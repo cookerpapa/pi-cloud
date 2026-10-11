@@ -49,8 +49,8 @@ or extra scheduling authority is introduced.
 
 The storage adapter retains native atomic commits. [ADR-0243](0243-native-input-current-state.md)
 supersedes the original full-write retention for Inbox/input metadata and Submissions:
-PG stores their current values; other writes remain in the canonical journal. Indexed current-record pointers and document reconstruction
-indexes are derived from that log. Native JSON is serialized losslessly as text,
+PG stores their current values; other writes remain in the canonical journal. Current-record pointers index retained history and ADR-0243 authoritative current
+input state; other document reconstruction indexes are derived from the journal. Native JSON is serialized losslessly as text,
 including NUL and lone-surrogate strings covered by upstream conformance; indexing
 uses JSON-encoded string identities rather than lossy text coercion. It must not
 copy transcript bodies into both a journal and full Entry query tables. Cloud
@@ -94,8 +94,9 @@ Plain active-conversation reads include the committed native Tool execute
 checkpoint even before its live start event receives display coverage. Its stable
 native task ID merges with the SSE start; no Tool task/receipt table is added.
 
-Current document/task projections are derived from this same canonical log,
-not independent control queues or external-operation result ledgers.
+Task and historical-document projections remain derived from the canonical log.
+ADR-0243 current input values are durable native state; neither store is an
+independent control queue or external-operation result ledger.
 
 Native model/task documents required for recovery are durable state. Disposable
 network health and guest preview observations retain the current HTTP/SSE path;

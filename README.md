@@ -46,8 +46,8 @@ and Run input/configuration/lifecycle. Initial requests are accepted in PG;
 additional messages go to the running Pi native queue and are confirmed after
 its Kafka-backed Storage commit. An unavailable Worker leaves the browser draft
 unconfirmed. [ADR-0238](docs/adr/0238-native-input-queue-and-run-record.md) is deployed;
-the current [Worker claim cleanup](docs/adr/0242-worker-claim-schema-cleanup.md) uses
-matched schema 184 and application images.
+the [Worker claim cleanup](docs/adr/0242-worker-claim-schema-cleanup.md) is retained
+in the current matched schema 185/application release.
 
 The intake path shares its locked Session and request lookup between
 routing and Run creation: eight ordinary business SQL statements, two on an
@@ -57,12 +57,17 @@ initial-request retry, with no cross-request cache
 Native tasks, submissions, entries and documents use one atomic commit stream.
 Kafka RF3 confirms each prepared commit before the Worker adopts it. PostgreSQL
 stores native history and authoritative current Inbox/input/Submission values,
-with rebuildable indexes for cold reads ([ADR-0243](docs/adr/0243-native-input-current-state.md)). Native Conversations share one physical Session lease and writer.
+with rebuildable indexes for cold reads
+([ADR-0243](docs/adr/0243-native-input-current-state.md)). Native Conversations share
+one physical Session lease and writer.
 Incomplete local Tool calls stay in Worker memory; complete model responses
 enter native persistence before validated Tool execution (ADR-0230).
-The [current deployed release](docs/reports/publication-admission-20261011.md) uses
-schema 184, guest input protocol 4, Tool Worker protocol 4 and Cube management
-protocol 7. It exercises the maintained matched release workflow and preserves
+The [current deployed release](docs/reports/native-input-current-state-20261012.md) uses
+schema 185, guest input protocol 4, Tool Worker protocol 4 and Cube management
+protocol 7. Inbox/input metadata and Submissions retain current values without
+permanent edit bodies. Native input/Stop, real Worker-crash recovery, browser/image
+and full Luna/Cube acceptance pass, with owned fixtures removed. It exercises the
+maintained matched release workflow and preserves
 the previously deployed [source repairs](docs/reports/review-repair-20261007-r3.md), which
 correct quarantine recovery, returned-input identity and oversized-line Read,
 and remove unnecessary document-revision queries. Confirmed loss of a user-selected
@@ -74,7 +79,7 @@ verifies indexed Worker admission/history reads, removes unused
 physical-Session metadata and gives Worker registry/lease references consistent names.
 Real Luna native-input/browser tests, cross-Worker restoration and same-Run crash
 recovery pass; normal claim still uses nine business SQL statements.
-The current release rejects already-known stale/closed publication registrations
+The retained publication-admission repair rejects already-known stale/closed registrations
 without SQL; every registration that could succeed still verifies PG. Real Luna
 native-input/Stop and Control Plane process-restart acceptance pass.
 Earlier cold-VM/preview acceptance, releases, reviews and

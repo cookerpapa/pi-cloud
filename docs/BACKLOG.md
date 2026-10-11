@@ -30,17 +30,20 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Reliability and capacity
 
-- [ ] Complete ADR-0243 native input current-state validation and matched schema 185
-      rollout. Queue/current metadata and Submissions stop accumulating historical
-      bodies; Kafka/native transaction ownership and Stop-return semantics remain.
+[ADR-0243](adr/0243-native-input-current-state.md) is deployed with schema 185 as
+`native-input-current-e82d00b7`. [Source and live acceptance](reports/native-input-current-state-20261012.md)
+cover current Inbox/Submission values, checked reconstruction, actual Worker SIGKILL,
+Stop/return, images and full Luna/Cube use. Configuration is preserved and fixtures
+are physically cleaned. Streaming pi.live retention remains separate work.
 
 The [native-log research/review](reports/append-only-storage-review-20261011.md)
 compares pinned Pi, Maka, Marten, Pekko and Temporal. It retains the current four
 storage tables and Session-local sequence; no runtime change was deployed.
 
-- [ ] R11L-01: finish validating ADR-0243 checks of batch completeness and a reconstructible integrity digest
-      during native index rebuild/import validation. Isolated missing/changed-body
-      fixtures currently rebuild silently; normal append conflict checks still pass.
+- [x] R11L-01: validate retained journal counts/checksums and latest required
+      current state during reconstruction, under ADR-0243. Missing/changed bodies
+      fail with transactional index rollback; quiescent reconstruction and real
+      asset restore preserve current values.
 - [ ] O11L-01: reuse already-scanned document metadata in the bounded cold-read
       cache. One measured 512 KiB document read uses three SELECTs; the isolated
       reuse prototype uses two with identical content. Preserve cache invalidation.
@@ -72,10 +75,11 @@ verify known directory errors, same-Run continuation, explicit restoration and
 preserved VM identity. The matched images include required Go/x-net security
 updates; owned resources are cleaned and original configuration is preserved.
 
-- [ ] If the October 10 large-Read model wait recurs, capture provider/request
-      stage evidence before changing timeout or retry policy. One Responses request
-      remained open about 3m54s until acceptance cancellation; the unchanged rerun
-      passed. The underlying cause is not established.
+- [ ] Reassess long model output if the large-Read fixture recurs after its
+      exact-short-label prompt. October 12 evidence located the delay in active
+      model text streaming after Read (HTTP 200, 3.4 MB over 234 seconds), not an
+      idle transport. The bounded repeat passed; no provider timeout or Tool-byte
+      assertion was weakened. [Evidence](reports/native-input-current-state-20261012.md).
 
 The [input-admission release](reports/input-admission-20261010.md) is deployed as
 `input-admission-db0548b8` on schema 183. Initial intake uses eight business SQL

@@ -55,8 +55,9 @@ Storage-layout follow-up: the owner approved ADR-0243 after the append-only revi
 Inbox/input metadata and Submission current values remain Pi-owned and acknowledged
 through the same Kafka commit. PG materializes them without intermediate bodies;
 index rebuild uses retained history plus authoritative current state. Other native
-records retain their existing policy. The implementation is under verification;
-matched schema 185 rollout is pending.
+records retain their existing policy.
+[Implementation and matched schema 185 deployment](reports/native-input-current-state-20261012.md)
+are complete, including current-state reconstruction and real Worker-crash recovery.
 
 The discussed pi.live Kafka-only streaming policy is separate and unimplemented.
 Text/thinking partials still reach PG through native document commits. The 64-delta

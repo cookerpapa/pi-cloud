@@ -853,8 +853,14 @@ const registration = await new PiCloudApi(fetchFromProduction).registerTenant(
 api = new PiCloudApi(fetchFromProduction, registration.apiToken);
 tenantId = registration.tenantId;
 authorizationToken = registration.apiToken;
-const model = await api.getModelConfiguration();
-assert.equal(model.mode, "real", "Production tenant must have a real model configured");
+const configuredModel = await api.getModelConfiguration();
+assert.equal(configuredModel.mode, "real", "Production tenant must have a real model configured");
+const model = {
+  provider: "openai-codex",
+  modelId: "gpt-6-luna",
+  thinkingLevel: "low",
+  fastMode: false,
+};
 progress(`real model configured: ${model.provider}/${model.modelId}`);
 
 const project = await api.createProject(`Cube production acceptance ${suffix}`);
@@ -869,6 +875,7 @@ let foreignSession;
 let largeSession;
 
 try {
+  await api.updateSessionModel(session.sessionId, model);
   assert.equal(managedForSession(await cube.list(), session.sessionId).length, 0);
 
   const chat = await runTurn(
@@ -1078,6 +1085,7 @@ try {
     `Cube large-workspace acceptance ${suffix}`,
     "elastic",
   );
+  await api.updateSessionModel(largeSession.sessionId, model);
   const largeFirst = await runTurn(
     largeSession.sessionId,
     [

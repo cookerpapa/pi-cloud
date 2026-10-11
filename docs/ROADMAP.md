@@ -4,16 +4,19 @@
 
 - [x] Record owner-approved [ADR-0243](adr/0243-native-input-current-state.md).
 - [x] Implement current Inbox/input/Submission persistence and atomic consumption.
-- [ ] Complete storage, API, recovery/export, fault and repository acceptance.
-- [ ] Deploy matched schema 185 and exercise real Luna/native-input/browser recovery.
+- [x] Complete storage, API, recovery/export, fault and repository acceptance.
+- [x] Deploy matched schema 185 and exercise real Luna/native-input/browser recovery.
+      [Release evidence](reports/native-input-current-state-20261012.md) includes
+      actual Worker SIGKILL, preserved configuration and confirmed fixture cleanup.
 
 ## Native log design review
 
 - [x] Compare maintained open-source storage patterns, inspect current Pi adapters,
       and execute isolated retention, cold-read and rebuild experiments.
       [Review and evidence](reports/append-only-storage-review-20261011.md).
-- [ ] Address R11L-01 and O11L-01 after review; discuss D11L-01 before changing
-      the canonical-log retention policy. Keep existing execution/storage authorities.
+- [x] Repair R11L-01 reconstruction integrity under ADR-0243.
+- [ ] Address O11L-01 cold-read reuse; discuss the remaining D11L-01 streaming/Task
+      retention policy. Keep existing execution authorities.
 
 ## Publication registration rejection
 

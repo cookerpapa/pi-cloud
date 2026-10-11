@@ -1,7 +1,10 @@
 # ADR-0243: Native input current state
 
-Status: accepted for implementation, 2026-10-12. The owner approved this slice
+Status: implemented, verified and deployed, 2026-10-12, as
+`native-input-current-e82d00b7` with schema 185. The owner approved this slice
 after comparing Pi Durable's Inbox contract with the previous full-write journal.
+[Source and live acceptance](../reports/native-input-current-state-20261012.md)
+record the matched release, failure evidence and fixture cleanup.
 
 ## Decision
 

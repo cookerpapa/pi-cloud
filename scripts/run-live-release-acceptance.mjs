@@ -285,7 +285,7 @@ try {
     session.sessionId,
     "严格分别调用一次 read，参数为这两个 JSON 对象：" +
       JSON.stringify(files.map((f) => ({ path: f.upload.path, offset: f.offset, limit: 1 }))) +
-      "。不要用 bash，不要继续读剩余内容，不要搜索或委派。两次读取后只回复每份返回文本开头的 WIDE 标识。",
+      "。不要用 bash，不要继续读剩余内容，不要搜索或委派。两次读取后只回复两个短标签 WIDE_ASCII_BEGIN_ 和 WIDE_UTF8_BEGIN_，不要复制标签后面的任何正文或重复字符。最终回答最多两行。",
     newIdempotencyKey("release-read"),
     "low",
   );
