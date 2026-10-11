@@ -30,6 +30,21 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Reliability and capacity
 
+The [native-log research/review](reports/append-only-storage-review-20261011.md)
+compares pinned Pi, Maka, Marten, Pekko and Temporal. It retains the current four
+storage tables and Session-local sequence; no runtime change was deployed.
+
+- [ ] R11L-01: verify batch completeness and a reconstructible integrity digest
+      during native index rebuild/import validation. Isolated missing/changed-body
+      fixtures currently rebuild silently; normal append conflict checks still pass.
+- [ ] O11L-01: reuse already-scanned document metadata in the bounded cold-read
+      cache. One measured 512 KiB document read uses three SELECTs; the isolated
+      reuse prototype uses two with identical content. Preserve cache invalidation.
+- [ ] D11L-01: discuss retention of superseded native Task checkpoints and
+      current-only document history using measured usage. Any reclamation requires
+      an ADR, complete reconstruction boundaries and attachment safety; do not filter
+      committed Pi batches or add a second runtime authority.
+
 The approved [publication-registration optimization](reports/publication-admission-20261011.md)
 is deployed as `publication-admission-c39a78f8`: known stale/closed identities
 are rejected before PG, while potentially successful registration retains PG

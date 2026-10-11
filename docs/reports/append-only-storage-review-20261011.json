@@ -1,0 +1,255 @@
+{
+  "date": "2026-10-11",
+  "baselineRevision": "24031331c5b1077f28cb6983201b03722b24bda9",
+  "productionCodeChanged": false,
+  "schema": 184,
+  "scope": "Native append-only storage design research and focused review; no deployment.",
+  "sources": [
+    {
+      "repository": "earendil-works/pi",
+      "version": "1.0.0",
+      "revision": "a13d35a742c6ef8462812a28fbe1d8c8b7431c32",
+      "license": "MIT"
+    },
+    {
+      "repository": "apache/maka",
+      "url": "https://github.com/apache/maka",
+      "revision": "fa26868b1d223acc833089e94b6834188926f49c",
+      "license": "Apache-2.0",
+      "archived": false,
+      "pushedAt": "2026-10-11T06:48:45Z"
+    },
+    {
+      "repository": "JasperFx/marten",
+      "url": "https://github.com/JasperFx/marten",
+      "revision": "a6832ce71f13d9bec76b999cbbe78793e96aea18",
+      "license": "MIT",
+      "archived": false,
+      "pushedAt": "2026-10-11T02:07:07Z"
+    },
+    {
+      "repository": "apache/pekko-persistence-jdbc",
+      "url": "https://github.com/apache/pekko-persistence-jdbc",
+      "revision": "712fed3cb7dfb3310723f3f9a6a0064194e7a638",
+      "license": "Apache-2.0",
+      "archived": false,
+      "pushedAt": "2026-10-08T16:25:57Z"
+    },
+    {
+      "repository": "temporalio/temporal",
+      "url": "https://github.com/temporalio/temporal",
+      "revision": "30c625664a2bbc1bd4cd9022d71982cc473e6979",
+      "license": "MIT",
+      "archived": false,
+      "pushedAt": "2026-10-10T21:03:39Z"
+    }
+  ],
+  "findings": [
+    {
+      "id": "R11L-01",
+      "category": "recovery-hardening",
+      "severity": "P2",
+      "status": "confirmed in isolated corruption fixtures; unimplemented",
+      "summary": "Index rebuild does not verify batch completeness or the stored fingerprint."
+    },
+    {
+      "id": "O11L-01",
+      "category": "performance",
+      "status": "measured; prototype only",
+      "summary": "Cold document lookup and materialization read the creation body three times; reuse of scanned metadata removes one SQL and one body transfer."
+    },
+    {
+      "id": "D11L-01",
+      "category": "architecture-decision",
+      "status": "requires retention-policy discussion",
+      "summary": "All intermediate native writes remain in canonical PG history until Session deletion, unlike native Pi backend reclamation of obsolete current-only state."
+    },
+    {
+      "id": "N11L-01",
+      "category": "documentation",
+      "status": "corrected in this review",
+      "summary": "ADR-0147 streaming/recovery clauses predate Durable1.0 and must not be presented as current."
+    }
+  ],
+  "measurements": {
+    "checkedAt": "2026-10-11T10:35:06.303Z",
+    "revision": "24031331c5b1077f28cb6983201b03722b24bda9",
+    "piVersion": "1.0.0",
+    "probeSha256": "0a7a6ead99ddb0ff0e05a0fde7d36f7dbc1d8f485e76e32cdf228d300542a368",
+    "scope": "Isolated storage contracts and retention; no Kafka, provider network, sandbox or production mutation.",
+    "synthetic": {
+      "piCloud": {
+        "commits": 130,
+        "records": 3,
+        "revisions": 1,
+        "groups": [
+          {
+            "record_kind": "conversation",
+            "phase": null,
+            "rows": 1,
+            "body_bytes": "40"
+          },
+          {
+            "record_kind": "document.change",
+            "phase": null,
+            "rows": 129,
+            "body_bytes": "13043"
+          },
+          {
+            "record_kind": "document.create",
+            "phase": null,
+            "rows": 1,
+            "body_bytes": "154"
+          },
+          {
+            "record_kind": "task",
+            "phase": null,
+            "rows": 130,
+            "body_bytes": "2123302"
+          }
+        ],
+        "relationSizesWholeFixture": [
+          {
+            "relname": "pi_durable_commits",
+            "total_bytes": "90112"
+          },
+          {
+            "relname": "pi_durable_document_revisions",
+            "total_bytes": "106496"
+          },
+          {
+            "relname": "pi_durable_log",
+            "total_bytes": "2441216"
+          },
+          {
+            "relname": "pi_durable_records",
+            "total_bytes": "221184"
+          }
+        ],
+        "maxBatchJsonBytes": 16723
+      },
+      "piJsonl": {
+        "bytes": 18388,
+        "files": ["doc-3.jsonl", "main.jsonl"],
+        "remainingTaskCheckpointBytes": 0
+      },
+      "piSqlite": {
+        "fileBytes": 151552,
+        "tasks": {
+          "rows": 1,
+          "body_bytes": 192
+        },
+        "documentRevisions": {
+          "rows": 1,
+          "body_bytes": 15
+        }
+      }
+    },
+    "nativeStreaming": {
+      "piCloud": {
+        "answerBytes": 16384,
+        "contextBytes": 16797,
+        "modelCalls": 1,
+        "storage": {
+          "commits": 70,
+          "records": 9,
+          "revisions": 4,
+          "groups": [
+            {
+              "record_kind": "conversation",
+              "phase": null,
+              "rows": 1,
+              "body_bytes": "40"
+            },
+            {
+              "record_kind": "document.change",
+              "phase": null,
+              "rows": 68,
+              "body_bytes": "25520"
+            },
+            {
+              "record_kind": "document.create",
+              "phase": null,
+              "rows": 4,
+              "body_bytes": "870"
+            },
+            {
+              "record_kind": "entry",
+              "phase": null,
+              "rows": 2,
+              "body_bytes": "16972"
+            },
+            {
+              "record_kind": "submission",
+              "phase": null,
+              "rows": 2,
+              "body_bytes": "265"
+            },
+            {
+              "record_kind": "task",
+              "phase": "\"prepare\"",
+              "rows": 2,
+              "body_bytes": "426"
+            },
+            {
+              "record_kind": "task",
+              "phase": "\"request\"",
+              "rows": 1,
+              "body_bytes": "312"
+            },
+            {
+              "record_kind": "task",
+              "phase": null,
+              "rows": 1,
+              "body_bytes": "225"
+            }
+          ],
+          "relationSizesWholeFixture": [
+            {
+              "relname": "pi_durable_commits",
+              "total_bytes": "106496"
+            },
+            {
+              "relname": "pi_durable_document_revisions",
+              "total_bytes": "188416"
+            },
+            {
+              "relname": "pi_durable_log",
+              "total_bytes": "2531328"
+            },
+            {
+              "relname": "pi_durable_records",
+              "total_bytes": "294912"
+            }
+          ],
+          "maxBatchJsonBytes": 17552
+        }
+      }
+    },
+    "rebuild": {
+      "validIndexMatches": true,
+      "duplicateAcceptedAsNoop": true,
+      "conflictingBatchRejected": true,
+      "missingBodyRejected": false,
+      "missingBodyHeader": {
+        "seq": "2",
+        "write_count": 1,
+        "actual_rows": 0
+      },
+      "changedBodyRejected": false,
+      "changedRead": "changed-without-commit"
+    },
+    "coldDocument": {
+      "current": {
+        "queries": 3,
+        "returnedBodyBytes": 1573317,
+        "returnedCheckpointBytes": 0
+      },
+      "reuseScannedHeaderPrototype": {
+        "queries": 2,
+        "returnedBodyBytes": 1048878,
+        "returnedCheckpointBytes": 0
+      }
+    }
+  }
+}

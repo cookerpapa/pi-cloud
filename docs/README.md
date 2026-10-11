@@ -1,5 +1,11 @@
 # Documentation map
 
+The [append-only storage research/review](reports/append-only-storage-review-20261011.md)
+compares Pi, Maka, Marten, Pekko and Temporal against schema 184. Isolated experiments
+retain the four-table/sequence design, identify rebuild integrity and cold-document
+read improvements, and separate retention-policy discussion from implementation.
+Only research artifacts and the old ADR's applicability note changed.
+
 The [publication-registration optimization](reports/publication-admission-20261011.md)
 is deployed as `publication-admission-c39a78f8`, retaining schema 184 and current
 protocols. Known stale/closed registrations use zero SQL; potentially successful

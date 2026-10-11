@@ -3,8 +3,14 @@
 ## Status
 
 Accepted. Entry/Record/COW query storage is superseded by
-[ADR-0197](0197-indexed-native-session-log.md); the semantic log and communication
-decisions below remain current.
+[ADR-0197](0197-indexed-native-session-log.md). The Pi 0.84 native format, operation
+recovery and assistant-delta persistence clauses below are historical after
+[ADR-0229](0229-native-durable-runtime.md). Pi Durable 1.0 text/thinking partials
+are native document writes and are materialized in PG; runtime observations retain
+their separate lossy transport. The self-contained semantic-log principle and
+the separation of context ancestry from communication remain current. See the
+[storage review](../reports/append-only-storage-review-20261011.md) for retention
+and reconstruction boundaries.
 
 ## Context
 

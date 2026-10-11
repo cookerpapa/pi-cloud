@@ -1,5 +1,13 @@
 # Implementation roadmap
 
+## Native log design review
+
+- [x] Compare maintained open-source storage patterns, inspect current Pi adapters,
+      and execute isolated retention, cold-read and rebuild experiments.
+      [Review and evidence](reports/append-only-storage-review-20261011.md).
+- [ ] Address R11L-01 and O11L-01 after review; discuss D11L-01 before changing
+      the canonical-log retention policy. Keep existing execution/storage authorities.
+
 ## Publication registration rejection
 
 - [x] Reuse the existing in-memory identity/closure checks before PG registration

@@ -64,6 +64,13 @@ duplicate batches are checked by position/fingerprint. Worker Storage acknowledg
 comes from Kafka before asynchronous PG materialization. Append-only does not make
 derived indexes immutable or prevent quiescent conversation deletion.
 
+The owner requested a comparison with mature open-source append-only designs.
+The [October 11 review](reports/append-only-storage-review-20261011.md) covers Pi,
+Maka, Marten, Pekko and Temporal, retaining four native storage tables and the
+Session-local commit version. Isolated experiments identify a rebuild integrity
+gap and repeated cold-document body reads; intermediate-state retention remains
+a separate design discussion. No product/runtime implementation changed.
+
 Follow-up discussions established:
 
 - Core Session/Turn/Run fields are consolidated under ADR-0238.
