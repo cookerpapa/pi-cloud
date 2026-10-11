@@ -17,7 +17,7 @@ Current meanings (older ADR clauses explicitly defer to ADR-0229):
 | --- | --- |
 | What survives Worker replacement? | The logical Run and native pending progress. A fresh PG grant is required after ordered old-writer closure; there is no RunAttempt. |
 | What does Stop mean? | Native Durable abort plus ordered operation cancellation at the guest Tool/process-group boundary. A cancellation ACK does not prove physical completion; late replies cannot replace a committed native abort. |
-| Where is native history saved? | The Worker uses public Durable `Storage`, publishes through ingress and waits for Kafka ACK. PG materializes exact batches for cold reads. There is no separate Tool ledger or lifetime JSONL replay. |
+| Where is native history saved? | The Worker uses public Durable `Storage`, publishes through ingress and waits for Kafka ACK. PG materializes the native state and retained history for cold reads. There is no separate Tool ledger or lifetime JSONL replay. |
 | What does an asset restore mean? | A cold PG/image recovery point, with old execution authority removed and new Workspaces. It is separate from resuming an interrupted Run in the same live deployment (ADR-0237). |
 
 ```text
@@ -590,18 +590,31 @@ Conversation belongs to the requesting generation, allowing its delegation Tool
 to return a blocked result and the parent to issue a later reply Tool. Native
 parent abort still cascades to that child.
 
-`pi_durable_log` retains each exact native write once as JSON text. Text storage
-preserves native NUL and lone-surrogate strings without PostgreSQL JSONB coercion.
-`pi_durable_commits` stores sequence, next ID and duplicate/conflict fingerprints.
-`pi_durable_records` contains current record pointers and thin query fields;
-`pi_durable_document_revisions` reconstructs documents with derived checkpoints
-every 64 deltas. These are indexes of the canonical log, not another authority.
-Document current-only policy is indexed metadata. Batched revision inserts derive
-version/count from PG state without per-document definition reads; every 64th delta
-still materializes a bounded native tail. Fixed selector keys are SQL literals from
-a code-owned allowlist, while selector values remain parameters.
-Rebuild requires quiescence and never executes Tools or rewrites native bodies.
-Cloud Session/Run/Turn origins remain in the canonical log through rebuilds.
+[ADR-0243](adr/0243-native-input-current-state.md) separates durable current input
+state from retained history. `pi_durable_current` stores one current body for every
+Submission and the conversation-scoped latest-only `pi.inbox` and
+`pi-cloud.human-inputs` documents. The latter preserve native version/delta count,
+creation/retirement identity and provenance. These bodies do not appear in
+`pi_durable_log` or accumulate document-revision checkpoints. The Projector applies
+current replacements and native consumption's immutable user Entry in one PG transaction.
+Individual cancellation clears unused text/upload metadata through Pi's transaction;
+Stop-return and consumed-message presentation data retain their existing lifetime.
+
+`pi_durable_log` retains other native writes as JSON text, preserving NUL and lone
+surrogates. `pi_durable_commits` retains sequence/ID watermarks, original replay
+fingerprints, retained-history checksums/counts and small current-state checksums.
+`pi_durable_records` indexes retained history and current state; the body resolver
+is one view over those two stores, not a second transcript copy. Other documents
+still use `pi_durable_document_revisions` with derived checkpoints every 64 deltas.
+Fixed selector keys are code-owned SQL literals while values remain parameters.
+
+Rebuild requires quiescence, validates journal completeness and the latest required
+current values, and rebuilds only indexes. It never deletes current state, runs
+Tools or allocates sequence. Current state must accompany history in asset recovery;
+chat history alone cannot restore the input queue. Kafka acknowledgement, native
+batch atomicity and the ordered closure/new-lease boundary remain unchanged.
+Streaming `pi.live` and Task history retention are separate, still-unimplemented
+policy discussions; this input slice does not silently alter those contracts.
 
 The Worker prepares and validates a detached batch, publishes it through ingress,
 waits for RF3 Kafka ACK and only then exposes it to Pi. A bounded acknowledged

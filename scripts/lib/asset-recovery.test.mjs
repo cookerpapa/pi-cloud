@@ -15,8 +15,20 @@ import { appendNativeFixture } from "../../packages/control-plane/test/fixtures/
 import { createTestWorker } from "../../packages/control-plane/test/admit-test-execution.ts";
 import { PostgresImageAttachmentStore } from "../../packages/session-attachments/src/store.ts";
 import { readDurableEntries } from "../../packages/pi-session-postgres/src/durable/history.ts";
+import { DurablePostgresProjection } from "../../packages/pi-session-postgres/src/durable/postgres-projection.ts";
 
-let pg, sourceImages, targetImages, source, target, admin, directory, scope, image, bytes, before;
+let pg,
+  sourceImages,
+  targetImages,
+  source,
+  target,
+  admin,
+  directory,
+  scope,
+  image,
+  bytes,
+  before,
+  beforeCurrent;
 const names = ["source", "target"].map(
   (kind) => `recovery_${kind}_${randomUUID().replaceAll("-", "")}`,
 );
@@ -31,6 +43,8 @@ const logs = (db) =>
   sql`select session_id,seq,ordinal,body,cloud_origin from pi_durable_log order by session_id,seq,ordinal`
     .execute(db)
     .then((r) => r.rows);
+const currentValues = (db) =>
+  sql`select * from pi_durable_current order by session_id,id`.execute(db).then((r) => r.rows);
 
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), "pi-cloud-recovery-"));
@@ -119,6 +133,40 @@ beforeAll(async () => {
       ],
     },
   ]);
+  const native = new DurablePostgresProjection(source, {
+    tenantId: scope.tenantId,
+    sessionId: scope.sessionId,
+  });
+  const head = await native.head();
+  await native.apply({
+    seq: head.seq + 1,
+    nextId: head.nextId + 2,
+    writes: [
+      {
+        type: "document.create",
+        record: {
+          id: head.nextId,
+          kind: "pi.inbox",
+          scope: { kind: "conversation", conversationId: 1 },
+          history: "latest",
+          fork: "initial",
+        },
+        content: { kind: "base", version: 1, value: { items: [] } },
+      },
+      {
+        type: "submission",
+        value: {
+          id: head.nextId + 1,
+          conversationId: 1,
+          type: "input",
+          requestId: "asset-current-fixture",
+          status: "done",
+          entry: 2,
+          answer: 5,
+        },
+      },
+    ],
+  });
   const terminal = {
     state: "completed",
     settled_at: new Date(),
@@ -181,6 +229,8 @@ beforeAll(async () => {
     })
     .execute();
   before = await logs(source);
+  beforeCurrent = await currentValues(source);
+  expect(beforeCurrent).toHaveLength(2);
 }, 120_000);
 
 afterAll(async () => {
@@ -341,6 +391,12 @@ it("restores after source loss, preserves exact native history/images and admits
   );
   expect(result.restored).toBe(true);
   expect(await logs(target)).toEqual(before);
+  expect(await currentValues(target)).toEqual(beforeCurrent);
+  await new DurablePostgresProjection(target, {
+    tenantId: scope.tenantId,
+    sessionId: scope.sessionId,
+  }).rebuild();
+  expect(await currentValues(target)).toEqual(beforeCurrent);
   expect(
     await new PostgresImageAttachmentStore(target, targetImages.blobs).get(scope.tenantId, image),
   ).toEqual(bytes);

@@ -136,6 +136,312 @@ for (const cold of [false, true])
     },
   );
 
+it("keeps one Inbox/Submission body across edits, atomically consumes it, and rebuilds without edit history", async () => {
+  const f = await fixture();
+  const id = 2 as import("@earendil-works/pi-durable").DocumentId;
+  const submission = {
+    id: 3 as never,
+    conversationId: 1 as never,
+    type: "input" as const,
+    requestId: "input-stable",
+  };
+  const initial: StorageWrite[] = [
+    { type: "conversation", value: { id: 1 as never } },
+    {
+      type: "document.create",
+      record: {
+        id,
+        kind: "pi.inbox",
+        scope: { kind: "conversation", conversationId: 1 as never },
+        history: "latest",
+        fork: "initial",
+      },
+      content: {
+        kind: "base",
+        version: 1,
+        value: { items: [{ id: 3, mode: "followUp", content: "SUPERSEDED_QUEUE_BODY" }] },
+      },
+    },
+    { type: "submission", value: { ...submission, status: "queued" } },
+  ];
+  try {
+    await f.store.commit(initial, BACKGROUND_CONTEXT);
+    for (let n = 1; n <= 130; n++) {
+      await f.store.commit(
+        [
+          {
+            type: "document.change",
+            id,
+            content: {
+              kind: "delta",
+              version: 1,
+              ops: [["s", ["items", 0, "content"], `edited-${n}\u0000\ud800`]],
+            },
+          },
+        ],
+        BACKGROUND_CONTEXT,
+      );
+      if (n % 19 === 0) await f.store.flush();
+      if (n % 17 === 0)
+        expect(await f.store.document(id, "current", BACKGROUND_CONTEXT)).toMatchObject({
+          value: { items: [{ content: `edited-${n}\u0000\ud800` }] },
+          deltasSinceBase: n,
+        });
+    }
+    await f.store.flush();
+    expect(await f.store.document(id, "current", BACKGROUND_CONTEXT)).toMatchObject({
+      value: { items: [{ content: "edited-130\u0000\ud800" }] },
+      deltasSinceBase: 130,
+    });
+    const current = await sql<{
+      body: string;
+    }>`select body from pi_durable_current where tenant_id=${f.tenantId}::uuid`.execute(database);
+    expect(current.rows).toHaveLength(2);
+    expect(current.rows.map((r) => r.body).join("\n")).not.toContain("SUPERSEDED_QUEUE_BODY");
+    expect(await f.projection.revisions(id, f.store.committedSequence)).toHaveLength(1);
+    expect(
+      (
+        await sql`select 1 from pi_durable_document_revisions where tenant_id=${f.tenantId}::uuid`.execute(
+          database,
+        )
+      ).rows,
+    ).toEqual([]);
+    const history = await sql<{
+      body: string;
+    }>`select body from pi_durable_log where tenant_id=${f.tenantId}::uuid`.execute(database);
+    expect(history.rows).toHaveLength(1);
+    expect(history.rows[0]!.body).not.toContain("QUEUE_BODY");
+    // An old acknowledged batch is an idempotent no-op, never a rewind of the queue.
+    expect(await f.projection.apply({ seq: 1 as never, nextId: 4, writes: initial })).toBe(false);
+    await expect(f.projection.apply({ seq: 1 as never, nextId: 4, writes: [] })).rejects.toThrow(
+      "changed bytes",
+    );
+    const before = await f.projection.revisions(id, f.store.committedSequence);
+    // A failed retained Entry insert must also roll back queue removal and its receipt.
+    await expect(
+      f.projection.apply({
+        seq: (f.store.committedSequence + 1) as never,
+        nextId: 4,
+        writes: [
+          {
+            type: "document.change",
+            id,
+            content: { kind: "base", version: 1, value: { items: [] } },
+          },
+          {
+            type: "entry",
+            value: { id: 1 as never, conversationId: 1 as never, kind: "invalid-reused-id" },
+          },
+        ],
+      }),
+    ).rejects.toThrow("ownership changed");
+    expect(await f.projection.revisions(id, f.store.committedSequence)).toEqual(before);
+    await f.store.commit(
+      [
+        {
+          type: "document.change",
+          id,
+          content: { kind: "base", version: 1, value: { items: [] } },
+        },
+        { type: "submission", value: { ...submission, status: "placed", entry: 4 as never } },
+        {
+          type: "entry",
+          value: {
+            id: 4 as never,
+            conversationId: 1 as never,
+            kind: "pi.user",
+            model: [{ role: "user", content: "edited-130\u0000\ud800", timestamp: 1 }],
+          },
+        },
+      ],
+      BACKGROUND_CONTEXT,
+    );
+    await f.store.flush();
+    const snapshot = async () =>
+      (
+        await sql`select id,kind,seq,ordinal,fields,created_seq,retired_seq from pi_durable_records where tenant_id=${f.tenantId}::uuid order by id`.execute(
+          database,
+        )
+      ).rows;
+    const indexed = await snapshot();
+    await sql`delete from pi_durable_records where tenant_id=${f.tenantId}::uuid`.execute(database);
+    await sql`delete from pi_durable_document_revisions where tenant_id=${f.tenantId}::uuid`.execute(
+      database,
+    );
+    await f.projection.rebuild();
+    expect(await snapshot()).toEqual(indexed);
+    expect((await f.projection.get(3))?.value).toMatchObject({ status: "placed", entry: 4 });
+    expect((await f.projection.revisions(id, f.store.committedSequence))[0]!.content).toMatchObject(
+      { kind: "base", value: { items: [] } },
+    );
+    expect((await f.projection.get(4))?.value).toMatchObject({
+      model: [{ content: "edited-130\u0000\ud800" }],
+    });
+    expect(
+      (
+        await sql`select 1 from pi_durable_log where tenant_id=${f.tenantId}::uuid and record_kind in ('submission','document.create','document.change')`.execute(
+          database,
+        )
+      ).rows,
+    ).toEqual([]);
+  } finally {
+    await f.close();
+  }
+});
+
+it("retires current input content and replaces its address without retaining the old payload", async () => {
+  const f = await fixture();
+  const definition = {
+    kind: "pi.inbox",
+    scope: { kind: "conversation" as const, conversationId: 1 as never },
+    history: "latest" as const,
+    fork: "initial" as const,
+  };
+  try {
+    await f.store.commit(
+      [
+        { type: "conversation", value: { id: 1 as never } },
+        {
+          type: "document.create",
+          record: { ...definition, id: 2 as never },
+          content: { kind: "base", version: 1, value: { items: ["retired-body"] } },
+        },
+      ],
+      BACKGROUND_CONTEXT,
+    );
+    await f.store.commit(
+      [
+        { type: "document.retire", id: 2 as never },
+        {
+          type: "document.create",
+          record: { ...definition, id: 3 as never },
+          content: { kind: "base", version: 1, value: { items: [] } },
+        },
+      ],
+      BACKGROUND_CONTEXT,
+    );
+    await f.store.flush();
+    expect(await f.store.document(2 as never, "current", BACKGROUND_CONTEXT)).toBeUndefined();
+    expect((await f.store.findDocument(definition, "current", BACKGROUND_CONTEXT))?.id).toBe(3);
+    await f.projection.rebuild();
+    expect((await f.projection.get(2))?.value).toMatchObject({ retiredAt: 2 });
+    expect(
+      (
+        await sql<{
+          body: string;
+        }>`select body from pi_durable_current where tenant_id=${f.tenantId}::uuid`.execute(
+          database,
+        )
+      ).rows
+        .map((r) => r.body)
+        .join("\n"),
+    ).not.toContain("retired-body");
+  } finally {
+    await f.close();
+  }
+});
+
+it("does not apply input retention to an unrelated scope sharing the same document kind", async () => {
+  const f = await fixture();
+  try {
+    await f.store.commit(
+      [
+        {
+          type: "document.create",
+          record: { id: 2 as never, kind: "pi.inbox", scope: { kind: "session" } },
+          content: { kind: "base", version: 1, value: { value: "before" } },
+        },
+      ],
+      BACKGROUND_CONTEXT,
+    );
+    await f.store.commit(
+      [
+        {
+          type: "document.change",
+          id: 2 as never,
+          content: { kind: "delta", version: 1, ops: [["s", ["value"], "after"]] },
+        },
+      ],
+      BACKGROUND_CONTEXT,
+    );
+    await f.store.flush();
+    expect(await f.store.document(2 as never, "current", BACKGROUND_CONTEXT)).toMatchObject({
+      value: { value: "after" },
+    });
+    expect(
+      (
+        await sql`select 1 from pi_durable_current where tenant_id=${f.tenantId}::uuid`.execute(
+          database,
+        )
+      ).rows,
+    ).toEqual([]);
+  } finally {
+    await f.close();
+  }
+});
+
+it.each(["missing state", "changed state", "missing history", "changed history"])(
+  "rejects %s during index rebuild and preserves existing indexes",
+  async (damage) => {
+    const f = await fixture();
+    try {
+      await f.store.commit(
+        [
+          { type: "conversation", value: { id: 1 as never } },
+          {
+            type: "document.create",
+            record: {
+              id: 2 as never,
+              kind: "pi.inbox",
+              scope: { kind: "conversation", conversationId: 1 as never },
+              history: "latest",
+              fork: "initial",
+            },
+            content: { kind: "base", version: 1, value: { items: [] } },
+          },
+        ],
+        BACKGROUND_CONTEXT,
+      );
+      await f.store.flush();
+      if (damage === "missing state")
+        await sql`delete from pi_durable_current where tenant_id=${f.tenantId}::uuid`.execute(
+          database,
+        );
+      else if (damage === "changed state")
+        await sql`update pi_durable_current set body='{}' where tenant_id=${f.tenantId}::uuid`.execute(
+          database,
+        );
+      else if (damage === "missing history")
+        await sql`delete from pi_durable_log where tenant_id=${f.tenantId}::uuid`.execute(database);
+      else
+        await sql`update pi_durable_log set body='{}' where tenant_id=${f.tenantId}::uuid`.execute(
+          database,
+        );
+      const before = (
+        await sql`select * from pi_durable_records where tenant_id=${f.tenantId}::uuid order by id`.execute(
+          database,
+        )
+      ).rows;
+      if (damage === "missing state") {
+        await expect(f.projection.get(2)).rejects.toThrow("body is missing");
+        await expect(f.projection.scan({ kind: "document" }, 20)).rejects.toThrow(
+          "body is missing",
+        );
+      }
+      await expect(f.projection.rebuild()).rejects.toThrow(/integrity|incomplete/);
+      expect(
+        (
+          await sql`select * from pi_durable_records where tenant_id=${f.tenantId}::uuid order by id`.execute(
+            database,
+          )
+        ).rows,
+      ).toEqual(before);
+    } finally {
+      await f.close();
+    }
+  },
+);
+
 it("does not expose a projected but unacknowledged commit, then rejects uncertain ownership", async () => {
   const projected = Promise.withResolvers<void>(),
     release = Promise.withResolvers<void>();

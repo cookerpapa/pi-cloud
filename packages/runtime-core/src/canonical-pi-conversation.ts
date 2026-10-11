@@ -308,7 +308,7 @@ export async function readCanonicalPiTurnTranscripts(
           where t.tenant_id=r.tenant_id and t.turn_id::text=r.fields->>'turn' and s.pi_session_id=r.session_id)
     ), history as (
       select r.id,r.session_id as pi_session_id,r.seq,r.ordinal,r.fields,l.body,c.committed_at,task.fields->>'nativeKind' as task_kind
-      from own r join pi_durable_log l using(tenant_id,session_id,seq,ordinal)
+      from own r join pi_durable_record_bodies l using(tenant_id,session_id,seq,ordinal)
         join pi_durable_commits c using(tenant_id,session_id,seq)
         left join pi_durable_records task on task.tenant_id=r.tenant_id and task.session_id=r.session_id
           and task.id=(r.fields->>'task')::bigint and task.kind='task'
@@ -320,7 +320,7 @@ export async function readCanonicalPiTurnTranscripts(
       where r.kind='task' and l.record_kind='task' and l.phase=${JSON.stringify("retry")}
       union all
       select r.id,r.session_id as pi_session_id,r.seq,r.ordinal,r.fields,l.body,c.committed_at,null::text as task_kind
-      from own r join pi_durable_log l using(tenant_id,session_id,seq,ordinal)
+      from own r join pi_durable_record_bodies l using(tenant_id,session_id,seq,ordinal)
         join pi_durable_commits c using(tenant_id,session_id,seq)
       where r.kind='task' and (r.fields->>'status'='terminal' or (r.fields->>'nativeKind'=${JSON.stringify("pi.tool")} and r.fields->>'status'='running'))
         and r.fields->>'nativeKind'=any(${["pi.tool", "pi.compaction"].map((value) => JSON.stringify(value))}::text[])

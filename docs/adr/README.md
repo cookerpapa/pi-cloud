@@ -10,6 +10,9 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0243](0243-native-input-current-state.md) — native Inbox/input metadata and
+   Submission current values, atomic consumption and checked history/state reconstruction.
+
 1. [ADR-0242](0242-worker-claim-schema-cleanup.md) — indexed Worker admission and
    control history, removal of unused physical-Session metadata, and Worker table naming.
 

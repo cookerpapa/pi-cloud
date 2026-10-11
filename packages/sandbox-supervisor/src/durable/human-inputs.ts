@@ -199,6 +199,10 @@ export class DurableHumanInputs {
         tx.settleSubmission(submission.id, { status: "unanswered", reason: "aborted" });
         inbox.items.splice(index, 1);
         input.cancelled = true;
+        // Individual withdrawal has no Stop-return or transcript payload. Keep
+        // identity/receipts so a lost reply cannot resurrect the old draft.
+        input.text = "";
+        input.uploads = [];
       } else if (change.action === "move") {
         const humanIds = new Set(Object.values(state.inputs).map((input) => input.nativeId));
         const positions = inbox.items.flatMap((item, index) =>

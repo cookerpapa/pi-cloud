@@ -1,7 +1,7 @@
 # Conversation and image recovery
 
 [ADR-0237](adr/0237-private-pilot-asset-recovery.md) defines this cold operator
-procedure. It preserves exact native history, associated product/account metadata
+procedure. It preserves retained native history and authoritative current input state, associated product/account metadata
 and immutable image attachments. Ordinary uploaded files belong to the Workspace;
 their bytes and running programs are not backed up here. Restored Sessions use
 fresh empty Workspaces. No old task, VM, Kafka queue or lease is resumed by restore.

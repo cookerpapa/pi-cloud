@@ -531,6 +531,14 @@ describe.sequential("native human inputs and cloud execution records", () => {
     try {
       const cancelled = (await f.accept("withdraw individually")) as NativeInputAccepted;
       await f.edit(cancelled.inputId, { action: "cancel", revision: (await f.list()).revision });
+      const current = await sql<{ body: string }>`select body from pi_durable_current
+        where tenant_id=${f.tenant.tenantId}::uuid`.execute(db);
+      expect(current.rows.map((row) => row.body).join("\n")).not.toContain("withdraw individually");
+      const historical = await sql<{ body: string }>`select body from pi_durable_log
+        where tenant_id=${f.tenant.tenantId}::uuid`.execute(db);
+      expect(historical.rows.map((row) => row.body).join("\n")).not.toContain(
+        "withdraw individually",
+      );
       const first = (await f.accept("first")) as NativeInputAccepted,
         second = (await f.accept("second")) as NativeInputAccepted;
       await f.edit(second.inputId, {

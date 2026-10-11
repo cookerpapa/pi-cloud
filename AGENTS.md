@@ -74,8 +74,9 @@ protocol, record the decision under `docs/adr/` before implementation.
   dedicating a process or OS thread to a cold session.
 - PostgreSQL is the sole Run/control authority. Active Pi Session writes are
   fully stamped by one physical-Session writer and acknowledged through R=3
-  Kafka; PostgreSQL materializes the exact native log for cold reads and long-term
-  history. Do not restore per-Step projection receipts or allocate sequence from
+  Kafka; PostgreSQL materializes native storage for cold reads and long-term
+  history. ADR-0243 stores Inbox/input metadata and Submissions as authoritative
+  current values; other native writes retain their historical policy. Do not restore per-Step projection receipts or allocate sequence from
   a second active writer. Cold administrative mutations require Session quiescence.
   Bootstrap only the latest Compaction and active suffix, never lifetime JSONL.
 - Workers publish through the control-plane ingress under a PG-issued identity

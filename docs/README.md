@@ -1,5 +1,10 @@
 # Documentation map
 
+[ADR-0243](adr/0243-native-input-current-state.md) implements native input current
+state under matched schema 185. Inbox/input metadata and Submission bodies replace
+older values; retained history and current state jointly rebuild the query indexes.
+Verification and deployment are in progress.
+
 The [append-only storage research/review](reports/append-only-storage-review-20261011.md)
 compares Pi, Maka, Marten, Pekko and Temporal against schema 184. Isolated experiments
 retain the four-table/sequence design, identify rebuild integrity and cold-document

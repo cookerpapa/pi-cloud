@@ -1,5 +1,12 @@
 # Implementation roadmap
 
+## Native input current state
+
+- [x] Record owner-approved [ADR-0243](adr/0243-native-input-current-state.md).
+- [x] Implement current Inbox/input/Submission persistence and atomic consumption.
+- [ ] Complete storage, API, recovery/export, fault and repository acceptance.
+- [ ] Deploy matched schema 185 and exercise real Luna/native-input/browser recovery.
+
 ## Native log design review
 
 - [x] Compare maintained open-source storage patterns, inspect current Pi adapters,

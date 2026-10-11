@@ -17,6 +17,16 @@ import type {
 } from "@earendil-works/pi-durable";
 import { applyImmutableBatches } from "@earendil-works/chord/delta";
 import {
+  prepareCurrentInputs,
+  currentInputIds,
+  currentInputIndex,
+  currentInputFingerprint,
+  historyFingerprint,
+  type CurrentInputRow,
+  type CurrentInputSource,
+  type HistoryWriteRow,
+} from "./current-input-state.ts";
+import {
   indexNative,
   type DurableBatch,
   type StoredDurableBatch,
@@ -31,7 +41,7 @@ type RecordRow = {
   kind: IndexedRecord["kind"];
   seq: string;
   ordinal: number;
-  body: string;
+  body: string | null;
   fields: Record<string, string>;
   created_seq: string | null;
   retired_seq: string | null;
@@ -59,6 +69,7 @@ const INDEX_FIELDS = new Set([
   "turn",
 ]);
 const decodeRecord = (row: RecordRow): IndexedRecord => {
+  if (row.body === null) throw new Error("Native record body is missing");
   const write = JSON.parse(row.body) as StorageWrite;
   const value =
     write.type === "document.create"
@@ -82,7 +93,7 @@ const decodeRecord = (row: RecordRow): IndexedRecord => {
   };
 };
 
-/** Derived indexes point into a single canonical write body. This class never
+/** Derived indexes resolve retained history or authoritative current state. This class never
  * allocates IDs/sequences and never makes an execution or replay decision. */
 export class DurablePostgresProjection {
   constructor(
@@ -108,7 +119,7 @@ export class DurablePostgresProjection {
   async get(id: number): Promise<IndexedRecord | undefined> {
     const result =
       await sql<RecordRow>`select r.kind,r.seq,r.ordinal,r.fields,r.created_seq,r.retired_seq,l.body
-      from pi_durable_records r join pi_durable_log l using(tenant_id,session_id,seq,ordinal)
+      from pi_durable_records r left join pi_durable_record_bodies l using(tenant_id,session_id,seq,ordinal)
       where ${this.scoped("r")} and r.id=${id}`.execute(this.database);
     return (
       result.rows[0] &&
@@ -141,7 +152,7 @@ export class DurablePostgresProjection {
       );
     const result =
       await sql<RecordRow>`select r.kind,r.seq,r.ordinal,r.fields,r.created_seq,r.retired_seq,l.body
-      from pi_durable_records r join pi_durable_log l using(tenant_id,session_id,seq,ordinal)
+      from pi_durable_records r left join pi_durable_record_bodies l using(tenant_id,session_id,seq,ordinal)
       where ${sql.join(clauses, sql` and `)} order by r.id ${query.descending ? sql`desc` : sql`asc`} limit ${limit}`.execute(
         this.database,
       );
@@ -167,28 +178,38 @@ export class DurablePostgresProjection {
       body: string;
       delta_count: number;
       checkpoint: string | null;
+      current_state: boolean;
     };
     const result = await sql<RevisionRow>`with base as (
       select seq from pi_durable_document_revisions d where ${this.scoped("d")}
         and document_id=${id} and seq<=${through} and (kind='base' or checkpoint is not null)
       order by seq desc limit 1
-    ) select d.seq,d.ordinal,d.delta_count,d.checkpoint,l.body from pi_durable_document_revisions d
+    ) select d.seq,d.ordinal,d.delta_count,d.checkpoint,l.body,false as current_state from pi_durable_document_revisions d
       join pi_durable_log l using(tenant_id,session_id,seq,ordinal)
       where ${this.scoped("d")} and d.document_id=${id} and d.seq>=(select seq from base) and d.seq<=${through}
-      order by d.seq`.execute(this.database);
+      union all select c.seq,c.ordinal,c.delta_count,null::text as checkpoint,c.body,true
+        from pi_durable_current c where ${this.scoped("c")} and c.id=${id}
+          and c.kind='document' and c.retired_seq is null and c.seq<=${through}
+      order by seq`.execute(this.database);
     return result.rows.map((row) => {
       const write = JSON.parse(row.body) as StorageWrite;
       if (write.type !== "document.create" && write.type !== "document.change")
         throw new Error("Invalid native document pointer");
+      if (row.current_state && write.content.kind !== "base")
+        throw new Error("Native current document needs a materialized base");
       return {
         id,
         seq: Number(row.seq),
         ordinal: row.ordinal,
         content: write.content,
         deltaCount: row.delta_count,
-        ...(row.checkpoint === null
-          ? {}
-          : { checkpoint: JSON.parse(row.checkpoint) as JsonObject }),
+        // A projected complete value must win over the same-sequence delta
+        // still held in the Worker's acknowledged overlay.
+        ...(row.current_state && write.content.kind === "base"
+          ? { checkpoint: write.content.value }
+          : row.checkpoint === null
+            ? {}
+            : { checkpoint: JSON.parse(row.checkpoint) as JsonObject }),
       };
     });
   }
@@ -196,12 +217,20 @@ export class DurablePostgresProjection {
     const result = await sql<{
       version: number;
       delta_count: number;
-    }>`select version,delta_count from pi_durable_document_revisions d
-      where ${this.scoped("d")} and document_id=${id} order by seq desc limit 1`.execute(
-      this.database,
-    );
+      body: string | null;
+    }>`select version,delta_count,null::text as body,seq from pi_durable_document_revisions d
+      where ${this.scoped("d")} and document_id=${id}
+      union all select null::integer,delta_count,body,seq from pi_durable_current c
+      where ${this.scoped("c")} and id=${id} and kind='document' and retired_seq is null
+      order by seq desc limit 1`.execute(this.database);
     return (
-      result.rows[0] && { version: result.rows[0].version, deltaCount: result.rows[0].delta_count }
+      result.rows[0] && {
+        version:
+          result.rows[0].body === null
+            ? result.rows[0].version
+            : JSON.parse(result.rows[0].body).content.version,
+        deltaCount: result.rows[0].delta_count,
+      }
     );
   }
   async apply(
@@ -234,9 +263,23 @@ export class DurablePostgresProjection {
         throw new Error("Native commit position changed bytes");
       return false;
     }
-    const view = new DurablePostgresProjection(tx, this.scope);
-    const head = await view.head();
-    if (batch.seq !== head.seq + 1 || batch.nextId < head.nextId)
+    // Read the native watermark and touched current-state values together.
+    // Unrelated document deltas do not acquire a separate metadata round trip.
+    const {
+      rows: [head],
+    } = await sql<{ seq: string; next_id: string; inputs: CurrentInputSource[] }>`
+      select coalesce(h.seq,0)::text as seq,coalesce(h.next_id,2)::text as next_id,
+        coalesce(state.inputs,'[]'::json) as inputs
+      from (select 1) seed left join lateral (
+        select seq,next_id from pi_durable_commits c where ${this.scoped("c")} order by seq desc limit 1
+      ) h on true left join lateral (
+        select json_agg(row) as inputs from (
+          select c.*,r.id as indexed_id,r.kind as indexed_kind,r.fields as indexed_fields
+          from pi_durable_records r left join pi_durable_current c using(tenant_id,session_id,id)
+          where ${this.scoped("r")} and r.id=any(${currentInputIds(batch)}::bigint[])
+        ) row
+      ) state on true`.execute(tx);
+    if (!head || batch.seq !== Number(head.seq) + 1 || batch.nextId < Number(head.next_id))
       throw new Error("Native commit sequence or ID watermark is not contiguous");
     const parentIds = [
       ...new Set(
@@ -300,30 +343,75 @@ export class DurablePostgresProjection {
       return fields;
     };
     for (const id of records.keys()) originFor(id);
+    const current = prepareCurrentInputs(batch, effective, head.inputs);
+    const history: HistoryWriteRow[] = batch.writes.flatMap((write, ordinal) => {
+      if (current.omitted.has(ordinal)) return [];
+      const id = "value" in write ? write.value.id : "record" in write ? write.record.id : write.id;
+      const fields = effective.get(id);
+      return [
+        {
+          ordinal,
+          record_kind: write.type,
+          record_id: String(id),
+          body: JSON.stringify(write),
+          phase:
+            write.type === "task" && "checkpoint" in write.value.state
+              ? (JSON.stringify((write.value.state.checkpoint as { phase?: unknown }).phase) ??
+                null)
+              : null,
+          cloud_origin: fields
+            ? Object.fromEntries(
+                ["cloudSession", "run", "turn"]
+                  .filter((key) => fields[key] !== undefined)
+                  .map((key) => [key, fields[key]!]),
+              )
+            : null,
+        },
+      ];
+    });
     await retainSessionImages(tx, this.scope, stored);
-    await sql`insert into pi_durable_commits(tenant_id,session_id,seq,next_id,fingerprint,write_count) values(${this.scope.tenantId}::uuid,${this.scope.sessionId},${batch.seq},${batch.nextId},${fingerprint},${batch.writes.length})`.execute(
+    await sql`insert into pi_durable_commits(tenant_id,session_id,seq,next_id,fingerprint,write_count,history_write_count,history_fingerprint,current_hashes)
+      values(${this.scope.tenantId}::uuid,${this.scope.sessionId},${batch.seq},${batch.nextId},${fingerprint},${batch.writes.length},${history.length},${historyFingerprint(history)},${JSON.stringify(Object.fromEntries(current.rows.map((row) => [row.id, currentInputFingerprint(row)])))}::jsonb)`.execute(
       tx,
     );
-    if (batch.writes.length)
+    if (history.length)
       await sql`insert into pi_durable_log(tenant_id,session_id,seq,ordinal,record_kind,record_id,body,phase,cloud_origin) values
       ${sql.join(
-        batch.writes.map((write, ordinal) => {
-          const id =
-            "value" in write ? write.value.id : "record" in write ? write.record.id : write.id;
-          return sql`(${this.scope.tenantId}::uuid,${this.scope.sessionId},${batch.seq},${ordinal},${write.type},${id},${JSON.stringify(write)},${write.type === "task" && "checkpoint" in write.value.state ? (JSON.stringify((write.value.state.checkpoint as { phase?: unknown }).phase) ?? null) : null},${effective.get(id) ? JSON.stringify(Object.fromEntries(["cloudSession", "run", "turn"].map((key) => [key, effective.get(id)![key]]))) : null}::jsonb)`;
-        }),
+        history.map(
+          (row) =>
+            sql`(${this.scope.tenantId}::uuid,${this.scope.sessionId},${batch.seq},${row.ordinal},${row.record_kind},${row.record_id},${row.body},${row.phase},${row.cloud_origin === null ? null : JSON.stringify(row.cloud_origin)}::jsonb)`,
+        ),
       )}`.execute(tx);
-    await this.#indexBatch(tx, batch, effective);
+    const retiredCurrent = current.rows
+      .filter((r) => r.retired_seq !== null)
+      .map((r) => Number(r.id));
+    if (retiredCurrent.length)
+      await sql`update pi_durable_records r set retired_seq=${batch.seq}
+      where ${this.scoped("r")} and id=any(${retiredCurrent}::bigint[])`.execute(tx);
+    await this.#indexBatch(tx, batch, effective, current.omitted);
+    if (current.rows.length) {
+      await sql`insert into pi_durable_current as existing
+        (tenant_id,session_id,id,kind,seq,ordinal,body,delta_count,created_seq,retired_seq,cloud_origin) values
+        ${sql.join(current.rows.map((r) => sql`(${this.scope.tenantId}::uuid,${this.scope.sessionId},${r.id},${r.kind},${r.seq},${r.ordinal},${r.body},${r.delta_count},${r.created_seq},${r.retired_seq},${r.cloud_origin === null ? null : JSON.stringify(r.cloud_origin)}::jsonb)`))}
+        on conflict(tenant_id,session_id,id) do update set seq=excluded.seq,ordinal=excluded.ordinal,
+          body=excluded.body,delta_count=excluded.delta_count,retired_seq=excluded.retired_seq,cloud_origin=excluded.cloud_origin
+        where existing.kind=excluded.kind`.execute(tx);
+      await this.#writeIndexes(tx, current.rows.map(currentInputIndex), true);
+    }
     return true;
   }
   async #indexBatch(
     tx: Transaction<Database>,
     batch: DurableBatch,
     effective: ReadonlyMap<number, Record<string, string> | undefined>,
+    omitted: ReadonlySet<number> = new Set(),
+    positions?: readonly number[],
   ): Promise<void> {
     const view = new DurablePostgresProjection(tx, this.scope, undefined, "references");
     const retired = new Set(
-      batch.writes.filter((w) => w.type === "document.retire").map((w) => w.id),
+      batch.writes
+        .filter((w, i) => !omitted.has(i) && w.type === "document.retire")
+        .map((w) => (w as Extract<StorageWrite, { type: "document.retire" }>).id),
     );
     // Retire addresses before installing replacements. One batch can update a
     // task repeatedly, so the derived pointer retains its last write only.
@@ -338,7 +426,9 @@ export class DurablePostgresProjection {
       ordinal: number;
       write: Extract<StorageWrite, { type: "document.create" | "document.change" }>;
     }> = [];
-    for (const [ordinal, write] of batch.writes.entries()) {
+    for (const [index, write] of batch.writes.entries()) {
+      if (omitted.has(index)) continue;
+      const ordinal = positions?.[index] ?? index;
       if (write.type === "document.copy")
         throw new Error("Published document copies must carry their resolved native base");
       if (write.type === "document.retire") continue;
@@ -369,21 +459,7 @@ export class DurablePostgresProjection {
           write,
         });
     }
-    if (records.size) {
-      const result = await sql`insert into pi_durable_records as existing
-        (tenant_id,session_id,id,kind,seq,ordinal,fields,created_seq,retired_seq) values
-        ${sql.join([...records.values()].map((r) => sql`(${this.scope.tenantId}::uuid,${this.scope.sessionId},${r.value.id},${r.kind},${batch.seq},${r.ordinal},${JSON.stringify(r.fields)}::jsonb,${r.createdSeq ?? null},${r.retiredSeq ?? null})`))}
-        on conflict(tenant_id,session_id,id) do update set seq=excluded.seq,ordinal=excluded.ordinal,
-          fields=excluded.fields || jsonb_strip_nulls(jsonb_build_object(
-            'cloudSession',coalesce(existing.fields->'cloudSession',excluded.fields->'cloudSession'),
-            'run',coalesce(existing.fields->'run',excluded.fields->'run'),
-            'turn',coalesce(existing.fields->'turn',excluded.fields->'turn')))
-        where existing.kind=excluded.kind and existing.kind in ('task','submission') returning id`.execute(
-        tx,
-      );
-      if (result.rows.length !== records.size)
-        throw new Error("Native record ID ownership changed");
-    }
+    await this.#writeIndexes(tx, [...records.values()]);
     const bases = documents
       .filter((d) => d.write.type === "document.change" && d.write.content.kind === "base")
       .map((d) => d.id);
@@ -436,27 +512,74 @@ export class DurablePostgresProjection {
       );
   }
 
-  /** Administrative rebuild of disposable indexes, never a Worker bootstrap. */
+  async #writeIndexes(
+    tx: Transaction<Database>,
+    records: readonly IndexedRecord[],
+    current = false,
+  ) {
+    if (!records.length) return;
+    const result = await sql`insert into pi_durable_records as existing
+      (tenant_id,session_id,id,kind,seq,ordinal,fields,created_seq,retired_seq) values
+      ${sql.join(records.map((r) => sql`(${this.scope.tenantId}::uuid,${this.scope.sessionId},${r.value.id},${r.kind},${r.seq},${r.ordinal},${JSON.stringify(r.fields)}::jsonb,${r.createdSeq ?? null},${r.retiredSeq ?? null})`))}
+      on conflict(tenant_id,session_id,id) do update set seq=excluded.seq,ordinal=excluded.ordinal,
+        retired_seq=excluded.retired_seq,
+        fields=excluded.fields || jsonb_strip_nulls(jsonb_build_object(
+          'cloudSession',coalesce(existing.fields->'cloudSession',excluded.fields->'cloudSession'),
+          'run',coalesce(existing.fields->'run',excluded.fields->'run'),
+          'turn',coalesce(existing.fields->'turn',excluded.fields->'turn')))
+      where existing.kind=excluded.kind and (existing.kind in ('task','submission') or
+        (${current} and existing.kind='document' and existing.created_seq=excluded.created_seq)) returning id`.execute(
+      tx,
+    );
+    if (result.rows.length !== records.length)
+      throw new Error("Native record ID ownership changed");
+  }
+
+  /** Rebuild disposable indexes from history AND current state; never a Worker bootstrap. */
   async rebuild(): Promise<void> {
     await this.database.transaction().execute(async (tx) => {
       await assertIdleNativeSession(tx, this.scope.tenantId, this.scope.sessionId);
+      const missing = await sql`with expected as (
+        select distinct on (state.key) state.key::bigint as id,c.seq
+          from pi_durable_commits c cross join lateral jsonb_each_text(c.current_hashes) state
+          where ${this.scoped("c")} order by state.key,c.seq desc
+      ), actual as (select id,seq from pi_durable_current c where ${this.scoped("c")})
+      select 1 from expected e full join actual a using(id)
+        where e.id is null or a.id is null or e.seq<>a.seq limit 1`.execute(tx);
+      if (missing.rows.length) throw new Error("Native current-state recovery set is incomplete");
       await sql`delete from pi_durable_records r where ${this.scoped("r")}`.execute(tx);
       await sql`delete from pi_durable_document_revisions r where ${this.scoped("r")}`.execute(tx);
+      let afterId = 0;
+      for (;;) {
+        const rows = await sql<
+          CurrentInputRow & { expected: string }
+        >`select s.*,c.current_hashes->>s.id::text as expected
+          from pi_durable_current s join pi_durable_commits c using(tenant_id,session_id,seq)
+          where ${this.scoped("s")} and s.id>${afterId} order by s.id limit 64`.execute(tx);
+        if (!rows.rows.length) break;
+        for (const row of rows.rows)
+          if (currentInputFingerprint(row) !== row.expected)
+            throw new Error("Native current-state integrity check failed");
+        await this.#writeIndexes(tx, rows.rows.map(currentInputIndex), true);
+        afterId = Number(rows.rows.at(-1)!.id);
+      }
       let through = 0;
       for (;;) {
         const headers = await sql<{
           seq: string;
           next_id: string;
-        }>`select seq,next_id from pi_durable_commits c
+          write_count: number;
+          history_write_count: number;
+          history_fingerprint: string;
+        }>`select seq,next_id,write_count,history_write_count,history_fingerprint from pi_durable_commits c
           where ${this.scoped("c")} and seq>${through} order by seq limit 128`.execute(tx);
         if (!headers.rows.length) break;
-        const rows = await sql<{
-          seq: string;
-          body: string;
-          record_id: string;
-          cloud_origin: Record<string, string> | null;
-        }>`
-          select seq,body,record_id,cloud_origin from pi_durable_log l where ${this.scoped("l")}
+        const rows = await sql<
+          HistoryWriteRow & {
+            seq: string;
+          }
+        >`
+          select seq,ordinal,record_kind,body,record_id,phase,cloud_origin from pi_durable_log l where ${this.scoped("l")}
           and seq>${through} and seq<=${headers.rows.at(-1)!.seq} order by seq,ordinal`.execute(tx);
         const grouped = new Map<string, typeof rows.rows>();
         for (const row of rows.rows) {
@@ -466,6 +589,13 @@ export class DurablePostgresProjection {
         }
         for (const header of headers.rows) {
           const entries = grouped.get(header.seq) ?? [];
+          if (
+            Number(header.seq) !== ++through ||
+            entries.length !== header.history_write_count ||
+            entries.some((entry) => entry.ordinal < 0 || entry.ordinal >= header.write_count) ||
+            historyFingerprint(entries) !== header.history_fingerprint
+          )
+            throw new Error("Native retained history integrity check failed");
           const batch = {
             seq: Number(header.seq) as Seq,
             nextId: Number(header.next_id),
@@ -475,6 +605,8 @@ export class DurablePostgresProjection {
             tx,
             batch,
             new Map(entries.map((row) => [Number(row.record_id), row.cloud_origin ?? undefined])),
+            new Set(),
+            entries.map((row) => row.ordinal),
           );
         }
         through = Number(headers.rows.at(-1)!.seq);

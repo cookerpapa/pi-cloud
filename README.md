@@ -56,8 +56,8 @@ initial-request retry, with no cross-request cache
 
 Native tasks, submissions, entries and documents use one atomic commit stream.
 Kafka RF3 confirms each prepared commit before the Worker adopts it. PostgreSQL
-stores the native body once, with rebuildable record/document indexes for cold
-reads. Native Conversations share one physical Session lease and writer.
+stores native history and authoritative current Inbox/input/Submission values,
+with rebuildable indexes for cold reads ([ADR-0243](docs/adr/0243-native-input-current-state.md)). Native Conversations share one physical Session lease and writer.
 Incomplete local Tool calls stay in Worker memory; complete model responses
 enter native persistence before validated Tool execution (ADR-0230).
 The [current deployed release](docs/reports/publication-admission-20261011.md) uses

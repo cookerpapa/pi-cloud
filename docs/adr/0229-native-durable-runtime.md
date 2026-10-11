@@ -47,8 +47,9 @@ successive calls and still cascades native parent abort to the child. The public
 creation receipt remains keyed by the original delegation request; no ownerless
 or extra scheduling authority is introduced.
 
-The storage adapter retains one canonical append record per native write, grouped
-by atomic commit. Indexed current-record pointers and document reconstruction
+The storage adapter retains native atomic commits. [ADR-0243](0243-native-input-current-state.md)
+supersedes the original full-write retention for Inbox/input metadata and Submissions:
+PG stores their current values; other writes remain in the canonical journal. Indexed current-record pointers and document reconstruction
 indexes are derived from that log. Native JSON is serialized losslessly as text,
 including NUL and lone-surrogate strings covered by upstream conformance; indexing
 uses JSON-encoded string identities rather than lossy text coercion. It must not

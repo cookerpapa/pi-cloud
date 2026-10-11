@@ -30,18 +30,23 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Reliability and capacity
 
+- [ ] Complete ADR-0243 native input current-state validation and matched schema 185
+      rollout. Queue/current metadata and Submissions stop accumulating historical
+      bodies; Kafka/native transaction ownership and Stop-return semantics remain.
+
 The [native-log research/review](reports/append-only-storage-review-20261011.md)
 compares pinned Pi, Maka, Marten, Pekko and Temporal. It retains the current four
 storage tables and Session-local sequence; no runtime change was deployed.
 
-- [ ] R11L-01: verify batch completeness and a reconstructible integrity digest
+- [ ] R11L-01: finish validating ADR-0243 checks of batch completeness and a reconstructible integrity digest
       during native index rebuild/import validation. Isolated missing/changed-body
       fixtures currently rebuild silently; normal append conflict checks still pass.
 - [ ] O11L-01: reuse already-scanned document metadata in the bounded cold-read
       cache. One measured 512 KiB document read uses three SELECTs; the isolated
       reuse prototype uses two with identical content. Preserve cache invalidation.
 - [ ] D11L-01: discuss retention of superseded native Task checkpoints and
-      current-only document history using measured usage. Any reclamation requires
+      current-only document history beyond ADR-0243 input state. Streaming pi.live
+      Kafka-only retention remains a separate pending slice. Any reclamation requires
       an ADR, complete reconstruction boundaries and attachment safety; do not filter
       committed Pi batches or add a second runtime authority.
 

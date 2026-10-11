@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { serviceAddress } from "./lib/production-kubernetes.mjs";
+import { sql } from "kysely";
+import { crashOwnedWorker } from "./lib/owned-worker-crash.mjs";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
 import { S3ImageBlobStore } from "../packages/session-attachments/src/s3.ts";
@@ -13,7 +15,7 @@ import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 
 if (process.env.PI_CLOUD_LIVE_NATIVE_INPUT_CHECK !== "1")
   throw new Error(
-    "Set PI_CLOUD_LIVE_NATIVE_INPUT_CHECK=1 for schema 184 matched Luna/Cube acceptance",
+    "Set PI_CLOUD_LIVE_NATIVE_INPUT_CHECK=1 for schema 185 matched Luna/Cube acceptance and an owned Worker crash",
   );
 const runtime = "deploy/production/runtime",
   env = await readFile(`${runtime}/.env`, "utf8");
@@ -62,7 +64,11 @@ try {
     .orderBy("name", "desc")
     .limit(1)
     .executeTakeFirstOrThrow();
-  assert.equal(schema.name, "184_worker_claim_schema", "Deploy the matched schema/app first");
+  assert.equal(
+    schema.name,
+    "185_native_input_current_state",
+    "Deploy the matched schema/app first",
+  );
   tenant = await createPrivateTenant(db, {
     slug: `native-input-${randomUUID()}`,
     ownerDisplayName: "Native input acceptance",
@@ -79,7 +85,7 @@ try {
   report.tenantId = tenant.tenantId;
   project = await api.createProject("Native input acceptance", { kind: "empty" });
   report.workspaceId = project.workspaceId;
-  for (const scenario of ["consume", "stop"]) {
+  for (const scenario of ["consume", "stop", "recover"]) {
     console.log(JSON.stringify({ phase: "native-input", scenario }));
     const session = await api.createSession(
       project.projectId,
@@ -161,6 +167,22 @@ try {
       )
     ).queue;
     assert.equal(queue.items[0].inputId, second.inputId);
+    await until(async () => {
+      const values =
+        await sql`select c.body from pi_durable_current c join pi_durable_records r using(tenant_id,session_id,id)
+        where c.tenant_id=${tenant.tenantId}::uuid and c.session_id=${session.sessionId}
+          and r.fields->>'nativeKind'=${JSON.stringify("pi-cloud.human-inputs")}`.execute(db);
+      return values.rows.some(
+        (r) => r.body.includes("EDITED_INPUT_MARKER") && !r.body.includes("ORIGINAL_INPUT_MARKER"),
+      );
+    }, "Latest-only input body");
+    const old = await sql`select 1 from pi_durable_log where tenant_id=${tenant.tenantId}::uuid
+      and session_id=${session.sessionId} and (record_kind='submission' or body like '%ORIGINAL_INPUT_MARKER%') limit 1`.execute(
+      db,
+    );
+    assert.equal(old.rows.length, 0, "Input edits must not enter retained native history");
+    let crash;
+    if (scenario === "recover") crash = await crashOwnedWorker(db, tenant.tenantId, root.runId);
     if (scenario === "stop") {
       await api.cancelTurn(session.sessionId, root.turnId, newIdempotencyKey("cancel"));
       await finished(root.runId);
@@ -186,6 +208,15 @@ try {
       const replayAfter = await api.acceptTurn(session.sessionId, text, key);
       assert.equal(replayAfter.runId, root.runId);
       assert.equal(replayAfter.replayed, true);
+      if (crash) {
+        const recovered = await db
+          .selectFrom("run_transitions")
+          .select("id")
+          .where("run_id", "=", root.runId)
+          .where("reason", "=", "native_execution_recovery")
+          .execute();
+        assert(recovered.length > 0, "Queued inputs require an actual recovered Run");
+      }
     }
     const runs = await db
       .selectFrom("runs")
@@ -199,6 +230,8 @@ try {
       oneRun: true,
       stableRetryIdentity: true,
       editedNativeInput: true,
+      noRetainedEditBodies: true,
+      ...(crash ? { crash } : {}),
     });
   }
   report.accepted = true;

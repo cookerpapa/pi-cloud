@@ -51,25 +51,17 @@ log bodies; the cloud adapter does not invent its own transcript semantics.
 Old-writer seal projection precedes cold replacement, while an active writer's
 acknowledged overlay covers its own not-yet-projected commits.
 
-Storage-layout follow-up: cold native reads use session_leases plus the four
-pi_durable_* tables; image hydration additionally checks session_image_objects.
-Task/Submission/Conversation writes retain native structures in the log body,
-with transport serialization, image references and separate cloud/index metadata.
-All Sessions share pi_durable_log; (tenant, physical Session, seq, ordinal) orders
-each commit's individual writes. Mutable Task/Submission versions append new log
-rows while pi_durable_records moves the current pointer. pi_durable_commits keeps
-batch metadata/fingerprints; document revisions/checkpoints accelerate state reads.
-The Projector commits headers, bodies and affected indexes in one PG transaction;
-duplicate batches are checked by position/fingerprint. Worker Storage acknowledgement
-comes from Kafka before asynchronous PG materialization. Append-only does not make
-derived indexes immutable or prevent quiescent conversation deletion.
+Storage-layout follow-up: the owner approved ADR-0243 after the append-only review.
+Inbox/input metadata and Submission current values remain Pi-owned and acknowledged
+through the same Kafka commit. PG materializes them without intermediate bodies;
+index rebuild uses retained history plus authoritative current state. Other native
+records retain their existing policy. The implementation is under verification;
+matched schema 185 rollout is pending.
 
-The owner requested a comparison with mature open-source append-only designs.
-The [October 11 review](reports/append-only-storage-review-20261011.md) covers Pi,
-Maka, Marten, Pekko and Temporal, retaining four native storage tables and the
-Session-local commit version. Isolated experiments identify a rebuild integrity
-gap and repeated cold-document body reads; intermediate-state retention remains
-a separate design discussion. No product/runtime implementation changed.
+The discussed pi.live Kafka-only streaming policy is separate and unimplemented.
+Text/thinking partials still reach PG through native document commits. The 64-delta
+checkpoints remain read accelerators for other documents. They are not model
+Compaction summaries or whole-Session recovery snapshots.
 
 Follow-up discussions established:
 
@@ -77,8 +69,8 @@ Follow-up discussions established:
 - A cloud Run can process multiple native human submissions.
 - Native follow-up waits for the final boundary; steer uses the earlier native
   boundary. Pi Durable persists pending submissions and InboxDoc changes.
-- Pending edits append document changes; they do not rewrite committed history
-  or expose superseded drafts to the model.
+- Pending edits use Pi transactions and Kafka durability. ADR-0243 replaces
+  their PG current values without retaining superseded edit bodies in history.
 - Current UI model preference remains control state. Actual native Run model
   configuration is persisted when applied, not for every selector click.
 - During a running Run, an unavailable Worker leaves the new draft unconfirmed

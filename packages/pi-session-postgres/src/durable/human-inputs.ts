@@ -9,7 +9,7 @@ import {
 } from "@pi-cloud/protocol";
 import type { DocumentRecord, StorageWrite } from "@earendil-works/pi-durable";
 import { DurablePostgresProjection, materializeNativeDocument } from "./postgres-projection.ts";
-import { documentAddress, type DurableScope, type DocumentRevision } from "./types.ts";
+import { documentAddress, type DurableScope } from "./types.ts";
 
 export type StoredHumanInput = {
   idempotencyKey: string;
@@ -141,12 +141,13 @@ export async function readNativeHumanSubmission(
   scope: DurableScope & { conversationId: number },
   inputId: string,
 ) {
-  const row = await sql<{ body: string; fields: Record<string, string> }>`
-    select l.body,r.fields from pi_durable_records r join pi_durable_log l using(tenant_id,session_id,seq,ordinal)
+  const row = await sql<{ body: string | null; fields: Record<string, string> }>`
+    select l.body,r.fields from pi_durable_records r left join pi_durable_record_bodies l using(tenant_id,session_id,seq,ordinal)
     where r.tenant_id=${scope.tenantId}::uuid and r.session_id=${scope.sessionId}
       and r.kind='submission' and r.fields->>'conversation'=${String(scope.conversationId)}
       and r.fields->>'request'=${JSON.stringify(inputId)} limit 1`.execute(database);
   if (!row.rows[0]) return;
+  if (row.rows[0].body === null) throw new Error("Native Submission body is missing");
   const value = JSON.parse(row.rows[0].body).value as {
     id: number;
     status: string;
@@ -163,19 +164,22 @@ export async function readHumanInputOutcomes(
 ) {
   const keys = Object.keys(state.inputs);
   if (!keys.length) return new Map<string, { status: string; entry?: number; reason?: string }>();
-  const result = await sql<{ body: string; request: string }>`
+  const result = await sql<{ body: string | null; request: string }>`
     select l.body,r.fields->>'request' as request from pi_durable_records r
-      join pi_durable_log l using(tenant_id,session_id,seq,ordinal)
+      left join pi_durable_record_bodies l using(tenant_id,session_id,seq,ordinal)
     where r.tenant_id=${scope.tenantId}::uuid and r.session_id=${scope.sessionId}
       and r.kind='submission' and r.fields->>'conversation'=${String(scope.conversationId)}
       and r.fields->>'request'=any(${keys.map((key) => JSON.stringify(key))}::text[])`.execute(
     database,
   );
   return new Map(
-    result.rows.map((row) => [
-      JSON.parse(row.request) as string,
-      JSON.parse(row.body).value as { status: string; entry?: number; reason?: string },
-    ]),
+    result.rows.map((row) => {
+      if (row.body === null) throw new Error("Native Submission body is missing");
+      return [
+        JSON.parse(row.request) as string,
+        JSON.parse(row.body).value as { status: string; entry?: number; reason?: string },
+      ] as const;
+    }),
   );
 }
 
@@ -193,57 +197,20 @@ export async function readHumanInputMetadataBatch(
       key: request.runId,
     }),
   );
-  const rows = await sql<{
-    id: string;
-    created_seq: string;
-    create_body: string;
-    seq: string;
-    ordinal: number;
-    delta_count: number;
-    checkpoint: string | null;
-    body: string;
-  }>`select r.id,r.created_seq,created.body as create_body,v.seq,v.ordinal,v.delta_count,v.checkpoint,l.body
-    from pi_durable_records r join pi_durable_log created using(tenant_id,session_id,seq,ordinal)
-    join lateral(select seq from pi_durable_document_revisions base
-      where base.tenant_id=r.tenant_id and base.session_id=r.session_id and base.document_id=r.id
-        and (base.kind='base' or base.checkpoint is not null) order by seq desc limit 1) start on true
-    join pi_durable_document_revisions v on v.tenant_id=r.tenant_id and v.session_id=r.session_id
-      and v.document_id=r.id and v.seq>=start.seq
-    join pi_durable_log l on l.tenant_id=v.tenant_id and l.session_id=v.session_id and l.seq=v.seq and l.ordinal=v.ordinal
+  const rows = await sql<{ body: string | null }>`select c.body
+    from pi_durable_records r left join pi_durable_current c using(tenant_id,session_id,id)
     where r.tenant_id=${scope.tenantId}::uuid and r.session_id=${scope.sessionId} and r.kind='document'
-      and r.retired_seq is null and r.fields->>'address'=any(${addresses}::text[])
-    order by r.id,v.seq`.execute(database);
-  const documents = new Map<string, { record: DocumentRecord; revisions: DocumentRevision[] }>();
-  for (const row of rows.rows) {
-    let current = documents.get(row.id);
-    if (!current) {
-      const creation = JSON.parse(row.create_body) as Extract<
-        StorageWrite,
-        { type: "document.create" }
-      >;
-      current = {
-        record: { ...creation.record, createdAt: Number(row.created_seq) as never },
-        revisions: [],
-      };
-      documents.set(row.id, current);
-    }
-    const write = JSON.parse(row.body) as StorageWrite;
-    if (write.type !== "document.create" && write.type !== "document.change")
-      throw new Error("Invalid human-input document revision");
-    current.revisions.push({
-      id: Number(row.id),
-      seq: Number(row.seq),
-      ordinal: row.ordinal,
-      content: write.content,
-      deltaCount: row.delta_count,
-      ...(row.checkpoint === null ? {} : { checkpoint: JSON.parse(row.checkpoint) }),
-    });
-  }
+      and r.retired_seq is null and r.fields->>'address'=any(${addresses}::text[])`.execute(
+    database,
+  );
   const result = new Map<string, StoredHumanInputs>();
-  for (const value of documents.values()) {
-    const state = materializeNativeDocument(value.record, value.revisions)
-      .value as unknown as StoredHumanInputs;
-    if (state.runId !== value.record.key || !state.inputs)
+  for (const row of rows.rows) {
+    if (row.body === null) throw new Error("Native input metadata is missing");
+    const write = JSON.parse(row.body) as Extract<StorageWrite, { type: "document.create" }>;
+    if (write.type !== "document.create" || write.content.kind !== "base")
+      throw new Error("Invalid current human-input document");
+    const state = write.content.value as unknown as StoredHumanInputs;
+    if (state.runId !== write.record.key || !state.inputs)
       throw new Error("Human input scope changed");
     result.set(state.runId, state);
   }

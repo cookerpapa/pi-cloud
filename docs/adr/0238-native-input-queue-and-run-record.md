@@ -38,6 +38,8 @@ native acceptance may permit a fresh execution through the ordinary PG path.
 
 Durable owns `submission` state and the public `pi.inbox` document. Its normal
 commit stream persists acceptance, queue mutations, consumption and abort.
+[ADR-0243](0243-native-input-current-state.md) changes their PG representation to
+authoritative current values without keeping intermediate edit bodies.
 The Worker remains the only active native writer; the API does not run Pi or
 write native Storage directly. A replacement Worker first obtains the existing
 ordered-closure/new-lease grant and resumes the same logical Run.
