@@ -51,6 +51,19 @@ log bodies; the cloud adapter does not invent its own transcript semantics.
 Old-writer seal projection precedes cold replacement, while an active writer's
 acknowledged overlay covers its own not-yet-projected commits.
 
+Storage-layout follow-up: cold native reads use session_leases plus the four
+pi_durable_* tables; image hydration additionally checks session_image_objects.
+Task/Submission/Conversation writes retain native structures in the log body,
+with transport serialization, image references and separate cloud/index metadata.
+All Sessions share pi_durable_log; (tenant, physical Session, seq, ordinal) orders
+each commit's individual writes. Mutable Task/Submission versions append new log
+rows while pi_durable_records moves the current pointer. pi_durable_commits keeps
+batch metadata/fingerprints; document revisions/checkpoints accelerate state reads.
+The Projector commits headers, bodies and affected indexes in one PG transaction;
+duplicate batches are checked by position/fingerprint. Worker Storage acknowledgement
+comes from Kafka before asynchronous PG materialization. Append-only does not make
+derived indexes immutable or prevent quiescent conversation deletion.
+
 Follow-up discussions established:
 
 - Core Session/Turn/Run fields are consolidated under ADR-0238.
