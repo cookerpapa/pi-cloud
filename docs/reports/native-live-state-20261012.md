@@ -218,6 +218,11 @@ path succeeded. They use a different TLS client from CLIProxyAPI's uTLS; neither
 those probes nor this successful suite proves the earlier intermittent tunnel
 closure has been fixed. The original failures remain available for diagnosis.
 
+The subsequent [TLS investigation](model-egress-tls-20261012.md) reproduced the
+same three-second EOF directly through the local proxy, bypassing PiCloud,
+and separately captured an AnyTLS node-connect timeout. Its 1,001-update storage
+recheck also confirms the current PG/Kafka retention split.
+
 Private follow-up evidence is under
 `dist/releases/native-live-cube-20261012-0519/`. Its scoped cleanup removed the
 owned acceptance tenant and all three fixture projects only after confirmed

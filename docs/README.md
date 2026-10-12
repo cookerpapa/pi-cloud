@@ -16,6 +16,13 @@ including actual loss of Worker and Projector memory during streamed output.
 The full Luna/Cube follow-up now passes, including fresh-VM Volume restoration;
 earlier intermittent upstream TLS failures remain recorded separately.
 
+The [model TLS investigation](reports/model-egress-tls-20261012.md) reproduces
+the three-second EOF directly through the local AnyTLS proxy, without PiCloud
+or model payloads, and records a separate node-connect timeout. It distinguishes
+observed failure boundaries from the inferred AnyTLS acknowledgement timeout.
+The same note rechecks that `pi.live` streaming bodies stay out of PG while
+native current state and recovery checkpoints remain available.
+
 The [append-only storage research/review](reports/append-only-storage-review-20261011.md)
 compares Pi, Maka, Marten, Pekko and Temporal against schema 184. Isolated experiments
 retain the four-table/sequence design, identify rebuild integrity and cold-document

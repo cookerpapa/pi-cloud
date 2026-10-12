@@ -60,14 +60,17 @@ storage tables and Session-local sequence; no runtime change was deployed.
       separate work; do not filter native publications or add a second runtime
       authority.
 
-- [ ] Diagnose intermittent model-proxy failures in longer real Luna acceptance.
-      October 12 runs observed HTTP 500 responses after about three seconds;
-      a captured native model error was `utls: TLS handshake: EOF`, and the
-      egress audit recorded the upstream proxy closing first. Six ordinary and
-      six streamed direct requests succeeded. A subsequent unchanged full Cube
-      suite passed at 05:23 UTC; that closes the acceptance gap, not the cause
-      of the earlier intermittent failures. Preserve the failure evidence;
-      do not weaken storage checks or add a competing cloud retry policy.
+- [x] Localize the intermittent model TLS failure: the
+      [October 12 investigation](reports/model-egress-tls-20261012.md) reproduces
+      the same three-second EOF directly through v2rayN/sing-box, without PiCloud
+      or model requests. The pinned AnyTLS acknowledgement deadline matches the
+      timing; a separate node TCP-connect timeout is confirmed by proxy logs.
+- [ ] Resolve the external AnyTLS-path instability using node-side evidence or an
+      operator-selected alternate path. The acknowledgement-timeout mechanism
+      remains an inference until correlated with the node/runtime. The unchanged
+      full Cube suite passed at 05:23 UTC; that closes the acceptance gap without
+      proving intermittent connectivity fixed. Preserve the failed samples and
+      keep Pi as the single model retry owner.
 
 The approved [publication-registration optimization](reports/publication-admission-20261011.md)
 is deployed as `publication-admission-c39a78f8`: known stale/closed identities
