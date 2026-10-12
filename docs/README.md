@@ -13,6 +13,8 @@ in Kafka and materializes PG state at native settlement or writer handoff.
 [Verification and release status](reports/native-live-state-20261012.md) cover
 current reads, multi-Conversation recovery references, retention and failures,
 including actual loss of Worker and Projector memory during streamed output.
+The full Luna/Cube follow-up now passes, including fresh-VM Volume restoration;
+earlier intermittent upstream TLS failures remain recorded separately.
 
 The [append-only storage research/review](reports/append-only-storage-review-20261011.md)
 compares Pi, Maka, Marten, Pekko and Temporal against schema 184. Isolated experiments

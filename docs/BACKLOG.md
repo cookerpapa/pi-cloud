@@ -64,7 +64,9 @@ storage tables and Session-local sequence; no runtime change was deployed.
       October 12 runs observed HTTP 500 responses after about three seconds;
       a captured native model error was `utls: TLS handshake: EOF`, and the
       egress audit recorded the upstream proxy closing first. Six ordinary and
-      six streamed direct requests succeeded. Preserve the failure evidence;
+      six streamed direct requests succeeded. A subsequent unchanged full Cube
+      suite passed at 05:23 UTC; that closes the acceptance gap, not the cause
+      of the earlier intermittent failures. Preserve the failure evidence;
       do not weaken storage checks or add a competing cloud retry policy.
 
 The approved [publication-registration optimization](reports/publication-admission-20261011.md)

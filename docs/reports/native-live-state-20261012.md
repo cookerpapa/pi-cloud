@@ -3,8 +3,9 @@
 Status: deployed as `native-live-1370d871`, schema 186, under
 [ADR-0244](../adr/0244-kafka-backed-native-live-state.md). Source gates and the
 focused live-state, native-input, browser/image and multi-Conversation acceptance
-pass. The broader Cube production check remains incomplete: repeated model
-requests encountered upstream TLS handshake failures, described below.
+pass. The broader Cube production check also passed on October 12 at 05:23 UTC.
+Earlier model requests encountered upstream TLS handshake failures; those failed
+executions and the successful follow-up remain separately recorded below.
 
 ## What changed
 
@@ -54,7 +55,7 @@ separate Kafka representation of display text remains a follow-up optimization.
 | Native input/live acceptance | Five scenarios passed, including Stop and loss of both Worker and Projector memory |
 | Browser/image/Read | Lost acknowledgement, Stop/return, image resend/direct vision and oversized ASCII/UTF-8 Read passed |
 | Multi-Conversation | Supervisor interaction, messaging, parallel children, cancellation and guest boundary: five passed |
-| Full Cube production check | Incomplete due to model-proxy failures; do not interpret focused acceptance as a full-suite pass |
+| Full Cube production check | Follow-up passed on the unchanged deployed release at 05:23 UTC, including fresh-VM Volume restoration and confirmed allocation cleanup |
 
 The first full run exposed an extra initialization SELECT. Projector live
 bootstrap now shares its existing native-head/current-state query; the original
@@ -159,10 +160,10 @@ observation timed out; cleanup completed. The driver now uses the browser's
 existing SSE client and reducer. Their 38 tests passed, followed by all five
 real native-input/live cases. No application change was needed for this fixture.
 
-## Broader acceptance limitation
+## Earlier broader acceptance failures
 
-The full Cube production driver did **not** complete successfully for this
-release. Its first execution read the generated Python file but failed an
+The initial full Cube production executions did **not** complete successfully.
+The first read the generated Python file but failed an
 artifact assertion requiring the word `negative`, which the prompt had not
 specified as a marker. The prompt now explicitly names `test_negative_inputs`;
 the original assertion remains unchanged and passed on subsequent executions.
@@ -181,8 +182,9 @@ files, authenticated preview, warm-VM reuse, surviving background processes,
 tenant isolation and the initial 1,024-file fixture passed. The most advanced
 execution confirmed removal of the source VM, then its fresh-VM follow-up failed
 at a model request. These partial observations are not a replacement for one
-complete production-suite pass. The remaining check and upstream investigation
-are recorded in the Roadmap and Backlog. No runtime retry policy, model/provider
+complete production-suite pass. The successful later run below closes the
+acceptance gap; the intermittent upstream cause remains in the Backlog.
+No runtime retry policy, model/provider
 configuration or storage acceptance condition was changed to hide the failure.
 
 The production driver now captures bounded outcome, HTTP status and known
@@ -190,6 +192,39 @@ transport-error categories before deleting its fixture history. It does not log
 free-form provider errors, native model content, Tool arguments or credentials.
 Failed and successful acceptance artifacts, including the earlier diagnostic
 containing the redacted TLS error, remain in the private release directory.
+
+## Successful full Cube follow-up
+
+At `2026-10-12T05:23:01.872Z` the maintained `production:check` driver completed
+with `accepted: true` and exit 0. Its source was
+`80ad4b3bba3b6d87d1f48d6a66bf1d029713c719`, including the previously recorded
+acceptance corrections. Serving artifacts remained `native-live-1370d871` /
+schema 186; this follow-up did not modify application code, model configuration,
+credentials or retry policy. The Control Plane image ID was
+`sha256:ef72916dd737eb2825b356d728f2cc7d393b02de3615a88a34c925f5866be27d`.
+
+The [full generated acceptance report](cubesandbox-production-acceptance-latest.md)
+and its JSON evidence record pure chat with zero Tool/VM activation, real coding,
+persisted files, authenticated preview, warm-VM reuse across distinct Tool
+bindings, surviving background work and cross-tenant isolation. After confirmed
+source-VM removal, the 1,024-file fixture was available on the same Volume in a
+fresh VM with a higher runtime generation. Total file counts were 1,025 before
+replacement and 1,026 after the follow-up's additional marker. Final-conversation
+deletion and confirmed native allocation closure both passed with zero retained
+test VMs. The suite made 20 real GPT-6 Luna requests.
+
+Before this run, eight ordinary Node TLS handshakes through the existing egress
+path succeeded. They use a different TLS client from CLIProxyAPI's uTLS; neither
+those probes nor this successful suite proves the earlier intermittent tunnel
+closure has been fixed. The original failures remain available for diagnosis.
+
+Private follow-up evidence is under
+`dist/releases/native-live-cube-20261012-0519/`. Its scoped cleanup removed the
+owned acceptance tenant and all three fixture projects only after confirmed
+Volume purge and native absence on 1/1 nodes. The final business/resource counts
+returned to zero, original account/configuration and stable credential-field
+fingerprints matched the new pre-test baseline, and Control Plane/web/Workers
+retained their 1/1, 1/1 and 2/2 Ready replicas.
 
 ## Cleanup and serving state
 

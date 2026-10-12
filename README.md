@@ -68,9 +68,9 @@ The [current deployed release](docs/reports/native-live-state-20261012.md) uses
 schema 186, guest input protocol 4, Tool Worker protocol 4 and Cube management
 protocol 7. Inbox/input metadata and Submissions retain current values without
 permanent edit bodies; streaming live bodies no longer accumulate in PG.
-Native input/Stop, actual Worker/Projector crash recovery, browser/image and
-multi-Conversation checks pass. The report also records broader Cube checks and
-model-proxy failures encountered during acceptance. It exercises the
+Native input/Stop, actual Worker/Projector crash recovery, browser/image,
+multi-Conversation and full Luna/Cube checks pass. The report also preserves
+earlier intermittent model-proxy failures encountered during acceptance. It exercises the
 maintained matched release workflow and preserves
 the previously deployed [source repairs](docs/reports/review-repair-20261007-r3.md), which
 correct quarantine recovery, returned-input identity and oversized-line Read,

@@ -11,9 +11,9 @@
 - [x] Complete measured storage/failure, native Luna/image/multi-Conversation
       acceptance and matched deployment.
       [Verification and release record](reports/native-live-state-20261012.md).
-- [ ] Obtain a complete broad Cube production-check pass after the observed
-      upstream TLS handshake failures are resolved. Keep the failed runs visible
-      in the release report; core live-state checks already pass.
+- [x] Complete the broad Cube production check on the deployed release. The
+      October 12 follow-up passed without a runtime/configuration change;
+      earlier upstream TLS failures remain a separate operational finding.
 
 ## Native input current state
 
