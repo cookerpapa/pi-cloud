@@ -149,3 +149,38 @@ it("updates a phase without another text body and adopts metadata only after ACK
   p.confirmed();
   expect(text.prepare(commit(3), [change(first, first)], f).texts).toEqual([]);
 });
+
+it("clears a streamed block removed by the final Assistant Entry", () => {
+  const text = new DurableTextPresentation({ conversationId: 1 }),
+    f = factory(),
+    before = value("first");
+  before.generation!.message!.content.push({ type: "text", text: "removed" });
+  const a = commit(1),
+    opening = text.prepare(a, [change(undefined, before)], f);
+  opening.confirmed();
+  const events = opening.texts.map((d) => resolveDurableText(a, d, () => before));
+  const b = commit(2, [
+    {
+      type: "entry",
+      value: {
+        id: 8,
+        kind: "pi.assistant",
+        conversationId: 1,
+        byTaskId: 3,
+        model: [fauxAssistantMessage("corrected")],
+      },
+    },
+    { type: "document.change", id: 2 },
+  ]);
+  const settled = text.prepare(b, [change(before, {})], f);
+  events.push(...settled.texts.map((d) => resolveDurableText(b, d, () => ({}))));
+  expect(settled.texts[1]).toMatchObject({
+    source: { kind: "empty" },
+    event: { payload: { replace: true } },
+  });
+  expect(
+    projectConversationTurnTranscript(events).items.flatMap((i) =>
+      i.kind === "text" && i.text ? [i.text] : [],
+    ),
+  ).toEqual(["corrected"]);
+});

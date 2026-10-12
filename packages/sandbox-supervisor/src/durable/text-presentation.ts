@@ -75,13 +75,26 @@ export class DurableTextPresentation {
       if (entry.kind !== "pi.assistant") continue;
       for (const [mi, message] of (entry.model ?? []).entries()) {
         if (message.role !== "assistant") continue;
-        for (const [index, block] of message.content.entries()) {
-          if (block.type !== "text") continue;
-          const task = entry.byTaskId ?? before?.run?.taskId;
+        const task = entry.byTaskId ?? before?.run?.taskId;
+        const prior =
+          task === before?.run?.taskId ? (before?.generation?.message?.content ?? []) : [];
+        for (let index = 0; index < Math.max(message.content.length, prior.length); index++) {
+          const block = message.content[index],
+            old = prior[index];
           const messageId =
             task === undefined
               ? `entry:${entry.id}:${index}`
               : key(task, before?.generation?.attempt ?? 1, index);
+          if (block?.type !== "text") {
+            // Final responses may remove or replace a previously visible block.
+            // Clear it before coverage retires the live prefix.
+            if (old?.type === "text" && old.text.length)
+              emit(
+                { messageId, settledMessageId: `entry:${entry.id}:${index}`, replace: true },
+                { kind: "empty" },
+              );
+            continue;
+          }
           const phase = this.#phase(message, block, index);
           emit(
             {
