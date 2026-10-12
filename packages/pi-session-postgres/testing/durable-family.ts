@@ -33,7 +33,11 @@ export async function durableFamilyFixture(
         const scope = bindings.get(write.value.conversationId);
         return scope ? [{ ...scope, recordId: write.value.id }] : [];
       });
-      await projection.apply(batch, origins);
+      await projection.apply(batch, origins, {
+        topic: "native-family-fixture",
+        partition: 0,
+        offset: BigInt(batch.seq),
+      });
     },
     waitProjected: async () => {},
   });

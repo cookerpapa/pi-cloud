@@ -1,5 +1,16 @@
 # Implementation roadmap
 
+## Native live-state retention
+
+- [x] Prepare [ADR-0244](adr/0244-kafka-backed-native-live-state.md) from native
+      Pi/storage and existing replay/closure code; owner approval is recorded.
+- [x] Implement PG boundary/handoff checkpoints, retained small commit headers,
+      current live reads and Kafka recovery references under schema 186.
+- [x] Verify live reads, mixed commits, multi-Conversation replay references,
+      checkpoint/closure atomicity, safe Kafka cleanup and quiescent asset recovery.
+- [ ] Complete measured storage/failure/Luna acceptance and matched deployment.
+      [Verification and release record](reports/native-live-state-20261012.md).
+
 ## Native input current state
 
 - [x] Record owner-approved [ADR-0243](adr/0243-native-input-current-state.md).

@@ -35,9 +35,14 @@ export async function acceptedFactRetentionFloors(
     from unnest(${[...partitions]}::integer[]) requested(partition)
     left join accepted_fact_projection_offsets checkpoint
       on checkpoint.topic=${topic} and checkpoint.partition=requested.partition
-    left join lateral (select min(output_first_offset) first_offset from runs
-      where output_first_topic=${topic} and output_first_partition=requested.partition
-        and output_sealed_at is null) pending on true`.execute(database);
+    left join lateral (select min(first_offset) first_offset from (
+      select min(output_first_offset) first_offset from runs
+        where output_first_topic=${topic} and output_first_partition=requested.partition
+          and output_sealed_at is null
+      union all
+      select min(replay_offset) from pi_durable_current
+        where replay_topic=${topic} and replay_partition=requested.partition and replay_offset is not null
+    ) required) pending on true`.execute(database);
   return new Map(result.rows.map((r) => [r.partition, r.floor === null ? null : BigInt(r.floor)]));
 }
 

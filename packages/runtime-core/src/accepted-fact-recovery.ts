@@ -4,7 +4,7 @@ import { sql, type Kysely, type Transaction } from "kysely";
 export type KafkaPartitionBounds = Readonly<{ partition: number; low: bigint; high: bigint }>;
 export type FactPosition = Readonly<{ topic: string; partition: number; offset: bigint }>;
 
-/** Co-commit with semantic data. Deltas never create PG rows or offset writes. */
+/** Co-commit with native headers/semantic data. Display-only deltas do not write PG. */
 export async function recordFactProjection(
   db: Transaction<Database>,
   position: FactPosition,
@@ -32,9 +32,14 @@ export async function loadFactReplayOffsets(
     left join accepted_fact_projection_offsets checkpoint
       on checkpoint.topic=${topic} and checkpoint.partition=requested.partition
     left join lateral (
-      select min(output_first_offset) as first_offset from runs
-      where output_first_topic=${topic} and output_first_partition=requested.partition
-        and output_sealed_at is null
+      select min(first_offset) as first_offset from (
+        select min(output_first_offset) as first_offset from runs
+        where output_first_topic=${topic} and output_first_partition=requested.partition
+          and output_sealed_at is null
+        union all
+        select min(replay_offset) from pi_durable_current
+        where replay_topic=${topic} and replay_partition=requested.partition and replay_offset is not null
+      ) required
     ) pending on true`.execute(db);
   const starts = new Map<number, bigint | Error>();
   for (const bound of bounds) {
@@ -47,7 +52,7 @@ export async function loadFactReplayOffsets(
     starts.set(
       bound.partition,
       pending < bound.low
-        ? new Error("Unsealed execution recovery position expired from Kafka")
+        ? new Error("Required execution recovery position expired from Kafka")
         : start,
     );
   }

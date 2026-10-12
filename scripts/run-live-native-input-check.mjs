@@ -4,6 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { serviceAddress } from "./lib/production-kubernetes.mjs";
 import { sql } from "kysely";
 import { crashOwnedWorker } from "./lib/owned-worker-crash.mjs";
+import { checkNativeLiveProgress } from "./lib/live-native-progress.mjs";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
 import { S3ImageBlobStore } from "../packages/session-attachments/src/s3.ts";
@@ -15,7 +16,7 @@ import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 
 if (process.env.PI_CLOUD_LIVE_NATIVE_INPUT_CHECK !== "1")
   throw new Error(
-    "Set PI_CLOUD_LIVE_NATIVE_INPUT_CHECK=1 for schema 185 matched Luna/Cube acceptance and an owned Worker crash",
+    "Set PI_CLOUD_LIVE_NATIVE_INPUT_CHECK=1 for schema 186 matched Luna/Cube acceptance and an owned Worker crash",
   );
 const runtime = "deploy/production/runtime",
   env = await readFile(`${runtime}/.env`, "utf8");
@@ -64,11 +65,7 @@ try {
     .orderBy("name", "desc")
     .limit(1)
     .executeTakeFirstOrThrow();
-  assert.equal(
-    schema.name,
-    "185_native_input_current_state",
-    "Deploy the matched schema/app first",
-  );
+  assert.equal(schema.name, "186_native_live_checkpoints", "Deploy the matched schema/app first");
   tenant = await createPrivateTenant(db, {
     slug: `native-input-${randomUUID()}`,
     ownerDisplayName: "Native input acceptance",
@@ -85,8 +82,7 @@ try {
   report.tenantId = tenant.tenantId;
   project = await api.createProject("Native input acceptance", { kind: "empty" });
   report.workspaceId = project.workspaceId;
-  for (const scenario of ["consume", "stop", "recover"]) {
-    console.log(JSON.stringify({ phase: "native-input", scenario }));
+  const createSession = async (scenario) => {
     const session = await api.createSession(
       project.projectId,
       project.workspaceId,
@@ -97,6 +93,11 @@ try {
       { provider: "openai-codex", modelId: report.model, thinkingLevel: "low", fastMode: false },
     );
     sessions.push(session);
+    return session;
+  };
+  for (const scenario of ["consume", "stop", "recover"]) {
+    console.log(JSON.stringify({ phase: "native-input", scenario }));
+    const session = await createSession(scenario);
     const root = await api.acceptTurn(
       session.sessionId,
       "Run bash exactly once: sleep 20. After that, answer briefly. Subsequent messages may change your instructions.",
@@ -234,6 +235,16 @@ try {
       ...(crash ? { crash } : {}),
     });
   }
+  report.cases.push(
+    ...(await checkNativeLiveProgress({
+      database: db,
+      tenantId: tenant.tenantId,
+      api,
+      createSession,
+      until,
+      finished,
+    })),
+  );
   report.accepted = true;
 } catch (error) {
   failure = error;

@@ -10,6 +10,10 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0244](0244-kafka-backed-native-live-state.md) — Kafka retention of native
+   live progress, PG boundary/handoff checkpoints, and protected recovery ranges.
+   Implemented in source under schema 186; matched rollout is pending.
+
 1. [ADR-0243](0243-native-input-current-state.md) — native Inbox/input metadata and
    Submission current values, atomic consumption and checked history/state reconstruction;
    deployed with schema 185 and real Worker-crash/native-input/browser acceptance.

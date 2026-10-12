@@ -1681,6 +1681,55 @@
       "file": "test/queued-input-wakes.test.ts",
       "test": "coalesces native commit wakes without comparing them to PG control versions",
       "invariant": "Native/control wake namespaces cannot suppress a newer queue view or cause idle database polling."
+    },
+    {
+      "id": "native-live-stream-retention",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-storage-conformance.test.ts",
+      "test": "keeps native live progress out of PG while preserving current reads across flush",
+      "invariant": "Streaming payloads stay in Kafka while acknowledged native current reads survive ordinary PG-buffer flushes."
+    },
+    {
+      "id": "native-live-replay-handoff",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-storage-conformance.test.ts",
+      "test": "replays accepted live state after owner loss and makes one exact handoff checkpoint",
+      "invariant": "Replay detects gaps and changed bytes; a handoff preserves exact native state without allocating a native sequence."
+    },
+    {
+      "id": "native-live-rollback",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-storage-conformance.test.ts",
+      "test": "does not adopt live projection memory or a recovery reference after SQL rollback",
+      "invariant": "SQL rollback advances neither authoritative recovery references nor adopted Projector memory."
+    },
+    {
+      "id": "native-live-lost-ack",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-storage-conformance.test.ts",
+      "test": "recovers an accepted live update after a lost publication acknowledgement",
+      "invariant": "Lost acknowledgement poisons the old writer but does not discard an accepted partial during native recovery."
+    },
+    {
+      "id": "native-live-interleaving",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-storage-conformance.test.ts",
+      "test": "replays interleaved Conversations after one live document has already settled",
+      "invariant": "One Conversation settling never discards another Conversation's in-flight state in the same physical Session."
+    },
+    {
+      "id": "native-live-seal-gate",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/execution-stream-seal.test.ts",
+      "test": "requires replayed live state before writer closure and commits one handoff checkpoint",
+      "invariant": "Writer closure waits for complete live reconstruction and commits its exact checkpoint before replacement."
+    },
+    {
+      "id": "native-live-closed-anchor",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/execution-stream-seal.test.ts",
+      "test": "protects and replays live data after its Run publication anchor has closed",
+      "invariant": "A closed publication anchor cannot release a sibling live suffix or suppress its read-only recovery."
     }
   ]
 }

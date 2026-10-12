@@ -17,15 +17,22 @@ import type {
 } from "@earendil-works/pi-durable";
 import { applyImmutableBatches } from "@earendil-works/chord/delta";
 import {
-  prepareCurrentInputs,
-  currentInputIds,
-  currentInputIndex,
-  currentInputFingerprint,
+  prepareCurrentStates,
+  currentStateIds,
+  currentStateIndex,
+  currentStateFingerprint,
   historyFingerprint,
-  type CurrentInputRow,
-  type CurrentInputSource,
+  isLiveRow,
+  isPendingLiveRow,
+  type CurrentStateRow,
+  type CurrentStateSource,
   type HistoryWriteRow,
-} from "./current-input-state.ts";
+} from "./current-state.ts";
+import {
+  NativeLiveState,
+  type NativeLiveProjection,
+  type NativeReplayPosition,
+} from "./live-state.ts";
 import {
   indexNative,
   type DurableBatch,
@@ -68,6 +75,9 @@ const INDEX_FIELDS = new Set([
   "run",
   "turn",
 ]);
+const CURRENT_SOURCE_COLUMNS = sql`c.id::text,c.kind,c.seq::text,c.ordinal,c.body,c.delta_count,
+  c.created_seq::text,c.retired_seq::text,c.cloud_origin,c.replay_topic,c.replay_partition,
+  c.replay_offset::text,c.replay_seq::text,r.id as indexed_id,r.kind as indexed_kind,r.fields as indexed_fields`;
 const decodeRecord = (row: RecordRow): IndexedRecord => {
   if (row.body === null) throw new Error("Native record body is missing");
   const write = JSON.parse(row.body) as StorageWrite;
@@ -96,6 +106,7 @@ const decodeRecord = (row: RecordRow): IndexedRecord => {
 /** Derived indexes resolve retained history or authoritative current state. This class never
  * allocates IDs/sequences and never makes an execution or replay decision. */
 export class DurablePostgresProjection {
+  readonly liveState = new NativeLiveState();
   constructor(
     readonly database: Kysely<Database>,
     readonly scope: DurableScope,
@@ -106,15 +117,31 @@ export class DurablePostgresProjection {
     return sql<boolean>`${sql.ref(`${alias}.tenant_id`)}=${this.scope.tenantId}::uuid
       and ${sql.ref(`${alias}.session_id`)}=${this.scope.sessionId}`;
   }
-  async head(): Promise<{ seq: number; nextId: number }> {
+  async assertComplete(): Promise<void> {
+    const pending = await sql`select 1 from pi_durable_current c where ${this.scoped("c")}
+      and c.replay_offset is not null limit 1`.execute(this.database);
+    if (pending.rows.length)
+      throw new Error("Native live state requires ordered Kafka recovery before cold open");
+  }
+  async head(requireComplete = false): Promise<{ seq: number; nextId: number }> {
     const result = await sql<{
-      seq: string;
-      next_id: string;
-    }>`select seq,next_id from pi_durable_commits c
-      where ${this.scoped("c")} order by seq desc limit 1`.execute(this.database);
-    return result.rows[0]
-      ? { seq: Number(result.rows[0].seq), nextId: Number(result.rows[0].next_id) }
-      : { seq: 0, nextId: 2 };
+      seq: string | null;
+      next_id: string | null;
+      incomplete: boolean;
+    }>`select h.seq,h.next_id,${
+      requireComplete
+        ? sql`exists(select 1 from pi_durable_current live
+      where ${this.scoped("live")} and live.replay_offset is not null)`
+        : sql`false`
+    } as incomplete
+      from (select 1) seed left join lateral (
+        select seq,next_id from pi_durable_commits c
+        where ${this.scoped("c")} order by seq desc limit 1
+      ) h on true`.execute(this.database);
+    const row = result.rows[0]!;
+    if (row.incomplete)
+      throw new Error("Native live state requires ordered Kafka recovery before cold open");
+    return { seq: Number(row.seq ?? 0), nextId: Number(row.next_id ?? 2) };
   }
   async get(id: number): Promise<IndexedRecord | undefined> {
     const result =
@@ -175,24 +202,37 @@ export class DurablePostgresProjection {
     type RevisionRow = {
       seq: string;
       ordinal: number;
-      body: string;
+      body: string | null;
       delta_count: number;
       checkpoint: string | null;
       current_state: boolean;
+      replay_seq: string | null;
+      current_row: CurrentStateRow | null;
+      expected: string | null;
     };
     const result = await sql<RevisionRow>`with base as (
       select seq from pi_durable_document_revisions d where ${this.scoped("d")}
         and document_id=${id} and seq<=${through} and (kind='base' or checkpoint is not null)
       order by seq desc limit 1
-    ) select d.seq,d.ordinal,d.delta_count,d.checkpoint,l.body,false as current_state from pi_durable_document_revisions d
+    ) select d.seq,d.ordinal,d.delta_count,d.checkpoint,l.body,false as current_state,null::bigint as replay_seq,
+        null::json as current_row,null::text as expected from pi_durable_document_revisions d
       join pi_durable_log l using(tenant_id,session_id,seq,ordinal)
       where ${this.scoped("d")} and d.document_id=${id} and d.seq>=(select seq from base) and d.seq<=${through}
-      union all select c.seq,c.ordinal,c.delta_count,null::text as checkpoint,c.body,true
-        from pi_durable_current c where ${this.scoped("c")} and c.id=${id}
+      union all select c.seq,c.ordinal,c.delta_count,null::text as checkpoint,null::text,true,c.replay_seq,
+        row_to_json(c),h.current_hashes->>c.id::text
+        from pi_durable_current c join pi_durable_commits h using(tenant_id,session_id,seq)
+        where ${this.scoped("c")} and c.id=${id}
           and c.kind='document' and c.retired_seq is null and c.seq<=${through}
       order by seq`.execute(this.database);
     return result.rows.map((row) => {
-      const write = JSON.parse(row.body) as StorageWrite;
+      if (row.replay_seq !== null)
+        throw new Error("Native live state requires Kafka replay; PG checkpoint is incomplete");
+      if (
+        row.current_state &&
+        (!row.current_row || currentStateFingerprint(row.current_row) !== row.expected)
+      )
+        throw new Error("Native current checkpoint integrity check failed");
+      const write = JSON.parse(row.current_row?.body ?? row.body!) as StorageWrite;
       if (write.type !== "document.create" && write.type !== "document.change")
         throw new Error("Invalid native document pointer");
       if (row.current_state && write.content.kind !== "base")
@@ -218,11 +258,14 @@ export class DurablePostgresProjection {
       version: number;
       delta_count: number;
       body: string | null;
-    }>`select version,delta_count,null::text as body,seq from pi_durable_document_revisions d
+      replay_seq: string | null;
+    }>`select version,delta_count,null::text as body,seq,null::bigint as replay_seq from pi_durable_document_revisions d
       where ${this.scoped("d")} and document_id=${id}
-      union all select null::integer,delta_count,body,seq from pi_durable_current c
+      union all select null::integer,delta_count,body,seq,replay_seq from pi_durable_current c
       where ${this.scoped("c")} and id=${id} and kind='document' and retired_seq is null
       order by seq desc limit 1`.execute(this.database);
+    if (result.rows[0]?.replay_seq != null)
+      throw new Error("Native live revision requires Kafka replay");
     return (
       result.rows[0] && {
         version:
@@ -236,13 +279,20 @@ export class DurablePostgresProjection {
   async apply(
     batch: DurableBatch | StoredDurableBatch,
     origins: readonly DurableRecordOrigin[] = [],
+    position?: NativeReplayPosition,
   ): Promise<boolean> {
-    return this.database.transaction().execute((tx) => this.applyIn(tx, batch, origins));
+    const live = position ? { state: this.liveState.fork(), position } : undefined;
+    const applied = await this.database
+      .transaction()
+      .execute((tx) => this.applyIn(tx, batch, origins, live));
+    if (live) this.liveState.adopt(live.state);
+    return applied;
   }
   async applyIn(
     tx: Transaction<Database>,
     stored: DurableBatch | StoredDurableBatch,
     origins: readonly DurableRecordOrigin[] = [],
+    live?: NativeLiveProjection,
   ): Promise<boolean> {
     validateImageReferencePayload(stored);
     // Only non-image record metadata is interpreted here. Model/image parts
@@ -256,31 +306,53 @@ export class DurablePostgresProjection {
       await sql`select id from pi_sessions p where p.tenant_id=${this.scope.tenantId}::uuid
       and p.id=${this.scope.sessionId} for update`.execute(tx);
     if (!parent.rows.length) throw new Error("Native Session was not found");
-    const prior = await sql<{ fingerprint: string }>`select fingerprint from pi_durable_commits c
+    const prior = await sql<{
+      fingerprint: string;
+      current_hashes: Record<string, string>;
+    }>`select fingerprint,current_hashes from pi_durable_commits c
       where ${this.scoped("c")} and seq=${batch.seq}`.execute(tx);
     if (prior.rows[0]) {
       if (prior.rows[0].fingerprint !== fingerprint)
         throw new Error("Native commit position changed bytes");
+      if (live) await this.#replayLiveIn(tx, batch, prior.rows[0].current_hashes, live);
       return false;
     }
     // Read the native watermark and touched current-state values together.
     // Unrelated document deltas do not acquire a separate metadata round trip.
+    const pendingLive =
+      live && live.state.through === undefined
+        ? sql`coalesce((
+      select json_agg(row) from (select ${CURRENT_SOURCE_COLUMNS}
+        from pi_durable_current c left join pi_durable_records r using(tenant_id,session_id,id)
+        where ${this.scoped("c")} and c.replay_offset is not null) row
+    ),'[]'::json)`
+        : sql`'[]'::json`;
     const {
       rows: [head],
-    } = await sql<{ seq: string; next_id: string; inputs: CurrentInputSource[] }>`
+    } = await sql<{
+      seq: string;
+      next_id: string;
+      inputs: CurrentStateSource[];
+      pending_live: CurrentStateSource[];
+    }>`
       select coalesce(h.seq,0)::text as seq,coalesce(h.next_id,2)::text as next_id,
-        coalesce(state.inputs,'[]'::json) as inputs
+        coalesce(state.inputs,'[]'::json) as inputs,${pendingLive} as pending_live
       from (select 1) seed left join lateral (
         select seq,next_id from pi_durable_commits c where ${this.scoped("c")} order by seq desc limit 1
       ) h on true left join lateral (
         select json_agg(row) as inputs from (
-          select c.*,r.id as indexed_id,r.kind as indexed_kind,r.fields as indexed_fields
+          select ${CURRENT_SOURCE_COLUMNS}
           from pi_durable_records r left join pi_durable_current c using(tenant_id,session_id,id)
-          where ${this.scoped("r")} and r.id=any(${currentInputIds(batch)}::bigint[])
+          where ${this.scoped("r")} and r.id=any(${currentStateIds(batch)}::bigint[])
         ) row
       ) state on true`.execute(tx);
     if (!head || batch.seq !== Number(head.seq) + 1 || batch.nextId < Number(head.next_id))
       throw new Error("Native commit sequence or ID watermark is not contiguous");
+    if (live) {
+      live.state.initialize(Number(head.seq), this.#validateLiveCheckpoints(head.pending_live));
+      if (live.state.through !== Number(head.seq))
+        throw new Error("Native live replay has not reached the projected head");
+    }
     const parentIds = [
       ...new Set(
         batch.writes.flatMap((write) =>
@@ -343,7 +415,15 @@ export class DurablePostgresProjection {
       return fields;
     };
     for (const id of records.keys()) originFor(id);
-    const current = prepareCurrentInputs(batch, effective, head.inputs);
+    const current = prepareCurrentStates(
+      batch,
+      effective,
+      this.#liveSources(head.inputs, live?.state),
+    );
+    const pending = current.rows.filter(isPendingLiveRow);
+    if (pending.length && !live)
+      throw new Error("Native live progress requires an ordered Kafka position");
+    const checkpoints = current.rows.filter((row) => !isPendingLiveRow(row));
     const history: HistoryWriteRow[] = batch.writes.flatMap((write, ordinal) => {
       if (current.omitted.has(ordinal)) return [];
       const id = "value" in write ? write.value.id : "record" in write ? write.record.id : write.id;
@@ -371,7 +451,7 @@ export class DurablePostgresProjection {
     });
     await retainSessionImages(tx, this.scope, stored);
     await sql`insert into pi_durable_commits(tenant_id,session_id,seq,next_id,fingerprint,write_count,history_write_count,history_fingerprint,current_hashes)
-      values(${this.scope.tenantId}::uuid,${this.scope.sessionId},${batch.seq},${batch.nextId},${fingerprint},${batch.writes.length},${history.length},${historyFingerprint(history)},${JSON.stringify(Object.fromEntries(current.rows.map((row) => [row.id, currentInputFingerprint(row)])))}::jsonb)`.execute(
+      values(${this.scope.tenantId}::uuid,${this.scope.sessionId},${batch.seq},${batch.nextId},${fingerprint},${batch.writes.length},${history.length},${historyFingerprint(history)},${JSON.stringify(Object.fromEntries(current.rows.map((row) => [row.id, currentStateFingerprint(row)])))}::jsonb)`.execute(
       tx,
     );
     if (history.length)
@@ -389,16 +469,202 @@ export class DurablePostgresProjection {
       await sql`update pi_durable_records r set retired_seq=${batch.seq}
       where ${this.scoped("r")} and id=any(${retiredCurrent}::bigint[])`.execute(tx);
     await this.#indexBatch(tx, batch, effective, current.omitted);
-    if (current.rows.length) {
-      await sql`insert into pi_durable_current as existing
-        (tenant_id,session_id,id,kind,seq,ordinal,body,delta_count,created_seq,retired_seq,cloud_origin) values
-        ${sql.join(current.rows.map((r) => sql`(${this.scope.tenantId}::uuid,${this.scope.sessionId},${r.id},${r.kind},${r.seq},${r.ordinal},${r.body},${r.delta_count},${r.created_seq},${r.retired_seq},${r.cloud_origin === null ? null : JSON.stringify(r.cloud_origin)}::jsonb)`))}
-        on conflict(tenant_id,session_id,id) do update set seq=excluded.seq,ordinal=excluded.ordinal,
-          body=excluded.body,delta_count=excluded.delta_count,retired_seq=excluded.retired_seq,cloud_origin=excluded.cloud_origin
-        where existing.kind=excluded.kind`.execute(tx);
-      await this.#writeIndexes(tx, current.rows.map(currentInputIndex), true);
+    await this.#checkpointRows(tx, checkpoints);
+    if (live) {
+      for (const row of pending) {
+        const before = head.inputs.find((r) => Number(r.id) === Number(row.id));
+        if (!before?.body)
+          throw new Error("Native live document requires a settled initial checkpoint");
+        if (before.replay_seq !== null) {
+          if (
+            before.replay_topic !== live.position.topic ||
+            before.replay_partition !== live.position.partition ||
+            BigInt(before.replay_offset!) > live.position.offset
+          )
+            throw new Error("Native live replay reference changed Kafka stream");
+        } else {
+          const pinned =
+            await sql`update pi_durable_current c set replay_topic=${live.position.topic},
+            replay_partition=${live.position.partition},replay_offset=${live.position.offset.toString()}::bigint,replay_seq=${batch.seq}
+            where ${this.scoped("c")} and id=${row.id}::bigint and replay_seq is null and seq<${batch.seq}
+            returning id`.execute(tx);
+          if (pinned.rows.length !== 1)
+            throw new Error("Native live recovery reference was not installed");
+        }
+      }
+      for (const row of current.rows)
+        if (isLiveRow(row)) {
+          if (isPendingLiveRow(row)) live.state.rows.set(Number(row.id), row);
+          else live.state.rows.delete(Number(row.id));
+        }
+      live.state.through = batch.seq;
     }
     return true;
+  }
+  async #checkpointRows(
+    tx: Transaction<Database>,
+    rows: readonly CurrentStateRow[],
+  ): Promise<void> {
+    if (!rows.length) return;
+    const result = await sql`insert into pi_durable_current as existing
+      (tenant_id,session_id,id,kind,seq,ordinal,body,delta_count,created_seq,retired_seq,cloud_origin) values
+      ${sql.join(rows.map((r) => sql`(${this.scope.tenantId}::uuid,${this.scope.sessionId},${r.id},${r.kind},${r.seq},${r.ordinal},${r.body},${r.delta_count},${r.created_seq},${r.retired_seq},${r.cloud_origin === null ? null : JSON.stringify(r.cloud_origin)}::jsonb)`))}
+      on conflict(tenant_id,session_id,id) do update set seq=excluded.seq,ordinal=excluded.ordinal,
+        body=excluded.body,delta_count=excluded.delta_count,retired_seq=excluded.retired_seq,cloud_origin=excluded.cloud_origin,
+        replay_topic=null,replay_partition=null,replay_offset=null,replay_seq=null
+      where existing.kind=excluded.kind and existing.seq<=excluded.seq
+      returning id`.execute(tx);
+    if (result.rows.length !== rows.length)
+      throw new Error("Native current checkpoint changed identity or regressed");
+    await this.#writeIndexes(tx, rows.map(currentStateIndex), true);
+  }
+  async #liveCheckpoints(tx: Transaction<Database>): Promise<CurrentStateSource[]> {
+    const result =
+      await sql<CurrentStateSource>`select c.*,r.id as indexed_id,r.kind as indexed_kind,r.fields as indexed_fields
+      from pi_durable_current c left join pi_durable_records r using(tenant_id,session_id,id)
+      where ${this.scoped("c")} and c.replay_offset is not null`.execute(tx);
+    return this.#validateLiveCheckpoints(result.rows);
+  }
+  #validateLiveCheckpoints(rows: CurrentStateSource[]): CurrentStateSource[] {
+    for (const row of rows) {
+      if (!isLiveRow(row)) throw new Error("Replay reference does not address native live state");
+      if (row.indexed_id == null) throw new Error("Native live checkpoint index is missing");
+    }
+    return rows;
+  }
+  async #initializeLive(
+    tx: Transaction<Database>,
+    state: NativeLiveState,
+    head?: number,
+  ): Promise<void> {
+    if (state.through !== undefined) return;
+    const current = head ?? (await new DurablePostgresProjection(tx, this.scope).head()).seq;
+    state.initialize(current, await this.#liveCheckpoints(tx));
+  }
+  #liveSources(rows: readonly CurrentStateSource[], state?: NativeLiveState): CurrentStateSource[] {
+    return rows.map((row) => {
+      const cached = state?.rows.get(Number(row.id));
+      if (!cached || Number(cached.seq) < Number(row.seq)) return row;
+      return {
+        ...row,
+        ...cached,
+        replay_topic: row.replay_topic,
+        replay_partition: row.replay_partition,
+        replay_offset: row.replay_offset,
+        replay_seq: row.replay_seq,
+      };
+    });
+  }
+  async #replayLiveIn(
+    tx: Transaction<Database>,
+    batch: DurableBatch,
+    hashes: Record<string, string>,
+    live: NativeLiveProjection,
+  ): Promise<void> {
+    await this.#initializeLive(tx, live.state);
+    if (batch.seq <= live.state.through!) return;
+    if (batch.seq !== live.state.through! + 1)
+      throw new Error("Native live Kafka recovery has a sequence gap");
+    const { rows } =
+      await sql<CurrentStateSource>`select c.*,r.id as indexed_id,r.kind as indexed_kind,r.fields as indexed_fields
+      from pi_durable_current c join pi_durable_records r using(tenant_id,session_id,id)
+      where ${this.scoped("c")} and c.id=any(${currentStateIds(batch)}::bigint[])`.execute(tx);
+    const eligible = new Set<number>();
+    for (const row of rows) {
+      if (!isLiveRow(row)) continue;
+      const cached = live.state.rows.get(Number(row.id));
+      if (row.replay_seq === null) {
+        if (cached && Number(cached.seq) <= Number(row.seq)) live.state.rows.delete(Number(row.id));
+        continue;
+      }
+      if (
+        batch.seq < Number(row.replay_seq) ||
+        batch.seq <= Math.max(Number(row.seq), Number(cached?.seq ?? 0))
+      )
+        continue;
+      if (
+        row.replay_topic !== live.position.topic ||
+        row.replay_partition !== live.position.partition ||
+        live.position.offset < BigInt(row.replay_offset!)
+      )
+        throw new Error("Native live replay changed its protected Kafka range");
+      eligible.add(Number(row.id));
+    }
+    const current = prepareCurrentStates(
+      batch,
+      new Map(),
+      this.#liveSources(rows, live.state),
+      (write) =>
+        (write.type === "document.change" || write.type === "document.retire") &&
+        eligible.has(write.id),
+    );
+    for (const row of current.rows) {
+      if (currentStateFingerprint(row) !== hashes[row.id])
+        throw new Error("Native live replay integrity check failed");
+      if (isPendingLiveRow(row)) live.state.rows.set(Number(row.id), row);
+      else live.state.rows.delete(Number(row.id));
+    }
+    live.state.through = batch.seq;
+  }
+  /** Read-only reconstruction of an already-accepted batch; never admits a new write. */
+  async replayLiveIn(
+    tx: Transaction<Database>,
+    stored: StoredDurableBatch,
+    origins: readonly DurableRecordOrigin[],
+    live: NativeLiveProjection,
+  ): Promise<boolean> {
+    const header = await sql<{
+      fingerprint: string;
+      current_hashes: Record<string, string>;
+    }>`select fingerprint,current_hashes
+      from pi_durable_commits c where ${this.scoped("c")} and seq=${stored.seq}`.execute(tx);
+    if (!header.rows[0]) return false;
+    const fingerprint = createHash("sha256")
+      .update(JSON.stringify({ batch: stored, origins }))
+      .digest("hex");
+    if (header.rows[0].fingerprint !== fingerprint)
+      throw new Error("Native replay position changed bytes");
+    await this.#replayLiveIn(
+      tx,
+      stored as unknown as DurableBatch,
+      header.rows[0].current_hashes,
+      live,
+    );
+    return true;
+  }
+  /** Caller holds the existing closure authority locks. No native sequence is allocated. */
+  async checkpointLiveIn(tx: Transaction<Database>, state: NativeLiveState): Promise<void> {
+    await sql`select id from pi_sessions p where p.tenant_id=${this.scope.tenantId}::uuid and p.id=${this.scope.sessionId} for update`.execute(
+      tx,
+    );
+    const head = await new DurablePostgresProjection(tx, this.scope).head();
+    const pending = await this.#liveCheckpoints(tx);
+    if (!pending.length) {
+      state.rows.clear();
+      state.through = head.seq;
+      return;
+    }
+    if (state.through !== head.seq)
+      throw new Error("Native live handoff must replay through the projected head");
+    const expected = await sql<{ id: string; seq: string; hash: string }>`select distinct on (h.key)
+      h.key as id,c.seq,h.value as hash from pi_durable_commits c
+      cross join lateral jsonb_each_text(c.current_hashes) h
+      where ${this.scoped("c")} and h.key=any(${pending.map((r) => String(r.id))}::text[])
+      order by h.key,c.seq desc`.execute(tx);
+    const checkpoints = pending.map((row) => {
+      const latest = state.rows.get(Number(row.id));
+      const proof = expected.rows.find((r) => r.id === String(row.id));
+      if (
+        !latest ||
+        !proof ||
+        Number(latest.seq) !== Number(proof.seq) ||
+        currentStateFingerprint(latest) !== proof.hash
+      )
+        throw new Error("Native live handoff checkpoint is incomplete or changed");
+      return latest;
+    });
+    await this.#checkpointRows(tx, checkpoints);
+    state.rows.clear();
   }
   async #indexBatch(
     tx: Transaction<Database>,
@@ -552,15 +818,15 @@ export class DurablePostgresProjection {
       let afterId = 0;
       for (;;) {
         const rows = await sql<
-          CurrentInputRow & { expected: string }
+          CurrentStateRow & { expected: string }
         >`select s.*,c.current_hashes->>s.id::text as expected
           from pi_durable_current s join pi_durable_commits c using(tenant_id,session_id,seq)
           where ${this.scoped("s")} and s.id>${afterId} order by s.id limit 64`.execute(tx);
         if (!rows.rows.length) break;
         for (const row of rows.rows)
-          if (currentInputFingerprint(row) !== row.expected)
+          if (currentStateFingerprint(row) !== row.expected)
             throw new Error("Native current-state integrity check failed");
-        await this.#writeIndexes(tx, rows.rows.map(currentInputIndex), true);
+        await this.#writeIndexes(tx, rows.rows.map(currentStateIndex), true);
         afterId = Number(rows.rows.at(-1)!.id);
       }
       let through = 0;

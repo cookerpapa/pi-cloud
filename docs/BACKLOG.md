@@ -34,7 +34,9 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 `native-input-current-e82d00b7`. [Source and live acceptance](reports/native-input-current-state-20261012.md)
 cover current Inbox/Submission values, checked reconstruction, actual Worker SIGKILL,
 Stop/return, images and full Luna/Cube use. Configuration is preserved and fixtures
-are physically cleaned. Streaming pi.live retention remains separate work.
+are physically cleaned. [ADR-0244](adr/0244-kafka-backed-native-live-state.md)
+implements streaming live retention in source under schema 186; matched release
+and live acceptance are tracked in its [report](reports/native-live-state-20261012.md).
 
 The [native-log research/review](reports/append-only-storage-review-20261011.md)
 compares pinned Pi, Maka, Marten, Pekko and Temporal. It retains the current four
@@ -49,9 +51,13 @@ storage tables and Session-local sequence; no runtime change was deployed.
       reuse prototype uses two with identical content. Preserve cache invalidation.
 - [ ] D11L-01: discuss retention of superseded native Task checkpoints and
       current-only document history beyond ADR-0243 input state. Streaming pi.live
-      Kafka-only retention remains a separate pending slice. Any reclamation requires
-      an ADR, complete reconstruction boundaries and attachment safety; do not filter
-      committed Pi batches or add a second runtime authority.
+      Kafka-only retention is implemented in source under
+      [ADR-0244](adr/0244-kafka-backed-native-live-state.md), with release acceptance
+      still pending. It retains small commit headers and verifies current reads,
+      handoff, multi-Conversation replay references and attachment safety. Task
+      reclamation and deduplicating the Kafka display representation remain
+      separate work; do not filter native publications or add a second runtime
+      authority.
 
 The approved [publication-registration optimization](reports/publication-admission-20261011.md)
 is deployed as `publication-admission-c39a78f8`: known stale/closed identities

@@ -136,7 +136,8 @@ async function assertQuiescent(client) {
     (select count(*) from session_leases where released_at is null)::int as writers,
     (select count(*) from active_execution_scopes)::int as scopes,
     (select count(*) from pi_durable_records where kind='task' and fields->>'status'<>'terminal')::int as tasks,
-    (select count(*) from pi_durable_records where kind='submission' and fields->>'status' in ('queued','placed'))::int as submissions`);
+    (select count(*) from pi_durable_records where kind='submission' and fields->>'status' in ('queued','placed'))::int as submissions,
+    (select count(*) from pi_durable_current where replay_seq is not null)::int as live_recovery`);
   assert(
     Object.values(rows[0]).every((n) => n === 0),
     "Asset backup requires settled Runs, projected seals and closed native writers/tasks",

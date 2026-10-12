@@ -63,6 +63,7 @@ export async function startNativeInputAgent(
       await projection.apply(
         { seq: prepared.seq, nextId: highWater, writes: prepared.writes },
         origins,
+        { topic: "native-input-fixture", partition: 0, offset: BigInt(prepared.seq) },
       );
       writes.push([...prepared.writes]);
       sequence = prepared.seq;

@@ -79,6 +79,11 @@ PI_CLOUD_LIVE_RELEASE_CHECK=1 node --import tsx scripts/run-live-release-accepta
 The native-input driver checks same-Run continuation, durable edits and promotion,
 retry identity, and Stop restoration against the current schema. It waits for
 projected queue visibility after native ACK and for terminal seals before cleanup.
+Under schema 186 it also checks streaming text stays out of PG, preserves the
+native interrupted reply on Stop, and resumes the same Run after losing both
+Worker and Projector memory. That owned fault case suspends Control Plane before
+killing the Worker, kills/restarts Control Plane, and requires kubelet crash and
+readiness evidence. It refuses injection while another tenant has unfinished work.
 
 For guest working-directory changes, also run
 `PI_CLOUD_LIVE_MISSING_DIRECTORY_CHECK=1 node --import tsx scripts/run-live-missing-directory-check.mjs /private/cwd-check.json`.

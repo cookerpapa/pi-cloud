@@ -152,6 +152,7 @@ export class ExecutionStreamProjector {
 
   reset(): void {
     this.#boundary.reset();
+    this.#durable.reset();
     this.#prefixes.clear();
   }
 
@@ -163,13 +164,17 @@ export class ExecutionStreamProjector {
     return this.#boundary.observes(record.fact.scope.runId, record.fact.scope.writerId);
   }
 
-  async project(record: KafkaAcceptedFactRecord): Promise<ExecutionProjectionResult | undefined> {
+  async project(
+    record: KafkaAcceptedFactRecord,
+    current: () => boolean = () => true,
+  ): Promise<ExecutionProjectionResult | undefined> {
     const { fact } = record;
     if (fact.kind === "path_probe") return;
     if (!(await this.#boundary.isOpen(record, true))) {
+      if (fact.kind === "durable_commit") await this.#durable.replay(fact, record, current);
       if (fact.kind === "execution_seal") {
         const prefix = this.#prefixes.get(`${fact.scope.writerId}:${fact.scope.runId}`);
-        const terminal = await this.#seal(fact, record, prefix);
+        const terminal = await this.#seal(fact, record, prefix, current);
         this.#boundary.close(fact.scope.runId, fact.scope.writerId, record.offset);
         if (fact.closesWriter) this.#boundary.closeWriter(fact.scope.writerId, record.offset);
         this.#prefixes.delete(`${fact.scope.writerId}:${fact.scope.runId}`);
@@ -183,10 +188,10 @@ export class ExecutionStreamProjector {
       prefix.accept(event);
     }
     if (fact.kind === "durable_commit") {
-      await this.#durable.project(fact, record);
+      await this.#durable.project(fact, record, current);
       this.#prefixes.set(`${fact.scope.writerId}:${fact.scope.runId}`, prefix);
     } else if (fact.kind === "execution_seal") {
-      const terminal = await this.#seal(fact, record, prefix);
+      const terminal = await this.#seal(fact, record, prefix, current);
       this.#boundary.close(fact.scope.runId, fact.scope.writerId, record.offset);
       if (fact.closesWriter) this.#boundary.closeWriter(fact.scope.writerId, record.offset);
       this.#prefixes.delete(`${fact.scope.writerId}:${fact.scope.runId}`);
@@ -240,7 +245,9 @@ export class ExecutionStreamProjector {
     fact: AcceptedExecutionSealFact,
     position: FactPosition,
     prefix: CompactEventTail | undefined,
+    current: () => boolean,
   ): Promise<PiCloudEvent | undefined> {
+    let adopt = () => {};
     const committed = await projectionTransaction(this.#database, async (transaction) => {
       const run = await transaction
         .selectFrom("runs")
@@ -310,6 +317,8 @@ export class ExecutionStreamProjector {
         BigInt(run.output_first_offset) !== position.offset
       )
         throw new Error("Unsealed execution prefix is missing before writer closure");
+      if (fact.closesWriter)
+        adopt = await this.#durable.checkpointLiveIn(transaction, fact.scope, current);
       if (fact.closesWriter && writer.writer_seal_offset === null)
         await transaction
           .updateTable("session_leases")
@@ -450,6 +459,8 @@ export class ExecutionStreamProjector {
       await advanceLaneReadiness(transaction, fact.scope.tenantId, fact.scope.sessionId);
       return event;
     });
+    adopt();
+    if (current()) this.#durable.releaseSettled(fact.scope);
     return committed;
   }
 }

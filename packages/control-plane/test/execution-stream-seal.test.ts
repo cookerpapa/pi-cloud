@@ -15,7 +15,10 @@ import { PostgresDurableCommitProjector } from "../../runtime-core/src/postgres-
 import { SessionLiveView } from "../../runtime-core/src/session-live-view.ts";
 import { parseKafkaAcceptedFact } from "../../runtime-core/src/kafka-accepted-fact.ts";
 import { loadFactReplayOffsets } from "../../runtime-core/src/accepted-fact-recovery.ts";
-import { KafkaSafeRetention } from "../../runtime-core/src/kafka-safe-retention.ts";
+import {
+  KafkaSafeRetention,
+  acceptedFactRetentionFloors,
+} from "../../runtime-core/src/kafka-safe-retention.ts";
 import { readCanonicalPiTurnTranscripts } from "../../runtime-core/src/canonical-pi-conversation.ts";
 import type {
   AcceptedFact,
@@ -158,6 +161,135 @@ async function fixture(drained = false) {
   return { first, second, session, executor, seal, mutation, delta, record, projection };
 }
 describe.sequential("native execution closure", () => {
+  const liveFacts = (f: Awaited<ReturnType<typeof fixture>>) => {
+    const first = f.mutation("before live generation");
+    const seed: AcceptedDurableCommitFact = {
+      ...first,
+      commit: {
+        ...first.commit,
+        nextId: 101,
+        writes: [
+          ...first.commit.writes,
+          {
+            type: "document.create",
+            record: {
+              id: 100,
+              kind: "pi.live",
+              scope: { kind: "conversation", conversationId: 1 },
+              history: "latest",
+              fork: "initial",
+            },
+            content: { kind: "base", version: 1, value: {} },
+          },
+        ],
+      },
+    };
+    const progress: AcceptedDurableCommitFact = {
+      ...first,
+      factId: crypto.randomUUID(),
+      origins: [],
+      commit: {
+        seq: 2,
+        nextId: 101,
+        writes: [
+          {
+            type: "document.change",
+            id: 100,
+            content: {
+              kind: "delta",
+              version: 1,
+              ops: [
+                ["s", ["generation"], { attempt: 1, message: { text: "accepted live suffix" } }],
+              ],
+            },
+          },
+        ],
+      },
+    };
+    return { seed, progress };
+  };
+  it("requires replayed live state before writer closure and commits one handoff checkpoint", async () => {
+    const f = await fixture(),
+      { seed, progress } = liveFacts(f);
+    expect(f.seal.closesWriter).toBe(true);
+    const old = new ExecutionStreamProjector(db);
+    await old.project(f.record(seed, 10n));
+    await old.project(f.record(progress, 20n));
+    const pg = new DurablePostgresProjection(db, { tenantId, sessionId: f.seal.scope.piSessionId });
+    await expect(pg.assertComplete()).rejects.toThrow("Kafka recovery");
+    const replacement = new ExecutionStreamProjector(db);
+    await replacement.project(f.record(seed, 10n));
+    await expect(replacement.project(f.record(f.seal, 30n))).rejects.toThrow("replay through");
+    expect(
+      (
+        await db
+          .selectFrom("session_leases")
+          .select("writer_seal_offset")
+          .where("lease_id", "=", f.seal.scope.writerId)
+          .executeTakeFirstOrThrow()
+      ).writer_seal_offset,
+    ).toBeNull();
+    await replacement.project(f.record(progress, 20n));
+    await replacement.project(f.record(f.seal, 30n));
+    await pg.assertComplete();
+    const snapshot = await pg.revisions(100, 2);
+    expect(snapshot).toHaveLength(1);
+    expect(snapshot[0]?.checkpoint).toEqual({
+      generation: { attempt: 1, message: { text: "accepted live suffix" } },
+    });
+    expect((await pg.head()).seq).toBe(2);
+    expect(await replacement.project(f.record(f.seal, 30n))).toMatchObject({
+      terminal: { type: "turn.failed" },
+    });
+  });
+  it("protects and replays live data after its Run publication anchor has closed", async () => {
+    const f = await fixture(true),
+      { seed, progress } = liveFacts(f);
+    expect(f.seal.closesWriter).toBe(false);
+    const first = new ExecutionStreamProjector(db);
+    await first.project(f.record(seed, 10n));
+    await first.project(f.record(progress, 20n));
+    await first.project(f.record(f.seal, 30n));
+    expect((await acceptedFactRetentionFloors(db, "seals-test", [0])).get(0)).toBe(20n);
+    expect(
+      (await loadFactReplayOffsets(db, "seals-test", [{ partition: 0, low: 0n, high: 31n }])).get(
+        0,
+      ),
+    ).toBe(20n);
+    const truncated = await loadFactReplayOffsets(db, "seals-test", [
+      { partition: 0, low: 21n, high: 31n },
+    ]);
+    expect(truncated.get(0)).toBeInstanceOf(Error);
+    const replacement = new ExecutionStreamProjector(db);
+    // The ordinary closed-Run admission path is rejected; protected reconstruction still runs.
+    await replacement.project(f.record(progress, 20n));
+    const changed = { ...progress, commit: { ...progress.commit, nextId: 102 } };
+    await expect(replacement.project(f.record(changed, 20n))).rejects.toThrow("changed bytes");
+    expect((await acceptedFactRetentionFloors(db, "seals-test", [0])).get(0)).toBe(20n);
+    const recovered = new PostgresDurableCommitProjector(db);
+    await recovered.replay(progress, f.record(progress, 20n));
+    const adopt = await db.transaction().execute(async (tx) => {
+      await tx
+        .selectFrom("runs")
+        .select("id")
+        .where("id", "=", f.first.runId)
+        .forNoKeyUpdate()
+        .execute();
+      await tx
+        .selectFrom("session_leases")
+        .select("lease_id")
+        .where("lease_id", "=", f.seal.scope.writerId)
+        .forNoKeyUpdate()
+        .execute();
+      return recovered.checkpointLiveIn(tx, f.seal.scope, () => true);
+    });
+    adopt();
+    const pg = new DurablePostgresProjection(db, { tenantId, sessionId: f.seal.scope.piSessionId });
+    expect((await pg.revisions(100, 2))[0]?.checkpoint).toEqual({
+      generation: { attempt: 1, message: { text: "accepted live suffix" } },
+    });
+    expect((await acceptedFactRetentionFloors(db, "seals-test", [0])).get(0)).toBe(31n);
+  });
   it("covers display only after its referenced native commit and retains immutable borrowed tails", async () => {
     const f = await fixture(),
       p = new ExecutionStreamProjector(db),

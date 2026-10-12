@@ -4,7 +4,7 @@ import type { DocumentRecord, StorageWrite } from "@earendil-works/pi-durable";
 import { NATIVE_HUMAN_INPUT_DOCUMENT } from "@pi-cloud/protocol";
 import { indexNative, type DurableBatch, type IndexedRecord, type NativeRecord } from "./types.ts";
 
-export type CurrentInputRow = {
+export type CurrentStateRow = {
   id: string;
   kind: "document" | "submission";
   seq: string;
@@ -43,7 +43,7 @@ export const historyFingerprint = (rows: readonly HistoryWriteRow[]): string =>
       origin(r.cloud_origin),
     ]),
   );
-export const currentInputFingerprint = (r: CurrentInputRow): string =>
+export const currentStateFingerprint = (r: CurrentStateRow): string =>
   digest([
     String(r.id),
     r.kind,
@@ -55,14 +55,39 @@ export const currentInputFingerprint = (r: CurrentInputRow): string =>
     r.retired_seq === null ? null : String(r.retired_seq),
     origin(r.cloud_origin),
   ]);
-export const isCurrentInputDocument = (
+export const isCurrentStateDocument = (
   record: Pick<DocumentRecord, "kind" | "scope" | "history">,
 ): boolean =>
   record.scope.kind === "conversation" &&
   record.history === "latest" &&
-  (record.kind === "pi.inbox" || record.kind === NATIVE_HUMAN_INPUT_DOCUMENT);
+  (record.kind === "pi.inbox" ||
+    record.kind === NATIVE_HUMAN_INPUT_DOCUMENT ||
+    record.kind === "pi.live");
 
-export function currentInputIndex(row: CurrentInputRow): IndexedRecord {
+export const isLiveDocument = (
+  record: Pick<DocumentRecord, "kind" | "scope" | "history">,
+): boolean => record.kind === "pi.live" && isCurrentStateDocument(record);
+
+/** Matches the pinned native LiveDoc checkpoint predicate. */
+export function isSettledLiveValue(value: Record<string, unknown>): boolean {
+  return (
+    value.generation === undefined &&
+    !(Array.isArray(value.tools) && value.tools.some((slot) => slot?.status === "running"))
+  );
+}
+
+export function isLiveRow(row: CurrentStateRow): boolean {
+  if (row.kind !== "document") return false;
+  const write = JSON.parse(row.body) as StorageWrite;
+  return write.type === "document.create" && isLiveDocument(write.record);
+}
+
+export function isPendingLiveRow(row: CurrentStateRow): boolean {
+  if (row.retired_seq !== null || !isLiveRow(row)) return false;
+  return !isSettledLiveValue(JSON.parse(row.body).content.value);
+}
+
+export function currentStateIndex(row: CurrentStateRow): IndexedRecord {
   const write = JSON.parse(row.body) as StorageWrite;
   const value =
     write.type === "document.create"
@@ -77,9 +102,9 @@ export function currentInputIndex(row: CurrentInputRow): IndexedRecord {
   if (
     !value ||
     (row.kind === "document") !== (write.type === "document.create") ||
-    (write.type === "document.create" && !isCurrentInputDocument(write.record))
+    (write.type === "document.create" && !isCurrentStateDocument(write.record))
   )
-    throw new Error("Invalid native input current-state body");
+    throw new Error("Invalid native current-state body");
   const indexed = indexNative(row.kind, value as NativeRecord, Number(row.seq), row.ordinal);
   if (indexed.value.id !== Number(row.id)) throw new Error("Native current-state identity changed");
   Object.assign(indexed.fields, origin(row.cloud_origin));
@@ -87,7 +112,7 @@ export function currentInputIndex(row: CurrentInputRow): IndexedRecord {
 }
 
 /** Interpret complete native commits; only the PG representation changes. */
-export const currentInputIds = (batch: DurableBatch): number[] => [
+export const currentStateIds = (batch: DurableBatch): number[] => [
   ...new Set(
     batch.writes.flatMap<number>((w) =>
       w.type === "submission"
@@ -100,17 +125,22 @@ export const currentInputIds = (batch: DurableBatch): number[] => [
     ),
   ),
 ];
-export type CurrentInputSource = CurrentInputRow & {
+export type CurrentStateSource = CurrentStateRow & {
   indexed_id: string;
   indexed_kind: string;
   indexed_fields: Record<string, string>;
+  replay_topic: string | null;
+  replay_partition: number | null;
+  replay_offset: string | null;
+  replay_seq: string | null;
 };
-export function prepareCurrentInputs(
+export function prepareCurrentStates(
   batch: DurableBatch,
   origins: ReadonlyMap<number, Record<string, string> | undefined>,
-  previous: readonly CurrentInputSource[],
-): { rows: CurrentInputRow[]; omitted: Set<number> } {
-  const rows = new Map<number, CurrentInputRow>(),
+  previous: readonly CurrentStateSource[],
+  include: (write: StorageWrite, ordinal: number) => boolean = () => true,
+): { rows: CurrentStateRow[]; omitted: Set<number> } {
+  const rows = new Map<number, CurrentStateRow>(),
     known = new Set<number>();
   for (const row of previous) {
     known.add(Number(row.indexed_id));
@@ -120,15 +150,18 @@ export function prepareCurrentInputs(
         row.indexed_fields.currentOnly === "true" &&
         row.indexed_fields.scope !== undefined &&
         JSON.parse(row.indexed_fields.scope)[0] === "conversation" &&
-        [JSON.stringify("pi.inbox"), JSON.stringify(NATIVE_HUMAN_INPUT_DOCUMENT)].includes(
-          row.indexed_fields.nativeKind!,
-        ));
-    if (required && !row.body) throw new Error("Native input current state is missing");
+        [
+          JSON.stringify("pi.inbox"),
+          JSON.stringify(NATIVE_HUMAN_INPUT_DOCUMENT),
+          JSON.stringify("pi.live"),
+        ].includes(row.indexed_fields.nativeKind!));
+    if (required && !row.body) throw new Error("Native current state is missing");
     if (row.body) rows.set(Number(row.id), row);
   }
   const changed = new Set<number>(),
     omitted = new Set<number>();
   for (const [ordinal, write] of batch.writes.entries()) {
+    if (!include(write, ordinal)) continue;
     if (write.type === "submission") {
       const id = write.value.id;
       rows.set(id, {
@@ -146,7 +179,7 @@ export function prepareCurrentInputs(
       omitted.add(ordinal);
       continue;
     }
-    if (write.type === "document.create" && isCurrentInputDocument(write.record)) {
+    if (write.type === "document.create" && isCurrentStateDocument(write.record)) {
       if (known.has(write.record.id) || changed.has(write.record.id))
         throw new Error("Native record ID ownership changed");
       if (write.content.kind !== "base") throw new Error("Native document needs an initial base");
@@ -171,7 +204,7 @@ export function prepareCurrentInputs(
     if (previous.kind !== "document" || previous.retired_seq !== null)
       throw new Error("Native current document is unavailable");
     const base = JSON.parse(previous.body) as Extract<StorageWrite, { type: "document.create" }>;
-    if (base.content.kind !== "base") throw new Error("Native input current base is invalid");
+    if (base.content.kind !== "base") throw new Error("Native current base is invalid");
     let deltaCount = previous.delta_count;
     let nextContent = base.content;
     if (write.type === "document.change") {

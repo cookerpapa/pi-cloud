@@ -76,7 +76,10 @@ protocol, record the decision under `docs/adr/` before implementation.
   fully stamped by one physical-Session writer and acknowledged through R=3
   Kafka; PostgreSQL materializes native storage for cold reads and long-term
   history. ADR-0243 stores Inbox/input metadata and Submissions as authoritative
-  current values; other native writes retain their historical policy. Do not restore per-Step projection receipts or allocate sequence from
+  current values. ADR-0244 keeps native live progress in Kafka and materializes
+  PG checkpoints at settlement or ordered writer handoff; outstanding replay
+  references protect that suffix across Run anchors. Other native writes retain
+  their historical policy. Do not restore per-Step projection receipts or allocate sequence from
   a second active writer. Cold administrative mutations require Session quiescence.
   Bootstrap only the latest Compaction and active suffix, never lifetime JSONL.
 - Workers publish through the control-plane ingress under a PG-issued identity

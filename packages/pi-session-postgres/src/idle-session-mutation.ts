@@ -1,6 +1,6 @@
 import type { Database } from "@pi-cloud/database";
 import { NativeSessionError } from "./native-session-error.ts";
-import { type Transaction } from "kysely";
+import { sql, type Transaction } from "kysely";
 
 /** Cold administrative writes share Run claim's physical Session lock. They
  * must never allocate native sequence beside an active acknowledged writer. */
@@ -21,5 +21,12 @@ export async function assertIdleNativeSession(
     throw new NativeSessionError(
       "storage",
       "Native Session must settle before administrative changes",
+    );
+  const incomplete = await sql`select 1 from pi_durable_current where tenant_id=${tenantId}::uuid
+    and session_id=${sessionId} and replay_offset is not null limit 1`.execute(tx);
+  if (incomplete.rows.length)
+    throw new NativeSessionError(
+      "storage",
+      "Native live state must finish Kafka recovery before administrative changes",
     );
 }

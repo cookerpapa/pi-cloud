@@ -613,12 +613,29 @@ current values, and rebuilds only indexes. It never deletes current state, runs
 Tools or allocates sequence. Current state must accompany history in asset recovery;
 chat history alone cannot restore the input queue. Kafka acknowledgement, native
 batch atomicity and the ordered closure/new-lease boundary remain unchanged.
-Streaming `pi.live` and Task history retention are separate, still-unimplemented
-policy discussions; this input slice does not silently alter those contracts.
+[ADR-0244](adr/0244-kafka-backed-native-live-state.md) is implemented in source
+under matched schema 186; its deployment status is recorded in the
+[verification report](reports/native-live-state-20261012.md). Conversation-scoped
+`pi.live` also uses `pi_durable_current`, but its PG row is a boundary/handoff
+checkpoint rather than a replacement on every delta. Active updates remain in
+complete Kafka commits and disposable Worker/Projector current values. A nullable
+topic/partition/offset/sequence reference protects the suffix not included in
+the PG checkpoint, independently of which Run anchored its publication.
+Native commit headers/checksums remain in PG; streaming bodies and their 64-delta
+checkpoints do not. Other document and Task history policies are unchanged.
+
+The Worker keeps the current live value across ordinary projection-buffer flushes.
+Cold open checks checkpoint completeness in the native-head query. Projector
+restart reconstructs protected live state even for already-projected batches or
+closed publication anchors, using stored fingerprints and cutoffs; reconstruction
+grants no append or Tool-dispatch authority. Old-writer closure atomically installs
+exact live checkpoints before permitting replacement. Native sequence, document
+version and delta count are retained. Safe Kafka deletion includes outstanding
+live references, and cold administrative mutation/export requires their completion.
 
 The Worker prepares and validates a detached batch, publishes it through ingress,
 waits for RF3 Kafka ACK and only then exposes it to Pi. A bounded acknowledged
-overlay handles PG lag. Eviction waits for the existing projection watermark in
+overlay handles PG lag. Ordinary buffer eviction waits for the existing projection watermark in
 batches, not a receipt per Step. A proved pre-enqueue refusal leaves the writer
 usable; an ambiguous commit poisons that owner until ordered closure. Cold reads
 use native head markers, scoped record indexes and bounded document tails.

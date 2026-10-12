@@ -30,6 +30,8 @@ import {
 } from "@earendil-works/pi-durable";
 import { PublicationNotSentError, NATIVE_HUMAN_INPUT_DOCUMENT } from "@pi-cloud/protocol";
 import { DurablePostgresProjection, materializeNativeDocument } from "./postgres-projection.ts";
+import { applyImmutableBatches } from "@earendil-works/chord/delta";
+import { isLiveDocument, isSettledLiveValue } from "./current-state.ts";
 import {
   cloneNative,
   currentOnly,
@@ -53,6 +55,7 @@ type Prepared = {
   resetRevisions: Set<number>;
   retiredCurrent: Set<number>;
   inputConversations: number[];
+  live: Map<number, StoredDocument | undefined>;
 };
 export type DurableStorageOptions = {
   projection: DurablePostgresProjection;
@@ -82,6 +85,7 @@ export class PublishedDurableStorage implements Storage {
   readonly #options: DurableStorageOptions;
   readonly #records = new Map<number, IndexedRecord>();
   readonly #revisions = new Map<number, DocumentRevision[]>();
+  readonly #live = new Map<number, StoredDocument>();
   readonly #revisionResets = new Set<number>();
   readonly #readCache = new Map<number, IndexedRecord | undefined>();
   #seq: number;
@@ -102,7 +106,7 @@ export class PublishedDurableStorage implements Storage {
     this.#coldNextId = head.nextId;
   }
   static async open(options: DurableStorageOptions): Promise<PublishedDurableStorage> {
-    return new PublishedDurableStorage(options, await options.projection.head());
+    return new PublishedDurableStorage(options, await options.projection.head(true));
   }
   get committedSequence(): number {
     return this.#seq;
@@ -168,6 +172,10 @@ export class PublishedDurableStorage implements Storage {
         this.#revisions.delete(id);
         this.#revisionResets.add(id);
       }
+      for (const [id, value] of prepared.live) {
+        if (value === undefined) this.#live.delete(id);
+        else this.#live.set(id, value);
+      }
       this.#seq = prepared.batch.seq;
       this.#nextId = Math.max(this.#nextId, prepared.batch.nextId);
       this.#bufferedWrites += Math.max(1, prepared.batch.writes.length);
@@ -202,6 +210,8 @@ export class PublishedDurableStorage implements Storage {
     this.#revisionResets.clear();
     this.#readCache.clear();
     this.#addresses.clear();
+    // PG's header watermark does not materialize an in-flight live document.
+    for (const [id, live] of this.#live) if (isSettledLiveValue(live.value)) this.#live.delete(id);
     this.#coldSeq = this.#seq;
     this.#coldNextId = this.#nextId;
     this.#bufferedBytes = 0;
@@ -482,6 +492,8 @@ export class PublishedDurableStorage implements Storage {
         : record.createdAt > at || (record.retiredAt !== undefined && record.retiredAt <= at)
     )
       return undefined;
+    const live = this.#live.get(id);
+    if (live && isLiveDocument(record)) return cloneNative(live);
     const through = at === "current" ? this.#seq : at;
     const local = (this.#revisions.get(id) ?? []).filter((r) => r.seq <= through);
     // A local base and every later acknowledged write belong to this writer.
@@ -535,8 +547,11 @@ export class PublishedDurableStorage implements Storage {
     this.#records.clear();
     this.#revisions.clear();
     this.#readCache.clear();
+    this.#live.clear();
   }
   async #latestRevision(id: number): Promise<{ version: number; deltaCount: number } | undefined> {
+    const live = this.#live.get(id);
+    if (live) return { version: live.version, deltaCount: live.deltasSinceBase };
     const local = this.#revisions.get(id)?.at(-1);
     if (local) return { version: local.content.version, deltaCount: local.deltaCount };
     return this.#revisionResets.has(id) || this.#coldSeq === 0 || id >= this.#coldNextId
@@ -587,6 +602,7 @@ export class PublishedDurableStorage implements Storage {
         });
       }
     }
+    const live = new Map<number, StoredDocument | undefined>();
     const claimed = new Map<number, IndexedRecord["kind"]>(),
       actions = new Map<DocumentId, DocumentAction>();
     let nextId = this.#nextId;
@@ -692,15 +708,32 @@ export class PublishedDurableStorage implements Storage {
             throw new Error(`Document ${id} version transition requires a base`);
         }
         if (action.content.kind === "base" && currentOnly(record)) resetRevisions.add(id);
-        revisions.push({
-          id,
-          seq,
-          ordinal,
-          content: action.content,
-          deltaCount: action.content.kind === "base" ? 0 : previous!.deltaCount + 1,
-        });
+        if (!isLiveDocument(record))
+          revisions.push({
+            id,
+            seq,
+            ordinal,
+            content: action.content,
+            deltaCount: action.content.kind === "base" ? 0 : previous!.deltaCount + 1,
+          });
+        if (isLiveDocument(record) && !action.retire) {
+          const before =
+            action.content.kind === "delta" ? await this.#document(id, "current") : undefined;
+          if (action.content.kind === "delta" && !before)
+            throw new Error("Native live delta has no current value");
+          live.set(id, {
+            record,
+            version: action.content.version,
+            value:
+              action.content.kind === "base"
+                ? cloneNative(action.content.value)
+                : applyImmutableBatches(before!.value, [action.content.ops]),
+            deltasSinceBase: action.content.kind === "base" ? 0 : previous!.deltaCount + 1,
+          });
+        }
       }
       if (action.retire && currentOnly(record)) retiredCurrent.add(id);
+      if (action.retire && isLiveDocument(record)) live.set(id, undefined);
     }
     if ([...liveCounts.values()].some((n) => n > 1))
       throw new Error("Document address already has a current incarnation");
@@ -713,6 +746,7 @@ export class PublishedDurableStorage implements Storage {
       resetRevisions,
       retiredCurrent,
       inputConversations: [...inputConversations],
+      live,
     };
   }
 }

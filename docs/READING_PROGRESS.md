@@ -1,6 +1,6 @@
 # Architecture reading checkpoint
 
-Updated: 2026-10-11.
+Updated: 2026-10-12.
 
 The walkthrough explains one component-to-component hop at a time, including
 its message, acknowledgement boundary, failure behavior and design tradeoffs.
@@ -59,10 +59,15 @@ records retain their existing policy.
 [Implementation and matched schema 185 deployment](reports/native-input-current-state-20261012.md)
 are complete, including current-state reconstruction and real Worker-crash recovery.
 
-The discussed pi.live Kafka-only streaming policy is separate and unimplemented.
-Text/thinking partials still reach PG through native document commits. The 64-delta
-checkpoints remain read accelerators for other documents. They are not model
-Compaction summaries or whole-Session recovery snapshots.
+The owner approved [ADR-0244](adr/0244-kafka-backed-native-live-state.md) after
+comparing Pi's latest-only live state with the earlier Kafka-text/PG-message split.
+It is implemented in source under schema 186: publications stay intact, PG keeps
+small commit headers, and current live reads span Kafka-backed memory and PG
+boundary/handoff checkpoints. Protected replay references span Conversation/Run
+anchors. The [report](reports/native-live-state-20261012.md) separates verification
+from the pending matched rollout. Other documents retain their 64-delta read
+accelerators; these are not model Compaction or whole-Session recovery snapshots.
+The walkthrough checkpoint above is unchanged.
 
 Follow-up discussions established:
 

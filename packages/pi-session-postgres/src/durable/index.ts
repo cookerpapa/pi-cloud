@@ -1,6 +1,11 @@
 export { PublishedDurableStorage, type DurableStorageOptions } from "./published-storage.ts";
 export { DurablePostgresProjection } from "./postgres-projection.ts";
 export {
+  NativeLiveState,
+  type NativeReplayPosition,
+  type NativeLiveProjection,
+} from "./live-state.ts";
+export {
   PostgresDurableSessionHost,
   type DurableRunBinding,
   type DurableSessionHandle,

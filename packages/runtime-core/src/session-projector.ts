@@ -209,7 +209,7 @@ export class SessionProjector {
             return;
           }
           const projected = await timing.measure("projection", () =>
-            this.#projection.project(record),
+            this.#projection.project(record, current ?? (() => true)),
           );
           if (current?.() === false) return;
           if (fact.kind === "execution_seal") {

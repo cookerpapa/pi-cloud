@@ -368,6 +368,7 @@ export const migrationProvider: MigrationProvider = {
       "183_native_inputs_and_run_record": nativeInputsAndRunRecord,
       "184_worker_claim_schema": workerClaimSchema,
       "185_native_input_current_state": nativeInputCurrentState,
+      "186_native_live_checkpoints": nativeLiveCheckpoints,
     };
   },
 };
@@ -376,3 +377,4 @@ import * as conversationActivityPage from "./182_conversation_activity_page.ts";
 import * as nativeInputsAndRunRecord from "./183_native_inputs_and_run_record.ts";
 import * as workerClaimSchema from "./184_worker_claim_schema.ts";
 import * as nativeInputCurrentState from "./185_native_input_current_state.ts";
+import * as nativeLiveCheckpoints from "./186_native_live_checkpoints.ts";

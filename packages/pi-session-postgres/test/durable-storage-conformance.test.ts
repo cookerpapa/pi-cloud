@@ -72,7 +72,11 @@ async function fixture(
     publish: async (batch, inputConversations) =>
       options.publish
         ? options.publish(batch, projection, inputConversations)
-        : void (await projection.apply(batch)),
+        : void (await projection.apply(batch, [], {
+            topic: "native-fixture",
+            partition: 0,
+            offset: BigInt(batch.seq),
+          })),
     waitProjected: async (through) => {
       if ((await projection.head()).seq < through)
         throw new Error("Fixture projection is still held");
@@ -135,6 +139,397 @@ for (const cold of [false, true])
       for (const contract of cases) it(contract.name, contract.run);
     },
   );
+
+it("keeps native live progress out of PG while preserving current reads across flush", async () => {
+  const f = await fixture();
+  const id = 2 as import("@earendil-works/pi-durable").DocumentId;
+  try {
+    await f.store.commit(
+      [
+        { type: "conversation", value: { id: 1 as never } },
+        {
+          type: "document.create",
+          record: {
+            id,
+            kind: "pi.live",
+            scope: { kind: "conversation", conversationId: 1 as never },
+            history: "latest",
+            fork: "initial",
+          },
+          content: { kind: "base", version: 1, value: {} },
+        },
+      ],
+      BACKGROUND_CONTEXT,
+    );
+    for (let n = 1; n <= 130; n++) {
+      await f.store.commit(
+        [
+          {
+            type: "document.change",
+            id,
+            content: {
+              kind: "delta",
+              version: 1,
+              ops: [
+                [
+                  "s",
+                  ["generation"],
+                  { attempt: 1, message: { text: `LIVE_ONLY_${n}\u0000\ud800` } },
+                ],
+              ],
+            },
+          },
+        ],
+        BACKGROUND_CONTEXT,
+      );
+      if (n % 19 === 0) await f.store.flush();
+    }
+    await f.store.flush();
+    expect(await f.store.document(id, "current", BACKGROUND_CONTEXT)).toMatchObject({
+      value: { generation: { message: { text: "LIVE_ONLY_130\u0000\ud800" } } },
+      deltasSinceBase: 130,
+    });
+    const payloads = await sql<{
+      body: string;
+    }>`select body from pi_durable_log where tenant_id=${f.tenantId}::uuid
+      union all select body from pi_durable_current where tenant_id=${f.tenantId}::uuid`.execute(
+      database,
+    );
+    expect(payloads.rows.some((r) => r.body.includes("LIVE_ONLY_"))).toBe(false);
+    expect(
+      (
+        await sql`select 1 from pi_durable_document_revisions where tenant_id=${f.tenantId}::uuid`.execute(
+          database,
+        )
+      ).rows,
+    ).toEqual([]);
+    await f.store.commit(
+      [{ type: "document.change", id, content: { kind: "base", version: 1, value: {} } }],
+      BACKGROUND_CONTEXT,
+    );
+    await f.store.flush();
+    expect(await f.store.document(id, "current", BACKGROUND_CONTEXT)).toMatchObject({
+      value: {},
+      deltasSinceBase: 0,
+    });
+    await f.projection.rebuild();
+  } finally {
+    await f.close();
+  }
+});
+
+it("replays accepted live state after owner loss and makes one exact handoff checkpoint", async () => {
+  const batches: DurableBatch[] = [];
+  const position = (batch: DurableBatch) => ({
+    topic: "live-recovery",
+    partition: 2,
+    offset: (1n << 54n) + BigInt(batch.seq) * 10n,
+  });
+  const f = await fixture({
+    publish: async (batch, projection) => {
+      batches.push(structuredClone(batch));
+      await projection.apply(batch, [], position(batch));
+    },
+  });
+  const id = 2 as import("@earendil-works/pi-durable").DocumentId;
+  try {
+    await f.store.commit(
+      [
+        { type: "conversation", value: { id: 1 as never } },
+        {
+          type: "document.create",
+          record: {
+            id,
+            kind: "pi.live",
+            scope: { kind: "conversation", conversationId: 1 as never },
+            history: "latest",
+            fork: "initial",
+          },
+          content: { kind: "base", version: 1, value: {} },
+        },
+      ],
+      BACKGROUND_CONTEXT,
+    );
+    for (let n = 1; n <= 4; n++)
+      await f.store.commit(
+        [
+          {
+            type: "document.change",
+            id,
+            content: {
+              kind: "delta",
+              version: 1,
+              ops: [
+                [
+                  "s",
+                  ["generation"],
+                  { attempt: 1, message: { text: `recover-${n}\u0000\ud800` } },
+                ],
+              ],
+            },
+          },
+        ],
+        BACKGROUND_CONTEXT,
+      );
+    await expect(
+      PublishedDurableStorage.open({
+        projection: f.projection,
+        publish: async () => {},
+        waitProjected: async () => {},
+      }),
+    ).rejects.toThrow("ordered Kafka recovery");
+    await expect(f.projection.revisions(id, 5)).rejects.toThrow("Kafka replay");
+    await expect(f.projection.rebuild()).rejects.toThrow("Kafka recovery");
+    const fresh = new DurablePostgresProjection(database, f.projection.scope);
+    await expect(fresh.apply(batches[2]!, [], position(batches[2]!))).rejects.toThrow(
+      "sequence gap",
+    );
+    for (const batch of batches) expect(await fresh.apply(batch, [], position(batch))).toBe(false);
+    const before = await fresh.head();
+    expect(await fresh.apply(batches[2]!, [], position(batches[2]!))).toBe(false);
+    const checkpoint = fresh.liveState.fork();
+    await expect(
+      database.transaction().execute(async (tx) => {
+        await fresh.checkpointLiveIn(tx, checkpoint);
+        throw new Error("rollback handoff");
+      }),
+    ).rejects.toThrow("rollback handoff");
+    await expect(fresh.assertComplete()).rejects.toThrow("Kafka recovery");
+    await database
+      .transaction()
+      .execute((tx) => fresh.checkpointLiveIn(tx, fresh.liveState.fork()));
+    expect(await fresh.head()).toEqual(before);
+    await fresh.rebuild();
+    const cold = await PublishedDurableStorage.open({
+      projection: fresh,
+      publish: async () => {},
+      waitProjected: async () => {},
+    });
+    expect(await cold.document(id, "current", BACKGROUND_CONTEXT)).toMatchObject({
+      value: { generation: { message: { text: "recover-4\u0000\ud800" } } },
+      deltasSinceBase: 4,
+    });
+    await cold.close(BACKGROUND_CONTEXT);
+    const changed = { ...structuredClone(batches[2]!), nextId: batches[2]!.nextId + 1 };
+    await expect(fresh.apply(changed, [], position(changed))).rejects.toThrow("changed bytes");
+    await sql`update pi_durable_current set delta_count=99 where tenant_id=${f.tenantId}::uuid and id=2`.execute(
+      database,
+    );
+    await expect(fresh.revisions(id, before.seq)).rejects.toThrow("integrity");
+  } finally {
+    await f.close();
+  }
+});
+
+it("does not adopt live projection memory or a recovery reference after SQL rollback", async () => {
+  const f = await fixture();
+  const id = 2 as import("@earendil-works/pi-durable").DocumentId;
+  try {
+    await f.store.commit(
+      [
+        { type: "conversation", value: { id: 1 as never } },
+        {
+          type: "document.create",
+          record: {
+            id,
+            kind: "pi.live",
+            scope: { kind: "conversation", conversationId: 1 as never },
+            history: "latest",
+            fork: "initial",
+          },
+          content: { kind: "base", version: 1, value: {} },
+        },
+      ],
+      BACKGROUND_CONTEXT,
+    );
+    const write: StorageWrite = {
+      type: "document.change",
+      id,
+      content: {
+        kind: "delta",
+        version: 1,
+        ops: [["s", ["generation"], { attempt: 1, message: { text: "rolled back" } }]],
+      },
+    };
+    const batch = { seq: 2 as never, nextId: 3, writes: [write] };
+    const state = f.projection.liveState.fork();
+    await expect(
+      database.transaction().execute(async (tx) => {
+        await f.projection.applyIn(tx, batch, [], {
+          state,
+          position: { topic: "native-fixture", partition: 0, offset: 2n },
+        });
+        throw new Error("rollback mixed commit");
+      }),
+    ).rejects.toThrow("rollback mixed commit");
+    expect((await f.projection.head()).seq).toBe(1);
+    expect(f.projection.liveState.rows.size).toBe(0);
+    await f.projection.assertComplete();
+    await f.store.commit([write], BACKGROUND_CONTEXT);
+    expect(f.projection.liveState.rows.size).toBe(1);
+    await expect(f.projection.assertComplete()).rejects.toThrow("Kafka recovery");
+  } finally {
+    await f.close();
+  }
+});
+
+it("recovers an accepted live update after a lost publication acknowledgement", async () => {
+  const batches: DurableBatch[] = [];
+  const at = (batch: DurableBatch) => ({
+    topic: "lost-live-ack",
+    partition: 0,
+    offset: BigInt(batch.seq),
+  });
+  const f = await fixture({
+    publish: async (batch, projection) => {
+      batches.push(structuredClone(batch));
+      await projection.apply(batch, [], at(batch));
+      if (batch.seq === 2) throw new Error("lost live acknowledgement");
+    },
+  });
+  const id = 2 as import("@earendil-works/pi-durable").DocumentId;
+  try {
+    await f.store.commit(
+      [
+        { type: "conversation", value: { id: 1 as never } },
+        {
+          type: "document.create",
+          record: {
+            id,
+            kind: "pi.live",
+            scope: { kind: "conversation", conversationId: 1 as never },
+            history: "latest",
+            fork: "initial",
+          },
+          content: { kind: "base", version: 1, value: {} },
+        },
+      ],
+      BACKGROUND_CONTEXT,
+    );
+    await expect(
+      f.store.commit(
+        [
+          {
+            type: "document.change",
+            id,
+            content: {
+              kind: "delta",
+              version: 1,
+              ops: [
+                [
+                  "s",
+                  ["generation"],
+                  { attempt: 1, message: { text: "committed despite missing ACK" } },
+                ],
+              ],
+            },
+          },
+        ],
+        BACKGROUND_CONTEXT,
+      ),
+    ).rejects.toThrow("lost live acknowledgement");
+    await expect(f.store.commit([], BACKGROUND_CONTEXT)).rejects.toThrow("uncertain publication");
+    const fresh = new DurablePostgresProjection(database, f.projection.scope);
+    for (const batch of batches) await fresh.apply(batch, [], at(batch));
+    await database
+      .transaction()
+      .execute((tx) => fresh.checkpointLiveIn(tx, fresh.liveState.fork()));
+    const cold = await PublishedDurableStorage.open({
+      projection: fresh,
+      publish: async () => {},
+      waitProjected: async () => {},
+    });
+    expect(await cold.document(id, "current", BACKGROUND_CONTEXT)).toMatchObject({
+      value: { generation: { message: { text: "committed despite missing ACK" } } },
+    });
+    await cold.close(BACKGROUND_CONTEXT);
+  } finally {
+    await f.close();
+  }
+});
+
+it("replays interleaved Conversations after one live document has already settled", async () => {
+  const batches: DurableBatch[] = [];
+  const at = (batch: DurableBatch) => ({
+    topic: "shared-native-writer",
+    partition: 1,
+    offset: BigInt(batch.seq) * 10n,
+  });
+  const f = await fixture({
+    publish: async (batch, projection) => {
+      batches.push(structuredClone(batch));
+      await projection.apply(batch, [], at(batch));
+    },
+  });
+  const a = 10 as import("@earendil-works/pi-durable").DocumentId;
+  const b = 11 as import("@earendil-works/pi-durable").DocumentId;
+  const answer = fauxAssistantMessage("A ready");
+  const update = (id: typeof a, text: string): StorageWrite => ({
+    type: "document.change",
+    id,
+    content: {
+      kind: "delta",
+      version: 1,
+      ops: [["s", ["generation"], { attempt: 1, message: { text } }]],
+    },
+  });
+  try {
+    await f.store.commit(
+      [
+        { type: "conversation", value: { id: 1 as never } },
+        { type: "conversation", value: { id: 2 as never } },
+        ...[a, b].map((id, index) => ({
+          type: "document.create",
+          record: {
+            id,
+            kind: "pi.live",
+            scope: { kind: "conversation", conversationId: index + 1 },
+            history: "latest",
+            fork: "initial",
+          },
+          content: { kind: "base", version: 1, value: {} },
+        })),
+      ] as StorageWrite[],
+      BACKGROUND_CONTEXT,
+    );
+    await f.store.commit([update(a, "A streaming"), update(b, "B first")], BACKGROUND_CONTEXT);
+    await f.store.commit([update(b, "B last")], BACKGROUND_CONTEXT);
+    await f.store.commit(
+      [
+        {
+          type: "entry",
+          value: {
+            id: 12 as never,
+            conversationId: 1 as never,
+            kind: "pi.assistant",
+            model: [answer],
+          },
+        },
+        { type: "document.change", id: a, content: { kind: "base", version: 1, value: {} } },
+      ],
+      BACKGROUND_CONTEXT,
+    );
+    await f.store.flush();
+    const expected = await f.store.document(b, "current", BACKGROUND_CONTEXT);
+    const fresh = new DurablePostgresProjection(database, f.projection.scope);
+    for (const batch of batches) await fresh.apply(batch, [], at(batch));
+    expect([...fresh.liveState.rows.keys()]).toEqual([11]);
+    await database
+      .transaction()
+      .execute((tx) => fresh.checkpointLiveIn(tx, fresh.liveState.fork()));
+    const cold = await PublishedDurableStorage.open({
+      projection: fresh,
+      publish: async () => {},
+      waitProjected: async () => {},
+    });
+    expect(await cold.document(b, "current", BACKGROUND_CONTEXT)).toEqual(expected);
+    expect(await cold.document(a, "current", BACKGROUND_CONTEXT)).toMatchObject({ value: {} });
+    expect((await cold.entry(12 as never, BACKGROUND_CONTEXT))?.entry.model).toEqual([answer]);
+    await cold.close(BACKGROUND_CONTEXT);
+  } finally {
+    await f.close();
+  }
+});
 
 it("keeps one Inbox/Submission body across edits, atomically consumes it, and rebuilds without edit history", async () => {
   const f = await fixture();
@@ -882,7 +1277,11 @@ it("externalizes every image in real Harness submissions, Tool results and copie
       expect(JSON.stringify(packed)).not.toContain(data);
       const native = await codec.unpack<DurableBatch>(scope, packed);
       expect(native).toEqual(batch);
-      await projection.apply(packed);
+      await projection.apply(packed, [], {
+        topic: "native-fixture",
+        partition: 0,
+        offset: BigInt(batch.seq),
+      });
     },
   });
   let harness: Awaited<ReturnType<typeof Harness.open>> | undefined;

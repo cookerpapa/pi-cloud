@@ -1,7 +1,8 @@
 # Conversation and image recovery
 
 [ADR-0237](adr/0237-private-pilot-asset-recovery.md) defines this cold operator
-procedure. It preserves retained native history and authoritative current input state, associated product/account metadata
+procedure. It preserves retained native history, authoritative current input state
+and complete native live checkpoints, associated product/account metadata
 and immutable image attachments. Ordinary uploaded files belong to the Workspace;
 their bytes and running programs are not backed up here. Restored Sessions use
 fresh empty Workspaces. No old task, VM, Kafka queue or lease is resumed by restore.
@@ -20,6 +21,8 @@ secrets and external provider credentials require the owner's separate secure co
    Control Plane/Volume Gateway and other application writers. Preserve the existing
    replica counts for restart. PG and attachment S3 remain running. This is a
    maintenance window; do not present the table locks as an online-backup feature.
+   Under schema 186, all native live replay references must be resolved as well:
+   a PG baseline that still needs Kafka is not a complete cold recovery point.
 2. In a private directory, make an operator config whose paths point to existing
    private credential files (database URL must be reachable from this host):
 
