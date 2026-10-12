@@ -1,25 +1,25 @@
 {
   "accepted": true,
-  "piCloudRevision": "80ad4b3bba3b6d87d1f48d6a66bf1d029713c719",
-  "deployedControlPlaneImage": "sha256:ef72916dd737eb2825b356d728f2cc7d393b02de3615a88a34c925f5866be27d",
-  "testRevision": "80ad4b3bba3b6d87d1f48d6a66bf1d029713c719",
-  "checkedAt": "2026-10-12T05:23:01.872Z",
+  "piCloudRevision": "c9b8b2a32702d5a4968f767bca80cb1cf2c8ee3a",
+  "deployedControlPlaneImage": "sha256:bad863ef2e4053959ccd3344ac95c1f675c1aae627865851c78ed78962506df2",
+  "testRevision": "c9b8b2a32702d5a4968f767bca80cb1cf2c8ee3a",
+  "checkedAt": "2026-10-12T10:23:28.871Z",
   "upstream": "TencentCloud/CubeSandbox@v0.6.0",
   "model": {
     "provider": "openai-codex",
     "modelId": "gpt-6-luna"
   },
   "pureChat": {
-    "acceptedMs": 45,
-    "firstDurableActivityMs": 2139,
+    "acceptedMs": 48,
+    "firstDurableActivityMs": 1918,
     "firstToolStartedMs": null,
-    "firstAssistantTextMs": 2139,
-    "settledMs": 2354,
+    "firstAssistantTextMs": 1918,
+    "settledMs": 2177,
     "toolCalls": 0,
     "cubeActivations": 0,
     "latency": {
-      "acceptedToExecutionMs": 43,
-      "executionToSettlementMs": 2176,
+      "acceptedToExecutionMs": 45,
+      "executionToSettlementMs": 1989,
       "modelRequests": 1,
       "toolOperations": 0,
       "toolBoundaryMs": 0
@@ -33,50 +33,50 @@
     }
   },
   "firstCoding": {
-    "acceptedMs": 43,
-    "firstDurableActivityMs": 11405,
-    "firstToolStartedMs": 11405,
-    "firstAssistantTextMs": 18299,
-    "settledMs": 19298,
-    "toolCalls": 2,
+    "acceptedMs": 31,
+    "firstDurableActivityMs": 5371,
+    "firstToolStartedMs": 5371,
+    "firstAssistantTextMs": 21118,
+    "settledMs": 22040,
+    "toolCalls": 3,
     "cubeActivations": 1,
-    "workspaceFileBytes": 1070,
+    "workspaceFileBytes": 1122,
     "latency": {
-      "acceptedToExecutionMs": 42,
-      "executionToSettlementMs": 19135,
-      "modelRequests": 3,
-      "toolOperations": 2,
-      "toolBoundaryMs": 2986.666
+      "acceptedToExecutionMs": 33,
+      "executionToSettlementMs": 21803,
+      "modelRequests": 4,
+      "toolOperations": 3,
+      "toolBoundaryMs": 4626.184
     },
     "usage": {
-      "requests": 3,
-      "inputTokens": 4569,
-      "outputTokens": 505,
-      "cacheReadTokens": 16128,
+      "requests": 4,
+      "inputTokens": 6005,
+      "outputTokens": 502,
+      "cacheReadTokens": 21504,
       "cacheWriteTokens": 0
     }
   },
   "followUpCoding": {
-    "acceptedMs": 39,
-    "firstDurableActivityMs": 3555,
-    "firstToolStartedMs": 3555,
-    "firstAssistantTextMs": 15851,
-    "settledMs": 16643,
+    "acceptedMs": 26,
+    "firstDurableActivityMs": 96583,
+    "firstToolStartedMs": 96583,
+    "firstAssistantTextMs": 109986,
+    "settledMs": 111308,
     "toolCalls": 4,
     "cubeActivations": 1,
-    "workspaceFileBytes": 1210,
+    "workspaceFileBytes": 1262,
     "latency": {
-      "acceptedToExecutionMs": 41,
-      "executionToSettlementMs": 16481,
+      "acceptedToExecutionMs": 35,
+      "executionToSettlementMs": 111096,
       "modelRequests": 4,
       "toolOperations": 4,
-      "toolBoundaryMs": 1805.136
+      "toolBoundaryMs": 2015.06
     },
     "usage": {
       "requests": 4,
-      "inputTokens": 3352,
-      "outputTokens": 367,
-      "cacheReadTokens": 30720,
+      "inputTokens": 7432,
+      "outputTokens": 396,
+      "cacheReadTokens": 27648,
       "cacheWriteTokens": 0
     }
   },
@@ -88,10 +88,10 @@
     "backgroundProcessSurvived": true,
     "authenticatedHttpPreviewPassed": true,
     "workspaceRestored": true,
-    "finalWorkspaceFileBytes": 1210
+    "finalWorkspaceFileBytes": 1262
   },
   "workspaceIsolation": {
-    "volumeId": "pcw-651098dbf81c2d64521583dcbf405edd3467d3998cf28baf",
+    "volumeId": "pcw-53c0b12651c62cf93a14809cf5d93f23043195592c28e644",
     "platformGitMetadataAbsent": true,
     "userGitPresent": false
   },
@@ -101,45 +101,45 @@
   },
   "largeWorkspace": {
     "source": "deterministic 1024-file local fixture",
-    "firstRunId": "96d289b8-5154-4412-9724-7ffcd0396af5",
-    "followUpRunId": "f96a1b18-5dec-4c6e-9950-f328c6e88be9",
+    "firstRunId": "c2370ec7-733f-4e12-9e43-e33ca41b2f7b",
+    "followUpRunId": "23c42c4c-1f4f-4643-85a4-bd4716b34a19",
     "firstFileCount": 1025,
     "restoredFileCount": 1026,
     "sourceSandboxDestroyed": true,
     "persistentVolumeRetained": true,
-    "volumeId": "pcw-972cbb80e621d212942491789c7a32d81285af51a69b6c83",
+    "volumeId": "pcw-e680a0276abf31247c67cc2904b9654dc516ba71a4246379",
     "restoredFromPersistentVolume": true,
     "freshCubeMicroVm": true,
     "higherRuntimeGeneration": true,
     "firstUsage": {
       "requests": 2,
-      "inputTokens": 1579,
-      "outputTokens": 250,
-      "cacheReadTokens": 11776,
+      "inputTokens": 4664,
+      "outputTokens": 262,
+      "cacheReadTokens": 8704,
       "cacheWriteTokens": 0
     },
     "followUpUsage": {
       "requests": 2,
-      "inputTokens": 2418,
-      "outputTokens": 249,
+      "inputTokens": 2463,
+      "outputTokens": 272,
       "cacheReadTokens": 11776,
       "cacheWriteTokens": 0
     }
   },
   "canonicalConversation": {
     "terminalCount": 5,
-    "piEntryCount": 34,
-    "canonicalPayloadBytes": 34639,
-    "terminalThroughSequence": 88
+    "piEntryCount": 36,
+    "canonicalPayloadBytes": 36604,
+    "terminalThroughSequence": 95
   },
   "eventPlane": {
     "authority": "Kafka acks=all",
     "postgresHotEventTableAbsent": true,
-    "projectedSessionMutations": 166,
+    "projectedSessionMutations": 174,
     "publishedTerminalEvents": 5,
     "kafka": {
-      "topic": "pi-cloud.execution-log.v14",
-      "logEndOffsetSum": 32906
+      "topic": "pi-cloud.execution-log.v15",
+      "logEndOffsetSum": 2502
     }
   },
   "scheduler": {
@@ -148,10 +148,10 @@
     "workerPool": "shared"
   },
   "totalUsage": {
-    "requests": 20,
-    "inputTokens": 22957,
-    "outputTokens": 1912,
-    "cacheReadTokens": 129024,
+    "requests": 21,
+    "inputTokens": 36973,
+    "outputTokens": 2063,
+    "cacheReadTokens": 124160,
     "cacheWriteTokens": 0
   },
   "cleanup": {

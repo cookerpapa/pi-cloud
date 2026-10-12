@@ -3,9 +3,10 @@
 The [Kafka assistant-text simplification](adr/0245-native-commit-text-presentation.md)
 keeps native text as the source and carries its display descriptions in the
 same Kafka publication. Worker interprets Pi, Projector resolves references,
-and preserves ordering/recovery/SSE coverage. The source uses the matched
-schema 187 / execution-topic v15 protocol; deployment and acceptance are tracked
-in the [implementation report](reports/native-text-presentation-20261012.md).
+and preserves ordering/recovery/SSE coverage. It is deployed as
+`native-text-c9b8b2a3`, matched schema 187 / execution-topic v15. The
+[verification report](reports/native-text-presentation-20261012.md) records passing
+source/live scenarios and the upstream TLS failures encountered during acceptance.
 
 [ADR-0243](adr/0243-native-input-current-state.md) implements native input current
 state under matched schema 185. Inbox/input metadata and Submission bodies replace

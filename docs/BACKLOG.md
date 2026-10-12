@@ -57,11 +57,12 @@ storage tables and Session-local sequence; no runtime change was deployed.
       headers and verifies current reads,
       handoff, multi-Conversation replay references and attachment safety. Task
       reclamation remains separate work.
-- [ ] R12T-01: [ADR-0245](adr/0245-native-commit-text-presentation.md) assistant text
-      uses same-commit descriptions, with no independent copied text publication.
-      Implementation, SQL/Kafka replay, multi-Conversation and frontend tests are
-      in source; required full checks, matched schema 187/topic v15 rollout and
-      live acceptance are in progress. See the
+- [x] R12T-01: [ADR-0245](adr/0245-native-commit-text-presentation.md) uses
+      same-commit assistant display descriptions without a copied text publication.
+      Deployed as `native-text-c9b8b2a3`, schema 187 / topic v15. Source/fault checks,
+      live input/Stop and dual-process recovery, browser/image, all multi-Conversation
+      scenarios and full Cube acceptance have passing evidence. Interrupted
+      upstream-TLS attempts and focused reruns are distinguished in the
       [report](reports/native-text-presentation-20261012.md).
 
 - [x] Localize the intermittent model TLS failure: the

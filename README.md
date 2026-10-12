@@ -47,7 +47,7 @@ additional messages go to the running Pi native queue and are confirmed after
 its Kafka-backed Storage commit. An unavailable Worker leaves the browser draft
 unconfirmed. [ADR-0238](docs/adr/0238-native-input-queue-and-run-record.md) is deployed;
 the [Worker claim cleanup](docs/adr/0242-worker-claim-schema-cleanup.md) is retained
-in the current schema; ADR-0245 source targets matched schema 187/topic v15.
+in the deployed schema 187 / execution-topic v15 release.
 
 The intake path shares its locked Session and request lookup between
 routing and Run creation: eight ordinary business SQL statements, two on an
@@ -67,12 +67,12 @@ second copied body ([ADR-0245](docs/adr/0245-native-commit-text-presentation.md)
 [rollout status](docs/reports/native-text-presentation-20261012.md) is tracked separately.
 Incomplete local Tool calls stay in Worker memory; complete model responses
 enter native persistence before validated Tool execution (ADR-0230).
-The [current deployed release](docs/reports/native-live-state-20261012.md) uses
-schema 186, guest input protocol 4, Tool Worker protocol 4 and Cube management
+The [current deployed release](docs/reports/native-text-presentation-20261012.md),
+`native-text-c9b8b2a3`, uses schema 187, guest input protocol 4, Tool Worker protocol 4 and Cube management
 protocol 7. Inbox/input metadata and Submissions retain current values without
 permanent edit bodies; streaming live bodies no longer accumulate in PG.
 Native input/Stop, actual Worker/Projector crash recovery, browser/image,
-multi-Conversation and full Luna/Cube checks pass. The report also preserves
+multi-Conversation scenarios and the full Luna/Cube check have passing evidence. The report also preserves
 earlier intermittent model-proxy failures encountered during acceptance. It exercises the
 maintained matched release workflow and preserves
 the previously deployed [source repairs](docs/reports/review-repair-20261007-r3.md), which

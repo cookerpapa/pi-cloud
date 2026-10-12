@@ -1,8 +1,9 @@
 # ADR-0245: Derive assistant text display from its native commit
 
-Status: accepted for implementation, 2026-10-12. The owner approved proceeding
-after discussing the public Storage.commit boundary. Implementation and matched
-release are in progress; no deployed completion is claimed here.
+Status: accepted and implemented, 2026-10-12. Deployed as
+`native-text-c9b8b2a3`, schema 187 / execution-topic v15. Source checks, matched
+release and real-model scenario evidence are in the
+[verification report](../reports/native-text-presentation-20261012.md).
 
 ## Behavior
 
@@ -36,7 +37,7 @@ text. There is no second text publication mode after cutover.
 
 ## Current evidence
 
-`DurableRunEvents.#text` currently turns committed Pi events into independent
+Before this change, `DurableRunEvents.#text` turned committed Pi events into independent
 `assistant.text.delta` publications containing the text again. The native view
 listener runs after Storage adoption. A `message_end` or related native Entry
 also drives the later `nativeSequence` display-coverage update.
@@ -73,7 +74,7 @@ post-adoption notification or re-enter Storage from its commit line.
    must not advance its comparison state; uncertain ACK retains the existing
    poisoned-owner/ordered-closure behavior. The native batch remains unchanged.
 
-The precise selector type must be exercised against real base, set and append
+The selector type is exercised against real base, set and append
 writes before freezing the protocol. Empty text/phase-only changes must not force
 another full-text copy. If a new native write shape cannot be described safely,
 fail preparation explicitly; do not silently re-enable standalone copied text.
