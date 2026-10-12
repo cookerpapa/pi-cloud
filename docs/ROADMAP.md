@@ -1,5 +1,15 @@
 # Implementation roadmap
 
+## Kafka assistant-text deduplication
+
+- [x] Inspect native commit preparation, post-adoption display callbacks,
+      publication ordering and history/SSE coverage. Record the proposed
+      [same-commit design](adr/0245-native-commit-text-presentation.md).
+- [ ] Implement and verify Worker-owned display descriptions that reference text
+      in the same native publication; remove the duplicated text publisher.
+- [ ] Validate ordering, replay, partial recovery, parent/child isolation and
+      browser behavior; measure bytes/record counts and deploy matched artifacts.
+
 ## Native live-state retention
 
 - [x] Prepare [ADR-0244](adr/0244-kafka-backed-native-live-state.md) from native

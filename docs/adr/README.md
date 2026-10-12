@@ -10,9 +10,13 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0245](0245-native-commit-text-presentation.md) — proposed removal of the
+   extra Kafka assistant-text copy through same-commit display descriptions;
+   not yet implemented.
+
 1. [ADR-0244](0244-kafka-backed-native-live-state.md) — Kafka retention of native
    live progress, PG boundary/handoff checkpoints, and protected recovery ranges.
-   Implemented in source under schema 186; matched rollout is pending.
+   Deployed under schema 186, including native recovery and full Cube acceptance.
 
 1. [ADR-0243](0243-native-input-current-state.md) — native Inbox/input metadata and
    Submission current values, atomic consumption and checked history/state reconstruction;

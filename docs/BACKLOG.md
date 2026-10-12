@@ -56,9 +56,11 @@ storage tables and Session-local sequence; no runtime change was deployed.
       [ADR-0244](adr/0244-kafka-backed-native-live-state.md). It retains small commit
       headers and verifies current reads,
       handoff, multi-Conversation replay references and attachment safety. Task
-      reclamation and deduplicating the Kafka display representation remain
-      separate work; do not filter native publications or add a second runtime
-      authority.
+      reclamation remains separate work. The owner requested the next Kafka text
+      simplification; [ADR-0245](adr/0245-native-commit-text-presentation.md) proposes
+      same-commit display descriptions without a copied text payload. Its
+      implementation is pending; do not filter native publications or add a
+      second runtime authority.
 
 - [x] Localize the intermittent model TLS failure: the
       [October 12 investigation](reports/model-egress-tls-20261012.md) reproduces
