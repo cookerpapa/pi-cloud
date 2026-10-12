@@ -4,6 +4,7 @@ import {
   parseExecutionReference,
   PublicationNotSentError,
   durableToolIntent,
+  parseDurableTextDescription,
   type DurableCommitPublication,
   type DurableCommitPublisher,
   type AcceptedToolCancellation,
@@ -121,7 +122,22 @@ export class DurableSessionPublisher {
               : {}),
             tools,
             cancellations,
-            events: publication.events,
+            display: publication.display.map(({ executionReference, texts, coveredThrough }) => {
+              const target = resolve(executionReference);
+              for (const text of texts) {
+                parseDurableTextDescription(text);
+                if (
+                  text.event.sessionId !== target.sessionId ||
+                  text.event.turnId !== target.turnId
+                )
+                  throw new Error("Native display belongs to another Run");
+              }
+              return {
+                scope: target,
+                texts,
+                ...(coveredThrough === undefined ? {} : { coveredThrough }),
+              };
+            }),
             occurredAt: new Date().toISOString(),
           };
         } catch (error) {

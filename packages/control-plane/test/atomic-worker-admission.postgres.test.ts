@@ -294,7 +294,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       ],
       tools: [],
       cancellations: [],
-      events: [],
+      display: [],
     };
     const projector = new PostgresDurableCommitProjector(measured);
     await projector.project(first, { topic: f.worker, partition: 0, offset: 10n });
@@ -368,7 +368,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       origins: [],
       tools: [],
       cancellations: [],
-      events: [],
+      display: [],
     };
     const position = { topic: f.worker, partition: 0, offset: 10n };
     const checkpoint: Extract<AcceptedFact, { kind: "agent_event" }> = {
@@ -488,7 +488,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
         await release.promise;
       });
       void holder.catch(held.reject);
-      let projection: Promise<void> | undefined;
+      let projection: Promise<unknown> | undefined;
       try {
         await held.promise;
         const started = Promise.withResolvers<number>();
@@ -605,7 +605,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       origins: [],
       tools: [],
       cancellations: [],
-      events: [],
+      display: [],
     };
     const position = { topic: f.worker, partition: 0, offset: 10n };
     const locked = Promise.withResolvers<void>(),
@@ -1737,7 +1737,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
         origins: [],
         tools: [],
         cancellations: [],
-        events: [],
+        display: [],
       };
       const selected = new WeakSet<object>();
       const measured = db.withPlugin({
@@ -1758,7 +1758,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
           return result;
         },
       });
-      let projection: Promise<void> | undefined,
+      let projection: Promise<unknown> | undefined,
         effects = 0,
         stopped = false,
         settlementAttempts = 0;
@@ -2146,7 +2146,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
         origins: [],
         tools: [],
         cancellations: [],
-        events: [],
+        display: [],
         occurredAt: new Date().toISOString(),
       };
       const record = { fact, topic: `first-${f.worker}`, partition: 0, offset: 10n };

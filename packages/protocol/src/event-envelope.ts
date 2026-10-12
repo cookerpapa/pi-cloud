@@ -88,6 +88,8 @@ const AssistantTextDeltaEventSchema = Type.Object(
       {
         text: Type.String(),
         messageId: Type.Optional(OpaqueIdSchema),
+        /** Move a finished live text block to its canonical message identity. */
+        settledMessageId: Type.Optional(OpaqueIdSchema),
         replace: Type.Optional(Type.Boolean()),
         phase: Type.Optional(AssistantMessagePhaseSchema),
       },

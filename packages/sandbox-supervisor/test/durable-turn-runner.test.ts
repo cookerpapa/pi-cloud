@@ -1,3 +1,4 @@
+import { nativeTestDisplay } from "./fixtures/native-test-display.ts";
 import { expect, it } from "vitest";
 import { MemoryStorage } from "@earendil-works/pi-durable";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
@@ -20,24 +21,38 @@ it.each(["complete", "stop_on_resume"] as const)(
   async (mode) => {
     const fake = new FakeModelServer({ defaultScenario: "text" });
     await fake.start();
+    const events: EventPublishMessage[] = [];
+    const textDisplay = nativeTestDisplay((event) =>
+      events.push({
+        protocolVersion: 1,
+        type: "event.publish",
+        messageId: event.eventId,
+        sentAt: event.occurredAt,
+        payload: { executionReference: command.payload.executionReference, event },
+      }),
+    );
     const recordSequences = new Map<number, number>();
     const storage = new (class extends MemoryStorage {
       override async commit(
         writes: readonly import("@earendil-works/pi-durable").StorageWrite[],
-        context: import("@earendil-works/chord").Context,
+        _context: import("@earendil-works/chord").Context,
       ) {
-        const seq = await super.commit(writes, context);
-        for (const write of writes)
-          recordSequences.set(
-            "value" in write ? write.value.id : "record" in write ? write.record.id : write.id,
-            seq,
-          );
-        return seq;
+        return textDisplay.serializePublication(async () => {
+          const prepared = this.prepareCommit(writes);
+          const confirmed = await textDisplay.compile(this, prepared.writes, prepared.seq);
+          const seq = prepared.apply();
+          confirmed();
+          for (const write of writes)
+            recordSequences.set(
+              "value" in write ? write.value.id : "record" in write ? write.record.id : write.id,
+              seq,
+            );
+          return seq;
+        });
       }
     })();
     const userStop = new AbortController();
     let runtime: Promise<ManagedNativeRuntime> | undefined;
-    const events: EventPublishMessage[] = [];
     const controller = new AbortController();
     const turn = createCloudTurnContext(command),
       execution = createCloudExecutionContext({
@@ -49,6 +64,7 @@ it.each(["complete", "stop_on_resume"] as const)(
       acquired = 0,
       released = 0;
     const handle: DurableSessionHandle = {
+      ...textDisplay,
       binding: {
         tenantId: command.payload.tenantId,
         piSessionId: command.payload.piSession.id,

@@ -194,7 +194,7 @@ it.skipIf(!postgres || !brokers)(
         ],
         tools: [],
         cancellations: [],
-        events: [],
+        display: [],
         occurredAt: new Date().toISOString(),
       };
       queries.length = 0;

@@ -515,3 +515,8 @@ Single-host acceptance does not establish independent-node availability.
 
 Every performance or availability claim must name the tested revision,
 topology, workload and observed result.
+
+The current vertical slice is ADR-0245: reuse one native Kafka publication for
+assistant text and display descriptions. Source uses matched schema 187/topic
+v15; [verification and rollout](reports/native-text-presentation-20261012.md)
+remain the completion gate. No new durable store or runtime authority is added.

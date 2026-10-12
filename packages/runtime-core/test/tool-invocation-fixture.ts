@@ -68,7 +68,7 @@ export function toolInvocationFixture(content = "hello") {
     origins: [{ recordId: 4, sessionId: scope.sessionId, runId, turnId: scope.turnId }],
     tools: [{ taskId: 4, command }],
     cancellations: [],
-    events: [],
+    display: [],
   };
   const {
     args: _args,
@@ -81,7 +81,7 @@ export function toolInvocationFixture(content = "hello") {
     scope: identity,
     commit: publication.commit,
     origins: publication.origins,
-    events: [],
+    display: [],
     cancellations: [],
     tools: [
       {

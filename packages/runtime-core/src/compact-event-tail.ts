@@ -70,6 +70,7 @@ export class CompactEventTail {
       !right ||
       left.event.type !== "assistant.text.delta" ||
       right.event.type !== "assistant.text.delta" ||
+      left.event.payload.settledMessageId ||
       left.event.payload.replace ||
       right.event.payload.replace ||
       left.event.payload.messageId !== right.event.payload.messageId ||

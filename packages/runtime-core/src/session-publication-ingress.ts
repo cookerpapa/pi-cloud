@@ -395,6 +395,20 @@ export class SessionPublicationIngress {
         if (!target || target.closed || target.seal) throw new PublicationIngressRejected("closed");
         this.#validate(target.permit, tool, writer);
       }
+      for (const display of fact.display) {
+        const target = writer.runs.get(display.scope.runId);
+        if (!target || target.closed || target.seal) throw new PublicationIngressRejected("closed");
+        const expected = target.permit.scope;
+        if (
+          Object.entries(display.scope).some(
+            ([key, value]) => expected[key as keyof typeof expected] !== value,
+          )
+        )
+          throw new PublicationIngressRejected("scope");
+        for (const { event } of display.texts)
+          if (event.sessionId !== display.scope.sessionId || event.turnId !== display.scope.turnId)
+            throw new PublicationIngressRejected("scope");
+      }
       for (const cancellation of fact.cancellations) {
         const target = writer.runs.get(cancellation.scope.runId);
         if (!target) throw new PublicationIngressRejected("scope");

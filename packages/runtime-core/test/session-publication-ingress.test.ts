@@ -62,7 +62,7 @@ function entry(p: ExecutionPublication, text = "accepted"): AcceptedDurableCommi
     ],
     tools: [],
     cancellations: [],
-    events: [],
+    display: [],
     occurredAt: new Date().toISOString(),
   };
 }

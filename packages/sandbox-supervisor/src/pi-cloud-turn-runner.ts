@@ -1,3 +1,4 @@
+import { DurableTextPresentation } from "./durable/text-presentation.ts";
 import {
   prepareNativeSettlementFollowUp,
   type PiSettlementGatePolicy,
@@ -333,11 +334,12 @@ export class PiCloudTurnRunner {
     timer?.unref();
     let handle: DurableSessionHandle | undefined,
       family: DurableAgentSession | undefined,
-      stream: AgentEventStream | undefined;
+      stream: AgentEventStream | undefined,
+      text: DurableTextPresentation | undefined;
     const cleanup: (() => void)[] = [];
     let delivery = Promise.resolve(),
       deliveryFailure: unknown;
-    const factory = createPiCloudEventFactory(
+    let factory = createPiCloudEventFactory(
       { sessionId: p.sessionId, turnId: p.turnId, agentId: p.agentId },
       { initialSequence: p.nextEventSeq - 1, clock, idGenerator: id },
     );
@@ -348,8 +350,12 @@ export class PiCloudTurnRunner {
         collecting.push(body);
         return Promise.resolve();
       }
-      const event = factory.next(body);
-      delivery = delivery.then(async () => {
+      const publish = async () => {
+        const candidate = createPiCloudEventFactory(
+          { sessionId: p.sessionId, turnId: p.turnId, agentId: p.agentId },
+          { initialSequence: factory.currentSequence(), clock, idGenerator: id },
+        );
+        const event = candidate.next(body);
         await publishEvent({
           protocolVersion: 1,
           messageId: id(),
@@ -358,10 +364,14 @@ export class PiCloudTurnRunner {
           payload: {
             executionReference: p.executionReference,
             event,
-            ...(nativeSequence === undefined ? {} : { nativeSequence }),
+            ...(nativeSequence === undefined || !text?.canCover(nativeSequence)
+              ? {}
+              : { nativeSequence }),
           },
         });
-      });
+        factory = candidate;
+      };
+      delivery = handle ? handle.serializePublication(publish) : delivery.then(publish);
       void delivery.catch((error) => {
         deliveryFailure ??= error;
       });
@@ -371,6 +381,24 @@ export class PiCloudTurnRunner {
       const config = validateRuntimeConfig(command, await options.resolveModelRuntime(p.model));
       handle = await options.openSession(command, combined);
       const owner = handle;
+      text = new DurableTextPresentation({
+        conversationId: p.piSession.conversationId,
+        ...(options.resolveAssistantTextPhase ? { phase: options.resolveAssistantTextPhase } : {}),
+      });
+      owner.prepareDisplay((commit, documents) => {
+        const candidate = createPiCloudEventFactory(
+          { sessionId: p.sessionId, turnId: p.turnId, agentId: p.agentId },
+          { initialSequence: factory.currentSequence(), clock, idGenerator: id },
+        );
+        const prepared = text!.prepare(commit, documents, candidate);
+        return {
+          ...prepared,
+          confirmed: () => {
+            prepared.confirmed();
+            factory = candidate;
+          },
+        };
+      });
       const registry = options.modelRegistry ?? sharedModels;
       const model = registry.configure(config);
       // Schemas are code-owned; constructing them does not access a guest.
@@ -421,7 +449,6 @@ export class PiCloudTurnRunner {
         }),
       );
       const events = new DurableRunEvents({
-        writerId: p.piSession.writerId,
         emit,
         humanInput: async (entryId) => {
           const inputId = humanEntries.get(entryId);
@@ -438,7 +465,6 @@ export class PiCloudTurnRunner {
             : undefined;
         },
         toolId: (callId, assistant, result) => invocations.resolve(callId, assistant, result),
-        ...(options.resolveAssistantTextPhase ? { phase: options.resolveAssistantTextPhase } : {}),
         maximumToolOutputBytes: p.budgets?.maximumToolOutputBytes ?? 65536,
         retryAttempts: 4,
         task: (taskId) => runtime.harness.getTask(taskId as TaskId, BACKGROUND_CONTEXT),

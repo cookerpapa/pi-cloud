@@ -1,3 +1,4 @@
+import { nativeTestDisplay } from "./fixtures/native-test-display.ts";
 import { expect, it, vi } from "vitest";
 import { MemoryStorage, type StorageWrite, type Seq } from "@earendil-works/pi-durable";
 import type { Context } from "@earendil-works/chord";
@@ -63,29 +64,42 @@ async function fixture(
         result: { content: [{ type: "text", text: "complete" }] },
       });
   };
+  const textDisplay = nativeTestDisplay((event) =>
+    events.push({
+      protocolVersion: 1,
+      type: "event.publish",
+      messageId: event.eventId,
+      sentAt: event.occurredAt,
+      payload: { executionReference: command.payload.executionReference, event },
+    }),
+  );
   const storage = new (class extends MemoryStorage {
     override async commit(writes: readonly StorageWrite[], context: Context): Promise<Seq> {
-      const prepared = this.prepareCommit(writes),
-        effects = preparation?.({
+      return textDisplay.serializePublication(async () => {
+        const prepared = this.prepareCommit(writes);
+        const confirmed = await textDisplay.compile(this, prepared.writes, prepared.seq);
+        const effects = preparation?.({
           seq: prepared.seq,
           nextId: 10000,
           writes: prepared.writes,
         } as unknown as DurableSessionCommit);
-      for (const tool of effects?.tools ?? []) {
-        commands.push(tool.command);
-        started.resolve();
-      }
-      for (const cancel of effects?.cancellations ?? []) cancellations.push(cancel.operationId);
-      effects?.confirmed();
-      const seq = prepared.apply();
-      for (const write of writes)
-        recordSeq.set(
-          "value" in write ? write.value.id : "record" in write ? write.record.id : write.id,
-          seq,
-        );
-      if (released) settle();
-      context.abortSignal?.throwIfAborted();
-      return seq;
+        for (const tool of effects?.tools ?? []) {
+          commands.push(tool.command);
+          started.resolve();
+        }
+        for (const cancel of effects?.cancellations ?? []) cancellations.push(cancel.operationId);
+        effects?.confirmed();
+        const seq = prepared.apply();
+        confirmed();
+        for (const write of writes)
+          recordSeq.set(
+            "value" in write ? write.value.id : "record" in write ? write.record.id : write.id,
+            seq,
+          );
+        if (released) settle();
+        context.abortSignal?.throwIfAborted();
+        return seq;
+      });
     }
   })();
   const scope = command.payload,
@@ -96,6 +110,7 @@ async function fixture(
       runtimeIdentity: { supervisorId: "test", bootId: "test", sandboxId: "test" },
     });
   const handle: DurableSessionHandle = {
+    ...textDisplay,
     storage,
     binding: {
       tenantId: scope.tenantId,

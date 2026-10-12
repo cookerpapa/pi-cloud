@@ -34,7 +34,7 @@ const record = (
     origins: [],
     tools: [],
     cancellations: [],
-    events: [],
+    display: [],
     occurredAt: new Date(at).toISOString(),
   },
   topic: "execution",

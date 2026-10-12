@@ -4,24 +4,15 @@ import type {
   TaskRecord,
   SnapshotEvent,
 } from "@earendil-works/pi-durable";
-import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
-import type {
-  PiCloudEventBody,
-  ModelSamplingIdentity,
-  AssistantMessagePhase,
-} from "@pi-cloud/protocol";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { PiCloudEventBody, ModelSamplingIdentity } from "@pi-cloud/protocol";
 
 /** Converts committed native view events to PiCloud's display protocol. Native
  * history stays authoritative; source observations never become model entries. */
 export class DurableRunEvents {
   #sampling: ModelSamplingIdentity | undefined;
   readonly #samplingQueue: ModelSamplingIdentity[] = [];
-  #message = "";
-  #ordinal = 0;
-  #responseId: string | undefined;
-  #timestamp: number | undefined;
   #messageOpen = false;
-  readonly #blocks = new Map<number, { text: string; phase?: AssistantMessagePhase }>();
   readonly #compactions = new Map<number, "manual" | "threshold" | "overflow">();
   #entryThrough = 0;
   readonly #activeTools = new Set<string>();
@@ -30,7 +21,6 @@ export class DurableRunEvents {
   lastAssistant: AssistantMessage | undefined;
   constructor(
     readonly options: {
-      writerId: string;
       emit(body: PiCloudEventBody): Promise<void>;
       humanInput?(
         entryId: number,
@@ -43,7 +33,6 @@ export class DurableRunEvents {
         assistant?: EntryRecord,
         result?: EntryRecord,
       ): Promise<string> | string;
-      phase?(responseId: string, index: number): AssistantMessagePhase | undefined;
       maximumToolOutputBytes: number;
       retryAttempts: number;
       task(
@@ -75,47 +64,9 @@ export class DurableRunEvents {
     this.#samplingQueue.push(identity);
     await this.options.emit({ type: "model.sampling.started", payload: identity });
   }
-  #phase(block: TextContent, index: number): AssistantMessagePhase | undefined {
-    if (block.textSignature?.startsWith("{")) {
-      try {
-        const signature = JSON.parse(block.textSignature);
-        if (signature.v === 1 && ["commentary", "final_answer"].includes(signature.phase))
-          return signature.phase;
-      } catch {
-        /* Provider signatures can be opaque strings. */
-      }
-    }
-    return this.#responseId ? this.options.phase?.(this.#responseId, index) : undefined;
-  }
-  async #text(index: number, text: string, phase?: AssistantMessagePhase): Promise<void> {
-    const old = this.#blocks.get(index),
-      previous = old?.text ?? "";
-    this.#blocks.set(index, { text, ...(phase ? { phase } : {}) });
-    if (text === previous && old?.phase === phase) return;
-    const replacing = !text.startsWith(previous) || (old !== undefined && old.phase !== phase);
-    const delta = replacing ? text : text.slice(previous.length);
-    if (!delta && !replacing) return;
-    await this.options.emit({
-      type: "assistant.text.delta",
-      payload: {
-        messageId: `${this.#message}:${index}`,
-        text: delta,
-        ...(replacing ? { replace: true } : {}),
-        ...(phase ? { phase } : {}),
-      },
-    });
-  }
-  async #messageStart(message: AssistantMessage, advance = false): Promise<void> {
+  #messageStart(advance = false): void {
     if (advance) this.#sampling = this.#samplingQueue.shift();
     this.#messageOpen = true;
-    if (advance || this.#timestamp !== message.timestamp || !this.#message) {
-      this.#message = message.responseId ?? `${this.options.writerId}:${++this.#ordinal}`;
-      this.#blocks.clear();
-    }
-    this.#timestamp = message.timestamp;
-    this.#responseId = message.responseId;
-    for (const [index, block] of message.content.entries())
-      if (block.type === "text") await this.#text(index, block.text, this.#phase(block, index));
   }
   async consume(events: readonly AgentEvent[]): Promise<void> {
     for (const event of events) {
@@ -153,34 +104,9 @@ export class DurableRunEvents {
               },
             ]);
           }
-        if (event.generation?.message)
-          await this.#messageStart(event.generation.message, !this.#messageOpen);
+        if (event.generation?.message) this.#messageStart(!this.#messageOpen);
       } else if (event.type === "message_start" && event.message.role === "assistant") {
-        await this.#messageStart(event.message, true);
-      } else if (event.type === "message_update") {
-        for (const change of event.changes) {
-          if (change.type === "text_delta") {
-            const before = this.#blocks.get(change.contentIndex);
-            await this.#text(
-              change.contentIndex,
-              (before?.text ?? "") + change.delta,
-              before?.phase,
-            );
-          } else if (
-            (change.type === "text_start" || change.type === "block") &&
-            change.block.type === "text"
-          ) {
-            await this.#text(
-              change.contentIndex,
-              change.block.text,
-              this.#phase(change.block, change.contentIndex),
-            );
-          } else if (change.type === "message") {
-            for (const [index, block] of change.message.content.entries())
-              if (block.type === "text")
-                await this.#text(index, block.text, this.#phase(block, index));
-          }
-        }
+        this.#messageStart(true);
       } else if (event.type === "message_end") {
         if (event.entry.id <= this.#entryThrough) continue;
         this.#entryThrough = Math.max(this.#entryThrough, event.entry.id);
@@ -192,10 +118,9 @@ export class DurableRunEvents {
           if (message.role !== "assistant") continue;
           this.lastAssistant = message;
           this.#assistantEntry = event.entry;
-          this.#responseId ??= message.responseId;
           // Overflow recovery can supply complete Entries without their start
           // events. Advance once at that boundary, even with equal timestamps.
-          await this.#messageStart(message, !this.#messageOpen);
+          this.#messageStart(!this.#messageOpen);
           if (
             this.#sampling &&
             message.stopReason !== "pending" &&

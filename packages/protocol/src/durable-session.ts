@@ -1,4 +1,4 @@
-import type { PiCloudEvent } from "./event-envelope.ts";
+import type { DurableDisplayPreparation } from "./durable-display.ts";
 import type { CandidateToolCommand } from "./tool-command.ts";
 import type { CandidateToolCancellation } from "./tool-cancellation.ts";
 
@@ -22,7 +22,7 @@ export type DurableCommitPublication = Readonly<{
   inputQueueSessions?: readonly string[];
   tools: readonly Readonly<{ taskId: number; command: CandidateToolCommand }>[];
   cancellations: readonly CandidateToolCancellation[];
-  events: readonly PiCloudEvent[];
+  display: readonly DurableDisplayPreparation[];
 }>;
 export interface DurableCommitPublisher {
   publish(publication: DurableCommitPublication): Promise<void>;

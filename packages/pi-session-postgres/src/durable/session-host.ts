@@ -14,7 +14,7 @@ import type { ImageAttachmentCodec } from "@pi-cloud/session-attachments";
 import type { ActiveExecutionAuthority } from "../execution-authority.ts";
 import { PostgresSessionLeaseObserver } from "../postgres-session-lease-observer.ts";
 import { DurablePostgresProjection } from "./postgres-projection.ts";
-import { PublishedDurableStorage } from "./published-storage.ts";
+import { PublishedDurableStorage, type NativeDocumentChange } from "./published-storage.ts";
 
 export type DurableRunBinding = Readonly<{
   tenantId: string;
@@ -35,6 +35,15 @@ export type NativePublicationPreparation = {
   cancellations: DurableCommitPublication["cancellations"];
   confirmed(): void;
 };
+export type NativeDisplayPreparation = {
+  texts: DurableCommitPublication["display"][number]["texts"];
+  coveredThrough?: number;
+  confirmed(): void;
+};
+type PrepareDisplay = (
+  commit: DurableSessionCommit,
+  documents: readonly NativeDocumentChange[],
+) => NativeDisplayPreparation;
 export type ManagedNativeRuntime = {
   close(): Promise<void>;
   childAnchor?(conversationId: number): Promise<number | undefined>;
@@ -52,6 +61,8 @@ type Owner = {
   bindings: Map<number, DurableRunBinding>;
   runtime?: Promise<ManagedNativeRuntime>;
   prepare?: (commit: DurableSessionCommit) => NativePublicationPreparation;
+  display: Map<string, PrepareDisplay>;
+  publicationTail: Promise<unknown>;
   closing?: Promise<void>;
   interruption: AbortController;
 };
@@ -63,6 +74,8 @@ export type DurableSessionHandle = {
   authority: ActiveExecutionAuthority;
   runtime<T extends ManagedNativeRuntime>(factory: () => Promise<T>): Promise<T>;
   preparePublication(prepare: (commit: DurableSessionCommit) => NativePublicationPreparation): void;
+  prepareDisplay(prepare: PrepareDisplay): void;
+  serializePublication<T>(work: () => Promise<T>): Promise<T>;
   close(): Promise<void>;
   interrupt(reason: Error): void;
 };
@@ -176,56 +189,84 @@ export class PostgresDurableSessionHost {
         const store = await PublishedDurableStorage.open({
           projection,
           assertCurrent: () => authority.assertCurrent(),
-          publish: async (batch, inputConversations = []) => {
-            await authority.assertCurrent();
-            const active = runs.values().next().value as DurableSessionOpen | undefined;
-            if (!active)
-              throw new PublicationNotSentError(
-                "Native Session has no admitted publication anchor",
+          publish: (batch, inputConversations = [], documents = []) =>
+            this.#serialize(this.#owners.get(key)!, async () => {
+              await authority.assertCurrent();
+              const active = runs.values().next().value as DurableSessionOpen | undefined;
+              if (!active)
+                throw new PublicationNotSentError(
+                  "Native Session has no admitted publication anchor",
+                );
+              const commit = batch as unknown as DurableSessionCommit;
+              const preparation = this.#owners.get(key)?.prepare?.(commit);
+              const display = [...this.#owners.get(key)!.display].map(
+                ([executionReference, prepare]) => ({
+                  executionReference,
+                  prepared: prepare(commit, documents),
+                }),
               );
-            const commit = batch as unknown as DurableSessionCommit;
-            const preparation = this.#owners.get(key)?.prepare?.(commit);
-            const origins = batch.writes.flatMap((write) => {
-              if (!("value" in write) || !("conversationId" in write.value)) return [];
-              const origin = bindings.get(write.value.conversationId);
-              return origin
-                ? [
-                    {
-                      recordId: write.value.id,
-                      sessionId: origin.sessionId,
-                      turnId: origin.turnId,
-                      runId: origin.runId,
-                    },
-                  ]
-                : [];
-            });
-            await active.publish({
-              commit,
-              origins,
-              ...(inputConversations.length
-                ? {
-                    inputQueueSessions: [
-                      ...new Set(
-                        inputConversations.flatMap((id) => {
-                          const binding = bindings.get(id);
-                          return binding ? [binding.sessionId] : [];
-                        }),
-                      ),
-                    ],
-                  }
-                : {}),
-              tools: preparation?.tools ?? [],
-              cancellations: preparation?.cancellations ?? [],
-              events: [],
-            });
-            preparation?.confirmed();
-          },
+              const origins = batch.writes.flatMap((write) => {
+                if (!("value" in write) || !("conversationId" in write.value)) return [];
+                const origin = bindings.get(write.value.conversationId);
+                return origin
+                  ? [
+                      {
+                        recordId: write.value.id,
+                        sessionId: origin.sessionId,
+                        turnId: origin.turnId,
+                        runId: origin.runId,
+                      },
+                    ]
+                  : [];
+              });
+              await active.publish({
+                commit,
+                origins,
+                ...(inputConversations.length
+                  ? {
+                      inputQueueSessions: [
+                        ...new Set(
+                          inputConversations.flatMap((id) => {
+                            const binding = bindings.get(id);
+                            return binding ? [binding.sessionId] : [];
+                          }),
+                        ),
+                      ],
+                    }
+                  : {}),
+                tools: preparation?.tools ?? [],
+                cancellations: preparation?.cancellations ?? [],
+                display: display.flatMap(({ executionReference, prepared }) =>
+                  prepared.texts.length || prepared.coveredThrough !== undefined
+                    ? [
+                        {
+                          executionReference,
+                          texts: prepared.texts,
+                          ...(prepared.coveredThrough === undefined
+                            ? {}
+                            : { coveredThrough: prepared.coveredThrough }),
+                        },
+                      ]
+                    : [],
+                ),
+              });
+              preparation?.confirmed();
+              for (const { prepared } of display) prepared.confirmed();
+            }),
           waitProjected: (through) => progress.wait(through, authority.signal),
         });
         authority.start();
         return store;
       })();
-      owner = { authority, storage, runs, bindings, interruption };
+      owner = {
+        authority,
+        storage,
+        runs,
+        bindings,
+        interruption,
+        display: new Map(),
+        publicationTail: Promise.resolve(),
+      };
       this.#owners.set(key, owner);
     }
     const currentOwner = owner;
@@ -242,6 +283,8 @@ export class PostgresDurableSessionHost {
       // Keep the final anchor installed through Harness.close(), so queued
       // native cleanup commits still use the current, unsealed identity.
       if (currentOwner.runs.size === 1) await this.#closeOwner(key, currentOwner);
+      await currentOwner.publicationTail;
+      currentOwner.display.delete(binding.executionReference);
       currentOwner.runs.delete(binding.executionReference);
     };
     try {
@@ -260,6 +303,10 @@ export class PostgresDurableSessionHost {
         preparePublication: (prepare) => {
           currentOwner.prepare = prepare;
         },
+        prepareDisplay: (prepare) => {
+          currentOwner.display.set(binding.executionReference, prepare);
+        },
+        serializePublication: (work) => this.#serialize(currentOwner, work),
         close: release,
         interrupt: (reason) => {
           currentOwner.interruption.abort(reason);
@@ -269,6 +316,11 @@ export class PostgresDurableSessionHost {
       await release();
       throw error;
     }
+  }
+  #serialize<T>(owner: Owner, work: () => Promise<T>): Promise<T> {
+    const next = owner.publicationTail.then(work);
+    owner.publicationTail = next.catch(() => undefined);
+    return next;
   }
   #closeOwner(key: string, owner: Owner): Promise<void> {
     if (!owner.closing)

@@ -207,6 +207,7 @@ function appendText(
   phase?: AssistantMessagePhase,
   messageId?: string,
   replace = false,
+  settledMessageId?: string,
 ): TurnView {
   const items = [...turn.items];
   if (messageId !== undefined) {
@@ -216,6 +217,7 @@ function appendText(
       items[index] = {
         ...old,
         text: replace ? text : old.text + text,
+        ...(settledMessageId === undefined ? {} : { messageId: settledMessageId }),
         lastSequence: sequence,
         ...(phase === undefined ? {} : { phase }),
       };
@@ -241,7 +243,7 @@ function appendText(
       kind: "text",
       key: `text:${String(sequence)}`,
       text,
-      ...(messageId === undefined ? {} : { messageId }),
+      ...(messageId === undefined ? {} : { messageId: settledMessageId ?? messageId }),
       ...(phase === undefined ? {} : { phase }),
       firstSequence: sequence,
       lastSequence: sequence,
@@ -319,6 +321,7 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
         event.payload.phase,
         event.payload.messageId,
         event.payload.replace,
+        event.payload.settledMessageId,
       );
     }
     if (event.type === "provider.hosted_tool.started") {

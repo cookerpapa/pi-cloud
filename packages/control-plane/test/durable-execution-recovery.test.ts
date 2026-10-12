@@ -108,7 +108,7 @@ it.each(["none", "before_seal", "after_seal"] as const)(
       origins: [],
       tools: [],
       cancellations: [],
-      events: [],
+      display: [],
     };
     const prefix = { fact: native, topic: "recovery-test", partition: 0, offset: 0n };
     const displaced = new ExecutionStreamProjector(db);

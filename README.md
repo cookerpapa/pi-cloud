@@ -47,7 +47,7 @@ additional messages go to the running Pi native queue and are confirmed after
 its Kafka-backed Storage commit. An unavailable Worker leaves the browser draft
 unconfirmed. [ADR-0238](docs/adr/0238-native-input-queue-and-run-record.md) is deployed;
 the [Worker claim cleanup](docs/adr/0242-worker-claim-schema-cleanup.md) is retained
-in the current matched schema 186/application release.
+in the current schema; ADR-0245 source targets matched schema 187/topic v15.
 
 The intake path shares its locked Session and request lookup between
 routing and Run creation: eight ordinary business SQL statements, two on an
@@ -61,7 +61,10 @@ with rebuildable indexes for cold reads
 ([ADR-0243](docs/adr/0243-native-input-current-state.md)). In-flight `pi.live` bodies
 stay in Kafka; PG keeps small commit headers and exact settlement/handoff checkpoints
 ([ADR-0244](docs/adr/0244-kafka-backed-native-live-state.md)). Native Conversations
-share one physical Session lease and writer.
+share one physical Session lease and writer. Assistant display descriptions now
+travel in the same native commit, referencing its text instead of publishing a
+second copied body ([ADR-0245](docs/adr/0245-native-commit-text-presentation.md));
+[rollout status](docs/reports/native-text-presentation-20261012.md) is tracked separately.
 Incomplete local Tool calls stay in Worker memory; complete model responses
 enter native persistence before validated Tool execution (ADR-0230).
 The [current deployed release](docs/reports/native-live-state-20261012.md) uses

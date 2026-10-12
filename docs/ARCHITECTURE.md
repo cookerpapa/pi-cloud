@@ -333,7 +333,7 @@ still drain. A replacement owner waits for projected closure, acquires a new lea
 resumes the same logical Run/Turn/native submission (ADR-0229). An append's HTTP success receipt is Kafka durable commit, not volatile acceptance.
 Lost commit responses never trigger automatic semantic publication replay.
 
-The code-owned topic is `pi-cloud.execution-log.v14`. Physical Session ID remains
+The code-owned topic is `pi-cloud.execution-log.v15` (matched schema 187). Physical Session ID remains
 the immutable key and fixes the partition; do not change the partition count in
 place. One Kafka transactional producer identity per partition fences replaced
 ingress processes. Transactions use RF3/acks-all and include current consumer-group
@@ -623,6 +623,29 @@ topic/partition/offset/sequence reference protects the suffix not included in
 the PG checkpoint, independently of which Run anchored its publication.
 Native commit headers/checksums remain in PG; streaming bodies and their 64-delta
 checkpoints do not. Other document and Task history policies are unchanged.
+
+[ADR-0245](adr/0245-native-commit-text-presentation.md) carries assistant display
+metadata in that same native commit. The trusted Runner interprets Pi and emits
+text selectors, not a second body. Projector resolves a same-record Entry string
+or the native live document produced by this commit, using its existing memory
+view. It skips canonically covered references before resolution during replay.
+No extra text fetch, Harness in Control Plane or new storage authority is involved.
+
+All publications use the physical owner's existing serialization boundary.
+Each logical Run keeps its own display sequence; preparation adopts that sequence
+only after Kafka ACK. Canonical Entry projection and display coverage share one
+PG transaction. Affected Runs are locked before the shared lease, in stable ID
+order. Child display is bound to its own Run even when a parent anchors publication.
+The initial Kafka floor also accounts for that co-committed child display.
+
+The public `assistant.text.delta` SSE payload retains `messageId`, `text`, `phase`
+and `replace`. Optional `settledMessageId` renames the completed active block to
+its canonical `entry:<id>:<block>` identity. A resumed native Task can then stream
+a new reply without overwriting the previously interrupted one. The web client
+and snapshot reducer apply this rename; native selectors stay private.
+Non-text notifications remain on their existing path. Their later coverage
+updates must never cover a newer, uncompleted native partial. The Worker guards
+that checkpoint with its last canonical native sequence and current partial state.
 
 The Worker keeps the current live value across ordinary projection-buffer flushes.
 Cold open checks checkpoint completeness in the native-head query. Projector

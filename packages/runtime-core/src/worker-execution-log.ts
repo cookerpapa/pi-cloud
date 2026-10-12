@@ -54,7 +54,16 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
     {
       touched: number;
       pending: boolean;
-      writers: Map<string, { ready(): boolean; due(): boolean; send(): Promise<void> }>;
+      writers: Map<
+        string,
+        {
+          runId: string;
+          acknowledge(seq: number): void;
+          ready(): boolean;
+          due(): boolean;
+          send(): Promise<void>;
+        }
+      >;
     }
   >();
   readonly #probeTimer: NodeJS.Timeout;
@@ -319,7 +328,17 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
         };
       },
       publication: permit,
-      commitNative: (fact) => publish({ kind: "durable_commit", fact }),
+      commitNative: async (fact) => {
+        await publish({ kind: "durable_commit", fact });
+        for (const display of fact.display) {
+          const through = Math.max(
+            display.coveredThrough ?? 0,
+            ...display.texts.map(({ event }) => event.seq),
+          );
+          for (const target of activeFamily.writers.values())
+            if (target.runId === display.scope.runId) target.acknowledge(through);
+        }
+      },
       publishToolCommand: async (command) => {
         if (command.request.operation === "tool.execute")
           throw new Error("Fixed Tool commands require an atomic native intent publication");
@@ -353,6 +372,10 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
     };
     this.#writers.set(request.executionReference, writer);
     activeFamily.writers.set(request.executionReference, {
+      runId: permit.scope.runId,
+      acknowledge: (seq) => {
+        acknowledgedThroughSeq = Math.max(acknowledgedThroughSeq, seq);
+      },
       ready: () => !closing && !failure && published,
       due: () =>
         !!this.#probeTransport &&

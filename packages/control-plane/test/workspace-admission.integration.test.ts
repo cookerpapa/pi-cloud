@@ -896,7 +896,7 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
         origins: [],
         tools: [],
         cancellations: [],
-        events: [],
+        display: [],
         occurredAt: new Date().toISOString(),
       },
       { topic: "retained-history", partition: 0, offset: 100n },

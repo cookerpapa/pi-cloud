@@ -99,3 +99,12 @@ Follow-up discussions established:
 Resume with: **how a native Storage commit submits the initial input/runtime
 progress through the registered publication ingress and receives Kafka confirmation**.
 Keep the later provider/model request as a separate walkthrough hop.
+
+The current implementation slice is ADR-0245. Pi still calls public
+`Storage.commit`; PiCloud puts that complete commit and text display descriptions
+into one acknowledged Kafka record. The old post-commit assistant-text publisher
+is removed. Native interpretation stays in Worker, while Projector resolves
+same-commit references and advances history/SSE coverage. The
+[release report](reports/native-text-presentation-20261012.md) tracks deployment.
+This does not advance the guided architecture reading beyond the Storage/open
+context discussion.

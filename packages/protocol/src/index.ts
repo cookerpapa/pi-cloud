@@ -655,3 +655,9 @@ export {
   NativeInputAcceptedSchema,
   NativeInputIdSchema,
 } from "./native-inputs.ts";
+export {
+  parseDurableTextDescription,
+  resolveDurableText,
+  type DurableTextDescription,
+  type DurableDisplayPreparation,
+} from "./durable-display.ts";

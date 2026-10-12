@@ -1,8 +1,8 @@
 # ADR-0245: Derive assistant text display from its native commit
 
-Status: proposed, 2026-10-12. The owner requested the next simplification after
-ADR-0244 and asked for the preferred design. This records the recommended
-protocol and acceptance boundaries; runtime implementation is not yet changed.
+Status: accepted for implementation, 2026-10-12. The owner approved proceeding
+after discussing the public Storage.commit boundary. Implementation and matched
+release are in progress; no deployed completion is claimed here.
 
 ## Behavior
 
@@ -60,9 +60,12 @@ post-adoption notification or re-enter Storage from its commit line.
    Thinking blocks, partial Tool calls, provider-private fields and arbitrary
    document strings must not become text display merely because they are strings.
 2. The description and source batch share one Kafka record and acknowledgement.
-   A source selector addresses text literals inside that record, optionally with
-   validated string ranges/parts. It may not point to a separate Kafka record,
-   PG query, object-store object or temporary result cache.
+   A source selector addresses a literal in that record or the current native
+   document produced by projecting that very commit, with a validated string
+   range. Chord supports truncation and array moves that contain no new text
+   literal; use the existing native live materialization for those changes.
+   It may not request a separate Kafka fetch, PG query, object-store object or
+   temporary result cache.
 3. Projector resolves a generic PiCloud selector and builds the existing public
    display event. It does not import/run the Pi Harness or recreate Pi event-loop
    semantics. The browser never reads native document paths or raw Pi events.
@@ -105,12 +108,15 @@ because a provider timestamp was reused or a response ID was absent.
 
 ## Recovery and storage
 
-References must be local to the complete Kafka publication. This deliberately
+References must be local to the complete Kafka publication and its native
+projection at the same sequence. This deliberately
 avoids retaining a separate queue of text references or every intermediate
 materialized document merely to resolve later display messages.
 
-Replay can reconstruct display from its original record without a Worker and
-without another database round trip to fetch the text. Existing ownership,
+Replay can reconstruct display from the native replay already required by
+ADR-0244, without a Worker or another database round trip to fetch the text.
+Covered canonical display is skipped before resolving older live references;
+completed text refers directly to its Entry in the same record. Existing ownership,
 canonical-coverage and dispatch boundaries still govern whether to expose it.
 Replaying display never reissues a committed Tool command.
 
@@ -143,7 +149,10 @@ is a bounded adapter to that stack, not a new event store or scheduler.
    modifying the native batch or copying its text into a second payload.
 2. Add the trusted Worker preparation adapter with commit/rollback tests and
    consolidate publication ordering. Resolve descriptions in the existing
-   Projector and keep the public SSE format.
+   Projector and retain the existing SSE text event. Add an optional settled
+   message identity so completion moves an active text item to its canonical
+   identity; a recovered native task can then begin a new response without
+   reusing the previous visible bubble. This is a documented matched protocol change.
 3. Remove the old assistant-text publication callback and unused text caches.
    Preserve required non-text events and explicitly verify canonical coverage.
 4. Exercise actual Kafka replay, ownership changes and browser behavior, then

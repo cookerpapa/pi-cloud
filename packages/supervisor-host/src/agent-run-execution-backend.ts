@@ -458,7 +458,10 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           throw error;
         }
         if (tracked.failure !== undefined) throw tracked.failure;
-        return result;
+        return {
+          ...result,
+          lastEventSeq: Math.max(result.lastEventSeq ?? 0, executionLog.acknowledgedThroughSeq),
+        };
       } finally {
         lifecycle.executionExited();
         try {
@@ -469,7 +472,10 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       }
     } catch (error: unknown) {
       const normalized = normalizeBackendError(opening.abort.signal.reason ?? error);
-      normalized.lastEventSeq ??= prepared?.lastAcknowledgedEventSeq();
+      const acknowledged =
+        executionLog?.acknowledgedThroughSeq ?? prepared?.lastAcknowledgedEventSeq();
+      if (acknowledged !== undefined)
+        normalized.lastEventSeq = Math.max(normalized.lastEventSeq ?? 0, acknowledged);
       if (normalized.code === "agent_runner_error") {
         try {
           this.#onUnexpectedError?.(error);

@@ -998,3 +998,45 @@ it("keeps consumed human messages in the same Run and deduplicates them on recon
   state = sessionViewReducer(state, { type: "stream.event", event: { ...first, seq: 2 } });
   expect(state.turns[0]?.items.filter((i) => i.kind === "user")).toHaveLength(1);
 });
+
+it("settles a recovered partial under its canonical identity before the same native task restarts", () => {
+  const events = [
+    envelope(1, {
+      type: "assistant.text.delta",
+      payload: { messageId: "live:1:3:1:0", text: "old" },
+    }),
+    envelope(2, {
+      type: "assistant.text.delta",
+      payload: {
+        messageId: "live:1:3:1:0",
+        text: "old partial",
+        replace: true,
+        settledMessageId: "entry:9:0",
+      },
+    }),
+    envelope(3, {
+      type: "assistant.text.delta",
+      payload: { messageId: "live:1:3:1:0", text: "new" },
+    }),
+    envelope(4, {
+      type: "assistant.text.delta",
+      payload: { messageId: "live:1:3:1:0", text: " answer" },
+    }),
+  ];
+  const expected = [
+    { kind: "text", messageId: "entry:9:0", text: "old partial" },
+    { kind: "text", messageId: "live:1:3:1:0", text: "new answer" },
+  ];
+  const ui = events.reduce(
+    (state, event) => sessionViewReducer(state, { type: "stream.event", event }),
+    preparedState(),
+  );
+  expect(ui.turns[0]!.items).toMatchObject(expected);
+  const tail = new CompactEventTail();
+  events.forEach((event) => tail.accept(event));
+  expect(projectConversationTurnTranscript(tail.events).items).toMatchObject(expected);
+  const historical = projectConversationTurnTranscript(events.slice(0, 2));
+  expect(projectConversationTurnTranscript(events.slice(2), historical).items).toMatchObject(
+    expected,
+  );
+});

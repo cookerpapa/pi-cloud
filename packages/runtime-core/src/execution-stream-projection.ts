@@ -14,14 +14,12 @@ import { projectionTransaction } from "./projection-transaction.ts";
 export type ExecutionProjectionResult = {
   terminal?: PiCloudEvent;
   canonicalThroughSequence?: number;
+  events?: PiCloudEvent[];
+  covers?: { sessionId: string; through: number }[];
 };
 
 export function factEvents(fact: AcceptedFact): readonly PiCloudEvent[] {
-  return fact.kind === "agent_event"
-    ? [fact.event]
-    : fact.kind === "durable_commit"
-      ? fact.events
-      : [];
+  return fact.kind === "agent_event" ? [fact.event] : [];
 }
 
 /** Durable closure is checked once per execution, not once per token. Closed
@@ -170,8 +168,44 @@ export class ExecutionStreamProjector {
   ): Promise<ExecutionProjectionResult | undefined> {
     const { fact } = record;
     if (fact.kind === "path_probe") return;
+    if (fact.kind === "durable_commit") {
+      const scopes = new Map(
+        [fact.scope, ...fact.display.map((d) => d.scope)].map((scope) => [scope.runId, scope]),
+      );
+      const open = new Set<string>();
+      // A parent can anchor a child's first display. Install that child's
+      // boundary at the same offset, before its floor is saved in PostgreSQL.
+      for (const scope of scopes.values())
+        if (await this.#boundary.isOpen({ ...record, fact: { ...fact, scope } }, true))
+          open.add(scope.runId);
+      if (!open.size) {
+        await this.#durable.replay(fact, record, current);
+        return;
+      }
+      const projected = await this.#durable.project(fact, record, current);
+      const sessions = new Set(
+        [...scopes.values()]
+          .filter((scope) => open.has(scope.runId))
+          .map((scope) => scope.sessionId),
+      );
+      const result = {
+        events: projected.events.filter((event) => sessions.has(event.sessionId)),
+        covers: projected.covers.filter((cover) => sessions.has(cover.sessionId)),
+      };
+      // The native anchor need not be the Conversation that produced text.
+      for (const scope of scopes.values()) {
+        if (!open.has(scope.runId)) continue;
+        const key = `${scope.writerId}:${scope.runId}`;
+        const prefix = this.#prefixes.get(key) ?? new CompactEventTail();
+        for (const event of result.events)
+          if (event.sessionId === scope.sessionId) prefix.accept(event);
+        for (const cover of result.covers)
+          if (cover.sessionId === scope.sessionId) prefix.cover(cover.through);
+        this.#prefixes.set(key, prefix);
+      }
+      return result;
+    }
     if (!(await this.#boundary.isOpen(record, true))) {
-      if (fact.kind === "durable_commit") await this.#durable.replay(fact, record, current);
       if (fact.kind === "execution_seal") {
         const prefix = this.#prefixes.get(`${fact.scope.writerId}:${fact.scope.runId}`);
         const terminal = await this.#seal(fact, record, prefix, current);
@@ -187,10 +221,7 @@ export class ExecutionStreamProjector {
     for (const event of factEvents(fact)) {
       prefix.accept(event);
     }
-    if (fact.kind === "durable_commit") {
-      await this.#durable.project(fact, record, current);
-      this.#prefixes.set(`${fact.scope.writerId}:${fact.scope.runId}`, prefix);
-    } else if (fact.kind === "execution_seal") {
+    if (fact.kind === "execution_seal") {
       const terminal = await this.#seal(fact, record, prefix, current);
       this.#boundary.close(fact.scope.runId, fact.scope.writerId, record.offset);
       if (fact.closesWriter) this.#boundary.closeWriter(fact.scope.writerId, record.offset);

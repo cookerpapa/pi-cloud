@@ -1,4 +1,8 @@
-export { PublishedDurableStorage, type DurableStorageOptions } from "./published-storage.ts";
+export {
+  PublishedDurableStorage,
+  type DurableStorageOptions,
+  type NativeDocumentChange,
+} from "./published-storage.ts";
 export { DurablePostgresProjection } from "./postgres-projection.ts";
 export {
   NativeLiveState,

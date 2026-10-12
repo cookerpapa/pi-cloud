@@ -73,7 +73,7 @@ it("uploads images before Kafka timing, packs their references, and rejects publ
     inputQueueSessions: [scope.sessionId],
     tools: [],
     cancellations: [],
-    events: [],
+    display: [],
   };
   try {
     await publisher.scoped(executionReference).publish(publication);
@@ -124,7 +124,7 @@ it("needs no PG receipt or second payload ledger and leaves telemetry outside AC
       origins: [],
       tools: [],
       cancellations: [],
-      events: [],
+      display: [],
     });
   expect(publications).toHaveLength(100);
   expect(new Set(publications.map((f) => f.factId)).size).toBe(100);

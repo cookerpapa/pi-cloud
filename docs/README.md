@@ -1,10 +1,11 @@
 # Documentation map
 
-The [Kafka assistant-text deduplication proposal](adr/0245-native-commit-text-presentation.md)
+The [Kafka assistant-text simplification](adr/0245-native-commit-text-presentation.md)
 keeps native text as the source and carries its display descriptions in the
 same Kafka publication. Worker interprets Pi, Projector resolves references,
-and existing ordering/recovery/SSE coverage must remain valid. This is a design
-proposal; the deployed runtime still has the separate display-text publication.
+and preserves ordering/recovery/SSE coverage. The source uses the matched
+schema 187 / execution-topic v15 protocol; deployment and acceptance are tracked
+in the [implementation report](reports/native-text-presentation-20261012.md).
 
 [ADR-0243](adr/0243-native-input-current-state.md) implements native input current
 state under matched schema 185. Inbox/input metadata and Submission bodies replace

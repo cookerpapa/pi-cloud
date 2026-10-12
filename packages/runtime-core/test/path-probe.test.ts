@@ -76,7 +76,7 @@ function fixture(append: (fact: AcceptedFact) => Promise<AcceptedFactReceipt>) {
         origins: [],
         tools: [],
         cancellations: [],
-        events: [],
+        display: [],
         occurredAt: new Date().toISOString(),
       });
     };

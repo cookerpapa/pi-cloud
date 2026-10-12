@@ -51,7 +51,11 @@ export type AcceptedDurableCommitFact = Readonly<{
   inputQueueSessions?: readonly string[];
   tools: readonly DurableToolDispatch[];
   cancellations: readonly import("@pi-cloud/protocol").AcceptedToolCancellation[];
-  events: readonly PiCloudEvent[];
+  display: readonly Readonly<{
+    scope: AcceptedFactScope;
+    texts: readonly import("@pi-cloud/protocol").DurableTextDescription[];
+    coveredThrough?: number;
+  }>[];
   occurredAt: string;
 }>;
 

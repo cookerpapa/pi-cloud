@@ -56,11 +56,13 @@ storage tables and Session-local sequence; no runtime change was deployed.
       [ADR-0244](adr/0244-kafka-backed-native-live-state.md). It retains small commit
       headers and verifies current reads,
       handoff, multi-Conversation replay references and attachment safety. Task
-      reclamation remains separate work. The owner requested the next Kafka text
-      simplification; [ADR-0245](adr/0245-native-commit-text-presentation.md) proposes
-      same-commit display descriptions without a copied text payload. Its
-      implementation is pending; do not filter native publications or add a
-      second runtime authority.
+      reclamation remains separate work.
+- [ ] R12T-01: [ADR-0245](adr/0245-native-commit-text-presentation.md) assistant text
+      uses same-commit descriptions, with no independent copied text publication.
+      Implementation, SQL/Kafka replay, multi-Conversation and frontend tests are
+      in source; required full checks, matched schema 187/topic v15 rollout and
+      live acceptance are in progress. See the
+      [report](reports/native-text-presentation-20261012.md).
 
 - [x] Localize the intermittent model TLS failure: the
       [October 12 investigation](reports/model-egress-tls-20261012.md) reproduces

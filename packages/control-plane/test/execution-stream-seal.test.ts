@@ -127,7 +127,7 @@ async function fixture(drained = false) {
       ],
       tools: [],
       cancellations: [],
-      events: [],
+      display: [],
       occurredAt: seal.occurredAt,
     };
   };

@@ -1,5 +1,6 @@
 import {
   parsePiCloudEvent,
+  parseDurableTextDescription,
   parsePathProbe,
   parseSessionControlChange,
   parseToolCancellation,
@@ -45,7 +46,14 @@ export function parseAcceptedFact(value: unknown): AcceptedFact {
     return {
       ...parsed,
       commit,
-      events: parsed.events.map(parsePiCloudEvent),
+      display: parsed.display.map((display) => {
+        if (
+          display.coveredThrough !== undefined &&
+          (!Number.isSafeInteger(display.coveredThrough) || display.coveredThrough < 0)
+        )
+          throw new Error("Invalid native display coverage");
+        return { ...display, texts: display.texts.map(parseDurableTextDescription) };
+      }),
       cancellations: parsed.cancellations.map(parseToolCancellation),
     };
   }

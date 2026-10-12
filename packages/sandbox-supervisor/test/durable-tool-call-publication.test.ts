@@ -280,7 +280,6 @@ it("persists text but no Tool draft, then waits for the complete validated inten
   const f = await nativeFixture({ holdIntent: true });
   const bodies: PiCloudEventBody[] = [];
   const display = new DurableRunEvents({
-    writerId: "probe",
     emit: async (body) => {
       bodies.push(body);
     },
@@ -300,11 +299,7 @@ it("persists text but no Tool draft, then waits for the complete validated inten
       stream.value.docs["pi.live"] as unknown as { generation: { message: AssistantMessage } }
     ).generation.message;
     await display.consume([{ type: "message_start", message }]);
-    expect(
-      bodies
-        .filter((body) => body.type === "assistant.text.delta")
-        .map((body) => body.payload.text),
-    ).toEqual(["VISIBLE STREAM TEXT", "AFTER TOOL SLOT"]);
+    expect(bodies.filter((body) => body.type === "assistant.text.delta")).toEqual([]);
     const call = partial.content[1]!;
     if (call.type !== "toolCall") throw new Error("Missing controlled Tool call");
     call.arguments = { command: "printf 'COMPLETE_ARGUMENT'" };
@@ -329,7 +324,7 @@ it("persists text but no Tool draft, then waits for the complete validated inten
     );
     if (!assistant) throw new Error("Complete assistant call was not persisted");
     await display.consume([{ type: "message_end", entry: assistant }]);
-    expect(bodies.filter((body) => body.type === "assistant.text.delta")).toHaveLength(2);
+    expect(bodies.filter((body) => body.type === "assistant.text.delta")).toHaveLength(0);
   } finally {
     f.acknowledged.resolve();
     f.provider.finish("aborted");

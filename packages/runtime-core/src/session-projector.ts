@@ -225,8 +225,10 @@ export class SessionProjector {
           if (current?.() === false) return;
           if (projected?.terminal) this.eventStore.accept(fact.scope.tenantId, projected.terminal);
           if (applicable) {
-            for (const event of factEvents(fact))
+            for (const event of projected?.events ?? factEvents(fact))
               this.eventStore.accept(fact.scope.tenantId, event);
+            for (const cover of projected?.covers ?? [])
+              this.eventStore.cover(fact.scope.tenantId, cover.sessionId, cover.through);
             if (projected?.canonicalThroughSequence !== undefined)
               this.eventStore.cover(
                 fact.scope.tenantId,

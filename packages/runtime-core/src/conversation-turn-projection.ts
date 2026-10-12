@@ -74,6 +74,9 @@ export function projectConversationTurnTranscript(
           items[at] = {
             ...old,
             text: event.payload.replace ? event.payload.text : old.text + event.payload.text,
+            ...(event.payload.settledMessageId === undefined
+              ? {}
+              : { messageId: event.payload.settledMessageId }),
             lastSequence: event.seq,
             ...(event.payload.phase === undefined ? {} : { phase: event.payload.phase }),
           };
@@ -98,7 +101,9 @@ export function projectConversationTurnTranscript(
         items.push({
           kind: "text",
           text: event.payload.text,
-          ...(event.payload.messageId === undefined ? {} : { messageId: event.payload.messageId }),
+          ...(event.payload.messageId === undefined
+            ? {}
+            : { messageId: event.payload.settledMessageId ?? event.payload.messageId }),
           ...(event.payload.phase === undefined ? {} : { phase: event.payload.phase }),
           firstSequence: event.seq,
           lastSequence: event.seq,

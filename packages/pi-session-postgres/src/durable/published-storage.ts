@@ -48,6 +48,11 @@ import {
 
 type StoredTask = TaskRecord<JsonValue, JsonValue, JsonValue>;
 type DocumentAction = { create?: DocumentCreate; content?: DocumentContent; retire: boolean };
+export type NativeDocumentChange = Readonly<{
+  record: DocumentRecord;
+  before: StoredDocument | undefined;
+  after: StoredDocument | undefined;
+}>;
 type Prepared = {
   batch: DurableBatch;
   records: IndexedRecord[];
@@ -56,10 +61,15 @@ type Prepared = {
   retiredCurrent: Set<number>;
   inputConversations: number[];
   live: Map<number, StoredDocument | undefined>;
+  documents: NativeDocumentChange[];
 };
 export type DurableStorageOptions = {
   projection: DurablePostgresProjection;
-  publish(batch: DurableBatch, inputConversations?: readonly number[]): Promise<void>;
+  publish(
+    batch: DurableBatch,
+    inputConversations: readonly number[],
+    documents: readonly NativeDocumentChange[],
+  ): Promise<void>;
   waitProjected(through: number): Promise<void>;
   assertCurrent?(): Promise<void>;
   maximumBufferedWrites?: number;
@@ -150,7 +160,11 @@ export class PublishedDurableStorage implements Storage {
       const prepared = await this.#prepare(detached);
       await this.#options.assertCurrent?.();
       try {
-        await this.#options.publish(cloneNative(prepared.batch), prepared.inputConversations);
+        await this.#options.publish(
+          cloneNative(prepared.batch),
+          prepared.inputConversations,
+          prepared.documents,
+        );
       } catch (error) {
         if (error instanceof PublicationNotSentError || error instanceof StorageRejected)
           throw new StorageRejected(error.message, { cause: error });
@@ -642,7 +656,8 @@ export class PublishedDurableStorage implements Storage {
       }
     }
     const records: IndexedRecord[] = [],
-      revisions: DocumentRevision[] = [];
+      revisions: DocumentRevision[] = [],
+      documents: NativeDocumentChange[] = [];
     const inputConversations = new Set<number>();
     const resetRevisions = new Set<number>(),
       retiredCurrent = new Set<number>(),
@@ -717,8 +732,7 @@ export class PublishedDurableStorage implements Storage {
             deltaCount: action.content.kind === "base" ? 0 : previous!.deltaCount + 1,
           });
         if (isLiveDocument(record) && !action.retire) {
-          const before =
-            action.content.kind === "delta" ? await this.#document(id, "current") : undefined;
+          const before = action.create ? undefined : await this.#document(id, "current");
           if (action.content.kind === "delta" && !before)
             throw new Error("Native live delta has no current value");
           live.set(id, {
@@ -730,6 +744,7 @@ export class PublishedDurableStorage implements Storage {
                 : applyImmutableBatches(before!.value, [action.content.ops]),
             deltasSinceBase: action.content.kind === "base" ? 0 : previous!.deltaCount + 1,
           });
+          documents.push({ record, before, after: live.get(id) });
         }
       }
       if (action.retire && currentOnly(record)) retiredCurrent.add(id);
@@ -747,6 +762,7 @@ export class PublishedDurableStorage implements Storage {
       retiredCurrent,
       inputConversations: [...inputConversations],
       live,
+      documents,
     };
   }
 }
