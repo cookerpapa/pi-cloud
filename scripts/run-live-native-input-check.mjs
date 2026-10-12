@@ -240,6 +240,8 @@ try {
       database: db,
       tenantId: tenant.tenantId,
       api,
+      authorizationToken: tenant.credential.token,
+      fetchImplementation: (url, init) => fetch(new URL(String(url), base), init),
       createSession,
       until,
       finished,

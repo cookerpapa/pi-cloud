@@ -8,8 +8,12 @@
       current live reads and Kafka recovery references under schema 186.
 - [x] Verify live reads, mixed commits, multi-Conversation replay references,
       checkpoint/closure atomicity, safe Kafka cleanup and quiescent asset recovery.
-- [ ] Complete measured storage/failure/Luna acceptance and matched deployment.
+- [x] Complete measured storage/failure, native Luna/image/multi-Conversation
+      acceptance and matched deployment.
       [Verification and release record](reports/native-live-state-20261012.md).
+- [ ] Obtain a complete broad Cube production-check pass after the observed
+      upstream TLS handshake failures are resolved. Keep the failed runs visible
+      in the release report; core live-state checks already pass.
 
 ## Native input current state
 

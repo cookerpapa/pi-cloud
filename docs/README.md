@@ -8,11 +8,11 @@ are complete, including native input/Stop, real Worker-crash recovery, browser/i
 and full Luna/Cube acceptance.
 
 The [native live-state retention change](adr/0244-kafka-backed-native-live-state.md)
-is implemented in source under schema 186. It keeps in-flight `pi.live` bodies
+is deployed as `native-live-1370d871` under schema 186. It keeps in-flight `pi.live` bodies
 in Kafka and materializes PG state at native settlement or writer handoff.
 [Verification and release status](reports/native-live-state-20261012.md) cover
-current reads, multi-Conversation recovery references, retention and failures.
-The deployed schema remains 185 until the matched rollout is recorded there.
+current reads, multi-Conversation recovery references, retention and failures,
+including actual loss of Worker and Projector memory during streamed output.
 
 The [append-only storage research/review](reports/append-only-storage-review-20261011.md)
 compares Pi, Maka, Marten, Pekko and Temporal against schema 184. Isolated experiments

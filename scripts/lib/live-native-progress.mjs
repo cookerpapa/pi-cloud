@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { sql } from "kysely";
 import { newIdempotencyKey } from "../../packages/web-ui/src/api.ts";
+import { streamSessionEvents } from "../../packages/web-ui/src/sse.ts";
+import {
+  createInitialSessionView,
+  sessionViewReducer,
+} from "../../packages/web-ui/src/session-view.ts";
 import { crashOwnedWorker } from "./owned-worker-crash.mjs";
 import { kubectl, podFor, serviceAddress, signalService } from "./production-kubernetes.mjs";
 
@@ -76,6 +81,8 @@ export async function checkNativeLiveProgress({
   database,
   tenantId,
   api,
+  authorizationToken,
+  fetchImplementation,
   createSession,
   until,
   finished,
@@ -103,23 +110,51 @@ export async function checkNativeLiveProgress({
           database,
         )
       ).rows;
-    const sample = await until(async () => {
-      const run = await api.getRun(root.runId);
-      assert(
-        !["completed", "failed", "cancelled", "timed_out"].includes(run.state),
-        "Streaming fixture ended before observation",
-      );
-      const turn = (await api.getConversation(session.sessionId)).turns.find(
-        (t) => t.runId === root.runId,
-      );
-      assert(
-        !turn?.transcript?.items.some((i) => i.kind === "tool"),
-        "Streaming fixture unexpectedly used a Tool",
-      );
-      const text = turn?.transcript?.items.filter((i) => i.kind === "text").at(-1)?.text ?? "";
-      const rows = await currentRows();
-      return text.length >= 120 && rows.some((row) => row.replay_seq !== null) && { text, rows };
-    }, "Confirmed live assistant text");
+    let view = createInitialSessionView(),
+      streamFailure,
+      sample;
+    const controller = new AbortController();
+    // The history endpoint deliberately contains canonical PG facts only. Observe
+    // in-flight text through the same SSE client and reducer as the browser.
+    const stream = streamSessionEvents({
+      sessionId: session.sessionId,
+      signal: controller.signal,
+      authorizationToken,
+      fetchImplementation,
+      onStatus() {},
+      onSnapshot(snapshot) {
+        view = sessionViewReducer(view, {
+          type: "conversation.loaded",
+          conversation: snapshot.conversation,
+        });
+      },
+      onEvent(event) {
+        view = sessionViewReducer(view, { type: "stream.event", event });
+      },
+    }).catch((error) => {
+      if (!controller.signal.aborted) streamFailure = error;
+    });
+    try {
+      sample = await until(async () => {
+        if (streamFailure) throw streamFailure;
+        const run = await api.getRun(root.runId);
+        assert(
+          !["completed", "failed", "cancelled", "timed_out"].includes(run.state),
+          "Streaming fixture ended before observation",
+        );
+        const turn = view.turns.find((t) => t.turnId === root.turnId);
+        assert(
+          !turn?.items.some((i) => i.kind === "tool"),
+          "Streaming fixture unexpectedly used a Tool",
+        );
+        const text = turn?.items.filter((i) => i.kind === "text").at(-1)?.text ?? "";
+        const rows = await currentRows();
+        return text.length >= 120 && rows.some((row) => row.replay_seq !== null) && { text, rows };
+      }, "Confirmed live assistant text");
+    } finally {
+      controller.abort();
+      await stream;
+    }
     for (const row of sample.rows) {
       assert.equal(
         JSON.parse(row.body).content.value.generation,

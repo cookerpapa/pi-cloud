@@ -1,10 +1,10 @@
 # ADR-0244: Keep native live progress in Kafka
 
-Status: accepted and implemented in source, 2026-10-12, under schema 186.
+Status: accepted and deployed, 2026-10-12, under schema 186 as `native-live-1370d871`.
 [Verification and release status](../reports/native-live-state-20261012.md).
 The owner approved the plan after discussing Pi 1.0 streaming persistence.
-The matched release is pending. The deployed schema 185 behavior remains ADR-0243: native
-`pi.live` changes still reach the PG journal and document revisions.
+This supersedes the schema 185 retention of native `pi.live` changes in the PG
+journal and document revisions. ADR-0243 input current-state behavior is retained.
 
 ## Behavior and scope
 

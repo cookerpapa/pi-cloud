@@ -754,6 +754,37 @@ async function runTurn(sessionId, prompt, expectTools) {
       firstAssistantTextMs: Math.round(firstAssistantTextAt - submittedAt),
       settledMs: Math.round(performance.now() - submittedAt),
     };
+  } catch (error) {
+    // Capture bounded failure evidence before the owned fixture's history is
+    // deleted. Preserve only fixed outcome/status categories, never free-form
+    // provider errors, model content, Tool arguments or request headers.
+    try {
+      const history = await readNativeHistory(psql, { runId: accepted.runId });
+      const modelFailures = nativeMessages(history)
+        .filter((message) => message.role === "assistant" && message.stopReason === "error")
+        .map((message) => {
+          const text = String(message.errorMessage ?? "");
+          return {
+            stopReason: message.stopReason,
+            httpStatus: text.match(/\b[45]\d{2}\b/u)?.[0] ?? null,
+            transportCode:
+              text.match(/\b(?:ECONNRESET|ECONNREFUSED|ETIMEDOUT|TLS handshake: EOF)\b/u)?.[0] ??
+              null,
+          };
+        });
+      console.error(
+        JSON.stringify({ phase: "failed-run-diagnostic", runId: accepted.runId, modelFailures }),
+      );
+    } catch {
+      console.error(
+        JSON.stringify({
+          phase: "failed-run-diagnostic",
+          runId: accepted.runId,
+          historyUnavailable: true,
+        }),
+      );
+    }
+    throw error;
   } finally {
     clearTimeout(timer);
     controller.abort();
@@ -895,6 +926,7 @@ try {
       "Work in the current empty workspace and use tools.",
       "Create counting_sort.py with a counting_sort(values) implementation that supports negative integers and duplicates.",
       "Include executable Python tests in the file for empty, sorted, reverse, negative, and duplicate inputs.",
+      "Name the negative-integer test test_negative_inputs and call it when the file runs.",
       "Run python3 counting_sort.py and make every test pass.",
       "Do not initialize or create a Git repository or any .git entry.",
       "Do not only describe the code.",

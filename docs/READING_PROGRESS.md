@@ -61,11 +61,11 @@ are complete, including current-state reconstruction and real Worker-crash recov
 
 The owner approved [ADR-0244](adr/0244-kafka-backed-native-live-state.md) after
 comparing Pi's latest-only live state with the earlier Kafka-text/PG-message split.
-It is implemented in source under schema 186: publications stay intact, PG keeps
+It is deployed as `native-live-1370d871` under schema 186: publications stay intact, PG keeps
 small commit headers, and current live reads span Kafka-backed memory and PG
 boundary/handoff checkpoints. Protected replay references span Conversation/Run
-anchors. The [report](reports/native-live-state-20261012.md) separates verification
-from the pending matched rollout. Other documents retain their 64-delta read
+anchors. The [report](reports/native-live-state-20261012.md) records the matched
+rollout and actual Worker/Projector crash recovery. Other documents retain their 64-delta read
 accelerators; these are not model Compaction or whole-Session recovery snapshots.
 The walkthrough checkpoint above is unchanged.
 

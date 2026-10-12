@@ -35,8 +35,9 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 cover current Inbox/Submission values, checked reconstruction, actual Worker SIGKILL,
 Stop/return, images and full Luna/Cube use. Configuration is preserved and fixtures
 are physically cleaned. [ADR-0244](adr/0244-kafka-backed-native-live-state.md)
-implements streaming live retention in source under schema 186; matched release
-and live acceptance are tracked in its [report](reports/native-live-state-20261012.md).
+is deployed as `native-live-1370d871` under schema 186. Streaming live retention,
+actual dual-process recovery and live acceptance are tracked in its
+[report](reports/native-live-state-20261012.md).
 
 The [native-log research/review](reports/append-only-storage-review-20261011.md)
 compares pinned Pi, Maka, Marten, Pekko and Temporal. It retains the current four
@@ -51,13 +52,20 @@ storage tables and Session-local sequence; no runtime change was deployed.
       reuse prototype uses two with identical content. Preserve cache invalidation.
 - [ ] D11L-01: discuss retention of superseded native Task checkpoints and
       current-only document history beyond ADR-0243 input state. Streaming pi.live
-      Kafka-only retention is implemented in source under
-      [ADR-0244](adr/0244-kafka-backed-native-live-state.md), with release acceptance
-      still pending. It retains small commit headers and verifies current reads,
+      Kafka-only retention is deployed under
+      [ADR-0244](adr/0244-kafka-backed-native-live-state.md). It retains small commit
+      headers and verifies current reads,
       handoff, multi-Conversation replay references and attachment safety. Task
       reclamation and deduplicating the Kafka display representation remain
       separate work; do not filter native publications or add a second runtime
       authority.
+
+- [ ] Diagnose intermittent model-proxy failures in longer real Luna acceptance.
+      October 12 runs observed HTTP 500 responses after about three seconds;
+      a captured native model error was `utls: TLS handshake: EOF`, and the
+      egress audit recorded the upstream proxy closing first. Six ordinary and
+      six streamed direct requests succeeded. Preserve the failure evidence;
+      do not weaken storage checks or add a competing cloud retry policy.
 
 The approved [publication-registration optimization](reports/publication-admission-20261011.md)
 is deployed as `publication-admission-c39a78f8`: known stale/closed identities

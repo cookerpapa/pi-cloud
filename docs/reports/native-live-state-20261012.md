@@ -1,8 +1,10 @@
 # Native live state: implementation and release
 
-Status: implemented and checked in source under [ADR-0244](../adr/0244-kafka-backed-native-live-state.md).
-Schema 186 matched deployment and live acceptance are pending. Schema 185 remains
-the serving release until the rollout section below is completed.
+Status: deployed as `native-live-1370d871`, schema 186, under
+[ADR-0244](../adr/0244-kafka-backed-native-live-state.md). Source gates and the
+focused live-state, native-input, browser/image and multi-Conversation acceptance
+pass. The broader Cube production check remains incomplete: repeated model
+requests encountered upstream TLS handshake failures, described below.
 
 ## What changed
 
@@ -48,7 +50,11 @@ separate Kafka representation of display text remains a follow-up optimization.
 | Deterministic fault evaluation | 247/247 passed, including seven new native live-state cases |
 | Release source gates | Format/docs/build, install/runtime policy, Go admission/allocation, Helm, observability and image closure passed |
 | Dependency audit | Passed with no remaining reported vulnerabilities |
-| Paid live acceptance | Pending matched deployment |
+| Matched artifacts | All 11 image scans and matched preflight passed |
+| Native input/live acceptance | Five scenarios passed, including Stop and loss of both Worker and Projector memory |
+| Browser/image/Read | Lost acknowledgement, Stop/return, image resend/direct vision and oversized ASCII/UTF-8 Read passed |
+| Multi-Conversation | Supervisor interaction, messaging, parallel children, cancellation and guest boundary: five passed |
+| Full Cube production check | Incomplete due to model-proxy failures; do not interpret focused acceptance as a full-suite pass |
 
 The first full run exposed an extra initialization SELECT. Projector live
 bootstrap now shares its existing native-head/current-state query; the original
@@ -107,17 +113,102 @@ text and native delta counts. Private JSON reports retain all measurements.
 
 ## Deployment and live acceptance
 
-Pending. Use the maintained matched release, including complete writer draining
-and positive native VM absence. No old-reader compatibility mode is retained.
+The maintained `prepare`/`apply` workflow deployed application source
+`1370d871557caca20c0f6daec9bda5a7967fc703` as `native-live-1370d871`.
+The application Helm revision is 38, schema is `186_native_live_checkpoints`,
+and guest input / Tool Worker / Cube management protocols remain 4 / 4 / 7.
+The guest input identity is `70d59dfbeb18c8b31d63048f38cadeb9deb93ea8`;
+the Cube completion identity is `4cf0beea09fe17bc3557adc18dfc80ebec49dbf6`.
+Acceptance-only script corrections and these release notes follow the runtime
+commit; they do not change its served images or protocol.
+
+The first preparation stopped while downloading Trivy's database. Downloading
+the same scanner's database from its official public ECR repository succeeded.
+All 11 maintained scans and matched artifact verification then passed. The
+security gate was not bypassed. The temporary build proxy was stopped.
+
 The pre-release observation found no business Runs/Sessions/Workspaces/native
-commits or active VM/writer/terminal resources, so no existing business data
-needs removal for this migration. Existing account/configuration fingerprints
-and stable credential-field fingerprints were captured privately.
+commits or active VM/writer/terminal resources. No existing business data needed
+removal. Apply still drained writers and required positive native VM absence
+before the matched schema/app/Cube cutover. No compatibility reader remains.
 
-The maintained native-input acceptance driver now also exercises visible text
-with no PG live bodies, Stop preservation, and loss of both Worker and Projector
-memory. It requires actual kubelet failure evidence and same-Run recovery,
-then uses the existing owned fixture cleanup. GPT-6 Luna remains the paid model.
+Real GPT-6 Luna acceptance passed:
 
-The rollout record must include the matched source/image identity, schema,
-live outcomes, fixture cleanup, final readiness and preserved configuration.
+- Native input consumption, editing, ordering, steer promotion and retry identity;
+  Stop returned pending inputs, and an actual Worker SIGKILL recovered the same Run.
+- Streaming Stop observed 324 characters through SSE; dual-process failure
+  observed 259 characters. Both checked the first 100 displayed characters in the
+  native aborted Assistant Entry. During generation PG contained neither live
+  journal/revision bodies nor an in-flight generation in its baseline. Final
+  closure cleared the Kafka replay references.
+- The simultaneous-memory-loss case suspended the Control Plane, killed the
+  actual owning Runner, then killed the Control Plane. Kubelet confirmed exit
+  137 for both. Recovery kept the logical Run and preserved the checked text.
+  Exact full native state, including delta counts, is additionally checked by
+  controlled storage/replay tests rather than inferred from the UI prefix.
+- The real browser exercised a lost admission reply, Stop, returned image identity,
+  resend as a new input and direct vision. Guest Read retained valid UTF-8 and
+  canonical truncation diagnostics at 51,200 / 51,196 bytes for the two fixtures.
+- Five Subagent scenarios passed: supervisor interaction, messaging, two parallel
+  children, cancellation and guest boundary. Parent/child Conversations retained
+  the same physical Session, Worker and lease.
+
+The first streaming fixture incorrectly waited for active text through the
+canonical history endpoint. Its three input cases passed, but the streaming
+observation timed out; cleanup completed. The driver now uses the browser's
+existing SSE client and reducer. Their 38 tests passed, followed by all five
+real native-input/live cases. No application change was needed for this fixture.
+
+## Broader acceptance limitation
+
+The full Cube production driver did **not** complete successfully for this
+release. Its first execution read the generated Python file but failed an
+artifact assertion requiring the word `negative`, which the prompt had not
+specified as a marker. The prompt now explicitly names `test_negative_inputs`;
+the original assertion remains unchanged and passed on subsequent executions.
+
+Four subsequent executions failed at model requests. The first two coincided
+with model-proxy HTTP 500 responses after approximately three seconds; their
+native error explanation was not retained by the old diagnostic. The next two
+captured `utls: TLS handshake: EOF`. The egress audit for a matching failure
+records `upstream_ended` at 3,004 ms. This confirms an upstream tunnel closure;
+it does not identify why the upstream proxy or remote endpoint closed it.
+Six direct ordinary and six direct streamed Luna requests succeeded, as did
+the focused native/browser/Subagent suites, so the failure is intermittent.
+
+Across the broader runs, pure chat without VM activation, real coding, Volume
+files, authenticated preview, warm-VM reuse, surviving background processes,
+tenant isolation and the initial 1,024-file fixture passed. The most advanced
+execution confirmed removal of the source VM, then its fresh-VM follow-up failed
+at a model request. These partial observations are not a replacement for one
+complete production-suite pass. The remaining check and upstream investigation
+are recorded in the Roadmap and Backlog. No runtime retry policy, model/provider
+configuration or storage acceptance condition was changed to hide the failure.
+
+The production driver now captures bounded outcome, HTTP status and known
+transport-error categories before deleting its fixture history. It does not log
+free-form provider errors, native model content, Tool arguments or credentials.
+Failed and successful acceptance artifacts, including the earlier diagnostic
+containing the redacted TLS error, remain in the private release directory.
+
+## Cleanup and serving state
+
+All successful and failed owned fixtures were settled and deleted through the
+existing APIs. Cleanup waited for Workspace byte purge, closed control records,
+and native inventory across all recorded nodes before deleting owned metadata.
+The last native inventory scanned 1/1 nodes and found zero VMs. Original account,
+configuration and credential records are checked separately from owned test
+tenants; API credential usage timestamps may advance during bootstrap checks.
+
+Final PG inventory matches the empty pre-release business baseline: zero Runs,
+Sessions, Workspaces, projects and native commits, with zero active writers,
+unsealed Sessions, VMs, development machines or terminals. Original counts remain
+29 users, 29 tenants, 30 model profiles, 30 credential bindings, 29 tenant API
+credentials, one platform settings row and four password credentials. Full
+account/configuration fingerprints and credential fingerprints excluding
+`last_used_at` match their pre-release values.
+
+The Control Plane and web each have 1/1 Ready replicas; the Worker pool has 2/2.
+Control Plane readiness and the web endpoint both return HTTP 200. Detailed
+private evidence lives under `dist/releases/native-live-1370d871/` and source
+verification/measurement evidence under `dist/releases/native-live-checks/`.
