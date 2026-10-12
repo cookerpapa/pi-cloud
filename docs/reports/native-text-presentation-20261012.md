@@ -32,8 +32,8 @@ Whole-workspace type checking, source build, runtime policy and documentation
 checks pass. The real Kafka transport suite passes (7 tests), acceptance helpers
 pass (64), Supervisor Host passes (93), and focused protocol/text/frontend checks
 pass (33). Native owner/PG replay checks pass (2); native storage/recovery
-contracts also pass (73). Full-workspace tests and the full fault suite are still
-running; live acceptance remains a rollout gate.
+contracts also pass (73). The full fault suite passes all 247 cases. Full-workspace tests and a final
+control-plane rerun are still running; live acceptance remains a rollout gate.
 
 The reproducible serialization experiment is
 `scripts/experiments/native-text-20261012/measure.ts`. For 100 UTF-8 chunks plus a
