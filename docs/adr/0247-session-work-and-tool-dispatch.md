@@ -1,13 +1,13 @@
 # ADR-0247: Session execution, native Subagents and unified Tool dispatch
 
-Status: **accepted for implementation; implementation in progress, not deployed**,
-2026-10-13. Source baseline: f5c0d9d8.
+Status: **implemented and deployed; final rolling acceptance in progress**,
+2026-10-14. Source baseline: f5c0d9d8. Serving release: session-work-6ba81a94.
 
 业主已同意以物理 Session 为执行所有权边界、将普通子 Agent 交给原生 Harness
 管理的方向，并要求回顾讨论、提出完整改造方案。本文件给出目标、实施顺序和
 验收条件；业主随后明确要求实施。各阶段仍须通过验收，授权不等于协议已经验证。
 尚未实施的 ADR-0246 已合并到本文，旧草案保留在上述 Git 提交中。
-当前线上仍按 ADR-0209/0229/0238：Worker 经入口发布，子 Agent 有云端 Run。
+当前线上已使用本文的直写/原生子对话方案；第 14、15 节记录滚动验收发现及修复。
 
 ## 1. 目标与明确的取舍
 
@@ -331,7 +331,7 @@ Session writer 的关闭属于一次租约代次：所有子 Conversation 共享
 每阶段运行相应 Pi 合同、PG/RF3 Kafka 集成与故障用例。最终执行仓库维护的 CI、
 transport/fault、打包和匹配发布检查，并用 GPT-6 Luna 做真实 Cube/浏览器验收。
 现有八项 Harness 测试、六个 Kafka 原语实验和两项入口测试仅为基线，不代表以上通过。
-本次仅方案文档验证，不运行付费模型或对生产注入故障。
+实际 source/live 验证与边界见[实施记录](../reports/session-work-implementation-20261013.md)。
 
 ## 11. 切换、风险与采用证据
 
@@ -373,3 +373,16 @@ P0 若无法在公开 Pi API 下保持现有语义，或 P4 无法闭合授权/�
 已改变而正确地拒绝 resume，于是只消费分区 0。安装新 assignment 时显式
 resume 新分配的分区，随后仍由恢复逻辑暂停确实不可用的分区。它不改变
 commit offset、原生序号、Tool 派发或 fencing 权威。新测试纳入完整传输套件。
+
+## 15. 控制工具恢复与重放必须使用相同的引用表示（2026-10-14）
+
+6ba81a94 的真实子 Agent 滚动验收发现：恢复扫描保存 cloud_metadata 中的引用，
+正常 consume 却保存附有 arguments/nativeCallId 的展开命令。同一原生调用重放时，
+引用与命令被身份比较误判为冲突，使分区无法推进。普通恢复测试没有重放该意图，
+因此漏掉了这个组合。新增测试先恢复等待中的调用，再重复消费原生意图，修复前
+明确复现 Control dispatch identity changed；真正的 replyTopic 变化仍须拒绝。
+
+consume 保留原生意图校验，但内存中只保存原始派发引用，与恢复扫描保持一致；
+实际执行时仍由 #load 从原生日志解析参数。不删除身份检查，不跳过 Kafka 记录，
+不改变 offset 或重放任意工具。该修复不变更存储/协议，可以使用已扫描的新控制面
+镜像替换故障实例以解除停滞，再完成匹配发布；原 Worker/Cube 的身份和取消结果保留。

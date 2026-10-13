@@ -89,10 +89,43 @@ async function fixture() {
     publish,
   });
   cleanups.push(() => dispatcher.close());
-  return { database, dispatch, dispatcher, execute, publish };
+  return { database, dispatch, dispatcher, execute, publish, task };
 }
 
 describe("native control Tool reconciliation", () => {
+  it("keeps the same reference when recovered waits replay their original native intent", async () => {
+    const f = await fixture();
+    f.execute.mockResolvedValue({ waiting: true });
+    await f.dispatcher.recover([1], () => true);
+    await vi.waitFor(() => expect(f.execute).toHaveBeenCalledTimes(1));
+    const record = {
+      topic: "native-controls",
+      partition: 1,
+      offset: 9n,
+      fact: {
+        kind: "durable_commit" as const,
+        factId: "intent",
+        scope: f.dispatch.scope,
+        occurredAt: new Date().toISOString(),
+        commit: { seq: 8, nextId: 5, writes: [{ type: "task" as const, value: f.task }] },
+        origins: [],
+        display: [],
+        cancellations: [],
+        tools: [f.dispatch],
+      },
+    };
+    await expect(f.dispatcher.consume(record)).resolves.toBeUndefined();
+    await f.dispatcher.recover([1], () => true);
+    await expect(f.dispatcher.consume(record)).resolves.toBeUndefined();
+    expect(f.execute).toHaveBeenCalledTimes(1);
+    expect(f.publish).not.toHaveBeenCalled();
+    const changed = structuredClone(record);
+    changed.fact.tools = [{ ...f.dispatch, replyTopic: "changed-worker-boot" }];
+    await expect(f.dispatcher.consume(changed)).rejects.toThrow(
+      "Control dispatch identity changed",
+    );
+  }, 20_000);
+
   it("recovers the original intent after later Task updates and sends the shared mailbox payload", async () => {
     const f = await fixture();
     await f.dispatcher.recover([1], () => true);

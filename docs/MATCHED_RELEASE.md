@@ -85,6 +85,21 @@ Worker and Projector memory. That owned fault case suspends Control Plane before
 killing the Worker, kills/restarts Control Plane, and requires kubelet crash and
 readiness evidence. It refuses injection while another tenant has unfinished work.
 
+For a compatible Control Plane handoff, hold Worker/Pi/Cube and all contracts fixed
+and run the owned rolling-replacement checks individually:
+
+```sh
+PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_CHECK=1 PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_MODE=rolling node --import tsx scripts/run-live-cube-handoff-restart-check.mjs /private/rolling-cube.json
+PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_CHECK=1 PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_MODE=rolling PI_CLOUD_LIVE_HANDOFF_SCENARIO=child node --import tsx scripts/run-live-cube-handoff-restart-check.mjs /private/rolling-child.json
+PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_CHECK=1 PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_MODE=rolling PI_CLOUD_LIVE_HANDOFF_SCENARIO=stream-image node --import tsx scripts/run-live-cube-handoff-restart-check.mjs /private/rolling-stream-image.json
+```
+
+These use the same image on overlapping old/new Control Plane Pods. They measure
+replacement time, check the original Worker, native child/control replies or
+image/text preservation, and wait for Workspace purge. They establish runtime
+handoff behavior, not compatibility of arbitrary application/schema upgrades.
+The full matched-release operator above still drains work.
+
 For guest working-directory changes, also run
 `PI_CLOUD_LIVE_MISSING_DIRECTORY_CHECK=1 node --import tsx scripts/run-live-missing-directory-check.mjs /private/cwd-check.json`.
 It uses an owned development machine and Luna to remove its selected directory,

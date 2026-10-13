@@ -6,6 +6,10 @@ intake acknowledgement boundary below. Implemented in source on 2026-10-09;
 [source verification](../reports/native-input-run-consolidation-20261009.md) is followed
 by the [matched deployment](../reports/native-input-release-20261009.md) on the same date.
 
+[ADR-0247](0247-session-work-and-tool-dispatch.md) extends the root Run to encompass
+its native descendants. Only root work is claimed in PG; child Conversations have
+no cloud Run rows. The input persistence and acknowledgement contract below remains.
+
 ## Execution and input identity
 
 Retain `sessions` for product identity, current preferences and resource binding.

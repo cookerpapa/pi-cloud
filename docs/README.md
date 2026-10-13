@@ -4,16 +4,18 @@ The [Session execution and Tool-dispatch plan](adr/0247-session-work-and-tool-di
 consolidates the October 13 discussion: root cloud work, native child Conversations
 without child Run claims, same-commit Tool dispatch, shared Kafka replies,
 Session writer closure and direct Worker publication. It replaces the unimplemented
-ADR-0246 draft; the old draft remains in Git. The source migration is under full
-acceptance. [Implementation evidence](reports/session-work-implementation-20261013.md)
-tracks the matching rollout separately; the serving release still uses schema 187.
+ADR-0246 draft; the old draft remains in Git. It is deployed as
+`session-work-6ba81a94`, schema 188 / execution-topic v16 / boot reply v3.
+[Implementation and release evidence](reports/session-work-implementation-20261013.md)
+records native children, direct publication, real recovery and rolling replacement.
 
 The [native Kafka fencing study](reports/kafka-native-fencing-20261013.md) compares
 direct Session producers with the current ingress. Isolated RF3/PG probes reproduce
 delayed initialization displacing a newer PG-authorized producer; a post-init PG
 check prevents stale data in the tested schedules but retains availability costs.
 Fresh-process resource samples and the existing ingress fault tests are included.
-This is research only; ADR-0209 and the maintained release remain unchanged.
+That study itself changed no runtime; ADR-0247 implements the subsequently
+approved migration and adds complete transport/live acceptance.
 
 The [Kafka assistant-text simplification](adr/0245-native-commit-text-presentation.md)
 keeps native text as the source and carries its display descriptions in the

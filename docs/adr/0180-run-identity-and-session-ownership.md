@@ -2,10 +2,12 @@
 
 Status: accepted, 2026-09-19. Owner-approved simplification of ADRs 0167,
 0174–0179. Kafka projection/seals, native Lane semantics and Workspace deletion
-coordination are unchanged.
+coordination are unchanged in that original revision. Current continuation follows
+[ADR-0229](0229-native-durable-runtime.md); root work/native children and one-writer
+closure follow [ADR-0247](0247-session-work-and-tool-dispatch.md).
 
-A Run is one admitted execution, not a retry container. Once admitted it ends
-normally or closes as interrupted/failed; another execution is a new Run. SQL
+A Run is one admitted root work item, not a retry container. Its native task may
+resume after ordered old-writer closure and a fresh PG grant. SQL
 transaction retries and provider transport retries are not new business Runs.
 Remove RunAttempt, its second state machine, current-attempt pointer and counters.
 Run owns execution attribution, publication/coverage, drain and seal evidence.
@@ -13,9 +15,9 @@ Never replay arbitrary Tools after uncertainty.
 
 One physical Session owns one Worker boot and one Lease/Fence. Its native writer
 identity is the lease incarnation, not a first task's Attempt. Sibling Lanes
-share that writer and can execute concurrently. Task completion closes only that
-Run; poisoned writer state belongs to the Session incarnation. New ownership
-still waits for every old Run's ordered seal. Keep precise post-lock expiry,
+share that writer and can execute concurrently. Children have native task outcomes,
+not cloud Runs or individual seals. Poisoned writer state belongs to the Session
+incarnation. New ownership waits for its one ordered closure. Keep precise post-lock expiry,
 ambiguous-COMMIT confirmation and effect-endpoint authority.
 
 Worker capacity is local admission, including pending claims and memory limits.

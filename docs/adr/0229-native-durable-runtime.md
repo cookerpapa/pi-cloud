@@ -3,6 +3,10 @@
 Status: implemented, verified and deployed, 2026-10-06. See the
 [migration and release record](../reports/pi-durable-migration-20261006.md).
 
+[ADR-0247](0247-session-work-and-tool-dispatch.md) narrows the cloud Run to root
+work with native descendants and replaces publication ingress with direct Session
+producers. It preserves this ADR's native continuation, abort and Tool semantics.
+
 The owner chose native Pi Durable 1.0 cancellation and recovery after
 [ADR-0228's executable evaluation](../reports/pi-durable-evaluation-20261005.md).
 The former differences are migration requirements, not reasons to reproduce

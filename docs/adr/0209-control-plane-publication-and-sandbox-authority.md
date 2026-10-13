@@ -9,6 +9,13 @@ receipts, signatures or a second Run authority. Implementation proceeds in
 complete, separately verified slices; the deployed topology changes only at the
 matched cutover.
 
+Current applicability: [ADR-0247](0247-session-work-and-tool-dispatch.md) supersedes
+the Worker publication ingress and per-Run closure clauses below. Workers now
+publish directly, children are native Conversations, and forced recovery closes
+one Session writer. The partition control publisher, Projector dispatch and
+Control Plane sandbox-lifecycle boundaries remain. The Publication section records
+the October 1 decision; it is not a supported alternative runtime.
+
 ## Decision
 
 PostgreSQL remains the sole authority for Run and physical-Session ownership.

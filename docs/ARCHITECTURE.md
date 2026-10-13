@@ -5,9 +5,9 @@ native tasks, model context, input placement, Tool selection and Compaction. PiC
 execution authority, distributed placement, output projection and Cube lifetimes.
 CubeSandbox KVM is the only untrusted execution backend.
 
-This document describes the ADR-0247 source migration (schema 188 / topic v16).
+This document describes deployed ADR-0247 (schema 188 / topic v16 / boot reply v3).
 [Implementation and rollout evidence](reports/session-work-implementation-20261013.md)
-distinguishes validated source from the still-serving schema 187 release.
+identifies `session-work-6ba81a94` and the scope of its acceptance.
 
 The [post-Durable review](reports/repository-review-20261006.md) records the audited
 baseline. The [repair record](reports/review-repair-20261006.md) distinguishes current
@@ -26,7 +26,7 @@ Current meanings (older ADR clauses explicitly defer to ADR-0229):
 
 ```text
 Browser → Control Plane → PostgreSQL accepted Run
-                            ↓ Lane ready → atomic claim + shared Session lease
+                            ↓ root work ready → atomic claim + Session lease
                          Pi Worker
                          ├─ native Harness / concurrent Conversations
                          ├─ Model Gateway → CLIProxyAPI → Provider
@@ -42,12 +42,13 @@ Browser → Control Plane → PostgreSQL accepted Run
                                                        ↓
                                                  native reply → Kafka reply topic → Worker/Pi
 
-Control authority → PG binding close + Outbox → same ingress/Kafka
-  → ingress routing revocation + Projector binding view
+Normal completion → Worker work_finished → Kafka → PG root outcome + writer retirement
+Forced closure → PG binding close + Outbox → control publisher / same Kafka partition
+  → routing revocation + Projector binding view
   → final Kafka seal → PG terminal/native closure → next Run eligible
 Chat Stop → durable PG request → Worker Agent.abort()
   → native abort + tool cancellation → same Session Kafka → Projector → Cube
-  → native abort settlement → seal; physical cancellation is independently delivered
+  → native abort settlement → work_finished; physical cancellation is independently delivered
 ```
 
 The Projector currently runs in the Control Plane process. Its modules remain
@@ -58,13 +59,12 @@ timeout rolls back without advancing offsets or admitting a Tool. Failed records
 retry in partition order. Phase metrics and payload-free slow-record diagnostics
 locate waits without introducing another consumer or a skip/dead-letter path
 ([ADR-0199](adr/0199-bounded-publication-and-projection.md)).
-Worker admission uses a short-lived mask of usable Session publication partitions.
-An open HTTP listener or existing Kafka topic alone is insufficient: a partition
-needs its producer, assignment and control views installed. The mask filters the
-existing PG claim query before a Run/lease is admitted; unrelated projection lag
-does not close healthy partitions. Peer reports are intersected with Kafka group
-ownership, and Worker snapshots expire after three seconds. This is an admission
-hint, not an additional lease or execution authority (ADR-0213).
+Worker admission reads Kafka partition availability and validates the fixed Topic's
+replication policy and in-sync replicas. It does not depend on a Control Plane
+publication endpoint. The availability mask filters the existing PG claim query;
+the PG grant and initialized Session producer still decide write admission.
+Control publication retains Projector assignment and installed-view checks.
+Readiness is an admission hint, not an additional lease or execution authority.
 
 Binding bootstrap loads assigned partitions in primary-key pages of 256. Each
 owner retains at most 65,536 entries and 64 MiB of serialized binding metadata;
@@ -218,8 +218,8 @@ authority/deduplication reads (ADR-0193).
 
 `queued` means accepted, not necessarily dispatchable. Input acceptance freezes
 the model/configuration and writes the initial Run and mailbox advancement together;
-`ready_at` is set only for a Lane head whose predecessor has closed. Otherwise
-seal projection promotes it in the closure transaction. Both paths hold the
+`ready_at` is set only for a root work head whose predecessor has closed. Otherwise
+work-finished or forced-seal projection promotes it in the closure transaction. Both paths hold the
 product Session row lock, so racing input and closure cannot lose readiness.
 Native child preparation runs inside the current Harness without a queue claim.
 Unchanged environment versions use a shared read. Only an image-version change
@@ -363,6 +363,9 @@ Worker readiness checks Kafka policy/available partitions directly; replacing th
 Control Plane does not reset a healthy Worker producer. Tool dispatch, projection
 and browser delivery can pause while the Projector is unavailable. PG remains
 the only lease/work authority. See [ADR-0247](adr/0247-session-work-and-tool-dispatch.md).
+On a new consumer assignment the reader explicitly resumes assigned partitions;
+an old handler's pause must not survive its generation. Recovery then reinstalls
+any required pause before dispatch. This preserves the committed effect boundary.
 
 Native sequence, exact closure offsets and fingerprints remain necessary for
 idempotent replay. There is no per-Step receipt, second channel lease or signing

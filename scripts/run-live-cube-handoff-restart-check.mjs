@@ -7,6 +7,13 @@ import { setTimeout as delay } from "node:timers/promises";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
+import { createHash, randomUUID, randomInt } from "node:crypto";
+import sharp from "sharp";
+import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
+import {
+  createInitialSessionView,
+  sessionViewReducer,
+} from "../packages/web-ui/src/session-view.ts";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { sql } from "kysely";
 if (process.env.PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_CHECK !== "1")
@@ -21,10 +28,10 @@ const runtime = resolve(
 const reportPath = process.argv[2] ?? "/tmp/pi-cloud-cube-handoff-restart.json";
 const exec = promisify(execFile);
 const port = (await readFile(runtime + "/.env", "utf8")).match(/^PI_CLOUD_HTTP_PORT=(\d+)$/m)[1];
-const api = new PiCloudApi(
-  (url, init) => fetch(new URL(String(url), `http://127.0.0.1:${port}`), init),
-  (await readFile(runtime + "/secrets/api-token", "utf8")).trim(),
-);
+const authorizationToken = (await readFile(runtime + "/secrets/api-token", "utf8")).trim();
+const fetchImplementation = (url, init) =>
+  fetch(new URL(String(url), `http://127.0.0.1:${port}`), init);
+const api = new PiCloudApi(fetchImplementation, authorizationToken);
 const terminal = (r) => ["completed", "failed", "cancelled", "timed_out"].includes(r.state);
 async function waitFor(fn, label, ms = 120000) {
   const until = Date.now() + ms;
@@ -35,13 +42,47 @@ async function waitFor(fn, label, ms = 120000) {
   }
   throw Error("Timed out: " + label);
 }
-let project, session, turn, error;
+let project, session, turn, error, child, streamAbort, streaming, streamFailure;
+let view = createInitialSessionView(),
+  observedText = "",
+  lastTextAt,
+  maxTextGapMs = 0,
+  textEvents = 0;
+const scenario = process.env.PI_CLOUD_LIVE_HANDOFF_SCENARIO ?? "cube";
+assert(["cube", "child", "stream-image"].includes(scenario));
+const imageCode = String(randomInt(100000, 999999));
+function observeText() {
+  const text =
+    view.turns
+      .find((item) => item.turnId === turn?.turnId)
+      ?.items.filter((item) => item.kind === "text")
+      .map((item) => item.text)
+      .join("") ?? "";
+  if (text.length > observedText.length) {
+    const now = Date.now();
+    if (lastTextAt !== undefined) maxTextGapMs = Math.max(maxTextGapMs, now - lastTextAt);
+    lastTextAt = now;
+    observedText = text;
+    textEvents++;
+  }
+}
+async function nativeQuery(query) {
+  const url = new URL((await readFile(runtime + "/secrets/database-url", "utf8")).trim());
+  url.hostname = serviceAddress("postgres");
+  const db = createDatabase({ connectionString: url.toString(), maxConnections: 1 });
+  try {
+    return (await query.execute(db)).rows;
+  } finally {
+    await db.destroy();
+  }
+}
 const faultMode = process.env.PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_MODE ?? "pod";
 assert(["pod", "process", "rolling"].includes(faultMode));
 const report = {
   checkedAt: new Date().toISOString(),
   model: "gpt-6-luna",
   faultMode,
+  scenario,
   accepted: false,
 };
 async function assertOnlyOwnedRun() {
@@ -74,30 +115,102 @@ try {
     "/workspace",
     { provider: "openai-codex", modelId: "gpt-6-luna", thinkingLevel: "low", fastMode: false },
   );
+  let uploadIds;
+  if (scenario === "stream-image") {
+    const png = await sharp(
+      Buffer.from(
+        `<svg width="600" height="240"><rect width="600" height="240" fill="white"/><text x="300" y="150" text-anchor="middle" font-family="sans-serif" font-size="85">${imageCode}</text></svg>`,
+      ),
+    )
+      .png()
+      .toBuffer();
+    const upload = await api.uploadWorkspaceFile(
+      session.sessionId,
+      randomUUID(),
+      new Blob([png], { type: "image/png" }),
+      "handoff-image.png",
+    );
+    uploadIds = [upload.id];
+  }
+  const task =
+    "Use bash exactly once with this command: printf 'started\\n' >> once.txt; sleep 45; printf 'finished\\n' >> once.txt; printf 'CUBE_HANDOFF_SURVIVED'. Set timeout to 120 seconds. Do not use other tools or delegate. After completion reply CUBE_HANDOFF_SURVIVED.";
+  const prompt =
+    scenario === "child"
+      ? `Call subagent action:run exactly once with context:fresh, sandbox:shared and tools:["bash"]. Give it this exact task: ${task} Wait for that child's result and then reply CUBE_HANDOFF_SURVIVED. Do not use workflow, start another child, or use Bash yourself.`
+      : scenario === "stream-image"
+        ? "This is a streaming acceptance test. Read the six digits in the attached image directly. Do not use any tools. In your final answer write 1000 numbered lines. Each line contains its number, the six digits you saw in the image, and STREAM_HANDOFF abcdefghijklmnopqrstuvwxyz. Do not summarize or use a code block."
+        : task;
   turn = await api.acceptTurn(
     session.sessionId,
-    "只调用一次 bash，命令必须为：printf 'started\\n' >> once.txt; sleep 45; printf 'finished\\n' >> once.txt; printf 'CUBE_HANDOFF_SURVIVED'。timeout 参数设为 120 秒。不要调用其他工具，不要搜索、不要子代理。完成后只回复 CUBE_HANDOFF_SURVIVED。",
+    prompt,
     newIdempotencyKey("handoff"),
     "low",
+    uploadIds,
   );
   report.runId = turn.runId;
-  await waitFor(async () => {
-    const r = await api.getRun(turn.runId);
-    if (terminal(r)) throw Error("Run ended before fault " + JSON.stringify(r.failure));
-    try {
-      return (
-        Buffer.from(
-          (await api.readWorkspaceFile(session.sessionId, "once.txt")).bytes,
-        ).toString() === "started\n"
-      );
-    } catch {
-      return false;
-    }
-  }, "native Bash start");
+  console.log(JSON.stringify({ phase: "handoff-start", scenario, runId: turn.runId }));
+  await writeFile(reportPath, JSON.stringify(report, null, 2) + "\n", { mode: 0o600 });
+  if (scenario === "stream-image") {
+    streamAbort = new AbortController();
+    streaming = streamSessionEvents({
+      sessionId: session.sessionId,
+      authorizationToken,
+      fetchImplementation,
+      signal: streamAbort.signal,
+      onStatus() {},
+      onSnapshot(snapshot) {
+        view = sessionViewReducer(view, {
+          type: "conversation.loaded",
+          conversation: snapshot.conversation,
+        });
+        observeText();
+      },
+      onEvent(event) {
+        view = sessionViewReducer(view, { type: "stream.event", event });
+        observeText();
+      },
+    }).catch((failure) => {
+      if (!streamAbort.signal.aborted) streamFailure = failure;
+    });
+  }
+  await waitFor(
+    async () => {
+      if (streamFailure) throw streamFailure;
+      const r = await api.getRun(turn.runId);
+      if (terminal(r)) throw Error("Run ended before fault " + JSON.stringify(r.failure));
+      if (scenario === "stream-image") return observedText.length >= 300;
+      try {
+        return (
+          Buffer.from(
+            (await api.readWorkspaceFile(session.sessionId, "once.txt")).bytes,
+          ).toString() === "started\n"
+        );
+      } catch {
+        return false;
+      }
+    },
+    scenario === "stream-image" ? "live image answer" : "native Bash start",
+  );
+  const observedPrefix = observedText.slice(0, 150);
+  if (scenario === "child") {
+    const children =
+      await nativeQuery(sql`select e.child_session_id, s.pi_session_id=ps.pi_session_id as same_session,
+      not exists(select 1 from runs cr where cr.session_id=e.child_session_id) as no_child_run
+      from subagent_executions e join sessions s on s.id=e.child_session_id
+      join runs r on r.id=e.root_run_id join sessions ps on ps.id=r.session_id
+      where e.root_run_id=${turn.runId}::uuid`);
+    assert.equal(children.length, 1);
+    child = children[0];
+    assert(child.same_session && child.no_child_run);
+    report.nativeChildOnly = true;
+  }
   const before = await api.getRun(turn.runId);
   report.workerId = before.workerId;
   await assertOnlyOwnedRun();
   const targetPod = podFor("control-plane");
+  console.log(JSON.stringify({ phase: "replace-control-plane", scenario }));
+  const faultStartedAt = Date.now();
+  const charactersBeforeRoll = observedText.length;
   if (faultMode === "process") {
     const beforePod = JSON.parse(kubectl(["get", "pod", targetPod, "-o", "json"]));
     const count = beforePod.status.containerStatuses[0].restartCount;
@@ -167,6 +280,10 @@ try {
       "--timeout=180s",
     ]);
   }
+  report.replacementMs = Date.now() - faultStartedAt;
+  report.charactersBeforeRoll = charactersBeforeRoll;
+  report.charactersAtReady = observedText.length;
+  const readyAt = Date.now();
   const finished = await waitFor(
     async () => {
       try {
@@ -177,8 +294,9 @@ try {
       }
     },
     "Run completion",
-    180000,
+    scenario === "stream-image" ? 360000 : 180000,
   );
+  report.completionAfterReadyMs = Date.now() - readyAt;
   report.completionState = finished.state;
   if (finished.failure) report.failure = finished.failure;
   assert.equal(finished.state, "completed", JSON.stringify(finished.failure));
@@ -187,19 +305,49 @@ try {
     (t) => t.runId === turn.runId,
   ).transcript;
   const tools = transcript.items.filter((i) => i.kind === "tool");
-  assert.equal(tools.length, 1);
-  assert.equal(tools[0].status, "completed");
-  assert.equal(
-    Buffer.from((await api.readWorkspaceFile(session.sessionId, "once.txt")).bytes).toString(),
-    "started\nfinished\n",
-  );
+  if (scenario === "stream-image") {
+    assert.equal(tools.length, 0);
+    const text = transcript.items
+      .filter((item) => item.kind === "text")
+      .map((item) => item.text)
+      .join("");
+    assert(text.includes(imageCode), "Image digits were not retained");
+    assert(text.includes(observedPrefix), "Pre-roll visible text was lost");
+    assert(text.length > observedPrefix.length);
+    assert(textEvents > 1, "No incremental text observations");
+    report.imageVerified = true;
+    report.preservedPrefixSha256 = createHash("sha256").update(observedPrefix).digest("hex");
+    report.textEvents = textEvents;
+    report.maxObservedTextGapMs = maxTextGapMs;
+    report.finalCharacters = text.length;
+  } else {
+    assert.equal(tools.length, 1);
+    assert.equal(tools[0].status, "completed");
+    if (child) {
+      assert.equal(tools[0].toolName, "subagent");
+      const childTurns = (await api.getConversation(child.child_session_id)).turns;
+      const childTools = childTurns
+        .flatMap((turn) => turn.transcript.items)
+        .filter((item) => item.kind === "tool");
+      assert.equal(childTools.length, 1);
+      assert.equal(childTools[0].toolName, "bash");
+      assert.equal(childTools[0].status, "completed");
+      report.controlToolReplyRecovered = true;
+    }
+    assert.equal(
+      Buffer.from((await api.readWorkspaceFile(session.sessionId, "once.txt")).bytes).toString(),
+      "started\nfinished\n",
+    );
+    report.executionCount = 1;
+    report.cubeCompletedAcrossControlPlaneLoss = true;
+  }
   report.accepted = true;
-  report.executionCount = 1;
   report.workerUnchanged = true;
-  report.cubeCompletedAcrossControlPlaneLoss = true;
 } catch (e) {
   error = e;
 } finally {
+  streamAbort?.abort();
+  await streaming;
   const cleanup = [];
   if (turn && session) {
     try {
@@ -217,6 +365,19 @@ try {
     await api
       .deleteWorkspace(project.workspaceId, newIdempotencyKey("cleanup-workspace"))
       .catch((e) => cleanup.push(e));
+  if (project) {
+    try {
+      await waitFor(async () => {
+        const [row] = await nativeQuery(
+          sql`select deleted_at is not null and storage_purged_at is not null as purged from workspaces where id=${project.workspaceId}::uuid`,
+        );
+        return !row || row.purged;
+      }, "physical Workspace purge");
+      report.physicalCleanupConfirmed = true;
+    } catch (failure) {
+      cleanup.push(failure);
+    }
+  }
   report.cleanupCompleted = cleanup.length === 0;
   await writeFile(reportPath, JSON.stringify(report, null, 2) + "\n");
   console.log(JSON.stringify(report));

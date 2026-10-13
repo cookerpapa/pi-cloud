@@ -9,10 +9,12 @@ ownership/fixed child slots. Their historical versions remain in Git.
 
 A Worker slot means one active physical Pi Session (`tenantId/piSessionId`),
 including main and all delegated Lanes. Human Forks remain separate families.
-Idle browser history does not reserve capacity. The family is retained until
-all its active Run executions drain; children do not compete for another root
+Idle browser history does not reserve capacity. Under
+[ADR-0247](0247-session-work-and-tool-dispatch.md), the family is retained until
+its root work and native children drain; children do not compete for another root
 slot. Remove the fixed parent/child split and the per-Root concurrent-child
-admission rejection. Keep bounded tree depth and total descendants.
+admission rejection. Product depth/descendant quotas default to absent under ADR-0215;
+explicitly configured finite policies remain enforceable.
 
 PostgreSQL remains the only durable scheduler. A Worker has at most two in-flight
 claims (ADR-0175), supplies its admitted family set/new-family allowance, and
@@ -20,19 +22,19 @@ reserves pending capacity locally. Its admission filter also applies to fixed-ID
 claims. ADR-0180 removes the duplicate PG occupancy counter; local admission counts
 distinct physical Sessions. There is one current owner lease per physical
 Session and one monotonic Session epoch; heartbeats renew that row once, not
-one lease/deadline per child. A Run is a task identity, not an owner.
+one lease/deadline per child. A Run identifies root work, not a separate owner.
 
-The task execution reference carries the shared lease ID/epoch plus its Run
-ID. It has no separate expiry or renewal. `runs` retain task lifecycle
+The work execution reference carries the shared lease ID/epoch plus its root Run
+ID. It has no separate expiry or renewal. `runs` retain root-work lifecycle
 and release markers; a read-only `active_execution_scopes` projection joins those
 records with the Session lease for executor authorization. No duplicate mutable
 per-task lease table, compatibility decoder or new authority service remains.
 The shared Session liveness watch is held by the native Session Host. Native
 stream/Tool cancellation remains task-local; a quiet child is not a lost owner.
 
-Task terminal seals close individual operations. An uncertain Session writer or
-lost Session lease closes the shared incarnation; recovery waits for all affected
-task closures to project before assigning the family elsewhere. A task cannot
+Native abort and ordered operation cancellation close individual tasks. An uncertain
+Session writer or lost Session lease closes the shared incarnation; recovery waits
+for that one Session closure to project before assigning the family elsewhere. A task cannot
 launch new effects after cancellation merely because the Session lease is valid.
 No lease, fence or ordered closure is replaced by a slot.
 

@@ -87,8 +87,13 @@ export class ControlToolDispatcher {
       return;
     }
     if (fact.kind !== "durable_commit") return;
-    for (const command of controlToolsForFact(fact))
-      this.#remember(command, fact.commit.seq, record.partition);
+    // Validate the same-commit intent, but retain only the transport reference.
+    // Recovery reads this exact descriptor from cloud_metadata; storing its
+    // expanded arguments here would turn an ordinary replay into a conflict.
+    controlToolsForFact(fact);
+    for (const reference of fact.tools)
+      if (reference.target === "control")
+        this.#remember(reference, fact.commit.seq, record.partition);
     let changed = false;
     for (const write of fact.commit.writes) {
       if (write.type === "task") {

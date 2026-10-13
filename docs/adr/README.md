@@ -8,14 +8,17 @@ The current append contract is [ADR-0161](0161-kafka-native-session-commit.md).
 Earlier PG receipt/cache experiments are preserved in Git history and their
 revision-bound reports, not as alternate production backends.
 
-Implementation proposal: [ADR-0247](0247-session-work-and-tool-dispatch.md)
+Current ownership and publication: [ADR-0247](0247-session-work-and-tool-dispatch.md)
 consolidates Session ownership, root cloud work, native Subagents, unified Tool
-dispatch/replies, writer closure and direct Kafka publication. The ownership
-direction is owner-agreed; the detailed protocol is proposed and unimplemented.
-It replaces the earlier ADR-0246 draft, archived in Git. ADR-0209/0229/0238
-remain the current production contracts until the matched cutover.
+dispatch/replies, writer closure and direct Kafka publication. It is deployed as
+`session-work-6ba81a94` under schema 188 / topic v16 / boot reply v3.
+It replaces the earlier ADR-0246 draft, archived in Git, and supersedes the
+Worker-ingress/child-Run clauses in ADR-0209/0229/0238.
 
 Read the documents in this order:
+
+1. [ADR-0247](0247-session-work-and-tool-dispatch.md) — one cloud root work item,
+   native descendants, one Session writer and unified Tool dispatch/replies.
 
 1. [ADR-0245](0245-native-commit-text-presentation.md) — removes the extra Kafka
    assistant-text copy through same-commit display descriptions; implemented and

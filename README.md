@@ -29,13 +29,14 @@ from actual-use and fleet-capacity evidence; the pilot has not started.
 Browser -> Control Plane -> PostgreSQL (Run queue/control) -> Pi Worker
 Pi Worker <-> Worker-local Model Gateway <-> CLIProxyAPI <-> Model
 
-Pi Worker -> Publication ingress -> Kafka -> Session Projector
-                                            +-> PostgreSQL (conversation history)
-                                            +-> Browser (SSE)
-                                            `-> Cube native execution endpoint
+Pi Worker -> Session Kafka producer -> Kafka -> Session Projector
+                                               +-> PostgreSQL (native state/history)
+                                               +-> Browser (SSE)
+                                               +-> Control Tool handlers
+                                               `-> Cube native execution endpoint
 
-Control state -> PostgreSQL + Outbox -> same ingress/Kafka -> Projector memory views
-Cube completion -> boot-scoped Kafka replies -> original Pi Worker
+Control state -> PostgreSQL + Outbox -> control publisher -> same Kafka partition
+Cube/control Tool completion -> boot-scoped Kafka replies -> original Pi Worker
 
 Chat upload -> Control Plane -> Cube Workspace Volume
                             `-> S3 (immutable source images)
@@ -47,7 +48,7 @@ additional messages go to the running Pi native queue and are confirmed after
 its Kafka-backed Storage commit. An unavailable Worker leaves the browser draft
 unconfirmed. [ADR-0238](docs/adr/0238-native-input-queue-and-run-record.md) is deployed;
 the [Worker claim cleanup](docs/adr/0242-worker-claim-schema-cleanup.md) is retained
-in the deployed schema 187 / execution-topic v15 release.
+in the deployed schema 188 / execution-topic v16 release.
 
 The intake path shares its locked Session and request lookup between
 routing and Run creation: eight ordinary business SQL statements, two on an
@@ -68,36 +69,16 @@ second copied body ([ADR-0245](docs/adr/0245-native-commit-text-presentation.md)
 Incomplete local Tool calls stay in Worker memory; complete model responses
 enter native persistence before validated Tool execution (ADR-0230).
 The [Session work migration](docs/adr/0247-session-work-and-tool-dispatch.md) is
-implemented in source and undergoing acceptance: one root Run with native child
-Conversations, unified Tool replies, one Session closure and Worker direct Kafka
-publication. It requires a matched schema 188 / execution-topic v16 release;
-[progress and remaining checks](docs/reports/session-work-implementation-20261013.md)
-are recorded separately. It is not yet the deployed release.
-
-The [current deployed release](docs/reports/native-text-presentation-20261012.md),
-`native-text-c9b8b2a3`, uses schema 187, guest input protocol 4, Tool Worker protocol 4 and Cube management
-protocol 7. Inbox/input metadata and Submissions retain current values without
-permanent edit bodies; streaming live bodies no longer accumulate in PG.
-Native input/Stop, actual Worker/Projector crash recovery, browser/image,
-multi-Conversation scenarios and the full Luna/Cube check have passing evidence. The report also preserves
-earlier intermittent model-proxy failures encountered during acceptance. It exercises the
-maintained matched release workflow and preserves
-the previously deployed [source repairs](docs/reports/review-repair-20261007-r3.md), which
-correct quarantine recovery, returned-input identity and oversized-line Read,
-and remove unnecessary document-revision queries. Confirmed loss of a user-selected
-working directory now returns a native Tool error so the Agent can continue the dialogue.
-Real Luna directory restoration, native input/Stop and browser/image/Read checks
-pass in the preceding [directory release](docs/reports/working-directory-20261010.md).
-The [preceding Worker-claim release](docs/reports/worker-claim-repair-20261010.md)
-verifies indexed Worker admission/history reads, removes unused
-physical-Session metadata and gives Worker registry/lease references consistent names.
-Real Luna native-input/browser tests, cross-Worker restoration and same-Run crash
-recovery pass; normal claim still uses nine business SQL statements.
-The retained publication-admission repair rejects already-known stale/closed registrations
-without SQL; every registration that could succeed still verifies PG. Real Luna
-native-input/Stop and Control Plane process-restart acceptance pass.
-Earlier cold-VM/preview acceptance, releases, reviews and
-the Durable migration remain indexed in [the documentation map](docs/README.md).
+deployed as `session-work-6ba81a94`: one root Run with native child Conversations,
+unified Tool replies, one Session closure and Worker direct Kafka publication.
+The matched contracts are schema 188, execution-topic v16, boot reply v3,
+guest input protocol 4, Tool Worker protocol 4 and Cube management protocol 7.
+[Implementation and acceptance evidence](docs/reports/session-work-implementation-20261013.md)
+records source tests, real Luna/Cube/browser checks and rolling-update findings.
+Each active physical Session adds a native Kafka producer; the
+[bounded comparison](docs/reports/session-work-transport-20261014.md) records both
+the latency improvement and its thread/connection cost. It is not a fleet-capacity claim.
+Earlier releases remain indexed in [the documentation map](docs/README.md).
 
 Whole file/shell Tools execute in Cube. Replies return through the separate
 Worker-boot Kafka transport; Pi processes them before publishing the canonical
@@ -109,11 +90,13 @@ allocation. Retirement closes creation admission before confirming node absence,
 so a delayed creation cannot reopen a released allocation (ADR-0223).
 Images used by the Agent are immutable Session attachments in private S3 storage;
 Kafka carries their references and Pi receives ordinary image content.
-The API, publication ingress, Projector and sandbox lifecycle controller share
+The API, control publisher, Projector and sandbox lifecycle controller share
 one Control Plane process. Cubelet owns accepted fixed Tool processes and their
 Kafka completion delivery. There is no separate Broker service.
-Ingress serializes Session writes, control changes and seals; its ordinary Worker
-append path uses no SQL. PG remains the Run/control authority. Committed control
+Worker commits bypass the Control Plane. Producer initialization verifies PG authority
+before and after Kafka takeover; ordinary native commits use no SQL or HTTP hop.
+Normal `work_finished` projects the root outcome and voluntary writer retirement;
+forced recovery retains one ordered Session seal. PG remains the Run/control authority. Committed control
 references refresh bounded binding, queued-input and Subagent views. Tool/probe
 routes read owner memory; pending inputs use SSE and relevant work wakes on changes
 or known deadlines. Worker admission uses the available publication partitions;
