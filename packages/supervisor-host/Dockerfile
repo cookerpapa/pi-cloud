@@ -75,8 +75,8 @@ COPY packages/supervisor-host/tsconfig.json packages/supervisor-host/tsconfig.js
 COPY packages/supervisor-host/src packages/supervisor-host/src
 COPY packages/workspace-runtime/package.json packages/workspace-runtime/package.json
 COPY packages/workspace-runtime/src packages/workspace-runtime/src
-RUN cd /app/packages/sandbox-supervisor \
-    && node --import tsx --input-type=module --eval "await import('./src/subagent-tool.ts'); await import('./src/pi-cloud-turn-runner.ts'); await import('@earendil-works/pi-durable')" \
+RUN cd /app/packages/supervisor-host \
+    && node --import tsx --input-type=module --eval "await import('./src/tools/worker-tool-runtime.ts'); await import('@pi-cloud/runtime-core/direct-session-kafka'); await import('@pi-cloud/sandbox-supervisor'); await import('@earendil-works/pi-durable')" \
     && cd /app/packages/sandbox-control \
     && node --input-type=module --eval "await import('undici')" \
     && rm -rf /usr/local/lib/node_modules/npm \
