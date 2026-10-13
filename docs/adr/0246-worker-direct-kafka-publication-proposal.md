@@ -20,6 +20,31 @@ This document authorizes no migration, deployment or runtime fallback.
 发布放在 Worker。控制面保留控制记录发布与故障封口能力。该候选具备可行的
 原生基础，但只有下述关闭和恢复验收通过后才建议切换。
 
+## Open refinement: Run completion versus writer fencing
+
+业主进一步指出：所有 Lane 共用一个 Harness/Storage/物理写入者，不能把每个
+子 Run 的结束都当成一次独立写入者封口。这个区分成立。真正撤销旧发布者资格的
+封口属于**物理 Session 的一次 writer incarnation**，不属于每个子 Run，也不是
+永久关闭会话历史；以后可以在新租约下继续追加。
+
+下文的普通 Run seal 流程描述的是目前需要保住的收尾合同，**保留每个 Run 一条
+独立 `execution_seal` 不再视为直写的既定前提**。优先评估将正常 Run 的终态、
+结果已投影、展示结束和下一项工作可运行的确认，改为唯一 Worker 写入的普通
+有序完成记录，或由已提交的 Pi 原生终态及必要的 PiCloud 描述驱动投影；不再为
+每个子 Run 额外走 PG Outbox → 控制面 → Kafka 的封口往返。
+
+这需要明确正常完成记录、PG Run 结算与取消竞争的映射，不能只删掉现有 seal：
+`PostgresSubagentJobProvider` 当前等 seal 才暴露可读的完成结果，`advanceLaneReadiness`
+也用它阻止下一项工作越过尚未投影的输出。实现前要先修订下文相应流程和验收，
+完成状态/有序收尾仍需保留。整 writer 的故障隔离、恢复检查点和接管守卫不削弱。
+
+本次补充的 `durable-agent-session.test.ts` 的 `early-answer` 隔离用例确认：
+父 Agent 的最终 Assistant Entry 和 Submission done 可以先出现，拥有子任务的
+上一代 Generation 仍为 `completing`；父 Conversation 的 `waitForIdle` 要等子任务
+结束才返回。PiCloud 的 Run runner 等的是这一 idle 边界。模型 final 文本、原生
+输入得到答案、云端整个 Run 完成是不同状态。八项本地 Harness 合同测试通过；
+这不是生产多 Agent 实测，也不是将 Run seal 删除后的端到端验收。
+
 ## Proposed topology
 
 ```mermaid

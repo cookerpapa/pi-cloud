@@ -43,6 +43,13 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
       [ADR-0246](adr/0246-worker-direct-kafka-publication-proposal.md) records the
       proposed change map and acceptance gates. It is not accepted, and no
       direct-Worker production adapter has been implemented.
+- [ ] R13K-02: simplify normal child-Run completion separately from physical
+      writer fencing. All Conversations share one native writer; independent
+      per-Run seals are an implementation choice, not a multi-Lane requirement.
+      Preserve result visibility, ordered terminal display, cancellation and
+      Lane readiness when replacing the existing seal path. A focused native
+      test proves final Assistant text can precede descendant-aware idle; it
+      does not establish the replacement cloud settlement protocol.
 
 [ADR-0243](adr/0243-native-input-current-state.md) is deployed with schema 185 as
 `native-input-current-e82d00b7`. [Source and live acceptance](reports/native-input-current-state-20261012.md)

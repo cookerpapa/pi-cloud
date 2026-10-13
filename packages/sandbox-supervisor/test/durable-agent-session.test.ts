@@ -256,7 +256,7 @@ it("rejects duplicate provider call IDs within one response before executing eit
   }
 });
 
-it.each(["reply", "abort"] as const)(
+it.each(["reply", "abort", "early-answer"] as const)(
   "keeps child supervision across Tool completion and applies native parent %s",
   async (mode) => {
     const models = createModels(),
@@ -266,7 +266,9 @@ it.each(["reply", "abort"] as const)(
     models.setProvider(childModel.provider);
     parentModel.setResponses([
       fauxAssistantMessage(fauxToolCall("delegate", {}), { stopReason: "toolUse" }),
-      fauxAssistantMessage(fauxToolCall("reply", {}), { stopReason: "toolUse" }),
+      ...(mode === "early-answer"
+        ? []
+        : [fauxAssistantMessage(fauxToolCall("reply", {}), { stopReason: "toolUse" })]),
       fauxAssistantMessage("PARENT DONE"),
     ]);
     childModel.setResponses([
@@ -364,7 +366,9 @@ it.each(["reply", "abort"] as const)(
         { type: "input", content: "delegate and supervise", requestId: parentRun },
         BACKGROUND_CONTEXT,
       );
-      await reached.promise;
+      if (mode === "early-answer") {
+        expect((await input.wait(BACKGROUND_CONTEXT)).status).toBe("done");
+      } else await reached.promise;
       const conversation = await storage.conversation(
         childId as import("@earendil-works/pi-durable").ConversationId,
         BACKGROUND_CONTEXT,
@@ -374,7 +378,36 @@ it.each(["reply", "abort"] as const)(
         BACKGROUND_CONTEXT,
       );
       expect(conversation?.owner?.taskId).toBe(caller?.owner);
-      if (mode === "abort") {
+      if (mode === "early-answer") {
+        const context = await parent.context(BACKGROUND_CONTEXT);
+        expect(
+          context.entries.some((entry) =>
+            entry.model?.some(
+              (message) =>
+                message.role === "assistant" &&
+                message.content.some((part) => part.type === "text" && part.text === "PARENT DONE"),
+            ),
+          ),
+        ).toBe(true);
+        const inspection = await runtime.harness.inspect(BACKGROUND_CONTEXT);
+        expect(
+          inspection.tasks.some(
+            ({ record }) => record.id === caller?.owner && record.state.status === "completing",
+          ),
+        ).toBe(true);
+        expect(inspection.tasks.some(({ record }) => record.conversationId === childId)).toBe(true);
+        let idle = false;
+        // This is the same descendant-aware boundary the cloud Run waits for.
+        const idleWait = parent.waitForIdle(BACKGROUND_CONTEXT).then(() => {
+          idle = true;
+        });
+        await runtime.harness.inspect(BACKGROUND_CONTEXT);
+        expect(idle).toBe(false);
+        reply.resolve();
+        await idleWait;
+        expect((await childInput!.wait(BACKGROUND_CONTEXT)).status).toBe("done");
+        expect(idle).toBe(true);
+      } else if (mode === "abort") {
         await parent.abort(BACKGROUND_CONTEXT);
         expect(await input.wait(BACKGROUND_CONTEXT)).toMatchObject({
           status: "unanswered",

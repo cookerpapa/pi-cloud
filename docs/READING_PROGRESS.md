@@ -123,6 +123,14 @@ acceptance gates. The current implementation has not changed. The compatible
 Control Plane update requirement remains distinct from the initial architectural
 cutover this candidate would require.
 
+The owner challenged retaining separate child-Run seals. Native ownership and an
+eight-test Harness run confirm one shared writer, generation-owned children, and
+final Assistant Entry/Submission done preceding descendant-aware idle. The cloud
+runner waits for that idle boundary. ADR-0246 now marks ordinary Run completion
+records versus physical-writer closure as a refinement to resolve, rather than
+treating per-Run seals as a required property of multiple Lanes. No production
+settlement or cancellation semantics have been changed.
+
 Resume with: **Kafka → Projector: consuming one committed record, projecting
 native state and dispatching its bounded effects**. Keep the provider/model
 request as a separate walkthrough hop.
