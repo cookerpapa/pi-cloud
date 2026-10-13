@@ -11,6 +11,7 @@ vi.mock("@confluentinc/kafka-javascript", async () => {
         }
         setDefaultConsumeTimeout() {}
         assign() {}
+        resume() {}
         unassign() {}
         connect(_o: any, callback: any) {
           callback();

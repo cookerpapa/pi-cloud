@@ -89,6 +89,11 @@ export class KafkaPartitionReader {
             assign: (values) => {
               if (this.#closing || generation !== this.#generation) return;
               this.#client.assign(values);
+              // librdkafka preserves pause state for a retained partition.
+              // Its old-generation handler deliberately cannot resume it;
+              // reset transport pauses when the new assignment is installed.
+              // Recovery may explicitly pause blocked partitions afterwards.
+              if (values.length) this.#client.resume(values);
               for (const value of values) {
                 this.#assigned.add(value.partition);
                 if (value.offset !== undefined) this.#starts.set(value.partition, value.offset);

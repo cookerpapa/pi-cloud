@@ -35,6 +35,7 @@ it.skipIf(!postgres || !brokers)(
       replicas: 3,
     });
     const replies = new Map<string, ToolReply>();
+    let waitingHandlers = 0;
     const controller = new SubagentController({
       database: measured,
       managementToken: "fixture-".repeat(8),
@@ -49,7 +50,11 @@ it.skipIf(!postgres || !brokers)(
       database: measured,
       partitions: 1,
       ownsPartition: (partition) => projector?.ownsPartition(partition) === true,
-      execute: (command, current) => controller.executeTool(command, current),
+      execute: async (command, current) => {
+        const result = await controller.executeTool(command, current);
+        if ("waiting" in result) waitingHandlers++;
+        return result;
+      },
       publish: async (_topic, reply) => {
         replies.set(reply.operationId, reply);
       },
@@ -95,11 +100,15 @@ it.skipIf(!postgres || !brokers)(
         timeout: 10_000,
       });
       expect(replies.has(command.operationId)).toBe(false);
+      await vi.waitFor(() => expect(waitingHandlers).toBeGreaterThan(0), { timeout: 10_000 });
+      const settledWaits = waitingHandlers;
       // A replacement Projector's in-memory wait list is reconstructed from the
       // same native Task and commit header, not another command queue.
       dispatcher.reset();
       await dispatcher.recover([0], () => true);
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await vi.waitFor(() => expect(waitingHandlers).toBeGreaterThan(settledWaits), {
+        timeout: 10_000,
+      });
       queries.length = 0;
       await new Promise((resolve) => setTimeout(resolve, 1200));
       expect(queries).toEqual([]);

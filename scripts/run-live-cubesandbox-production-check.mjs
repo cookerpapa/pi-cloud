@@ -1069,20 +1069,22 @@ try {
     `select (to_regclass('public.session_events') is null)::int || '|' ||
             (select count(*) from pi_durable_commits
               where tenant_id = ${sqlLiteral(tenantId)}) || '|' ||
-            (select count(*)
-               from outbox terminal_outbox
-               join session_terminal_events terminal
-                 on terminal.event_id = terminal_outbox.id
-              where terminal.tenant_id = ${sqlLiteral(tenantId)}
-                and terminal.session_id = ${sqlLiteral(session.sessionId)}
-                and terminal_outbox.topic = 'session.event.accepted.v1'
-                and terminal_outbox.published_at is not null)`,
+            (select count(*) from runs r join session_leases l on l.lease_id=r.lease_id
+              where r.tenant_id=${sqlLiteral(tenantId)} and r.session_id=${sqlLiteral(session.sessionId)}
+                and r.state='completed' and r.output_sealed_at is not null and r.output_seal_id is null
+                and l.writer_sealed_at is not null and l.released_at is not null) || '|' ||
+            (select count(*) from outbox where tenant_id=${sqlLiteral(tenantId)} and aggregate_type='session_terminal_event')`,
   );
-  const [postgresHotEventTableAbsent, projectedSessionMutations, publishedTerminalEvents] =
-    eventPlaneEvidence.split("|").map(Number);
+  const [
+    postgresHotEventTableAbsent,
+    projectedSessionMutations,
+    completedWorkRecords,
+    forcedSealRecords,
+  ] = eventPlaneEvidence.split("|").map(Number);
   assert.equal(postgresHotEventTableAbsent, 1);
   assert(projectedSessionMutations > 0);
-  assert.equal(publishedTerminalEvents, terminalCount);
+  assert.equal(completedWorkRecords, terminalCount);
+  assert.equal(forcedSealRecords, 0, "Normal work unexpectedly used a forced seal Outbox");
   const kafka = await kafkaState();
   assert(kafka.logEndOffsetSum > 0);
   assert(
@@ -1271,7 +1273,7 @@ try {
       authority: "Kafka acks=all",
       postgresHotEventTableAbsent: true,
       projectedSessionMutations,
-      publishedTerminalEvents,
+      completedWorkRecords,
       kafka,
     },
     scheduler: {
@@ -1329,7 +1331,7 @@ try {
         `- Large Workspace fresh-VM cold restore: ${String(report.largeWorkspace.freshCubeMicroVm)}`,
         `- Real input/output/cache-read tokens: ${String(report.totalUsage.inputTokens)} / ${String(report.totalUsage.outputTokens)} / ${String(report.totalUsage.cacheReadTokens)}`,
         `- Canonical conversation: ${String(report.canonicalConversation.terminalCount)} terminal Turns / ${String(report.canonicalConversation.piEntryCount)} Pi entries / ${String(report.canonicalConversation.canonicalPayloadBytes)} bytes`,
-        `- Current Kafka topic / end-offset sum / published seals: ${report.eventPlane.kafka.topic} / ${String(report.eventPlane.kafka.logEndOffsetSum)} / ${String(report.eventPlane.publishedTerminalEvents)}`,
+        `- Current Kafka topic / end-offset sum / completed work records: ${report.eventPlane.kafka.topic} / ${String(report.eventPlane.kafka.logEndOffsetSum)} / ${String(report.eventPlane.completedWorkRecords)}`,
         `- PostgreSQL hot-event table absent / projected Session mutations: ${String(report.eventPlane.postgresHotEventTableAbsent)} / ${String(report.eventPlane.projectedSessionMutations)}`,
         `- Scheduler / Worker pool: ${report.scheduler.authority} / ${report.scheduler.workerPool}`,
         `- Cross-tenant conversation hidden: ${String(report.multiTenant.crossTenantConversationHidden)}`,

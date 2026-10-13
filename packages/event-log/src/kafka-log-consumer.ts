@@ -176,6 +176,13 @@ export class KafkaLogConsumer<T> {
             service: "pi-cloud-kafka-consumer",
             level: "error",
             event: "consumer.failed",
+            attributes: {
+              reason: ["KafkaPausedPartitionDeliveryError", "LibrdKafkaError", "Error"].includes(
+                String(message),
+              )
+                ? String(message)
+                : "KafkaReaderError",
+            },
           });
           restart();
         },
