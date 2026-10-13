@@ -4,8 +4,14 @@ import type { Database } from "@pi-cloud/database";
 import { recoverQuarantinedSession } from "./quarantined-session-recovery.ts";
 import { advanceLaneReadiness } from "./run-readiness.ts";
 import { parsePiCloudEvent, type PiCloudEvent } from "@pi-cloud/protocol";
-import { sql, type Kysely } from "kysely";
-import type { AcceptedExecutionSealFact, AcceptedFact } from "./accepted-fact.ts";
+import { sql, type Kysely, type Transaction } from "kysely";
+import type {
+  AcceptedExecutionSealFact,
+  AcceptedWorkFinishedFact,
+  AcceptedFact,
+} from "./accepted-fact.ts";
+import { finishWorkIn } from "./work-finished-projection.ts";
+import { releaseIdleSessionLease } from "./session-lease-release.ts";
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
 import { recordFactProjection, type FactPosition } from "./accepted-fact-recovery.ts";
 import { CompactEventTail } from "./compact-event-tail.ts";
@@ -101,8 +107,7 @@ export class ExecutionStreamBoundary {
       ])
       .where("run.id", "=", scope.runId)
       .where("run.tenant_id", "=", scope.tenantId)
-      .where("run.session_id", "=", scope.sessionId)
-      .where("run.turn_id", "=", scope.turnId)
+      .where("writer.pi_session_id", "=", scope.piSessionId)
       .executeTakeFirst();
     if (run && run.lease_id !== scope.writerId) {
       if (run.writer_seal_offset === null)
@@ -168,34 +173,24 @@ export class ExecutionStreamProjector {
   ): Promise<ExecutionProjectionResult | undefined> {
     const { fact } = record;
     if (fact.kind === "path_probe") return;
+    if (fact.kind === "work_finished") return this.#finishWork(fact, record, current);
     if (fact.kind === "durable_commit") {
       const scopes = new Map(
-        [fact.scope, ...fact.display.map((d) => d.scope)].map((scope) => [scope.runId, scope]),
+        [fact.scope, ...fact.display.map((d) => d.scope)].map((scope) => [scope.sessionId, scope]),
       );
-      const open = new Set<string>();
-      // A parent can anchor a child's first display. Install that child's
-      // boundary at the same offset, before its floor is saved in PostgreSQL.
-      for (const scope of scopes.values())
-        if (await this.#boundary.isOpen({ ...record, fact: { ...fact, scope } }, true))
-          open.add(scope.runId);
-      if (!open.size) {
+      if (!(await this.#boundary.isOpen(record, true))) {
         await this.#durable.replay(fact, record, current);
         return;
       }
       const projected = await this.#durable.project(fact, record, current);
-      const sessions = new Set(
-        [...scopes.values()]
-          .filter((scope) => open.has(scope.runId))
-          .map((scope) => scope.sessionId),
-      );
+      const sessions = new Set([...scopes.values()].map((scope) => scope.sessionId));
       const result = {
         events: projected.events.filter((event) => sessions.has(event.sessionId)),
         covers: projected.covers.filter((cover) => sessions.has(cover.sessionId)),
       };
       // The native anchor need not be the Conversation that produced text.
       for (const scope of scopes.values()) {
-        if (!open.has(scope.runId)) continue;
-        const key = `${scope.writerId}:${scope.runId}`;
+        const key = `${scope.writerId}:${scope.runId}:${scope.sessionId}`;
         const prefix = this.#prefixes.get(key) ?? new CompactEventTail();
         for (const event of result.events)
           if (event.sessionId === scope.sessionId) prefix.accept(event);
@@ -207,16 +202,20 @@ export class ExecutionStreamProjector {
     }
     if (!(await this.#boundary.isOpen(record, true))) {
       if (fact.kind === "execution_seal") {
-        const prefix = this.#prefixes.get(`${fact.scope.writerId}:${fact.scope.runId}`);
+        const prefix = this.#prefixes.get(
+          `${fact.scope.writerId}:${fact.scope.runId}:${fact.scope.sessionId}`,
+        );
         const terminal = await this.#seal(fact, record, prefix, current);
         this.#boundary.close(fact.scope.runId, fact.scope.writerId, record.offset);
-        if (fact.closesWriter) this.#boundary.closeWriter(fact.scope.writerId, record.offset);
-        this.#prefixes.delete(`${fact.scope.writerId}:${fact.scope.runId}`);
+        this.#boundary.closeWriter(fact.scope.writerId, record.offset);
+        this.#prefixes.delete(`${fact.scope.writerId}:${fact.scope.runId}:${fact.scope.sessionId}`);
         return terminal ? { terminal, canonicalThroughSequence: terminal.seq } : undefined;
       }
       return;
     }
-    const existingPrefix = this.#prefixes.get(`${fact.scope.writerId}:${fact.scope.runId}`);
+    const existingPrefix = this.#prefixes.get(
+      `${fact.scope.writerId}:${fact.scope.runId}:${fact.scope.sessionId}`,
+    );
     const prefix = existingPrefix ?? new CompactEventTail();
     for (const event of factEvents(fact)) {
       prefix.accept(event);
@@ -224,32 +223,93 @@ export class ExecutionStreamProjector {
     if (fact.kind === "execution_seal") {
       const terminal = await this.#seal(fact, record, prefix, current);
       this.#boundary.close(fact.scope.runId, fact.scope.writerId, record.offset);
-      if (fact.closesWriter) this.#boundary.closeWriter(fact.scope.writerId, record.offset);
-      this.#prefixes.delete(`${fact.scope.writerId}:${fact.scope.runId}`);
+      this.#boundary.closeWriter(fact.scope.writerId, record.offset);
+      this.#prefixes.delete(`${fact.scope.writerId}:${fact.scope.runId}:${fact.scope.sessionId}`);
       return terminal ? { terminal, canonicalThroughSequence: terminal.seq } : undefined;
     } else {
       if (fact.kind === "agent_event" && fact.nativeSequence !== undefined) {
         // A replay is valid only under the same authority/native-commit checks.
         // Lock before deciding: a concurrent advance or owner change must be
         // rechecked, even when this statement would otherwise be a no-op.
-        const covered = await sql`with covered_run as materialized (
-          select id,output_display_seq,output_display_native_seq from runs
-          where tenant_id=${fact.scope.tenantId}::uuid and id=${fact.scope.runId}::uuid
+        const covered = await sql`with owner as materialized (
+          select id from runs where tenant_id=${fact.scope.tenantId}::uuid and id=${fact.scope.runId}::uuid
             and lease_id=${fact.scope.writerId}::uuid
             and exists(select 1 from pi_durable_commits c where c.tenant_id=${fact.scope.tenantId}::uuid
               and c.session_id=${fact.scope.piSessionId} and c.seq=${fact.nativeSequence})
           for no key update
-        ), advanced as (
+        ), admitted as materialized (
+          select v.* from conversation_turns v join owner on owner.id=v.id
+          where v.tenant_id=${fact.scope.tenantId}::uuid and v.session_id=${fact.scope.sessionId}::uuid
+            and v.turn_id=${fact.scope.turnId}::uuid
+        ), root as (
           update runs r set output_display_seq=greatest(r.output_display_seq,${fact.event.seq}),
             output_display_native_seq=greatest(r.output_display_native_seq,${fact.nativeSequence})
-          from covered_run c where r.id=c.id
-            and (c.output_display_seq<${fact.event.seq} or c.output_display_native_seq<${fact.nativeSequence})
-          returning r.id
-        ) select id from covered_run`.execute(this.#database);
+          from admitted c where r.id=c.id and r.session_id=c.session_id and r.turn_id=c.turn_id
+            and (r.output_display_seq<${fact.event.seq} or r.output_display_native_seq<${fact.nativeSequence}) returning r.id
+        ), child as (
+          update subagent_conversations v set output_display_seq=greatest(v.output_display_seq,${fact.event.seq}),
+            output_display_native_seq=greatest(v.output_display_native_seq,${fact.nativeSequence})
+          from admitted c where v.root_run_id=c.id and v.child_session_id=c.session_id and v.child_turn_id=c.turn_id
+            and (v.output_display_seq<${fact.event.seq} or v.output_display_native_seq<${fact.nativeSequence}) returning v.id
+        ) select id from admitted`.execute(this.#database);
         if (covered.rows.length !== 1)
           throw new Error("Display checkpoint preceded its native commit");
+        if (
+          fact.event.type === "turn.completed" ||
+          fact.event.type === "turn.failed" ||
+          fact.event.type === "turn.cancelled"
+        ) {
+          const event = fact.event;
+          await projectionTransaction(this.#database, async (tx) => {
+            const child = await tx
+              .selectFrom("subagent_conversations")
+              .select("id")
+              .where("tenant_id", "=", fact.scope.tenantId)
+              .where("root_run_id", "=", fact.scope.runId)
+              .where("child_session_id", "=", fact.scope.sessionId)
+              .where("child_turn_id", "=", fact.scope.turnId)
+              .forUpdate()
+              .executeTakeFirst();
+            if (!child)
+              throw new Error("Only child Conversations finish through native presentation");
+            await tx
+              .insertInto("session_terminal_events")
+              .values({
+                event_id: event.eventId,
+                tenant_id: fact.scope.tenantId,
+                session_id: event.sessionId,
+                turn_id: event.turnId,
+                agent_id: event.agentId,
+                run_id: fact.scope.runId,
+                seq: event.seq,
+                schema_version: event.schemaVersion,
+                type: event.type as "turn.completed" | "turn.failed" | "turn.cancelled",
+                payload: event.payload,
+                occurred_at: new Date(event.occurredAt),
+                persisted_at: new Date(),
+                interrupted_prefix: null,
+              })
+              .onConflict((conflict) => conflict.column("event_id").doNothing())
+              .execute();
+            await tx
+              .updateTable("sessions")
+              .set({ next_event_seq: sql`greatest(next_event_seq,${event.seq + 1})` })
+              .where("tenant_id", "=", fact.scope.tenantId)
+              .where("id", "=", event.sessionId)
+              .execute();
+            await recordFactProjection(tx, record);
+            if (!current()) throw new Error("Conversation completion owner changed");
+          });
+          this.#prefixes.delete(
+            `${fact.scope.writerId}:${fact.scope.runId}:${fact.scope.sessionId}`,
+          );
+          return { terminal: event, canonicalThroughSequence: event.seq };
+        }
         prefix.cover(fact.event.seq);
-        this.#prefixes.set(`${fact.scope.writerId}:${fact.scope.runId}`, prefix);
+        this.#prefixes.set(
+          `${fact.scope.writerId}:${fact.scope.runId}:${fact.scope.sessionId}`,
+          prefix,
+        );
         return { canonicalThroughSequence: fact.event.seq };
       }
       if (!existingPrefix) {
@@ -268,8 +328,116 @@ export class ExecutionStreamProjector {
           .where("output_first_offset", "is", null)
           .execute();
       }
-      this.#prefixes.set(`${fact.scope.writerId}:${fact.scope.runId}`, prefix);
+      this.#prefixes.set(
+        `${fact.scope.writerId}:${fact.scope.runId}:${fact.scope.sessionId}`,
+        prefix,
+      );
     }
+  }
+
+  async #finishWork(
+    fact: AcceptedWorkFinishedFact,
+    position: FactPosition,
+    current: () => boolean,
+  ): Promise<ExecutionProjectionResult | undefined> {
+    let adopt = () => {},
+      rootClosed: bigint | undefined,
+      writerClosed: bigint | undefined;
+    const key = `${fact.scope.writerId}:${fact.scope.runId}:${fact.scope.sessionId}`;
+    const event = await projectionTransaction(this.#database, async (tx) => {
+      const run = await tx
+        .selectFrom("runs")
+        .select([
+          "lease_id",
+          "fencing_token",
+          "session_id",
+          "turn_id",
+          "output_sealed_at",
+          "output_seal_offset",
+          "state",
+          "output_first_topic",
+          "output_first_partition",
+        ])
+        .where("tenant_id", "=", fact.scope.tenantId)
+        .where("id", "=", fact.scope.runId)
+        .forNoKeyUpdate()
+        .executeTakeFirst();
+      const writer = await tx
+        .selectFrom("session_leases")
+        .select(["writer_failed_at", "writer_seal_offset", "pi_session_id", "fencing_token"])
+        .where("tenant_id", "=", fact.scope.tenantId)
+        .where("lease_id", "=", fact.scope.writerId)
+        .forNoKeyUpdate()
+        .executeTakeFirst();
+      if (!run || !writer) return;
+      if (writer.writer_seal_offset !== null) writerClosed = BigInt(writer.writer_seal_offset);
+      if (
+        run.lease_id !== fact.scope.writerId ||
+        (writerClosed !== undefined && position.offset > writerClosed)
+      ) {
+        if (writerClosed === undefined)
+          throw new Error("Work completion owner changed without closure proof");
+        await recordFactProjection(tx, position);
+        return;
+      }
+      if (
+        run.session_id !== fact.scope.sessionId ||
+        run.turn_id !== fact.scope.turnId ||
+        writer.pi_session_id !== fact.scope.piSessionId ||
+        Number(writer.fencing_token) !== fact.scope.fencingToken
+      )
+        throw new Error("Root completion scope changed");
+      if (
+        run.output_first_topic !== null &&
+        (run.output_first_topic !== position.topic ||
+          run.output_first_partition !== position.partition)
+      )
+        throw new Error("Root completion moved between Kafka streams");
+      if (run.output_sealed_at !== null) {
+        if (run.output_seal_offset !== null) rootClosed = BigInt(run.output_seal_offset);
+        await recordFactProjection(tx, position);
+        return;
+      }
+      if (fact.nativeSequence > 0) {
+        const head = await sql<{
+          seq: string;
+        }>`select coalesce(max(seq),0)::text seq from pi_durable_commits
+          where tenant_id=${fact.scope.tenantId}::uuid and session_id=${fact.scope.piSessionId}`.execute(
+          tx,
+        );
+        if (Number(head.rows[0]!.seq) !== fact.nativeSequence)
+          throw new Error("Root completion does not follow its final native commit");
+      }
+      const retire = writer.writer_failed_at === null;
+      adopt = await this.#durable.checkpointLiveIn(tx, fact.scope, current);
+      if (retire) await this.#handoffViews(tx, fact.scope);
+      const result = await finishWorkIn(
+        tx,
+        fact,
+        position,
+        this.#prefixes.get(key)?.highWaterMark ?? 0,
+        retire,
+      );
+      if (result) {
+        rootClosed = position.offset;
+        if (retire) writerClosed = position.offset;
+      }
+      if (!current()) throw new Error("Work completion Projector owner changed");
+      return result;
+    });
+    adopt();
+    if (!current()) return;
+    if (rootClosed !== undefined) {
+      this.#boundary.close(fact.scope.runId, fact.scope.writerId, rootClosed);
+      this.#prefixes.delete(key);
+    }
+    if (writerClosed !== undefined) {
+      this.#boundary.closeWriter(fact.scope.writerId, writerClosed);
+      for (const id of this.#prefixes.keys())
+        if (id.startsWith(`${fact.scope.writerId}:`)) this.#prefixes.delete(id);
+    }
+    this.#durable.releaseSettled(fact.scope);
+    return event ? { terminal: event, canonicalThroughSequence: event.seq } : undefined;
   }
 
   async #seal(
@@ -317,10 +485,22 @@ export class ExecutionStreamProjector {
       )
         throw new Error("Execution seal does not match its requested Run");
       if (run.output_sealed_at !== null) {
+        if (writer.writer_seal_offset === null) {
+          adopt = await this.#durable.checkpointLiveIn(transaction, fact.scope, current);
+          const now = new Date();
+          await transaction
+            .updateTable("session_leases")
+            .set({ writer_sealed_at: now, writer_seal_offset: position.offset.toString() })
+            .where("tenant_id", "=", fact.scope.tenantId)
+            .where("lease_id", "=", fact.scope.writerId)
+            .execute();
+          await releaseIdleSessionLease(transaction, fact.scope.writerId, now);
+        }
         const terminal = await transaction
           .selectFrom("session_terminal_events")
           .selectAll()
-          .where("event_id", "=", fact.factId)
+          .where("tenant_id", "=", fact.scope.tenantId)
+          .where("turn_id", "=", fact.scope.turnId)
           .executeTakeFirstOrThrow();
         const event = parsePiCloudEvent({
           schemaVersion: terminal.schema_version,
@@ -344,13 +524,15 @@ export class ExecutionStreamProjector {
       }
       if (
         run.output_first_offset !== null &&
-        !this.#prefixes.has(`${fact.scope.writerId}:${fact.scope.runId}`) &&
+        !this.#prefixes.has(`${fact.scope.writerId}:${fact.scope.runId}:${fact.scope.sessionId}`) &&
         BigInt(run.output_first_offset) !== position.offset
       )
         throw new Error("Unsealed execution prefix is missing before writer closure");
-      if (fact.closesWriter)
+      {
         adopt = await this.#durable.checkpointLiveIn(transaction, fact.scope, current);
-      if (fact.closesWriter && writer.writer_seal_offset === null)
+        await this.#handoffViews(transaction, fact.scope);
+      }
+      if (writer.writer_seal_offset === null)
         await transaction
           .updateTable("session_leases")
           .set({
@@ -359,6 +541,20 @@ export class ExecutionStreamProjector {
           })
           .where("lease_id", "=", fact.scope.writerId)
           .execute();
+      {
+        // The ordered Kafka fence is the ownership proof. An unreachable old
+        // Worker need not acknowledge its local callback cleanup; this says
+        // nothing about the lifetime of physical Cube processes.
+        await transaction
+          .updateTable("runs")
+          .set({ execution_released_at: new Date() })
+          .where("tenant_id", "=", fact.scope.tenantId)
+          .where("id", "=", fact.scope.runId)
+          .where("lease_id", "=", fact.scope.writerId)
+          .where("execution_released_at", "is", null)
+          .execute();
+        await releaseIdleSessionLease(transaction, fact.scope.writerId, new Date());
+      }
       if (fact.recover) {
         const now = new Date(),
           through = Math.max(fact.baseSequence, prefix?.highWaterMark ?? 0);
@@ -408,7 +604,6 @@ export class ExecutionStreamProjector {
             output_first_partition: null,
             output_first_offset: null,
             output_publication: null,
-            native_output_drained: false,
             ready_at: null,
           })
           .where("tenant_id", "=", fact.scope.tenantId)
@@ -493,5 +688,22 @@ export class ExecutionStreamProjector {
     adopt();
     if (current()) this.#durable.releaseSettled(fact.scope);
     return committed;
+  }
+
+  /** Event sequences belong to views. A Session handoff must advance every
+   * observed child, including a child that has no terminal presentation yet. */
+  async #handoffViews(tx: Transaction<Database>, scope: AcceptedFact["scope"]): Promise<void> {
+    const start = `${scope.writerId}:${scope.runId}:`;
+    const rows = [...this.#prefixes].flatMap(([key, tail]) =>
+      key.startsWith(start)
+        ? [{ sessionId: key.slice(start.length), through: tail.highWaterMark }]
+        : [],
+    );
+    if (!rows.length) return;
+    await sql`update sessions s set next_event_seq=greatest(s.next_event_seq,views.through+1)
+      from (values ${sql.join(rows.map((row) => sql`(${row.sessionId}::uuid,${row.through}::bigint)`))}) views(id,through)
+      where s.tenant_id=${scope.tenantId}::uuid and s.pi_session_id=${scope.piSessionId} and s.id=views.id`.execute(
+      tx,
+    );
   }
 }

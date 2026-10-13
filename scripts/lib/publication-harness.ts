@@ -1,79 +1,86 @@
-import { KafkaLogConsumer, type ProducerCapacity } from "@pi-cloud/event-log";
+import {
+  KafkaSessionWriter,
+  DEFAULT_PRODUCER_CAPACITY,
+  type ProducerCapacity,
+} from "@pi-cloud/event-log";
 import {
   ExecutionLogTopic,
   type ExecutionLogTopicOptions,
 } from "../../packages/runtime-core/src/execution-log-topic.ts";
-import { SessionPublicationIngress } from "../../packages/runtime-core/src/session-publication-ingress.ts";
 import { kafkaProducerLane } from "../../packages/runtime-core/src/kafka-accepted-fact.ts";
+import { PublicationIngressRejected } from "../../packages/runtime-core/src/session-publication-ingress.ts";
 import type { AcceptedFact } from "../../packages/runtime-core/src/accepted-fact.ts";
 
-/** Isolated transport acceptance only. Installs fixture grants instead of PG
- * authority; production Workers must use the private publication HTTP client. */
+/** Isolated transport measurements. Synthetic grants never authorize production
+ * work; the production DirectSessionKafkaBus checks fresh PG ownership twice. */
 export class PublicationHarness {
   readonly #topic: ExecutionLogTopic;
-  readonly #consumer: KafkaLogConsumer<AcceptedFact>;
-  readonly #ingress: SessionPublicationIngress;
-  readonly #runs = new Set<string>();
-  #retired: Promise<unknown> = Promise.resolve();
+  readonly #writers = new Map<string, { writer: KafkaSessionWriter; ready: Promise<void> }>();
+  #closed = false;
+  #bytes = 0;
+  #facts = 0;
   constructor(
     readonly options: ExecutionLogTopicOptions & { topic: string; capacity?: ProducerCapacity },
   ) {
     this.#topic = new ExecutionLogTopic(options);
-    this.#ingress = new SessionPublicationIngress(options.capacity);
-    this.#consumer = new KafkaLogConsumer({
-      ...options,
-      groupId: `${options.topic}-publication-fixture`,
-      groupRecovery: true,
-      orderedEffects: true,
-      decode: (bytes) => JSON.parse(bytes.toString()),
-      handler: async () => {},
-      onRevoked: () => {
-        this.#runs.clear();
-        this.#retired = Promise.allSettled(
-          Array.from({ length: options.partitions }, (_, p) => this.#ingress.revoke(p)),
-        );
-      },
-      onAssigned: async (partitions, current) => {
-        await this.#retired;
-        await Promise.all(
-          partitions.map(async (partition) => {
-            const writer = await this.#consumer.openPublicationWriter(partition, current);
-            if (current()) this.#ingress.installPartition(partition, writer);
-            else await writer.close();
-          }),
-        );
-      },
-    });
   }
   async start(): Promise<void> {
     await this.#topic.start();
-    await this.#consumer.start();
-    await this.#consumer.waitUntilAssigned(30_000);
   }
-  append(fact: AcceptedFact) {
-    const partition = kafkaProducerLane(fact.scope.piSessionId, this.options.partitions);
-    const owner = this.#ingress.ownership(partition);
-    if (!owner) return Promise.reject(new Error("Fixture publication owner unavailable"));
-    if (!this.#runs.has(fact.scope.runId)) {
-      this.#ingress.installRun(owner, {
-        scope: {
-          ...fact.scope,
-          leaseId: fact.scope.writerId,
-          piSessionLane: "piSession" in fact ? fact.piSession.lane : "main",
-        },
+  async append(fact: AcceptedFact) {
+    if (this.#closed) throw new Error("Fixture is closed");
+    const value = JSON.stringify(fact),
+      bytes = Buffer.byteLength(value),
+      capacity = this.options.capacity ?? DEFAULT_PRODUCER_CAPACITY;
+    if (
+      this.#bytes + bytes > capacity.maximumPendingBytes ||
+      this.#facts >= capacity.maximumPendingFacts
+    )
+      throw new PublicationIngressRejected("capacity");
+    this.#bytes += bytes;
+    this.#facts++;
+    try {
+      const key = `${fact.scope.tenantId}:${fact.scope.piSessionId}`;
+      let entry = this.#writers.get(key);
+      if (!entry) {
+        const writer = new KafkaSessionWriter({
+          brokers: this.options.brokers,
+          clientId: this.options.clientId,
+          topic: this.options.topic,
+          partition: kafkaProducerLane(fact.scope.piSessionId, this.options.partitions),
+          tenantId: fact.scope.tenantId,
+          sessionId: fact.scope.piSessionId,
+          authorize: async () => {},
+          current: () => !this.#closed,
+        });
+        entry = { writer, ready: writer.start() };
+        this.#writers.set(key, entry);
+      }
+      await entry.ready;
+      return await entry.writer.append({
+        factId: fact.factId,
+        sessionId: fact.scope.piSessionId,
+        value,
       });
-      this.#runs.add(fact.scope.runId);
+    } finally {
+      this.#bytes -= bytes;
+      this.#facts--;
     }
-    return fact.kind === "execution_seal"
-      ? this.#ingress.seal(owner, fact)
-      : this.#ingress.append(owner, fact);
+  }
+  async retire(tenant: string, session: string): Promise<void> {
+    const key = `${tenant}:${session}`,
+      entry = this.#writers.get(key);
+    if (!entry) return;
+    this.#writers.delete(key);
+    await entry.writer.close();
   }
   statistics() {
-    return this.#ingress.statistics();
+    return { pendingBytes: this.#bytes, pendingFacts: this.#facts };
   }
   async close(): Promise<void> {
-    await this.#ingress.close();
-    await this.#consumer.close();
+    this.#closed = true;
+    await Promise.allSettled([...this.#writers.values()].map((e) => e.writer.close()));
+    this.#writers.clear();
     await this.#topic.close();
   }
 }

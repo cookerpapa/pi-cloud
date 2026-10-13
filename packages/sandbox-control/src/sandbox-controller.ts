@@ -151,7 +151,6 @@ type ManagedElasticRuntime = {
   handle?: SandboxHandle;
   materializing?: Promise<SandboxHandle>;
   bindingIds: Set<string>;
-  initialBindingIssued: boolean;
   activeOperations: number;
   environment: EnvironmentRuntimeSnapshot;
   sandboxProfileKey: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey;
@@ -699,16 +698,7 @@ export class SandboxController {
     for (const route of await this.#bindings.adopt(handle.activationId)) {
       const { snapshot, descriptor, bindingId } = route;
       if (route.closed) {
-        const identity = parseExecutionReference(snapshot.assignment.executionReference);
-        await this.#bindings.closeScope(
-          {
-            tenantId: snapshot.assignment.tenantId,
-            runId: identity.runId,
-            writerId: identity.leaseId,
-          },
-          false,
-          true,
-        );
+        await this.#bindings.closeBinding(bindingId, snapshot.assignment, true);
         await this.#bindings.release(bindingId, snapshot.assignment);
         continue;
       }
@@ -798,7 +788,6 @@ export class SandboxController {
             sandboxProfileKey: candidate.sandboxProfileKey,
           },
           bindingIds: new Set(),
-          initialBindingIssued: true,
           activeOperations: 0,
           environment: handle.environment,
           sandboxProfileKey: candidate.sandboxProfileKey,
@@ -1715,7 +1704,6 @@ export class SandboxController {
         },
         ...(workspaceTerminal === undefined ? {} : { handle: workspaceTerminal[1].handle }),
         bindingIds: new Set(),
-        initialBindingIssued: false,
         activeOperations: 0,
         environment: request.environment,
         sandboxProfileKey: request.sandboxProfileKey,
@@ -1726,11 +1714,7 @@ export class SandboxController {
       if (workspaceTerminal !== undefined) workspaceTerminal[1].workspaceRuntime = runtime;
     }
 
-    const activationId = validActivationId(
-      runtime.initialBindingIssued
-        ? parseExecutionReference(request.assignment.executionReference).runId
-        : runtime.physicalActivationId,
-    );
+    const activationId = validActivationId(request.requestId);
     if (this.#toolBindings.has(activationId) || runtime.bindingIds.has(activationId)) {
       throw new SandboxControlError(
         "tool_binding_identity_collision",
@@ -1785,7 +1769,6 @@ export class SandboxController {
       );
     }
     runtime.bindingIds.add(activationId);
-    runtime.initialBindingIssued = true;
     this.#toolBindings.set(activationId, {
       activationId,
       assignment: request.assignment,
@@ -1858,11 +1841,7 @@ export class SandboxController {
       throw error;
     }
     const physicalActivationId = validActivationId(environment.reservation.environmentId);
-    const activationId = validActivationId(
-      environment.bindingIds.size === 0
-        ? physicalActivationId
-        : parseExecutionReference(request.assignment.executionReference).runId,
-    );
+    const activationId = validActivationId(request.requestId);
     if (this.#toolBindings.has(activationId) || environment.bindingIds.has(activationId)) {
       throw new SandboxControlError(
         "tool_binding_identity_collision",
@@ -2216,8 +2195,8 @@ export class SandboxController {
     for (const activation of this.#toolBindings.values()) {
       const identity = parseExecutionReference(activation.assignment.executionReference);
       if (
-        identity.runId !== fact.scope.runId &&
-        !(fact.closesWriter && identity.leaseId === fact.scope.writerId)
+        identity.leaseId !== fact.scope.writerId ||
+        (fact.kind === "binding_close" && activation.activationId !== fact.bindingId)
       )
         continue;
       for (const [key, operation] of activation.operations) {
@@ -2317,14 +2296,9 @@ export class SandboxController {
         false,
       );
     activation.inputClosed = true;
-    const identityForRelease = parseExecutionReference(activation.assignment.executionReference);
-    await this.#bindings.closeScope(
-      {
-        tenantId: activation.assignment.tenantId,
-        runId: identityForRelease.runId,
-        writerId: identityForRelease.leaseId,
-      },
-      false,
+    await this.#bindings.closeBinding(
+      activation.activationId,
+      activation.assignment,
       request.cancelOutstanding === true,
     );
     // These are interactive workflow/input-preparation channels. Fixed Tools
@@ -2474,10 +2448,11 @@ export class SandboxController {
     cancelOutstanding: boolean,
   ): Promise<void> {
     const identity = parseExecutionReference(assignment.executionReference);
-    const routes = await this.#bindings.find(
-      { tenantId: assignment.tenantId, runId: identity.runId, writerId: identity.leaseId },
-      false,
-    );
+    const routes = await this.#bindings.find({
+      tenantId: assignment.tenantId,
+      runId: identity.runId,
+      writerId: identity.leaseId,
+    });
     for (const route of routes.filter((row) => row.bindingId === activationId)) {
       if (!sameAssignment(route.snapshot.assignment, assignment))
         throw new SandboxControlError(
@@ -2485,11 +2460,7 @@ export class SandboxController {
           "Closing binding identity did not match",
           false,
         );
-      await this.#bindings.closeScope(
-        { tenantId: assignment.tenantId, runId: identity.runId, writerId: identity.leaseId },
-        false,
-        cancelOutstanding,
-      );
+      await this.#bindings.closeBinding(activationId, assignment, cancelOutstanding);
       await this.#bindings.release(activationId, assignment);
     }
   }

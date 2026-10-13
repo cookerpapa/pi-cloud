@@ -37,7 +37,7 @@ async function waitFor(fn, label, ms = 120000) {
 }
 let project, session, turn, error;
 const faultMode = process.env.PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_MODE ?? "pod";
-assert(["pod", "process"].includes(faultMode));
+assert(["pod", "process", "rolling"].includes(faultMode));
 const report = {
   checkedAt: new Date().toISOString(),
   model: "gpt-6-luna",
@@ -133,6 +133,31 @@ try {
       "process restarted and Ready",
       180000,
     );
+  } else if (faultMode === "rolling") {
+    const beforeDeployment = JSON.parse(
+      kubectl(["get", "deployment/pi-cloud-control-plane", "-o", "json"]),
+    );
+    assert.equal(beforeDeployment.spec.strategy.type, "RollingUpdate");
+    const images = beforeDeployment.spec.template.spec.containers.map(
+      (container) => container.image,
+    );
+    await kubectlAsync(["rollout", "restart", "deployment/pi-cloud-control-plane"]);
+    await kubectlAsync([
+      "rollout",
+      "status",
+      "deployment/pi-cloud-control-plane",
+      "--timeout=180s",
+    ]);
+    const afterDeployment = JSON.parse(
+      kubectl(["get", "deployment/pi-cloud-control-plane", "-o", "json"]),
+    );
+    assert.deepEqual(
+      afterDeployment.spec.template.spec.containers.map((container) => container.image),
+      images,
+    );
+    assert.notEqual(podFor("control-plane"), targetPod);
+    report.compatibleRollingReplacement = true;
+    report.artifactsUnchanged = true;
   } else {
     await kubectlAsync(["delete", "pod", targetPod, "--grace-period=0", "--force", "--wait=true"]);
     await kubectlAsync([

@@ -11,7 +11,7 @@ await kafkaEvaluation(
     const id = randomUUID();
     const topic = `pi-cloud.backpressure-check.${id}`,
       clientId = `backpressure-${id}`;
-    const producerId = `${clientId}-publication-0`;
+    const producerId = clientId;
     const admin = new Admin({ bootstrapBrokers: brokers, clientId: `capacity-admin-${id}` });
     const capacity = { maximumPendingBytes: 64 * 1024, maximumPendingFacts: 128 };
     const bus = new PublicationHarness({

@@ -33,15 +33,16 @@ export type BindingViewPage = Readonly<{
 }>;
 export const BINDING_VIEW_PAGE_SIZE = 256;
 export interface SandboxBindingReader {
-  find(scope: ToolLogFact["scope"], wholeWriter: boolean): Promise<readonly SandboxBinding[]>;
-  closeScope(
-    scope: ToolLogFact["scope"],
-    wholeWriter: boolean,
-    cancelOutstanding?: boolean,
-  ): Promise<void>;
+  find(scope: ToolLogFact["scope"]): Promise<readonly SandboxBinding[]>;
+  closeWriter(scope: ToolLogFact["scope"], cancelOutstanding?: boolean): Promise<void>;
   isAlive(instanceId: string): Promise<boolean>;
 }
 export interface SandboxBindings extends SandboxBindingReader {
+  closeBinding(
+    bindingId: string,
+    assignment: ToolSandboxAssignment,
+    cancelOutstanding?: boolean,
+  ): Promise<void>;
   releaseAfterPhysicalAbsence(physicalActivationId: string): Promise<void>;
   confirmPhysicalClosure(physicalActivationId: string): Promise<void>;
   register(
@@ -86,10 +87,12 @@ export class PostgresSandboxBindings implements SandboxBindings {
     await this.publishChanges([bindingId]);
   }
   async release(bindingId: string, assignment: ToolSandboxAssignment): Promise<void> {
+    const identity = parseExecutionReference(assignment.executionReference);
     const removed = await this.database
       .deleteFrom("sandbox_tool_bindings")
       .where("tenant_id", "=", assignment.tenantId)
       .where("run_id", "=", parseExecutionReference(assignment.executionReference).runId)
+      .where("writer_id", "=", identity.leaseId)
       .where("binding_id", "=", bindingId)
       .where("dispatch_closed", "=", true)
       .returning("binding_id")
@@ -102,11 +105,36 @@ export class PostgresSandboxBindings implements SandboxBindings {
         .where("binding_id", "=", bindingId)
         .where("tenant_id", "=", assignment.tenantId)
         .where("run_id", "=", parseExecutionReference(assignment.executionReference).runId)
+        .where("writer_id", "=", identity.leaseId)
         .executeTakeFirst())
     )
       throw new Error("Binding routing admission is still open");
     // Removing routing metadata does not terminate accepted Tools or release VM quota.
     // The Outbox retires the already-revoked read view.
+  }
+  async closeBinding(
+    bindingId: string,
+    assignment: ToolSandboxAssignment,
+    cancelOutstanding = false,
+  ): Promise<void> {
+    const identity = parseExecutionReference(assignment.executionReference);
+    const rows = await this.database
+      .updateTable("sandbox_tool_bindings")
+      .set({
+        dispatch_closed: true,
+        cancel_outstanding: sql`cancel_outstanding or ${cancelOutstanding}`,
+      })
+      .where("binding_id", "=", bindingId)
+      .where("tenant_id", "=", assignment.tenantId)
+      .where("run_id", "=", identity.runId)
+      .where("writer_id", "=", identity.leaseId)
+      .returning("binding_id")
+      .execute();
+    try {
+      await this.publishChanges(rows.map((r) => r.binding_id));
+    } catch (cause) {
+      throw new BindingClosurePending(cause);
+    }
   }
   async releaseAfterPhysicalAbsence(physicalActivationId: string): Promise<void> {
     // Caller has confirmed native destruction/absence on the recorded node.
@@ -138,22 +166,14 @@ export class PostgresSandboxBindings implements SandboxBindings {
         "binding.revision",
       ]);
   }
-  async find(
-    scope: ToolLogFact["scope"],
-    wholeWriter: boolean,
-  ): Promise<readonly SandboxBinding[]> {
-    const query = this.#query().where("binding.tenant_id", "=", scope.tenantId!);
-    return (await (
-      wholeWriter
-        ? query.where("binding.writer_id", "=", scope.writerId)
-        : query.where("binding.run_id", "=", scope.runId)
-    ).execute()) as unknown as SandboxBinding[];
+  async find(scope: ToolLogFact["scope"]): Promise<readonly SandboxBinding[]> {
+    return (await this.#query()
+      .where("binding.tenant_id", "=", scope.tenantId!)
+      .where("binding.writer_id", "=", scope.writerId)
+      .where("binding.run_id", "=", scope.runId)
+      .execute()) as unknown as SandboxBinding[];
   }
-  async closeScope(
-    scope: ToolLogFact["scope"],
-    wholeWriter: boolean,
-    cancelOutstanding = false,
-  ): Promise<void> {
+  async closeWriter(scope: ToolLogFact["scope"], cancelOutstanding = false): Promise<void> {
     const query = this.database
       .updateTable("sandbox_tool_bindings")
       .set({
@@ -161,11 +181,8 @@ export class PostgresSandboxBindings implements SandboxBindings {
         cancel_outstanding: sql`cancel_outstanding or ${cancelOutstanding}`,
       })
       .where("tenant_id", "=", scope.tenantId!);
-    const closed = await (
-      wholeWriter
-        ? query.where("writer_id", "=", scope.writerId)
-        : query.where("run_id", "=", scope.runId)
-    )
+    const closed = await query
+      .where("writer_id", "=", scope.writerId)
       .returning("binding_id")
       .execute();
     try {

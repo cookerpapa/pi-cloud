@@ -23,11 +23,13 @@
     "./session-lease-release": "./src/session-lease-release.ts",
     "./execution-stream-seal": "./src/execution-stream-seal.ts",
     "./quarantined-session-recovery": "./src/quarantined-session-recovery.ts",
+    "./direct-session-kafka": "./src/direct-session-kafka.ts",
     "./http-publication-client": "./src/http-publication-client.ts",
     "./session-control-outbox": "./src/session-control-outbox.ts",
     "./session-publication-ingress": "./src/session-publication-ingress.ts",
     "./worker-execution-log": "./src/worker-execution-log.ts",
-    "./durable-session-publisher": "./src/durable-session-publisher.ts"
+    "./durable-session-publisher": "./src/durable-session-publisher.ts",
+    "./tool-invocation-fact": "./src/tool-invocation-fact.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

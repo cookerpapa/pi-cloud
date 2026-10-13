@@ -1,3 +1,4 @@
+import type { AcceptedWorkFinishedFact } from "@pi-cloud/runtime-core/accepted-fact";
 import { parseExecutionReference } from "@pi-cloud/protocol";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import {
@@ -198,7 +199,6 @@ describe.skipIf(!endpoint).sequential("Run queue authority", () => {
       status: "failed",
       failure_code: "environment_preflight_failed",
     });
-    await seal(accepted.runId);
     expect((await store.getRun(accepted.runId)).state).toBe("failed");
   });
 
@@ -322,11 +322,23 @@ describe.skipIf(!endpoint).sequential("Run queue authority", () => {
     },
   );
 
-  it("retries a rolled-back terminal commit without re-executing the Agent Loop", async () => {
+  it("retries a rolled-back completion projection without re-executing the Agent Loop", async () => {
     const s = await conversation("terminal"),
       a = await store.acceptTurn(s.sessionId, "first", { prompt: "once" });
-    let fail = true,
-      executions = 0;
+    let executions = 0,
+      completion: AcceptedWorkFinishedFact | undefined,
+      fail = true;
+    const worker = await createTestWorker(database);
+    const executor = worker.executor({
+      execute: async () => {
+        executions++;
+        return { stopReason: "stop" };
+      },
+      finish: async (fact) => {
+        completion = fact;
+      },
+    });
+    await expect(executor.dispatchRun(a.runId)).resolves.toMatchObject({ status: "completed" });
     const measured = database.withPlugin({
       transformQuery({ node, queryId }) {
         const q = database.getExecutor().compileQuery(node, queryId);
@@ -340,19 +352,14 @@ describe.skipIf(!endpoint).sequential("Run queue authority", () => {
         return result;
       },
     });
-    const worker = await createTestWorker(database),
-      executor = worker.executor(
-        {
-          async execute() {
-            executions++;
-            return { stopReason: "stop" };
-          },
-        },
-        { database: measured },
-      );
-    expect(await executor.dispatchRun(a.runId)).toMatchObject({ status: "completed" });
+    const projector = new ExecutionStreamProjector(measured);
+    const record = { fact: completion!, topic: "queue-tests", partition: 0, offset: offset++ };
+    await expect(projector.project(record)).rejects.toMatchObject({ code: "40P01" });
+    expect((await store.getRun(a.runId)).state).toBe("running");
+    await projector.project(record);
+    await projector.project(record);
     expect(executions).toBe(1);
-    expect(fail).toBe(false);
+    expect((await store.getRun(a.runId)).state).toBe("completed");
     expect(
       await database
         .selectFrom("run_transitions")
@@ -375,7 +382,11 @@ describe.skipIf(!endpoint).sequential("Run queue authority", () => {
     const worker = await createTestWorker(database),
       entered = Promise.withResolvers<void>(),
       release = Promise.withResolvers<void>();
+    const completions: AcceptedWorkFinishedFact[] = [];
     const executor = worker.executor({
+      finish: async (fact) => {
+        completions.push(fact);
+      },
       async execute(r) {
         if (r.runId === a.runId) {
           entered.resolve();
@@ -394,7 +405,12 @@ describe.skipIf(!endpoint).sequential("Run queue authority", () => {
       await first;
     }
     expect(await executor.dispatchNext()).toEqual({ status: "idle" });
-    await seal(a.runId);
+    await new ExecutionStreamProjector(database).project({
+      fact: completions[0]!,
+      topic: "queue-tests",
+      partition: 0,
+      offset: offset++,
+    });
     expect(await executor.dispatchNext()).toMatchObject({ status: "completed", runId: b.runId });
   });
 
@@ -475,7 +491,6 @@ describe.skipIf(!endpoint).sequential("Run queue authority", () => {
         expect(
           await database.selectFrom("turn_control_requests").select(["kind", "state"]).execute(),
         ).toEqual([{ kind: "cancel", state: "completed" }]);
-        await seal(a.runId);
         expect((await store.getRun(a.runId)).state).toBe("cancelled");
       } finally {
         vi.useRealTimers();
@@ -514,51 +529,37 @@ describe.skipIf(!endpoint).sequential("Run queue authority", () => {
     expect(new Set(entered)).toEqual(new Set([ar.runId, br.runId]));
   });
 
-  it("keeps every active Lane of one physical Pi Session on its owner Worker", async () => {
+  it("does not claim a second root work while the physical Session is owned", async () => {
     const main = await conversation("family"),
-      child = await lane(main, "child");
+      child = await lane(main, "another root view");
     const a = await store.acceptTurn(main.sessionId, "first", { prompt: "main" }),
-      b = await store.acceptTurn(child.sessionId, "first", { prompt: "child" });
+      b = await store.acceptTurn(child.sessionId, "first", { prompt: "other root" });
     const owner = await createTestWorker(database),
       foreign = await createTestWorker(database);
-    const entered = new Set<string>(),
-      gates = new Map([a.runId, b.runId].map((id) => [id, Promise.withResolvers<void>()]));
+    const entered = Promise.withResolvers<void>(),
+      gate = Promise.withResolvers<void>();
     const executor = owner.executor({
-      async execute(r) {
-        entered.add(r.runId);
-        await gates.get(r.runId)!.promise;
+      execute: async () => {
+        entered.resolve();
+        await gate.promise;
         return { stopReason: "stop" };
       },
     });
-    const other = foreign.executor({
-      async execute() {
-        return { stopReason: "stop" };
-      },
-    });
+    const other = foreign.executor({ execute: async () => ({ stopReason: "stop" }) });
     const first = executor.dispatchRun(a.runId);
-    await vi.waitFor(() => expect(entered.has(a.runId)).toBe(true));
-    let second: Promise<unknown> | undefined;
+    void first.catch(entered.reject);
+    await entered.promise;
     try {
       expect(await other.dispatchRun(b.runId)).toEqual({ status: "idle" });
-      second = executor.dispatchRun(b.runId);
-      await vi.waitFor(() => expect(entered.has(b.runId)).toBe(true));
+      expect(await executor.dispatchRun(b.runId)).toEqual({ status: "idle" });
       expect(await activeOwners()).toHaveLength(1);
-      gates.get(a.runId)!.resolve();
-      await first;
-      await seal(a.runId);
-      const next = await store.acceptTurn(main.sessionId, "next", { prompt: "next" });
-      expect(await other.dispatchRun(next.runId)).toEqual({ status: "idle" });
-      gates.get(b.runId)!.resolve();
-      await second;
-      expect(await activeOwners()).toHaveLength(0);
-      expect(await other.dispatchRun(next.runId)).toEqual({ status: "idle" });
-      await seal(b.runId);
-      expect(await other.dispatchRun(next.runId)).toMatchObject({ status: "completed" });
-      expect((await store.getRun(next.runId)).workerId).toBe(foreign.workerId);
     } finally {
-      for (const g of gates.values()) g.resolve();
-      await Promise.allSettled([first, ...(second ? [second] : [])]);
+      gate.resolve();
+      await first;
     }
+    expect(await activeOwners()).toHaveLength(0);
+    expect(await other.dispatchRun(b.runId)).toMatchObject({ status: "completed" });
+    expect((await store.getRun(b.runId)).workerId).toBe(foreign.workerId);
   });
 
   it("atomically elects one Worker when two Lanes of a cold Pi Session race", async () => {

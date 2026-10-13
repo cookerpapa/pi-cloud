@@ -29,7 +29,7 @@ function fixture() {
     kind: "tool_command",
     factId: randomUUID(),
     toolCallId: "result-entry",
-    replyTopic: "pi-cloud.tool-replies.v2." + randomUUID(),
+    replyTopic: "pi-cloud.tool-replies.v3." + randomUUID(),
     occurredAt: new Date().toISOString(),
     scope,
     request: {
@@ -98,7 +98,7 @@ function fixture() {
     },
   };
   const find = vi.fn(async () => [route]);
-  const closeScope = vi.fn(async () => {
+  const closeWriter = vi.fn(async () => {
     find.mockResolvedValue([{ ...route, dispatchClosed: true }]);
   });
   const cube = {
@@ -109,7 +109,7 @@ function fixture() {
     publishReply = vi.fn(async () => {}),
     quarantine = vi.fn(async () => {});
   const options = {
-    routes: { find, closeScope, isAlive: async () => true },
+    routes: { find, closeWriter, isAlive: async () => true },
     cube,
     workflow,
     publishReply,
@@ -119,7 +119,7 @@ function fixture() {
     command,
     route,
     find,
-    closeScope,
+    closeWriter,
     cube,
     workflow,
     publishReply,
@@ -147,7 +147,7 @@ describe("Projector native Cube handoff", () => {
     expect(f.cube.cancelTool).toHaveBeenCalledTimes(2);
     expect(f.cube.cancelTool).toHaveBeenLastCalledWith(f.route.descriptor.target, {
       source: { topic: "session-log", partition: 0, offset: "101" },
-      runId: scope.runId,
+      executionScopeId: f.route.bindingId,
       writerId: scope.writerId,
       operationId: cancel.request.operationId,
     });
@@ -193,7 +193,7 @@ describe("Projector native Cube handoff", () => {
     );
     expect(f.cube.cancelTool).toHaveBeenCalledWith(f.route.descriptor.target, {
       source: { topic: "session-log", partition: 0, offset: "102" },
-      runId: f.command.scope.runId,
+      executionScopeId: f.route.bindingId,
       writerId: f.command.scope.writerId,
     });
     expect(f.find).not.toHaveBeenCalled();
@@ -212,7 +212,7 @@ describe("Projector native Cube handoff", () => {
         },
       ]),
       readChange: vi.fn(async () => undefined),
-      closeScope: f.closeScope,
+      closeWriter: f.closeWriter,
       isAlive: async () => true,
     };
     const routes = new SandboxBindingView({ source, partitionCount: 2, partitionFor: () => 0 });
@@ -238,7 +238,7 @@ describe("Projector native Cube handoff", () => {
       f.route.descriptor.target,
       expect.objectContaining({
         operationId: f.command.request.operationId,
-        runId: f.command.scope.runId,
+        executionScopeId: f.route.bindingId,
         writerId: f.command.scope.writerId,
         payload: {
           mode: "operation",
@@ -318,7 +318,7 @@ describe("Projector native Cube handoff", () => {
     const f = fixture();
     await f.router.consume(record(f.command));
     await f.router.consume(record({ kind: "execution_seal", scope: f.command.scope }));
-    expect(f.closeScope).toHaveBeenCalledExactlyOnceWith(f.command.scope, false, true);
+    expect(f.closeWriter).toHaveBeenCalledExactlyOnceWith(f.command.scope, true);
     await f.router.closeWorkflowBinding(
       {
         kind: "control_change",
@@ -354,7 +354,7 @@ describe("Projector native Cube handoff", () => {
   it("waits only for writer routing revocation before sealing", async () => {
     const f = fixture();
     const pending = Promise.withResolvers<void>();
-    f.closeScope.mockImplementation(() => pending.promise);
+    f.closeWriter.mockImplementation(() => pending.promise);
     let sealed = false;
     const closing = f.router
       .consume(record({ kind: "execution_seal", scope: f.command.scope, closesWriter: true }))
@@ -362,7 +362,7 @@ describe("Projector native Cube handoff", () => {
         sealed = true;
       });
     await Promise.resolve();
-    expect(f.closeScope).toHaveBeenCalledWith(f.command.scope, true, true);
+    expect(f.closeWriter).toHaveBeenCalledWith(f.command.scope, true);
     expect(sealed).toBe(false);
     pending.resolve();
     await closing;
@@ -393,7 +393,7 @@ describe("Projector native Cube handoff", () => {
       ).toBeUndefined();
     expect(f.workflow).toHaveBeenCalledTimes(2);
     expect(f.cube.submitTool).not.toHaveBeenCalled();
-    expect(f.closeScope).not.toHaveBeenCalled();
+    expect(f.closeWriter).not.toHaveBeenCalled();
     await expect(
       f.router.closeWorkflowBinding({ ...change, closed: false }, f.route, source, () => true),
     ).rejects.toThrow("not closed");

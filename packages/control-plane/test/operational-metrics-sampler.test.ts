@@ -92,7 +92,7 @@ describe("operational metrics sampler", () => {
     expect(
       ages.values.find((v) => v.labels.entity === "input_queue")!.value,
     ).toBeGreaterThanOrEqual(9);
-    expect(backlog.values).toHaveLength(4);
+    expect(backlog.values).toHaveLength(3);
     await database.deleteFrom("outbox").where("id", "=", id).execute();
     await sampler.sample();
     expect((await metrics.controlOutboxPending.get()).values.every((v) => v.value === 0)).toBe(

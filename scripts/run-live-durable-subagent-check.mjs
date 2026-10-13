@@ -120,7 +120,7 @@ try {
       .map((item) => item.text)
       .join("");
     const children = query(
-      `select coalesce(json_agg(json_build_object('id',e.id,'state',e.state,'runState',r.state,'failure',r.failure_code,'sameOwner',r.lease_id=p.lease_id and r.worker_id=p.worker_id,'samePhysical',s.pi_session_id=ps.pi_session_id,'conversation',s.pi_conversation_id)),'[]') from subagent_executions e join runs r on r.id=e.child_run_id join runs p on p.id=e.parent_run_id join sessions s on s.id=e.child_session_id join sessions ps on ps.id=p.session_id where e.parent_run_id='${accepted.runId}'`,
+      `select coalesce(json_agg(json_build_object('id',e.id,'state',e.state,'taskState',e.state,'failure',e.failure_code,'sameOwner',not exists(select 1 from runs cr where cr.session_id=e.child_session_id),'samePhysical',s.pi_session_id=ps.pi_session_id,'conversation',s.pi_conversation_id)),'[]') from subagent_executions e join runs p on p.id=e.root_run_id join sessions s on s.id=e.child_session_id join sessions ps on ps.id=p.session_id where e.root_run_id='${accepted.runId}'`,
     );
     const errors = turn.transcript.items
       .filter((item) => item.kind === "tool" && item.status !== "completed")
@@ -133,7 +133,7 @@ try {
     assert(
       children.every(
         (c) =>
-          c.runState === (scenario.childState ?? "completed") &&
+          c.taskState === (scenario.childState ?? "completed") &&
           c.sameOwner &&
           c.samePhysical &&
           Number(c.conversation) > 1,
@@ -143,7 +143,7 @@ try {
     assert(text.includes(scenario.marker), JSON.stringify({ text, errors }));
     if (scenario.name === "supervisor") {
       const answered = query(
-        `select count(*)::int from subagent_supervisor_requests q join subagent_executions e on e.id=q.execution_id where e.parent_run_id='${accepted.runId}' and q.reply_message='APPROVED-TEAL'`,
+        `select count(*)::int from subagent_supervisor_requests q join subagent_executions e on e.id=q.execution_id where e.root_run_id='${accepted.runId}' and q.reply_message='APPROVED-TEAL'`,
       );
       assert.equal(answered, 1);
     }

@@ -1,4 +1,4 @@
-import { admitTestExecution } from "./admit-test-execution.ts";
+import { admitTestExecution, testWorkPublication } from "./admit-test-execution.ts";
 import { randomUUID } from "node:crypto";
 import { createDatabase, databaseTime, runMigrations, type Database } from "@pi-cloud/database";
 import { sql, type Kysely } from "kysely";
@@ -108,7 +108,8 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
           await beforeAcquire?.(request, tx, facts);
           return admitTestExecution(coordinator, tx, request, facts);
         },
-        execute: async (request, _lifecycle, admission) => {
+        execute: async (request, lifecycle, admission) => {
+          lifecycle.publicationReady(testWorkPublication(db, request, admission));
           const binding = admission!;
           ready.resolve({ request, reference: binding.executionReference });
           await finish.promise;
@@ -196,10 +197,10 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
     expect(
       await db
         .selectFrom("pi_sessions")
-        .select(["lease_epoch", "unsealed_runs"])
+        .select("lease_epoch")
         .where("id", "=", target.piSessionId)
         .executeTakeFirstOrThrow(),
-    ).toEqual({ lease_epoch: "0", unsealed_runs: "0" });
+    ).toEqual({ lease_epoch: "0" });
   });
   it.each(["renew", "grant"])(
     "rejects %s if authority expires during lock wait",

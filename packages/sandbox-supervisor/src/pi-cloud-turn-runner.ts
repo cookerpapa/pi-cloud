@@ -88,9 +88,6 @@ export type PiCloudTurnRunnerOptions = {
   interruptionReason?: () => RunInterruptionReason | undefined;
   metrics?: PiCloudMetrics;
   createAgentTools(context: {
-    trackWorkflowOperation: (
-      operation: import("./durable/remote-tools.ts").TrackedWorkflowOperation,
-    ) => void;
     stepWorldState: PiSessionWorldStateController;
     captureSamplingStep(
       createFresh: (sequence: number) => Promise<Omit<PiSamplingStepCapture, "samplingAttempt">>,
@@ -99,6 +96,8 @@ export type PiCloudTurnRunnerOptions = {
   }): TrustedRemoteAgentTools;
   sandboxContinuity: PiSandboxContinuity;
   onSettled?: () => Promise<void> | void;
+  onNativeBound?: () => Promise<void>;
+  beforeEffect?: (signal?: AbortSignal) => Promise<void>;
   onActivity?: (update: RunActivityUpdate | undefined) => void;
   subscribeHostedActivity?: ProviderHostedActivitySubscriber;
   resolveAssistantTextPhase?: AssistantTextPhaseResolver;
@@ -223,6 +222,9 @@ export class PiCloudTurnRunner {
   constructor(options: PiCloudTurnRunnerOptions) {
     this.#options = options;
     void this.#ready.promise.catch(() => undefined);
+  }
+  async waitUntilReady(): Promise<void> {
+    await this.#ready.promise;
   }
   #onInputLine<T>(action: () => Promise<T>): Promise<T> {
     const next = this.#inputLine.then(action);
@@ -356,19 +358,33 @@ export class PiCloudTurnRunner {
           { initialSequence: factory.currentSequence(), clock, idGenerator: id },
         );
         const event = candidate.next(body);
-        await publishEvent({
-          protocolVersion: 1,
-          messageId: id(),
-          sentAt: validDate(clock).toISOString(),
-          type: "event.publish",
-          payload: {
-            executionReference: p.executionReference,
-            event,
-            ...(nativeSequence === undefined || !text?.canCover(nativeSequence)
-              ? {}
-              : { nativeSequence }),
-          },
-        });
+        try {
+          await publishEvent({
+            protocolVersion: 1,
+            messageId: id(),
+            sentAt: validDate(clock).toISOString(),
+            type: "event.publish",
+            payload: {
+              executionReference: p.executionReference,
+              event,
+              ...(nativeSequence === undefined ||
+              (!text?.canCover(nativeSequence) &&
+                !(
+                  p.conversationWork &&
+                  ["turn.completed", "turn.failed", "turn.cancelled"].includes(body.type)
+                ))
+                ? {}
+                : { nativeSequence }),
+            },
+          });
+        } catch (cause) {
+          handle?.interrupt(
+            Object.assign(new Error("Session display publication failed", { cause }), {
+              code: "writer_publication_failed",
+            }),
+          );
+          throw cause;
+        }
         factory = candidate;
       };
       delivery = handle ? handle.serializePublication(publish) : delivery.then(publish);
@@ -405,7 +421,10 @@ export class PiCloudTurnRunner {
       family = await owner.runtime(async () => {
         const runtime = await DurableAgentSession.open(owner.storage, {
           models: registry.models,
-          remoteTools: fixedRemoteToolDefinitions(),
+          remoteTools: [
+            ...fixedRemoteToolDefinitions(),
+            ...(options.trustedToolDefinitions ?? []).filter((tool) => "prepareExecution" in tool),
+          ],
           infrastructureTools: options.trustedToolDefinitions ?? [],
           settings: {
             stream: {
@@ -418,7 +437,7 @@ export class PiCloudTurnRunner {
             },
           },
         });
-        owner.preparePublication((commit) => runtime.remote.preparePublication(commit));
+        owner.preparePublication((commit) => runtime.preparePublication(commit));
         return runtime;
       });
       const runtime = family;
@@ -470,7 +489,6 @@ export class PiCloudTurnRunner {
         task: (taskId) => runtime.harness.getTask(taskId as TaskId, BACKGROUND_CONTEXT),
       });
       const tools = options.createAgentTools({
-        trackWorkflowOperation: (operation) => runtime.remote.trackWorkflow(operation),
         stepWorldState: world,
         captureSamplingStep: async (fresh, capture) => {
           const step = await sampling.capture(fresh);
@@ -520,7 +538,11 @@ export class PiCloudTurnRunner {
         ...(config.autoCompactTokenLimit === undefined
           ? {}
           : { autoCompactTokenLimit: config.autoCompactTokenLimit }),
-        context: { sessionId: p.sessionId, turnId: p.turnId },
+        context: {
+          sessionId: p.sessionId,
+          turnId: p.turnId,
+          ...(p.conversationWork ? { view: JSON.parse(JSON.stringify(p.conversationWork)) } : {}),
+        },
         agent: {
           instructions: await tools.systemPrompt(prompt),
           cwd: p.workingDirectory,
@@ -529,9 +551,11 @@ export class PiCloudTurnRunner {
         remoteTools: tools.tools.filter((tool) => tool.prepareExecution).map((tool) => tool.name),
         tools: tools.tools.filter((tool) => !tool.prepareExecution),
         assertCurrent: () => owner.authority.assertCurrent(),
-        ...(p.stopOnResume
+        ...(p.stopOnResume || options.beforeEffect
           ? {
               beforeEffect: async (effectSignal?: AbortSignal) => {
+                await options.beforeEffect?.(effectSignal);
+                if (!p.stopOnResume) return;
                 await awaitWithContext(
                   new Promise<void>(() => {}),
                   withAbortSignal(
@@ -653,6 +677,7 @@ export class PiCloudTurnRunner {
             }
           : {}),
       });
+      await options.onNativeBound?.();
       stream = await runtime.watch(conversation.id, async (batch) => {
         try {
           for (const event of batch) {
@@ -837,14 +862,56 @@ export class PiCloudTurnRunner {
         throw new PiTurnError("model_request_failed", "The model request did not complete", false);
       await owner.authority.assertCurrent();
       await options.onSettled?.();
+      if (p.conversationWork)
+        await emit(
+          { type: "turn.completed", payload: { stopReason: assistant.stopReason } },
+          owner.committedSequence(),
+        );
       return { stopReason: assistant.stopReason };
     } catch (error) {
-      if (handle?.authority.signal.aborted)
+      if (handle?.authority.signal.aborted) {
+        if (
+          (handle.authority.signal.reason as { code?: string })?.code ===
+          "writer_publication_failed"
+        )
+          throw new PiTurnError(
+            "writer_publication_failed",
+            "The Session writer stopped after publication failed",
+            true,
+          );
         throw new PiTurnError(
           "session_lease_revoked",
           "The native owner lost execution authority",
           true,
         );
+      }
+      if (
+        p.conversationWork &&
+        handle &&
+        !(
+          error instanceof PiTurnError &&
+          ["worker_shutdown", "session_lease_revoked", "writer_publication_failed"].includes(
+            error.code,
+          )
+        )
+      ) {
+        const cancelled =
+          error instanceof PiTurnCancelledError ||
+          (error instanceof PiTurnError && error.code === "native_task_aborted");
+        await emit(
+          cancelled
+            ? { type: "turn.cancelled", payload: { reason: "user_request", forced: false } }
+            : {
+                type: "turn.failed",
+                payload: {
+                  code: error instanceof PiTurnError ? error.code : "native_task_failed",
+                  message: "The native conversation did not complete",
+                  retryable: false,
+                },
+              },
+          handle.committedSequence(),
+        );
+      }
       throw error;
     } finally {
       this.#ended = true;
@@ -855,8 +922,10 @@ export class PiCloudTurnRunner {
       for (const dispose of cleanup) dispose();
       await stream?.stop();
       await delivery.catch(() => undefined);
-      family?.detach(p.runId);
-      await handle?.close();
+      family?.detach(p.runId, p.piSession.conversationId);
+      await handle?.close().catch((error) => {
+        if (!handle?.authority.signal.aborted) throw error;
+      });
       try {
         options.onActivity?.(undefined);
       } catch {

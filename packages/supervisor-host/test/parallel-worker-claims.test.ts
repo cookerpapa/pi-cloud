@@ -38,7 +38,6 @@ afterEach(async () => {
 
 function fixture(
   capacity = 4,
-  lanes = 4,
   readiness: () => Promise<
     import("@pi-cloud/protocol").PublicationAvailability | undefined
   > = async () => ({ partitionCount: 1, partitions: [0] }),
@@ -72,7 +71,6 @@ function fixture(
     notificationConnectionString: "test",
     identity: "worker",
     maximumActiveFamilies: capacity,
-    maximumLanesPerFamily: lanes,
     memoryHeadroom: () => true,
     pollIntervalMs: 10_000,
     canClaimRuns: () => accepting,
@@ -107,7 +105,7 @@ it("caps pending claims at two, then replenishes at commit rather than Agent com
   const f = fixture();
   await f.worker.start();
   await vi.waitFor(() => expect(f.tickets).toHaveLength(2));
-  for (let n = 0; n < 100; n++) f.worker.scheduleOwnedSubagent("hint");
+  for (let n = 0; n < 100; n++) notification.send();
   await tick();
   expect(f.tickets).toHaveLength(2);
   f.tickets[0]!.claim("a");
@@ -115,19 +113,17 @@ it("caps pending claims at two, then replenishes at commit rather than Agent com
   expect(f.tickets[2]!.admission.allowedFamilyKeys).toBeUndefined();
 });
 
-it("reserves unknown claims against family capacity and the last available Lane", async () => {
-  const f = fixture(1, 2);
+it("reserves pending claims and admits only one root work item per Session", async () => {
+  const f = fixture(1);
   await f.worker.start();
   await vi.waitFor(() => expect(f.tickets).toHaveLength(1));
   f.tickets[0]!.claim("a");
-  await vi.waitFor(() => expect(f.tickets).toHaveLength(2));
-  expect(f.tickets[1]!.admission.allowedFamilyKeys).toEqual(["tenant:a"]);
-  f.tickets[1]!.claim("a");
   await tick();
-  expect(f.tickets).toHaveLength(2);
-  f.tickets[1]!.finish();
-  await vi.waitFor(() => expect(f.tickets).toHaveLength(3));
-  expect(f.tickets[2]!.admission.allowedFamilyKeys).toEqual(["tenant:a"]);
+  notification.send();
+  await tick();
+  expect(f.tickets).toHaveLength(1);
+  f.tickets[0]!.finish();
+  await vi.waitFor(() => expect(f.tickets).toHaveLength(2));
 });
 
 it("idle and failed claims release their reservations without a self-waking retry loop", async () => {
@@ -140,18 +136,17 @@ it("idle and failed claims release their reservations without a self-waking retr
   await tick();
   expect(f.tickets).toHaveLength(2);
   expect(f.failure).toHaveBeenCalledTimes(1);
-  f.worker.scheduleOwnedSubagent("external-wake");
+  notification.send();
   await vi.waitFor(() => expect(f.tickets).toHaveLength(4));
 });
 
-it.each(["subagent", "postgres"])(
+it.each(["postgres"])(
   "rechecks newer %s work after older empty claims, without self-waking",
-  async (source) => {
+  async () => {
     const f = fixture();
     await f.worker.start();
     await vi.waitFor(() => expect(f.tickets).toHaveLength(2));
-    if (source === "subagent") f.worker.scheduleOwnedSubagent("new-work");
-    else notification.send();
+    notification.send();
     await tick();
     f.tickets[0]!.finish();
     f.tickets[1]!.finish();
@@ -172,12 +167,12 @@ it("an execution failure after claim confirmation does not release another pendi
   await vi.waitFor(() => expect(f.tickets).toHaveLength(3));
   f.tickets[0]!.fail();
   await tick();
-  for (let n = 0; n < 20; n++) f.worker.scheduleOwnedSubagent("hint");
+  for (let n = 0; n < 20; n++) notification.send();
   await tick();
   expect(f.tickets).toHaveLength(3);
 });
 
-it("shutdown joins already-issued claims and limits later probes to owned families", async () => {
+it("shutdown joins already-issued claims without issuing more probes", async () => {
   const f = fixture();
   await f.worker.start();
   await vi.waitFor(() => expect(f.tickets).toHaveLength(2));
@@ -189,8 +184,8 @@ it("shutdown joins already-issued claims and limits later probes to owned famili
   expect(stopped).toBe(false);
   expect(f.tickets).toHaveLength(2);
   f.tickets[0]!.claim("a");
-  await vi.waitFor(() => expect(f.tickets).toHaveLength(3));
-  expect(f.tickets[2]!.admission.allowedFamilyKeys).toEqual(["tenant:a"]);
+  await tick();
+  expect(f.tickets).toHaveLength(2);
   await f.close();
   await stop;
   expect(stopped).toBe(true);
@@ -199,7 +194,7 @@ it("shutdown joins already-issued claims and limits later probes to owned famili
 it("does not start claims after shutdown while readiness was pending", async () => {
   const ready = Promise.withResolvers<import("@pi-cloud/protocol").PublicationAvailability>();
   const entered = vi.fn(() => ready.promise);
-  const f = fixture(4, 4, entered);
+  const f = fixture(4, entered);
   await f.worker.start();
   await vi.waitFor(() => expect(entered).toHaveBeenCalledOnce());
   const stop = f.worker.stop();

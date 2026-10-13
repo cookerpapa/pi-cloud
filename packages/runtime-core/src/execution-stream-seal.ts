@@ -42,7 +42,6 @@ export async function requestExecutionStreamSeal(
       "run.fencing_token",
       "run.output_seal_id",
       "run.lease_id",
-      "run.native_output_drained",
       "writer.writer_failed_at",
       "session.pi_session_id",
       "session.next_event_seq",
@@ -54,17 +53,12 @@ export async function requestExecutionStreamSeal(
     .forNoKeyUpdate("run")
     .executeTakeFirstOrThrow();
   if (execution.output_seal_id !== null) return;
-  const closesWriter =
-    input.recover === true ||
-    !execution.native_output_drained ||
-    execution.writer_failed_at !== null;
-  if (closesWriter)
-    await transaction
-      .updateTable("session_leases")
-      .set({ writer_failed_at: input.now })
-      .where("lease_id", "=", execution.lease_id!)
-      .where("writer_failed_at", "is", null)
-      .execute();
+  await transaction
+    .updateTable("session_leases")
+    .set({ writer_failed_at: input.now })
+    .where("lease_id", "=", execution.lease_id!)
+    .where("writer_failed_at", "is", null)
+    .execute();
   const fact: AcceptedExecutionSealFact = {
     kind: "execution_seal",
     factId: input.eventId,
@@ -78,7 +72,7 @@ export async function requestExecutionStreamSeal(
       writerId: execution.lease_id!,
     },
     agentId: input.agentId,
-    closesWriter,
+    closesWriter: true,
     baseSequence: Number(execution.next_event_seq) - 1,
     ...(input.recover ? { recover: true as const } : { terminal: input.body }),
     occurredAt: input.now.toISOString(),

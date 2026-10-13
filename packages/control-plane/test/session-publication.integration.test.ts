@@ -1,366 +1,265 @@
-import { installBinaryBodyParser } from "../src/binary-body-parser.ts";
+import { MAX_EXECUTION_FACT_BYTES } from "@pi-cloud/protocol";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { randomUUID } from "node:crypto";
-import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { Admin } from "@platformatic/kafka";
 import { sql } from "kysely";
-import Fastify from "fastify";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import { DirectSessionKafkaBus } from "../../runtime-core/src/direct-session-kafka.ts";
 import { SessionProjector } from "../../runtime-core/src/session-projector.ts";
-import { HttpPublicationClient } from "../../runtime-core/src/http-publication-client.ts";
-import { WorkerExecutionLog } from "../../runtime-core/src/worker-execution-log.ts";
+import { requestExecutionStreamSeal } from "../../runtime-core/src/execution-stream-seal.ts";
 import type {
-  ExecutionPublication,
   AcceptedDurableCommitFact,
   AcceptedExecutionSealFact,
+  AcceptedFactScope,
+  ExecutionPublication,
 } from "../../runtime-core/src/accepted-fact.ts";
-import { SessionPublicationService } from "../src/session-publication-service.ts";
-import { ControlPlaneStore, createPrivateTenant } from "../src/index.ts";
+import { nativeSubagentFixture } from "./native-subagent-fixture.ts";
 import { createTestWorker } from "./admit-test-execution.ts";
-import { up as publicationCutover } from "../../database/src/migrations/158_control_plane_publication.ts";
-
-const postgres = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 const brokers = process.env.PI_CLOUD_KAFKA_INTEGRATION_BROKERS?.split(",");
-it.skipIf(!postgres || !brokers)(
-  "publishes without append-path SQL, restores ingress ownership without retrying lost ACKs, seals and replaces the writer",
+const postgres = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
+
+it.skipIf(!brokers || !postgres)(
+  "writes directly through control-plane replacement, fences old writers and resumes the same logical work",
   async () => {
-    const name = `publication_${randomUUID().replaceAll("-", "")}`,
-      topic = `pi-publication-${randomUUID()}`;
-    const admin = createDatabase({ connectionString: postgres!, maxConnections: 1 });
-    await sql`create database ${sql.id(name)}`.execute(admin);
-    const endpoint = new URL(postgres!);
-    endpoint.pathname = `/${name}`;
-    const database = createDatabase({ connectionString: endpoint.toString(), maxConnections: 8 });
-    const kafka = new Admin({ clientId: topic, bootstrapBrokers: brokers! });
-    const requestScope = new AsyncLocalStorage<string>(),
-      queries: string[] = [],
-      openQueries: string[] = [];
-    const measured = database.withPlugin({
+    const f = await nativeSubagentFixture(),
+      topic = `direct-session-${crypto.randomUUID()}`;
+    const admin = new Admin({ clientId: topic, bootstrapBrokers: brokers! });
+    const measured = new AsyncLocalStorage<boolean>(),
+      queries: string[] = [];
+    const database = f.database.withPlugin({
       transformQuery({ node, queryId }) {
-        if (requestScope.getStore()?.endsWith("/append"))
-          queries.push(database.getExecutor().compileQuery(node, queryId).sql);
-        if (requestScope.getStore()?.endsWith("/open"))
-          openQueries.push(database.getExecutor().compileQuery(node, queryId).sql);
+        if (measured.getStore())
+          queries.push(f.database.getExecutor().compileQuery(node, queryId).sql);
         return node;
       },
       async transformResult({ result }) {
         return result;
       },
     });
-    let projector!: SessionProjector;
-    let loseAppendReply = false;
-    const appendRequests: string[] = [];
-    const server = Fastify({ logger: false }),
-      token = "publication-fixture-" + randomUUID();
-    installBinaryBodyParser(server);
-    server.addHook("onRequest", (request, _reply, done) => {
-      requestScope.run(request.url, done);
-    });
-    server.addHook("onSend", (request, reply, payload, done) => {
-      if (loseAppendReply && request.url.endsWith("/append")) {
-        loseAppendReply = false;
-        reply.raw.destroy();
-      }
-      done(null, payload);
-    });
-    new SessionPublicationService(token, {
-      publicationAvailability: () => projector.publicationAvailability(),
-      localPublicationAvailability: () => projector.localPublicationAvailability(),
-      publicationPartition: (id) => projector.publicationPartition(id),
-      ownerForPartition: (p) => projector.ownerForPartition(p),
-      openPublication: (p) => projector.openPublication(p),
-      appendPublication: (f) => {
-        appendRequests.push(f.factId);
-        return projector.appendPublication(f);
+    const options = {
+      database,
+      brokers: brokers!,
+      topic,
+      clientId: topic,
+      partitions: 1,
+      replicas: 3,
+    };
+    const bus = new DirectSessionKafkaBus(options),
+      successor = new DirectSessionKafkaBus(options);
+    const prechecked = Promise.withResolvers<void>(),
+      resumeLate = Promise.withResolvers<void>();
+    let holdOnce = true;
+    const lateDb = f.database.withPlugin({
+      transformQuery({ node }) {
+        return node;
       },
-      acceptSeal: (f) => projector.acceptSeal(f),
-      acceptControl: (f) => projector.acceptControl(f),
-    }).install(server);
-    let client: HttpPublicationClient | undefined, logs: WorkerExecutionLog | undefined;
-    const pending: Array<{
-      finish: ReturnType<typeof Promise.withResolvers<void>>;
-      execution: Promise<unknown>;
-    }> = [];
-    try {
-      await runMigrations(database, "up");
-      const url = await server.listen({ host: "127.0.0.1", port: 0 });
-      const createProjector = () =>
-        new SessionProjector({
-          database: measured,
-          notificationConnectionString: endpoint.toString(),
-          brokers: brokers!,
-          clientId: topic,
-          topic,
-          partitions: 1,
-          replicas: 3,
-          retentionMs: 600_000,
-          advertisedBaseUrl: url,
-          publicationToken: token,
-          toolCommands: { consume: async () => {} },
-        });
-      projector = createProjector();
-      await projector.start();
-      await eventually(() => projector.ownsPartition(0));
-      const tenant = await createPrivateTenant(database, {
-        slug: name.replaceAll("_", "-"),
-        ownerDisplayName: "Publication test",
+      async transformResult({ result }) {
+        if (holdOnce) {
+          holdOnce = false;
+          prechecked.resolve();
+          await resumeLate.promise;
+        }
+        return result;
+      },
+    });
+    const late = new DirectSessionKafkaBus({ ...options, database: lateDb });
+    const third = new DirectSessionKafkaBus(options);
+    let lateOpening: Promise<void> | undefined, thirdExecution: Promise<unknown> | undefined;
+    let projector: SessionProjector | undefined;
+    const create = () =>
+      new SessionProjector({
+        ...options,
+        database: f.database,
+        notificationConnectionString: f.url,
+        retentionMs: 600000,
+        publicationToken: "fixture-".repeat(8),
+        advertisedBaseUrl: "http://127.0.0.1:9",
+        toolCommands: { consume: async () => {} },
       });
-      const store = new ControlPlaneStore({ database, ...tenant });
-      const project = await store.createProject({
-        name: "Source publication",
-        source: { kind: "empty" },
-      });
-      const session = await store.createSession(
-        project.projectId,
-        project.workspaceId,
-        "One physical Session",
-        "elastic",
-      );
-      client = new HttpPublicationClient({ baseUrl: url, token });
-      expect(await client.publicationAvailability()).toEqual({
-        partitionCount: 1,
-        partitions: [0],
-      });
-      logs = new WorkerExecutionLog(database, client);
-      async function admit(key: string) {
-        const accepted = await store.acceptTurn(session.sessionId, key, { prompt: key });
-        const worker = await createTestWorker(database);
-        const entered = Promise.withResolvers<{
-          publication: ExecutionPublication;
-          executionReference: string;
-        }>();
-        const finish = Promise.withResolvers<void>();
-        const execution = worker
-          .executor({
-            execute: async (_r, _l, admission) => {
-              entered.resolve(admission!);
-              await finish.promise;
-              return { stopReason: "stop" };
-            },
-          })
-          .dispatchRun(accepted.runId);
-        void execution.catch(entered.reject);
-        pending.push({ finish, execution });
-        return { ...accepted, ...(await entered.promise), finish, execution };
-      }
-      const first = await admit("first");
-      const channel = await logs.open({
-        ...first,
-        sessionId: session.sessionId,
-        nextEventSeq: 1,
-        piSession: {
-          id: session.sessionId,
-          conversationId: 1,
-          writerId: first.publication.scope.writerId,
-        },
-      });
-      expect(openQueries).toHaveLength(1);
-      openQueries.length = 0;
-      // Even a matching open cache cannot replace current PG authorization.
-      await client.open(first.publication);
-      expect(openQueries).toHaveLength(1);
-      await expect(
-        database.transaction().execute((transaction) => publicationCutover<Database>(transaction)),
-      ).rejects.toThrow("Drain Runs, Session leases and seals");
-      const nativeId = 2;
-      const data = JSON.parse('{"__proto__":{"kept":"opaque"},"constructor":"ordinary"}') as Record<
-        string,
-        unknown
-      >;
-      const fact: AcceptedDurableCommitFact = {
-        kind: "durable_commit",
-        factId: randomUUID(),
-        scope: (({ leaseId: _lease, piConversationId: _conversation, ...scope }) => scope)(
-          first.publication.scope,
-        ),
-        commit: {
-          seq: 1,
-          nextId: 3,
-          writes: [
-            { type: "conversation", value: { id: 1 } },
-            {
-              type: "entry",
-              value: { id: nativeId, conversationId: 1, kind: "publication-test", data },
-            },
-          ],
-        },
-        origins: [
+    const permit = { scope: { ...f.scope, leaseId: f.scope.writerId, piConversationId: 1 } };
+    const fact = (seq: number, scope: AcceptedFactScope = f.scope): AcceptedDurableCommitFact => ({
+      kind: "durable_commit",
+      factId: crypto.randomUUID(),
+      scope,
+      commit: {
+        seq,
+        nextId: seq + 1,
+        writes: [
           {
-            recordId: nativeId,
-            sessionId: session.sessionId,
-            runId: first.runId,
-            turnId: first.turnId,
+            type: "entry",
+            value: { id: seq, conversationId: 1, kind: "test", data: { text: `entry ${seq}` } },
           },
         ],
-        tools: [],
-        cancellations: [],
-        display: [],
-        occurredAt: new Date().toISOString(),
-      };
-      queries.length = 0;
-      await client.append(fact);
-      await eventually(
-        async () =>
-          (
-            await sql`select id from pi_durable_records where tenant_id=${tenant.tenantId}::uuid
-        and session_id=${session.sessionId} and kind='entry' and id=${nativeId}`.execute(database)
-          ).rows.length === 1,
-      );
-      expect(queries).toEqual([]);
-      const row = (
-        await sql<{
-          body: string;
-        }>`select body from pi_durable_log where tenant_id=${tenant.tenantId}::uuid
-        and session_id=${session.sessionId} and record_kind='entry' and record_id=${nativeId}`.execute(
-          database,
-        )
-      ).rows[0]!;
-      expect(JSON.parse(row.body)).toMatchObject({ value: { data } });
-      const probe = () => ({
-        kind: "path_probe" as const,
-        factId: randomUUID(),
-        scope: fact.scope,
-        occurredAt: new Date().toISOString(),
-      });
-      const samples: number[] = [];
-      for (let i = 0; i < 12; i++) {
-        const start = performance.now();
-        await client.append(probe());
-        samples.push(performance.now() - start);
-      }
-      samples.sort((a, b) => a - b);
-      process.stdout.write(
-        JSON.stringify({
-          measurement: "private_http_to_rf3_commit",
-          count: samples.length,
-          p50Ms: samples[5],
-          p95Ms: samples[11],
-          appendQueries: queries.length,
-        }) + "\n",
-      );
-      const lost = probe();
-      loseAppendReply = true;
-      await expect(client.append(lost)).rejects.toBeInstanceOf(Error);
-      expect(appendRequests.filter((id) => id === lost.factId)).toHaveLength(1);
-      await projector.close();
-      projector = createProjector();
-      await projector.start();
-      await eventually(() => projector.ownsPartition(0));
-      const resumed = probe();
-      openQueries.length = 0;
-      await client.append(resumed);
-      // The first request was explicitly rejected before enqueue; only then may
-      // the client restore the PG grant on a replacement's empty soft state.
-      expect(appendRequests.filter((id) => id === resumed.factId)).toHaveLength(2);
-      expect(queries).toEqual([]);
-      expect(openQueries).toHaveLength(1);
-      await channel.close();
-      first.finish.resolve();
-      await first.execution;
-      await eventually(
-        async () =>
-          (
-            await database
-              .selectFrom("runs")
-              .select("output_sealed_at")
-              .where("id", "=", first.runId)
-              .executeTakeFirst()
-          )?.output_sealed_at != null,
-      );
-      openQueries.length = 0;
-      await expect(client.open(first.publication)).rejects.toThrow("closed");
-      expect(openQueries).toEqual([]);
-      const second = await admit("replacement");
-      const sealed = await database
-        .selectFrom("outbox as o")
-        .innerJoin("runs as r", "r.output_seal_id", "o.id")
-        .select("o.payload")
-        .where("r.id", "=", first.runId)
+      },
+      origins: [
+        { recordId: seq, runId: scope.runId, sessionId: scope.sessionId, turnId: scope.turnId },
+      ],
+      display: [],
+      cancellations: [],
+      tools: [],
+      occurredAt: new Date().toISOString(),
+    });
+    const readRun = () =>
+      f.database
+        .selectFrom("runs")
+        .selectAll()
+        .where("id", "=", f.scope.runId)
         .executeTakeFirstOrThrow();
-      await expect(
-        client.append({
-          ...(sealed.payload as unknown as AcceptedExecutionSealFact),
-          occurredAt: "2000-01-01T00:00:00.000Z",
-        }),
-      ).rejects.toBeInstanceOf(Error);
-      expect(second.publication.scope.fencingToken).toBeGreaterThan(
-        first.publication.scope.fencingToken,
-      );
-      await client.open(second.publication);
-      expect(openQueries).toHaveLength(1);
-      openQueries.length = 0;
-      await expect(client.append({ ...fact, factId: randomUUID() })).rejects.toBeInstanceOf(Error);
-      const wrong = { ...fact, scope: { ...fact.scope, runId: second.runId, fencingToken: 999 } };
-      await expect(client.append(wrong)).rejects.toBeInstanceOf(Error);
-      await expect(client.open(first.publication)).rejects.toBeInstanceOf(Error);
-      expect(openQueries).toEqual([]);
-      second.finish.resolve();
-      await second.execution;
-      await eventually(
-        async () =>
-          (
-            await database
-              .selectFrom("runs")
-              .select("output_sealed_at")
-              .where("id", "=", second.runId)
-              .executeTakeFirst()
-          )?.output_sealed_at != null,
-      );
-      // Losing the negative cache requires a PG read, which still rejects the
-      // old grant; absence from memory is never permission to reopen it.
-      await projector.close();
-      projector = createProjector();
+    const finished = Promise.withResolvers<void>();
+    let execution: Promise<unknown> | undefined;
+    try {
+      projector = create();
       await projector.start();
-      await eventually(() => projector.ownsPartition(0));
-      openQueries.length = 0;
-      await expect(client.open(first.publication)).rejects.toThrow("scope");
-      expect(openQueries).toHaveLength(1);
+      await vi.waitFor(() => expect(projector!.ownsPartition(0)).toBe(true), { timeout: 30000 });
+      await bus.checkHealth();
+      expect(await bus.publicationAvailability()).toEqual({ partitionCount: 1, partitions: [0] });
+      await measured.run(true, () => bus.open(permit));
+      expect(queries).toHaveLength(2); // current PG grant before AND after native init
+      queries.length = 0;
+      const oversized = fact(2);
+      Object.assign(oversized.commit.writes[0]!.value as object, {
+        data: { text: "x".repeat(MAX_EXECUTION_FACT_BYTES) },
+      });
+      await expect(measured.run(true, () => bus.append(oversized))).rejects.toThrow(
+        "transport budget",
+      );
+      expect(bus.publicationFailure(f.scope)).toBeUndefined();
+      await measured.run(true, () => bus.append(fact(2)));
+      expect(queries).toEqual([]);
+      await vi.waitFor(async () => expect((await f.projection.head()).seq).toBe(2), {
+        timeout: 10000,
+      });
+      await projector.close();
+      projector = undefined;
+      // No control-plane owner or HTTP server exists here. The active producer still commits.
+      await measured.run(true, () => bus.append(fact(3)));
+      expect(queries).toEqual([]);
+      expect((await f.projection.head()).seq).toBe(2);
+      projector = create();
+      await projector.start();
+      await vi.waitFor(async () => expect((await f.projection.head()).seq).toBe(3), {
+        timeout: 30000,
+      });
+      lateOpening = late.open(permit);
+      void lateOpening.catch(() => {});
+      await prechecked.promise;
+      const sealId = crypto.randomUUID();
+      await f.database.transaction().execute((tx) =>
+        requestExecutionStreamSeal(tx, {
+          tenantId: f.scope.tenantId,
+          sessionId: f.scope.sessionId,
+          turnId: f.scope.turnId,
+          runId: f.scope.runId,
+          agentId: "root",
+          now: new Date(),
+          eventId: sealId,
+          recover: true,
+        }),
+      );
+      const seal = (
+        await f.database
+          .selectFrom("outbox")
+          .select("payload")
+          .where("id", "=", sealId)
+          .executeTakeFirstOrThrow()
+      ).payload as AcceptedExecutionSealFact;
+      await vi.waitFor(async () => expect((await readRun()).state).toBe("queued"), {
+        timeout: 30000,
+      });
+      await expect(bus.append(fact(4))).rejects.toBeInstanceOf(Error);
+      await expect(bus.append(fact(4))).rejects.toBeInstanceOf(Error);
+      await expect(successor.open(permit)).rejects.toThrow("no longer current");
+      const worker = await createTestWorker(f.database);
+      const entered = Promise.withResolvers<ExecutionPublication>();
+      execution = worker
+        .executor({
+          execute: async (_r, _l, admission) => {
+            entered.resolve(admission.publication);
+            await finished.promise;
+            return { stopReason: "stop" };
+          },
+          finish: async () => {},
+        })
+        .dispatchRun(f.scope.runId);
+      void execution.catch(entered.reject);
+      const next = await entered.promise;
+      expect(next.scope.runId).toBe(f.scope.runId);
+      expect(next.scope.writerId).not.toBe(f.scope.writerId);
+      expect(next.scope.fencingToken).toBe(2);
+      await successor.open(next);
+      // Replayed closed evidence must NOT initialize another producer and fence the successor.
+      await projector.publishSeal(seal);
+      const { leaseId: _lease, piConversationId: _conv, ...scope } = next.scope;
+      await successor.append(fact(4, scope));
+      await vi.waitFor(async () => expect((await f.projection.head()).seq).toBe(4), {
+        timeout: 10000,
+      });
+      // Late cleanup from the old incarnation cannot drop the new writer.
+      await successor.forget(f.scope);
+      await successor.append(fact(5, scope));
+      await vi.waitFor(async () => expect((await f.projection.head()).seq).toBe(5), {
+        timeout: 10000,
+      });
+      // A delayed initializer passed its first PG check before closure. It fences
+      // the current producer, then MUST fail its fresh post-init check.
+      resumeLate.resolve();
+      await expect(lateOpening).rejects.toThrow("no longer current");
+      await expect(successor.append(fact(6, scope))).rejects.toBeInstanceOf(Error);
+      await f.database.transaction().execute((tx) =>
+        requestExecutionStreamSeal(tx, {
+          tenantId: scope.tenantId,
+          sessionId: scope.sessionId,
+          turnId: scope.turnId,
+          runId: scope.runId,
+          agentId: "root",
+          now: new Date(),
+          eventId: crypto.randomUUID(),
+          recover: true,
+        }),
+      );
+      await vi.waitFor(async () => expect((await readRun()).state).toBe("queued"), {
+        timeout: 30000,
+      });
+      const thirdWorker = await createTestWorker(f.database),
+        thirdEntered = Promise.withResolvers<ExecutionPublication>();
+      thirdExecution = thirdWorker
+        .executor({
+          execute: async (_r, _l, a) => {
+            thirdEntered.resolve(a.publication);
+            await finished.promise;
+            return { stopReason: "stop" };
+          },
+          finish: async () => {},
+        })
+        .dispatchRun(scope.runId);
+      void thirdExecution.catch(thirdEntered.reject);
+      const finalPermit = await thirdEntered.promise;
+      expect(finalPermit.scope.fencingToken).toBe(3);
+      await third.open(finalPermit);
+      const { leaseId: _l3, piConversationId: _c3, ...scope3 } = finalPermit.scope;
+      await third.append(fact(6, scope3));
+      await vi.waitFor(async () => expect((await f.projection.head()).seq).toBe(6), {
+        timeout: 10000,
+      });
       expect(
         (
-          await sql`select id from pi_durable_records where tenant_id=${tenant.tenantId}::uuid and session_id=${session.sessionId} and kind='entry'`.execute(
-            database,
+          await sql<{
+            count: string;
+          }>`select count(*) from runs where tenant_id=${f.scope.tenantId}::uuid`.execute(
+            f.database,
           )
-        ).rows,
-      ).toHaveLength(1);
-      await eventually(
-        async () =>
-          !(
-            await database
-              .selectFrom("outbox")
-              .select("id")
-              .where("aggregate_type", "=", "session_terminal_event")
-              .where("published_at", "is", null)
-              .execute()
-          ).length,
-      );
-      await expect(
-        database.transaction().execute((transaction) => publicationCutover<Database>(transaction)),
-      ).resolves.toBeUndefined();
+        ).rows[0]!.count,
+      ).toBe("1");
     } finally {
-      for (const run of pending) run.finish.resolve();
-      await Promise.allSettled(pending.map((run) => run.execution));
-      await logs?.close().catch(() => {});
-      await client?.close().catch(() => {});
-      await projector?.close().catch(() => {});
-      await server.close();
-      await database.destroy();
-      await sql`drop database ${sql.id(name)}`.execute(admin);
-      await admin.destroy();
-      await kafka.deleteTopics({ topics: [topic] }).catch(() => {});
-      await kafka.close();
+      resumeLate.resolve();
+      await lateOpening?.catch(() => {});
+      finished.resolve();
+      await Promise.allSettled([execution, thirdExecution]);
+      await Promise.allSettled([bus.close(), successor.close(), late.close(), third.close()]);
+      await projector?.close();
+      await admin.deleteTopics({ topics: [topic] }).catch(() => {});
+      await admin.close();
+      await f.close();
     }
   },
-  90_000,
+  180000,
 );
-
-async function eventually(
-  predicate: () => boolean | Promise<boolean>,
-  timeout = 30_000,
-): Promise<void> {
-  const end = Date.now() + timeout;
-  while (Date.now() < end) {
-    if (await predicate()) return;
-    await new Promise<void>((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error("Publication integration deadline exceeded");
-}

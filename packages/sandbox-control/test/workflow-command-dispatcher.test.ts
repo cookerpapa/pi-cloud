@@ -15,7 +15,7 @@ function command(): AcceptedToolCommand {
     kind: "tool_command",
     factId: crypto.randomUUID(),
     toolCallId,
-    replyTopic: "pi-cloud.tool-replies.v2.test",
+    replyTopic: "pi-cloud.tool-replies.v3.test",
     scope: {
       tenantId: crypto.randomUUID(),
       sessionId: crypto.randomUUID(),
@@ -98,6 +98,53 @@ function fixture(maximumActiveCommands = 32) {
   };
 }
 describe("interactive workflow replies without completed-result retention", () => {
+  it("admits all operations in one native commit and closes only the selected child binding", async () => {
+    const f = fixture(),
+      a = command(),
+      b = { ...command(), scope: a.scope };
+    const finish = Promise.withResolvers<void>();
+    f.execute.mockImplementation(async (_lease, request) => {
+      await finish.promise;
+      return output(request);
+    });
+    f.own(a);
+    f.own(b);
+    f.executor.receive(record(a, 10n));
+    f.executor.receive(record(b, 10n));
+    f.executor.receive(record(a, 10n));
+    await vi.waitFor(() => expect(f.execute).toHaveBeenCalledTimes(2));
+    f.executor.receive(
+      record({ kind: "binding_close", bindingId: a.request.activationId, scope: a.scope }, 11n),
+    );
+    finish.resolve();
+    await f.settled();
+    expect(f.publish.mock.calls.map(([, reply]) => reply.operationId)).toEqual([
+      b.request.operationId,
+    ]);
+  });
+
+  it("allows a resumed logical Run under a new writer after the old writer closes", async () => {
+    const f = fixture(),
+      a = command();
+    const b = {
+      ...command(),
+      scope: {
+        ...a.scope,
+        writerId: crypto.randomUUID(),
+        leaseId: crypto.randomUUID(),
+        fencingToken: 2,
+      },
+    };
+    f.own(a);
+    f.own(b);
+    f.executor.receive(record({ kind: "execution_seal", scope: a.scope, closesWriter: true }, 1n));
+    f.executor.receive(record(b, 2n));
+    await f.settled();
+    expect(f.execute).toHaveBeenCalledOnce();
+    expect(f.publish.mock.calls.map(([, reply]) => reply.operationId)).toEqual([
+      b.request.operationId,
+    ]);
+  });
   it("rejects fixed Tools at the workflow-only boundary", () => {
     const f = fixture(),
       c = command();
@@ -136,12 +183,8 @@ describe("interactive workflow replies without completed-result retention", () =
     f.executor.receive(record(c));
     await f.settled();
     expect(
-      f.publish.mock.calls.map(([, reply]) => [
-        reply.operationId,
-        reply.sequence,
-        reply.kind === "tool_result" ? reply.event.type : reply.kind,
-      ]),
-    ).toEqual([[c.request.operationId, 1, "tool_execution_end"]]);
+      f.publish.mock.calls.map(([, reply]) => [reply.operationId, reply.sequence, reply.kind]),
+    ).toEqual([[c.request.operationId, 1, "tool_result"]]);
     expect(f.progress).toHaveBeenCalledWith(
       expect.objectContaining({
         tenantId: c.scope.tenantId,

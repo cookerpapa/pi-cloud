@@ -75,7 +75,7 @@ export async function liveNativeTools(
         await client.submitTool(binding.descriptor.target, {
           source,
           operationId: request.operationId,
-          runId: identity.runId,
+          executionScopeId: request.activationId,
           writerId: identity.leaseId,
           payload: {
             mode: "operation",

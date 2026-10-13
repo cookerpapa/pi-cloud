@@ -8,7 +8,7 @@ import {
   durableToolIntent,
 } from "@pi-cloud/protocol";
 import type { AcceptedFact, SessionLogFact } from "./accepted-fact.ts";
-import { toolCommandsForFact } from "./tool-invocation-fact.ts";
+import { toolCommandsForFact, controlToolsForFact } from "./tool-invocation-fact.ts";
 export {
   ACCEPTED_FACT_TOPIC,
   loadProducerCapacity,
@@ -41,8 +41,10 @@ export function parseAcceptedFact(value: unknown): AcceptedFact {
   const parsed = value as AcceptedFact;
   if (parsed.kind === "durable_commit") {
     const commit = parseDurableSessionCommit(parsed.commit);
-    for (const tool of parsed.tools) durableToolIntent(commit, tool.taskId);
+    for (const tool of parsed.tools)
+      if (tool.target !== "control") durableToolIntent(commit, tool.taskId);
     toolCommandsForFact(parsed);
+    controlToolsForFact(parsed);
     return {
       ...parsed,
       commit,
@@ -62,12 +64,31 @@ export function parseAcceptedFact(value: unknown): AcceptedFact {
   }
   if (parsed.kind === "path_probe") return parsePathProbe(parsed);
   if (parsed.kind === "tool_cancel") return parseToolCancellation(parsed);
-  if (
-    parsed.kind === "execution_seal" ||
-    parsed.kind === "tool_command" ||
-    parsed.kind === "subagent_command"
-  )
+  if (parsed.kind === "execution_seal") {
+    if (parsed.closesWriter !== true) throw new Error("Only Session writer seals are supported");
     return parsed;
+  }
+  if (parsed.kind === "work_finished") {
+    if (
+      parsed.retireWriter !== true ||
+      !Number.isSafeInteger(parsed.nativeSequence) ||
+      parsed.nativeSequence < 0 ||
+      !Number.isSafeInteger(parsed.baseSequence) ||
+      parsed.baseSequence < 0
+    )
+      throw new Error("Invalid work completion boundary");
+    parsePiCloudEvent({
+      schemaVersion: 1,
+      eventId: parsed.factId,
+      sessionId: parsed.scope.sessionId,
+      turnId: parsed.scope.turnId,
+      agentId: parsed.agentId,
+      seq: parsed.baseSequence + 1,
+      occurredAt: parsed.occurredAt,
+      ...parsed.terminal,
+    });
+    return parsed;
+  }
 
   throw new TypeError("Kafka AcceptedFact kind is invalid");
 }

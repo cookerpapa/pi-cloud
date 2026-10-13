@@ -21,6 +21,7 @@ import {
   createExecutionReference,
   ToolExecutionFailure,
   type NativeToolEnd,
+  type CandidateToolCommand,
 } from "@pi-cloud/protocol";
 import { createTrustedRemoteAgentTools } from "../src/trusted-remote-tools.ts";
 import { withToolInvocation } from "../src/tool-invocation.ts";
@@ -81,16 +82,11 @@ it.each([
       });
     });
     let step = 0;
-    const publish = vi.fn(
-      async (
-        command: Parameters<
-          Parameters<typeof createTrustedRemoteAgentTools>[0]["publishToolCommand"]
-        >[0],
-      ) => ({ operationId: command.request.operationId, accepted: true as const }),
-    );
+    const publish = vi.fn(async (command: CandidateToolCommand) => ({
+      operationId: command.request.operationId,
+      accepted: true as const,
+    }));
     const remote = createTrustedRemoteAgentTools({
-      publishToolCommand: publish,
-      trackWorkflowOperation: () => {},
       waitForToolReply: async (_request, signal) => {
         signal.addEventListener("abort", () => reply.reject(signal.reason), { once: true });
         return reply.promise;
@@ -151,20 +147,27 @@ it.each([
         release: () => {},
       };
     });
-    const model = scoped.register(crypto.randomUUID(), provider.getModel());
+    const model = scoped.register(crypto.randomUUID(), 1, provider.getModel());
     const tool: ToolRegistration = {
       name: "workflow",
       description: "fixture",
       parameters: Type.Object({ script: Type.String() }),
       execute: async (args, api, context) =>
         withToolInvocation({ id: `task:${api.taskId}`, nativeToolCallId: api.callId }, async () => {
-          const value = await remote.executeWorkflow(
+          const prepared = await remote.prepareWorkflow(
             api.callId,
             (args as { script: string }).script,
             async () => null,
             context.abortSignal,
+            "workflow",
           );
-          return { content: [{ type: "text", text: String(value) }] };
+          try {
+            if (!("request" in prepared.command)) throw Error("Expected workflow transport");
+            await publish(prepared.command);
+            return await prepared.result();
+          } finally {
+            prepared.dispose();
+          }
         }),
     };
     const registry = createRegistry();

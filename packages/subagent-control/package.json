@@ -5,7 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./subagent-jobs": "./src/postgres-subagent-job-provider.ts",
+    "./subagent-conversations": "./src/postgres-subagent-conversations.ts",
     "./subagent-supervisor": "./src/postgres-subagent-supervisor-channel.ts"
   },
   "scripts": {

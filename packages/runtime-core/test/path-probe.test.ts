@@ -1,7 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { createExecutionReference } from "@pi-cloud/protocol";
-import type { Database } from "@pi-cloud/database";
-import type { Kysely } from "kysely";
 import type {
   AcceptedFact,
   AcceptedFactReceipt,
@@ -31,22 +29,7 @@ it("decodes only the bounded content-free probe protocol", () => {
 
 afterEach(() => vi.useRealTimers());
 function fixture(append: (fact: AcceptedFact) => Promise<AcceptedFactReceipt>) {
-  const writes = vi.fn(async () => []);
-  const query = {
-    set() {
-      return this;
-    },
-    where() {
-      return this;
-    },
-    execute: writes,
-  };
-  const log = new WorkerExecutionLog(
-    { updateTable: () => query } as unknown as Kysely<Database>,
-    { append, checkHealth: async () => {} },
-    undefined,
-    15_000,
-  );
+  const log = new WorkerExecutionLog({ append, checkHealth: async () => {} }, undefined, 15_000);
   const base = toolInvocationFixture().scope;
   async function open(scope: ExecutionPublication["scope"]) {
     const executionReference = createExecutionReference(
@@ -82,7 +65,7 @@ function fixture(append: (fact: AcceptedFact) => Promise<AcceptedFactReceipt>) {
     };
     return { writer, publish, executionReference };
   }
-  return { log, writes, base, open };
+  return { log, base, open };
 }
 
 it("probes a quiet physical Session once across Lanes and never opens or sequences history", async () => {
@@ -107,7 +90,6 @@ it("probes a quiet physical Session once across Lanes and never opens or sequenc
     expect(facts[1]?.scope.writerId).toBe(f.base.writerId);
     expect(a.writer.acknowledgedThroughSeq).toBe(0);
     expect(b.writer.acknowledgedThroughSeq).toBe(0);
-    expect(f.writes).not.toHaveBeenCalled();
     await a.publish();
     await vi.advanceTimersByTimeAsync(10_000);
     await b.publish();
@@ -175,7 +157,6 @@ it("probes bound guests despite ongoing text and aggregates Session bindings int
     await vi.advanceTimersByTimeAsync(0);
     expect(report).toHaveBeenCalledTimes(2);
     expect(report.mock.calls.map(([r]) => r.scope.runId)).toEqual([f.base.runId, childRunId]);
-    expect(f.writes).not.toHaveBeenCalled();
     expect(a.writer.acknowledgedThroughSeq).toBe(0);
   } finally {
     mailbox.close();
@@ -226,7 +207,6 @@ it("lost guest replies do not stop log probes, and replacement rejects old bindi
     await vi.advanceTimersByTimeAsync(0);
     expect(report).not.toHaveBeenCalled();
     await a.publish();
-    expect(f.writes).not.toHaveBeenCalled();
   } finally {
     mailbox.close();
     await f.log.close();

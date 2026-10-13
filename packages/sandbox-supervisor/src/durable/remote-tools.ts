@@ -8,8 +8,9 @@ import {
 import type { Context } from "@earendil-works/chord";
 import {
   durableToolIntent,
+  isControlToolCommand,
   PublicationNotSentError,
-  type CandidateToolCommand,
+  type CandidateToolEffect,
   type CandidateToolCancellation,
   type DurableSessionCommit,
 } from "@pi-cloud/protocol";
@@ -23,18 +24,14 @@ export type RemoteInvocation = {
   context: Context;
 };
 export type PreparedRemoteInvocation = {
-  command: CandidateToolCommand;
+  command: CandidateToolEffect;
   result(): Promise<ToolExecutionResult>;
   dispose(): void;
   /** Reply observation only; it does not replace Pi's canonical result. */
   completed(): boolean;
 };
-export type TrackedWorkflowOperation = Pick<
-  PreparedRemoteInvocation,
-  "command" | "completed" | "dispose"
->;
 type Pending = {
-  prepared: TrackedWorkflowOperation & Partial<Pick<PreparedRemoteInvocation, "result">>;
+  prepared: PreparedRemoteInvocation;
   dispatched: boolean;
   cancelled: boolean;
 };
@@ -64,7 +61,9 @@ export class DurableRemoteTools {
         });
         if (
           prepared.command.toolCallId !== `task:${api.taskId}` ||
-          prepared.command.request.toolName !== call.name
+          (isControlToolCommand(prepared.command)
+            ? prepared.command.toolName
+            : (prepared.command.nativeToolName ?? prepared.command.request.toolName)) !== call.name
         ) {
           prepared.dispose();
           throw new Error("Remote Tool preparation changed its native identity");
@@ -93,24 +92,12 @@ export class DurableRemoteTools {
       },
     }));
   }
-  /** Workflow commands enter the same execution writer synchronously before
-   * registration. Native abort can now co-commit their operation cancellation,
-   * even while the command ACK or guest completion is still pending. */
-  trackWorkflow(operation: TrackedWorkflowOperation): void {
-    const match = /^task:([1-9][0-9]*)$/.exec(operation.command.toolCallId);
-    if (!match || operation.command.request.operation !== "workflow.exec")
-      throw new Error("Workflow cancellation requires its native Tool task identity");
-    const taskId = Number(match[1]);
-    if (!Number.isSafeInteger(taskId) || this.#pending.has(taskId))
-      throw new Error("Workflow operation is already registered");
-    this.#pending.set(taskId, { prepared: operation, dispatched: true, cancelled: false });
-  }
   preparePublication(commit: DurableSessionCommit): {
-    tools: { taskId: number; command: CandidateToolCommand }[];
+    tools: { taskId: number; command: CandidateToolEffect }[];
     cancellations: CandidateToolCancellation[];
     confirmed(): void;
   } {
-    const tools: { taskId: number; command: CandidateToolCommand }[] = [];
+    const tools: { taskId: number; command: CandidateToolEffect }[] = [];
     const cancellations: CandidateToolCancellation[] = [];
     const terminal: number[] = [];
     const cancelling: Pending[] = [];
@@ -118,6 +105,7 @@ export class DurableRemoteTools {
       if (write.type !== "task") continue;
       const task = write.value as {
         id: number;
+        conversationId: number;
         kind: string;
         abortRequested: boolean;
         state: { status: string; checkpoint?: { phase: string } };
@@ -131,12 +119,14 @@ export class DurableRemoteTools {
         !pending.prepared.completed()
       ) {
         const command = pending.prepared.command;
-        cancellations.push({
-          executionReference: command.executionReference,
-          activationId: command.request.activationId,
-          operationId: command.request.operationId,
-          occurredAt: new Date().toISOString(),
-        });
+        if (!isControlToolCommand(command))
+          cancellations.push({
+            executionReference: command.executionReference,
+            conversationId: task.conversationId,
+            activationId: command.request.activationId,
+            operationId: command.request.operationId,
+            occurredAt: new Date().toISOString(),
+          });
         cancelling.push(pending);
       }
       if (
@@ -146,11 +136,14 @@ export class DurableRemoteTools {
       ) {
         const intent = durableToolIntent(commit, task.id),
           command = pending.prepared.command;
-        if (
-          command.request.operation !== "tool.execute" ||
-          command.request.toolCallId !== intent.callId ||
-          !isDeepStrictEqual(command.request.args, intent.arguments)
-        )
+        const matches = isControlToolCommand(command)
+          ? command.nativeCallId === intent.callId &&
+            isDeepStrictEqual(command.arguments, intent.arguments)
+          : command.request.toolCallId === intent.callId &&
+            (command.request.operation === "tool.execute"
+              ? isDeepStrictEqual(command.request.args, intent.arguments)
+              : command.request.script === intent.arguments.script);
+        if (!matches)
           throw new PublicationNotSentError(
             "Remote command differs from Pi's final validated intent",
           );

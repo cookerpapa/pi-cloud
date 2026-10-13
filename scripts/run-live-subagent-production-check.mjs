@@ -73,15 +73,18 @@ async function sampleRuntimeBindings() {
   if (!project) return;
   const rows = JSON.parse(
     await psql(`select coalesce(json_agg(json_build_object(
-    'runId',b.run_id,'runtimeId',b.descriptor->'target'->>'sandboxId')),'[]'::json)::text
+    'viewSessionId',b.snapshot->'assignment'->>'sessionId','runtimeId',b.descriptor->'target'->>'sandboxId')),'[]'::json)::text
     from sandbox_tool_bindings b where b.tenant_id=${sqlLiteral(registration.tenantId)}
       and b.snapshot->'assignment'->>'workspaceId'=${sqlLiteral(project.workspaceId)}`),
   );
   for (const row of rows) {
     assert(row.runtimeId);
-    const prior = observedRuntimes.get(row.runId);
-    assert(prior === undefined || prior === row.runtimeId, "Run was redirected to another VM");
-    observedRuntimes.set(row.runId, row.runtimeId);
+    const prior = observedRuntimes.get(row.viewSessionId);
+    assert(
+      prior === undefined || prior === row.runtimeId,
+      "Conversation was redirected to another VM",
+    );
+    observedRuntimes.set(row.viewSessionId, row.runtimeId);
   }
 }
 
@@ -237,20 +240,19 @@ async function executionEvidence(parentRunId, executionId) {
     select json_build_object(
       'executionId', execution.id,
       'parentRunId', parent_run.id,
+      'parentSessionId', parent_run.session_id,
       'sandboxMode', execution.sandbox_mode,
       'state', execution.state,
       'childSessionId', execution.child_session_id,
-      'childRunId', execution.child_run_id,
+      'childTurnId', execution.child_turn_id,
       'parentWorkspaceId', parent_run.workspace_id,
-      'childWorkspaceId', child_run.workspace_id,
-      'computeSessionId', child_run.compute_session_id,
-      'cwd', child_run.working_directory,
-      'childRunState', child_run.state,
+      'childWorkspaceId', child.workspace_id,
+      'computeSessionId', child.compute_session_id,
+      'cwd', child.working_directory,
+      'childTaskState', execution.state,
       'parentWorker', parent_run.worker_id,
-      'childWorker', child_run.worker_id,
-      'sameWorker', parent_run.worker_id = child_run.worker_id,
-      'sameOwnerLease', parent_run.lease_id = child_run.lease_id
-        and parent_run.fencing_token = child_run.fencing_token,
+      'sameWorker', not exists(select 1 from runs cr where cr.session_id=child.id),
+      'sameOwnerLease', not exists(select 1 from session_leases l where l.pi_session_id=child.id::text),
       'piSessionId', child.pi_session_id,
       'nativeConversationId', child.pi_conversation_id,
       'contextBaseEntryId', execution.pi_context_base_entry_id,
@@ -274,7 +276,7 @@ async function executionEvidence(parentRunId, executionId) {
           and entry.session_id = child.pi_session_id
           and entry.fields->>'turn' in (
             select turn.turn_id::text
-            from runs turn
+            from conversation_turns turn
             where turn.tenant_id = execution.tenant_id
               and turn.session_id = execution.child_session_id
           )
@@ -283,13 +285,12 @@ async function executionEvidence(parentRunId, executionId) {
       'workspaceDeleted', child_workspace.deleted_at is not null
     )::text
     from subagent_executions as execution
-    join runs as parent_run on parent_run.id = execution.parent_run_id
+    join runs as parent_run on parent_run.id = execution.root_run_id
 
-    join runs as child_run on child_run.id = execution.child_run_id
     join sessions as child on child.id = execution.child_session_id
 
-    join workspaces as child_workspace on child_workspace.id = child_run.workspace_id
-    where execution.parent_run_id = ${sqlLiteral(parentRunId)}
+    join workspaces as child_workspace on child_workspace.id = child.workspace_id
+    where execution.root_run_id = ${sqlLiteral(parentRunId)}
       ${executionId === undefined ? "" : `and execution.id = ${sqlLiteral(executionId)}`}
     order by execution.created_at desc
     limit 1
@@ -298,8 +299,8 @@ async function executionEvidence(parentRunId, executionId) {
   const result = JSON.parse(value);
   return {
     ...result,
-    parentRuntimeId: observedRuntimes.get(result.parentRunId) ?? null,
-    childRuntimeId: observedRuntimes.get(result.childRunId) ?? null,
+    parentRuntimeId: observedRuntimes.get(result.parentSessionId) ?? null,
+    childRuntimeId: observedRuntimes.get(result.childSessionId) ?? null,
   };
 }
 
@@ -314,16 +315,14 @@ async function recursiveTreeEvidence(rootRunId) {
       'depth', execution.depth,
       'state', execution.state,
       'childSessionId', execution.child_session_id,
-      'childRunId', execution.child_run_id,
-      'childRunState', child_run.state,
+      'childTurnId', execution.child_turn_id,
+      'childTaskState', execution.state,
       'rootWorker', root_run.worker_id,
-      'computeSessionId', child_run.compute_session_id,
-      'cwd', child_run.working_directory,
-      'runtimeId', (select runtime_id from workspace_runtimes where tenant_id=execution.tenant_id and workspace_id=child_run.workspace_id and compute_session_id is not distinct from child_run.compute_session_id order by created_at desc limit 1),
-      'childWorker', child_run.worker_id,
-      'sameWorker', root_run.worker_id = child_run.worker_id,
-      'sameOwnerLease', root_run.lease_id = child_run.lease_id
-        and root_run.fencing_token = child_run.fencing_token,
+      'computeSessionId', child.compute_session_id,
+      'cwd', child.working_directory,
+      'runtimeId', (select runtime_id from workspace_runtimes where tenant_id=execution.tenant_id and workspace_id=child.workspace_id and compute_session_id is not distinct from child.compute_session_id order by created_at desc limit 1),
+      'sameWorker', not exists(select 1 from runs cr where cr.session_id=child.id),
+      'sameOwnerLease', not exists(select 1 from session_leases l where l.pi_session_id=child.id::text),
       'piSessionId', child.pi_session_id,
       'nativeConversationId', child.pi_conversation_id,
       'contextBaseEntryId', execution.pi_context_base_entry_id
@@ -331,7 +330,6 @@ async function recursiveTreeEvidence(rootRunId) {
     from subagent_executions as execution
     join runs as root_run on root_run.id = execution.root_run_id
 
-    join runs as child_run on child_run.id = execution.child_run_id
 
     join sessions as child on child.id = execution.child_session_id
     where execution.root_run_id = ${sqlLiteral(rootRunId)}
@@ -344,14 +342,12 @@ async function parallelExecutionEvidence(parentRunId) {
     select coalesce(json_agg(json_build_object(
       'executionId', execution.id,
       'childSessionId', execution.child_session_id,
-      'childRunId', execution.child_run_id,
-      'childRunState', child_run.state,
+      'childTurnId', execution.child_turn_id,
+      'childTaskState', execution.state,
       'parentWorker', parent_run.worker_id,
-      'childWorker', child_run.worker_id,
-      'sameWorker', parent_run.worker_id = child_run.worker_id,
+      'sameWorker', not exists(select 1 from runs cr where cr.session_id=child.id),
       'piSessionId', child.pi_session_id,
-      'sameOwnerLease', parent_run.lease_id = child_run.lease_id
-        and parent_run.fencing_token = child_run.fencing_token,
+      'sameOwnerLease', not exists(select 1 from session_leases l where l.pi_session_id=child.id::text),
       'nativeConversationId', child.pi_conversation_id,
       'contextBaseEntryId', execution.pi_context_base_entry_id,
       'childPhysicalSessionExists', exists (
@@ -370,25 +366,24 @@ async function parallelExecutionEvidence(parentRunId) {
         where entry.kind='entry' and entry.tenant_id = execution.tenant_id
           and entry.session_id = child.pi_session_id
           and entry.fields->>'turn' in (
-            select turn.turn_id::text from runs turn
+            select turn.turn_id::text from conversation_turns turn
             where turn.tenant_id = execution.tenant_id
               and turn.session_id = execution.child_session_id
           )
       )
     ) order by execution.created_at), '[]'::json)::text
     from subagent_executions execution
-    join runs parent_run on parent_run.id = execution.parent_run_id
+    join runs parent_run on parent_run.id = execution.root_run_id
 
-    join runs child_run on child_run.id = execution.child_run_id
 
     join sessions child on child.id = execution.child_session_id
-    where execution.parent_run_id = ${sqlLiteral(parentRunId)}
+    where execution.root_run_id = ${sqlLiteral(parentRunId)}
   `);
   return JSON.parse(value);
 }
 
-async function childUsedLocalTools(childRunId) {
-  return nativeMessages(await readNativeHistory(psql, { runId: childRunId })).some(
+async function childUsedLocalTools(childTurnId) {
+  return nativeMessages(await readNativeHistory(psql, { turnId: childTurnId })).some(
     (message) =>
       message.role === "toolResult" &&
       ["read", "write", "edit", "bash"].includes(message.toolName) &&
@@ -490,7 +485,7 @@ try {
   );
   const noneEvidence = await executionEvidence(none.accepted.runId);
   assert.equal(noneEvidence.sandboxMode, "none");
-  assert.equal(noneEvidence.childRunState, "completed");
+  assert.equal(noneEvidence.childTaskState, "completed");
   assert.equal(noneEvidence.contextBaseEntryId, null);
   assertNativeConversationBacked(noneEvidence, session.sessionId);
 
@@ -504,11 +499,11 @@ try {
   );
   const lazyEvidence = await executionEvidence(lazy.accepted.runId);
   assert.equal(lazyEvidence.sandboxMode, "ephemeral");
-  assert.equal(lazyEvidence.childRunState, "completed");
+  assert.equal(lazyEvidence.childTaskState, "completed");
   assert.equal(lazyEvidence.contextBaseEntryId, null);
   assertNativeConversationBacked(lazyEvidence, session.sessionId);
   assert.equal(
-    await childUsedLocalTools(lazyEvidence.childRunId),
+    await childUsedLocalTools(lazyEvidence.childTurnId),
     false,
     "A pure research Child unexpectedly used local Tools",
   );
@@ -531,7 +526,7 @@ try {
   const parallelEvidence = await parallelExecutionEvidence(parallel.accepted.runId);
   assert.equal(parallelEvidence.length, 2, JSON.stringify(parallelEvidence));
   for (const child of parallelEvidence) {
-    assert.equal(child.childRunState, "completed");
+    assert.equal(child.childTaskState, "completed");
     assert.equal(child.contextBaseEntryId, null);
     assertNativeConversationBacked(child, session.sessionId);
   }
@@ -549,7 +544,7 @@ try {
   const sharedEvidence = await executionEvidence(shared.accepted.runId);
   assert.equal(sharedEvidence.sandboxMode, "shared");
   assert.equal(sharedEvidence.childWorkspaceId, sharedEvidence.parentWorkspaceId);
-  assert.equal(sharedEvidence.childRunState, "completed");
+  assert.equal(sharedEvidence.childTaskState, "completed");
   assert.equal(sharedEvidence.contextBaseEntryId, null);
   assert(sharedEvidence.parentRuntimeId);
   assert.equal(sharedEvidence.childRuntimeId, sharedEvidence.parentRuntimeId);
@@ -590,7 +585,7 @@ try {
   const parallelComputeEvidence = [];
   for (const child of parallelComputeChildren) {
     const evidence = await executionEvidence(parallelCompute.accepted.runId, child.executionId);
-    assert.equal(evidence.childRunState, "completed");
+    assert.equal(evidence.childTaskState, "completed");
     assert.equal(evidence.sandboxMode, "ephemeral");
     assert.equal(evidence.childWorkspaceId, project.workspaceId);
     assert.equal(evidence.computeSessionId, evidence.childSessionId);
@@ -624,7 +619,7 @@ try {
   const nestedLeaf = nestedComputeEvidence.find((e) => e.depth === 2);
   assert(nestedRoot && nestedLeaf && nestedRoot.runtimeId);
   for (const child of nestedComputeEvidence) {
-    assert.equal(child.childRunState, "completed");
+    assert.equal(child.childTaskState, "completed");
     assert.equal(child.computeSessionId, nestedRoot.childSessionId);
     assert.equal(child.runtimeId, nestedRoot.runtimeId);
     assert.equal(child.cwd, "/workspace/worktrees/feature-a");
@@ -654,7 +649,7 @@ try {
     [1, 2],
   );
   assert(recursiveEvidence.every((execution) => execution.rootRunId === recursive.accepted.runId));
-  assert(recursiveEvidence.every((execution) => execution.childRunState === "completed"));
+  assert(recursiveEvidence.every((execution) => execution.childTaskState === "completed"));
   assert(recursiveEvidence.every((execution) => execution.piSessionId === session.sessionId));
   assert(recursiveEvidence.every((execution) => execution.sameWorker === true));
   assert(recursiveEvidence.every((execution) => execution.sameOwnerLease === true));
@@ -681,11 +676,11 @@ try {
   );
   const codingEvidence = await parallelExecutionEvidence(coding.accepted.runId);
   assert.equal(codingEvidence.length, 2);
-  assert(codingEvidence.every((child) => child.childRunState === "completed"));
+  assert(codingEvidence.every((child) => child.childTaskState === "completed"));
   assert.match(coding.text, /SUBAGENT-CODING-OK/u);
   for (const child of codingEvidence) {
     assertNativeConversationBacked(child, session.sessionId);
-    assert.equal(await childUsedLocalTools(child.childRunId), true);
+    assert.equal(await childUsedLocalTools(child.childTurnId), true);
   }
 
   const messageMarker = `MAILBOX-${suffix}`;
@@ -695,16 +690,13 @@ try {
     `Call subagent action:workflow exactly once with this script: ${messageScript} Then briefly report the child result.`,
   );
   const messagingEvidence = await executionEvidence(messaging.accepted.runId);
-  assert.equal(messagingEvidence.childRunState, "completed");
+  assert.equal(messagingEvidence.childTaskState, "completed");
   const mailboxEvidence = JSON.parse(
-    await psql(`select json_build_object(
-    'commands', count(*), 'consumed', count(input_consumed_at),
-    'nativeEntries', (select count(*) from pi_durable_records input where input.kind='submission' and input.session_id=${sqlLiteral(session.sessionId)}
-      and input.fields ? 'entry' and input.fields->>'request' in (select to_jsonb(id::text)::text from subagent_control_commands where run_id=${sqlLiteral(messaging.accepted.runId)} and command->'request'->>'action'='send'))) from subagent_control_commands
-    where run_id=${sqlLiteral(messaging.accepted.runId)} and command->'request'->>'action'='send'`),
+    await psql(`select json_build_object('nativeEntries',count(*)) from pi_durable_records input
+      where input.kind='submission' and input.session_id=${sqlLiteral(session.sessionId)}
+        and input.fields ? 'entry' and input.fields->>'run'=${sqlLiteral(messaging.accepted.runId)}
+        and input.fields->>'request'<>to_jsonb(${sqlLiteral(messaging.accepted.runId)}::text)::text`),
   );
-  assert.equal(mailboxEvidence.commands, 1);
-  assert.equal(mailboxEvidence.consumed, 1);
   assert.equal(mailboxEvidence.nativeEntries, 1);
   assert.match(messaging.text, new RegExp(messageMarker));
 
@@ -718,7 +710,7 @@ try {
     ].join(" "),
   );
   const supervisorEvidence = await executionEvidence(supervisor.accepted.runId);
-  assert.equal(supervisorEvidence.childRunState, "completed");
+  assert.equal(supervisorEvidence.childTaskState, "completed");
   assert.match(supervisor.text, /SUPERVISOR-TEAL-OK/u);
   const supervisorReplied = await psql(
     `select count(*) from subagent_supervisor_requests where execution_id=${sqlLiteral(supervisorEvidence.executionId)} and reply_message='APPROVED-TEAL'`,
@@ -734,7 +726,7 @@ try {
     ].join(" "),
   );
   const cancellationEvidence = await executionEvidence(cancelled.accepted.runId);
-  assert.equal(cancellationEvidence.childRunState, "cancelled");
+  assert.equal(cancellationEvidence.childTaskState, "cancelled");
   assert.match(cancelled.text, /SUBAGENT-CANCEL-OK/u);
 
   const boundary = await runTurn(

@@ -132,6 +132,7 @@ await kafkaEvaluation("docs/reports/kafka-accepted-fact-load-latest.json", async
           latencies.push(performance.now() - eventStartedAt);
           events++;
         }
+        await bus.retire(seed.tenantId, seed.sessionId);
       });
       const elapsedMs = performance.now() - startedAt;
       cases.push({
@@ -156,11 +157,11 @@ await kafkaEvaluation("docs/reports/kafka-accepted-fact-load-latest.json", async
       kafka: { topic, brokers: 3, partitions: 32, replicas: 3, acknowledgements: "all" },
       applicationMicrobatch: false,
       acknowledgementBoundary: "transaction_commit",
-      publicationBatching: true,
-      transactionalPartitions: 32,
-      recordAuthentication: "trusted-private-ingress",
+      publicationBatching: false,
+      transactionalIdentity: "physical-session",
+      recordAuthentication: "trusted-worker-grant",
       scope:
-        "installed Session ingress -> transactional Kafka ACK; excludes HTTP, PG grant/opening, projection, model and Cube",
+        "Session producer init -> transactional Kafka ACK; excludes PG grants, projection, model and Cube",
       cases,
     };
   } finally {

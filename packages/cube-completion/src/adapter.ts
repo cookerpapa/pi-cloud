@@ -199,11 +199,12 @@ export class CubeCompletionAdapter {
         ),
       ),
     );
+    const { type: _nativeType, ...result } = encoded;
     await this.options.publish(context.replyTopic, {
       kind: "tool_result",
       operationId: packet.operationId,
       sequence: 1,
-      event: encoded,
+      result,
       ...(context.execution ? { execution: { ...context.execution, observedAt } } : {}),
     });
   }

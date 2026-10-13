@@ -942,32 +942,17 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
         .where("id", "=", session.sessionId)
         .execute(),
     ).toHaveLength(1);
+    await expect(
+      database
+        .updateTable("session_leases")
+        .set({ released_at: new Date() })
+        .where("lease_id", "=", leaseId)
+        .execute(),
+    ).rejects.toThrow();
     await database
       .updateTable("session_leases")
-      .set({ released_at: new Date() })
+      .set({ released_at: new Date(), writer_sealed_at: new Date(), writer_seal_offset: "10" })
       .where("lease_id", "=", leaseId)
-      .execute();
-    await database
-      .updateTable("pi_sessions")
-      .set({ unsealed_runs: "1" })
-      .where("tenant_id", "=", scope.tenantId)
-      .where("id", "=", session.sessionId)
-      .execute();
-    await expect(deletion.delete(scope.tenantId, session.sessionId)).rejects.toMatchObject({
-      code: "conflict",
-    });
-    expect(
-      await database
-        .selectFrom("sessions")
-        .select("id")
-        .where("id", "=", session.sessionId)
-        .execute(),
-    ).toHaveLength(1);
-    await database
-      .updateTable("pi_sessions")
-      .set({ unsealed_runs: "0" })
-      .where("tenant_id", "=", scope.tenantId)
-      .where("id", "=", session.sessionId)
       .execute();
     await deletion.delete(scope.tenantId, session.sessionId);
     expect(

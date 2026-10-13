@@ -30,9 +30,7 @@ it.each([
     remainingToolCalls: null,
     maximumToolOutputBytes: 4096,
     onToolOperationUnavailable: unavailable,
-    trackWorkflowOperation: () => {},
     waitForToolReply: async () => pending.promise,
-    publishToolCommand: async (c) => ({ operationId: c.request.operationId, accepted: true }),
     captureStepContext: (activeTools) => {
       const context = {
         schemaVersion: 2 as const,
@@ -65,6 +63,7 @@ it.each([
         command: `printf '${prefix}: ordinary application log\\n'; exit 7`,
       });
       try {
+        if (!("request" in prepared.command)) throw new Error("Expected the Cube fixture");
         if (prepared.command.request.operation !== "tool.execute") throw Error("wrong tool");
         const event = await executeNativeTool(
           prepared.command.request,

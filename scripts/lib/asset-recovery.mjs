@@ -132,7 +132,6 @@ async function assertQuiescent(client) {
   const { rows } = await client.query(`select
     (select count(*) from runs where state not in ${terminalStates} or recovery_requested_at is not null
       or (output_seal_id is not null and output_sealed_at is null))::int as unsettled,
-    (select count(*) from pi_sessions where unsealed_runs<>0)::int as unsealed,
     (select count(*) from session_leases where released_at is null)::int as writers,
     (select count(*) from active_execution_scopes)::int as scopes,
     (select count(*) from pi_durable_records where kind='task' and fields->>'status'<>'terminal')::int as tasks,

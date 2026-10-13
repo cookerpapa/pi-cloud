@@ -25,6 +25,7 @@ export type DurableTextDescription = Readonly<{
 /** Runner-created metadata; all content is read from the same native projection. */
 export type DurableDisplayPreparation = Readonly<{
   executionReference: string;
+  conversationId: number;
   texts: readonly DurableTextDescription[];
   coveredThrough?: number;
 }>;

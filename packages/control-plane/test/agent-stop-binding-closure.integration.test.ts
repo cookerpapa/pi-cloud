@@ -1,3 +1,4 @@
+import { DirectSessionKafkaBus } from "../../runtime-core/src/direct-session-kafka.ts";
 import { randomUUID } from "node:crypto";
 import { Admin } from "@platformatic/kafka";
 import { sql } from "kysely";
@@ -27,6 +28,14 @@ it.skipIf(!postgres || !brokers)(
     endpoint.pathname = `/${name}`;
     const database = createDatabase({ connectionString: endpoint.toString(), maxConnections: 8 });
     const kafka = new Admin({ clientId: topic, bootstrapBrokers: brokers! });
+    const bus = new DirectSessionKafkaBus({
+      database,
+      brokers: brokers!,
+      topic,
+      clientId: topic,
+      partitions: 1,
+      replicas: 3,
+    });
     const finish = Promise.withResolvers<void>();
     let projector: SessionProjector | undefined, execution: Promise<unknown> | undefined;
     const ownerId = randomUUID();
@@ -122,6 +131,9 @@ it.skipIf(!postgres || !brokers)(
       }>();
       execution = worker
         .executor({
+          finish: async (fact) => {
+            await bus.append(fact);
+          },
           execute: async (_r, _l, admission) => {
             entered.resolve(admission!);
             await finish.promise;
@@ -131,7 +143,7 @@ it.skipIf(!postgres || !brokers)(
         .dispatchRun(accepted.runId);
       void execution.catch(entered.reject);
       const admission = await entered.promise;
-      await projector.openPublication(admission.publication);
+      await bus.open(admission.publication);
       const bindingId = randomUUID();
       const assignment = {
         tenantId: tenant.tenantId,
@@ -175,11 +187,11 @@ it.skipIf(!postgres || !brokers)(
         request: { activationId: bindingId, operationId },
         occurredAt: new Date().toISOString(),
       });
-      await projector.appendPublication(cancellation);
+      await bus.append(cancellation);
       await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce(), { timeout: 15000 });
       expect(cancel.mock.calls[0]).toEqual([
         expect.anything(),
-        expect.objectContaining({ operationId, runId: accepted.runId }),
+        expect.objectContaining({ operationId, executionScopeId: bindingId }),
       ]);
       expect(submit).not.toHaveBeenCalled();
       finish.resolve();
@@ -196,16 +208,14 @@ it.skipIf(!postgres || !brokers)(
       });
       expect(positions[0]).toMatchObject({ topic, partition: 0 });
       expect(BigInt(positions[0]!.offset)).toBeGreaterThan(0n);
-      expect(BigInt((await run()).output_seal_offset!)).toBeGreaterThan(
-        BigInt(positions[0]!.offset),
-      );
+      expect(BigInt((await run()).output_seal_offset!)).toBeLessThan(BigInt(positions[0]!.offset));
       expect(submit).not.toHaveBeenCalled();
       await bindings.release(bindingId, assignment);
       process.stdout.write(
         JSON.stringify({
           measurement: "agent_seal_without_cube_stop",
           realPostgresKafka: true,
-          closeBeforeSeal: true,
+          closeBeforeLeaseRelease: true,
           cubeStopReceiptRequired: false,
           orderedToolCancellation: true,
         }) + "\n",
@@ -213,6 +223,7 @@ it.skipIf(!postgres || !brokers)(
     } finally {
       finish.resolve();
       await execution?.catch(() => {});
+      await bus.close();
       await projector?.close();
       await owner.close();
       await database.destroy();

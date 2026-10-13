@@ -1,4 +1,4 @@
-import { admitTestExecution } from "./admit-test-execution.ts";
+import { admitTestExecution, testWorkPublication } from "./admit-test-execution.ts";
 import { Pool } from "pg";
 import { randomUUID } from "node:crypto";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
@@ -65,7 +65,12 @@ it.skipIf(!external)(
       const seals = new WeakSet<object>();
       const measured = db.withPlugin({
         transformQuery({ node, queryId }) {
-          if (db.getExecutor().compileQuery(node, queryId).sql.includes('insert into "outbox"'))
+          if (
+            db
+              .getExecutor()
+              .compileQuery(node, queryId)
+              .sql.includes('insert into "session_terminal_events"')
+          )
             seals.add(queryId);
           return node;
         },
@@ -89,7 +94,8 @@ it.skipIf(!external)(
         executionAuthority: coordinator,
         backend: {
           admit: (tx, request, _mark, facts) => admitTestExecution(coordinator, tx, request, facts),
-          async execute() {
+          async execute(request, lifecycle, admission) {
+            lifecycle.publicationReady(testWorkPublication(measured, request, admission));
             executions++;
 
             return { stopReason: "stop" };
@@ -105,7 +111,7 @@ it.skipIf(!external)(
         })),
       );
       expect(executions).toBe(2);
-      // A deadlock retried by retryTransaction would attempt a third seal INSERT.
+      // A deadlock retried by retryTransaction would attempt a third terminal INSERT.
       expect(arrivals).toBe(2);
       expect(
         await db
@@ -127,7 +133,7 @@ it.skipIf(!external)(
           .select("id")
           .where("aggregate_type", "=", "session_terminal_event")
           .execute(),
-      ).toHaveLength(2);
+      ).toHaveLength(0);
     } finally {
       clearTimeout(timer);
       release();

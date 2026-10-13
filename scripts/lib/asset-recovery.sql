@@ -4,14 +4,12 @@
 set local search_path=pg_catalog,public;
 set constraints all immediate;
 -- Lease identities are immutable online. This empty-target restore transaction
--- explicitly discards them; the source has already proved unsealed_runs=0.
-alter table runs disable trigger runs_count_unsealed;
+-- explicitly discards them; the source has already proved every writer closed.
 update runs set worker_id=null, lease_id=null, fencing_token=null,
   compute_session_id=null, recovery_requested_at=null, output_publication=null,
   output_first_topic=null, output_first_partition=null, output_first_offset=null,
   output_seal_id=null, output_seal_offset=null, output_sealed_at=null;
 set constraints all immediate;
-alter table runs enable trigger runs_count_unsealed;
 update sessions set development_environment_id=null, compute_session_id=null,
   execution_mode='elastic', state='cold', working_directory='/workspace';
 update source_control_issue_jobs set development_environment_id=null;
@@ -33,7 +31,6 @@ delete from supervisor_connections;
 delete from supervisor_boot_credentials;
 delete from workers;
 delete from supervisor_hosts;
-delete from subagent_control_commands;
 delete from subagent_supervisor_requests;
 delete from turn_control_requests;
 delete from gitlab_issue_note_sync;

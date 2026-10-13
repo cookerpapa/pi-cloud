@@ -600,6 +600,20 @@ export class KafkaLogConsumer<T> {
     }
   }
 
+  /** Session closure uses the Worker's stable producer ID but must still be
+   * committed by the current Projector group member. */
+  publicationTransaction(partition: number, current: () => boolean) {
+    const reader = this.#reader;
+    if (!reader || !current()) throw new Error("Publication consumer assignment is unavailable");
+    return async (
+      producer: import("@confluentinc/kafka-javascript").Producer,
+      send: () => Promise<void>,
+    ) => {
+      if (this.#reader !== reader || !current()) throw new Error("Publication owner changed");
+      await reader.commitPublication(partition, producer, send);
+    };
+  }
+
   async #retirePublicationWriters(): Promise<void> {
     const writers = [...this.#publicationWriters];
     await Promise.allSettled(writers.map((writer) => writer.close()));

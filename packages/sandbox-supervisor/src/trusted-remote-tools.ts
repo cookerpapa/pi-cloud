@@ -9,7 +9,6 @@ import {
   type CloudToolName,
   type ToolSandboxOperationRequest,
   type ToolSandboxOperationResponse,
-  type ToolCommandPublisher,
   type CandidateToolCommand,
 } from "@pi-cloud/protocol";
 import type { Message } from "@earendil-works/pi-ai";
@@ -24,7 +23,7 @@ import type { PiWorldStateModelMessage } from "./pi-sandbox-continuity.ts";
 import {
   readWorkflowResult,
   type WorkflowHostCall,
-  type WorkflowExecutor,
+  type WorkflowPreparer,
 } from "./workflow-transport.ts";
 
 import {
@@ -50,10 +49,6 @@ type RemoteOperationInput<T = ToolSandboxOperationRequest> = T extends unknown
 
 export type TrustedRemoteToolsRuntimeConfiguration = {
   observeToolDuration?: (seconds: number, outcome: "completed" | "failed") => void;
-  publishToolCommand: ToolCommandPublisher["publishToolCommand"];
-  trackWorkflowOperation?: (
-    operation: import("./durable/remote-tools.ts").TrackedWorkflowOperation,
-  ) => void;
   onToolCancellationUnconfirmed?: () => void;
   waitForToolReply?: (
     request: ToolSandboxOperationRequest,
@@ -184,10 +179,6 @@ function validateRuntimeConfiguration(
     throw new Error("Trusted trace state is invalid");
   }
   return {
-    publishToolCommand: candidate.publishToolCommand,
-    ...(candidate.trackWorkflowOperation
-      ? { trackWorkflowOperation: candidate.trackWorkflowOperation }
-      : {}),
     ...(candidate.onToolCancellationUnconfirmed
       ? { onToolCancellationUnconfirmed: candidate.onToolCancellationUnconfirmed }
       : {}),
@@ -217,7 +208,7 @@ function validateRuntimeConfiguration(
 }
 
 export type TrustedRemoteAgentTools = Readonly<{
-  executeWorkflow: WorkflowExecutor;
+  prepareWorkflow: WorkflowPreparer;
   tools: readonly PreparedAgentTool[];
   systemPrompt(base: string): Promise<string>;
   transformContext(
@@ -458,43 +449,54 @@ export function createTrustedRemoteAgentTools(
     });
   }
 
+  const prepareWorkflow: WorkflowPreparer = async (
+    toolCallId,
+    script,
+    call,
+    signal,
+    nativeToolName,
+  ) => {
+    if (!allowedTools.has("bash"))
+      throw new Error("Workflow code requires the Bash execution capability");
+    consumeToolCall();
+    const prepared = await prepareOperation(
+      "bash",
+      toolCallId,
+      {
+        operation: "workflow.exec",
+        toolCallId,
+        script,
+        cwd: runtime.workingDirectory,
+        timeoutMs: MAX_TOOL_EXECUTION_TIMEOUT_MS,
+      },
+      signal,
+      call,
+    );
+    return {
+      command: { ...prepared.command, nativeToolName },
+      dispose: prepared.dispose,
+      completed: prepared.completed,
+      result: async () => {
+        const response = await prepared.result();
+        if (
+          response.type !== "tool_sandbox.operation_result" ||
+          response.operation !== "workflow.exec"
+        )
+          throw new Error("Workflow returned an invalid response");
+        return response.ok
+          ? (response.value as import("@earendil-works/pi-durable").ToolExecutionResult)
+          : {
+              content: [{ type: "text", text: response.error ?? "Workflow failed" }],
+              isError: true,
+            };
+      },
+    };
+  };
   return {
     tools,
+    prepareWorkflow,
     systemPrompt,
     transformHeaders: sampling.transformHeaders,
     transformContext: sampling.transformContext,
-    executeWorkflow: (async (toolCallId, script, call, signal) => {
-      if (!allowedTools.has("bash"))
-        throw new Error("Workflow code requires the Bash execution capability");
-      consumeToolCall();
-      const prepared = await prepareOperation(
-        "bash",
-        toolCallId,
-        {
-          operation: "workflow.exec",
-          toolCallId,
-          script,
-          cwd: runtime.workingDirectory,
-          timeoutMs: MAX_TOOL_EXECUTION_TIMEOUT_MS,
-        },
-        signal,
-        call,
-      );
-      try {
-        signal?.throwIfAborted();
-        if (!runtime.trackWorkflowOperation)
-          throw new Error("Workflow native cancellation port is unavailable");
-        const published = runtime.publishToolCommand(prepared.command);
-        runtime.trackWorkflowOperation(prepared);
-        await published;
-        const result = await prepared.result();
-        if (result.type !== "tool_sandbox.operation_result" || result.operation !== "workflow.exec")
-          throw new Error("Workflow returned an invalid response");
-        if (!result.ok) throw new Error(result.error ?? "Workflow failed");
-        return result.value;
-      } finally {
-        prepared.dispose();
-      }
-    }) satisfies WorkflowExecutor,
   };
 }

@@ -8,10 +8,12 @@ The current append contract is [ADR-0161](0161-kafka-native-session-commit.md).
 Earlier PG receipt/cache experiments are preserved in Git history and their
 revision-bound reports, not as alternate production backends.
 
-Pending discussion: [ADR-0246](0246-worker-direct-kafka-publication-proposal.md)
-evaluates direct Worker Kafka publication, two closure scopes, native producer
-fencing and same-Run recovery. It is not accepted or implemented; ADR-0209 remains
-the current ingress contract.
+Implementation proposal: [ADR-0247](0247-session-work-and-tool-dispatch.md)
+consolidates Session ownership, root cloud work, native Subagents, unified Tool
+dispatch/replies, writer closure and direct Kafka publication. The ownership
+direction is owner-agreed; the detailed protocol is proposed and unimplemented.
+It replaces the earlier ADR-0246 draft, archived in Git. ADR-0209/0229/0238
+remain the current production contracts until the matched cutover.
 
 Read the documents in this order:
 

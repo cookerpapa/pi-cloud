@@ -47,6 +47,7 @@ export async function releaseIdleSessionLease(
     .set({ released_at: now })
     .where("lease_id", "=", leaseId)
     .where("released_at", "is", null)
+    .where("writer_sealed_at", "is not", null)
     .where(
       sql<boolean>`not exists(select 1 from runs where lease_id=${leaseId}::uuid
       and execution_released_at is null)`,

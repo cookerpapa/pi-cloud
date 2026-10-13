@@ -1,0 +1,145 @@
+import { expect, it, vi } from "vitest";
+import { WorkerToolRuntime } from "../src/tools/worker-tool-runtime.ts";
+import { ToolReplyMailbox } from "@pi-cloud/event-log";
+import {
+  withToolInvocation,
+  type PreparedAgentTool,
+  type WorkflowPreparer,
+  type SubagentControlClient,
+} from "@pi-cloud/sandbox-supervisor";
+import type { ExecuteTurnCommandMessage, ToolResultPayload } from "@pi-cloud/protocol";
+
+const command = {
+  payload: {
+    sessionKind: "conversation",
+    tenantId: "tenant",
+    sessionId: "session",
+    runId: "run",
+    executionReference: "grant",
+    piSession: { conversationId: 1 },
+  },
+} as ExecuteTurnCommandMessage;
+
+function fixture() {
+  const mailbox = new ToolReplyMailbox();
+  const control = {
+    request: vi.fn<SubagentControlClient["request"]>(async (input) => {
+      input.onPublished?.();
+      return { state: "completed", executionId: input.toolCallId };
+    }),
+  };
+  const runtime = new WorkerToolRuntime({
+    maximumDepth: 3,
+    control,
+    nativeConversations: {
+      childAnchor: async (_ref, inherit) => (inherit ? "3" : null),
+      conversationDepth: async () => 3,
+    },
+    wait: async (...args) =>
+      (await mailbox.wait(args[0], args[1], args[2], args[3])) as ToolResultPayload,
+  });
+  return { runtime, mailbox, control };
+}
+
+it("prepares a control invocation and returns its reply without executing its business logic", async () => {
+  const f = fixture();
+  const bindings = await f.runtime.create({
+    command,
+    prepareWorkflow: async () => {
+      throw Error("No script");
+    },
+    prepareEnvironment: async () => {
+      throw Error("Delegation must not activate Cube");
+    },
+  });
+  const tool = bindings.find((b) => b.tool.name === "subagent")!.tool as PreparedAgentTool;
+  const prepared = await withToolInvocation({ id: "task:4", nativeToolCallId: "call" }, () =>
+    tool.prepareExecution!("call", { action: "run", task: "Check code", context: "branch" }),
+  );
+  expect(prepared.command).toMatchObject({
+    target: "control",
+    toolCallId: "task:4",
+    nativeCallId: "call",
+    conversationId: 1,
+    contextAnchor: 3,
+    arguments: { action: "run", task: "Check code" },
+  });
+  expect(f.control.request).not.toHaveBeenCalled();
+  if (!("operationId" in prepared.command)) throw Error("Expected control command");
+  f.mailbox.accept({
+    kind: "tool_result",
+    sequence: 1,
+    operationId: prepared.command.operationId,
+    result: {
+      toolCallId: "call",
+      toolName: "subagent",
+      isError: false,
+      result: { content: [{ type: "text", text: "DONE" }] },
+    },
+  });
+  await expect(prepared.result()).resolves.toMatchObject({
+    content: [{ type: "text", text: "DONE" }],
+  });
+  prepared.dispose();
+  f.mailbox.close();
+});
+
+it("publishes one dynamic run request for a workflow key and isolates reused provider call IDs", async () => {
+  const f = fixture();
+  let callback: Parameters<WorkflowPreparer>[2] | undefined;
+  const bindings = await f.runtime.create({
+    command,
+    prepareEnvironment: async () => "unused",
+    prepareWorkflow: async (_id, _script, call) => {
+      callback = call;
+      return {
+        command: {} as never,
+        completed: () => false,
+        dispose() {},
+        result: async () => ({}),
+      };
+    },
+  });
+  const tool = bindings.find((b) => b.tool.name === "subagent")!.tool as PreparedAgentTool;
+  for (const id of ["task:4", "task:5"]) {
+    await withToolInvocation({ id, nativeToolCallId: "same-provider-id" }, () =>
+      tool.prepareExecution!("same-provider-id", { action: "workflow", script: "return 1" }),
+    );
+    const args = { key: "one", task: { task: "Check code" } };
+    expect(await callback!("run", args)).toEqual(await callback!("run", args));
+    await expect(callback!("run", { key: "one", task: { task: "Changed" } })).rejects.toThrow(
+      "changed arguments",
+    );
+  }
+  expect(f.control.request).toHaveBeenCalledTimes(2);
+  expect(
+    f.control.request.mock.calls.map(([input]) => [input.toolCallId, input.request.action]),
+  ).toEqual([
+    ["task:4", "run"],
+    ["task:5", "run"],
+  ]);
+  f.mailbox.close();
+});
+
+it("derives tool exposure from native ancestry and prepares environment only for preview", async () => {
+  const f = fixture(),
+    prepareEnvironment = vi.fn(async () => "binding");
+  const bindings = await f.runtime.create({
+    command: { ...command, payload: { ...command.payload, sessionKind: "subagent" } },
+    prepareEnvironment,
+    prepareWorkflow: async () => {
+      throw Error("No script");
+    },
+  });
+  expect(bindings.find((b) => b.tool.name === "subagent")!.offered).toBe(false);
+  expect(bindings.find((b) => b.tool.name === "contact_supervisor")!.offered).toBe(true);
+  expect(prepareEnvironment).not.toHaveBeenCalled();
+  const preview = bindings.find((b) => b.tool.name === "preview")!.tool as PreparedAgentTool;
+  const prepared = await withToolInvocation({ id: "task:6", nativeToolCallId: "preview" }, () =>
+    preview.prepareExecution!("preview", { port: 3000 }),
+  );
+  expect(prepared.command).toMatchObject({ bindingId: "binding", toolName: "preview" });
+  expect(prepareEnvironment).toHaveBeenCalledOnce();
+  prepared.dispose();
+  f.mailbox.close();
+});

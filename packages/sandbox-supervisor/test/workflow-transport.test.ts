@@ -39,7 +39,15 @@ it.each(["completed", "business-error", "not-started"] as const)(
       await expect(result).resolves.toMatchObject({
         operation: "workflow.exec",
         ok: kind === "completed",
-        ...(kind === "completed" ? { value: 42 } : { error: "business failure" }),
+        ...(kind === "completed"
+          ? {
+              value: {
+                content: [{ type: "text", text: "business failure" }],
+                details: 42,
+                isError: false,
+              },
+            }
+          : { error: "business failure" }),
       });
   },
 );
@@ -88,7 +96,10 @@ it("streams many sequential workflow calls without retaining completed replies",
         call: async () => ({ state: "running" }),
         completion,
       }),
-    ).resolves.toMatchObject({ ok: true, value: "complete" });
+    ).resolves.toMatchObject({
+      ok: true,
+      value: { content: [], details: "complete", isError: false },
+    });
     expect(count).toBe(512);
   } finally {
     for (const client of server.clients) client.terminate();

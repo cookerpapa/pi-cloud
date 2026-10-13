@@ -888,7 +888,7 @@ export class ControlPlaneStore {
             .select("execution.id")
             .where("execution.tenant_id", "=", this.#tenantId)
             .where("root.workspace_id", "=", workspaceId)
-            .where("execution.state", "in", ["preparing", "queued", "running"])
+            .where("execution.state", "in", ["preparing", "running"])
             .limit(1)
             .executeTakeFirst();
           if (activeSubagent !== undefined) {
@@ -1144,14 +1144,21 @@ export class ControlPlaneStore {
           "Wait for the active Run to settle before rebinding the Workspace",
         );
       }
-      const physicalSession = await transaction
+      await transaction
         .selectFrom("pi_sessions")
-        .select("unsealed_runs")
+        .select("id")
         .where("tenant_id", "=", this.#tenantId)
         .where("id", "=", session.piSessionId)
         .forUpdate()
         .executeTakeFirstOrThrow();
-      if (Number(physicalSession.unsealed_runs) !== 0)
+      const writer = await transaction
+        .selectFrom("session_leases")
+        .select("lease_id")
+        .where("tenant_id", "=", this.#tenantId)
+        .where("pi_session_id", "=", session.piSessionId)
+        .where("released_at", "is", null)
+        .executeTakeFirst();
+      if (writer)
         throw new ControlPlaneStoreError(
           "conflict",
           "Wait for all Session work to settle before rebinding",

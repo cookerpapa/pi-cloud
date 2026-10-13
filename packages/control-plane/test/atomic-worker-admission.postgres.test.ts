@@ -11,19 +11,14 @@ import { SessionOutboxRelay } from "../../runtime-core/src/session-outbox-relay.
 import { SESSION_CONTROL_NOTIFICATION_CHANNEL } from "@pi-cloud/protocol";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { AgentRunSupervisor } from "@pi-cloud/sandbox-supervisor";
+import { AgentRunSupervisor, PiTurnCancelledError } from "@pi-cloud/sandbox-supervisor";
 import {
   parseExecutionReference,
   type ExecuteTurnCommandMessage,
   type EventPublishMessage,
 } from "@pi-cloud/protocol";
 import { AgentRunExecutionBackend } from "../../supervisor-host/src/agent-run-execution-backend.ts";
-import {
-  RunExecutor,
-  type TurnExecutionBackend,
-  type TurnExecutionRequest,
-  type TurnExecutionAdmission,
-} from "../../runtime-core/src/run-executor.ts";
+import { RunExecutor, type TurnExecutionBackend } from "../../runtime-core/src/run-executor.ts";
 import { RunCancellationExecutor } from "../../runtime-core/src/run-cancellation-executor.ts";
 import { SessionLeaseCoordinator } from "../../runtime-core/src/session-lease-coordinator.ts";
 import { WorkerExecutionLog } from "../../runtime-core/src/worker-execution-log.ts";
@@ -77,7 +72,11 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       }
     }
   });
-  async function fixture(capacity = 2, open?: AcceptedFactBus["open"]) {
+  async function fixture(
+    capacity = 2,
+    open?: AcceptedFactBus["open"],
+    publicationFailure?: AcceptedFactBus["publicationFailure"],
+  ) {
     const tenant = await createPrivateTenant(db, {
       slug: `atomic-${randomUUID()}`,
       ownerDisplayName: "Admission test",
@@ -115,15 +114,17 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       facts.push(fact);
       return { factId: fact.factId, durable: true as const };
     });
-    const logs = new WorkerExecutionLog(db, {
+    const logs = new WorkerExecutionLog({
       append,
       ...(open ? { open } : {}),
+      ...(publicationFailure ? { publicationFailure } : {}),
       checkHealth: async () => {},
     });
     const runner = vi.fn(
       async (
         command: ExecuteTurnCommandMessage,
         publish: (event: EventPublishMessage) => Promise<void>,
+        _signal?: AbortSignal,
       ) => {
         await publish({
           protocolVersion: 1,
@@ -175,7 +176,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
         .executeTakeFirstOrThrow(),
       physical: await db
         .selectFrom("pi_sessions")
-        .select(["lease_epoch", "unsealed_runs"])
+        .select("lease_epoch")
         .where("id", "=", session.sessionId)
         .executeTakeFirstOrThrow(),
       worker: await db
@@ -226,6 +227,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       runner,
       supervisor,
       facts,
+      logs,
     };
   }
 
@@ -766,11 +768,15 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       (
         await db
           .selectFrom("pi_sessions")
-          .select("unsealed_runs")
+          .select(
+            sql<string>`(select count(*) from session_leases l where l.tenant_id=pi_sessions.tenant_id and l.pi_session_id=pi_sessions.id and l.released_at is null)`.as(
+              "active_writers",
+            ),
+          )
           .where("tenant_id", "=", f.tenant.tenantId)
           .where("id", "=", f.session.sessionId)
           .executeTakeFirstOrThrow()
-      ).unsealed_runs;
+      ).active_writers;
     expect(await ready()).toEqual([f.accepted.runId]);
     expect(await count()).toBe("0");
     expect(await f.executor().dispatchRun(f.accepted.runId)).toMatchObject({ status: "completed" });
@@ -989,14 +995,9 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
         },
       });
       const projector = new ExecutionStreamProjector(order === "seal-first" ? measured : db);
-      for (const [i, fact] of f.facts.entries())
+      for (const [i, fact] of f.facts.filter((fact) => fact.kind !== "work_finished").entries())
         await projector.project({ fact, topic: "ready-race", partition: 0, offset: BigInt(i) });
-      const row = await db
-        .selectFrom("outbox")
-        .where("aggregate_type", "=", "session_terminal_event")
-        .select("payload")
-        .where("tenant_id", "=", f.tenant.tenantId)
-        .executeTakeFirstOrThrow();
+      const row = { payload: f.facts.find((fact) => fact.kind === "work_finished")! };
       const seal = () =>
         projector.project({
           fact: row.payload as unknown as AcceptedFact,
@@ -1054,14 +1055,9 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       },
     });
     const projector = new ExecutionStreamProjector(measured);
-    for (const [i, fact] of f.facts.entries())
+    for (const [i, fact] of f.facts.filter((fact) => fact.kind !== "work_finished").entries())
       await projector.project({ fact, topic: "ready-rollback", partition: 0, offset: BigInt(i) });
-    const row = await db
-      .selectFrom("outbox")
-      .where("aggregate_type", "=", "session_terminal_event")
-      .select("payload")
-      .where("tenant_id", "=", f.tenant.tenantId)
-      .executeTakeFirstOrThrow();
+    const row = { payload: f.facts.find((fact) => fact.kind === "work_finished")! };
     const record = {
       fact: row.payload as unknown as AcceptedFact,
       topic: "ready-rollback",
@@ -1071,7 +1067,11 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     const snapshot = async () => ({
       family: await db
         .selectFrom("pi_sessions")
-        .select("unsealed_runs")
+        .select(
+          sql<string>`(select count(*) from session_leases l where l.tenant_id=pi_sessions.tenant_id and l.pi_session_id=pi_sessions.id and l.released_at is null)`.as(
+            "active_writers",
+          ),
+        )
         .where("tenant_id", "=", f.tenant.tenantId)
         .where("id", "=", f.session.sessionId)
         .executeTakeFirstOrThrow(),
@@ -1087,129 +1087,29 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     fail = false;
     await projector.project(record);
     const after = await snapshot();
-    expect(after.family.unsealed_runs).toBe("0");
+    expect(after.family.active_writers).toBe("0");
     expect(after.next.ready_at).toBeInstanceOf(Date);
     await projector.project(record);
     expect(await snapshot()).toEqual(after);
   });
 
-  it.each([false, true])(
-    "notifies seal work only after atomic completion commits (rollback=%s)",
-    async (rollback) => {
-      const f = await fixture(),
-        wake = new PostgresNotificationWake(
-          notificationConnectionString,
-          SESSION_CONTROL_NOTIFICATION_CHANNEL,
-        );
-      wake.refresh();
-      await vi.waitFor(() => expect(wake.generation).toBeGreaterThan(0));
-      let before = wake.generation;
-      const entered = Promise.withResolvers<void>(),
-        release = Promise.withResolvers<void>();
-      const statements: string[] = [];
-      const measured = db.withPlugin({
-        transformQuery({ node, queryId }) {
-          statements.push(db.getExecutor().compileQuery(node, queryId).sql);
-          return node;
-        },
-        async transformResult({ result }) {
-          return result;
-        },
-      });
-      const executor = new RunExecutor({
-        database: measured,
-        backend: f.backend,
-        workerId: f.worker,
-        executionAuthority: {
-          assertCurrent: f.coordinator.assertCurrent.bind(f.coordinator),
-          assertCurrentOrExpired: f.coordinator.assertCurrentOrExpired.bind(f.coordinator),
-          async releaseCurrent(tx, request, reference, now) {
-            await f.coordinator.releaseCurrent(tx, request, reference, now);
-            entered.resolve();
-            await release.promise;
-            if (rollback) throw Error("injected settlement rollback");
-          },
-        },
-      });
-      const executing = executor.dispatchRun(f.accepted.runId);
-      const outcome = Promise.allSettled([executing]);
-      try {
-        await entered.promise;
-        // Admission now emits queue-view hints on the shared control channel.
-        // Drain those committed notifications before testing the held settlement.
-        const admissionGeneration = wake.generation;
-        await sql`select pg_notify(${SESSION_CONTROL_NOTIFICATION_CHANNEL}, 'settlement-test-barrier')`.execute(
-          db,
-        );
-        await vi.waitFor(() => expect(wake.generation).toBeGreaterThan(admissionGeneration));
-        before = wake.generation;
-        expect(
-          await db
-            .selectFrom("outbox")
-            .where("aggregate_type", "=", "session_terminal_event")
-            .select("id")
-            .where("tenant_id", "=", f.tenant.tenantId)
-            .execute(),
-        ).toHaveLength(0);
-        expect(wake.generation).toBe(before);
-        release.resolve();
-        const [result] = await outcome;
-        const completion = statements.slice(
-          statements.findIndex((s) => s.startsWith('with "settled_session"')),
-        );
-        expect(completion.filter((s) => s.startsWith('with "settled_session"'))).toHaveLength(1);
-        expect(completion[0]).toContain('"settled_session"');
-        expect(
-          completion.filter((s) =>
-            s.startsWith('select "tenant_id", "pi_session_id" from "session_leases"'),
-          ),
-        ).toHaveLength(1);
-        expect(completion.filter((s) => s.startsWith('with "queued_seal"'))).toHaveLength(1);
-        if (rollback) {
-          expect(result).toMatchObject({ status: "rejected" });
-          expect(
-            await db
-              .selectFrom("outbox")
-              .where("aggregate_type", "=", "session_terminal_event")
-              .select("id")
-              .where("tenant_id", "=", f.tenant.tenantId)
-              .execute(),
-          ).toHaveLength(0);
-          expect((await f.state()).leases).toHaveLength(1);
-          expect((await f.state()).worker.state).toBe("ready");
-          expect(
-            (
-              await db
-                .selectFrom("runs")
-                .select("state")
-                .where("turn_id", "=", f.accepted.turnId)
-                .executeTakeFirstOrThrow()
-            ).state,
-          ).toBe("running");
-          expect(
-            (
-              await db
-                .selectFrom("sessions")
-                .select("state")
-                .where("id", "=", f.session.sessionId)
-                .executeTakeFirstOrThrow()
-            ).state,
-          ).toBe("running");
-          await new Promise((r) => setTimeout(r, 30));
-          expect(wake.generation).toBe(before);
-        } else {
-          expect(result).toMatchObject({ status: "fulfilled", value: { status: "completed" } });
-          await vi.waitFor(() => expect(wake.generation).toBe(before + 1));
-          expect((await f.state()).leases).toHaveLength(0);
-          await f.project();
-        }
-      } finally {
-        release.resolve();
-        await outcome;
-        await wake.close();
-      }
-    },
-  );
+  it("publishes normal completion on the existing writer without a PG terminal outbox", async () => {
+    const f = await fixture();
+    await f.executor().dispatchRun(f.accepted.runId);
+    expect(f.facts.filter((fact) => fact.kind === "work_finished")).toHaveLength(1);
+    expect(
+      await db
+        .selectFrom("outbox")
+        .select("id")
+        .where("tenant_id", "=", f.tenant.tenantId)
+        .where("aggregate_type", "=", "session_terminal_event")
+        .execute(),
+    ).toEqual([]);
+    expect((await f.state()).run.state).toBe("running");
+    await f.project();
+    expect((await f.state()).run.state).toBe("completed");
+    expect((await f.state()).leases).toHaveLength(0);
+  });
 
   it("commits once before local execution and never appends an opening handshake", async () => {
     const f = await fixture();
@@ -1236,8 +1136,8 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     expect(await f.executor(f.backend, observed).dispatchRun(f.accepted.runId)).toMatchObject({
       status: "completed",
     });
-    expect(transactions).toBe(2); // admission and completion, not another startup transaction
-    expect(f.facts.map((fact) => fact.kind)).toEqual(["agent_event"]);
+    expect(transactions).toBe(1); // Completion is published, then materialized by Projector.
+    expect(f.facts.map((fact) => fact.kind)).toEqual(["agent_event", "work_finished"]);
   });
 
   it.each(["before_write", "after_write"])(
@@ -1306,6 +1206,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       empty = Promise.withResolvers<void>(),
       release = Promise.withResolvers<void>(),
       appended: string[] = [];
+    vi.spyOn(f.logs, "open").mockRejectedValueOnce(new Error("injected preparation failure"));
     const executor = db.getExecutor(),
       original = executor.executeQuery.bind(executor);
     let held = false;
@@ -1361,6 +1262,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
   it("keeps polling during listener loss and reconnects before shutdown", async () => {
     const f = await fixture(),
       appended: string[] = [];
+    vi.spyOn(f.logs, "open").mockRejectedValueOnce(new Error("injected preparation failure"));
     const relay = new SessionOutboxRelay({
       database: db,
       notificationConnectionString,
@@ -1443,9 +1345,11 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       .where("id", "=", f.accepted.runId)
       .executeTakeFirstOrThrow();
     expect(a.output_publication).not.toBeNull();
-    expect(a.output_seal_id).not.toBeNull();
-    expect(a.execution_released_at).not.toBeNull();
+    expect(a.output_seal_id).toBeNull();
+    expect(a.execution_released_at).toBeNull();
     await f.project();
+    expect((await f.state()).run.state).toBe("completed");
+    expect((await f.state()).leases).toHaveLength(0);
   });
   it.each(["lease", "publication"])(
     "rolls back the entire admission after %s fails",
@@ -1635,17 +1539,26 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     await executing;
     expect(f.runner).not.toHaveBeenCalled();
     expect(f.facts).toEqual([]);
-    expect((await f.state()).run.state).toBe("cancelled");
+    expect((await f.state()).run.state).toBe("cancel_requested");
     const seal = await db
       .selectFrom("outbox")
       .where("aggregate_type", "=", "session_terminal_event")
       .select("payload")
       .where("tenant_id", "=", f.tenant.tenantId)
       .executeTakeFirstOrThrow();
-    expect(seal.payload).toMatchObject({ closesWriter: false });
+    expect(seal.payload).toMatchObject({ closesWriter: true, recover: true });
+    await f.project();
+    expect((await f.state()).run.state).toBe("queued");
+    expect(
+      await db
+        .selectFrom("turn_control_requests")
+        .select("state")
+        .where("target_run_id", "=", f.accepted.runId)
+        .execute(),
+    ).toEqual([{ state: "pending" }]);
   });
 
-  it("cancellation after admission owns settlement even before the local Runner is prepared", async () => {
+  it("preserves native completion when a control cancellation has not aborted the Runner", async () => {
     const f = await fixture();
     const cancelling = Promise.withResolvers<void>(),
       release = Promise.withResolvers<void>();
@@ -1683,7 +1596,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     };
     try {
       expect(await f.executor(backend).dispatchRun(f.accepted.runId)).toMatchObject({
-        status: "cancellation_pending",
+        status: "completed",
       });
       expect(f.runner).toHaveBeenCalledOnce();
     } finally {
@@ -1691,177 +1604,112 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     }
     expect(await cancelled).toMatchObject({ status: "cancelled" });
     await f.project();
-    expect((await f.state()).run.state).toBe("cancelled");
+    expect((await f.state()).run.state).toBe("completed");
     const terminals = await db
       .selectFrom("session_terminal_events")
       .select("type")
       .where("run_id", "=", f.accepted.runId)
       .execute();
-    expect(terminals).toEqual([{ type: "turn.cancelled" }]);
+    expect(terminals).toEqual([{ type: "turn.completed" }]);
   });
   it.each([false, true])(
-    "settles cancellation beside native projection without replaying stop (SQL abort=%s)",
+    "projects native cancellation after SQL rollback without aborting the Agent twice (%s)",
     async (injectAbort) => {
-      const f = await fixture();
-      const started = Promise.withResolvers<{
-        request: TurnExecutionRequest;
-        admission: TurnExecutionAdmission;
-      }>();
-      const finish = Promise.withResolvers<void>(),
-        nativeLocked = Promise.withResolvers<void>(),
-        releaseNative = Promise.withResolvers<void>();
-      const executing = f
-        .executor({
-          admit: f.backend.admit.bind(f.backend),
-          async execute(request, lifecycle, admission) {
-            started.resolve({ request, admission: admission! });
-            await finish.promise;
-            lifecycle.executionExited();
-            return { stopReason: "stop" };
-          },
-        })
-        .dispatchRun(f.accepted.runId);
-      const { request, admission } = await Promise.race([
-        started.promise,
-        executing.then((result) => {
-          throw new Error(`Run did not enter execution: ${JSON.stringify(result)}`);
-        }),
-      ]);
-      const { leaseId: _lease, piConversationId: _lane, ...scope } = admission.publication.scope;
-      const fact: Extract<AcceptedFact, { kind: "durable_commit" }> = {
-        kind: "durable_commit",
-        factId: randomUUID(),
-        scope,
-        occurredAt: new Date().toISOString(),
-        commit: { seq: 1, nextId: 2, writes: [{ type: "conversation", value: { id: 1 } }] },
-        origins: [],
-        tools: [],
-        cancellations: [],
-        display: [],
-      };
-      const selected = new WeakSet<object>();
-      const measured = db.withPlugin({
-        transformQuery({ node, queryId }) {
-          const q = db.getExecutor().compileQuery(node, queryId).sql;
-          if (
-            q.startsWith("select ") &&
-            (q.includes('from "pi_sessions"') || q.includes("from pi_sessions"))
-          )
-            selected.add(queryId);
-          return node;
-        },
-        async transformResult({ result, queryId }) {
-          if (selected.has(queryId)) {
-            nativeLocked.resolve();
-            await releaseNative.promise;
-          }
-          return result;
-        },
-      });
-      let projection: Promise<unknown> | undefined,
-        effects = 0,
-        stopped = false,
-        settlementAttempts = 0;
-      const cancellationDb = db.withPlugin({
-        transformQuery({ node, queryId }) {
-          if (
-            stopped &&
-            db.getExecutor().compileQuery(node, queryId).sql.includes('"controlAttempts"')
-          )
-            settlementAttempts++;
-          return node;
-        },
-        async transformResult({ result }) {
-          return result;
-        },
-      });
-      if (injectAbort)
-        await sql`create sequence cancellation_abort_once;
-      create function abort_first_cancellation() returns trigger language plpgsql as $$
-      begin
-        if nextval('cancellation_abort_once')=1 then
-          raise exception 'certified cancellation rollback' using errcode='40001';
-        end if;
-        return new;
-      end $$;
-      create trigger abort_first_cancellation before insert on run_transitions
-        for each row when(new.to_state='cancelled') execute function abort_first_cancellation();`.execute(
-          db,
+      const f = await fixture(),
+        entered = Promise.withResolvers<void>();
+      const original = f.runner.getMockImplementation()!;
+      const aborted = vi.fn();
+      f.runner.mockImplementation(async (command, publish, signal) => {
+        await original(command, publish, signal);
+        entered.resolve();
+        await new Promise<void>((resolve) =>
+          signal!.addEventListener(
+            "abort",
+            () => {
+              aborted();
+              resolve();
+            },
+            { once: true },
+          ),
         );
+        const writer = f.logs.resolve(command.payload.executionReference)!;
+        const { leaseId: _l, piConversationId: _c, ...scope } = writer.publication.scope;
+        await writer.commitNative({
+          kind: "durable_commit",
+          factId: randomUUID(),
+          scope,
+          commit: { seq: 1, nextId: 2, writes: [{ type: "conversation", value: { id: 1 } }] },
+          origins: [],
+          tools: [],
+          display: [],
+          cancellations: [],
+          occurredAt: new Date().toISOString(),
+        });
+        throw new PiTurnCancelledError("user_request", false);
+      });
+      const executing = f.executor().dispatchRun(f.accepted.runId);
+      void executing.catch(entered.reject);
+      await entered.promise;
       await f.store.acceptTurnCancellation(
         f.session.sessionId,
         f.accepted.turnId,
         randomUUID(),
         {},
       );
-      const cancelled = new RunCancellationExecutor({
-        database: cancellationDb,
+      const cancellation = new RunCancellationExecutor({
+        database: db,
         executionAuthority: f.coordinator,
-        backend: {
-          async cancel(r, lifecycle) {
-            effects++;
-            await lifecycle.started(admission);
-            await f.append(fact);
-            await db
-              .updateTable("runs")
-              .set({ native_output_drained: true })
-              .where("id", "=", request.runId)
-              .execute();
-            projection = new PostgresDurableCommitProjector(measured).project(fact, {
-              topic: `test-${f.worker}`,
-              partition: 0,
-              offset: 0n,
-            });
-            void projection.catch((error) => nativeLocked.reject(error));
-            await nativeLocked.promise;
-            stopped = true;
-            return { reason: r.reason, forced: false };
-          },
-        },
-      }).dispatchTargetRun(f.accepted.runId);
-      void cancelled.then(
-        (result) =>
-          nativeLocked.reject(
-            new Error(`Cancellation ended before projection gate: ${result.status}`),
-          ),
-        (error) => nativeLocked.reject(error),
-      );
+        backend: f.backend,
+      });
+      await expect(cancellation.dispatchTargetRun(f.accepted.runId)).resolves.toMatchObject({
+        status: "cancelled",
+      });
+      await expect(executing).resolves.toMatchObject({ status: "cancelled" });
+      expect(aborted).toHaveBeenCalledOnce();
+      const completion = f.facts.find((fact) => fact.kind === "work_finished")!;
+      expect(completion).toMatchObject({ nativeSequence: 1, terminal: { type: "turn.cancelled" } });
+      expect((await f.state()).run.state).toBe("cancel_requested");
+      const projector = new ExecutionStreamProjector(db),
+        topic = `test-${f.worker}`;
+      let offset = 0n;
+      for (const fact of f.facts.filter((fact) => fact.kind !== "work_finished"))
+        await projector.project({ fact, topic, partition: 0, offset: offset++ });
+      if (injectAbort)
+        await sql`create sequence cancellation_abort_once;
+      create function abort_first_cancellation() returns trigger language plpgsql as $$ begin
+        if nextval('cancellation_abort_once')=1 then raise exception 'certified cancellation rollback' using errcode='40001'; end if; return new; end $$;
+      create trigger abort_first_cancellation before insert on run_transitions
+        for each row when(new.to_state='cancelled') execute function abort_first_cancellation();`.execute(
+          db,
+        );
       try {
-        await nativeLocked.promise;
-        await vi.waitFor(async () => {
-          const locks = await sql<{ n: number }>`select count(*)::int n from pg_stat_activity
-          where datname=${name} and wait_event_type='Lock'`.execute(db);
-          expect(locks.rows[0]!.n).toBeGreaterThan(0);
-        });
-        releaseNative.resolve();
-        await projection;
-        expect(await cancelled).toMatchObject({ status: "cancelled" });
-        expect(effects).toBe(1);
-        expect(settlementAttempts).toBe(injectAbort ? 2 : 1);
-        expect(
-          (
-            await sql<{ count: string }>`select count(*) as count from pi_durable_commits
-            where tenant_id=${fact.scope.tenantId}::uuid and session_id=${fact.scope.piSessionId}`.execute(
-              db,
-            )
-          ).rows[0]!,
-        ).toEqual({ count: "1" });
-        await f.project();
+        const record = { fact: completion, topic, partition: 0, offset };
+        if (injectAbort) {
+          await expect(projector.project(record)).rejects.toMatchObject({ code: "40001" });
+          expect((await f.state()).run.state).toBe("cancel_requested");
+        }
+        await projector.project(record);
+        await projector.project(record);
         expect((await f.state()).run.state).toBe("cancelled");
+        expect((await f.state()).leases).toEqual([]);
+        expect(aborted).toHaveBeenCalledOnce();
+        expect(
+          await db
+            .selectFrom("session_terminal_events")
+            .select("type")
+            .where("run_id", "=", f.accepted.runId)
+            .execute(),
+        ).toEqual([{ type: "turn.cancelled" }]);
       } finally {
-        releaseNative.resolve();
-        finish.resolve();
-        await Promise.allSettled([executing, cancelled, ...(projection ? [projection] : [])]);
         if (injectAbort)
-          await sql`drop trigger abort_first_cancellation on run_transitions;
-        drop function abort_first_cancellation(); drop sequence cancellation_abort_once;`.execute(
+          await sql`drop trigger abort_first_cancellation on run_transitions; drop function abort_first_cancellation(); drop sequence cancellation_abort_once;`.execute(
             db,
           );
       }
     },
   );
 
-  it("preparation rejection seals the admitted attempt instead of requeueing it", async () => {
+  it("reports a prepared writer failure through normal completion without requeueing", async () => {
     const f = await fixture();
     const prepare = f.supervisor.prepare.bind(f.supervisor);
     vi.spyOn(f.supervisor, "prepare").mockImplementationOnce((...args) => {
@@ -1876,18 +1724,21 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       status: "failed",
       phase: "after_admission",
     });
-    expect(f.append).not.toHaveBeenCalled();
-    expect((await f.state()).leases).toEqual([]);
+    expect(f.facts).toMatchObject([{ kind: "work_finished", terminal: { type: "turn.failed" } }]);
+    expect((await f.state()).leases).toHaveLength(1);
     expect((await f.state()).worker.state).toBe("ready");
     expect(await f.executor().dispatchRun(f.accepted.runId)).toEqual({ status: "idle" });
-    const seal = await db
-      .selectFrom("outbox")
-      .where("aggregate_type", "=", "session_terminal_event")
-      .select("payload")
-      .where("tenant_id", "=", f.tenant.tenantId)
-      .executeTakeFirstOrThrow();
-    expect(seal.payload).toMatchObject({ closesWriter: false }); // known-empty local writer drained
+    expect(
+      await db
+        .selectFrom("outbox")
+        .select("id")
+        .where("aggregate_type", "=", "session_terminal_event")
+        .where("tenant_id", "=", f.tenant.tenantId)
+        .execute(),
+    ).toEqual([]);
     await f.project();
+    expect((await f.state()).leases).toEqual([]);
+    expect((await f.state()).run.state).toBe("failed");
     const attempt = await db
       .selectFrom("runs")
       .select(["output_first_offset", "output_sealed_at"])
@@ -1896,134 +1747,51 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     expect(attempt.output_first_offset).toBe("0");
     expect(attempt.output_sealed_at).not.toBeNull();
   });
-  it("two concurrent Lanes bind to one lease, writer and family slot", async () => {
+  it("claims only one root work item per physical Session", async () => {
     const f = await fixture(1);
-    const child = await f.store.createSession(
+    const other = await f.store.createSession(
       f.workspace.projectId,
       f.workspace.workspaceId,
-      "child",
+      "other view",
       "elastic",
     );
     await db
       .updateTable("sessions")
       .set({ pi_session_id: f.session.sessionId, pi_conversation_id: "2" })
-      .where("id", "=", child.sessionId)
+      .where("id", "=", other.sessionId)
       .execute();
-    const childRun = await f.store.acceptTurn(child.sessionId, randomUUID(), { prompt: "child" });
+    const queued = await f.store.acceptTurn(other.sessionId, randomUUID(), {
+      prompt: "Another root",
+    });
     const entered = Promise.withResolvers<void>(),
       release = Promise.withResolvers<void>();
-    let count = 0;
     f.runner.mockImplementation(async () => {
-      if (++count === 2) entered.resolve();
+      entered.resolve();
       await release.promise;
       return { stopReason: "stop" };
     });
-    const pending = Promise.all([
-      f.executor().dispatchRun(f.accepted.runId),
-      f.executor().dispatchRun(childRun.runId),
-    ]);
+    const current = f.executor().dispatchRun(f.accepted.runId);
     try {
-      await Promise.race([
-        entered.promise,
-        pending.then(() => {
-          throw new Error("Lanes did not both start");
-        }),
-      ]);
-      const s = await f.state();
-      expect(s.worker.state).toBe("ready");
-      expect(s.leases).toHaveLength(1);
-      const attempts = await db
-        .selectFrom("runs")
-        .select(["lease_id"])
-        .where("tenant_id", "=", f.tenant.tenantId)
-        .execute();
-      expect(new Set(attempts.map((a) => a.lease_id)).size).toBe(1);
+      await entered.promise;
+      expect(await f.executor().dispatchRun(queued.runId)).toEqual({ status: "idle" });
+      expect(f.runner).toHaveBeenCalledOnce();
+      expect((await f.state()).leases).toHaveLength(1);
     } finally {
       release.resolve();
-      await pending;
+      await current;
     }
-    expect((await f.state()).leases).toHaveLength(0);
   });
-  it.each(["active", "closed"])(
-    "scopes child admission to its tenant and %s parent",
-    async (parentState) => {
-      const f = await fixture(1);
-      const child = await f.store.createSession(
-        f.workspace.projectId,
-        f.workspace.workspaceId,
-        "child",
-        "elastic",
-      );
-      await db
-        .updateTable("sessions")
-        .set({ pi_session_id: f.session.sessionId, pi_conversation_id: "2" })
-        .where("id", "=", child.sessionId)
-        .execute();
-      const childRun = await f.store.acceptTurn(child.sessionId, randomUUID(), { prompt: "child" });
-      await db
-        .insertInto("subagent_executions")
-        .values({
-          id: randomUUID(),
-          tenant_id: f.tenant.tenantId,
-          parent_session_id: f.session.sessionId,
-          parent_run_id: f.accepted.runId,
-          root_session_id: f.session.sessionId,
-          root_run_id: f.accepted.runId,
-          parent_tool_call_id: "delegate",
-          workflow_run_id: "test",
-          step_index: 0,
-          request_sha256: "a".repeat(64),
-          child_session_id: child.sessionId,
-          child_run_id: childRun.runId,
-          agent_name: "child",
-          context_mode: "fresh",
-          sandbox_mode: "shared",
-          state: "queued",
-          depth: 1,
-        })
-        .execute();
-      const entered = Promise.withResolvers<void>(),
-        release = Promise.withResolvers<void>();
-      f.runner.mockImplementation(async (command) => {
-        if (command.payload.runId === f.accepted.runId) {
-          entered.resolve();
-          await release.promise;
-        }
-        return { stopReason: "stop" };
-      });
-      const parent = f.executor().dispatchRun(f.accepted.runId);
-      try {
-        await entered.promise;
-        if (parentState === "closed") {
-          release.resolve();
-          await parent;
-          await f.project();
-        }
-        const result = await f.executor().dispatchRun(childRun.runId);
-        if (parentState === "active") {
-          expect(result.status).toBe("completed");
-          const grants = await db
-            .selectFrom("runs")
-            .select("lease_id")
-            .where("id", "in", [f.accepted.runId, childRun.runId])
-            .execute();
-          expect(new Set(grants.map((r) => r.lease_id)).size).toBe(1);
-        } else {
-          expect(result.status).toBe("idle");
-          expect(
-            await db
-              .selectFrom("runs")
-              .select(["state", "lease_id"])
-              .where("id", "=", childRun.runId)
-              .executeTakeFirst(),
-          ).toEqual({ state: "queued", lease_id: null });
-        }
-      } finally {
-        release.resolve();
-        await parent;
-      }
-    },
-  );
+  it("never claims a native child Conversation as a cloud Run", async () => {
+    const f = await fixture(1);
+    // Even an obsolete queued row manually left under a child view is ineligible.
+    await db
+      .updateTable("sessions")
+      .set({ session_kind: "subagent" })
+      .where("id", "=", f.session.sessionId)
+      .execute();
+    expect(await f.executor().dispatchRun(f.accepted.runId)).toEqual({ status: "idle" });
+    expect(f.runner).not.toHaveBeenCalled();
+  });
 
   it("competing claims start the same Run once without a PG slot reservation", async () => {
     const f = await fixture(1),
@@ -2046,30 +1814,45 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       await running;
     }
   });
-  it("a lost first append ACK fails and seals, without replaying the Agent", async () => {
+  it("a lost first append ACK freezes the Session until ordered native recovery", async () => {
     const f = await fixture();
     f.append.mockImplementation(async (fact) => {
       f.facts.push(fact);
       throw new Error("lost Kafka ACK");
     });
     expect(await f.executor().dispatchRun(f.accepted.runId)).toMatchObject({
-      status: "failed",
-      phase: "after_admission",
+      status: "recovering",
     });
     expect(f.runner).toHaveBeenCalledOnce();
-    expect((await f.state()).leases).toEqual([]);
+    expect((await f.state()).leases).toHaveLength(1);
     expect(await f.executor().dispatchRun(f.accepted.runId)).toEqual({ status: "idle" });
     await f.project();
-    expect(
-      (
-        await db
-          .selectFrom("runs")
-          .select("output_sealed_at")
-          .where("id", "=", f.accepted.runId)
-          .executeTakeFirstOrThrow()
-      ).output_sealed_at,
-    ).not.toBeNull();
+    expect((await f.state()).run.state).toBe("queued");
+    expect((await f.state()).leases).toEqual([]);
+    expect(f.runner).toHaveBeenCalledOnce();
   });
+  it("recovers a Kafka-fenced producer while its Agent is waiting without a new native commit", async () => {
+    let failure: Error | undefined;
+    const f = await fixture(2, undefined, () => failure),
+      entered = Promise.withResolvers<void>();
+    f.runner.mockImplementation(async (_command, _publish, signal) => {
+      entered.resolve();
+      await new Promise<void>((resolve) =>
+        signal!.addEventListener("abort", () => resolve(), { once: true }),
+      );
+      throw new PiTurnCancelledError("shutdown", false);
+    });
+    const executing = f.executor().dispatchRun(f.accepted.runId);
+    void executing.catch(entered.reject);
+    await entered.promise;
+    failure = Error("producer epoch fenced during probe");
+    await expect(executing).resolves.toMatchObject({ status: "recovering" });
+    expect((await f.state()).leases).toHaveLength(1);
+    await f.project();
+    expect((await f.state()).run.state).toBe("queued");
+    expect((await f.state()).leases).toEqual([]);
+  });
+
   it("owner loss requires ordered closure before the same logical Run is readied", async () => {
     const f = await fixture();
     await expect(

@@ -46,6 +46,7 @@ type SupportedModel =
       baseUrlPath: "";
     });
 
+type RootModelBudget = { key: string; holders: number; maximum: number | null; started: number };
 type ActiveCapabilityFields = {
   tokenDigest: string;
   tenantId: string;
@@ -55,8 +56,7 @@ type ActiveCapabilityFields = {
   modelProfileId: string;
   serviceTier: "fast" | null;
   expiresAt: number;
-  maximumRequestsPerRun: number | null;
-  requestsStarted: number;
+  budget: RootModelBudget;
   revoked: boolean;
   requestControllers: Set<AbortController>;
   hostedActivityListeners: Set<(activity: ProviderHostedActivity) => void>;
@@ -375,6 +375,7 @@ export class TenantModelGateway {
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #server: Server;
   readonly #capabilities = new Map<string, ActiveCapability>();
+  readonly #budgets = new Map<string, RootModelBudget>();
   #started = false;
   #requestBytes = 0;
   #closing: Promise<void> | undefined;
@@ -541,6 +542,26 @@ export class TenantModelGateway {
         "Model Gateway capability collision occurred",
       );
     }
+    const key = `${command.payload.tenantId}:${command.payload.runId}`;
+    const maximum = minimumResourceLimit(
+      this.#maximumRequestsPerTurn,
+      command.payload.budgets?.maximumModelRequests ?? null,
+    );
+    let budget = this.#budgets.get(key);
+    if (!budget) {
+      budget = {
+        key,
+        holders: 0,
+        maximum,
+        started: command.payload.budgets?.consumedModelRequests ?? 0,
+      };
+      this.#budgets.set(key, budget);
+    } else if (budget.maximum !== maximum)
+      throw new TenantModelGatewayError(
+        "invalid_gateway_configuration",
+        "Root work model budget changed",
+      );
+    budget.holders++;
     const active: ActiveCapability = {
       ...model,
       tokenDigest: digest,
@@ -551,11 +572,7 @@ export class TenantModelGateway {
       modelProfileId: command.payload.model.profileId,
       serviceTier: command.payload.model.serviceTier,
       expiresAt,
-      maximumRequestsPerRun: minimumResourceLimit(
-        this.#maximumRequestsPerTurn,
-        command.payload.budgets?.maximumModelRequests ?? null,
-      ),
-      requestsStarted: command.payload.budgets?.consumedModelRequests ?? 0,
+      budget,
       revoked: false,
       requestControllers: new Set(),
       hostedActivityListeners: new Set(),
@@ -745,17 +762,14 @@ export class TenantModelGateway {
       // No await between the final authority/count check and reservation.
       this.#requireCapability(active);
       controller.signal.throwIfAborted();
-      if (
-        active.maximumRequestsPerRun !== null &&
-        active.requestsStarted >= active.maximumRequestsPerRun
-      ) {
+      if (active.budget.maximum !== null && active.budget.started >= active.budget.maximum) {
         throw new SafeGatewayHttpError(
           429,
           "model_request_limit_exceeded",
           "Model request limit was exceeded",
         );
       }
-      active.requestsStarted++;
+      active.budget.started++;
       timing.upstreamStartMs = elapsed();
       upstreamAttempts = 1;
       armUpstreamTimeout("connect", this.#upstreamConnectTimeoutMs);
@@ -930,6 +944,8 @@ export class TenantModelGateway {
     active.hostedTranscriptListeners.clear();
     active.assistantTextPhases.clear();
     this.#capabilities.delete(active.tokenDigest);
+    if (--active.budget.holders === 0 && this.#budgets.get(active.budget.key) === active.budget)
+      this.#budgets.delete(active.budget.key);
   }
 
   async #close(): Promise<void> {

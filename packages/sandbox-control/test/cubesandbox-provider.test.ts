@@ -1112,9 +1112,7 @@ describe("CubeSandbox Provider contract", () => {
       environment,
       workspaceSeed: { kind: "sample_java" },
     });
-    expect(next.activationId).toBe(
-      parseExecutionReference(nextAssignment.executionReference).runId,
-    );
+    expect(next.activationId).toBe("10000000-0000-4000-8000-000000000032");
     expect(next.activationId).not.toBe(reserved.activationId);
     expect(next.continuity).toBe("warm_reuse");
     expect(runtime.creates).toHaveLength(1);

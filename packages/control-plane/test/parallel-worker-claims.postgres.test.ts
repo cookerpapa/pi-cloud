@@ -98,7 +98,7 @@ describe.skipIf(!endpoint)("two-way Worker / PostgreSQL admission", () => {
     const backend = new AgentRunExecutionBackend({
       supervisor,
       leaseCoordinator: coordinator,
-      executionLogs: new WorkerExecutionLog(db, {
+      executionLogs: new WorkerExecutionLog({
         checkHealth: async () => {},
         append: async (fact) => {
           facts.push(fact);
@@ -132,7 +132,7 @@ describe.skipIf(!endpoint)("two-way Worker / PostgreSQL admission", () => {
       notificationConnectionString: url.toString(),
       identity: workerId,
       maximumActiveFamilies: 2,
-      maximumLanesPerFamily: 4,
+
       memoryHeadroom: () => true,
       onCapacity: (sample) => {
         localFamilies = sample.families;

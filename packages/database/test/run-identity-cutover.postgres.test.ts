@@ -123,17 +123,18 @@ describe.skipIf(!endpoint)("one-Run identity cutover", () => {
         .execute(),
     ).toEqual(before);
     expect(
-      await db
-        .selectFrom("runs")
-        .select([
-          "id",
-          "state",
-          "output_first_offset",
-          "output_seal_offset",
-          "native_output_drained",
-        ])
-        .where("id", "=", runId)
-        .executeTakeFirstOrThrow(),
+      (
+        await sql<{
+          id: string;
+          state: string;
+          output_first_offset: string;
+          output_seal_offset: string;
+          native_output_drained: boolean;
+        }>`
+        select id,state,output_first_offset::text,output_seal_offset::text,native_output_drained from runs where id=${runId}::uuid`.execute(
+          db,
+        )
+      ).rows[0],
     ).toEqual({
       id: runId,
       state: "completed",

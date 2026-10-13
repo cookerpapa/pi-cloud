@@ -5,6 +5,10 @@ native tasks, model context, input placement, Tool selection and Compaction. PiC
 execution authority, distributed placement, output projection and Cube lifetimes.
 CubeSandbox KVM is the only untrusted execution backend.
 
+This document describes the ADR-0247 source migration (schema 188 / topic v16).
+[Implementation and rollout evidence](reports/session-work-implementation-20261013.md)
+distinguishes validated source from the still-serving schema 187 release.
+
 The [post-Durable review](reports/repository-review-20261006.md) records the audited
 baseline. The [repair record](reports/review-repair-20261006.md) distinguishes current
 implementation verification from deployment and remaining operational limits.
@@ -17,7 +21,7 @@ Current meanings (older ADR clauses explicitly defer to ADR-0229):
 | --- | --- |
 | What survives Worker replacement? | The logical Run and native pending progress. A fresh PG grant is required after ordered old-writer closure; there is no RunAttempt. |
 | What does Stop mean? | Native Durable abort plus ordered operation cancellation at the guest Tool/process-group boundary. A cancellation ACK does not prove physical completion; late replies cannot replace a committed native abort. |
-| Where is native history saved? | The Worker uses public Durable `Storage`, publishes through ingress and waits for Kafka ACK. PG materializes the native state and retained history for cold reads. There is no separate Tool ledger or lifetime JSONL replay. |
+| Where is native history saved? | The Worker uses public Durable `Storage`, publishes directly to Kafka and waits for transaction ACK. PG materializes the native state and retained history for cold reads. There is no separate Tool ledger or lifetime JSONL replay. |
 | What does an asset restore mean? | A cold PG/image recovery point, with old execution authority removed and new Workspaces. It is separate from resuming an interrupted Run in the same live deployment (ADR-0237). |
 
 ```text
@@ -26,7 +30,7 @@ Browser → Control Plane → PostgreSQL accepted Run
                          Pi Worker
                          ├─ native Harness / concurrent Conversations
                          ├─ Model Gateway → CLIProxyAPI → Provider
-                         └─ publication ingress → Kafka transaction ACK
+                         └─ Session producer → Kafka transaction ACK
                                                         ↓
                                              Session Projector group
                                              ├─ PG semantic projection
@@ -95,12 +99,13 @@ immutable. Input references that add held Steer work carry an additive wake hint
 owned-scope recovery retains ACKed inputs until canonical consumption or sealed
 restoration. Other Session events do not issue empty reconciliation reads. A
 bounded held-scope index falls back to scoped reconciliation on overflow.
-Ordinary Subagent maintenance follows affected Run changes with indexed parent/child
-reads. Startup, known deadlines and bounded-scope overflow retain global recovery.
+Control Tool waits wake on native generation/input outcomes and ordered supervisor
+changes. Reassignment rebuilds references from native commit metadata and current
+Tasks; there is no separate Subagent command table or queue consumer.
 
 Chat Stop uses the existing durable PG request to abort the native Conversation.
 The fixed remote adapter co-commits the native abort mark and operation-scoped
-cancellation through the same Session writer/ingress/Kafka path. Projector forwards
+cancellation through the same Session writer/Kafka path. Projector forwards
 its ordered position to Cube; acceptance means the signal was requested, not that
 process exit was proved. The fixed guest delivers it to that Tool's AbortController.
 Bash cancels its process group. Completed operations, completed background launches
@@ -216,19 +221,16 @@ the model/configuration and writes the initial Run and mailbox advancement toget
 `ready_at` is set only for a Lane head whose predecessor has closed. Otherwise
 seal projection promotes it in the closure transaction. Both paths hold the
 product Session row lock, so racing input and closure cannot lose readiness.
-Child preparation readies its own Lane without waiting for its parent to finish.
+Native child preparation runs inside the current Harness without a queue claim.
 Unchanged environment versions use a shared read. Only an image-version change
 locks the Project for update and re-reads the current version; ordinary input
 does not serialize unrelated Sessions on that Project.
 
-Workers claim only ready `runs` with `FOR UPDATE SKIP LOCKED`. Local pending/active
-family reservations decide capacity; PG checks ownership and parent liveness,
-not predecessor history again.
-It locks the physical `pi_sessions` row to keep active Lanes on one Worker boot.
-Its `unsealed_runs` count permits cold ownership only after all older tasks have
-closed; a healthy current owner can continue ready sibling Lanes. A Run
-row trigger updates the count on owner binding/first seal in the existing transactions.
-It adds no client round trip; rollback and duplicate seal delivery cannot drift it.
+Workers claim only ready root `runs` with `FOR UPDATE SKIP LOCKED`. Local
+pending/active family reservations decide capacity. PG locks physical Session
+ownership, requires the previous lease to be closed/released, and issues one
+lease for the whole root work. Child Conversations are not candidates. No
+unsealed-run counter or per-child lease/claim remains.
 One materialized candidate supplies the startup context without a second queue
 scan. Immutable Session kind and Workspace seed kind travel in the internal
 execute command; downstream preparation does not re-query them.
@@ -259,7 +261,7 @@ families, including their newly delegated children.
 
 Admission permits at most two in-flight Run claims
 per Worker (ADR-0175). Unknown claims conservatively reserve possible family and
-Lane capacity until commit or failure; PG remains the final authority. This
+work capacity until commit or failure; PG remains the final authority. This
 does not raise model concurrency, change per-Session ownership or allow a
 successor to skip the predecessor's seal. New work arriving during an older
 empty scan is rechecked on completion; idle scans do not self-wake indefinitely.
@@ -271,16 +273,15 @@ once; released or expired owners cannot revive. Each Run carries an
 `ExecutionReference` (Run ID plus Session lease/epoch), not another lease.
 The read-only `active_execution_scopes` view combines Run state with current owner
 authority for executor checks. Task cancellation closes that task; lost ownership retires
-the family, and a successor waits for all affected ordered closures to project.
+the family, and a successor waits for its one ordered Session closure to project.
 
 [ADR-0242](adr/0242-worker-claim-schema-cleanup.md) names the trusted Worker registry
 `workers` and its cleanup records `worker_retirements`; leases, connections,
 boot credentials and the execution-scope view use `worker_id`. These identities
 are distinct from Cube sandbox IDs and physical allocation bootstrap context.
-`pi_sessions` retains only physical identity, lease epoch, unsealed count and
-partition hash; product metadata stays in `sessions` and native ancestry in Durable.
-The child-Run eligibility lookup includes its tenant to bound the existing
-composite index; cloud Run transition history has a tenant/Run/time/ID index.
+`pi_sessions` retains only physical identity, lease epoch and partition hash; product metadata stays in `sessions` and native ancestry in Durable.
+Native child lookups use scoped source/conversation indexes; cloud root Run
+transition history has a tenant/Run/time/ID index.
 Normal new-owner admission remains nine business SQL statements. Schema 184
 requires the matching drained application release; it adds no compatibility view.
 
@@ -312,48 +313,61 @@ delay between completed scans, not a one-second failure-detection guarantee.
 
 ## Publication and execution log
 
-Atomic PG admission freezes one Run's physical-Session lease, epoch and Lane.
-The Worker stamps native records and sends them to the control-plane publication
-module. The existing Projector group assignment selects one ingress owner per
-partition; private HTTP requests redirect to that owner. Registration first rejects
-identities that installed memory already proves stale or closed, without querying PG.
-Every registration that could succeed still reads its committed PG grant once,
-including a matching open identity, a newer epoch and a cache miss after eviction
-or owner replacement. Memory can reject but cannot grant registration. The same
-identity checks run again after the PG read, retaining in-flight closure guards.
-Ordinary appends check only installed memory state,
-with bounded pending bytes/records and no PG query. Opening creates no log record.
-A closure or ownership change invalidates admission reads already in flight.
+Atomic PG admission freezes one root work item's physical-Session lease and epoch.
+The Worker opens a Kafka transactional producer whose stable ID is derived from
+Topic, tenant and physical Session. Run, epoch and Worker boot are not part of
+that producer ID. It checks the exact PG grant before initialization and again
+after Kafka has fenced the preceding producer; no PG lock is held during network
+initialization. Ordinary commits validate the local shared grant and use bounded
+pending bytes/records, with no per-commit authority query or HTTP ingress.
 
-All Lanes of a physical Session share one publication queue. A seal first closes
-admission, drains earlier accepted records, then enters that same queue. A normal
-Run seal leaves sibling Lanes open. Uncertain semantic publication retires the
-writer and prevents queued semantic records from starting; its closing seals can
-still drain. A replacement owner waits for projected closure, acquires a new lease and
-resumes the same logical Run/Turn/native submission (ADR-0229). An append's HTTP success receipt is Kafka durable commit, not volatile acceptance.
-Lost commit responses never trigger automatic semantic publication replay.
+One physical Session has one native Harness, one writer and one Worker family
+slot. A Run describes the root work and its ordinary descendants. Children are
+native Conversations/Tasks, not separately claimed cloud Runs. They retain
+independent input, model/tool configuration, display and cancellation identities.
+`subagent_conversations` stores native source and product/resource links;
+`subagent_executions` and `conversation_turns` are query views of native progress.
+Opaque source JSON is decoded in JavaScript, never converted through PG jsonb.
 
-The code-owned topic is `pi-cloud.execution-log.v15` (matched schema 187). Physical Session ID remains
-the immutable key and fixes the partition; do not change the partition count in
-place. One Kafka transactional producer identity per partition fences replaced
-ingress processes. Transactions use RF3/acks-all and include current consumer-group
-metadata under the same commit guard as dispatch offsets, preserving that offset
-without advancing or regressing it. Consumers read committed records and account
-for transaction-control/aborted offsets during catch-up. This is transport fencing;
-PG remains the sole Run/lease authority.
+Worker joins the native family and drains its commits before publishing
+`work_finished`. Projector materializes the root outcome and advances the next
+work item. The current product releases idle Harnesses, so a normal completion
+also supplies voluntary writer retirement. There are no child seals and no
+terminal Outbox round trip for normal completion. A pending forced seal remains
+the required ownership boundary even if native completion arrives meanwhile.
 
-The [direct Worker Kafka proposal](adr/0246-worker-direct-kafka-publication-proposal.md)
-is a source-only evaluation with explicit closure/recovery gates. It is not
-accepted or implemented; the ingress path above remains the maintained topology.
+On failure/unknown commit, PG revokes the old grant and requests one Session seal.
+Control Plane closes routing admission, temporarily initializes the same Session
+transactional ID, rechecks its PG closure intent and publishes the seal. Projector
+installs exact recovery checkpoints and closure evidence before PG can issue the
+next lease. A lost local cleanup ACK does not prevent releasing Kafka write
+ownership; physical Cube cleanup still requires its own evidence. Old completed
+seal requests reuse PG proof without initializing another producer. Uncertain
+native publication never automatically retries a batch or reinitializes its
+producer. A delayed stale initialization can fence a valid successor, but its
+post-init PG check forbids data publication; the successor recovers through the
+same closure protocol. Arbitrary unsafe Tools are never replayed by projection.
 
-Worker admission, ingress scope installation and ordered closure are control
-operations. Source scope validation replaces the former per-record Projector
-ownership decision. Native first positions, exact Outbox seals and canonical
-closure remain necessary for idempotent replay. No per-Step projection receipt,
-second channel lease, signing key, or provider/guest credential enters the log.
-The first native append co-commits its recovery floor with semantic state; a first
-display/control record persists that floor before visibility or Tool routing.
-Lease loss still stops the Worker; ordered closure defines the output cutoff.
+The code-owned topic is `pi-cloud.execution-log.v16` (matched schema 188).
+Physical Session ID fixes its Kafka partition; partition count cannot change in
+place. Native producers use short RF3/acks-all transactions; no model/Tool wait
+holds an open transaction. Consumers read committed records. Control changes
+still use one Projector-owned transaction producer per partition, coupled to
+consumer-group membership and the existing dispatch offset. Session seals use
+the Session producer ID plus that group commit guard. Cross-producer causal order
+comes from acknowledged control revocation and PG handoff, not merely the key.
+
+The old Worker open/append HTTP endpoints and ingress identity cache are removed.
+Private HTTP only forwards control changes/seals between partition owners.
+Worker readiness checks Kafka policy/available partitions directly; replacing the
+Control Plane does not reset a healthy Worker producer. Tool dispatch, projection
+and browser delivery can pause while the Projector is unavailable. PG remains
+the only lease/work authority. See [ADR-0247](adr/0247-session-work-and-tool-dispatch.md).
+
+Native sequence, exact closure offsets and fingerprints remain necessary for
+idempotent replay. There is no per-Step receipt, second channel lease or signing
+key. The first native append co-commits its recovery floor with semantic state;
+a first display/control record persists its floor before visibility or routing.
 
 Hot event and Worker-envelope schemas compile once per server process. Browser
 bundles select the same schemas' non-code-generating checker through package
@@ -660,7 +674,7 @@ exact live checkpoints before permitting replacement. Native sequence, document
 version and delta count are retained. Safe Kafka deletion includes outstanding
 live references, and cold administrative mutation/export requires their completion.
 
-The Worker prepares and validates a detached batch, publishes it through ingress,
+The Worker prepares and validates a detached batch, publishes it directly to Kafka,
 waits for RF3 Kafka ACK and only then exposes it to Pi. A bounded acknowledged
 overlay handles PG lag. Ordinary buffer eviction waits for the existing projection watermark in
 batches, not a receipt per Step. A proved pre-enqueue refusal leaves the writer
@@ -715,7 +729,7 @@ replay, or patched Agent loop. See [ADR-0229](adr/0229-native-durable-runtime.md
 
 ## Tools and Cube
 
-The Control Plane owns publication admission, the Session Projector and a
+The Control Plane owns control admission, the Session Projector and a
 sandbox lifecycle module. There is no independent Broker process. At the
 Worker's existing lazy binding hook, the controller materializes the chosen VM
 and stores bounded immutable transport metadata (Cube API/node/boot and guest
@@ -724,8 +738,8 @@ monotonic Kafka dispatch commit before handing a fixed Tool directly to Cube.
 It waits for bounded takeover, never the duration of Bash execution.
 
 Binding creation, closure, deletion and controller adoption co-commit bounded
-control-change references with PG state. They publish through the same Session
-ingress and partition producer. Projector maintains an indexed binding view;
+control-change references with PG state. They publish to the same Session
+partition through its control publisher. Projector maintains an indexed binding view;
 ordinary Tool/probe routing reads memory. PG reads belong to control publication
 admission, consumed changes and bootstrap. A closure installs current closed
 state at the partition owner before its Kafka publication, so a delayed close
@@ -887,24 +901,21 @@ closure; late replies cannot reopen a call or enter sealed history. UNKNOWN
 never triggers automatic shell replay. Kafka fencing cannot undo an already-issued
 Cube request or roll back a running process. See [ADR-0183](adr/0183-native-remote-tool-execution.md).
 
-Worker-local `supervisor-host/src/tools` supplies the code-owned Tool adapters.
-The separate `subagent-control` package owns PG task coordination and has no
-Runner dependency; Control Plane neither imports nor copies Runner source.
-Subagent start,
-communication and cancellation requests append to Kafka; Projector persists
-idempotent admission and dispatch state, then routes native Lane operations to
-the owning Worker. Long preparation and result waits never block its partition
-handler. Result notifications use the Worker management channel, independently
-of the Provider HTTP proxy, rather than per-child status polling.
+Worker-local `supervisor-host/src/tools` contains the trusted Tool catalogue and
+generic remote proxies. The `subagent-control` adapter authorizes child resources
+in PG; Control Plane calls Worker native create/configure/input/stop capabilities
+rather than running a Harness. Ordinary Tool dispatch references the same
+committed native execution intent; dynamic workflow hostcalls have native Task
+Doc receipts. Their final results use the same boot-scoped Kafka mailbox as Cube.
+Only Pi's processed Tool result is canonical.
 
-The same owner caches bounded Worker routes, target directories and family read
-results. PG-originated Subagent state/command changes invalidate these views and
-wake affected pending references; native input consumption and seals also wake
-them. Timers inspect known retry/expiry deadlines, without globally scanning
-pending commands every second. Reassignment reconstructs pending work from PG.
-Actual input delivery still checks the current receiver Run and consumption
-receipt in PG; a cached running status cannot authorize a late input. These
-views do not replace PG task admission, cancellation or durable receipts.
+ControlToolDispatcher keeps active references and bounded in-flight handlers/reply
+bodies. Reference memory is proportional to active native control Tasks; it does
+not copy prompt or script bodies. A wait holds no handler/model permit. Native
+outcomes wake relevant references; retries have deadlines. Reassignment joins
+current native Tasks to commit metadata. Receiver input receipts are checked by
+the current Worker at its native input boundary, not a cached child Run state.
+No PG command-body queue, result cache or per-child polling loop is retained.
 
 Direct delegation creates no script or Cube. Workflow JavaScript runs in Cube
 through envd's bounded stdin/stdout bridge. Guest `runs.*` requests return to the
@@ -1035,13 +1046,13 @@ valid usage-bearing Entry follows that boundary (ADR-0193).
 The role-free Subagent tool uses Pi's public runtime/storage contracts and the
 community `runs.run`/`runs.all` programming model, not a CLI-emulation backend.
 Fresh context and inherited context are independent of shared/ephemeral compute
-selection and working directory. All active Lanes share one physical Session owner; PG holds durable
-parent/child communication and cancellation state. Recursive depth, descendant
+selection and working directory. All active Lanes share one physical Session owner; Pi holds durable
+parent/child input and cancellation state; PG retains product/resource associations. Recursive depth, descendant
 count and Worker/per-Session model concurrency default to no product quota;
 explicit finite policies still use fair admission. Children are not rejected
 merely because another child is waiting (ADR-0215).
 An ephemeral child uses a new lazy, bounded-warm Cube against the parent Volume.
-Shared descendants inherit that compute scope. The accepted Run freezes the scope
+Shared descendants inherit that compute scope. The native creation receipt freezes the scope
 and cwd; explicit directories must exist. Elastic Volumes retain `/workspace` and
 machine home Volumes retain `/home/user` in every Cube. A machine's system disk
 is not exposed through this mode. The parent can create worktrees using Git,

@@ -9,11 +9,15 @@ import type {
 import type { RunCancellationExecutor } from "@pi-cloud/runtime-core/run-cancellation-executor";
 import { PostgresPiWorker } from "../src/postgres-pi-worker.ts";
 
+const notification = vi.hoisted(() => ({ send: () => {} }));
 vi.mock("pg", async () => {
   const { EventEmitter } = await import("node:events");
   return {
     Client: class extends EventEmitter {
-      async connect() {}
+      async connect() {
+        notification.send = () =>
+          this.emit("notification", { channel: "pi_cloud_run_queue", payload: "work" });
+      }
       async query() {}
       async end() {}
     },
@@ -95,7 +99,6 @@ it.each([false, true])(
       notificationConnectionString: "test",
       identity: "worker",
       maximumActiveFamilies: 2,
-      maximumLanesPerFamily: 4,
       memoryHeadroom: () => true,
       pollIntervalMs: 10,
       runExecutor: executor,
@@ -106,13 +109,13 @@ it.each([false, true])(
     try {
       await vi.waitFor(() => expect(started).toContain(first.runId));
       cancellationPending = true;
-      worker.scheduleOwnedSubagent(first.runId);
+      notification.send();
       await vi.waitFor(() => expect(cancel).toHaveBeenCalledTimes(1));
       const before = scans;
       await new Promise((resolve) => setTimeout(resolve, 75));
       expect(scans).toBe(before);
       queue.push(second);
-      worker.scheduleOwnedSubagent(second.runId);
+      notification.send();
       await vi.waitFor(() => expect(started).toContain(second.runId));
       await vi.waitFor(() => expect(scans).toBeGreaterThan(before + 1));
       expect(cancel).toHaveBeenCalledTimes(1);

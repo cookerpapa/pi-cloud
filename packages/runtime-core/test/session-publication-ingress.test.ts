@@ -1,505 +1,92 @@
 import { randomUUID } from "node:crypto";
-import type { Database } from "@pi-cloud/database";
-import type { Kysely } from "kysely";
-import {
-  MAX_EXECUTION_FACT_BYTES,
-  createExecutionReference,
-  type SessionControlChange,
-} from "@pi-cloud/protocol";
 import { expect, it, vi } from "vitest";
-import type {
-  AcceptedExecutionSealFact,
-  AcceptedDurableCommitFact,
-  ExecutionPublication,
-} from "../src/accepted-fact.ts";
+import type { SessionControlChange } from "@pi-cloud/protocol";
 import {
   SessionPublicationIngress,
-  type PartitionPublicationWriter,
   type PublicationRecord,
 } from "../src/session-publication-ingress.ts";
-import { PostgresPublicationControl } from "../src/postgres-publication-control.ts";
-
-const deferred = <T>() => Promise.withResolvers<T>();
-function permit(
-  epoch = 7,
-  prior?: ExecutionPublication,
-  run: string = randomUUID(),
-  lane = 1,
-): ExecutionPublication {
-  const writer = prior && prior.scope.fencingToken === epoch ? prior.scope.writerId : randomUUID();
-  return {
-    scope: {
-      tenantId: prior?.scope.tenantId ?? randomUUID(),
-      sessionId: randomUUID(),
-      piSessionId: prior?.scope.piSessionId ?? randomUUID(),
-      runId: run,
-      turnId: randomUUID(),
-      writerId: writer,
-      leaseId: writer,
-      fencingToken: epoch,
-      piConversationId: lane,
-    },
-  };
-}
-function entry(p: ExecutionPublication, text = "accepted"): AcceptedDurableCommitFact {
-  const { leaseId: _lease, piConversationId, ...scope } = p.scope;
-  return {
-    kind: "durable_commit",
-    factId: randomUUID(),
-    scope,
-    commit: {
-      seq: 1,
-      nextId: 3,
-      writes: [
-        {
-          type: "entry",
-          value: { id: 2, conversationId: piConversationId, kind: "test", data: { text } },
-        },
-      ],
-    },
-    origins: [
-      { recordId: 2, runId: scope.runId, sessionId: scope.sessionId, turnId: scope.turnId },
-    ],
-    tools: [],
-    cancellations: [],
-    display: [],
-    occurredAt: new Date().toISOString(),
-  };
-}
-function seal(p: ExecutionPublication, closesWriter = true): AcceptedExecutionSealFact {
-  const { leaseId: _lease, piConversationId: _lane, ...scope } = p.scope;
-  return {
-    kind: "execution_seal",
-    factId: randomUUID(),
-    scope,
-    closesWriter,
-    agentId: "root",
-    baseSequence: 0,
-    terminal: { type: "turn.completed", payload: { stopReason: "stop" } },
-    occurredAt: new Date().toISOString(),
-  };
-}
-function fixture(
-  capacity?: { maximumPendingBytes: number; maximumPendingFacts: number },
-  maximumWriters?: number,
-) {
-  const records: PublicationRecord[] = [],
-    gates: Array<ReturnType<typeof deferred<void>>> = [];
-  const writer: PartitionPublicationWriter = {
-    append: vi.fn<PartitionPublicationWriter["append"]>(async (record) => {
-      records.push(record);
-      const gate = gates.shift();
-      if (gate) await gate.promise;
-      return { factId: record.factId, durable: true };
-    }),
-    close: vi.fn(async () => {}),
-  };
-  const ingress = new SessionPublicationIngress(capacity, maximumWriters);
-  const owner = ingress.installPartition(0, writer);
-  const p = permit();
-  ingress.installRun(owner, p);
-  return { ingress, owner, writer, p, records, gates };
-}
-
-function unavailablePostgres(ingress: SessionPublicationIngress) {
-  const selectFrom = vi.fn(() => {
-    throw new Error("PG admission required");
-  });
-  const database = { selectFrom } as unknown as Kysely<Database>;
-  return { control: new PostgresPublicationControl(database, ingress), selectFrom };
-}
-
-it.each(["closed Run", "closed writer", "older epoch", "different writer"] as const)(
-  "rejects a known %s before touching PG during registration",
-  async (kind) => {
-    const f = fixture(),
-      pg = unavailablePostgres(f.ingress);
-    let p = f.p;
-    try {
-      if (kind === "closed Run") await f.ingress.seal(f.owner, seal(p, false));
-      if (kind === "closed writer") {
-        await f.ingress.seal(f.owner, seal(p));
-        p = permit(7, p, randomUUID(), 2);
-      }
-      if (kind === "older epoch") {
-        await f.ingress.seal(f.owner, seal(p));
-        f.ingress.installRun(f.owner, permit(8, p, p.scope.runId));
-      }
-      if (kind === "different writer") {
-        const writerId = randomUUID();
-        p = { scope: { ...p.scope, writerId, leaseId: writerId } };
-      }
-      const published = f.records.length;
-      await expect(pg.control.open(f.owner, p)).rejects.toMatchObject({
-        reason: kind.startsWith("closed") ? "closed" : "scope",
-      });
-      expect(pg.selectFrom).not.toHaveBeenCalled();
-      expect(f.records).toHaveLength(published);
-    } finally {
-      await f.ingress.close();
-    }
-  },
-);
-
-it.each([
-  "current",
-  "new Session",
-  "new Run",
-  "next epoch",
-  "replacement owner",
-  "evicted",
-] as const)(
-  "still requires PG for %s registration; memory never grants admission",
-  async (kind) => {
-    const f = fixture(undefined, 1),
-      pg = unavailablePostgres(f.ingress);
-    let p = f.p,
-      owner = f.owner;
-    try {
-      if (kind === "new Session") p = permit();
-      if (kind === "new Run") {
-        await f.ingress.seal(owner, seal(p, false));
-        p = permit(7, p, randomUUID(), 2);
-      }
-      if (kind === "next epoch") {
-        await f.ingress.seal(owner, seal(p));
-        p = permit(8, p, p.scope.runId);
-      }
-      if (kind === "replacement owner") {
-        await f.ingress.revoke(owner.partition);
-        owner = f.ingress.installPartition(owner.partition, f.writer);
-      }
-      if (kind === "evicted") {
-        await f.ingress.seal(owner, seal(p));
-        f.ingress.installRun(owner, permit());
-      }
-      const published = f.records.length;
-      await expect(pg.control.open(owner, p)).rejects.toThrow("PG admission required");
-      expect(pg.selectFrom).toHaveBeenCalledExactlyOnceWith("runs as r");
-      expect(f.records).toHaveLength(published);
-    } finally {
-      await f.ingress.close();
-    }
-  },
-);
-
-function controlChange(p: ExecutionPublication, version: string): SessionControlChange {
+function change(sessionId: string = randomUUID(), version = "1"): SessionControlChange {
   return {
     kind: "control_change",
     factId: randomUUID(),
     entity: "sandbox_binding",
-    scope: { tenantId: p.scope.tenantId, piSessionId: p.scope.piSessionId },
+    scope: { tenantId: randomUUID(), piSessionId: sessionId },
     entityId: randomUUID(),
-    runId: p.scope.runId,
+    runId: randomUUID(),
     version,
     closed: false,
     occurredAt: new Date().toISOString(),
   };
 }
-
-it.each(["legacy-call", "task:0", "task:9007199254740992"])(
-  "refuses invalid Subagent task identity before publishing: %s",
-  async (toolCallId) => {
-    const f = fixture(),
-      { leaseId, piConversationId: _lane, ...scope } = f.p.scope;
-    await expect(
-      f.ingress.append(f.owner, {
-        kind: "subagent_command",
-        factId: randomUUID(),
-        scope,
-        executionReference: createExecutionReference(leaseId, scope.runId, scope.fencingToken),
-        toolCallId,
-        workflowId: randomUUID(),
-        request: { action: "status", target: "child" },
-        occurredAt: new Date().toISOString(),
-      }),
-    ).rejects.toMatchObject({ reason: "scope" });
-    expect(f.records).toEqual([]);
-    await f.ingress.append(f.owner, entry(f.p));
-    expect(f.records).toHaveLength(1);
-    await f.ingress.close();
-  },
-);
-
-it("orders control changes with native publications on the physical Session queue", async () => {
+function fixture(capacity?: { maximumPendingBytes: number; maximumPendingFacts: number }) {
+  const records: PublicationRecord[] = [];
+  const gates: Array<Promise<void>> = [];
+  const writer = {
+    append: vi.fn(async (record: PublicationRecord) => {
+      records.push(record);
+      await gates.shift();
+      return { factId: record.factId, durable: true as const };
+    }),
+    close: vi.fn(async () => {}),
+  };
+  const ingress = new SessionPublicationIngress(capacity);
+  const owner = ingress.installPartition(0, writer);
+  return { ingress, owner, writer, records, gates };
+}
+it("orders one Session's control changes while unrelated Sessions continue", async () => {
   const f = fixture(),
-    gate = deferred<void>();
-  f.gates.push(gate);
-  const first = f.ingress.control(f.owner, controlChange(f.p, "1"));
-  const native = f.ingress.append(f.owner, entry(f.p));
-  const next = f.ingress.control(f.owner, controlChange(f.p, "2"));
+    gate = Promise.withResolvers<void>();
+  const a = change(),
+    b = { ...change(a.scope.piSessionId, "2"), scope: a.scope };
+  f.gates.push(gate.promise);
+  const first = f.ingress.control(f.owner, a);
+  const second = f.ingress.control(f.owner, b);
   await vi.waitFor(() => expect(f.records).toHaveLength(1));
+  await f.ingress.control(f.owner, change());
+  expect(f.records).toHaveLength(2);
   gate.resolve();
-  await Promise.all([first, native, next]);
-  expect(f.records.map((r) => JSON.parse(r.value).kind)).toEqual([
-    "control_change",
-    "durable_commit",
-    "control_change",
-  ]);
-  expect(new Set(f.records.map((r) => r.sessionId))).toEqual(new Set([f.p.scope.piSessionId]));
+  await Promise.all([first, second]);
+  expect(f.records.map((r) => r.factId)).toEqual([a.factId, f.records[1]!.factId, b.factId]);
   expect(f.ingress.statistics()).toEqual({ pendingBytes: 0, pendingFacts: 0 });
+  await f.ingress.close();
 });
-
-it("accepts an authorized cold control change without opening a native writer", async () => {
-  const f = fixture(),
-    cold = permit();
-  await f.ingress.control(f.owner, controlChange(cold, "1"));
-  await expect(f.ingress.append(f.owner, entry(cold))).rejects.toMatchObject({
-    reason: "not_open",
-  });
-  f.ingress.installRun(f.owner, cold);
-  await f.ingress.append(f.owner, entry(cold));
-  expect(f.records).toHaveLength(2);
-});
-
-it("keeps native publication independent of an uncertain idempotent control change", async () => {
-  const f = fixture();
-  vi.mocked(f.writer.append).mockRejectedValueOnce(new Error("Control ACK lost"));
-  await expect(f.ingress.control(f.owner, controlChange(f.p, "1"))).rejects.toThrow("ACK lost");
-  await expect(f.ingress.append(f.owner, entry(f.p))).resolves.toMatchObject({ durable: true });
-});
-
-it("closes admission before draining and emits the seal before opening a new writer", async () => {
-  const f = fixture(),
-    firstAck = deferred<void>(),
-    sealAck = deferred<void>();
-  f.gates.push(firstAck, sealAck);
-  const first = f.ingress.append(f.owner, entry(f.p));
-  await vi.waitFor(() => expect(f.records).toHaveLength(1));
-  let closed = false;
-  const sealing = f.ingress.seal(f.owner, seal(f.p)).then(() => {
-    closed = true;
-  });
-  await expect(f.ingress.append(f.owner, entry(f.p, "late"))).rejects.toMatchObject({
-    reason: "closed",
-  });
-  const pg = unavailablePostgres(f.ingress);
-  await expect(pg.control.open(f.owner, f.p)).rejects.toMatchObject({ reason: "closed" });
-  expect(pg.selectFrom).not.toHaveBeenCalled();
-  expect(f.records).toHaveLength(1);
-  expect(closed).toBe(false);
-  const next = permit(8, f.p);
-  expect(() => f.ingress.installRun(f.owner, next)).toThrow("not_open");
-  firstAck.resolve();
+it("bounds pending control bytes and releases capacity after failure", async () => {
+  const f = fixture({ maximumPendingBytes: 10000, maximumPendingFacts: 1 }),
+    gate = Promise.withResolvers<void>();
+  f.gates.push(gate.promise);
+  const first = f.ingress.control(f.owner, change());
+  expect(() => f.ingress.control(f.owner, change())).toThrow("capacity");
+  gate.resolve();
   await first;
-  await vi.waitFor(() => expect(f.records).toHaveLength(2));
-  expect(closed).toBe(false);
-  sealAck.resolve();
-  await sealing;
-  f.ingress.installRun(f.owner, next);
-  await f.ingress.append(f.owner, entry(next));
-  expect(f.records.map((r) => JSON.parse(r.value).scope.fencingToken)).toEqual([7, 7, 8]);
-  await expect(f.ingress.append(f.owner, entry(f.p))).rejects.toMatchObject({ reason: "not_open" });
-  expect(f.ingress.statistics()).toEqual({ pendingFacts: 0, pendingBytes: 0 });
+  f.writer.append.mockRejectedValueOnce(new Error("ACK unknown"));
+  await expect(f.ingress.control(f.owner, change())).rejects.toThrow("ACK unknown");
+  await expect(f.ingress.control(f.owner, change())).resolves.toMatchObject({ durable: true });
+  expect(f.ingress.statistics().pendingFacts).toBe(0);
+  await f.ingress.close();
 });
-
-it("keeps sibling Lane publication open after normal Run closure", async () => {
+it("rejects queued controls and stale owners after assignment replacement", async () => {
   const f = fixture(),
-    child = permit(7, f.p, randomUUID(), 2);
-  f.ingress.installRun(f.owner, child);
-  await f.ingress.seal(f.owner, seal(child, false));
-  await expect(f.ingress.append(f.owner, entry(child))).rejects.toMatchObject({ reason: "closed" });
-  await f.ingress.append(f.owner, entry(f.p));
-  expect(f.records.map((r) => JSON.parse(r.value).kind)).toEqual([
-    "execution_seal",
-    "durable_commit",
-  ]);
-  await f.ingress.seal(f.owner, seal(f.p));
-  const next = permit(8, f.p);
-  f.ingress.installRun(f.owner, next);
-});
-
-it("allows a new lease after all normal Run seals without inventing a writer failure", async () => {
-  const f = fixture();
-  await f.ingress.seal(f.owner, seal(f.p, false));
-  const next = permit(8, f.p);
-  f.ingress.installRun(f.owner, next);
-  await f.ingress.append(f.owner, entry(next));
-});
-
-it("deduplicates the same seal and rejects a conflicting seal identity", async () => {
-  const f = fixture(),
-    closing = seal(f.p);
-  const first = await f.ingress.seal(f.owner, closing);
-  expect(await f.ingress.seal(f.owner, closing)).toEqual(first);
-  expect(f.records).toHaveLength(1);
-  await expect(f.ingress.seal(f.owner, seal(f.p))).rejects.toMatchObject({ reason: "scope" });
-  expect(() => f.ingress.installRun(f.owner, f.p)).toThrow("closed");
-});
-
-it("can close an execution that never opened its publication channel", async () => {
-  const f = fixture(),
-    p = permit();
-  await f.ingress.seal(f.owner, seal(p));
-  await expect(f.ingress.append(f.owner, entry(p))).rejects.toMatchObject({ reason: "closed" });
-});
-
-it("does not admit a larger epoch or an unknown Run directly from an append", async () => {
-  const f = fixture();
-  await expect(f.ingress.append(f.owner, entry(permit(8, f.p)))).rejects.toMatchObject({
-    reason: "not_open",
-  });
-  const wrong = entry(f.p);
-  Object.assign(wrong.scope, { fencingToken: 8 });
-  await expect(f.ingress.append(f.owner, wrong)).rejects.toMatchObject({ reason: "scope" });
-  expect(f.records).toEqual([]);
-});
-
-it("closes the whole writer on an uncertain semantic append without poisoning another Session", async () => {
-  const f = fixture();
-  vi.mocked(f.writer.append).mockRejectedValueOnce(new Error("commit reply lost"));
-  await expect(f.ingress.append(f.owner, entry(f.p))).rejects.toThrow("commit reply lost");
-  await expect(f.ingress.append(f.owner, entry(f.p))).rejects.toMatchObject({ reason: "closed" });
-  const other = permit();
-  f.ingress.installRun(f.owner, other);
-  await f.ingress.append(f.owner, entry(other));
-  await f.ingress.seal(f.owner, seal(f.p));
-});
-
-it("bounds admission without revoking accepted work, and a failed seal enqueue still closes the Run", async () => {
-  const f = fixture({ maximumPendingBytes: 1024 * 1024, maximumPendingFacts: 1 }),
-    ack = deferred<void>();
-  f.gates.push(ack);
-  const writing = f.ingress.append(f.owner, entry(f.p));
-  await expect(f.ingress.append(f.owner, entry(f.p))).rejects.toMatchObject({ reason: "capacity" });
-  const closing = seal(f.p);
-  await expect(f.ingress.seal(f.owner, closing)).rejects.toMatchObject({ reason: "capacity" });
-  await expect(f.ingress.append(f.owner, entry(f.p))).rejects.toMatchObject({ reason: "closed" });
-  ack.resolve();
-  await writing;
-  await f.ingress.seal(f.owner, closing);
-  expect(f.records).toHaveLength(2);
-});
-
-it("invalidates slow admission continuations when partition ownership changes", async () => {
-  const f = fixture();
+    gate = Promise.withResolvers<void>(),
+    a = change();
+  f.gates.push(gate.promise);
+  const first = f.ingress.control(f.owner, a);
+  const queued = f.ingress.control(f.owner, { ...a, factId: randomUUID(), version: "2" });
+  void queued.catch(() => {});
+  await vi.waitFor(() => expect(f.records).toHaveLength(1));
   await f.ingress.revoke(0);
   const owner = f.ingress.installPartition(0, f.writer);
-  expect(() => f.ingress.installRun(f.owner, f.p)).toThrow("not_owner");
-  await expect(f.ingress.append(f.owner, entry(f.p))).rejects.toMatchObject({
-    reason: "not_owner",
-  });
-  await expect(f.ingress.append(owner, entry(f.p))).rejects.toMatchObject({ reason: "not_open" });
-  f.ingress.installRun(owner, f.p);
-  await f.ingress.append(owner, entry(f.p));
-});
-
-it("retains the accepted serialized payload even if its caller reuses the object", async () => {
-  const f = fixture(),
-    value = entry(f.p, "original");
-  const pending = f.ingress.append(f.owner, value);
-  Object.assign(value, { items: [] });
-  await pending;
-  expect(f.records[0]!.value).toContain("original");
-  expect(f.records[0]!.value).not.toContain("mutated");
-});
-
-it("rejects a PG admission snapshot overtaken by a projected seal even without cached Run state", () => {
-  const f = fixture(),
-    p = permit();
-  const admission = f.ingress.beginAdmission(f.owner, p.scope);
-  f.ingress.confirmSealed(f.owner, seal(p));
-  expect(() => f.ingress.installRun(f.owner, p, admission)).toThrow("not_open");
-  admission.release();
-});
-
-it("does not repeat a Session admission read when unrelated Sessions open or seal", async () => {
-  const f = fixture(),
-    p = permit();
-  const admission = f.ingress.beginAdmission(f.owner, p.scope);
-  const other = permit();
-  f.ingress.installRun(f.owner, other);
-  await f.ingress.seal(f.owner, seal(other));
-  f.ingress.installRun(f.owner, p, admission);
-  admission.release();
-  await f.ingress.append(f.owner, entry(p));
-});
-
-it("uses projected closure after a lost seal ACK without leaving the next writer blocked", async () => {
-  const f = fixture(),
-    closing = seal(f.p);
-  vi.mocked(f.writer.append).mockRejectedValueOnce(new Error("seal ACK lost"));
-  await expect(f.ingress.seal(f.owner, closing)).rejects.toThrow("seal ACK lost");
-  expect(() => f.ingress.installRun(f.owner, permit(8, f.p))).toThrow("not_open");
-  f.ingress.confirmSealed(f.owner, closing);
-  const next = permit(8, f.p);
-  f.ingress.installRun(f.owner, next);
-  await f.ingress.append(f.owner, entry(next));
-});
-
-it("stops queued data after an uncertain append but still permits the closing seal", async () => {
-  const f = fixture(),
-    failed = deferred<never>();
-  vi.mocked(f.writer.append).mockImplementationOnce(() => failed.promise);
-  const first = f.ingress.append(f.owner, entry(f.p));
-  const next = f.ingress.append(f.owner, entry(f.p));
-  const results = Promise.allSettled([first, next]);
-  failed.reject(new Error("commit uncertain"));
-  expect((await results).map((r) => r.status)).toEqual(["rejected", "rejected"]);
-  expect(f.writer.append).toHaveBeenCalledOnce();
-  await f.ingress.seal(f.owner, seal(f.p));
-  expect(f.writer.append).toHaveBeenCalledTimes(2);
-});
-
-it("rejects an oversized record without poisoning another Session's publication", async () => {
-  const f = fixture();
-  await expect(
-    f.ingress.append(f.owner, entry(f.p, "x".repeat(MAX_EXECUTION_FACT_BYTES))),
-  ).rejects.toMatchObject({ reason: "size" });
-  const other = permit();
-  f.ingress.installRun(f.owner, other);
-  await f.ingress.append(f.owner, entry(other));
-  await f.ingress.append(f.owner, entry(f.p));
+  expect(() => f.ingress.control(f.owner, change())).toThrow("not_owner");
+  gate.resolve();
+  await first;
+  await expect(queued).rejects.toThrow("not_owner");
+  await f.ingress.control(owner, change());
   expect(f.records).toHaveLength(2);
+  await f.ingress.close();
 });
-
-it("bounds cached writers across partitions and evicts only fully sealed state", async () => {
+it("has no Worker registration, data append or child seal authority", async () => {
   const f = fixture();
-  const ingress = new SessionPublicationIngress(undefined, 1);
-  const first = ingress.installPartition(0, f.writer),
-    second = ingress.installPartition(1, f.writer);
-  ingress.installRun(first, f.p);
-  const other = permit();
-  expect(() => ingress.installRun(second, other)).toThrow("capacity");
-  await ingress.seal(first, seal(f.p));
-  ingress.installRun(second, other);
-  await expect(ingress.append(first, entry(f.p))).rejects.toMatchObject({ reason: "not_open" });
-  await ingress.revoke(1);
-  ingress.installRun(first, permit());
-  await ingress.close();
-});
-
-it("closes execution before sealing without blocking another Session's publication", async () => {
-  const f = fixture(),
-    stopped = deferred<void>(),
-    closing = seal(f.p),
-    closeExecution = vi.fn(() => stopped.promise);
-  const pending = f.ingress.seal(f.owner, closing, closeExecution);
-  expect(f.ingress.seal(f.owner, closing, closeExecution)).toBe(pending);
-  await expect(f.ingress.append(f.owner, entry(f.p))).rejects.toMatchObject({ reason: "closed" });
-  const other = permit();
-  f.ingress.installRun(f.owner, other);
-  await f.ingress.append(f.owner, entry(other));
-  expect(f.records.map((record) => JSON.parse(record.value).kind)).toEqual(["durable_commit"]);
-  expect(closeExecution).toHaveBeenCalledOnce();
-  stopped.resolve();
-  await pending;
-  expect(f.records.map((record) => JSON.parse(record.value).kind)).toEqual([
-    "durable_commit",
-    "execution_seal",
-  ]);
-});
-
-it("retains closed admission when execution closure fails before logging its seal", async () => {
-  const f = fixture(),
-    closing = seal(f.p);
-  await expect(
-    f.ingress.seal(f.owner, closing, async () => {
-      throw new Error("closure unconfirmed");
-    }),
-  ).rejects.toThrow("unconfirmed");
-  expect(f.records).toEqual([]);
-  await expect(f.ingress.append(f.owner, entry(f.p))).rejects.toMatchObject({ reason: "closed" });
-  await f.ingress.seal(f.owner, closing, async () => {});
-  expect(f.records).toHaveLength(1);
+  for (const name of ["installRun", "append", "seal", "beginAdmission"])
+    expect(name in f.ingress).toBe(false);
+  await f.ingress.control(f.owner, change());
+  await f.ingress.close();
 });

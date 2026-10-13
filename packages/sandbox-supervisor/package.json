@@ -22,6 +22,7 @@
     "@earendil-works/chord": "1.0.0"
   },
   "devDependencies": {
+    "@pi-cloud/event-log": "0.1.0",
     "@pi-cloud/fake-model-server": "0.1.0",
     "@electric-sql/pglite": "0.5.4",
     "@electric-sql/pglite-socket": "0.2.7",

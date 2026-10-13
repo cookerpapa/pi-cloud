@@ -87,7 +87,7 @@ function scoped(provider: ReturnType<typeof controlledProvider>, runId: string =
     onToolCallProgress: activity,
     release,
   }));
-  const reference = router.register(runId, provider.model);
+  const reference = router.register(runId, 1, provider.model);
   return {
     router,
     reference,

@@ -6,18 +6,14 @@ import { beforeAll, afterAll, expect, it } from "vitest";
 import { Pool } from "pg";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { sql, type Kysely } from "kysely";
-import {
-  Harness,
-  createRegistry,
-  type Session,
-  type ConversationId,
-} from "@earendil-works/pi-durable";
+import { Harness, createRegistry, type ConversationId } from "@earendil-works/pi-durable";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { PostgresDurableSessionHost } from "@pi-cloud/pi-session-postgres/durable";
 import { DurableSessionPublisher } from "@pi-cloud/runtime-core/durable-session-publisher";
 import type {
   AcceptedFactWriter,
   AcceptedDurableCommitFact,
+  AcceptedWorkFinishedFact,
   AcceptedExecutionSealFact,
 } from "@pi-cloud/runtime-core/accepted-fact";
 import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
@@ -43,7 +39,7 @@ afterAll(async () => {
   }
 });
 
-it("shares one acknowledged native writer with paused PG projection, closes one scope independently, and cold restores", async () => {
+it("shares one root grant across Conversation views, closes concurrent handles once, and cold restores", async () => {
   const tenant = await createPrivateTenant(db, {
     slug: "native-host",
     ownerDisplayName: "Host fixture",
@@ -67,157 +63,176 @@ it("shares one acknowledged native writer with paused PG projection, closes one 
     "Child",
     "elastic",
   );
+  const input = await control.acceptTurn(parent.sessionId, "parent", { prompt: "storage fixture" });
+  const childTurn = crypto.randomUUID();
+  await db
+    .updateTable("sessions")
+    .set({ pi_session_id: parent.sessionId, session_kind: "subagent" })
+    .where("id", "=", child.sessionId)
+    .execute();
+  // Resource/view admission is covered by the Subagent contracts. This data-only
+  // host fixture isolates native storage ACK, view identity and handle lifetime.
+  await db
+    .insertInto("subagent_conversations")
+    .values({
+      id: crypto.randomUUID(),
+      tenant_id: tenant.tenantId,
+      root_run_id: input.runId,
+      root_session_id: parent.sessionId,
+      parent_session_id: parent.sessionId,
+      parent_turn_id: input.turnId,
+      parent_tool_call_id: "task:1",
+      parent_execution_id: null,
+      depth: 1,
+      source_sequence: "1",
+      source_record_id: "1",
+      source_kind: "task",
+      request_sha256: "a".repeat(64),
+      child_session_id: child.sessionId,
+      child_turn_id: childTurn,
+      agent_name: "fixture",
+      context_mode: "fresh",
+      sandbox_mode: "shared",
+    })
+    .execute();
   const worker = await createTestWorker(db),
     host = new PostgresDurableSessionHost({ database: db });
-  const channels = new Map<string, AcceptedFactWriter>(),
-    facts: AcceptedDurableCommitFact[] = [];
+  const channels = new Map<string, AcceptedFactWriter>();
+  const facts: Array<AcceptedDurableCommitFact | AcceptedWorkFinishedFact> = [];
   const publisher = new DurableSessionPublisher({
-    channels: { resolve: (reference) => channels.get(reference), checkHealth: async () => {} },
     replyTopic: "unused",
-  });
-  let constructors = 0,
-    childConversation = 0,
-    native: Session | undefined;
-  const parentReady = Promise.withResolvers<void>(),
-    childReady = Promise.withResolvers<void>();
-  const releaseParent = Promise.withResolvers<void>(),
-    parentClosed = Promise.withResolvers<void>(),
-    releaseChild = Promise.withResolvers<void>();
-  let mode: "live" | "cold" = "live";
-  const backend = worker.executor({
-    execute: async (request, _life, admission) => {
-      const writerId = parseExecutionReference(admission!.executionReference).leaseId;
-      channels.set(admission!.executionReference, {
-        publication: admission!.publication,
-        commitNative: async (fact) => {
-          facts.push(fact);
-        },
-        publishSubagentCommand: async () => {},
-        publishToolCancellation: async () => {},
-        publishToolCommand: async () => {
-          throw new Error("Data-only native fixture");
-        },
-      });
-      const handle = await host.open({
-        binding: {
-          tenantId: tenant.tenantId,
-          piSessionId: parent.sessionId,
-          sessionId: request.sessionId,
-          conversationId: request.piConversationId,
-          runId: request.runId,
-          turnId: request.turnId,
-          executionReference: admission!.executionReference,
-          writerId,
-        },
-        publish: (value) => publisher.scoped(admission!.executionReference).publish(value),
-      });
-      const text = new DurableTextPresentation({ conversationId: request.piConversationId });
-      const events = createPiCloudEventFactory(
-        { sessionId: request.sessionId, turnId: request.turnId, agentId: "root" },
-        { initialSequence: Number(request.nextEventSeq) - 1 },
-      );
-      handle.prepareDisplay((commit, documents) => text.prepare(commit, documents, events));
-      try {
-        const runtime = await handle.runtime(async () => {
-          constructors++;
-          const session = await Harness.open(
-            handle.storage,
-            { models: createModels(), registry: createRegistry() },
-            BACKGROUND_CONTEXT,
-          );
-          await session.root(BACKGROUND_CONTEXT);
-          return { session, close: () => session.close(BACKGROUND_CONTEXT) };
-        });
-        if (mode === "cold") {
-          const rootEntries = await handle.storage.scanEntries(
-            { conversationId: 1 as ConversationId },
-            20,
-            undefined,
-            BACKGROUND_CONTEXT,
-          );
-          const childEntries = await handle.storage.scanEntries(
-            { conversationId: childConversation as ConversationId },
-            20,
-            undefined,
-            BACKGROUND_CONTEXT,
-          );
-          expect(rootEntries.items.map((entry) => entry.data)).toEqual(["parent"]);
-          expect(childEntries.items.map((entry) => entry.data)).toEqual([
-            "after parent closed",
-            "child",
-          ]);
-          return { stopReason: "stop" };
-        }
-        if (request.sessionId === parent.sessionId) {
-          native = runtime.session;
-          await native.commit(async (tx) => {
-            childConversation = (await tx.createConversation({ ownership: { kind: "ownerless" } }))
-              .id;
-            await tx.appendEntry(1 as ConversationId, {
-              kind: "pi.assistant",
-              data: "parent",
-              model: [fauxAssistantMessage("parent")],
-            });
-          }, BACKGROUND_CONTEXT);
-          parentReady.resolve();
-          await releaseParent.promise;
-        } else {
-          expect(runtime.session).toBe(native);
-          await runtime.session.commit(async (tx) => {
-            await tx.appendEntry(childConversation as ConversationId, {
-              kind: "pi.assistant",
-              data: "child",
-              model: [fauxAssistantMessage("child")],
-            });
-          }, BACKGROUND_CONTEXT);
-          childReady.resolve();
-          await parentClosed.promise;
-          await runtime.session.commit(async (tx) => {
-            await tx.appendEntry(childConversation as ConversationId, {
-              kind: "pi.assistant",
-              data: "after parent closed",
-              model: [fauxAssistantMessage("after parent closed")],
-            });
-          }, BACKGROUND_CONTEXT);
-          await releaseChild.promise;
-        }
-        return { stopReason: "stop" };
-      } finally {
-        await handle.close();
-        if (request.sessionId === parent.sessionId) parentClosed.resolve();
-        channels.delete(admission!.executionReference);
-      }
+    channels: {
+      resolve: (reference, conversationId = 1) => channels.get(`${reference}:${conversationId}`),
+      checkHealth: async () => {},
     },
   });
-  const parentInput = await control.acceptTurn(parent.sessionId, "parent", {
-    prompt: "data fixture",
+  let constructors = 0,
+    closures = 0,
+    childConversation = 0,
+    cold = false;
+  const backend = worker.executor({
+    finish: async (fact) => {
+      facts.push(fact);
+    },
+    execute: async (request, _life, admission) => {
+      const reference = admission!.executionReference,
+        writerId = parseExecutionReference(reference).leaseId;
+      const open = async (conversationId: number, sessionId: string, turnId: string) => {
+        const publication = {
+          scope: {
+            ...admission!.publication.scope,
+            sessionId,
+            turnId,
+            piConversationId: conversationId,
+          },
+        };
+        channels.set(`${reference}:${conversationId}`, {
+          publication,
+          commitNative: async (fact) => {
+            facts.push(fact);
+          },
+          publishToolCancellation: async () => {},
+        });
+        const handle = await host.open({
+          binding: {
+            tenantId: tenant.tenantId,
+            piSessionId: parent.sessionId,
+            sessionId,
+            turnId,
+            runId: request.runId,
+            conversationId,
+            executionReference: reference,
+            writerId,
+          },
+          publish: (value) => publisher.scoped(reference).publish(value),
+        });
+        const text = new DurableTextPresentation({ conversationId });
+        const factory = createPiCloudEventFactory({ sessionId, turnId, agentId: "fixture" });
+        handle.prepareDisplay((commit, documents) => text.prepare(commit, documents, factory));
+        return handle;
+      };
+      const root = await open(1, parent.sessionId, request.turnId);
+      const runtime = await root.runtime(async () => {
+        constructors++;
+        const session = await Harness.open(
+          root.storage,
+          { models: createModels(), registry: createRegistry() },
+          BACKGROUND_CONTEXT,
+        );
+        await session.root(BACKGROUND_CONTEXT);
+        return {
+          session,
+          close: async () => {
+            closures++;
+            await session.close(BACKGROUND_CONTEXT);
+          },
+        };
+      });
+      if (cold) {
+        const own = await root.storage.scanEntries(
+          { conversationId: 1 as ConversationId },
+          20,
+          undefined,
+          BACKGROUND_CONTEXT,
+        );
+        const delegated = await root.storage.scanEntries(
+          { conversationId: childConversation as ConversationId },
+          20,
+          undefined,
+          BACKGROUND_CONTEXT,
+        );
+        expect(own.items.map((entry) => entry.data)).toEqual(["parent"]);
+        expect(delegated.items.map((entry) => entry.data)).toEqual(["child"]);
+        await root.close();
+        return { stopReason: "stop" };
+      }
+      childConversation = (
+        await runtime.session.createConversation(
+          { ownership: { kind: "ownerless" } },
+          BACKGROUND_CONTEXT,
+        )
+      ).id;
+      await db
+        .updateTable("sessions")
+        .set({ pi_conversation_id: String(childConversation) })
+        .where("id", "=", child.sessionId)
+        .execute();
+      const leaf = await open(childConversation, child.sessionId, childTurn);
+      expect(
+        await leaf.runtime(async () => {
+          throw new Error("Second Harness must not be constructed");
+        }),
+      ).toBe(runtime);
+      for (const [conversationId, value] of [
+        [1, "parent"],
+        [childConversation, "child"],
+      ] as const)
+        await runtime.session.commit(
+          (tx) =>
+            tx.appendEntry(conversationId as ConversationId, {
+              kind: "pi.assistant",
+              data: value,
+              model: [fauxAssistantMessage(value)],
+            }),
+          BACKGROUND_CONTEXT,
+        );
+      expect(constructors).toBe(1);
+      await Promise.all([root.close(), leaf.close()]);
+      expect(closures).toBe(1);
+      expect(host.hasExecution(reference)).toBe(false);
+      return { stopReason: "stop" };
+    },
   });
-  const parentRun = backend.dispatchRun(parentInput.runId);
-  void parentRun.catch(parentReady.reject);
-  let childRun: Promise<unknown> | undefined;
   try {
-    await parentReady.promise;
-    await db
-      .updateTable("sessions")
-      .set({ pi_session_id: parent.sessionId, pi_conversation_id: String(childConversation) })
-      .where("id", "=", child.sessionId)
-      .execute();
-    const childInput = await control.acceptTurn(child.sessionId, "child", {
-      prompt: "child fixture",
-    });
-    childRun = backend.dispatchRun(childInput.runId);
-    void childRun.catch(childReady.reject);
-    await childReady.promise;
-    expect(constructors).toBe(1);
-    releaseParent.resolve();
-    await parentRun;
-    releaseChild.resolve();
-    await childRun;
-    const projection = new ExecutionStreamProjector(db);
+    expect((await backend.dispatchRun(input.runId)).status).toBe("completed");
+    expect(
+      await db.selectFrom("runs").select("id").where("tenant_id", "=", tenant.tenantId).execute(),
+    ).toHaveLength(1);
+    const projector = new ExecutionStreamProjector(db);
     let offset = 0n;
     const shown = [];
     for (const fact of facts) {
-      const result = await projection.project({
+      const result = await projector.project({
         fact,
         topic: "native-host",
         partition: 0,
@@ -230,12 +245,12 @@ it("shares one acknowledged native writer with paused PG projection, closes one 
     ).toMatchObject([{ text: "parent" }]);
     expect(
       shown.filter((event) => event.sessionId === child.sessionId).map((event) => event.payload),
-    ).toMatchObject([{ text: "child" }, { text: "after parent closed" }]);
+    ).toMatchObject([{ text: "child" }]);
     const replay = new ExecutionStreamProjector(db);
     for (const [index, fact] of facts.entries())
       expect(
         (await replay.project({ fact, topic: "native-host", partition: 0, offset: BigInt(index) }))
-          ?.events,
+          ?.events ?? [],
       ).toEqual([]);
     const seals = await db
       .selectFrom("outbox")
@@ -245,27 +260,23 @@ it("shares one acknowledged native writer with paused PG projection, closes one 
       .orderBy("created_at")
       .execute();
     for (const seal of seals)
-      await projection.project({
+      await projector.project({
         fact: seal.payload as unknown as AcceptedExecutionSealFact,
         topic: "native-host",
         partition: 0,
         offset: offset++,
       });
-    mode = "cold";
+    cold = true;
     const next = await control.acceptTurn(parent.sessionId, "cold", {
-      prompt: "read existing history",
+      prompt: "read persisted history",
     });
     expect((await backend.dispatchRun(next.runId)).status).toBe("completed");
     expect(constructors).toBe(2);
   } finally {
-    releaseParent.resolve();
-    parentClosed.resolve();
-    releaseChild.resolve();
-    await Promise.allSettled([parentRun, ...(childRun ? [childRun] : [])]);
     await host.close();
     await publisher.close();
   }
-}, 30000);
+}, 30_000);
 
 it("rebuilds live display from Kafka, skips covered document refs after cold replay, and serializes publication", async () => {
   const tenant = await createPrivateTenant(db, {

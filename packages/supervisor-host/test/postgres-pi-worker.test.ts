@@ -2,44 +2,29 @@ import { describe, expect, it } from "vitest";
 import { PostgresQueueWake } from "@pi-cloud/database";
 import { familyAdmission } from "../src/postgres-pi-worker.ts";
 
-describe("Session-family admission", () => {
-  const task = (piSessionId: string, n: number) => ({
-    runId: "task-" + n,
+describe("Session root-work admission", () => {
+  const task = (piSessionId: string) => ({
+    runId: `root-${piSessionId}`,
     tenantId: "tenant",
     piSessionId,
   });
-  it("counts many same-family Lanes once", () => {
-    const active = Array.from({ length: 8 }, (_, n) => task("a", n));
-    expect(familyAdmission(active, 2, 33)).toEqual({ blockedFamilyKeys: [] });
-    expect(familyAdmission([...active, task("b", 9)], 2, 33)).toEqual({
-      allowedFamilyKeys: ["tenant:a", "tenant:b"],
-      blockedFamilyKeys: [],
+  it("blocks a second root in every occupied physical Session", () => {
+    expect(familyAdmission([task("a")], 2)).toEqual({ blockedFamilyKeys: ["tenant:a"] });
+    expect(familyAdmission([task("a"), task("b")], 2)).toEqual({
+      allowedFamilyKeys: [],
+      blockedFamilyKeys: ["tenant:a", "tenant:b"],
     });
   });
-  it("bounds resident Lanes separately and stops new families at a soft memory watermark", () => {
-    const active = [task("a", 1), task("a", 2)];
-    expect(familyAdmission(active, 4, 2)).toEqual({ blockedFamilyKeys: ["tenant:a"] });
-    expect(familyAdmission(active, 4, 33, false)).toEqual({
-      allowedFamilyKeys: ["tenant:a"],
+  it("reserves uncommitted claims and stops admission at the memory watermark", () => {
+    expect(familyAdmission([], 1, true, 1)).toEqual({
+      allowedFamilyKeys: [],
       blockedFamilyKeys: [],
     });
-  });
-  it("releases the family slot only after its final Lane leaves", () => {
-    expect(familyAdmission([task("a", 2)], 1, 33).allowedFamilyKeys).toEqual(["tenant:a"]);
-    expect(familyAdmission([], 1, 33).allowedFamilyKeys).toBeUndefined();
-  });
-  it("reserves possible families and Lane occupancy for uncommitted claims", () => {
-    expect(familyAdmission([], 1, 33, true, 1).allowedFamilyKeys).toEqual([]);
-    const active = [task("a", 1)];
-    expect(familyAdmission(active, 2, 2, true, 1)).toEqual({
-      allowedFamilyKeys: ["tenant:a"],
+    expect(familyAdmission([task("a")], 2, false)).toEqual({
+      allowedFamilyKeys: [],
       blockedFamilyKeys: ["tenant:a"],
     });
-    expect(familyAdmission(active, 2, 3, true, 1)).toEqual({
-      allowedFamilyKeys: ["tenant:a"],
-      blockedFamilyKeys: [],
-    });
-    expect(familyAdmission(active, 2, 3, true, 0).allowedFamilyKeys).toBeUndefined();
+    expect(familyAdmission([], 1).allowedFamilyKeys).toBeUndefined();
   });
 });
 
@@ -71,15 +56,16 @@ describe("PostgreSQL queue wake-up", () => {
   });
 });
 
-it("does not impose a family or Lane quota in unlimited mode but retains memory admission", () => {
+it("unlimited family capacity still enforces one writer work item per Session", () => {
   const active = Array.from({ length: 40 }, (_, n) => ({
     tenantId: "tenant",
     piSessionId: `family-${n}`,
     runId: `run-${n}`,
   }));
-  expect(familyAdmission(active, null, null, true, 2)).toEqual({ blockedFamilyKeys: [] });
-  expect(familyAdmission(active, null, null, false, 2)).toEqual({
-    allowedFamilyKeys: active.map((r) => `tenant:${r.piSessionId}`),
-    blockedFamilyKeys: [],
+  const blockedFamilyKeys = active.map((r) => `tenant:${r.piSessionId}`);
+  expect(familyAdmission(active, null, true, 2)).toEqual({ blockedFamilyKeys });
+  expect(familyAdmission(active, null, false, 2)).toEqual({
+    allowedFamilyKeys: [],
+    blockedFamilyKeys,
   });
 });

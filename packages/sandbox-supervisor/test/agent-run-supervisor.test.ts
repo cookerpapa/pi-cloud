@@ -619,7 +619,7 @@ describe("AgentRunSupervisor", () => {
     expect(supervisor.activeSessionCount).toBe(0);
   });
 
-  it("uses one family slot/renewal and cancels only the requested sibling task", async () => {
+  it("uses one family renewal and refuses a second cloud Run for its native children", async () => {
     const signals = new Map<string, AbortSignal>();
     const runtime = new AgentRunSupervisor({
       maxConcurrentSessions: 1,
@@ -651,11 +651,9 @@ describe("AgentRunSupervisor", () => {
       });
     const parent = runtime.prepare(parentCommand, rejectUnexpectedEvent),
       child = runtime.prepare(childCommand, rejectUnexpectedEvent);
-    expect(child.ack.payload.status).toBe("accepted");
-    const parentRun = parent.run(),
-      childRun = child.run();
+    expect(child.ack.payload.status).toBe("rejected");
+    const parentRun = parent.run();
     void parentRun.catch(() => {});
-    void childRun.catch(() => {});
     expect(runtime.activeSessionCount).toBe(1);
     expect(
       runtime.createHeartbeat({
@@ -664,9 +662,7 @@ describe("AgentRunSupervisor", () => {
         connectionId: IDS.connection,
       }).payload.families,
     ).toHaveLength(1);
-    const cancelled = runtime.prepareCancellation(cancellation(childCommand));
-    await cancelled.run();
-    await expect(childRun).rejects.toBeInstanceOf(PiTurnCancelledError);
+    expect(signals.has("child-scope")).toBe(false);
     expect(signals.get("session-1")?.aborted).toBe(false);
     expect(runtime.activeSessionCount).toBe(1);
     parent.revokeExecution();

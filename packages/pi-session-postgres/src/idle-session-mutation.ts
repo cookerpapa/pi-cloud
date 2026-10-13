@@ -11,13 +11,20 @@ export async function assertIdleNativeSession(
 ) {
   const session = await tx
     .selectFrom("pi_sessions")
-    .select(["id", "unsealed_runs"])
+    .select("id")
     .where("tenant_id", "=", tenantId)
     .where("id", "=", sessionId)
     .forUpdate()
     .executeTakeFirst();
   if (!session) throw new NativeSessionError("not_found", "Pi Session was not found");
-  if (session.unsealed_runs !== "0")
+  const owner = await tx
+    .selectFrom("session_leases")
+    .select("lease_id")
+    .where("tenant_id", "=", tenantId)
+    .where("pi_session_id", "=", sessionId)
+    .where("released_at", "is", null)
+    .executeTakeFirst();
+  if (owner)
     throw new NativeSessionError(
       "storage",
       "Native Session must settle before administrative changes",

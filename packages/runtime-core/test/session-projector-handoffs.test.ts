@@ -102,7 +102,7 @@ beforeEach(() => {
     retentionMs: 7_200_000,
     advertisedBaseUrl: "http://projector",
     toolCommands: { consume: route, close: () => f.close("tools") },
-    subagentCommands: { consume: async () => {}, close: () => f.close("subagents") },
+    nativeChanges: { consume: async () => {}, close: () => f.close("subagents") },
   });
 });
 afterEach(async () => {

@@ -4,9 +4,10 @@ import {
   parseToolSandboxOperationRequest,
   type AcceptedToolCommand,
   type NativeToolEvent,
-  type NativeToolEnd,
+  type ToolResultPayload,
   type ToolProgressDelivery,
   TOOL_PROGRESS_MAX_CHARACTERS,
+  serializeSubagentResult,
 } from "@pi-cloud/protocol";
 import {
   operationalLog,
@@ -27,10 +28,10 @@ export type ToolLogFact = {
   kind: string;
   scope: Pick<AcceptedToolCommand["scope"], "runId" | "writerId"> &
     Partial<AcceptedToolCommand["scope"]>;
-  closesWriter?: boolean;
+  bindingId?: string;
 };
 type Reply =
-  | { kind: "tool_result"; operationId: string; sequence: 1; event: NativeToolEnd }
+  | { kind: "tool_result"; operationId: string; sequence: 1; result: ToolResultPayload }
   | Extract<ToolReply, { kind: "execution_failure" }>;
 
 /** Projector committed the dispatch boundary before delivery. No completed-result cache. */
@@ -45,10 +46,10 @@ export class WorkflowCommandDispatcher {
   readonly #maximumActiveCommands: number;
   readonly #progress:
     { update(value: ToolProgressDelivery): void; forget(id: string): void } | undefined;
-  readonly #positions = new Map<string, bigint>();
-  readonly #sealed = new Set<string>();
+  readonly #positions = new Map<string, { offset: bigint; deliveries: Set<string> }>();
+  readonly #closedBindings = new Set<string>();
   readonly #sealedWriters = new Set<string>();
-  readonly #active = new Map<string, AcceptedToolCommand["scope"]>();
+  readonly #active = new Map<string, { scope: AcceptedToolCommand["scope"]; bindingId: string }>();
   #commands = 0;
   #closed = false;
 
@@ -77,24 +78,35 @@ export class WorkflowCommandDispatcher {
   receive(record: ToolLogRecord<ToolLogFact>): void {
     if (this.#closed) throw new Error("Tool command executor stopped");
     const key = `${record.topic}:${record.partition}`;
-    if (record.offset <= (this.#positions.get(key) ?? -1n)) return;
+    let position = this.#positions.get(key);
+    if (position && record.offset < position.offset) return;
+    if (!position || record.offset > position.offset) {
+      position = { offset: record.offset, deliveries: new Set() };
+      this.#positions.set(key, position);
+    }
+    const identity =
+      record.fact.kind === "tool_command"
+        ? (record.fact as AcceptedToolCommand).request.operationId
+        : `${record.fact.kind}:${record.fact.scope.writerId}:${record.fact.bindingId ?? record.fact.scope.runId}`;
+    if (position.deliveries.has(identity)) return;
     // Record synchronous admission before any asynchronous execution continuation.
-    this.#positions.set(key, record.offset);
+    position.deliveries.add(identity);
     this.consume(record);
   }
   consume(record: ToolLogRecord<ToolLogFact>): void {
     const { fact } = record;
-    if (fact.kind === "execution_seal") {
-      for (const [id, scope] of this.#active) {
-        if (
-          scope.runId === fact.scope.runId ||
-          (fact.closesWriter && scope.writerId === fact.scope.writerId)
-        )
-          this.#progress?.forget(id);
+    if (fact.kind === "binding_close") {
+      if (!fact.bindingId) throw new Error("Workflow binding closure needs its binding identity");
+      this.#closedBindings.add(fact.bindingId);
+      for (const [id, active] of this.#active)
+        if (active.bindingId === fact.bindingId) this.#progress?.forget(id);
+      if (this.#closedBindings.size > 65536)
+        this.#closedBindings.delete(this.#closedBindings.values().next().value!);
+    } else if (fact.kind === "execution_seal") {
+      for (const [id, { scope }] of this.#active) {
+        if (scope.writerId === fact.scope.writerId) this.#progress?.forget(id);
       }
-      this.#sealed.add(fact.scope.runId);
-      if (fact.closesWriter) this.#sealedWriters.add(fact.scope.writerId);
-      if (this.#sealed.size > 65536) this.#sealed.delete(this.#sealed.values().next().value!);
+      this.#sealedWriters.add(fact.scope.writerId);
       if (this.#sealedWriters.size > 65536)
         this.#sealedWriters.delete(this.#sealedWriters.values().next().value!);
     } else if (fact.kind === "tool_command") {
@@ -106,7 +118,7 @@ export class WorkflowCommandDispatcher {
   #closedFor(command: AcceptedToolCommand): boolean {
     return (
       this.#closed ||
-      this.#sealed.has(command.scope.runId) ||
+      this.#closedBindings.has(command.request.activationId) ||
       this.#sealedWriters.has(command.scope.writerId) ||
       !this.#broker.ownsToolBinding(command.request.activationId)
     );
@@ -161,7 +173,8 @@ export class WorkflowCommandDispatcher {
           });
         return;
       }
-      await publish({ kind: "tool_result", operationId: request.operationId, sequence: 1, event });
+      const { type: _nativeType, ...result } = event;
+      await publish({ kind: "tool_result", operationId: request.operationId, sequence: 1, result });
     };
     const parent = parseTraceCarrier(command.traceContext ?? {});
     this.#commands++;
@@ -206,9 +219,9 @@ export class WorkflowCommandDispatcher {
             isError: !response.ok,
             result: {
               content: response.ok
-                ? []
+                ? [{ type: "text", text: serializeSubagentResult(response.value) }]
                 : [{ type: "text", text: response.error ?? "Workflow failed" }],
-              details: response.value,
+              details: { action: "workflow" },
             },
           });
         } else throw new Error("WAL commands must execute whole Tools");
@@ -246,7 +259,10 @@ export class WorkflowCommandDispatcher {
         this.#progress?.forget(request.operationId);
         this.#active.delete(request.operationId);
       });
-    this.#active.set(request.operationId, command.scope);
+    this.#active.set(request.operationId, {
+      scope: command.scope,
+      bindingId: request.activationId,
+    });
   }
   statistics() {
     return {

@@ -5,6 +5,7 @@ import type {
   ConversationDetailResource,
   ConversationListResource,
   ProjectEnvironmentResource,
+  SessionState,
 } from "@pi-cloud/protocol";
 import {
   parseEnvironmentValidationReport,
@@ -13,7 +14,10 @@ import {
 import { sql, type Kysely } from "kysely";
 import { jsonObjectFrom } from "kysely/helpers/postgres";
 import { parseUserUploads } from "@pi-cloud/protocol";
-import { readCanonicalPiTurnTranscripts } from "@pi-cloud/runtime-core/canonical-pi-conversation";
+import {
+  readCanonicalPiTurnTranscripts,
+  conversationPrompt,
+} from "@pi-cloud/runtime-core/canonical-pi-conversation";
 import { loadDelegatedSessionTreeSummaries } from "./delegated-session-projection.ts";
 import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
 import {
@@ -114,7 +118,7 @@ export class ConversationReader {
       .innerJoinLateral(
         (query) =>
           query
-            .selectFrom("runs as counted_run")
+            .selectFrom("conversation_turns as counted_run")
             .select((expression) => expression.fn.countAll<string>().as("count"))
             .whereRef("counted_run.tenant_id", "=", "session_row.tenant_id")
             .whereRef("counted_run.session_id", "=", "session_row.id")
@@ -244,7 +248,11 @@ export class ConversationReader {
         "session_row.workspace_id as workspaceId",
         "session_row.development_environment_id as developmentEnvironmentId",
         "session_row.desired_model_profile_id as modelProfileId",
-        "session_row.state as sessionState",
+        sql<SessionState>`case when session_row.session_kind='subagent' then
+          case (select e.state from subagent_executions e where e.tenant_id=session_row.tenant_id and e.child_session_id=session_row.id)
+            when 'running' then 'running' when 'completed' then 'idle' when 'cancelled' then 'idle'
+            when 'failed' then 'failed' when 'unknown' then 'failed' else 'cold' end
+          else session_row.state end`.as("sessionState"),
         "session_row.execution_mode as executionMode",
         "session_row.sandbox_profile_key as sandboxProfileKey",
         "session_row.working_directory as workingDirectory",
@@ -280,7 +288,7 @@ export class ConversationReader {
       beforeTurnId === undefined
         ? undefined
         : await this.#database
-            .selectFrom("runs as anchor")
+            .selectFrom("conversation_turns as anchor")
             .select(["anchor.session_id", "anchor.mailbox_position"])
             .where("anchor.tenant_id", "=", this.#tenantId)
             .where("anchor.turn_id", "=", beforeTurnId)
@@ -303,7 +311,7 @@ export class ConversationReader {
         child?.forkTurnId === null || child?.forkTurnId === undefined
           ? null
           : await this.#database
-              .selectFrom("runs")
+              .selectFrom("conversation_turns")
               .select("mailbox_position")
               .where("tenant_id", "=", this.#tenantId)
               .where("session_id", "=", node.sessionId)
@@ -329,12 +337,13 @@ export class ConversationReader {
           "History anchor is beyond the conversation fork",
         );
       const newestRows = await this.#database
-        .selectFrom("runs as run")
+        .selectFrom("conversation_turns as run")
         .select([
           "run.session_id as originSessionId",
           "run.id as runId",
           "run.turn_id as turnId",
           "run.input_text as prompt",
+          "run.input_source as promptSource",
           "run.input_uploads as uploads",
           "run.state as runState",
           sql<boolean>`(run.output_seal_id is not null and run.output_sealed_at is null)`.as(
@@ -359,7 +368,12 @@ export class ConversationReader {
         .orderBy("run.id", "desc")
         .limit(MAX_CONVERSATION_TURNS + 1 - lineageTurnRows.length)
         .execute();
-      lineageTurnRows.push(...newestRows);
+      lineageTurnRows.push(
+        ...newestRows.map(({ promptSource, ...row }) => ({
+          ...row,
+          prompt: conversationPrompt(row.prompt, promptSource),
+        })),
+      );
       if (lineageTurnRows.length > MAX_CONVERSATION_TURNS) break;
     }
     const historyTruncated = lineageTurnRows.length > MAX_CONVERSATION_TURNS;

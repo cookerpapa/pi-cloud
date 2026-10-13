@@ -1,5 +1,6 @@
 import type { DurableDisplayPreparation } from "./durable-display.ts";
-import type { CandidateToolCommand } from "./tool-command.ts";
+import type { CandidateToolEffect } from "./tool-command.ts";
+import type { ControlToolDispatch } from "./control-tool-command.ts";
 import type { CandidateToolCancellation } from "./tool-cancellation.ts";
 
 /** PiCloud's private transport envelope. Native SDK objects are opaque JSON at
@@ -20,7 +21,7 @@ export type DurableCommitPublication = Readonly<{
   origins: readonly DurableRecordOrigin[];
   /** Native queue documents changed; a disposable view wake after projection. */
   inputQueueSessions?: readonly string[];
-  tools: readonly Readonly<{ taskId: number; command: CandidateToolCommand }>[];
+  tools: readonly Readonly<{ taskId: number; command: CandidateToolEffect }>[];
   cancellations: readonly CandidateToolCancellation[];
   display: readonly DurableDisplayPreparation[];
 }>;
@@ -91,4 +92,40 @@ export function durableToolIntent(
   )
     throw new Error("Tool handoff requires its admitted native execution intent");
   return { callId: input.callId, arguments: checkpoint.arguments as Record<string, unknown> };
+}
+
+/** Dynamic workflow host calls are task-owned native documents. Their input
+ * exists once in the creating commit, rather than another PG command body. */
+export function durableControlIntent(
+  commit: DurableSessionCommit,
+  reference: Pick<
+    ControlToolDispatch,
+    "taskId" | "sourceDocumentId" | "operationId" | "conversationId" | "toolName"
+  >,
+): { callId: string; arguments: Record<string, unknown> } {
+  if (reference.sourceDocumentId === undefined) return durableToolIntent(commit, reference.taskId);
+  const write = commit.writes.find(
+    (write) =>
+      write.type === "document.create" &&
+      (write.record as { id?: number })?.id === reference.sourceDocumentId,
+  );
+  const record = write?.record as
+    { kind?: string; key?: string; scope?: { kind: string; taskId: number } } | undefined;
+  const content = write?.content as { kind?: string; value?: Record<string, unknown> } | undefined;
+  const value = content?.value;
+  if (
+    record?.kind !== "pi-cloud.tool-hostcall" ||
+    record.key !== reference.operationId ||
+    record.scope?.kind !== "task" ||
+    record.scope.taskId !== reference.taskId ||
+    content?.kind !== "base" ||
+    value?.conversationId !== reference.conversationId ||
+    value.toolName !== reference.toolName ||
+    typeof value.callId !== "string" ||
+    !value.arguments ||
+    typeof value.arguments !== "object" ||
+    Array.isArray(value.arguments)
+  )
+    throw new Error("Control Tool requires its committed native hostcall");
+  return { callId: value.callId, arguments: value.arguments as Record<string, unknown> };
 }

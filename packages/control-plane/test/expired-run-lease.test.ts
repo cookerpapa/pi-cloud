@@ -1,4 +1,4 @@
-import { admitTestExecution } from "./admit-test-execution.ts";
+import { admitTestExecution, testWorkPublication } from "./admit-test-execution.ts";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
@@ -70,7 +70,8 @@ it("retires an expired Run on a healthy Worker without stopping its other Sessio
       executionAuthority: coordinator,
       backend: {
         admit: (tx, request, _mark, facts) => admitTestExecution(coordinator, tx, request, facts),
-        async execute(request) {
+        async execute(request, lifecycle, admission) {
+          lifecycle.publicationReady(testWorkPublication(db, request, admission));
           const wait = new Promise<void>((r) => released.set(request.runId, r));
           started.get(request.runId)!();
           await wait;
@@ -135,7 +136,9 @@ it("retires an expired Run on a healthy Worker without stopping its other Sessio
         .where("worker_id", "=", workerId)
         .where("released_at", "is", null)
         .execute(),
-    ).toEqual([{ pi_session_id: b.sessionId }]);
+    ).toEqual(
+      expect.arrayContaining([{ pi_session_id: a.sessionId }, { pi_session_id: b.sessionId }]),
+    );
     expect(await store.getRun(first.runId)).toMatchObject({ state: "running" });
     const row = await db
       .selectFrom("outbox")

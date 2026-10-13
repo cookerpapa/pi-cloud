@@ -449,7 +449,6 @@ export const DelegatedSessionSandboxModeSchema = Type.Union([
 
 export const DelegatedSessionStateSchema = Type.Union([
   Type.Literal("preparing"),
-  Type.Literal("queued"),
   Type.Literal("running"),
   Type.Literal("completed"),
   Type.Literal("failed"),

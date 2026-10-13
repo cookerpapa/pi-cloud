@@ -69,8 +69,8 @@ try{
  // An undeliverable reply belongs solely to this fixture. Do not interrupt
  // the shared Kafka brokers or a user's Worker to emulate that failure.
  const probeId=randomUUID(),bindingId=randomUUID();
- await client.submitProbe(target,{probeId,runId:randomUUID(),writerId:randomUUID(),completionContext:{
-   kind:'execution_probe',replyTopic:'pi-cloud.tool-replies.v2.'+randomUUID(),sentAt:Date.now(),bindingIds:[bindingId],
+ await client.submitProbe(target,{probeId,executionScopeId:randomUUID(),writerId:randomUUID(),completionContext:{
+   kind:'execution_probe',replyTopic:'pi-cloud.tool-replies.v3.'+randomUUID(),sentAt:Date.now(),bindingIds:[bindingId],
    execution:{bindingId,targetId:'fixture',bootId:target.bootId}}});
  await client.probeExecution(target,randomUUID());
  await client.pause(target.sandboxId);paused=true;

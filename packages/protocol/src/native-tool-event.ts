@@ -1,12 +1,9 @@
 import { Type } from "typebox";
 import { Value } from "typebox/value";
+import { ToolResultDataSchema, type ToolResultData } from "./tool-result.ts";
 
 /** PiCloud's fixed guest transport; only the trusted Harness makes the result canonical. */
-export type NativeToolResult = {
-  content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[];
-  details?: unknown;
-  diagnostics?: { severity: "info" | "warn" | "error"; message: string; code?: string }[];
-};
+export type NativeToolResult = ToolResultData;
 export type NativeToolUpdate = {
   type: "tool_execution_update";
   toolCallId: string;
@@ -23,28 +20,7 @@ export type NativeToolEnd = {
 };
 export type NativeToolEvent = NativeToolUpdate | NativeToolEnd;
 
-const result = Type.Unsafe<NativeToolResult>(
-  Type.Object({
-    content: Type.Array(Type.Unknown()),
-    details: Type.Optional(Type.Unknown()),
-    diagnostics: Type.Optional(
-      Type.Array(
-        Type.Object(
-          {
-            severity: Type.Union([
-              Type.Literal("info"),
-              Type.Literal("warn"),
-              Type.Literal("error"),
-            ]),
-            message: Type.String(),
-            code: Type.Optional(Type.String()),
-          },
-          { additionalProperties: false },
-        ),
-      ),
-    ),
-  }),
-);
+const result = ToolResultDataSchema;
 const identity = { toolCallId: Type.String(), toolName: Type.String() };
 export const NativeToolEventSchema = Type.Unsafe<NativeToolEvent>(
   Type.Union([

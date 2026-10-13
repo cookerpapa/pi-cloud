@@ -18,7 +18,7 @@ function fixture() {
       leaseId: writerId,
       fencingToken: 1,
     },
-    replyTopic: `pi-cloud.tool-replies.v2.${randomUUID()}`,
+    replyTopic: `pi-cloud.tool-replies.v3.${randomUUID()}`,
     toolCallId: "result-entry",
     nativeToolCallId: "native-call",
     toolName: "read",
@@ -106,7 +106,7 @@ it("externalizes the guest image before the boot reply and preserves the origina
     {
       operationId: f.packet.operationId,
       sequence: 1,
-      event: {
+      result: {
         toolCallId: "native-call",
         result: {
           content: [{ type: "pi_cloud_image_v1", attachment: { byteLength: 7 } }],
@@ -135,7 +135,7 @@ it("reports failed image storage without inserting an inline image or invented v
   f.put.mockRejectedValueOnce(new Error("object store unavailable"));
   await f.adapter.accept(f.packet);
   expect(
-    (f.publish.mock.calls[0]![1] as Extract<ToolReply, { kind: "tool_result" }>).event,
+    (f.publish.mock.calls[0]![1] as Extract<ToolReply, { kind: "tool_result" }>).result,
   ).toMatchObject({
     isError: true,
     result: {
@@ -183,7 +183,7 @@ it("preserves a known directory failure as a final native Tool result", async ()
   expect(f.publish.mock.calls[0]![1]).toMatchObject({
     kind: "tool_result",
     operationId: f.packet.operationId,
-    event: { toolCallId: "native-call", isError: true, result: output.response.event.result },
+    result: { toolCallId: "native-call", isError: true, result: output.response.event.result },
   });
   expect(f.put).not.toHaveBeenCalled();
 });

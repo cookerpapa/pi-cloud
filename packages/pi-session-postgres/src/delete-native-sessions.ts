@@ -9,16 +9,24 @@ export async function deletePostgresPiSessionsInTransaction(
   ids: readonly string[],
 ): Promise<void> {
   if (ids.length === 0) return;
-  const sessions = await transaction
+  await transaction
     .selectFrom("pi_sessions")
-    .select(["id", "unsealed_runs"])
+    .select("id")
     .where("tenant_id", "=", tenantId)
     .where(sql<boolean>`id=any(${[...ids]}::text[])`)
     .orderBy("id")
     .forUpdate()
     .noWait()
     .execute();
-  if (sessions.some((row) => row.unsealed_runs !== "0"))
+  const current = await transaction
+    .selectFrom("session_leases")
+    .select("lease_id")
+    .where("tenant_id", "=", tenantId)
+    .where(sql<boolean>`pi_session_id=any(${[...ids]}::text[])`)
+    .where("released_at", "is", null)
+    .limit(1)
+    .executeTakeFirst();
+  if (current)
     throw new NativeSessionError("storage", "Native Session must settle before deletion");
   const referenced = await transaction
     .selectFrom("sessions")
@@ -29,15 +37,6 @@ export async function deletePostgresPiSessionsInTransaction(
     .executeTakeFirst();
   if (referenced)
     throw new NativeSessionError("storage", "Native Session still has a product reference");
-  const current = await transaction
-    .selectFrom("session_leases")
-    .select("lease_id")
-    .where("tenant_id", "=", tenantId)
-    .where(sql<boolean>`pi_session_id=any(${[...ids]}::text[])`)
-    .where("released_at", "is", null)
-    .limit(1)
-    .executeTakeFirst();
-  if (current) throw new NativeSessionError("storage", "Native Session still has a current writer");
   await transaction
     .deleteFrom("session_leases")
     .where("tenant_id", "=", tenantId)

@@ -1,8 +1,8 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { ToolReplyMailbox, parseWorkerReply, type ToolReply } from "../src/tool-replies.ts";
 import {
   ToolExecutionFailure,
-  type NativeToolEnd,
+  type ToolResultPayload,
   type NativeToolUpdate,
 } from "@pi-cloud/protocol";
 
@@ -13,8 +13,7 @@ const update: NativeToolUpdate = {
   args: { command: "test" },
   partialResult: { content: [{ type: "text", text: "progress" }], details: undefined },
 };
-const end: NativeToolEnd = {
-  type: "tool_execution_end",
+const end: ToolResultPayload = {
   toolCallId: "call_1",
   toolName: "bash",
   result: { content: [{ type: "text", text: "done" }], details: undefined },
@@ -23,7 +22,7 @@ const end: NativeToolEnd = {
 
 it("requires a typed envelope and carries infrastructure failure separately from native text", async () => {
   expect(() =>
-    parseWorkerReply(JSON.stringify({ operationId: "op", sequence: 1, event: end })),
+    parseWorkerReply(JSON.stringify({ operationId: "op", sequence: 1, result: end })),
   ).toThrow();
   expect(() =>
     parseWorkerReply(
@@ -31,7 +30,7 @@ it("requires a typed envelope and carries infrastructure failure separately from
         kind: "tool_result",
         operationId: "op",
         sequence: 1,
-        event: end,
+        result: end,
         failure: { code: "ownership_lost" },
       }),
     ),
@@ -60,7 +59,7 @@ it("requires a typed envelope and carries infrastructure failure separately from
   };
   mailbox.accept(
     parseWorkerReply(
-      JSON.stringify({ kind: "tool_result", operationId: "text", sequence: 1, event }),
+      JSON.stringify({ kind: "tool_result", operationId: "text", sequence: 1, result: event }),
     ),
   );
   await expect(ordinary).resolves.toEqual(event);
@@ -70,11 +69,11 @@ it("delivers one final result only to its registered operation, ignoring duplica
   const mailbox = new ToolReplyMailbox();
   const a = mailbox.wait("a", "call_1", "bash", new AbortController().signal);
   const b = mailbox.wait("b", "call_1", "bash", new AbortController().signal);
-  mailbox.accept({ kind: "tool_result", operationId: "a", sequence: 1, event: end });
-  mailbox.accept({ kind: "tool_result", operationId: "a", sequence: 1, event: end });
+  mailbox.accept({ kind: "tool_result", operationId: "a", sequence: 1, result: end });
+  mailbox.accept({ kind: "tool_result", operationId: "a", sequence: 1, result: end });
   expect(await a).toEqual(end);
   expect(mailbox.size).toBe(1);
-  mailbox.accept({ kind: "tool_result", operationId: "b", sequence: 1, event: end });
+  mailbox.accept({ kind: "tool_result", operationId: "b", sequence: 1, result: end });
   expect(await b).toEqual(end);
   expect(mailbox.size).toBe(0);
 });
@@ -100,7 +99,7 @@ it("keeps batched probe replies separate from native Tool promises and discards 
   await expect(a).rejects.toThrow("retired");
   await expect(b).resolves.toMatchObject({ kind: "execution_probe" });
   expect(mailbox.size).toBe(1);
-  mailbox.accept({ kind: "tool_result", operationId: "probe", sequence: 1, event: end });
+  mailbox.accept({ kind: "tool_result", operationId: "probe", sequence: 1, result: end });
   await expect(tool).resolves.toEqual(end);
   mailbox.close();
 });
@@ -112,7 +111,7 @@ it("rejects progress on the final-only Kafka reply transport", async () => {
     kind: "tool_result",
     operationId: "op",
     sequence: 1,
-    event: update,
+    result: update,
   } as unknown as ToolReply);
   await expect(pending).rejects.toThrow("identity/order");
   expect(mailbox.size).toBe(0);
@@ -121,8 +120,57 @@ it("rejects progress on the final-only Kafka reply transport", async () => {
 it("accepts a fast reply before the caller awaits its promise", async () => {
   const mailbox = new ToolReplyMailbox();
   const pending = mailbox.wait("op", "call_1", "bash", new AbortController().signal);
-  mailbox.accept({ kind: "tool_result", operationId: "op", sequence: 1, event: end });
+  mailbox.accept({ kind: "tool_result", operationId: "op", sequence: 1, result: end });
   await expect(pending).resolves.toEqual(end);
+});
+
+it("uses the same reply mailbox for a long control-plane tool without guest lifecycle events", async () => {
+  vi.useFakeTimers();
+  const mailbox = new ToolReplyMailbox();
+  try {
+    const pending = mailbox.wait(
+      "child-op",
+      "parent-call",
+      "subagent",
+      new AbortController().signal,
+    );
+    await vi.advanceTimersByTimeAsync(90 * 60 * 1000);
+    expect(mailbox.size).toBe(1);
+    const result: ToolResultPayload = {
+      toolName: "subagent",
+      toolCallId: "parent-call",
+      isError: false,
+      result: {
+        content: [{ type: "text", text: "Child completed" }],
+        details: { conversationId: 17 },
+      },
+    };
+    await vi.advanceTimersByTimeAsync(30_000); // result transport reconnect delay
+    mailbox.accept(
+      parseWorkerReply(
+        JSON.stringify({
+          kind: "tool_result",
+          operationId: "child-op",
+          sequence: 1,
+          result,
+        }),
+      ),
+    );
+    await expect(pending).resolves.toEqual(result);
+    expect(() =>
+      parseWorkerReply(
+        JSON.stringify({
+          kind: "tool_result",
+          operationId: "old-format",
+          sequence: 1,
+          event: { type: "tool_execution_end", ...result },
+        }),
+      ),
+    ).toThrow();
+  } finally {
+    mailbox.close();
+    vi.useRealTimers();
+  }
 });
 
 it("never resurrects an aborted invocation from late results", async () => {
@@ -130,27 +178,27 @@ it("never resurrects an aborted invocation from late results", async () => {
     controller = new AbortController();
   const pending = mailbox.wait("op", "call_1", "bash", controller.signal);
   controller.abort(new Error("cancelled"));
-  mailbox.accept({ kind: "tool_result", operationId: "op", sequence: 1, event: end });
+  mailbox.accept({ kind: "tool_result", operationId: "op", sequence: 1, result: end });
   await expect(pending).rejects.toThrow("cancelled");
   expect(mailbox.size).toBe(0);
   const next = mailbox.wait("next-op", "call_1", "bash", new AbortController().signal);
-  mailbox.accept({ kind: "tool_result", operationId: "op", sequence: 1, event: end });
+  mailbox.accept({ kind: "tool_result", operationId: "op", sequence: 1, result: end });
   expect(mailbox.size).toBe(1);
-  mailbox.accept({ kind: "tool_result", operationId: "next-op", sequence: 1, event: end });
+  mailbox.accept({ kind: "tool_result", operationId: "next-op", sequence: 1, result: end });
   await expect(next).resolves.toEqual(end);
 });
 
 it("rejects identity and sequence changes without passing a partial success to Pi", async () => {
   const mailbox = new ToolReplyMailbox();
   const wrong = mailbox.wait("wrong", "different", "bash", new AbortController().signal);
-  mailbox.accept({ kind: "tool_result", operationId: "wrong", sequence: 1, event: end });
+  mailbox.accept({ kind: "tool_result", operationId: "wrong", sequence: 1, result: end });
   await expect(wrong).rejects.toThrow("identity/order");
   const gap = mailbox.wait("gap", "call_1", "bash", new AbortController().signal);
   mailbox.accept({
     kind: "tool_result",
     operationId: "gap",
     sequence: 2,
-    event: end,
+    result: end,
   } as unknown as ToolReply);
   await expect(gap).rejects.toThrow("identity/order");
 });
@@ -160,7 +208,7 @@ it("closing one worker does not hand abandoned replies to another worker", async
     b = new ToolReplyMailbox();
   const old = a.wait("old", "call_1", "bash", new AbortController().signal);
   a.close();
-  b.accept({ kind: "tool_result", operationId: "old", sequence: 1, event: end });
+  b.accept({ kind: "tool_result", operationId: "old", sequence: 1, result: end });
   await expect(old).rejects.toThrow("UNKNOWN");
   expect(b.size).toBe(0);
 });

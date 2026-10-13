@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(187);
+      expect(firstMigrationPass.rows).toHaveLength(188);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("187_native_text_presentation");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("188_session_work_and_tool_dispatch");
       const terminalColumns = await sql<{ column_name: string }>`select column_name
         from information_schema.columns where table_name='workspace_terminal_sessions'`.execute(
         database,
@@ -57,6 +57,7 @@ describe("current PiCloud schema", () => {
       `.execute(database);
       const names = new Set(tables.rows.map((row) => row.table_name));
       for (const retired of [
+        "subagent_control_commands",
         "sandboxes",
         "sandbox_retirements",
         "turns",
@@ -84,7 +85,7 @@ describe("current PiCloud schema", () => {
         "worker_retirements",
         "runs",
         "run_transitions",
-        "subagent_control_commands",
+        "subagent_conversations",
         "turn_control_requests",
         "session_leases",
         "pi_sessions",
@@ -174,7 +175,8 @@ describe("current PiCloud schema", () => {
         expect.arrayContaining(["released_at", "writer_failed_at", "writer_seal_offset"]),
       );
       expect(leaseColumns.rows.map((r) => r.column_name)).not.toContain("writer_id");
-      expect(keys.has("pi_sessions.unsealed_runs")).toBe(true);
+      expect(keys.has("pi_sessions.unsealed_runs")).toBe(false);
+      expect(keys.has("runs.native_output_drained")).toBe(false);
       expect(keys.has("runs.agent_exited_at")).toBe(true);
       expect(keys.has("runs.output_first_offset")).toBe(true);
       expect(keys.has("runs.output_open_offset")).toBe(false);

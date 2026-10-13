@@ -3,7 +3,6 @@ import type { FastifyInstance } from "fastify";
 import { MAX_EXECUTION_FACT_BYTES, parseSessionControlChange } from "@pi-cloud/protocol";
 import type { SessionProjector } from "@pi-cloud/runtime-core/session-projector";
 import { parseAcceptedFact } from "@pi-cloud/runtime-core/kafka-accepted-fact";
-import type { ExecutionPublication } from "@pi-cloud/runtime-core/accepted-fact";
 import { PUBLICATION_PATH } from "@pi-cloud/runtime-core/http-publication-client";
 import { PublicationIngressRejected } from "@pi-cloud/runtime-core/session-publication-ingress";
 import { PublicationNotSentError } from "@pi-cloud/protocol";
@@ -18,9 +17,7 @@ export class SessionPublicationService {
       | "localPublicationAvailability"
       | "publicationPartition"
       | "ownerForPartition"
-      | "openPublication"
       | "acceptSeal"
-      | "appendPublication"
       | "acceptControl"
     >,
   ) {}
@@ -52,10 +49,10 @@ export class SessionPublicationService {
     server.get(`${PUBLICATION_PATH}/health/local`, async () =>
       this.projector.localPublicationAvailability(),
     );
-    for (const action of ["open", "append", "seal", "control"] as const) {
+    for (const action of ["seal", "control"] as const) {
       server.post(
         `${PUBLICATION_PATH}/${action}`,
-        { bodyLimit: action === "open" ? 8192 : MAX_EXECUTION_FACT_BYTES },
+        { bodyLimit: MAX_EXECUTION_FACT_BYTES },
         async (request, reply) => {
           let value: unknown;
           try {
@@ -82,10 +79,6 @@ export class SessionPublicationService {
             return reply.code(409).send({ error: { code: "publication_not_sent", reason } });
           }
           try {
-            if (action === "open") {
-              await this.projector.openPublication(value as ExecutionPublication);
-              return { installed: true };
-            }
             if (action === "control")
               return await this.projector.acceptControl(parseSessionControlChange(value));
             let fact;
@@ -94,14 +87,10 @@ export class SessionPublicationService {
             } catch {
               throw new PublicationIngressRejected("scope");
             }
-            if (action === "seal") {
-              if (fact.kind !== "execution_seal") throw new PublicationIngressRejected("scope");
-              return await this.projector.acceptSeal(fact);
-            }
-            if (fact.kind === "execution_seal") throw new PublicationIngressRejected("scope");
-            return await this.projector.appendPublication(fact);
+            if (fact.kind !== "execution_seal") throw new PublicationIngressRejected("scope");
+            return await this.projector.acceptSeal(fact);
           } catch (error) {
-            if (action === "open" || error instanceof PublicationNotSentError)
+            if (error instanceof PublicationNotSentError)
               return reply.code(409).send({
                 error: {
                   code: "publication_not_sent",

@@ -124,19 +124,25 @@ try {
     .executeTakeFirstOrThrow();
   const children = await db
     .selectFrom("subagent_executions as child")
-    .innerJoin("runs as run", "run.id", "child.child_run_id")
     .innerJoin("sessions as session", "session.id", "child.child_session_id")
-    .select(["child.id", "child.state", "run.id as run_id", "run.turn_id", "session.pi_session_id"])
+    .select([
+      "child.id",
+      "child.state",
+      "child.root_run_id as run_id",
+      "child.child_turn_id as turn_id",
+      "session.pi_session_id",
+      "session.desired_model_profile_id",
+    ])
     .where("child.tenant_id", "=", scope.tenant_id)
-    .where("child.parent_run_id", "=", first.task.runId)
+    .where("child.root_run_id", "=", first.task.runId)
     .execute();
   assert.equal(children.length, 1);
   assert.equal(children[0].state, "completed");
   assert.equal(children[0].pi_session_id, scope.pi_session_id);
   const childModel = await db
-    .selectFrom("runs")
+    .selectFrom("model_profiles")
     .select("model_id")
-    .where("turn_id", "=", children[0].turn_id)
+    .where("id", "=", children[0].desired_model_profile_id)
     .executeTakeFirstOrThrow();
   assert.equal(childModel.model_id, report.model);
   report.child = {
@@ -149,12 +155,13 @@ try {
     async () =>
       (
         await db
-          .selectFrom("pi_sessions")
-          .select("unsealed_runs")
-          .where("id", "=", scope.pi_session_id)
-          .executeTakeFirstOrThrow()
-      ).unsealed_runs,
-    (count) => count === "0",
+          .selectFrom("session_leases")
+          .select("lease_id")
+          .where("pi_session_id", "=", scope.pi_session_id)
+          .where("released_at", "is", null)
+          .execute()
+      ).length,
+    (count) => count === 0,
     "ordered Session closure",
     120000,
   );

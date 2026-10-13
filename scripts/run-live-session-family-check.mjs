@@ -252,8 +252,8 @@ try {
   await until(
     async () =>
       Number(
-        await sql(`select count(*) from subagent_executions e join runs r on r.id=e.child_run_id
-    where e.parent_run_id=${quote(first.accepted.runId)} and r.state='running'`),
+        await sql(`select count(*) from subagent_executions e
+    where e.root_run_id=${quote(first.accepted.runId)} and e.state='running'`),
       ) >= 2,
     "two active child Lanes",
   );
@@ -298,7 +298,7 @@ try {
   assert.match(aResult.text, /FAMILY-A-CODING-OK/);
   assert.equal(
     await sql(
-      `select count(*) from subagent_executions where parent_run_id=${quote(first.accepted.runId)}`,
+      `select count(*) from subagent_executions where root_run_id=${quote(first.accepted.runId)}`,
     ),
     "3",
   );

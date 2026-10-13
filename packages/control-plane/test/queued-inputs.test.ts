@@ -4,8 +4,6 @@ import { sql, type Kysely } from "kysely";
 import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { readHumanInputMetadataBatch } from "@pi-cloud/pi-session-postgres/durable";
-import { ExecutionStreamProjector } from "@pi-cloud/runtime-core";
-import { parseKafkaAcceptedFact } from "@pi-cloud/runtime-core/kafka-accepted-fact";
 import { readCanonicalPiTurnTranscripts } from "../../runtime-core/src/canonical-pi-conversation.ts";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
@@ -21,7 +19,6 @@ import type {
 const external = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 describe.sequential("native human inputs and cloud execution records", () => {
   let db: Kysely<Database>, admin: Pool, name: string;
-  let offset = 0n;
   beforeAll(async () => {
     if (!external) throw new Error("Use the isolated PostgreSQL test runner");
     admin = new Pool({ connectionString: external, max: 1 });
@@ -78,20 +75,6 @@ describe.sequential("native human inputs and cloud execution records", () => {
     };
     return { tenant, store, project, session, queue, deliver, accept, list, edit, start };
   }
-  async function seal(runId: string) {
-    const row = await db
-      .selectFrom("outbox")
-      .select("payload")
-      .where(sql<boolean>`payload->>'kind'='execution_seal' and payload#>>'{scope,runId}'=${runId}`)
-      .executeTakeFirstOrThrow();
-    await new ExecutionStreamProjector(db).project({
-      fact: parseKafkaAcceptedFact(JSON.stringify(row.payload)),
-      topic: "native-input-test",
-      partition: 0,
-      offset: offset++,
-    });
-  }
-
   function queryGate(matches: (query: string) => boolean) {
     const held = Promise.withResolvers<void>(),
       release = Promise.withResolvers<void>();
@@ -564,7 +547,7 @@ describe.sequential("native human inputs and cloud execution records", () => {
       await expect(f.accept("late")).rejects.toMatchObject({ code: "conflict" });
       await a.abort();
       expect((await f.queue.returned(f.tenant.tenantId, f.session.sessionId)).pending).toBe(true);
-      await seal(a.root.runId);
+      await a.projectCompletion();
       const returned = await f.queue.returned(f.tenant.tenantId, f.session.sessionId);
       expect(returned.pending).toBe(false);
       expect(returned.items.map((i) => i.inputId)).toEqual([second.inputId, first.inputId]);
@@ -621,7 +604,7 @@ describe.sequential("native human inputs and cloud execution records", () => {
       await a.release();
       await f.store.acceptTurnCancellation(f.session.sessionId, a.root.turnId, "stop", {});
       await a.abort();
-      await seal(a.root.runId);
+      await a.projectCompletion();
       expect(await f.queue.returned(f.tenant.tenantId, f.session.sessionId)).toMatchObject({
         pending: false,
         items: [],
@@ -642,7 +625,7 @@ describe.sequential("native human inputs and cloud execution records", () => {
         {},
       );
       await a.abort();
-      await seal(a.root.runId);
+      await a.projectCompletion();
       const first = await f.queue.returned(f.tenant.tenantId, f.session.sessionId);
       expect(first.items).toHaveLength(20);
       expect(first.hasMore).toBe(true);

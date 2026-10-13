@@ -1,5 +1,7 @@
 import { SessionPublicationService } from "./session-publication-service.ts";
 import { SubagentController } from "./subagent-controller.ts";
+import { ControlToolDispatcher } from "./control-tool-dispatcher.ts";
+import { executePreviewTool } from "./control-preview-tool.ts";
 import { createDatabase } from "@pi-cloud/database";
 import { operationalLog, startServiceObservability } from "@pi-cloud/observability";
 import { randomUUID } from "node:crypto";
@@ -82,6 +84,7 @@ export async function startControlPlane(): Promise<void> {
   let ownedObservability: Awaited<ReturnType<typeof startServiceObservability>> | undefined;
   let ownedDatabase: ReturnType<typeof createDatabase> | undefined;
   let unattachedSubagents: SubagentController | undefined;
+  let unattachedControlTools: ControlToolDispatcher | undefined;
   const controlPlaneInstanceId = randomUUID();
   let agentEvents: SessionProjector | undefined;
   let sandboxControl: Awaited<ReturnType<typeof createSandboxControl>> | undefined;
@@ -111,6 +114,7 @@ export async function startControlPlane(): Promise<void> {
       () => operationalMetrics?.close(),
       () => sandboxControl?.close(),
       () => unattachedSubagents?.close(),
+      () => unattachedControlTools?.close(),
       () => sourceControlDispatcher?.close(),
       () => internalSourceControlDispatcher?.close(),
       () => images?.blobs.close(),
@@ -162,7 +166,7 @@ export async function startControlPlane(): Promise<void> {
       database,
       managementToken: config.supervisorManagementToken,
       allowInsecureHttp: config.allowInsecureInternalHttp,
-      ownsPartition: (partition) => agentEvents?.ownsPartition(partition) === true,
+      changed: (tenant, session) => controlTools.wake(tenant, session),
       treePolicy: config.subagentTreePolicy,
       validateDirectory: async (target) => {
         const machine =
@@ -193,15 +197,34 @@ export async function startControlPlane(): Promise<void> {
             : {}),
         });
       },
-      onError: (error) =>
+    });
+    unattachedSubagents = subagents;
+    const controlTools = new ControlToolDispatcher({
+      database,
+      partitions: config.kafkaPartitions,
+      ...(images ? { images: images.codec } : {}),
+      ownsPartition: (partition) => agentEvents?.ownsPartition(partition) === true,
+      publish: (topic, reply) => sandboxControl!.publishReply(topic, reply),
+      execute: async (call, current) => {
+        if (call.toolName === "preview")
+          return executePreviewTool(database, call, async () => {
+            if (!call.bindingId) throw new Error("Preview requires an admitted Tool binding");
+            if (!current()) throw new Error("Control Tool owner changed");
+            await sandboxControl!.refreshToolServices(
+              { ...call.scope, leaseId: call.scope.writerId },
+              call.bindingId,
+            );
+          });
+        return subagents.executeTool(call, current);
+      },
+      onError: () =>
         operationalLog({
           service: "pi-cloud-control-plane",
           level: "warn",
-          event: "subagent.delivery_retry",
-          attributes: { reason: error instanceof Error ? error.message : "unknown" },
+          event: "tool.control_retry",
         }),
     });
-    unattachedSubagents = subagents;
+    unattachedControlTools = controlTools;
     const queueReads = createDatabase({
       connectionString: config.databaseUrl,
       maxConnections: 2,
@@ -229,12 +252,11 @@ export async function startControlPlane(): Promise<void> {
       brokers: config.kafkaBrokers,
       clientId: controlPlaneInstanceId,
       advertisedBaseUrl: config.projectorAdvertisedBaseUrl,
-      subagentCommands: {
+      nativeChanges: {
         consume: async (record, current) => {
-          await subagents.consume(record, current);
           if (current?.() === false) return;
           const fact = record.fact;
-          if (fact.kind === "execution_seal")
+          if (fact.kind === "execution_seal" || fact.kind === "work_finished")
             inputQueues.notify(
               fact.scope.tenantId,
               fact.scope.sessionId,
@@ -247,21 +269,23 @@ export async function startControlPlane(): Promise<void> {
         close: () => subagents.close(),
       },
       toolCommands: sandboxControl.dispatcher,
+      controlTools,
       executionProbes: sandboxControl.probes,
       controlChanges: {
         load: async (partitions, current) => {
           await bindingView.load(partitions, current);
-          if (current()) await subagents.recover(partitions, current);
+          if (current()) await controlTools.recover(partitions, current);
         },
         reset: () => {
           bindingView.reset();
           inputQueues.reset();
           subagents.reset();
+          controlTools.reset();
         },
         prepare: (change, current) => bindingView.prepare(change, current),
         consume: async (change, current, position) => {
           await consumeBindingChange(change, current, position);
-          await subagents.changed(change, current);
+          if (current()) controlTools.wake(change.scope.tenantId, change.scope.piSessionId);
           inputQueues.consume(change, current);
         },
       },
@@ -273,6 +297,7 @@ export async function startControlPlane(): Promise<void> {
     });
     // The completed Projector now owns/drains its command consumers.
     unattachedSubagents = undefined;
+    unattachedControlTools = undefined;
     const activeAgentEvents = agentEvents;
     const executionProbes = sandboxControl.probes;
     executionProbes.observeWith({

@@ -18,6 +18,7 @@ export type ToolCancellation = Static<typeof ToolCancellationSchema>;
 export type CandidateToolCancellation = ToolCancellation &
   Readonly<{
     executionReference: string;
+    conversationId: number;
     occurredAt: string;
   }>;
 export const AcceptedToolCancellationSchema = Type.Object(

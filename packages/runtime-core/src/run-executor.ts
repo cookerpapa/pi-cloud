@@ -1,3 +1,4 @@
+import { recordEnvironmentFailure } from "./environment-failure.ts";
 import { readDurableRunUsage } from "@pi-cloud/pi-session-postgres/durable";
 import { resourceLimit } from "@pi-cloud/domain";
 import type { PublicationAvailability } from "@pi-cloud/protocol";
@@ -94,6 +95,10 @@ export type RunClaimAdmission = Readonly<{
 export type TurnExecutionLifecycle = {
   /** Positive local Agent Loop exit, independent of guest Tool cleanup. */
   executionExited(): void;
+  publicationReady(finalizer: {
+    finish(terminal: import("./accepted-fact.ts").WorkTerminal): Promise<void>;
+    close(): Promise<void>;
+  }): void;
 };
 
 export type TurnExecutionResult = {
@@ -393,6 +398,7 @@ export class RunExecutor {
     const executionStartedAt = performance.now();
     let agentExited = false;
     let completed = false;
+    let finalizer: Parameters<TurnExecutionLifecycle["publicationReady"]>[0] | undefined;
     try {
       const result = await withSpan<RunExecutionResult>({
         serviceName: "pi-cloud-control-plane",
@@ -407,6 +413,11 @@ export class RunExecutor {
           const lifecycle: TurnExecutionLifecycle = {
             executionExited: () => {
               agentExited = true;
+            },
+            publicationReady: (publication) => {
+              if (finalizer)
+                throw new RunExecutorInvariantError("Root publication was installed twice");
+              finalizer = publication;
             },
           };
 
@@ -429,27 +440,73 @@ export class RunExecutor {
               );
             }
           } catch (error) {
+            const failure = normalizeFailure(error);
+            if (
+              [
+                "worker_shutdown",
+                "session_lease_revoked",
+                "session_lease_renewal_failed",
+                "writer_publication_failed",
+              ].includes(failure.code)
+            )
+              return this.#requestRecovery(claim, acknowledgement);
+            if (failure.quarantineSession)
+              return this.#recordFailure(claim, failure, acknowledgement);
+            if (finalizer) {
+              const terminal: import("./accepted-fact.ts").WorkTerminal =
+                error instanceof TurnExecutionCancelledError && error.reason === "user_request"
+                  ? {
+                      type: "turn.cancelled",
+                      payload: { reason: "user_request", forced: error.forced },
+                    }
+                  : {
+                      type: "turn.failed",
+                      payload: {
+                        code: failure.code,
+                        message: failure.safeMessage,
+                        retryable: failure.retryable,
+                      },
+                    };
+              try {
+                await finalizer.finish(terminal);
+              } catch {
+                return this.#requestRecovery(claim, acknowledgement);
+              }
+              completed = true;
+              const identity = {
+                runId: claim.request.runId,
+                sessionId: claim.request.sessionId,
+                turnId: claim.request.turnId,
+              };
+              return terminal.type === "turn.cancelled"
+                ? { status: "cancelled" as const, ...identity }
+                : {
+                    status: "failed" as const,
+                    ...identity,
+                    phase: "after_admission" as const,
+                    failureCode: failure.code,
+                  };
+            }
+            if (error instanceof TurnExecutionCancelledError && error.reason === "user_request")
+              return this.#requestRecovery(claim, acknowledgement);
             const externallySettled = await this.#observeCancellation(claim);
             if (externallySettled !== undefined) return externallySettled;
-            if (error instanceof TurnExecutionCancelledError && error.reason === "user_request") {
-              throw new RunExecutorInvariantError(
-                "Cancellation confirmation arrived before its durable lifecycle",
-              );
-            }
-            const failure = normalizeFailure(error);
-            if (["worker_shutdown", "session_lease_revoked"].includes(failure.code))
-              return this.#requestRecovery(claim, acknowledgement);
-            if (failure.code === "native_task_aborted") {
-              const cancelled = await this.#recordOwnedAbort(claim, failure, acknowledgement);
-              if (cancelled) return cancelled;
-            }
             return this.#recordFailure(claim, failure, acknowledgement);
           }
 
-          const status = await this.#complete(claim, executionResult, acknowledgement);
-          completed = status === "completed";
+          if (!finalizer)
+            throw new RunExecutorInvariantError("Backend completed without a root publication");
+          try {
+            await finalizer.finish({
+              type: "turn.completed",
+              payload: { stopReason: executionResult.stopReason },
+            });
+          } catch {
+            return this.#requestRecovery(claim, acknowledgement);
+          }
+          completed = true;
           return {
-            status,
+            status: "completed" as const,
             runId: claim.request.runId,
             sessionId: claim.request.sessionId,
             turnId: claim.request.turnId,
@@ -470,6 +527,14 @@ export class RunExecutor {
       );
       throw error;
     } finally {
+      await finalizer?.close().catch(() => {
+        operationalLog({
+          service: "pi-cloud-worker",
+          level: "warn",
+          event: "session.writer.close_failed",
+          attributes: { runId: claim.request.runId, piSessionId: claim.request.piSessionId },
+        });
+      });
       this.#metrics?.activeRuns.dec();
       // Normal completion already leaves the Session idle. Failure/cancellation
       // may race the seal, so retain positive exit evidence for either order.
@@ -495,11 +560,7 @@ export class RunExecutor {
           sessionId: claim.request.sessionId,
           turnId: claim.request.turnId,
         };
-      if (
-        rows.runState === "cancel_requested" &&
-        rows.runState === "cancel_requested" &&
-        rows.sessionState === "cancelling"
-      ) {
+      if (rows.runState === "cancel_requested" && rows.sessionState === "cancelling") {
         return {
           status: "cancellation_pending",
           runId: claim.request.runId,
@@ -507,11 +568,7 @@ export class RunExecutor {
           turnId: claim.request.turnId,
         };
       }
-      if (
-        rows.runState === "cancelled" &&
-        rows.runState === "cancelled" &&
-        rows.sessionState === "idle"
-      ) {
+      if (rows.runState === "cancelled" && rows.sessionState === "idle") {
         return {
           status: "cancelled",
           runId: claim.request.runId,
@@ -550,17 +607,6 @@ export class RunExecutor {
           and publication_session.session_hash % ${admission.publication.partitionCount} = any(${[...admission.publication.partitions]}::int[]))`
           : sql`true`
       })`;
-  }
-
-  #taskOwnerAvailable(runAlias: string) {
-    // Delegated work belongs to a live parent task, not merely to historical
-    // Session ancestry. A departed parent's queued child cannot start a new owner.
-    return sql<boolean>`not exists(select 1 from subagent_executions e
-      where e.tenant_id=${sql.ref(`${runAlias}.tenant_id`)}
-        and e.child_run_id=${sql.ref(`${runAlias}.id`)} and not exists(
-        select 1 from active_execution_scopes parent where parent.run_id=e.parent_run_id
-          and parent.accepting_effects and parent.valid_until>clock_timestamp()
-      ))`;
   }
 
   async #claimNext(
@@ -606,15 +652,14 @@ export class RunExecutor {
         .where(sql<boolean>`candidate.state = 'queued' and candidate.ready_at is not null`)
         .where("candidate_session.state", "in", ["cold", "idle"])
         .where("candidate_session.pi_conversation_id", "is not", null)
+        .where("candidate_session.session_kind", "=", "conversation")
         .where(this.#familyAdmission("candidate_session", admission))
-        .where(this.#taskOwnerAvailable("candidate"))
         .where("candidate_policy.enabled", "=", true)
         .where("candidate_agent.runtime_kind", "=", this.#agentRuntimeKind)
         .where(
           piSessionWorkerAvailable(
             sql.ref("candidate_session.tenant_id"),
             sql.ref("candidate_session.pi_session_id"),
-            this.#workerId,
           ),
         )
         .orderBy("candidate.available_at", "asc")
@@ -958,7 +1003,7 @@ export class RunExecutor {
         updated_at=${now},row_version=row_version+1,
         worker_id=${this.#workerId}::uuid,lease_id=${ref.leaseId}::uuid,
         fencing_token=${ref.fencingToken},last_event_seq=${Math.max(0, Number(r.nextEventSeq) - 1)},
-        output_publication=${JSON.stringify(claim.admission.publication)}::jsonb,native_output_drained=false
+        output_publication=${JSON.stringify(claim.admission.publication)}::jsonb
         where tenant_id=${r.tenantId}::uuid and id=${r.runId}::uuid
           and state='queued' and ready_at is not null
           and lease_id is null and row_version=${runVersion}::bigint
@@ -983,112 +1028,54 @@ export class RunExecutor {
       throw new RunExecutorInvariantError("Execution admission did not start exactly one task");
   }
 
-  async #complete(
-    claim: ClaimedTurn,
-    result: TurnExecutionResult,
-    acknowledgement: TurnExecutionReference,
-  ): Promise<"completed" | "cancelled" | "cancellation_pending" | "recovering"> {
-    const now = safeDate(this.#clock);
-    const terminalEventId = this.#idGenerator();
-    const terminalBody = {
-      type: "turn.completed",
-      payload: {
-        stopReason: result.stopReason,
-      },
-    } as const;
-    return retryTransaction(this.#database, async (transaction) => {
-      const rows = await this.#lockLifecycleRows(transaction, claim);
-      if (
-        rows.currentLeaseId !==
-          parseExecutionReference(acknowledgement.executionReference).leaseId ||
-        rows.recoveryRequestedAt !== null
-      )
-        return "recovering";
-      // Cancellation may win after admission but before the local Runner exists.
-      // Its control request owns settlement; don't overwrite it with success.
-      if (rows.runState === "cancel_requested") return "cancellation_pending";
-      if (rows.runState === "cancelled") return "cancelled";
-      if (rows.runState !== "running" || rows.sessionState !== "running") {
-        throw new RunExecutorInvariantError("Only a running Run can complete");
-      }
-
-      await this.#executionAuthority.assertCurrent(transaction, claim.request, acknowledgement);
-      await this.#storeEventBoundary(
-        transaction,
-        claim,
-        result.lastEventSeq ?? Number(claim.request.nextEventSeq) - 1,
-        now,
-      );
-
-      await transitionCurrentRun(
-        transaction,
-        {
-          tenantId: claim.request.tenantId,
-          runId: claim.request.runId,
-        },
-        {
-          runState: "completed",
-          reason: "execution_completed",
-          now,
-          stopReason: result.stopReason,
-          transitionId: this.#idGenerator(),
-        },
-      );
-
-      const sessionUpdate = transaction
-        .updateTable("sessions")
-        .set({
-          state: transitionSession(rows.sessionState, "idle"),
-          row_version: sql<string>`${sql.ref("row_version")} + 1`,
-          updated_at: now,
-          last_active_at: now,
-        })
-        .where("tenant_id", "=", claim.request.tenantId)
-        .where("id", "=", claim.request.sessionId)
-        .where("state", "=", rows.sessionState)
-        .returning("id");
-      const updated = await transaction
-        .with("settled_session", () => sessionUpdate)
-        .selectNoFrom([sql<number>`(select count(*)::int from settled_session)`.as("sessions")])
-        .executeTakeFirstOrThrow();
-      expectOne(BigInt(updated.sessions), "settling a session");
-      await requestExecutionStreamSeal(transaction, {
-        tenantId: claim.request.tenantId,
-        sessionId: claim.request.sessionId,
-        turnId: claim.request.turnId,
-        runId: claim.request.runId,
-        agentId: "root",
-        body: terminalBody,
-        now,
-        eventId: terminalEventId,
-      });
-      await this.#executionAuthority.releaseCurrent(
-        transaction,
-        claim.request,
-        acknowledgement,
-        now,
-      );
-      return "completed";
-    });
-  }
-
   async #requestRecovery(
     claim: ClaimedTurn,
     grant: TurnExecutionReference,
   ): Promise<RunExecutionResult> {
     const now = safeDate(this.#clock),
       ref = parseExecutionReference(grant.executionReference);
+    let settled: RunExecutionResult | undefined;
     await retryTransaction(this.#database, async (tx) => {
       const run = await tx
         .selectFrom("runs")
-        .select(["lease_id", "execution_released_at", "output_seal_id"])
+        .select([
+          "lease_id",
+          "execution_released_at",
+          "output_seal_id",
+          "output_sealed_at",
+          "state",
+          "failure_code",
+        ])
         .where("tenant_id", "=", claim.request.tenantId)
         .where("id", "=", claim.request.runId)
         .forNoKeyUpdate()
         .executeTakeFirst();
       // A remote controller may already have closed this incarnation. An old
       // local completion must never alter the new owner's logical work.
-      if (!run || run.lease_id !== ref.leaseId || run.output_seal_id !== null) return;
+      if (!run || run.lease_id !== ref.leaseId) return;
+      if (
+        run.output_sealed_at !== null &&
+        ["completed", "cancelled", "failed", "timed_out"].includes(run.state)
+      ) {
+        const identity = {
+          runId: claim.request.runId,
+          sessionId: claim.request.sessionId,
+          turnId: claim.request.turnId,
+        };
+        settled =
+          run.state === "completed"
+            ? { status: "completed", ...identity }
+            : run.state === "cancelled"
+              ? { status: "cancelled", ...identity }
+              : {
+                  status: "failed",
+                  ...identity,
+                  phase: "after_admission",
+                  failureCode: run.failure_code ?? "native_work_failed",
+                };
+        return;
+      }
+      if (run.output_seal_id !== null) return;
       await this.#executionAuthority.assertCurrentOrExpired(tx, claim.request, grant);
       await requestExecutionStreamSeal(tx, {
         tenantId: claim.request.tenantId,
@@ -1103,83 +1090,14 @@ export class RunExecutor {
       if (run.execution_released_at === null)
         await this.#executionAuthority.releaseCurrent(tx, claim.request, grant, now);
     });
-    return {
-      status: "recovering",
-      runId: claim.request.runId,
-      sessionId: claim.request.sessionId,
-      turnId: claim.request.turnId,
-    };
-  }
-
-  async #recordOwnedAbort(
-    claim: ClaimedTurn,
-    failure: ExecutionFailure,
-    grant: TurnExecutionReference,
-  ): Promise<RunExecutionResult | undefined> {
-    const now = safeDate(this.#clock);
-    const cancelled = await retryTransaction(this.#database, async (tx) => {
-      const rows = await this.#lockLifecycleRows(tx, claim);
-      if (rows.runState !== "running") return false;
-      await this.#executionAuthority.assertCurrentOrExpired(tx, claim.request, grant);
-      // Native ownership propagates Esc before every child gets an individual
-      // management RPC. The already-persisted ancestor Stop authorizes this
-      // child's cancellation; no synthetic control receipt or second scheduler.
-      const ancestor = await sql<{ id: string }>`with recursive ancestors(id) as (
-        select parent_run_id from subagent_executions where tenant_id=${claim.request.tenantId}::uuid and child_run_id=${claim.request.runId}::uuid
-        union select e.parent_run_id from subagent_executions e join ancestors a on e.child_run_id=a.id
-          where e.tenant_id=${claim.request.tenantId}::uuid
-      ) select r.id from ancestors a join runs r on r.id=a.id and r.tenant_id=${claim.request.tenantId}::uuid
-        where r.state in ('cancel_requested','cancelled') limit 1`.execute(tx);
-      if (!ancestor.rows.length) return false;
-      await this.#storeEventBoundary(
-        tx,
-        claim,
-        failure.lastEventSeq ?? Number(claim.request.nextEventSeq) - 1,
-        now,
-      );
-      const identity = { tenantId: claim.request.tenantId, runId: claim.request.runId };
-      await transitionCurrentRun(tx, identity, {
-        runState: "cancel_requested",
-        reason: "native_ancestor_abort",
-        now,
-      });
-      await transitionCurrentRun(tx, identity, {
-        runState: "cancelled",
-        reason: "native_ancestor_abort",
-        now,
-        stopReason: "cancelled",
-      });
-      await tx
-        .updateTable("sessions")
-        .set({
-          state: "idle",
-          row_version: sql`row_version+1`,
-          updated_at: now,
-          last_active_at: now,
-        })
-        .where("tenant_id", "=", identity.tenantId)
-        .where("id", "=", claim.request.sessionId)
-        .execute();
-      await requestExecutionStreamSeal(tx, {
-        ...identity,
+    return (
+      settled ?? {
+        status: "recovering",
+        runId: claim.request.runId,
         sessionId: claim.request.sessionId,
         turnId: claim.request.turnId,
-        agentId: "root",
-        body: { type: "turn.cancelled", payload: { reason: "user_request", forced: false } },
-        now,
-        eventId: this.#idGenerator(),
-      });
-      await this.#executionAuthority.releaseCurrent(tx, claim.request, grant, now);
-      return true;
-    });
-    return cancelled
-      ? {
-          status: "cancelled",
-          runId: claim.request.runId,
-          sessionId: claim.request.sessionId,
-          turnId: claim.request.turnId,
-        }
-      : undefined;
+      }
+    );
   }
 
   async #recordFailure(
@@ -1219,38 +1137,7 @@ export class RunExecutor {
         now,
       );
       const timedOut = /(?:^|_)timeout$/.test(failure.code) || failure.code === "pi_timeout";
-      if (failure.code.startsWith("environment_")) {
-        await transaction
-          .insertInto("environment_validations")
-          .values({
-            id: this.#idGenerator(),
-            tenant_id: claim.request.tenantId,
-            project_id: claim.request.projectId,
-            environment_version_id: claim.request.environment.environmentVersionId,
-            run_id: claim.request.runId,
-            status: "failed",
-            report: null,
-            failure_code: failure.code,
-            validated_at: now,
-          })
-          .onConflict((conflict) =>
-            conflict.columns(["environment_version_id", "run_id"]).doNothing(),
-          )
-          .executeTakeFirst();
-        await transaction
-          .updateTable("environment_versions")
-          .set({
-            state: "failed",
-            failure_code: failure.code,
-            validated_at: null,
-            updated_at: now,
-          })
-          .where("tenant_id", "=", claim.request.tenantId)
-          .where("project_id", "=", claim.request.projectId)
-          .where("id", "=", claim.request.environment.environmentVersionId)
-          .where("recipe_sha256", "=", claim.request.environment.recipeSha256)
-          .executeTakeFirstOrThrow();
-      }
+      await recordEnvironmentFailure(transaction, { ...claim.request, code: failure.code, now });
       await transitionCurrentRun(
         transaction,
         {

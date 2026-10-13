@@ -3,11 +3,6 @@ import type { EventPublishMessage, PiCloudEvent, PiCloudEventBody } from "@pi-cl
 import type { DurableSessionCommit, DurableRecordOrigin } from "@pi-cloud/protocol";
 import type {
   AcceptedToolCommand,
-  CandidateToolCommand,
-  ToolCommandPublisher,
-  CandidateSubagentCommand,
-  SubagentCommandPublisher,
-  SubagentControlRequest,
   ToolSandboxOperationRequest,
   ToolCancellationPublisher,
 } from "@pi-cloud/protocol";
@@ -19,8 +14,6 @@ export type CandidateFact =
       command: import("@pi-cloud/protocol").CandidateToolCancellation;
     }>
   | Omit<import("@pi-cloud/protocol").PathProbe, "scope">
-  | Readonly<{ kind: "tool_command"; command: CandidateToolCommand }>
-  | Readonly<{ kind: "subagent_command"; command: CandidateSubagentCommand }>
   | Readonly<{ kind: "agent_event"; publication: EventPublishMessage }>;
 
 export type AcceptedFactScope = Readonly<{
@@ -39,6 +32,23 @@ export type AcceptedAgentEventFact = Readonly<{
   scope: AcceptedFactScope;
   event: PiCloudEvent;
   nativeSequence?: number;
+  occurredAt: string;
+}>;
+export type WorkTerminal = Extract<
+  PiCloudEventBody,
+  { type: "turn.completed" | "turn.failed" | "turn.cancelled" }
+>;
+/** The native family is idle and all publication handles have drained. This
+ * ordinary writer record does not require a PG -> Outbox -> Kafka round trip. */
+export type AcceptedWorkFinishedFact = Readonly<{
+  kind: "work_finished";
+  factId: string;
+  scope: AcceptedFactScope;
+  agentId: string;
+  baseSequence: number;
+  nativeSequence: number;
+  terminal: WorkTerminal;
+  retireWriter: true;
   occurredAt: string;
 }>;
 
@@ -65,7 +75,7 @@ export type AcceptedExecutionSealFact = Readonly<{
   scope: AcceptedFactScope;
   agentId: string;
   baseSequence: number;
-  closesWriter: boolean;
+  closesWriter: true;
   occurredAt: string;
 }> &
   (
@@ -79,12 +89,29 @@ export type AcceptedExecutionSealFact = Readonly<{
       }
   );
 
-export type DurableToolDispatch = Omit<AcceptedToolCommand, "kind" | "request"> & {
+export type DurableCubeToolDispatch = Omit<AcceptedToolCommand, "kind" | "request"> & {
+  target?: never;
   taskId: number;
-  request: Omit<
-    Extract<ToolSandboxOperationRequest, { operation: "tool.execute" }>,
-    "args" | "toolCallId"
-  >;
+  request:
+    | Omit<
+        Extract<ToolSandboxOperationRequest, { operation: "tool.execute" }>,
+        "args" | "toolCallId"
+      >
+    | Omit<
+        Extract<ToolSandboxOperationRequest, { operation: "workflow.exec" }>,
+        "script" | "toolCallId"
+      >;
+};
+export type DurableControlToolDispatch = import("@pi-cloud/protocol").ControlToolDispatch & {
+  scope: AcceptedFactScope;
+};
+export type DurableToolDispatch = DurableCubeToolDispatch | DurableControlToolDispatch;
+
+export type AcceptedControlToolCommand = DurableControlToolDispatch & {
+  kind: "control_tool";
+  nativeCallId: string;
+  arguments: Record<string, unknown>;
+  nativeSequence: number;
 };
 
 export type ExecutionPublication = Readonly<{
@@ -96,22 +123,11 @@ export type AcceptedFact =
   | import("@pi-cloud/protocol").PathProbe
   | AcceptedToolCommand
   | AcceptedAgentEventFact
-  | AcceptedExecutionSealFact
-  | AcceptedSubagentCommand;
+  | AcceptedWorkFinishedFact
+  | AcceptedExecutionSealFact;
 
 /** Session control references share transport/order, but never native history. */
 export type SessionLogFact = AcceptedFact | import("@pi-cloud/protocol").SessionControlChange;
-
-export type AcceptedSubagentCommand = Readonly<{
-  kind: "subagent_command";
-  factId: string;
-  scope: AcceptedFactScope;
-  executionReference: string;
-  toolCallId: string;
-  workflowId: string;
-  request: SubagentControlRequest;
-  occurredAt: string;
-}>;
 
 export type AcceptedFactReceipt = Readonly<{
   factId: string;
@@ -127,20 +143,20 @@ export class AcceptedFactCapacityError extends PublicationNotSentError {
 }
 
 export interface AcceptedFactBus {
+  publicationFailure?(scope: AcceptedFactScope): unknown;
   publicationAvailability?(): Promise<import("@pi-cloud/protocol").PublicationAvailability>;
   open?(publication: ExecutionPublication, signal?: AbortSignal): Promise<void>;
-  forget?(runId: string): void;
+  forget?(scope: AcceptedFactScope): void | Promise<void>;
   append(fact: AcceptedFact): Promise<AcceptedFactReceipt>;
   checkHealth(): Promise<void>;
 }
 
 export interface ActiveExecutionLogResolver {
-  resolve(executionReference: string): AcceptedFactWriter | undefined;
+  resolve(executionReference: string, conversationId?: number): AcceptedFactWriter | undefined;
   checkHealth(): Promise<void>;
 }
 
-export interface AcceptedFactWriter
-  extends ToolCommandPublisher, SubagentCommandPublisher, ToolCancellationPublisher {
+export interface AcceptedFactWriter extends ToolCancellationPublisher {
   readonly publication: ExecutionPublication;
   commitNative(fact: AcceptedDurableCommitFact): Promise<void>;
 }

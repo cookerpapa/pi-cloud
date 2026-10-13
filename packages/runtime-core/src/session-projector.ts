@@ -1,17 +1,13 @@
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
-import { KafkaLogConsumer } from "@pi-cloud/event-log";
+import { KafkaLogConsumer, KafkaSessionWriter } from "@pi-cloud/event-log";
 import {
   ACCEPTED_FACT_TOPIC,
   kafkaProducerLane,
   parseSessionLogFact,
 } from "./kafka-accepted-fact.ts";
 import { ExecutionStreamProjector, factEvents } from "./execution-stream-projection.ts";
-import type {
-  AcceptedExecutionSealFact,
-  ExecutionPublication,
-  SessionLogFact,
-} from "./accepted-fact.ts";
+import type { AcceptedExecutionSealFact, SessionLogFact } from "./accepted-fact.ts";
 import type { PublicationAvailability, SessionControlChange } from "@pi-cloud/protocol";
 import { assertCommittedControlChange } from "./session-control-outbox.ts";
 import type { ProducerCapacity } from "@pi-cloud/event-log";
@@ -27,7 +23,6 @@ import { SessionLiveView } from "./session-live-view.ts";
 import { SessionOutboxRelay } from "./session-outbox-relay.ts";
 import { KafkaSafeRetention } from "./kafka-safe-retention.ts";
 import { loadFactReplayOffsets, recordFactProjection } from "./accepted-fact-recovery.ts";
-import type { AcceptedFact } from "./accepted-fact.ts";
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
 import { toolCommandsForFact } from "./tool-invocation-fact.ts";
 import { ProjectionTiming } from "./projection-timing.ts";
@@ -81,7 +76,11 @@ export class SessionProjector {
         consume(record: KafkaAcceptedFactRecord, current?: () => boolean): Promise<void>;
         close?(): Promise<void>;
       };
-      subagentCommands?: {
+      nativeChanges?: {
+        consume(record: KafkaAcceptedFactRecord, current?: () => boolean): Promise<void>;
+        close?(): Promise<void>;
+      };
+      controlTools?: {
         consume(record: KafkaAcceptedFactRecord, current?: () => boolean): Promise<void>;
         close?(): Promise<void>;
       };
@@ -89,21 +88,35 @@ export class SessionProjector {
   ) {
     const topic = options.topic ?? ACCEPTED_FACT_TOPIC;
     this.#topic = new ExecutionLogTopic(options);
-    this.publication = new SessionPublicationIngress(options.capacity, 65_536, options.metrics);
-    this.#publicationControl = new PostgresPublicationControl(
-      options.database,
-      this.publication,
-      async (fact) => {
+    this.publication = new SessionPublicationIngress(options.capacity, options.metrics);
+    this.#publicationControl = new PostgresPublicationControl({
+      database: options.database,
+      current: (owner) =>
+        this.publication.ownership(owner.partition) === owner &&
+        this.#consumer.ownsPartition(owner.partition),
+      beforeSeal: async (fact) => {
         const partition = this.publicationPartition(fact.scope.piSessionId);
-        // Revoke routing admission before the final seal. Accepted Cube processes
-        // are not stopped by sealing. Normal cancellation co-commits its Tool
-        // interruption with native Durable abort settlement (ADR-0229); late
-        // physical replies cannot replace that settled native result.
         await options.toolCommands.consume({ topic, partition, offset: 0n, fact }, () =>
           this.#consumer.ownsPartition(partition),
         );
       },
-    );
+      writer: (owner, fact, authorize) => {
+        const current = () =>
+          this.publication.ownership(owner.partition) === owner &&
+          this.#consumer.ownsPartition(owner.partition);
+        return new KafkaSessionWriter({
+          brokers: options.brokers,
+          clientId: `${options.clientId}-seal`,
+          topic,
+          partition: owner.partition,
+          tenantId: fact.scope.tenantId,
+          sessionId: fact.scope.piSessionId,
+          current,
+          authorize,
+          transaction: this.#consumer.publicationTransaction(owner.partition, current),
+        });
+      },
+    });
     this.#publicationClient = new HttpPublicationClient({
       baseUrl: options.advertisedBaseUrl,
       token: options.publicationToken,
@@ -208,19 +221,19 @@ export class SessionProjector {
             if (open) options.executionProbes?.consume(fact, current);
             return;
           }
+          // Normal work completion also retires this idle owner. Publish routing
+          // revocation before opening the PG boundary to a successor writer.
+          if (fact.kind === "work_finished") await options.toolCommands.consume(record, current);
           const projected = await timing.measure("projection", () =>
             this.#projection.project(record, current ?? (() => true)),
           );
           if (current?.() === false) return;
-          if (fact.kind === "execution_seal") {
-            const owner = this.publication.ownership(record.partition);
-            if (owner) this.publication.confirmSealed(owner, fact);
-          }
           if (fact.kind === "durable_commit")
             for (const cancellation of fact.cancellations)
               await options.toolCommands.consume({ ...record, fact: cancellation }, current);
           const applicable =
             fact.kind === "execution_seal" ||
+            fact.kind === "work_finished" ||
             (await timing.measure("boundary", () => this.#projection.accepts(record)));
           if (current?.() === false) return;
           if (projected?.terminal) this.eventStore.accept(fact.scope.tenantId, projected.terminal);
@@ -235,6 +248,9 @@ export class SessionProjector {
                 fact.scope.sessionId,
                 projected.canonicalThroughSequence,
               );
+            // Repeatable control references are already durable in the native
+            // projection. Admit them before committing any non-replayable effect.
+            await options.controlTools?.consume(record, current);
             const commands = toolCommandsForFact(fact);
             if (commands.length) {
               if (
@@ -245,14 +261,14 @@ export class SessionProjector {
                   await timing.measure("tool_route", () =>
                     options.toolCommands.consume({ ...record, fact: command }, current),
                   );
-            } else if (fact.kind !== "execution_seal") {
+            } else if (fact.kind !== "execution_seal" && fact.kind !== "work_finished") {
               await timing.measure("tool_route", () =>
                 options.toolCommands.consume(record, current),
               );
             }
-            if (options.subagentCommands)
+            if (options.nativeChanges)
               await timing.measure("subagent_route", () =>
-                options.subagentCommands!.consume(record, current),
+                options.nativeChanges!.consume(record, current),
               );
           }
           if (current?.() !== false)
@@ -312,25 +328,11 @@ export class SessionProjector {
   publicationPartition(sessionId: string): number {
     return kafkaProducerLane(sessionId, this.options.partitions);
   }
-  async openPublication(permit: ExecutionPublication): Promise<void> {
-    const partition = this.publicationPartition(permit.scope.piSessionId);
-    const owner = this.publication.ownership(partition);
-    if (!owner || !this.#consumer.ownsPartition(partition))
-      throw new PublicationIngressRejected("not_owner");
-    await this.#publicationControl.open(owner, permit);
-  }
-  appendPublication(fact: Exclude<AcceptedFact, AcceptedExecutionSealFact>) {
-    const partition = this.publicationPartition(fact.scope.piSessionId);
-    const owner = this.publication.ownership(partition);
-    if (!owner || !this.#consumer.ownsPartition(partition))
-      throw new PublicationIngressRejected("not_owner");
-    return this.publication.append(owner, fact);
-  }
   async publishSeal(fact: AcceptedExecutionSealFact) {
     const partition = this.publicationPartition(fact.scope.piSessionId);
     const owner = this.publication.ownership(partition);
     if (!owner || !this.#consumer.ownsPartition(partition))
-      return this.#publicationClient.append(fact);
+      return this.#publicationClient.publishSeal(fact);
     return this.#publicationControl.seal(owner, fact);
   }
   async acceptSeal(fact: AcceptedExecutionSealFact) {
@@ -450,10 +452,12 @@ export class SessionProjector {
     for (const close of [
       () => this.#relay.close(),
       () => this.#publicationClient.close(),
+      () => this.#publicationControl.close(),
       () => this.publication.close(),
       () => this.#consumer.close(),
       () => this.options.toolCommands.close?.(),
-      () => this.options.subagentCommands?.close?.(),
+      () => this.options.nativeChanges?.close?.(),
+      () => this.options.controlTools?.close?.(),
       () => this.#retention.close(),
       () => this.eventStore.close(),
       () => this.#topic.close(),

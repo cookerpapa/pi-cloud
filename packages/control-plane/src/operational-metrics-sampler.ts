@@ -89,12 +89,7 @@ export class OperationalMetricsSampler {
       this.#metrics.terminalEventOutboxPending.set(
         count(snapshot.outbox.find((row) => row.kind === "terminal")?.count ?? "0"),
       );
-      for (const entity of [
-        "sandbox_binding",
-        "input_queue",
-        "subagent_state",
-        "subagent_command",
-      ]) {
+      for (const entity of ["sandbox_binding", "input_queue", "subagent_state"]) {
         const row = snapshot.outbox.find((row) => row.kind === entity);
         this.#metrics.controlOutboxPending.set({ entity }, count(row?.count ?? "0"));
         this.#metrics.controlOutboxOldestAge.set({ entity }, Number(row?.age ?? 0));

@@ -155,7 +155,7 @@ it("forwards a guest probe from the same memory view without a binding SELECT", 
       { ...f.second, ...f.sibling, revision: "2" },
     ]),
     readChange: vi.fn(async () => undefined),
-    closeScope: async () => {},
+    closeWriter: async () => {},
     isAlive: async () => true,
   };
   const routes = new SandboxBindingView({ source, partitionCount: 2, partitionFor: () => 0 });

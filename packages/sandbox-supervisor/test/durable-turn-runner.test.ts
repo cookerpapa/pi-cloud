@@ -124,7 +124,7 @@ it.each(["complete", "stop_on_resume"] as const)(
       createAgentTools: ({ stepWorldState, captureSamplingStep }) => ({
         tools: [],
         systemPrompt: async (base) => base,
-        executeWorkflow: async () => {
+        prepareWorkflow: async () => {
           throw new Error("No workflow expected");
         },
         transformHeaders: async (headers) => headers ?? {},

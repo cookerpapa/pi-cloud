@@ -24,6 +24,7 @@ import { ExecutionPathProbes } from "./execution-path-probes.ts";
 import { executionTargetId } from "./sandbox-execution.ts";
 import { RUNTIME_EXECUTION_EVIDENCE_PATH } from "@pi-cloud/protocol";
 import { fetch as internalFetch } from "undici";
+import { SandboxControlClient } from "./sandbox-control-client.ts";
 
 /** A control-plane module. It has no standalone process, database pool or Run lease. */
 export async function createSandboxControl(options: {
@@ -162,10 +163,10 @@ export async function createSandboxControl(options: {
           reply.kind === "tool_result"
             ? {
                 ...reply,
-                event: await encodeSessionImages(
+                result: await encodeSessionImages(
                   options.images?.codec,
                   { tenantId: scope.tenantId, runId: scope.runId },
-                  reply.event,
+                  reply.result,
                 ),
               }
             : reply,
@@ -178,7 +179,7 @@ export async function createSandboxControl(options: {
     const receive = async (delivery: import("./tool-command-dispatcher.ts").ToolLogDelivery) => {
       ownership.assertLocalOwnership();
       const record = { ...delivery, offset: BigInt(delivery.offset) };
-      if (delivery.fact.kind === "execution_seal") {
+      if (delivery.fact.kind === "execution_seal" || delivery.fact.kind === "binding_close") {
         workflows.consume(record); // Close admission before joining existing hostcalls.
         await controller.stopWorkflowScope(delivery.fact);
       } else workflows.receive(record);
@@ -286,6 +287,25 @@ export async function createSandboxControl(options: {
     return {
       controller,
       dispatcher,
+      publishReply: (topic: string, reply: import("@pi-cloud/event-log").ToolReply) =>
+        replies.publish(topic, reply),
+      refreshToolServices: async (
+        scope: import("@pi-cloud/protocol").AcceptedToolCommand["scope"],
+        bindingId: string,
+      ) => {
+        const route = (await bindingView.find(scope)).find((r) => r.bindingId === bindingId);
+        if (!route || route.dispatchClosed) throw new Error("Preview Tool binding is unavailable");
+        if (route.instanceId === instanceId) {
+          await controller.refreshServices(bindingId, route.snapshot.assignment);
+        } else {
+          const remote = new SandboxControlClient({
+            baseUrl: route.baseUrl,
+            serviceToken: config.serviceToken,
+            allowInsecureHttp: true,
+          });
+          await remote.refreshServices(bindingId, route.snapshot.assignment);
+        }
+      },
       probes,
       bindingView,
       consumeBindingChange: async (

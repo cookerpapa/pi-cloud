@@ -1,11 +1,12 @@
 # Documentation map
 
-The [direct Worker publication proposal](adr/0246-worker-direct-kafka-publication-proposal.md)
-maps the native Kafka candidate to Worker ownership, normal Run seals, failed
-Session writer closure, control changes, recovery, readiness and deployment.
-It is a plan for discussion, not an approved migration or a deployed topology.
-The existing ingress remains active; the proposal identifies the fault gates
-that must pass before a decision to cut over.
+The [Session execution and Tool-dispatch plan](adr/0247-session-work-and-tool-dispatch.md)
+consolidates the October 13 discussion: root cloud work, native child Conversations
+without child Run claims, same-commit Tool dispatch, shared Kafka replies,
+Session writer closure and direct Worker publication. It replaces the unimplemented
+ADR-0246 draft; the old draft remains in Git. The source migration is under full
+acceptance. [Implementation evidence](reports/session-work-implementation-20261013.md)
+tracks the matching rollout separately; the serving release still uses schema 187.
 
 The [native Kafka fencing study](reports/kafka-native-fencing-20261013.md) compares
 direct Session producers with the current ingress. Isolated RF3/PG probes reproduce

@@ -19,13 +19,14 @@ export class InMemorySandboxBindings implements SandboxBindings {
       throw new Error("Binding routing admission is still open");
     this.rows.delete(bindingId);
   }
-  async find(...[scope, wholeWriter]: Parameters<SandboxBindings["find"]>) {
+  async find(...[scope]: Parameters<SandboxBindings["find"]>) {
     return [...this.rows.values()].filter((row) => {
       const assignment = row.snapshot.assignment;
       const id = parseExecutionReference(assignment.executionReference);
       return (
         assignment.tenantId === scope.tenantId &&
-        (wholeWriter ? id.leaseId === scope.writerId : id.runId === scope.runId)
+        id.leaseId === scope.writerId &&
+        id.runId === scope.runId
       );
     });
   }
@@ -34,11 +35,18 @@ export class InMemorySandboxBindings implements SandboxBindings {
       .filter((row) => row.snapshot.physicalActivationId === physicalActivationId)
       .map((row) => ({ ...row, closed: row.dispatchClosed }));
   }
-  async closeScope(...args: Parameters<SandboxBindings["closeScope"]>) {
-    for (const row of await this.find(args[0], args[1])) {
+  async closeWriter(...args: Parameters<SandboxBindings["closeWriter"]>) {
+    for (const row of await this.find(args[0])) {
       this.rows.set(row.bindingId, { ...row, dispatchClosed: true });
       await this.onClose?.(row);
     }
+  }
+  async closeBinding(...[id, assignment]: Parameters<SandboxBindings["closeBinding"]>) {
+    const row = this.rows.get(id);
+    if (!row || row.snapshot.assignment.executionReference !== assignment.executionReference)
+      return;
+    this.rows.set(id, { ...row, dispatchClosed: true });
+    await this.onClose?.(row);
   }
   commitPhysicalClosure(physicalActivationId: string): void {
     for (const row of this.rows.values())

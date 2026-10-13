@@ -9,6 +9,9 @@ import {
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
 import type { SessionEventHub } from "./session-event-hub.ts";
 
+const observationKey = (scope: RuntimeObservationScope) =>
+  `${scope.writerId}:${scope.runId}:${scope.sessionId}`;
+
 type Active = {
   scope: RuntimeObservationScope;
   partition: number;
@@ -38,15 +41,19 @@ export class RunObservations {
   record(record: KafkaAcceptedFactRecord, open: boolean): void {
     const { fact, partition, offset } = record;
     const { scope } = fact;
-    if (fact.kind === "execution_seal" && fact.closesWriter) {
+    if (fact.kind === "execution_seal" || fact.kind === "work_finished") {
       for (const id of [...(this.#families.get(scope.writerId) ?? [])]) this.#remove(id);
       return;
     }
-    if (!open) {
-      this.#remove(scope.runId);
+    if (
+      !open ||
+      (fact.kind === "agent_event" &&
+        ["turn.completed", "turn.failed", "turn.cancelled"].includes(fact.event.type))
+    ) {
+      this.#remove(observationKey(scope));
       return;
     }
-    let active = this.#runs.get(scope.runId);
+    let active = this.#runs.get(observationKey(scope));
     if (!active && fact.kind !== "path_probe") {
       // Tool command scopes contain leaseId in addition to the common identity.
       const { tenantId, sessionId, turnId, runId, writerId, fencingToken, piSessionId } = scope;
@@ -59,10 +66,10 @@ export class RunObservations {
         touched: this.clock(),
         executionRevision: 0,
       };
-      this.#runs.set(scope.runId, active);
+      this.#runs.set(observationKey(scope), active);
       let family = this.#families.get(scope.writerId);
       if (!family) this.#families.set(scope.writerId, (family = new Set()));
-      family.add(scope.runId);
+      family.add(observationKey(scope));
       if (this.#runs.size > 65_536) this.#remove(this.#runs.keys().next().value!);
     }
     if (!active) return;
@@ -85,7 +92,7 @@ export class RunObservations {
         type: "run.path",
         sessionId: target.scope.sessionId,
         turnId: target.scope.turnId,
-        runId,
+        runId: target.scope.runId,
         sentAt,
         observedAt: now,
       });
@@ -93,7 +100,7 @@ export class RunObservations {
   }
 
   activity(delivery: RunActivityDelivery): void {
-    const active = this.#runs.get(delivery.scope.runId),
+    const active = this.#runs.get(observationKey(delivery.scope)),
       now = this.clock();
     if (
       !active ||
@@ -121,7 +128,7 @@ export class RunObservations {
   }
 
   isActive(scope: RuntimeObservationScope, partition?: number): boolean {
-    const active = this.#runs.get(scope.runId);
+    const active = this.#runs.get(observationKey(scope));
     return (
       !!active &&
       (partition === undefined || active.partition === partition) &&
@@ -131,9 +138,7 @@ export class RunObservations {
   executionTargets(writerId: string, bindings: readonly ProbeBinding[], sentAt: number): void {
     for (const runId of this.#families.get(writerId) ?? []) {
       const active = this.#runs.get(runId)!;
-      const binding = bindings.find(
-        (b) => b.scope.runId === runId && isDeepStrictEqual(b.scope, active.scope),
-      );
+      const binding = bindings.find((b) => isDeepStrictEqual(b.scope, active.scope));
       if (!binding)
         this.execution(active.scope, { status: "not_applicable", stage: "projector", sentAt });
       else if (binding.probe || active.execution?.bindingId !== binding.bindingId)
@@ -146,7 +151,7 @@ export class RunObservations {
     }
   }
   execution(scope: RuntimeObservationScope, value: ExecutionPathStatus): void {
-    const active = this.#runs.get(scope.runId),
+    const active = this.#runs.get(observationKey(scope)),
       now = this.clock();
     if (!active || !isDeepStrictEqual(active.scope, scope) || !this.#fresh(value.sentAt, now))
       return;

@@ -29,8 +29,11 @@ export type ToolLogDelivery = Readonly<{
 export function toolDeliveryFact(fact: ToolLogFact): ToolLogFact | undefined {
   if (fact.kind === "tool_command") return fact;
   if (fact.kind === "tool_cancel") return fact;
-  if (fact.kind === "execution_seal")
-    return { kind: fact.kind, scope: fact.scope, closesWriter: fact.closesWriter === true };
+  if (fact.kind === "execution_seal" || fact.kind === "work_finished")
+    return {
+      kind: "execution_seal",
+      scope: fact.scope,
+    };
   return undefined;
 }
 
@@ -69,14 +72,13 @@ export class ToolCommandDispatcher {
     const seal = fact.kind === "execution_seal";
     if (seal) {
       const terminal = (record.fact as { terminal?: { type: string } }).terminal;
-      await this.options.routes.closeScope(
+      await this.options.routes.closeWriter(
         fact.scope,
-        fact.closesWriter === true,
-        fact.closesWriter === true || terminal?.type !== "turn.completed",
+        record.fact.kind === "execution_seal" || terminal?.type !== "turn.completed",
       );
       return;
     }
-    const routes = await this.options.routes.find(fact.scope, false);
+    const routes = await this.options.routes.find(fact.scope);
     if (current?.() === false) return;
     const source = {
       topic: record.topic,
@@ -91,7 +93,7 @@ export class ToolCommandDispatcher {
           route.descriptor.target,
           {
             source,
-            runId: cancel.scope.runId,
+            executionScopeId: route.bindingId,
             writerId: cancel.scope.writerId,
             operationId: cancel.request.operationId,
           },
@@ -129,7 +131,7 @@ export class ToolCommandDispatcher {
         await this.options.cube.submitTool(route.descriptor.target, {
           source,
           operationId: command.request.operationId,
-          runId: command.scope.runId,
+          executionScopeId: route.bindingId,
           writerId: command.scope.writerId,
           payload: {
             mode: "operation",
@@ -200,7 +202,7 @@ export class ToolCommandDispatcher {
   ): Promise<void> {
     if (!change.closed || !change.cancelTarget || !current()) return;
     const { writerId, ...target } = change.cancelTarget;
-    await this.#cancel(target, { source, runId: change.runId, writerId }, current);
+    await this.#cancel(target, { source, executionScopeId: change.entityId, writerId }, current);
   }
   async #cancel(
     target: SandboxExecutionTarget,
@@ -222,7 +224,7 @@ export class ToolCommandDispatcher {
       level: "warn",
       event: "tool.cancellation.unconfirmed",
       attributes: {
-        runId: request.runId,
+        bindingId: request.executionScopeId,
         ...(request.operationId ? { operationId: request.operationId } : {}),
       },
     });
@@ -241,13 +243,13 @@ export class ToolCommandDispatcher {
         ...source,
         instanceId: route.instanceId,
         fact: {
-          kind: "execution_seal",
+          kind: "binding_close",
+          bindingId: route.bindingId,
           scope: {
             tenantId: change.scope.tenantId,
             runId: change.runId,
             writerId: parseExecutionReference(route.snapshot.assignment.executionReference).leaseId,
           },
-          closesWriter: false,
         },
       });
     } catch {

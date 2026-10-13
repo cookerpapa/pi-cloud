@@ -304,7 +304,7 @@ export async function readCanonicalPiTurnTranscripts(
       select r.* from pi_durable_records r
       where r.tenant_id=${input.tenantId}::uuid and r.fields->>'turn'=any(${turnIds}::text[])
         and (r.kind='entry' or r.kind='submission' or (r.kind='task' and r.fields->>'nativeKind'=any(${["pi.generation", "pi.tool", "pi.compaction"].map((value) => JSON.stringify(value))}::text[])))
-        and exists(select 1 from runs t join sessions s on s.tenant_id=t.tenant_id and s.id=t.session_id
+        and exists(select 1 from conversation_turns t join sessions s on s.tenant_id=t.tenant_id and s.id=t.session_id
           where t.tenant_id=r.tenant_id and t.turn_id::text=r.fields->>'turn' and s.pi_session_id=r.session_id)
     ), history as (
       select r.id,r.session_id as pi_session_id,r.seq,r.ordinal,r.fields,l.body,c.committed_at,task.fields->>'nativeKind' as task_kind
@@ -385,7 +385,7 @@ export async function readCanonicalPiTurnTranscripts(
     .where("turn_id", "in", turnIds)
     .execute();
   const activeRows = await database
-    .selectFrom("runs")
+    .selectFrom("conversation_turns")
     .select(["turn_id", "output_display_seq", "output_display_native_seq"])
     .where("tenant_id", "=", input.tenantId)
     .where("turn_id", "in", turnIds)
@@ -460,4 +460,16 @@ export async function readCanonicalPiTurnTranscripts(
     }
   }
   return result;
+}
+/** Child prompts remain in the original native intent. Decode opaque JSON in JS,
+ * where escaped NUL and unpaired surrogates are legal, never by PG jsonb casts. */
+export function conversationPrompt(text: string | null, source: string | null): string | null {
+  if (source === null) return text;
+  const write = JSON.parse(source);
+  const args =
+    write.type === "task"
+      ? write.value?.state?.checkpoint?.arguments
+      : write.content?.value?.arguments;
+  if (typeof args?.task !== "string") throw new Error("Native child prompt source is invalid");
+  return args.task;
 }

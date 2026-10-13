@@ -1,4 +1,4 @@
-import { databaseTime, retryTransaction, type Database } from "@pi-cloud/database";
+import { databaseTime, type Database } from "@pi-cloud/database";
 import {
   transitionTurnControlRequest,
   transitionSession,
@@ -289,7 +289,8 @@ export class RunCancellationExecutor {
       return this.#recordFailure(claim, started, normalizeFailure(error), acknowledgement);
     }
 
-    await this.#complete(claim, acknowledgement, result);
+    // The Worker's ordered work_finished record settles the Run and request.
+    // Keep the request acknowledged until projection (or recovery) observes it.
     return {
       status: "cancelled",
       controlRequestId: claim.request.controlRequestId,
@@ -577,123 +578,6 @@ export class RunCancellationExecutor {
         .where("state", "=", rows.sessionState)
         .executeTakeFirst();
       expectOne(sessionUpdate.numUpdatedRows, "cancelling a session");
-    });
-  }
-
-  async #complete(
-    claim: ClaimedCancellation,
-    acknowledgement: TurnExecutionReference,
-    result: TurnCancellationResult,
-  ): Promise<void> {
-    const terminalEventId = this.#idGenerator();
-    const terminalBody = {
-      type: "turn.cancelled",
-      payload: { reason: result.reason, forced: result.forced },
-    } as const;
-
-    // The Agent interruption settled; a Tool may still be UNKNOWN. Retry only
-    // certified SQL aborts here, never model/Tool execution.
-    await retryTransaction(this.#database, async (transaction) => {
-      const rows = await this.#lockLifecycleRows(transaction, claim);
-      const now = await databaseTime(transaction);
-      if (
-        rows.cancellationTurnControlRequestState !== "acknowledged" ||
-        rows.runState !== "cancel_requested" ||
-        rows.sessionState !== "cancelling" ||
-        rows.runState !== "cancel_requested"
-      ) {
-        throw new RunCancellationExecutorInvariantError(
-          "Only an acknowledged cancellation can settle a turn",
-        );
-      }
-
-      await this.#executionAuthority.assertCurrent(
-        transaction,
-        claim.request.target,
-        acknowledgement,
-      );
-      if (result.lastEventSeq !== undefined) {
-        const boundary = await transaction
-          .updateTable("runs")
-          .set({ last_event_seq: result.lastEventSeq, updated_at: now })
-          .where("tenant_id", "=", claim.request.target.tenantId)
-          .where("id", "=", claim.request.target.runId)
-          .where("last_event_seq", "<=", String(result.lastEventSeq))
-          .executeTakeFirst();
-        if (boundary.numUpdatedRows !== 1n) {
-          const existing = await transaction
-            .selectFrom("runs")
-            .select("last_event_seq")
-            .where("tenant_id", "=", claim.request.target.tenantId)
-            .where("id", "=", claim.request.target.runId)
-            .executeTakeFirst();
-          if (existing === undefined || Number(existing.last_event_seq) < result.lastEventSeq) {
-            throw new RunCancellationExecutorInvariantError(
-              "Cancelled Run event boundary could not be advanced or confirmed",
-            );
-          }
-        }
-      }
-      await transitionCurrentRun(
-        transaction,
-        {
-          tenantId: claim.request.target.tenantId,
-          runId: claim.request.target.runId,
-        },
-        {
-          runState: "cancelled",
-          reason: "cancellation_confirmed",
-          now,
-          stopReason: "cancelled",
-        },
-      );
-
-      const cancellationUpdate = await transaction
-        .updateTable("turn_control_requests")
-        .set({
-          state: transitionTurnControlRequest(
-            rows.cancellationTurnControlRequestState,
-            "completed",
-          ),
-          completed_at: now,
-          failure_code: null,
-        })
-        .where("tenant_id", "=", claim.request.target.tenantId)
-        .where("id", "=", claim.request.controlRequestId)
-        .where("state", "=", rows.cancellationTurnControlRequestState)
-        .executeTakeFirst();
-      expectOne(cancellationUpdate.numUpdatedRows, "completing a cancellation command");
-
-      const sessionUpdate = await transaction
-        .updateTable("sessions")
-        .set({
-          state: transitionSession(rows.sessionState, "idle"),
-          row_version: sql<string>`${sql.ref("row_version")} + 1`,
-          updated_at: now,
-          last_active_at: now,
-        })
-        .where("tenant_id", "=", claim.request.target.tenantId)
-        .where("id", "=", claim.request.target.sessionId)
-        .where("state", "=", rows.sessionState)
-        .executeTakeFirst();
-      expectOne(sessionUpdate.numUpdatedRows, "settling a cancelled session");
-      await requestExecutionStreamSeal(transaction, {
-        tenantId: claim.request.target.tenantId,
-        sessionId: claim.request.target.sessionId,
-        turnId: claim.request.target.turnId,
-        runId: claim.request.target.runId,
-        agentId: "root",
-        body: terminalBody,
-        now,
-        eventId: terminalEventId,
-      });
-
-      await this.#executionAuthority.releaseCurrent(
-        transaction,
-        claim.request.target,
-        acknowledgement,
-        now,
-      );
     });
   }
 

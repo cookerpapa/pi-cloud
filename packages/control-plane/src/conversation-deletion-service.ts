@@ -70,7 +70,7 @@ export class ConversationDeletionService {
           .select("id")
           .where("tenant_id", "=", tenantId)
           .where(sql<boolean>`child_session_id=any(${ids}::uuid[])`)
-          .where("state", "in", ["preparing", "queued", "running"])
+          .where("state", "in", ["preparing", "running"])
           .limit(1)
           .executeTakeFirst();
         if (children) throw new ConversationDeletionError("Delegated work is still active");

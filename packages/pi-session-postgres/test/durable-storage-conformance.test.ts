@@ -95,6 +95,47 @@ async function fixture(
   };
 }
 
+it("retains cloud dispatch references with the native commit and rejects changed replay metadata", async () => {
+  let saved: DurableBatch | undefined;
+  const metadata = {
+    controlTools: [
+      { operationId: randomUUID(), taskId: 4, conversationId: 1, toolName: "subagent" },
+    ],
+  };
+  const f = await fixture({
+    publish: async (batch, projection) => {
+      saved = batch;
+      await projection.apply(batch, [], undefined, metadata);
+    },
+  });
+  try {
+    await f.store.commit([{ type: "conversation", value: { id: 1 as never } }], BACKGROUND_CONTEXT);
+    const row = await sql<{ cloud_metadata: string }>`select cloud_metadata from pi_durable_commits
+      where tenant_id=${f.tenantId}::uuid and session_id=${f.sessionId} and seq=${saved!.seq}`.execute(
+      database,
+    );
+    expect(JSON.parse(row.rows[0]!.cloud_metadata)).toEqual(metadata);
+    await expect(f.projection.apply(saved!, [], undefined, metadata)).resolves.toBe(false);
+    await expect(
+      f.projection.apply(saved!, [], undefined, {
+        controlTools: [{ ...metadata.controlTools[0], operationId: randomUUID() }],
+      }),
+    ).rejects.toThrow("changed bytes");
+    await expect(f.projection.apply(saved!)).rejects.toThrow("changed bytes");
+    expect((await f.projection.head()).seq).toBe(saved!.seq);
+    await f.projection.rebuild();
+    const retained = await sql<{
+      cloud_metadata: string;
+    }>`select cloud_metadata from pi_durable_commits
+      where tenant_id=${f.tenantId}::uuid and session_id=${f.sessionId} and seq=${saved!.seq}`.execute(
+      database,
+    );
+    expect(retained.rows).toEqual(row.rows);
+  } finally {
+    await f.close();
+  }
+});
+
 for (const cold of [false, true])
   describe.sequential(
     `Pi Durable 1.0 real PG contract (${cold ? "cold indexed reads" : "acknowledged overlay"})`,

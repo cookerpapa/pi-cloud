@@ -9,18 +9,22 @@ import type { RunCancellationExecutor } from "@pi-cloud/runtime-core/run-cancell
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
 
+const notification = vi.hoisted(() => ({ send: () => {} }));
 vi.mock("pg", async () => {
   const { EventEmitter } = await import("node:events");
   return {
     Client: class extends EventEmitter {
-      async connect() {}
+      async connect() {
+        notification.send = () =>
+          this.emit("notification", { channel: "pi_cloud_run_queue", payload: "work" });
+      }
       async query() {}
       async end() {}
     },
   };
 });
 
-it("drains owned families by admitting their children, without admitting another family", async () => {
+it("drains root work without claiming queued work during shutdown", async () => {
   const emptyQuery = {
     innerJoin() {
       return this;
@@ -83,7 +87,6 @@ it("drains owned families by admitting their children, without admitting another
     notificationConnectionString: "test",
     identity: "worker",
     maximumActiveFamilies: 1,
-    maximumLanesPerFamily: 4,
     memoryHeadroom: () => true,
     pollIntervalMs: 10,
     runExecutor: executor,
@@ -94,13 +97,14 @@ it("drains owned families by admitting their children, without admitting another
     await vi.waitFor(() => expect(started).toContain(parent.runId));
     const draining = worker.stop();
     queue.push(child, foreign);
-    worker.scheduleOwnedSubagent(child.runId);
-    await vi.waitFor(() => expect(started).toContain(child.runId));
+    notification.send();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(started).not.toContain(child.runId);
     expect(started).not.toContain(foreign.runId);
     child.release();
     parent.release();
     await draining;
-    expect(queue).toEqual([foreign]);
+    expect(queue).toEqual([child, foreign]);
     expect(peak).toBeLessThanOrEqual(2);
   } finally {
     parent.release();

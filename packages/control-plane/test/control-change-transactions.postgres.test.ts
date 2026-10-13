@@ -143,47 +143,6 @@ it.skipIf(!endpoint)(
     );
   },
 );
-it.skipIf(!endpoint)(
-  "does not notify duplicate Subagent upserts, but emits actual update and deletion",
-  async () => {
-    const f = await fixture(),
-      id = randomUUID();
-    const insert = () =>
-      db.insertInto("subagent_control_commands").values({
-        id,
-        tenant_id: f.tenantId,
-        run_id: f.runId,
-        partition: 0,
-        command: { scope: { piSessionId: f.sessionId }, request: { action: "wait" } },
-        delivered_at: null,
-        input_consumed_at: null,
-      });
-    const original = await insert().returning("revision").executeTakeFirstOrThrow();
-    const refs = async () =>
-      (await f.changes()).filter((r) => r.payload.entity === "subagent_command");
-    expect(await refs()).toHaveLength(1);
-    for (let n = 0; n < 5; n++) {
-      const retry = await insert()
-        .onConflict((c) =>
-          c.column("id").doUpdateSet({ id: sql.ref("subagent_control_commands.id") }),
-        )
-        .returning("revision")
-        .executeTakeFirstOrThrow();
-      expect(retry.revision).toBe(original.revision);
-    }
-    expect(await refs()).toHaveLength(1);
-    const changed = await db
-      .updateTable("subagent_control_commands")
-      .set({ delivered_at: new Date() })
-      .where("id", "=", id)
-      .returning("revision")
-      .executeTakeFirstOrThrow();
-    expect(BigInt(changed.revision)).toBeGreaterThan(BigInt(original.revision));
-    expect(await refs()).toHaveLength(2);
-    await db.deleteFrom("subagent_control_commands").where("id", "=", id).execute();
-    expect(await refs()).toHaveLength(3);
-  },
-);
 
 it.skipIf(!endpoint)(
   "does not reuse a coalescing identity across commit, rollback or a restored reference",

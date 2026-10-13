@@ -7,7 +7,6 @@ import {
   createExecutionReference,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
-  parseExecutionReference,
 } from "@pi-cloud/protocol";
 import { createHash, randomUUID } from "node:crypto";
 import { PassThrough } from "node:stream";
@@ -473,7 +472,7 @@ describe("provider-backed Sandbox controller", () => {
     const fixture = providerFixture(),
       bindings = new InMemorySandboxBindings();
     const create = vi.spyOn(fixture.provider, "create"),
-      stop = vi.spyOn(bindings, "closeScope");
+      stop = vi.spyOn(bindings, "closeBinding");
     const first = testBroker({
       provider: fixture.provider,
       bindings,
@@ -508,13 +507,7 @@ describe("provider-backed Sandbox controller", () => {
       assignment: assignment,
       disposition: "keep_warm",
     });
-    expect(stop).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({
-        runId: parseExecutionReference(assignment.executionReference).runId,
-      }),
-      false,
-      false,
-    );
+    expect(stop).toHaveBeenCalledExactlyOnceWith(binding.activationId, assignment, false);
     expect(fixture.destroyed).toBe(false);
     await second.close();
   });
@@ -619,9 +612,7 @@ describe("provider-backed Sandbox controller", () => {
     const childAssignment = (suffix: string): ToolSandboxAssignment => ({
       ...assignment,
       sessionId: suffix,
-      runId: suffix,
       turnId: suffix,
-      executionReference: createExecutionReference(crypto.randomUUID(), crypto.randomUUID(), 5),
     });
     const child = childAssignment("child"),
       descendant = childAssignment("descendant");
@@ -629,12 +620,14 @@ describe("provider-backed Sandbox controller", () => {
       const root = await manager.create(createRequest);
       const one = await manager.create({
         ...createRequest,
+        requestId: crypto.randomUUID(),
         assignment: child,
         computeSessionId: scope,
         toolRoot: "/workspace/worktrees/a",
       });
       const two = await manager.create({
         ...createRequest,
+        requestId: crypto.randomUUID(),
         assignment: descendant,
         computeSessionId: scope,
         toolRoot: "/workspace/worktrees/b",
@@ -870,7 +863,7 @@ describe("provider-backed Sandbox controller", () => {
     });
 
     await expect(manager.create(createRequest)).resolves.toMatchObject({
-      activationId: ACTIVATION_ID,
+      activationId: createRequest.requestId,
     });
     expect(retired).not.toHaveBeenCalled();
     expect(orphaned).not.toHaveBeenCalled();
@@ -880,7 +873,7 @@ describe("provider-backed Sandbox controller", () => {
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.release",
       requestId: crypto.randomUUID(),
-      activationId: ACTIVATION_ID,
+      activationId: createRequest.requestId,
       assignment: assignment,
       disposition: "keep_warm",
     });
@@ -920,18 +913,18 @@ describe("provider-backed Sandbox controller", () => {
         return result;
       });
 
-    await expect(firstReservation).resolves.toMatchObject({ activationId: ACTIVATION_ID });
+    await expect(firstReservation).resolves.toMatchObject({
+      activationId: createRequest.requestId,
+    });
     await new Promise<void>((resolvePromise) => setImmediate(resolvePromise));
     expect(secondResolved).toBe(true);
     const second = await secondReservation;
-    expect(second.activationId).toBe(
-      parseExecutionReference(siblingAssignment.executionReference).runId,
-    );
+    expect(second.activationId).toBe("20000000-0000-4000-8000-000000000024");
     await manager.release({
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.release",
       requestId: crypto.randomUUID(),
-      activationId: ACTIVATION_ID,
+      activationId: createRequest.requestId,
       assignment: assignment,
       disposition: "keep_warm",
     });
@@ -973,7 +966,7 @@ describe("provider-backed Sandbox controller", () => {
       ...createRequest,
       executionMode: "development_environment",
     });
-    expect(agent.activationId).toBe(ACTIVATION_ID);
+    expect(agent.activationId).toBe(createRequest.requestId);
     expect(agent).toMatchObject({
       continuity: "warm_reuse",
       continuityId: "66666666-6666-4666-8666-666666666666",
@@ -1099,7 +1092,7 @@ describe("provider-backed Sandbox controller", () => {
     await manager.close();
   });
 
-  it("gives concurrent parent and Child Runs independent bindings to one development KVM", async () => {
+  it("gives parent and child Conversations of one Run independent bindings to one development KVM", async () => {
     const fixture = providerFixture();
     const manager = testBroker({
       provider: fixture.provider,
@@ -1126,13 +1119,7 @@ describe("provider-backed Sandbox controller", () => {
     const childAssignment: ToolSandboxAssignment = {
       ...assignment,
       sessionId: "session-provider-test-child",
-      runId: "command-provider-test-child",
       turnId: "turn-provider-test-child",
-      executionReference: createExecutionReference(
-        "21600000-0000-4000-8000-000000000002",
-        "21600000-0000-4000-8000-000000000003",
-        1,
-      ),
     };
     const [parent, child] = await Promise.all([
       parentPending,
@@ -1143,10 +1130,8 @@ describe("provider-backed Sandbox controller", () => {
         executionMode: "development_environment",
       }),
     ]);
-    expect(parent.activationId).toBe(ACTIVATION_ID);
-    expect(child.activationId).toBe(
-      parseExecutionReference(childAssignment.executionReference).runId,
-    );
+    expect(parent.activationId).toBe(createRequest.requestId);
+    expect(child.activationId).toBe("21600000-0000-4000-8000-000000000004");
     expect(child.continuityId).toBe(parent.continuityId);
     expect(fixture.listDirectory).not.toHaveBeenCalled();
     await manager.release({
@@ -1299,7 +1284,7 @@ describe("provider-backed Sandbox controller", () => {
     });
     expect(returnMachine).toHaveBeenCalledWith(
       ACTIVATION_ID,
-      binding.activationId,
+      ACTIVATION_ID,
       "unknown",
       expect.objectContaining({
         handle: expect.objectContaining({ runtimeId: "66666666-6666-4666-8666-666666666666" }),
@@ -1347,7 +1332,7 @@ describe("provider-backed Sandbox controller", () => {
 
     await manager.close();
 
-    expect(borrowed.activationId).toBe(ACTIVATION_ID);
+    expect(borrowed.activationId).toBe(createRequest.requestId);
     expect(fixture.pause).not.toHaveBeenCalled();
     expect(fixture.detachPersistent).toHaveBeenCalledOnce();
     expect(fixture.destroyed).toBe(false);
@@ -1392,7 +1377,7 @@ describe("provider-backed Sandbox controller", () => {
       toolRoot: "/missing",
       executionMode: "development_environment",
     });
-    expect(binding.activationId).toBe(ACTIVATION_ID);
+    expect(binding.activationId).toBe(createRequest.requestId);
     expect(fixture.listDirectory).not.toHaveBeenCalled();
     expect(fixture.destroyed).toBe(false);
     await manager.release({
@@ -1440,7 +1425,7 @@ describe("provider-backed Sandbox controller", () => {
     expect(fixture.terminalInput).toHaveBeenCalledWith(Buffer.from("pwd\r"));
     expect(fixture.terminalResize).toHaveBeenCalledWith({ rows: 40, cols: 120 });
     const agent = await manager.create(createRequest);
-    expect(agent.activationId).toBe(ACTIVATION_ID);
+    expect(agent.activationId).toBe(createRequest.requestId);
     await manager.release({
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.release",
@@ -1683,7 +1668,7 @@ describe("provider-backed Sandbox controller", () => {
       idGenerator: () => ACTIVATION_ID,
     });
     await manager.create({ ...createRequest, allowedTools: ["read"] });
-    expect(bindings.rows.get(ACTIVATION_ID)?.snapshot.allowedTools).toEqual(["read"]);
+    expect(bindings.rows.get(createRequest.requestId)?.snapshot.allowedTools).toEqual(["read"]);
     expect("execute" in manager).toBe(false);
     await manager.close();
   });
@@ -1880,24 +1865,34 @@ describe("provider-backed Sandbox controller", () => {
       });
       const parent = task(crypto.randomUUID()),
         child = task(crypto.randomUUID());
-      const a = await manager.create({ ...createRequest, assignment: parent });
-      const b = await manager.create({ ...createRequest, assignment: child });
+      const a = await manager.create({
+        ...createRequest,
+        requestId: crypto.randomUUID(),
+        assignment: parent,
+      });
+      const b = await manager.create({
+        ...createRequest,
+        requestId: crypto.randomUUID(),
+        assignment: child,
+      });
       expect(a.activationId).not.toBe(initial.activationId);
       expect(b.activationId).not.toBe(initial.activationId);
       expect(manager.reservedCount).toBe(2);
       vi.spyOn(repository, "claimUnboundWorkspaceRuntimes").mockResolvedValueOnce([
-        { activationId: initial.activationId, assignment },
+        { activationId: ACTIVATION_ID, assignment },
       ]);
       await vi.advanceTimersByTimeAsync(30_000);
       expect(manager.reservedCount).toBe(0);
       expect(manager.admittedCount).toBe(0);
       expect(manager.ownsToolBinding(a.activationId)).toBe(false);
       expect(manager.ownsToolBinding(b.activationId)).toBe(false);
+      const nextRequestId = crypto.randomUUID();
       const next = await manager.create({
         ...createRequest,
+        requestId: nextRequestId,
         assignment: task(crypto.randomUUID()),
       });
-      expect(next.activationId).toBe(SECOND_ACTIVATION_ID);
+      expect(next.activationId).toBe(nextRequestId);
       expect(next.continuity).toBe("cold_restore");
     } finally {
       await manager.close();
@@ -2036,9 +2031,7 @@ describe("provider-backed Sandbox controller", () => {
     });
 
     expect(stateRepository.released).not.toContain(first.activationId);
-    expect(second.activationId).toBe(
-      parseExecutionReference(nextAssignment.executionReference).runId,
-    );
+    expect(second.activationId).toBe("73500000-0000-4000-8000-000000000004");
     expect(second.continuity).toBe("warm_reuse");
     expect(fixture.createCount).toBe(1);
     await manager.release({
@@ -2159,7 +2152,7 @@ describe("provider-backed Sandbox controller", () => {
   it("runs two Session Tool bindings through one physical Workspace runtime", async () => {
     const fixture = providerFixture(),
       bindings = new InMemorySandboxBindings();
-    const stop = vi.spyOn(bindings, "closeScope");
+    const stop = vi.spyOn(bindings, "closeBinding");
     const manager = testBroker({ provider: fixture.provider, bindings });
     const first = await manager.create(createRequest),
       next = nextBindingRequest(assignment.workspaceId);
@@ -2172,13 +2165,7 @@ describe("provider-backed Sandbox controller", () => {
       assignment: assignment,
       disposition: "keep_warm",
     });
-    expect(stop).toHaveBeenCalledWith(
-      expect.objectContaining({
-        runId: parseExecutionReference(assignment.executionReference).runId,
-      }),
-      false,
-      false,
-    );
+    expect(stop).toHaveBeenCalledWith(first.activationId, assignment, false);
     expect(stop).toHaveBeenCalledTimes(1);
     expect(bindings.rows.size).toBe(1);
     expect(fixture.destroyed).toBe(false);

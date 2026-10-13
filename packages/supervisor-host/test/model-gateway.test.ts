@@ -166,6 +166,45 @@ function createGateway(
 }
 
 describe("tenant model gateway", () => {
+  it("shares the root request budget across Conversation capabilities and independent release", async () => {
+    const upstream = vi.fn<typeof fetch>(
+      async () =>
+        new Response('data: {"type":"response.completed","response":{"id":"root"}}\n\n', {
+          headers: { "content-type": "text/event-stream" },
+        }),
+    );
+    const gateway = createGateway(upstream, 1);
+    await gateway.start();
+    const rootCommand = command("openai-codex", "gpt-6-luna");
+    const root = gateway.issue(rootCommand),
+      child = gateway.issue({
+        ...rootCommand,
+        payload: {
+          ...rootCommand.payload,
+          sessionId: crypto.randomUUID(),
+          sessionKind: "subagent",
+          piSession: { ...rootCommand.payload.piSession, conversationId: 2 },
+        },
+      });
+    const request = async (capability: string) => {
+      const response = await fetch(`http://127.0.0.1:${gateway.listeningPort}/codex/responses`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${capability}`,
+          "content-type": "application/json",
+          ...samplingHeaders(),
+        },
+        body: JSON.stringify({ model: "gpt-6-luna", stream: true, input: [] }),
+      });
+      await response.text();
+      return response.status;
+    };
+    expect(await request(root.runtime.capability)).toBe(200);
+    await root.release();
+    expect(await request(child.runtime.capability)).toBe(429);
+    expect(upstream).toHaveBeenCalledOnce();
+    await child.release();
+  });
   function partialRequest(gateway: TenantModelGateway, capability: string) {
     let request!: ClientRequest;
     const response = new Promise<{ status?: number; error?: NodeJS.ErrnoException }>((resolve) => {

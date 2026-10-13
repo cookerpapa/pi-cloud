@@ -356,25 +356,14 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
       .where("released_at", "is", null)
       .forNoKeyUpdate()
       .executeTakeFirst();
-    if (
-      lease &&
-      (lease.worker_id !== worker.id ||
-        lease.writer_failed_at !== null ||
-        lease.writer_sealed_at !== null)
-    )
+    if (lease)
       throw new SessionLeaseCoordinatorError(
         "session_lease_conflict",
         "Previous Session owner must finish closure before takeover",
         true,
       );
-    const newFamily = !lease;
-    // No new owner may start until all previous Runs have committed their seals.
-    if (newFamily && physical.unsealedRuns !== "0")
-      throw new SessionLeaseCoordinatorError(
-        "session_lease_conflict",
-        "Previous Session executions have not finished closure",
-        true,
-      );
+    // One physical Session admits one root work item. Child Conversations do
+    // not enter this cloud claim transaction at all.
     // Run's final conditional UPDATE checks clock_timestamp() after every lock;
     // an earlier SELECT timestamp would not authorize a later execution anyway.
     mark("lease_read");

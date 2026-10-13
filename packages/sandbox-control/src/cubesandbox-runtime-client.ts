@@ -49,7 +49,8 @@ export type CubeExecutionTarget = Readonly<{
 export type CubeToolHandoff = Readonly<{
   source: ExecutionLogPosition;
   operationId: string;
-  runId: string;
+  /** Cube's opaque cancellation domain; PiCloud supplies a Tool binding ID. */
+  executionScopeId: string;
   writerId: string;
   payload: unknown;
   completionContext: unknown;
@@ -131,14 +132,19 @@ export interface CubeSandboxRuntimeClient {
   probeExecution(target: CubeExecutionTarget, probeId: string): Promise<GuestProbeReply>;
   submitProbe(
     target: CubeExecutionTarget,
-    request: { probeId: string; runId: string; writerId: string; completionContext: unknown },
+    request: {
+      probeId: string;
+      executionScopeId: string;
+      writerId: string;
+      completionContext: unknown;
+    },
   ): Promise<void>;
   submitTool(target: CubeExecutionTarget, request: CubeToolHandoff): Promise<void>;
   cancelTool(
     target: CubeExecutionTarget,
     request: {
       source: ExecutionLogPosition;
-      runId: string;
+      executionScopeId: string;
       writerId: string;
       operationId?: string;
     },
@@ -856,7 +862,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         bootID: target.bootId,
         operationID: request.operationId,
         source: parseExecutionLogPosition(request.source),
-        runID: request.runId,
+        runID: request.executionScopeId,
         writerID: request.writerId,
         payload: request.payload,
         completionContext: request.completionContext,
@@ -884,7 +890,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     target: CubeExecutionTarget,
     request: {
       source: ExecutionLogPosition;
-      runId: string;
+      executionScopeId: string;
       writerId: string;
       operationId?: string;
     },
@@ -895,7 +901,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       {
         nodeID: target.nodeId,
         bootID: target.bootId,
-        runID: request.runId,
+        runID: request.executionScopeId,
         writerID: request.writerId,
         operationID: request.operationId,
         source: parseExecutionLogPosition(request.source),
@@ -920,10 +926,15 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
 
   async submitProbe(
     target: CubeExecutionTarget,
-    request: { probeId: string; runId: string; writerId: string; completionContext: unknown },
+    request: {
+      probeId: string;
+      executionScopeId: string;
+      writerId: string;
+      completionContext: unknown;
+    },
   ): Promise<void> {
     await this.#probe(target, request.probeId, {
-      runID: request.runId,
+      runID: request.executionScopeId,
       writerID: request.writerId,
       completionContext: request.completionContext,
     });

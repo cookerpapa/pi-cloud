@@ -161,6 +161,7 @@ export const SupervisorRegisteredMessageSchema = Type.Object(
   { additionalProperties: false },
 );
 
+import { ConversationWorkViewSchema } from "./conversation-work.ts";
 export const ExecuteTurnCommandMessageSchema = Type.Object(
   {
     ...WireEnvelopeProperties,
@@ -169,6 +170,7 @@ export const ExecuteTurnCommandMessageSchema = Type.Object(
       {
         ...CommandIdentityProperties,
         piSession: PiSessionConversationBindingSchema,
+        conversationWork: Type.Optional(ConversationWorkViewSchema),
         nextEventSeq: PositiveSafeIntegerSchema,
         stopOnResume: Type.Optional(Type.Literal(true)),
         agent: AgentRevisionSnapshotSchema,

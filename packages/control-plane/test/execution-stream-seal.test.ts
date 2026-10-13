@@ -15,10 +15,7 @@ import { PostgresDurableCommitProjector } from "../../runtime-core/src/postgres-
 import { SessionLiveView } from "../../runtime-core/src/session-live-view.ts";
 import { parseKafkaAcceptedFact } from "../../runtime-core/src/kafka-accepted-fact.ts";
 import { loadFactReplayOffsets } from "../../runtime-core/src/accepted-fact-recovery.ts";
-import {
-  KafkaSafeRetention,
-  acceptedFactRetentionFloors,
-} from "../../runtime-core/src/kafka-safe-retention.ts";
+import { KafkaSafeRetention } from "../../runtime-core/src/kafka-safe-retention.ts";
 import { readCanonicalPiTurnTranscripts } from "../../runtime-core/src/canonical-pi-conversation.ts";
 import type {
   AcceptedFact,
@@ -49,7 +46,7 @@ afterAll(async () => {
   await socket?.stop();
   await pg?.close();
 });
-async function fixture(drained = false) {
+async function fixture() {
   const project = await store.createProject({
     name: `seal-${crypto.randomUUID()}`,
     source: { kind: "empty" },
@@ -70,13 +67,8 @@ async function fixture(drained = false) {
   });
   const worker = await createTestWorker(db);
   const executor = worker.executor({
-    execute: async (request) => {
-      if (drained)
-        await db
-          .updateTable("runs")
-          .set({ native_output_drained: true })
-          .where("id", "=", request.runId)
-          .execute();
+    unavailablePublication: true,
+    execute: async () => {
       throw new TurnExecutionBackendError("fixture_failure", "Synthetic terminal failure", false);
     },
   });
@@ -242,54 +234,6 @@ describe.sequential("native execution closure", () => {
       terminal: { type: "turn.failed" },
     });
   });
-  it("protects and replays live data after its Run publication anchor has closed", async () => {
-    const f = await fixture(true),
-      { seed, progress } = liveFacts(f);
-    expect(f.seal.closesWriter).toBe(false);
-    const first = new ExecutionStreamProjector(db);
-    await first.project(f.record(seed, 10n));
-    await first.project(f.record(progress, 20n));
-    await first.project(f.record(f.seal, 30n));
-    expect((await acceptedFactRetentionFloors(db, "seals-test", [0])).get(0)).toBe(20n);
-    expect(
-      (await loadFactReplayOffsets(db, "seals-test", [{ partition: 0, low: 0n, high: 31n }])).get(
-        0,
-      ),
-    ).toBe(20n);
-    const truncated = await loadFactReplayOffsets(db, "seals-test", [
-      { partition: 0, low: 21n, high: 31n },
-    ]);
-    expect(truncated.get(0)).toBeInstanceOf(Error);
-    const replacement = new ExecutionStreamProjector(db);
-    // The ordinary closed-Run admission path is rejected; protected reconstruction still runs.
-    await replacement.project(f.record(progress, 20n));
-    const changed = { ...progress, commit: { ...progress.commit, nextId: 102 } };
-    await expect(replacement.project(f.record(changed, 20n))).rejects.toThrow("changed bytes");
-    expect((await acceptedFactRetentionFloors(db, "seals-test", [0])).get(0)).toBe(20n);
-    const recovered = new PostgresDurableCommitProjector(db);
-    await recovered.replay(progress, f.record(progress, 20n));
-    const adopt = await db.transaction().execute(async (tx) => {
-      await tx
-        .selectFrom("runs")
-        .select("id")
-        .where("id", "=", f.first.runId)
-        .forNoKeyUpdate()
-        .execute();
-      await tx
-        .selectFrom("session_leases")
-        .select("lease_id")
-        .where("lease_id", "=", f.seal.scope.writerId)
-        .forNoKeyUpdate()
-        .execute();
-      return recovered.checkpointLiveIn(tx, f.seal.scope, () => true);
-    });
-    adopt();
-    const pg = new DurablePostgresProjection(db, { tenantId, sessionId: f.seal.scope.piSessionId });
-    expect((await pg.revisions(100, 2))[0]?.checkpoint).toEqual({
-      generation: { attempt: 1, message: { text: "accepted live suffix" } },
-    });
-    expect((await acceptedFactRetentionFloors(db, "seals-test", [0])).get(0)).toBe(31n);
-  });
   it("covers display only after its referenced native commit and retains immutable borrowed tails", async () => {
     const f = await fixture(),
       p = new ExecutionStreamProjector(db),
@@ -318,29 +262,26 @@ describe.sequential("native execution closure", () => {
       view.close();
     }
   });
-  it.each([false, true])(
-    "rejects late native writes at the PG boundary after a seal (drained=%s)",
-    async (drained) => {
-      const f = await fixture(drained),
-        p = new ExecutionStreamProjector(db);
-      const native = f.mutation("retained interrupted text", "aborted");
-      await p.project(f.record(native, 10n));
-      await p.project(f.record(f.delta(1, "retained interrupted text"), 11n));
-      expect(await f.executor.dispatchRun(f.second.runId)).toEqual({ status: "idle" });
-      const result = await p.project(f.record(f.seal, 12n));
-      expect(result?.terminal?.seq).toBe(2);
-      const late = f.mutation("must not enter history", "stop");
-      await p.project(f.record(late, 13n));
-      await new PostgresDurableCommitProjector(db).project(late, f.record(late, 13n));
-      expect((await f.projection.head()).seq).toBe(1);
-      const transcript = (
-        await readCanonicalPiTurnTranscripts(db, { tenantId, turnIds: [f.first.turnId] })
-      ).get(f.first.turnId)!;
-      expect(transcript.items).toMatchObject([{ kind: "text", text: "retained interrupted text" }]);
-      expect(JSON.stringify(transcript)).not.toContain("must not enter");
-      expect((await f.executor.dispatchRun(f.second.runId)).status).toBe("failed");
-    },
-  );
+  it("rejects late native writes at the PG boundary after a writer seal", async () => {
+    const f = await fixture(),
+      p = new ExecutionStreamProjector(db);
+    const native = f.mutation("retained interrupted text", "aborted");
+    await p.project(f.record(native, 10n));
+    await p.project(f.record(f.delta(1, "retained interrupted text"), 11n));
+    expect(await f.executor.dispatchRun(f.second.runId)).toEqual({ status: "idle" });
+    const result = await p.project(f.record(f.seal, 12n));
+    expect(result?.terminal?.seq).toBe(2);
+    const late = f.mutation("must not enter history", "stop");
+    await p.project(f.record(late, 13n));
+    await new PostgresDurableCommitProjector(db).project(late, f.record(late, 13n));
+    expect((await f.projection.head()).seq).toBe(1);
+    const transcript = (
+      await readCanonicalPiTurnTranscripts(db, { tenantId, turnIds: [f.first.turnId] })
+    ).get(f.first.turnId)!;
+    expect(transcript.items).toMatchObject([{ kind: "text", text: "retained interrupted text" }]);
+    expect(JSON.stringify(transcript)).not.toContain("must not enter");
+    expect((await f.executor.dispatchRun(f.second.runId)).status).toBe("failed");
+  });
   it("replays a native prefix idempotently after consumer replacement", async () => {
     const f = await fixture(),
       record = f.record(f.mutation("complete native text", "aborted"), 20n),

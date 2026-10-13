@@ -422,12 +422,11 @@ try {
       'executionMode', child_session.execution_mode,
       'developmentEnvironmentId', child_session.development_environment_id,
       'workingDirectory', child_session.working_directory,
-      'childRunState', child_run.state
+      'childTaskState', execution.state
     )::text
     from subagent_executions as execution
     join sessions as child_session on child_session.id = execution.child_session_id
-    join runs as child_run on child_run.id = execution.child_run_id
-    where execution.parent_run_id = ${sqlLiteral(sharedSubagentRun.runId)}
+    where execution.root_run_id = ${sqlLiteral(sharedSubagentRun.runId)}
     order by execution.created_at desc
     limit 1
   `);
@@ -438,7 +437,7 @@ try {
     executionMode: "development_environment",
     developmentEnvironmentId: development.environmentId,
     workingDirectory: "/home/user/empty-project",
-    childRunState: "completed",
+    childTaskState: "completed",
   });
   const temporarySubagentRun = await api.acceptTurn(
     session.sessionId,
@@ -453,11 +452,11 @@ try {
   await waitForRun(temporarySubagentRun.runId);
   const temporarySubagentEvidence = JSON.parse(
     await psql(`select json_build_object(
-    'childSessionId',e.child_session_id,'state',r.state,'computeSessionId',r.compute_session_id,
+    'childSessionId',e.child_session_id,'state',e.state,'computeSessionId',r.compute_session_id,
     'workspaceId',r.workspace_id,'cwd',r.working_directory,'runtimeName',a.runtime_name
-  )::text from subagent_executions e join runs r on r.id=e.child_run_id
+  )::text from subagent_executions e join sessions r on r.id=e.child_session_id
     join workspace_runtimes a on a.tenant_id=e.tenant_id and a.workspace_id=r.workspace_id and a.compute_session_id=r.compute_session_id
-  where e.parent_run_id=${sqlLiteral(temporarySubagentRun.runId)} order by a.created_at desc limit 1`),
+  where e.root_run_id=${sqlLiteral(temporarySubagentRun.runId)} order by a.created_at desc limit 1`),
   );
   assert.equal(temporarySubagentEvidence.state, "completed");
   assert.equal(

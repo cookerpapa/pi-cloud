@@ -1,5 +1,9 @@
 import { createExecutionReference, type CandidateToolCommand } from "@pi-cloud/protocol";
-import type { AcceptedDurableCommitFact, ExecutionPublication } from "../src/accepted-fact.ts";
+import type {
+  AcceptedDurableCommitFact,
+  ExecutionPublication,
+  DurableCubeToolDispatch,
+} from "../src/accepted-fact.ts";
 import type { DurableCommitPublication } from "@pi-cloud/protocol";
 
 export function toolInvocationFixture(content = "hello") {
@@ -41,7 +45,9 @@ export function toolInvocationFixture(content = "hello") {
     },
   };
   const { leaseId: _lease, piConversationId: _conversation, ...identity } = scope;
-  const publication: DurableCommitPublication = {
+  const publication: DurableCommitPublication & {
+    tools: { taskId: number; command: CandidateToolCommand }[];
+  } = {
     commit: {
       seq: 8,
       nextId: 5,
@@ -75,7 +81,7 @@ export function toolInvocationFixture(content = "hello") {
     toolCallId: _providerId,
     ...request
   } = command.request as Extract<CandidateToolCommand["request"], { operation: "tool.execute" }>;
-  const fact: AcceptedDurableCommitFact = {
+  const fact: AcceptedDurableCommitFact & { tools: DurableCubeToolDispatch[] } = {
     kind: "durable_commit",
     factId: "20000000-0000-4000-8000-000000000009",
     scope: identity,

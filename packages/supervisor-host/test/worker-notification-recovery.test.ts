@@ -49,7 +49,6 @@ function fixture() {
     notificationConnectionString: "test",
     identity: "worker",
     maximumActiveFamilies: 1,
-    maximumLanesPerFamily: 4,
     pollIntervalMs: 10,
     runExecutor: { dispatchNext: scan } as unknown as RunExecutor,
     cancellationExecutor: {} as RunCancellationExecutor,

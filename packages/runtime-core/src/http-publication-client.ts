@@ -8,75 +8,39 @@ import {
   type SessionControlPublisher,
 } from "@pi-cloud/protocol";
 import { PublicationNotSentError } from "@pi-cloud/protocol";
-import type {
-  AcceptedFact,
-  AcceptedFactBus,
-  AcceptedFactReceipt,
-  ExecutionPublication,
-} from "./accepted-fact.ts";
+import type { AcceptedExecutionSealFact, AcceptedFactReceipt } from "./accepted-fact.ts";
 
 export const PUBLICATION_PATH = "/internal/v1/session-publication";
 
-/** A pooled private HTTP hop; a successful response is the Kafka commit ACK. */
-export class HttpPublicationClient implements AcceptedFactBus, SessionControlPublisher {
+/** Private forwarding between control partition owners. No Worker data path. */
+export class HttpPublicationClient implements SessionControlPublisher {
   readonly #dispatcher = new Agent({ connections: 16 });
   readonly #owners = new Map<string, string>();
-  readonly #scopes = new Map<string, ExecutionPublication>();
   #closed = false;
 
   constructor(readonly options: { baseUrl: string; token: string; timeoutMs?: number }) {}
-
-  async open(publication: ExecutionPublication, signal?: AbortSignal): Promise<void> {
-    await this.#request("open", publication.scope.piSessionId, publication, true, signal);
-    signal?.throwIfAborted();
-    this.#scopes.set(publication.scope.runId, structuredClone(publication));
-  }
 
   async publishControl(change: SessionControlChange): Promise<AcceptedFactReceipt> {
     return (await this.#request(
       "control",
       change.scope.piSessionId,
       change,
-      false,
     )) as AcceptedFactReceipt;
   }
 
-  async append(fact: AcceptedFact): Promise<AcceptedFactReceipt> {
-    try {
-      return (await this.#request(
-        fact.kind === "execution_seal" ? "seal" : "append",
-        fact.scope.piSessionId,
-        fact,
-        false,
-      )) as AcceptedFactReceipt;
-    } catch (error) {
-      if (error instanceof RemotePublicationNotOpen && fact.kind !== "execution_seal") {
-        const scope = this.#scopes.get(fact.scope.runId);
-        if (!scope) throw error;
-        // A new ingress owner has no soft state. Reinstall the PG grant only
-        // after it positively rejected this record before enqueueing it.
-        await this.open(scope);
-        return (await this.#request(
-          "append",
-          fact.scope.piSessionId,
-          fact,
-          false,
-        )) as AcceptedFactReceipt;
-      }
-      throw error;
-    }
+  async publishSeal(fact: AcceptedExecutionSealFact): Promise<AcceptedFactReceipt> {
+    return (await this.#request("seal", fact.scope.piSessionId, fact)) as AcceptedFactReceipt;
   }
 
   async #request(
-    action: "open" | "append" | "seal" | "control",
+    action: "seal" | "control",
     sessionId: string,
     value: unknown,
-    opening: boolean,
     signal?: AbortSignal,
   ): Promise<unknown> {
     if (this.#closed) throw new PublicationNotSentError("Publication client closed before send");
     const body = Buffer.from(JSON.stringify(value));
-    if (body.length > (opening ? 8192 : MAX_EXECUTION_FACT_BYTES))
+    if (body.length > MAX_EXECUTION_FACT_BYTES)
       throw new PublicationNotSentError("Publication exceeds the transport size limit");
     let base = this.#owners.get(sessionId) ?? this.options.baseUrl;
     const deadline = Date.now() + (this.options.timeoutMs ?? 15_000);
@@ -99,10 +63,6 @@ export class HttpPublicationClient implements AcceptedFactBus, SessionControlPub
           ]),
         });
       } catch (error) {
-        if (opening)
-          throw new PublicationNotSentError("Publication scope could not be installed", {
-            cause: error,
-          });
         throw error;
       }
       if (response.status === 307) {
@@ -126,26 +86,18 @@ export class HttpPublicationClient implements AcceptedFactBus, SessionControlPub
       if (response.ok) return payload;
       if (payload.error?.code === "publication_not_sent") {
         const reason = payload.error.reason;
-        if (
-          (reason === "not_owner" || (opening && reason === "not_open")) &&
-          Date.now() < deadline
-        ) {
+        if (reason === "not_owner" && Date.now() < deadline) {
           this.#owners.delete(sessionId);
           base = this.options.baseUrl;
           await delay(50, undefined, { signal });
           continue;
         }
-        if (reason === "not_open") throw new RemotePublicationNotOpen();
         throw new PublicationNotSentError(
           `Publication rejected before Kafka admission: ${reason ?? "unavailable"}`,
         );
       }
       throw new Error("Publication commit could not be confirmed");
     }
-  }
-
-  forget(runId: string): void {
-    this.#scopes.delete(runId);
   }
 
   async publicationAvailability(
@@ -174,14 +126,7 @@ export class HttpPublicationClient implements AcceptedFactBus, SessionControlPub
 
   async close(): Promise<void> {
     this.#closed = true;
-    this.#scopes.clear();
     this.#owners.clear();
     await this.#dispatcher.destroy();
-  }
-}
-
-class RemotePublicationNotOpen extends PublicationNotSentError {
-  constructor() {
-    super("Publication scope is not installed on this owner");
   }
 }

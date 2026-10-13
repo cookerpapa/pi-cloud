@@ -1,6 +1,6 @@
 import { resourceLimit } from "@pi-cloud/domain";
 import type { PublicationAvailability } from "@pi-cloud/protocol";
-import { HttpPublicationClient } from "@pi-cloud/runtime-core/http-publication-client";
+import { DirectSessionKafkaBus } from "@pi-cloud/runtime-core/direct-session-kafka";
 import { SubagentControlClient } from "@pi-cloud/sandbox-supervisor";
 import { RunCancellationExecutor } from "@pi-cloud/runtime-core/run-cancellation-executor";
 import type { ExecutionLogFactory } from "@pi-cloud/runtime-core/execution-log";
@@ -23,7 +23,7 @@ import {
   ReconnectingSupervisorWebSocketClient,
   type ReconnectingSupervisorWebSocketClientStop,
 } from "@pi-cloud/sandbox-supervisor";
-import { PostgresTrustedToolRuntime } from "./tools/trusted-tool-runtime.ts";
+import { WorkerToolRuntime } from "./tools/worker-tool-runtime.ts";
 import { FamilyModelPermits } from "./family-model-permits.ts";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { sql, type Kysely } from "kysely";
@@ -70,7 +70,6 @@ export type SupervisorRunWorker = {
   readonly state: PostgresPiWorkerState;
   start(): Promise<void>;
   stop(): Promise<void>;
-  scheduleOwnedSubagent?(runId: string): boolean;
 };
 
 function executionLogResolver(value: ExecutionLogFactory): ActiveExecutionLogResolver {
@@ -323,18 +322,14 @@ export class PiWorkerRuntime {
             command.message,
             command.delivery,
             command.executionReference,
+            command.conversationId,
           );
-        } else if (command.action === "prepare_conversation") {
-          return this.#nativeSessions.createChildConversation({
-            executionReference: command.executionReference,
-            requestId: command.requestId,
-            ownerTaskId: command.ownerTaskId,
-            at: command.anchor,
-          });
-        } else if (command.action === "result") {
-          this.#subagentControl.receive(command.executionReference, command.response);
+        } else if (command.action === "start_conversation") {
+          if (!this.#agentRunner) throw new Error("Native runner is unavailable");
+          return this.#agentRunner.startConversation(command);
         } else {
-          this.#runWorker?.scheduleOwnedSubagent?.(command.runId);
+          if (!this.#agentRunner) throw new Error("Native runner is unavailable");
+          return this.#agentRunner.stopConversation(command.executionReference, command.requestId);
         }
       },
       humanInput: async (command) => {
@@ -391,11 +386,12 @@ export class PiWorkerRuntime {
     const runWorkerIdentity = identity.sandboxId;
     let executionLogs = this.#executionLogs;
     if (!executionLogs) {
-      const bus = new HttpPublicationClient({
-        baseUrl: this.#config.controlPlaneBaseUrl,
-        token: this.#config.managementToken,
+      const bus = new DirectSessionKafkaBus({
+        database: this.#database!,
+        ...this.#config.kafka,
+        clientId: `pi-worker-${identity.bootId}`,
       });
-      executionLogs = new WorkerExecutionLog(this.#database!, bus, this.#config.producerCapacity);
+      executionLogs = new WorkerExecutionLog(bus, this.#config.producerCapacity);
       this.#activeExecutionLogs = executionLogs;
       this.#ownsExecutionLogs = true;
     }
@@ -443,16 +439,21 @@ export class PiWorkerRuntime {
       ...(images ? { images: images.codec } : {}),
     });
     this.#nativeSessions = nativeSessions;
-    this.#subagentControl = new SubagentControlClient((lease) =>
-      executionLogResolver(executionLogs).resolve(lease),
-    );
-    const trustedTools = new PostgresTrustedToolRuntime({
-      database: this.#database,
+    this.#subagentControl = new SubagentControlClient(nativeSessions, {
+      topic: toolReplies.topic,
+      wait: async (...args) => {
+        const reply = await toolReplies.wait(...args);
+        // Hostcall results are structured control data, never inline images.
+        return reply as ToolResultPayload;
+      },
+    });
+    const trustedTools = new WorkerToolRuntime({
       nativeConversations: nativeSessions,
       control: this.#subagentControl,
-      treePolicy: {
-        maximumDepth: this.#config.subagentMaximumDepth,
-        maximumNodes: this.#config.subagentMaximumNodes,
+      maximumDepth: this.#config.subagentMaximumDepth,
+      wait: async (id, callId, name, signal, scope) => {
+        const reply = await toolReplies.wait(id, callId, name, signal);
+        return decodeSessionImages<ToolResultPayload>(images?.codec, scope, reply, signal);
       },
     });
     const modelPermits = new FamilyModelPermits({
@@ -480,11 +481,12 @@ export class PiWorkerRuntime {
     toolReplies.onExecutionEvidence = (id, evidence) =>
       workerLog?.recordExecutionEvidence(id, evidence);
     const runner = new RemoteToolSandboxTurnRunner({
-      onRuntimeBinding: (reference, bindingId) => workerLog?.bindRuntime(reference, bindingId),
+      onRuntimeBinding: (reference, bindingId, conversationId) =>
+        workerLog?.bindRuntime(reference, bindingId, conversationId),
       onActivity: (command, update) => {
         const p = command.payload;
         if (!update) {
-          activity.forget(p.runId);
+          activity.forget(p.runId, p.sessionId);
           return;
         }
         activity.update(
@@ -510,23 +512,42 @@ export class PiWorkerRuntime {
         ),
       acquireModelPermit: (command, signal) =>
         modelPermits.acquire(`${command.payload.tenantId}:${command.payload.piSession.id}`, signal),
-      publishToolCommand: (command) => {
-        const channel = executionLogResolver(executionLogs).resolve(command.executionReference);
-        if (!channel) throw new Error("Tool command Fact Stream is unavailable");
-        return channel.publishToolCommand({ ...command, replyTopic: toolReplies.topic });
-      },
       waitForToolReply: async (request, signal, toolCallId, imageScope) => {
         if (!toolCallId) throw new Error("Tool call identity is unavailable");
-        const event = await toolReplies.wait(
+        const reply = await toolReplies.wait(
           request.operationId,
           toolCallId,
           request.toolName,
           signal,
         );
         if (!imageScope) throw new Error("Tool image scope is unavailable");
-        return decodeSessionImages<NativeToolEnd>(images?.codec, imageScope, event, signal);
+        const result = await decodeSessionImages<ToolResultPayload>(
+          images?.codec,
+          imageScope,
+          reply,
+          signal,
+        );
+        return { type: "tool_execution_end", ...result };
       },
       broker: this.#sandboxControl,
+      conversations: nativeSessions,
+      openConversationLog: (command) => {
+        const p = command.payload;
+        if (!executionLogs.openConversation)
+          throw new Error("Conversation publication port is unavailable");
+        const log = executionLogs.openConversation(p.executionReference, {
+          conversationId: p.piSession.conversationId,
+          sessionId: p.sessionId,
+          turnId: p.turnId,
+          nextEventSeq: p.nextEventSeq,
+        });
+        return {
+          publish: async (event) => {
+            await log.ingest(event);
+          },
+          close: () => log.close(),
+        };
+      },
       runtimeIdentity: identity,
       trustedWorkspaceDirectory: this.#config.trustedWorkspaceDirectory,
       openAgentSession: (command) =>
@@ -556,8 +577,6 @@ export class PiWorkerRuntime {
     const runSupervisor = new AgentRunSupervisor({
       runner,
       maxConcurrentSessions: this.#config.maxConcurrentSessions,
-      maximumLanesPerFamily:
-        this.#config.subagentMaximumNodes === null ? null : this.#config.subagentMaximumNodes + 1,
     });
     this.#runSupervisor = runSupervisor;
     client = new ReconnectingSupervisorWebSocketClient({
@@ -602,8 +621,6 @@ export class PiWorkerRuntime {
       notificationConnectionString: this.#config.databaseNotificationUrl,
       identity: runWorkerIdentity,
       maximumActiveFamilies: this.#config.maxConcurrentSessions,
-      maximumLanesPerFamily:
-        this.#config.subagentMaximumNodes === null ? null : this.#config.subagentMaximumNodes + 1,
       onCapacity: (sample) => this.#metrics?.activeSessionFamilies.set(sample.families),
       canClaimRuns: () =>
         (this.#state === "ready" || this.#state === "draining") && client?.state === "connected",
@@ -798,4 +815,4 @@ import {
   configuredImageAttachments,
   type ConfiguredImageAttachments,
 } from "@pi-cloud/session-attachments";
-import type { NativeToolEnd } from "@pi-cloud/protocol";
+import type { ToolResultPayload } from "@pi-cloud/protocol";

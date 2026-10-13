@@ -455,6 +455,20 @@ async function activeWorkers() {
 }
 
 async function turnModelSnapshot(turnId) {
+  const turn = JSON.parse(
+    await psql(
+      `select row_to_json(s) from conversation_turns t join sessions s on s.id=t.session_id where t.turn_id=${sqlLiteral(turnId)}`,
+    ),
+  );
+  if (turn.session_kind === "subagent") {
+    const model = await api.getSessionModel(turn.id);
+    return {
+      provider: model.provider,
+      modelId: model.modelId,
+      thinkingLevel: model.thinkingLevel,
+      serviceTier: model.fastMode ? "fast" : null,
+    };
+  }
   const row = await psql(
     `select json_build_object('provider',provider,'modelId',model_id,
                               'thinkingLevel',thinking_level,'serviceTier',service_tier)::text
@@ -1101,10 +1115,10 @@ try {
   );
   const children = JSON.parse(
     await psql(`select coalesce(json_agg(json_build_object(
-    'sessionId', e.child_session_id, 'runId', e.child_run_id, 'context', e.context_mode,
-    'turnId', child.turn_id, 'state', e.state)), '[]')::text
-    from subagent_executions e join runs child on child.id=e.child_run_id
-    where e.tenant_id=${sqlLiteral(tenantId)} and e.parent_run_id=${sqlLiteral(delegation.runId)}`),
+    'sessionId', e.child_session_id, 'runId', e.root_run_id, 'context', e.context_mode,
+    'turnId', e.child_turn_id, 'state', e.state)), '[]')::text
+    from subagent_executions e
+    where e.tenant_id=${sqlLiteral(tenantId)} and e.root_run_id=${sqlLiteral(delegation.runId)}`),
   );
   assert.equal(
     children.length,
@@ -1134,7 +1148,7 @@ try {
       thinkingLevel: "high",
       serviceTier: null,
     });
-    delegationUsage.push(await usageForRun(child.runId));
+    // Root Run usage already includes its native child Conversations.
   }
   const delegatedTurn = (await api.getConversation(session.sessionId)).turns.find(
     (turn) => turn.runId === delegation.runId,

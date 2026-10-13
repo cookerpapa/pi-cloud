@@ -4,6 +4,8 @@ import {
   parseExecutionReference,
   PublicationNotSentError,
   durableToolIntent,
+  durableControlIntent,
+  isControlToolCommand,
   parseDurableTextDescription,
   type DurableCommitPublication,
   type DurableCommitPublisher,
@@ -54,8 +56,8 @@ export class DurableSessionPublisher {
         let fact: AcceptedDurableCommitFact;
         const preparing = performance.now();
         try {
-          const resolve = (reference: string): AcceptedFactScope => {
-            const channel = this.options.channels.resolve(reference);
+          const resolve = (reference: string, conversationId?: number): AcceptedFactScope => {
+            const channel = this.options.channels.resolve(reference, conversationId);
             if (!channel) throw new Error("Tool execution grant is unavailable");
             const {
               leaseId,
@@ -76,18 +78,54 @@ export class DurableSessionPublisher {
             return identity;
           };
           const tools: DurableToolDispatch[] = publication.tools.map(({ taskId, command }) => {
-            const identity = resolve(command.executionReference),
-              intent = durableToolIntent(publication.commit, taskId);
+            const sourceTask = publication.commit.writes.find(
+              (w) => w.type === "task" && (w.value as { id?: number })?.id === taskId,
+            );
+            const identity = resolve(
+              command.executionReference,
+              isControlToolCommand(command)
+                ? command.conversationId
+                : (sourceTask?.value as { conversationId: number })?.conversationId,
+            );
+            if (isControlToolCommand(command)) {
+              const intent = durableControlIntent(publication.commit, { ...command, taskId });
+              if (
+                command.toolCallId !== `task:${taskId}` ||
+                command.nativeCallId !== intent.callId ||
+                !isDeepStrictEqual(command.arguments, intent.arguments)
+              )
+                throw new Error("Control Tool intent changed");
+              return {
+                target: "control",
+                operationId: command.operationId,
+                taskId,
+                conversationId: command.conversationId,
+                toolName: command.toolName,
+                contextAnchor: command.contextAnchor,
+                ...(command.bindingId ? { bindingId: command.bindingId } : {}),
+                ...(command.sourceDocumentId ? { sourceDocumentId: command.sourceDocumentId } : {}),
+                ...(command.replyMode ? { replyMode: command.replyMode } : {}),
+                ...(command.workflowKey ? { workflowKey: command.workflowKey } : {}),
+                scope: identity,
+                replyTopic: this.options.replyTopic,
+              };
+            }
+            const intent = durableToolIntent(publication.commit, taskId);
             if (
               command.toolCallId !== `task:${taskId}` ||
-              command.request.operation !== "tool.execute" ||
               command.request.toolCallId !== intent.callId ||
-              !isDeepStrictEqual(command.request.args, intent.arguments)
+              !(command.request.operation === "tool.execute"
+                ? isDeepStrictEqual(command.request.args, intent.arguments)
+                : command.request.script === intent.arguments.script)
             )
               throw new Error("Remote Tool intent changed");
-            const { args: _args, toolCallId: _callId, ...request } = command.request;
+            const request =
+              command.request.operation === "tool.execute"
+                ? (({ args: _args, toolCallId: _callId, ...rest }) => rest)(command.request)
+                : (({ script: _script, toolCallId: _callId, ...rest }) => rest)(command.request);
             return {
               toolCallId: command.toolCallId,
+              ...(command.nativeToolName ? { nativeToolName: command.nativeToolName } : {}),
               occurredAt: command.occurredAt,
               ...(command.traceContext ? { traceContext: command.traceContext } : {}),
               request,
@@ -101,7 +139,7 @@ export class DurableSessionPublisher {
             (command) => ({
               kind: "tool_cancel",
               factId: randomUUID(),
-              scope: resolve(command.executionReference),
+              scope: resolve(command.executionReference, command.conversationId),
               request: { activationId: command.activationId, operationId: command.operationId },
               occurredAt: command.occurredAt,
             }),
@@ -122,22 +160,24 @@ export class DurableSessionPublisher {
               : {}),
             tools,
             cancellations,
-            display: publication.display.map(({ executionReference, texts, coveredThrough }) => {
-              const target = resolve(executionReference);
-              for (const text of texts) {
-                parseDurableTextDescription(text);
-                if (
-                  text.event.sessionId !== target.sessionId ||
-                  text.event.turnId !== target.turnId
-                )
-                  throw new Error("Native display belongs to another Run");
-              }
-              return {
-                scope: target,
-                texts,
-                ...(coveredThrough === undefined ? {} : { coveredThrough }),
-              };
-            }),
+            display: publication.display.map(
+              ({ executionReference, conversationId, texts, coveredThrough }) => {
+                const target = resolve(executionReference, conversationId);
+                for (const text of texts) {
+                  parseDurableTextDescription(text);
+                  if (
+                    text.event.sessionId !== target.sessionId ||
+                    text.event.turnId !== target.turnId
+                  )
+                    throw new Error("Native display belongs to another Run");
+                }
+                return {
+                  scope: target,
+                  texts,
+                  ...(coveredThrough === undefined ? {} : { coveredThrough }),
+                };
+              },
+            ),
             occurredAt: new Date().toISOString(),
           };
         } catch (error) {

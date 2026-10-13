@@ -196,11 +196,7 @@ it.skipIf(!endpoint)(
         }).migrateTo("153_indexed_native_session_log");
         if (result.error) throw result.error;
       };
-      await db
-        .updateTable("pi_sessions")
-        .set({ unsealed_runs: 1 })
-        .where("id", "=", sessionId)
-        .execute();
+      await sql`update pi_sessions set unsealed_runs=1 where id=${sessionId}`.execute(db);
       await expect(migrateIndexedLog()).rejects.toThrow("must settle before indexed-log cutover");
       expect(await snapshot()).toEqual(before);
       expect(
@@ -210,11 +206,7 @@ it.skipIf(!endpoint)(
           }>`select to_regclass('pi_session_entries')::text as relation`.execute(db)
         ).rows[0]!.relation,
       ).toBe("pi_session_entries");
-      await db
-        .updateTable("pi_sessions")
-        .set({ unsealed_runs: 0 })
-        .where("id", "=", sessionId)
-        .execute();
+      await sql`update pi_sessions set unsealed_runs=0 where id=${sessionId}`.execute(db);
       await migrateIndexedLog();
       expect(await snapshot()).toEqual(before);
       for (const table of [

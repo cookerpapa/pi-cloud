@@ -412,12 +412,13 @@ describe("PostgreSQL Sandbox control ownership", () => {
       )
         sessions.push(s.sessionId);
     }
-    const runs: string[] = [];
+    const runs: string[] = [],
+      writers = [randomUUID(), randomUUID()];
     for (const [i, sessionId] of sessions.entries()) {
       const run = await store.acceptTurn(sessionId, randomUUID(), { prompt: "snapshot" });
       runs.push(run.runId);
       await sql`insert into sandbox_tool_bindings(binding_id,tenant_id,run_id,writer_id,sandbox_domain_id,owner_instance_id,descriptor,snapshot)
-        select gen_random_uuid(),${tenant.tenantId}::uuid,${run.runId}::uuid,gen_random_uuid(),'sandbox-domain-0001',${instanceId}::uuid,
+        select gen_random_uuid(),${tenant.tenantId}::uuid,${run.runId}::uuid,${writers[i]}::uuid,'sandbox-domain-0001',${instanceId}::uuid,
           '{"version":1}'::jsonb,'{}'::jsonb from generate_series(1,${i === 0 ? 257 : 300})`.execute(
         database,
       );
@@ -449,16 +450,10 @@ describe("PostgreSQL Sandbox control ownership", () => {
     expect(reads).toHaveLength(2);
     expect(reads.every((q) => q.includes("session_hash") && q.includes("limit"))).toBe(true);
     expect(
-      await view.find(
-        { tenantId: tenant.tenantId, runId: runs[0]!, writerId: randomUUID() },
-        false,
-      ),
+      await view.find({ tenantId: tenant.tenantId, runId: runs[0]!, writerId: writers[0]! }),
     ).toHaveLength(257);
     expect(
-      await view.find(
-        { tenantId: tenant.tenantId, runId: runs[1]!, writerId: randomUUID() },
-        false,
-      ),
+      await view.find({ tenantId: tenant.tenantId, runId: runs[1]!, writerId: writers[1]! }),
     ).toHaveLength(0);
   });
 
@@ -908,7 +903,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
     const parentRunId = "20000000-0000-4000-8000-000000000032";
     const environmentId = "20000000-0000-4000-8000-000000000030";
     const childTurnId = "20000000-0000-4000-8000-000000000033";
-    const childRunId = "20000000-0000-4000-8000-000000000035";
+    const childBindingId = "20000000-0000-4000-8000-000000000035";
     await database
       .insertInto("environment_versions")
       .values({
@@ -1089,32 +1084,6 @@ describe("PostgreSQL Sandbox control ownership", () => {
       .executeTakeFirstOrThrow();
 
     await database
-      .insertInto("runs")
-      .values([
-        {
-          id: childRunId,
-          input_text: "Inspect the shared Workspace",
-          model_profile_id: profileId,
-          provider: "test",
-          model_id: "test-model",
-          thinking_level: "off",
-          credential_binding_id: credentialId,
-          credential_binding_version: 1,
-          tenant_id: tenantId,
-          project_id: projectId,
-          workspace_id: workspaceId,
-          session_id: delegatedSessionId,
-          turn_id: childTurnId,
-          mailbox_position: 1,
-          request_sha256: "b".repeat(64),
-          available_at: new Date(),
-          environment_version_id: environmentId,
-          idempotency_key: "delegated-child",
-          state: "queued" as const,
-        },
-      ])
-      .executeTakeFirstOrThrow();
-    await database
       .updateTable("runs")
       .set({ state: "running", started_at: new Date(), settled_at: null, stop_reason: null })
       .where("id", "=", parentRunId)
@@ -1122,19 +1091,11 @@ describe("PostgreSQL Sandbox control ownership", () => {
     await database
       .updateTable("runs")
       .set({
-        state: "running",
-        started_at: new Date(),
-      })
-      .where("id", "=", childRunId)
-      .executeTakeFirstOrThrow();
-    await database
-      .updateTable("runs")
-      .set({
         lease_id: "20000000-0000-4000-8000-000000000009",
         worker_id: activation.assignment.sandboxId,
         fencing_token: 1,
       })
-      .where("id", "in", [parentRunId, childRunId])
+      .where("id", "=", parentRunId)
       .execute();
     await database
       .updateTable("pi_sessions")
@@ -1153,26 +1114,26 @@ describe("PostgreSQL Sandbox control ownership", () => {
       })
       .execute();
     await database
-      .insertInto("subagent_executions")
+      .insertInto("subagent_conversations")
       .values({
         id: "20000000-0000-4000-8000-000000000036",
         tenant_id: tenantId,
         parent_session_id: rootSessionId,
-        parent_run_id: parentRunId,
-        parent_tool_call_id: "subagent-shared",
+        parent_turn_id: forkTurnId,
+        parent_tool_call_id: "task:2",
         root_session_id: rootSessionId,
         root_run_id: parentRunId,
         parent_execution_id: null,
         depth: 1,
-        workflow_run_id: "workflow-shared",
-        step_index: 0,
+        source_sequence: "1",
+        source_record_id: "2",
+        source_kind: "task",
         request_sha256: "f".repeat(64),
         child_session_id: delegatedSessionId,
-        child_run_id: childRunId,
+        child_turn_id: childTurnId,
         agent_name: "cloud-child",
         context_mode: "branch",
         sandbox_mode: "shared",
-        state: "queued",
       })
       .executeTakeFirstOrThrow();
 
@@ -1237,12 +1198,12 @@ describe("PostgreSQL Sandbox control ownership", () => {
       ...activation,
       assignment: {
         ...activation.assignment,
-        runId: childRunId,
+        runId: parentRunId,
         sessionId: delegatedSessionId,
         turnId: childTurnId,
         executionReference: createExecutionReference(
           "20000000-0000-4000-8000-000000000009",
-          childRunId,
+          parentRunId,
           1,
         ),
       },
@@ -1277,25 +1238,29 @@ describe("PostgreSQL Sandbox control ownership", () => {
       },
     };
     for (const binding of [activation, childActivation])
-      await routes.register(activation.activationId, descriptor, {
-        assignment: binding.assignment,
-        physicalActivationId: activation.activationId,
-        turnContextSha256: binding.turnContextSha256,
-        executionContextSha256: binding.executionContextSha256,
-        allowedTools: ["bash"],
-        sandboxProfileKey: "standard",
-      });
+      await routes.register(
+        binding === activation ? activation.activationId : childBindingId,
+        descriptor,
+        {
+          assignment: binding.assignment,
+          physicalActivationId: activation.activationId,
+          turnContextSha256: binding.turnContextSha256,
+          executionContextSha256: binding.executionContextSha256,
+          allowedTools: ["bash"],
+          sandboxProfileKey: "standard",
+        },
+      );
     const routeScope = {
       tenantId,
       runId: parentRunId,
       writerId: "20000000-0000-4000-8000-000000000009",
     };
-    const parentRoutes = await routes.find(routeScope, false);
-    expect(parentRoutes).toHaveLength(1);
+    const parentRoutes = await routes.find(routeScope);
+    expect(parentRoutes).toHaveLength(2);
     expect(parentRoutes[0]!.bindingId).toBe(activation.activationId);
     expect(await routes.isAlive(parentRoutes[0]!.instanceId)).toBe(true);
-    expect(await routes.find({ ...routeScope, tenantId: crypto.randomUUID() }, false)).toEqual([]);
-    expect(await routes.find(routeScope, true)).toHaveLength(2);
+    expect(await routes.find({ ...routeScope, tenantId: crypto.randomUUID() })).toEqual([]);
+    expect(await routes.find(routeScope)).toHaveLength(2);
     await expect(
       database
         .selectFrom("workspace_runtimes")
@@ -1309,7 +1274,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
     });
     capture = true;
     try {
-      expect(await routes.find(routeScope, false)).toHaveLength(1);
+      expect(await routes.find(routeScope)).toHaveLength(2);
     } finally {
       capture = false;
     }
@@ -1317,9 +1282,9 @@ describe("PostgreSQL Sandbox control ownership", () => {
     expect(queries[0]).not.toContain("active_execution_scopes");
     expect(queries[0]).not.toContain("for update");
     expect(parentRoutes[0]!.dispatchClosed).toBe(false);
-    await routes.closeScope(routeScope, false);
-    expect((await routes.find(routeScope, false))[0]!.dispatchClosed).toBe(true);
-    expect((await routes.find(routeScope, true)).filter((r) => !r.dispatchClosed)).toHaveLength(1);
+    await routes.closeBinding(activation.activationId, activation.assignment);
+    expect((await routes.find(routeScope))[0]!.dispatchClosed).toBe(true);
+    expect((await routes.find(routeScope)).filter((r) => !r.dispatchClosed)).toHaveLength(1);
     await expect(routes.confirmPhysicalClosure(activation.activationId)).rejects.toThrow(
       "has not committed",
     );
@@ -1333,9 +1298,9 @@ describe("PostgreSQL Sandbox control ownership", () => {
         throw new Error("quarantine rollback");
       }),
     ).rejects.toThrow("quarantine rollback");
-    expect((await routes.find(routeScope, true)).filter((r) => !r.dispatchClosed)).toHaveLength(1);
+    expect((await routes.find(routeScope)).filter((r) => !r.dispatchClosed)).toHaveLength(1);
     await repository.setWorkspaceRuntimeState(activation.activationId, "unknown");
-    expect((await routes.find(routeScope, true)).every((r) => r.dispatchClosed)).toBe(true);
+    expect((await routes.find(routeScope)).every((r) => r.dispatchClosed)).toBe(true);
     const unavailable = new PostgresSandboxBindings(
       database,
       "sandbox-domain-0001",
@@ -1386,11 +1351,11 @@ describe("PostgreSQL Sandbox control ownership", () => {
       session_id: rootSessionId,
       state: "active",
     });
-    expect(await routes.find(routeScope, false)).toHaveLength(1);
+    expect(await routes.find(routeScope)).toHaveLength(2);
     await database
-      .updateTable("runs")
+      .updateTable("sessions")
       .set({ compute_session_id: delegatedSessionId })
-      .where("id", "=", childRunId)
+      .where("id", "=", delegatedSessionId)
       .execute();
     const childCompute = {
       ...childActivation,
@@ -1401,7 +1366,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
     await expect(
       repository.reserve({ ...childCompute, computeSessionId: crypto.randomUUID() }),
     ).rejects.toMatchObject({ code: "ownership_lost" });
-    expect(await routes.find(routeScope, true)).toHaveLength(2);
+    expect(await routes.find(routeScope)).toHaveLength(2);
     expect(
       await database
         .selectFrom("workspace_runtimes")
@@ -1412,9 +1377,9 @@ describe("PostgreSQL Sandbox control ownership", () => {
     ).toHaveLength(2);
     await repository.setWorkspaceRuntimeState(childCompute.activationId, "released");
     await database
-      .updateTable("runs")
+      .updateTable("sessions")
       .set({ compute_session_id: null })
-      .where("id", "=", childRunId)
+      .where("id", "=", delegatedSessionId)
       .execute();
     await database
       .deleteFrom("session_leases")
@@ -1766,15 +1731,15 @@ it("retires routing without a Cube receipt and preserves a sibling with the same
     first = await f.makeBinding(),
     sibling = await f.makeBinding();
   await expect(f.bindings.release(f.bindingId, first.assignment)).rejects.toThrow("still open");
-  await f.bindings.closeScope(first.scope, false);
+  await f.bindings.closeWriter(first.scope, false);
   const change = await first.change();
   expect(change.closed).toBe(true);
   const before = (await first.row()).revision;
-  await f.bindings.closeScope(first.scope, false);
+  await f.bindings.closeWriter(first.scope, false);
   expect((await first.row()).revision).toBe(before);
   await f.bindings.release(f.bindingId, first.assignment);
   await f.bindings.release(f.bindingId, first.assignment);
-  expect(await f.bindings.find(first.scope, false)).toEqual([]);
+  expect(await f.bindings.find(first.scope)).toEqual([]);
   expect((await sibling.row()).dispatch_closed).toBe(false);
 });
 
@@ -1782,7 +1747,7 @@ it("keeps abnormal-retirement cancellation address durable after binding deletio
   const f = await orderedClosureFixture(),
     first = await f.makeBinding();
   const original = await first.row();
-  await f.bindings.closeScope(first.scope, false, true);
+  await f.bindings.closeWriter(first.scope, true);
   const change = await first.change();
   expect(change).toMatchObject({
     closed: true,
@@ -1790,7 +1755,7 @@ it("keeps abnormal-retirement cancellation address durable after binding deletio
     cancelTarget: { ...(original.descriptor as any).target, writerId: first.scope.writerId },
   });
   await f.bindings.release(f.bindingId, first.assignment);
-  expect(await f.bindings.find(first.scope, false)).toEqual([]);
+  expect(await f.bindings.find(first.scope)).toEqual([]);
   const durable = await f.database
     .selectFrom("outbox")
     .select("payload")
@@ -1804,8 +1769,8 @@ it("uses the explicit physical-absence path to retire all bindings for that VM",
     first = await f.makeBinding(),
     sibling = await f.makeBinding();
   await f.bindings.releaseAfterPhysicalAbsence(f.physicalId);
-  expect(await f.bindings.find(first.scope, false)).toEqual([]);
-  expect(await f.bindings.find(sibling.scope, false)).toEqual([]);
+  expect(await f.bindings.find(first.scope)).toEqual([]);
+  expect(await f.bindings.find(sibling.scope)).toEqual([]);
 });
 
 it.each(["shutdown", "expiry"] as const)(
@@ -1969,7 +1934,7 @@ it("adopts a binding through durable Outbox metadata while publication is unavai
     .execute();
   await adopted.release(f.bindingId, first.assignment);
   expect(publish).not.toHaveBeenCalled();
-  expect(await adopted.find(first.scope, false)).toEqual([]);
+  expect(await adopted.find(first.scope)).toEqual([]);
   const retired = await f.database
     .selectFrom("outbox")
     .select("payload")

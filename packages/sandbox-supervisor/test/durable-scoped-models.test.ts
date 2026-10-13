@@ -11,23 +11,22 @@ describe("Durable model calls under cloud authority", () => {
     base.setProvider(faux.provider);
     const leases: string[] = [],
       releases: string[] = [];
-    const router = new ScopedDurableModels(base, async ({ runId, options }) => {
-      leases.push(runId);
+    const router = new ScopedDurableModels(base, async ({ runId, conversationId, options }) => {
+      leases.push(`${runId}:${conversationId}`);
       return {
         model: faux.getModel(),
         options: { ...options, apiKey: `private-${runId}` },
         release: () => {
-          releases.push(runId);
+          releases.push(`${runId}:${conversationId}`);
         },
       };
     });
-    const first = randomUUID(),
-      second = randomUUID();
-    const a = router.register(first, {
+    const rootRun = randomUUID();
+    const a = router.register(rootRun, 1, {
       ...faux.getModel(),
       headers: { Authorization: "must not persist" },
     });
-    const b = router.register(second, faux.getModel());
+    const b = router.register(rootRun, 17, faux.getModel());
     const modelA = router.models.getModel(a.provider, a.modelId)!,
       modelB = router.models.getModel(b.provider, b.modelId)!;
     expect(JSON.stringify(modelA)).not.toContain("must not persist");
@@ -38,8 +37,8 @@ describe("Durable model calls under cloud authority", () => {
       router.models.completeSimple(modelB, { messages: [] }),
     ]);
     expect(results.every((result) => result.model === faux.getModel().id)).toBe(true);
-    expect(new Set(leases)).toEqual(new Set([first, second]));
-    expect(new Set(releases)).toEqual(new Set([first, second]));
+    expect(new Set(leases)).toEqual(new Set([`${rootRun}:1`, `${rootRun}:17`]));
+    expect(new Set(releases)).toEqual(new Set(leases));
   });
 
   it("refuses model and compaction calls at the Models port without entering the provider", async () => {
@@ -50,7 +49,7 @@ describe("Durable model calls under cloud authority", () => {
       throw new Error("revoked: private-token");
     });
     const router = new ScopedDurableModels(base, open),
-      route = router.register(randomUUID(), faux.getModel());
+      route = router.register(randomUUID(), 1, faux.getModel());
     const model = router.models.getModel(route.provider, route.modelId)!;
     expect((await router.models.streamSimple(model, { messages: [] }).result()).stopReason).toBe(
       "error",
@@ -72,7 +71,7 @@ describe("Durable model calls under cloud authority", () => {
       abort.abort();
       return { model: faux.getModel(), options, release };
     });
-    const route = router.register(randomUUID(), faux.getModel()),
+    const route = router.register(randomUUID(), 1, faux.getModel()),
       model = router.models.getModel(route.provider, route.modelId)!;
     expect(
       (await router.models.completeSimple(model, { messages: [] }, { signal: abort.signal }))

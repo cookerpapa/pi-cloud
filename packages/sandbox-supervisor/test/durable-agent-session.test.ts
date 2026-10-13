@@ -47,6 +47,7 @@ async function fixture(options: { hold?: boolean; invalid?: boolean; duplicate?:
       } as unknown as DurableSessionCommit);
       commits.push(structuredClone([...writes]));
       for (const { command } of effects?.tools ?? []) {
+        if (!("request" in command)) throw new Error("Expected the Cube fixture");
         commands.push(command);
         started.resolve();
         if (!options.hold) {
@@ -257,7 +258,7 @@ it("rejects duplicate provider call IDs within one response before executing eit
 });
 
 it.each(["reply", "abort", "early-answer"] as const)(
-  "keeps child supervision across Tool completion and applies native parent %s",
+  "shares one root Run across parent/child models and preserves native parent %s",
   async (mode) => {
     const models = createModels(),
       parentModel = fauxProvider({ provider: "parent-fixture", tokensPerSecond: 1000000 }),
@@ -283,8 +284,7 @@ it.each(["reply", "abort", "early-answer"] as const)(
       childInput: import("@earendil-works/pi-durable").Submission | undefined;
     let childId = 0,
       callerId = 0;
-    const childRun = randomUUID(),
-      parentRun = randomUUID();
+    const parentRun = randomUUID();
     const ask = {
       name: "ask",
       description: "request a decision",
@@ -302,14 +302,21 @@ it.each(["reply", "abort", "early-answer"] as const)(
         parameters: Type.Object({}),
         execute: async (_args, api) => {
           callerId = api.taskId;
-          childId = await runtime.createConversation({
+          const creation = {
             requestId: "child",
             ownerTaskId: api.taskId,
             parentConversationId: api.conversationId,
-          });
-          const child = await runtime.bind(config(childRun, childId, childModel.getModel(), [ask]));
+          };
+          childId = await runtime.createConversation(creation);
+          expect(await runtime.createConversation(creation)).toBe(childId);
+          await expect(
+            runtime.createConversation({ ...creation, ownerTaskId: api.taskId + 1 }),
+          ).rejects.toThrow("identity was reused");
+          const child = await runtime.bind(
+            config(parentRun, childId, childModel.getModel(), [ask]),
+          );
           childInput = await child.submit(
-            { type: "input", content: "ask", requestId: childRun },
+            { type: "input", content: "ask", requestId: "child-input" },
             BACKGROUND_CONTEXT,
           );
           await asked.promise;
@@ -347,11 +354,11 @@ it.each(["reply", "abort", "early-answer"] as const)(
         prepareRemote: async () => {
           throw new Error("no remote effect");
         },
-        openModel: async ({ options }: { options: Record<string, unknown> }) => ({
-          model,
-          options: { ...options, apiKey: "fixture" },
-          release() {},
-        }),
+        openModel: async (request: import("../src/durable/scoped-models.ts").CloudModelRequest) => {
+          expect(request.runId).toBe(parentRun);
+          expect(request.conversationId).toBe(conversationId);
+          return { model, options: { ...request.options, apiKey: "fixture" }, release() {} };
+        },
       };
     }
     runtime = await DurableAgentSession.open(storage, {

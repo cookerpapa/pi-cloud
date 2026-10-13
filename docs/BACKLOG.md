@@ -30,26 +30,34 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Reliability and capacity
 
-- [ ] R13U-01: design and verify compatible Control Plane updates while Runs stay
-      active, draining bounded publication/dispatch work instead of waiting for
-      whole Runs to finish. Keep Worker/Pi, Cube and protocol/data semantics fixed;
-      distinguish known pre-admission retry from unknown commit recovery. The
-      [native Kafka study](reports/kafka-native-fencing-20261013.md) does not
-      authorize removing the ingress or changing execution ownership.
-- [ ] R13K-01: revisit direct Session producers only with an explicit publication
-      decision covering post-init PG admission, current-producer disruption,
-      Run-versus-Session seals, control ordering and measured active-Session cost.
-      Six RF3/PG primitive probes and two existing ingress tests are complete;
-      [ADR-0246](adr/0246-worker-direct-kafka-publication-proposal.md) records the
-      proposed change map and acceptance gates. It is not accepted, and no
-      direct-Worker production adapter has been implemented.
-- [ ] R13K-02: simplify normal child-Run completion separately from physical
-      writer fencing. All Conversations share one native writer; independent
-      per-Run seals are an implementation choice, not a multi-Lane requirement.
-      Preserve result visibility, ordered terminal display, cancellation and
-      Lane readiness when replacing the existing seal path. A focused native
-      test proves final Assistant text can precede descendant-aware idle; it
-      does not establish the replacement cloud settlement protocol.
+The [October 13 consolidated plan](adr/0247-session-work-and-tool-dispatch.md)
+records the owner-agreed Session/root-work direction and implemented source contracts. Existing production still uses ingress and child Runs. Execute the
+following slices in order; [current implementation evidence](reports/session-work-implementation-20261013.md)
+tracks partial gates and remaining rollout work.
+
+- [ ] R13S-01 / P0: prove the public Pi APIs can manage native child creation,
+      input identity, wait/blocked, supervisor exchanges, cancellation and recovery
+      without a cloud child Run; freeze identity and completion mappings first.
+- [ ] R13T-01 / P1: co-commit ordinary cloud Tool dispatch with native intent;
+      move trusted Tool business logic to handlers and unify final Kafka replies.
+      Preserve Cube execution, dynamic workflow calls, mixed-record offset safety,
+      long waits, typed failures, cancellation and native final settlement.
+- [ ] R13S-02 / P2: keep only root cloud work in Run admission. Migrate child
+      models, resources, input/Stop, display/history, attachments and cleanup to
+      root Run plus native identity. Remove child claims and duplicated command
+      bodies/state only after every existing subagent action has a working replacement.
+- [ ] R13K-02 / P3: separate native child outcomes and ordered root-work completion
+      from Session writer closure. Remove per-child seals/unsealed-count dependencies
+      without weakening input races, history/SSE coverage or old-owner recovery proof.
+- [ ] R13K-01 / P4: implement direct Session producers with fresh post-init PG
+      admission, control ordering, bounded fencing recovery and same-load resource
+      measurement. Six RF3/PG primitive probes and two current ingress tests are
+      baseline evidence. The direct publisher is wired; RF3/PG takeover, delayed
+      initialization and same-Run recovery tests pass. Full-suite/live gates remain.
+- [ ] R13U-01 / P5: complete the matched destructive cutover, retained-configuration
+      checks and Luna/Cube/browser acceptance. Then prove compatible Control Plane
+      handoff during active root work with Worker/Pi/Cube and protocol contracts fixed,
+      instead of waiting for an entire Agent family to finish.
 
 [ADR-0243](adr/0243-native-input-current-state.md) is deployed with schema 185 as
 `native-input-current-e82d00b7`. [Source and live acceptance](reports/native-input-current-state-20261012.md)

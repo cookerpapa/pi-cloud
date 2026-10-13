@@ -151,7 +151,7 @@ export class ExecutionPathProbes {
     bindings: ProbeBinding[],
     current: () => boolean,
   ): Promise<void> {
-    const routes = await this.options.routes.find(fact.scope, true);
+    const routes = await this.options.routes.find(fact.scope);
     const sentAt = Date.parse(fact.occurredAt);
     if (!current() || !this.#valid(fact.scope) || this.#now() - sentAt > EXECUTION_PROBE_TIMEOUT_MS)
       return;
@@ -221,7 +221,7 @@ export class ExecutionPathProbes {
               return false;
             await this.options.cube.submitProbe(target, {
               probeId: fact.factId,
-              runId: first.scope.runId,
+              executionScopeId: first.route.bindingId,
               writerId: first.scope.writerId,
               completionContext: {
                 kind: "execution_probe",

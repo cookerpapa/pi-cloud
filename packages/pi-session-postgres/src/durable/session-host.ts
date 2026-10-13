@@ -15,6 +15,12 @@ import type { ActiveExecutionAuthority } from "../execution-authority.ts";
 import { PostgresSessionLeaseObserver } from "../postgres-session-lease-observer.ts";
 import { DurablePostgresProjection } from "./postgres-projection.ts";
 import { PublishedDurableStorage, type NativeDocumentChange } from "./published-storage.ts";
+import { sql } from "kysely";
+import {
+  durableControlIntent,
+  prepareSubagentArguments,
+  type ConversationWorkView,
+} from "@pi-cloud/protocol";
 
 export type DurableRunBinding = Readonly<{
   tenantId: string;
@@ -46,23 +52,34 @@ type PrepareDisplay = (
 ) => NativeDisplayPreparation;
 export type ManagedNativeRuntime = {
   close(): Promise<void>;
+  publishHostCall?(
+    taskId: number,
+    command: import("@pi-cloud/protocol").CandidateControlToolCommand,
+  ): Promise<void>;
+  retireHostCall?(taskId: number, id: string): Promise<void>;
+  stopConversation?(requestId: string): Promise<void>;
+  activeConversationViews?(
+    runId: string,
+  ): Promise<Array<{ conversationId: number; view: ConversationWorkView }>>;
   childAnchor?(conversationId: number): Promise<number | undefined>;
   createConversation?(input: {
     requestId: string;
     ownerTaskId: number;
     parentConversationId: number;
     at?: number;
+    view?: ConversationWorkView;
   }): Promise<number>;
 };
 type Owner = {
   authority: ActiveExecutionAuthority & { start(): void };
   storage: Promise<PublishedDurableStorage>;
-  runs: Map<string, DurableSessionOpen>;
+  runs: Map<number, DurableSessionOpen>;
   bindings: Map<number, DurableRunBinding>;
   runtime?: Promise<ManagedNativeRuntime>;
   prepare?: (commit: DurableSessionCommit) => NativePublicationPreparation;
-  display: Map<string, PrepareDisplay>;
+  display: Map<number, PrepareDisplay>;
   publicationTail: Promise<unknown>;
+  releaseTail: Promise<unknown>;
   closing?: Promise<void>;
   interruption: AbortController;
 };
@@ -96,9 +113,13 @@ export class PostgresDurableSessionHost {
   runtimeFor(reference: string): Promise<ManagedNativeRuntime> | undefined {
     return this.#executions.get(reference)?.runtime;
   }
-  async childAnchor(reference: string, inherit: boolean): Promise<string | null> {
+  async childAnchor(
+    reference: string,
+    inherit: boolean,
+    conversationId: number,
+  ): Promise<string | null> {
     const owner = this.#executions.get(reference),
-      binding = owner?.runs.get(reference)?.binding;
+      binding = owner?.runs.get(conversationId)?.binding;
     if (!owner || !binding) throw new Error("Parent native owner is unavailable");
     await owner.authority.assertCurrent();
     const runtime = await owner.runtime;
@@ -106,14 +127,54 @@ export class PostgresDurableSessionHost {
     const tail = inherit ? await runtime.childAnchor(binding.conversationId) : undefined;
     return tail === undefined ? null : String(tail);
   }
+  async conversationDepth(reference: string, conversationId: number): Promise<number> {
+    const owner = this.#executions.get(reference);
+    if (!owner) throw new Error("Native owner is unavailable");
+    await owner.authority.assertCurrent();
+    const storage = await owner.storage;
+    let id: number | undefined = conversationId,
+      depth = 0;
+    const seen = new Set<number>();
+    while (id !== undefined) {
+      if (seen.has(id)) throw new Error("Native conversation ancestry is cyclic");
+      seen.add(id);
+      const conversation = await storage.conversation(
+        id as import("@earendil-works/pi-durable").ConversationId,
+        BACKGROUND_CONTEXT,
+      );
+      if (!conversation) throw new Error("Native conversation ancestry is unavailable");
+      id = conversation.owner?.conversationId;
+      if (id !== undefined) depth++;
+    }
+    return depth;
+  }
+  async publishHostCall(
+    taskId: number,
+    command: import("@pi-cloud/protocol").CandidateControlToolCommand,
+  ): Promise<void> {
+    const owner = this.#executions.get(command.executionReference);
+    if (!owner) throw new Error("Native hostcall owner is unavailable");
+    await owner.authority.assertCurrent();
+    const runtime = await owner.runtime;
+    if (!runtime?.publishHostCall) throw new Error("Native hostcall port is unavailable");
+    await runtime.publishHostCall(taskId, command);
+  }
+  async retireHostCall(reference: string, taskId: number, id: string): Promise<void> {
+    const owner = this.#executions.get(reference);
+    if (!owner) return;
+    await owner.authority.assertCurrent();
+    await (await owner.runtime)?.retireHostCall?.(taskId, id);
+  }
   async createChildConversation(input: {
     executionReference: string;
     requestId: string;
     ownerTaskId: number;
+    parentConversationId: number;
     at: string | null;
+    view?: ConversationWorkView;
   }): Promise<number> {
     const owner = this.#executions.get(input.executionReference),
-      binding = owner?.runs.get(input.executionReference)?.binding;
+      binding = owner?.runs.get(input.parentConversationId)?.binding;
     if (!owner || !binding) throw new Error("Parent native owner is unavailable");
     await owner.authority.assertCurrent();
     const runtime = await owner.runtime;
@@ -123,7 +184,82 @@ export class PostgresDurableSessionHost {
       ownerTaskId: input.ownerTaskId,
       parentConversationId: binding.conversationId,
       ...(input.at === null ? {} : { at: Number(input.at) }),
+      ...(input.view ? { view: input.view } : {}),
     });
+  }
+  async stopConversation(reference: string, requestId: string): Promise<void> {
+    const owner = this.#executions.get(reference);
+    if (!owner) throw new Error("Native owner is unavailable");
+    await owner.authority.assertCurrent();
+    const runtime = await owner.runtime;
+    if (!runtime?.stopConversation) throw new Error("Native cancellation port is unavailable");
+    await runtime.stopConversation(requestId);
+  }
+  async inputReceipt(
+    reference: string,
+    conversationId: number,
+    requestId: string,
+  ): Promise<boolean> {
+    const owner = this.#executions.get(reference);
+    if (!owner) throw new Error("Native owner is unavailable");
+    await owner.authority.assertCurrent();
+    const receipt = await (
+      await owner.storage
+    ).submissionByRequest(
+      conversationId as import("@earendil-works/pi-durable").ConversationId,
+      requestId,
+      BACKGROUND_CONTEXT,
+    );
+    // This acknowledges durable admission, not processing. A later abort can
+    // withdraw an admitted input without making the original ACK untrue.
+    return !!receipt;
+  }
+  async activeConversations(reference: string): Promise<
+    Array<{
+      conversationId: number;
+      view: ConversationWorkView;
+      prompt: string;
+      nextEventSeq: number;
+    }>
+  > {
+    const owner = this.#executions.get(reference);
+    if (!owner) throw new Error("Native owner is unavailable");
+    await owner.authority.assertCurrent();
+    const binding = owner.runs.values().next().value!.binding;
+    const views = (await (await owner.runtime)?.activeConversationViews?.(binding.runId)) ?? [];
+    return Promise.all(
+      views.map(async (entry) => {
+        const { source } = entry.view;
+        const record = await sql<{ body: string }>`select body from pi_durable_log
+        where tenant_id=${binding.tenantId}::uuid and session_id=${binding.piSessionId}
+          and seq=${source.sequence} and record_id=${source.documentId ?? source.taskId}
+          and record_kind=${source.documentId === undefined ? "task" : "document.create"}`.execute(
+          this.options.database,
+        );
+        if (record.rows.length !== 1) throw new Error("Native child source is missing");
+        const intent = durableControlIntent(
+          { seq: source.sequence, nextId: 2, writes: [JSON.parse(record.rows[0]!.body)] },
+          {
+            taskId: source.taskId,
+            ...(source.documentId ? { sourceDocumentId: source.documentId } : {}),
+            operationId: entry.view.id,
+            conversationId: entry.view.parentConversationId,
+            toolName: "subagent",
+          },
+        );
+        const args = prepareSubagentArguments(intent.arguments);
+        if (args.action !== "run") throw new Error("Native child source is not a delegation");
+        const cursor = await this.options.database
+          .selectFrom("sessions as s")
+          .innerJoin("subagent_conversations as v", "v.child_session_id", "s.id")
+          .select(sql<string>`greatest(s.next_event_seq,v.output_display_seq+1)`.as("next"))
+          .where("s.tenant_id", "=", binding.tenantId)
+          .where("s.id", "=", entry.view.sessionId)
+          .where("v.root_run_id", "=", binding.runId)
+          .executeTakeFirstOrThrow();
+        return { ...entry, prompt: args.task, nextEventSeq: Number(cursor.next) };
+      }),
+    );
   }
   observeLeaseRenewals(
     heartbeat: SupervisorHeartbeatMessage,
@@ -177,7 +313,7 @@ export class PostgresDurableSessionHost {
         { tenantId: binding.tenantId, sessionId: binding.piSessionId },
         this.options.images,
       );
-      const runs = new Map<string, DurableSessionOpen>(),
+      const runs = new Map<number, DurableSessionOpen>(),
         bindings = new Map<number, DurableRunBinding>();
       const progress = new NativeProjectionProgress({
         initialThrough: 0,
@@ -200,8 +336,9 @@ export class PostgresDurableSessionHost {
               const commit = batch as unknown as DurableSessionCommit;
               const preparation = this.#owners.get(key)?.prepare?.(commit);
               const display = [...this.#owners.get(key)!.display].map(
-                ([executionReference, prepare]) => ({
-                  executionReference,
+                ([conversationId, prepare]) => ({
+                  executionReference: bindings.get(conversationId)!.executionReference,
+                  conversationId,
                   prepared: prepare(commit, documents),
                 }),
               );
@@ -219,37 +356,47 @@ export class PostgresDurableSessionHost {
                     ]
                   : [];
               });
-              await active.publish({
-                commit,
-                origins,
-                ...(inputConversations.length
-                  ? {
-                      inputQueueSessions: [
-                        ...new Set(
-                          inputConversations.flatMap((id) => {
-                            const binding = bindings.get(id);
-                            return binding ? [binding.sessionId] : [];
-                          }),
-                        ),
-                      ],
-                    }
-                  : {}),
-                tools: preparation?.tools ?? [],
-                cancellations: preparation?.cancellations ?? [],
-                display: display.flatMap(({ executionReference, prepared }) =>
-                  prepared.texts.length || prepared.coveredThrough !== undefined
-                    ? [
-                        {
-                          executionReference,
-                          texts: prepared.texts,
-                          ...(prepared.coveredThrough === undefined
-                            ? {}
-                            : { coveredThrough: prepared.coveredThrough }),
-                        },
-                      ]
-                    : [],
-                ),
-              });
+              await active
+                .publish({
+                  commit,
+                  origins,
+                  ...(inputConversations.length
+                    ? {
+                        inputQueueSessions: [
+                          ...new Set(
+                            inputConversations.flatMap((id) => {
+                              const binding = bindings.get(id);
+                              return binding ? [binding.sessionId] : [];
+                            }),
+                          ),
+                        ],
+                      }
+                    : {}),
+                  tools: preparation?.tools ?? [],
+                  cancellations: preparation?.cancellations ?? [],
+                  display: display.flatMap(({ executionReference, conversationId, prepared }) =>
+                    prepared.texts.length || prepared.coveredThrough !== undefined
+                      ? [
+                          {
+                            executionReference,
+                            conversationId,
+                            texts: prepared.texts,
+                            ...(prepared.coveredThrough === undefined
+                              ? {}
+                              : { coveredThrough: prepared.coveredThrough }),
+                          },
+                        ]
+                      : [],
+                  ),
+                })
+                .catch((cause) => {
+                  interruption.abort(
+                    Object.assign(new Error("Native Session publication failed", { cause }), {
+                      code: "writer_publication_failed",
+                    }),
+                  );
+                  throw cause;
+                });
               preparation?.confirmed();
               for (const { prepared } of display) prepared.confirmed();
             }),
@@ -266,26 +413,38 @@ export class PostgresDurableSessionHost {
         interruption,
         display: new Map(),
         publicationTail: Promise.resolve(),
+        releaseTail: Promise.resolve(),
       };
       this.#owners.set(key, owner);
     }
     const currentOwner = owner;
-    if (owner.runs.has(binding.executionReference))
-      throw new Error("Execution is already attached to the native Session");
-    owner.runs.set(binding.executionReference, input);
+    if (owner.runs.has(binding.conversationId))
+      throw new Error("Conversation is already attached to the native Session");
+    owner.runs.set(binding.conversationId, input);
     owner.bindings.set(binding.conversationId, binding);
     this.#executions.set(binding.executionReference, owner);
-    let released = false;
-    const release = async () => {
-      if (released) return;
-      released = true;
-      this.#executions.delete(binding.executionReference);
-      // Keep the final anchor installed through Harness.close(), so queued
-      // native cleanup commits still use the current, unsealed identity.
-      if (currentOwner.runs.size === 1) await this.#closeOwner(key, currentOwner);
-      await currentOwner.publicationTail;
-      currentOwner.display.delete(binding.executionReference);
-      currentOwner.runs.delete(binding.executionReference);
+    let releasing: Promise<void> | undefined;
+    const release = (): Promise<void> => {
+      if (releasing) return releasing;
+      releasing = currentOwner.releaseTail.then(async () => {
+        // Keep the final anchor installed through Harness.close(), so queued
+        // native cleanup commits still use the current, unsealed identity.
+        try {
+          if (currentOwner.runs.size === 1) await this.#closeOwner(key, currentOwner);
+          await currentOwner.publicationTail;
+        } finally {
+          currentOwner.display.delete(binding.conversationId);
+          currentOwner.runs.delete(binding.conversationId);
+          if (
+            ![...currentOwner.runs.values()].some(
+              (run) => run.binding.executionReference === binding.executionReference,
+            )
+          )
+            this.#executions.delete(binding.executionReference);
+        }
+      });
+      currentOwner.releaseTail = releasing.catch(() => {});
+      return releasing;
     };
     try {
       const storage = await owner.storage;
@@ -304,7 +463,7 @@ export class PostgresDurableSessionHost {
           currentOwner.prepare = prepare;
         },
         prepareDisplay: (prepare) => {
-          currentOwner.display.set(binding.executionReference, prepare);
+          currentOwner.display.set(binding.conversationId, prepare);
         },
         serializePublication: (work) => this.#serialize(currentOwner, work),
         close: release,

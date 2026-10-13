@@ -1,3 +1,5 @@
+import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
+import type { AcceptedWorkFinishedFact } from "../../runtime-core/src/accepted-fact.ts";
 import { MemoryStorage, type StorageWrite, type Seq, type Id } from "@earendil-works/pi-durable";
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 import type { Context } from "@earendil-works/chord";
@@ -128,9 +130,25 @@ export async function startNativeInputAgent(
   const worker = await createTestWorker(database);
   const entered = Promise.withResolvers<void>(),
     exited = Promise.withResolvers<void>();
-  let reference = "";
+  let reference = "",
+    completion: AcceptedWorkFinishedFact | undefined;
+  const projectCompletion = async () => {
+    if (!completion) return;
+    await database
+      .transaction()
+      .execute((tx) => projection.checkpointLiveIn(tx, projection.liveState.fork()));
+    await new ExecutionStreamProjector(database).project({
+      fact: completion,
+      topic: "native-input-fixture",
+      partition: 0,
+      offset: BigInt(sequence + 1),
+    });
+  };
   const execution = worker
     .executor({
+      finish: async (fact) => {
+        completion = { ...fact, nativeSequence: sequence };
+      },
       execute: async (request, listener, admission) => {
         reference = admission.executionReference;
         await conversation.submit(
@@ -190,6 +208,7 @@ export async function startNativeInputAgent(
     reference,
     calls,
     execution,
+    projectCompletion,
     release,
     async abort() {
       await new RunCancellationExecutor({
@@ -217,6 +236,7 @@ export async function startNativeInputAgent(
       await runtime.close();
       finish.resolve();
       await execution;
+      await projectCompletion();
     },
   };
 }

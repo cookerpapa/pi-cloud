@@ -84,6 +84,7 @@ async function fixture(
           writes: prepared.writes,
         } as unknown as DurableSessionCommit);
         for (const tool of effects?.tools ?? []) {
+          if (!("request" in tool.command)) throw new Error("Expected the Cube fixture");
           commands.push(tool.command);
           started.resolve();
         }
@@ -168,10 +169,6 @@ async function fixture(
     },
     createAgentTools: ({ stepWorldState, captureSamplingStep }) =>
       createTrustedRemoteAgentTools({
-        publishToolCommand: async () => {
-          throw new Error("Fixed tools require one native handoff");
-        },
-        trackWorkflowOperation: () => {},
         workflowUrl: "http://127.0.0.1:1",
         activationId: "20000000-0000-4000-8000-000000000001",
         executionReference: scope.executionReference,

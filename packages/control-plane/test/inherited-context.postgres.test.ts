@@ -4,7 +4,7 @@ import { createDatabase, runMigrations, type Database } from "@pi-cloud/database
 import { appendNativeFixture } from "./fixtures/durable-native.ts";
 import { MAX_INHERITED_CONTEXT_ENTRIES, parseConversationDetailResource } from "@pi-cloud/protocol";
 
-import { PostgresSubagentJobProvider } from "@pi-cloud/subagent-control";
+import { PostgresSubagentConversations } from "@pi-cloud/subagent-control";
 import { sql, type Kysely } from "kysely";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
@@ -96,32 +96,37 @@ it.each([true, false])(
     void execution.catch(entered.reject);
     try {
       const reference = await entered.promise;
-      const provider = new PostgresSubagentJobProvider({
+      const provider = new PostgresSubagentConversations({
         database,
-        nativeConversations: {
-          childAnchor: async () => anchor,
-          createChildConversation: async () => {
-            throw new Error("Creation is deferred in this read fixture");
+        native: {
+          start: async () => {
+            throw Object.assign(new Error("Worker admission is pending"), { retryable: true });
           },
+          stop: async () => {},
         },
       });
-      const child = await provider.start(
-        {
+      const id = crypto.randomUUID();
+      await expect(
+        provider.start({
+          id,
           tenantId: tenant.tenantId,
+          rootRunId: accepted.runId,
           parentSessionId: parent.sessionId,
-          parentRunId: accepted.runId,
-          parentExecutionReference: reference,
+          parentTurnId: accepted.turnId,
+          executionReference: reference,
           parentToolCallId: "task:2",
-          workflowRunId: "preview",
-          stepIndex: 0,
-          agentName: "preview",
+          source: { sequence: 1, taskId: 2 },
           prompt: "Inspect",
           contextMode: "branch",
           sandboxMode: "none",
-          contextAnchor: anchor,
-        },
-        true,
-      );
+          contextAnchor: Number(anchor),
+        }),
+      ).rejects.toThrow("admission is pending");
+      const child = await database
+        .selectFrom("subagent_conversations")
+        .select("child_session_id as childSessionId")
+        .where("id", "=", id)
+        .executeTakeFirstOrThrow();
       const detail = parseConversationDetailResource(
         await store.getConversation(child.childSessionId),
       );

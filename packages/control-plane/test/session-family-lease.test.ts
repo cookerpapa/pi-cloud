@@ -33,23 +33,12 @@ async function fixture(capacity = 1, leaseMs = 60000) {
     .where("id", "=", project.environment.environmentVersionId)
     .execute();
   const main = await store.createSession(project.projectId, project.workspaceId, "main", "elastic");
-  const child = await store.createSession(
-    project.projectId,
-    project.workspaceId,
-    "child",
-    "elastic",
-  );
   const foreign = await store.createSession(
     project.projectId,
     project.workspaceId,
     "foreign",
     "elastic",
   );
-  await db
-    .updateTable("sessions")
-    .set({ pi_session_id: main.sessionId, pi_conversation_id: "2" })
-    .where("id", "=", child.sessionId)
-    .execute();
   const workerId = crypto.randomUUID();
   await db
     .insertInto("workers")
@@ -73,25 +62,49 @@ async function fixture(capacity = 1, leaseMs = 60000) {
   >();
   const ready = new Map<string, () => void>();
   const running: Promise<unknown>[] = [];
+  const completions: AcceptedFact[] = [];
   const executor = new RunExecutor({
     database: db,
     workerId,
     executionAuthority: coordinator,
     backend: {
       admit: (tx, request, _mark, facts) => admitTestExecution(coordinator, tx, request, facts),
-      execute: async (request, _lifecycle, admission) => {
+      execute: async (request, lifecycle, admission) => {
         const binding = admission!;
+        lifecycle.publicationReady({
+          close: async () => {},
+          finish: async (terminal) => {
+            const ref = parseExecutionReference(binding.executionReference);
+            const owner = await db
+              .selectFrom("session_leases")
+              .select("writer_sealed_at")
+              .where("lease_id", "=", ref.leaseId)
+              .executeTakeFirstOrThrow();
+            if (owner.writer_sealed_at !== null) throw new Error("Writer was fenced");
+            const {
+              leaseId: _lease,
+              piConversationId: _conversation,
+              ...scope
+            } = admission.publication.scope;
+            completions.push({
+              kind: "work_finished",
+              scope,
+              factId: crypto.randomUUID(),
+              agentId: "root",
+              baseSequence: 0,
+              nativeSequence: 0,
+              terminal,
+              retireWriter: true,
+              occurredAt: new Date().toISOString(),
+            });
+          },
+        });
+
         const wait = new Promise<void>((release) =>
           tasks.set(request.runId, { request, reference: binding.executionReference, release }),
         );
         ready.get(request.runId)?.();
         await wait;
-        // The fake Runner emitted nothing, but must still prove its output drained.
-        await db
-          .updateTable("runs")
-          .set({ native_output_drained: true })
-          .where("id", "=", request.runId)
-          .execute();
         return { stopReason: "stop" };
       },
     },
@@ -145,9 +158,12 @@ async function fixture(capacity = 1, leaseMs = 60000) {
       .execute();
     const projector = new ExecutionStreamProjector(db);
     let offset = 0n;
-    for (const row of records)
+    for (const fact of [
+      ...completions,
+      ...records.map((row) => row.payload as unknown as AcceptedFact),
+    ])
       await projector.project({
-        fact: row.payload as unknown as AcceptedFact,
+        fact,
         topic: "family-test",
         partition: 0,
         offset: offset++,
@@ -157,7 +173,6 @@ async function fixture(capacity = 1, leaseMs = 60000) {
     db,
     store,
     main,
-    child,
     foreign,
     workerId,
     coordinator,
@@ -176,84 +191,59 @@ async function fixture(capacity = 1, leaseMs = 60000) {
   };
 }
 
-it("shares one owner lease, renews once, and releases ownership only after the final task", async () => {
+it("renews one Session owner and releases it only after ordered work completion", async () => {
   const f = await fixture();
   try {
     const main = await f.start(f.main.sessionId),
-      child = await f.start(f.child.sessionId);
-    const a = parseExecutionReference(main.reference),
-      b = parseExecutionReference(child.reference);
-    expect(a.leaseId).toBe(b.leaseId);
-    expect(a.fencingToken).toBe(b.fencingToken);
-    expect(a.runId).not.toBe(b.runId);
+      a = parseExecutionReference(main.reference);
     expect(await f.db.selectFrom("session_leases").selectAll().execute()).toHaveLength(1);
-    expect(await f.db.selectFrom("active_execution_scopes").selectAll().execute()).toHaveLength(2);
-    // Quiet child progress is not the shared owner's liveness.
+    expect(await f.db.selectFrom("active_execution_scopes").selectAll().execute()).toHaveLength(1);
     const past = new Date(Date.now() - 120_000);
-    await f.db.updateTable("runs").set({ updated_at: past }).where("id", "=", b.runId).execute();
+    await f.db.updateTable("runs").set({ updated_at: past }).where("id", "=", a.runId).execute();
     expect((await f.renew()).payload.familyLeaseRenewals).toHaveLength(1);
     expect(
       (
         await f.db
           .selectFrom("runs")
           .select("updated_at")
-          .where("id", "=", b.runId)
+          .where("id", "=", a.runId)
           .executeTakeFirstOrThrow()
       ).updated_at,
     ).toEqual(past);
-    await f.coordinator.assertCurrentGrant(child.request, { executionReference: child.reference });
-    const foreign = await f.store.acceptTurn(f.foreign.sessionId, "blocked", { prompt: "blocked" });
-    expect(
-      await f.executor.dispatchRun(foreign.runId, {
-        allowedFamilyKeys: [`${main.request.tenantId}:${main.request.piSessionId}`],
-        blockedFamilyKeys: [],
-      }),
-    ).toEqual({ status: "idle" });
-    expect(
-      await f.db
-        .selectFrom("runs")
-        .select(["state", "lease_id"])
-        .where("id", "=", foreign.runId)
-        .executeTakeFirstOrThrow(),
-    ).toEqual({ state: "queued", lease_id: null });
-    const measured = await f.metrics.runPreparationDuration.get();
-    const counts = measured.values.filter((v) => v.metricName?.endsWith("_count"));
-    // No standalone lease-acquire transaction remains outside atomic admission.
-    expect(counts).toEqual([]);
     main.release();
-    expect(await main.done).toMatchObject({ status: "completed" });
-    expect(await f.db.selectFrom("session_leases").selectAll().execute()).toHaveLength(1);
-    await expect(
-      f.coordinator.assertCurrentGrant(main.request, { executionReference: main.reference }),
-    ).rejects.toThrow();
-    expect((await f.renew()).payload.familyLeaseRenewals).toHaveLength(1);
-    await f.coordinator.assertCurrentGrant(child.request, { executionReference: child.reference });
-    child.release();
-    expect(await child.done).toMatchObject({ status: "completed" });
+    await main.done;
     expect(
       await f.db
         .selectFrom("session_leases")
-        .selectAll()
+        .select("lease_id")
+        .where("released_at", "is", null)
+        .execute(),
+    ).toHaveLength(1);
+    await f.projectSeals();
+    expect(
+      await f.db
+        .selectFrom("session_leases")
+        .select("lease_id")
         .where("released_at", "is", null)
         .execute(),
     ).toHaveLength(0);
-    await f.projectSeals();
+    await expect(
+      f.coordinator.assertCurrentGrant(main.request, { executionReference: main.reference }),
+    ).rejects.toThrow();
     const next = await f.start(f.main.sessionId);
     expect(parseExecutionReference(next.reference).fencingToken).toBe(a.fencingToken + 1);
-    expect(parseExecutionReference(next.reference).leaseId).not.toBe(a.leaseId);
     next.release();
     await next.done;
   } finally {
     await f.close();
   }
-}, 30000);
+}, 30_000);
 
-it("retires every task of an expired Session, even with a one-family recovery limit", async () => {
+it("closes one expired Session writer without retiring another physical Session", async () => {
   const f = await fixture(2);
   try {
     const main = await f.start(f.main.sessionId),
-      child = await f.start(f.child.sessionId);
-    const other = await f.start(f.foreign.sessionId);
+      other = await f.start(f.foreign.sessionId);
     await f.db
       .updateTable("session_leases")
       .set({ valid_until: new Date(Date.now() - 1) })
@@ -264,14 +254,27 @@ it("retires every task of an expired Session, even with a one-family recovery li
       workerId: f.workerId,
       inventory: {
         listAssignments: async () => {
-          throw new Error("Semantic retirement must not kill a healthy Worker");
+          throw new Error("Lease retirement must not terminate the Worker");
         },
         terminateAndConfirmAbsent: async () => {
           throw new Error("Unexpected physical termination");
         },
       },
     });
-    expect(await reconciler.retireExpiredAssignments(1)).toMatchObject({ settledAssignments: 2 });
+    expect(await reconciler.retireExpiredAssignments(1)).toMatchObject({ settledAssignments: 1 });
+    // Revocation precedes the ordered closure; retained ownership blocks takeover.
+    expect(
+      await f.db
+        .selectFrom("session_leases")
+        .select("lease_id")
+        .where("released_at", "is", null)
+        .execute(),
+    ).toHaveLength(2);
+    await expect(
+      f.coordinator.assertCurrentGrant(main.request, { executionReference: main.reference }),
+    ).rejects.toThrow();
+    await f.coordinator.assertCurrentGrant(other.request, { executionReference: other.reference });
+    await f.projectSeals();
     expect(
       await f.db
         .selectFrom("session_leases")
@@ -279,16 +282,10 @@ it("retires every task of an expired Session, even with a one-family recovery li
         .where("released_at", "is", null)
         .execute(),
     ).toEqual([{ pi_session_id: f.foreign.sessionId }]);
-    await expect(
-      f.coordinator.assertCurrentGrant(child.request, { executionReference: child.reference }),
-    ).rejects.toThrow();
-    await f.coordinator.assertCurrentGrant(other.request, { executionReference: other.reference });
-    await f.projectSeals();
     main.release();
-    child.release();
     other.release();
-    await Promise.allSettled([main.done, child.done, other.done]);
+    await Promise.allSettled([main.done, other.done]);
   } finally {
     await f.close();
   }
-}, 30000);
+}, 30_000);

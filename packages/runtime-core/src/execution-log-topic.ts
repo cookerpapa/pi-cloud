@@ -81,6 +81,20 @@ export class ExecutionLogTopic {
     if (!this.#started || !(await this.#admin.listTopics()).includes(this.#topic))
       throw new Error("Execution log topic is unavailable");
   }
+  async availablePartitions(): Promise<number[]> {
+    if (!this.#started) throw new Error("Execution log topic is unavailable");
+    const metadata = await this.#admin.metadata({ topics: [this.#topic], forceUpdate: true });
+    const topic = metadata.topics.get(this.#topic);
+    if (topic?.partitionsCount !== this.#partitions)
+      throw new Error("Execution log partition generation changed");
+    return topic.partitions.flatMap((p, index) =>
+      p.leader >= 0 &&
+      p.replicas.length === this.#replicas &&
+      p.isr.length >= Math.max(1, this.#replicas - 1)
+        ? [index]
+        : [],
+    );
+  }
   async partitionOwners(groupId: string): Promise<ReadonlyMap<number, string>> {
     // Confluent's native Admin conversion dereferences a null assignor for
     // missing groups. Reuse this existing protocol Admin, including its decoder.

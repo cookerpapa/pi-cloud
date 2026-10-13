@@ -75,7 +75,7 @@ it("uses the same native probe endpoint for direct guest evidence and asynchrono
     executionReply = { accepted: true, bootID: executionTarget.bootId, probeID: probeId };
     await client.submitProbe(executionTarget, {
       probeId,
-      runId: "run",
+      executionScopeId: "run",
       writerId: "writer",
       completionContext: { kind: "execution_probe" },
     });
@@ -769,7 +769,7 @@ const executionTarget = {
 const executionRequest = {
   source: { topic: "test-session-log", partition: 0, offset: "1" },
   operationId: "22222222-2222-4222-8222-222222222222",
-  runId: "33333333-3333-4333-8333-333333333333",
+  executionScopeId: "33333333-3333-4333-8333-333333333333",
   writerId: "44444444-4444-4444-8444-444444444444",
   payload: {},
   completionContext: {},

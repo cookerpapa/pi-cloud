@@ -1,9 +1,5 @@
 import { expect, it, vi } from "vitest";
 import { SubagentReadViews } from "../src/subagent-read-views.ts";
-import {
-  SubagentPendingCommands,
-  type SubagentCommandRow,
-} from "../src/subagent-pending-commands.ts";
 
 it("shares warm lookups and rejects late cache installation after a family change", async () => {
   const views = new SubagentReadViews(),
@@ -37,56 +33,4 @@ it("does not retain failed or over-budget values and isolates Session families",
   await views.read("one", "key", load);
   expect(load).toHaveBeenCalledTimes(2);
   expect(await views.read("two", "key", async () => "other")).toBe("other");
-});
-
-function row(): SubagentCommandRow {
-  return {
-    id: "command",
-    ordinal: "1",
-    revision: "1",
-    tenant_id: "tenant",
-    run_id: "run",
-    partition: 0,
-    command: { scope: { piSessionId: "physical" }, request: { task: "x".repeat(1000) } },
-    child_execution_id: null,
-    supervisor_request_id: null,
-    target_session_id: null,
-    input_run_id: null,
-    input_consumed_at: null,
-    response: null,
-    delivered_at: null,
-    created_at: new Date(),
-    updated_at: new Date(),
-  };
-}
-
-it("keeps bounded references when bodies are evicted and retires only consumed input", () => {
-  const pending = new SubagentPendingCommands(2, 64),
-    initial = row();
-  pending.remember(initial);
-  expect(pending.row(initial.id)).toBeUndefined();
-  expect(pending.get(initial.id)?.responsePending).toBe(true);
-  const accepted = {
-    ...initial,
-    revision: "2",
-    delivered_at: new Date(),
-    target_session_id: "receiver",
-    input_run_id: "receiver-run",
-    response: { result: { state: "accepted" } },
-  };
-  pending.remember(accepted);
-  expect(pending.get(initial.id)).toMatchObject({ responsePending: false, inputPending: true });
-  pending.remember({ ...accepted, revision: "3", input_consumed_at: new Date() });
-  expect(pending.get(initial.id)).toBeUndefined();
-  pending.remember(initial);
-  expect(pending.get(initial.id)).toBeUndefined();
-});
-
-it("reports reference pressure without turning an untracked durable command into success", () => {
-  const pending = new SubagentPendingCommands(1),
-    first = row();
-  expect(pending.remember(first)).toBe(true);
-  expect(pending.remember({ ...first, id: "next", ordinal: "2" })).toBe(false);
-  expect(pending.overflow).toBe(true);
-  expect(pending.size).toBe(1);
 });

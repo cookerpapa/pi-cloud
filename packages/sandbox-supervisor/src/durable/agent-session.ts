@@ -1,4 +1,11 @@
 import { withToolInvocation } from "../tool-invocation.ts";
+import { PiTurnError } from "../pi-turn-runtime.ts";
+import { isDeepStrictEqual } from "node:util";
+import {
+  parseExecutionReference,
+  type CandidateControlToolCommand,
+  type DurableSessionCommit,
+} from "@pi-cloud/protocol";
 import {
   BACKGROUND_CONTEXT,
   awaitWithContext,
@@ -48,12 +55,39 @@ export const CloudRunDocument = defineDoc<Record<string, JsonValue>>({
   fork: "initial",
   initial: () => ({}),
 });
-const CreationReceipt = defineDocFamily<{ conversationId: number }, number>({
+type ConversationCreation = {
+  conversationId: number;
+  parentConversationId: number;
+  ownerTaskId: number;
+  at: number | null;
+  view: Record<string, JsonValue> | null;
+};
+const CreationReceipt = defineDocFamily<ConversationCreation, ConversationCreation>({
   kind: "pi-cloud.conversation-creation",
+  version: 3,
+  scope: "session",
+  family: true,
+  initial: (receipt) => receipt,
+});
+const ConversationStop = defineDocFamily<{ stopped: boolean }, boolean>({
+  kind: "pi-cloud.conversation-stop",
   version: 1,
   scope: "session",
   family: true,
-  initial: (conversationId) => ({ conversationId }),
+  initial: (stopped) => ({ stopped }),
+});
+type HostCallValue = {
+  conversationId: number;
+  toolName: string;
+  callId: string;
+  arguments: Record<string, JsonValue>;
+};
+const HostCallDocument = defineDocFamily<HostCallValue, HostCallValue>({
+  kind: "pi-cloud.tool-hostcall",
+  version: 1,
+  scope: "task",
+  family: true,
+  initial: (value) => value,
 });
 export type NativeRequestContext = {
   taskId: number;
@@ -82,15 +116,16 @@ export type DurableRunConfiguration = {
 };
 
 /** Pi owns tasks, retry, compaction and cancellation. This family only supplies
- * the cloud ports and registers the PG-admitted configuration of each Run. */
+ * cloud ports. Conversations in one root Run have distinct model/Tool bindings. */
 export class DurableAgentSession {
-  readonly #runs = new Map<string, DurableRunConfiguration>();
+  readonly #bindings = new Map<number, DurableRunConfiguration>();
   readonly #conversations = new Map<number, string>();
   readonly #requests = new Map<number, NativeRequestContext>();
   readonly #waiters = new Map<string, Set<() => void>>();
   readonly #abort = new AbortController();
   readonly #registry = createRegistry();
   readonly #installed = new Set<string>();
+  readonly #hostCalls = new Map<string, { taskId: number; command: CandidateControlToolCommand }>();
   readonly #models: ScopedDurableModels;
   readonly remote: DurableRemoteTools;
   #harness!: Harness;
@@ -104,7 +139,11 @@ export class DurableAgentSession {
     },
   ) {
     this.#models = new ScopedDurableModels(options.models, async (request) => {
-      const run = await this.#awaitRun(request.runId, request.options.signal);
+      const run = await this.#awaitRun(
+        request.runId,
+        request.conversationId,
+        request.options.signal,
+      );
       await run.assertCurrent();
       await run.beforeEffect?.(request.options.signal);
       return run.openModel(request, this.#requests.get(run.conversationId));
@@ -114,7 +153,11 @@ export class DurableAgentSession {
       prepare: async (invocation) => {
         const id = this.#conversations.get(invocation.conversationId);
         if (!id) throw new Error("Tool conversation has no cloud Run binding");
-        const run = await this.#awaitRun(id, invocation.context.abortSignal);
+        const run = await this.#awaitRun(
+          id,
+          invocation.conversationId,
+          invocation.context.abortSignal,
+        );
         await run.assertCurrent();
         await run.beforeEffect?.(invocation.context.abortSignal);
         return run.prepareRemote(invocation);
@@ -136,9 +179,8 @@ export class DurableAgentSession {
               return undefined;
             },
             onYield: async (answer, api) => {
-              const id = this.#conversations.get(api.conversationId),
-                run = id && this.#runs.get(id);
-              const next = await (run || undefined)?.beforeYield?.(answer);
+              const run = this.#bindings.get(api.conversationId);
+              const next = await run?.beforeYield?.(answer);
               return next === undefined ? undefined : { continue: next };
             },
           }),
@@ -170,7 +212,7 @@ export class DurableAgentSession {
               execute: async (args, api, context) => {
                 const id = this.#conversations.get(api.conversationId);
                 if (!id) throw new Error("Infrastructure Tool has no cloud Run binding");
-                const current = await this.#awaitRun(id, context.abortSignal);
+                const current = await this.#awaitRun(id, api.conversationId, context.abortSignal);
                 await current.assertCurrent();
                 await current.beforeEffect?.(context.abortSignal);
                 const definition = current.tools.find((candidate) => candidate.name === tool.name);
@@ -246,15 +288,12 @@ export class DurableAgentSession {
       );
       if (typeof state?.runId !== "string" || !state.model) continue;
       session.#conversations.set(conversationId, state.runId);
-      session.#models.register(state.runId, state.model as unknown as Model<Api>);
+      session.#models.register(state.runId, conversationId, state.model as unknown as Model<Api>);
     }
     return session;
   }
   get harness(): Harness {
     return this.#harness;
-  }
-  describe(runId: string, model: Model<Api>): void {
-    this.#models.register(runId, model);
   }
   async bind(run: DurableRunConfiguration): Promise<Conversation> {
     await run.assertCurrent();
@@ -279,7 +318,7 @@ export class DurableAgentSession {
       previous?.runId === run.runId
         ? (previous.baseEntry ?? null)
         : ((await conversation.entries({}, 1, undefined, BACKGROUND_CONTEXT)).items[0]?.id ?? null);
-    this.#runs.set(run.runId, run);
+    this.#bindings.set(run.conversationId, run);
     this.#conversations.set(run.conversationId, run.runId);
     this.#installTools(run.tools);
     const descriptor = {
@@ -289,7 +328,7 @@ export class DurableAgentSession {
           ? run.model.contextWindow
           : Math.min(run.model.contextWindow, run.autoCompactTokenLimit + this.#reserveTokens),
     };
-    const model = this.#models.register(run.runId, descriptor);
+    const model = this.#models.register(run.runId, run.conversationId, descriptor);
     await conversation.commit(async (tx) => {
       const state = await tx.doc(CloudRunDocument, conversation.id);
       for (const key of Object.keys(state)) delete state[key];
@@ -308,14 +347,18 @@ export class DurableAgentSession {
         ],
       });
     }, BACKGROUND_CONTEXT);
-    for (const wake of this.#waiters.get(run.runId) ?? []) wake();
+    for (const wake of this.#waiters.get(`${run.runId}:${run.conversationId}`) ?? []) wake();
     return conversation;
   }
-  detach(runId: string): void {
-    const run = this.#runs.get(runId);
-    this.#runs.delete(runId);
-    if (run && this.#conversations.get(run.conversationId) === runId)
-      this.#conversations.delete(run.conversationId);
+  detach(runId: string, conversationId: number): void {
+    const run = this.#bindings.get(conversationId);
+    if (run?.runId === runId) {
+      this.#bindings.delete(conversationId);
+      this.#conversations.delete(conversationId);
+      for (const [taskId, request] of this.#requests)
+        if (request.conversationId === conversationId) this.#requests.delete(taskId);
+    }
+    this.#models.forget(runId, conversationId);
   }
   async watch(
     conversationId: number,
@@ -334,8 +377,20 @@ export class DurableAgentSession {
     ownerTaskId: number;
     parentConversationId: number;
     at?: number;
+    view?: import("@pi-cloud/protocol").ConversationWorkView;
   }): Promise<number> {
     return this.#harness.commit(async (tx) => {
+      const stopped = await this.storage.findDocument(
+        { kind: "pi-cloud.conversation-stop", scope: { kind: "session" }, key: input.requestId },
+        "current",
+        BACKGROUND_CONTEXT,
+      );
+      if (stopped)
+        throw new PiTurnError(
+          "native_conversation_cancelled",
+          "Native child creation was cancelled",
+          false,
+        );
       const existing = await this.storage.findDocument(
         {
           kind: "pi-cloud.conversation-creation",
@@ -349,17 +404,34 @@ export class DurableAgentSession {
         const stored = await this.storage.document(existing.id, "current", BACKGROUND_CONTEXT);
         if (typeof stored?.value.conversationId !== "number")
           throw new Error("Native creation receipt is corrupt");
+        if (
+          stored.value.ownerTaskId !== input.ownerTaskId ||
+          stored.value.parentConversationId !== input.parentConversationId ||
+          stored.value.at !== (input.at ?? null) ||
+          !isDeepStrictEqual(stored.value.view, input.view ?? null)
+        )
+          throw new PiTurnError(
+            "idempotency_conflict",
+            "Native creation identity was reused with different arguments",
+            false,
+          );
         return stored.value.conversationId;
       }
       const caller = await tx.task(input.ownerTaskId as TaskId);
       const generation = caller?.owner === undefined ? undefined : await tx.task(caller.owner);
       if (
         caller?.kind !== "pi.tool" ||
+        caller.abortRequested ||
+        ["completing", "terminal"].includes(caller.state.status) ||
         caller.conversationId !== input.parentConversationId ||
         generation?.kind !== "pi.generation" ||
         generation.conversationId !== input.parentConversationId
       )
-        throw new Error("Child creation requires the calling Tool's native generation");
+        throw new PiTurnError(
+          "native_conversation_closed",
+          "Child creation requires the calling Tool's native generation",
+          false,
+        );
       // A completing task waits for its owned work. Owning the child under the
       // delegation Tool would prevent the parent from reaching its reply Tool.
       const ownership = { kind: "task" as const, taskId: generation.id };
@@ -371,9 +443,48 @@ export class DurableAgentSession {
               input.at as EntryId,
               { ownership },
             );
-      await tx.doc(CreationReceipt, input.requestId, created.id);
+      await tx.doc(CreationReceipt, input.requestId, {
+        conversationId: created.id,
+        parentConversationId: input.parentConversationId,
+        ownerTaskId: input.ownerTaskId,
+        at: input.at ?? null,
+        view: input.view ? JSON.parse(JSON.stringify(input.view)) : null,
+      });
       return created.id;
     }, BACKGROUND_CONTEXT);
+  }
+  async stopConversation(requestId: string): Promise<void> {
+    await this.#harness.commit(async (tx) => {
+      await tx.doc(ConversationStop, requestId, true);
+    }, BACKGROUND_CONTEXT);
+    const receipt = await this.#harness.snapshot(CreationReceipt, requestId, BACKGROUND_CONTEXT);
+    if (receipt)
+      await (
+        await this.#harness.conversation(
+          receipt.conversationId as ConversationId,
+          BACKGROUND_CONTEXT,
+        )
+      )?.abort(BACKGROUND_CONTEXT);
+  }
+  async activeConversationViews(
+    runId: string,
+  ): Promise<
+    Array<{ conversationId: number; view: import("@pi-cloud/protocol").ConversationWorkView }>
+  > {
+    const result: Array<{
+      conversationId: number;
+      view: import("@pi-cloud/protocol").ConversationWorkView;
+    }> = [];
+    const inspection = await this.#harness.inspect(BACKGROUND_CONTEXT);
+    for (const id of new Set(inspection.tasks.map(({ record }) => record.conversationId))) {
+      const value = await this.#harness.snapshot(CloudRunDocument, id, BACKGROUND_CONTEXT);
+      if (value?.runId === runId && value.view)
+        result.push({
+          conversationId: id,
+          view: value.view as unknown as import("@pi-cloud/protocol").ConversationWorkView,
+        });
+    }
+    return result;
   }
   async childAnchor(conversationId: number): Promise<number | undefined> {
     const state = await this.#harness.snapshot(
@@ -383,8 +494,69 @@ export class DurableAgentSession {
     );
     return typeof state?.baseEntry === "number" ? state.baseEntry : undefined;
   }
-  async #awaitRun(id: string, signal?: AbortSignal): Promise<DurableRunConfiguration> {
-    while (!this.#runs.has(id)) {
+  preparePublication(commit: DurableSessionCommit) {
+    const prepared = this.remote.preparePublication(commit);
+    const tools = [...prepared.tools];
+    for (const write of commit.writes) {
+      if (write.type !== "document.create") continue;
+      const record = write.record as { id: number; kind: string; key?: string };
+      if (record.kind !== "pi-cloud.tool-hostcall" || !record.key) continue;
+      const pending = this.#hostCalls.get(record.key);
+      if (!pending) throw new Error("Native hostcall has no prepared dispatch");
+      tools.push({
+        taskId: pending.taskId,
+        command: { ...pending.command, sourceDocumentId: record.id },
+      });
+    }
+    return { ...prepared, tools };
+  }
+  async publishHostCall(taskId: number, command: CandidateControlToolCommand): Promise<void> {
+    const runId = parseExecutionReference(command.executionReference).runId;
+    const binding = this.#bindings.get(command.conversationId);
+    if (binding?.runId !== runId) throw new Error("Native hostcall invocation has ended");
+    await binding.assertCurrent();
+    if (this.#hostCalls.has(command.operationId))
+      throw new Error("Native hostcall is already publishing");
+    this.#hostCalls.set(command.operationId, { taskId, command });
+    try {
+      await this.#harness.commit(async (tx) => {
+        const task = await tx.task(taskId as TaskId);
+        if (
+          task?.kind !== "pi.tool" ||
+          task.conversationId !== command.conversationId ||
+          task.abortRequested ||
+          task.state.status !== "running" ||
+          (task.state.checkpoint as { phase?: string }).phase !== "execute"
+        )
+          throw new Error("Native hostcall invocation has ended");
+        const seed: HostCallValue = {
+          conversationId: command.conversationId,
+          toolName: command.toolName,
+          callId: command.nativeCallId,
+          arguments: command.arguments as Record<string, JsonValue>,
+        };
+        const value = await tx.doc(HostCallDocument, taskId as TaskId, command.operationId, seed);
+        if (!isDeepStrictEqual(JSON.parse(JSON.stringify(value)), seed))
+          throw new Error("Native hostcall identity changed arguments");
+      }, BACKGROUND_CONTEXT);
+    } finally {
+      this.#hostCalls.delete(command.operationId);
+    }
+  }
+  async retireHostCall(taskId: number, id: string): Promise<void> {
+    await this.#harness.commit(async (tx) => {
+      const task = await tx.task(taskId as TaskId);
+      if (!task || task.state.status === "terminal") return;
+      await tx.retireDoc(HostCallDocument, taskId as TaskId, id);
+    }, BACKGROUND_CONTEXT);
+  }
+  async #awaitRun(
+    runId: string,
+    conversationId: number,
+    signal?: AbortSignal,
+  ): Promise<DurableRunConfiguration> {
+    const id = `${runId}:${conversationId}`;
+    while (this.#bindings.get(conversationId)?.runId !== runId) {
       const context = withAbortSignal(
         signal ? AbortSignal.any([signal, this.#abort.signal]) : this.#abort.signal,
         BACKGROUND_CONTEXT,
@@ -404,7 +576,7 @@ export class DurableAgentSession {
       }
     }
     this.#abort.signal.throwIfAborted();
-    return this.#runs.get(id)!;
+    return this.#bindings.get(conversationId)!;
   }
   async close(): Promise<void> {
     this.#abort.abort(new Error("Native Session owner closed"));
@@ -412,7 +584,7 @@ export class DurableAgentSession {
       await this.#harness.close(BACKGROUND_CONTEXT);
     } finally {
       this.remote.close();
-      this.#runs.clear();
+      this.#bindings.clear();
       this.#conversations.clear();
       this.#requests.clear();
     }

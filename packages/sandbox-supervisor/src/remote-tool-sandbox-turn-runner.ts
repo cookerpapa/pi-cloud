@@ -1,4 +1,10 @@
-import type { WorkflowExecutor } from "./workflow-transport.ts";
+import type { WorkflowPreparer } from "./workflow-transport.ts";
+import {
+  awaitWithContext,
+  withAbortSignal,
+  BACKGROUND_CONTEXT,
+} from "@earendil-works/chord/context";
+import { isDeepStrictEqual } from "node:util";
 import {
   activeTraceCarrier,
   operationalLog,
@@ -12,6 +18,8 @@ import {
   type ToolSandboxAssignment,
   type ToolSandboxCreateRequest,
   type ToolSandboxCreateResponse,
+  type ConversationWorkView,
+  type ConversationStartRequest,
 } from "@pi-cloud/protocol";
 import { encodeWorkspaceBlob } from "@pi-cloud/workspace-runtime";
 import { stat } from "node:fs/promises";
@@ -68,7 +76,35 @@ export interface SandboxControlBoundary {
 }
 
 export type RemoteToolSandboxTurnRunnerOptions = {
-  onRuntimeBinding?: (executionReference: string, bindingId: string | undefined) => void;
+  conversations?: {
+    createChildConversation(input: {
+      executionReference: string;
+      requestId: string;
+      ownerTaskId: number;
+      parentConversationId: number;
+      at: string | null;
+      view: ConversationWorkView;
+    }): Promise<number>;
+    stopConversation(reference: string, requestId: string): Promise<void>;
+    inputReceipt(reference: string, conversationId: number, requestId: string): Promise<boolean>;
+    activeConversations(reference: string): Promise<
+      Array<{
+        conversationId: number;
+        view: ConversationWorkView;
+        prompt: string;
+        nextEventSeq: number;
+      }>
+    >;
+  };
+  openConversationLog?: (command: ExecuteTurnCommandMessage) => {
+    publish: PiEventPublisher;
+    close(): Promise<void>;
+  };
+  onRuntimeBinding?: (
+    executionReference: string,
+    bindingId: string | undefined,
+    conversationId: number,
+  ) => void;
   onActivity?: (
     command: ExecuteTurnCommandMessage,
     update: import("@pi-cloud/protocol").RunActivityUpdate | undefined,
@@ -87,13 +123,12 @@ export type RemoteToolSandboxTurnRunnerOptions = {
     command: ExecuteTurnCommandMessage,
     readSignal?: AbortSignal,
   ) => Promise<PiCloudSessionHandle>;
-  publishToolCommand?: import("@pi-cloud/protocol").ToolCommandPublisher["publishToolCommand"];
   waitForToolReply?: TrustedRemoteToolsRuntimeConfiguration["waitForToolReply"];
   createTrustedTools?: (
     command: ExecuteTurnCommandMessage,
     context: Readonly<{
-      executeWorkflow: WorkflowExecutor;
-      refreshServices(): Promise<void>;
+      prepareWorkflow: WorkflowPreparer;
+      prepareEnvironment(): Promise<string>;
     }>,
   ) => Promise<readonly TrustedAgentTool[]> | readonly TrustedAgentTool[];
   acquireModelPermit?: (
@@ -142,13 +177,32 @@ async function releaseModelRuntimeLease(lease: TrustedModelRuntimeLease): Promis
 }
 
 export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
+  readonly #conversationHost: RemoteToolSandboxTurnRunnerOptions["conversations"];
+  readonly #openConversationLog: RemoteToolSandboxTurnRunnerOptions["openConversationLog"];
+  readonly #families = new Map<
+    string,
+    {
+      command: ExecuteTurnCommandMessage;
+      signal: AbortSignal;
+      bindingsReady: PromiseWithResolvers<void>;
+      children: Map<
+        string,
+        {
+          conversationId: number;
+          view: ConversationWorkView;
+          ready: Promise<void>;
+          done: Promise<unknown>;
+        }
+      >;
+    }
+  >();
+  readonly #conversationLines = new Map<string, Promise<unknown>>();
   readonly #broker: SandboxControlBoundary;
   readonly #runtimeIdentity: SandboxRuntimeIdentity;
   readonly #trustedWorkspaceDirectory: string;
   readonly #modelRuntimeLeaseResolver: TrustedModelRuntimeLeaseResolver;
   readonly #workspaceSeedResolver: AgentWorkspaceSeedResolver | undefined;
   readonly #openAgentSession: RemoteToolSandboxTurnRunnerOptions["openAgentSession"];
-  readonly #publishToolCommand: RemoteToolSandboxTurnRunnerOptions["publishToolCommand"];
   readonly #waitForToolReply: RemoteToolSandboxTurnRunnerOptions["waitForToolReply"];
   readonly #decodeInputImages: RemoteToolSandboxTurnRunnerOptions["decodeInputImages"];
   readonly #createTrustedTools: RemoteToolSandboxTurnRunnerOptions["createTrustedTools"];
@@ -170,6 +224,8 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   >();
 
   constructor(options: RemoteToolSandboxTurnRunnerOptions) {
+    this.#conversationHost = options.conversations;
+    this.#openConversationLog = options.openConversationLog;
     this.#onActivity = options.onActivity;
     this.#onRuntimeBinding = options.onRuntimeBinding;
     this.#broker = options.broker;
@@ -178,7 +234,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     this.#modelRuntimeLeaseResolver = options.modelRuntimeLeaseResolver;
     this.#workspaceSeedResolver = options.workspaceSeedResolver;
     this.#openAgentSession = options.openAgentSession;
-    this.#publishToolCommand = options.publishToolCommand;
     this.#waitForToolReply = options.waitForToolReply;
     this.#decodeInputImages = options.decodeInputImages;
     this.#createTrustedTools = options.createTrustedTools;
@@ -198,7 +253,9 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     publishEvent: PiEventPublisher,
     signal: AbortSignal,
   ): Promise<PiTurnResult> {
-    if (this.#activePiRunners.has(command.payload.runId)) {
+    const key = `${command.payload.runId}:${command.payload.piSession.conversationId}`;
+    const root = !command.payload.conversationWork;
+    if (this.#activePiRunners.has(key)) {
       throw new PiTurnError(
         "pi_runtime_overlap",
         "Pi Runtime is already active for this Run",
@@ -218,7 +275,17 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       reject: rejectRunner,
       executionReference: command.payload.executionReference,
     };
-    this.#activePiRunners.set(command.payload.runId, slot);
+    this.#activePiRunners.set(key, slot);
+    if (root) {
+      const bindingsReady = Promise.withResolvers<void>();
+      void bindingsReady.promise.catch(() => {});
+      this.#families.set(command.payload.executionReference, {
+        command,
+        signal,
+        bindingsReady,
+        children: new Map(),
+      });
+    }
     try {
       return await withSpan({
         serviceName: "pi-cloud-trusted-runner",
@@ -235,8 +302,31 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         run: () => this.#run(command, publishEvent, signal, slot.resolve),
       });
     } finally {
-      if (this.#activePiRunners.get(command.payload.runId) === slot) {
-        this.#activePiRunners.delete(command.payload.runId);
+      if (root) {
+        const family = this.#families.get(command.payload.executionReference);
+        family?.bindingsReady.reject(
+          new Error("Root work ended before native bindings were ready"),
+        );
+        const outcomes = family
+          ? await Promise.allSettled([...family.children.values()].map((child) => child.done))
+          : [];
+        this.#families.delete(command.payload.executionReference);
+        const failure = outcomes.find(
+          (outcome) =>
+            outcome.status === "rejected" &&
+            outcome.reason instanceof PiTurnError &&
+            ["writer_publication_failed", "worker_shutdown", "session_lease_revoked"].includes(
+              outcome.reason.code,
+            ),
+        );
+        if (failure?.status === "rejected") {
+          this.#activePiRunners.delete(key);
+          slot.reject(failure.reason);
+          throw failure.reason;
+        }
+      }
+      if (this.#activePiRunners.get(key) === slot) {
+        this.#activePiRunners.delete(key);
       }
       slot.reject(
         new PiTurnError(
@@ -247,24 +337,127 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       );
     }
   }
+  async #conversationLine<T>(reference: string, id: string, action: () => Promise<T>): Promise<T> {
+    const key = `${reference}:${id}`,
+      prior = this.#conversationLines.get(key) ?? Promise.resolve();
+    const next = prior.catch(() => {}).then(action);
+    this.#conversationLines.set(key, next);
+    try {
+      return await next;
+    } finally {
+      if (this.#conversationLines.get(key) === next) this.#conversationLines.delete(key);
+    }
+  }
+  startConversation(
+    request: ConversationStartRequest,
+    restored?: { conversationId: number; nextEventSeq: number },
+  ): Promise<number> {
+    return this.#conversationLine(request.executionReference, request.view.id, async () => {
+      const family = this.#families.get(request.executionReference);
+      if (!family || !this.#conversationHost || !this.#openConversationLog)
+        throw Object.assign(new Error("Native Session owner is unavailable"), { retryable: true });
+      const prior = family.children.get(request.view.id);
+      if (prior) {
+        if (!isDeepStrictEqual(prior.view, request.view))
+          throw new Error("Child view identity changed");
+        await prior.ready;
+        return prior.conversationId;
+      }
+      const view = request.view;
+      const conversationId =
+        restored?.conversationId ??
+        (await this.#conversationHost.createChildConversation({
+          executionReference: request.executionReference,
+          requestId: view.id,
+          parentConversationId: view.parentConversationId,
+          ownerTaskId: view.ownerTaskId,
+          at: view.contextAnchor === null ? null : String(view.contextAnchor),
+          view,
+        }));
+      const { computeSessionId: _compute, ...rootPayload } = family.command.payload;
+      const command: ExecuteTurnCommandMessage = {
+        ...family.command,
+        messageId: this.#idGenerator(),
+        payload: {
+          ...rootPayload,
+          sessionId: view.sessionId,
+          turnId: view.turnId,
+          piSession: { ...rootPayload.piSession, conversationId },
+          conversationWork: view,
+          sessionKind: "subagent",
+          nextEventSeq: restored?.nextEventSeq ?? 1,
+          input: { kind: "prompt", text: request.prompt },
+          workingDirectory: view.workingDirectory,
+          toolCapabilities: view.toolCapabilities,
+          agentSystemPrompt: view.agentSystemPrompt,
+          ...(view.computeSessionId ? { computeSessionId: view.computeSessionId } : {}),
+        },
+      };
+      const log = this.#openConversationLog(command);
+      const work = this.run(command, log.publish, family.signal);
+      const slot = this.#activePiRunners.get(`${command.payload.runId}:${conversationId}`)!;
+      const ready = slot.ready.then((runner) => runner.waitUntilReady());
+      const done = work.then(
+        async (result) => {
+          await log.close().catch(() => {
+            throw new PiTurnError(
+              "writer_publication_failed",
+              "Conversation publication did not drain",
+              true,
+            );
+          });
+          return result;
+        },
+        async (error: unknown) => {
+          await log.close().catch(() => {});
+          throw error;
+        },
+      );
+      void done.catch(() => {});
+      family.children.set(view.id, { conversationId, view: structuredClone(view), ready, done });
+      await ready;
+      return conversationId;
+    });
+  }
+  stopConversation(reference: string, id: string): Promise<void> {
+    return this.#conversationLine(reference, id, async () => {
+      if (!this.#families.has(reference) || !this.#conversationHost)
+        throw Object.assign(new Error("Native Session owner is unavailable"), { retryable: true });
+      await this.#conversationHost.stopConversation(reference, id);
+    });
+  }
   async agentInput(
     runId: string,
     id: string,
     text: string,
     delivery: "notify" | "steer" | "follow_up",
     executionReference: string,
-  ): Promise<void> {
-    const slot = this.#activePiRunners.get(runId);
-    if (!slot) throw new Error("Target Agent is not running on this Worker");
+    conversationId: number,
+  ): Promise<{ accepted: boolean }> {
+    const key = `${runId}:${conversationId}`;
+    const slot = this.#activePiRunners.get(key);
+    const receipt = async () => ({
+      accepted:
+        (await this.#conversationHost?.inputReceipt(executionReference, conversationId, id)) ??
+        false,
+    });
+    if (!slot) return receipt();
     if (slot.executionReference !== executionReference)
       throw new Error("Target Agent input authority mismatch");
     const runner = await slot.ready;
-    if (this.#activePiRunners.get(runId) !== slot)
-      throw new Error("Target Agent ended before input delivery");
-    await runner.agentInput(id, text, delivery);
+    if (this.#activePiRunners.get(key) !== slot) return receipt();
+    try {
+      await runner.agentInput(id, text, delivery);
+    } catch (error) {
+      if (error instanceof PiTurnError && error.code === "steer_target_unavailable")
+        return receipt();
+      throw error;
+    }
+    return { accepted: true };
   }
   async humanInput(command: NativeInputCommand): Promise<NativeInputResult> {
-    const slot = this.#activePiRunners.get(command.runId);
+    const key = `${command.runId}:1`;
+    const slot = this.#activePiRunners.get(key);
     if (!slot || slot.executionReference !== command.executionReference)
       throw new PiTurnError(
         "input_target_unavailable",
@@ -272,7 +465,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         true,
       );
     const runner = await slot.ready;
-    if (this.#activePiRunners.get(command.runId) !== slot)
+    if (this.#activePiRunners.get(key) !== slot)
       throw new PiTurnError("input_target_unavailable", "Input target ended during delivery", true);
     return runner.humanInput(command);
   }
@@ -372,7 +565,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           const created = await this.#broker.create(createRequest, signal);
           activation = created;
           try {
-            this.#onRuntimeBinding?.(command.payload.executionReference, created.activationId);
+            this.#onRuntimeBinding?.(
+              command.payload.executionReference,
+              created.activationId,
+              command.payload.piSession.conversationId,
+            );
           } catch {
             /* Observation only. */
           }
@@ -431,17 +628,14 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         if (toolRuntimeFailure !== undefined) throw toolRuntimeFailure;
       };
       const settlementPolicy = settlementGatePolicyFromCommand(command);
-      let executeWorkflow: WorkflowExecutor | undefined;
+      let prepareWorkflow: WorkflowPreparer | undefined;
       const trustedToolBindings =
         (await this.#createTrustedTools?.(command, {
-          executeWorkflow: (...args) => {
-            if (!executeWorkflow) throw new Error("Remote workflow runtime is not ready");
-            return executeWorkflow(...args);
+          prepareWorkflow: (...args) => {
+            if (!prepareWorkflow) throw new Error("Remote workflow runtime is not ready");
+            return prepareWorkflow(...args);
           },
-          refreshServices: async () => {
-            const active = await ensureActivation();
-            await this.#broker.refreshServices(active.activationId, toolAssignment);
-          },
+          prepareEnvironment: async () => (await ensureActivation()).activationId,
         })) ?? ([] as readonly TrustedAgentTool[]);
       const trustedTools = trustedToolBindings
         .filter((binding) => binding.offered !== false)
@@ -492,6 +686,38 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       };
       let recordPreparedInput: (() => Promise<void>) | undefined;
       const runner = new PiCloudTurnRunner({
+        beforeEffect: async (effectSignal) => {
+          const family = this.#families.get(command.payload.executionReference);
+          if (!family) throw new Error("Native Session work is closing");
+          await awaitWithContext(
+            family.bindingsReady.promise,
+            withAbortSignal(effectSignal ?? signal, BACKGROUND_CONTEXT),
+          );
+        },
+        ...(!command.payload.conversationWork
+          ? {
+              onNativeBound: async () => {
+                const family = this.#families.get(command.payload.executionReference)!;
+                try {
+                  for (const child of (await this.#conversationHost?.activeConversations(
+                    command.payload.executionReference,
+                  )) ?? [])
+                    await this.startConversation(
+                      {
+                        executionReference: command.payload.executionReference,
+                        view: child.view,
+                        prompt: child.prompt,
+                      },
+                      child,
+                    );
+                  family.bindingsReady.resolve();
+                } catch (error) {
+                  family.bindingsReady.reject(error);
+                  throw error;
+                }
+              },
+            }
+          : {}),
         prepareInputUploads: (uploads, inputSignal) => {
           const preparing = (async () => {
             const sources = uploads.flatMap((file) => (file.image ? [file.image] : []));
@@ -554,10 +780,9 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           : {}),
         ...commonRunnerOptions,
         interruptionReason: () => interruptionReasonForFailureCode(toolRuntimeFailure?.code),
-        createAgentTools: ({ stepWorldState, captureSamplingStep, trackWorkflowOperation }) => {
+        createAgentTools: ({ stepWorldState, captureSamplingStep }) => {
           recordPreparedInput = () => stepWorldState.recordActive(activation);
           const remoteTools = createTrustedRemoteAgentTools({
-            trackWorkflowOperation,
             onToolCancellationUnconfirmed: () => {
               cancelOutstanding = true;
             },
@@ -573,11 +798,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                     }),
                 }
               : {}),
-            publishToolCommand: (command) => {
-              if (!this.#publishToolCommand)
-                throw new Error("Tool command publisher is unavailable");
-              return this.#publishToolCommand(command);
-            },
             resolveOperationTarget: async () => {
               const active = await ensureActivation();
               return {
@@ -624,7 +844,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                     : { tracestate: downstreamTrace.tracestate }),
                 }),
           });
-          executeWorkflow = remoteTools.executeWorkflow;
+          prepareWorkflow = remoteTools.prepareWorkflow;
           if (trustedTools.length === 0) return remoteTools;
           return {
             ...remoteTools,
@@ -671,7 +891,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       );
       await Promise.allSettled([...inputPreparations]);
       try {
-        this.#onRuntimeBinding?.(command.payload.executionReference, undefined);
+        this.#onRuntimeBinding?.(
+          command.payload.executionReference,
+          undefined,
+          command.payload.piSession.conversationId,
+        );
       } catch {
         /* Observation only. */
       }

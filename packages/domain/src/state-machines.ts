@@ -76,7 +76,7 @@ const runTransitions = {
   queued: ["running", "cancel_requested", "failed", "cancelled"],
   running: ["queued", "settling", "cancel_requested", "completed", "failed", "timed_out"],
   settling: ["queued", "cancel_requested", "completed", "failed", "timed_out"],
-  cancel_requested: ["queued", "cancelled", "failed", "timed_out"],
+  cancel_requested: ["queued", "completed", "cancelled", "failed", "timed_out"],
   completed: [],
   failed: [],
   cancelled: [],

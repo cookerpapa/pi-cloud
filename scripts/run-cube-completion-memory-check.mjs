@@ -47,7 +47,7 @@ const adapter = new CubeCompletionAdapter({
   images,
   progress: { update() {}, forget() {} },
   publish: async (_topic, reply) => {
-    if (reply.kind !== "tool_result" || reply.event.result.content[0].type !== "pi_cloud_image_v1")
+    if (reply.kind !== "tool_result" || reply.result.result.content[0].type !== "pi_cloud_image_v1")
       throw Error("Expected claim-check");
     publications++;
   },

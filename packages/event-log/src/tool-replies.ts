@@ -1,12 +1,11 @@
 import kafkaNative from "@confluentinc/kafka-javascript";
 import {
-  parseNativeToolEvent,
+  parseToolResultPayload,
   parseToolExecutionFailure,
   ToolExecutionFailure,
   type ToolExecutionFailureData,
-  MAX_TOOL_EXECUTION_TIMEOUT_MS,
   MAX_TOOL_RESPONSE_BYTES,
-  type NativeToolEnd,
+  type ToolResultPayload,
   type ImagePacked,
   validateImageReferencePayload,
   parseExecutionProbeReply,
@@ -17,11 +16,13 @@ import {
 import { KafkaLogConsumer } from "./kafka-log-consumer.ts";
 
 const { KafkaJS } = kafkaNative;
-export const TOOL_REPLY_TOPIC_PREFIX = "pi-cloud.tool-replies.v2.";
+export const TOOL_REPLY_TOPIC_PREFIX = "pi-cloud.tool-replies.v3.";
 const PREFIX = TOOL_REPLY_TOPIC_PREFIX;
 export const TOOL_REPLY_TOPIC_PATTERN =
-  /^pi-cloud\.tool-replies\.v2\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export const TOOL_REPLY_RETENTION_MS = 2 * (MAX_TOOL_EXECUTION_TIMEOUT_MS + 30_000);
+  /^pi-cloud\.tool-replies\.v3\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Transport redelivery starts when a result is published, not when the Tool
+// begins. A multi-hour native child wait has no Bash execution timeout.
+export const TOOL_REPLY_RETENTION_MS = 2 * 60 * 60_000 + 60_000;
 export function toolReplyTopic(bootId: string): string {
   if (!TOOL_REPLY_TOPIC_PATTERN.test(`${PREFIX}${bootId}`))
     throw new Error("Invalid Worker boot identity");
@@ -32,7 +33,7 @@ export type ToolReply = ReplyIdentity &
   (
     | {
         kind: "tool_result";
-        event: ImagePacked<NativeToolEnd>;
+        result: ImagePacked<ToolResultPayload>;
         execution?: ExecutionEvidence;
       }
     | {
@@ -57,20 +58,20 @@ export function parseWorkerReply(value: string | Buffer): WorkerReply {
       typeof reply.toolName !== "string" ||
       !reply.toolName ||
       "event" in reply ||
+      "result" in reply ||
       "execution" in reply
     )
       throw new Error("Invalid Tool failure identity");
     return { ...reply, failure: parseToolExecutionFailure(reply.failure) };
   }
-  if (
-    reply.kind !== "tool_result" ||
-    reply.event?.type !== "tool_execution_end" ||
-    "failure" in reply
-  )
+  if (reply.kind !== "tool_result" || "event" in reply || "failure" in reply)
     throw new Error("Invalid Tool reply kind");
-  validateImageReferencePayload(reply.event);
+  validateImageReferencePayload(reply.result);
   if (reply.execution) parseExecutionEvidence(reply.execution);
-  return { ...reply, event: parseNativeToolEvent(reply.event) as ImagePacked<NativeToolEnd> };
+  return {
+    ...reply,
+    result: parseToolResultPayload(reply.result) as ImagePacked<ToolResultPayload>,
+  };
 }
 
 export class KafkaToolReplyPublisher {
@@ -120,7 +121,7 @@ export class KafkaToolReplyPublisher {
 type Pending = {
   toolCallId: string;
   toolName: string;
-  resolve(event: ImagePacked<NativeToolEnd>): void;
+  resolve(result: ImagePacked<ToolResultPayload>): void;
   reject(error: unknown): void;
   cleanup(): void;
 };
@@ -158,7 +159,7 @@ export class ToolReplyMailbox {
   wait(operationId: string, toolCallId: string, toolName: string, signal: AbortSignal) {
     signal.throwIfAborted();
     if (this.#pending.has(operationId)) throw new Error("Tool operation already waiting");
-    const promise = new Promise<ImagePacked<NativeToolEnd>>((resolve, reject) => {
+    const promise = new Promise<ImagePacked<ToolResultPayload>>((resolve, reject) => {
       const abort = () => {
         this.#pending.delete(operationId);
         signal.removeEventListener("abort", abort);
@@ -191,13 +192,12 @@ export class ToolReplyMailbox {
     }
     const pending = this.#pending.get(reply.operationId);
     if (!pending) return;
-    const identity = reply.kind === "tool_result" ? reply.event : reply;
+    const identity = reply.kind === "tool_result" ? reply.result : reply;
     if (
       identity?.toolCallId !== pending.toolCallId ||
       identity?.toolName !== pending.toolName ||
       reply.sequence !== 1 ||
-      (reply.kind !== "execution_failure" &&
-        (reply.kind !== "tool_result" || reply.event?.type !== "tool_execution_end"))
+      (reply.kind !== "execution_failure" && reply.kind !== "tool_result")
     ) {
       this.#finish(reply.operationId, pending, new Error("Tool reply identity/order changed"));
       return;
@@ -216,7 +216,13 @@ export class ToolReplyMailbox {
     }
     this.#pending.delete(reply.operationId);
     pending.cleanup();
-    pending.resolve(reply.event);
+    try {
+      parseToolResultPayload(reply.result);
+    } catch {
+      pending.reject(new Error("Tool reply identity/order changed"));
+      return;
+    }
+    pending.resolve(reply.result);
     if (reply.execution) {
       try {
         this.onExecutionEvidence?.(reply.operationId, reply.execution);

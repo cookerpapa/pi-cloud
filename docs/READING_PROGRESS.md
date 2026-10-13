@@ -115,21 +115,36 @@ The [native Kafka fencing research](reports/kafka-native-fencing-20261013.md)
 and its isolated experiments are complete. They do not authorize a Kafka fork,
 direct-Worker migration, a second execution authority or a deployment.
 
-The owner then requested a direct-Worker plan and change assessment.
-[ADR-0246](adr/0246-worker-direct-kafka-publication-proposal.md) is the resulting
-unaccepted proposal: stable per-active-Session native producers, fresh post-init
-PG admission, distinct Run/writer closure, control publication, recovery and
-acceptance gates. The current implementation has not changed. The compatible
-Control Plane update requirement remains distinct from the initial architectural
-cutover this candidate would require.
+The owner requested a direct-Worker assessment, then challenged independent child
+seals and the need for cloud child Runs at all. Native ownership and an eight-test
+Harness run confirm one shared writer, generation-owned children, and final
+Assistant Entry/Submission done preceding descendant-aware idle. The cloud runner
+waits for that idle boundary. These tests do not prove a replacement cloud protocol.
 
-The owner challenged retaining separate child-Run seals. Native ownership and an
-eight-test Harness run confirm one shared writer, generation-owned children, and
-final Assistant Entry/Submission done preceding descendant-aware idle. The cloud
-runner waits for that idle boundary. ADR-0246 now marks ordinary Run completion
-records versus physical-writer closure as a refinement to resolve, rather than
-treating per-Run seals as a required property of multiple Lanes. No production
-settlement or cancellation semantics have been changed.
+The October 13 discussion clarified:
+
+- Pi's public Harness already manages multiple Conversations and their tasks;
+  a custom subagent tool is an adapter into that capability.
+- Fixed Cube tools already return prepared content. Worker tool proxies return
+  it through execute; Pi applies hooks and commits the canonical result.
+- Current subagent code still sends separate start/wait commands, creates/claims
+  a child Run, and receives management-HTTP results. Fixed Tools use Kafka replies.
+- Source-derived dispatch must use validated native execution intent, not merely
+  an assistant tool_call. Reconstruction never authorizes arbitrary effect replay.
+- PG child-creation deduplication and native creation receipts handle repeated
+  delivery. A repeatable notification is not permission to start another Agent.
+- A cloud Run need not mean one agent loop. Session owns the renewable execution
+  authority; the agreed direction is one root cloud work item with native descendants,
+  without giving each descendant a separate cloud Run queue lifecycle.
+
+[ADR-0247](adr/0247-session-work-and-tool-dispatch.md) consolidates the resulting
+plan and replaces the earlier unimplemented ADR-0246 draft, retained in Git.
+It covers native children, shared Tool dispatch/replies, ordinary work completion,
+Session closure, direct Kafka publishing and compatible Control Plane updates.
+The source migration is implemented and under full acceptance. Real PG/RF3 tests
+cover direct publication during Control Plane replacement, delayed initialization
+and ordered same-Run recovery. The [progress record](reports/session-work-implementation-20261013.md)
+tracks remaining checks; production has not yet changed.
 
 Resume with: **Kafka → Projector: consuming one committed record, projecting
 native state and dispatching its bounded effects**. Keep the provider/model

@@ -86,6 +86,7 @@ export function indexNative(
     fields.scope = documentScope(record.scope);
     fields.address = documentAddress(record);
     fields.nativeKind = JSON.stringify(record.kind);
+    if (record.key !== undefined) fields.key = JSON.stringify(record.key);
     fields.currentOnly = String(currentOnly(record));
     return {
       kind,
@@ -120,6 +121,7 @@ export function indexNative(
     } else if (kind === "submission") {
       const submission = record as SubmissionRecord;
       fields.status = submission.status;
+      if (submission.status === "unanswered") fields.reason = submission.reason;
       if (submission.entry !== undefined) fields.entry = String(submission.entry);
       if (submission.requestId !== undefined) fields.request = JSON.stringify(submission.requestId);
     } else {

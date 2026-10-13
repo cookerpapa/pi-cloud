@@ -20,7 +20,6 @@ const routeKey = (tenant: string, run: string, binding: string) => `${tenant}:${
  * a control change, never as an implicit fallback on Tool/probe lookup. */
 export class SandboxBindingView implements SandboxBindingReader {
   readonly #entries = new Map<string, Entry>();
-  readonly #runs = new Map<string, Set<string>>();
   readonly #writers = new Map<string, Set<string>>();
   #partitions = new Set<number>();
   #generation = 0;
@@ -28,7 +27,7 @@ export class SandboxBindingView implements SandboxBindingReader {
   #bytes = 0;
   constructor(
     readonly options: {
-      source: Pick<SandboxBindingReader, "closeScope" | "isAlive"> & {
+      source: Pick<SandboxBindingReader, "closeWriter" | "isAlive"> & {
         loadView(page: BindingViewPage): Promise<readonly SandboxBindingRecord[]>;
         readChange(change: SandboxBindingChange): Promise<SandboxBindingRecord | undefined>;
       };
@@ -45,7 +44,6 @@ export class SandboxBindingView implements SandboxBindingReader {
     this.#partitions.clear();
     this.#entries.clear();
     this.#bytes = 0;
-    this.#runs.clear();
     this.#writers.clear();
   }
   async load(partitions: readonly number[], current: () => boolean): Promise<void> {
@@ -86,10 +84,7 @@ export class SandboxBindingView implements SandboxBindingReader {
     return entry;
   }
   #index(route: SandboxBindingRecord, add: boolean): void {
-    for (const [index, identity] of [
-      [this.#runs, route.runId],
-      [this.#writers, route.writerId],
-    ] as const) {
+    for (const [index, identity] of [[this.#writers, route.writerId]] as const) {
       const id = key(route.tenantId, identity),
         binding = routeKey(route.tenantId, route.runId, route.bindingId);
       if (add) {
@@ -178,19 +173,17 @@ export class SandboxBindingView implements SandboxBindingReader {
   }
   async find(
     scope: Parameters<SandboxBindingReader["find"]>[0],
-    wholeWriter: boolean,
   ): Promise<readonly SandboxBinding[]> {
     if (!this.#ready) throw new Error("Sandbox binding view has not recovered");
     if (!scope.tenantId) throw new Error("Sandbox binding scope has no tenant");
-    const index = wholeWriter ? this.#writers : this.#runs;
-    const ids = index.get(key(scope.tenantId, wholeWriter ? scope.writerId : scope.runId));
+    const ids = this.#writers.get(key(scope.tenantId, scope.writerId));
     return [...(ids ?? [])].flatMap((id) => {
       const route = this.#entries.get(id)?.route;
-      return route ? [route] : [];
+      return route?.runId === scope.runId ? [route] : [];
     });
   }
-  closeScope(...args: Parameters<SandboxBindingReader["closeScope"]>): Promise<void> {
-    return this.options.source.closeScope(...args);
+  closeWriter(...args: Parameters<SandboxBindingReader["closeWriter"]>): Promise<void> {
+    return this.options.source.closeWriter(...args);
   }
   isAlive(instanceId: string): Promise<boolean> {
     return this.options.source.isAlive(instanceId);

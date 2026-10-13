@@ -182,20 +182,24 @@ export class SupervisorManagementServer {
         if (!this.#subagentCommand)
           return reply.code(503).send({ error: "Subagent host is unavailable" });
         const body = request.body as SubagentHostRequest;
-        if (!body || !["prepare_conversation", "schedule", "result", "input"].includes(body.action))
+        if (!body || !["start_conversation", "stop_conversation", "input"].includes(body.action))
           return reply.code(400).send({ error: "Invalid Subagent control request" });
         try {
           const result = await this.#subagentCommand(body);
           return reply.send({ accepted: true, result });
         } catch (error) {
-          const retryable =
-            !!error &&
-            typeof error === "object" &&
-            "retryable" in error &&
-            error.retryable === true;
-          return reply
-            .code(retryable ? 503 : 409)
-            .send({ error: error instanceof Error ? error.message : "Subagent control failed" });
+          const known =
+            !!error && typeof error === "object" && "retryable" in error && "code" in error;
+          const failure = known
+            ? safeFailure(error)
+            : new SupervisorManagementServerError(
+                "native_management_unavailable",
+                "Native management delivery is unconfirmed",
+                true,
+              );
+          return reply.code(failure.retryable ? 503 : 409).send({
+            error: { code: failure.code, message: failure.message, retryable: failure.retryable },
+          } satisfies InternalServiceError);
         }
       },
     );

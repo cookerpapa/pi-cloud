@@ -1,77 +1,113 @@
 import { randomUUID } from "node:crypto";
 import type {
-  CandidateSubagentCommand,
-  SubagentCommandPublisher,
+  CandidateControlToolCommand,
   SubagentControlRequest,
-  SubagentControlResult,
+  ToolResultPayload,
 } from "@pi-cloud/protocol";
+import { parseSubagentTaskId, prepareSubagentArguments } from "@pi-cloud/protocol";
 
-/** Correlation only. Kafka/PG retain requests/results; this is not another queue. */
+/** Dynamic workflow host calls reuse the Worker's one boot-scoped reply mailbox. */
 export class SubagentControlClient {
-  readonly #pending = new Map<
-    string,
-    {
-      lease: string;
-      resolve(value: Record<string, unknown>): void;
-      reject(error: Error): void;
-    }
-  >();
+  readonly #abort = new AbortController();
   #closed = false;
-  constructor(readonly resolvePublisher: (lease: string) => SubagentCommandPublisher | undefined) {}
+  constructor(
+    readonly native: {
+      publishHostCall(taskId: number, command: CandidateControlToolCommand): Promise<void>;
+      retireHostCall(reference: string, taskId: number, id: string): Promise<void>;
+    },
+    readonly replies: {
+      topic: string;
+      wait(
+        id: string,
+        callId: string,
+        name: string,
+        signal: AbortSignal,
+      ): Promise<ToolResultPayload>;
+    },
+  ) {}
 
   async request(input: {
     executionReference: string;
+    conversationId: number;
     toolCallId: string;
-    workflowId: string;
     request: SubagentControlRequest;
     signal?: AbortSignal;
     onPublished?(): void;
   }): Promise<Record<string, unknown>> {
     if (this.#closed) throw new Error("Subagent control client is closed");
     input.signal?.throwIfAborted();
-    const publisher = this.resolvePublisher(input.executionReference);
-    if (!publisher) throw new Error("Subagent execution log is unavailable");
+    const taskId = parseSubagentTaskId(input.toolCallId);
+    const request = input.request;
+    if (!["run", "status", "wait", "cancel", "send"].includes(request.action))
+      throw new Error("Unsupported native workflow hostcall");
+    const args =
+      request.action === "run"
+        ? prepareSubagentArguments({
+            action: "run",
+            task: request.task,
+            context: request.context,
+            sandbox: request.sandbox === "none" ? "shared" : request.sandbox,
+            ...(request.cwd ? { cwd: request.cwd } : {}),
+            ...(request.tools ? { tools: request.tools } : {}),
+          })
+        : prepareSubagentArguments(request);
     const requestId = randomUUID();
-    let fail!: (error: Error) => void;
-    const result = new Promise<Record<string, unknown>>((resolve, reject) => {
-      fail = reject;
-      this.#pending.set(requestId, { lease: input.executionReference, resolve, reject });
-    });
+    const waiting = new AbortController();
+    const signal = AbortSignal.any([
+      this.#abort.signal,
+      waiting.signal,
+      ...(input.signal ? [input.signal] : []),
+    ]);
+    const result = this.replies.wait(requestId, input.toolCallId, "subagent-control", signal);
     // Abort/publication can fail before the caller starts waiting for the response.
     void result.catch(() => {});
-    const abort = () => fail(new Error("Subagent control request was interrupted"));
-    input.signal?.addEventListener("abort", abort, { once: true });
-    const command: CandidateSubagentCommand = {
+    const command: CandidateControlToolCommand = {
+      target: "control",
       executionReference: input.executionReference,
-      requestId,
+      operationId: requestId,
       toolCallId: input.toolCallId,
-      workflowId: input.workflowId,
-      request: input.request,
+      nativeCallId: input.toolCallId,
+      conversationId: input.conversationId,
+      toolName: "subagent",
+      arguments: args,
+      replyMode: "hostcall",
+      contextAnchor:
+        request.action === "run" && request.anchor !== null ? Number(request.anchor) : null,
+      ...(request.action === "run" ? { workflowKey: request.key } : {}),
       occurredAt: new Date().toISOString(),
     };
     try {
-      await publisher.publishSubagentCommand(command);
+      await this.native.publishHostCall(taskId, command);
       input.onPublished?.();
-      return await result;
+      const reply = await result;
+      const receipt = reply.result.details as
+        | {
+            executionReference?: string;
+            value?: Record<string, unknown>;
+          }
+        | undefined;
+      if (receipt?.executionReference !== input.executionReference)
+        throw new Error("Subagent response authority mismatch");
+      await this.native.retireHostCall(input.executionReference, taskId, requestId);
+      if (reply.isError)
+        throw new Error(
+          reply.result.content
+            .filter((part) => part.type === "text")
+            .map((part) => part.text)
+            .join("\n"),
+        );
+      return receipt.value ?? {};
+    } catch (error) {
+      if (input.signal?.aborted)
+        throw new Error("Subagent control request was interrupted", { cause: error });
+      throw error;
     } finally {
-      input.signal?.removeEventListener("abort", abort);
-      this.#pending.delete(requestId);
+      waiting.abort(new Error("Subagent reply wait closed"));
     }
-  }
-
-  receive(executionReference: string, response: SubagentControlResult): void {
-    const pending = this.#pending.get(response.requestId);
-    if (!pending) return; // Duplicate delivery or a departed invocation.
-    if (pending.lease !== executionReference)
-      throw new Error("Subagent response authority mismatch");
-    if (response.ok) pending.resolve(response.result ?? {});
-    else pending.reject(new Error(response.error ?? "Subagent command failed"));
   }
 
   close(): void {
     this.#closed = true;
-    for (const pending of this.#pending.values())
-      pending.reject(new Error("Subagent host stopped"));
-    this.#pending.clear();
+    this.#abort.abort(new Error("Subagent host stopped"));
   }
 }

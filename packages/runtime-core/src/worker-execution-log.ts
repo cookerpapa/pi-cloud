@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import type { Database } from "@pi-cloud/database";
-import type { Kysely } from "kysely";
 import {
   parseSupervisorToControlMessage,
   RUN_PATH_PROBE_INTERVAL_MS,
@@ -27,6 +25,14 @@ import { DEFAULT_PRODUCER_CAPACITY, type ProducerCapacity } from "@pi-cloud/even
 import { AcceptedFactCapacityError } from "./accepted-fact.ts";
 import { PublicationNotSentError } from "@pi-cloud/protocol";
 import type { AcceptedFact } from "./accepted-fact.ts";
+import type { WorkTerminal } from "./accepted-fact.ts";
+
+export type ConversationLogAddress = {
+  conversationId: number;
+  sessionId: string;
+  turnId: string;
+  nextEventSeq: number;
+};
 
 export type WorkerExecutionProbeTransport = {
   topic: string;
@@ -35,7 +41,7 @@ export type WorkerExecutionProbeTransport = {
   report(value: ExecutionObservationDelivery): void;
 };
 
-/** Worker-local ordering over control-plane publication; no second lease renewer. */
+/** Worker-local ordering over its physical Session producer; no second lease renewer. */
 export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionLogResolver {
   #probeTransport: WorkerExecutionProbeTransport | undefined;
   readonly #runtimeBindings = new Map<
@@ -48,6 +54,11 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
     }
   >();
   readonly #writers = new Map<string, ExecutionLogWriter>();
+  readonly #conversationWriters = new Map<string, Map<number, ExecutionLogWriter>>();
+  readonly #conversationFactories = new Map<
+    string,
+    (address: ConversationLogAddress) => ExecutionLogWriter
+  >();
   readonly #opening = new Set<string>();
   readonly #families = new Map<
     string,
@@ -70,7 +81,6 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
   #queuedBytes = 0;
   #queuedFacts = 0;
   constructor(
-    readonly database: Kysely<Database>,
     readonly bus: AcceptedFactBus & { close?(): Promise<void> },
     readonly capacity: ProducerCapacity = DEFAULT_PRODUCER_CAPACITY,
     readonly probeIntervalMs = RUN_PATH_PROBE_INTERVAL_MS,
@@ -104,8 +114,17 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
   configureExecutionProbes(transport: WorkerExecutionProbeTransport): void {
     this.#probeTransport = transport;
   }
-  bindRuntime(executionReference: string, bindingId: string | undefined): void {
-    const runtime = this.#runtimeBindings.get(executionReference);
+  bindRuntime(
+    executionReference: string,
+    bindingId: string | undefined,
+    conversationId?: number,
+  ): void {
+    const key =
+      conversationId === undefined ||
+      this.#writers.get(executionReference)?.publication.scope.piConversationId === conversationId
+        ? executionReference
+        : `${executionReference}:${conversationId}`;
+    const runtime = this.#runtimeBindings.get(key);
     if (!runtime || runtime.bindingId === bindingId) return;
     runtime.pending?.abort();
     delete runtime.pending;
@@ -190,8 +209,17 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
     }
     return { replyTopic: transport.topic, bindings };
   }
-  resolve(lease: string) {
-    return this.#writers.get(lease);
+  resolve(lease: string, conversationId?: number) {
+    const root = this.#writers.get(lease);
+    return conversationId === undefined ||
+      root?.publication.scope.piConversationId === conversationId
+      ? root
+      : this.#conversationWriters.get(lease)?.get(conversationId);
+  }
+  openConversation(reference: string, address: ConversationLogAddress): ExecutionLogWriter {
+    const create = this.#conversationFactories.get(reference);
+    if (!create) throw new Error("Root Session writer is unavailable");
+    return create(address);
   }
   async publicationAvailability() {
     if (!this.bus.publicationAvailability)
@@ -213,15 +241,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       await this.bus.open?.(request.publication, request.signal);
       request.signal?.throwIfAborted();
     } catch (error) {
-      this.bus.forget?.(request.publication.scope.runId);
-      // Opening installs control state only: no native message or external
-      // effect could have been submitted by this not-yet-created writer.
-      await this.database
-        .updateTable("runs")
-        .set({ native_output_drained: true })
-        .where("id", "=", request.publication.scope.runId)
-        .where("output_sealed_at", "is", null)
-        .execute();
+      await this.bus.forget?.(request.publication.scope);
       throw error;
     } finally {
       this.#opening.delete(request.executionReference);
@@ -252,8 +272,10 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       failure: unknown,
       tail = Promise.resolve(),
       published = false,
+      nativeSequence = 0,
       acknowledgedThroughSeq = request.nextEventSeq - 1;
-    const publish = (candidate: CandidateFact): Promise<void> => {
+    let finishing: { terminal: string; promise: Promise<void> } | undefined;
+    const publish = (candidate: CandidateFact, view = permit.scope): Promise<void> => {
       if (failure) return Promise.reject(failure);
       if (closing)
         return Promise.reject(
@@ -262,7 +284,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       let fact: AcceptedFact, bytes: number;
       try {
         fact = prepareExecutionFact(
-          { ...permit.scope, executionReference: request.executionReference },
+          { ...view, executionReference: request.executionReference },
           candidate,
         );
         bytes = Buffer.byteLength(JSON.stringify(fact));
@@ -307,6 +329,14 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       return pending;
     };
     const writer: ExecutionLogWriter = {
+      assertHealthy: () => {
+        const cause = failure ?? this.bus.publicationFailure?.(permit.scope);
+        if (cause)
+          throw Object.assign(new Error("Session producer stopped"), {
+            code: "writer_publication_failed",
+            cause,
+          });
+      },
       get acknowledgedThroughSeq() {
         return acknowledgedThroughSeq;
       },
@@ -330,26 +360,67 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       publication: permit,
       commitNative: async (fact) => {
         await publish({ kind: "durable_commit", fact });
+        nativeSequence = fact.commit.seq;
         for (const display of fact.display) {
           const through = Math.max(
             display.coveredThrough ?? 0,
             ...display.texts.map(({ event }) => event.seq),
           );
-          for (const target of activeFamily.writers.values())
-            if (target.runId === display.scope.runId) target.acknowledge(through);
+          if (display.scope.sessionId === permit.scope.sessionId)
+            acknowledgedThroughSeq = Math.max(acknowledgedThroughSeq, through);
+          const acknowledge = conversationAcknowledgements.get(display.scope.sessionId);
+          acknowledge?.(through);
         }
-      },
-      publishToolCommand: async (command) => {
-        if (command.request.operation === "tool.execute")
-          throw new Error("Fixed Tool commands require an atomic native intent publication");
-        await publish({ kind: "tool_command", command });
-        return { operationId: command.request.operationId, accepted: true };
       },
       publishToolCancellation: async (command) => {
         await publish({ kind: "tool_cancel", command });
       },
-      publishSubagentCommand: async (command) => {
-        await publish({ kind: "subagent_command", command });
+      drain: async () => {
+        closing = true;
+        await tail;
+        if (failure)
+          throw Object.assign(new Error("Session writer publication failed", { cause: failure }), {
+            code: "writer_publication_failed",
+            retryable: true,
+          });
+      },
+      finish: (terminal: WorkTerminal) => {
+        const encoded = JSON.stringify(terminal);
+        if (finishing) {
+          if (finishing.terminal !== encoded)
+            return Promise.reject(new Error("Root completion outcome changed"));
+          return finishing.promise;
+        }
+        const promise = (async () => {
+          await writer.drain();
+          if (conversations.size)
+            throw new Error("Root work still has attached Conversation publications");
+          const { leaseId: _lease, piConversationId: _conversation, ...scope } = permit.scope;
+          const fact = {
+            kind: "work_finished" as const,
+            factId: randomUUID(),
+            scope,
+            agentId: "root",
+            baseSequence: acknowledgedThroughSeq,
+            nativeSequence,
+            terminal,
+            retireWriter: true as const,
+            occurredAt: new Date().toISOString(),
+          };
+          try {
+            const receipt = await this.bus.append(fact);
+            if (!receipt.durable || receipt.factId !== fact.factId)
+              throw new Error("Work completion ACK changed");
+          } catch (cause) {
+            failure = cause;
+            throw Object.assign(
+              new Error("Work completion publication is unconfirmed", { cause }),
+              { code: "writer_publication_failed", retryable: true },
+            );
+          }
+        })();
+        finishing = { terminal: encoded, promise };
+        return promise;
       },
       close: async () => {
         closing = true;
@@ -359,17 +430,78 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
         if (!activeFamily.writers.size) this.#families.delete(permit.scope.writerId);
         await tail;
         this.#writers.delete(request.executionReference);
-        this.bus.forget?.(permit.scope.runId);
+        this.#conversationFactories.delete(request.executionReference);
+        this.#conversationWriters.delete(request.executionReference);
+        await this.bus.forget?.(permit.scope);
         if (failure) throw failure;
-        await this.database
-          .updateTable("runs")
-          .set({ native_output_drained: true, last_event_seq: acknowledgedThroughSeq })
-          .where("id", "=", permit.scope.runId)
-          .where("lease_id", "=", permit.scope.writerId)
-          .where("output_sealed_at", "is", null)
-          .execute();
       },
     };
+    const conversationAcknowledgements = new Map<string, (seq: number) => void>();
+    const conversations = new Map<number, ExecutionLogWriter>();
+    this.#conversationWriters.set(request.executionReference, conversations);
+    this.#conversationFactories.set(request.executionReference, (address) => {
+      if (closing || failure) throw new Error("Root Session writer is closing");
+      if (conversations.has(address.conversationId))
+        throw new Error("Conversation writer already open");
+      const scope = {
+        ...permit.scope,
+        sessionId: address.sessionId,
+        turnId: address.turnId,
+        piConversationId: address.conversationId,
+      };
+      const { leaseId: _lease, piConversationId: _conversation, ...observationScope } = scope;
+      const bindingKey = `${request.executionReference}:${address.conversationId}`;
+      this.#runtimeBindings.set(bindingKey, { scope: observationScope, successAt: 0 });
+      let closed = false,
+        through = address.nextEventSeq - 1;
+      const view: ExecutionLogWriter = {
+        ...writer,
+        publication: { scope },
+        drain: async () => {
+          await tail;
+        },
+        finish: async () => {
+          throw new Error("Only root work can finish the Session writer");
+        },
+        publishToolCancellation: (command) => publish({ kind: "tool_cancel", command }, scope),
+        get acknowledgedThroughSeq() {
+          return through;
+        },
+        ingest: async (value) => {
+          if (closed) throw new PublicationNotSentError("Conversation view is closed");
+          const publication = parseSupervisorToControlMessage(value);
+          if (publication.type !== "event.publish") throw new Error("Expected an Agent event");
+          await publish({ kind: "agent_event", publication }, scope);
+          through = Math.max(through, publication.payload.event.seq);
+          return {
+            protocolVersion: 1,
+            messageId: randomUUID(),
+            sentAt: new Date().toISOString(),
+            type: "event.ack",
+            payload: {
+              sessionId: address.sessionId,
+              executionReference: request.executionReference,
+              acknowledgedThroughSeq: through,
+            },
+          };
+        },
+        close: async () => {
+          if (closed) return;
+          closed = true;
+          await tail;
+          conversations.delete(address.conversationId);
+          conversationAcknowledgements.delete(address.sessionId);
+          this.#runtimeBindings.get(bindingKey)?.pending?.abort();
+          this.#runtimeBindings.delete(bindingKey);
+          if (failure) throw failure;
+        },
+      };
+      conversations.set(address.conversationId, view);
+      conversationAcknowledgements.set(address.sessionId, (seq) => {
+        through = Math.max(through, seq);
+      });
+      return view;
+    });
     this.#writers.set(request.executionReference, writer);
     activeFamily.writers.set(request.executionReference, {
       runId: permit.scope.runId,

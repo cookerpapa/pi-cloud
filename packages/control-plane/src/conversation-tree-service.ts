@@ -272,7 +272,7 @@ async function completedTurns(
 ): Promise<Map<string, CompletedTurnRow[]>> {
   if (sessionIds.length === 0) return new Map();
   const rows = await database
-    .selectFrom("runs as run")
+    .selectFrom("conversation_turns as run")
     .select([
       "run.session_id as sessionId",
       "run.turn_id as turnId",
@@ -868,7 +868,7 @@ export class ConversationTreeService {
           ...(prunedTurnIds.length === 0
             ? []
             : [
-                sql`parent_run.turn_id in (${sql.join(
+                sql`execution.parent_turn_id in (${sql.join(
                   prunedTurnIds.map((id) => sql`${id}::uuid`),
                 )})`,
               ]),
@@ -881,9 +881,6 @@ export class ConversationTreeService {
                   with recursive affected_executions as (
                     select execution.id, execution.child_session_id, execution.state
                       from subagent_executions execution
-                      join runs parent_run
-                        on parent_run.tenant_id = execution.tenant_id
-                       and parent_run.id = execution.parent_run_id
                      where execution.tenant_id = ${tenantId}::uuid
                        and (${sql.join(affectedSubagentConditions, sql` or `)})
                     union
@@ -898,10 +895,7 @@ export class ConversationTreeService {
               ).rows;
         if (
           subagentRows.some(
-            (row) =>
-              row.executionState === "preparing" ||
-              row.executionState === "queued" ||
-              row.executionState === "running",
+            (row) => row.executionState === "preparing" || row.executionState === "running",
           )
         ) {
           throw new ControlPlaneStoreError("conflict", "Delegated work is still active");

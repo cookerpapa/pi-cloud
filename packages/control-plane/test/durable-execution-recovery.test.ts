@@ -129,10 +129,14 @@ it.each(["none", "before_seal", "after_seal"] as const)(
       (
         await db
           .selectFrom("pi_sessions")
-          .select("unsealed_runs")
+          .select(
+            sql<string>`(select count(*) from session_leases l where l.tenant_id=pi_sessions.tenant_id and l.pi_session_id=pi_sessions.id and l.released_at is null)`.as(
+              "active_writers",
+            ),
+          )
           .where("id", "=", seal.scope.piSessionId)
           .executeTakeFirstOrThrow()
-      ).unsealed_runs,
+      ).active_writers,
     ).toBe("0");
     if (stop === "after_seal") await requestStop();
     if (stop !== "none") {

@@ -347,6 +347,11 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
             nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
           }),
       );
+      const publication = executionLog;
+      lifecycle.publicationReady({
+        finish: (terminal) => publication.finish(terminal),
+        close: () => publication.close(),
+      });
       opening.abort.signal.throwIfAborted();
       if (this.#heartbeatFailure) throw this.#heartbeatFailure;
       const parsed = parseControlToSupervisorMessage({
@@ -490,7 +495,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           prepared?.releaseBeforeStart();
           lifecycle.executionExited();
         }
-        if (executionLog !== undefined && tracked === undefined) await executionLog.close();
+        if (executionLog !== undefined && tracked === undefined) await executionLog.drain();
       } finally {
         this.#openingExecutions.delete(request.runId);
         opening.resolve();
@@ -508,8 +513,8 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       if (opening?.executionReference === acknowledgement.executionReference) {
         // No runner or Tool exists yet. Abort the control handshake and join its
         // cleanup before confirming cancellation; never launch a cancelled Run.
-        opening.abort.abort(new TurnExecutionCancelledError(request.reason, false));
         await lifecycle.started(acknowledgement);
+        opening.abort.abort(new TurnExecutionCancelledError(request.reason, false));
         await opening.done;
         return {
           reason: request.reason,
@@ -594,7 +599,16 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
   }
 
   #closeTrackedChannel(tracked: TrackedExecution): Promise<void> {
-    tracked.writerClosing ??= tracked.writer.close();
+    tracked.writerClosing ??= tracked.writer.drain().catch((cause) => {
+      throw Object.assign(
+        new TurnExecutionBackendError(
+          "writer_publication_failed",
+          "Session publication did not drain",
+          true,
+        ),
+        { cause },
+      );
+    });
     return tracked.writerClosing;
   }
 
@@ -627,6 +641,21 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     try {
       const identity = await this.#leaseCoordinator.heartbeatIdentity();
       while (!signal.aborted && this.#trackedExecutions.size > 0) {
+        for (const tracked of this.#trackedExecutions.values()) {
+          try {
+            tracked.writer.assertHealthy?.();
+          } catch (cause) {
+            tracked.failure ??= Object.assign(
+              new TurnExecutionBackendError(
+                "writer_publication_failed",
+                "Session producer stopped",
+                true,
+              ),
+              { cause },
+            );
+            tracked.prepared.revokeExecution();
+          }
+        }
         const requestedAt = performance.now();
         const heartbeat = this.#supervisor.createHeartbeat(identity);
         let acknowledgement;

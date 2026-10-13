@@ -67,6 +67,13 @@ second copied body ([ADR-0245](docs/adr/0245-native-commit-text-presentation.md)
 [rollout status](docs/reports/native-text-presentation-20261012.md) is tracked separately.
 Incomplete local Tool calls stay in Worker memory; complete model responses
 enter native persistence before validated Tool execution (ADR-0230).
+The [Session work migration](docs/adr/0247-session-work-and-tool-dispatch.md) is
+implemented in source and undergoing acceptance: one root Run with native child
+Conversations, unified Tool replies, one Session closure and Worker direct Kafka
+publication. It requires a matched schema 188 / execution-topic v16 release;
+[progress and remaining checks](docs/reports/session-work-implementation-20261013.md)
+are recorded separately. It is not yet the deployed release.
+
 The [current deployed release](docs/reports/native-text-presentation-20261012.md),
 `native-text-c9b8b2a3`, uses schema 187, guest input protocol 4, Tool Worker protocol 4 and Cube management
 protocol 7. Inbox/input metadata and Submissions retain current values without

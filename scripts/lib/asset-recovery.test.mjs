@@ -210,7 +210,6 @@ beforeAll(async () => {
       output_seal_offset: 1,
       execution_released_at: now,
       agent_exited_at: now,
-      native_output_drained: true,
     })
     .where("id", "=", scope.runId)
     .execute();
@@ -252,11 +251,6 @@ it("rejects an unprojected seal without producing a selectable backup", async ()
     .updateTable("runs")
     .set({ output_sealed_at: null })
     .where("id", "=", scope.runId)
-    .execute();
-  await source
-    .updateTable("pi_sessions")
-    .set({ unsealed_runs: 1 })
-    .where("id", "=", scope.sessionId)
     .execute();
   await expect(
     backupAssets({

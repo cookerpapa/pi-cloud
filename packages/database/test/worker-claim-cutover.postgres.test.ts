@@ -118,11 +118,14 @@ it("requires drained owners and preserves Worker identities, fences and credenti
         .executeTakeFirst(),
     ).toEqual({ worker_id: worker, fencing_token: "3", writer_seal_offset: "42" });
     expect(
-      await db
-        .selectFrom("pi_sessions")
-        .select(["lease_epoch", "unsealed_runs"])
-        .where("id", "=", session.sessionId)
-        .executeTakeFirst(),
+      (
+        await sql<{
+          lease_epoch: string;
+          unsealed_runs: string;
+        }>`select lease_epoch::text,unsealed_runs::text from pi_sessions where id=${session.sessionId}`.execute(
+          db,
+        )
+      ).rows[0],
     ).toEqual({ lease_epoch: "3", unsealed_runs: "0" });
     expect(
       await db

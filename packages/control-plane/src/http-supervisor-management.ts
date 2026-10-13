@@ -149,11 +149,14 @@ export class HttpSupervisorManagementClient {
       );
     }
     if (!response.ok) {
-      const body = await response.text();
+      const failure = await response
+        .json()
+        .then((body) => parseInternalServiceError(body).error)
+        .catch(() => undefined);
       throw new HttpSupervisorManagementError(
-        "subagent_host_rejected",
-        `Subagent host rejected control (${response.status}): ${body.slice(0, 1024)}`,
-        response.status >= 500,
+        failure?.code ?? "subagent_host_rejected",
+        failure?.message ?? "Native management rejected the request",
+        failure?.retryable ?? response.status >= 500,
       );
     }
     return ((await response.json()) as { result?: unknown }).result;

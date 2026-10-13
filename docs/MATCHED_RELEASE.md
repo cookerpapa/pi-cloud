@@ -79,7 +79,7 @@ PI_CLOUD_LIVE_RELEASE_CHECK=1 node --import tsx scripts/run-live-release-accepta
 The native-input driver checks same-Run continuation, durable edits and promotion,
 retry identity, and Stop restoration against the current schema. It waits for
 projected queue visibility after native ACK and for terminal seals before cleanup.
-Under schema 187 it also checks streaming text stays out of PG, preserves the
+Under the current native storage contract it also checks streaming text stays out of PG, preserves the
 native interrupted reply on Stop, and resumes the same Run after losing both
 Worker and Projector memory. That owned fault case suspends Control Plane before
 killing the Worker, kills/restarts Control Plane, and requires kubelet crash and
@@ -121,9 +121,11 @@ source/artifact identities, outcomes and evidence scope in the release report.
 A test/preflight is not a newly deployed release, and readiness is not a completed
 [private pilot](PRIVATE_PILOT.md).
 
-Schema 187 changes private native display transport and uses execution-topic v15.
-Drain writers before removing obsolete development native history; the migration
-rejects live ownership or retained old native commits. Preserve accounts, model
-configuration and credentials. No legacy display reader or copied-text mode is
-retained. The matched release still requires confirmed absence of physical VMs;
-the schema marker is not permission to discard cleanup ownership.
+Schema 188 changes Session work ownership and unified Tool replies and uses
+execution-topic v16 / boot reply v3. This is a destructive matched upgrade.
+Drain writers and confirm physical absence before deleting obsolete development
+history, root/child work, and closed Session ownership records. Preserve accounts,
+model/provider configuration and credentials. The migration rejects retained old
+native commits or ownership records. There is no legacy ingress or child-Run mode.
+The matched release still requires confirmed absence of physical VMs; the schema
+marker never permits discarding cleanup ownership without its physical proof.

@@ -28,9 +28,15 @@ import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
   createTrustedRemoteAgentTools as createRemoteTools,
-  type TrustedRemoteToolsRuntimeConfiguration,
+  type TrustedRemoteToolsRuntimeConfiguration as BaseConfiguration,
 } from "../src/trusted-remote-tools.ts";
 import { withToolInvocation } from "../src/tool-invocation.ts";
+
+type TrustedRemoteToolsRuntimeConfiguration = BaseConfiguration & {
+  publishToolCommand(
+    command: CandidateToolCommand,
+  ): Promise<{ operationId: string; accepted: true }>;
+};
 
 function createTrustedRemoteAgentTools(configuration: TrustedRemoteToolsRuntimeConfiguration) {
   const runtime = createRemoteTools(configuration);
@@ -44,6 +50,7 @@ function createTrustedRemoteAgentTools(configuration: TrustedRemoteToolsRuntimeC
           async () => {
             const prepared = await tool.prepareExecution!(api.callId, args, context.abortSignal);
             try {
+              if (!("request" in prepared.command)) throw new Error("Expected the Cube fixture");
               await configuration.publishToolCommand(prepared.command);
               return await prepared.result();
             } finally {
@@ -52,10 +59,6 @@ function createTrustedRemoteAgentTools(configuration: TrustedRemoteToolsRuntimeC
           },
         )) as typeof tool.execute,
     })),
-    executeWorkflow: ((id, ...args) =>
-      withToolInvocation({ id: `invocation-${id}`, nativeToolCallId: id }, () =>
-        runtime.executeWorkflow(id, ...args),
-      )) as typeof runtime.executeWorkflow,
   };
 }
 
@@ -83,7 +86,7 @@ async function runNativeRemote(
       release: () => {},
     };
   });
-  const model = scoped.register(crypto.randomUUID(), provider.getModel());
+  const model = scoped.register(crypto.randomUUID(), 1, provider.getModel());
   const registry = createRegistry();
   registry.install(
     defineExtension({
@@ -180,7 +183,6 @@ function configuration(overrides: Partial<TrustedRemoteToolsRuntimeConfiguration
   });
   const value: TrustedRemoteToolsRuntimeConfiguration = {
     publishToolCommand,
-    trackWorkflowOperation: () => {},
     waitForToolReply: (_request, signal) =>
       new Promise((resolve, reject) => {
         pending = { resolve };

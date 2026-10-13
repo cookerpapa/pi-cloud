@@ -82,12 +82,19 @@ protocol, record the decision under `docs/adr/` before implementation.
   their historical policy. Do not restore per-Step projection receipts or allocate sequence from
   a second active writer. Cold administrative mutations require Session quiescence.
   Bootstrap only the latest Compaction and active suffix, never lifetime JSONL.
-- Workers publish through the control-plane ingress under a PG-issued identity
-  (ADR-0209). One Session Projector group owns ingress partitions, native history,
-  live views and Tool routing. Ordinary append scope checks use installed memory;
-  data and seals share the Session queue. Kafka transactions fence replaced ingress
-  owners and preserve dispatch offsets. Do not add another channel lease, separate
-  live/Tool consumer or per-Step projection receipt.
+- Under ADR-0247 Workers publish directly with one stable transactional producer
+  identity per active physical Session. PG authorization is checked before and
+  after producer initialization, never per ordinary commit. Root Runs encompass
+  native child Conversations; children are not cloud queue rows or separate writers.
+  Normal work_finished retires the idle owner after native family settlement.
+  Forced closure takes over the same Kafka identity, rechecks its PG intent and
+  commits under the current Projector group. A delayed stale initializer must
+  fail post-init authorization; affected valid writers recover through one ordered
+  Session closure. Never automatically reinitialize/retry an uncertain writer.
+  One Session Projector group owns native history, live views and Tool routing.
+  Control changes retain the partition publication queue and group transaction
+  guard; Worker open/append HTTP and ingress identity caches are removed.
+  Do not add another channel lease, separate live/Tool consumer or per-Step receipt.
   Tool executors remain independently authorized external-effect endpoints;
   replaying a projection must never imply replaying arbitrary shell work.
   Projector confirms its monotonic Kafka dispatch commit before issuing a Tool
@@ -97,7 +104,7 @@ protocol, record the decision under `docs/adr/` before implementation.
   Workers/Kafka/PG are trusted private infrastructure; do not reintroduce per-record
   signatures or key management. This does not remove tenant checks or Tool fencing.
   ADR-0212 carries PG-authorized control references through the same Session
-  ingress. Tool/probe binding lookups use the partition owner's memory view;
+  Kafka partition. Tool/probe binding lookups use the partition owner's memory view;
   lifecycle mutations, closure admission and bootstrap retain PG checks. Never
   rely on a delayed Kafka close event alone to revoke external-effect admission.
 - Treat the persistent Cube Volume as the sole Workspace byte authority. Do

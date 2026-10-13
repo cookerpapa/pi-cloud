@@ -54,10 +54,6 @@ export const SessionControlChangeSchema = Type.Union([
     { ...CommonChange, entity: Type.Literal("subagent_state") },
     { additionalProperties: false },
   ),
-  Type.Object(
-    { ...CommonChange, entity: Type.Literal("subagent_command") },
-    { additionalProperties: false },
-  ),
 ]);
 export type SessionControlChange = Static<typeof SessionControlChangeSchema>;
 export type SandboxBindingChange = Extract<SessionControlChange, { entity: "sandbox_binding" }>;

@@ -150,7 +150,6 @@ async function assertDrained(includeWriters) {
     (select count(*) from workspace_runtimes where state<>'released')::int as vms,
     (select count(*) from development_environments where state<>'released')::int as machines,
     (select count(*) from workspace_terminal_sessions where state<>'released')::int as terminals,
-    (select count(*) from pi_sessions where unsealed_runs<>0)::int as unsealed,
     (select count(*) from session_leases where released_at is null)::int as writers`.execute(
     database,
   );

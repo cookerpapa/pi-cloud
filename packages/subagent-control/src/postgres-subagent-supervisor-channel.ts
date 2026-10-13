@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { Database, SubagentSupervisorReason } from "@pi-cloud/database";
 import { sql, type Kysely } from "kysely";
 
+export class SupervisorChannelError extends Error {}
+
 const MAX_MESSAGE_BYTES = 64 * 1024;
 const REQUEST_TIMEOUT_MS = 10 * 60 * 1_000;
 
@@ -18,11 +20,11 @@ export type CloudSupervisorRequest = Readonly<{
 
 function boundedMessage(value: unknown, label: string): string {
   if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error(`${label} is required`);
+    throw new SupervisorChannelError(`${label} is required`);
   }
   const normalized = value.trim();
   if (Buffer.byteLength(normalized, "utf8") > MAX_MESSAGE_BYTES) {
-    throw new Error(`${label} is too large`);
+    throw new SupervisorChannelError(`${label} is too large`);
   }
   return normalized;
 }
@@ -59,7 +61,7 @@ export class PostgresSubagentSupervisorChannel {
   async contact(input: {
     tenantId: string;
     childSessionId: string;
-    childRunId: string;
+    rootRunId: string;
     reason: SubagentSupervisorReason;
     message: string;
     interview?: Record<string, unknown>;
@@ -76,18 +78,21 @@ export class PostgresSubagentSupervisorChannel {
       .executeTakeFirst();
     if (prior) return this.request(input.tenantId, requestId);
     const created = await this.#database.transaction().execute(async (transaction) => {
+      // The link row serializes request deduplication; its state is read from Pi.
+      await transaction
+        .selectFrom("subagent_conversations")
+        .select("id")
+        .where("tenant_id", "=", input.tenantId)
+        .where("child_session_id", "=", input.childSessionId)
+        .where("root_run_id", "=", input.rootRunId)
+        .forUpdate()
+        .executeTakeFirstOrThrow();
       const execution = await transaction
-        .selectFrom("subagent_executions as execution")
-        .innerJoin("runs as child_run", (join) =>
-          join
-            .onRef("child_run.tenant_id", "=", "execution.tenant_id")
-            .onRef("child_run.id", "=", "execution.child_run_id"),
-        )
-        .select(["execution.id", "execution.state", "child_run.state as childRunState"])
-        .where("execution.tenant_id", "=", input.tenantId)
-        .where("execution.child_session_id", "=", input.childSessionId)
-        .where("execution.child_run_id", "=", input.childRunId)
-        .forUpdate(["execution"])
+        .selectFrom("subagent_executions")
+        .select(["id", "state"])
+        .where("tenant_id", "=", input.tenantId)
+        .where("child_session_id", "=", input.childSessionId)
+        .where("root_run_id", "=", input.rootRunId)
         .executeTakeFirst();
       // Two Projector boots can overlap during handoff. Recheck after taking
       // the execution lock, not only before entering the transaction.
@@ -107,19 +112,8 @@ export class PostgresSubagentSupervisorChannel {
         .where("id", "=", requestId)
         .executeTakeFirst();
       if (existing) return resource(existing);
-      if (
-        execution === undefined ||
-        (execution.state !== "running" && execution.childRunState !== "running")
-      ) {
-        throw new Error("Subagent execution is not running");
-      }
-      if (execution.state !== "running") {
-        await transaction
-          .updateTable("subagent_executions")
-          .set({ state: "running", updated_at: sql<Date>`clock_timestamp()` })
-          .where("tenant_id", "=", input.tenantId)
-          .where("id", "=", execution.id)
-          .executeTakeFirstOrThrow();
+      if (execution === undefined || execution.state !== "running") {
+        throw new SupervisorChannelError("Subagent execution is not running");
       }
       const row = await transaction
         .insertInto("subagent_supervisor_requests")
@@ -264,7 +258,7 @@ export class PostgresSubagentSupervisorChannel {
       .where("execution.parent_session_id", "=", parentSessionId)
       .executeTakeFirst();
     if (row === undefined) {
-      throw new Error("Supervisor request was not found for this parent Session");
+      throw new SupervisorChannelError("Supervisor request was not found for this parent Session");
     }
     return resource(row);
   }
@@ -293,11 +287,13 @@ export class PostgresSubagentSupervisorChannel {
         .forUpdate(["request"])
         .executeTakeFirst();
       if (request === undefined || request.parentSessionId !== input.parentSessionId) {
-        throw new Error("Supervisor request was not found for this parent Session");
+        throw new SupervisorChannelError(
+          "Supervisor request was not found for this parent Session",
+        );
       }
       if (request.replyMessage !== null) {
         if (request.replyMessage !== message)
-          throw new Error("Supervisor request already has a different reply");
+          throw new SupervisorChannelError("Supervisor request already has a different reply");
         return;
       }
       // This statement runs after the request lock. An earlier SELECT snapshot
@@ -311,7 +307,7 @@ export class PostgresSubagentSupervisorChannel {
         .where("expires_at", ">", sql<Date>`clock_timestamp()`)
         .returning("id")
         .executeTakeFirst();
-      if (!replied) throw new Error("Supervisor request has expired");
+      if (!replied) throw new SupervisorChannelError("Supervisor request has expired");
     });
     return this.request(input.tenantId, input.requestId);
   }

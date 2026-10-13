@@ -22,6 +22,7 @@ export type CloudModelPermit = {
 };
 export type CloudModelRequest = {
   runId: string;
+  conversationId: number;
   operation: ModelOperation;
   input: unknown;
   options: RequestOptions;
@@ -32,7 +33,10 @@ export type CloudModelRequest = {
  * including Compaction and deferred requests. Hook exceptions are not gates. */
 export class ScopedDurableModels {
   readonly models: Models;
-  readonly #descriptors = new Map<string, { runId: string; model: Model<Api> }>();
+  readonly #descriptors = new Map<
+    string,
+    { runId: string; conversationId: number; model: Model<Api> }
+  >();
   constructor(
     readonly source: Models,
     readonly open: (request: CloudModelRequest) => Promise<CloudModelPermit>,
@@ -75,18 +79,27 @@ export class ScopedDurableModels {
       },
     });
   }
-  register(runId: string, model: Model<Api>): { provider: string; modelId: string } {
-    if (!/^[0-9a-f-]{36}$/.test(runId))
-      throw new Error("Model route requires a cloud Run identity");
-    const modelId = `pi-cloud:${runId}:${encodeURIComponent(model.id)}`;
+  register(
+    runId: string,
+    conversationId: number,
+    model: Model<Api>,
+  ): { provider: string; modelId: string } {
+    if (
+      !/^[0-9a-f-]{36}$/.test(runId) ||
+      !Number.isSafeInteger(conversationId) ||
+      conversationId < 1
+    )
+      throw new Error("Model route requires a cloud Run and native Conversation identity");
+    const modelId = `pi-cloud:${runId}:${conversationId}:${encodeURIComponent(model.id)}`;
     // Even a model-level Authorization header is a live grant, not native state.
     const { headers: _headers, ...descriptor } = model;
-    this.#descriptors.set(modelId, { runId, model: descriptor });
+    this.#descriptors.set(modelId, { runId, conversationId, model: descriptor });
     return { provider: model.provider, modelId };
   }
-  forget(runId: string): void {
+  forget(runId: string, conversationId: number): void {
     for (const [key, value] of this.#descriptors)
-      if (value.runId === runId) this.#descriptors.delete(key);
+      if (value.runId === runId && value.conversationId === conversationId)
+        this.#descriptors.delete(key);
   }
   async #permit(
     operation: ModelOperation,
@@ -98,7 +111,13 @@ export class ScopedDurableModels {
     if (!descriptor || descriptor.model.provider !== model.provider)
       throw new Error("Cloud model route is not admitted");
     options.signal?.throwIfAborted();
-    const permit = await this.open({ runId: descriptor.runId, operation, input, options });
+    const permit = await this.open({
+      runId: descriptor.runId,
+      conversationId: descriptor.conversationId,
+      operation,
+      input,
+      options,
+    });
     if (
       permit.model.provider !== descriptor.model.provider ||
       permit.model.id !== descriptor.model.id ||

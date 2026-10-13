@@ -2,7 +2,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { AgentRunSupervisor } from "@pi-cloud/sandbox-supervisor";
-import { HttpPublicationClient } from "@pi-cloud/runtime-core/http-publication-client";
+import { DirectSessionKafkaBus } from "@pi-cloud/runtime-core/direct-session-kafka";
 import {
   PostgresSupervisorCredentialAuthorizer,
   SupervisorBootProvisioner,
@@ -19,7 +19,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 vi.mock("@pi-cloud/event-log", async (original) => ({
   ...(await original<typeof import("@pi-cloud/event-log")>()),
   KafkaToolReplyMailbox: class {
-    topic = "pi-cloud.tool-replies.v2.test";
+    topic = "pi-cloud.tool-replies.v3.test";
     async start() {}
     async shutdown() {}
     async wait() {
@@ -387,7 +387,6 @@ describe("PiWorkerRuntime", () => {
       expect(activeCredential.boot_id).toBe(secondIdentity.bootId);
       expect(runWorkerOptions).toHaveLength(2);
       expect(runWorkerOptions.map((options) => options.maximumActiveFamilies)).toEqual([4, 4]);
-      expect(runWorkerOptions.map((options) => options.maximumLanesPerFamily)).toEqual([33, 33]);
       expect(runWorkerOptions.map((options) => options.canClaimRuns?.())).toEqual([false, true]);
       await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toEqual({
         partitionCount: 1,
@@ -474,9 +473,9 @@ describe("PiWorkerRuntime", () => {
       }
       const publisherStartupFailure = new Error("Publication health failed after acquisition");
       const startingPublisher = vi
-        .spyOn(HttpPublicationClient.prototype, "checkHealth")
+        .spyOn(DirectSessionKafkaBus.prototype, "checkHealth")
         .mockRejectedValueOnce(publisherStartupFailure);
-      const closingPublisher = vi.spyOn(HttpPublicationClient.prototype, "close");
+      const closingPublisher = vi.spyOn(DirectSessionKafkaBus.prototype, "close");
       const closingModelGateway = vi.spyOn(TenantModelGateway.prototype, "close");
       const failedPublisher = new PiWorkerRuntime({
         config: {

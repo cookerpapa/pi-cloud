@@ -25,7 +25,11 @@ it("routes internal Worker management independently from the model/global fetch 
       allowInsecureHttp: true,
     });
     await expect(
-      client.subagent({ action: "schedule", runId: crypto.randomUUID() }),
+      client.subagent({
+        action: "stop_conversation",
+        executionReference: "reference",
+        requestId: crypto.randomUUID(),
+      }),
     ).resolves.toEqual({ delivered: true });
     expect(paths).toEqual(["/internal/v1/subagent-runtime"]);
     expect(proxyFetch).not.toHaveBeenCalled();

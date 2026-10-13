@@ -61,7 +61,7 @@ spec:
               JOIN agent_revisions agent ON agent.id=r.agent_revision_id
               WHERE r.state='queued' AND r.ready_at IS NOT NULL AND r.available_at<=now()
                 AND s.session_kind='conversation' AND agent.runtime_kind='pi_sdk'
-                AND family.unsealed_runs=0
+                AND NOT EXISTS (SELECT 1 FROM session_leases l WHERE l.tenant_id=family.tenant_id AND l.pi_session_id=family.id AND l.released_at IS NULL)
           ) AS families
         targetQueryValue: {{ .Values.autoscaling.targetSessionsPerReplica | quote }}
         activationTargetQueryValue: "0"

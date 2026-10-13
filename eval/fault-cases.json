@@ -3,41 +3,6 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
-      "id": "publication-known-closed-registration",
-      "workspace": "@pi-cloud/runtime-core",
-      "file": "test/session-publication-ingress.test.ts",
-      "test": "rejects a known closed Run before touching PG during registration",
-      "invariant": "A known closed Run is rejected without a database dependency or a new Kafka write."
-    },
-    {
-      "id": "publication-known-old-registration",
-      "workspace": "@pi-cloud/runtime-core",
-      "file": "test/session-publication-ingress.test.ts",
-      "test": "rejects a known older epoch before touching PG during registration",
-      "invariant": "A replaced writer cannot reopen its Run and is rejected from the current owner's memory."
-    },
-    {
-      "id": "publication-positive-cache-needs-pg",
-      "workspace": "@pi-cloud/runtime-core",
-      "file": "test/session-publication-ingress.test.ts",
-      "test": "still requires PG for current registration; memory never grants admission",
-      "invariant": "An open cached identity cannot bypass current PG authorization when registering again."
-    },
-    {
-      "id": "publication-replacement-registration-needs-pg",
-      "workspace": "@pi-cloud/runtime-core",
-      "file": "test/session-publication-ingress.test.ts",
-      "test": "still requires PG for replacement owner registration; memory never grants admission",
-      "invariant": "A replacement ingress with empty memory cannot grant admission while PG is unavailable."
-    },
-    {
-      "id": "publication-evicted-registration-needs-pg",
-      "workspace": "@pi-cloud/runtime-core",
-      "file": "test/session-publication-ingress.test.ts",
-      "test": "still requires PG for evicted registration; memory never grants admission",
-      "invariant": "Evicting a closed identity cannot turn an old grant into permission to reopen it."
-    },
-    {
       "id": "guest-deleted-working-directory",
       "workspace": "@pi-cloud/tool-sandbox",
       "file": "test/envd-tool-exec.test.ts",
@@ -426,15 +391,15 @@
       "id": "cancel-native-projection-locks",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/atomic-worker-admission.postgres.test.ts",
-      "test": "settles cancellation beside native projection without replaying stop (SQL abort=false)",
-      "invariant": "Cancellation lifecycle locks remain compatible with the native Record's Turn foreign key, so neither side deadlocks."
+      "test": "projects native cancellation after SQL rollback without aborting the Agent twice (false)",
+      "invariant": "A failed completion projection is retried without repeating native cancellation."
     },
     {
       "id": "cancel-settlement-sql-abort",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/atomic-worker-admission.postgres.test.ts",
-      "test": "settles cancellation beside native projection without replaying stop (SQL abort=true)",
-      "invariant": "A certified cancellation-settlement SQL abort retries only that transaction, never the external stop or Agent Loop."
+      "test": "projects native cancellation after SQL rollback without aborting the Agent twice (true)",
+      "invariant": "A transaction rollback during final cancellation projection cannot repeat the Agent abort or native effects."
     },
     {
       "id": "ready-seal-atomicity",
@@ -461,8 +426,8 @@
       "id": "ready-family-owner-handoff",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/run-queue.test.ts",
-      "test": "keeps every active Lane of one physical Pi Session on its owner Worker",
-      "invariant": "A ready main Lane cannot acquire a new owner until the old sibling's final seal commits."
+      "test": "does not claim a second root work while the physical Session is owned",
+      "invariant": "One physical Session admits only one root work until its previous writer is closed, across Worker contenders."
     },
     {
       "id": "interrupted-framed-snapshot",
@@ -484,13 +449,6 @@
       "file": "test/agent-run-supervisor.test.ts",
       "test": "retains the high-water fencing token after a pre-start release",
       "invariant": "A released task cannot reuse its execution reference under a retired Session owner."
-    },
-    {
-      "id": "stale-accepted-fact-authority",
-      "workspace": "@pi-cloud/runtime-core",
-      "file": "test/session-publication-ingress.test.ts",
-      "test": "does not admit a larger epoch or an unknown Run directly from an append",
-      "invariant": "A record cannot install its own authority or bypass the PG-issued publication scope."
     },
     {
       "id": "terminal-tail-unload",
@@ -724,13 +682,6 @@
       "invariant": "Cold reads and independent native Fork history retain the exact image bytes."
     },
     {
-      "id": "native-record-oversize-isolation",
-      "workspace": "@pi-cloud/runtime-core",
-      "file": "test/session-publication-ingress.test.ts",
-      "test": "rejects an oversized record without poisoning another Session's publication",
-      "invariant": "Oversized individual publications fail before entering the bounded publication queue."
-    },
-    {
       "id": "workflow-result-budget",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/workflow-channels.test.ts",
@@ -787,34 +738,6 @@
       "invariant": "Native input RPC holds no cloud admission transaction; concurrent foreign-key references do not deadlock intake."
     },
     {
-      "id": "publication-seal-order",
-      "workspace": "@pi-cloud/runtime-core",
-      "file": "test/session-publication-ingress.test.ts",
-      "test": "closes admission before draining and emits the seal before opening a new writer",
-      "invariant": "Ingress closes old admission before draining and a successor cannot pass the ordered seal."
-    },
-    {
-      "id": "publication-stale-admission",
-      "workspace": "@pi-cloud/runtime-core",
-      "file": "test/session-publication-ingress.test.ts",
-      "test": "rejects a PG admission snapshot overtaken by a projected seal even without cached Run state",
-      "invariant": "A delayed PG grant cannot reopen a scope after its closure completed."
-    },
-    {
-      "id": "publication-uncertain-queued-data",
-      "workspace": "@pi-cloud/runtime-core",
-      "file": "test/session-publication-ingress.test.ts",
-      "test": "stops queued data after an uncertain append but still permits the closing seal",
-      "invariant": "Unknown semantic commit stops queued data while preserving ordered closure."
-    },
-    {
-      "id": "publication-lost-seal-ack",
-      "workspace": "@pi-cloud/runtime-core",
-      "file": "test/session-publication-ingress.test.ts",
-      "test": "uses projected closure after a lost seal ACK without leaving the next writer blocked",
-      "invariant": "PG canonical seal evidence releases a successor despite a lost producer ACK."
-    },
-    {
       "id": "quarantined-binding-late-command",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/tool-command-routing.test.ts",
@@ -859,9 +782,9 @@
     {
       "id": "subagent-pending-input-reference",
       "workspace": "@pi-cloud/control-plane",
-      "file": "test/subagent-read-views.test.ts",
-      "test": "keeps bounded references when bodies are evicted and retires only consumed input",
-      "invariant": "Evicting a body cannot discard durable unconsumed Agent input."
+      "file": "test/control-tool-dispatcher.test.ts",
+      "test": "does not resurrect aborted Tasks or retired workflow hostcalls",
+      "invariant": "Rebuilding control references cannot revive a settled native effect."
     },
     {
       "id": "quarantine-stale-physical-target",
@@ -908,9 +831,9 @@
     {
       "id": "subagent-noop-notification",
       "workspace": "@pi-cloud/control-plane",
-      "file": "test/control-change-transactions.postgres.test.ts",
-      "test": "does not notify duplicate Subagent upserts, but emits actual update and deletion",
-      "invariant": "A conflicting no-op INSERT never publishes an imaginary source mutation."
+      "file": "test/control-tool-dispatcher.test.ts",
+      "test": "abandons a reply from the previous partition generation",
+      "invariant": "An old control handler cannot publish after its partition ownership is replaced."
     },
     {
       "id": "control-coalescing-logical-restore",
@@ -1231,8 +1154,8 @@
       "id": "durable-shared-host",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/native-session-host.test.ts",
-      "test": "shares one acknowledged native writer with paused PG projection, closes one scope independently, and cold restores",
-      "invariant": "One physical writer serves sibling Conversations and preserves acknowledged native state during scoped close and cold restore."
+      "test": "shares one root grant across Conversation views, closes concurrent handles once, and cold restores",
+      "invariant": "One physical Session shares one root grant and native writer across child views and cold recovery."
     },
     {
       "id": "durable-display-coverage",
@@ -1252,8 +1175,8 @@
       "id": "durable-post-seal-refusal",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/execution-stream-seal.test.ts",
-      "test": "rejects late native writes at the PG boundary after a seal (drained=false)",
-      "invariant": "A sealed writer cannot append late native state."
+      "test": "rejects late native writes at the PG boundary after a writer seal",
+      "invariant": "Ordered Session closure prevents late native state from becoming canonical."
     },
     {
       "id": "durable-unsafe-recovery",
@@ -1336,14 +1259,14 @@
       "id": "durable-child-generation-reply",
       "workspace": "@pi-cloud/sandbox-supervisor",
       "file": "test/durable-agent-session.test.ts",
-      "test": "keeps child supervision across Tool completion and applies native parent reply",
+      "test": "shares one root Run across parent/child models and preserves native parent reply",
       "invariant": "The native generation owns delegated Conversations: returning a blocked Tool permits a parent reply, while parent abort still cancels child work."
     },
     {
       "id": "durable-child-generation-abort",
       "workspace": "@pi-cloud/sandbox-supervisor",
       "file": "test/durable-agent-session.test.ts",
-      "test": "keeps child supervision across Tool completion and applies native parent abort",
+      "test": "shares one root Run across parent/child models and preserves native parent abort",
       "invariant": "The native generation owns delegated Conversations: returning a blocked Tool permits a parent reply, while parent abort still cancels child work."
     },
     {
@@ -1436,13 +1359,6 @@
       "file": "test/conversation-tree.postgres.test.ts",
       "test": "reads a running native Tool with assistant coverage=false while its result is absent",
       "invariant": "A durable executing Tool can be queried before display coverage without replaying uncovered assistant text."
-    },
-    {
-      "id": "subagent-native-task-admission",
-      "workspace": "@pi-cloud/runtime-core",
-      "file": "test/session-publication-ingress.test.ts",
-      "test": "refuses invalid Subagent task identity before publishing: legacy-call",
-      "invariant": "An invalid Tool identity is refused before Kafka and cannot poison the Session writer."
     },
     {
       "id": "volume-shared-holder-killed",
@@ -1727,9 +1643,72 @@
     {
       "id": "native-live-closed-anchor",
       "workspace": "@pi-cloud/control-plane",
-      "file": "test/execution-stream-seal.test.ts",
-      "test": "protects and replays live data after its Run publication anchor has closed",
-      "invariant": "A closed publication anchor cannot release a sibling live suffix or suppress its read-only recovery."
+      "file": "test/work-finished-projection.test.ts",
+      "test": "keeps a requested writer closure until its seal and never requeues a completed Run",
+      "invariant": "Native completion cannot bypass a requested writer closure or be undone by its late seal."
+    },
+    {
+      "id": "session-producer-post-init-grant",
+      "workspace": "@pi-cloud/event-log",
+      "file": "test/kafka-session-writer.test.ts",
+      "test": "checks PG both before and after producer initialization and never adopts a stale grant",
+      "invariant": "A producer cannot adopt a grant revoked while initialization was in flight."
+    },
+    {
+      "id": "session-producer-unknown-commit",
+      "workspace": "@pi-cloud/event-log",
+      "file": "test/kafka-session-writer.test.ts",
+      "test": "freezes the writer after an uncertain commit without retrying its batch or initializing again",
+      "invariant": "An uncertain native transaction freezes this producer instead of replaying or reinitializing."
+    },
+    {
+      "id": "session-producer-initialization-close",
+      "workspace": "@pi-cloud/event-log",
+      "file": "test/kafka-session-writer.test.ts",
+      "test": "closing during initialization waits for disposal and never admits queued writes",
+      "invariant": "Shutdown disposes an initializing producer before it can publish."
+    },
+    {
+      "id": "session-producer-waiting-recovery",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/atomic-worker-admission.postgres.test.ts",
+      "test": "recovers a Kafka-fenced producer while its Agent is waiting without a new native commit",
+      "invariant": "Existing Worker heartbeat checks recover a failed producer even while its model has no new commit."
+    },
+    {
+      "id": "control-publication-backpressure",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-publication-ingress.test.ts",
+      "test": "bounds pending control bytes and releases capacity after failure",
+      "invariant": "Control publication rejects overflow before send and releases memory after an unknown ACK."
+    },
+    {
+      "id": "control-publication-replaced-owner",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-publication-ingress.test.ts",
+      "test": "rejects queued controls and stale owners after assignment replacement",
+      "invariant": "Revoked control owners cannot admit waiting effects to a replacement writer."
+    },
+    {
+      "id": "native-subagent-stop-before-create",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/native-session-work.test.ts",
+      "test": "persists cancellation before creation so a late management request cannot start a child",
+      "invariant": "A durable native stop receipt rejects a delayed child creation."
+    },
+    {
+      "id": "native-subagent-unsafe-recovery",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/native-session-work.test.ts",
+      "test": "reopens multiple native children under the same logical Run without replaying unsafe tools",
+      "invariant": "Cold native recovery restores children without a cloud child Run or unsafe Tool replay."
+    },
+    {
+      "id": "native-child-fork-delete",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/native-child-history.postgres.test.ts",
+      "test": "forks native child history and preserves parent-owned deletion boundaries without a child Run",
+      "invariant": "Native child history supports cold fork and parent-owned deletion without adding cloud task rows."
     }
   ]
 }

@@ -68,7 +68,6 @@ export type RevokedSupervisorAssignments = {
 export type AgentRunSupervisorOptions = {
   runner: SupervisorTurnRunner;
   maxConcurrentSessions?: number | null;
-  maximumLanesPerFamily?: number | null;
   clock?: () => Date;
   monotonicNow?: () => number;
   idGenerator?: () => string;
@@ -131,7 +130,6 @@ function sameCancellationIdentity(
 export class AgentRunSupervisor {
   readonly #runner: SupervisorTurnRunner;
   readonly #maxConcurrentSessions: number | null;
-  readonly #maximumLanesPerFamily: number | null;
   readonly #clock: () => Date;
   readonly #monotonicNow: () => number;
   readonly #heartbeatStarted = new WeakMap<SupervisorHeartbeatMessage, number>();
@@ -144,10 +142,6 @@ export class AgentRunSupervisor {
     { epoch: number; leaseId: string; writerId: string; lastRunId: string }
   >();
   constructor(options: AgentRunSupervisorOptions) {
-    this.#maximumLanesPerFamily = resourceLimit(
-      options.maximumLanesPerFamily,
-      "maximumLanesPerFamily",
-    );
     this.#runner = options.runner;
     this.#maxConcurrentSessions = resourceLimit(
       options.maxConcurrentSessions,
@@ -407,12 +401,13 @@ export class AgentRunSupervisor {
       new Set(families).size >= this.#maxConcurrentSessions
     )
       return this.#rejected(command, "capacity", "Supervisor Session capacity is full", true);
-    if (
-      current === undefined &&
-      this.#maximumLanesPerFamily !== null &&
-      families.filter((k) => k === family).length >= this.#maximumLanesPerFamily
-    )
-      return this.#rejected(command, "capacity", "Supervisor family Lane capacity is full", true);
+    if (current === undefined && generation === highestGeneration && families.includes(family))
+      return this.#rejected(
+        command,
+        "capacity",
+        "Session already has an active root work item",
+        true,
+      );
 
     if (
       current &&

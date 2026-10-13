@@ -280,11 +280,12 @@ export class DurablePostgresProjection {
     batch: DurableBatch | StoredDurableBatch,
     origins: readonly DurableRecordOrigin[] = [],
     position?: NativeReplayPosition,
+    cloudMetadata?: Readonly<Record<string, unknown>>,
   ): Promise<boolean> {
     const live = position ? { state: this.liveState.fork(), position } : undefined;
     const applied = await this.database
       .transaction()
-      .execute((tx) => this.applyIn(tx, batch, origins, live));
+      .execute((tx) => this.applyIn(tx, batch, origins, live, cloudMetadata));
     if (live) this.liveState.adopt(live.state);
     return applied;
   }
@@ -293,13 +294,14 @@ export class DurablePostgresProjection {
     stored: DurableBatch | StoredDurableBatch,
     origins: readonly DurableRecordOrigin[] = [],
     live?: NativeLiveProjection,
+    cloudMetadata?: Readonly<Record<string, unknown>>,
   ): Promise<boolean> {
     validateImageReferencePayload(stored);
     // Only non-image record metadata is interpreted here. Model/image parts
     // remain encoded in the canonical body and in derived document checkpoints.
     const batch = stored as DurableBatch;
     const fingerprint = createHash("sha256")
-      .update(JSON.stringify({ batch, origins }))
+      .update(JSON.stringify({ batch, origins, cloudMetadata }))
       .digest("hex");
     const ownership = new Map(origins.map((origin) => [origin.recordId, origin]));
     const parent =
@@ -450,8 +452,8 @@ export class DurablePostgresProjection {
       ];
     });
     await retainSessionImages(tx, this.scope, stored);
-    await sql`insert into pi_durable_commits(tenant_id,session_id,seq,next_id,fingerprint,write_count,history_write_count,history_fingerprint,current_hashes)
-      values(${this.scope.tenantId}::uuid,${this.scope.sessionId},${batch.seq},${batch.nextId},${fingerprint},${batch.writes.length},${history.length},${historyFingerprint(history)},${JSON.stringify(Object.fromEntries(current.rows.map((row) => [row.id, currentStateFingerprint(row)])))}::jsonb)`.execute(
+    await sql`insert into pi_durable_commits(tenant_id,session_id,seq,next_id,fingerprint,write_count,history_write_count,history_fingerprint,current_hashes,cloud_metadata)
+      values(${this.scope.tenantId}::uuid,${this.scope.sessionId},${batch.seq},${batch.nextId},${fingerprint},${batch.writes.length},${history.length},${historyFingerprint(history)},${JSON.stringify(Object.fromEntries(current.rows.map((row) => [row.id, currentStateFingerprint(row)])))}::jsonb,${cloudMetadata === undefined ? null : JSON.stringify(cloudMetadata)})`.execute(
       tx,
     );
     if (history.length)
@@ -612,6 +614,7 @@ export class DurablePostgresProjection {
     stored: StoredDurableBatch,
     origins: readonly DurableRecordOrigin[],
     live: NativeLiveProjection,
+    cloudMetadata?: Readonly<Record<string, unknown>>,
   ): Promise<boolean> {
     const header = await sql<{
       fingerprint: string;
@@ -620,7 +623,7 @@ export class DurablePostgresProjection {
       from pi_durable_commits c where ${this.scoped("c")} and seq=${stored.seq}`.execute(tx);
     if (!header.rows[0]) return false;
     const fingerprint = createHash("sha256")
-      .update(JSON.stringify({ batch: stored, origins }))
+      .update(JSON.stringify({ batch: stored, origins, cloudMetadata }))
       .digest("hex");
     if (header.rows[0].fingerprint !== fingerprint)
       throw new Error("Native replay position changed bytes");

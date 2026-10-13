@@ -11,12 +11,13 @@ export type WorkflowHostCall = (
   args: Record<string, unknown>,
   signal?: AbortSignal,
 ) => Promise<unknown>;
-export type WorkflowExecutor = (
+export type WorkflowPreparer = (
   toolCallId: string,
   script: string,
   call: WorkflowHostCall,
-  signal?: AbortSignal,
-) => Promise<unknown>;
+  signal: AbortSignal | undefined,
+  nativeToolName: string,
+) => Promise<import("./prepared-tool.ts").PreparedToolExecution>;
 
 /** Duplex guest host calls; completion arrives on Kafka, observations bypass Worker. */
 export async function readWorkflowResult(input: {
@@ -125,7 +126,7 @@ export async function readWorkflowResult(input: {
           operationId: input.operationId,
           operation: "workflow.exec",
           ok: true,
-          value: event.result.details,
+          value: { ...event.result, isError: event.isError },
         });
       }, fail)
       .catch(fail);

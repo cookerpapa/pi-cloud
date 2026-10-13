@@ -8,6 +8,8 @@ import {
   type ExecutionObservationDelivery,
 } from "@pi-cloud/protocol";
 
+const observationKey = (scope: RuntimeObservationScope) => `${scope.runId}:${scope.sessionId}`;
+
 type Active = {
   scope: RuntimeObservationScope;
   partition: number;
@@ -35,9 +37,9 @@ export class RunActivityPublisher {
   }
   update(scope: RuntimeObservationScope, partition: number, update: RunActivityUpdate): void {
     if (this.#closed) return;
-    const previous = this.#runs.get(scope.runId);
+    const previous = this.#runs.get(observationKey(scope));
     if (!previous && this.#runs.size >= 1024) return;
-    this.#runs.set(scope.runId, {
+    this.#runs.set(observationKey(scope), {
       scope,
       partition,
       update,
@@ -45,11 +47,25 @@ export class RunActivityPublisher {
       due: 0,
     });
   }
-  forget(runId: string): void {
-    this.#runs.delete(runId);
-    this.#executions.delete(runId);
-    this.#sending.get(`execution:${runId}`)?.abort();
-    this.#sending.get(runId)?.abort();
+  forget(runId: string, sessionId?: string): void {
+    const keys = new Set([
+      ...[...this.#runs]
+        .filter(
+          ([, v]) => v.scope.runId === runId && (!sessionId || v.scope.sessionId === sessionId),
+        )
+        .map(([key]) => key),
+      ...[...this.#executions]
+        .filter(
+          ([, v]) => v.scope.runId === runId && (!sessionId || v.scope.sessionId === sessionId),
+        )
+        .map(([key]) => key),
+    ]);
+    for (const key of keys) {
+      this.#runs.delete(key);
+      this.#executions.delete(key);
+      this.#sending.get(`execution:${key}`)?.abort();
+      this.#sending.get(key)?.abort();
+    }
   }
   flush(): void {
     if (this.#closed) return;
@@ -72,12 +88,12 @@ export class RunActivityPublisher {
   execution(delivery: ExecutionObservationDelivery): void {
     if (
       this.#closed ||
-      (this.#executions.size >= 1024 && !this.#executions.has(delivery.scope.runId))
+      (this.#executions.size >= 1024 && !this.#executions.has(observationKey(delivery.scope)))
     )
       return;
-    const previous = this.#executions.get(delivery.scope.runId);
+    const previous = this.#executions.get(observationKey(delivery.scope));
     if (!previous || previous.evidence.observedAt <= delivery.evidence.observedAt)
-      this.#executions.set(delivery.scope.runId, delivery);
+      this.#executions.set(observationKey(delivery.scope), delivery);
   }
   #flushExecutions(maximum: number): void {
     let sent = 0;

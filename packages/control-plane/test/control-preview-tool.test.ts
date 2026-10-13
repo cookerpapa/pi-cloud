@@ -1,10 +1,9 @@
-import { nativeToolApi } from "./tool-api.ts";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
 import { afterEach, describe, expect, it } from "vitest";
-import { createCloudPreviewTool } from "../src/tools/postgres-preview-tool.ts";
+import { executePreviewTool } from "../src/control-preview-tool.ts";
+import type { AcceptedControlToolCommand } from "@pi-cloud/runtime-core/accepted-fact";
 
 const resources: Array<() => Promise<void>> = [];
 
@@ -39,14 +38,15 @@ describe("trusted Preview Tool", () => {
           };
           return query;
         },
-      } as unknown as Parameters<typeof createCloudPreviewTool>[0]["database"];
-      const tool = createCloudPreviewTool({
+      } as unknown as Parameters<typeof executePreviewTool>[0];
+      await executePreviewTool(
         database,
-        tenantId: "tenant",
-        sessionId: "child",
-        refreshServices: async () => {},
-      });
-      await tool.execute({ port: 3000 }, nativeToolApi("call"), BACKGROUND_CONTEXT);
+        {
+          scope: { tenantId: "tenant", sessionId: "child" },
+          arguments: { port: 3000 },
+        } as unknown as AcceptedControlToolCommand,
+        async () => {},
+      );
       expect(filters).toContainEqual([
         "target_kind",
         "=",
@@ -152,34 +152,31 @@ describe("trusted Preview Tool", () => {
       })
       .execute();
 
-    const tool = createCloudPreviewTool({
-      database,
-      tenantId,
-      sessionId,
-      refreshServices: async () => undefined,
+    const invoke = (args: Record<string, unknown>) =>
+      executePreviewTool(
+        database,
+        {
+          scope: { tenantId, sessionId },
+          arguments: args,
+        } as unknown as AcceptedControlToolCommand,
+        async () => {},
+      );
+    await expect(invoke({ port: 3000, path: "/game" })).resolves.toMatchObject({
+      result: {
+        details: { port: 3000, previewPath: `/v1/conversations/${sessionId}/preview/3000/game` },
+      },
     });
-    await expect(
-      tool.execute(
-        { port: 3_000, path: "/game" },
-        nativeToolApi("preview-call"),
-        BACKGROUND_CONTEXT,
-      ),
-    ).resolves.toEqual(
-      expect.objectContaining({
-        details: expect.objectContaining({
-          port: 3_000,
-          previewPath: `/v1/conversations/${sessionId}/preview/3000/game`,
-        }),
-      }),
-    );
     await database
       .updateTable("sandbox_http_services")
       .set({ state: "ended", ended_at: new Date() })
       .where("tenant_id", "=", tenantId)
       .where("target_id", "=", sessionId)
       .execute();
-    await expect(
-      tool.execute({ port: 3_000 }, nativeToolApi("preview-call-2"), BACKGROUND_CONTEXT),
-    ).rejects.toThrow("preview_service_not_found");
+    await expect(invoke({ port: 3000 })).resolves.toMatchObject({
+      isError: true,
+      result: {
+        content: [{ type: "text", text: expect.stringContaining("preview_service_not_found") }],
+      },
+    });
   }, 20_000);
 });

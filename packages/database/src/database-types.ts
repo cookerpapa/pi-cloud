@@ -68,7 +68,7 @@ export type WorkspaceKind = "user" | "development_environment";
 export type SubagentContextMode = "fresh" | "branch";
 export type SubagentSandboxMode = "none" | "shared" | "ephemeral";
 export type SubagentExecutionState =
-  "preparing" | "queued" | "running" | "completed" | "failed" | "cancelled" | "unknown";
+  "preparing" | "running" | "completed" | "failed" | "cancelled" | "unknown";
 export type SubagentSupervisorReason = "need_decision" | "interview_request" | "progress_update";
 export type SourceControlProvider = "github" | "gitlab";
 export type SourceControlInstallationState = "active" | "suspended" | "deleted";
@@ -611,51 +611,57 @@ export interface SessionTable {
   last_active_at: GeneratedTimestamp;
 }
 
-export interface SubagentExecutionTable {
+export interface SubagentConversationTable {
   id: string;
   tenant_id: string;
   parent_session_id: string;
-  parent_run_id: string;
+  parent_turn_id: string;
   parent_tool_call_id: string;
   root_session_id: string;
   root_run_id: string;
   parent_execution_id: string | null;
   depth: number;
-  workflow_run_id: string;
-  step_index: number;
+  source_sequence: string;
+  source_record_id: string;
+  source_kind: "task" | "document.create";
   request_sha256: string;
   child_session_id: string;
-  child_run_id: string;
+  child_turn_id: string;
   agent_name: string;
   context_mode: SubagentContextMode;
   pi_context_base_entry_id: GeneratedNullable<string>;
   sandbox_mode: SubagentSandboxMode;
+  output_display_seq: GeneratedInt8;
+  output_display_native_seq: GeneratedInt8;
+  created_at: GeneratedTimestamp;
+  updated_at: GeneratedTimestamp;
+}
+/** Read-only native-state projection; never a claimable child job. */
+export interface SubagentExecutionTable extends SubagentConversationTable {
   state: SubagentExecutionState;
   failure_code: string | null;
   failure_message: string | null;
-  created_at: GeneratedTimestamp;
-  updated_at: GeneratedTimestamp;
   settled_at: NullableTimestamp;
 }
-
-export interface SubagentControlCommandTable {
-  revision: GeneratedInt8;
-  id: string;
-  ordinal: GeneratedInt8;
-  tenant_id: string;
-  run_id: string;
-  partition: number;
-  command: Record<string, unknown>;
-  child_execution_id: GeneratedNullable<string>;
-  supervisor_request_id: GeneratedNullable<string>;
-  target_session_id: GeneratedNullable<string>;
-  input_run_id: GeneratedNullable<string>;
-  input_consumed_at: NullableTimestamp;
-  response: GeneratedNullable<Record<string, unknown>>;
-  delivered_at: NullableTimestamp;
-  created_at: GeneratedTimestamp;
-  updated_at: GeneratedTimestamp;
-}
+export type ConversationTurnView = Pick<
+  RunTable,
+  | "id"
+  | "tenant_id"
+  | "session_id"
+  | "turn_id"
+  | "input_text"
+  | "input_uploads"
+  | "state"
+  | "mailbox_position"
+  | "created_at"
+  | "started_at"
+  | "settled_at"
+  | "pruned_at"
+  | "output_seal_id"
+  | "output_sealed_at"
+  | "output_display_seq"
+  | "output_display_native_seq"
+> & { input_source: string | null };
 
 export interface SubagentSupervisorRequestTable {
   id: string;
@@ -750,7 +756,6 @@ export interface RunTable {
   output_display_seq: GeneratedInt8;
   output_display_native_seq: GeneratedInt8;
   output_publication: GeneratedNullable<Record<string, unknown>>;
-  native_output_drained: Generated<boolean>;
 }
 
 export interface RunTransitionTable {
@@ -962,7 +967,6 @@ export interface PiSessionTable {
   tenant_id: string;
   id: string;
   lease_epoch: GeneratedInt8;
-  unsealed_runs: GeneratedInt8;
 }
 
 export interface SessionUploadTable {
@@ -1025,7 +1029,8 @@ export interface Database {
   model_profiles: ModelProfileTable;
   sessions: SessionTable;
   subagent_executions: SubagentExecutionTable;
-  subagent_control_commands: SubagentControlCommandTable;
+  subagent_conversations: SubagentConversationTable;
+  conversation_turns: ConversationTurnView;
   subagent_supervisor_requests: SubagentSupervisorRequestTable;
   conversation_prune_operations: ConversationPruneOperationTable;
   runs: RunTable;

@@ -24,7 +24,7 @@ export async function loadDelegatedSessionSummaries(
     .innerJoin("runs as parent_run", (join) =>
       join
         .onRef("parent_run.tenant_id", "=", "execution.tenant_id")
-        .onRef("parent_run.id", "=", "execution.parent_run_id"),
+        .onRef("parent_run.id", "=", "execution.root_run_id"),
     )
     .innerJoin("projects as project", (join) =>
       join
@@ -38,7 +38,7 @@ export async function loadDelegatedSessionSummaries(
       "execution.root_session_id as rootSessionId",
       "execution.parent_execution_id as parentExecutionId",
       "execution.depth",
-      "parent_run.turn_id as parentTurnId",
+      "execution.parent_turn_id as parentTurnId",
       "child.title as title",
       "execution.context_mode as contextMode",
       "execution.sandbox_mode as sandboxMode",

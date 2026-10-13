@@ -149,7 +149,7 @@ function delegatedStateLabel(
   state: DelegatedSessionSummaryResource["state"],
   t: Translate,
 ): string {
-  if (state === "queued") return t("chat.state.queued");
+  if (state === "preparing") return t("run.phase.preparing");
   if (state === "running") return t("chat.state.running");
   if (state === "completed") return t("chat.state.completed");
   if (state === "failed") return t("chat.state.failed");

@@ -24,24 +24,16 @@ export const familyKey = (r: Pick<ExecutionReference, "tenantId" | "piSessionId"
 export function familyAdmission(
   active: readonly ExecutionReference[],
   capacity: number | null,
-  maximumLanesPerFamily: number | null,
   memoryHeadroom = true,
   pendingClaims = 0,
 ): RunClaimAdmission {
-  const counts = new Map<string, number>();
-  for (const r of active) counts.set(familyKey(r), (counts.get(familyKey(r)) ?? 0) + 1);
+  const families = new Set(active.map(familyKey));
   return {
-    // An unknown claim can become a new family or another Lane in any current
-    // family. Reserve both possibilities until its committed identity arrives.
-    ...((capacity === null || counts.size + pendingClaims < capacity) && memoryHeadroom
+    // Each claim is one root work item. Native children consume no claim slot.
+    ...((capacity === null || families.size + pendingClaims < capacity) && memoryHeadroom
       ? {}
-      : { allowedFamilyKeys: [...counts.keys()] }),
-    blockedFamilyKeys: [...counts]
-      .filter(
-        ([, count]) =>
-          maximumLanesPerFamily !== null && count + pendingClaims >= maximumLanesPerFamily,
-      )
-      .map(([key]) => key),
+      : { allowedFamilyKeys: [] }),
+    blockedFamilyKeys: [...families],
   };
 }
 
@@ -54,7 +46,6 @@ export type PostgresPiWorkerOptions = {
   notificationConnectionString: string;
   identity: string;
   maximumActiveFamilies: number | null;
-  maximumLanesPerFamily: number | null;
   memoryHeadroom?: () => boolean;
   onCapacity?: (sample: { families: number; lanes: number }) => void;
   pollIntervalMs?: number;
@@ -100,7 +91,6 @@ export class PostgresPiWorker {
   readonly #notificationConnectionString: string;
   readonly #identity: string;
   readonly #maximumActiveFamilies: number | null;
-  readonly #maximumLanesPerFamily: number | null;
   readonly #memoryHeadroom: () => boolean;
   readonly #memoryMonitor: WorkerMemoryMonitor | undefined;
   readonly #onCapacity: NonNullable<PostgresPiWorkerOptions["onCapacity"]>;
@@ -136,10 +126,6 @@ export class PostgresPiWorker {
     this.#maximumActiveFamilies = resourceLimit(
       options.maximumActiveFamilies,
       "maximumActiveFamilies",
-    );
-    this.#maximumLanesPerFamily = resourceLimit(
-      options.maximumLanesPerFamily,
-      "maximumLanesPerFamily",
     );
     this.#memoryMonitor = options.memoryHeadroom
       ? undefined
@@ -202,14 +188,6 @@ export class PostgresPiWorker {
     await this.#listener?.end().catch(() => undefined);
     await this.#memoryMonitor?.close();
     this.#state = "stopped";
-  }
-
-  scheduleOwnedSubagent(runId: string): boolean {
-    bounded(runId, "Subagent runId", 256);
-    if (!["running", "stopping"].includes(this.#state) || !this.#canClaimRuns()) return false;
-    // A hint, not a second bypass around admission. All Lanes use the same probe.
-    this.#notifyWork();
-    return true;
   }
 
   #notifyWork(): void {
@@ -296,14 +274,23 @@ export class PostgresPiWorker {
     this.#onCapacity({ families: new Set(active.map(familyKey)).size, lanes: active.length });
   }
   async #fillCapacity(): Promise<void> {
-    if (this.#pendingClaims >= MAXIMUM_PENDING_CLAIMS || !this.#canClaimRuns()) return;
+    if (
+      this.#state !== "running" ||
+      this.#pendingClaims >= MAXIMUM_PENDING_CLAIMS ||
+      !this.#canClaimRuns()
+    )
+      return;
     const publication = await this.#admitRunClaims();
-    if (!publication?.partitions.length || !this.#canClaimRuns()) return;
-    while (this.#pendingClaims < MAXIMUM_PENDING_CLAIMS && this.#canClaimRuns()) {
+    if (this.#state !== "running" || !publication?.partitions.length || !this.#canClaimRuns())
+      return;
+    while (
+      this.#state === "running" &&
+      this.#pendingClaims < MAXIMUM_PENDING_CLAIMS &&
+      this.#canClaimRuns()
+    ) {
       const admission = familyAdmission(
         this.#activeReferences(),
         this.#maximumActiveFamilies,
-        this.#maximumLanesPerFamily,
         this.#state === "running" && this.#memoryHeadroom(),
         this.#pendingClaims,
       );

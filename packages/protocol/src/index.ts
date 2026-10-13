@@ -1,6 +1,7 @@
 export { uploadContentDigest, parseUploadIdentity, type UploadContent } from "./upload-content.ts";
 export { toolResultIsUnknown } from "./tool-result-outcome.ts";
 export * from "./user-upload.ts";
+export * from "./conversation-work.ts";
 
 export {
   PINNED_PI_DURABLE_VERSION,
@@ -603,6 +604,11 @@ export { normalizeProviderHostedWebSearchAction } from "./hosted-search-action.t
 export * from "./tool-command.ts";
 export * from "./subagent-command.ts";
 export * from "./native-tool-event.ts";
+export * from "./tool-result.ts";
+export * from "./control-tools.ts";
+export * from "./control-tool-command.ts";
+export { durableControlIntent } from "./durable-session.ts";
+export { isControlToolCommand, type CandidateToolEffect } from "./tool-command.ts";
 export * from "./tool-progress.ts";
 export * from "./run-observation.ts";
 export * from "./queued-inputs.ts";

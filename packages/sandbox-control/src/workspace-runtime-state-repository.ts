@@ -610,11 +610,13 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       const authority = await transaction
         .selectFrom("active_execution_scopes")
         .select(
-          sql<
-            string | null
-          >`(select compute_session_id from runs where id=${input.assignment.runId}::uuid)`.as(
-            "compute_session_id",
-          ),
+          sql<string | null>`case when session_id=${input.assignment.sessionId}::uuid
+            then (select compute_session_id from runs where id=${input.assignment.runId}::uuid)
+            else (select s.compute_session_id from subagent_conversations v join sessions s
+              on s.tenant_id=v.tenant_id and s.id=v.child_session_id
+              where v.tenant_id=${input.assignment.tenantId}::uuid and v.root_run_id=${input.assignment.runId}::uuid
+                and v.child_session_id=${input.assignment.sessionId}::uuid and v.child_turn_id=${input.assignment.turnId}::uuid)
+            end`.as("compute_session_id"),
         )
         .select([
           "tenant_id",
@@ -630,15 +632,19 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .where("run_id", "=", execution.runId)
         .where("fencing_token", "=", String(execution.fencingToken))
         .where("valid_until", ">", sql<Date>`clock_timestamp()`)
+        .where(
+          sql<boolean>`((session_id=${input.assignment.sessionId}::uuid and turn_id=${input.assignment.turnId}::uuid)
+          or exists(select 1 from subagent_conversations v where v.tenant_id=${input.assignment.tenantId}::uuid
+            and v.root_run_id=${input.assignment.runId}::uuid and v.child_session_id=${input.assignment.sessionId}::uuid
+            and v.child_turn_id=${input.assignment.turnId}::uuid))`,
+        )
         .executeTakeFirst();
       if (
         authority === undefined ||
         authority.tenant_id !== input.assignment.tenantId ||
         authority.project_id !== input.assignment.projectId ||
         authority.workspace_id !== input.assignment.workspaceId ||
-        authority.session_id !== input.assignment.sessionId ||
         authority.run_id !== input.assignment.runId ||
-        authority.turn_id !== input.assignment.turnId ||
         authority.worker_id !== input.assignment.sandboxId ||
         authority.compute_session_id !== (input.computeSessionId ?? null)
       ) {
