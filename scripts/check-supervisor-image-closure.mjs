@@ -105,10 +105,12 @@ assert(
   "Supervisor image must not depend on an npm-hoisting-specific Sandbox control node_modules path",
 );
 assert(
-  dockerfile.includes("await import('./src/subagent-tool.ts')") &&
+  dockerfile.includes("await import('./src/tools/worker-tool-runtime.ts')") &&
+    dockerfile.includes("await import('@pi-cloud/runtime-core/direct-session-kafka')") &&
     dockerfile.includes("await import('@earendil-works/pi-durable')"),
-  "Supervisor image must verify its native Subagent adapter closure",
+  "Supervisor image must verify its generic Tool proxy and Session producer closure",
 );
+await access(resolve(packagesDirectory, "supervisor-host", "src/tools/worker-tool-runtime.ts"));
 
 const dockerfileCandidates = [
   resolve(repositoryRoot, "deploy", "cubesandbox", "Dockerfile.tool"),
