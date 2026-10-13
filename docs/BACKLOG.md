@@ -31,33 +31,40 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 ## Reliability and capacity
 
 The [October 13 consolidated plan](adr/0247-session-work-and-tool-dispatch.md)
-records the owner-agreed Session/root-work direction and implemented source contracts. Existing production still uses ingress and child Runs. Execute the
-following slices in order; [current implementation evidence](reports/session-work-implementation-20261013.md)
-tracks partial gates and remaining rollout work.
+is deployed as `session-work-6ac697f9`, schema 188 / execution-topic v16 / boot
+reply v3. The [implementation evidence](reports/session-work-implementation-20261013.md)
+records source, transport, recovery and rolling-replacement gates.
 
-- [ ] R13S-01 / P0: prove the public Pi APIs can manage native child creation,
+- [x] R13S-01 / P0: prove the public Pi APIs can manage native child creation,
       input identity, wait/blocked, supervisor exchanges, cancellation and recovery
       without a cloud child Run; freeze identity and completion mappings first.
-- [ ] R13T-01 / P1: co-commit ordinary cloud Tool dispatch with native intent;
+- [x] R13T-01 / P1: co-commit ordinary cloud Tool dispatch with native intent;
       move trusted Tool business logic to handlers and unify final Kafka replies.
       Preserve Cube execution, dynamic workflow calls, mixed-record offset safety,
       long waits, typed failures, cancellation and native final settlement.
-- [ ] R13S-02 / P2: keep only root cloud work in Run admission. Migrate child
+- [x] R13S-02 / P2: keep only root cloud work in Run admission. Migrate child
       models, resources, input/Stop, display/history, attachments and cleanup to
       root Run plus native identity. Remove child claims and duplicated command
       bodies/state only after every existing subagent action has a working replacement.
-- [ ] R13K-02 / P3: separate native child outcomes and ordered root-work completion
+- [x] R13K-02 / P3: separate native child outcomes and ordered root-work completion
       from Session writer closure. Remove per-child seals/unsealed-count dependencies
       without weakening input races, history/SSE coverage or old-owner recovery proof.
-- [ ] R13K-01 / P4: implement direct Session producers with fresh post-init PG
+- [x] R13K-01 / P4: implement direct Session producers with fresh post-init PG
       admission, control ordering, bounded fencing recovery and same-load resource
       measurement. Six RF3/PG primitive probes and two current ingress tests are
       baseline evidence. The direct publisher is wired; RF3/PG takeover, delayed
-      initialization and same-Run recovery tests pass. Full-suite/live gates remain.
-- [ ] R13U-01 / P5: complete the matched destructive cutover, retained-configuration
+      initialization and same-Run recovery tests pass. Repository, real-model recovery
+      and rolling-replacement gates pass.
+- [x] R13U-01 / P5: complete the matched destructive cutover, retained-configuration
       checks and Luna/Cube/browser acceptance. Then prove compatible Control Plane
       handoff during active root work with Worker/Pi/Cube and protocol contracts fixed,
       instead of waiting for an entire Agent family to finish.
+
+- [ ] Attribute and reduce Control Plane handoff latency before setting a user-visible
+      availability target. The final image/stream case observed a 13.833-second Pod
+      replacement and a 35.368-second maximum text-update gap; model generation,
+      SSE reconnect and projection recovery need separate timings. Also measure
+      native Session producer threads/FDs at larger concurrency before capacity claims.
 
 [ADR-0243](adr/0243-native-input-current-state.md) is deployed with schema 185 as
 `native-input-current-e82d00b7`. [Source and live acceptance](reports/native-input-current-state-20261012.md)

@@ -5,7 +5,7 @@ consolidates the October 13 discussion: root cloud work, native child Conversati
 without child Run claims, same-commit Tool dispatch, shared Kafka replies,
 Session writer closure and direct Worker publication. It replaces the unimplemented
 ADR-0246 draft; the old draft remains in Git. It is deployed as
-`session-work-6ba81a94`, schema 188 / execution-topic v16 / boot reply v3.
+`session-work-6ac697f9`, schema 188 / execution-topic v16 / boot reply v3.
 [Implementation and release evidence](reports/session-work-implementation-20261013.md)
 records native children, direct publication, real recovery and rolling replacement.
 

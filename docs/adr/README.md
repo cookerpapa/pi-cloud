@@ -11,7 +11,7 @@ revision-bound reports, not as alternate production backends.
 Current ownership and publication: [ADR-0247](0247-session-work-and-tool-dispatch.md)
 consolidates Session ownership, root cloud work, native Subagents, unified Tool
 dispatch/replies, writer closure and direct Kafka publication. It is deployed as
-`session-work-6ba81a94` under schema 188 / topic v16 / boot reply v3.
+`session-work-6ac697f9` under schema 188 / topic v16 / boot reply v3.
 It replaces the earlier ADR-0246 draft, archived in Git, and supersedes the
 Worker-ingress/child-Run clauses in ADR-0209/0229/0238.
 

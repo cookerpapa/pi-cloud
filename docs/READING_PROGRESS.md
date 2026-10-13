@@ -1,24 +1,26 @@
 # Architecture reading checkpoint
 
-Updated: 2026-10-13.
+Updated: 2026-10-14.
 
 The walkthrough explains one component-to-component hop at a time, including
 its message, acknowledgement boundary, failure behavior and design tradeoffs.
 
-Current checkpoint: **Worker Storage → publication ingress → Kafka commit**.
+Current checkpoint: **Worker Storage → Kafka commit**. ADR-0247 removes the
+ordinary Worker publication ingress discussed before the migration.
 Covered HTTP idempotency keys, accepted versus executed input, atomic intake,
 PG queue readiness and the difference between cloud control records and the
 native append-only log. PG notifications wake Workers; they are hints, not task
 payloads or execution ownership. The persisted Run survives a missed notification,
 and periodic queries cover missed wakes. The Worker pulls eligible ready Runs;
 `FOR UPDATE SKIP LOCKED` separates competing claims. Physical-Session ownership,
-lease issuance/reuse and the Run's transition to running commit together before
+lease issuance and the Run's transition to running commit together before
 Runner execution. Claim locks last only for the transaction, while leases/fencing
 govern the subsequent execution. A pre-commit rollback leaves work queued;
 post-commit loss requires the existing closure/recovery path, not blind replay.
 
-Normal fresh-lease admission is 9 business SQL statements, plus BEGIN/COMMIT;
-reusing the physical family's current lease skips its creation statement.
+Normal fresh-lease admission is 9 business SQL statements, plus BEGIN/COMMIT.
+Child Conversations no longer enter this claim path; they use the root work's
+existing Session ownership through the native Harness.
 The [focused table review](reports/worker-claim-schema-review-20261010.md) retains
 Run, physical-Session and lease boundaries. It records two query/index issues,
 three unused physical-Session metadata columns and Worker naming debt.
@@ -26,21 +28,20 @@ The owner-approved repairs under ADR-0242 are verified and deployed as
 `worker-claim-5c803cc5`, schema 184. Source/transport/fault tests and real Luna
 input/browser/Worker-recovery acceptance pass.
 
-After claim commits, the Worker registers its publication identity at the
-Control Plane ingress before opening the native Session. Registration verifies
-the PG grant and installs disposable memory; ordinary appends check that memory.
-Opening emits no Kafka/native record. A seal closes the old incarnation without
-incrementing its epoch; PG issues the higher epoch only during a new lease claim
+After claim commits, the Worker verifies its PG grant and initializes a Kafka
+producer with a stable physical-Session transactional ID. It verifies PG again
+after initialization: a delayed stale initializer cannot publish under an expired
+grant. Ordinary commits use that producer without HTTP or a new PG authority read.
+Opening emits no native record. A forced seal closes the old incarnation without
+incrementing its PG epoch; PG issues the higher epoch during a new lease claim
 after ordered closure. Kafka seal durability and PG-projected closure are distinct.
-The owner approved rejecting already-known stale/closed registration requests
-before their PG query, while all potentially successful registrations retain PG
-checks. The [implementation and rollout](reports/publication-admission-20261011.md)
-are complete as `publication-admission-c39a78f8`, with real SQL counts, Luna
-input/Stop and Control Plane restart acceptance.
+Normal root work finishes through `work_finished`, after its native children settle.
+The former ingress-registration optimization remains historical evidence in
+[its release report](reports/publication-admission-20261011.md).
 
 Native opening is Worker-local. A live physical Session lease incarnation shares
-one Harness/Storage; a new incarnation opens fresh, and the last attached Run
-closes the owner. Storage first reads PG's latest native commit sequence/next ID,
+one Harness/Storage; a new incarnation opens fresh, and native family settlement
+closes the idle owner. Storage first reads PG's latest native commit sequence/next ID,
 then serves indexed records/documents as Pi requests them. Harness.open restores
 live tasks before scheduling; cloud binding applies the admitted model/tools/cwd.
 The initial native submission uses the logical Run ID for deduplication.
@@ -96,20 +97,21 @@ Follow-up discussions established:
   it is deployed with same-Run Luna continuation, explicit directory restoration
   and unchanged VM identity. No intake SQL changes were required.
 
-The walkthrough now also covers the commit envelope, installed-memory scope checks,
-the Session publication queue and seal ordering, Kafka transaction ACK, known
+The walkthrough covers the commit envelope, scope checks, writer/closure ordering,
+Kafka transaction ACK, known
 pre-admission rejection versus ambiguous delivery, Session key/partition placement,
 native seq versus Kafka offset, and Kafka producer fencing versus PG lease fencing.
-Ingress is a module inside Control Plane, sharing Projector partition ownership;
-it is not an independently deployed service. Old and new Control Plane instances
-can coexist during a compatible rollout.
+Control publication remains a module inside Control Plane, sharing Projector
+partition ownership. Native Worker commits bypass that module. Old and new
+Control Plane instances can coexist during a compatible rollout.
 
 The owner narrowed the update requirement to compatible Control Plane changes,
 such as additional APIs or internal refactoring. Continuously active Runs must
 not have to finish before such an update. Worker/Pi, Cube and protocol/data
-contracts remain fixed. Bounded handoff is a target, not an already-verified
-capability; the current matched release still drains work. Ordinary publication
-failures are not all classified as automatic same-Run recovery.
+contracts remain fixed. The [current acceptance record](reports/session-work-implementation-20261013.md)
+tracks real overlapping-Pod handoff and the defects it exposed. The maintained
+full matched release still drains work; arbitrary schema/Worker upgrades are not
+covered by the compatible Control Plane handoff contract.
 
 The [native Kafka fencing research](reports/kafka-native-fencing-20261013.md)
 and its isolated experiments are complete. They do not authorize a Kafka fork,
@@ -127,8 +129,9 @@ The October 13 discussion clarified:
   a custom subagent tool is an adapter into that capability.
 - Fixed Cube tools already return prepared content. Worker tool proxies return
   it through execute; Pi applies hooks and commits the canonical result.
-- Current subagent code still sends separate start/wait commands, creates/claims
-  a child Run, and receives management-HTTP results. Fixed Tools use Kafka replies.
+- The old separate start/wait commands and cloud child Runs are removed.
+  Control tools and fixed Cube tools share boot-scoped Kafka replies. Pi processes
+  the returned content before committing the canonical Tool Result.
 - Source-derived dispatch must use validated native execution intent, not merely
   an assistant tool_call. Reconstruction never authorizes arbitrary effect replay.
 - PG child-creation deduplication and native creation receipts handle repeated
@@ -141,10 +144,10 @@ The October 13 discussion clarified:
 plan and replaces the earlier unimplemented ADR-0246 draft, retained in Git.
 It covers native children, shared Tool dispatch/replies, ordinary work completion,
 Session closure, direct Kafka publishing and compatible Control Plane updates.
-The source migration is implemented and under full acceptance. Real PG/RF3 tests
+The migration is deployed as `session-work-6ac697f9`. Real PG/RF3 tests
 cover direct publication during Control Plane replacement, delayed initialization
 and ordered same-Run recovery. The [progress record](reports/session-work-implementation-20261013.md)
-tracks remaining checks; production has not yet changed.
+tracks the source, live recovery and rolling-replacement evidence.
 
 Resume with: **Kafka → Projector: consuming one committed record, projecting
 native state and dispatching its bounded effects**. Keep the provider/model

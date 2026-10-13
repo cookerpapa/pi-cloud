@@ -5,26 +5,28 @@
 The owner agreed to clarify cloud Run as root work and let one Session Harness
 manage its ordinary child Conversations. The
 [consolidated plan](adr/0247-session-work-and-tool-dispatch.md) replaces the earlier
-ADR-0246 proposal. This section tracks implementation and acceptance, not a completed rollout.
+ADR-0246 proposal. The migration is deployed as `session-work-6ac697f9`;
+source, transport, live recovery and rolling-replacement acceptance are complete.
 See the [progress report](reports/session-work-implementation-20261013.md).
 
 - [x] Reconcile current source, the native public APIs and October 13 decisions;
       define scope, deletion targets, failure gates and matched-cutover requirements.
-- [ ] P0 / R13S-01: prove child creation, input, ownership, wait/blocked, cancellation
+- [x] P0 / R13S-01: prove child creation, input, ownership, wait/blocked, cancellation
       and recovery without cloud child Runs, retaining the current product behavior.
-- [ ] P1 / R13T-01: unify same-commit dispatch and final Kafka replies with a common
+- [x] P1 / R13T-01: unify same-commit dispatch and final Kafka replies with a common
       Worker proxy; verify mixed effect classes and replay/offset boundaries.
-- [ ] P2 / R13S-02: remove child Run claims and duplicated command/state bodies;
+- [x] P2 / R13S-02: remove child Run claims and duplicated command/state bodies;
       migrate model, resource, input, UI/history and recovery consumers to native identity.
-- [ ] P3 / R13K-02: replace per-child Run seals with native completion and one
+- [x] P3 / R13K-02: replace per-child Run seals with native completion and one
       physical-writer closure; preserve root-work readiness and exact recovery proof.
-- [ ] P4 / R13K-01: implement direct Session producers only after real PG/Kafka
+- [x] P4 / R13K-01: implement direct Session producers only after real PG/Kafka
       authorization, takeover and ambiguous-commit tests and same-load resource comparison.
-- [ ] P5 / R13U-01: complete one matched cutover and full Luna/Cube/browser acceptance,
+- [x] P5 / R13U-01: complete one matched cutover and full Luna/Cube/browser acceptance,
       then verify compatible Control Plane updates during continuously active work.
 
-Each phase is a verified slice. Until the matched cutover, the current production
-runtime remains in place; the final design has no dual-writer/legacy fallback.
+The matched schema 188 / topic v16 / reply v3 release has no dual-writer or
+legacy child-Run fallback. The report distinguishes tested handoff from arbitrary
+cross-version/schema upgrades and records the observed text-update gap.
 
 ## Native Kafka fencing research
 
@@ -42,9 +44,9 @@ runtime remains in place; the final design has no dual-writer/legacy fallback.
 - [x] Inspect native commit preparation, post-adoption display callbacks,
       publication ordering and history/SSE coverage. Record the proposed
       [same-commit design](adr/0245-native-commit-text-presentation.md).
-- [ ] Implement and verify Worker-owned display descriptions that reference text
+- [x] Implement and verify Worker-owned display descriptions that reference text
       in the same native publication; remove the duplicated text publisher.
-- [ ] Validate ordering, replay, partial recovery, parent/child isolation and
+- [x] Validate ordering, replay, partial recovery, parent/child isolation and
       browser behavior; measure bytes/record counts and deploy matched artifacts.
 
 ## Native live-state retention

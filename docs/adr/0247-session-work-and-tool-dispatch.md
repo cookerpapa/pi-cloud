@@ -1,13 +1,15 @@
 # ADR-0247: Session execution, native Subagents and unified Tool dispatch
 
-Status: **implemented and deployed; final rolling acceptance in progress**,
-2026-10-14. Source baseline: f5c0d9d8. Serving release: session-work-6ba81a94.
+Status: **implemented, verified and deployed**,
+2026-10-14. Source baseline: f5c0d9d8. Serving release: session-work-6ac697f9.
 
 业主已同意以物理 Session 为执行所有权边界、将普通子 Agent 交给原生 Harness
 管理的方向，并要求回顾讨论、提出完整改造方案。本文件给出目标、实施顺序和
 验收条件；业主随后明确要求实施。各阶段仍须通过验收，授权不等于协议已经验证。
 尚未实施的 ADR-0246 已合并到本文，旧草案保留在上述 Git 提交中。
 当前线上已使用本文的直写/原生子对话方案；第 14、15 节记录滚动验收发现及修复。
+[实施记录](../reports/session-work-implementation-20261013.md)包含匹配部署、真实
+父子任务/图片/流式交接、故障恢复和最终浏览器证据，以及停顿和容量测量的限制。
 
 ## 1. 目标与明确的取舍
 
@@ -40,7 +42,7 @@ PG 仍是云端工作、租约和资源授权的唯一权威。控制面停机�
 
 目标是在同一物理 Session 内，一次只有一份活跃的云端根工作。初始用户请求
 仍先登记 PG，再确认接受。Worker 可以从根 Run 队列发现工作，在同一领取事务
-取得/复用 Session 租约；不必为“领取 Session”另造一张调度表。
+取得 Session 租约；不必为“领取 Session”另造一张调度表。子对话直接共享这份租约。
 FOR UPDATE SKIP LOCKED、PG 时间检查、短事务和领取提交不确定时的身份核对保留。
 
 运行期间的 follow-up/steer 仍进入 Pi Inbox，沿用浏览器保留未确认草稿的语义。

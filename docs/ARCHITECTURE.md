@@ -7,7 +7,7 @@ CubeSandbox KVM is the only untrusted execution backend.
 
 This document describes deployed ADR-0247 (schema 188 / topic v16 / boot reply v3).
 [Implementation and rollout evidence](reports/session-work-implementation-20261013.md)
-identifies `session-work-6ba81a94` and the scope of its acceptance.
+identifies `session-work-6ac697f9` and the scope of its acceptance.
 
 The [post-Durable review](reports/repository-review-20261006.md) records the audited
 baseline. The [repair record](reports/review-repair-20261006.md) distinguishes current

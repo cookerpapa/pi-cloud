@@ -1,18 +1,17 @@
 {
   "accepted": true,
-  "piCloudRevision": "9a3742d3005b15c529c87a543bcf0b6cddf81c71",
+  "piCloudRevision": "6ac697f92237b090a883cbcc5b9975dccd4f4ac7",
   "harnessWorkingTreeDirty": true,
-  "runtimeRevisions": {
-    "pi-cloud-production-web-1": "6e92e850b116e62269157a5f26bdb0630ee777f5",
-    "pi-cloud-production-control-plane-1": "6e92e850b116e62269157a5f26bdb0630ee777f5",
-    "pi-cloud-production-tool-broker-1": "6e92e850b116e62269157a5f26bdb0630ee777f5"
+  "runtimeImages": {
+    "web": "sha256:3e053eb2cba4c6cd21c66007f0723c3faee2d8124a06a1151c709b6d11c98027",
+    "control-plane": "sha256:d7b01735aa8870f8d1c8e9b4b7ecf22e86999f57133deec3cc8387751ba3e102"
   },
   "workerRuntimeImages": {
-    "pi-cloud-pi-worker-local-v1-0": "pi-cloud/supervisor-host:kubernetes-6e92e850b116",
-    "pi-cloud-pi-worker-local-v1-1": "pi-cloud/supervisor-host:kubernetes-6e92e850b116"
+    "pi-cloud-pi-worker-primary-v1-0": "pi-cloud/supervisor-host:session-work-6ac697f9",
+    "pi-cloud-pi-worker-primary-v1-1": "pi-cloud/supervisor-host:session-work-6ac697f9"
   },
-  "checkedAt": "2026-09-17T00:24:31.270Z",
-  "account": "browser.acceptance.mu4scui3",
+  "checkedAt": "2026-10-13T20:21:34.628Z",
+  "account": "browser.acceptance.mv74kd6e",
   "clickedControls": [
     "auth.localOnly",
     "auth.registerTab",
@@ -37,21 +36,25 @@
     "conversation.create",
     "codeHost.open",
     "codeHost.close",
+    "conversation.testModelMenu",
+    "conversation.testProvider",
+    "conversation.testLuna",
+    "conversation.testMedium",
     "composer.send",
     "conversation.defaultModel",
     "conversation.openFromSnapshot",
     "conversation.modelMenuOpen",
     "conversation.providerChatGpt",
-    "conversation.modelTerra",
+    "conversation.modelSolFast",
     "conversation.fastMode",
     "conversation.reasoningHigh",
     "conversation.modelMenuReopen",
     "conversation.providerDeepSeek",
-    "conversation.modelDeepSeekPro",
+    "conversation.modelDeepSeekFlash",
     "conversation.reasoningDeepSeekHigh",
     "conversation.modelMenuReturnToGpt",
     "conversation.providerChatGptAgain",
-    "conversation.modelSol",
+    "conversation.modelLuna",
     "conversation.reasoningMedium",
     "transcript.copyUserMessage",
     "transcript.copyAssistantMessage",
@@ -108,21 +111,21 @@
     "account.menuOpenForLogout",
     "account.logout"
   ],
-  "clickedControlCount": 93,
+  "clickedControlCount": 97,
   "latencyMs": {
-    "userSubmitToFirstAssistantText": 6156,
-    "userSubmitToCompleteReply": 6261
+    "userSubmitToFirstAssistantText": 5236,
+    "userSubmitToCompleteReply": 5771
   },
   "browserFirstText": {
-    "submittedWallAt": 1789604576840,
-    "userClickToFirstDomMs": 6119.5999999940395,
-    "userClickToFirstTextPaintMs": 6132.20000000298,
-    "domToFirstTextPaintMs": 12.600000008940697,
+    "submittedWallAt": 1791922797757,
+    "userClickToFirstDomMs": 5232.300000011921,
+    "userClickToFirstTextPaintMs": 5245.600000023842,
+    "domToFirstTextPaintMs": 13.300000011920929,
     "measurement": "Chrome Element Timing text-paint; one browser monotonic clock; headless rendering"
   },
   "firstModelTiming": {
-    "providerRouteToFirstTextMs": 5839.389,
-    "nonProviderClickToPaintMs": 292.8110000029801,
+    "providerRouteToFirstTextMs": 4666.645,
+    "nonProviderClickToPaintMs": 578.9550000238414,
     "measurement": "Subtract same-sampling provider interval from browser click-to-paint; no cross-process wall-clock subtraction"
   },
   "testMode": "full",

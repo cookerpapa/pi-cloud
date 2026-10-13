@@ -138,7 +138,7 @@ try {
     scenario === "child"
       ? `Call subagent action:run exactly once with context:fresh, sandbox:shared and tools:["bash"]. Give it this exact task: ${task} Wait for that child's result and then reply CUBE_HANDOFF_SURVIVED. Do not use workflow, start another child, or use Bash yourself.`
       : scenario === "stream-image"
-        ? "This is a streaming acceptance test. Read the six digits in the attached image directly. Do not use any tools. In your final answer write 1000 numbered lines. Each line contains its number, the six digits you saw in the image, and STREAM_HANDOFF abcdefghijklmnopqrstuvwxyz. Do not summarize or use a code block."
+        ? "Read the six digits in the attached image directly and put them on the first line. Then write a thorough 4000-word technical tutorial in English about browser rendering, HTML parsing, CSS layout, painting, compositing, animation and performance measurement. Use numbered sections and concrete examples. This is also a streaming acceptance test, so develop each section fully instead of giving a short outline. Start the tutorial immediately after the digits. Do not use any tools."
         : task;
   turn = await api.acceptTurn(
     session.sessionId,
@@ -177,7 +177,24 @@ try {
     async () => {
       if (streamFailure) throw streamFailure;
       const r = await api.getRun(turn.runId);
-      if (terminal(r)) throw Error("Run ended before fault " + JSON.stringify(r.failure));
+      if (terminal(r)) {
+        const detail = (await api.getConversation(session.sessionId)).turns.find(
+          (item) => item.runId === turn.runId,
+        );
+        const text =
+          detail?.transcript.items
+            .filter((item) => item.kind === "text")
+            .map((item) => item.text)
+            .join("") ?? "";
+        report.beforeFaultEnd = {
+          state: r.state,
+          failure: r.failure,
+          canonicalCharacters: text.length,
+          observedCharacters: observedText.length,
+          textEvents,
+        };
+        throw Error("Run ended before fault " + JSON.stringify(report.beforeFaultEnd));
+      }
       if (scenario === "stream-image") return observedText.length >= 300;
       try {
         return (
