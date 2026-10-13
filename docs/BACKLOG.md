@@ -40,7 +40,9 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
       decision covering post-init PG admission, current-producer disruption,
       Run-versus-Session seals, control ordering and measured active-Session cost.
       Six RF3/PG primitive probes and two existing ingress tests are complete;
-      no direct-Worker production adapter has been implemented.
+      [ADR-0246](adr/0246-worker-direct-kafka-publication-proposal.md) records the
+      proposed change map and acceptance gates. It is not accepted, and no
+      direct-Worker production adapter has been implemented.
 
 [ADR-0243](adr/0243-native-input-current-state.md) is deployed with schema 185 as
 `native-input-current-e82d00b7`. [Source and live acceptance](reports/native-input-current-state-20261012.md)

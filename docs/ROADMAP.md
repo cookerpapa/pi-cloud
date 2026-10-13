@@ -6,6 +6,11 @@
       execute six isolated Kafka/PG schedules, active-producer resource samples
       and the two maintained ingress transport tests.
       [Findings and scope](reports/kafka-native-fencing-20261013.md).
+- [x] Assess the direct-Worker change as
+      [proposed ADR-0246](adr/0246-worker-direct-kafka-publication-proposal.md),
+      including normal Run closure versus whole-writer fencing, delayed startup,
+      control ordering, source removal and a matched initial cutover. No adoption
+      or production implementation is implied.
 - [ ] Define and verify bounded Control Plane handoff for continuously active
       Runs under unchanged Worker/Cube and protocol/data contracts. This remains
       separate from incompatible matched upgrades and from a direct-publication

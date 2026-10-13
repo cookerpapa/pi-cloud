@@ -342,6 +342,10 @@ without advancing or regressing it. Consumers read committed records and account
 for transaction-control/aborted offsets during catch-up. This is transport fencing;
 PG remains the sole Run/lease authority.
 
+The [direct Worker Kafka proposal](adr/0246-worker-direct-kafka-publication-proposal.md)
+is a source-only evaluation with explicit closure/recovery gates. It is not
+accepted or implemented; the ingress path above remains the maintained topology.
+
 Worker admission, ingress scope installation and ordered closure are control
 operations. Source scope validation replaces the former per-record Projector
 ownership decision. Native first positions, exact Outbox seals and canonical

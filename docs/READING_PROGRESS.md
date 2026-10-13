@@ -115,6 +115,14 @@ The [native Kafka fencing research](reports/kafka-native-fencing-20261013.md)
 and its isolated experiments are complete. They do not authorize a Kafka fork,
 direct-Worker migration, a second execution authority or a deployment.
 
+The owner then requested a direct-Worker plan and change assessment.
+[ADR-0246](adr/0246-worker-direct-kafka-publication-proposal.md) is the resulting
+unaccepted proposal: stable per-active-Session native producers, fresh post-init
+PG admission, distinct Run/writer closure, control publication, recovery and
+acceptance gates. The current implementation has not changed. The compatible
+Control Plane update requirement remains distinct from the initial architectural
+cutover this candidate would require.
+
 Resume with: **Kafka → Projector: consuming one committed record, projecting
 native state and dispatching its bounded effects**. Keep the provider/model
 request as a separate walkthrough hop.

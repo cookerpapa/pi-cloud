@@ -1,5 +1,12 @@
 # Documentation map
 
+The [direct Worker publication proposal](adr/0246-worker-direct-kafka-publication-proposal.md)
+maps the native Kafka candidate to Worker ownership, normal Run seals, failed
+Session writer closure, control changes, recovery, readiness and deployment.
+It is a plan for discussion, not an approved migration or a deployed topology.
+The existing ingress remains active; the proposal identifies the fault gates
+that must pass before a decision to cut over.
+
 The [native Kafka fencing study](reports/kafka-native-fencing-20261013.md) compares
 direct Session producers with the current ingress. Isolated RF3/PG probes reproduce
 delayed initialization displacing a newer PG-authorized producer; a post-init PG

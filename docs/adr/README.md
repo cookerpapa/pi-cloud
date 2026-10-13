@@ -8,11 +8,16 @@ The current append contract is [ADR-0161](0161-kafka-native-session-commit.md).
 Earlier PG receipt/cache experiments are preserved in Git history and their
 revision-bound reports, not as alternate production backends.
 
+Pending discussion: [ADR-0246](0246-worker-direct-kafka-publication-proposal.md)
+evaluates direct Worker Kafka publication, two closure scopes, native producer
+fencing and same-Run recovery. It is not accepted or implemented; ADR-0209 remains
+the current ingress contract.
+
 Read the documents in this order:
 
-1. [ADR-0245](0245-native-commit-text-presentation.md) — proposed removal of the
-   extra Kafka assistant-text copy through same-commit display descriptions;
-   not yet implemented.
+1. [ADR-0245](0245-native-commit-text-presentation.md) — removes the extra Kafka
+   assistant-text copy through same-commit display descriptions; implemented and
+   deployed as `native-text-c9b8b2a3`, schema 187 / execution-topic v15.
 
 1. [ADR-0244](0244-kafka-backed-native-live-state.md) — Kafka retention of native
    live progress, PG boundary/handoff checkpoints, and protected recovery ranges.
