@@ -1,11 +1,11 @@
 # Architecture reading checkpoint
 
-Updated: 2026-10-12.
+Updated: 2026-10-13.
 
 The walkthrough explains one component-to-component hop at a time, including
 its message, acknowledgement boundary, failure behavior and design tradeoffs.
 
-Current checkpoint: **Worker → native Pi Harness/Storage → PG context reads**.
+Current checkpoint: **Worker Storage → publication ingress → Kafka commit**.
 Covered HTTP idempotency keys, accepted versus executed input, atomic intake,
 PG queue readiness and the difference between cloud control records and the
 native append-only log. PG notifications wake Workers; they are hints, not task
@@ -67,7 +67,7 @@ boundary/handoff checkpoints. Protected replay references span Conversation/Run
 anchors. The [report](reports/native-live-state-20261012.md) records the matched
 rollout and actual Worker/Projector crash recovery. Other documents retain their 64-delta read
 accelerators; these are not model Compaction or whole-Session recovery snapshots.
-The walkthrough checkpoint above is unchanged.
+The storage-layout discussion above did not itself advance the walkthrough.
 
 Follow-up discussions established:
 
@@ -96,9 +96,28 @@ Follow-up discussions established:
   it is deployed with same-Run Luna continuation, explicit directory restoration
   and unchanged VM identity. No intake SQL changes were required.
 
-Resume with: **how a native Storage commit submits the initial input/runtime
-progress through the registered publication ingress and receives Kafka confirmation**.
-Keep the later provider/model request as a separate walkthrough hop.
+The walkthrough now also covers the commit envelope, installed-memory scope checks,
+the Session publication queue and seal ordering, Kafka transaction ACK, known
+pre-admission rejection versus ambiguous delivery, Session key/partition placement,
+native seq versus Kafka offset, and Kafka producer fencing versus PG lease fencing.
+Ingress is a module inside Control Plane, sharing Projector partition ownership;
+it is not an independently deployed service. Old and new Control Plane instances
+can coexist during a compatible rollout.
+
+The owner narrowed the update requirement to compatible Control Plane changes,
+such as additional APIs or internal refactoring. Continuously active Runs must
+not have to finish before such an update. Worker/Pi, Cube and protocol/data
+contracts remain fixed. Bounded handoff is a target, not an already-verified
+capability; the current matched release still drains work. Ordinary publication
+failures are not all classified as automatic same-Run recovery.
+
+The [native Kafka fencing research](reports/kafka-native-fencing-20261013.md)
+and its isolated experiments are complete. They do not authorize a Kafka fork,
+direct-Worker migration, a second execution authority or a deployment.
+
+Resume with: **Kafka → Projector: consuming one committed record, projecting
+native state and dispatching its bounded effects**. Keep the provider/model
+request as a separate walkthrough hop.
 
 ADR-0245 is implemented and deployed as `native-text-c9b8b2a3` (schema 187/topic v15). Pi still calls public
 `Storage.commit`; PiCloud puts that complete commit and text display descriptions
@@ -106,5 +125,4 @@ into one acknowledged Kafka record. The old post-commit assistant-text publisher
 is removed. Native interpretation stays in Worker, while Projector resolves
 same-commit references and advances history/SSE coverage. The
 [release report](reports/native-text-presentation-20261012.md) tracks deployment.
-This does not advance the guided architecture reading beyond the Storage/open
-context discussion.
+That implementation preceded the subsequent ingress/Kafka walkthrough recorded above.

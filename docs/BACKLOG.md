@@ -30,6 +30,18 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Reliability and capacity
 
+- [ ] R13U-01: design and verify compatible Control Plane updates while Runs stay
+      active, draining bounded publication/dispatch work instead of waiting for
+      whole Runs to finish. Keep Worker/Pi, Cube and protocol/data semantics fixed;
+      distinguish known pre-admission retry from unknown commit recovery. The
+      [native Kafka study](reports/kafka-native-fencing-20261013.md) does not
+      authorize removing the ingress or changing execution ownership.
+- [ ] R13K-01: revisit direct Session producers only with an explicit publication
+      decision covering post-init PG admission, current-producer disruption,
+      Run-versus-Session seals, control ordering and measured active-Session cost.
+      Six RF3/PG primitive probes and two existing ingress tests are complete;
+      no direct-Worker production adapter has been implemented.
+
 [ADR-0243](adr/0243-native-input-current-state.md) is deployed with schema 185 as
 `native-input-current-e82d00b7`. [Source and live acceptance](reports/native-input-current-state-20261012.md)
 cover current Inbox/Submission values, checked reconstruction, actual Worker SIGKILL,

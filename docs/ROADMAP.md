@@ -1,5 +1,16 @@
 # Implementation roadmap
 
+## Native Kafka fencing research and compatible updates
+
+- [x] Research native transactions, PG authority and delayed initialization;
+      execute six isolated Kafka/PG schedules, active-producer resource samples
+      and the two maintained ingress transport tests.
+      [Findings and scope](reports/kafka-native-fencing-20261013.md).
+- [ ] Define and verify bounded Control Plane handoff for continuously active
+      Runs under unchanged Worker/Cube and protocol/data contracts. This remains
+      separate from incompatible matched upgrades and from a direct-publication
+      architecture decision. See R13U-01/R13K-01 in the backlog.
+
 ## Kafka assistant-text deduplication
 
 - [x] Inspect native commit preparation, post-adoption display callbacks,
@@ -109,12 +120,12 @@ the [matched deployment](reports/native-input-release-20261009.md) and real
 Luna/Cube/browser acceptance are also complete.
 
 The [reading checkpoint](READING_PROGRESS.md) covers PG input acceptance, queue
-notification, atomic Worker claim/Session-lease admission, publication registration,
-and native Harness opening/indexed context loading.
+notification, atomic Worker claim/Session-lease admission, native Harness/context
+opening, Storage publication through ingress, and Kafka commit/fencing.
 The focused
 [claim-table review](reports/worker-claim-schema-review-20261010.md) is complete;
 its approved repairs are implemented and deployed under ADR-0242. The next hop is
-native Storage submission through ingress and Kafka confirmation, before provider requests.
+Kafka consumption by Projector; provider requests remain a separate walkthrough.
 
 ## Architecture evidence and private-use readiness
 

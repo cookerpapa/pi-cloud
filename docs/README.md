@@ -1,5 +1,12 @@
 # Documentation map
 
+The [native Kafka fencing study](reports/kafka-native-fencing-20261013.md) compares
+direct Session producers with the current ingress. Isolated RF3/PG probes reproduce
+delayed initialization displacing a newer PG-authorized producer; a post-init PG
+check prevents stale data in the tested schedules but retains availability costs.
+Fresh-process resource samples and the existing ingress fault tests are included.
+This is research only; ADR-0209 and the maintained release remain unchanged.
+
 The [Kafka assistant-text simplification](adr/0245-native-commit-text-presentation.md)
 keeps native text as the source and carries its display descriptions in the
 same Kafka publication. Worker interprets Pi, Projector resolves references,
@@ -73,7 +80,8 @@ owned fixtures are removed and original accounts/configuration/credentials remai
 The report records the corrected model-egress endpoint and updated operator drivers.
 
 The [reading checkpoint](READING_PROGRESS.md) now covers atomic Worker claim,
-Session-lease admission, publication registration/closure and native Harness/context opening. The
+Session-lease admission, native Harness/context opening, Storage publication,
+Kafka commit and fencing. The
 [claim-table review](reports/worker-claim-schema-review-20261010.md)
 preserves this ownership design and records two index-access issues, unused
 physical-Session metadata and Worker naming debt. The owner-approved repairs follow
