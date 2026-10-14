@@ -1,5 +1,12 @@
 # Documentation map
 
+The [complete Control Plane outage check](reports/control-plane-outage-20261014.md)
+holds the only Control Plane at zero replicas for more than a minute. The active
+Worker keeps renewing its PG lease and writing Kafka, Cube completes accepted
+work, and the same Run resumes dispatch after startup. Same-key intake retries
+create one new Run. The report records startup timing, an idle Worker restart,
+fixture corrections and the paths that remain untested. Runtime images are unchanged.
+
 The [Session execution and Tool-dispatch plan](adr/0247-session-work-and-tool-dispatch.md)
 consolidates the October 13 discussion: root cloud work, native child Conversations
 without child Run claims, same-commit Tool dispatch, shared Kafka replies,

@@ -100,6 +100,22 @@ image/text preservation, and wait for Workspace purge. They establish runtime
 handoff behavior, not compatibility of arbitrary application/schema upgrades.
 The full matched-release operator above still drains work.
 
+For a controlled complete outage, with no unrelated active work or pre-existing
+VMs, run:
+
+```sh
+PI_CLOUD_LIVE_CONTROL_PLANE_OUTAGE_CHECK=1 node --import tsx scripts/run-live-control-plane-outage-check.mjs /private/control-plane-outage.json
+```
+
+This holds Control Plane replicas at zero for at least 60 seconds, then restores
+the original count. An independent watchdog also carries a guarded restore receipt.
+Worker lease/Kafka progress, native VM identity, two ordered Bash calls, and a
+same-key request retried across the outage are checked. Use a fresh report path;
+do not discard an unrestored `.restore.json` receipt. HPA-managed deployments are
+rejected. [Evidence and limits](reports/control-plane-outage-20261014.md) include
+the observed idle Worker restart. This acceptance driver is not a production
+upgrade command.
+
 For guest working-directory changes, also run
 `PI_CLOUD_LIVE_MISSING_DIRECTORY_CHECK=1 node --import tsx scripts/run-live-missing-directory-check.mjs /private/cwd-check.json`.
 It uses an owned development machine and Luna to remove its selected directory,

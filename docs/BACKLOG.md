@@ -30,6 +30,20 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Reliability and capacity
 
+The [October 14 complete Control Plane outage check](reports/control-plane-outage-20261014.md)
+passes same-Run/Worker/lease/VM continuation, Kafka buffering and idempotent new
+intake after 65 seconds at zero replicas. This is same-version recovery evidence,
+not a new deployment operator or a guarantee for every active transport.
+
+- [ ] Evaluate idle Worker re-registration after a planned control outage exceeds
+      its management heartbeat timeout. An active Worker with fresh PG execution
+      leases stayed intact; the idle Worker was rejected and restarted. Preserve
+      expired-owner fencing and distinguish idle transport recovery from execution authority.
+- [ ] Verify the dispatch-commit/Cube-handoff window and interactive workflow,
+      terminal and preview connections before claiming fully transparent Control Plane updates.
+- [ ] Test owner-address cache invalidation when one surviving Control Plane keeps
+      forwarding to an exited peer; the zero-replica check restarts all such caches.
+
 The [October 13 consolidated plan](adr/0247-session-work-and-tool-dispatch.md)
 is deployed as `session-work-6ac697f9`, schema 188 / execution-topic v16 / boot
 reply v3. The [implementation evidence](reports/session-work-implementation-20261013.md)

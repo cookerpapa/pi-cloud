@@ -363,6 +363,10 @@ Worker readiness checks Kafka policy/available partitions directly; replacing th
 Control Plane does not reset a healthy Worker producer. Tool dispatch, projection
 and browser delivery can pause while the Projector is unavailable. PG remains
 the only lease/work authority. See [ADR-0247](adr/0247-session-work-and-tool-dispatch.md).
+The [complete-outage check](reports/control-plane-outage-20261014.md) verifies an
+active Worker renewing PG and accumulating native commits while the sole Control
+Plane is absent for over a minute. Its same-Run/VM continuation does not imply
+all idle Workers or interactive transports preserve their original processes.
 On a new consumer assignment the reader explicitly resumes assigned partitions;
 an old handler's pause must not survive its generation. Recovery then reinstalls
 any required pause before dispatch. This preserves the committed effect boundary.

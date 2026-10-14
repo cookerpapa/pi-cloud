@@ -113,6 +113,13 @@ tracks real overlapping-Pod handoff and the defects it exposed. The maintained
 full matched release still drains work; arbitrary schema/Worker upgrades are not
 covered by the compatible Control Plane handoff contract.
 
+The October 14 follow-up verified a complete Control Plane outage: the existing
+Worker/Session lease and VM survived, committed progress waited in Kafka, and a
+new request retried with one identity was claimed after recovery. The
+[report](reports/control-plane-outage-20261014.md) records the idle Worker restart
+and remaining handoff/interactive-transport checks. The walkthrough checkpoint
+is unchanged; no version-routing or query-service split was implemented.
+
 The [native Kafka fencing research](reports/kafka-native-fencing-20261013.md)
 and its isolated experiments are complete. They do not authorize a Kafka fork,
 direct-Worker migration, a second execution authority or a deployment.
