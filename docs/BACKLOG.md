@@ -35,15 +35,19 @@ passes same-Run/Worker/lease/VM continuation, Kafka buffering and idempotent new
 intake after 65 seconds at zero replicas. This is same-version recovery evidence,
 not a new deployment operator or a guarantee for every active transport.
 
-- [ ] Implement the proposed [idle Worker reconnect slice](reports/idle-worker-reconnect-plan-20261014.md)
-      after recording the approved lifecycle decision in an ADR. The retirement
-      reason is confirmed as `heartbeat_timeout`. Separate connection expiry from
-      idle Boot retirement; cover claim/reconnect/new-Boot races and retain expired
-      execution fencing. Research is complete; runtime behavior is unchanged.
+- [ ] Implement [ADR-0248](adr/0248-idle-worker-management-reconnect.md) A1–A4:
+      idle connection expiry/re-registration, atomic Boot/claim admission,
+      failure tests and matched deployment/live acceptance. The owner accepted
+      the direction; runtime behavior is unchanged. The [research record](reports/idle-worker-reconnect-plan-20261014.md)
+      confirms `heartbeat_timeout` retirement and explains the current source.
 - [ ] Verify the dispatch-commit/Cube-handoff window and interactive workflow,
       terminal and preview connections before claiming fully transparent Control Plane updates.
 - [ ] Test owner-address cache invalidation when one surviving Control Plane keeps
       forwarding to an exited peer; the zero-replica check restarts all such caches.
+- [ ] After the handoff gates, provide a maintained compatible Control Plane-only
+      image-replacement procedure with readiness, graceful exit, measured recovery
+      and recorded rollback. The full matched-release operator still drains work;
+      do not apply the lighter procedure to schema/Worker/Pi/Cube contract changes.
 
 The [October 13 consolidated plan](adr/0247-session-work-and-tool-dispatch.md)
 is deployed as `session-work-6ac697f9`, schema 188 / execution-topic v16 / boot

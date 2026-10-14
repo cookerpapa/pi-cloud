@@ -7,10 +7,11 @@ work, and the same Run resumes dispatch after startup. Same-key intake retries
 create one new Run. The report records startup timing, an idle Worker restart,
 fixture corrections and the paths that remain untested. Runtime images are unchanged.
 
-The [idle Worker reconnect proposal](reports/idle-worker-reconnect-plan-20261014.md)
-confirms the timeout retirement cause, distinguishes same-image restart, compatible
-Control Plane replacement and full matched release, and defines the proposed
-connection/Boot separation with concurrency acceptance. It is not implemented.
+The [idle Worker reconnect research](reports/idle-worker-reconnect-plan-20261014.md)
+confirms the timeout retirement cause and distinguishes same-image restart,
+compatible Control Plane replacement and full matched release.
+[ADR-0248](adr/0248-idle-worker-management-reconnect.md) records the accepted
+direction and ordered implementation/acceptance plan. It is not implemented.
 
 The [Session execution and Tool-dispatch plan](adr/0247-session-work-and-tool-dispatch.md)
 consolidates the October 13 discussion: root cloud work, native child Conversations

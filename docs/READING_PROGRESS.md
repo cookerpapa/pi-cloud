@@ -120,6 +120,12 @@ new request retried with one identity was claimed after recovery. The
 and remaining handoff/interactive-transport checks. The walkthrough checkpoint
 is unchanged; no version-routing or query-service split was implemented.
 
+The owner then accepted separating idle connection expiry from Worker Boot
+retirement. [ADR-0248](adr/0248-idle-worker-management-reconnect.md) records the
+morning recap, reconnect/registration/claim changes and verification sequence.
+Service addresses stay fixed; a fresh WebSocket and registration acknowledge the
+new connection. This is an implementation plan, not a deployed behavior change.
+
 The [native Kafka fencing research](reports/kafka-native-fencing-20261013.md)
 and its isolated experiments are complete. They do not authorize a Kafka fork,
 direct-Worker migration, a second execution authority or a deployment.

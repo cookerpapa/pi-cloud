@@ -1,5 +1,23 @@
 # Implementation roadmap
 
+## Idle Worker reconnect and compatible Control Plane updates
+
+The owner accepted the reconnect direction after the October 14 outage evidence.
+[ADR-0248](adr/0248-idle-worker-management-reconnect.md) consolidates the morning
+discussion and separates the immediate implementation slice from later handoff work.
+
+- [x] Reconcile observed behavior, stable Service discovery, WebSocket registration
+      and the timeout retirement cause; record the decision before runtime changes.
+- [ ] A1: distinguish idle connection expiry from Boot retirement across every entry path.
+- [ ] A2: preserve new-Boot fencing and atomic claim/reconnect admission.
+- [ ] A3: cover transport, credential, lease and PG concurrency failures.
+- [ ] A4: deploy the matched change and verify 60/90-second outages with both idle
+      and busy Workers, new intake and confirmed fixture cleanup.
+
+Dispatch handoff, surviving-peer address caches and interactive connections remain
+separate follow-ups before a maintained compatible Control Plane-only release path.
+Current serving behavior is unchanged.
+
 ## Session execution, native Subagents and Tool dispatch
 
 The owner agreed to clarify cloud Run as root work and let one Session Harness
