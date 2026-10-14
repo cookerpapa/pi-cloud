@@ -55,9 +55,11 @@ Kafka 客户端读取该 Session 的记录；通过 Cube 原生全节点清单�
 
 持有测试 Run 的 Worker 没有重启。另一个空闲 Worker 的管理重连遭拒绝，日志
 记录 `registration_connection_closed`、关闭码 1008，随后容器重启一次并恢复。
-当前管理连接过期后，只有存在新鲜执行租约才会保护原 Worker；现象与这项规则
-一致。它没有影响原 Run，但不能据此宣称所有 Worker 都会在长停机后原地重连。
-是否优化空闲 Worker 的重注册，应单独评估，不能放松真正过期 writer 的 fencing。
+随后只读取证确认：该 Boot 的 `worker_retirements.reason` 是 `heartbeat_timeout`，
+退役已完成，原管理连接也是以此原因被 fenced。当前连接过期后，只有存在新鲜
+执行租约才会保护原 Worker。它没有影响原 Run，但不能据此宣称所有 Worker
+都会在长停机后原地重连。[后续研究方案](idle-worker-reconnect-plan-20261014.md)
+区分连接过期与空闲 Boot 退役，尚未实施，不放松真正过期 writer 的 fencing。
 
 第一轮脚本已观察到续租与 Kafka 进度，但未完成验收：它错误地用 PiCloud 的
 派生 runtime UUID 匹配 Cube 原生 Sandbox ID，并将 API 客户端的网络错误

@@ -35,10 +35,11 @@ passes same-Run/Worker/lease/VM continuation, Kafka buffering and idempotent new
 intake after 65 seconds at zero replicas. This is same-version recovery evidence,
 not a new deployment operator or a guarantee for every active transport.
 
-- [ ] Evaluate idle Worker re-registration after a planned control outage exceeds
-      its management heartbeat timeout. An active Worker with fresh PG execution
-      leases stayed intact; the idle Worker was rejected and restarted. Preserve
-      expired-owner fencing and distinguish idle transport recovery from execution authority.
+- [ ] Implement the proposed [idle Worker reconnect slice](reports/idle-worker-reconnect-plan-20261014.md)
+      after recording the approved lifecycle decision in an ADR. The retirement
+      reason is confirmed as `heartbeat_timeout`. Separate connection expiry from
+      idle Boot retirement; cover claim/reconnect/new-Boot races and retain expired
+      execution fencing. Research is complete; runtime behavior is unchanged.
 - [ ] Verify the dispatch-commit/Cube-handoff window and interactive workflow,
       terminal and preview connections before claiming fully transparent Control Plane updates.
 - [ ] Test owner-address cache invalidation when one surviving Control Plane keeps
