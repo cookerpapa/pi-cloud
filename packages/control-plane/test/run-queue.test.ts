@@ -122,7 +122,7 @@ describe.skipIf(!endpoint).sequential("Run queue authority", () => {
     );
     expect(candidates[0]).not.toContain("from runs as earlier_run");
     expect(queries.some((q) => q.includes('update "workers"'))).toBe(false);
-    expect(queries.filter((q) => q.startsWith('with "started_session"'))).toHaveLength(1);
+    expect(queries.filter((q) => q.startsWith("with connection_admission"))).toHaveLength(1);
     const stages = await metrics.runClaimStageDuration.get();
     const counts = stages.values.filter((v) => v.metricName?.endsWith("_count"));
     expect(counts.map((v) => v.labels.stage).sort()).toEqual([

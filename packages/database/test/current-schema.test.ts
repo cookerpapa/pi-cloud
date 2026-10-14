@@ -23,7 +23,7 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(188);
+      expect(firstMigrationPass.rows).toHaveLength(189);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
       expect(firstMigrationPass.rows.at(-1)?.name).toBe("189_idle_worker_reconnect");
       const terminalColumns = await sql<{ column_name: string }>`select column_name
