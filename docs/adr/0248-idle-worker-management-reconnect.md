@@ -1,12 +1,13 @@
 # ADR-0248: Idle Worker management reconnect
 
-Status: **deployed; live acceptance in progress**,
-2026-10-14. Design baseline: `7d708e08`; implementation: `c744cfa7`;
-serving release: `worker-reconnect-c744cfa7`, schema 189 / topic v16 / boot reply v3.
+Status: **implemented, verified and deployed**,
+2026-10-14. Design baseline: `7d708e08`; implementation and acceptance repair: `5b6ba003`;
+serving release: `worker-reconnect-5b6ba003`, schema 189 / topic v16 / boot reply v3.
 
 业主同意空闲 Worker 管理重连的优化方向，并要求回顾今早讨论、整理实施方案。
 业主随后要求实施。源码、仓库检查、配套部署及 60/90 秒停机验证已完成；
-[实施记录](../reports/idle-worker-reconnect-20261014.md)跟踪其余生产验收。
+[实施记录](../reports/idle-worker-reconnect-20261014.md)记录最终完整原生输入、Cube、
+浏览器、补丁停机验收和配置保留/物理清理证明；第 5 节仍是独立后续工作。
 [研究记录](../reports/idle-worker-reconnect-plan-20261014.md)保存现有源码入口、
 故障原因和成熟机制依据。本文固定实施边界，避免把管理连接恢复扩大为执行权恢复。
 
@@ -113,4 +114,4 @@ READ COMMITTED 的输入准入事务中，先读 native head，再重建最新�
 `readHumanInputMetadataBatch` 的单条当前元数据查询，去掉无关的 Inbox 重建。
 输入身份/Run 关联不变，投影未出现时仍交给原 Worker 幂等确认；不增加表、
 历史保留、兼容读取或第二套输入队列，也不把整个写事务改成旧快照隔离级别。
-这是对 ADR-0243 当前状态读取的修正，须通过原生输入与发布验收后配套交付。
+这是对 ADR-0243 当前状态读取的修正，已通过原生输入与发布验收并配套交付。

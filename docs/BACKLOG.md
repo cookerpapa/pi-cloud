@@ -35,12 +35,13 @@ passes same-Run/Worker/lease/VM continuation, Kafka buffering and idempotent new
 intake after 65 seconds at zero replicas. This is same-version recovery evidence,
 not a new deployment operator or a guarantee for every active transport.
 
-- [ ] Implement [ADR-0248](adr/0248-idle-worker-management-reconnect.md) A1–A4:
+- [x] Implement [ADR-0248](adr/0248-idle-worker-management-reconnect.md) A1–A4:
       idle connection expiry/re-registration, atomic Boot/claim admission,
       failure tests and matched deployment/live acceptance. It is deployed as
-      `worker-reconnect-c744cfa7` / schema 189; repository checks, 60/90-second
+      `worker-reconnect-5b6ba003` / schema 189; repository checks, 60/90-second
       outages and actual SIGKILL pass. [Delivery evidence](reports/idle-worker-reconnect-20261014.md)
-      tracks the remaining routine live gates.
+      records full native-input, Cube, browser and final-patch outage acceptance,
+      the input receipt read repair, preserved configuration and physical cleanup.
 - [ ] Verify the dispatch-commit/Cube-handoff window and interactive workflow,
       terminal and preview connections before claiming fully transparent Control Plane updates.
 - [ ] Test owner-address cache invalidation when one surviving Control Plane keeps
@@ -52,9 +53,13 @@ not a new deployment operator or a guarantee for every active transport.
 - [ ] Evaluate renewal of the existing 24-hour Boot registration credential before
       claiming long-lived Workers can reconnect indefinitely across Control Plane updates.
       Expired/revoked credentials still fail closed; management reconnect does not renew them.
-- [ ] Align the security-update download path with the existing Debian mirror/retry
-      policy. A proxied Debian download returned 502 during this release; retry
-      passed without changing pinned versions or bypassing artifact scans.
+- [x] Align the security-update download path with the existing Debian mirror
+      policy after a proxied Debian download returned 502. The final release keeps
+      exact security package versions and passes all artifact scans.
+- [ ] Have the full Cube production driver invoke the existing owned-tenant purger
+      after physical cleanup; it currently leaves its temporary account metadata.
+      This delivery explicitly purged its three exact fixture identities, with
+      the original account/configuration counts and digests restored.
 
 The [October 13 consolidated plan](adr/0247-session-work-and-tool-dispatch.md)
 is deployed as `session-work-6ac697f9`, schema 188 / execution-topic v16 / boot

@@ -1,20 +1,23 @@
 # Documentation map
 
-The [complete Control Plane outage check](reports/control-plane-outage-20261014.md)
+The [initial complete Control Plane outage check](reports/control-plane-outage-20261014.md)
 holds the only Control Plane at zero replicas for more than a minute. The active
 Worker keeps renewing its PG lease and writing Kafka, Cube completes accepted
 work, and the same Run resumes dispatch after startup. Same-key intake retries
 create one new Run. The report records startup timing, an idle Worker restart,
-fixture corrections and the paths that remain untested. Runtime images are unchanged.
+fixture corrections and the paths that remained untested. That initial check changed
+no runtime images; the subsequent repair and release are described below.
 
 The [idle Worker reconnect research](reports/idle-worker-reconnect-plan-20261014.md)
 confirms the timeout retirement cause and distinguishes same-image restart,
 compatible Control Plane replacement and full matched release.
 [ADR-0248](adr/0248-idle-worker-management-reconnect.md) records the accepted
 direction and ordered implementation/acceptance plan. It is deployed as
-`worker-reconnect-c744cfa7`, schema 189. [Delivery evidence](reports/idle-worker-reconnect-20261014.md)
+`worker-reconnect-5b6ba003`, schema 189. [Delivery evidence](reports/idle-worker-reconnect-20261014.md)
 records repository checks, preserved configuration, both original Worker Boots
-across 60/90-second outages and actual Control Plane SIGKILL; routine live gates are finishing.
+across 60/90-second outages and actual Control Plane SIGKILL. Full native-input,
+Cube and browser acceptance pass. The final patch also fixes a reproduced input
+receipt read race without retaining historical queue versions.
 
 The [Session execution and Tool-dispatch plan](adr/0247-session-work-and-tool-dispatch.md)
 consolidates the October 13 discussion: root cloud work, native child Conversations

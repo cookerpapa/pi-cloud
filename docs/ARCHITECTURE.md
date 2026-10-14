@@ -8,7 +8,7 @@ CubeSandbox KVM is the only untrusted execution backend.
 This document describes ADR-0247 Session ownership with the deployed ADR-0248
 management reconnect extension (schema 189 / topic v16 / boot reply v3).
 [Reconnect delivery evidence](reports/idle-worker-reconnect-20261014.md) identifies
-`worker-reconnect-c744cfa7`; the [Session migration evidence](reports/session-work-implementation-20261013.md)
+`worker-reconnect-5b6ba003`; the [Session migration evidence](reports/session-work-implementation-20261013.md)
 records the earlier `session-work-6ac697f9` baseline.
 
 The [post-Durable review](reports/repository-review-20261006.md) records the audited

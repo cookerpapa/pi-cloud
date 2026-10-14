@@ -1,9 +1,10 @@
 # 空闲 Worker 重连实施与验收
 
 2026-10-14。[ADR-0248](../adr/0248-idle-worker-management-reconnect.md)的 A1–A4。
-状态：已配套上线，60/90 秒完全停机和实际 SIGKILL 验收通过，常规生产验收收尾中。
-源码 `c744cfa762eeb644119dc5d4d83a79083899ce14`，运行版本
-`worker-reconnect-c744cfa7` / schema 189 / execution-topic v16 / boot reply v3。
+状态：已完成并配套上线，目标故障验收和完整生产验收通过。
+最终源码 `5b6ba0039665e7f4741e475c0ec51392b6dc0fb4`，运行版本
+`worker-reconnect-5b6ba003` / schema 189 / execution-topic v16 / boot reply v3。
+初次重连版本为 `c744cfa7`；最终补丁加入下述验收发现的回执读取修复和构建源调整。
 
 ## 行为和代码边界
 
@@ -46,7 +47,8 @@ CI 的依赖、格式、文档、安装、运行策略、Cube 契约、Helm、�
 通过断言修改运行行为；其他已通过测试没有反复重跑。
 
 随后完成验收脚本 71 项、真实 Kafka 传输 8 项、故障评估 244/244 项和安全审计。
-故障评估记录源码为上述 c744cfa7，工作树干净。原先按条件跳过的测试没有算作通过。
+故障评估记录源码为初次版本 c744cfa7，工作树干净。最终回执补丁另通过 95 项相关
+真实 PG/传输测试、控制面类型检查、格式/文档和脚本检查。原先按条件跳过的测试没有算作通过。
 
 最终候选 11 个镜像的扫描、匹配预检和维护的 apply 流程通过。切换前 PG 未完成
 Run、writer、VM、开发机、终端均为零；发布过程另行检查全节点原生 VM 清单和
@@ -57,18 +59,19 @@ writer 排空。切换后控制面 1 个副本、Worker 2 个副本就绪。
 构建期间 CLIProxyAPI 镜像下载 Debian 固定安全更新包曾通过本机代理返回 502。
 重试后的构建与扫描通过，未跳过更新、检查或替换依赖版本。
 阿里云镜像源的同包下载实测约 0.7 秒，仓库 Volume Gateway 已使用该源；
-后续补丁已将安全更新脚本对齐到该现有镜像源，保留 Debian 签名校验和固定包版本，
-待与下述回执查询修复一起完成镜像扫描、配套交付。
+最终补丁已将安全更新脚本对齐到该现有镜像源，保留 Debian 签名校验和固定包版本。
+该次构建用约 25 秒取得 9.4 MB 包索引，完整构建、11 镜像扫描和匹配发布通过。
 
 ## 线上故障验收
 
 所有模型场景使用 GPT-6 Luna。
 
-| 场景 | 故障/恢复观测 | 结果 |
+| 场景/版本 | 故障/恢复观测 | 结果 |
 | --- | --- | --- |
-| 60 秒完全停机 | 实际不可达 63.977 秒；恢复副本到就绪 12.957 秒 | 原 Run/租约/VM 保持，两次 Bash 各执行一次；空闲和忙碌 Worker 容器/Boot 都保持，新 connectionId；清理通过 |
-| 90 秒完全停机 | 实际不可达 93.953 秒；恢复副本到就绪 10.299 秒 | 同样保持两个原 Worker、Run/租约/VM，新请求重试只创建一个 Run；清理通过 |
-| 实际控制面 SIGKILL | 容器退出码 137；恢复 17.306 秒 | 原工具执行一次并完成，两个 Worker 容器与重启次数均不变；物理清理通过 |
+| 60 秒完全停机 / c744cfa7 | 实际不可达 63.977 秒；恢复副本到就绪 12.957 秒 | 原 Run/租约/VM 保持，两次 Bash 各执行一次；空闲和忙碌 Worker 容器/Boot 都保持，新 connectionId；清理通过 |
+| 90 秒完全停机 / c744cfa7 | 实际不可达 93.953 秒；恢复副本到就绪 10.299 秒 | 同样保持两个原 Worker、Run/租约/VM，新请求重试只创建一个 Run；清理通过 |
+| 实际控制面 SIGKILL / c744cfa7 | 容器退出码 137；恢复 17.306 秒 | 原工具执行一次并完成，两个 Worker 容器与重启次数均不变；物理清理通过 |
+| 最终补丁 60 秒停机 / 5b6ba003 | 实际不可达 63.995 秒；恢复副本到就绪 9.515 秒 | 两个原 Worker/Boot、原 Run/租约/VM 保持，新连接生效；执行标记及新请求幂等检查通过，清理通过 |
 
 60/90 秒是主动施加的故障窗口，恢复时间是本机的单次观测，不是升级可用性承诺。
 HTTP 新请求的重试由验收客户端执行，不表示所有浏览器 POST 都已自动重试。
@@ -86,11 +89,33 @@ SIGKILL 恢复，随后流式观察场景未完成；不将分次通过说成整
 下先读旧 native head，Worker 再更新 latest-only 文档，后续基底查询读不到旧版本。
 确认回执并不需要重建 Inbox；改用现有单条当前元数据查询后，该回归和相关 95 项
 测试通过，保持原有 fingerprint/acceptedAt 校验和未投影时的 Worker 幂等确认。
-补丁配套发布与最终完整 Cube/原生输入验收仍待完成。
+补丁已配套发布。最终原生输入脚本一次完整通过五项场景：consume、stop、recover、
+stream_stop、stream_both_crash，包含实际 Worker 和控制面进程丢失及同 Run 恢复。
+完整 Cube 脚本一次通过纯聊天无 VM、编码、预览、跨 Run 后台进程、千文件工作区
+和新 VM 挂载原 Volume。最终浏览器验收及上述补丁停机检查均通过。
+
+最终补丁验收也保留了两次浏览器 TLS 中断，以及一次在故障注入前就结束的停机
+准备 Run。后续限次、隔离重跑没有修改测试断言；第一次重跑即完成浏览器和停机
+两项。失败尝试没有计作通过，也没有对任意生产 Tool 追加重试。
+
+## 最终清理与保留
+
+全部成功和失败 fixture 的会话、Volume/VM 生命周期先通过既有产品路径收尾。
+完整 Cube 驱动留下的三个本次临时租户，经精确 ID/slug 核对并通过现有
+`purgeOwnedAcceptanceTenant` 的物理清理/未完成控制检查后删除；未扩大到历史
+租户或原用户账户。最终七张账户/凭据/模型配置表的数量和摘要与最初基线一致。
+
+最终 PG 未完成 Run、未释放 writer、活动 VM/开发机/终端、待清理 Workspace 均为
+零；原生 Cube 清单扫描 1/1 个节点，物理 VM 为零。控制面 1/1、Worker 2/2、Web
+1/1 均就绪，镜像均为 `worker-reconnect-5b6ba003`。
 
 私有证据为 `/tmp/pi-cloud-reconnect-{outage60,outage90,process}.json`、
 `/tmp/pi-cloud-reconnect-process-workers.json`、`/tmp/pi-cloud-reconnect-faults.json`，
-以及 `/tmp/pi-cloud-release-worker-reconnect-c744cfa7-retry/` 的匹配发布证据。
+最终补丁的 `/tmp/pi-cloud-reconnect-patch-{native-input,production}.json`、
+`/tmp/pi-cloud-reconnect-final-{browser,outage}-1.json`、
+`/tmp/pi-cloud-reconnect-final-state.json`、
+`/tmp/pi-cloud-reconnect-production-fixture-cleanup.json`，以及
+`/tmp/pi-cloud-release-worker-reconnect-5b6ba003/` 的最终匹配发布证据。
 原始模型文本、用户仓库和凭据不进入 Git。
 
 ADR 中列出的 dispatch 接单窗口、存活 peer 地址缓存、workflow/终端/预览交接
