@@ -10,14 +10,15 @@ discussion and separates the immediate implementation slice from later handoff w
       and the timeout retirement cause; record the decision before runtime changes.
 - [x] A1: distinguish idle connection expiry from Boot retirement across every entry path.
 - [x] A2: preserve new-Boot fencing and atomic claim/reconnect admission.
-- [ ] A3: cover transport, credential, lease and PG concurrency failures.
+- [x] A3: cover transport, credential, lease and PG concurrency failures.
 - [ ] A4: deploy the matched change and verify 60/90-second outages with both idle
       and busy Workers, new intake and confirmed fixture cleanup.
 
 Dispatch handoff, surviving-peer address caches and interactive connections remain
 separate follow-ups before a maintained compatible Control Plane-only release path.
-Current serving behavior is unchanged; [delivery evidence](reports/idle-worker-reconnect-20261014.md)
-tracks source tests, repository checks and rollout.
+The reconnect change is deployed as `worker-reconnect-c744cfa7`, schema 189;
+[delivery evidence](reports/idle-worker-reconnect-20261014.md) tracks passing
+repository/outage/SIGKILL gates and the remaining routine live acceptance.
 
 ## Session execution, native Subagents and Tool dispatch
 

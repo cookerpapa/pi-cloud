@@ -5,9 +5,11 @@ native tasks, model context, input placement, Tool selection and Compaction. PiC
 execution authority, distributed placement, output projection and Cube lifetimes.
 CubeSandbox KVM is the only untrusted execution backend.
 
-This document describes deployed ADR-0247 (schema 188 / topic v16 / boot reply v3).
-[Implementation and rollout evidence](reports/session-work-implementation-20261013.md)
-identifies `session-work-6ac697f9` and the scope of its acceptance.
+This document describes ADR-0247 Session ownership with the deployed ADR-0248
+management reconnect extension (schema 189 / topic v16 / boot reply v3).
+[Reconnect delivery evidence](reports/idle-worker-reconnect-20261014.md) identifies
+`worker-reconnect-c744cfa7`; the [Session migration evidence](reports/session-work-implementation-20261013.md)
+records the earlier `session-work-6ac697f9` baseline.
 
 The [post-Durable review](reports/repository-review-20261006.md) records the audited
 baseline. The [repair record](reports/review-repair-20261006.md) distinguishes current
@@ -311,6 +313,22 @@ lease sweep. The initial expiry query takes one PG-time cutoff, and final
 decisions still recheck authority after locks. The one-second interval is a
 delay between completed scans, not a one-second failure-detection guarantee.
 
+Under [ADR-0248](adr/0248-idle-worker-management-reconnect.md), management connection
+expiry is recorded as `expired`. An authorized idle Boot with no unreleased Session
+lease or retirement can reconnect without a process restart. Fresh PG execution
+leases also protect a busy Boot, but no longer extend an expired management
+connection. Re-registration keeps the Worker/Boot identity and issues a new
+connection ID; old messages cannot update a replacement connection. Revoked or
+expired Boot credentials and failed/draining/terminated Workers are not revived.
+An expired unreleased Session is not evidence of idleness.
+
+Boot provisioning and registration serialize on the existing Host row; registration
+checks current authorization after Worker/connection locks. New Run admission
+checks the current connection inside its existing final SQL and rolls back to
+queued when unavailable, without another SQL round trip. Existing Session renewal
+stays independent of the management connection. These changes add no per-Tool,
+per-Step or per-token authority query and no new storage table.
+
 ## Publication and execution log
 
 Atomic PG admission freezes one root work item's physical-Session lease and epoch.
@@ -363,10 +381,11 @@ Worker readiness checks Kafka policy/available partitions directly; replacing th
 Control Plane does not reset a healthy Worker producer. Tool dispatch, projection
 and browser delivery can pause while the Projector is unavailable. PG remains
 the only lease/work authority. See [ADR-0247](adr/0247-session-work-and-tool-dispatch.md).
-The [complete-outage check](reports/control-plane-outage-20261014.md) verifies an
-active Worker renewing PG and accumulating native commits while the sole Control
-Plane is absent for over a minute. Its same-Run/VM continuation does not imply
-all idle Workers or interactive transports preserve their original processes.
+The [initial outage check](reports/control-plane-outage-20261014.md) exposed idle
+Boot retirement. The [reconnect acceptance](reports/idle-worker-reconnect-20261014.md)
+now verifies both idle and busy Worker processes/Boots across 60/90-second Control
+Plane outages, same-Run/lease/VM continuation and fresh management connections.
+This is not proof for every interactive transport or arbitrary schema upgrade.
 On a new consumer assignment the reader explicitly resumes assigned partitions;
 an old handler's pause must not survive its generation. Recovery then reinstalls
 any required pause before dispatch. This preserves the committed effect boundary.

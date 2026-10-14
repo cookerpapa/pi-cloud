@@ -124,7 +124,10 @@ The owner then accepted separating idle connection expiry from Worker Boot
 retirement. [ADR-0248](adr/0248-idle-worker-management-reconnect.md) records the
 morning recap, reconnect/registration/claim changes and verification sequence.
 Service addresses stay fixed; a fresh WebSocket and registration acknowledge the
-new connection. This is an implementation plan, not a deployed behavior change.
+new connection. The change is deployed as `worker-reconnect-c744cfa7`, schema 189;
+[evidence](reports/idle-worker-reconnect-20261014.md) confirms original idle/busy
+Worker processes across 60/90-second outages and Control Plane SIGKILL.
+The walkthrough remains at Worker Storage → Kafka commit.
 
 The [native Kafka fencing research](reports/kafka-native-fencing-20261013.md)
 and its isolated experiments are complete. They do not authorize a Kafka fork,

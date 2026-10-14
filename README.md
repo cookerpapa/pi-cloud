@@ -23,6 +23,11 @@ and optional [conversation/image recovery procedure](docs/ASSET_RECOVERY.md).
 The [private pilot criteria](docs/PRIVATE_PILOT.md) distinguish readiness checks
 from actual-use and fleet-capacity evidence; the pilot has not started.
 
+Management reconnect preserves authorized idle and busy Worker processes across
+Control Plane outages. [Current recovery evidence](docs/reports/idle-worker-reconnect-20261014.md)
+covers 60/90-second outages and a Control Plane process crash. Full matched
+application/schema updates still use the drained release procedure above.
+
 ## Architecture
 
 ```text

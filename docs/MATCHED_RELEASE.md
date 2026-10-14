@@ -112,9 +112,13 @@ the original count. An independent watchdog also carries a guarded restore recei
 Worker lease/Kafka progress, native VM identity, two ordered Bash calls, and a
 same-key request retried across the outage are checked. Use a fresh report path;
 do not discard an unrestored `.restore.json` receipt. HPA-managed deployments are
-rejected. [Evidence and limits](reports/control-plane-outage-20261014.md) include
-the observed idle Worker restart. This acceptance driver is not a production
-upgrade command.
+rejected. The [initial evidence](reports/control-plane-outage-20261014.md) exposed
+idle Worker retirement. Schema 189's [reconnect acceptance](reports/idle-worker-reconnect-20261014.md)
+requires both idle and busy Workers to keep their original containers/Boots and
+register new connections, with no healthy Boot retirement. Set
+`PI_CLOUD_CONTROL_PLANE_OUTAGE_MS=90000` for the longer outage case; the fixture
+requires an idle Worker in addition to its busy Worker. This driver is not a
+production upgrade command.
 
 For guest working-directory changes, also run
 `PI_CLOUD_LIVE_MISSING_DIRECTORY_CHECK=1 node --import tsx scripts/run-live-missing-directory-check.mjs /private/cwd-check.json`.
@@ -152,11 +156,15 @@ source/artifact identities, outcomes and evidence scope in the release report.
 A test/preflight is not a newly deployed release, and readiness is not a completed
 [private pilot](PRIVATE_PILOT.md).
 
-Schema 188 changes Session work ownership and unified Tool replies and uses
-execution-topic v16 / boot reply v3. This is a destructive matched upgrade.
+Current schema 189 adds the `expired` management-connection state and matching
+Worker admission behavior. It keeps execution-topic v16 / boot reply v3 and does
+not delete native history. Deploy its matching application/schema set while drained.
+
+The earlier schema 188 changed Session work ownership and unified Tool replies
+and required a destructive matched upgrade from the previous native contract.
 Drain writers and confirm physical absence before deleting obsolete development
 history, root/child work, and closed Session ownership records. Preserve accounts,
-model/provider configuration and credentials. The migration rejects retained old
+model/provider configuration and credentials. Migration 188 rejects retained old
 native commits or ownership records. There is no legacy ingress or child-Run mode.
 The matched release still requires confirmed absence of physical VMs; the schema
 marker never permits discarding cleanup ownership without its physical proof.

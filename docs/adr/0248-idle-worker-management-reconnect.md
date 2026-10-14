@@ -1,11 +1,12 @@
 # ADR-0248: Idle Worker management reconnect
 
-Status: **source implemented; repository checks and deployment in progress**,
-2026-10-14. Source baseline: `7d708e08`; serving release: `session-work-6ac697f9`.
+Status: **deployed; live acceptance in progress**,
+2026-10-14. Design baseline: `7d708e08`; implementation: `c744cfa7`;
+serving release: `worker-reconnect-c744cfa7`, schema 189 / topic v16 / boot reply v3.
 
 业主同意空闲 Worker 管理重连的优化方向，并要求回顾今早讨论、整理实施方案。
-业主随后要求实施。源码及专项验证已完成；[实施记录](../reports/idle-worker-reconnect-20261014.md)
-区分检查、部署和实测进度，不表示下述运行策略已经上线。
+业主随后要求实施。源码、仓库检查、配套部署及 60/90 秒停机验证已完成；
+[实施记录](../reports/idle-worker-reconnect-20261014.md)跟踪其余生产验收。
 [研究记录](../reports/idle-worker-reconnect-plan-20261014.md)保存现有源码入口、
 故障原因和成熟机制依据。本文固定实施边界，避免把管理连接恢复扩大为执行权恢复。
 
@@ -101,3 +102,15 @@ A1–A4 是一个完整纵向切片，不能只放宽注册检查而遗漏清扫
 这些是后续独立切片。当前不引入按 Run 分版本、版本 Topic、查询微服务或新的
 调度系统，也不把所有前端 POST 都描述成已具备自动重试。前端未确认输入仍按
 既有草稿/确认语义处理；验收客户端的同键重试只证明已测试的请求路径。
+
+## 6. 验收发现的输入回执读取竞态
+
+上线后原生输入验收的同键重试出现 HTTP 500。真实 PG 交错测试复现：在
+READ COMMITTED 的输入准入事务中，先读 native head，再重建最新队列；Worker
+并发替换 current-only 文档后，旧 head 对应的基底已不再保存，读取报缺基底。
+
+重复提交只需要原输入的 fingerprint 和 acceptedAt。改用现有
+`readHumanInputMetadataBatch` 的单条当前元数据查询，去掉无关的 Inbox 重建。
+输入身份/Run 关联不变，投影未出现时仍交给原 Worker 幂等确认；不增加表、
+历史保留、兼容读取或第二套输入队列，也不把整个写事务改成旧快照隔离级别。
+这是对 ADR-0243 当前状态读取的修正，须通过原生输入与发布验收后配套交付。

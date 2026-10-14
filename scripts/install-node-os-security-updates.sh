@@ -3,6 +3,15 @@
 # Keep the security revisions explicit; release scans verify the final image.
 set -eu
 
+# Match the existing Volume Gateway build mirror. APT still verifies Debian's
+# signed metadata and installs the exact security revisions below.
+if [ -f /etc/apt/sources.list.d/debian.sources ]; then
+  sed -i \
+    -e 's|http://deb.debian.org/debian-security|http://mirrors.aliyun.com/debian-security|g' \
+    -e 's|http://deb.debian.org/debian|http://mirrors.aliyun.com/debian|g' \
+    /etc/apt/sources.list.d/debian.sources
+fi
+
 apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
 DEBIAN_FRONTEND=noninteractive apt-get \
   -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \

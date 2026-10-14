@@ -37,9 +37,10 @@ not a new deployment operator or a guarantee for every active transport.
 
 - [ ] Implement [ADR-0248](adr/0248-idle-worker-management-reconnect.md) A1–A4:
       idle connection expiry/re-registration, atomic Boot/claim admission,
-      failure tests and matched deployment/live acceptance. The owner accepted
-      the direction; runtime behavior is unchanged. The [research record](reports/idle-worker-reconnect-plan-20261014.md)
-      confirms `heartbeat_timeout` retirement and explains the current source.
+      failure tests and matched deployment/live acceptance. It is deployed as
+      `worker-reconnect-c744cfa7` / schema 189; repository checks, 60/90-second
+      outages and actual SIGKILL pass. [Delivery evidence](reports/idle-worker-reconnect-20261014.md)
+      tracks the remaining routine live gates.
 - [ ] Verify the dispatch-commit/Cube-handoff window and interactive workflow,
       terminal and preview connections before claiming fully transparent Control Plane updates.
 - [ ] Test owner-address cache invalidation when one surviving Control Plane keeps
@@ -48,6 +49,12 @@ not a new deployment operator or a guarantee for every active transport.
       image-replacement procedure with readiness, graceful exit, measured recovery
       and recorded rollback. The full matched-release operator still drains work;
       do not apply the lighter procedure to schema/Worker/Pi/Cube contract changes.
+- [ ] Evaluate renewal of the existing 24-hour Boot registration credential before
+      claiming long-lived Workers can reconnect indefinitely across Control Plane updates.
+      Expired/revoked credentials still fail closed; management reconnect does not renew them.
+- [ ] Align the security-update download path with the existing Debian mirror/retry
+      policy. A proxied Debian download returned 502 during this release; retry
+      passed without changing pinned versions or bypassing artifact scans.
 
 The [October 13 consolidated plan](adr/0247-session-work-and-tool-dispatch.md)
 is deployed as `session-work-6ac697f9`, schema 188 / execution-topic v16 / boot

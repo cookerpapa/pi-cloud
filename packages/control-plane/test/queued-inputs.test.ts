@@ -455,6 +455,40 @@ describe.sequential("native human inputs and cloud execution records", () => {
       await a.close();
     }
   });
+
+  it("replays an input receipt while the Worker advances latest-only queue documents", async () => {
+    const f = await fixture(),
+      a = await f.start();
+    const gate = queryGate(
+      (q) => q.startsWith("select h.seq,h.next_id") || q.startsWith("select c.body"),
+    );
+    try {
+      const original = await f.accept("original", "lost-reply");
+      const command = f.deliver.mock.calls[0]![0];
+      if (command.action !== "submit") throw new Error("Expected native submission");
+      const store = new ControlPlaneStore({ database: gate.database, ...f.tenant });
+      const replay = f.queue
+        .accept(store, f.tenant.tenantId, f.session.sessionId, "lost-reply", { prompt: "original" })
+        .catch((error) => error);
+      await gate.held.promise;
+      // Native commits do not take the product Session lock held by admission.
+      await a.inputs.submit({
+        ...command.input,
+        inputId: `input-${"a".repeat(64)}`,
+        idempotencyKey: "concurrent",
+        fingerprint: "b".repeat(64),
+        text: "concurrent input",
+      });
+      gate.release.resolve();
+      expect(await replay).toMatchObject({
+        inputId: (original as NativeInputAccepted).inputId,
+        replayed: true,
+      });
+    } finally {
+      gate.release.resolve();
+      await a.close();
+    }
+  });
   it("rejects stale edits, including moving away and back, and serializes concurrent replicas", async () => {
     const f = await fixture(),
       a = await f.start();

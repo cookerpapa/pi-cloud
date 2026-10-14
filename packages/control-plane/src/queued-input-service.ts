@@ -21,6 +21,7 @@ import {
 import {
   readNativeHumanInputs,
   readNativeHumanSubmission,
+  readHumanInputMetadataBatch,
 } from "@pi-cloud/pi-session-postgres/durable";
 import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
 import { advanceLaneReadiness } from "@pi-cloud/runtime-core/run-readiness";
@@ -230,8 +231,13 @@ export class QueuedInputService {
           };
           const previous = await readNativeHumanSubmission(tx, scope, inputId);
           if (previous?.runId) {
-            const state = await readNativeHumanInputs(tx, { ...scope, runId: previous.runId });
-            const record = state.state.inputs[inputId];
+            // A replay needs the immutable receipt, not an Inbox reconstruction.
+            // Admission uses READ COMMITTED: a separate head/read sequence can
+            // straddle a Worker commit that replaces latest-only document state.
+            const metadata = await readHumanInputMetadataBatch(tx, scope, [
+              { runId: previous.runId, conversationId: scope.conversationId },
+            ]);
+            const record = metadata.get(previous.runId)?.inputs[inputId];
             if (!record || record.fingerprint !== fingerprint)
               throw new ControlPlaneStoreError("idempotency_conflict", "Input identity was reused");
             const run = await this.#run(tx, tenantId, sessionId, previous.runId);
