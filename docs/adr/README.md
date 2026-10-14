@@ -17,7 +17,7 @@ Worker-ingress/child-Run clauses in ADR-0209/0229/0238.
 
 Accepted next slice: [ADR-0248](0248-idle-worker-management-reconnect.md) separates
 idle management-connection expiry from Boot retirement, with claim/registration
-race gates. It is planned, not implemented or deployed; ADR-0247 remains the
+race gates. Source and targeted tests are complete; it is not deployed. ADR-0247 remains the
 serving architecture.
 
 Read the documents in this order:

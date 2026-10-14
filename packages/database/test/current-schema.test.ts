@@ -25,7 +25,7 @@ describe("current PiCloud schema", () => {
       `.execute(database);
       expect(firstMigrationPass.rows).toHaveLength(188);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("188_session_work_and_tool_dispatch");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("189_idle_worker_reconnect");
       const terminalColumns = await sql<{ column_name: string }>`select column_name
         from information_schema.columns where table_name='workspace_terminal_sessions'`.execute(
         database,

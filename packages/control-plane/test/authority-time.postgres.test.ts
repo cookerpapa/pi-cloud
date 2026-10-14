@@ -1,3 +1,4 @@
+import { registerTestWorker } from "./fixtures/registered-worker.ts";
 import { admitTestExecution, testWorkPublication } from "./admit-test-execution.ts";
 import { randomUUID } from "node:crypto";
 import { createDatabase, databaseTime, runMigrations, type Database } from "@pi-cloud/database";
@@ -91,6 +92,7 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
         max_concurrent_sessions: 1,
       })
       .execute();
+    await registerTestWorker(db, workerId);
     const coordinator = new SessionLeaseCoordinator({
       database: db,
       workerId: workerId,

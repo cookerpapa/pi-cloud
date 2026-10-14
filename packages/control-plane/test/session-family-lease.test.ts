@@ -1,3 +1,4 @@
+import { registerTestWorker } from "./fixtures/registered-worker.ts";
 import { admitTestExecution } from "./admit-test-execution.ts";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
@@ -50,6 +51,7 @@ async function fixture(capacity = 1, leaseMs = 60000) {
       max_concurrent_sessions: capacity,
     })
     .execute();
+  await registerTestWorker(db, workerId);
   const metrics = new PiCloudMetrics("lease-timing-test");
   const coordinator = new SessionLeaseCoordinator({
     database: db,

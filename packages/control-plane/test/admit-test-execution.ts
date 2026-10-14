@@ -1,4 +1,5 @@
 import type { Database } from "@pi-cloud/database";
+import { registerTestWorker } from "./fixtures/registered-worker.ts";
 import type { Transaction, Kysely } from "kysely";
 import { SessionLeaseCoordinator } from "../../runtime-core/src/session-lease-coordinator.ts";
 import {
@@ -52,6 +53,7 @@ export async function createTestWorker(database: Kysely<Database>, capacity = 16
       max_concurrent_sessions: capacity,
     })
     .execute();
+  await registerTestWorker(database, workerId);
   const coordinator = new SessionLeaseCoordinator({ database, workerId: workerId });
   return {
     workerId,

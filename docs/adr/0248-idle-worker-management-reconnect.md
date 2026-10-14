@@ -1,10 +1,11 @@
 # ADR-0248: Idle Worker management reconnect
 
-Status: **direction accepted; implementation and deployment pending**,
+Status: **source implemented; repository checks and deployment in progress**,
 2026-10-14. Source baseline: `7d708e08`; serving release: `session-work-6ac697f9`.
 
 业主同意空闲 Worker 管理重连的优化方向，并要求回顾今早讨论、整理实施方案。
-本次产物是决策与计划；不表示下述运行策略已经上线。
+业主随后要求实施。源码及专项验证已完成；[实施记录](../reports/idle-worker-reconnect-20261014.md)
+区分检查、部署和实测进度，不表示下述运行策略已经上线。
 [研究记录](../reports/idle-worker-reconnect-plan-20261014.md)保存现有源码入口、
 故障原因和成熟机制依据。本文固定实施边界，避免把管理连接恢复扩大为执行权恢复。
 
@@ -41,6 +42,8 @@ Worker 使用稳定的 Service 地址 `control-plane:3000`。旧 WebSocket 断�
 4. 已被替换、撤销、failed/draining/terminated 的 Worker 不因此复活。存在
    过期未关闭执行权时仍按现有封口与恢复规则处理。忙碌 Worker 的新鲜 PG 租约
    保护、直接续租和原生 writer fencing 保持原职责。
+   实施中统一结束超时的连接：新鲜执行租约保护 Boot，但不再延长旧连接的
+   `expires_at` 来表示管理通道仍可用。忙碌 Worker 同样以原 Boot 重新登记。
 5. 只有当前授权仍允许重连的连接失效才返回可重试错误。旧连接消息不能续期、
    改写或关闭新连接；真正的身份失效继续终止。不能把所有拒绝都改为重试。
 

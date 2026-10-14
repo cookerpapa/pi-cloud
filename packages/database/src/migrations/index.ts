@@ -371,6 +371,7 @@ export const migrationProvider: MigrationProvider = {
       "186_native_live_checkpoints": nativeLiveCheckpoints,
       "187_native_text_presentation": nativeTextPresentation,
       "188_session_work_and_tool_dispatch": sessionWorkAndToolDispatch,
+      "189_idle_worker_reconnect": idleWorkerReconnect,
     };
   },
 };
@@ -383,3 +384,4 @@ import * as nativeLiveCheckpoints from "./186_native_live_checkpoints.ts";
 
 import * as nativeTextPresentation from "./187_native_text_presentation.ts";
 import * as sessionWorkAndToolDispatch from "./188_session_work_and_tool_dispatch.ts";
+import * as idleWorkerReconnect from "./189_idle_worker_reconnect.ts";

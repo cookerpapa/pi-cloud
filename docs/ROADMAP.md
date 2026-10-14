@@ -8,15 +8,16 @@ discussion and separates the immediate implementation slice from later handoff w
 
 - [x] Reconcile observed behavior, stable Service discovery, WebSocket registration
       and the timeout retirement cause; record the decision before runtime changes.
-- [ ] A1: distinguish idle connection expiry from Boot retirement across every entry path.
-- [ ] A2: preserve new-Boot fencing and atomic claim/reconnect admission.
+- [x] A1: distinguish idle connection expiry from Boot retirement across every entry path.
+- [x] A2: preserve new-Boot fencing and atomic claim/reconnect admission.
 - [ ] A3: cover transport, credential, lease and PG concurrency failures.
 - [ ] A4: deploy the matched change and verify 60/90-second outages with both idle
       and busy Workers, new intake and confirmed fixture cleanup.
 
 Dispatch handoff, surviving-peer address caches and interactive connections remain
 separate follow-ups before a maintained compatible Control Plane-only release path.
-Current serving behavior is unchanged.
+Current serving behavior is unchanged; [delivery evidence](reports/idle-worker-reconnect-20261014.md)
+tracks source tests, repository checks and rollout.
 
 ## Session execution, native Subagents and Tool dispatch
 

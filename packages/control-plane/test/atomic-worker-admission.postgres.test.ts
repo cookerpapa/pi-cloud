@@ -1,3 +1,4 @@
+import { registerTestWorker } from "./fixtures/registered-worker.ts";
 import { kafkaProducerLane } from "../../runtime-core/src/kafka-accepted-fact.ts";
 import { ConversationDeletionService } from "../src/conversation-deletion-service.ts";
 import { randomUUID } from "node:crypto";
@@ -100,6 +101,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
         max_concurrent_sessions: capacity,
       })
       .execute();
+    await registerTestWorker(db, worker);
     const coordinator = new SessionLeaseCoordinator({ database: db, workerId: worker });
     const facts: AcceptedFact[] = [];
     const append = vi.fn(async (fact: AcceptedFact) => {
@@ -249,6 +251,93 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     });
     expect(f.runner).toHaveBeenCalledOnce();
     await f.project();
+  });
+
+  it.each(["before", "during"] as const)(
+    "rolls back a new claim when its management connection expires %s admission",
+    async (timing) => {
+      const f = await fixture();
+      const before = await f.state();
+      const expire = () =>
+        db
+          .updateTable("supervisor_connections")
+          .set({ expires_at: sql<Date>`clock_timestamp() - interval '1 millisecond'` })
+          .where("worker_id", "=", f.worker)
+          .where("state", "=", "active")
+          .execute();
+      if (timing === "before") await expire();
+      const result = await f
+        .executor({
+          ...f.backend,
+          admit: async (...args) => {
+            const admitted = await f.backend.admit(...args);
+            if (timing === "during") await expire();
+            return admitted;
+          },
+          execute: (...args) => f.backend.execute(...args),
+        })
+        .dispatchRun(f.accepted.runId);
+      expect(result).toEqual({ status: "idle" });
+      expect(await f.state()).toEqual(before);
+      expect(f.runner).not.toHaveBeenCalled();
+      await registerTestWorker(db, f.worker);
+      await f.executor().dispatchRun(f.accepted.runId);
+      expect(f.runner).toHaveBeenCalledOnce();
+      await f.project();
+    },
+  );
+
+  it("serializes the expiry sweep behind an in-flight claim and keeps its rollback queued", async () => {
+    const f = await fixture();
+    const { manager } = await registerTestWorker(db, f.worker);
+    const before = await f.state();
+    const entered = Promise.withResolvers<number>(),
+      release = Promise.withResolvers<void>();
+    const claiming = f
+      .executor({
+        admit: async (tx, ...args) => {
+          const grant = await f.backend.admit(tx, ...args);
+          entered.resolve(
+            (await sql<{ pid: number }>`select pg_backend_pid() pid`.execute(tx)).rows[0]!.pid,
+          );
+          await release.promise;
+          return grant;
+        },
+        execute: (...args) => f.backend.execute(...args),
+      })
+      .dispatchRun(f.accepted.runId);
+    const pid = await entered.promise;
+    let sweeping: ReturnType<typeof manager.expireConnections> | undefined;
+    try {
+      await db
+        .updateTable("supervisor_connections")
+        .set({ expires_at: sql<Date>`clock_timestamp() - interval '1 millisecond'` })
+        .where("worker_id", "=", f.worker)
+        .where("state", "=", "active")
+        .execute();
+      sweeping = manager.expireConnections();
+      await vi.waitFor(async () =>
+        expect(
+          (
+            await sql<{ n: number }>`select count(*)::int n from pg_stat_activity
+        where ${pid}=any(pg_blocking_pids(pid))`.execute(db)
+          ).rows[0]!.n,
+        ).toBeGreaterThan(0),
+      );
+    } finally {
+      release.resolve();
+    }
+    expect(await claiming).toEqual({ status: "idle" });
+    await sweeping;
+    expect(await f.state()).toEqual(before);
+    expect(f.runner).not.toHaveBeenCalled();
+    expect(
+      await db
+        .selectFrom("worker_retirements")
+        .selectAll()
+        .where("worker_id", "=", f.worker)
+        .execute(),
+    ).toEqual([]);
   });
 
   it("matches the Session partition hash for Unicode and every supported partition count", async () => {

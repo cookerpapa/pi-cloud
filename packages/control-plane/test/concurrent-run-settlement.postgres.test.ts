@@ -1,3 +1,4 @@
+import { registerTestWorker } from "./fixtures/registered-worker.ts";
 import { admitTestExecution, testWorkPublication } from "./admit-test-execution.ts";
 import { Pool } from "pg";
 import { randomUUID } from "node:crypto";
@@ -62,6 +63,7 @@ it.skipIf(!external)(
           max_concurrent_sessions: 16,
         })
         .execute();
+      await registerTestWorker(db, sandboxId);
       const seals = new WeakSet<object>();
       const measured = db.withPlugin({
         transformQuery({ node, queryId }) {

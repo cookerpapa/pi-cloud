@@ -2,6 +2,7 @@ import type {
   Database,
   WorkerRetirementReason,
   SupervisorConnectionCloseReason,
+  SupervisorConnectionState,
 } from "@pi-cloud/database";
 import { transitionWorker, type WorkerState } from "@pi-cloud/domain";
 import {
@@ -149,7 +150,7 @@ type ConnectionRow = {
   supervisor_id: string;
   boot_id: string;
   control_plane_instance_id: string;
-  state: "active" | "superseded" | "fenced";
+  state: SupervisorConnectionState;
   registration_fingerprint: string;
   selected_protocol_version: number;
   heartbeat_interval_ms: number;
@@ -329,6 +330,9 @@ export class SupervisorConnectionManager {
     const result = await this.#database
       .transaction()
       .execute(async (transaction): Promise<RegistrationTransactionResult> => {
+        // Serialize against Boot provisioning/revocation, including a handshake
+        // authorized before a replacement Boot acquired its credential.
+        await this.#lockHost(transaction, authority.supervisorId);
         const workers = await transaction
           .selectFrom("workers")
           .select(["id", "supervisor_id", "boot_id", "state", "max_concurrent_sessions"])
@@ -366,6 +370,13 @@ export class SupervisorConnectionManager {
             false,
           );
         }
+        if (!["provisioning", "ready"].includes(current.state)) {
+          return this.#registrationRejection(
+            "sandbox_unavailable",
+            "Supervisor sandbox cannot be registered",
+            false,
+          );
+        }
 
         const sandboxIds = workers.map((sandbox) => sandbox.id);
         const connections =
@@ -395,6 +406,14 @@ export class SupervisorConnectionManager {
                 .forUpdate()
                 .execute();
         const now = await databaseTime(transaction);
+        // A credential may expire while the preceding row locks are awaited.
+        if (!(await this.#bootAuthorized(transaction, current))) {
+          return this.#registrationRejection(
+            "boot_unavailable",
+            "Supervisor boot authorization is no longer current",
+            false,
+          );
+        }
         const transportConnection = connections.find(
           (connection) => connection.transport_id === authority.transportId,
         );
@@ -420,12 +439,24 @@ export class SupervisorConnectionManager {
             return { kind: "accepted", connection: transportConnection };
           }
           if (transportConnection.state === "active") {
-            await this.#fenceSandbox(transaction, current, "heartbeat_timeout", now);
+            const retained = await this.#expireLockedConnection(
+              transaction,
+              current,
+              transportConnection.connection_id,
+              now,
+            );
+            return this.#registrationRejection(
+              "stale_registration",
+              "Expired transport must reconnect",
+              retained,
+            );
           }
           return this.#registrationRejection(
             "stale_registration",
             "Supervisor registration is no longer current",
-            false,
+            transportConnection.state === "expired" &&
+              !connections.some((c) => c.worker_id === current.id && c.state === "active") &&
+              (await this.#canRetainBoot(transaction, current)),
           );
         }
 
@@ -446,20 +477,7 @@ export class SupervisorConnectionManager {
         const currentConnections = connections.filter(
           (connection) => connection.worker_id === current.id,
         );
-        const currentActive = currentConnections.find(
-          (connection) => connection.state === "active",
-        );
-        if (
-          current.state === "failed" ||
-          current.state === "draining" ||
-          current.state === "terminated"
-        ) {
-          return this.#registrationRejection(
-            "sandbox_unavailable",
-            "Supervisor sandbox cannot be registered",
-            false,
-          );
-        }
+        let currentActive = currentConnections.find((connection) => connection.state === "active");
         if (current.state === "provisioning" && currentConnections.length !== 0) {
           return this.#registrationRejection(
             "registration_invariant",
@@ -470,7 +488,11 @@ export class SupervisorConnectionManager {
         if (
           current.state === "ready" &&
           currentActive === undefined &&
-          currentConnections.length !== 0
+          currentConnections.length !== 0 &&
+          !(
+            currentConnections.some((c) => c.state === "expired") &&
+            (await this.#canRetainBoot(transaction, current))
+          )
         ) {
           return this.#registrationRejection(
             "stale_registration",
@@ -482,15 +504,21 @@ export class SupervisorConnectionManager {
           currentActive !== undefined &&
           new Date(currentActive.expires_at).valueOf() <= now.valueOf()
         ) {
-          const freshExecution = await this.#hasFreshExecution(transaction, current.id);
-          if (!freshExecution) {
-            await this.#fenceSandbox(transaction, current, "heartbeat_timeout", now);
+          if (
+            !(await this.#expireLockedConnection(
+              transaction,
+              current,
+              currentActive.connection_id,
+              now,
+            ))
+          ) {
             return this.#registrationRejection(
               "stale_registration",
               "Expired supervisor connection cannot be revived",
               false,
             );
           }
+          currentActive = undefined;
         }
 
         this.#validateRegistrationPolicy(message);
@@ -618,11 +646,7 @@ export class SupervisorConnectionManager {
           .executeTakeFirst();
       });
       if (!updated) {
-        throw new SupervisorConnectionManagerError(
-          "stale_connection",
-          "Supervisor connection authority is stale",
-          false,
-        );
+        throw await this.#staleConnection(parsed.payload.connectionId, authority);
       }
       const acknowledgement = parseControlToSupervisorMessage({
         protocolVersion: 1,
@@ -652,6 +676,8 @@ export class SupervisorConnectionManager {
       return await coordinator.renewFromHeartbeat(parsed);
     } catch (error: unknown) {
       if (error instanceof SessionLeaseCoordinatorError) {
+        if (error.code === "stale_connection")
+          throw await this.#staleConnection(parsed.payload.connectionId, authority);
         throw new SupervisorConnectionManagerError(
           error.code,
           "Supervisor heartbeat was rejected",
@@ -720,11 +746,7 @@ export class SupervisorConnectionManager {
       connection.control_plane_instance_id !== this.#controlPlaneInstanceId ||
       connection.state !== "active"
     ) {
-      throw new SupervisorConnectionManagerError(
-        "stale_connection",
-        "Supervisor connection authority is stale",
-        false,
-      );
+      throw await this.#staleConnection(connectionId, authority);
     }
     return connection;
   }
@@ -1006,11 +1028,12 @@ export class SupervisorConnectionManager {
   async #expireConnection(connectionId: string): Promise<boolean> {
     const candidate = await this.#database
       .selectFrom("supervisor_connections")
-      .select(["worker_id"])
+      .select(["worker_id", "supervisor_id"])
       .where("connection_id", "=", connectionId)
       .executeTakeFirst();
     if (candidate === undefined) return false;
     return this.#database.transaction().execute(async (transaction) => {
+      await this.#lockHost(transaction, candidate.supervisor_id);
       const sandbox = await transaction
         .selectFrom("workers")
         .select(["id", "supervisor_id", "boot_id", "state", "max_concurrent_sessions"])
@@ -1038,22 +1061,134 @@ export class SupervisorConnectionManager {
       ) {
         return false;
       }
-      if (await this.#hasFreshExecution(transaction, sandbox.id)) {
-        const deferred = await transaction
-          .updateTable("supervisor_connections")
-          .set({
-            expires_at: sql<Date>`clock_timestamp() + ${this.#heartbeatTimeoutMs} * interval '1 millisecond'`,
-          })
-          .where("connection_id", "=", connectionId)
-          .where("state", "=", "active")
-          .where("expires_at", "<=", now)
-          .executeTakeFirst();
-        expectOne(deferred.numUpdatedRows, "deferring a live Supervisor connection retirement");
-        return false;
-      }
-      await this.#fenceSandbox(transaction, sandbox, "heartbeat_timeout", now);
+      await this.#expireLockedConnection(transaction, sandbox, connectionId, now);
       return true;
     });
+  }
+
+  async #lockHost(transaction: Transaction<Database>, supervisorId: string): Promise<void> {
+    const host = await transaction
+      .selectFrom("supervisor_hosts")
+      .select("supervisor_id")
+      .where("supervisor_id", "=", supervisorId)
+      .forUpdate()
+      .executeTakeFirst();
+    if (!host)
+      throw new SupervisorConnectionManagerError(
+        "boot_unavailable",
+        "Supervisor host is not provisioned",
+        false,
+      );
+  }
+
+  async #bootAuthorized(
+    transaction: Transaction<Database>,
+    worker: WorkerIdentityRow,
+  ): Promise<boolean> {
+    return !!(await transaction
+      .selectFrom("supervisor_boot_credentials")
+      .select("credential_id")
+      .where("worker_id", "=", worker.id)
+      .where("supervisor_id", "=", worker.supervisor_id)
+      .where("boot_id", "=", worker.boot_id)
+      .where("revoked_at", "is", null)
+      .where("expires_at", ">", sql<Date>`clock_timestamp()`)
+      .executeTakeFirst());
+  }
+
+  /** Host and Worker are locked: a new Boot or in-flight claim cannot cross this decision. */
+  async #canRetainBoot(
+    transaction: Transaction<Database>,
+    worker: WorkerIdentityRow,
+  ): Promise<boolean> {
+    if (worker.state !== "ready" || !(await this.#bootAuthorized(transaction, worker)))
+      return false;
+    const retirement = await transaction
+      .selectFrom("worker_retirements")
+      .select("worker_id")
+      .where("worker_id", "=", worker.id)
+      .executeTakeFirst();
+    if (retirement) return false;
+    // Preserve fresh execution protection, including independent expiry of one
+    // Session on a busy Worker. No fresh lease alone is not proof of idleness.
+    if (await this.#hasFreshExecution(transaction, worker.id)) return true;
+    return !(await transaction
+      .selectFrom("session_leases")
+      .select("lease_id")
+      .where("worker_id", "=", worker.id)
+      .where("released_at", "is", null)
+      .executeTakeFirst());
+  }
+
+  async #expireLockedConnection(
+    transaction: Transaction<Database>,
+    worker: WorkerIdentityRow,
+    connectionId: string,
+    now: Date,
+  ): Promise<boolean> {
+    if (!(await this.#canRetainBoot(transaction, worker))) {
+      await this.#fenceSandbox(transaction, worker, "heartbeat_timeout", now);
+      return false;
+    }
+    const expired = await transaction
+      .updateTable("supervisor_connections")
+      .set({ state: "expired", close_reason: "heartbeat_timeout", closed_at: now })
+      .where("connection_id", "=", connectionId)
+      .where("state", "=", "active")
+      .executeTakeFirst();
+    expectOne(expired.numUpdatedRows, "expiring a Supervisor transport");
+    return true;
+  }
+
+  /** Cold failure path only. Commit expiry before returning the retryable close. */
+  async #staleConnection(
+    connectionId: string,
+    authority: SupervisorTransportAuthority,
+  ): Promise<SupervisorConnectionManagerError> {
+    const retryable = await this.#database.transaction().execute(async (tx) => {
+      await this.#lockHost(tx, authority.supervisorId);
+      const worker = await tx
+        .selectFrom("workers")
+        .select(["id", "supervisor_id", "boot_id", "state", "max_concurrent_sessions"])
+        .where("id", "=", authority.sandboxId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (
+        !worker ||
+        worker.supervisor_id !== authority.supervisorId ||
+        worker.boot_id !== authority.bootId
+      )
+        return false;
+      const connection = await tx
+        .selectFrom("supervisor_connections")
+        .selectAll()
+        .where("connection_id", "=", connectionId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (
+        !connection ||
+        connection.worker_id !== worker.id ||
+        connection.boot_id !== worker.boot_id ||
+        connection.transport_id !== authority.transportId ||
+        connection.control_plane_instance_id !== this.#controlPlaneInstanceId
+      )
+        return false;
+      const now = await databaseTime(tx);
+      if (connection.state === "active" && connection.expires_at.valueOf() <= now.valueOf())
+        return this.#expireLockedConnection(tx, worker, connectionId, now);
+      if (connection.state !== "expired" || !(await this.#canRetainBoot(tx, worker))) return false;
+      return !(await tx
+        .selectFrom("supervisor_connections")
+        .select("connection_id")
+        .where("worker_id", "=", worker.id)
+        .where("state", "=", "active")
+        .executeTakeFirst());
+    });
+    return new SupervisorConnectionManagerError(
+      "stale_connection",
+      "Supervisor transport must register again",
+      retryable,
+    );
   }
 
   async #hasFreshExecution(

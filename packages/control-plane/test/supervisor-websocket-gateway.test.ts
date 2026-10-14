@@ -1,9 +1,14 @@
 import { emptyEventRuntime } from "./fixtures/event-runtime.ts";
+import { authorizeTestWorker } from "./fixtures/registered-worker.ts";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { parseSupervisorToControlMessage } from "@pi-cloud/protocol";
-import { AgentRunSupervisor, SupervisorWebSocketClient } from "@pi-cloud/sandbox-supervisor";
+import {
+  AgentRunSupervisor,
+  SupervisorWebSocketClient,
+  ReconnectingSupervisorWebSocketClient,
+} from "@pi-cloud/sandbox-supervisor";
 import Fastify from "fastify";
 import { type Kysely } from "kysely";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -50,6 +55,7 @@ async function provision(value: SupervisorBootIdentity): Promise<void> {
       max_concurrent_sessions: 1,
     })
     .executeTakeFirstOrThrow();
+  await authorizeTestWorker(database, value.sandboxId);
 }
 
 function emptyInventory() {
@@ -396,7 +402,22 @@ describe.sequential("authenticated supervisor WebSocket transport", () => {
           .select("state")
           .where("id", "=", supervisorIdentity.sandboxId)
           .executeTakeFirstOrThrow(),
-      ).toEqual({ state: "failed" });
+      ).toEqual({ state: "ready" });
+      expect(
+        await database
+          .selectFrom("worker_retirements")
+          .selectAll()
+          .where("worker_id", "=", supervisorIdentity.sandboxId)
+          .execute(),
+      ).toEqual([]);
+      const replacement = client(gateway.url, TOKEN, supervisorIdentity);
+      try {
+        const reconnected = await replacement.start();
+        expect(reconnected.payload.connectionId).not.toBe(registered.payload.connectionId);
+        expect(reconnected.payload.bootId).toBe(registered.payload.bootId);
+      } finally {
+        await replacement.stop();
+      }
     } finally {
       await connected.stop();
       await gateway.server.close();
@@ -451,6 +472,58 @@ describe.sequential("authenticated supervisor WebSocket transport", () => {
       await second.stop();
       await firstGateway.server.close();
       await secondGateway.server.close();
+    }
+  });
+
+  it("automatically re-registers the same idle Boot after its heartbeat transport expires", async () => {
+    const id = identity();
+    await provision(id);
+    const hosted = await startGateway({ identity: id });
+    const runtime = new AgentRunSupervisor({
+      runner: {
+        async run() {
+          return { stopReason: "unused" };
+        },
+      },
+      maxConcurrentSessions: 1,
+    });
+    const reconnecting = new ReconnectingSupervisorWebSocketClient({
+      url: hosted.url,
+      authorizationHeader: `Bearer ${TOKEN}`,
+      registration: { ...id, maxConcurrentSessions: 1 },
+      runtime,
+      connectTimeoutMs: 2000,
+      closeTimeoutMs: 200,
+    });
+    try {
+      const first = await reconnecting.start();
+      await database
+        .updateTable("supervisor_connections")
+        .set({ expires_at: new Date(Date.now() - 1) })
+        .where("connection_id", "=", first.payload.connectionId)
+        .execute();
+      await waitFor(
+        () =>
+          reconnecting.state === "connected" &&
+          reconnecting.connectionId !== first.payload.connectionId,
+        5000,
+      );
+      const current = await database
+        .selectFrom("supervisor_connections")
+        .select(["boot_id", "worker_id", "state"])
+        .where("connection_id", "=", reconnecting.connectionId!)
+        .executeTakeFirstOrThrow();
+      expect(current).toEqual({ boot_id: id.bootId, worker_id: id.sandboxId, state: "active" });
+      expect(
+        await database
+          .selectFrom("worker_retirements")
+          .selectAll()
+          .where("worker_id", "=", id.sandboxId)
+          .execute(),
+      ).toEqual([]);
+    } finally {
+      await reconnecting.stop();
+      await hosted.server.close();
     }
   });
 

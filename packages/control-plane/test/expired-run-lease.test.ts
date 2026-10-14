@@ -1,3 +1,4 @@
+import { registerTestWorker } from "./fixtures/registered-worker.ts";
 import { admitTestExecution, testWorkPublication } from "./admit-test-execution.ts";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
@@ -52,6 +53,7 @@ it("retires an expired Run on a healthy Worker without stopping its other Sessio
         max_concurrent_sessions: 8,
       })
       .execute();
+    await registerTestWorker(db, workerId);
     let now = Date.now();
     const clock = () => new Date(now),
       coordinator = new SessionLeaseCoordinator({

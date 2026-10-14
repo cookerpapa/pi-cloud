@@ -65,11 +65,7 @@ try {
     .orderBy("name", "desc")
     .limit(1)
     .executeTakeFirstOrThrow();
-  assert.equal(
-    schema.name,
-    "188_session_work_and_tool_dispatch",
-    "Deploy the matched schema/app first",
-  );
+  assert.equal(schema.name, "189_idle_worker_reconnect", "Deploy the matched schema/app first");
   tenant = await createPrivateTenant(db, {
     slug: `native-input-${randomUUID()}`,
     ownerDisplayName: "Native input acceptance",

@@ -11,7 +11,9 @@ The [idle Worker reconnect research](reports/idle-worker-reconnect-plan-20261014
 confirms the timeout retirement cause and distinguishes same-image restart,
 compatible Control Plane replacement and full matched release.
 [ADR-0248](adr/0248-idle-worker-management-reconnect.md) records the accepted
-direction and ordered implementation/acceptance plan. It is not implemented.
+direction and ordered implementation/acceptance plan. Its source and targeted
+tests are complete; [delivery evidence](reports/idle-worker-reconnect-20261014.md)
+tracks repository checks and deployment, which are still in progress.
 
 The [Session execution and Tool-dispatch plan](adr/0247-session-work-and-tool-dispatch.md)
 consolidates the October 13 discussion: root cloud work, native child Conversations

@@ -921,7 +921,7 @@ export class RunExecutor {
       if (
         !committedCandidate &&
         error instanceof SessionLeaseCoordinatorError &&
-        error.code === "session_lease_conflict"
+        ["session_lease_conflict", "worker_connection_unavailable"].includes(error.code)
       )
         return undefined;
       // Only the exact admission whose COMMIT reply was lost may continue.
@@ -993,10 +993,18 @@ export class RunExecutor {
       sessions: number;
       runs: number;
       transitions: number;
-    }>`with "started_session" as (
+      connected: boolean;
+    }>`with connection_admission as materialized (
+      select exists(select 1 from supervisor_connections c
+        join workers w on w.id=c.worker_id and w.boot_id=c.boot_id
+          and w.supervisor_id=c.supervisor_id
+        where w.id=${this.#workerId}::uuid and w.state='ready'
+          and c.state='active' and c.expires_at>clock_timestamp()) as connected
+    ), "started_session" as (
       update sessions set state='running',row_version=row_version+1,
         updated_at=${now},last_active_at=${now}
         where tenant_id=${r.tenantId}::uuid and id=${r.sessionId}::uuid and state in ('cold','idle')
+          and (select connected from connection_admission)
         returning id
     ), started_run as (
       update runs set state='running',ready_at=null,started_at=coalesce(started_at,${now}), recovery_requested_at=null,
@@ -1007,6 +1015,7 @@ export class RunExecutor {
         where tenant_id=${r.tenantId}::uuid and id=${r.runId}::uuid
           and state='queued' and ready_at is not null
           and lease_id is null and row_version=${runVersion}::bigint
+          and (select connected from connection_admission)
           and exists(select 1 from session_leases l where l.lease_id=${ref.leaseId}::uuid
             and l.tenant_id=${r.tenantId}::uuid and l.pi_session_id=${r.piSessionId}
             and l.worker_id=${this.#workerId}::uuid and l.fencing_token=${ref.fencingToken}
@@ -1022,9 +1031,16 @@ export class RunExecutor {
     select
       (select count(*)::int from "started_session") as sessions,
       (select count(*)::int from started_run) as runs,
-      (select count(*)::int from recorded_transition) as transitions`.execute(transaction);
+      (select count(*)::int from recorded_transition) as transitions,
+      (select connected from connection_admission) as connected`.execute(transaction);
     const counts = result.rows[0];
-    if (!counts || Object.values(counts).some((count) => count !== 1))
+    if (counts && !counts.connected)
+      throw new SessionLeaseCoordinatorError(
+        "worker_connection_unavailable",
+        "Worker must register before claiming work",
+        true,
+      );
+    if (!counts || [counts.sessions, counts.runs, counts.transitions].some((count) => count !== 1))
       throw new RunExecutorInvariantError("Execution admission did not start exactly one task");
   }
 

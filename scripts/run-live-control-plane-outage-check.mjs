@@ -92,6 +92,33 @@ function workerPods() {
       })),
     }));
 }
+async function workerConnections() {
+  return db
+    .selectFrom("workers as w")
+    .innerJoin("supervisor_connections as c", "c.worker_id", "w.id")
+    .select([
+      "w.id as workerId",
+      "w.supervisor_id as pod",
+      "w.boot_id as bootId",
+      "c.connection_id as connectionId",
+      "c.registered_at as registeredAt",
+    ])
+    .select(
+      sql`(select count(*)::int from session_leases l where l.worker_id=w.id and l.released_at is null)`.as(
+        "sessions",
+      ),
+    )
+    .where("w.state", "=", "ready")
+    .where("c.state", "=", "active")
+    .where("c.expires_at", ">", sql`clock_timestamp()`)
+    .where(
+      "w.supervisor_id",
+      "in",
+      report.beforePods.map((p) => p.name),
+    )
+    .orderBy("w.supervisor_id")
+    .execute();
+}
 async function inventory(runtimeId) {
   const cluster = JSON.parse(
     await readFile(resolve(runtimeDirectory, "cubesandbox/cluster.json"), "utf8"),
@@ -221,7 +248,7 @@ try {
     .orderBy("name", "desc")
     .limit(1)
     .executeTakeFirstOrThrow();
-  assert.equal(schema.name, "188_session_work_and_tool_dispatch");
+  assert.equal(schema.name, "189_idle_worker_reconnect");
   report.controlPlaneImage = deployment.spec.template.spec.containers[0].image;
   report.beforePods = workerPods();
   report.initialInventory = await inventory();
@@ -280,6 +307,14 @@ try {
   report.before = await leaseSample();
   report.vmBefore = await vmSample();
   assert(report.vmBefore.runtime_id && report.before.valid);
+  report.connectionsBefore = await workerConnections();
+  assert.equal(report.connectionsBefore.length, report.beforePods.length);
+  assert(
+    report.connectionsBefore.some(
+      (c) => c.workerId !== report.before.worker_id && c.sessions === 0,
+    ),
+    "Acceptance needs an idle Worker as well as the busy Worker",
+  );
   await ownedOnly();
   fault = await armControlPlaneRestore(output + ".restore.json", Date.now() + 240000);
   const stopAt = Date.now();
@@ -445,13 +480,43 @@ try {
     "Original native Cube sandbox is not present after recovery",
   );
   report.afterPods = workerPods();
-  const oldPod = report.beforePods.find((p) => p.name === report.before.pod),
-    newPod = report.afterPods.find((p) => p.name === report.before.pod);
-  assert.equal(newPod.uid, oldPod.uid);
-  assert.deepEqual(
-    newPod.containers.map((c) => c.id),
-    oldPod.containers.map((c) => c.id),
-  );
+  assert.equal(report.afterPods.length, report.beforePods.length);
+  for (const oldPod of report.beforePods) {
+    const newPod = report.afterPods.find((p) => p.name === oldPod.name);
+    assert.equal(newPod?.uid, oldPod.uid);
+    assert.deepEqual(
+      newPod.containers.map((c) => ({ id: c.id, restarts: c.restarts })),
+      oldPod.containers.map((c) => ({ id: c.id, restarts: c.restarts })),
+      `Worker ${oldPod.name} restarted during Control Plane outage`,
+    );
+  }
+  report.connectionsAfter = await until(async () => {
+    const connections = await workerConnections();
+    return (
+      connections.length === report.connectionsBefore.length &&
+      connections.every((c) => {
+        const old = report.connectionsBefore.find((b) => b.workerId === c.workerId);
+        return (
+          old &&
+          c.bootId === old.bootId &&
+          c.connectionId !== old.connectionId &&
+          new Date(c.registeredAt).valueOf() >= Date.parse(report.restoreRequestedAt)
+        );
+      }) &&
+      connections
+    );
+  }, "all original Worker Boots re-registered");
+  const retired = await db
+    .selectFrom("worker_retirements")
+    .select("worker_id")
+    .where(
+      "worker_id",
+      "in",
+      report.connectionsBefore.map((c) => c.workerId),
+    )
+    .execute();
+  assert.deepEqual(retired, [], "A healthy Worker was retired by management expiry");
+  report.idleAndBusyWorkersPreserved = true;
   const runRows = await db
     .selectFrom("runs")
     .select(["id", "state", "created_at", "started_at", "settled_at"])

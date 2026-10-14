@@ -1,3 +1,4 @@
+import { registerTestWorker } from "./fixtures/registered-worker.ts";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { sql, type Kysely } from "kysely";
@@ -76,6 +77,7 @@ describe.skipIf(!endpoint)("two-way Worker / PostgreSQL admission", () => {
         max_concurrent_sessions: 2,
       })
       .execute();
+    await registerTestWorker(db, workerId);
     const coordinator = new SessionLeaseCoordinator({ database: db, workerId: workerId });
     const facts: AcceptedFact[] = [],
       started: string[] = [],
