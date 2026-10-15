@@ -81,6 +81,13 @@ through the existing proxy. The maintained guest Dockerfile now uses the same
 Aliyun mirror family as the existing Debian/Alpine build paths; Ubuntu signatures,
 explicit OpenSSL pins and later vulnerability scans remain enforced. No runtime
 proxy/provider configuration or dependency version was changed by this repair.
+The same proxied Ubuntu 502 recurred in the pinned Cubelet base Dockerfile; its
+existing build/security patch now applies that mirror and bounded APT retries too.
+The patch digest is updated and the entire pinned patch sequence is checked.
+Docker's configured old loopback proxy endpoint also caused manifest timeouts.
+A temporary local TCP relay to the existing proxy restores build-time access;
+it must be stopped after release and does not complete the separate permanent
+daemon-proxy configuration backlog item.
 
 Private intermediate logs are under `/tmp/pi-cloud-projector-a1-*` and
 `/tmp/pi-cloud-projector-a2-*`. They are source checks, not a serving release.
