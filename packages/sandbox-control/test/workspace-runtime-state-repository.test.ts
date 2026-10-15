@@ -543,7 +543,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
           version: 1,
           target: { ...target, sandboxId },
           initialization: {
-            toolWorkerProtocolVersion: 4,
+            toolWorkerProtocolVersion: 5,
             type: "worker.initialize",
             activationId: bindingId,
             toolRoot: "/workspace",
@@ -1229,7 +1229,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
         bootId: crypto.randomUUID(),
       },
       initialization: {
-        toolWorkerProtocolVersion: 4 as const,
+        toolWorkerProtocolVersion: 5 as const,
         type: "worker.initialize" as const,
         activationId: activation.activationId,
         toolRoot: "/workspace",

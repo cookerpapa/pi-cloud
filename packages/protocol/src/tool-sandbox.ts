@@ -32,7 +32,7 @@ const ToolSandboxEnvelope = {
 };
 
 const WorkerEnvelope = {
-  toolWorkerProtocolVersion: Type.Literal(4),
+  toolWorkerProtocolVersion: Type.Literal(5),
 };
 
 const SafeCodeSchema = Type.String({
@@ -302,11 +302,14 @@ const OperationEnvelope = {
   type: Type.Literal("tool_sandbox.operation"),
   activationId: UuidSchema,
   operationId: UuidSchema,
+  toolName: CloudToolNameSchema,
+};
+
+const WorkflowContext = {
   turnContextSha256: Sha256Schema,
   executionContextSha256: Sha256Schema,
   stepContextSequence: PositiveSafeIntegerSchema,
   stepContextSha256: Sha256Schema,
-  toolName: CloudToolNameSchema,
 };
 
 const ToolPathSchema = Type.String({ minLength: 1, maxLength: 4_096 });
@@ -336,6 +339,7 @@ export const ToolSandboxOperationRequestSchema = Type.Union([
     {
       ...OperationEnvelope,
       operation: Type.Literal("workflow.exec"),
+      ...WorkflowContext,
       toolCallId: Type.String({ minLength: 1 }),
       script: Type.String({ minLength: 1, maxLength: MAX_TOOL_COMMAND_BYTES }),
       cwd: ToolPathSchema,

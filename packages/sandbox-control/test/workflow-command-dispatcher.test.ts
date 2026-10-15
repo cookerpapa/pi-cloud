@@ -13,7 +13,6 @@ function command(): AcceptedToolCommand {
   const toolCallId = crypto.randomUUID();
   return {
     kind: "tool_command",
-    factId: crypto.randomUUID(),
     toolCallId,
     replyTopic: "pi-cloud.tool-replies.v3.test",
     scope: {
@@ -21,7 +20,6 @@ function command(): AcceptedToolCommand {
       sessionId: crypto.randomUUID(),
       turnId: crypto.randomUUID(),
       runId: crypto.randomUUID(),
-      leaseId: crypto.randomUUID(),
       fencingToken: 1,
       piSessionId: crypto.randomUUID(),
       writerId: crypto.randomUUID(),
@@ -150,7 +148,15 @@ describe("interactive workflow replies without completed-result retention", () =
       c = command();
     f.own(c);
     if (c.request.operation !== "workflow.exec") throw new Error("fixture");
-    const { script: _script, cwd: _cwd, ...envelope } = c.request;
+    const {
+      script: _script,
+      cwd: _cwd,
+      turnContextSha256: _turn,
+      executionContextSha256: _execution,
+      stepContextSequence: _sequence,
+      stepContextSha256: _step,
+      ...envelope
+    } = c.request;
     const native: AcceptedToolCommand = {
       ...c,
       request: {

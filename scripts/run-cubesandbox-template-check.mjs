@@ -150,10 +150,7 @@ const operation = (toolName, args) => ({
   type: "tool_sandbox.operation",
   activationId,
   operationId: randomUUID(),
-  turnContextSha256: contextSha256("turn"),
-  executionContextSha256: contextSha256("attempt"),
-  stepContextSequence: 1,
-  stepContextSha256: contextSha256("step"),
+
   operation: "tool.execute",
   toolCallId: randomUUID(),
   toolName,
@@ -274,7 +271,7 @@ try {
   await envdRun(baseUrl, "/usr/bin/pkill -f '^python3 -m http.server 5173 '");
 
   const initialization = {
-    toolWorkerProtocolVersion: 4,
+    toolWorkerProtocolVersion: 5,
     type: "worker.initialize",
     activationId,
     toolRoot: "/workspace",

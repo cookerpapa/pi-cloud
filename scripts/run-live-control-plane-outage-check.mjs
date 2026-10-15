@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { sql } from "kysely";
+import { ACCEPTED_FACT_TOPIC } from "../packages/event-log/src/index.ts";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
 import { S3ImageBlobStore } from "../packages/session-attachments/src/s3.ts";
@@ -202,7 +203,7 @@ async function kafkaSample(owner) {
   // Execute the bounded read in the Worker Pod so advertised broker DNS resolves.
   const input = { partition: Number(owner.partition), runId: root.runId };
   const source = `import native from '@confluentinc/kafka-javascript';
-const input=${JSON.stringify(input)},topic='pi-cloud.execution-log.v16';
+const input=${JSON.stringify(input)},topic=${JSON.stringify(ACCEPTED_FACT_TOPIC)};
 const reader=new native.KafkaConsumer({'metadata.broker.list':process.env.PI_CLOUD_KAFKA_BROKERS,'group.id':'outage-readonly-'+Date.now(),'enable.auto.commit':false,'enable.auto.offset.store':false,'isolation.level':'read_committed','log_level':0},{});
 await new Promise((resolve,reject)=>reader.connect({},e=>e?reject(e):resolve()));
 try {

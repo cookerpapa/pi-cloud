@@ -15,6 +15,50 @@ import {
   ToolSandboxProtocolError,
 } from "../src/index.ts";
 
+it("keeps fixed Tool requests compact while requiring workflow context and the matched guest version", () => {
+  const envelope = {
+    toolBrokerProtocolVersion: 1,
+    type: "tool_sandbox.operation",
+    activationId: "10000000-0000-4000-8000-000000000005",
+    operationId: "10000000-0000-4000-8000-000000000006",
+    toolName: "bash",
+    toolCallId: "native-call",
+    timeoutMs: 30000,
+  };
+  const fixed = {
+    ...envelope,
+    operation: "tool.execute",
+    args: { command: "pwd" },
+    maximumOutputBytes: 65536,
+  };
+  expect(parseToolSandboxOperationRequest(fixed)).toEqual(fixed);
+  const context = {
+    turnContextSha256: "a".repeat(64),
+    executionContextSha256: "b".repeat(64),
+    stepContextSequence: 1,
+    stepContextSha256: "c".repeat(64),
+  };
+  for (const [name, value] of Object.entries(context))
+    expect(() => parseToolSandboxOperationRequest({ ...fixed, [name]: value })).toThrow();
+  const workflow = {
+    ...envelope,
+    operation: "workflow.exec",
+    script: "return 1",
+    cwd: "/workspace",
+  };
+  expect(() => parseToolSandboxOperationRequest(workflow)).toThrow();
+  expect(parseToolSandboxOperationRequest({ ...workflow, ...context })).toMatchObject(context);
+  const failure = {
+    toolWorkerProtocolVersion: 5,
+    type: "worker.failed",
+    code: "fixture",
+    message: "fixture",
+    retryable: false,
+  };
+  expect(parseToolWorkerOutput(failure)).toEqual(failure);
+  expect(() => parseToolWorkerOutput({ ...failure, toolWorkerProtocolVersion: 4 })).toThrow();
+});
+
 const environment = {
   environmentVersionId: "10000000-0000-4000-8000-000000000010",
   versionNumber: 1,
@@ -95,7 +139,7 @@ describe("Tool Sandbox protocol", () => {
   it("carries deployment-owned direct private CIDRs into the Tool process environment", () => {
     expect(
       parseToolWorkerInput({
-        toolWorkerProtocolVersion: 4,
+        toolWorkerProtocolVersion: 5,
         type: "worker.initialize",
         activationId: "10000000-0000-4000-8000-000000000005",
         toolRoot: "/workspace",
@@ -119,10 +163,7 @@ describe("Tool Sandbox protocol", () => {
         type: "tool_sandbox.operation",
         activationId: "10000000-0000-4000-8000-000000000005",
         operationId: "10000000-0000-4000-8000-000000000006",
-        turnContextSha256: "a".repeat(64),
-        executionContextSha256: "b".repeat(64),
-        stepContextSequence: 1,
-        stepContextSha256: "a".repeat(64),
+
         toolName: "bash",
         operation: "tool.execute",
         toolCallId: "native-bash",
@@ -151,7 +192,7 @@ describe("Tool Sandbox protocol", () => {
   it("binds every worker result to activation and operation identities", () => {
     expect(
       parseToolWorkerOutput({
-        toolWorkerProtocolVersion: 4,
+        toolWorkerProtocolVersion: 5,
         type: "worker.operation_result",
         scopeStopRequired: false,
         response: {
@@ -232,7 +273,7 @@ describe("Tool Sandbox protocol", () => {
     (type) => {
       expect(() =>
         parseToolWorkerInput({
-          toolWorkerProtocolVersion: 4,
+          toolWorkerProtocolVersion: 5,
           type,
           activationId: "10000000-0000-4000-8000-000000000008",
           ...(type === "worker.cancel"

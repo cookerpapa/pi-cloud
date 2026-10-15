@@ -15,7 +15,6 @@ function fixture() {
       runId: randomUUID(),
       turnId: randomUUID(),
       writerId,
-      leaseId: writerId,
       fencingToken: 1,
     },
     replyTopic: `pi-cloud.tool-replies.v3.${randomUUID()}`,
@@ -31,7 +30,7 @@ function fixture() {
     context,
     result: {
       output: {
-        toolWorkerProtocolVersion: 4,
+        toolWorkerProtocolVersion: 5,
         type: "worker.operation_result",
         scopeStopRequired: false,
         response: {
@@ -193,7 +192,7 @@ it.each(["workspace_attach_invalid", "tool_worker_failed"])(
   async (code) => {
     const f = fixture();
     f.packet.result!.output = {
-      toolWorkerProtocolVersion: 4,
+      toolWorkerProtocolVersion: 5,
       type: "worker.failed",
       code,
       message: "Guest preparation failed",

@@ -218,10 +218,7 @@ function operation(
     type: "tool_sandbox.operation",
     activationId,
     operationId: randomUUID(),
-    turnContextSha256: STEP_CONTEXT_SHA256,
-    executionContextSha256: STEP_CONTEXT_SHA256,
-    stepContextSequence: 1,
-    stepContextSha256: STEP_CONTEXT_SHA256,
+
     toolName: "bash",
     operation: "tool.execute",
     toolCallId: "native-security-probe",

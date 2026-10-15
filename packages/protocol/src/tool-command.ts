@@ -37,9 +37,3 @@ export type AcceptedToolCommand = Readonly<{
   occurredAt: string;
   traceContext?: CandidateToolCommand["traceContext"];
 }>;
-
-export interface ToolCommandPublisher {
-  publishToolCommand(
-    command: CandidateToolCommand,
-  ): Promise<Readonly<{ operationId: string; accepted: true }>>;
-}

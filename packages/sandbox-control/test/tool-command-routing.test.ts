@@ -22,12 +22,10 @@ function fixture() {
     turnId: randomUUID(),
     runId: randomUUID(),
     writerId: randomUUID(),
-    leaseId: randomUUID(),
     fencingToken: 1,
   };
   const command: AcceptedToolCommand = {
     kind: "tool_command",
-    factId: randomUUID(),
     toolCallId: "result-entry",
     replyTopic: "pi-cloud.tool-replies.v3." + randomUUID(),
     occurredAt: new Date().toISOString(),
@@ -37,10 +35,7 @@ function fixture() {
       type: "tool_sandbox.operation",
       activationId: randomUUID(),
       operationId: randomUUID(),
-      turnContextSha256: "a".repeat(64),
-      executionContextSha256: "b".repeat(64),
-      stepContextSequence: 1,
-      stepContextSha256: "c".repeat(64),
+
       toolName: "bash",
       operation: "tool.execute",
       toolCallId: "native",
@@ -63,7 +58,7 @@ function fixture() {
         bootId: randomUUID(),
       },
       initialization: {
-        toolWorkerProtocolVersion: 4,
+        toolWorkerProtocolVersion: 5,
         type: "worker.initialize",
         activationId: command.request.activationId,
         toolRoot: "/workspace",
@@ -88,11 +83,11 @@ function fixture() {
         supervisorId: "worker",
         bootId: randomUUID(),
         sandboxId: randomUUID(),
-        executionReference: createExecutionReference(scope.leaseId, scope.runId, 1),
+        executionReference: createExecutionReference(scope.writerId, scope.runId, 1),
       },
       physicalActivationId: randomUUID(),
-      turnContextSha256: command.request.turnContextSha256,
-      executionContextSha256: command.request.executionContextSha256,
+      turnContextSha256: "a".repeat(64),
+      executionContextSha256: "b".repeat(64),
       allowedTools: ["bash"],
       sandboxProfileKey: "standard",
     },
@@ -134,12 +129,10 @@ describe("Projector native Cube handoff", () => {
   it("cancels the exact invocation even after new-command routing has closed", async () => {
     const f = fixture();
     f.find.mockResolvedValue([{ ...f.route, dispatchClosed: true }]);
-    const { leaseId: _lease, ...scope } = f.command.scope;
+    const scope = f.command.scope;
     const cancel = {
       kind: "tool_cancel",
-      factId: randomUUID(),
       scope,
-      occurredAt: new Date().toISOString(),
       request: { activationId: f.route.bindingId, operationId: f.command.request.operationId },
     };
     await f.router.consume(record(cancel, 101n));
@@ -157,11 +150,10 @@ describe("Projector native Cube handoff", () => {
   it("bounds an unavailable cancellation endpoint without fabricating stopping or deleting a VM", async () => {
     const f = fixture();
     f.cube.cancelTool.mockRejectedValue(new Error("unreachable"));
-    const { leaseId: _lease, ...scope } = f.command.scope;
+    const scope = f.command.scope;
     await f.router.consume(
       record({
         kind: "tool_cancel",
-        factId: randomUUID(),
         scope,
         request: { activationId: f.route.bindingId, operationId: f.command.request.operationId },
       }),

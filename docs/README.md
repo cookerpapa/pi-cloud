@@ -3,9 +3,11 @@
 The [October 15 Projector message review](reports/projector-envelope-review-20261015.md)
 records field-by-field removal/retention guidance, repeated intent decoding,
 duplicate Tool presentation bodies and a reproduced child-prefix cleanup gap.
-Its [measurements](reports/projector-envelope-review-20261015.json) and runnable
-isolated probes accompany 89 passing existing contract tests. This is review
-evidence, not an implemented protocol simplification or a new deployment.
+Its [measurements](reports/projector-envelope-review-20261015.json) and baseline
+probes accompany 89 passing existing contract tests. The baseline probes are
+archived in Git and replaced by maintained regression tests. The subsequently
+approved [repair record](reports/projector-repair-20261015.md) tracks compact
+publication, Tool presentation and the pending matched rollout.
 
 The [initial complete Control Plane outage check](reports/control-plane-outage-20261014.md)
 holds the only Control Plane at zero replicas for more than a minute. The active

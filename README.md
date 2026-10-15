@@ -53,7 +53,7 @@ additional messages go to the running Pi native queue and are confirmed after
 its Kafka-backed Storage commit. An unavailable Worker leaves the browser draft
 unconfirmed. [ADR-0238](docs/adr/0238-native-input-queue-and-run-record.md) is deployed;
 the [Worker claim cleanup](docs/adr/0242-worker-claim-schema-cleanup.md) is retained
-in the deployed schema 188 / execution-topic v16 release.
+in the current schema 189 runtime.
 
 The intake path shares its locked Session and request lookup between
 routing and Run creation: eight ordinary business SQL statements, two on an
@@ -76,8 +76,13 @@ enter native persistence before validated Tool execution (ADR-0230).
 The [Session work migration](docs/adr/0247-session-work-and-tool-dispatch.md) is
 deployed as `session-work-6ac697f9`: one root Run with native child Conversations,
 unified Tool replies, one Session closure and Worker direct Kafka publication.
-The matched contracts are schema 188, execution-topic v16, boot reply v3,
-guest input protocol 4, Tool Worker protocol 4 and Cube management protocol 7.
+The current source's matched contracts are schema 189, execution-topic v17,
+boot reply v3, guest/Tool Worker protocol 5 and Cube management protocol 7.
+[ADR-0249](docs/adr/0249-compact-projector-publication.md) compacts shared publication
+identity and derives Tool presentation from the same native commit. Private
+projection prefixes keep sequence/identity only, and fixed Tool requests omit
+workflow-only context fields. [Repair and rollout status](docs/reports/projector-repair-20261015.md)
+distinguishes verified source from the serving release.
 [Implementation and acceptance evidence](docs/reports/session-work-implementation-20261013.md)
 records source tests, real Luna/Cube/browser checks and rolling-update findings.
 Each active physical Session adds a native Kafka producer; the

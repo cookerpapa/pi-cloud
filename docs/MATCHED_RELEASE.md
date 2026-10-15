@@ -156,9 +156,14 @@ source/artifact identities, outcomes and evidence scope in the release report.
 A test/preflight is not a newly deployed release, and readiness is not a completed
 [private pilot](PRIVATE_PILOT.md).
 
-Current schema 189 adds the `expired` management-connection state and matching
-Worker admission behavior. It keeps execution-topic v16 / boot reply v3 and does
-not delete native history. Deploy its matching application/schema set while drained.
+Current schema 189 retains the `expired` management-connection state and matching
+Worker admission behavior. ADR-0249 changes the execution Topic to v17 and the
+guest/Tool Worker protocol to 5, retaining boot reply v3 and Cube management 7.
+Deploy the complete matching set while drained; do not roll v16/v17 publishers
+or protocol-4/protocol-5 guests together. Native PG storage remains unchanged and
+needs no old-format decoder. Old Kafka Topics may be removed only after all their
+unsealed Run floors and outstanding live replay references are closed, and old
+writers and physical executions have completed the maintained cleanup checks.
 
 The earlier schema 188 changed Session work ownership and unified Tool replies
 and required a destructive matched upgrade from the previous native contract.

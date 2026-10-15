@@ -33,8 +33,12 @@ records the protocol decision before implementation. No release has occurred yet
 
 ## Remaining work
 
-- A5: fixed Tool/workflow request separation, matched guest contract, all fixture
-  and delivery-provenance updates.
+- A5 is source implemented: fixed Tool/workflow request schemas are separate;
+  guest/Tool Worker protocol is 5, with managed Cube protocol 7 unchanged. Fixed
+  Tools retain identity/time/output budgets and workflow retains context checks.
+  Seven targeted files initially passed 123 cases and exposed one old fixture
+  copying workflow context into a fixed request. The corrected workflow suite
+  passes all 11 cases. Full repository verification follows.
 - A6: required checks, full matched release, real Luna/Cube/browser/native-input
   acceptance, obsolete-resource cleanup and final documentation.
 

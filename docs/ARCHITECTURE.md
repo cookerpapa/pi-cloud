@@ -5,8 +5,10 @@ native tasks, model context, input placement, Tool selection and Compaction. PiC
 execution authority, distributed placement, output projection and Cube lifetimes.
 CubeSandbox KVM is the only untrusted execution backend.
 
-This document describes ADR-0247 Session ownership with the deployed ADR-0248
-management reconnect extension (schema 189 / topic v16 / boot reply v3).
+This document describes ADR-0247 Session ownership and ADR-0248 management reconnect
+with ADR-0249's source publication contract (schema 189 / topic v17 / boot reply v3 /
+guest protocol 5). [Repair and rollout status](reports/projector-repair-20261015.md)
+distinguishes these source changes from the last deployed release.
 [Reconnect delivery evidence](reports/idle-worker-reconnect-20261014.md) identifies
 `worker-reconnect-5b6ba003`; the [Session migration evidence](reports/session-work-implementation-20261013.md)
 records the earlier `session-work-6ac697f9` baseline.
@@ -366,7 +368,7 @@ producer. A delayed stale initialization can fence a valid successor, but its
 post-init PG check forbids data publication; the successor recovers through the
 same closure protocol. Arbitrary unsafe Tools are never replayed by projection.
 
-The code-owned topic is `pi-cloud.execution-log.v16` (matched schema 188).
+The code-owned topic is `pi-cloud.execution-log.v17` (schema 189, ADR-0249).
 Physical Session ID fixes its Kafka partition; partition count cannot change in
 place. Native producers use short RF3/acks-all transactions; no model/Tool wait
 holds an open transaction. Consumers read committed records. Control changes
@@ -403,6 +405,11 @@ unchanged; this introduces no authority cache or additional durability boundary.
 ## Unified projection and recovery
 
 One `pi-cloud-session-projector-v2` consumer group assigns disjoint partitions.
+Its decoder validates one compact envelope and prepares dispatches once using a
+record-local native write index. Nested tools, cancellations and presentation
+inherit the root writer identity while keeping their own Conversation addresses.
+The original Boot reply Topic is shared by the commit. Expanded commands and
+self-contained cold control metadata are internal objects, not another wire format.
 After canonical replay/closure checks, a record updates native PG state, its disposable
 live view and the Tool routing module as applicable. Guest execution itself is
 never awaited by the partition handler. PG or live-owner delivery failure stalls
@@ -455,6 +462,11 @@ Local Tool drafts remain excluded by ADR-0230. Public display fragments do not
 create another transcript table.
 Rebalance invalidates old subscriptions and rebuilds the assigned prefix before
 its Projector serves snapshots.
+
+The private closure prefix retains only sequence progress and uncovered event IDs
+for conflict checks. It never retains presentation bodies. Normal completion and
+forced closure retire every prefix belonging to that Writer, including children.
+The existing public live view owns text buffering and history/display merging.
 
 At a terminal seal, one PG transaction stores the exact public terminal, Run
 closure and recovery progress. A recoverable seal closes only the old execution
@@ -677,6 +689,13 @@ or the native live document produced by this commit, using its existing memory
 view. It skips canonically covered references before resolution during replay.
 No extra text fetch, Harness in Control Plane or new storage authority is involved.
 
+ADR-0249 extends same-commit descriptions to native Tool starts and canonical
+Tool results. Worker interprets validated Task checkpoints and post-hook result
+Entries; Projector resolves owned value/text selectors, image placeholders and
+the bounded display format. The post-adoption watcher no longer publishes a
+second copy of Tool arguments or output. Native batch contents remain intact;
+unrelated human-input, model and hosted-activity notifications keep their paths.
+
 All publications use the physical owner's existing serialization boundary.
 Each Conversation view keeps its own display sequence; preparation adopts that
 sequence only after Kafka ACK. Canonical Entry projection and display coverage
@@ -855,7 +874,7 @@ writer cleanup batches active-Run queries and never overlaps itself (ADR-0227).
 The guest executes the whole fixed Tool, with native edit/write logic and source
 output bounds.
 Oversized-line Read retains a UTF-8-safe text prefix. Continuation guidance
-travels as structured diagnostics through Tool Worker protocol 4; native Harness
+travels as structured diagnostics through Tool Worker protocol 5; native Harness
 renders it after bounding content, so a full text budget cannot erase the hint.
 Ranged reads do not scan the remaining file just to count total lines/bytes.
 The matched-release requirement is recorded in [ADR-0236](adr/0236-recovery-input-identity-and-tool-diagnostics.md).

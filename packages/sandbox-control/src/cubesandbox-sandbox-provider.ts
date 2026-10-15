@@ -749,7 +749,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     toolRoot = activation.toolRoot,
   ): Extract<ToolWorkerInput, { type: "worker.initialize" }> {
     return {
-      toolWorkerProtocolVersion: 4,
+      toolWorkerProtocolVersion: 5,
       type: "worker.initialize",
       activationId: toolBindingId,
       toolRoot,
@@ -890,7 +890,7 @@ export class CubeSandboxProvider implements SandboxProvider {
           {
             mode: "initialize",
             initialization: {
-              toolWorkerProtocolVersion: 4,
+              toolWorkerProtocolVersion: 5,
               type: "worker.initialize",
               activationId: spec.activationId,
               toolRoot,

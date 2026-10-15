@@ -1,6 +1,7 @@
 # ADR-0249: Compact Projector publication and derived presentation
 
-Status: accepted for implementation, 2026-10-15. The owner approved the
+Status: source implemented; repository verification and matched rollout in progress,
+2026-10-15. The owner approved the
 [focused review](../reports/projector-envelope-review-20261015.md) and its ordered
 repair plan. Review baseline: `c3aca045`; preserved evidence: `8e734945`.
 
@@ -62,6 +63,10 @@ a competing authority without removing the required Pi/Cube boundary. Generic
 native write selectors and existing codecs are the bounded retained adapter.
 
 ## Ordered slices and acceptance
+
+The matched transport contract is execution-topic v17 and guest/Tool Worker
+protocol 5. PG schema 189, boot reply v3 and Cube management protocol 7 remain.
+Native PG history and normalized control metadata need no compatibility decoder.
 
 - A1: no full-body private prefix; forced/normal closure clears all child state;
   conflict detection, handoff watermarks and missing-prefix checks still pass.

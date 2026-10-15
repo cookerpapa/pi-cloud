@@ -36,7 +36,7 @@ async function run(cwd: string, command: string) {
     JSON.stringify({
       mode: "operation",
       initialization: {
-        toolWorkerProtocolVersion: 4,
+        toolWorkerProtocolVersion: 5,
         type: "worker.initialize",
         activationId,
         toolRoot: cwd,
@@ -63,10 +63,6 @@ async function run(cwd: string, command: string) {
         args: { command },
         timeoutMs: 10000,
         maximumOutputBytes: 51200,
-        turnContextSha256: "a".repeat(64),
-        executionContextSha256: "b".repeat(64),
-        stepContextSequence: 1,
-        stepContextSha256: "c".repeat(64),
       },
     }),
     { mode: 0o600 },

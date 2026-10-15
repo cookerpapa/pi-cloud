@@ -264,10 +264,14 @@ export function createTrustedRemoteAgentTools(
       type: "tool_sandbox.operation",
       activationId: target.activationId,
       operationId: randomUUID(),
-      turnContextSha256: runtime.turnContextSha256,
-      executionContextSha256: runtime.executionContextSha256,
-      stepContextSequence: sampling.step.context.sequence,
-      stepContextSha256: sampling.step.sha256,
+      ...(request.operation === "workflow.exec"
+        ? {
+            turnContextSha256: runtime.turnContextSha256,
+            executionContextSha256: runtime.executionContextSha256,
+            stepContextSequence: sampling.step.context.sequence,
+            stepContextSha256: sampling.step.sha256,
+          }
+        : {}),
       toolName,
       ...request,
     });

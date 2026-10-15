@@ -105,10 +105,7 @@ async function fixture(options: { hold?: boolean; invalid?: boolean; duplicate?:
             type: "tool_sandbox.operation",
             activationId: randomUUID(),
             operationId: randomUUID(),
-            turnContextSha256: "a".repeat(64),
-            executionContextSha256: "b".repeat(64),
-            stepContextSequence: 1,
-            stepContextSha256: "c".repeat(64),
+
             operation: "tool.execute",
             toolName: "bash",
             toolCallId: invocation.callId,

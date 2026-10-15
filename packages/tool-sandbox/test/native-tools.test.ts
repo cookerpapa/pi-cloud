@@ -36,10 +36,6 @@ function request(
     args,
     timeoutMs: 300000,
     maximumOutputBytes: 51200,
-    turnContextSha256: "a".repeat(64),
-    executionContextSha256: "b".repeat(64),
-    stepContextSequence: 1,
-    stepContextSha256: "c".repeat(64),
   };
 }
 

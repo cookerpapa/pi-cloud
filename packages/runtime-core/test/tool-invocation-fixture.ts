@@ -36,10 +36,7 @@ export function toolInvocationFixture(content = "hello") {
       args,
       activationId: "20000000-0000-4000-8000-000000000007",
       operationId: "20000000-0000-4000-8000-000000000008",
-      turnContextSha256: "a".repeat(64),
-      executionContextSha256: "b".repeat(64),
-      stepContextSha256: "c".repeat(64),
-      stepContextSequence: 1,
+
       timeoutMs: 60000,
       maximumOutputBytes: 65536,
     },
