@@ -7,7 +7,7 @@ Its [measurements](reports/projector-envelope-review-20261015.json) and baseline
 probes accompany 89 passing existing contract tests. The baseline probes are
 archived in Git and replaced by maintained regression tests. The subsequently
 approved [repair record](reports/projector-repair-20261015.md) tracks compact
-publication, Tool presentation and the pending matched rollout.
+publication, Tool presentation, the matched rollout and live acceptance.
 
 The [initial complete Control Plane outage check](reports/control-plane-outage-20261014.md)
 holds the only Control Plane at zero replicas for more than a minute. The active

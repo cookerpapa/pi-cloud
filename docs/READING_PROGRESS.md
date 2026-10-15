@@ -12,8 +12,11 @@ live presentation and dispatch-commit-before-Cube ordering. Kafka producer fenci
 acts at submission; PG grant expiry alone does not instantly fence a producer.
 The [focused review](reports/projector-envelope-review-20261015.md) records fields
 that can be derived/shared, those required for native recovery and child identity,
-and reproduced projection cleanup/duplication findings. No runtime repair has
-been made in this review. Next hop: Projector → Cube takeover and eventual reply.
+and reproduced projection cleanup/duplication findings. The approved
+[repairs](reports/projector-repair-20261015.md) are deployed as
+`projector-compact-bf55d9bd`: compact envelope, same-commit Tool presentation,
+indexed dispatch preparation and whole-writer prefix cleanup. Next hop:
+Projector → Cube takeover and eventual reply.
 
 ADR-0247 removes the ordinary Worker publication ingress discussed before migration.
 Covered HTTP idempotency keys, accepted versus executed input, atomic intake,

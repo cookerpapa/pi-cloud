@@ -6,9 +6,9 @@ execution authority, distributed placement, output projection and Cube lifetimes
 CubeSandbox KVM is the only untrusted execution backend.
 
 This document describes ADR-0247 Session ownership and ADR-0248 management reconnect
-with ADR-0249's source publication contract (schema 189 / topic v17 / boot reply v3 /
-guest protocol 5). [Repair and rollout status](reports/projector-repair-20261015.md)
-distinguishes these source changes from the last deployed release.
+with ADR-0249's deployed publication contract (schema 189 / topic v17 / boot reply v3 /
+guest protocol 5). [Repair and acceptance evidence](reports/projector-repair-20261015.md)
+identifies the current `projector-compact-bf55d9bd` release and verification results.
 [Reconnect delivery evidence](reports/idle-worker-reconnect-20261014.md) identifies
 `worker-reconnect-5b6ba003`; the [Session migration evidence](reports/session-work-implementation-20261013.md)
 records the earlier `session-work-6ac697f9` baseline.

@@ -1,7 +1,8 @@
 # ADR-0249: Compact Projector publication and derived presentation
 
-Status: source implemented; repository verification and matched rollout in progress,
-2026-10-15. The owner approved the
+Status: implemented, verified and deployed as `projector-compact-bf55d9bd`,
+2026-10-15. [Delivery evidence](../reports/projector-repair-20261015.md) records
+source gates, live acceptance, failed samples and cleanup. The owner approved the
 [focused review](../reports/projector-envelope-review-20261015.md) and its ordered
 repair plan. Review baseline: `c3aca045`; preserved evidence: `8e734945`.
 

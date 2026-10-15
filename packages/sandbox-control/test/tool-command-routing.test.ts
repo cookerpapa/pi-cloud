@@ -349,7 +349,7 @@ describe("Projector native Cube handoff", () => {
     f.closeWriter.mockImplementation(() => pending.promise);
     let sealed = false;
     const closing = f.router
-      .consume(record({ kind: "execution_seal", scope: f.command.scope, closesWriter: true }))
+      .consume(record({ kind: "execution_seal", scope: f.command.scope }))
       .then(() => {
         sealed = true;
       });

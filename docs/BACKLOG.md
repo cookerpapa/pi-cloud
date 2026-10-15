@@ -33,29 +33,31 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 The [October 15 focused review](reports/projector-envelope-review-20261015.md)
 audits baseline `c3aca045`. Its 89 existing contract tests pass; isolated probes
 reproduce retained child prefixes after writer closure, duplicated Tool display
-bodies and repeated intent lookups. Runtime and deployed protocols are unchanged.
+bodies and repeated intent lookups. That review did not change runtime protocols;
+the approved implementation follows below.
 
 The owner subsequently approved implementation under
 [ADR-0249](adr/0249-compact-projector-publication.md). The
-[repair record](reports/projector-repair-20261015.md) tracks source changes and
-pending matched deployment; the review evidence above remains tied to its baseline.
+[repair record](reports/projector-repair-20261015.md) records verified source and
+the matched `projector-compact-bf55d9bd` deployment, real acceptance and cleanup;
+the review evidence above remains tied to its baseline.
 
-- [ ] R15P-01: replace the internal full-text prefix with the minimum sequence
+- [x] R15P-01: replace the internal full-text prefix with the minimum sequence
       state and clear every child view on forced writer closure. Preserve missing
       prefix detection, handoff positions, conflict checks and the public live view.
-- [ ] O15P-02: reuse validated per-record dispatch preparation and bounded native
+- [x] O15P-02: reuse validated per-record dispatch preparation and bounded native
       write lookup; remove repeated expansion without changing batch order,
       identity checks, projection transactions or commit-before-effect.
-- [ ] O15P-03 / C15P-01: propose a matched compact envelope: inherit shared writer
+- [x] O15P-03 / C15P-01: deliver a matched compact envelope: inherit shared writer
       identity, derive aliases, share the original Boot reply target, and remove
       the unused standalone cancellation publisher. Separate wire facts from
       expanded commands; preserve self-contained control-tool recovery metadata.
-- [ ] O15P-01: extend same-commit presentation references to duplicated Tool
+- [x] O15P-01: extend same-commit presentation references to duplicated Tool
       input/result display bodies, keeping native interpretation in Worker and
       final results after Pi processing. Do not recreate a second result store.
-- [ ] O15P-04: separate fixed Cube request fields from workflow context checks
-      before removing unused fixed-Tool context hashes. Requires an ADR, matched
-      guest protocol and fencing/cancellation/output-budget acceptance.
+- [x] O15P-04: separate fixed Cube request fields from workflow context checks
+      and remove unused fixed-Tool context hashes. ADR-0249, matched guest protocol 5
+      and fencing/cancellation/output-budget acceptance are complete.
 
 ## Reliability and capacity
 
@@ -532,6 +534,15 @@ separate design questions, not an implicit part of the completed query merge.
       Lane counts; unlimited product defaults do not establish sustainable capacity.
 
 ## Deployment operations
+
+- [ ] Wait for current Cube node registration/health before template creation
+      after native replacement. In the October 15 matched release, Kubernetes
+      readiness preceded Master discovery of the new Cubelet address; template
+      creation failed while Master still polled the old Pod IP. A second apply
+      of the same scanned artifacts passed after registration and complete
+      zero-VM inventory. Add a bounded native-readiness gate and a replacement
+      regression; retain fail-closed cutover and physical cleanup requirements.
+      [Evidence](reports/projector-repair-20261015.md).
 
 - [ ] Reconcile the build host's Docker daemon proxy with its current proxy
       endpoint. October 10 uncached pulls needed a temporary loopback relay;

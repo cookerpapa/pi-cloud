@@ -129,13 +129,12 @@ describe("interactive workflow replies without completed-result retention", () =
       scope: {
         ...a.scope,
         writerId: crypto.randomUUID(),
-        leaseId: crypto.randomUUID(),
         fencingToken: 2,
       },
     };
     f.own(a);
     f.own(b);
-    f.executor.receive(record({ kind: "execution_seal", scope: a.scope, closesWriter: true }, 1n));
+    f.executor.receive(record({ kind: "execution_seal", scope: a.scope }, 1n));
     f.executor.receive(record(b, 2n));
     await f.settled();
     expect(f.execute).toHaveBeenCalledOnce();
@@ -238,7 +237,7 @@ describe("interactive workflow replies without completed-result retention", () =
       raw = command();
     const sibling = { ...raw, scope: { ...raw.scope, writerId: a.scope.writerId } };
     for (const c of [a, b, sibling]) f.own(c);
-    f.executor.receive(record({ kind: "execution_seal", scope: a.scope, closesWriter: true }));
+    f.executor.receive(record({ kind: "execution_seal", scope: a.scope }));
     f.executor.receive(record(sibling, 1n));
     f.executor.receive(record(b, 2n));
     await f.settled();

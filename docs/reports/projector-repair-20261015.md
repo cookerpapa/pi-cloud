@@ -1,8 +1,9 @@
 # Projector review implementation
 
-Status: source verified; matched rollout in progress, 2026-10-15. The owner authorized all repair slices from the
+Status: implemented, verified and deployed, 2026-10-15. The owner authorized all repair slices from the
 [review](projector-envelope-review-20261015.md). [ADR-0249](../adr/0249-compact-projector-publication.md)
-records the protocol decision before implementation. No release has occurred yet.
+records the protocol decision before implementation. The matched release is
+`projector-compact-bf55d9bd` (source `bf55d9bddbbc202ad3b0c7306ddb64b23d4afcae`).
 
 ## Completed source slices
 
@@ -31,16 +32,19 @@ records the protocol decision before implementation. No release has occurred yet
   PG wrapper timed out in database setup; it was rerun with the isolated official
   PostgreSQL fixture, not counted as passing initially.
 
-## Remaining work
-
-- A5 is source implemented: fixed Tool/workflow request schemas are separate;
+- A5: fixed Tool/workflow request schemas are separate;
   guest/Tool Worker protocol is 5, with managed Cube protocol 7 unchanged. Fixed
   Tools retain identity/time/output budgets and workflow retains context checks.
   Seven targeted files initially passed 123 cases and exposed one old fixture
   copying workflow context into a fixed request. The corrected workflow suite
   passes all 11 cases. The repository-wide typecheck and workspace tests pass.
-- A6: required checks, full matched release, real Luna/Cube/browser/native-input
-  acceptance, obsolete-resource cleanup and final documentation.
+
+## Delivery
+
+- A6 is complete: source gates, matched release, real Luna/Cube/browser/native
+  input/child-recovery checks and owned-resource cleanup have passing evidence.
+  Failed attempts and operational follow-ups are distinguished below. The final
+  documentation/fixture-only commit does not change the deployed runtime inputs.
 
 ## Repository verification
 
@@ -61,10 +65,13 @@ After that repair:
   control-plane replacement, same-Run recovery and control-view reconstruction.
 - The maintained fault evaluator passes 243/243 cases on `3d2cc95e`.
 - Dependency security audit passes with no remaining vulnerabilities reported.
+- Final fixture cleanup removes retired close/lease aliases from two dispatcher
+  suites; their 26 tests pass. Documentation/link and formatting checks pass.
+  Recomputed guest/completion input identities still match the deployed candidate.
 
 This records corrected and resumed CI stages, not a claim that the first complete
 CI command exited successfully. Image vulnerability/provenance gates and live
-acceptance remain part of the matched release below.
+acceptance are recorded separately below.
 
 Before release, authoritative PG checks show zero unfinished Runs, unreleased
 writers, VMs, machines and terminals. Native inventory confirms zero sandboxes
@@ -99,7 +106,91 @@ CA bundle. Its build now bootstraps public CAs from the already pinned Go builde
 then installs Ubuntu's own ca-certificates package. APT fails on any index error;
 certificate and repository signature verification remain enabled.
 
-Private intermediate logs are under `/tmp/pi-cloud-projector-a1-*` and
-`/tmp/pi-cloud-projector-a2-*`. They are source checks, not a serving release.
-Preserve the Session producer fencing and all existing closure, PG authority,
-Tool dispatch and physical resource cleanup boundaries throughout the remaining work.
+## Matched deployment
+
+All eleven image provenance/SBOM/vulnerability gates and matched preflight pass.
+Trivy's first database download exceeded its deadline; the same pinned scanner
+downloaded the official database from GHCR with a longer download timeout, then
+the complete maintained preparation passed. No scan or severity gate was waived.
+Unused build cache was reclaimed to restore the required disk headroom.
+
+The first apply stopped after native Cube replacement: template registration
+overlapped node re-registration. Master was still trying the old Pod IP while the
+new Cubelet was booting; no template VM reached that Cubelet. The failed release
+correctly kept applications offline. After current-node inventory confirmed one
+of one nodes and zero VMs, the same scanned candidate was applied again. All four
+new templates became READY; registration removed obsolete templates. Application
+deployment completed at approximately 13:12 Asia/Shanghai. Control Plane, both
+Workers, Web, SSH and Volume Gateway are ready on the matching release.
+
+Contracts: PG schema 189, execution Topic v17, boot reply v3, guest/Tool Worker
+protocol 5, Cube management protocol 7. Accounts, model/provider settings and
+credentials were not reset. The native-node readiness window is a separate
+release-operator follow-up, not a reason to weaken VM absence or fencing checks.
+
+## Live acceptance
+
+All real-model checks use GPT-6 Luna. The [bounded evidence](projector-repair-20261015.json)
+contains results without prompts, Tool output, image bytes or credentials.
+
+| Check | Result |
+| --- | --- |
+| Full Cube production suite | Complete pass on the third attempt, 21 model requests: pure chat without a VM, coding, authenticated preview, warm VM/background-process reuse, tenant isolation and 1,024 fixture files restored on a fresh VM using the original Volume. |
+| Native input | All five cases pass in one invocation: consume, stop, recover, stream_stop and stream_both_crash. Actual Worker/Control Plane SIGKILL, same-Run recovery, retained interrupted text, no PG streaming bodies and physical cleanup are checked. |
+| Real browser and native Read | Complete pass on the second attempt: lost admission reply, Stop, returned draft/image, distinct resend identity, same uploaded image/direct vision, 120,017-byte ASCII and 140,031-byte Unicode inputs, valid source-truncated native results and diagnostic display. |
+| Native child/control tools | Supervisor request/reply, messaging, two parallel children, cancellation and guest boundary each pass. These are an initial supervisor result plus focused invocations, not one successful full five-scenario run. Diagnostic messaging also verifies the marker in the child's history and its completed Bash. |
+| Control Plane replacement during child Bash | Same-image rolling replacement takes 12.106 s in this sample. The same Worker completes the same root Run; native child/control reply recovers, the Bash marker proves one execution, and physical cleanup completes. This is not a cross-version availability guarantee. |
+
+The first two full Cube attempts and first browser attempt fail on upstream
+`chatgpt.com` TLS handshake EOF. Unauthenticated probes reproduce intermittent
+TLS failure both through the runtime relay and directly through the existing host
+proxy (one failure out of three on each path). This is consistent with the
+[existing egress investigation](model-egress-tls-20261012.md); it is not fixed by
+the Projector change. Failed samples remain recorded; no provider retry owner,
+proxy route, credential or assertion was changed to obtain passing evidence.
+
+The first combined child suite passes supervisor but its messaging answer does
+not contain the expected marker. No Tool error is reported; that fixture's
+original history is already removed by its cleanup, so its cause is not claimed.
+The focused diagnostic run passes with the expected workflow input, child Bash
+and received marker. All remaining focused child cases pass. During the intentional
+dual-process fault, the replacement Worker also has two startup failures before
+becoming Ready; the same-Run recovery check passes, without claiming zero fresh-Boot
+startup retries while Control Plane is unavailable.
+
+The short synthetic Bash envelope used by the baseline review shrinks from 2,081
+to 1,408 bytes (673 bytes, approximately 32%). This measures that envelope only,
+not whole-session compression, resident memory savings or production latency.
+Tool-start/result descriptions now reference native bodies rather than publishing
+the extra copied bodies reproduced by the baseline probe.
+
+## Cleanup and preserved assets
+
+- Native inventory confirms one of one nodes, zero VMs; authoritative PG has zero
+  unfinished/unsealed Runs, live Session writers, VMs, machines or terminals.
+- Browser/native-input fixtures remove their own accounts and images after physical
+  purge. Three Cube-suite tenants (including failed attempts) are removed through
+  the owned-acceptance helper. Seven task-created projects/Workspaces and six released
+  runtime records under the original account are removed only after Volume purge,
+  allocation closure and absence of dependent Runs/Sessions are confirmed.
+- Old execution Topic v16 is deleted after checking zero unsealed old-topic Runs,
+  replay references and active writers. Its 30 obsolete PG projection-offset rows
+  are removed. Topic v17, the current Projector group and boot reply transport remain.
+  Native PG history does not require an old-format reader.
+- All four current guest templates are READY; the failed/previous templates are
+  removed by maintained registration cleanup. The task's temporary build proxy relay,
+  diagnostic CA image and temporary build probe directory are removed.
+- Original tenant/user/password/model/binding/source-control tables match their
+  pre-release whole-table fingerprints and counts. Counts remain 32 tenants/users,
+  five password records, 35 models, 35 bindings and zero source-control credentials.
+  API credentials remain 32, with none created or revoked since the baseline;
+  authentication refreshes one `last_used_at`, so its whole-row fingerprint is
+  explicitly not reported as identical. Usage timestamps are not restored to make
+  a checksum comparison pass.
+
+The existing external AnyTLS-path issue, permanent Docker daemon proxy configuration
+and native Cube registration/readiness window remain documented operational work.
+No compatibility decoder, new execution authority or extra queue/store is introduced.
+
+Private intermediate logs remain under `/tmp/pi-cloud-projector-*`; they are not
+committed transcripts or credentials.

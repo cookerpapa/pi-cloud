@@ -7,11 +7,15 @@ the [October 15 review](reports/projector-envelope-review-20261015.md).
 [Implementation progress](reports/projector-repair-20261015.md) distinguishes
 source slices from matched deployment and live acceptance.
 
-- [ ] A1/A2: minimal prefix state and whole-writer cleanup; prepared/indexed dispatch.
-- [ ] A3: one compact Kafka envelope, no standalone cancellation/old wire fallback.
-- [ ] A4: same-commit Tool presentation without copied argument/result bodies.
-- [ ] A5: fixed/workflow request separation and matched guest contracts.
-- [ ] A6: required gates, matched rollout and complete relevant live acceptance.
+- [x] A1/A2: minimal prefix state and whole-writer cleanup; prepared/indexed dispatch.
+- [x] A3: one compact Kafka envelope, no standalone cancellation/old wire fallback.
+- [x] A4: same-commit Tool presentation without copied argument/result bodies.
+- [x] A5: fixed/workflow request separation and matched guest contracts.
+- [x] A6: required gates, matched rollout and complete relevant live acceptance.
+
+Deployed as `projector-compact-bf55d9bd`, schema 189 / topic v17 / guest protocol 5.
+The repair record separates complete native-input/browser/Cube passes, focused
+child checks, rolling child recovery, failed samples and confirmed cleanup.
 
 ## Idle Worker reconnect and compatible Control Plane updates
 

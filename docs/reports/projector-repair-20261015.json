@@ -1,0 +1,360 @@
+{
+  "format": "pi-cloud.projector-repair.v1",
+  "checkedAt": "2026-10-15T05:39:48.272Z",
+  "accepted": true,
+  "sourceRevision": "bf55d9bddbbc202ad3b0c7306ddb64b23d4afcae",
+  "release": "projector-compact-bf55d9bd",
+  "contracts": {
+    "pgSchema": 189,
+    "executionTopic": "pi-cloud.execution-log.v17",
+    "bootReplyProtocol": 3,
+    "guestProtocol": 5,
+    "cubeManagementProtocol": 7,
+    "piVersion": "1.0.0"
+  },
+  "sourceVerification": {
+    "workspaceTypechecksAndTestsPassed": true,
+    "acceptanceHelperTests": 71,
+    "correctedRuntimeTests": 78,
+    "isolatedConditionalTestsSkipped": 2,
+    "realPgRf3KafkaFiles": 7,
+    "realPgRf3KafkaTests": 8,
+    "faultCasesPassed": 243,
+    "faultCasesTotal": 243,
+    "finalFixtureTestsPassed": 26,
+    "firstAggregateCiPassed": false,
+    "explanation": "Initial CI transport failure repaired in 3d2cc95e; corrected stages rerun. Later build-only changes independently checked."
+  },
+  "artifacts": {
+    "manifestRevision": "bf55d9bddbbc202ad3b0c7306ddb64b23d4afcae",
+    "imageCount": 11,
+    "provenanceAndVulnerabilityGatesPassed": true,
+    "maximumFixableHighCriticalFindings": 0
+  },
+  "live": {
+    "production": {
+      "accepted": true,
+      "invocation": 3,
+      "model": "gpt-6-luna",
+      "modelRequests": 21,
+      "pureChatVmCount": 0,
+      "multiRound": {
+        "sameCubeMicroVm": true,
+        "runningWorkspaceRuntimeReuse": true,
+        "elasticSandboxPolicy": true,
+        "agentPreviewPublished": true,
+        "backgroundProcessSurvived": true,
+        "authenticatedHttpPreviewPassed": true,
+        "workspaceRestored": true,
+        "finalWorkspaceFileBytes": 1190
+      },
+      "multiTenant": {
+        "crossTenantConversationHidden": true,
+        "lowerLevelCubeTenantGate": 2
+      },
+      "largeWorkspace": {
+        "fixtureFiles": 1024,
+        "filesBefore": 1025,
+        "filesAfter": 1026,
+        "freshVm": true,
+        "originalVolume": true
+      },
+      "cleanup": {
+        "retainedRunningWorkspaceMicroVmCount": 0,
+        "foreignSessionMicroVmCount": 0,
+        "conversationDeletionReleasedWorkspaceRuntime": true,
+        "confirmedAllocationClosureVerified": true
+      }
+    },
+    "nativeInput": {
+      "accepted": true,
+      "cleanupConfirmed": true,
+      "cases": [
+        {
+          "scenario": "consume",
+          "oneRun": true
+        },
+        {
+          "scenario": "stop",
+          "oneRun": true
+        },
+        {
+          "scenario": "recover",
+          "oneRun": true,
+          "crash": {
+            "pod": "pi-cloud-pi-worker-primary-v1-0",
+            "leaseId": "6d34d42d-d77b-481a-a895-f94b0bd27a88",
+            "exitCode": 137,
+            "restartCount": 1
+          }
+        },
+        {
+          "scenario": "stream_stop",
+          "oneRun": true,
+          "noPgStreamingBodies": true,
+          "preservedNativePartial": true
+        },
+        {
+          "scenario": "stream_both_crash",
+          "oneRun": true,
+          "noPgStreamingBodies": true,
+          "preservedNativePartial": true,
+          "crash": {
+            "worker": {
+              "pod": "pi-cloud-pi-worker-primary-v1-1",
+              "leaseId": "31808b96-269a-4fb1-90b0-c2c5a4f01db7",
+              "exitCode": 137,
+              "restartCount": 1
+            },
+            "controlPlane": {
+              "pod": "pi-cloud-control-plane-5b4fb9699b-qr2rk",
+              "exitCode": 137,
+              "restartCount": 1
+            }
+          }
+        }
+      ]
+    },
+    "browser": {
+      "accepted": true,
+      "invocation": 2,
+      "cleanupConfirmed": true,
+      "returnedInput": {
+        "nativeInputInOriginalRun": true,
+        "realBrowser": true,
+        "requests": 2,
+        "distinctKeys": 2,
+        "distinctAdmissions": 2,
+        "originalRunCancelled": true,
+        "newRunCompleted": true,
+        "sameUploadId": true,
+        "directVision": true,
+        "activeRunCancelled": true
+      },
+      "read": [
+        {
+          "kind": "wide-ascii.txt",
+          "sourceBytes": 120017,
+          "contentBytes": 51200,
+          "utf8Valid": true,
+          "canonicalDiagnostic": true
+        },
+        {
+          "kind": "wide-unicode.txt",
+          "sourceBytes": 140031,
+          "contentBytes": 51196,
+          "utf8Valid": true,
+          "canonicalDiagnostic": true
+        }
+      ]
+    },
+    "children": {
+      "allFiveScenariosPassed": true,
+      "oneCompleteCombinedPass": false,
+      "cases": [
+        {
+          "scenario": "supervisor",
+          "passed": true,
+          "descendants": 1,
+          "invocation": "initial-combined"
+        },
+        {
+          "scenario": "messaging",
+          "passed": true,
+          "descendants": 1,
+          "invocation": "focused-with-read-only-diagnostics"
+        },
+        {
+          "scenario": "parallel",
+          "passed": true,
+          "descendants": 2,
+          "invocation": "focused"
+        },
+        {
+          "scenario": "cancellation",
+          "passed": true,
+          "descendants": 1,
+          "invocation": "focused"
+        },
+        {
+          "scenario": "guest-boundary",
+          "passed": true,
+          "descendants": 0,
+          "invocation": "focused"
+        }
+      ]
+    },
+    "childHandoff": {
+      "accepted": true,
+      "faultMode": "rolling",
+      "replacementMs": 12106,
+      "artifactsUnchanged": true,
+      "nativeChildOnly": true,
+      "workerUnchanged": true,
+      "executionCount": 1,
+      "controlToolReplyRecovered": true,
+      "physicalCleanupConfirmed": true
+    }
+  },
+  "failures": [
+    {
+      "check": "matched-apply",
+      "attempt": 1,
+      "reason": "template creation during native node address re-registration",
+      "recoveredBy": "same scanned candidate reapplied after complete current-node zero-VM inventory"
+    },
+    {
+      "check": "production",
+      "attempt": 1,
+      "reason": "upstream TLS handshake EOF after preview"
+    },
+    {
+      "check": "production",
+      "attempt": 2,
+      "reason": "upstream TLS handshake EOF during pure chat"
+    },
+    {
+      "check": "browser",
+      "attempt": 1,
+      "reason": "upstream TLS handshake EOF during vision",
+      "cleanupConfirmed": true
+    },
+    {
+      "check": "combined-children",
+      "attempt": 1,
+      "reason": "messaging output lacked expected marker; initial cause not established",
+      "cleanupConfirmed": true,
+      "focusedDiagnosticPassed": true
+    }
+  ],
+  "tlsProbe": {
+    "endpoint": "https://chatgpt.com/backend-api/codex/responses",
+    "credentialsSent": false,
+    "runtimeRelay": {
+      "attempts": 3,
+      "http405": 2,
+      "sslSyscallErrors": 1
+    },
+    "existingHostProxy": {
+      "attempts": 3,
+      "http405": 2,
+      "sslSyscallErrors": 1
+    },
+    "conclusion": "Unauthenticated requests reproduce intermittent TLS failure with and without the PiCloud relay; no proxy or model policy change."
+  },
+  "syntheticEnvelope": {
+    "kind": "same-short-bash-fixture-wire-size",
+    "beforeBytes": 2081,
+    "afterBytes": 1408,
+    "nativeSequence": 8,
+    "toolCallId": "task:4",
+    "notes": "Synthetic execution-intent envelope only; no whole-session compression or latency claim."
+  },
+  "cleanup": {
+    "physical": {
+      "checkedAt": "2026-10-15T05:32:25.445Z",
+      "nodesScanned": 1,
+      "nativeVmCount": 0,
+      "runs": 0,
+      "vms": 0,
+      "machines": 0,
+      "terminals": 0,
+      "writers": 0
+    },
+    "oldTopic": {
+      "topicRemoved": "pi-cloud.execution-log.v16",
+      "remainingTopic": "pi-cloud.execution-log.v17",
+      "projectorGroupPreserved": "pi-cloud-session-projector-v2",
+      "before": {
+        "pending": 0,
+        "replay": 0,
+        "writers": 0
+      },
+      "rowsRemoved": 30
+    },
+    "templates": {
+      "count": 4,
+      "currentReady": 4,
+      "obsolete": 0
+    },
+    "projects": {
+      "projectsRemoved": 7,
+      "workspacesRemoved": 7,
+      "releasedRuntimesRemoved": 6,
+      "publishedControlsRemoved": 0,
+      "accountsPreserved": true
+    },
+    "firstCubeTenant": [
+      {
+        "tenantId": "efdd6dbc-eaf9-4b95-983f-48ceb4fe672d",
+        "tenantRemoved": true,
+        "imagesRemoved": 0
+      }
+    ],
+    "remainingCubeTenants": [
+      {
+        "tenantId": "97c0d60a-fdcd-451e-8dfc-4a2901cfffb5",
+        "tenantRemoved": true,
+        "imagesRemoved": 0
+      },
+      {
+        "tenantId": "62f2a6c4-df04-48c4-b3d9-e03277bc7c56",
+        "tenantRemoved": true,
+        "imagesRemoved": 0
+      }
+    ],
+    "temporaryBuildRelayStopped": true,
+    "diagnosticCaImageRemoved": true
+  },
+  "preservedAssets": {
+    "tables": {
+      "tenants": {
+        "count": 32,
+        "countMatches": true,
+        "wholeTableFingerprintMatches": true
+      },
+      "users": {
+        "count": 32,
+        "countMatches": true,
+        "wholeTableFingerprintMatches": true
+      },
+      "tenant_api_credentials": {
+        "count": 32,
+        "countMatches": true,
+        "wholeTableFingerprintMatches": false
+      },
+      "user_password_credentials": {
+        "count": 5,
+        "countMatches": true,
+        "wholeTableFingerprintMatches": true
+      },
+      "model_profiles": {
+        "count": 35,
+        "countMatches": true,
+        "wholeTableFingerprintMatches": true
+      },
+      "credential_bindings": {
+        "count": 35,
+        "countMatches": true,
+        "wholeTableFingerprintMatches": true
+      },
+      "source_control_credentials": {
+        "count": 0,
+        "countMatches": true,
+        "wholeTableFingerprintMatches": true
+      }
+    },
+    "apiCredentialUsage": {
+      "createdSinceBaseline": 0,
+      "revokedSinceBaseline": 0,
+      "lastUsedRefreshed": 1
+    }
+  },
+  "limitations": [
+    "No fleet capacity or general latency claim.",
+    "External AnyTLS instability remains open.",
+    "Native Cube registration gate needs release-operator follow-up.",
+    "Fresh replacement Worker showed two startup failures during deliberate dual-process fault before becoming Ready.",
+    "No compatibility reader, provider retry change or alternate proxy route introduced."
+  ]
+}
