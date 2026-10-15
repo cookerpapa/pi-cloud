@@ -210,10 +210,7 @@ export async function startControlPlane(): Promise<void> {
           return executePreviewTool(database, call, async () => {
             if (!call.bindingId) throw new Error("Preview requires an admitted Tool binding");
             if (!current()) throw new Error("Control Tool owner changed");
-            await sandboxControl!.refreshToolServices(
-              call.scope,
-              call.bindingId,
-            );
+            await sandboxControl!.refreshToolServices(call.scope, call.bindingId);
           });
         return subagents.executeTool(call, current);
       },

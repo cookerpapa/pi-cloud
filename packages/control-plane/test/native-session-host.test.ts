@@ -131,7 +131,6 @@ it("shares one root grant across Conversation views, closes concurrent handles o
           commitNative: async (fact) => {
             facts.push(fact);
           },
-
         });
         const handle = await host.open({
           binding: {

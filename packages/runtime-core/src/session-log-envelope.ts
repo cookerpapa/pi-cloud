@@ -101,7 +101,9 @@ export function encodeSessionLogFact(fact: SessionLogFact): string {
         const address = view(display.scope, fact.scope);
         return {
           view: address,
-          events: display.events.map((text) => compactEvent(text as unknown as ObjectValue, address)),
+          events: display.events.map((text) =>
+            compactEvent(text as unknown as ObjectValue, address),
+          ),
           ...(display.coveredThrough === undefined
             ? {}
             : { coveredThrough: display.coveredThrough }),
