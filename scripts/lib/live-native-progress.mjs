@@ -9,6 +9,7 @@ import {
 } from "../../packages/web-ui/src/session-view.ts";
 import { crashOwnedWorker } from "./owned-worker-crash.mjs";
 import { kubectl, podFor, serviceAddress, signalService } from "./production-kubernetes.mjs";
+import { nativeHistory, nativeMessages } from "./native-session-history.mjs";
 
 async function crashBoth(database, tenantId, runId, until) {
   const unrelated = await database
@@ -86,6 +87,7 @@ export async function checkNativeLiveProgress({
   createSession,
   until,
   finished,
+  onUnexpectedEnd = () => {},
 }) {
   const results = [];
   for (const scenario of ["stream_stop", "stream_both_crash"]) {
@@ -138,6 +140,34 @@ export async function checkNativeLiveProgress({
       sample = await until(async () => {
         if (streamFailure) throw streamFailure;
         const run = await api.getRun(root.runId);
+        if (["completed", "failed", "cancelled", "timed_out"].includes(run.state)) {
+          const diagnostic = {
+            scenario,
+            runId: root.runId,
+            state: run.state,
+            failureCode: run.failure?.code,
+          };
+          try {
+            const messages = nativeMessages(
+              await nativeHistory(database, { tenantId, runId: root.runId }),
+            ).filter((message) => message.role === "assistant");
+            diagnostic.stopReasons = [...new Set(messages.map((message) => message.stopReason))];
+            diagnostic.textCharacters = messages.reduce(
+              (sum, message) =>
+                sum +
+                message.content
+                  .filter((part) => part.type === "text")
+                  .reduce((n, part) => n + part.text.length, 0),
+              0,
+            );
+            diagnostic.tlsHandshakeEof = messages.some((message) =>
+              /TLS handshake.*EOF/i.test(message.errorMessage ?? ""),
+            );
+          } catch {
+            diagnostic.historyReadFailed = true;
+          }
+          onUnexpectedEnd(diagnostic);
+        }
         assert(
           !["completed", "failed", "cancelled", "timed_out"].includes(run.state),
           "Streaming fixture ended before observation",

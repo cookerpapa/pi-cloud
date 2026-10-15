@@ -6,10 +6,12 @@ execution authority, distributed placement, output projection and Cube lifetimes
 CubeSandbox KVM is the only untrusted execution backend.
 
 This document describes ADR-0247 Session ownership and ADR-0248 management reconnect
-with ADR-0249's deployed publication contract (schema 189 / topic v17 / boot reply v3 /
-guest protocol 5) and ADR-0250's Tool handoff repair.
-[Current delivery evidence](reports/projector-cube-handoff-repair-20261015.md)
-identifies `handoff-6ab91bb7`; the
+with ADR-0249's deployed publication contract, ADR-0250's handoff repair and
+ADR-0251's guest attachment/lifetime repair (schema 189 / topic v17 / boot reply v3 /
+guest protocol 6). [Current delivery evidence](reports/cubelet-guest-execution-repair-20261015.md)
+identifies `guest-execution-5536fc73`; the
+[handoff evidence](reports/projector-cube-handoff-repair-20261015.md) records
+`handoff-6ab91bb7` and the
 [publication repair evidence](reports/projector-repair-20261015.md) records the
 preceding `projector-compact-bf55d9bd` baseline.
 [Reconnect delivery evidence](reports/idle-worker-reconnect-20261014.md) identifies
@@ -784,7 +786,7 @@ The Control Plane owns control admission, the Session Projector and a
 sandbox lifecycle module. There is no independent Broker process. At the
 Worker's existing lazy binding hook, the controller materializes the chosen VM
 and stores bounded immutable transport metadata (Cube API/node/boot and guest
-initialization). Pure chat still allocates no VM. The Projector confirms its
+attachment). Pure chat still allocates no VM. The Projector confirms its
 monotonic Kafka dispatch commit before handing a fixed Tool directly to Cube.
 It waits for bounded takeover, never the duration of Bash execution.
 
@@ -828,8 +830,8 @@ Known expiry/cancellation before Start retains non-execution evidence. Native
 cleanup keeps a finite final Kill budget even after its parent expires; ambiguous
 Start or stopping replies remain uncertain. Native Read path interpretation is
 contract-tested against pinned Pi while retaining bounded reads and images.
-The [repair record](reports/cubelet-guest-execution-repair-20261015.md) tracks rollout;
-the release identified at the top remains the currently deployed version.
+The [repair record](reports/cubelet-guest-execution-repair-20261015.md) records
+the matched rollout, source/live acceptance, failed samples and cleanup.
 
 Authorized closure revokes publication and binding routing admission before the
 seal. Normal Stop co-commits native abort and cancellation for unfinished fixed

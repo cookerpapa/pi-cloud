@@ -11,10 +11,14 @@
 The review itself made no runtime or deployment change. The owner subsequently
 approved all four repairs under [ADR-0251](adr/0251-guest-attachment-and-execution-bounds.md).
 
-- [ ] G1: bound native cleanup and refuse Start after known expiry/cancellation.
-- [ ] G2: align guest Read path semantics and subsequent path checks with pinned Pi.
-- [ ] G3: replace per-Tool initialization bodies with the strict attachment contract.
-- [ ] G4: required gates, matched guest 6 release, live acceptance and cleanup.
+- [x] G1: bound native cleanup and refuse Start after known expiry/cancellation.
+- [x] G2: align guest Read path semantics and subsequent path checks with pinned Pi.
+- [x] G3: replace per-Tool initialization bodies with the strict attachment contract.
+- [x] G4: required gates, matched guest 6 release, live acceptance and cleanup.
+
+Deployed as `guest-execution-5536fc73`; the
+[delivery record](reports/cubelet-guest-execution-repair-20261015.md) separates
+successful acceptance, failed samples and confirmed cleanup.
 
 ## Projector → Cube handoff audit
 

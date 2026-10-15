@@ -1,9 +1,12 @@
 # Current architecture decisions
 
-[ADR-0251](0251-guest-attachment-and-execution-bounds.md) is the approved guest
+[ADR-0251](0251-guest-attachment-and-execution-bounds.md) is the deployed guest
 execution repair: bounded native cleanup/startup, native Read path parity and
-separate initialization/attachment messages. Implementation and matched guest
-protocol 6 delivery are pending; the serving release below remains unchanged.
+separate initialization/attachment messages. It is deployed as
+`guest-execution-5536fc73`, guest protocol 6 / descriptor 2, retaining PG 189,
+execution Topic v17, boot reply v3 and Cube management 7.
+[Acceptance evidence](../reports/cubelet-guest-execution-repair-20261015.md)
+records full source/live checks and preserved configuration.
 
 [ADR-0250](0250-cube-handoff-outcomes-and-runtime-admission.md) repairs failure
 notification/evidence, exact binding lookup and removed-VM admission. It is

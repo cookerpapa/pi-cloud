@@ -6,9 +6,10 @@ initialization fields and an expired-setup startup optimization. Its
 [isolated evidence](reports/cubelet-guest-execution-review-20261015.json) includes
 SDK comparisons and native driver fault injection. This review does not change
 the deployed runtime.
-The approved [repair record](reports/cubelet-guest-execution-repair-20261015.md)
-tracks [ADR-0251](adr/0251-guest-attachment-and-execution-bounds.md), the matched
-guest protocol 6 implementation, required verification and rollout status.
+The [repair record](reports/cubelet-guest-execution-repair-20261015.md) records
+[ADR-0251](adr/0251-guest-attachment-and-execution-bounds.md), deployed as
+`guest-execution-5536fc73` with guest protocol 6. Complete source/live checks,
+actual `@`-path reads, child recovery, failed samples and cleanup are distinguished.
 
 The [October 15 Projector → Cube handoff review](reports/projector-cube-handoff-review-20261015.md)
 records failure-notification coupling, refusal evidence classification, late

@@ -32,17 +32,19 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 The [October 15 review](reports/cubelet-guest-execution-review-20261015.md) is complete
 against `c3837bdb`, with existing suites and reproducible isolated evidence.
-The serving runtime remains `handoff-6ab91bb7`. The owner approved all four
-repairs under [ADR-0251](adr/0251-guest-attachment-and-execution-bounds.md);
-implementation, verification and matched delivery are pending.
+The owner-approved repairs under [ADR-0251](adr/0251-guest-attachment-and-execution-bounds.md)
+are deployed as `guest-execution-5536fc73`, guest protocol 6. The
+[delivery record](reports/cubelet-guest-execution-repair-20261015.md) covers passing
+CI and live acceptance, first-attempt streaming uncertainty, the extra startup
+failure during injected dual crash, preserved configuration and confirmed cleanup.
 
-- [ ] R15G-01: bound the final cleanup-helper Kill after its parent budget expires.
+- [x] R15G-01: bound the final cleanup-helper Kill after its parent budget expires.
       Preserve UNKNOWN/unsafe outcomes, operation scope and Control Plane lifecycle ownership.
-- [ ] R15G-02: align custom Read path interpretation with pinned Pi and native
+- [x] R15G-02: align custom Read path interpretation with pinned Pi and native
       Edit/Write, including alias/Unicode and ambiguous-name contract cases.
-- [ ] O15G-01: separate ordinary Tool attachment parameters from full VM
+- [x] O15G-01: separate ordinary Tool attachment parameters from full VM
       initialization; remove unused recipe/seed fields through an explicit matched protocol change.
-- [ ] O15G-02: recheck expiry before issuing native Start; do not call an
+- [x] O15G-02: recheck expiry before issuing native Start; do not call an
       already-issued or ambiguously acknowledged Start definitely unexecuted.
 
 ## Projector → Cube handoff review

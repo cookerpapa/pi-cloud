@@ -1,6 +1,6 @@
 # Architecture reading checkpoint
 
-Updated: 2026-10-15.
+Updated: 2026-10-16.
 
 The walkthrough explains one component-to-component hop at a time, including
 its message, acknowledgement boundary, failure behavior and design tradeoffs.
@@ -10,8 +10,11 @@ Explained per-operation native process startup in a reusable VM, the root scope
 launcher and unprivileged Tool process, working-directory attachment, Bash output,
 ordinary process-group cancellation and stronger timeout/fault cleanup. Bash uses
 the cloud guest adapter; the guest does not create a Pi Harness or model loop.
-The [focused review](reports/cubelet-guest-execution-review-20261015.md) is complete,
-with findings recorded for follow-up. No runtime changed in this audit.
+The [focused review](reports/cubelet-guest-execution-review-20261015.md) is complete.
+All four approved [repairs](reports/cubelet-guest-execution-repair-20261015.md)
+are deployed as `guest-execution-5536fc73`: bounded cleanup/startup, native Read
+path parity and guest 6's smaller execution attachment. Source/live acceptance
+and configuration preservation are verified; failed samples remain recorded.
 Next: guest result → Cubelet's completion adapter; Kafka delivery follows.
 
 Previously covered **Projector → Cube: dispatch and takeover acknowledgement**.

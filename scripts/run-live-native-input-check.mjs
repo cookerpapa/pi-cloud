@@ -245,11 +245,15 @@ try {
       createSession,
       until,
       finished,
+      onUnexpectedEnd: (diagnostic) => {
+        report.streamingFailure = diagnostic;
+      },
     })),
   );
   report.accepted = true;
 } catch (error) {
   failure = error;
+  report.failure = String(error?.message ?? error).slice(0, 600);
 } finally {
   const errors = [];
   const clean = async (work) => {

@@ -1,6 +1,9 @@
 # ADR-0251: Minimal guest attachment and bounded native execution
 
-Status: approved for implementation, 2026-10-15. The owner authorized all four
+Status: implemented, verified and deployed as `guest-execution-5536fc73`, 2026-10-16.
+[Delivery evidence](../reports/cubelet-guest-execution-repair-20261015.md) records
+required gates, real acceptance, failed samples and confirmed cleanup.
+The owner authorized all four
 findings in the [Cubelet → guest review](../reports/cubelet-guest-execution-review-20261015.md).
 
 ## Behavior and ownership
