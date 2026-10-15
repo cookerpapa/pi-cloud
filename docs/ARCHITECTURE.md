@@ -449,8 +449,10 @@ Kafka offset commit is confirmed; commands below that commit are never dispatche
 again during projection replay. A crash between commit and dispatch may omit
 execution and remains UNKNOWN. Kafka fetching is not acknowledgement. Complete
 native commit/seal transactions advance PG progress. Durable text/thinking partials
-are native document changes and are materialized in PG; local Tool drafts remain
-excluded by ADR-0230. Public display fragments do not create another transcript table.
+are native document changes kept in Kafka and the active live state; PG stores
+their small commit headers and settlement/handoff checkpoints under ADR-0244.
+Local Tool drafts remain excluded by ADR-0230. Public display fragments do not
+create another transcript table.
 Rebalance invalidates old subscriptions and rebuilds the assigned prefix before
 its Projector serves snapshots.
 
@@ -676,10 +678,11 @@ view. It skips canonically covered references before resolution during replay.
 No extra text fetch, Harness in Control Plane or new storage authority is involved.
 
 All publications use the physical owner's existing serialization boundary.
-Each logical Run keeps its own display sequence; preparation adopts that sequence
-only after Kafka ACK. Canonical Entry projection and display coverage share one
-PG transaction. Affected Runs are locked before the shared lease, in stable ID
-order. Child display is bound to its own Run even when a parent anchors publication.
+Each Conversation view keeps its own display sequence; preparation adopts that
+sequence only after Kafka ACK. Canonical Entry projection and display coverage
+share one PG transaction. The root Run is locked before the shared lease and
+native Session. Child display retains its own product Session/Turn while sharing
+the root Run and Writer, even when the parent anchors publication.
 The initial Kafka floor also accounts for that co-committed child display.
 
 The public `assistant.text.delta` SSE payload retains `messageId`, `text`, `phase`

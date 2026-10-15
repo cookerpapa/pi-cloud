@@ -28,6 +28,30 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## Projector message and decoding review
+
+The [October 15 focused review](reports/projector-envelope-review-20261015.md)
+audits baseline `c3aca045`. Its 89 existing contract tests pass; isolated probes
+reproduce retained child prefixes after writer closure, duplicated Tool display
+bodies and repeated intent lookups. Runtime and deployed protocols are unchanged.
+
+- [ ] R15P-01: replace the internal full-text prefix with the minimum sequence
+      state and clear every child view on forced writer closure. Preserve missing
+      prefix detection, handoff positions, conflict checks and the public live view.
+- [ ] O15P-02: reuse validated per-record dispatch preparation and bounded native
+      write lookup; remove repeated expansion without changing batch order,
+      identity checks, projection transactions or commit-before-effect.
+- [ ] O15P-03 / C15P-01: propose a matched compact envelope: inherit shared writer
+      identity, derive aliases, share the original Boot reply target, and remove
+      the unused standalone cancellation publisher. Separate wire facts from
+      expanded commands; preserve self-contained control-tool recovery metadata.
+- [ ] O15P-01: extend same-commit presentation references to duplicated Tool
+      input/result display bodies, keeping native interpretation in Worker and
+      final results after Pi processing. Do not recreate a second result store.
+- [ ] O15P-04: separate fixed Cube request fields from workflow context checks
+      before removing unused fixed-Tool context hashes. Requires an ADR, matched
+      guest protocol and fencing/cancellation/output-budget acceptance.
+
 ## Reliability and capacity
 
 The [October 14 complete Control Plane outage check](reports/control-plane-outage-20261014.md)

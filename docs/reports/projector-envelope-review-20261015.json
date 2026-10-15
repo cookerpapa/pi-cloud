@@ -1,0 +1,145 @@
+{
+  "baseline": "c3aca045",
+  "date": "2026-10-15",
+  "scope": "Projector envelope/decoding/projection review; no runtime changes or live deployment",
+  "tests": {
+    "files": 15,
+    "passed": 89,
+    "failed": 0,
+    "skipped": 0,
+    "commands": [
+      "./node_modules/.bin/vitest run packages/runtime-core/test/tool-invocation-fact.test.ts packages/runtime-core/test/durable-session-publisher.test.ts packages/runtime-core/test/session-projector-handoffs.test.ts packages/runtime-core/test/session-projector-readiness.test.ts packages/runtime-core/test/execution-stream-boundary.test.ts packages/runtime-core/test/run-observations.test.ts packages/control-plane/test/control-tool-dispatcher.test.ts packages/control-plane/test/execution-stream-seal.test.ts packages/control-plane/test/work-finished-projection.test.ts --maxWorkers=2 --testTimeout=15000 --hookTimeout=60000",
+      "./node_modules/.bin/vitest run packages/protocol/test/durable-display.test.ts packages/sandbox-supervisor/test/durable-text-presentation.test.ts packages/sandbox-supervisor/test/durable-run-events.test.ts packages/sandbox-supervisor/test/durable-workflow-cancellation.test.ts packages/event-log/test/ordered-effects.test.ts packages/event-log/test/kafka-session-writer.test.ts --maxWorkers=2 --testTimeout=15000 --hookTimeout=60000"
+    ]
+  },
+  "envelope": {
+    "baseline": "c3aca045",
+    "kind": "synthetic-source-characterization",
+    "note": "Proposed serialization is a sizing sketch, not an implemented or deployable protocol. Native batch and origins are unchanged.",
+    "sizeSamples": [
+      {
+        "tools": 1,
+        "argumentContentBytes": 0,
+        "beforeBytes": 2081,
+        "proposedBytes": 1744,
+        "savedBytes": 337,
+        "savedPercent": 16.194137433926
+      },
+      {
+        "tools": 10,
+        "argumentContentBytes": 0,
+        "beforeBytes": 16021,
+        "proposedBytes": 12350,
+        "savedBytes": 3671,
+        "savedPercent": 22.91367580051183
+      },
+      {
+        "tools": 100,
+        "argumentContentBytes": 0,
+        "beforeBytes": 155718,
+        "proposedBytes": 118653,
+        "savedBytes": 37065,
+        "savedPercent": 23.80264323970254
+      },
+      {
+        "tools": 1,
+        "argumentContentBytes": 360000,
+        "beforeBytes": 362093,
+        "proposedBytes": 361756,
+        "savedBytes": 337,
+        "savedPercent": 0.09307001240012924
+      }
+    ],
+    "lookups": [
+      {
+        "stage": "worker",
+        "tools": 1,
+        "linearFinds": 3,
+        "elementComparisons": 3
+      },
+      {
+        "stage": "projector",
+        "tools": 1,
+        "linearFinds": 3,
+        "elementComparisons": 3
+      },
+      {
+        "stage": "worker",
+        "tools": 10,
+        "linearFinds": 30,
+        "elementComparisons": 165
+      },
+      {
+        "stage": "projector",
+        "tools": 10,
+        "linearFinds": 30,
+        "elementComparisons": 165
+      },
+      {
+        "stage": "worker",
+        "tools": 100,
+        "linearFinds": 300,
+        "elementComparisons": 15150
+      },
+      {
+        "stage": "projector",
+        "tools": 100,
+        "linearFinds": 300,
+        "elementComparisons": 15150
+      }
+    ],
+    "divergence": [
+      {
+        "field": "factId",
+        "publicationAccepted": true,
+        "parserAccepted": true
+      },
+      {
+        "field": "toolCallId",
+        "publicationAccepted": true,
+        "parserAccepted": true
+      },
+      {
+        "field": "leaseId",
+        "publicationAccepted": true,
+        "parserAccepted": true
+      },
+      {
+        "field": "fencingToken",
+        "publicationAccepted": false,
+        "parserAccepted": true
+      }
+    ]
+  },
+  "prefix": {
+    "baseline": "c3aca045",
+    "kind": "isolated-PGlite-real-projection-characterization",
+    "note": "No runtime source changes. A temporary Map.set observation captures the actual private prefix map. Byte counts are logical retained text, not measured RSS.",
+    "before": {
+      "tails": 2,
+      "logicalTextBytes": 262144,
+      "publicLiveViewTextBytes": 262144
+    },
+    "after": {
+      "tails": 1,
+      "logicalTextBytes": 262144,
+      "oldWriterSealOffset": "20",
+      "oldWriterReleased": true,
+      "childTailRetained": true
+    },
+    "afterReset": {
+      "tails": 0
+    }
+  },
+  "display": {
+    "baseline": "c3aca045",
+    "kind": "real-presentation-adapter-synthetic-events",
+    "note": "Runs real DurableRunEvents, prepareExecutionFact and parser; no Kafka network or production state is used.",
+    "nativeExecuteArgumentBytes": 80000,
+    "copiedToolStartedArgumentBytes": 80000,
+    "toolStartedFactBytes": 80794,
+    "nativeToolResultTextBytes": 16384,
+    "copiedToolCompletedOutputBytes": 16384,
+    "toolCompletedFactBytes": 17153
+  }
+}

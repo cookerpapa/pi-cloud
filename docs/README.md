@@ -1,5 +1,12 @@
 # Documentation map
 
+The [October 15 Projector message review](reports/projector-envelope-review-20261015.md)
+records field-by-field removal/retention guidance, repeated intent decoding,
+duplicate Tool presentation bodies and a reproduced child-prefix cleanup gap.
+Its [measurements](reports/projector-envelope-review-20261015.json) and runnable
+isolated probes accompany 89 passing existing contract tests. This is review
+evidence, not an implemented protocol simplification or a new deployment.
+
 The [initial complete Control Plane outage check](reports/control-plane-outage-20261014.md)
 holds the only Control Plane at zero replicas for more than a minute. The active
 Worker keeps renewing its PG lease and writing Kafka, Cube completes accepted
@@ -110,7 +117,7 @@ The report records the corrected model-egress endpoint and updated operator driv
 
 The [reading checkpoint](READING_PROGRESS.md) now covers atomic Worker claim,
 Session-lease admission, native Harness/context opening, Storage publication,
-Kafka commit and fencing. The
+Kafka commit/fencing and Projector consumption/envelope handling. The
 [claim-table review](reports/worker-claim-schema-review-20261010.md)
 preserves this ownership design and records two index-access issues, unused
 physical-Session metadata and Worker naming debt. The owner-approved repairs follow

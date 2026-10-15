@@ -1,12 +1,21 @@
 # Architecture reading checkpoint
 
-Updated: 2026-10-14.
+Updated: 2026-10-15.
 
 The walkthrough explains one component-to-component hop at a time, including
 its message, acknowledgement boundary, failure behavior and design tradeoffs.
 
-Current checkpoint: **Worker Storage → Kafka commit**. ADR-0247 removes the
-ordinary Worker publication ingress discussed before the migration.
+Current checkpoint: **Kafka → Projector: committed-record consumption and message
+envelope review**. Covered one consumer per Control Plane process, partition
+ownership/concurrency, the complete Tool execution-intent envelope, PG projection,
+live presentation and dispatch-commit-before-Cube ordering. Kafka producer fencing
+acts at submission; PG grant expiry alone does not instantly fence a producer.
+The [focused review](reports/projector-envelope-review-20261015.md) records fields
+that can be derived/shared, those required for native recovery and child identity,
+and reproduced projection cleanup/duplication findings. No runtime repair has
+been made in this review. Next hop: Projector → Cube takeover and eventual reply.
+
+ADR-0247 removes the ordinary Worker publication ingress discussed before migration.
 Covered HTTP idempotency keys, accepted versus executed input, atomic intake,
 PG queue readiness and the difference between cloud control records and the
 native append-only log. PG notifications wake Workers; they are hints, not task
@@ -130,7 +139,7 @@ Worker processes across 60/90-second outages and Control Plane SIGKILL.
 Complete native-input/Cube/browser acceptance passes; a concurrent replay-receipt
 read was repaired by using current metadata directly instead of reconstructing an
 Inbox against a stale head. No extra query authority or historical queue copy was added.
-The walkthrough remains at Worker Storage → Kafka commit.
+At the end of that reconnect work, the walkthrough remained at Worker Storage → Kafka commit.
 
 The [native Kafka fencing research](reports/kafka-native-fencing-20261013.md)
 and its isolated experiments are complete. They do not authorize a Kafka fork,
@@ -168,8 +177,9 @@ cover direct publication during Control Plane replacement, delayed initializatio
 and ordered same-Run recovery. The [progress record](reports/session-work-implementation-20261013.md)
 tracks the source, live recovery and rolling-replacement evidence.
 
-Resume with: **Kafka → Projector: consuming one committed record, projecting
-native state and dispatching its bounded effects**. Keep the provider/model
+The subsequent October 15 walkthrough covered **Kafka → Projector: consuming one
+committed record, projecting native state and preparing dispatch**. After discussing
+the focused review above, resume with **Projector → Cube**. Keep the provider/model
 request as a separate walkthrough hop.
 
 ADR-0245 is implemented and deployed as `native-text-c9b8b2a3` (schema 187/topic v15). Pi still calls public
