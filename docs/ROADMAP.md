@@ -1,5 +1,15 @@
 # Implementation roadmap
 
+## Cubelet → guest execution audit
+
+- [x] Review native process startup, guest framing/attachment, fixed Tools,
+      output, cancellation and cleanup against pinned Cube/containerd/Pi source.
+- [x] Run existing suites and isolated path/deadline probes; record evidence,
+      existing design choices and bounded repair proposals in the
+      [review](reports/cubelet-guest-execution-review-20261015.md).
+
+The findings are pending in the backlog. This audit makes no runtime or deployment change.
+
 ## Projector → Cube handoff audit
 
 - [x] Review dispatch commit, memory routing, takeover ACK, partition/Boot changes

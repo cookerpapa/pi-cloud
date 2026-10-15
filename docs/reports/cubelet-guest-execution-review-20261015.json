@@ -1,0 +1,77 @@
+{
+  "reviewedRevision": "c3837bdb2682779dd14e57cb140dc0727eeb6e22",
+  "checkedAt": "2026-10-15T12:55:11.852Z",
+  "piVersion": "1.0.0",
+  "cubeCommit": "8721dd151971ce3c2966482bbd32904ad98f378e",
+  "liveVmFaultInjection": false,
+  "productionMutations": false,
+  "paths": [
+    {
+      "case": "leading-at",
+      "nativeReadsExpectedFile": true,
+      "cloudIsError": true,
+      "cloudReadsDifferentFile": false
+    },
+    {
+      "case": "unicode-space",
+      "nativeReadsExpectedFile": true,
+      "cloudIsError": true,
+      "cloudReadsDifferentFile": false
+    },
+    {
+      "case": "decomposed-unicode",
+      "nativeReadsExpectedFile": true,
+      "cloudIsError": true,
+      "cloudReadsDifferentFile": false
+    },
+    {
+      "case": "curly-apostrophe",
+      "nativeReadsExpectedFile": true,
+      "cloudIsError": true,
+      "cloudReadsDifferentFile": false
+    },
+    {
+      "case": "literal-at-collision",
+      "nativeReadsExpectedFile": true,
+      "cloudIsError": false,
+      "cloudReadsDifferentFile": true
+    }
+  ],
+  "writeThenReadSamePath": {
+    "writeSucceeded": true,
+    "readFailed": true
+  },
+  "attachment": {
+    "fixture": "code-owned default environment",
+    "initializationBytes": 747,
+    "consumedFieldBytes": 128,
+    "unusedOperationFields": ["environment", "workspaceSeed"],
+    "proposedWireSizeOrProductionLatencyNotMeasured": true
+  },
+  "goVersion": "go version go1.26.0 linux/amd64",
+  "nativeExecutionBaselinePassed": true,
+  "nativeProbes": [
+    {
+      "case": "cleanup-kill-deadline",
+      "killHasDeadline": false,
+      "returnedWhileKillStalled": false,
+      "parentDeadlineMs": 20,
+      "observedAfterDeadlineMs": 80
+    },
+    {
+      "case": "expired-setup-start",
+      "launcherStarts": 1,
+      "startContextAlreadyCancelled": false,
+      "parentAlreadyExpired": true,
+      "userCommandExecutionNotClaimed": true
+    }
+  ],
+  "sourceSha256": {
+    "deploy/cubesandbox/runtime-build.json": "ad6d549b06254853bc4bc99bdf3fbc8c413e146f858e55bc48082f6a13a53536",
+    "packages/tool-sandbox/src/native-tools.ts": "ff9c4179816924a8bec93e3b7565736b878013d333594b6562161c2bd3d1027a",
+    "packages/tool-sandbox/src/envd-tool-exec.ts": "987e0ecece9ed77eeddc30e64401905e977a6ffa5eae65c572edb0a268854cd9",
+    "packages/tool-sandbox/src/cube-tool-scope.ts": "6803aafba2c1a05e620426b24da861bf9168ba3ffd140754c8b450b72a1b2109",
+    "packages/tool-sandbox/src/execution-cgroup.ts": "09511fd0fd4a2446574a0c30e03aa751d7a37024e55c2a37cc3e1b0d144de208",
+    "packages/tool-sandbox/src/tool-worker.ts": "98fa43be9177f2b7f7c057a88ba65715f4aca39b5c5c72cc5ad09e95183313f4"
+  }
+}

@@ -28,6 +28,21 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## Cubelet → guest execution review
+
+The [October 15 review](reports/cubelet-guest-execution-review-20261015.md) is complete
+against `c3837bdb`, with existing suites and reproducible isolated evidence.
+The serving runtime remains `handoff-6ab91bb7`; these repairs are pending.
+
+- [ ] R15G-01: bound the final cleanup-helper Kill after its parent budget expires.
+      Preserve UNKNOWN/unsafe outcomes, operation scope and Control Plane lifecycle ownership.
+- [ ] R15G-02: align custom Read path interpretation with pinned Pi and native
+      Edit/Write, including alias/Unicode and ambiguous-name contract cases.
+- [ ] O15G-01: separate ordinary Tool attachment parameters from full VM
+      initialization; remove unused recipe/seed fields through an explicit matched protocol change.
+- [ ] O15G-02: recheck expiry before issuing native Start; do not call an
+      already-issued or ambiguously acknowledged Start definitely unexecuted.
+
 ## Projector → Cube handoff review
 
 The [October 15 handoff audit](reports/projector-cube-handoff-review-20261015.md)

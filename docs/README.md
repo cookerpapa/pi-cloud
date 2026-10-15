@@ -1,5 +1,12 @@
 # Documentation map
 
+The [October 15 Cubelet → guest execution review](reports/cubelet-guest-execution-review-20261015.md)
+records a missing deadline in cleanup, native Read path drift, unused per-Tool
+initialization fields and an expired-setup startup optimization. Its
+[isolated evidence](reports/cubelet-guest-execution-review-20261015.json) includes
+SDK comparisons and native driver fault injection. This review does not change
+the deployed runtime.
+
 The [October 15 Projector → Cube handoff review](reports/projector-cube-handoff-review-20261015.md)
 records failure-notification coupling, refusal evidence classification, late
 removed-VM admission and a binding lookup optimization. Its

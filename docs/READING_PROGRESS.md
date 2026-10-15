@@ -5,7 +5,16 @@ Updated: 2026-10-15.
 The walkthrough explains one component-to-component hop at a time, including
 its message, acknowledgement boundary, failure behavior and design tradeoffs.
 
-Current checkpoint: **Projector → Cube: dispatch and takeover acknowledgement**.
+Current checkpoint: **Cubelet → the VM's fixed Tool execution process**.
+Explained per-operation native process startup in a reusable VM, the root scope
+launcher and unprivileged Tool process, working-directory attachment, Bash output,
+ordinary process-group cancellation and stronger timeout/fault cleanup. Bash uses
+the cloud guest adapter; the guest does not create a Pi Harness or model loop.
+The [focused review](reports/cubelet-guest-execution-review-20261015.md) is complete,
+with findings recorded for follow-up. No runtime changed in this audit.
+Next: guest result → Cubelet's completion adapter; Kafka delivery follows.
+
+Previously covered **Projector → Cube: dispatch and takeover acknowledgement**.
 Explained confirmed dispatch offset before HTTP delivery, in-memory binding
 lookup, bounded takeover ACK versus Tool completion, and the intentional UNKNOWN
 window without automatic Shell replay. The actual vendor route is Cube API →
@@ -14,7 +23,6 @@ records implementation findings; the owner approved the
 [repair](reports/projector-cube-handoff-repair-20261015.md) under ADR-0250,
 now deployed and accepted as `handoff-6ab91bb7`.
 Multi-operation-per-record remains a Pi upgrade check, without a protocol expansion.
-The next hop is Cubelet → the VM's fixed Tool process.
 
 Previously covered Kafka → Projector: one consumer per Control Plane process, partition
 ownership/concurrency, the complete Tool execution-intent envelope, PG projection,
