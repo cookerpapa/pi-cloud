@@ -153,11 +153,11 @@ export class DirectSessionKafkaBus implements AcceptedFactBus {
     try {
       assertSessionPublication(entry.publication, fact);
       value = encodeSessionLogFact(fact);
-      if (Buffer.byteLength(value) > MAX_EXECUTION_FACT_BYTES)
-        throw new PublicationNotSentError("Session record exceeds its transport budget");
     } catch (cause) {
       throw new PublicationNotSentError("Session record is invalid", { cause });
     }
+    if (Buffer.byteLength(value) > MAX_EXECUTION_FACT_BYTES)
+      throw new PublicationNotSentError("Session record exceeds its transport budget");
     return entry.writer.append({ factId: fact.factId, sessionId: fact.scope.piSessionId, value });
   }
   async forget(scope: AcceptedFactScope): Promise<void> {
