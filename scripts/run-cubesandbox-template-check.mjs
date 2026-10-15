@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -119,32 +119,7 @@ async function writeEnvdFile(baseUrl, path, value) {
   assert(response.ok, `envd file write failed: HTTP ${String(response.status)}`);
   await response.body?.cancel();
 }
-
-const contextSha256 = (name) =>
-  createHash("sha256").update(`pi-cloud-template-check-${name}`, "utf8").digest("hex");
 const activationId = randomUUID();
-const environment = (imageRevision) => ({
-  environmentVersionId: randomUUID(),
-  versionNumber: 1,
-  profileKey: "pi-cloud-fullstack",
-  profileVersion: "1",
-  imageRevision,
-  specSha256: "e4195cfc4c9e79286d47618d704dbe32dd4141eaa0ce21d82f72699e360f9630",
-  recipe: {
-    schemaVersion: 1,
-    setupCommands: [],
-    verificationCommands: [
-      {
-        id: "workspace-root",
-        command: 'test "$PWD" = /workspace && test -w .',
-        cwd: ".",
-        timeoutMs: 10_000,
-        network: "none",
-      },
-    ],
-  },
-  recipeSha256: "2d6c5260fe7bc3901e454ff93106dc5ed263d6edbbabf7bafdf852021289e5ba",
-});
 const operation = (toolName, args) => ({
   toolBrokerProtocolVersion: 1,
   type: "tool_sandbox.operation",
@@ -270,17 +245,18 @@ try {
   );
   await envdRun(baseUrl, "/usr/bin/pkill -f '^python3 -m http.server 5173 '");
 
-  const initialization = {
-    toolWorkerProtocolVersion: 5,
-    type: "worker.initialize",
+  const attachment = {
     activationId,
     toolRoot: "/workspace",
-    environment: environment(evidence.imageRevision),
-    workspaceSeed: { kind: "sample_java" },
   };
   const runTool = async (request) => {
     const path = `/tmp/pi-cloud-envd-${randomUUID()}.json`;
-    await writeEnvdFile(baseUrl, path, { mode: "operation", initialization, operation: request });
+    await writeEnvdFile(baseUrl, path, {
+      toolWorkerProtocolVersion: 6,
+      type: "worker.operation",
+      attachment,
+      request,
+    });
     const result = await envdRun(
       baseUrl,
       `/bin/chown 1000:1000 ${path} && /bin/chmod 0400 ${path} && /usr/bin/setpriv --reuid 1000 --regid 1000 --clear-groups --no-new-privs /usr/local/bin/node /opt/pi-cloud/bin/envd-tool-exec.mjs ${path}`,

@@ -30,7 +30,7 @@ function fixture() {
     context,
     result: {
       output: {
-        toolWorkerProtocolVersion: 5,
+        toolWorkerProtocolVersion: 6,
         type: "worker.operation_result",
         scopeStopRequired: false,
         response: {
@@ -192,7 +192,7 @@ it.each(["workspace_attach_invalid", "tool_worker_failed"])(
   async (code) => {
     const f = fixture();
     f.packet.result!.output = {
-      toolWorkerProtocolVersion: 5,
+      toolWorkerProtocolVersion: 6,
       type: "worker.failed",
       code,
       message: "Guest preparation failed",

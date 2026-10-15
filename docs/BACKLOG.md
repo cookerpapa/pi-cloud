@@ -32,7 +32,9 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 The [October 15 review](reports/cubelet-guest-execution-review-20261015.md) is complete
 against `c3837bdb`, with existing suites and reproducible isolated evidence.
-The serving runtime remains `handoff-6ab91bb7`; these repairs are pending.
+The serving runtime remains `handoff-6ab91bb7`. The owner approved all four
+repairs under [ADR-0251](adr/0251-guest-attachment-and-execution-bounds.md);
+implementation, verification and matched delivery are pending.
 
 - [ ] R15G-01: bound the final cleanup-helper Kill after its parent budget expires.
       Preserve UNKNOWN/unsafe outcomes, operation scope and Control Plane lifecycle ownership.

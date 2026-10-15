@@ -2,7 +2,7 @@
   "upstreamRepository": "https://github.com/TencentCloud/CubeSandbox.git",
   "upstreamCommit": "8721dd151971ce3c2966482bbd32904ad98f378e",
   "managedProtocolVersion": 7,
-  "guestProtocolVersion": 5,
+  "guestProtocolVersion": 6,
   "patches": [
     {
       "file": "0001-accurate-sandbox-state.patch",
@@ -31,6 +31,10 @@
     {
       "file": "0007-live-vm-tool-admission.patch",
       "sha256": "ba2b8cdcab3287ddd1ac0b93e85ff1ade64d3722c5a354e7fa36582b264f1452"
+    },
+    {
+      "file": "0008-bounded-tool-process-lifetime.patch",
+      "sha256": "b1ceb09e85b217c43dd29bb2bede99813d07d0d03094e606eaed3413c44e4d09"
     }
   ],
   "buildImages": {

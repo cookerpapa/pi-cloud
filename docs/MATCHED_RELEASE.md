@@ -55,7 +55,9 @@ node --import tsx scripts/run-matched-release.mjs apply /private/releases/candid
 Apply repeats artifact preflight and imports content before disruption. It requires
 settled Runs and a complete native inventory with no VM on any node. It stops
 Web/SSH/Workers, lets the still-running Control Plane close writers/project seals,
-then stops Control Plane/Volume Gateway and checks quiescence again. It reconciles
+then stops Control Plane/Volume Gateway and checks quiescence again, including
+removal of all retired Tool bindings. Guest attachment protocol changes cannot
+carry old descriptor bodies into the new runtime. It reconciles
 native Cube through the existing declarative Helm path, registers the prepared
 guest and deploys the matched application. Only successful deployment replaces
 the serving image catalog.

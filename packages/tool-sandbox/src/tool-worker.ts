@@ -11,6 +11,7 @@ import {
   type EnvironmentToolName,
   type EnvironmentToolchainReport,
   type ToolWorkerInput,
+  type ToolExecutionAttachment,
   type ToolSandboxOperationRequest,
   type ToolSandboxOperationResponse,
   type ToolWebProxyBootstrap,
@@ -850,9 +851,7 @@ function validateAttachedInitialization(): Promise<void> {
   );
 }
 
-export async function attachToolExecution(
-  message: Extract<ToolWorkerInput, { type: "worker.initialize" }>,
-): Promise<string> {
+export async function attachToolExecution(message: ToolExecutionAttachment): Promise<string> {
   await selectToolRoot(message.toolRoot);
   safeToolEnvironment(message.webProxy);
   await validateAttachedInitialization();

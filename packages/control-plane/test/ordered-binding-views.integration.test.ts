@@ -16,7 +16,6 @@ import { SessionControlOutbox } from "../../runtime-core/src/session-control-out
 import { HttpPublicationClient } from "../../runtime-core/src/http-publication-client.ts";
 import { PostgresSandboxBindings } from "../../sandbox-control/src/sandbox-bindings.ts";
 import { SandboxBindingView } from "../../sandbox-control/src/sandbox-binding-view.ts";
-import type { SandboxExecutionDescriptor } from "../../sandbox-control/src/sandbox-execution.ts";
 import { ControlPlaneStore, createPrivateTenant } from "../src/index.ts";
 import { SessionPublicationService } from "../src/session-publication-service.ts";
 import { InputQueueView } from "../src/input-queue-view.ts";
@@ -189,14 +188,17 @@ it.skipIf(!postgres || !brokers)(
       await bindings.register(
         binding,
         {
-          version: 1,
+          version: 2,
           target: {
             apiUrl: "http://cube.test",
             sandboxId: "fixture",
             nodeId: "node",
             bootId: randomUUID(),
           },
-          initialization: {} as SandboxExecutionDescriptor["initialization"],
+          attachment: {
+            activationId: "00000000-0000-4000-8000-000000000001",
+            toolRoot: "/workspace",
+          },
         },
         {
           assignment,

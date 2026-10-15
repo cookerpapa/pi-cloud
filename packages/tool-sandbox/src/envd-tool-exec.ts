@@ -1,6 +1,5 @@
 import {
   parseToolWorkerInput,
-  type ToolWorkerInput,
   type ToolWorkerOutput,
   type NativeToolUpdate,
   type ToolSandboxOperationResponse,
@@ -34,68 +33,25 @@ async function readInput(path: string): Promise<unknown> {
   }
 }
 
-function envelope(value: unknown): {
-  initialization: Extract<ToolWorkerInput, { type: "worker.initialize" }>;
-  operation?: Extract<ToolWorkerInput, { type: "worker.operation" }>;
-} {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new ToolWorkerError("tool_worker_protocol_error", "Tool worker input was invalid");
+async function main(): Promise<ToolWorkerOutput> {
+  const input = parseToolWorkerInput(await readInput(inputPath(process.argv[2])));
+  if (input.type === "worker.initialize") {
+    const environment = await initializeToolExecution(input);
+    return {
+      toolWorkerProtocolVersion: 6,
+      type: "worker.ready",
+      activationId: input.activationId,
+      environment,
+    };
   }
-  const input = value as Record<string, unknown>;
-  const keys = Object.keys(input).sort();
-  if (
-    (keys.join(",") !== "initialization,mode" &&
-      keys.join(",") !== "initialization,mode,operation") ||
-    (input.mode !== "initialize" && input.mode !== "operation")
-  ) {
-    throw new ToolWorkerError("tool_worker_protocol_error", "Tool worker input was invalid");
-  }
-  const initialization = parseToolWorkerInput(input.initialization);
-  if (initialization.type !== "worker.initialize") {
-    throw new ToolWorkerError("tool_worker_protocol_error", "Tool worker input was invalid");
-  }
-  if (input.mode === "initialize") {
-    if (input.operation !== undefined) {
-      throw new ToolWorkerError("tool_worker_protocol_error", "Tool worker input was invalid");
-    }
-    return { initialization };
-  }
-  const operation = parseToolWorkerInput({
-    toolWorkerProtocolVersion: 5,
-    type: "worker.operation",
-    request: input.operation,
-  });
-  if (
-    operation.type !== "worker.operation" ||
-    operation.request.activationId !== initialization.activationId
-  ) {
+  const request = input.request;
+  if (request.activationId !== input.attachment.activationId)
     throw new ToolWorkerError(
       "tool_worker_identity_mismatch",
       "Tool worker identity did not match",
     );
-  }
-  return { initialization, operation };
-}
-
-async function main(): Promise<ToolWorkerOutput> {
-  const input = envelope(await readInput(inputPath(process.argv[2])));
-  if (input.operation === undefined) {
-    const environment = await initializeToolExecution(input.initialization);
-    return {
-      toolWorkerProtocolVersion: 5,
-      type: "worker.ready",
-      activationId: input.initialization.activationId,
-      environment,
-    };
-  }
-  const request = input.operation.request;
   const control = toolCancellationInput(process.stdin, request.operationId);
   try {
-    if (request.operation !== "tool.execute")
-      throw new ToolWorkerError(
-        "workflow_transport_required",
-        "Workflow execution requires the scoped duplex process transport",
-      );
     let sequence = 0;
     let draining: Promise<unknown> | undefined;
     let latest: NativeToolUpdate | undefined;
@@ -123,7 +79,7 @@ async function main(): Promise<ToolWorkerOutput> {
     const signal = AbortSignal.any([timeout, control.signal]);
     const execution: Promise<ToolSandboxOperationResponse> = executeAttachedNativeTool(
       request,
-      input.initialization,
+      input.attachment,
       signal,
       progress,
     ).then((event) => ({
@@ -151,7 +107,7 @@ async function main(): Promise<ToolWorkerOutput> {
     }
     while (draining) await draining;
     return {
-      toolWorkerProtocolVersion: 5,
+      toolWorkerProtocolVersion: 6,
       type: "worker.operation_result",
       // Normal Agent cancellation follows Pi's process-group boundary. A setsid
       // child is deliberately outside that boundary; only timeout/fault cleanup
@@ -172,7 +128,7 @@ try {
       ? error
       : new ToolWorkerError("tool_worker_failed", "Tool worker failed", true);
   const output: ToolWorkerOutput = {
-    toolWorkerProtocolVersion: 5,
+    toolWorkerProtocolVersion: 6,
     type: "worker.failed",
     code: failure.code,
     message: failure.message,

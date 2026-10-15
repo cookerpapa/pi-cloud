@@ -193,28 +193,14 @@ describe("credential-free Tool Sandbox worker", () => {
     }
   });
 
-  it("attaches an existing persistent Volume independently of its original seed kind", async () => {
+  it("attaches existing Workspace bytes without an environment recipe or seed", async () => {
     const workspace = await mkdtemp(resolve(tmpdir(), "pi-cloud-volume-authority-"));
     const base = {
-      toolWorkerProtocolVersion: 5 as const,
-      type: "worker.initialize" as const,
       activationId: "10000000-0000-4000-8000-000000000001",
       toolRoot: workspace,
-      environment: recipeEnvironment(DEFAULT_PROJECT_ENVIRONMENT_RECIPE),
     };
     try {
-      await expect(
-        attachToolExecution({
-          ...base,
-          workspaceSeed: {
-            kind: "bundle",
-            bundle: encodeWorkspaceBlob(createWorkspaceSeed([])),
-          },
-        }),
-      ).resolves.toBe(workspace);
-      await expect(
-        attachToolExecution({ ...base, workspaceSeed: { kind: "sample_java" } }),
-      ).resolves.toBe(workspace);
+      await expect(attachToolExecution(base)).resolves.toBe(workspace);
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
@@ -224,12 +210,8 @@ describe("credential-free Tool Sandbox worker", () => {
     const workspace = await mkdtemp(resolve(tmpdir(), "pi-cloud-seed-safe-"));
     try {
       await attachToolExecution({
-        toolWorkerProtocolVersion: 5,
-        type: "worker.initialize",
         activationId: "10000000-0000-4000-8000-000000000001",
         toolRoot: workspace,
-        environment: recipeEnvironment(DEFAULT_PROJECT_ENVIRONMENT_RECIPE),
-        workspaceSeed: { kind: "bundle", bundle: encodeWorkspaceBlob(createWorkspaceSeed([])) },
       });
       await writeFile(resolve(workspace, "keep.txt"), "another Session owns this");
       await seedToolWorkspace(encodeWorkspaceBlob(createWorkspaceSeed([])));

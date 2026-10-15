@@ -2,8 +2,10 @@
 
 Date: 2026-10-15. Baseline `c3837bdb`; serving release `handoff-6ab91bb7`.
 This is a completed review, not a runtime change or deployment. Evidence:
-[isolated measurements](cubelet-guest-execution-review-20261015.json) and
-[reproduction instructions](../../scripts/experiments/review-20261015-guest/README.md).
+[isolated measurements](cubelet-guest-execution-review-20261015.json). The original
+reproduction scripts remain in Git `a0886962:scripts/experiments/review-20261015-guest/`;
+the subsequently approved [repair](cubelet-guest-execution-repair-20261015.md)
+replaces them with maintained regression tests.
 
 ## Scope and assessment
 

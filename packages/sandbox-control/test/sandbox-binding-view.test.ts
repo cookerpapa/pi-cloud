@@ -16,14 +16,14 @@ function fixture() {
     baseUrl: "http://owner.test",
     dispatchClosed: false,
     descriptor: {
-      version: 1,
+      version: 2,
       target: {
         apiUrl: "http://cube.test",
         sandboxId: "cube",
         nodeId: "node",
         bootId: randomUUID(),
       },
-      initialization: {} as SandboxBindingRecord["descriptor"]["initialization"],
+      attachment: { activationId: "00000000-0000-4000-8000-000000000001", toolRoot: "/workspace" },
     },
     snapshot: {} as SandboxBindingRecord["snapshot"],
   };

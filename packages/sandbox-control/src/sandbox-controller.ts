@@ -715,7 +715,7 @@ export class SandboxController {
         environment: handle.environment,
         workspaceSeed: { kind: "sample_java" as const },
         policy: this.#provider.defaultPolicy,
-        toolRoot: descriptor.initialization.toolRoot,
+        toolRoot: descriptor.attachment.toolRoot,
         sandboxProfileKey: snapshot.sandboxProfileKey,
       };
       const binding: ManagedToolBinding = {

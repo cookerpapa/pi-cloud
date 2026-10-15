@@ -22,5 +22,6 @@ export {
   type ToolSandboxOperationResponse,
   type ToolWebProxyBootstrap,
   type ToolWorkerInput,
+  type ToolExecutionAttachment,
   type ToolWorkerOutput,
 } from "./tool-sandbox.ts";

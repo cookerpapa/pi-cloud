@@ -8,7 +8,13 @@
       existing design choices and bounded repair proposals in the
       [review](reports/cubelet-guest-execution-review-20261015.md).
 
-The findings are pending in the backlog. This audit makes no runtime or deployment change.
+The review itself made no runtime or deployment change. The owner subsequently
+approved all four repairs under [ADR-0251](adr/0251-guest-attachment-and-execution-bounds.md).
+
+- [ ] G1: bound native cleanup and refuse Start after known expiry/cancellation.
+- [ ] G2: align guest Read path semantics and subsequent path checks with pinned Pi.
+- [ ] G3: replace per-Tool initialization bodies with the strict attachment contract.
+- [ ] G4: required gates, matched guest 6 release, live acceptance and cleanup.
 
 ## Projector → Cube handoff audit
 

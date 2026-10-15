@@ -549,15 +549,11 @@ describe("PostgreSQL Sandbox control ownership", () => {
       bindings.register(
         bindingId,
         {
-          version: 1,
+          version: 2,
           target: { ...target, sandboxId },
-          initialization: {
-            toolWorkerProtocolVersion: 5,
-            type: "worker.initialize",
+          attachment: {
             activationId: bindingId,
             toolRoot: "/workspace",
-            environment: project.environment,
-            workspaceSeed: { kind: "empty" },
           },
         } as never,
         {
@@ -1230,20 +1226,16 @@ describe("PostgreSQL Sandbox control ownership", () => {
       async () => {},
     );
     const descriptor = {
-      version: 1 as const,
+      version: 2 as const,
       target: {
         apiUrl: "http://cube.test",
         sandboxId: "aabbccddeeff00112233445566778899",
         nodeId: "node-test",
         bootId: crypto.randomUUID(),
       },
-      initialization: {
-        toolWorkerProtocolVersion: 5 as const,
-        type: "worker.initialize" as const,
+      attachment: {
         activationId: activation.activationId,
         toolRoot: "/workspace",
-        environment,
-        workspaceSeed: { kind: "sample_java" as const },
       },
     };
     for (const binding of [activation, childActivation])
@@ -1696,14 +1688,17 @@ async function orderedClosureFixture() {
     await bindings.register(
       bindingId,
       {
-        version: 1,
+        version: 2,
         target: {
           apiUrl: "http://cube.test",
           sandboxId: "a".repeat(32),
           nodeId: "node",
           bootId: randomUUID(),
         },
-        initialization: {} as never,
+        attachment: {
+          activationId: "00000000-0000-4000-8000-000000000001",
+          toolRoot: "/workspace",
+        },
       },
       {
         assignment,

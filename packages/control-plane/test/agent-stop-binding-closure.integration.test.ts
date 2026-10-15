@@ -160,14 +160,17 @@ it.skipIf(!postgres || !brokers)(
       await bindings.register(
         bindingId,
         {
-          version: 1,
+          version: 2,
           target: {
             apiUrl: "http://cube.test",
             sandboxId: "a".repeat(32),
             nodeId: "node",
             bootId: randomUUID(),
           },
-          initialization: {} as never,
+          attachment: {
+            activationId: "00000000-0000-4000-8000-000000000001",
+            toolRoot: "/workspace",
+          },
         },
         {
           assignment,

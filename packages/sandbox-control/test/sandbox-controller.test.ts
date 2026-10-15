@@ -186,20 +186,16 @@ function providerFixture() {
     providerId: "cubesandbox",
     async describeExecution(handle, bindingId, toolRoot) {
       return {
-        version: 1,
+        version: 2,
         target: {
           apiUrl: "http://cube.test",
           sandboxId: handle.runtimeName,
           nodeId: "node-test",
           bootId: "11111111-1111-4111-8111-111111111111",
         },
-        initialization: {
-          toolWorkerProtocolVersion: 5,
-          type: "worker.initialize",
+        attachment: {
           activationId: bindingId,
           toolRoot,
-          environment: handle.environment,
-          workspaceSeed: { kind: "sample_java" },
         },
       };
     },
@@ -638,9 +634,11 @@ describe("provider-backed Sandbox controller", () => {
         assignment.workspaceId,
       ]);
       expect(created.map((spec) => spec.volumeMountPath)).toEqual(["/workspace", "/workspace"]);
-      expect(
-        [...bindings.rows.values()].map((row) => row.descriptor.initialization.toolRoot),
-      ).toEqual(["/workspace", "/workspace/worktrees/a", "/workspace/worktrees/b"]);
+      expect([...bindings.rows.values()].map((row) => row.descriptor.attachment.toolRoot)).toEqual([
+        "/workspace",
+        "/workspace/worktrees/a",
+        "/workspace/worktrees/b",
+      ]);
       expect(one.continuityId).toBe(two.continuityId);
       expect(root.continuityId).not.toBe(one.continuityId);
       await manager.release({
@@ -1614,7 +1612,7 @@ describe("provider-backed Sandbox controller", () => {
     const created = await manager.create(createRequest);
     const row = bindings.rows.get(created.activationId)!;
     expect(row.snapshot.assignment.executionReference).toBe(assignment.executionReference);
-    expect(row.descriptor.initialization.toolRoot).toBe(createRequest.toolRoot);
+    expect(row.descriptor.attachment.toolRoot).toBe(createRequest.toolRoot);
     expect(row.descriptor.target.sandboxId).toBe(
       fixture.createSpec && "pi-cloud-tool-" + ACTIVATION_ID,
     );

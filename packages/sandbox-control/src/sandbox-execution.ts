@@ -1,4 +1,4 @@
-import type { ToolWorkerInput } from "@pi-cloud/protocol";
+import type { ToolExecutionAttachment } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
 
 export function executionTargetId(target: SandboxExecutionTarget): string {
@@ -15,9 +15,9 @@ export type SandboxExecutionTarget = Readonly<{
   bootId: string;
 }>;
 export type SandboxExecutionDescriptor = Readonly<{
-  version: 1;
+  version: 2;
   target: SandboxExecutionTarget;
-  initialization: Extract<ToolWorkerInput, { type: "worker.initialize" }>;
+  attachment: ToolExecutionAttachment;
 }>;
 
 export type SandboxBindingSnapshot = Readonly<{

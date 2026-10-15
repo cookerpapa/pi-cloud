@@ -6,12 +6,7 @@ import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
-  DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
-  DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
-  parseToolWorkerOutput,
-} from "@pi-cloud/protocol";
+import { parseToolWorkerOutput } from "@pi-cloud/protocol";
 
 const exec = promisify(execFile);
 const owned: string[] = [];
@@ -26,45 +21,39 @@ async function fixture() {
   await mkdir(cwd);
   return { root, cwd, marker };
 }
-async function run(cwd: string, command: string) {
+async function run(
+  cwd: string,
+  command: string,
+  transform: (input: Record<string, unknown>) => unknown = (input) => input,
+) {
   const activationId = randomUUID(),
     operationId = randomUUID();
   const path = `/tmp/pi-cloud-envd-${operationId}.json`;
   owned.push(path);
   await writeFile(
     path,
-    JSON.stringify({
-      mode: "operation",
-      initialization: {
-        toolWorkerProtocolVersion: 5,
-        type: "worker.initialize",
-        activationId,
-        toolRoot: cwd,
-        environment: {
-          environmentVersionId: randomUUID(),
-          versionNumber: 1,
-          profileKey: "pi-cloud-fullstack",
-          profileVersion: "1",
-          imageRevision: "cwd-test",
-          specSha256: DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
-          recipe: DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
-          recipeSha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+    JSON.stringify(
+      transform({
+        toolWorkerProtocolVersion: 6,
+        type: "worker.operation",
+        attachment: {
+          activationId,
+          toolRoot: cwd,
         },
-        workspaceSeed: { kind: "sample_java" },
-      },
-      operation: {
-        toolBrokerProtocolVersion: 1,
-        type: "tool_sandbox.operation",
-        operation: "tool.execute",
-        activationId,
-        operationId,
-        toolCallId: "cwd-call",
-        toolName: "bash",
-        args: { command },
-        timeoutMs: 10000,
-        maximumOutputBytes: 51200,
-      },
-    }),
+        request: {
+          toolBrokerProtocolVersion: 1,
+          type: "tool_sandbox.operation",
+          operation: "tool.execute",
+          activationId,
+          operationId,
+          toolCallId: "cwd-call",
+          toolName: "bash",
+          args: { command },
+          timeoutMs: 10000,
+          maximumOutputBytes: 51200,
+        },
+      }),
+    ),
     { mode: 0o600 },
   );
   const result = await exec(
@@ -74,6 +63,31 @@ async function run(cwd: string, command: string) {
   );
   return parseToolWorkerOutput(JSON.parse(result.stdout.trim().split("\n").at(-1)!));
 }
+
+it.each(["attachment identity", "old version", "unused initializer", "old wrapper"])(
+  "rejects invalid execution attachment before command effects: %s",
+  async (kind) => {
+    const f = await fixture();
+    const result = await run(f.cwd, `printf executed > '${f.marker}'`, (input) => {
+      if (kind === "attachment identity")
+        return {
+          ...input,
+          attachment: { ...(input.attachment as object), activationId: randomUUID() },
+        };
+      if (kind === "old version") return { ...input, toolWorkerProtocolVersion: 5 };
+      if (kind === "unused initializer")
+        return {
+          ...input,
+          attachment: { ...(input.attachment as object), workspaceSeed: { kind: "sample_java" } },
+        };
+      return { mode: "operation", initialization: input.attachment, operation: input.request };
+    });
+    expect(result).toMatchObject({ type: "worker.failed" });
+    if (kind === "attachment identity")
+      expect(result).toMatchObject({ code: "tool_worker_identity_mismatch" });
+    await expect(readFile(f.marker)).rejects.toMatchObject({ code: "ENOENT" });
+  },
+);
 
 it("returns a native Tool error after cwd deletion without starting the command", async () => {
   const f = await fixture();

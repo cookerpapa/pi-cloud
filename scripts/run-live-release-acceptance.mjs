@@ -284,14 +284,25 @@ try {
   const readRun = await api.acceptTurn(
     session.sessionId,
     "严格分别调用一次 read，参数为这两个 JSON 对象：" +
-      JSON.stringify(files.map((f) => ({ path: f.upload.path, offset: f.offset, limit: 1 }))) +
-      "。不要用 bash，不要继续读剩余内容，不要搜索或委派。两次读取后只回复两个短标签 WIDE_ASCII_BEGIN_ 和 WIDE_UTF8_BEGIN_，不要复制标签后面的任何正文或重复字符。最终回答最多两行。",
+      JSON.stringify(
+        files.map((f) => ({ path: `@${f.upload.path}`, offset: f.offset, limit: 1 })),
+      ) +
+      "。保留 path 开头的 @，不要修改路径字符串。不要用 bash，不要继续读剩余内容，不要搜索或委派。两次读取后只回复两个短标签 WIDE_ASCII_BEGIN_ 和 WIDE_UTF8_BEGIN_，不要复制标签后面的任何正文或重复字符。最终回答最多两行。",
     newIdempotencyKey("release-read"),
     "low",
   );
   const history = await completed(readRun.runId);
   const results = history.filter((r) => r.entry.kind === "pi.tool-result");
   const modelResults = nativeMessages(history).filter((m) => m.role === "toolResult");
+  const readCalls = nativeMessages(history)
+    .filter((m) => m.role === "assistant")
+    .flatMap((m) => m.content.filter((part) => part.type === "toolCall" && part.name === "read"));
+  assert.deepEqual(
+    readCalls.map((call) => call.arguments.path).sort(),
+    files.map((file) => `@${file.upload.path}`).sort(),
+    "The live Read check must exercise native @ path interpretation",
+  );
+  report.readPathAliases = true;
   assert.equal(modelResults.length, 2);
   assert(modelResults.every((r) => r.toolName === "read" && !r.isError));
   report.read = [];

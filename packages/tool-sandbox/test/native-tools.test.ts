@@ -40,6 +40,105 @@ function request(
 }
 
 describe("whole native tools at the execution source", () => {
+  it.each([
+    { name: "leading @", file: "sample.txt", path: "@sample.txt" },
+    { name: "doubled @", file: "@literal.txt", path: "@@literal.txt" },
+    { name: "Unicode space", file: "my file.txt", path: "my\u00a0file.txt" },
+    { name: "timestamp space", file: "screen 1.00\u202fPM.txt", path: "screen 1.00 PM.txt" },
+    { name: "decomposed filename", file: "cafe\u0301.txt", path: "caf\u00e9.txt" },
+    { name: "curly apostrophe", file: "it\u2019s.txt", path: "it's.txt" },
+    { name: "combined variants", file: "cafe\u0301\u2019s.txt", path: "caf\u00e9's.txt" },
+    { name: "literal @ collision", file: "target.txt", path: "@target.txt", collision: true },
+  ])("uses Pi's Read target selection ($name)", async (sample) => {
+    const root = await directory();
+    await writeFile(join(root, sample.file), "expected file\n");
+    if (sample.collision) await writeFile(join(root, sample.path), "different file\n");
+    const args = { path: sample.path };
+    const native = await createReadTool().execute(
+      args,
+      {
+        env: new NodeExecutionEnv({ cwd: root }),
+        diagnostic: () => {},
+      } as unknown as ToolExecutionApi,
+      BACKGROUND_CONTEXT,
+    );
+    const cloud = await executeNativeTool(
+      request("read", args),
+      root,
+      new AbortController().signal,
+      () => {},
+    );
+    expect(cloud.isError).toBe(false);
+    expect(cloud.result.content).toEqual(native.content);
+    expect(cloud.result.content).toEqual([{ type: "text", text: "expected file\n" }]);
+  });
+
+  it("uses the same interpreted path for Write, Edit and Read", async () => {
+    const root = await directory(),
+      signal = new AbortController().signal;
+    const path = "@my\u00a0file.txt";
+    expect(
+      (
+        await executeNativeTool(
+          request("write", { path, content: "before" }),
+          root,
+          signal,
+          () => {},
+        )
+      ).isError,
+    ).toBe(false);
+    expect(
+      (
+        await executeNativeTool(
+          request("edit", { path, edits: [{ oldText: "before", newText: "after" }] }),
+          root,
+          signal,
+          () => {},
+        )
+      ).isError,
+    ).toBe(false);
+    const read = await executeNativeTool(request("read", { path }), root, signal, () => {});
+    expect(read.isError).toBe(false);
+    expect(read.result.content).toEqual([{ type: "text", text: "after" }]);
+    expect(await readFile(join(root, "my file.txt"), "utf8")).toBe("after");
+  });
+
+  it("resolves image paths before the cloud image extension", async () => {
+    const root = await directory();
+    await sharp({ create: { width: 2, height: 3, channels: 3, background: "red" } })
+      .png()
+      .toFile(join(root, "picture.png"));
+    const result = await executeNativeTool(
+      request("read", { path: "@picture.png" }),
+      root,
+      new AbortController().signal,
+      () => {},
+    );
+    expect(result.isError).toBe(false);
+    expect(result.result.content.some((part) => part.type === "image")).toBe(true);
+  });
+
+  it.each(["read", "write", "edit"] as const)(
+    "applies the existing credential-path guard after interpretation (%s)",
+    async (tool) => {
+      const root = await directory();
+      await writeFile(join(root, ".git-credentials"), "fixture bytes");
+      const result = await executeNativeTool(
+        request(tool, {
+          path: "@.git-credentials",
+          content: "replacement",
+          edits: [{ oldText: "fixture", newText: "replacement" }],
+        }),
+        root,
+        new AbortController().signal,
+        () => {},
+      );
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result.result)).toContain("not available through file tools");
+      expect(await readFile(join(root, ".git-credentials"), "utf8")).toBe("fixture bytes");
+    },
+  );
+
   it.each([false, true])(
     "cancels only the Bash process group (separate session=%s)",
     async (separate) => {

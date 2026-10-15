@@ -1,5 +1,10 @@
 # Current architecture decisions
 
+[ADR-0251](0251-guest-attachment-and-execution-bounds.md) is the approved guest
+execution repair: bounded native cleanup/startup, native Read path parity and
+separate initialization/attachment messages. Implementation and matched guest
+protocol 6 delivery are pending; the serving release below remains unchanged.
+
 [ADR-0250](0250-cube-handoff-outcomes-and-runtime-admission.md) repairs failure
 notification/evidence, exact binding lookup and removed-VM admission. It is
 deployed as `handoff-6ab91bb7`, retaining schema 189 / topic v17 / guest 5.

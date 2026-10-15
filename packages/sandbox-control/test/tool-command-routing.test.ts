@@ -1,11 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
-import {
-  createExecutionReference,
-  DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
-  DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
-  type AcceptedToolCommand,
-} from "@pi-cloud/protocol";
+import { createExecutionReference, type AcceptedToolCommand } from "@pi-cloud/protocol";
 import { ToolCommandDispatcher, toolDeliveryFact } from "../src/tool-command-dispatcher.ts";
 import {
   CubeExecutionRejected,
@@ -50,29 +45,16 @@ function fixture() {
     baseUrl: "http://controller:4300",
     dispatchClosed: false,
     descriptor: {
-      version: 1,
+      version: 2,
       target: {
         apiUrl: "http://cube.test",
         sandboxId: "aabbccddeeff00112233445566778899",
         nodeId: "node-1",
         bootId: randomUUID(),
       },
-      initialization: {
-        toolWorkerProtocolVersion: 5,
-        type: "worker.initialize",
+      attachment: {
         activationId: command.request.activationId,
         toolRoot: "/workspace",
-        workspaceSeed: { kind: "sample_java" },
-        environment: {
-          environmentVersionId: randomUUID(),
-          versionNumber: 1,
-          profileKey: "pi-cloud-fullstack",
-          profileVersion: "1",
-          imageRevision: "test",
-          specSha256: "e4195cfc4c9e79286d47618d704dbe32dd4141eaa0ce21d82f72699e360f9630",
-          recipe: DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
-          recipeSha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
-        },
       },
     },
     snapshot: {
@@ -235,9 +217,10 @@ describe("Projector native Cube handoff", () => {
         executionScopeId: f.route.bindingId,
         writerId: f.command.scope.writerId,
         payload: {
-          mode: "operation",
-          initialization: f.route.descriptor.initialization,
-          operation: f.command.request,
+          toolWorkerProtocolVersion: 6,
+          type: "worker.operation",
+          attachment: f.route.descriptor.attachment,
+          request: f.command.request,
         },
         completionContext: expect.objectContaining({
           toolCallId: "result-entry",

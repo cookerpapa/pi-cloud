@@ -78,9 +78,10 @@ export async function liveNativeTools(
           executionScopeId: request.activationId,
           writerId: identity.leaseId,
           payload: {
-            mode: "operation",
-            initialization: binding.descriptor.initialization,
-            operation: request,
+            toolWorkerProtocolVersion: 6,
+            type: "worker.operation",
+            attachment: binding.descriptor.attachment,
+            request,
           },
           completionContext: {
             scope: {

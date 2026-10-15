@@ -150,13 +150,13 @@ async function assertDrained(includeWriters) {
     (select count(*) from workspace_runtimes where state<>'released')::int as vms,
     (select count(*) from development_environments where state<>'released')::int as machines,
     (select count(*) from workspace_terminal_sessions where state<>'released')::int as terminals,
-    (select count(*) from session_leases where released_at is null)::int as writers`.execute(
-    database,
-  );
-  const { writers, ...rest } = rows[0];
+    (select count(*) from session_leases where released_at is null)::int as writers,
+    (select count(*) from sandbox_tool_bindings)::int as bindings`.execute(database);
+  const { writers, bindings, ...rest } = rows[0];
   assert(
-    Object.values(rest).every((n) => n === 0) && (!includeWriters || writers === 0),
-    "Drain Runs/seals and release native VM/terminal/machine lifetimes before matched replacement",
+    Object.values(rest).every((n) => n === 0) &&
+      (!includeWriters || (writers === 0 && bindings === 0)),
+    "Drain Runs/seals, Tool bindings and native VM/terminal/machine lifetimes before matched replacement",
   );
 }
 try {

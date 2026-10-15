@@ -11,7 +11,7 @@ import {
   type NativeToolUpdate,
   type ToolSandboxOperationRequest,
   type ToolWebProxyBootstrap,
-  type ToolWorkerInput,
+  type ToolExecutionAttachment,
 } from "@pi-cloud/protocol/guest";
 import { spawn } from "node:child_process";
 import { open } from "node:fs/promises";
@@ -28,6 +28,7 @@ import {
 } from "./tool-worker.ts";
 import { NativeToolOutput, redactToolText } from "./native-tool-output.ts";
 import { processImageSource } from "./image-processor.ts";
+import { normalizeToolPath, resolveReadToolPath } from "./native-tool-path.ts";
 
 export type NativeToolRequest = Extract<ToolSandboxOperationRequest, { operation: "tool.execute" }>;
 
@@ -35,25 +36,25 @@ export type NativeToolRequest = Extract<ToolSandboxOperationRequest, { operation
  * failure before execution can become an ordinary native Tool result. */
 export async function executeAttachedNativeTool(
   request: NativeToolRequest,
-  initialization: Extract<ToolWorkerInput, { type: "worker.initialize" }>,
+  attachment: ToolExecutionAttachment,
   signal: AbortSignal,
   onUpdate: (event: NativeToolUpdate) => void,
 ): Promise<NativeToolEnd> {
   let cwd: string;
   try {
-    cwd = await attachToolExecution(initialization);
+    cwd = await attachToolExecution(attachment);
   } catch (error) {
     // /workspace is the fixed Volume mount. Losing that attachment still needs
     // infrastructure handling, even when its path is absent.
     if (
       error instanceof ToolWorkerError &&
       error.code === "tool_root_unavailable" &&
-      resolve(initialization.toolRoot) !== "/workspace"
+      resolve(attachment.toolRoot) !== "/workspace"
     )
       return nativeToolError(request, new Error(`${error.code}: ${error.message}`));
     throw error;
   }
-  return executeNativeTool(request, cwd, signal, onUpdate, initialization.webProxy);
+  return executeNativeTool(request, cwd, signal, onUpdate, attachment.webProxy);
 }
 
 function nativeToolError(request: NativeToolRequest, error: unknown): NativeToolEnd {
@@ -95,7 +96,7 @@ export async function executeNativeTool(
     } else {
       const path = request.args.path;
       if (typeof path !== "string") throw new Error("Tool path is required");
-      if (path.split(/[\\/]/u).includes(".git-credentials"))
+      if (normalizeToolPath(path).split(/[\\/]/u).includes(".git-credentials"))
         throw new Error("Code Host credentials are not available through file tools");
       const context = withAbortSignal(signal, BACKGROUND_CONTEXT);
       const env = new NodeExecutionEnv({ cwd });
@@ -107,7 +108,10 @@ export async function executeNativeTool(
         ...(value.details === undefined ? {} : { details: value.details }),
         ...(value.diagnostics === undefined ? {} : { diagnostics: [...value.diagnostics] }),
       });
-      const absolutePath = getOrThrow(await env.absolutePath(path, context));
+      const absolutePath =
+        request.toolName === "read"
+          ? await resolveReadToolPath(env, path, context)
+          : getOrThrow(await env.absolutePath(normalizeToolPath(path), context));
       const canonicalPath = async (target: string) => {
         signal.throwIfAborted();
         return getOrThrow(await env.canonicalPath(target, context));

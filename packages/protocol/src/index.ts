@@ -269,6 +269,7 @@ export {
   ToolSandboxReleaseResponseSchema,
   ToolSandboxProtocolError,
   ToolWorkerInputSchema,
+  ToolExecutionAttachmentSchema,
   ToolWorkerOutputSchema,
   parseSandboxControlRequest,
   parseSandboxControlResponse,
@@ -295,6 +296,7 @@ export {
   type ToolSandboxReleaseRequest,
   type ToolSandboxReleaseResponse,
   type ToolWorkerInput,
+  type ToolExecutionAttachment,
   type ToolWorkerOutput,
   type ToolWebProxyBootstrap,
 } from "./tool-sandbox.ts";

@@ -19,7 +19,7 @@ import {
   type SandboxControlReadWorkspaceFileRequest,
   type SandboxControlReadWorkspaceFileResponse,
   type ToolSandboxAssignment,
-  type ToolWorkerInput,
+  type ToolExecutionAttachment,
   type ToolWebProxyBootstrap,
   type DevelopmentEnvironmentProfileKey,
   type SourceControlWorkspaceCredentialAuthorizeRequest,
@@ -743,18 +743,14 @@ export class CubeSandboxProvider implements SandboxProvider {
     }
   }
 
-  #attachedInitialization(
+  #toolAttachment(
     activation: CubeActivation,
     toolBindingId = activation.handle.activationId,
     toolRoot = activation.toolRoot,
-  ): Extract<ToolWorkerInput, { type: "worker.initialize" }> {
+  ): ToolExecutionAttachment {
     return {
-      toolWorkerProtocolVersion: 5,
-      type: "worker.initialize",
       activationId: toolBindingId,
       toolRoot,
-      environment: activation.handle.environment,
-      workspaceSeed: { kind: "sample_java" },
       webProxy: this.#webProxy,
     };
   }
@@ -888,16 +884,13 @@ export class CubeSandboxProvider implements SandboxProvider {
         await this.#guestJson(
           instance,
           {
-            mode: "initialize",
-            initialization: {
-              toolWorkerProtocolVersion: 5,
-              type: "worker.initialize",
-              activationId: spec.activationId,
-              toolRoot,
-              environment: spec.environment,
-              workspaceSeed: spec.workspaceSeed,
-              webProxy: this.#webProxy,
-            },
+            toolWorkerProtocolVersion: 6,
+            type: "worker.initialize",
+            activationId: spec.activationId,
+            toolRoot,
+            environment: spec.environment,
+            workspaceSeed: spec.workspaceSeed,
+            webProxy: this.#webProxy,
           },
           {
             program: "tool",
@@ -981,9 +974,9 @@ export class CubeSandboxProvider implements SandboxProvider {
   ): Promise<SandboxExecutionDescriptor> {
     const activation = this.#dataOwned(handle);
     return {
-      version: 1,
+      version: 2,
       target: activation.executionTarget,
-      initialization: this.#attachedInitialization(activation, bindingId, toolRoot),
+      attachment: this.#toolAttachment(activation, bindingId, toolRoot),
     };
   }
 

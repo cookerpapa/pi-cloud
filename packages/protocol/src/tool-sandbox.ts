@@ -32,7 +32,7 @@ const ToolSandboxEnvelope = {
 };
 
 const WorkerEnvelope = {
-  toolWorkerProtocolVersion: Type.Literal(5),
+  toolWorkerProtocolVersion: Type.Literal(6),
 };
 
 const SafeCodeSchema = Type.String({
@@ -314,27 +314,29 @@ const WorkflowContext = {
 
 const ToolPathSchema = Type.String({ minLength: 1, maxLength: 4_096 });
 
+const FixedToolOperationRequestSchema = Type.Object(
+  {
+    ...OperationEnvelope,
+    operation: Type.Literal("tool.execute"),
+    toolName: Type.Union([
+      Type.Literal("read"),
+      Type.Literal("write"),
+      Type.Literal("edit"),
+      Type.Literal("bash"),
+    ]),
+    toolCallId: Type.String({ minLength: 1 }),
+    args: Type.Record(Type.String(), Type.Unknown()),
+    maximumOutputBytes: Type.Integer({ minimum: 1024, maximum: MAX_TOOL_OUTPUT_BYTES }),
+    timeoutMs: Type.Integer({
+      minimum: MIN_TOOL_EXECUTION_TIMEOUT_MS,
+      maximum: MAX_TOOL_EXECUTION_TIMEOUT_MS,
+    }),
+  },
+  { additionalProperties: false },
+);
+
 export const ToolSandboxOperationRequestSchema = Type.Union([
-  Type.Object(
-    {
-      ...OperationEnvelope,
-      operation: Type.Literal("tool.execute"),
-      toolName: Type.Union([
-        Type.Literal("read"),
-        Type.Literal("write"),
-        Type.Literal("edit"),
-        Type.Literal("bash"),
-      ]),
-      toolCallId: Type.String({ minLength: 1 }),
-      args: Type.Record(Type.String(), Type.Unknown()),
-      maximumOutputBytes: Type.Integer({ minimum: 1024, maximum: MAX_TOOL_OUTPUT_BYTES }),
-      timeoutMs: Type.Integer({
-        minimum: MIN_TOOL_EXECUTION_TIMEOUT_MS,
-        maximum: MAX_TOOL_EXECUTION_TIMEOUT_MS,
-      }),
-    },
-    { additionalProperties: false },
-  ),
+  FixedToolOperationRequestSchema,
   Type.Object(
     {
       ...OperationEnvelope,
@@ -391,16 +393,23 @@ export const ToolSandboxOperationResponseSchema = Type.Union([
   ),
 ]);
 
+export const ToolExecutionAttachmentSchema = Type.Object(
+  {
+    activationId: UuidSchema,
+    toolRoot: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),
+    webProxy: Type.Optional(ToolWebProxyBootstrapSchema),
+  },
+  { additionalProperties: false },
+);
+
 export const ToolWorkerInputSchema = Type.Union([
   Type.Object(
     {
       ...WorkerEnvelope,
       type: Type.Literal("worker.initialize"),
-      activationId: UuidSchema,
-      toolRoot: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),
+      ...ToolExecutionAttachmentSchema.properties,
       environment: EnvironmentRuntimeSnapshotSchema,
       workspaceSeed: AgentWorkspaceSeedSchema,
-      webProxy: Type.Optional(ToolWebProxyBootstrapSchema),
     },
     { additionalProperties: false },
   ),
@@ -408,7 +417,8 @@ export const ToolWorkerInputSchema = Type.Union([
     {
       ...WorkerEnvelope,
       type: Type.Literal("worker.operation"),
-      request: ToolSandboxOperationRequestSchema,
+      attachment: ToolExecutionAttachmentSchema,
+      request: FixedToolOperationRequestSchema,
     },
     { additionalProperties: false },
   ),
@@ -472,6 +482,7 @@ export type SandboxControlResponse = Static<typeof SandboxControlResponseSchema>
 export type ToolSandboxOperationRequest = Static<typeof ToolSandboxOperationRequestSchema>;
 export type ToolSandboxOperationResponse = Static<typeof ToolSandboxOperationResponseSchema>;
 export type ToolWorkerInput = Static<typeof ToolWorkerInputSchema>;
+export type ToolExecutionAttachment = Static<typeof ToolExecutionAttachmentSchema>;
 export type ToolWorkerOutput = Static<typeof ToolWorkerOutputSchema>;
 export type ToolWebProxyBootstrap = Static<typeof ToolWebProxyBootstrapSchema>;
 

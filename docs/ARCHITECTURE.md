@@ -820,6 +820,17 @@ reply to the original Worker boot. Pi Harness processing still creates the
 canonical Tool Result. No raw-result GET/cache or PG operation ledger exists.
 Uncertain execution never causes automatic shell replay.
 
+[ADR-0251](adr/0251-guest-attachment-and-execution-bounds.md) defines guest protocol 6:
+full initialization carries environment/seed data only at VM preparation; ordinary
+Tools carry an attachment with binding identity, working directory and optional
+network configuration. One strict guest message replaces the old outer wrapper.
+Known expiry/cancellation before Start retains non-execution evidence. Native
+cleanup keeps a finite final Kill budget even after its parent expires; ambiguous
+Start or stopping replies remain uncertain. Native Read path interpretation is
+contract-tested against pinned Pi while retaining bounded reads and images.
+The [repair record](reports/cubelet-guest-execution-repair-20261015.md) tracks rollout;
+the release identified at the top remains the currently deployed version.
+
 Authorized closure revokes publication and binding routing admission before the
 seal. Normal Stop co-commits native abort and cancellation for unfinished fixed
 Tools or workflow scripts; a late reply cannot replace the native outcome. Binding closure itself has no

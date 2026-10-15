@@ -394,13 +394,13 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
       }
     }
     if (input.command.includes("envd-tool-exec.mjs")) {
-      const initialization = (request.initialization ?? {}) as {
+      const initialization = request as unknown as {
         activationId: string;
         environment: typeof environment;
       };
-      if (request.mode === "initialize") {
+      if (request.type === "worker.initialize") {
         return this.#result({
-          toolWorkerProtocolVersion: 5,
+          toolWorkerProtocolVersion: 6,
           type: "worker.ready",
           activationId: initialization.activationId,
           environment: {
@@ -414,10 +414,10 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
           },
         });
       }
-      const operation = request.operation as ToolSandboxOperationRequest;
+      const operation = request.request as ToolSandboxOperationRequest;
       if (operation.operation !== "tool.execute") throw new Error("unexpected operation");
       const result = this.#result({
-        toolWorkerProtocolVersion: 5,
+        toolWorkerProtocolVersion: 6,
         type: "worker.operation_result",
         scopeStopRequired: false,
         response: {
@@ -647,7 +647,7 @@ describe("CubeSandbox Provider contract", () => {
       runtime.requests.some(
         ({ sandboxId, guestRequest }) =>
           sandboxId === child.runtimeName &&
-          (guestRequest.initialization as { toolRoot?: string } | undefined)?.toolRoot ===
+          (guestRequest as { toolRoot?: string } | undefined)?.toolRoot ===
             "/home/user/worktrees/feature-a",
       ),
     ).toBe(true);
@@ -685,7 +685,8 @@ describe("CubeSandbox Provider contract", () => {
       provider.describeExecution(handle, ACTIVATION_ID, "/workspace"),
     ).resolves.toMatchObject({
       target: { apiUrl: "http://cube.test", sandboxId: handle.runtimeName, nodeId: "node-test" },
-      initialization: { activationId: ACTIVATION_ID, toolRoot: "/workspace" },
+      version: 2,
+      attachment: { activationId: ACTIVATION_ID, toolRoot: "/workspace" },
     });
     expect(inspect).not.toHaveBeenCalled();
     // Lifecycle identity validation remains authoritative when explicitly inspecting.
@@ -892,13 +893,16 @@ describe("CubeSandbox Provider contract", () => {
     });
     expect(handle.workspaceRoot).toBe("/home/user");
     expect(
-      runtime.requests.find((entry) => entry.guestRequest.mode === "initialize")?.guestRequest,
-    ).toMatchObject({ initialization: { toolRoot: "/home/user" } });
+      runtime.requests.find((entry) => entry.guestRequest.type === "worker.initialize")
+        ?.guestRequest,
+    ).toMatchObject({ toolRoot: "/home/user" });
     expect(
       runtime.requests.findIndex(
         (entry) => entry.guestRequest.mode === "prepare_exclusive_machine",
       ),
-    ).toBeLessThan(runtime.requests.findIndex((entry) => entry.guestRequest.mode === "initialize"));
+    ).toBeLessThan(
+      runtime.requests.findIndex((entry) => entry.guestRequest.type === "worker.initialize"),
+    );
     expect(
       runtime.requests.some((entry) => entry.guestRequest.mode === "prepare_exclusive_machine"),
     ).toBe(true);
@@ -1212,12 +1216,11 @@ describe("CubeSandbox Provider contract", () => {
     );
     const initialize = runtime.requests.find(
       ({ sandboxId, guestRequest }) =>
-        sandboxId === "cube-sandbox-2" && guestRequest.mode === "initialize",
+        sandboxId === "cube-sandbox-2" && guestRequest.type === "worker.initialize",
     );
-    expect(
-      (initialize?.guestRequest.initialization as { activationId?: string } | undefined)
-        ?.activationId,
-    ).toBe(nextActivationId);
+    expect((initialize?.guestRequest as { activationId?: string } | undefined)?.activationId).toBe(
+      nextActivationId,
+    );
     expect(restored.assignment).toEqual(nextAssignment);
     await provider.destroy(restored);
     await provider.close();
@@ -1258,10 +1261,16 @@ describe("CubeSandbox Provider contract", () => {
       "/workspace/child",
     );
     expect(parentDescriptor.target).toEqual(childDescriptor.target);
-    expect(childDescriptor.initialization).toMatchObject({
+    expect(childDescriptor.attachment).toMatchObject({
       activationId: childBindingId,
       toolRoot: "/workspace/child",
     });
+    expect(Object.keys(childDescriptor.attachment).sort()).toEqual([
+      "activationId",
+      "toolRoot",
+      "webProxy",
+    ]);
+    expect(childDescriptor).not.toHaveProperty("initialization");
     await expect(provider.inspect(parent)).resolves.toMatchObject({ state: "running" });
     expect(runtime.creates).toHaveLength(1);
     await provider.destroy(parent);
@@ -1467,10 +1476,10 @@ describe("CubeSandbox Provider contract", () => {
     const runtime = new FakeCubeRuntimeClient();
     const original = runtime.runCommand.bind(runtime);
     runtime.runCommand = async (instance, input) =>
-      runtime.requestForCommand(input).mode === "initialize"
+      runtime.requestForCommand(input).type === "worker.initialize"
         ? {
             stdout: JSON.stringify({
-              toolWorkerProtocolVersion: 5,
+              toolWorkerProtocolVersion: 6,
               type: "worker.failed",
               code: "workspace_attach_invalid",
               message: "Preserved workspace could not be attached",
@@ -1701,10 +1710,9 @@ describe("CubeSandbox Provider contract", () => {
       allowPublicTraffic: false,
     });
     const initialize = runtime.requests.find(
-      ({ guestRequest }) => guestRequest.mode === "initialize",
+      ({ guestRequest }) => guestRequest.type === "worker.initialize",
     );
-    const initialization = initialize?.guestRequest.initialization as
-      Record<string, unknown> | undefined;
+    const initialization = initialize?.guestRequest as Record<string, unknown> | undefined;
     expect(initialization).toMatchObject({
       webProxy: WEB_PROXY,
     });

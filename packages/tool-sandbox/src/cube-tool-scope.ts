@@ -79,9 +79,10 @@ async function main(): Promise<void> {
   const body = Buffer.from((await inputFrames.next()).value ?? "");
   const input = JSON.parse(body.toString("utf8"));
   if (
-    input.mode !== "operation" ||
-    input.operation?.operation !== "tool.execute" ||
-    input.operation.operationId !== operationId
+    input.toolWorkerProtocolVersion !== 6 ||
+    input.type !== "worker.operation" ||
+    input.request?.operation !== "tool.execute" ||
+    input.request.operationId !== operationId
   )
     throw new Error("Execution scope input identity changed");
   const inputPath = `/tmp/pi-cloud-envd-${operationId.toLowerCase()}.json`;
@@ -173,7 +174,7 @@ async function main(): Promise<void> {
 void main()
   .catch(() => {
     // Payloads may contain user material. The executor receives a bounded failure,
-    // never an exception dump of the command or initialization envelope.
+    // never an exception dump of the command or attachment payload.
     process.stderr.write("cube_execution_scope_failed\n");
     process.exitCode = 1;
   })

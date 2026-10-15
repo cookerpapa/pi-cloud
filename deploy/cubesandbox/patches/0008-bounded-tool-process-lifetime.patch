@@ -1,0 +1,237 @@
+diff --git a/Cubelet/pkg/execution/containerd.go b/Cubelet/pkg/execution/containerd.go
+index 7b6ce55..9af1819 100644
+--- a/Cubelet/pkg/execution/containerd.go
++++ b/Cubelet/pkg/execution/containerd.go
+@@ -19,6 +19,7 @@ import (
+ )
+ 
+ const guestScopeProgram = "/opt/pi-cloud/bin/cube-tool-scope.mjs"
++const finalCleanupKillTimeout = 5 * time.Second
+ 
+ type ResolvedTask struct {
+ 	Task      containerd.Task
+@@ -125,7 +126,24 @@ func (b *boundedOutput) Bytes() []byte {
+ 	return append([]byte(nil), b.buffer.Bytes()...)
+ }
+ 
++// Only call before Start has been issued. An ambiguous Start reply cannot prove
++// non-execution, even when its original budget has subsequently expired.
++func unstartedFailure(ctx context.Context, r Request) string {
++	if ctx.Err() != nil {
++		return "execution_not_started"
++	}
++	select {
++	case <-r.Interrupt:
++		return "tool_cancelled_before_start"
++	default:
++		return ""
++	}
++}
++
+ func (d *ContainerdDriver) Run(ctx context.Context, r Request, progress func(json.RawMessage)) Result {
++	if failure := unstartedFailure(ctx, r); failure != "" {
++		return Result{Failure: failure}
++	}
+ 	setupParent := context.WithoutCancel(ctx)
+ 	if r.Probe {
+ 		setupParent = ctx
+@@ -179,6 +197,9 @@ func (d *ContainerdDriver) Run(ctx context.Context, r Request, progress func(jso
+ 	if err != nil {
+ 		return Result{Failure: "tool_wait_unavailable", Quarantine: true}
+ 	}
++	if failure := unstartedFailure(ctx, r); failure != "" {
++		return Result{Failure: failure}
++	}
+ 	startParent := context.WithoutCancel(ctx)
+ 	if r.Probe {
+ 		startParent = ctx
+@@ -292,7 +313,9 @@ func (d *ContainerdDriver) stopGroup(ctx context.Context, task containerd.Task,
+ 			return errors.New("scope cleanup failed")
+ 		}
+ 	case <-ctx.Done():
+-		_ = p.Kill(context.WithoutCancel(ctx), syscall.SIGKILL)
++		kill, endKill := context.WithTimeout(context.WithoutCancel(ctx), finalCleanupKillTimeout)
++		_ = p.Kill(kill, syscall.SIGKILL)
++		endKill()
+ 		return ctx.Err()
+ 	}
+ 	drained := make(chan struct{})
+diff --git a/Cubelet/pkg/execution/containerd_lifetime_test.go b/Cubelet/pkg/execution/containerd_lifetime_test.go
+new file mode 100644
+index 0000000..6ff3148
+--- /dev/null
++++ b/Cubelet/pkg/execution/containerd_lifetime_test.go
+@@ -0,0 +1,173 @@
++package execution
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"strings"
++	"syscall"
++	"testing"
++	"time"
++
++	containerd "github.com/containerd/containerd/v2/client"
++	"github.com/containerd/containerd/v2/pkg/cio"
++	"github.com/containerd/containerd/v2/pkg/namespaces"
++	"github.com/opencontainers/runtime-spec/specs-go"
++)
++
++type lifetimeProcess struct {
++	containerd.Process
++	start   func(context.Context) error
++	kill    func(context.Context) error
++	deleted *int
++	exits   <-chan containerd.ExitStatus
++}
++
++func (p lifetimeProcess) Start(ctx context.Context) error {
++	if p.start != nil {
++		return p.start(ctx)
++	}
++	return nil
++}
++func (p lifetimeProcess) Kill(ctx context.Context, _ syscall.Signal, _ ...containerd.KillOpts) error {
++	if p.kill != nil {
++		return p.kill(ctx)
++	}
++	return nil
++}
++func (p lifetimeProcess) Wait(context.Context) (<-chan containerd.ExitStatus, error) {
++	return p.exits, nil
++}
++func (p lifetimeProcess) Delete(ctx context.Context, _ ...containerd.ProcessDeleteOpts) (*containerd.ExitStatus, error) {
++	if p.deleted != nil {
++		*p.deleted++
++	}
++	return containerd.NewExitStatus(0, time.Now(), nil), nil
++}
++func (p lifetimeProcess) IO() cio.IO { return namespaceIO{} }
++
++type lifetimeTask struct {
++	containerd.Task
++	spec func(context.Context) (*specs.Spec, error)
++	exec func(string) (containerd.Process, error)
++}
++
++func (t lifetimeTask) Spec(ctx context.Context) (*specs.Spec, error) {
++	if t.spec != nil {
++		return t.spec(ctx)
++	}
++	return &specs.Spec{Process: &specs.Process{}}, nil
++}
++func (t lifetimeTask) Exec(_ context.Context, id string, _ *specs.Process, _ cio.Creator) (containerd.Process, error) {
++	return t.exec(id)
++}
++
++func TestCleanupKillKeepsNamespaceAndIndependentDeadline(t *testing.T) {
++	ctx, cancel := context.WithTimeout(namespaces.WithNamespace(context.Background(), "owned-runtime"), 20*time.Millisecond)
++	defer cancel()
++	killed := false
++	task := lifetimeTask{exec: func(string) (containerd.Process, error) {
++		return lifetimeProcess{
++			exits: make(chan containerd.ExitStatus),
++			kill: func(kill context.Context) error {
++				killed = true
++				deadline, bounded := kill.Deadline()
++				if !bounded || deadline.After(time.Now().Add(6*time.Second)) {
++					t.Error("cleanup Kill is not bounded")
++					return errors.New("invalid Kill budget")
++				}
++				if kill.Err() != nil {
++					t.Error("Kill reused an already expired context")
++				}
++				if ns, _ := namespaces.Namespace(kill); ns != "owned-runtime" {
++					t.Error("cleanup lost native namespace")
++				}
++				<-kill.Done() // A stalled RPC must release the driver when this budget expires.
++				return kill.Err()
++			},
++		}, nil
++	}}
++	started := time.Now()
++	err := (&ContainerdDriver{}).stopGroup(ctx, task, specs.Process{}, request().OperationID)
++	if !killed || !errors.Is(err, context.DeadlineExceeded) || time.Since(started) > 7*time.Second {
++		t.Fatalf("unbounded cleanup or false success: %v", err)
++	}
++}
++
++func TestExpiredOrCancelledPreparationDoesNotStartNativeProcess(t *testing.T) {
++	for _, mode := range []string{"already_expired", "expired_during_setup", "cancelled_during_setup"} {
++		t.Run(mode, func(t *testing.T) {
++			budget := time.Minute
++			if mode == "already_expired" {
++				budget = -time.Second
++			} else if mode == "expired_during_setup" {
++				budget = 20 * time.Millisecond
++			}
++			ctx, cancel := context.WithTimeout(context.Background(), budget)
++			defer cancel()
++			interrupt := make(chan struct{})
++			resolved, starts, deletes := 0, 0, 0
++			task := lifetimeTask{
++				spec: func(context.Context) (*specs.Spec, error) {
++					if mode == "expired_during_setup" {
++						<-ctx.Done()
++					} else if mode == "cancelled_during_setup" {
++						close(interrupt)
++					}
++					return &specs.Spec{Process: &specs.Process{}}, nil
++				},
++				exec: func(string) (containerd.Process, error) {
++					exits := make(chan containerd.ExitStatus, 1)
++					return lifetimeProcess{exits: exits, deleted: &deletes, start: func(context.Context) error {
++						starts++
++						exits <- *containerd.NewExitStatus(1, time.Now(), nil)
++						return nil
++					}}, nil
++				},
++			}
++			driver := &ContainerdDriver{Resolve: func(context.Context, Request) (ResolvedTask, error) {
++				resolved++
++				return ResolvedTask{Task: task, Namespace: "owned-runtime"}, nil
++			}}
++			r := request()
++			r.Interrupt = interrupt
++			result := driver.Run(ctx, r, func(json.RawMessage) {})
++			want := "execution_not_started"
++			if mode == "cancelled_during_setup" {
++				want = "tool_cancelled_before_start"
++			}
++			if result.Failure != want || result.Quarantine || starts != 0 {
++				t.Fatalf("incorrect unstarted result: %+v; starts=%d", result, starts)
++			}
++			if mode == "already_expired" {
++				if resolved != 0 || deletes != 0 {
++					t.Fatal("expired request still acquired a process")
++				}
++			} else if deletes != 1 {
++				t.Fatal("unstarted native handle was not deleted")
++			}
++		})
++	}
++}
++
++func TestLostStartReplyNeverBecomesNotStarted(t *testing.T) {
++	starts := 0
++	task := lifetimeTask{exec: func(id string) (containerd.Process, error) {
++		exits := make(chan containerd.ExitStatus, 1)
++		exits <- *containerd.NewExitStatus(1, time.Now(), nil)
++		return lifetimeProcess{exits: exits, start: func(context.Context) error {
++			if strings.HasPrefix(id, "pc-") {
++				starts++
++				return context.DeadlineExceeded
++			}
++			return nil
++		}}, nil
++	}}
++	driver := &ContainerdDriver{Resolve: func(context.Context, Request) (ResolvedTask, error) {
++		return ResolvedTask{Task: task, Namespace: "owned-runtime"}, nil
++	}}
++	result := driver.Run(context.Background(), request(), func(json.RawMessage) {})
++	if starts != 1 || result.Failure == "" || result.Failure == "execution_not_started" || result.Failure == "tool_cancelled_before_start" {
++		t.Fatalf("lost Start reply lost uncertainty: %+v starts=%d", result, starts)
++	}
++}

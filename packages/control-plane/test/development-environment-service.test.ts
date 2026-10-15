@@ -106,20 +106,16 @@ function provider(): SandboxProvider {
     },
     async describeExecution(handle, bindingId, toolRoot) {
       return {
-        version: 1,
+        version: 2,
         target: {
           apiUrl: "http://cube.test",
           sandboxId: handle.runtimeName,
           nodeId: "node-test",
           bootId: "11111111-1111-4111-8111-111111111111",
         },
-        initialization: {
-          toolWorkerProtocolVersion: 5,
-          type: "worker.initialize",
+        attachment: {
           activationId: bindingId,
           toolRoot,
-          environment: handle.environment,
-          workspaceSeed: { kind: "sample_java" },
         },
       };
     },

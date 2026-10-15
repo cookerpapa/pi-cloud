@@ -49,14 +49,68 @@ it("keeps fixed Tool requests compact while requiring workflow context and the m
   expect(() => parseToolSandboxOperationRequest(workflow)).toThrow();
   expect(parseToolSandboxOperationRequest({ ...workflow, ...context })).toMatchObject(context);
   const failure = {
-    toolWorkerProtocolVersion: 5,
+    toolWorkerProtocolVersion: 6,
     type: "worker.failed",
     code: "fixture",
     message: "fixture",
     retryable: false,
   };
   expect(parseToolWorkerOutput(failure)).toEqual(failure);
-  expect(() => parseToolWorkerOutput({ ...failure, toolWorkerProtocolVersion: 4 })).toThrow();
+  expect(() => parseToolWorkerOutput({ ...failure, toolWorkerProtocolVersion: 5 })).toThrow();
+});
+
+it("separates full initialization from fixed Tool attachment and refuses obsolete wrappers", () => {
+  const activationId = "10000000-0000-4000-8000-000000000005";
+  const attachment = {
+    activationId,
+    toolRoot: "/workspace",
+    webProxy: { host: "10.255.255.254", port: 3128 },
+  };
+  const message = {
+    toolWorkerProtocolVersion: 6,
+    type: "worker.operation",
+    attachment,
+    request: {
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.operation",
+      operation: "tool.execute",
+      activationId,
+      operationId: "10000000-0000-4000-8000-000000000006",
+      toolName: "bash",
+      toolCallId: "native",
+      args: { command: "pwd" },
+      maximumOutputBytes: 51200,
+      timeoutMs: 1000,
+    },
+  };
+  expect(parseToolWorkerInput(message)).toEqual(message);
+  const initialization = {
+    toolWorkerProtocolVersion: 6,
+    type: "worker.initialize",
+    ...attachment,
+    environment,
+    workspaceSeed: { kind: "sample_java" },
+  };
+  expect(parseToolWorkerInput(initialization)).toEqual(initialization);
+  for (const extra of [
+    { environment },
+    { workspaceSeed: { kind: "sample_java" } },
+    { type: "worker.initialize" },
+  ])
+    expect(() =>
+      parseToolWorkerInput({ ...message, attachment: { ...attachment, ...extra } }),
+    ).toThrow();
+  expect(() => parseToolWorkerInput({ ...message, toolWorkerProtocolVersion: 5 })).toThrow();
+  expect(() =>
+    parseToolWorkerInput({ mode: "operation", initialization, operation: message.request }),
+  ).toThrow();
+  expect(() =>
+    parseToolWorkerInput({
+      ...message,
+      request: { ...message.request, operation: "workflow.exec" },
+    }),
+  ).toThrow();
+  expect(() => parseToolWorkerInput({ ...initialization, environment: undefined })).toThrow();
 });
 
 const environment = {
@@ -139,7 +193,7 @@ describe("Tool Sandbox protocol", () => {
   it("carries deployment-owned direct private CIDRs into the Tool process environment", () => {
     expect(
       parseToolWorkerInput({
-        toolWorkerProtocolVersion: 5,
+        toolWorkerProtocolVersion: 6,
         type: "worker.initialize",
         activationId: "10000000-0000-4000-8000-000000000005",
         toolRoot: "/workspace",
@@ -192,7 +246,7 @@ describe("Tool Sandbox protocol", () => {
   it("binds every worker result to activation and operation identities", () => {
     expect(
       parseToolWorkerOutput({
-        toolWorkerProtocolVersion: 5,
+        toolWorkerProtocolVersion: 6,
         type: "worker.operation_result",
         scopeStopRequired: false,
         response: {
@@ -273,7 +327,7 @@ describe("Tool Sandbox protocol", () => {
     (type) => {
       expect(() =>
         parseToolWorkerInput({
-          toolWorkerProtocolVersion: 5,
+          toolWorkerProtocolVersion: 6,
           type,
           activationId: "10000000-0000-4000-8000-000000000008",
           ...(type === "worker.cancel"
