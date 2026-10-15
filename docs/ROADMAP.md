@@ -5,9 +5,15 @@
 - [x] Review dispatch commit, memory routing, takeover ACK, partition/Boot changes
       and failure handling against the pinned Cube source; record isolated probes.
 
-The [review](reports/projector-cube-handoff-review-20261015.md) preserves the owner's
-accepted ordering. Repairs and the multi-effect protocol decision remain pending
-discussion; [backlog](BACKLOG.md#projector--cube-handoff-review) tracks each finding.
+The owner approved [ADR-0250](adr/0250-cube-handoff-outcomes-and-runtime-admission.md)
+after the [review](reports/projector-cube-handoff-review-20261015.md). The
+[repair record](reports/projector-cube-handoff-repair-20261015.md) tracks delivery.
+
+- [ ] H1: independent failure notification/quarantine settlement and explicit effect evidence.
+- [ ] H2: exact binding lookup with the existing ownership/closure guards.
+- [ ] H3: native catalog admission serialized with confirmed-absence cleanup.
+- [ ] H4: native concurrent-read upgrade contract; no batch-position protocol expansion.
+- [ ] H5: required gates, matched release, relevant live acceptance and fixture cleanup.
 
 ## Projector publication and presentation simplification
 

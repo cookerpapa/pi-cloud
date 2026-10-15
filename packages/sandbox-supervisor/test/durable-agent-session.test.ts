@@ -17,20 +17,41 @@ import {
 } from "@pi-cloud/protocol";
 import { DurableAgentSession } from "../src/durable/agent-session.ts";
 import type { RemoteInvocation } from "../src/durable/remote-tools.ts";
+import { fixedRemoteToolDefinitions } from "../src/fixed-remote-tool-definitions.ts";
 
-async function fixture(options: { hold?: boolean; invalid?: boolean; duplicate?: boolean } = {}) {
+async function fixture(
+  options: { hold?: boolean; invalid?: boolean; duplicate?: boolean; parallelReads?: boolean } = {},
+) {
   const models = createModels(),
     faux = fauxProvider({ tokensPerSecond: 1_000_000 });
   models.setProvider(faux.provider);
-  const call = fauxToolCall("bash", options.invalid ? {} : { command: "one effect" });
+  const name = options.parallelReads ? "read" : "bash";
+  const call = fauxToolCall(
+    name,
+    options.invalid
+      ? {}
+      : options.parallelReads
+        ? { path: "first.txt" }
+        : { command: "one effect" },
+  );
   faux.setResponses([
-    fauxAssistantMessage(options.duplicate ? [call, structuredClone(call)] : call, {
-      stopReason: "toolUse",
-    }),
+    fauxAssistantMessage(
+      options.parallelReads
+        ? [call, fauxToolCall("read", { path: "second.txt" })]
+        : options.duplicate
+          ? [call, structuredClone(call)]
+          : call,
+      {
+        stopReason: "toolUse",
+      },
+    ),
     fauxAssistantMessage("DONE"),
   ]);
   let runtime: DurableAgentSession | undefined;
   const started = Promise.withResolvers<void>();
+  const bothExecuting = Promise.withResolvers<void>();
+  const effectBatches: { seq: number; tools: number }[] = [];
+  let executing = 0;
   const reply = Promise.withResolvers<import("@earendil-works/pi-durable").ToolExecutionResult>();
   const commits: StorageWrite[][] = [],
     commands: CandidateToolCommand[] = [],
@@ -46,6 +67,8 @@ async function fixture(options: { hold?: boolean; invalid?: boolean; duplicate?:
         writes: prepared.writes,
       } as unknown as DurableSessionCommit);
       commits.push(structuredClone([...writes]));
+      if (effects?.tools.length)
+        effectBatches.push({ seq: Number(prepared.seq), tools: effects.tools.length });
       for (const { command } of effects?.tools ?? []) {
         if (!("request" in command)) throw new Error("Expected the Cube fixture");
         commands.push(command);
@@ -67,11 +90,13 @@ async function fixture(options: { hold?: boolean; invalid?: boolean; duplicate?:
       return prepared.apply();
     }
   })();
-  const definition = {
-    name: "bash",
-    description: "Test transport only",
-    parameters: Type.Object({ command: Type.String() }),
-  };
+  const definition = options.parallelReads
+    ? fixedRemoteToolDefinitions().find((tool) => tool.name === "read")!
+    : {
+        name,
+        description: "Test transport only",
+        parameters: Type.Object({ command: Type.String() }),
+      };
   runtime = await DurableAgentSession.open(store, {
     models,
     remoteTools: [definition],
@@ -85,7 +110,7 @@ async function fixture(options: { hold?: boolean; invalid?: boolean; duplicate?:
     model: faux.getModel(),
     agent: {},
     context: { sessionId: randomUUID(), turnId: randomUUID() },
-    remoteTools: ["bash"],
+    remoteTools: [name],
     tools: [],
     assertCurrent: async () => {},
     openModel: async ({ options: request }) => ({
@@ -107,14 +132,18 @@ async function fixture(options: { hold?: boolean; invalid?: boolean; duplicate?:
             operationId: randomUUID(),
 
             operation: "tool.execute",
-            toolName: "bash",
+            toolName: name,
             toolCallId: invocation.callId,
             args: invocation.args,
             timeoutMs: 1000,
             maximumOutputBytes: 65536,
           },
         },
-        result: () => awaitWithContext(reply.promise, invocation.context),
+        result: () => {
+          executing++;
+          if (executing === 2) bothExecuting.resolve();
+          return awaitWithContext(reply.promise, invocation.context).finally(() => executing--);
+        },
         completed: () => received,
         dispose: () => {},
       };
@@ -130,9 +159,35 @@ async function fixture(options: { hold?: boolean; invalid?: boolean; duplicate?:
     cancels,
     started,
     commits,
+    effectBatches,
+    bothExecuting,
+    finishTools: () => {
+      received = true;
+      reply.resolve({ content: [{ type: "text", text: "ONE" }] });
+    },
     prepared: () => preparedCount,
   };
 }
+
+it("keeps concurrent native read execution intents in separate commits without serializing execution", async () => {
+  const f = await fixture({ hold: true, parallelReads: true });
+  try {
+    const input = await f.conversation.submit(
+      { type: "input", content: "Read both files" },
+      BACKGROUND_CONTEXT,
+    );
+    await f.bothExecuting.promise;
+    expect(f.commands).toHaveLength(2);
+    expect(f.effectBatches.map((batch) => batch.tools)).toEqual([1, 1]);
+    expect(f.effectBatches[1]!.seq).toBeGreaterThan(f.effectBatches[0]!.seq);
+    expect(f.faux.state.callCount).toBe(1);
+    f.finishTools();
+    expect((await input.wait(BACKGROUND_CONTEXT)).status).toBe("done");
+    expect(f.faux.state.callCount).toBe(2);
+  } finally {
+    await f.runtime.close();
+  }
+});
 
 it("executes a remote Tool only with the native post-validation intent and keeps secrets outside storage", async () => {
   const f = await fixture();

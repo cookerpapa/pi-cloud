@@ -785,6 +785,16 @@ initialization). Pure chat still allocates no VM. The Projector confirms its
 monotonic Kafka dispatch commit before handing a fixed Tool directly to Cube.
 It waits for bounded takeover, never the duration of Bash execution.
 
+[ADR-0250](adr/0250-cube-handoff-outcomes-and-runtime-admission.md) separates the
+takeover failure reply from quarantine success: both start and settle independently,
+without detaching lifecycle work. Availability codes and execution evidence are
+classified separately; an unavailable endpoint can definitively refuse before
+execution, while unknown refusal semantics remain UNKNOWN. Known-binding Tool,
+cancel, probe and preview reads use the existing exact memory key and validate
+the writer, without enumerating a family or querying PG. The
+[delivery record](reports/projector-cube-handoff-repair-20261015.md) distinguishes
+these source changes from the serving release.
+
 Binding creation, closure, deletion and controller adoption co-commit bounded
 control-change references with PG state. They publish to the same Session
 partition through its control publisher. Projector maintains an indexed binding view;
@@ -797,6 +807,10 @@ never reopen or silently retarget a replacement VM. These facts do not become
 Pi Entries or model context. See [ADR-0212](adr/0212-ordered-control-read-models.md).
 
 Cubelet owns native containerd process handles and operation-scoped guest cgroups.
+Its Tool/Cancel admission checks the existing in-memory VM catalog under the same
+Manager mutex that protects position registration and confirmed-absence cleanup.
+A missing catalog entry cannot recreate a removed VM's retained position state;
+it is refusal evidence, not physical-absence or quota-release authority.
 It rejects stale positions and duplicate/changed operations in memory, without querying PG Run leases.
 A trusted host completion adapter externalizes images and publishes one final
 reply to the original Worker boot. Pi Harness processing still creates the

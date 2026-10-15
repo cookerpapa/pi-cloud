@@ -33,7 +33,7 @@ export type BindingViewPage = Readonly<{
 }>;
 export const BINDING_VIEW_PAGE_SIZE = 256;
 export interface SandboxBindingReader {
-  find(scope: ToolLogFact["scope"]): Promise<readonly SandboxBinding[]>;
+  get(scope: ToolLogFact["scope"], bindingId: string): Promise<SandboxBinding | undefined>;
   closeWriter(scope: ToolLogFact["scope"], cancelOutstanding?: boolean): Promise<void>;
   isAlive(instanceId: string): Promise<boolean>;
 }
@@ -166,12 +166,13 @@ export class PostgresSandboxBindings implements SandboxBindings {
         "binding.revision",
       ]);
   }
-  async find(scope: ToolLogFact["scope"]): Promise<readonly SandboxBinding[]> {
+  async get(scope: ToolLogFact["scope"], bindingId: string): Promise<SandboxBinding | undefined> {
     return (await this.#query()
+      .where("binding.binding_id", "=", bindingId)
       .where("binding.tenant_id", "=", scope.tenantId!)
       .where("binding.writer_id", "=", scope.writerId)
       .where("binding.run_id", "=", scope.runId)
-      .execute()) as unknown as SandboxBinding[];
+      .executeTakeFirst()) as unknown as SandboxBinding | undefined;
   }
   async closeWriter(scope: ToolLogFact["scope"], cancelOutstanding = false): Promise<void> {
     const query = this.database

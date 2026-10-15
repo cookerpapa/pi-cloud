@@ -66,8 +66,10 @@ function fixture() {
   const first = route(scope),
     sibling = { ...scope, runId: randomUUID(), turnId: randomUUID() },
     second = route(sibling);
-  const find = vi.fn(async () => [first, second]);
-  const routes = { find } as unknown as SandboxBindingReader;
+  const get = vi.fn(async (_scope: unknown, id: string) =>
+    [first, second].find((r) => r.bindingId === id),
+  );
+  const routes = { get } as unknown as SandboxBindingReader;
   const submitProbe = vi.fn(async () => {}),
     evidence = vi.fn(async () => {});
   const observer = { active: vi.fn(() => true), targets: vi.fn(), status: vi.fn() };
@@ -113,7 +115,7 @@ function fixture() {
     observer,
     submitProbe,
     evidence,
-    find,
+    get,
     first,
     second,
     scope,
@@ -165,7 +167,7 @@ it("forwards a guest probe from the same memory view without a binding SELECT", 
   try {
     probes.consume(f.fact);
     await vi.waitFor(() => expect(f.submitProbe).toHaveBeenCalledOnce());
-    expect(f.find).not.toHaveBeenCalled();
+    expect(f.get).not.toHaveBeenCalled();
     expect(source.readChange).not.toHaveBeenCalled();
   } finally {
     await probes.close();
@@ -176,10 +178,10 @@ it("never probes absent chat bindings, but treats a missing expected binding as 
   const f = fixture();
   try {
     f.probes.consume({ ...f.fact, execution: { ...f.fact.execution!, bindings: [] } });
-    expect(f.find).not.toHaveBeenCalled();
+    expect(f.get).not.toHaveBeenCalled();
     expect(f.submitProbe).not.toHaveBeenCalled();
     f.advance(15000);
-    f.find.mockResolvedValue([]);
+    f.get.mockResolvedValue(undefined);
     f.probes.consume({
       ...f.fact,
       factId: randomUUID(),

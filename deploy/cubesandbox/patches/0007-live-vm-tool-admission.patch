@@ -1,0 +1,271 @@
+diff --git a/Cubelet/pkg/execution/containerd.go b/Cubelet/pkg/execution/containerd.go
+index df7eecb..7b6ce55 100644
+--- a/Cubelet/pkg/execution/containerd.go
++++ b/Cubelet/pkg/execution/containerd.go
+@@ -26,8 +26,13 @@ type ResolvedTask struct {
+ }
+ type TaskResolver func(context.Context, Request) (ResolvedTask, error)
+ type ContainerdDriver struct {
+-	Resolve       TaskResolver
+-	FIFODirectory string
++	Resolve        TaskResolver
++	RuntimePresent func(string) bool
++	FIFODirectory  string
++}
++
++func (d *ContainerdDriver) HasRuntime(sandbox string) bool {
++	return d.RuntimePresent != nil && d.RuntimePresent(sandbox)
+ }
+ 
+ type toolOutput struct {
+diff --git a/Cubelet/pkg/execution/manager.go b/Cubelet/pkg/execution/manager.go
+index 2fc2c6a..625fbdb 100644
+--- a/Cubelet/pkg/execution/manager.go
++++ b/Cubelet/pkg/execution/manager.go
+@@ -61,6 +61,9 @@ type Result struct {
+ }
+ 
+ type Driver interface {
++	// HasRuntime reads the existing native catalog only. It runs under the
++	// admission mutex shared with ForgetRuntime; it must not probe or do I/O.
++	HasRuntime(string) bool
+ 	// Run joins its native main process and performs scoped stopping on context
+ 	// cancellation or an explicit guest timeout flag before returning.
+ 	Run(context.Context, Request, func(json.RawMessage)) Result
+@@ -136,6 +139,9 @@ func (m *Manager) Submit(boot string, r Request) string {
+ 	if m.closed {
+ 		return "executor_capacity"
+ 	}
++	if !m.driver.HasRuntime(r.SandboxID) {
++		return "execution_unavailable"
++	}
+ 	if m.unsafeRuntimes[r.SandboxID] {
+ 		return "runtime_quarantined"
+ 	}
+@@ -256,8 +262,8 @@ func (m *Manager) advance(sandbox string, source Position, offset int64, fresh b
+ }
+ 
+ // Cancel requests cooperative Tool interruption. It never signals a completed
+-// operation or asserts that its processes have exited. The service verifies the
+-// recorded VM exists before admitting a cancellation for a previously unused VM.
++// operation or asserts that its processes have exited. Catalog presence is
++// checked inside the same mutex as Submit and confirmed-absence cleanup.
+ func (m *Manager) Cancel(boot string, r Request) string {
+ 	if boot != m.BootID {
+ 		return "executor_replaced"
+@@ -284,6 +290,9 @@ func (m *Manager) Cancel(boot string, r Request) string {
+ 	if m.closed {
+ 		return "execution_unavailable"
+ 	}
++	if !m.driver.HasRuntime(r.SandboxID) {
++		return "execution_unavailable"
++	}
+ 	if why := m.advance(r.SandboxID, r.Source, offset, false); why != "" {
+ 		return why
+ 	}
+diff --git a/Cubelet/pkg/execution/manager_test.go b/Cubelet/pkg/execution/manager_test.go
+index e1c3856..9340759 100644
+--- a/Cubelet/pkg/execution/manager_test.go
++++ b/Cubelet/pkg/execution/manager_test.go
+@@ -16,6 +16,8 @@ import (
+ 
+ type driverFunc func(context.Context, Request, func(json.RawMessage)) Result
+ 
++func (f driverFunc) HasRuntime(string) bool { return true }
++
+ func (f driverFunc) Run(c context.Context, r Request, p func(json.RawMessage)) Result {
+ 	return f(c, r, p)
+ }
+diff --git a/Cubelet/pkg/execution/ordered_admission_test.go b/Cubelet/pkg/execution/ordered_admission_test.go
+index 73c3bff..1949665 100644
+--- a/Cubelet/pkg/execution/ordered_admission_test.go
++++ b/Cubelet/pkg/execution/ordered_admission_test.go
+@@ -7,10 +7,125 @@ import (
+ 	"encoding/json"
+ 	"github.com/google/uuid"
+ 	"strconv"
++	"sync"
++	"sync/atomic"
+ 	"testing"
+ 	"time"
+ )
+ 
++type catalogDriver struct {
++	driverFunc
++	present func(string) bool
++}
++
++func (d catalogDriver) HasRuntime(id string) bool { return d.present(id) }
++
++func TestRemovedRuntimeCannotRecreateAdmissionState(t *testing.T) {
++	var present atomic.Bool
++	present.Store(true)
++	var calls atomic.Int32
++	r := request()
++	m := New(catalogDriver{
++		driverFunc: func(context.Context, Request, func(json.RawMessage)) Result {
++			calls.Add(1)
++			return Result{}
++		},
++		present: func(id string) bool { return id != r.SandboxID || present.Load() },
++	}, deliveryFunc(func(context.Context, Request, Result) error { return nil }))
++	defer m.Close()
++	if why := m.Submit(m.BootID, r); why != "" {
++		t.Fatal(why)
++	}
++	m.wg.Wait()
++	present.Store(false) // Native catalog deletion precedes confirmed absence.
++	m.ForgetRuntime(r.SandboxID)
++	r.OperationID = uuid.NewString()
++	r.Source.Offset = "101"
++	for i := 0; i < 100; i++ {
++		if why := m.Submit(m.BootID, r); why != "execution_unavailable" {
++			t.Fatal(why)
++		}
++		if why := m.Cancel(m.BootID, r); why != "execution_unavailable" {
++			t.Fatal(why)
++		}
++	}
++	m.mu.Lock()
++	positions, operations, active := len(m.positions), len(m.operations), m.active
++	m.mu.Unlock()
++	if positions != 0 || operations != 0 || active != 0 || calls.Load() != 1 {
++		t.Fatal("removed identity acquired state or work", positions, operations, active, calls.Load())
++	}
++	fresh := request()
++	fresh.SandboxID = "another-live-vm"
++	if why := m.Submit(m.BootID, fresh); why != "" {
++		t.Fatal(why)
++	}
++	m.wg.Wait()
++	if calls.Load() != 2 || !m.Accepting() {
++		t.Fatal("missing VM blocked another VM")
++	}
++}
++
++func TestCatalogCheckAndPositionAdmissionJoinConfirmedAbsence(t *testing.T) {
++	for _, method := range []string{"submit", "cancel"} {
++		t.Run(method, func(t *testing.T) {
++			var present atomic.Bool
++			present.Store(true)
++			checked, release := make(chan struct{}), make(chan struct{})
++			var checkOnce, releaseOnce sync.Once
++			m := New(catalogDriver{
++				driverFunc: func(ctx context.Context, _ Request, _ func(json.RawMessage)) Result {
++					<-ctx.Done()
++					return Result{}
++				},
++				present: func(string) bool {
++					value := present.Load()
++					checkOnce.Do(func() { close(checked); <-release })
++					return value
++				},
++			}, deliveryFunc(func(context.Context, Request, Result) error { return nil }))
++			defer func() { releaseOnce.Do(func() { close(release) }); m.Close() }()
++			r := request()
++			admit := m.Submit
++			if method == "cancel" {
++				admit = m.Cancel
++			}
++			admitted := make(chan string, 1)
++			go func() { admitted <- admit(m.BootID, r) }()
++			await(t, checked)
++			present.Store(false)
++			forgetting, forgotten := make(chan struct{}), make(chan struct{})
++			go func() { close(forgetting); m.ForgetRuntime(r.SandboxID); close(forgotten) }()
++			await(t, forgetting)
++			select {
++			case <-forgotten:
++				t.Fatal("absence crossed an unsettled admission")
++			case <-time.After(20 * time.Millisecond):
++			}
++			releaseOnce.Do(func() { close(release) })
++			select {
++			case why := <-admitted:
++				if why != "" {
++					t.Fatal(why)
++				}
++			case <-time.After(time.Second):
++				t.Fatal("admission did not settle")
++			}
++			await(t, forgotten)
++			m.wg.Wait()
++			if why := admit(m.BootID, r); why != "execution_unavailable" {
++				t.Fatal(why)
++			}
++			m.mu.Lock()
++			positions, operations, active := len(m.positions), len(m.operations), m.active
++			m.mu.Unlock()
++			if positions != 0 || operations != 0 || active != 0 {
++				t.Fatal("forgotten identity was recreated", positions, operations, active)
++			}
++		})
++	}
++}
++
+ func TestLaterHandoffRejectsDelayedOldOwnerWithoutCancellingActiveCommand(t *testing.T) {
+ 	started := make(chan struct{}, 2)
+ 	ended := make(chan struct{}, 2)
+diff --git a/Cubelet/services/cubebox/execution.go b/Cubelet/services/cubebox/execution.go
+index 4e5a052..d623b03 100644
+--- a/Cubelet/services/cubebox/execution.go
++++ b/Cubelet/services/cubebox/execution.go
+@@ -13,6 +13,13 @@ import (
+ 	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/execution"
+ )
+ 
++// Get uses Cube's existing in-memory catalog. Missing/recovering identity denies
++// admission, but never proves physical absence or authorizes destruction.
++func (s *service) hasExecutionRuntime(id string) bool {
++	_, err := s.cubeboxMgr.cubeboxManger.Get(context.Background(), id)
++	return err == nil
++}
++
+ func (s *service) resolveExecutionTask(ctx context.Context, r execution.Request) (execution.ResolvedTask, error) {
+ 	box, err := s.cubeboxMgr.cubeboxManger.Get(ctx, r.SandboxID)
+ 	if err != nil {
+@@ -76,16 +83,12 @@ func (s *service) SubmitTool(_ context.Context, r *cubebox.SubmitToolRequest) (*
+ 	return &cubebox.SubmitToolResponse{BootId: s.executions.BootID, OperationId: r.OperationId, Accepted: rejection == "", Rejection: rejection}, nil
+ }
+ 
+-func (s *service) CancelTool(ctx context.Context, r *cubebox.CancelToolRequest) (*cubebox.CancelToolResponse, error) {
++func (s *service) CancelTool(_ context.Context, r *cubebox.CancelToolRequest) (*cubebox.CancelToolResponse, error) {
+ 	if s.executions == nil {
+ 		return &cubebox.CancelToolResponse{Rejection: "execution_unavailable"}, nil
+ 	}
+ 	reply := &cubebox.CancelToolResponse{BootId: s.executions.BootID}
+-	// A retired physical VM cannot acquire new retained cancellation state.
+-	if _, err := s.cubeboxMgr.cubeboxManger.Get(ctx, r.SandboxId); err != nil {
+-		reply.Rejection = "execution_unavailable"
+-		return reply, nil
+-	}
++	// Manager checks catalog presence inside its admission/forget mutex.
+ 	var source execution.Position
+ 	if json.Unmarshal(r.SourcePosition, &source) != nil {
+ 		reply.Rejection = "invalid_execution_position"
+diff --git a/Cubelet/services/cubebox/execution_probe_test.go b/Cubelet/services/cubebox/execution_probe_test.go
+index 95b202a..eddd4f5 100644
+--- a/Cubelet/services/cubebox/execution_probe_test.go
++++ b/Cubelet/services/cubebox/execution_probe_test.go
+@@ -13,6 +13,8 @@ import (
+ 
+ type probeDriver struct{}
+ 
++func (probeDriver) HasRuntime(string) bool { return true }
++
+ func (probeDriver) Run(_ context.Context, r execution.Request, _ func(json.RawMessage)) execution.Result {
+ 	output, _ := json.Marshal(map[string]string{"type": "worker.probe_result", "probeId": r.OperationID, "guestBootId": uuid.NewString()})
+ 	return execution.Result{Output: output}
+diff --git a/Cubelet/services/cubebox/service.go b/Cubelet/services/cubebox/service.go
+index cf654a8..bed229c 100644
+--- a/Cubelet/services/cubebox/service.go
++++ b/Cubelet/services/cubebox/service.go
+@@ -176,7 +176,7 @@ func init() {
+ 						CubeLog.Warn("Execution completion adapter unavailable; Tool admission remains disabled")
+ 					}
+ 				}()
+-				s.executions = execution.New(&execution.ContainerdDriver{Resolve: s.resolveExecutionTask, FIFODirectory: filepath.Join(cb.config.StatePath, "fifo", "pi-cloud-execution")}, delivery)
++				s.executions = execution.New(&execution.ContainerdDriver{Resolve: s.resolveExecutionTask, RuntimePresent: s.hasExecutionRuntime, FIFODirectory: filepath.Join(cb.config.StatePath, "fifo", "pi-cloud-execution")}, delivery)
+ 				s.completions = delivery
+ 			}
+ 

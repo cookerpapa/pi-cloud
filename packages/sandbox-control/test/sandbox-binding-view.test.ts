@@ -65,16 +65,24 @@ function fixture() {
 
 it("bootstraps once and serves repeated Run and writer lookups without storage reads", async () => {
   const f = fixture();
-  await expect(f.view.find(f.scope)).rejects.toThrow("not recovered");
+  await expect(f.view.get(f.scope, f.original.bindingId)).rejects.toThrow("not recovered");
   await f.view.load([0], () => true);
   for (let n = 0; n < 1000; n++) {
-    expect(await f.view.find(f.scope)).toHaveLength(1);
-    expect(await f.view.find(f.scope)).toHaveLength(1);
+    expect(await f.view.get(f.scope, f.original.bindingId)).toEqual(f.original);
+    expect(await f.view.get(f.scope, f.original.bindingId)).toEqual(f.original);
   }
   expect(f.source.loadView).toHaveBeenCalledOnce();
   expect(f.source.readChange).not.toHaveBeenCalled();
-  expect(await f.view.find({ ...f.scope, tenantId: randomUUID() })).toEqual([]);
-  expect(await f.view.find({ ...f.scope, runId: randomUUID() })).toEqual([]);
+  expect(
+    await f.view.get({ ...f.scope, tenantId: randomUUID() }, f.original.bindingId),
+  ).toBeUndefined();
+  expect(
+    await f.view.get({ ...f.scope, runId: randomUUID() }, f.original.bindingId),
+  ).toBeUndefined();
+  expect(
+    await f.view.get({ ...f.scope, writerId: randomUUID() }, f.original.bindingId),
+  ).toBeUndefined();
+  expect(await f.view.get(f.scope, randomUUID())).toBeUndefined();
 });
 
 it("closes dispatch before log consumption and cannot reopen through delayed open changes", async () => {
@@ -82,11 +90,11 @@ it("closes dispatch before log consumption and cannot reopen through delayed ope
   await f.view.load([0], () => true);
   f.set({ ...f.original, revision: "3", dispatchClosed: true });
   await f.view.prepare(f.change("3", true), () => true);
-  expect((await f.view.find(f.scope))[0]?.dispatchClosed).toBe(true);
+  expect((await f.view.get(f.scope, f.original.bindingId))?.dispatchClosed).toBe(true);
   await f.view.consume(f.change("2"), () => true);
   await f.view.consume(f.change("3", true), () => true);
   expect(f.source.readChange).toHaveBeenCalledOnce();
-  expect((await f.view.find(f.scope))[0]?.dispatchClosed).toBe(true);
+  expect((await f.view.get(f.scope, f.original.bindingId))?.dispatchClosed).toBe(true);
 });
 
 it("keeps new bindings out of the view until their ordered change is consumed", async () => {
@@ -95,10 +103,10 @@ it("keeps new bindings out of the view until their ordered change is consumed", 
   await f.view.load([0], () => true);
   f.set(f.original);
   await f.view.prepare(f.change("1"), () => true);
-  expect(await f.view.find(f.scope)).toEqual([]);
+  expect(await f.view.get(f.scope, f.original.bindingId)).toBeUndefined();
   expect(f.source.readChange).toHaveBeenCalledOnce();
   await f.view.consume(f.change("1"), () => true);
-  expect(await f.view.find(f.scope)).toHaveLength(1);
+  expect(await f.view.get(f.scope, f.original.bindingId)).toEqual(f.original);
   expect(f.source.readChange).toHaveBeenCalledTimes(2);
 });
 
@@ -112,7 +120,7 @@ it("does not resurrect a deleted route after an older read completes", async () 
   await f.view.prepare(f.change("3", true), () => true);
   old.resolve({ ...f.original, revision: "2" });
   await reading;
-  expect(await f.view.find(f.scope)).toEqual([]);
+  expect(await f.view.get(f.scope, f.original.bindingId)).toBeUndefined();
 });
 
 it("discards both delayed bootstrap and event reads after assignment replacement", async () => {
@@ -123,7 +131,7 @@ it("discards both delayed bootstrap and event reads after assignment replacement
   f.view.reset();
   snapshot.resolve([f.original]);
   await load;
-  await expect(f.view.find(f.scope)).rejects.toThrow("not recovered");
+  await expect(f.view.get(f.scope, f.original.bindingId)).rejects.toThrow("not recovered");
   await f.view.load([0], () => true);
   const old = Promise.withResolvers<SandboxBindingRecord | undefined>();
   f.source.readChange.mockImplementationOnce(() => old.promise);
@@ -133,7 +141,7 @@ it("discards both delayed bootstrap and event reads after assignment replacement
   await f.view.load([0], () => true);
   old.resolve({ ...f.original, revision: "2" });
   await reading;
-  expect(await f.view.find(f.scope)).toEqual([]);
+  expect(await f.view.get(f.scope, f.original.bindingId)).toBeUndefined();
 });
 
 it("an old publication retry still installs current deletion before its Kafka send", async () => {
@@ -147,7 +155,7 @@ it("an old publication retry still installs current deletion before its Kafka se
   await f.view.prepare(f.change("8"), () => true);
   old.resolve({ ...f.original, revision: "11" });
   await reading;
-  expect(await f.view.find(f.scope)).toEqual([]);
+  expect(await f.view.get(f.scope, f.original.bindingId)).toBeUndefined();
 });
 
 it("keeps native Conversation bindings distinct within the same root work", async () => {
@@ -155,26 +163,23 @@ it("keeps native Conversation bindings distinct within the same root work", asyn
   const child = { ...f.original, bindingId: randomUUID() };
   f.source.loadView.mockResolvedValueOnce([f.original, child]);
   await f.view.load([0], () => true);
-  expect(await f.view.find(f.scope)).toHaveLength(2);
+  expect(await f.view.get(f.scope, f.original.bindingId)).toEqual(f.original);
+  expect(await f.view.get(f.scope, child.bindingId)).toEqual(child);
   f.set({ ...f.original, revision: "2", dispatchClosed: true });
   await f.view.prepare(f.change("2", true), () => true);
-  expect(
-    (await f.view.find(f.scope)).find((r) => r.bindingId === f.original.bindingId)?.dispatchClosed,
-  ).toBe(true);
-  expect(
-    (await f.view.find(f.scope)).find((r) => r.bindingId === child.bindingId)?.dispatchClosed,
-  ).toBe(false);
+  expect((await f.view.get(f.scope, f.original.bindingId))?.dispatchClosed).toBe(true);
+  expect((await f.view.get(f.scope, child.bindingId))?.dispatchClosed).toBe(false);
 });
 
 it("does not serve routes for another partition or replace missing state with an open default", async () => {
   const f = fixture();
   await f.view.load([1], () => true);
-  expect(await f.view.find(f.scope)).toEqual([]);
+  expect(await f.view.get(f.scope, f.original.bindingId)).toBeUndefined();
   await expect(f.view.consume(f.change("2"), () => true)).rejects.toThrow("owner");
   await f.view.load([0], () => true);
   f.set(undefined);
   await f.view.consume(f.change("2", true), () => true);
-  expect(await f.view.find(f.scope)).toEqual([]);
+  expect(await f.view.get(f.scope, f.original.bindingId)).toBeUndefined();
 });
 
 it("pages one owner's snapshot and enforces retained row/byte budgets before readiness", async () => {
@@ -189,7 +194,8 @@ it("pages one owner's snapshot and enforces retained row/byte budgets before rea
     partitionCount: 2,
     partitions: [0],
   });
-  expect(await f.view.find(f.scope)).toHaveLength(257);
+  expect(await f.view.get(f.scope, "0")).toEqual(rows[0]);
+  expect(await f.view.get(f.scope, "256")).toEqual(rows[256]);
   const bounded = new SandboxBindingView({
     source: f.source,
     partitionCount: 2,
@@ -197,7 +203,7 @@ it("pages one owner's snapshot and enforces retained row/byte budgets before rea
     maximumBytes: 1,
   });
   await expect(bounded.load([0], () => true)).rejects.toThrow("byte capacity");
-  await expect(bounded.find(f.scope)).rejects.toThrow("not recovered");
+  await expect(bounded.get(f.scope, f.original.bindingId)).rejects.toThrow("not recovered");
   const limited = new SandboxBindingView({
     source: f.source,
     partitionCount: 2,

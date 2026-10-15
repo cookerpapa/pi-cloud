@@ -2448,12 +2448,15 @@ export class SandboxController {
     cancelOutstanding: boolean,
   ): Promise<void> {
     const identity = parseExecutionReference(assignment.executionReference);
-    const routes = await this.#bindings.find({
-      tenantId: assignment.tenantId,
-      runId: identity.runId,
-      writerId: identity.leaseId,
-    });
-    for (const route of routes.filter((row) => row.bindingId === activationId)) {
+    const route = await this.#bindings.get(
+      {
+        tenantId: assignment.tenantId,
+        runId: identity.runId,
+        writerId: identity.leaseId,
+      },
+      activationId,
+    );
+    if (route) {
       if (!sameAssignment(route.snapshot.assignment, assignment))
         throw new SandboxControlError(
           "tool_binding_identity_mismatch",

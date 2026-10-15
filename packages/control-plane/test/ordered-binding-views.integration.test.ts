@@ -207,9 +207,12 @@ it.skipIf(!postgres || !brokers)(
           sandboxProfileKey: "starter",
         },
       );
-      await vi.waitFor(async () => expect(await view!.find(scope)).toHaveLength(1), {
-        timeout: 10000,
-      });
+      await vi.waitFor(
+        async () => expect(await view!.get(scope, binding)).toMatchObject({ bindingId: binding }),
+        {
+          timeout: 10000,
+        },
+      );
       const changeRow = await database
         .selectFrom("outbox")
         .select("payload")
@@ -220,9 +223,10 @@ it.skipIf(!postgres || !brokers)(
       if (change.entity !== "sandbox_binding") throw new Error("Expected binding change");
       await expect(client.publishControl({ ...change, closed: true })).rejects.toThrow();
       expect("append" in client).toBe(false);
-      expect((await view!.find(scope))[0]?.dispatchClosed).toBe(false);
+      expect((await view!.get(scope, binding))?.dispatchClosed).toBe(false);
       await context.run(true, async () => {
-        for (let i = 0; i < 100; i++) expect(await view!.find(scope)).toHaveLength(1);
+        for (let i = 0; i < 100; i++)
+          expect(await view!.get(scope, binding)).toMatchObject({ bindingId: binding });
       });
       expect(queries).toEqual([]);
       const subscription = projector.eventHub.subscribe(tenant.tenantId, session.sessionId);
@@ -268,7 +272,7 @@ it.skipIf(!postgres || !brokers)(
           throw new Error("rollback closure");
         }),
       ).rejects.toThrow("rollback closure");
-      expect((await bindings.find(scope))[0]?.dispatchClosed).toBe(false);
+      expect((await bindings.get(scope, binding))?.dispatchClosed).toBe(false);
       expect(
         await database
           .selectFrom("outbox")
@@ -285,18 +289,20 @@ it.skipIf(!postgres || !brokers)(
       await vi.waitFor(() => expect(controlRequests).toBeGreaterThan(previousRequests), {
         timeout: 10000,
       });
-      await vi.waitFor(async () => expect((await view!.find(scope))[0]?.dispatchClosed).toBe(true));
+      await vi.waitFor(async () =>
+        expect((await view!.get(scope, binding))?.dispatchClosed).toBe(true),
+      );
       closedAdmissionGate.resolve();
       await expect(closing).rejects.toThrow();
-      expect((await view!.find(scope))[0]?.dispatchClosed).toBe(true);
+      expect((await view!.get(scope, binding))?.dispatchClosed).toBe(true);
       await bindings.closeWriter(scope, false);
       await projector.close();
       projector = create();
       await projector.start();
       await vi.waitFor(() => expect(projector!.ownsPartition(0)).toBe(true), { timeout: 30000 });
-      expect((await view!.find(scope))[0]?.dispatchClosed).toBe(true);
+      expect((await view!.get(scope, binding))?.dispatchClosed).toBe(true);
       await bindings.release(binding, assignment);
-      await vi.waitFor(async () => expect(await view!.find(scope)).toEqual([]), {
+      await vi.waitFor(async () => expect(await view!.get(scope, binding)).toBeUndefined(), {
         timeout: 10000,
       });
       expect((await sql`select 1 from pi_durable_log`.execute(database)).rows).toEqual([]);

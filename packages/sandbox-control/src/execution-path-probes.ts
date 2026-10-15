@@ -151,14 +151,17 @@ export class ExecutionPathProbes {
     bindings: ProbeBinding[],
     current: () => boolean,
   ): Promise<void> {
-    const routes = await this.options.routes.find(fact.scope);
+    const routes = await Promise.all(
+      bindings.map((binding) => this.options.routes.get(binding.scope, binding.bindingId)),
+    );
     const sentAt = Date.parse(fact.occurredAt);
     if (!current() || !this.#valid(fact.scope) || this.#now() - sentAt > EXECUTION_PROBE_TIMEOUT_MS)
       return;
     const groups = new Map<string, Pending[]>();
-    for (const binding of bindings) {
+    for (const [index, binding] of bindings.entries()) {
       if (!this.#valid(binding.scope)) continue;
-      const route = routes.find((r) => r.bindingId === binding.bindingId && !r.dispatchClosed);
+      const found = routes[index];
+      const route = found?.dispatchClosed ? undefined : found;
       const identity =
         route && parseExecutionReference(route.snapshot.assignment.executionReference);
       if (

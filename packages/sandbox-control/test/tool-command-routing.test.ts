@@ -92,19 +92,21 @@ function fixture() {
       sandboxProfileKey: "standard",
     },
   };
-  const find = vi.fn(async () => [route]);
+  const get = vi.fn(async () => route as SandboxBinding | undefined);
   const closeWriter = vi.fn(async () => {
-    find.mockResolvedValue([{ ...route, dispatchClosed: true }]);
+    get.mockResolvedValue({ ...route, dispatchClosed: true });
   });
   const cube = {
     submitTool: vi.fn<CubeSandboxRuntimeClient["submitTool"]>(async () => {}),
     cancelTool: vi.fn<CubeSandboxRuntimeClient["cancelTool"]>(async () => {}),
   };
   const workflow = vi.fn(async () => {}),
-    publishReply = vi.fn(async () => {}),
+    publishReply = vi.fn<ConstructorParameters<typeof ToolCommandDispatcher>[0]["publishReply"]>(
+      async () => {},
+    ),
     quarantine = vi.fn(async () => {});
   const options = {
-    routes: { find, closeWriter, isAlive: async () => true },
+    routes: { get, closeWriter, isAlive: async () => true },
     cube,
     workflow,
     publishReply,
@@ -113,7 +115,7 @@ function fixture() {
   return {
     command,
     route,
-    find,
+    get,
     closeWriter,
     cube,
     workflow,
@@ -128,7 +130,7 @@ const record = (fact: any, offset = 0n) => ({ fact, topic: "session-log", partit
 describe("Projector native Cube handoff", () => {
   it("cancels the exact invocation even after new-command routing has closed", async () => {
     const f = fixture();
-    f.find.mockResolvedValue([{ ...f.route, dispatchClosed: true }]);
+    f.get.mockResolvedValue({ ...f.route, dispatchClosed: true });
     const scope = f.command.scope;
     const cancel = {
       kind: "tool_cancel",
@@ -165,7 +167,7 @@ describe("Projector native Cube handoff", () => {
   });
   it("retains a durable cancellation target after its binding row is removed", async () => {
     const f = fixture();
-    f.find.mockResolvedValue([]);
+    f.get.mockResolvedValue(undefined);
     const change = {
       kind: "control_change" as const,
       entity: "sandbox_binding" as const,
@@ -188,7 +190,7 @@ describe("Projector native Cube handoff", () => {
       executionScopeId: f.route.bindingId,
       writerId: f.command.scope.writerId,
     });
-    expect(f.find).not.toHaveBeenCalled();
+    expect(f.get).not.toHaveBeenCalled();
   });
   it("dispatches repeated fixed Tools from the binding view without a per-Tool lookup", async () => {
     const f = fixture();
@@ -215,7 +217,7 @@ describe("Projector native Cube handoff", () => {
         record({ ...f.command, request: { ...f.command.request, operationId: randomUUID() } }),
       );
     expect(f.cube.submitTool).toHaveBeenCalledTimes(100);
-    expect(f.find).not.toHaveBeenCalled();
+    expect(f.get).not.toHaveBeenCalled();
     expect(source.readChange).not.toHaveBeenCalled();
     expect(source.loadView).toHaveBeenCalledOnce();
   });
@@ -224,7 +226,7 @@ describe("Projector native Cube handoff", () => {
     const observation = { kind: "agent_event", scope: f.command.scope };
     expect(toolDeliveryFact(observation)).toBeUndefined();
     await f.router.consume(record(observation));
-    expect(f.find).not.toHaveBeenCalled();
+    expect(f.get).not.toHaveBeenCalled();
     await f.router.consume(record(f.command, 1n));
     expect(f.cube.submitTool).toHaveBeenCalledWith(
       f.route.descriptor.target,
@@ -248,14 +250,14 @@ describe("Projector native Cube handoff", () => {
     await f.router.consume(
       record({ ...f.command, request: { ...f.command.request, operationId: randomUUID() } }, 2n),
     );
-    expect(f.find).toHaveBeenCalledTimes(2);
+    expect(f.get).toHaveBeenCalledTimes(2);
   });
   it("reconstructs transport metadata after dispatcher replacement", async () => {
     const f = fixture();
     await new ToolCommandDispatcher(f.options).consume(record(f.command));
     const next = { ...f.command, request: { ...f.command.request, operationId: randomUUID() } };
     await new ToolCommandDispatcher(f.options).consume(record(next, 1n));
-    expect(f.find).toHaveBeenCalledTimes(2);
+    expect(f.get).toHaveBeenCalledTimes(2);
     expect(f.cube.submitTool.mock.calls.map((args) => args[0])).toEqual([
       f.route.descriptor.target,
       f.route.descriptor.target,
@@ -264,9 +266,9 @@ describe("Projector native Cube handoff", () => {
   it("does not dispatch after partition ownership changes during the binding read", async () => {
     const f = fixture();
     let current = true;
-    f.find.mockImplementation(async () => {
+    f.get.mockImplementation(async () => {
       current = false;
-      return [f.route];
+      return f.route;
     });
     await f.router.consume(record(f.command), () => current);
     expect(f.cube.submitTool).not.toHaveBeenCalled();
@@ -306,6 +308,72 @@ describe("Projector native Cube handoff", () => {
     expect(f.quarantine).toHaveBeenCalledWith(f.route.descriptor.target);
     expect(f.cube.submitTool).toHaveBeenCalledOnce();
   });
+  it.each(["executor_replaced", "runtime_quarantined"])(
+    "notifies the Worker while %s quarantine is still pending, then joins its failure",
+    async (reason) => {
+      const f = fixture(),
+        pending = Promise.withResolvers<void>();
+      f.cube.submitTool.mockRejectedValue(new CubeExecutionRejected(reason));
+      f.quarantine.mockImplementation(() => pending.promise);
+      const handling = f.router.consume(record(f.command));
+      const result = handling.catch((error) => error);
+      await vi.waitFor(() => expect(f.publishReply).toHaveBeenCalledOnce());
+      expect(f.publishReply.mock.calls[0]?.[1]).toMatchObject({
+        failure: { code: "cubesandbox_tool_unavailable", effect: "unknown" },
+      });
+      let settled = false;
+      void result.then(() => {
+        settled = true;
+      });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      pending.reject(new Error("quarantine propagation failed"));
+      expect(await result).toBeInstanceOf(AggregateError);
+      expect(f.cube.submitTool).toHaveBeenCalledOnce();
+      expect(f.publishReply).toHaveBeenCalledOnce();
+      expect(f.cube.cancelTool).not.toHaveBeenCalled();
+    },
+  );
+  it("attempts failure notification even when quarantine throws synchronously", async () => {
+    const f = fixture();
+    f.cube.submitTool.mockRejectedValue(new CubeExecutionRejected("executor_replaced"));
+    f.quarantine.mockImplementation(() => {
+      throw Error("synchronous lifecycle failure");
+    });
+    await expect(f.router.consume(record(f.command))).rejects.toBeInstanceOf(AggregateError);
+    expect(f.publishReply).toHaveBeenCalledOnce();
+  });
+  it("still completes quarantine when the failure reply is lost, without replay or cancellation", async () => {
+    const f = fixture();
+    f.cube.submitTool.mockRejectedValue(new CubeExecutionRejected("executor_replaced"));
+    f.publishReply.mockRejectedValue(new Error("reply transport unavailable"));
+    await f.router.consume(record(f.command));
+    expect(f.quarantine).toHaveBeenCalledOnce();
+    expect(f.publishReply).toHaveBeenCalledOnce();
+    expect(f.cube.submitTool).toHaveBeenCalledOnce();
+    expect(f.cube.cancelTool).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["node_unavailable", "cubesandbox_tool_unavailable", "not_started"],
+    ["execution_unavailable", "cubesandbox_tool_unavailable", "not_started"],
+    ["execution_endpoint_unconfigured", "cubesandbox_tool_unavailable", "not_started"],
+    ["executor_capacity", "cubesandbox_tool_unavailable", "not_started"],
+    ["capacity", "tool_execution_not_started", "not_started"],
+    ["invalid_request", "tool_execution_not_started", "not_started"],
+    ["invalid_identity", "tool_execution_not_started", "not_started"],
+    ["invalid_execution_position", "tool_execution_not_started", "not_started"],
+    ["operation_changed", "cubesandbox_tool_result_unknown", "unknown"],
+    ["execution_position_stale", "cubesandbox_tool_result_unknown", "unknown"],
+    ["execution_stream_changed", "cubesandbox_tool_result_unknown", "unknown"],
+    ["future_refusal", "cubesandbox_tool_result_unknown", "unknown"],
+  ])("preserves %s refusal evidence without inventing effects", async (reason, code, effect) => {
+    const f = fixture();
+    f.cube.submitTool.mockRejectedValue(new CubeExecutionRejected(reason));
+    await f.router.consume(record(f.command));
+    expect(f.publishReply.mock.calls[0]?.[1]).toMatchObject({ failure: { code, effect } });
+    expect(f.cube.submitTool).toHaveBeenCalledOnce();
+    expect(f.quarantine).not.toHaveBeenCalled();
+  });
   it("refuses later routing after binding closure, including dispatcher replacement", async () => {
     const f = fixture();
     await f.router.consume(record(f.command));
@@ -337,7 +405,7 @@ describe("Projector native Cube handoff", () => {
   it("refuses a binding quarantined by another control-plane replica", async () => {
     const f = fixture();
     await f.router.consume(record(f.command));
-    f.find.mockResolvedValue([{ ...f.route, dispatchClosed: true }]);
+    f.get.mockResolvedValue({ ...f.route, dispatchClosed: true });
     await f.router.consume(
       record({ ...f.command, request: { ...f.command.request, operationId: randomUUID() } }, 1n),
     );

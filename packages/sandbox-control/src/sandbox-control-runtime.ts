@@ -293,7 +293,7 @@ export async function createSandboxControl(options: {
         scope: import("@pi-cloud/protocol").AcceptedToolCommand["scope"],
         bindingId: string,
       ) => {
-        const route = (await bindingView.find(scope)).find((r) => r.bindingId === bindingId);
+        const route = await bindingView.get(scope, bindingId);
         if (!route || route.dispatchClosed) throw new Error("Preview Tool binding is unavailable");
         if (route.instanceId === instanceId) {
           await controller.refreshServices(bindingId, route.snapshot.assignment);

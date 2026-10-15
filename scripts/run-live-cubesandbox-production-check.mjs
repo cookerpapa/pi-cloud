@@ -15,6 +15,7 @@ import {
   OfficialCubeSandboxRuntimeClient,
   workspaceVolumeId,
 } from "../packages/sandbox-control/src/index.ts";
+import { CubeExecutionRejected } from "../packages/sandbox-control/src/cubesandbox-runtime-client.ts";
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import { snapshotTurn } from "./lib/session-snapshot.mjs";
@@ -1135,6 +1136,12 @@ try {
   const largeFirstUsage = await runUsageEvidence(largeFirst.accepted.runId);
   const largeFirstWorkspace = await workspaceFileEvidence(largeFirst.accepted.runId);
   const largeFirstRuntime = await workspaceRuntimeEvidence(largeSession.workspaceId);
+  const sourceInstance = await cube.read(largeFirstRuntime.providerRuntimeId);
+  assert(sourceInstance?.nodeId, "Owned VM has no recorded node");
+  const sourceExecution = await cube.executionTarget(
+    sourceInstance.sandboxId,
+    sourceInstance.nodeId,
+  );
   assert(
     largeFirstWorkspace.volumeFileCount > 512,
     "Large-workspace Run did not create the requested persistent files",
@@ -1142,6 +1149,39 @@ try {
   await terminateWarmCubeSession(largeFirst.accepted.runId, largeSession.sessionId);
   await waitForNoCubeSession(largeSession.sessionId);
   progress("source Cube was removed while its persistent Workspace Volume remained authoritative");
+  assert.equal(
+    (await cube.observe(sourceExecution.sandboxId, sourceExecution.nodeId)).presence,
+    "absent",
+  );
+  assert.equal(
+    (await cube.executionTarget(sourceExecution.sandboxId, sourceExecution.nodeId)).bootId,
+    sourceExecution.bootId,
+    "Keep the executor Boot unchanged for the post-deletion admission check",
+  );
+  const absentOperation = {
+    source: { topic: ACCEPTED_FACT_TOPIC, partition: 0, offset: "0" },
+    operationId: randomUUID(),
+    executionScopeId: randomUUID(),
+    writerId: randomUUID(),
+  };
+  const refusedBeforeAdmission = (error) =>
+    error instanceof CubeExecutionRejected && error.code === "execution_unavailable";
+  // Negative endpoint check after anchored absence. Opaque empty payloads can
+  // never contain a file/shell command; no new execution intent is being created.
+  await assert.rejects(
+    cube.submitTool(sourceExecution, {
+      ...absentOperation,
+      payload: {},
+      completionContext: {},
+      timeoutMs: 1000,
+      maximumOutputBytes: 1024,
+    }),
+    refusedBeforeAdmission,
+  );
+  await assert.rejects(cube.cancelTool(sourceExecution, absentOperation), refusedBeforeAdmission);
+  progress(
+    "deleted VM rejected both Tool and cancellation admission on the original executor Boot",
+  );
 
   const largeFollowUp = await runTurn(
     largeSession.sessionId,
@@ -1287,6 +1327,7 @@ try {
       foreignSessionMicroVmCount: 0,
       conversationDeletionReleasedWorkspaceRuntime: false,
       confirmedAllocationClosureVerified: false,
+      deletedVmAdmissionRejected: true,
     },
   };
   assert(usage.requests >= 3 && usage.inputTokens > 0 && usage.outputTokens > 0);

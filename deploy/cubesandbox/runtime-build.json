@@ -27,6 +27,10 @@
     {
       "file": "0006-template-cleanup-node-routing.patch",
       "sha256": "4df39ad1d7f5f71f9ad5c0fa24bd1e125ade2423b3d1451725927f4221815cc8"
+    },
+    {
+      "file": "0007-live-vm-tool-admission.patch",
+      "sha256": "ba2b8cdcab3287ddd1ac0b93e85ff1ade64d3722c5a354e7fa36582b264f1452"
     }
   ],
   "buildImages": {

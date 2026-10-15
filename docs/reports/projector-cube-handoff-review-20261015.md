@@ -4,6 +4,9 @@
 `projector-compact-bf55d9bd`，schema 189 / execution Topic v17 / guest 5 / Cube management 7。
 这是审查记录，没有修改运行代码、消息协议、数据库或线上部署。
 
+后续批准的[修复记录](projector-cube-handoff-repair-20261015.md)单独跟踪实施与上线。
+下列审查探针已由维护中的回归测试替代；复现原行为须检出 `9097ba11`。
+
 建议保留已认可的顺序：投影原生意图 → 确认单调派发 offset → 向 Cube 请求接管。
 发现三个可复现的实现问题、一个查找优化点，以及一个尚未由当前原生调用触发的
 批内位置契约隐患。无需增加 Broker、工具任务表、每工具 PG 租约查询或新队列。
@@ -163,6 +166,8 @@ offset。Cube 的新 operation 则要求 offset
 独立小优化。D15H-01 先明确实际批内效果能力，再决定协议改动范围。
 
 复现命令（只用合成数据、隔离容器/本地 HTTP；不接触生产会话）：
+
+以下命令针对 Git `9097ba11` 的完整检出，不针对已修复的当前分支。
 
 ```sh
 node --import tsx scripts/experiments/review-20261015-handoff/routing.mts

@@ -5,6 +5,7 @@ import {
   type ExecutionLogPosition,
   type SandboxBindingChange,
   type AcceptedToolCancellation,
+  type ToolExecutionFailureData,
 } from "@pi-cloud/protocol";
 import type { ToolReply } from "@pi-cloud/event-log";
 import { operationalLog, type PiCloudMetrics } from "@pi-cloud/observability";
@@ -42,6 +43,51 @@ type WorkflowDelivery = ((
   delivery: ToolLogDelivery,
 ) => Promise<void>) & { close?(): Promise<void> };
 
+function handoffFailure(error: unknown): {
+  failure: ToolExecutionFailureData;
+  quarantine: boolean;
+} {
+  let code = "cubesandbox_tool_result_unknown";
+  let effect: ToolExecutionFailureData["effect"] = "unknown";
+  let quarantine = false;
+  if (error instanceof CubeExecutionRejected) {
+    switch (error.code) {
+      case "executor_replaced":
+      case "runtime_quarantined":
+        code = "cubesandbox_tool_unavailable";
+        quarantine = true;
+        break;
+      case "node_unavailable":
+      case "execution_unavailable":
+      case "execution_endpoint_unconfigured":
+      case "executor_capacity":
+        code = "cubesandbox_tool_unavailable";
+        effect = "not_started";
+        break;
+      case "capacity":
+      case "invalid_request":
+      case "invalid_identity":
+      case "invalid_execution_position":
+        code = "tool_execution_not_started";
+        effect = "not_started";
+        break;
+      // A stale position/changed identity may describe an earlier effect.
+      // Unrecognized refusal semantics likewise cannot prove non-execution.
+    }
+  }
+  return {
+    quarantine,
+    failure: {
+      code,
+      effect,
+      message:
+        effect === "not_started"
+          ? "The execution request was refused before admission; this delivery did not start a file or shell action."
+          : "Execution handoff did not return a confirmed result. The operation was not replayed; inspect effects before repeating it.",
+    },
+  };
+}
+
 /** Runs after the Projector's durable dispatch commit. Fixed Tools go straight
  * to Cube's native executor; only interactive workflow channels use their owner. */
 export class ToolCommandDispatcher {
@@ -78,7 +124,8 @@ export class ToolCommandDispatcher {
       );
       return;
     }
-    const routes = await this.options.routes.find(fact.scope);
+    const invocation = fact as AcceptedToolCommand | AcceptedToolCancellation;
+    const route = await this.options.routes.get(fact.scope, invocation.request.activationId);
     if (current?.() === false) return;
     const source = {
       topic: record.topic,
@@ -87,7 +134,6 @@ export class ToolCommandDispatcher {
     };
     if (fact.kind === "tool_cancel") {
       const cancel = fact as AcceptedToolCancellation;
-      const route = routes.find((r) => r.bindingId === cancel.request.activationId);
       if (route)
         await this.#cancel(
           route.descriptor.target,
@@ -102,14 +148,12 @@ export class ToolCommandDispatcher {
       return;
     }
     const command = fact as AcceptedToolCommand;
-    const route = routes.find((r) => r.bindingId === command.request.activationId);
     if (!route || route.dispatchClosed) {
-      await this.#fail(
-        command,
-        "cubesandbox_tool_unavailable",
-        "The recorded Tool binding is unavailable.",
-        "not_started",
-      );
+      await this.#fail(command, {
+        code: "cubesandbox_tool_unavailable",
+        message: "The recorded Tool binding is unavailable.",
+        effect: "not_started",
+      });
       return;
     }
     const started = performance.now();
@@ -159,35 +203,22 @@ export class ToolCommandDispatcher {
       this.#delivered++;
     } catch (error) {
       this.#abandoned++;
-      let code = "cubesandbox_tool_result_unknown";
-      if (error instanceof CubeExecutionRejected) {
-        if (["executor_replaced", "runtime_quarantined"].includes(error.code)) {
-          await this.options.quarantine(route.descriptor.target);
-          code = "cubesandbox_tool_unavailable";
-        } else {
-          code = [
-            "operation_changed",
-            "execution_position_stale",
-            "execution_stream_changed",
-          ].includes(error.code)
-            ? "cubesandbox_tool_result_unknown"
-            : [
-                  "node_unavailable",
-                  "execution_unavailable",
-                  "execution_endpoint_unconfigured",
-                  "executor_capacity",
-                ].includes(error.code)
-              ? "cubesandbox_tool_unavailable"
-              : "tool_execution_not_started";
-        }
-      }
+      const outcome = handoffFailure(error);
       // A lost handoff response cannot retract an accepted external effect.
       // Do not compensate by stopping processes or replaying the command.
-      await this.#fail(
-        command,
-        code,
-        "Execution handoff did not return a confirmed result. The operation was not replayed; inspect effects before repeating it.",
+      // Notify the original Worker without waiting for lifecycle propagation.
+      // Join both branches so shutdown/rebalance never abandons quarantine work.
+      const settled = await Promise.allSettled([
+        this.#fail(command, outcome.failure),
+        ...(outcome.quarantine
+          ? [Promise.resolve().then(() => this.options.quarantine(route.descriptor.target))]
+          : []),
+      ]);
+      const failures = settled.flatMap((result) =>
+        result.status === "rejected" ? [result.reason] : [],
       );
+      if (failures.length)
+        throw new AggregateError(failures, "Tool failure settlement is incomplete");
     } finally {
       this.options.metrics?.toolLogDelivery.observe(
         { route: "local", outcome: "handoff" },
@@ -257,14 +288,7 @@ export class ToolCommandDispatcher {
         throw new Error("Workflow closure is unconfirmed");
     }
   }
-  async #fail(
-    command: AcceptedToolCommand,
-    code: string,
-    text: string,
-    effect: "not_started" | "unknown" = code === "tool_execution_not_started"
-      ? "not_started"
-      : "unknown",
-  ): Promise<void> {
+  async #fail(command: AcceptedToolCommand, failure: ToolExecutionFailureData): Promise<void> {
     if (!command.replyTopic) return;
     try {
       await this.options.publishReply(
@@ -278,7 +302,7 @@ export class ToolCommandDispatcher {
               ? command.request.toolCallId
               : command.toolCallId,
           toolName: command.request.toolName,
-          failure: { code, message: text, effect },
+          failure,
         },
         command.scope,
       );

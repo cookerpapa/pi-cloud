@@ -13,14 +13,12 @@ type Entry = {
   readers: number;
   closed: boolean;
 };
-const key = (tenant: string, id: string) => `${tenant}:${id}`;
 const routeKey = (tenant: string, run: string, binding: string) => `${tenant}:${run}:${binding}`;
 
 /** Current routing on the Session partition owner. PG is read at bootstrap or
  * a control change, never as an implicit fallback on Tool/probe lookup. */
 export class SandboxBindingView implements SandboxBindingReader {
   readonly #entries = new Map<string, Entry>();
-  readonly #writers = new Map<string, Set<string>>();
   #partitions = new Set<number>();
   #generation = 0;
   #ready = false;
@@ -44,7 +42,6 @@ export class SandboxBindingView implements SandboxBindingReader {
     this.#partitions.clear();
     this.#entries.clear();
     this.#bytes = 0;
-    this.#writers.clear();
   }
   async load(partitions: readonly number[], current: () => boolean): Promise<void> {
     this.reset();
@@ -83,21 +80,6 @@ export class SandboxBindingView implements SandboxBindingReader {
     this.#entries.set(id, entry);
     return entry;
   }
-  #index(route: SandboxBindingRecord, add: boolean): void {
-    for (const [index, identity] of [[this.#writers, route.writerId]] as const) {
-      const id = key(route.tenantId, identity),
-        binding = routeKey(route.tenantId, route.runId, route.bindingId);
-      if (add) {
-        let set = index.get(id);
-        if (!set) index.set(id, (set = new Set()));
-        set.add(binding);
-      } else {
-        const set = index.get(id);
-        set?.delete(binding);
-        if (!set?.size) index.delete(id);
-      }
-    }
-  }
   #apply(entry: Entry, route: SandboxBindingRecord | undefined, version: bigint): void {
     // Binding identities never reopen. Positive PG absence is closure even
     // when the triggering Outbox retry predates the deleted row's last version.
@@ -109,12 +91,10 @@ export class SandboxBindingView implements SandboxBindingReader {
       throw new Error("Sandbox binding view byte capacity exceeded");
     this.#bytes = bytes;
     entry.bytes = routeBytes;
-    if (entry.route) this.#index(entry.route, false);
     entry.version = version > entry.version ? version : entry.version;
     entry.closed ||= !route || route.dispatchClosed;
     if (route) entry.route = structuredClone(route);
     else delete entry.route;
-    if (entry.route) this.#index(entry.route, true);
   }
   async #change(
     change: SandboxBindingChange,
@@ -171,16 +151,14 @@ export class SandboxBindingView implements SandboxBindingReader {
       throw new Error("Binding closure view is behind its fact");
     return row;
   }
-  async find(
-    scope: Parameters<SandboxBindingReader["find"]>[0],
-  ): Promise<readonly SandboxBinding[]> {
+  async get(
+    scope: Parameters<SandboxBindingReader["get"]>[0],
+    bindingId: string,
+  ): Promise<SandboxBinding | undefined> {
     if (!this.#ready) throw new Error("Sandbox binding view has not recovered");
     if (!scope.tenantId) throw new Error("Sandbox binding scope has no tenant");
-    const ids = this.#writers.get(key(scope.tenantId, scope.writerId));
-    return [...(ids ?? [])].flatMap((id) => {
-      const route = this.#entries.get(id)?.route;
-      return route?.runId === scope.runId ? [route] : [];
-    });
+    const route = this.#entries.get(routeKey(scope.tenantId, scope.runId, bindingId))?.route;
+    return route?.writerId === scope.writerId ? route : undefined;
   }
   closeWriter(...args: Parameters<SandboxBindingReader["closeWriter"]>): Promise<void> {
     return this.options.source.closeWriter(...args);

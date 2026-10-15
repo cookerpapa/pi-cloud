@@ -573,15 +573,21 @@ describe("whole-tool Worker adapter", () => {
     "image decode failed",
     "reply identity mismatch",
     "structured failure",
+    "unavailable before admission",
   ])("stops native Agent sampling after transport rejection: %s", async (reason) => {
-    const cause =
+    const expectedCode =
       reason === "structured failure"
-        ? new ToolExecutionFailure({
-            code: "ownership_lost",
-            message: "Executor no longer owns this operation",
-            effect: "unknown",
-          })
-        : new Error(reason);
+        ? "ownership_lost"
+        : reason === "unavailable before admission"
+          ? "cubesandbox_tool_unavailable"
+          : "tool_operation_outcome_unknown";
+    const cause = ["structured failure", "unavailable before admission"].includes(reason)
+      ? new ToolExecutionFailure({
+          code: expectedCode,
+          message: "Executor no longer owns this operation",
+          effect: reason === "unavailable before admission" ? "not_started" : "unknown",
+        })
+      : new Error(reason);
     let failure: Error | undefined;
     const capture = createStepCapture();
     const unavailable = vi.fn((value: { code: string; message: string }) => {
@@ -608,7 +614,8 @@ describe("whole-tool Worker adapter", () => {
     expect(publish).toHaveBeenCalledOnce();
     expect(unavailable).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
-        code: reason === "structured failure" ? "ownership_lost" : "tool_operation_outcome_unknown",
+        code: expectedCode,
+        effect: reason === "unavailable before admission" ? "not_started" : "unknown",
         retryable: false,
       }),
     );
@@ -617,9 +624,7 @@ describe("whole-tool Worker adapter", () => {
       content: [
         {
           type: "text",
-          text: expect.stringContaining(
-            reason === "structured failure" ? "ownership_lost" : "tool_operation_outcome_unknown",
-          ),
+          text: expect.stringContaining(expectedCode),
         },
       ],
     });

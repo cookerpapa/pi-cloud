@@ -19,16 +19,18 @@ export class InMemorySandboxBindings implements SandboxBindings {
       throw new Error("Binding routing admission is still open");
     this.rows.delete(bindingId);
   }
-  async find(...[scope]: Parameters<SandboxBindings["find"]>) {
-    return [...this.rows.values()].filter((row) => {
-      const assignment = row.snapshot.assignment;
-      const id = parseExecutionReference(assignment.executionReference);
-      return (
-        assignment.tenantId === scope.tenantId &&
-        id.leaseId === scope.writerId &&
-        id.runId === scope.runId
-      );
-    });
+  #matches(row: SandboxBinding, scope: Parameters<SandboxBindings["get"]>[0]) {
+    const assignment = row.snapshot.assignment;
+    const id = parseExecutionReference(assignment.executionReference);
+    return (
+      assignment.tenantId === scope.tenantId &&
+      id.leaseId === scope.writerId &&
+      id.runId === scope.runId
+    );
+  }
+  async get(...[scope, bindingId]: Parameters<SandboxBindings["get"]>) {
+    const row = this.rows.get(bindingId);
+    return row && this.#matches(row, scope) ? row : undefined;
   }
   async adopt(physicalActivationId: string) {
     return [...this.rows.values()]
@@ -36,7 +38,8 @@ export class InMemorySandboxBindings implements SandboxBindings {
       .map((row) => ({ ...row, closed: row.dispatchClosed }));
   }
   async closeWriter(...args: Parameters<SandboxBindings["closeWriter"]>) {
-    for (const row of await this.find(args[0])) {
+    for (const row of this.rows.values()) {
+      if (!this.#matches(row, args[0])) continue;
       this.rows.set(row.bindingId, { ...row, dispatchClosed: true });
       await this.onClose?.(row);
     }

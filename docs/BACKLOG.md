@@ -35,6 +35,11 @@ reviews `93635d37` and the exact pinned Cube patches. It preserves confirmed
 dispatch-before-effect and UNKNOWN semantics. Source/isolated probes pass; this
 review does not change runtime behavior or count as new live fault acceptance.
 
+The owner approved [ADR-0250](adr/0250-cube-handoff-outcomes-and-runtime-admission.md).
+[Repair progress](reports/projector-cube-handoff-repair-20261015.md) distinguishes
+source changes, checks and matched delivery. D15H-01 is a pinned-Pi upgrade check;
+no batch-position protocol extension is included in this repair.
+
 - [ ] R15H-01: keep takeover failure notification independent of quarantine
       success; preserve lifecycle reconciliation and never replay committed Tools.
 - [ ] R15H-02: classify endpoint rejection code and effect evidence separately.
@@ -44,10 +49,10 @@ review does not change runtime behavior or count as new live fault acceptance.
       state after confirmed absence. Cover the check/admission/deletion race.
 - [ ] O15H-01: use the existing exact binding key for ordinary Tool/cancel lookup,
       retaining owner/tenant/closure checks and explicit enumeration where needed.
-- [ ] D15H-01: resolve multi-effect-per-record versus strict Cube offset ordering
-      before enabling/relying on that contract. The current native two-read probe
-      emits separate commits; no normal parallel-read failure is claimed. Any
-      protocol change requires its ADR and matched release.
+- [ ] D15H-01: preserve the current native parallel-read intent grouping as a Pi
+      upgrade contract test. No runtime batch restriction or position field is
+      added. Revisit the protocol only if a real producer path needs multiple
+      Cube effects in one record; ordinary concurrent tools do not imply that.
 
 ## Projector message and decoding review
 
