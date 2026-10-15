@@ -11,9 +11,10 @@ lookup, bounded takeover ACK versus Tool completion, and the intentional UNKNOWN
 window without automatic Shell replay. The actual vendor route is Cube API →
 CubeMaster → Cubelet. The [handoff review](reports/projector-cube-handoff-review-20261015.md)
 records implementation findings; the owner approved the
-[repair](reports/projector-cube-handoff-repair-20261015.md) under ADR-0250.
+[repair](reports/projector-cube-handoff-repair-20261015.md) under ADR-0250,
+now deployed and accepted as `handoff-6ab91bb7`.
 Multi-operation-per-record remains a Pi upgrade check, without a protocol expansion.
-After delivery, the next hop is Cubelet → the VM's fixed Tool process.
+The next hop is Cubelet → the VM's fixed Tool process.
 
 Previously covered Kafka → Projector: one consumer per Control Plane process, partition
 ownership/concurrency, the complete Tool execution-intent envelope, PG projection,

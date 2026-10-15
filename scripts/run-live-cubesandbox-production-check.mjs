@@ -515,16 +515,16 @@ async function workspaceFileEvidence(runId) {
 
 async function workspaceRuntimeEvidence(workspaceId) {
   const value = await psql(
-    `select workspace_runtime_id::text || '|' || coalesce(runtime_id, '') || '|' || state
+    `select workspace_runtime_id::text || '|' || coalesce(runtime_id, '') || '|' || state || '|' || coalesce(runtime_name, '')
        from workspace_runtimes
       where workspace_id = ${sqlLiteral(workspaceId)}
         and state in ('reserved', 'materializing', 'active', 'warm', 'cleaning', 'unknown')
       order by updated_at desc
       limit 1`,
   );
-  const [workspaceRuntimeId, providerRuntimeId, state] = value.split("|");
-  assert(workspaceRuntimeId && providerRuntimeId && state);
-  return { workspaceRuntimeId, providerRuntimeId, state };
+  const [workspaceRuntimeId, providerRuntimeId, state, sandboxId] = value.split("|");
+  assert(workspaceRuntimeId && providerRuntimeId && state && sandboxId);
+  return { workspaceRuntimeId, providerRuntimeId, state, sandboxId };
 }
 
 // Routing rows are removed after ordered closure; collect the owned binding
@@ -1136,7 +1136,8 @@ try {
   const largeFirstUsage = await runUsageEvidence(largeFirst.accepted.runId);
   const largeFirstWorkspace = await workspaceFileEvidence(largeFirst.accepted.runId);
   const largeFirstRuntime = await workspaceRuntimeEvidence(largeSession.workspaceId);
-  const sourceInstance = await cube.read(largeFirstRuntime.providerRuntimeId);
+  // runtime_id is PiCloud's UUID; runtime_name is Cube's native sandbox ID.
+  const sourceInstance = await cube.read(largeFirstRuntime.sandboxId);
   assert(sourceInstance?.nodeId, "Owned VM has no recorded node");
   const sourceExecution = await cube.executionTarget(
     sourceInstance.sandboxId,

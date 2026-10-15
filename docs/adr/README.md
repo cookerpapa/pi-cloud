@@ -1,10 +1,16 @@
 # Current architecture decisions
 
-The accepted [ADR-0249](0249-compact-projector-publication.md) implements the
+[ADR-0250](0250-cube-handoff-outcomes-and-runtime-admission.md) repairs failure
+notification/evidence, exact binding lookup and removed-VM admission. It is
+deployed as `handoff-6ab91bb7`, retaining schema 189 / topic v17 / guest 5.
+[Acceptance evidence](../reports/projector-cube-handoff-repair-20261015.md)
+includes native race tests, real Luna/Cube/browser/child recovery and cleanup.
+
+[ADR-0249](0249-compact-projector-publication.md) implements the
 October 15 Projector review: minimal prefix state, compact publication, shared
 dispatch preparation, Tool presentation references and fixed/workflow request
-separation. Implementation and matched release are in progress; it does not
-replace the deployed ownership and recovery contracts below.
+separation. It was deployed as `projector-compact-bf55d9bd` and remains in the
+current release, preserving the ownership and recovery contracts below.
 
 This directory contains only decisions that constrain the maintained Pi Cloud
 product. Superseded experiments and pre-release decisions are intentionally not

@@ -1,6 +1,9 @@
 # ADR-0250: Tool takeover outcomes and live-runtime admission
 
-Status: approved for implementation, 2026-10-15. The owner authorized R15H-01/02/03
+Status: implemented and deployed as `handoff-6ab91bb7`, 2026-10-15.
+[Delivery and acceptance](../reports/projector-cube-handoff-repair-20261015.md)
+record source/native tests, live recovery, failed samples and cleanup.
+The owner authorized R15H-01/02/03
 and O15H-01 from the [handoff review](../reports/projector-cube-handoff-review-20261015.md).
 D15H-01 is an upgrade contract check, not a protocol expansion.
 

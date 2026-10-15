@@ -39,17 +39,19 @@ The owner approved [ADR-0250](adr/0250-cube-handoff-outcomes-and-runtime-admissi
 [Repair progress](reports/projector-cube-handoff-repair-20261015.md) distinguishes
 source changes, checks and matched delivery. D15H-01 is a pinned-Pi upgrade check;
 no batch-position protocol extension is included in this repair.
+The repair is deployed as `handoff-6ab91bb7`; source/native gates, full Cube,
+native-input/browser/child recovery, configuration preservation and cleanup pass.
 
-- [ ] R15H-01: keep takeover failure notification independent of quarantine
+- [x] R15H-01: keep takeover failure notification independent of quarantine
       success; preserve lifecycle reconciliation and never replay committed Tools.
-- [ ] R15H-02: classify endpoint rejection code and effect evidence separately.
+- [x] R15H-02: classify endpoint rejection code and effect evidence separately.
       Preserve definite pre-execution refusals; unknown semantics stay UNKNOWN.
-- [ ] R15H-03: make removed-VM admission and position cleanup share the native
+- [x] R15H-03: make removed-VM admission and position cleanup share the native
       lifecycle boundary. A delayed Submit must not recreate historical position
       state after confirmed absence. Cover the check/admission/deletion race.
-- [ ] O15H-01: use the existing exact binding key for ordinary Tool/cancel lookup,
+- [x] O15H-01: use the existing exact binding key for ordinary Tool/cancel lookup,
       retaining owner/tenant/closure checks and explicit enumeration where needed.
-- [ ] D15H-01: preserve the current native parallel-read intent grouping as a Pi
+- [x] D15H-01: preserve the current native parallel-read intent grouping as a Pi
       upgrade contract test. No runtime batch restriction or position field is
       added. Revisit the protocol only if a real producer path needs multiple
       Cube effects in one record; ordinary concurrent tools do not imply that.

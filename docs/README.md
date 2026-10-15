@@ -8,7 +8,9 @@ reproduced adapter/Manager behavior from the untriggered native multi-effect
 contract concern. It makes no runtime or deployment change.
 The subsequently approved [repair](reports/projector-cube-handoff-repair-20261015.md)
 implements [ADR-0250](adr/0250-cube-handoff-outcomes-and-runtime-admission.md);
-its delivery status is separate from the audit baseline.
+it is deployed as `handoff-6ab91bb7`, retaining schema 189 and topic v17. The report
+separates passing source/live acceptance, fixture corrections, external TLS failures
+and confirmed cleanup from the audit baseline.
 
 The [October 15 Projector message review](reports/projector-envelope-review-20261015.md)
 records field-by-field removal/retention guidance, repeated intent decoding,

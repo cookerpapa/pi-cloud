@@ -7,8 +7,11 @@ CubeSandbox KVM is the only untrusted execution backend.
 
 This document describes ADR-0247 Session ownership and ADR-0248 management reconnect
 with ADR-0249's deployed publication contract (schema 189 / topic v17 / boot reply v3 /
-guest protocol 5). [Repair and acceptance evidence](reports/projector-repair-20261015.md)
-identifies the current `projector-compact-bf55d9bd` release and verification results.
+guest protocol 5) and ADR-0250's Tool handoff repair.
+[Current delivery evidence](reports/projector-cube-handoff-repair-20261015.md)
+identifies `handoff-6ab91bb7`; the
+[publication repair evidence](reports/projector-repair-20261015.md) records the
+preceding `projector-compact-bf55d9bd` baseline.
 [Reconnect delivery evidence](reports/idle-worker-reconnect-20261014.md) identifies
 `worker-reconnect-5b6ba003`; the [Session migration evidence](reports/session-work-implementation-20261013.md)
 records the earlier `session-work-6ac697f9` baseline.
@@ -792,8 +795,8 @@ classified separately; an unavailable endpoint can definitively refuse before
 execution, while unknown refusal semantics remain UNKNOWN. Known-binding Tool,
 cancel, probe and preview reads use the existing exact memory key and validate
 the writer, without enumerating a family or querying PG. The
-[delivery record](reports/projector-cube-handoff-repair-20261015.md) distinguishes
-these source changes from the serving release.
+[delivery record](reports/projector-cube-handoff-repair-20261015.md) records the
+serving release, native race tests and real acceptance.
 
 Binding creation, closure, deletion and controller adoption co-commit bounded
 control-change references with PG state. They publish to the same Session

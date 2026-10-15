@@ -7,13 +7,14 @@
 
 The owner approved [ADR-0250](adr/0250-cube-handoff-outcomes-and-runtime-admission.md)
 after the [review](reports/projector-cube-handoff-review-20261015.md). The
-[repair record](reports/projector-cube-handoff-repair-20261015.md) tracks delivery.
+[repair record](reports/projector-cube-handoff-repair-20261015.md) records the
+completed `handoff-6ab91bb7` deployment, source/live gates and confirmed cleanup.
 
-- [ ] H1: independent failure notification/quarantine settlement and explicit effect evidence.
-- [ ] H2: exact binding lookup with the existing ownership/closure guards.
-- [ ] H3: native catalog admission serialized with confirmed-absence cleanup.
-- [ ] H4: native concurrent-read upgrade contract; no batch-position protocol expansion.
-- [ ] H5: required gates, matched release, relevant live acceptance and fixture cleanup.
+- [x] H1: independent failure notification/quarantine settlement and explicit effect evidence.
+- [x] H2: exact binding lookup with the existing ownership/closure guards.
+- [x] H3: native catalog admission serialized with confirmed-absence cleanup.
+- [x] H4: native concurrent-read upgrade contract; no batch-position protocol expansion.
+- [x] H5: required gates, matched release, relevant live acceptance and fixture cleanup.
 
 ## Projector publication and presentation simplification
 
