@@ -79,10 +79,10 @@ RUN node node_modules/esbuild/bin/esbuild \
 FROM ${CUBE_BASE_IMAGE}
 
 ARG DEBIAN_FRONTEND=noninteractive
-# Cube's base image uses the global Ubuntu archive, which is pathologically
-# slow from GitHub-hosted Azure runners. This official mirror serves the same
-# signed Ubuntu repository metadata and remains overrideable for self-hosters.
-ARG PI_CLOUD_UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu
+# Match the existing Debian/Alpine download mirror policy. APT still verifies
+# Ubuntu's signatures, and explicit package pins and image scans remain required.
+# Self-hosters may select another signed repository mirror at build time.
+ARG PI_CLOUD_UBUNTU_MIRROR=https://mirrors.aliyun.com/ubuntu
 
 # Tencent's pinned 2026.16 base ships envd 0.5.13 built with an obsolete Go
 # toolchain. Preserve Cube's supported image/entrypoint contract while replacing

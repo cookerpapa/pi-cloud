@@ -73,6 +73,15 @@ on one of one registered nodes. Preservation fingerprints cover the original
 35 credential bindings and zero source-control credentials; raw rows/credentials
 are not exported or committed.
 
+## Artifact preparation
+
+The first guest build hit a GitHub TLS EOF fetching pinned envd source. Retrying
+the same pinned commit succeeded. Ubuntu downloads then repeatedly returned 502
+through the existing proxy. The maintained guest Dockerfile now uses the same
+Aliyun mirror family as the existing Debian/Alpine build paths; Ubuntu signatures,
+explicit OpenSSL pins and later vulnerability scans remain enforced. No runtime
+proxy/provider configuration or dependency version was changed by this repair.
+
 Private intermediate logs are under `/tmp/pi-cloud-projector-a1-*` and
 `/tmp/pi-cloud-projector-a2-*`. They are source checks, not a serving release.
 Preserve the Session producer fencing and all existing closure, PG authority,
