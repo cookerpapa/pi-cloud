@@ -88,6 +88,12 @@ Docker's configured old loopback proxy endpoint also caused manifest timeouts.
 A temporary local TCP relay to the existing proxy restores build-time access;
 it must be stopped after release and does not complete the separate permanent
 daemon-proxy configuration backlog item.
+The pinned Rust builder image was inspected offline and already contains rustc
+1.85.1 (`4eb161250`) and Cargo 1.85.1. Upstream's `1.85` alias nevertheless caused
+another installation of those same binaries on each rebuild. The existing patch
+now names `1.85.1` exactly; an offline container check verifies use of the installed
+toolchain. This tightens the build pin without changing the compiler version or
+runtime protocol. The redundant in-progress candidate download was stopped first.
 
 Private intermediate logs are under `/tmp/pi-cloud-projector-a1-*` and
 `/tmp/pi-cloud-projector-a2-*`. They are source checks, not a serving release.

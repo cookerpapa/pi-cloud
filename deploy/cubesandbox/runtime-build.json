@@ -22,7 +22,7 @@
     },
     {
       "file": "0005-release-security-dependencies.patch",
-      "sha256": "2a84d10611789423d5131b5d68518fffbaa4156f845bd4e750b2888b168088d2"
+      "sha256": "4696097d6898d0c5a807590997ae8bbe38ba0128d0323325c2b3d5d47d14b5d2"
     },
     {
       "file": "0006-template-cleanup-node-routing.patch",

@@ -11,6 +11,13 @@ index 328a8c3..382e517 100644
      && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
      && echo "Asia/Shanghai" > /etc/timezone
  
+diff --git a/CubeAPI/rust-toolchain.toml b/CubeAPI/rust-toolchain.toml
+--- a/CubeAPI/rust-toolchain.toml
++++ b/CubeAPI/rust-toolchain.toml
+@@ -1,2 +1,2 @@
+ [toolchain]
+-channel = "1.85"
++channel = "1.85.1"
 diff --git a/CubeMaster/go.mod b/CubeMaster/go.mod
 index 248fdf1..84df0e5 100644
 --- a/CubeMaster/go.mod
