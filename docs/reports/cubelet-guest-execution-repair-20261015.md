@@ -1,7 +1,8 @@
 # Cubelet → guest execution repair
 
-Status: source implemented; full verification and matched deployment pending,
-2026-10-15. Baseline `a0886962`; decision [ADR-0251](../adr/0251-guest-attachment-and-execution-bounds.md).
+Status: source implemented and required CI passed; matched deployment pending,
+2026-10-15. Baseline `a0886962`; runtime repair `2b3909af`;
+decision [ADR-0251](../adr/0251-guest-attachment-and-execution-bounds.md).
 The owner approved all four findings from the
 [review](cubelet-guest-execution-review-20261015.md).
 
@@ -34,7 +35,13 @@ No compatibility decoder, storage migration or business-data reset is introduced
 Full environment preflight remains at activation/adoption. Accounts, model/provider
 configuration and credentials must be preserved across the matched cutover.
 
-## Verification so far
+## Source verification
+
+The complete `npm run ci` passes on the clean runtime repair commit: build,
+all workspace typechecks/tests, real RF3 Kafka/PG transport (eight tests), all
+244 deterministic fault cases and dependency security audit. The audit reports
+no vulnerabilities. Native admission/allocation/service, installer, Helm,
+observability and image-closure checks also pass.
 
 - Native lifetime regressions and the full patched execution package pass under
   the race detector, including stalled Kill, expired/cancelled preparation, lost
@@ -46,6 +53,6 @@ configuration and credentials must be preserved across the matched cutover.
 - Review-only reproductions are replaced by maintained regressions. Their original
   source is archived in Git `a0886962`; the review's JSON evidence remains.
 
-These source checks do not represent a completed deployment. Record full required
-gates, artifact scans, matched rollout, real Luna/Cube/browser/native-input/child
+These source checks do not represent a completed deployment. Record
+artifact scans, matched rollout, real Luna/Cube/browser/native-input/child
 recovery, failed samples and confirmed fixture cleanup before marking delivery done.
