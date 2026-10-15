@@ -1,6 +1,6 @@
 # Projector review implementation
 
-Status: in progress, 2026-10-15. The owner authorized all repair slices from the
+Status: source verified; matched rollout in progress, 2026-10-15. The owner authorized all repair slices from the
 [review](projector-envelope-review-20261015.md). [ADR-0249](../adr/0249-compact-projector-publication.md)
 records the protocol decision before implementation. No release has occurred yet.
 
@@ -38,9 +38,40 @@ records the protocol decision before implementation. No release has occurred yet
   Tools retain identity/time/output budgets and workflow retains context checks.
   Seven targeted files initially passed 123 cases and exposed one old fixture
   copying workflow context into a fixed request. The corrected workflow suite
-  passes all 11 cases. Full repository verification follows.
+  passes all 11 cases. The repository-wide typecheck and workspace tests pass.
 - A6: required checks, full matched release, real Luna/Cube/browser/native-input
   acceptance, obsolete-resource cleanup and final documentation.
+
+## Repository verification
+
+The complete CI invocation on `0f850dab` passed dependency preparation, formatting,
+documentation, installer/runtime policy, native Cube admission/allocation,
+Helm/observability/image closure, build, all workspace typechecks/tests and 71
+acceptance-helper tests. Its real transport stage exposed one regression: a
+proved oversized-record rejection had been wrapped as invalid-message failure.
+`3d2cc95e` restores the specific transport-budget rejection outside that catch.
+
+After that repair:
+
+- Runtime-core typecheck and 78 unit tests pass; two conditional transport/PG
+  tests are skipped in that isolated package invocation. The earlier repository
+  run used its maintained PG wrapper, and real transport is checked separately.
+- All seven real PostgreSQL/RF3 Kafka transport files pass, eight tests total,
+  including direct publishing, delayed initializer fencing, ordered cancellation,
+  control-plane replacement, same-Run recovery and control-view reconstruction.
+- The maintained fault evaluator passes 243/243 cases on `3d2cc95e`.
+- Dependency security audit passes with no remaining vulnerabilities reported.
+
+This records corrected and resumed CI stages, not a claim that the first complete
+CI command exited successfully. Image vulnerability/provenance gates and live
+acceptance remain part of the matched release below.
+
+Before release, authoritative PG checks show zero unfinished Runs, unreleased
+writers, VMs, machines and terminals. Native inventory confirms zero sandboxes
+on one of one registered nodes. Preservation fingerprints cover the original
+32 tenants/users/API credentials, five password records, 35 model profiles,
+35 credential bindings and zero source-control credentials; raw rows/credentials
+are not exported or committed.
 
 Private intermediate logs are under `/tmp/pi-cloud-projector-a1-*` and
 `/tmp/pi-cloud-projector-a2-*`. They are source checks, not a serving release.
