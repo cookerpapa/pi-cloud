@@ -28,6 +28,27 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## Projector → Cube handoff review
+
+The [October 15 handoff audit](reports/projector-cube-handoff-review-20261015.md)
+reviews `93635d37` and the exact pinned Cube patches. It preserves confirmed
+dispatch-before-effect and UNKNOWN semantics. Source/isolated probes pass; this
+review does not change runtime behavior or count as new live fault acceptance.
+
+- [ ] R15H-01: keep takeover failure notification independent of quarantine
+      success; preserve lifecycle reconciliation and never replay committed Tools.
+- [ ] R15H-02: classify endpoint rejection code and effect evidence separately.
+      Preserve definite pre-execution refusals; unknown semantics stay UNKNOWN.
+- [ ] R15H-03: make removed-VM admission and position cleanup share the native
+      lifecycle boundary. A delayed Submit must not recreate historical position
+      state after confirmed absence. Cover the check/admission/deletion race.
+- [ ] O15H-01: use the existing exact binding key for ordinary Tool/cancel lookup,
+      retaining owner/tenant/closure checks and explicit enumeration where needed.
+- [ ] D15H-01: resolve multi-effect-per-record versus strict Cube offset ordering
+      before enabling/relying on that contract. The current native two-read probe
+      emits separate commits; no normal parallel-read failure is claimed. Any
+      protocol change requires its ADR and matched release.
+
 ## Projector message and decoding review
 
 The [October 15 focused review](reports/projector-envelope-review-20261015.md)

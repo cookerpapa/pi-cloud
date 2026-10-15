@@ -1,0 +1,170 @@
+{
+  "format": "pi-cloud.projector-cube-handoff-review.v1",
+  "checkedAt": "2026-10-15T06:26:19.868Z",
+  "sourceBaseline": "93635d37",
+  "servingRelease": "projector-compact-bf55d9bd",
+  "runtimeChanged": false,
+  "liveFaultInjection": false,
+  "scope": [
+    "Kafka dispatch commit and partition handoff",
+    "binding view and dispatch adapter",
+    "Cube API/Master routing and Cubelet admission"
+  ],
+  "tests": {
+    "typescriptFiles": 10,
+    "typescriptPassed": 99,
+    "pinnedCubeAdmissionPassed": 16,
+    "raceDetector": true,
+    "auditGoCases": 2
+  },
+  "routing": {
+    "baseline": "93635d37",
+    "multiCommandEnvelope": {
+      "decodedCommands": 2,
+      "sharedKafkaRecord": true
+    },
+    "classification": [
+      {
+        "reason": "node_unavailable",
+        "code": "cubesandbox_tool_unavailable",
+        "message": "Execution handoff did not return a confirmed result. The operation was not replayed; inspect effects before repeating it.",
+        "effect": "unknown"
+      },
+      {
+        "reason": "execution_unavailable",
+        "code": "cubesandbox_tool_unavailable",
+        "message": "Execution handoff did not return a confirmed result. The operation was not replayed; inspect effects before repeating it.",
+        "effect": "unknown"
+      },
+      {
+        "reason": "execution_endpoint_unconfigured",
+        "code": "cubesandbox_tool_unavailable",
+        "message": "Execution handoff did not return a confirmed result. The operation was not replayed; inspect effects before repeating it.",
+        "effect": "unknown"
+      },
+      {
+        "reason": "capacity",
+        "code": "tool_execution_not_started",
+        "message": "Execution handoff did not return a confirmed result. The operation was not replayed; inspect effects before repeating it.",
+        "effect": "not_started"
+      },
+      {
+        "reason": "unrecognized_refusal",
+        "code": "tool_execution_not_started",
+        "message": "Execution handoff did not return a confirmed result. The operation was not replayed; inspect effects before repeating it.",
+        "effect": "not_started"
+      }
+    ],
+    "quarantineFailure": {
+      "submitCalls": 1,
+      "failureReplies": 0,
+      "propagated": true
+    },
+    "bindingLookup": {
+      "familyBindings": 1000,
+      "entryLookups": 1000,
+      "returnedRoutes": 1000,
+      "pgReads": 0
+    },
+    "partialHttpReply": {
+      "requests": 1,
+      "bodyDeadlineMs": 5002.207014,
+      "bounded": true
+    }
+  },
+  "admission": {
+    "baseline": "93635d37",
+    "upstream": "8721dd151971ce3c2966482bbd32904ad98f378e",
+    "cases": [
+      {
+        "case": "same_position",
+        "firstAccepted": true,
+        "distinctSecondOperation": "execution_position_stale"
+      },
+      {
+        "case": "late_deleted_vm",
+        "accepted": true,
+        "positionsAfterForget": 0,
+        "positionsAfterLateReply": 1,
+        "activeOperations": 0,
+        "newEffects": 0
+      }
+    ]
+  },
+  "nativeCommitGrouping": {
+    "baseline": "93635d37",
+    "nativeVersion": "1.0.0",
+    "model": "faux; no external request",
+    "toolCalls": 2,
+    "effectBatches": [
+      {
+        "seq": 9,
+        "tools": 1,
+        "cancellations": 0
+      },
+      {
+        "seq": 10,
+        "tools": 1,
+        "cancellations": 0
+      }
+    ],
+    "maximumToolsPerCommit": 1
+  },
+  "findings": [
+    {
+      "id": "R15H-01",
+      "priority": 2,
+      "kind": "failure completion coupling",
+      "reproduced": true
+    },
+    {
+      "id": "R15H-02",
+      "priority": 2,
+      "kind": "rejection evidence classification",
+      "reproduced": true
+    },
+    {
+      "id": "R15H-03",
+      "priority": 2,
+      "kind": "removed VM position recreated by late submit",
+      "reproduced": true,
+      "nativeVmRestarted": false,
+      "realVmDeletedInProbe": false
+    },
+    {
+      "id": "O15H-01",
+      "priority": 3,
+      "kind": "linear family lookup despite existing exact key",
+      "reproduced": true
+    },
+    {
+      "id": "D15H-01",
+      "kind": "cross-boundary batch position contract",
+      "codecAndDestinationMismatchReproduced": true,
+      "ordinaryNativeDoubleReadTriggered": false
+    }
+  ],
+  "notes": [
+    "Positive deadline probe includes HTTP body withholding, one request only.",
+    "Current pinned native two-read sample has one Tool per commit; do not describe it as an observed normal-read failure.",
+    "Go probes use the exact checksum-verified maintained Manager with fake effect/delivery ports; no real sandbox is launched.",
+    "UNKNOWN after committed dispatch and before confirmed takeover remains an accepted tradeoff."
+  ],
+  "httpDeadlineRepeats": [
+    {
+      "requests": 1,
+      "bodyDeadlineMs": 5002.6956390000005,
+      "bounded": true
+    },
+    {
+      "requests": 1,
+      "bodyDeadlineMs": 5002.493432,
+      "bounded": true
+    }
+  ],
+  "probeHarnessNotes": [
+    "One initial HTTP probe had incomplete constructor fixture settings; corrected before the measured runs.",
+    "One subsequent process did not exit and was stopped; request and cleanup timing were not separated in that attempt, so it is not counted as product timeout evidence.",
+    "Fixture now stops accepting connections before destroying all tracked sockets, has a 10s watchdog, and measures request rejection separately. Three completed runs each reject at approximately 5.002s with one HTTP request."
+  ]
+}

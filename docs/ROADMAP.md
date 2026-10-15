@@ -1,5 +1,14 @@
 # Implementation roadmap
 
+## Projector → Cube handoff audit
+
+- [x] Review dispatch commit, memory routing, takeover ACK, partition/Boot changes
+      and failure handling against the pinned Cube source; record isolated probes.
+
+The [review](reports/projector-cube-handoff-review-20261015.md) preserves the owner's
+accepted ordering. Repairs and the multi-effect protocol decision remain pending
+discussion; [backlog](BACKLOG.md#projector--cube-handoff-review) tracks each finding.
+
 ## Projector publication and presentation simplification
 
 The owner approved [ADR-0249](adr/0249-compact-projector-publication.md), following

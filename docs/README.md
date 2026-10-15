@@ -1,5 +1,12 @@
 # Documentation map
 
+The [October 15 Projector → Cube handoff review](reports/projector-cube-handoff-review-20261015.md)
+records failure-notification coupling, refusal evidence classification, late
+removed-VM admission and a binding lookup optimization. Its
+[evidence](reports/projector-cube-handoff-review-20261015.json) distinguishes
+reproduced adapter/Manager behavior from the untriggered native multi-effect
+contract concern. It makes no runtime or deployment change.
+
 The [October 15 Projector message review](reports/projector-envelope-review-20261015.md)
 records field-by-field removal/retention guidance, repeated intent decoding,
 duplicate Tool presentation bodies and a reproduced child-prefix cleanup gap.

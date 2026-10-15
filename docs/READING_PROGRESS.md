@@ -5,8 +5,15 @@ Updated: 2026-10-15.
 The walkthrough explains one component-to-component hop at a time, including
 its message, acknowledgement boundary, failure behavior and design tradeoffs.
 
-Current checkpoint: **Kafka → Projector: committed-record consumption and message
-envelope review**. Covered one consumer per Control Plane process, partition
+Current checkpoint: **Projector → Cube: dispatch and takeover acknowledgement**.
+Explained confirmed dispatch offset before HTTP delivery, in-memory binding
+lookup, bounded takeover ACK versus Tool completion, and the intentional UNKNOWN
+window without automatic Shell replay. The actual vendor route is Cube API →
+CubeMaster → Cubelet. The [handoff review](reports/projector-cube-handoff-review-20261015.md)
+records implementation findings; no repair is part of that review. Next discussion:
+these findings, followed by Cubelet → the VM's fixed Tool process.
+
+Previously covered Kafka → Projector: one consumer per Control Plane process, partition
 ownership/concurrency, the complete Tool execution-intent envelope, PG projection,
 live presentation and dispatch-commit-before-Cube ordering. Kafka producer fencing
 acts at submission; PG grant expiry alone does not instantly fence a producer.
@@ -15,8 +22,7 @@ that can be derived/shared, those required for native recovery and child identit
 and reproduced projection cleanup/duplication findings. The approved
 [repairs](reports/projector-repair-20261015.md) are deployed as
 `projector-compact-bf55d9bd`: compact envelope, same-commit Tool presentation,
-indexed dispatch preparation and whole-writer prefix cleanup. Next hop:
-Projector → Cube takeover and eventual reply.
+indexed dispatch preparation and whole-writer prefix cleanup.
 
 ADR-0247 removes the ordinary Worker publication ingress discussed before migration.
 Covered HTTP idempotency keys, accepted versus executed input, atomic intake,
