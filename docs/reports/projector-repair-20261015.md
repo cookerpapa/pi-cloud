@@ -94,6 +94,10 @@ another installation of those same binaries on each rebuild. The existing patch
 now names `1.85.1` exactly; an offline container check verifies use of the installed
 toolchain. This tightens the build pin without changing the compiler version or
 runtime protocol. The redundant in-progress candidate download was stopped first.
+The HTTPS mirror exposed that the minimal Cubelet runtime base initially has no
+CA bundle. Its build now bootstraps public CAs from the already pinned Go builder,
+then installs Ubuntu's own ca-certificates package. APT fails on any index error;
+certificate and repository signature verification remain enabled.
 
 Private intermediate logs are under `/tmp/pi-cloud-projector-a1-*` and
 `/tmp/pi-cloud-projector-a2-*`. They are source checks, not a serving release.
