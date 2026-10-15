@@ -16,12 +16,17 @@ it.skipIf(!postgres || !brokers)(
       topic = `native-controls-${crypto.randomUUID()}`;
     const admin = new Admin({ clientId: topic, bootstrapBrokers: brokers! });
     const queries: string[] = [];
+    const inFlightQueries = new Set<unknown>();
+    const consumedCommits = new Set<number>();
+    let executingHandlers = 0;
     const measured = f.database.withPlugin({
       transformQuery({ node, queryId }) {
+        inFlightQueries.add(queryId);
         queries.push(f.database.getExecutor().compileQuery(node, queryId).sql);
         return node;
       },
-      async transformResult({ result }) {
+      async transformResult({ result, queryId }) {
+        inFlightQueries.delete(queryId);
         return result;
       },
     });
@@ -51,9 +56,14 @@ it.skipIf(!postgres || !brokers)(
       partitions: 1,
       ownsPartition: (partition) => projector?.ownsPartition(partition) === true,
       execute: async (command, current) => {
-        const result = await controller.executeTool(command, current);
-        if ("waiting" in result) waitingHandlers++;
-        return result;
+        executingHandlers++;
+        try {
+          const result = await controller.executeTool(command, current);
+          if (current() && "waiting" in result) waitingHandlers++;
+          return result;
+        } finally {
+          executingHandlers--;
+        }
       },
       publish: async (_topic, reply) => {
         replies.set(reply.operationId, reply);
@@ -72,7 +82,14 @@ it.skipIf(!postgres || !brokers)(
         publicationToken: "fixture-".repeat(8),
         advertisedBaseUrl: "http://127.0.0.1:9",
         toolCommands: { consume: async () => {} },
-        controlTools: dispatcher,
+        controlTools: {
+          consume: async (record, current) => {
+            await dispatcher.consume(record, current);
+            if (current?.() !== false && record.fact.kind === "durable_commit")
+              consumedCommits.add(record.fact.commit.seq);
+          },
+          close: () => dispatcher.close(),
+        },
         controlChanges: {
           load: (partitions, current) => dispatcher.recover(partitions, current),
           reset: () => dispatcher.reset(),
@@ -94,21 +111,38 @@ it.skipIf(!postgres || !brokers)(
             expect((await f.projection.head()).seq).toBeGreaterThanOrEqual(fact.commit.seq),
           { timeout: 10_000 },
         );
+        // PG materialization precedes control consumption. A late, legitimate
+        // creation wake must settle before measuring an otherwise idle wait.
+        await vi.waitFor(() => expect(consumedCommits.has(fact.commit.seq)).toBe(true), {
+          timeout: 10_000,
+        });
       });
       const command = await f.command({ action: "run", task: "A native child" });
       await vi.waitFor(() => expect(f.children.has(command.operationId)).toBe(true), {
         timeout: 10_000,
       });
       expect(replies.has(command.operationId)).toBe(false);
-      await vi.waitFor(() => expect(waitingHandlers).toBeGreaterThan(0), { timeout: 10_000 });
+      await vi.waitFor(
+        () => {
+          expect(waitingHandlers).toBeGreaterThan(0);
+          expect(executingHandlers).toBe(0);
+          expect(inFlightQueries.size).toBe(0);
+        },
+        { timeout: 10_000 },
+      );
       const settledWaits = waitingHandlers;
       // A replacement Projector's in-memory wait list is reconstructed from the
       // same native Task and commit header, not another command queue.
       dispatcher.reset();
       await dispatcher.recover([0], () => true);
-      await vi.waitFor(() => expect(waitingHandlers).toBeGreaterThan(settledWaits), {
-        timeout: 10_000,
-      });
+      await vi.waitFor(
+        () => {
+          expect(waitingHandlers).toBeGreaterThan(settledWaits);
+          expect(executingHandlers).toBe(0);
+          expect(inFlightQueries.size).toBe(0);
+        },
+        { timeout: 10_000 },
+      );
       queries.length = 0;
       await new Promise((resolve) => setTimeout(resolve, 1200));
       expect(queries).toEqual([]);

@@ -34,14 +34,29 @@ Contracts remain schema 189 / execution Topic v17 / boot reply v3 / guest 5 /
 Cube management 7. Native patch/application artifacts still require the maintained
 matched release. Accounts, model/provider configuration and credentials are preserved.
 
-## Verification so far
+## Source verification
 
-- Initial outcome suites: 36 tests pass.
-- Binding view/dispatcher/probe suites: 47 tests pass; sandbox-control typecheck passes.
-- PG/native subset: 32 pass, one Kafka-dependent integration case is skipped without
-  its transport fixture. Full transport verification remains required.
+- Initial outcome suites: 36 tests pass. Binding view/dispatcher/probe suites: 47
+  tests pass. The final native Harness/Tool subset passes all 42 tests, including
+  concurrent fixed reads and unavailable-but-definitely-not-started sampling guards.
+- A 1,000-binding family requires one hot entry lookup and zero hot PG reads;
+  bootstrap uses four pages. The audit baseline enumerated all 1,000 entries.
 - Updated native admission tests, including both Submit/Cancel interleavings, pass
-  under the race detector. Full native build/service checks remain part of CI.
+  under the race detector. Full native admission/allocation/service build checks,
+  repository build, typechecks, workspace tests and 71 acceptance-helper tests pass.
+- The initial aggregate CI run stopped on a control-Tool recovery test's idle SQL
+  measurement. PG projection precedes control consumption, so its original wait
+  could count a legitimate unfinished creation/recovery wake as idle polling.
+  The fixture now waits for the actual consumed commit, current-generation waiting
+  handler and in-flight queries to settle. The unchanged 1.2-second zero-SQL
+  assertion remains; no production dispatcher behavior changed for this failure.
+  Re-running the complete real RF3/PG transport suite passes all eight tests in
+  seven files. Its ordered-binding measurement also confirms 100 reads with zero SQL.
+- The remaining fault evaluation and dependency security audit gates pass; the
+  dependency audit reports no vulnerabilities. The checked-in fault report records
+  its source revision and the test-fixture edit present at test start. Together
+  these runs complete the required CI stages; the initial aggregate command itself
+  did not exit successfully. Artifact scans and deployed acceptance remain pending.
 
 The audit probes are replaced by maintained regressions. Their original code and
 baseline assertions remain in Git `9097ba11`; their JSON review evidence is retained.
