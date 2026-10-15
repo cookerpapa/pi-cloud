@@ -16,7 +16,6 @@ import type {
   DurableControlToolDispatch,
 } from "@pi-cloud/runtime-core/accepted-fact";
 import type { KafkaAcceptedFactRecord } from "@pi-cloud/runtime-core/kafka-accepted-fact-consumer";
-import { controlToolsForFact } from "@pi-cloud/runtime-core/tool-invocation-fact";
 
 type Pending = {
   dispatch: DurableControlToolDispatch;
@@ -87,10 +86,10 @@ export class ControlToolDispatcher {
       return;
     }
     if (fact.kind !== "durable_commit") return;
-    // Validate the same-commit intent, but retain only the transport reference.
+    // The publication decoder validated the same-commit intent. Retain only
+    // the transport reference, not another expanded argument copy.
     // Recovery reads this exact descriptor from cloud_metadata; storing its
     // expanded arguments here would turn an ordinary replay into a conflict.
-    controlToolsForFact(fact);
     for (const reference of fact.tools)
       if (reference.target === "control")
         this.#remember(reference, fact.commit.seq, record.partition);

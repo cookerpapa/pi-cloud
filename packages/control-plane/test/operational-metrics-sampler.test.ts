@@ -111,6 +111,7 @@ describe("operational metrics sampler", () => {
         duplicateEvents: 1,
         evictedEvents: 400,
       },
+      projection: { prefixes: 2, pendingEventIds: 9 },
     };
     const sampler = new OperationalMetricsSampler({
       database,

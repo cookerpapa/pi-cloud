@@ -35,6 +35,11 @@ audits baseline `c3aca045`. Its 89 existing contract tests pass; isolated probes
 reproduce retained child prefixes after writer closure, duplicated Tool display
 bodies and repeated intent lookups. Runtime and deployed protocols are unchanged.
 
+The owner subsequently approved implementation under
+[ADR-0249](adr/0249-compact-projector-publication.md). The
+[repair record](reports/projector-repair-20261015.md) tracks source changes and
+pending matched deployment; the review evidence above remains tied to its baseline.
+
 - [ ] R15P-01: replace the internal full-text prefix with the minimum sequence
       state and clear every child view on forced writer closure. Preserve missing
       prefix detection, handoff positions, conflict checks and the public live view.

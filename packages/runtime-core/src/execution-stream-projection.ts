@@ -14,7 +14,7 @@ import { finishWorkIn } from "./work-finished-projection.ts";
 import { releaseIdleSessionLease } from "./session-lease-release.ts";
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
 import { recordFactProjection, type FactPosition } from "./accepted-fact-recovery.ts";
-import { CompactEventTail } from "./compact-event-tail.ts";
+import { ExecutionPrefix } from "./execution-prefix.ts";
 import { projectionTransaction } from "./projection-transaction.ts";
 
 export type ExecutionProjectionResult = {
@@ -145,7 +145,7 @@ export class ExecutionStreamProjector {
   readonly #database: Kysely<Database>;
   readonly #boundary: ExecutionStreamBoundary;
   readonly #durable: PostgresDurableCommitProjector;
-  readonly #prefixes = new Map<string, CompactEventTail>();
+  readonly #prefixes = new Map<string, ExecutionPrefix>();
 
   constructor(database: Kysely<Database>) {
     this.#database = database;
@@ -157,6 +157,19 @@ export class ExecutionStreamProjector {
     this.#boundary.reset();
     this.#durable.reset();
     this.#prefixes.clear();
+  }
+
+  statistics() {
+    return {
+      prefixes: this.#prefixes.size,
+      pendingEventIds: [...this.#prefixes.values()].reduce((n, p) => n + p.pendingEventIds, 0),
+    };
+  }
+
+  #closeWriter(writerId: string, offset: bigint): void {
+    this.#boundary.closeWriter(writerId, offset);
+    for (const key of this.#prefixes.keys())
+      if (key.startsWith(`${writerId}:`)) this.#prefixes.delete(key);
   }
 
   accepts(record: KafkaAcceptedFactRecord): Promise<boolean> {
@@ -191,7 +204,7 @@ export class ExecutionStreamProjector {
       // The native anchor need not be the Conversation that produced text.
       for (const scope of scopes.values()) {
         const key = `${scope.writerId}:${scope.runId}:${scope.sessionId}`;
-        const prefix = this.#prefixes.get(key) ?? new CompactEventTail();
+        const prefix = this.#prefixes.get(key) ?? new ExecutionPrefix();
         for (const event of result.events)
           if (event.sessionId === scope.sessionId) prefix.accept(event);
         for (const cover of result.covers)
@@ -207,8 +220,7 @@ export class ExecutionStreamProjector {
         );
         const terminal = await this.#seal(fact, record, prefix, current);
         this.#boundary.close(fact.scope.runId, fact.scope.writerId, record.offset);
-        this.#boundary.closeWriter(fact.scope.writerId, record.offset);
-        this.#prefixes.delete(`${fact.scope.writerId}:${fact.scope.runId}:${fact.scope.sessionId}`);
+        this.#closeWriter(fact.scope.writerId, record.offset);
         return terminal ? { terminal, canonicalThroughSequence: terminal.seq } : undefined;
       }
       return;
@@ -216,15 +228,14 @@ export class ExecutionStreamProjector {
     const existingPrefix = this.#prefixes.get(
       `${fact.scope.writerId}:${fact.scope.runId}:${fact.scope.sessionId}`,
     );
-    const prefix = existingPrefix ?? new CompactEventTail();
+    const prefix = existingPrefix ?? new ExecutionPrefix();
     for (const event of factEvents(fact)) {
       prefix.accept(event);
     }
     if (fact.kind === "execution_seal") {
       const terminal = await this.#seal(fact, record, prefix, current);
       this.#boundary.close(fact.scope.runId, fact.scope.writerId, record.offset);
-      this.#boundary.closeWriter(fact.scope.writerId, record.offset);
-      this.#prefixes.delete(`${fact.scope.writerId}:${fact.scope.runId}:${fact.scope.sessionId}`);
+      this.#closeWriter(fact.scope.writerId, record.offset);
       return terminal ? { terminal, canonicalThroughSequence: terminal.seq } : undefined;
     } else {
       if (fact.kind === "agent_event" && fact.nativeSequence !== undefined) {
@@ -431,11 +442,7 @@ export class ExecutionStreamProjector {
       this.#boundary.close(fact.scope.runId, fact.scope.writerId, rootClosed);
       this.#prefixes.delete(key);
     }
-    if (writerClosed !== undefined) {
-      this.#boundary.closeWriter(fact.scope.writerId, writerClosed);
-      for (const id of this.#prefixes.keys())
-        if (id.startsWith(`${fact.scope.writerId}:`)) this.#prefixes.delete(id);
-    }
+    if (writerClosed !== undefined) this.#closeWriter(fact.scope.writerId, writerClosed);
     this.#durable.releaseSettled(fact.scope);
     return event ? { terminal: event, canonicalThroughSequence: event.seq } : undefined;
   }
@@ -443,7 +450,7 @@ export class ExecutionStreamProjector {
   async #seal(
     fact: AcceptedExecutionSealFact,
     position: FactPosition,
-    prefix: CompactEventTail | undefined,
+    prefix: ExecutionPrefix | undefined,
     current: () => boolean,
   ): Promise<PiCloudEvent | undefined> {
     let adopt = () => {};

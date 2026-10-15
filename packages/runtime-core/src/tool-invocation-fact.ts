@@ -1,6 +1,7 @@
 import {
   durableToolIntent,
   durableControlIntent,
+  DurableCommitIndex,
   parseControlToolDispatch,
   parseToolSandboxOperationRequest,
   type AcceptedToolCommand,
@@ -13,13 +14,17 @@ import type {
 
 /** Arguments appear once in Kafka, in the native execute checkpoint. Expand
  * the owned Cube command only at the external-effect dispatch boundary. */
-export function toolCommandsForFact(fact: AcceptedFact): readonly AcceptedToolCommand[] {
+export function toolCommandsForFact(
+  fact: AcceptedFact,
+  index?: DurableCommitIndex,
+): readonly AcceptedToolCommand[] {
   if (fact.kind === "tool_command") return [fact];
   if (fact.kind !== "durable_commit") return [];
+  index ??= new DurableCommitIndex(fact.commit);
   return fact.tools
     .filter((tool): tool is DurableCubeToolDispatch => tool.target !== "control")
     .map(({ taskId, ...command }) => {
-      const intent = durableToolIntent(fact.commit, taskId);
+      const intent = durableToolIntent(fact.commit, taskId, index);
       if (
         "args" in command.request ||
         "script" in command.request ||
@@ -39,18 +44,20 @@ export function toolCommandsForFact(fact: AcceptedFact): readonly AcceptedToolCo
 
 /** Control effects share the native checkpoint; this expansion is not a
  * separately published command or a second copy of its input parameters. */
-export function controlToolsForFact(fact: AcceptedFact): readonly AcceptedControlToolCommand[] {
+export function controlToolsForFact(
+  fact: AcceptedFact,
+  index?: DurableCommitIndex,
+): readonly AcceptedControlToolCommand[] {
   if (fact.kind !== "durable_commit") return [];
+  index ??= new DurableCommitIndex(fact.commit);
   return fact.tools.flatMap((tool) => {
     if (tool.target !== "control") return [];
     const reference = parseControlToolDispatch(tool);
-    const intent = durableControlIntent(fact.commit, tool);
-    const task = fact.commit.writes.find(
-      (write) => write.type === "task" && (write.value as { id?: unknown })?.id === tool.taskId,
-    );
+    const intent = durableControlIntent(fact.commit, tool, index);
+    const task = index!.task(tool.taskId);
     if (
       reference.sourceDocumentId === undefined &&
-      (task?.value as { conversationId?: unknown })?.conversationId !== reference.conversationId
+      task?.conversationId !== reference.conversationId
     )
       throw new Error("Control Tool conversation changed");
     return [

@@ -5,9 +5,10 @@ import {
   parseSessionControlChange,
   parseToolCancellation,
   parseDurableSessionCommit,
-  durableToolIntent,
+  DurableCommitIndex,
+  type AcceptedToolCommand,
 } from "@pi-cloud/protocol";
-import type { AcceptedFact, SessionLogFact } from "./accepted-fact.ts";
+import type { AcceptedFact, SessionLogFact, AcceptedControlToolCommand } from "./accepted-fact.ts";
 import { toolCommandsForFact, controlToolsForFact } from "./tool-invocation-fact.ts";
 export {
   ACCEPTED_FACT_TOPIC,
@@ -31,20 +32,42 @@ export function parseKafkaAcceptedFact(value: string | Buffer): AcceptedFact {
 }
 
 export function parseSessionLogFact(value: string | Buffer): SessionLogFact {
+  return decodeSessionLogFact(value).fact;
+}
+
+export type PreparedSessionLogFact = Readonly<{
+  fact: SessionLogFact;
+  tools: readonly AcceptedToolCommand[];
+  controlTools: readonly AcceptedControlToolCommand[];
+}>;
+
+export function decodeSessionLogFact(value: string | Buffer): PreparedSessionLogFact {
   const parsed = JSON.parse(value.toString());
   return parsed?.kind === "control_change"
-    ? parseSessionControlChange(parsed)
-    : parseAcceptedFact(parsed);
+    ? { fact: parseSessionControlChange(parsed), tools: [], controlTools: [] }
+    : prepareAcceptedFact(parsed);
 }
 
 export function parseAcceptedFact(value: unknown): AcceptedFact {
+  return prepareAcceptedFact(value).fact;
+}
+
+export function prepareAcceptedFact(
+  value: unknown,
+): PreparedSessionLogFact & { fact: AcceptedFact } {
+  const fact = validateAcceptedFact(value);
+  const index = fact.kind === "durable_commit" ? new DurableCommitIndex(fact.commit) : undefined;
+  return {
+    fact,
+    tools: toolCommandsForFact(fact, index),
+    controlTools: controlToolsForFact(fact, index),
+  };
+}
+
+function validateAcceptedFact(value: unknown): AcceptedFact {
   const parsed = value as AcceptedFact;
   if (parsed.kind === "durable_commit") {
     const commit = parseDurableSessionCommit(parsed.commit);
-    for (const tool of parsed.tools)
-      if (tool.target !== "control") durableToolIntent(commit, tool.taskId);
-    toolCommandsForFact(parsed);
-    controlToolsForFact(parsed);
     return {
       ...parsed,
       commit,

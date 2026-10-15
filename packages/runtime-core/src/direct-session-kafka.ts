@@ -9,9 +9,8 @@ import type {
   AcceptedFactScope,
   ExecutionPublication,
 } from "./accepted-fact.ts";
-import { kafkaProducerLane, parseAcceptedFact } from "./kafka-accepted-fact.ts";
+import { kafkaProducerLane, prepareAcceptedFact } from "./kafka-accepted-fact.ts";
 import { ExecutionLogTopic } from "./execution-log-topic.ts";
-import { toolCommandsForFact, controlToolsForFact } from "./tool-invocation-fact.ts";
 
 export function assertSessionPublication(
   publication: ExecutionPublication,
@@ -26,10 +25,9 @@ export function assertSessionPublication(
   check(fact.scope);
   if (fact.kind === "execution_seal" || fact.kind === "tool_command")
     throw new PublicationNotSentError("Workers publish only native intents and work records");
-  parseAcceptedFact(fact);
+  const prepared = prepareAcceptedFact(fact);
   if (fact.kind === "durable_commit") {
-    for (const tool of [...toolCommandsForFact(fact), ...controlToolsForFact(fact)])
-      check(tool.scope);
+    for (const tool of [...prepared.tools, ...prepared.controlTools]) check(tool.scope);
     for (const cancel of fact.cancellations) check(cancel.scope);
     for (const display of fact.display) check(display.scope);
   }

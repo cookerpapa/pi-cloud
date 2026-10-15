@@ -4,10 +4,11 @@ import { KafkaLogConsumer, KafkaSessionWriter } from "@pi-cloud/event-log";
 import {
   ACCEPTED_FACT_TOPIC,
   kafkaProducerLane,
-  parseSessionLogFact,
+  decodeSessionLogFact,
+  type PreparedSessionLogFact,
 } from "./kafka-accepted-fact.ts";
 import { ExecutionStreamProjector, factEvents } from "./execution-stream-projection.ts";
-import type { AcceptedExecutionSealFact, SessionLogFact } from "./accepted-fact.ts";
+import type { AcceptedExecutionSealFact } from "./accepted-fact.ts";
 import type { PublicationAvailability, SessionControlChange } from "@pi-cloud/protocol";
 import { assertCommittedControlChange } from "./session-control-outbox.ts";
 import type { ProducerCapacity } from "@pi-cloud/event-log";
@@ -24,7 +25,6 @@ import { SessionOutboxRelay } from "./session-outbox-relay.ts";
 import { KafkaSafeRetention } from "./kafka-safe-retention.ts";
 import { loadFactReplayOffsets, recordFactProjection } from "./accepted-fact-recovery.ts";
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
-import { toolCommandsForFact } from "./tool-invocation-fact.ts";
 import { ProjectionTiming } from "./projection-timing.ts";
 import { RunObservations } from "./run-observations.ts";
 
@@ -34,7 +34,7 @@ export class SessionProjector {
   readonly eventHub;
   readonly observations: RunObservations;
   readonly #observationSweep: NodeJS.Timeout;
-  readonly #consumer: KafkaLogConsumer<SessionLogFact>;
+  readonly #consumer: KafkaLogConsumer<PreparedSessionLogFact>;
   readonly #topic: ExecutionLogTopic;
   readonly #relay: SessionOutboxRelay;
   readonly #retention: KafkaSafeRetention;
@@ -143,7 +143,7 @@ export class SessionProjector {
         PREFIX + Buffer.from(new URL(options.advertisedBaseUrl).toString()).toString("base64url"),
       groupRecovery: true,
       orderedEffects: true,
-      decode: parseSessionLogFact,
+      decode: decodeSessionLogFact,
       replayOffsets: async (bounds) => {
         // Kafka bounds were captured before PG. Read the routing snapshot AFTER
         // choosing the recovery floor: later changes are necessarily replayed.
@@ -186,7 +186,9 @@ export class SessionProjector {
           this.publication.installPartition(partition, writer);
         }
       },
-      handler: async (raw, current, commitBeforeEffect) => {
+      handler: async (decoded, current, commitBeforeEffect) => {
+        const prepared = decoded.fact;
+        const raw = { ...decoded, fact: prepared.fact };
         if (raw.fact.kind === "tool_cancel") {
           if (current?.() === false) return;
           // Cancellation is idempotent. Replay it after owner loss even when
@@ -251,7 +253,7 @@ export class SessionProjector {
             // Repeatable control references are already durable in the native
             // projection. Admit them before committing any non-replayable effect.
             await options.controlTools?.consume(record, current);
-            const commands = toolCommandsForFact(fact);
+            const commands = prepared.tools;
             if (commands.length) {
               if (
                 (await timing.measure("dispatch_commit", commitBeforeEffect!)) &&
@@ -439,7 +441,7 @@ export class SessionProjector {
     await this.#topic.checkHealth();
   }
   statistics() {
-    return { liveTail: this.eventStore.statistics() };
+    return { liveTail: this.eventStore.statistics(), projection: this.#projection.statistics() };
   }
   close(): Promise<void> {
     this.#ready = false;

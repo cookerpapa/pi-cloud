@@ -8,6 +8,7 @@ import {
 import type { Context } from "@earendil-works/chord";
 import {
   durableToolIntent,
+  DurableCommitIndex,
   isControlToolCommand,
   PublicationNotSentError,
   type CandidateToolEffect,
@@ -101,6 +102,7 @@ export class DurableRemoteTools {
     const cancellations: CandidateToolCancellation[] = [];
     const terminal: number[] = [];
     const cancelling: Pending[] = [];
+    const index = new DurableCommitIndex(commit);
     for (const write of commit.writes) {
       if (write.type !== "task") continue;
       const task = write.value as {
@@ -134,7 +136,7 @@ export class DurableRemoteTools {
         task.state.checkpoint?.phase === "execute" &&
         !pending.dispatched
       ) {
-        const intent = durableToolIntent(commit, task.id),
+        const intent = durableToolIntent(commit, task.id, index),
           command = pending.prepared.command;
         const matches = isControlToolCommand(command)
           ? command.nativeCallId === intent.callId &&

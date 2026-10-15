@@ -5,6 +5,7 @@ import {
   PublicationNotSentError,
   durableToolIntent,
   durableControlIntent,
+  DurableCommitIndex,
   isControlToolCommand,
   parseDurableTextDescription,
   type DurableCommitPublication,
@@ -77,18 +78,21 @@ export class DurableSessionPublisher {
               throw new Error("Native effect belongs to another Session owner");
             return identity;
           };
+          const index = new DurableCommitIndex(publication.commit);
           const tools: DurableToolDispatch[] = publication.tools.map(({ taskId, command }) => {
-            const sourceTask = publication.commit.writes.find(
-              (w) => w.type === "task" && (w.value as { id?: number })?.id === taskId,
-            );
+            const sourceTask = index.task(taskId);
             const identity = resolve(
               command.executionReference,
               isControlToolCommand(command)
                 ? command.conversationId
-                : (sourceTask?.value as { conversationId: number })?.conversationId,
+                : (sourceTask?.conversationId as number | undefined),
             );
             if (isControlToolCommand(command)) {
-              const intent = durableControlIntent(publication.commit, { ...command, taskId });
+              const intent = durableControlIntent(
+                publication.commit,
+                { ...command, taskId },
+                index,
+              );
               if (
                 command.toolCallId !== `task:${taskId}` ||
                 command.nativeCallId !== intent.callId ||
@@ -110,7 +114,7 @@ export class DurableSessionPublisher {
                 replyTopic: this.options.replyTopic,
               };
             }
-            const intent = durableToolIntent(publication.commit, taskId);
+            const intent = durableToolIntent(publication.commit, taskId, index);
             if (
               command.toolCallId !== `task:${taskId}` ||
               command.request.toolCallId !== intent.callId ||

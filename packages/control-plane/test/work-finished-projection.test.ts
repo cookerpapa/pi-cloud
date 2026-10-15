@@ -2,6 +2,8 @@ import { afterEach, expect, it } from "vitest";
 import { nativeSubagentFixture } from "./native-subagent-fixture.ts";
 import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
 import { requestExecutionStreamSeal } from "../../runtime-core/src/execution-stream-seal.ts";
+import { PostgresSubagentConversations } from "@pi-cloud/subagent-control/subagent-conversations";
+import type { AcceptedDurableCommitFact } from "@pi-cloud/runtime-core/accepted-fact";
 import type {
   AcceptedWorkFinishedFact,
   AcceptedExecutionSealFact,
@@ -139,4 +141,136 @@ it("does not finalize ahead of its last native commit", async () => {
         .executeTakeFirstOrThrow()
     ).state,
   ).toBe("running");
+}, 30_000);
+
+it("retires all child prefix identities on forced closure and preserves their next display positions", async () => {
+  const f = await fixture();
+  const jobs = new PostgresSubagentConversations({ database: f.database, native: f.native });
+  const children = [];
+  for (let i = 0; i < 2; i++) {
+    const call = await f.command({ task: `Child ${i}` });
+    children.push(
+      await jobs.start({
+        id: call.operationId,
+        tenantId: f.scope.tenantId,
+        rootRunId: f.scope.runId,
+        parentSessionId: f.scope.sessionId,
+        parentTurnId: f.scope.turnId,
+        executionReference: f.reference,
+        parentToolCallId: `task:${call.taskId}`,
+        source: { sequence: call.nativeSequence, taskId: call.taskId },
+        prompt: String(call.arguments.task),
+        contextMode: "fresh",
+        contextAnchor: null,
+        sandboxMode: "shared",
+      }),
+    );
+  }
+  const head = await f.projection.head();
+  const fact: AcceptedDurableCommitFact = {
+    kind: "durable_commit",
+    factId: crypto.randomUUID(),
+    scope: f.scope,
+    commit: {
+      seq: head.seq + 1,
+      nextId: 10002,
+      writes: children.map((child, i) => ({
+        type: "document.create",
+        record: {
+          id: 10000 + i,
+          kind: "pi.live",
+          scope: {
+            kind: "conversation",
+            conversationId: f.children.get(child.executionId)!.conversationId,
+          },
+          history: "latest",
+          fork: "initial",
+        },
+        content: { kind: "base", version: 1, value: {} },
+      })),
+    },
+    origins: [],
+    tools: [],
+    cancellations: [],
+    display: [],
+    occurredAt: new Date().toISOString(),
+  };
+  await f.projector.project({ fact, topic: "finish-contract", partition: 0, offset: 10n });
+  const text = "unfinished child output".repeat(1000);
+  const progress: AcceptedDurableCommitFact = {
+    ...fact,
+    factId: crypto.randomUUID(),
+    commit: {
+      seq: head.seq + 2,
+      nextId: 10002,
+      writes: children.map((_child, i) => ({
+        type: "document.change",
+        id: 10000 + i,
+        content: {
+          kind: "delta",
+          version: 1,
+          ops: [["s", ["generation"], { attempt: 1, message: { text } }]],
+        },
+      })),
+    },
+    display: children.map((child, i) => ({
+      scope: { ...f.scope, sessionId: child.childSessionId, turnId: child.childTurnId },
+      texts: [
+        {
+          event: {
+            schemaVersion: 1,
+            eventId: crypto.randomUUID(),
+            sessionId: child.childSessionId,
+            turnId: child.childTurnId,
+            agentId: "child",
+            seq: 12 + i,
+            occurredAt: fact.occurredAt,
+            type: "assistant.text.delta",
+            payload: { messageId: "live" },
+          },
+          source: {
+            kind: "document",
+            id: 10000 + i,
+            path: ["generation", "message", "text"],
+            start: 0,
+            end: text.length,
+          },
+        },
+      ],
+    })),
+  };
+  await f.projector.project({
+    fact: progress,
+    topic: "finish-contract",
+    partition: 0,
+    offset: 11n,
+  });
+  expect(f.projector.statistics()).toEqual({ prefixes: 3, pendingEventIds: 2 });
+  const sealId = crypto.randomUUID();
+  await f.database.transaction().execute((tx) =>
+    requestExecutionStreamSeal(tx, {
+      ...f.scope,
+      agentId: "root",
+      now: new Date(),
+      eventId: sealId,
+      recover: true,
+    }),
+  );
+  const seal = await f.database
+    .selectFrom("outbox")
+    .select("payload")
+    .where("id", "=", sealId)
+    .executeTakeFirstOrThrow();
+  await f.project(seal.payload as unknown as AcceptedExecutionSealFact, 20n);
+  expect(f.projector.statistics()).toEqual({ prefixes: 0, pendingEventIds: 0 });
+  for (const [i, child] of children.entries()) {
+    const view = await f.database
+      .selectFrom("sessions")
+      .select("next_event_seq")
+      .where("id", "=", child.childSessionId)
+      .executeTakeFirstOrThrow();
+    expect(Number(view.next_event_seq)).toBe(13 + i);
+  }
+  await f.project(seal.payload as unknown as AcceptedExecutionSealFact, 20n);
+  expect(f.projector.statistics()).toEqual({ prefixes: 0, pendingEventIds: 0 });
 }, 30_000);

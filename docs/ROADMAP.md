@@ -1,5 +1,18 @@
 # Implementation roadmap
 
+## Projector publication and presentation simplification
+
+The owner approved [ADR-0249](adr/0249-compact-projector-publication.md), following
+the [October 15 review](reports/projector-envelope-review-20261015.md).
+[Implementation progress](reports/projector-repair-20261015.md) distinguishes
+source slices from matched deployment and live acceptance.
+
+- [ ] A1/A2: minimal prefix state and whole-writer cleanup; prepared/indexed dispatch.
+- [ ] A3: one compact Kafka envelope, no standalone cancellation/old wire fallback.
+- [ ] A4: same-commit Tool presentation without copied argument/result bodies.
+- [ ] A5: fixed/workflow request separation and matched guest contracts.
+- [ ] A6: required gates, matched rollout and complete relevant live acceptance.
+
 ## Idle Worker reconnect and compatible Control Plane updates
 
 The owner accepted the reconnect direction after the October 14 outage evidence.

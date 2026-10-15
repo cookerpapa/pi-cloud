@@ -20,8 +20,16 @@ vi.mock("@pi-cloud/event-log", async (original) => ({
   ...(await original<typeof import("@pi-cloud/event-log")>()),
   KafkaLogConsumer: class {
     constructor(options: { handler: typeof f.handler; decode: typeof f.decode }) {
-      f.handler = options.handler;
-      f.decode = options.decode;
+      f.handler = (record, current, commit) =>
+        options.handler!(
+          {
+            ...record,
+            fact: { fact: record.fact, tools: toolCommandsForFact(record.fact), controlTools: [] },
+          },
+          current,
+          commit,
+        );
+      f.decode = (value) => options.decode!(value).fact;
     }
     async start() {
       f.start("consumer");
@@ -34,7 +42,7 @@ vi.mock("@pi-cloud/event-log", async (original) => ({
 vi.mock("../src/kafka-accepted-fact.ts", () => ({
   ACCEPTED_FACT_TOPIC: "test",
   kafkaProducerLane: () => 0,
-  parseSessionLogFact: f.parse,
+  decodeSessionLogFact: f.parse,
 }));
 vi.mock("../src/execution-log-topic.ts", () => ({
   ExecutionLogTopic: class {
@@ -89,7 +97,9 @@ beforeEach(() => {
   f.project.mockReset().mockResolvedValue(undefined);
   f.applies.mockReset().mockResolvedValue(true);
   f.observes.mockReset().mockReturnValue(false);
-  f.parse.mockReset().mockImplementation(JSON.parse);
+  f.parse
+    .mockReset()
+    .mockImplementation((value) => ({ fact: JSON.parse(value), tools: [], controlTools: [] }));
   route = vi.fn<ToolDelivery>(async () => {});
   projector = new SessionProjector({
     database: {} as Kysely<Database>,
@@ -302,8 +312,8 @@ describe("Unified Projector handoff boundaries (transport/PG simulated)", () => 
     });
     await f.handler!(r);
     expect(f.parse).toHaveBeenCalledOnce();
-    expect(f.project.mock.calls[0]![0]).toBe(r);
-    expect(route.mock.calls[0]![0]).toBe(r);
+    expect(f.project.mock.calls[0]![0].fact).toBe(r.fact);
+    expect(route.mock.calls[0]![0].fact).toBe(r.fact);
   });
 
   it("waits for seal projection before displaying the terminal without a second execution-stop RPC", async () => {

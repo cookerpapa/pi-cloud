@@ -1,5 +1,11 @@
 # Current architecture decisions
 
+The accepted [ADR-0249](0249-compact-projector-publication.md) implements the
+October 15 Projector review: minimal prefix state, compact publication, shared
+dispatch preparation, Tool presentation references and fixed/workflow request
+separation. Implementation and matched release are in progress; it does not
+replace the deployed ownership and recovery contracts below.
+
 This directory contains only decisions that constrain the maintained Pi Cloud
 product. Superseded experiments and pre-release decisions are intentionally not
 kept beside current ADRs; Git history is their archive.

@@ -29,6 +29,31 @@ export interface DurableCommitPublisher {
   publish(publication: DurableCommitPublication): Promise<void>;
 }
 
+/** One record-local index. Keep first-match intent semantics and the original
+ * write array intact; native batches may update an identity more than once. */
+export class DurableCommitIndex {
+  readonly #tasks = new Map<number, Readonly<Record<string, unknown>>>();
+  readonly #documents = new Map<number, Readonly<Record<string, unknown>>>();
+  constructor(readonly commit: DurableSessionCommit) {
+    for (const write of commit.writes) {
+      if (write.type === "task") {
+        const task = write.value as Readonly<Record<string, unknown>>;
+        const id = task.id as number;
+        if (!this.#tasks.has(id)) this.#tasks.set(id, task);
+      } else if (write.type === "document.create") {
+        const id = (write.record as { id: number }).id;
+        if (!this.#documents.has(id)) this.#documents.set(id, write);
+      }
+    }
+  }
+  task(id: number): Readonly<Record<string, unknown>> | undefined {
+    return this.#tasks.get(id);
+  }
+  document(id: number): Readonly<Record<string, unknown>> | undefined {
+    return this.#documents.get(id);
+  }
+}
+
 export function parseDurableSessionCommit(value: unknown): DurableSessionCommit {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Invalid native commit");
@@ -69,15 +94,13 @@ export function parseDurableSessionCommit(value: unknown): DurableSessionCommit 
 export function durableToolIntent(
   commit: DurableSessionCommit,
   taskId: number,
+  index = new DurableCommitIndex(commit),
 ): {
   callId: string;
   arguments: Record<string, unknown>;
 } {
-  const write = commit.writes.find(
-    (write) =>
-      write.type === "task" && (write.value as Record<string, unknown> | undefined)?.id === taskId,
-  );
-  const task = write?.value as Record<string, unknown> | undefined;
+  if (index.commit !== commit) throw new Error("Native intent index belongs to another commit");
+  const task = index.task(taskId);
   const state = task?.state as Record<string, unknown> | undefined;
   const checkpoint = state?.checkpoint as Record<string, unknown> | undefined;
   const input = task?.input as Record<string, unknown> | undefined;
@@ -102,13 +125,12 @@ export function durableControlIntent(
     ControlToolDispatch,
     "taskId" | "sourceDocumentId" | "operationId" | "conversationId" | "toolName"
   >,
+  index = new DurableCommitIndex(commit),
 ): { callId: string; arguments: Record<string, unknown> } {
-  if (reference.sourceDocumentId === undefined) return durableToolIntent(commit, reference.taskId);
-  const write = commit.writes.find(
-    (write) =>
-      write.type === "document.create" &&
-      (write.record as { id?: number })?.id === reference.sourceDocumentId,
-  );
+  if (index.commit !== commit) throw new Error("Native intent index belongs to another commit");
+  if (reference.sourceDocumentId === undefined)
+    return durableToolIntent(commit, reference.taskId, index);
+  const write = index.document(reference.sourceDocumentId);
   const record = write?.record as
     { kind?: string; key?: string; scope?: { kind: string; taskId: number } } | undefined;
   const content = write?.content as { kind?: string; value?: Record<string, unknown> } | undefined;
