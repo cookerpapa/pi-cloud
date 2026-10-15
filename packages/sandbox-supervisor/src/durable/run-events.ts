@@ -15,9 +15,7 @@ export class DurableRunEvents {
   #messageOpen = false;
   readonly #compactions = new Map<number, "manual" | "threshold" | "overflow">();
   #entryThrough = 0;
-  readonly #activeTools = new Set<string>();
   readonly #humanEntries = new Set<number>();
-  #assistantEntry: EntryRecord | undefined;
   lastAssistant: AssistantMessage | undefined;
   constructor(
     readonly options: {
@@ -28,12 +26,6 @@ export class DurableRunEvents {
         | { inputId: string; text: string; uploads: import("@pi-cloud/protocol").UserUpload[] }
         | undefined
       >;
-      toolId(
-        callId: string,
-        assistant?: EntryRecord,
-        result?: EntryRecord,
-      ): Promise<string> | string;
-      maximumToolOutputBytes: number;
       retryAttempts: number;
       task(
         id: number,
@@ -49,9 +41,6 @@ export class DurableRunEvents {
   ) {}
   baseline(snapshot: SnapshotEvent): void {
     this.#entryThrough = Math.max(0, ...snapshot.entries.map((entry) => entry.id));
-    this.#assistantEntry = snapshot.entries.findLast((entry) =>
-      entry.model?.some((message) => message.role === "assistant"),
-    );
     this.lastAssistant = snapshot.entries
       .flatMap((entry) => entry.model ?? [])
       .findLast((message) => message.role === "assistant");
@@ -77,33 +66,8 @@ export class DurableRunEvents {
         // before the current partial; never replay the pre-attachment history.
         for (const entry of event.entries) {
           if (entry.id <= this.#entryThrough) continue;
-          for (const message of entry.model ?? [])
-            if (message.role === "toolResult") {
-              await this.consume([
-                {
-                  type: "tool_execution_end",
-                  toolCallId: message.toolCallId,
-                  toolName: message.toolName,
-                  entry,
-                },
-              ]);
-            }
           await this.consume([{ type: "message_end", entry }]);
         }
-        for (const slot of event.tools)
-          if (slot.status === "running") {
-            const call = this.#assistantEntry?.model
-              ?.flatMap((message) => (message.role === "assistant" ? message.content : []))
-              .find((part) => part.type === "toolCall" && part.id === slot.callId);
-            await this.consume([
-              {
-                type: "tool_execution_start",
-                toolCallId: slot.callId,
-                toolName: slot.name,
-                args: call?.type === "toolCall" ? JSON.parse(JSON.stringify(call.arguments)) : {},
-              },
-            ]);
-          }
         if (event.generation?.message) this.#messageStart(!this.#messageOpen);
       } else if (event.type === "message_start" && event.message.role === "assistant") {
         this.#messageStart(true);
@@ -117,7 +81,6 @@ export class DurableRunEvents {
           }
           if (message.role !== "assistant") continue;
           this.lastAssistant = message;
-          this.#assistantEntry = event.entry;
           // Overflow recovery can supply complete Entries without their start
           // events. Advance once at that boundary, even with equal timestamps.
           this.#messageStart(!this.#messageOpen);
@@ -142,45 +105,6 @@ export class DurableRunEvents {
           }
           this.#messageOpen = false;
         }
-      } else if (event.type === "tool_execution_start") {
-        const toolCallId = await this.options.toolId(event.toolCallId, this.#assistantEntry);
-        if (this.#activeTools.has(toolCallId)) continue;
-        this.#activeTools.add(toolCallId);
-        await this.options.emit({
-          type: "tool.started",
-          payload: {
-            toolCallId,
-            toolName: event.toolName,
-            input: event.args,
-            ...(this.#sampling ?? {}),
-          },
-        });
-      } else if (event.type === "tool_execution_end") {
-        const toolCallId = await this.options.toolId(
-          event.toolCallId,
-          this.#assistantEntry,
-          event.entry,
-        );
-        this.#activeTools.delete(toolCallId);
-        const result = event.entry?.model?.find((message) => message.role === "toolResult");
-        const text =
-          result?.content
-            .map((part) => (part.type === "text" ? part.text : `[Image: ${part.mimeType}]`))
-            .join("\n") ?? "Tool task ended without a result";
-        const output =
-          Buffer.byteLength(text) <= this.options.maximumToolOutputBytes
-            ? text
-            : Buffer.from(text).subarray(0, this.options.maximumToolOutputBytes).toString("utf8") +
-              "\n[Display truncated]";
-        await this.options.emit({
-          type: "tool.completed",
-          payload: {
-            toolCallId,
-            outcome: !result || result.isError ? "failed" : "completed",
-            output,
-            ...(this.#sampling ?? {}),
-          },
-        });
       } else if (event.type === "compaction_start") {
         this.#compactions.set(event.taskId, event.reason);
         await this.options.emit({

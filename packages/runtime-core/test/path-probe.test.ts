@@ -79,24 +79,25 @@ it("probes a quiet physical Session once across Lanes and never opens or sequenc
     const a = await f.open(f.base);
     await vi.advanceTimersByTimeAsync(15_000);
     expect(facts).toHaveLength(0);
-    const b = await f.open({
-      ...f.base,
-      runId: "20000000-0000-4000-8000-000000000099",
-      piConversationId: 2,
+    const b = f.log.openConversation(a.executionReference, {
+      sessionId: crypto.randomUUID(),
+      turnId: crypto.randomUUID(),
+      conversationId: 2,
+      nextEventSeq: 1,
     });
-    await b.publish(); // first registered Lane is still unpublished
+    await a.publish(); // All Conversations publish through the physical writer.
     await vi.advanceTimersByTimeAsync(15_000);
     expect(facts.map((f) => f.kind)).toEqual(["durable_commit", "path_probe"]);
     expect(facts[1]?.scope.writerId).toBe(f.base.writerId);
     expect(a.writer.acknowledgedThroughSeq).toBe(0);
-    expect(b.writer.acknowledgedThroughSeq).toBe(0);
+    expect(b.acknowledgedThroughSeq).toBe(0);
     await a.publish();
     await vi.advanceTimersByTimeAsync(10_000);
-    await b.publish();
+    await a.publish();
     await vi.advanceTimersByTimeAsync(5_000);
     expect(facts.filter((f) => f.kind === "path_probe")).toHaveLength(1);
+    await b.close();
     await a.writer.close();
-    await b.writer.close();
     const length = facts.length;
     await vi.advanceTimersByTimeAsync(60_000);
     expect(facts).toHaveLength(length);
@@ -121,18 +122,22 @@ it("probes bound guests despite ongoing text and aggregates Session bindings int
     report,
   });
   try {
-    const childRunId = crypto.randomUUID();
-    const a = await f.open(f.base),
-      b = await f.open({ ...f.base, runId: childRunId, piConversationId: 2 });
+    const childSessionId = crypto.randomUUID();
+    const a = await f.open(f.base);
+    const b = f.log.openConversation(a.executionReference, {
+      sessionId: childSessionId,
+      turnId: crypto.randomUUID(),
+      conversationId: 2,
+      nextEventSeq: 1,
+    });
     await a.publish();
-    await b.publish();
     await vi.advanceTimersByTimeAsync(15000);
     expect(facts.filter((f) => f.kind === "path_probe").at(-1)).toMatchObject({
       execution: { bindings: [] },
     });
     const ids = [crypto.randomUUID(), crypto.randomUUID()];
     f.log.bindRuntime(a.executionReference, ids[0]);
-    f.log.bindRuntime(b.executionReference, ids[1]);
+    f.log.bindRuntime(a.executionReference, ids[1], 2);
     await vi.advanceTimersByTimeAsync(14000);
     await a.publish();
     await vi.advanceTimersByTimeAsync(1000);
@@ -156,8 +161,13 @@ it("probes bound guests despite ongoing text and aggregates Session bindings int
     });
     await vi.advanceTimersByTimeAsync(0);
     expect(report).toHaveBeenCalledTimes(2);
-    expect(report.mock.calls.map(([r]) => r.scope.runId)).toEqual([f.base.runId, childRunId]);
+    expect(report.mock.calls.map(([r]) => r.scope.runId)).toEqual([f.base.runId, f.base.runId]);
+    expect(report.mock.calls.map(([r]) => r.scope.sessionId)).toEqual([
+      f.base.sessionId,
+      childSessionId,
+    ]);
     expect(a.writer.acknowledgedThroughSeq).toBe(0);
+    await b.close();
   } finally {
     mailbox.close();
     await f.log.close();

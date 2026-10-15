@@ -21,6 +21,7 @@ import type {
   ExecutionLogOpenRequest,
 } from "./execution-log.ts";
 import { prepareExecutionFact } from "./prepare-execution-fact.ts";
+import { encodeSessionLogFact } from "./session-log-envelope.ts";
 import { DEFAULT_PRODUCER_CAPACITY, type ProducerCapacity } from "@pi-cloud/event-log";
 import { AcceptedFactCapacityError } from "./accepted-fact.ts";
 import { PublicationNotSentError } from "@pi-cloud/protocol";
@@ -287,7 +288,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
           { ...view, executionReference: request.executionReference },
           candidate,
         );
-        bytes = Buffer.byteLength(JSON.stringify(fact));
+        bytes = Buffer.byteLength(encodeSessionLogFact(fact));
       } catch (error) {
         return Promise.reject(
           new PublicationNotSentError("Execution record preparation failed", { cause: error }),
@@ -320,11 +321,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       // A lost probe ACK must not pin native writes or Run drain indefinitely.
       if (fact.kind !== "path_probe")
         tail = pending.catch((error) => {
-          // Cancellation is an idempotent control request, not an uncertain
-          // shell invocation/native history append. Its lost ACK cannot poison
-          // the canonical cancellation result or sibling Lanes.
-          if (fact.kind !== "tool_cancel" && !(error instanceof PublicationNotSentError))
-            failure = error;
+          if (!(error instanceof PublicationNotSentError)) failure = error;
         });
       return pending;
     };
@@ -364,16 +361,13 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
         for (const display of fact.display) {
           const through = Math.max(
             display.coveredThrough ?? 0,
-            ...display.texts.map(({ event }) => event.seq),
+            ...display.events.map(({ event }) => event.seq),
           );
           if (display.scope.sessionId === permit.scope.sessionId)
             acknowledgedThroughSeq = Math.max(acknowledgedThroughSeq, through);
           const acknowledge = conversationAcknowledgements.get(display.scope.sessionId);
           acknowledge?.(through);
         }
-      },
-      publishToolCancellation: async (command) => {
-        await publish({ kind: "tool_cancel", command });
       },
       drain: async () => {
         closing = true;
@@ -404,7 +398,6 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
             baseSequence: acknowledgedThroughSeq,
             nativeSequence,
             terminal,
-            retireWriter: true as const,
             occurredAt: new Date().toISOString(),
           };
           try {
@@ -463,7 +456,6 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
         finish: async () => {
           throw new Error("Only root work can finish the Session writer");
         },
-        publishToolCancellation: (command) => publish({ kind: "tool_cancel", command }, scope),
         get acknowledgedThroughSeq() {
           return through;
         },

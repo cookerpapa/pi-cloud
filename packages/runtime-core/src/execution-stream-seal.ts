@@ -72,7 +72,6 @@ export async function requestExecutionStreamSeal(
       writerId: execution.lease_id!,
     },
     agentId: input.agentId,
-    closesWriter: true,
     baseSequence: Number(execution.next_event_seq) - 1,
     ...(input.recover ? { recover: true as const } : { terminal: input.body }),
     occurredAt: input.now.toISOString(),

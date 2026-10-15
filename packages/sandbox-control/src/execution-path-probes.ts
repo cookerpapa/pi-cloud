@@ -77,7 +77,7 @@ export class ExecutionPathProbes {
     return !this.#closed && this.#observer?.active(scope, partition) === true;
   }
   rememberTool(command: AcceptedToolCommand, route: SandboxBinding): void {
-    const { leaseId: _lease, ...scope } = command.scope;
+    const scope = command.scope;
     if (this.#closed || this.#bindings.size >= 65_536) return;
     this.#bindings.set(route.bindingId, { scope, route, touched: this.#now() });
     if (this.#valid(scope))

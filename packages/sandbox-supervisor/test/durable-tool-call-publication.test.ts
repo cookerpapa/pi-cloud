@@ -283,8 +283,6 @@ it("persists text but no Tool draft, then waits for the complete validated inten
     emit: async (body) => {
       bodies.push(body);
     },
-    toolId: (id) => id,
-    maximumToolOutputBytes: 65536,
     retryAttempts: 1,
     task: (id) => f.harness.getTask(id as TaskId, context),
   });

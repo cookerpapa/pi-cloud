@@ -55,7 +55,6 @@ export class RunObservations {
     }
     let active = this.#runs.get(observationKey(scope));
     if (!active && fact.kind !== "path_probe") {
-      // Tool command scopes contain leaseId in addition to the common identity.
       const { tenantId, sessionId, turnId, runId, writerId, fencingToken, piSessionId } = scope;
       active = {
         scope: { tenantId, sessionId, turnId, runId, writerId, fencingToken, piSessionId },

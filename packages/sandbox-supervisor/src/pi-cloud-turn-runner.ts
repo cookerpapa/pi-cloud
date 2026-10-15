@@ -30,6 +30,7 @@ import {
   MODEL_SAMPLING_ATTEMPT_HEADER,
   type ExecuteTurnCommandMessage,
   type PiCloudEventBody,
+  type ModelSamplingIdentity,
   type UserUpload,
   type RunActivityUpdate,
   type RunInterruptionReason,
@@ -45,7 +46,7 @@ import {
 } from "./pi-sandbox-continuity.ts";
 import { DurableSampling, type PiSamplingStepCapture } from "./durable/sampling.ts";
 import { withToolInvocation } from "./tool-invocation.ts";
-import { DurableToolIdentities } from "./durable/tool-identities.ts";
+import { prepareToolPresentation } from "./durable/tool-presentation.ts";
 import { PiRunActivity } from "./pi-run-activity.ts";
 import {
   PiTurnError,
@@ -338,6 +339,7 @@ export class PiCloudTurnRunner {
       family: DurableAgentSession | undefined,
       stream: AgentEventStream | undefined,
       text: DurableTextPresentation | undefined;
+    let toolSampling: ModelSamplingIdentity | undefined;
     const cleanup: (() => void)[] = [];
     let delivery = Promise.resolve(),
       deliveryFailure: unknown;
@@ -406,9 +408,17 @@ export class PiCloudTurnRunner {
           { sessionId: p.sessionId, turnId: p.turnId, agentId: p.agentId },
           { initialSequence: factory.currentSequence(), clock, idGenerator: id },
         );
+        const toolEvents = prepareToolPresentation(commit, documents, candidate, {
+          conversationId: p.piSession.conversationId,
+          maximumOutputBytes: p.budgets?.maximumToolOutputBytes ?? 65536,
+          ...(toolSampling ? { sampling: toolSampling } : {}),
+        });
         const prepared = text!.prepare(commit, documents, candidate);
         return {
-          ...prepared,
+          events: [...toolEvents, ...prepared.events],
+          ...(prepared.coveredThrough === undefined
+            ? {}
+            : { coveredThrough: prepared.coveredThrough }),
           confirmed: () => {
             prepared.confirmed();
             factory = candidate;
@@ -449,8 +459,7 @@ export class PiCloudTurnRunner {
         options.sandboxContinuity,
       );
       await world.capture();
-      const invocations = new DurableToolIdentities(owner.storage),
-        sampling = new DurableSampling();
+      const sampling = new DurableSampling();
       let observedEntry = 0,
         wakeObserved: (() => void) | undefined;
       const humanEntries = new Map<number, string>();
@@ -483,8 +492,6 @@ export class PiCloudTurnRunner {
             ? { inputId, text: input.text, uploads: parseUserUploads(input.uploads) }
             : undefined;
         },
-        toolId: (callId, assistant, result) => invocations.resolve(callId, assistant, result),
-        maximumToolOutputBytes: p.budgets?.maximumToolOutputBytes ?? 65536,
         retryAttempts: 4,
         task: (taskId) => runtime.harness.getTask(taskId as TaskId, BACKGROUND_CONTEXT),
       });
@@ -492,12 +499,13 @@ export class PiCloudTurnRunner {
         stepWorldState: world,
         captureSamplingStep: async (fresh, capture) => {
           const step = await sampling.capture(fresh);
+          toolSampling = {
+            stepSequence: step.step.context.sequence,
+            stepSha256: step.step.sha256,
+            samplingAttempt: step.samplingAttempt,
+          };
           if (capture?.publishEvent !== false && sampling.publish) {
-            await events.samplingStarted({
-              stepSequence: step.step.context.sequence,
-              stepSha256: step.step.sha256,
-              samplingAttempt: step.samplingAttempt,
-            });
+            await events.samplingStarted(toolSampling);
           }
           return step;
         },

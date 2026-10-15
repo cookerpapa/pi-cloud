@@ -18,12 +18,11 @@ export function toolCommandsForFact(
   fact: AcceptedFact,
   index?: DurableCommitIndex,
 ): readonly AcceptedToolCommand[] {
-  if (fact.kind === "tool_command") return [fact];
   if (fact.kind !== "durable_commit") return [];
   index ??= new DurableCommitIndex(fact.commit);
   return fact.tools
     .filter((tool): tool is DurableCubeToolDispatch => tool.target !== "control")
-    .map(({ taskId, ...command }) => {
+    .map(({ taskId, target: _target, ...command }) => {
       const intent = durableToolIntent(fact.commit, taskId, index);
       if (
         "args" in command.request ||
@@ -38,7 +37,7 @@ export function toolCommandsForFact(
           : { script: intent.arguments.script }),
         toolCallId: intent.callId,
       });
-      return { ...command, kind: "tool_command", request };
+      return { ...command, kind: "tool_command", toolCallId: `task:${taskId}`, request };
     });
 }
 

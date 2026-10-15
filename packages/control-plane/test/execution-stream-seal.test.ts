@@ -203,7 +203,7 @@ describe.sequential("native execution closure", () => {
   it("requires replayed live state before writer closure and commits one handoff checkpoint", async () => {
     const f = await fixture(),
       { seed, progress } = liveFacts(f);
-    expect(f.seal.closesWriter).toBe(true);
+    expect(f.seal.kind).toBe("execution_seal");
     const old = new ExecutionStreamProjector(db);
     await old.project(f.record(seed, 10n));
     await old.project(f.record(progress, 20n));

@@ -19,12 +19,10 @@ export type CandidateToolCancellation = ToolCancellation &
   Readonly<{
     executionReference: string;
     conversationId: number;
-    occurredAt: string;
   }>;
 export const AcceptedToolCancellationSchema = Type.Object(
   {
     kind: Type.Literal("tool_cancel"),
-    factId: Uuid,
     scope: Type.Object(
       {
         tenantId: Uuid,
@@ -38,7 +36,6 @@ export const AcceptedToolCancellationSchema = Type.Object(
       { additionalProperties: false },
     ),
     request: ToolCancellationSchema,
-    occurredAt: Type.String({ minLength: 20, maxLength: 40 }),
   },
   { additionalProperties: false },
 );
@@ -47,7 +44,4 @@ export function parseToolCancellation(value: unknown): AcceptedToolCancellation 
   if (!Value.Check(AcceptedToolCancellationSchema, value))
     throw new TypeError("Invalid Tool cancellation");
   return value as AcceptedToolCancellation;
-}
-export interface ToolCancellationPublisher {
-  publishToolCancellation(command: CandidateToolCancellation): Promise<void>;
 }

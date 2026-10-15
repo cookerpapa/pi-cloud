@@ -196,7 +196,7 @@ export class WorkflowCommandDispatcher {
           );
         const response = await this.#broker.executeWorkflow(
           createExecutionReference(
-            command.scope.leaseId,
+            command.scope.writerId,
             command.scope.runId,
             command.scope.fencingToken,
           ),

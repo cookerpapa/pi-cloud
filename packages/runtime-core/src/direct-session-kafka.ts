@@ -11,6 +11,7 @@ import type {
 } from "./accepted-fact.ts";
 import { kafkaProducerLane, prepareAcceptedFact } from "./kafka-accepted-fact.ts";
 import { ExecutionLogTopic } from "./execution-log-topic.ts";
+import { encodeSessionLogFact } from "./session-log-envelope.ts";
 
 export function assertSessionPublication(
   publication: ExecutionPublication,
@@ -23,7 +24,7 @@ export function assertSessionPublication(
         throw new PublicationNotSentError("Record belongs to another Session writer");
   };
   check(fact.scope);
-  if (fact.kind === "execution_seal" || fact.kind === "tool_command")
+  if (fact.kind === "execution_seal")
     throw new PublicationNotSentError("Workers publish only native intents and work records");
   const prepared = prepareAcceptedFact(fact);
   if (fact.kind === "durable_commit") {
@@ -148,11 +149,12 @@ export class DirectSessionKafkaBus implements AcceptedFactBus {
       fact.kind === "execution_seal"
     )
       throw new PublicationNotSentError("Session writer is unavailable for this record");
-    const value = JSON.stringify(fact);
-    if (Buffer.byteLength(value) > MAX_EXECUTION_FACT_BYTES)
-      throw new PublicationNotSentError("Session record exceeds its transport budget");
+    let value: string;
     try {
       assertSessionPublication(entry.publication, fact);
+      value = encodeSessionLogFact(fact);
+      if (Buffer.byteLength(value) > MAX_EXECUTION_FACT_BYTES)
+        throw new PublicationNotSentError("Session record exceeds its transport budget");
     } catch (cause) {
       throw new PublicationNotSentError("Session record is invalid", { cause });
     }

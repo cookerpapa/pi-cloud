@@ -24,7 +24,7 @@ async function fixture() {
     baseSequence: 0,
     nativeSequence: 1,
     terminal: { type: "turn.completed", payload: { stopReason: "stop" } },
-    retireWriter: true,
+
     occurredAt: new Date().toISOString(),
   };
   const projector = new ExecutionStreamProjector(f.database);
@@ -215,7 +215,7 @@ it("retires all child prefix identities on forced closure and preserves their ne
     },
     display: children.map((child, i) => ({
       scope: { ...f.scope, sessionId: child.childSessionId, turnId: child.childTurnId },
-      texts: [
+      events: [
         {
           event: {
             schemaVersion: 1,

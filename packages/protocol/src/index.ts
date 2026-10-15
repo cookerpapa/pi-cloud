@@ -664,6 +664,11 @@ export {
 export {
   parseDurableTextDescription,
   resolveDurableText,
+  parseDurableDisplayDescription,
+  resolveDurableDisplay,
   type DurableTextDescription,
+  type DurableDisplayDescription,
+  type DurableToolStartDescription,
+  type DurableToolEndDescription,
   type DurableDisplayPreparation,
 } from "./durable-display.ts";

@@ -12,7 +12,7 @@ import type {
   NativeDocumentChange,
 } from "@pi-cloud/pi-session-postgres/durable";
 import {
-  resolveDurableText,
+  resolveDurableDisplay,
   type DurableSessionCommit,
   type PiCloudEvent,
 } from "@pi-cloud/protocol";
@@ -58,9 +58,9 @@ export function nativeTestDisplay(onText: (event: PiCloudEvent) => void) {
       const prepared = prepare?.(commit, documents);
       return () => {
         prepared?.confirmed();
-        for (const text of prepared?.texts ?? [])
+        for (const text of prepared?.events ?? [])
           onText(
-            resolveDurableText(
+            resolveDurableDisplay(
               commit,
               text,
               (id) => documents.find((d) => d.record.id === id)?.after?.value,

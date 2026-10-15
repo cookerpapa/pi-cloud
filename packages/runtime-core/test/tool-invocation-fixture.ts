@@ -92,10 +92,9 @@ export function toolInvocationFixture(content = "hello") {
     tools: [
       {
         taskId: 4,
-        factId: command.request.operationId,
-        scope: { ...identity, leaseId },
+        target: "cube",
+        scope: identity,
         request,
-        toolCallId: command.toolCallId,
         replyTopic: command.replyTopic!,
         occurredAt: command.occurredAt,
       },

@@ -136,7 +136,7 @@ export function testWorkPublication(
         baseSequence,
         nativeSequence: 0,
         terminal,
-        retireWriter: true,
+
         occurredAt: new Date().toISOString(),
       };
       if (publish) {

@@ -30,7 +30,7 @@ it("uploads images before Kafka timing, packs their references, and rejects publ
   let accepted: AcceptedDurableCommitFact | undefined;
   const channel: AcceptedFactWriter = {
     publication: { scope },
-    publishToolCancellation: async () => {},
+
 
     commitNative: async (fact) => {
       now += 7;
@@ -95,7 +95,7 @@ it("needs no PG receipt or second payload ledger and leaves telemetry outside AC
   const publications: AcceptedDurableCommitFact[] = [];
   const channel: AcceptedFactWriter = {
     publication: { scope },
-    publishToolCancellation: async () => {},
+
 
     commitNative: async (fact) => {
       publications.push(fact);

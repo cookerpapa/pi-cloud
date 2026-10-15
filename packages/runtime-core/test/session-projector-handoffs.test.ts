@@ -239,7 +239,7 @@ describe("Unified Projector handoff boundaries (transport/PG simulated)", () => 
 
   it("routes a Tool only after confirmed dispatch commit and skips replayed commands", async () => {
     const commit = deferred<boolean>();
-    const r = record("session", "tool_command");
+    const r = { ...record(), fact: toolInvocationFixture().fact };
     const handling = f.handler!(
       r,
       () => true,
@@ -261,7 +261,7 @@ describe("Unified Projector handoff boundaries (transport/PG simulated)", () => 
   it("does not route a Tool when its dispatch commit fails", async () => {
     await expect(
       f.handler!(
-        record("session", "tool_command"),
+        { ...record(), fact: toolInvocationFixture().fact },
         () => true,
         async () => {
           throw new Error("commit lost");
@@ -313,7 +313,7 @@ describe("Unified Projector handoff boundaries (transport/PG simulated)", () => 
     await f.handler!(r);
     expect(f.parse).toHaveBeenCalledOnce();
     expect(f.project.mock.calls[0]![0].fact).toBe(r.fact);
-    expect(route.mock.calls[0]![0].fact).toBe(r.fact);
+    expect(route).not.toHaveBeenCalled();
   });
 
   it("waits for seal projection before displaying the terminal without a second execution-stop RPC", async () => {
@@ -362,11 +362,23 @@ describe("Unified Projector handoff boundaries (transport/PG simulated)", () => 
   it("does not put unrelated partition handlers behind a pending owner-delivery ACK", async () => {
     const delivery = deferred<void>();
     route.mockImplementationOnce(() => delivery.promise);
-    const a = f.handler!(record("a", "agent_event", 0));
+    const { fact } = toolInvocationFixture();
+    f.project.mockImplementation(async (record) => ({
+      events: [event(record.partition ? "b" : "a")],
+    }));
+    const a = f.handler!(
+      { ...record("a", "durable_commit", 0), fact },
+      () => true,
+      async () => true,
+    );
     await vi.waitFor(() => expect(route).toHaveBeenCalledOnce());
-    await f.handler!(record("b", "agent_event", 1));
+    await f.handler!(
+      { ...record("b", "durable_commit", 1), fact },
+      () => true,
+      async () => true,
+    );
     expect(route).toHaveBeenCalledTimes(2);
-    expect(projector.eventStore.snapshot("tenant", "b").events).toHaveLength(1);
+    expect(projector.eventStore.snapshot(fact.scope.tenantId, "b").events).toHaveLength(1);
     delivery.resolve();
     await a;
   });

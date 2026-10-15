@@ -22,9 +22,7 @@ export type CandidateToolCommand = Readonly<{
 
 export type AcceptedToolCommand = Readonly<{
   kind: "tool_command";
-  factId: string;
   toolCallId: string;
-  nativeToolName?: string;
   replyTopic?: string;
   scope: Readonly<{
     tenantId: string;
@@ -32,7 +30,6 @@ export type AcceptedToolCommand = Readonly<{
     turnId: string;
     runId: string;
     fencingToken: number;
-    leaseId: string;
     piSessionId: string;
     writerId: string;
   }>;

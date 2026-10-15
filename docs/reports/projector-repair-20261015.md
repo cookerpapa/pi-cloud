@@ -16,14 +16,23 @@ records the protocol decision before implementation. No release has occurred yet
   them, control reconciliation retains only the validated reference, and Worker
   boundary checks no longer repeatedly expand the same dispatch. Six targeted
   files / 37 tests pass. Runtime-core typecheck passes.
+- A3: compact execution-topic v17 envelope is implemented. Child view addresses
+  and the original Boot reply Topic round-trip; duplicate aliases and standalone
+  cancellation publication are removed. Internal commands remain expanded objects.
+  Projection locks one root Run before its lease. Targeted envelope/PG/handoff
+  tests pass. The broader runtime tests exposed one obsolete multi-Run probe
+  fixture; it now uses native child views, and its five tests pass.
+- A4: same-commit Tool-start/result references now provide public presentation.
+  Arguments reference the admitted checkpoint; canonical result parts reference
+  the post-hook Entry. The old post-commit Tool body publisher and its PG identity
+  lookups are removed. Text and Tool descriptions share an events collection.
+  Forty initial presentation/protocol tests pass; real Pi/native PG/child history
+  checks pass (five files / 20 tests). A direct invocation without the maintained
+  PG wrapper timed out in database setup; it was rerun with the isolated official
+  PostgreSQL fixture, not counted as passing initially.
 
 ## Remaining work
 
-- A3: compact one-format Kafka envelope, shared identities/reply target, removal
-  of redundant fields and unused standalone cancellation, internal/wire type
-  separation, single-root PG validation simplification, matched topic contract.
-- A4: native same-commit Tool-start/result display references and removal of
-  duplicated post-commit Tool display bodies, with native cancellation/recovery.
 - A5: fixed Tool/workflow request separation, matched guest contract, all fixture
   and delivery-provenance updates.
 - A6: required checks, full matched release, real Luna/Cube/browser/native-input

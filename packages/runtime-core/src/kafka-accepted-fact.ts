@@ -1,6 +1,6 @@
 import {
   parsePiCloudEvent,
-  parseDurableTextDescription,
+  parseDurableDisplayDescription,
   parsePathProbe,
   parseSessionControlChange,
   parseToolCancellation,
@@ -10,6 +10,8 @@ import {
 } from "@pi-cloud/protocol";
 import type { AcceptedFact, SessionLogFact, AcceptedControlToolCommand } from "./accepted-fact.ts";
 import { toolCommandsForFact, controlToolsForFact } from "./tool-invocation-fact.ts";
+import { expandSessionLogEnvelope } from "./session-log-envelope.ts";
+export { encodeSessionLogFact } from "./session-log-envelope.ts";
 export {
   ACCEPTED_FACT_TOPIC,
   loadProducerCapacity,
@@ -28,7 +30,9 @@ export function kafkaProducerLane(sessionId: string, lanes: number): number {
 }
 
 export function parseKafkaAcceptedFact(value: string | Buffer): AcceptedFact {
-  return parseAcceptedFact(JSON.parse(Buffer.isBuffer(value) ? value.toString("utf8") : value));
+  const prepared = decodeSessionLogFact(value);
+  if (prepared.fact.kind === "control_change") throw new Error("Expected execution fact");
+  return prepared.fact;
 }
 
 export function parseSessionLogFact(value: string | Buffer): SessionLogFact {
@@ -42,7 +46,7 @@ export type PreparedSessionLogFact = Readonly<{
 }>;
 
 export function decodeSessionLogFact(value: string | Buffer): PreparedSessionLogFact {
-  const parsed = JSON.parse(value.toString());
+  const parsed = expandSessionLogEnvelope(JSON.parse(value.toString()));
   return parsed?.kind === "control_change"
     ? { fact: parseSessionControlChange(parsed), tools: [], controlTools: [] }
     : prepareAcceptedFact(parsed);
@@ -77,7 +81,7 @@ function validateAcceptedFact(value: unknown): AcceptedFact {
           (!Number.isSafeInteger(display.coveredThrough) || display.coveredThrough < 0)
         )
           throw new Error("Invalid native display coverage");
-        return { ...display, texts: display.texts.map(parseDurableTextDescription) };
+        return { ...display, events: display.events.map(parseDurableDisplayDescription) };
       }),
       cancellations: parsed.cancellations.map(parseToolCancellation),
     };
@@ -86,14 +90,11 @@ function validateAcceptedFact(value: unknown): AcceptedFact {
     return { ...parsed, event: parsePiCloudEvent(parsed.event) };
   }
   if (parsed.kind === "path_probe") return parsePathProbe(parsed);
-  if (parsed.kind === "tool_cancel") return parseToolCancellation(parsed);
   if (parsed.kind === "execution_seal") {
-    if (parsed.closesWriter !== true) throw new Error("Only Session writer seals are supported");
     return parsed;
   }
   if (parsed.kind === "work_finished") {
     if (
-      parsed.retireWriter !== true ||
       !Number.isSafeInteger(parsed.nativeSequence) ||
       parsed.nativeSequence < 0 ||
       !Number.isSafeInteger(parsed.baseSequence) ||

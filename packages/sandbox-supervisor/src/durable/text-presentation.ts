@@ -40,7 +40,7 @@ export class DurableTextPresentation {
     documents: readonly NativeDocumentChange[],
     factory: PiCloudEventFactory,
   ) {
-    const texts: DurableTextDescription[] = [],
+    const events: DurableTextDescription[] = [],
       phases = new Map(this.#phases);
     const live = documents.find(
       ({ record }) =>
@@ -62,7 +62,7 @@ export class DurableTextPresentation {
       });
       if (event.type !== "assistant.text.delta") throw new Error("Text factory changed event kind");
       const { text: _text, ...metadata } = event.payload;
-      texts.push({ event: { ...event, payload: metadata }, source });
+      events.push({ event: { ...event, payload: metadata }, source });
     };
     let canonical = false;
     // Settle old text before describing a new partial in the same transaction.
@@ -161,7 +161,7 @@ export class DurableTextPresentation {
       }
     } else if (live) phases.clear();
     return {
-      texts,
+      events,
       ...(coveredThrough === undefined ? {} : { coveredThrough }),
       confirmed: () => {
         this.#phases = phases;

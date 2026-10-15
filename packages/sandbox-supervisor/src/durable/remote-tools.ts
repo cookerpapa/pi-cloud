@@ -127,7 +127,6 @@ export class DurableRemoteTools {
             conversationId: task.conversationId,
             activationId: command.request.activationId,
             operationId: command.request.operationId,
-            occurredAt: new Date().toISOString(),
           });
         cancelling.push(pending);
       }

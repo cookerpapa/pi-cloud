@@ -3,7 +3,7 @@ import { MAX_EXECUTION_FACT_BYTES, PublicationNotSentError } from "@pi-cloud/pro
 import type { AcceptedFact, AcceptedFactReceipt } from "../src/accepted-fact.ts";
 import { WorkerExecutionLog } from "../src/worker-execution-log.ts";
 import { DurableSessionPublisher } from "../src/durable-session-publisher.ts";
-import { parseKafkaAcceptedFact } from "../src/kafka-accepted-fact.ts";
+import { parseKafkaAcceptedFact, encodeSessionLogFact } from "../src/kafka-accepted-fact.ts";
 import { toolCommandsForFact, controlToolsForFact } from "../src/tool-invocation-fact.ts";
 import { assertSessionPublication } from "../src/direct-session-kafka.ts";
 import { toolInvocationFixture } from "./tool-invocation-fixture.ts";
@@ -14,14 +14,13 @@ afterEach(async () => {
 
 it("stores large validated arguments once and expands the exact owned Cube command", () => {
   const { fact, command } = toolInvocationFixture("x".repeat(360000));
-  const encoded = JSON.stringify(fact);
+  const encoded = encodeSessionLogFact(fact);
   expect(Buffer.byteLength(encoded)).toBeLessThan(MAX_EXECUTION_FACT_BYTES);
   expect(encoded.match(/x{360000}/g)).toHaveLength(1);
   expect(toolCommandsForFact(parseKafkaAcceptedFact(encoded))).toEqual([
     {
       kind: "tool_command",
-      factId: command.request.operationId,
-      scope: { ...fact.scope, leaseId: fact.scope.writerId },
+      scope: fact.scope,
       request: command.request,
       toolCallId: command.toolCallId,
       occurredAt: command.occurredAt,
@@ -33,7 +32,9 @@ it("stores large validated arguments once and expands the exact owned Cube comma
 it("rejects duplicate argument authority in a dispatch", () => {
   const { fact } = toolInvocationFixture();
   Object.assign(fact.tools[0]!.request, { args: {} });
-  expect(() => parseKafkaAcceptedFact(JSON.stringify(fact))).toThrow("duplicates native intent");
+  expect(() => parseKafkaAcceptedFact(encodeSessionLogFact(fact))).toThrow(
+    "duplicates native intent",
+  );
 });
 
 it("keeps child scopes under the same root writer without querying PG", () => {
@@ -114,7 +115,7 @@ it("addresses native child Tools, text and cancellation through the one root wri
     turnId: child.publication.scope.turnId,
   });
   const display = [
-    { executionReference: f.executionReference, conversationId: 2, texts: [], coveredThrough: 12 },
+    { executionReference: f.executionReference, conversationId: 2, events: [], coveredThrough: 12 },
   ];
   const cancellations = [
     {
@@ -178,7 +179,7 @@ it("routes control tools from the same validated native commit without copying t
   const published = f.publisher.publish(publication);
   await vi.waitFor(() => expect(f.append).toHaveBeenCalledOnce());
   const fact = f.append.mock.calls[0]![0];
-  const encoded = JSON.stringify(fact);
+  const encoded = encodeSessionLogFact(fact);
   expect(encoded.match(/q{80000}/g)).toHaveLength(1);
   const parsed = parseKafkaAcceptedFact(encoded);
   expect(toolCommandsForFact(parsed)).toEqual([]);
@@ -199,7 +200,10 @@ it("routes control tools from the same validated native commit without copying t
   Object.assign(parsed.tools[0]!.scope, { runId: "different" });
   expect(() => assertSessionPublication({ scope: f.scope }, parsed)).toThrow();
   Object.assign(parsed.tools[0]!, { conversationId: 999 });
-  expect(() => parseKafkaAcceptedFact(JSON.stringify(parsed))).toThrow("conversation changed");
+  Object.assign(parsed.tools[0]!.scope, { runId: f.scope.runId });
+  expect(() => parseKafkaAcceptedFact(encodeSessionLogFact(parsed))).toThrow(
+    "conversation changed",
+  );
 });
 
 it.each(["lost", "mismatched"] as const)("does not retry an %s ACK", async (mode) => {

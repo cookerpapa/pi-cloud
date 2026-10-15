@@ -96,7 +96,7 @@ async function fixture(capacity = 1, leaseMs = 60000) {
               baseSequence: 0,
               nativeSequence: 0,
               terminal,
-              retireWriter: true,
+
               occurredAt: new Date().toISOString(),
             });
           },

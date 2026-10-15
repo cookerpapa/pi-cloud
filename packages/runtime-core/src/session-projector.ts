@@ -24,7 +24,10 @@ import { SessionLiveView } from "./session-live-view.ts";
 import { SessionOutboxRelay } from "./session-outbox-relay.ts";
 import { KafkaSafeRetention } from "./kafka-safe-retention.ts";
 import { loadFactReplayOffsets, recordFactProjection } from "./accepted-fact-recovery.ts";
-import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
+import type {
+  KafkaAcceptedFactRecord,
+  KafkaToolDispatchRecord,
+} from "./kafka-accepted-fact-consumer.ts";
 import { ProjectionTiming } from "./projection-timing.ts";
 import { RunObservations } from "./run-observations.ts";
 
@@ -73,7 +76,7 @@ export class SessionProjector {
         reset(): void;
       };
       toolCommands: {
-        consume(record: KafkaAcceptedFactRecord, current?: () => boolean): Promise<void>;
+        consume(record: KafkaToolDispatchRecord, current?: () => boolean): Promise<void>;
         close?(): Promise<void>;
       };
       nativeChanges?: {
@@ -189,15 +192,6 @@ export class SessionProjector {
       handler: async (decoded, current, commitBeforeEffect) => {
         const prepared = decoded.fact;
         const raw = { ...decoded, fact: prepared.fact };
-        if (raw.fact.kind === "tool_cancel") {
-          if (current?.() === false) return;
-          // Cancellation is idempotent. Replay it after owner loss even when
-          // the original shell dispatch offset was already committed.
-          await options.toolCommands.consume({ ...raw, fact: raw.fact }, current);
-          if (current?.() !== false)
-            await options.database.transaction().execute((tx) => recordFactProjection(tx, raw));
-          return;
-        }
         if (raw.fact.kind === "control_change") {
           if (current?.() === false) return;
           if (!options.controlChanges && raw.fact.entity === "sandbox_binding")
@@ -263,13 +257,9 @@ export class SessionProjector {
                   await timing.measure("tool_route", () =>
                     options.toolCommands.consume({ ...record, fact: command }, current),
                   );
-            } else if (fact.kind !== "execution_seal" && fact.kind !== "work_finished") {
-              await timing.measure("tool_route", () =>
-                options.toolCommands.consume(record, current),
-              );
             }
             if (options.nativeChanges)
-              await timing.measure("subagent_route", () =>
+              await timing.measure("view_notify", () =>
                 options.nativeChanges!.consume(record, current),
               );
           }

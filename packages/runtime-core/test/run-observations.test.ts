@@ -190,7 +190,7 @@ it("authenticates observations against projected scopes and closes all Lanes on 
         factId: "seal",
         agentId: "agent",
         baseSequence: 1,
-        closesWriter: true,
+
         terminal: { type: "turn.completed", payload: { stopReason: "stop" } },
         occurredAt: new Date(now).toISOString(),
       },

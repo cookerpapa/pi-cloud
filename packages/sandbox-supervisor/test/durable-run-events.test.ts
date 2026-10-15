@@ -3,14 +3,12 @@ import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/provid
 import type { AgentEvent, SnapshotEvent, TaskRecord } from "@earendil-works/pi-durable";
 import type { PiCloudEventBody } from "@pi-cloud/protocol";
 import { DurableRunEvents } from "../src/durable/run-events.ts";
-function fixture(outcome = "completed", maximum = 65536) {
+function fixture(outcome = "completed") {
   const bodies: PiCloudEventBody[] = [];
   const events = new DurableRunEvents({
     emit: async (body) => {
       bodies.push(body);
     },
-    toolId: () => "task:3",
-    maximumToolOutputBytes: maximum,
     retryAttempts: 4,
     task: async () =>
       ({ state: { status: "terminal", outcome: { status: outcome } } }) as TaskRecord<
@@ -48,16 +46,13 @@ it.each(["completed", "aborted", "failed", "faulted"])(
     });
   },
 );
-it("does not invent a successful result when a native Tool task has no result entry", async () => {
+it("does not publish a second Tool result through the post-commit observer", async () => {
   const f = fixture();
   await f.events.consume([{ type: "tool_execution_end", toolCallId: "call", toolName: "bash" }]);
-  expect(f.bodies.at(-1)).toMatchObject({
-    type: "tool.completed",
-    payload: { toolCallId: "task:3", outcome: "failed" },
-  });
+  expect(f.bodies).toEqual([]);
 });
 
-it("reconstructs a dropped Tool completion once from an overflow snapshot", async () => {
+it("does not duplicate native Tool presentation when an observer overflows", async () => {
   const f = fixture();
   const entry = {
     id: 9,
@@ -85,12 +80,7 @@ it("reconstructs a dropped Tool completion once from an overflow snapshot", asyn
     usage: {},
   } as unknown as SnapshotEvent;
   await f.events.consume([snapshot, snapshot]);
-  expect(f.bodies.filter((body) => body.type === "tool.completed")).toEqual([
-    {
-      type: "tool.completed",
-      payload: { toolCallId: "task:3", outcome: "completed", output: "persisted" },
-    },
-  ]);
+  expect(f.bodies.filter((body) => body.type === "tool.completed")).toEqual([]);
 });
 it("translates the native completed-attempt retry number into the next attempt", async () => {
   const f = fixture();

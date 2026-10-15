@@ -1,4 +1,4 @@
-import { resolveDurableText, type PiCloudEvent } from "@pi-cloud/protocol";
+import { resolveDurableDisplay, type PiCloudEvent } from "@pi-cloud/protocol";
 import { sql, type Kysely, type Transaction } from "kysely";
 import type { Database } from "@pi-cloud/database";
 import {
@@ -57,13 +57,11 @@ export class PostgresDurableCommitProjector {
     await projectionTransaction(
       this.database,
       async (tx) => {
-        // Lock all affected Runs in deterministic order before the shared lease.
-        // Materialization plus aggregation forces completion of every Run lock;
-        // never acquire a sibling Run after holding the lease.
-        const ids = [
-          ...new Set([fact.scope.runId, ...fact.display.map((d) => d.scope.runId)]),
-        ].sort();
-        type LockedRun = {
+        // Every child view shares the root Run. Materialize its lock before
+        // locking the lease; the native Session lock follows in applyIn().
+        const {
+          rows: [run],
+        } = await sql<{
           id: string;
           session_id: string;
           turn_id: string;
@@ -73,44 +71,32 @@ export class PostgresDurableCommitProjector {
           output_first_partition: number | null;
           output_first_offset: string | null;
           output_display_seq: string;
-        };
-        const {
-          rows: [locked],
-        } = await sql<{
-          runs: LockedRun[];
           writer_seal_offset: string | null;
-        }>`with locked_runs as materialized (
+        }>`with locked_run as materialized (
           select id,session_id,turn_id,lease_id,output_seal_offset::text,output_first_topic,output_first_partition,output_first_offset::text,output_display_seq::text
-          from runs where tenant_id=${fact.scope.tenantId}::uuid and id in (${sql.join(ids.map((id) => sql`${id}::uuid`))})
-          order by id for no key update
-        ), gathered as materialized (select jsonb_agg(to_jsonb(r)) as runs from locked_runs r)
-        select g.runs,l.writer_seal_offset from gathered g join session_leases l
+          from runs where tenant_id=${fact.scope.tenantId}::uuid and id=${fact.scope.runId}::uuid
+          for no key update
+        ) select r.*,l.writer_seal_offset from locked_run r join session_leases l
           on l.tenant_id=${fact.scope.tenantId}::uuid and l.lease_id=${fact.scope.writerId}::uuid
-        where g.runs is not null for no key update of l`.execute(tx);
+        for no key update of l`.execute(tx);
         if (
-          !locked ||
-          locked.runs.length !== ids.length ||
-          (locked.writer_seal_offset !== null &&
-            position.offset > BigInt(locked.writer_seal_offset))
+          !run ||
+          (run.writer_seal_offset !== null && position.offset > BigInt(run.writer_seal_offset))
         )
           return;
-        const runs = new Map(locked.runs.map((r) => [r.id, r]));
-        for (const scope of [fact.scope]) {
-          const run = runs.get(scope.runId)!;
-          if (
-            run.lease_id !== scope.writerId ||
-            run.session_id !== scope.sessionId ||
-            run.turn_id !== scope.turnId ||
-            (run.output_seal_offset !== null && position.offset >= BigInt(run.output_seal_offset))
-          )
-            return;
-          if (
-            run.output_first_offset !== null &&
-            (run.output_first_topic !== position.topic ||
-              run.output_first_partition !== position.partition)
-          )
-            throw new Error("Native Run publication moved between Kafka streams");
-        }
+        if (
+          run.lease_id !== fact.scope.writerId ||
+          run.session_id !== fact.scope.sessionId ||
+          run.turn_id !== fact.scope.turnId ||
+          (run.output_seal_offset !== null && position.offset >= BigInt(run.output_seal_offset))
+        )
+          return;
+        if (
+          run.output_first_offset !== null &&
+          (run.output_first_topic !== position.topic ||
+            run.output_first_partition !== position.partition)
+        )
+          throw new Error("Native Run publication moved between Kafka streams");
         const displayViews = fact.display.length
           ? await sql<{
               session_id: string;
@@ -140,8 +126,7 @@ export class PostgresDurableCommitProjector {
           { state, position },
           cloudMetadata(fact),
         );
-        const floors = locked.runs.filter((r) => r.output_first_offset === null).map((r) => r.id);
-        if (floors.length)
+        if (run.output_first_offset === null)
           await tx
             .updateTable("runs")
             .set({
@@ -150,16 +135,16 @@ export class PostgresDurableCommitProjector {
               output_first_offset: position.offset.toString(),
             })
             .where("tenant_id", "=", fact.scope.tenantId)
-            .where("id", "in", floors)
+            .where("id", "=", fact.scope.runId)
             .execute();
         for (const display of fact.display) {
           const previous = Number(displays.get(display.scope.sessionId)!.output_display_seq);
           // Historical live documents may have been superseded by a newer PG
           // checkpoint. Never resolve text already represented by native Entries.
-          for (const description of display.texts) {
+          for (const description of display.events) {
             if (description.event.seq <= previous) continue;
             events.push(
-              resolveDurableText(fact.commit, description, (id) => {
+              resolveDurableDisplay(fact.commit, description, (id) => {
                 const row = state.rows.get(id);
                 if (
                   !row ||

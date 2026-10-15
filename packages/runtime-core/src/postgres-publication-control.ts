@@ -7,6 +7,7 @@ import {
   type PublicationOwnership,
 } from "./session-publication-ingress.ts";
 import type { KafkaSessionWriter } from "@pi-cloud/event-log";
+import { encodeSessionLogFact } from "./session-log-envelope.ts";
 
 /** Forced closure takes over the same Kafka identity only under a fresh PG
  * closure grant. Completed evidence never initializes another producer. */
@@ -48,7 +49,7 @@ export class PostgresPublicationControl {
       .where("l.pi_session_id", "=", fact.scope.piSessionId)
       .where("l.fencing_token", "=", String(fact.scope.fencingToken))
       .executeTakeFirst();
-    if (!row || !isDeepStrictEqual(row.payload, fact) || !fact.closesWriter)
+    if (!row || !isDeepStrictEqual(row.payload, fact))
       throw new PublicationIngressRejected("scope");
     if (row.writer_sealed_at !== null) return "closed";
     if (
@@ -93,7 +94,7 @@ export class PostgresPublicationControl {
       return await writer.append({
         factId: fact.factId,
         sessionId: fact.scope.piSessionId,
-        value: JSON.stringify(fact),
+        value: encodeSessionLogFact(fact),
       });
     } catch (error) {
       if (closed) return receipt;

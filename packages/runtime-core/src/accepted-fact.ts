@@ -1,18 +1,10 @@
 import { PublicationNotSentError } from "@pi-cloud/protocol";
 import type { EventPublishMessage, PiCloudEvent, PiCloudEventBody } from "@pi-cloud/protocol";
 import type { DurableSessionCommit, DurableRecordOrigin } from "@pi-cloud/protocol";
-import type {
-  AcceptedToolCommand,
-  ToolSandboxOperationRequest,
-  ToolCancellationPublisher,
-} from "@pi-cloud/protocol";
+import type { AcceptedToolCommand, ToolSandboxOperationRequest } from "@pi-cloud/protocol";
 
 export type CandidateFact =
   | Readonly<{ kind: "durable_commit"; fact: AcceptedDurableCommitFact }>
-  | Readonly<{
-      kind: "tool_cancel";
-      command: import("@pi-cloud/protocol").CandidateToolCancellation;
-    }>
   | Omit<import("@pi-cloud/protocol").PathProbe, "scope">
   | Readonly<{ kind: "agent_event"; publication: EventPublishMessage }>;
 
@@ -48,7 +40,6 @@ export type AcceptedWorkFinishedFact = Readonly<{
   baseSequence: number;
   nativeSequence: number;
   terminal: WorkTerminal;
-  retireWriter: true;
   occurredAt: string;
 }>;
 
@@ -63,7 +54,7 @@ export type AcceptedDurableCommitFact = Readonly<{
   cancellations: readonly import("@pi-cloud/protocol").AcceptedToolCancellation[];
   display: readonly Readonly<{
     scope: AcceptedFactScope;
-    texts: readonly import("@pi-cloud/protocol").DurableTextDescription[];
+    events: readonly import("@pi-cloud/protocol").DurableDisplayDescription[];
     coveredThrough?: number;
   }>[];
   occurredAt: string;
@@ -75,7 +66,6 @@ export type AcceptedExecutionSealFact = Readonly<{
   scope: AcceptedFactScope;
   agentId: string;
   baseSequence: number;
-  closesWriter: true;
   occurredAt: string;
 }> &
   (
@@ -89,8 +79,11 @@ export type AcceptedExecutionSealFact = Readonly<{
       }
   );
 
-export type DurableCubeToolDispatch = Omit<AcceptedToolCommand, "kind" | "request"> & {
-  target?: never;
+export type DurableCubeToolDispatch = Omit<
+  AcceptedToolCommand,
+  "kind" | "request" | "toolCallId"
+> & {
+  target: "cube";
   taskId: number;
   request:
     | Omit<
@@ -119,9 +112,7 @@ export type ExecutionPublication = Readonly<{
 }>;
 export type AcceptedFact =
   | AcceptedDurableCommitFact
-  | import("@pi-cloud/protocol").AcceptedToolCancellation
   | import("@pi-cloud/protocol").PathProbe
-  | AcceptedToolCommand
   | AcceptedAgentEventFact
   | AcceptedWorkFinishedFact
   | AcceptedExecutionSealFact;
@@ -156,7 +147,7 @@ export interface ActiveExecutionLogResolver {
   checkHealth(): Promise<void>;
 }
 
-export interface AcceptedFactWriter extends ToolCancellationPublisher {
+export interface AcceptedFactWriter {
   readonly publication: ExecutionPublication;
   commitNative(fact: AcceptedDurableCommitFact): Promise<void>;
 }

@@ -42,7 +42,7 @@ export type NativePublicationPreparation = {
   confirmed(): void;
 };
 export type NativeDisplayPreparation = {
-  texts: DurableCommitPublication["display"][number]["texts"];
+  events: DurableCommitPublication["display"][number]["events"];
   coveredThrough?: number;
   confirmed(): void;
 };
@@ -375,12 +375,12 @@ export class PostgresDurableSessionHost {
                   tools: preparation?.tools ?? [],
                   cancellations: preparation?.cancellations ?? [],
                   display: display.flatMap(({ executionReference, conversationId, prepared }) =>
-                    prepared.texts.length || prepared.coveredThrough !== undefined
+                    prepared.events.length || prepared.coveredThrough !== undefined
                       ? [
                           {
                             executionReference,
                             conversationId,
-                            texts: prepared.texts,
+                            events: prepared.events,
                             ...(prepared.coveredThrough === undefined
                               ? {}
                               : { coveredThrough: prepared.coveredThrough }),

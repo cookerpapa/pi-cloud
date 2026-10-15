@@ -7,7 +7,7 @@ import {
   durableControlIntent,
   DurableCommitIndex,
   isControlToolCommand,
-  parseDurableTextDescription,
+  parseDurableDisplayDescription,
   type DurableCommitPublication,
   type DurableCommitPublisher,
   type AcceptedToolCancellation,
@@ -128,24 +128,20 @@ export class DurableSessionPublisher {
                 ? (({ args: _args, toolCallId: _callId, ...rest }) => rest)(command.request)
                 : (({ script: _script, toolCallId: _callId, ...rest }) => rest)(command.request);
             return {
-              toolCallId: command.toolCallId,
-              ...(command.nativeToolName ? { nativeToolName: command.nativeToolName } : {}),
+              target: "cube",
               occurredAt: command.occurredAt,
               ...(command.traceContext ? { traceContext: command.traceContext } : {}),
               request,
               taskId,
-              factId: command.request.operationId,
-              scope: { ...identity, leaseId: identity.writerId },
+              scope: identity,
               replyTopic: this.options.replyTopic,
             };
           });
           const cancellations: AcceptedToolCancellation[] = publication.cancellations.map(
             (command) => ({
               kind: "tool_cancel",
-              factId: randomUUID(),
               scope: resolve(command.executionReference, command.conversationId),
               request: { activationId: command.activationId, operationId: command.operationId },
-              occurredAt: command.occurredAt,
             }),
           );
           const commit = await encodeSessionImages(
@@ -165,10 +161,10 @@ export class DurableSessionPublisher {
             tools,
             cancellations,
             display: publication.display.map(
-              ({ executionReference, conversationId, texts, coveredThrough }) => {
+              ({ executionReference, conversationId, events, coveredThrough }) => {
                 const target = resolve(executionReference, conversationId);
-                for (const text of texts) {
-                  parseDurableTextDescription(text);
+                for (const text of events) {
+                  parseDurableDisplayDescription(text);
                   if (
                     text.event.sessionId !== target.sessionId ||
                     text.event.turnId !== target.turnId
@@ -177,7 +173,7 @@ export class DurableSessionPublisher {
                 }
                 return {
                   scope: target,
-                  texts,
+                  events,
                   ...(coveredThrough === undefined ? {} : { coveredThrough }),
                 };
               },

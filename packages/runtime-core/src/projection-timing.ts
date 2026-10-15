@@ -2,7 +2,7 @@ import { operationalLog, safeErrorCode, type PiCloudMetrics } from "@pi-cloud/ob
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
 
 type Stage =
-  "publication" | "projection" | "boundary" | "dispatch_commit" | "tool_route" | "subagent_route";
+  "publication" | "projection" | "boundary" | "dispatch_commit" | "tool_route" | "view_notify";
 
 /** Low-cardinality metrics; slow/failed record logs contain routing identity,
  * never the Fact body, SQL text or an exception message. */

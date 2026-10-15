@@ -1635,7 +1635,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       .select("payload")
       .where("tenant_id", "=", f.tenant.tenantId)
       .executeTakeFirstOrThrow();
-    expect(seal.payload).toMatchObject({ closesWriter: true, recover: true });
+    expect(seal.payload).toMatchObject({ kind: "execution_seal", recover: true });
     await f.project();
     expect((await f.state()).run.state).toBe("queued");
     expect(

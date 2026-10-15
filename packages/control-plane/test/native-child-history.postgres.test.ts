@@ -39,7 +39,7 @@ it("forks native child history and preserves parent-owned deletion boundaries wi
         baseSequence: 0,
         nativeSequence: (await f.projection.head()).seq,
         terminal: { type: "turn.completed", payload: { stopReason: "stop" } },
-        retireWriter: true,
+
         occurredAt: new Date().toISOString(),
       },
       topic: "child-history",

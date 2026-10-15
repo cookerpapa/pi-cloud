@@ -49,7 +49,7 @@ it("claims bounded Session heads without holding a connection during delivery an
           last_error: null,
           payload: {
             kind: "execution_seal",
-            closesWriter: true,
+
             factId: id,
             scope: {
               tenantId: tenant,

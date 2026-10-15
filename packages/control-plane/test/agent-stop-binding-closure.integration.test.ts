@@ -182,12 +182,46 @@ it.skipIf(!postgres || !brokers)(
       const operationId = randomUUID();
       const cancellation = parseToolCancellation({
         kind: "tool_cancel",
-        factId: randomUUID(),
         scope,
         request: { activationId: bindingId, operationId },
+      });
+      await bus.append({
+        kind: "durable_commit",
+        factId: randomUUID(),
+        scope,
+        commit: {
+          seq: 1,
+          nextId: 3,
+          writes: [
+            { type: "conversation", value: { id: 1 } },
+            {
+              type: "task",
+              value: {
+                id: 2,
+                conversationId: 1,
+                kind: "pi.tool",
+                version: 1,
+                input: { assistant: 1, callId: "fixture" },
+                background: false,
+                abortRequested: true,
+                state: {
+                  status: "running",
+                  checkpoint: {
+                    phase: "execute",
+                    arguments: { command: "fixture" },
+                    replay: "unsafe",
+                  },
+                },
+              },
+            },
+          ],
+        },
+        origins: [],
+        tools: [],
+        display: [],
+        cancellations: [cancellation],
         occurredAt: new Date().toISOString(),
       });
-      await bus.append(cancellation);
       await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce(), { timeout: 15000 });
       expect(cancel.mock.calls[0]).toEqual([
         expect.anything(),

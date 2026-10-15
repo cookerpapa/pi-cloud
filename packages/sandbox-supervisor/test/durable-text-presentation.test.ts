@@ -48,7 +48,7 @@ it("references append, correction, truncation and deletion without copying bodie
     const after = value(next),
       c = commit(i + 1),
       prepared = text.prepare(c, [change(previous, after)], f);
-    for (const d of prepared.texts) {
+    for (const d of prepared.events) {
       expect(d.event.payload).not.toHaveProperty("text");
       actual.push(resolveDurableText(c, d, () => after));
     }
@@ -70,7 +70,7 @@ it("settles interrupted text separately from a recovered request with the same t
   const a = commit(1),
     opening = text.prepare(a, [change(undefined, before)], f);
   opening.confirmed();
-  const events = opening.texts.map((d) => resolveDurableText(a, d, () => before));
+  const events = opening.events.map((d) => resolveDurableText(a, d, () => before));
   const b = commit(2, [
     {
       type: "entry",
@@ -86,12 +86,12 @@ it("settles interrupted text separately from a recovered request with the same t
   ]);
   const ending = text.prepare(b, [change(before, {})], f);
   ending.confirmed();
-  events.push(...ending.texts.map((d) => resolveDurableText(b, d, () => ({}))));
+  events.push(...ending.events.map((d) => resolveDurableText(b, d, () => ({}))));
   const c = commit(3),
     next = value("new partial"),
     recovery = text.prepare(c, [change({}, next)], f);
   recovery.confirmed();
-  events.push(...recovery.texts.map((d) => resolveDurableText(c, d, () => next)));
+  events.push(...recovery.events.map((d) => resolveDurableText(c, d, () => next)));
   expect(events[1]!.payload.settledMessageId).toBe("entry:8:0");
   expect(ending.coveredThrough).toBe(events[1]!.seq);
   expect(text.canCover(2)).toBe(false);
@@ -120,15 +120,15 @@ it("places coverage before a new partial and isolates Conversations", () => {
     { type: "document.change", id: 2 },
   ]);
   const prepared = text.prepare(c, [change(before, after)], f);
-  expect(prepared.texts).toHaveLength(2);
-  expect(prepared.coveredThrough).toBe(prepared.texts[0]!.event.seq);
-  expect(prepared.texts[1]!.event.seq).toBeGreaterThan(prepared.coveredThrough!);
+  expect(prepared.events).toHaveLength(2);
+  expect(prepared.coveredThrough).toBe(prepared.events[0]!.event.seq);
+  expect(prepared.events[1]!.event.seq).toBeGreaterThan(prepared.coveredThrough!);
   expect(
     new DurableTextPresentation({ conversationId: 7 }).prepare(
       c,
       [change(before, after)],
       factory(),
-    ).texts,
+    ).events,
   ).toEqual([]);
 });
 it("updates a phase without another text body and adopts metadata only after ACK", () => {
@@ -141,13 +141,13 @@ it("updates a phase without another text body and adopts metadata only after ACK
   a.confirmed();
   phase = "final_answer";
   const p = text.prepare(commit(2), [change(first, first)], f);
-  expect(p.texts[0]).toMatchObject({
+  expect(p.events[0]).toMatchObject({
     source: { kind: "empty" },
     event: { payload: { phase: "final_answer" } },
   });
-  expect(text.prepare(commit(2), [change(first, first)], f).texts).toHaveLength(1);
+  expect(text.prepare(commit(2), [change(first, first)], f).events).toHaveLength(1);
   p.confirmed();
-  expect(text.prepare(commit(3), [change(first, first)], f).texts).toEqual([]);
+  expect(text.prepare(commit(3), [change(first, first)], f).events).toEqual([]);
 });
 
 it("clears a streamed block removed by the final Assistant Entry", () => {
@@ -158,7 +158,7 @@ it("clears a streamed block removed by the final Assistant Entry", () => {
   const a = commit(1),
     opening = text.prepare(a, [change(undefined, before)], f);
   opening.confirmed();
-  const events = opening.texts.map((d) => resolveDurableText(a, d, () => before));
+  const events = opening.events.map((d) => resolveDurableText(a, d, () => before));
   const b = commit(2, [
     {
       type: "entry",
@@ -173,8 +173,8 @@ it("clears a streamed block removed by the final Assistant Entry", () => {
     { type: "document.change", id: 2 },
   ]);
   const settled = text.prepare(b, [change(before, {})], f);
-  events.push(...settled.texts.map((d) => resolveDurableText(b, d, () => ({}))));
-  expect(settled.texts[1]).toMatchObject({
+  events.push(...settled.events.map((d) => resolveDurableText(b, d, () => ({}))));
+  expect(settled.events[1]).toMatchObject({
     source: { kind: "empty" },
     event: { payload: { replace: true } },
   });

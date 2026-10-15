@@ -1,6 +1,4 @@
 import type { CandidateFact, AcceptedFact, ExecutionPublication } from "./accepted-fact.ts";
-import { randomUUID } from "node:crypto";
-import { parseToolCancellation } from "@pi-cloud/protocol";
 import { isDeepStrictEqual } from "node:util";
 
 export function prepareExecutionFact(
@@ -17,27 +15,6 @@ export function prepareExecutionFact(
     if (!isDeepStrictEqual(candidate.fact.scope, identity))
       throw new Error("Native commit belongs to another execution owner");
     return candidate.fact;
-  }
-  if (candidate.kind === "tool_cancel") {
-    const { executionReference, conversationId, occurredAt, ...request } = candidate.command;
-    if (
-      executionReference !== scope.executionReference ||
-      conversationId !== scope.piConversationId
-    )
-      throw new Error("Tool cancellation does not belong to its ExecutionReference");
-    const {
-      leaseId: _lease,
-      piConversationId: _lane,
-      executionReference: _reference,
-      ...identity
-    } = scope;
-    return parseToolCancellation({
-      kind: "tool_cancel",
-      factId: randomUUID(),
-      scope: identity,
-      request,
-      occurredAt,
-    });
   }
   if (candidate.kind === "path_probe") {
     const {

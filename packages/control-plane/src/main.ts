@@ -211,7 +211,7 @@ export async function startControlPlane(): Promise<void> {
             if (!call.bindingId) throw new Error("Preview requires an admitted Tool binding");
             if (!current()) throw new Error("Control Tool owner changed");
             await sandboxControl!.refreshToolServices(
-              { ...call.scope, leaseId: call.scope.writerId },
+              call.scope,
               call.bindingId,
             );
           });
