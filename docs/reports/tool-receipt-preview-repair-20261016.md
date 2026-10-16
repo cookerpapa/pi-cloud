@@ -133,8 +133,8 @@ Loading the existing `kvm_amd` module fails with `Operation not supported`, and
 the kernel records `SVM not supported by CPU`. There is no configured PVM fallback.
 These symptoms and the Windows build match
 [Microsoft's confirmed Windows-update regression](https://github.com/microsoft/WSL/issues/41917).
-This is strong evidence for that regression; this investigation did not independently
-instrument Windows HCS or uninstall the update to prove the causal chain.
+At that stage, this was strong evidence for the regression, but the investigation
+had not independently queried Windows HCS or rolled back the update.
 Community reports on that issue restore nested virtualization by uninstalling
 the update and rebooting; that host-level change requires the owner's decision.
 
@@ -155,9 +155,40 @@ tenants/users/API credentials, five password credentials, 35 model profiles and
 35 credential bindings, zero source-control credentials. No live fixture tenant
 was created. Native/infrastructure Pods are Ready; application workloads are offline.
 
+## Authorized host repair, awaiting reboot
+
+The owner subsequently authorized trying the Windows-host repair. A bounded local
+PowerShell script first verified the exact installed package manifest identifies
+`KB5127648`, the current Windows build and the absence of a prior pending reboot.
+The unelevated HCS query returned access denied (`0x8037011B`); after Windows UAC
+authorization, `Basic` returned `S_OK` while `ProcessorCapabilities` independently
+reproduced `0x8007000D` / invalid data. This matches the upstream failure more
+specifically than the earlier missing-KVM symptoms alone.
+
+At 14:19 on October 16 (Asia/Shanghai), Windows completed the online phase of
+`Remove-WindowsPackage -Online -NoRestart` for exactly
+`Package_for_RollupFix~31bf3856ad364e35~amd64~~26100.9711.1.30`.
+The cmdlet reports `RestartNeeded:true`, and CBS records successful finalization
+with reboot required and no additional repair needed. Automatic reboot was not
+requested. Other packages, Windows feature settings and `.wslconfig` were not
+separately changed. Removing the cumulative update also rolls back its other
+included fixes; restore current updates once an applicable upstream fix is verified.
+
+**Host repair is not yet accepted:** Windows still needs a restart, followed by
+the WSL KVM API/empty-VM-creation check and real Cube acceptance. Do not describe
+the online servicing success as proof that KVM works or PiCloud is deployed.
+The private Windows-local repair script, diagnostic result, DISM log, post-reboot
+probe and handoff notes are under
+`%LOCALAPPDATA%\Temp\pi-cloud-kvm-20261016\`; copies of the result and log are
+retained with the ignored release evidence. Applications remain offline pending
+the matched release.
+
 ## Resume after host repair
 
-1. Restore KVM on the host and check it inside every Cubelet using
+1. Save open work and restart Windows to finish the staged rollback. Run the
+   prepared `verify-after-reboot.ps1`; it loads the existing AMD KVM module and
+   creates/closes an empty VM through the KVM API, without RAM, vCPU or disk.
+   Then check KVM inside every Cubelet using
    `assertCubeKvmAvailable`; a missing device must never be worked around with a
    different execution backend or an ignored gate.
 2. Prepare/apply a new candidate from the current clean revision using

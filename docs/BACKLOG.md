@@ -40,7 +40,9 @@ adds incremental display/reset semantics and terminal-aware previews. The
 verification and the pending matched deployment/live acceptance. All source/native/
 fault gates and eleven artifact scans pass. Native Cube has been replaced, but
 guest-template creation failed because this Windows/WSL host no longer exposes
-KVM. Applications remain offline. Restore host virtualization, prepare/apply from
+KVM. The owner-authorized Windows update rollback completed its online phase;
+Windows restart and actual KVM/Cube verification are still required. Applications
+remain offline. Restore host virtualization, prepare/apply from
 an exact clean revision, then run the maintained live checks. The release operator
 now checks KVM device availability on every Cube compute node before draining.
 
