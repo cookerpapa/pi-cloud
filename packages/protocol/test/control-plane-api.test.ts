@@ -354,30 +354,35 @@ describe("control-plane public API schemas", () => {
       ],
     });
 
+    const run = parseRunResource({
+      runId: "50000000-0000-4000-8000-000000000010",
+      traceId: "11111111111111111111111111111111",
+      projectId: "10000000-0000-4000-8000-000000000001",
+      workspaceId: "20000000-0000-4000-8000-000000000001",
+      sessionId: "30000000-0000-4000-8000-000000000001",
+      turnId: "50000000-0000-4000-8000-000000000001",
+      state: "running",
+      environment: ENVIRONMENT_SNAPSHOT,
+      workerId: "50000000-0000-4000-8000-000000000012",
+      queuedAt: createdAt,
+      startedAt: createdAt,
+      updatedAt: createdAt,
+      transitions: [
+        {
+          fromState: "queued",
+          toState: "running",
+          reason: "execution_admitted",
+          occurredAt: createdAt,
+        },
+      ],
+    });
+    expect(run).toMatchObject({ state: "running", transitions: [{ toState: "running" }] });
     expect(
       parseRunResource({
-        runId: "50000000-0000-4000-8000-000000000010",
-        traceId: "11111111111111111111111111111111",
-        projectId: "10000000-0000-4000-8000-000000000001",
-        workspaceId: "20000000-0000-4000-8000-000000000001",
-        sessionId: "30000000-0000-4000-8000-000000000001",
-        turnId: "50000000-0000-4000-8000-000000000001",
-        state: "running",
-        environment: ENVIRONMENT_SNAPSHOT,
-        workerId: "50000000-0000-4000-8000-000000000012",
-        queuedAt: createdAt,
-        startedAt: createdAt,
-        updatedAt: createdAt,
-        transitions: [
-          {
-            fromState: "queued",
-            toState: "running",
-            reason: "execution_admitted",
-            occurredAt: createdAt,
-          },
-        ],
-      }),
-    ).toMatchObject({ state: "running", transitions: [{ toState: "running" }] });
+        ...run,
+        transitions: Array.from({ length: 129 }, () => run.transitions[0]),
+      }).transitions,
+    ).toHaveLength(129);
   });
 
   it("rejects malformed public resources", () => {

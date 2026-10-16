@@ -1024,7 +1024,7 @@ export const RunResourceSchema = Type.Object(
     startedAt: Type.Optional(UtcTimestampSchema),
     settledAt: Type.Optional(UtcTimestampSchema),
     updatedAt: UtcTimestampSchema,
-    transitions: Type.Array(RunTransitionResourceSchema, { maxItems: 128 }),
+    transitions: Type.Array(RunTransitionResourceSchema),
   },
   { additionalProperties: false },
 );

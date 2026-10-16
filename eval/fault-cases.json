@@ -395,6 +395,27 @@
       "invariant": "A failed completion projection is retried without repeating native cancellation."
     },
     {
+      "id": "cancel-during-writer-bootstrap",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/atomic-worker-admission.postgres.test.ts",
+      "test": "settles Stop during writer bootstrap without a recovery loop (startup failure=false)",
+      "invariant": "Stop survives authorized writer bootstrap, blocks model/Tool effects and settles once through native cancellation."
+    },
+    {
+      "id": "cancel-during-recovered-writer-bootstrap",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/atomic-worker-admission.postgres.test.ts",
+      "test": "settles Stop during writer bootstrap without a recovery loop (startup failure=true)",
+      "invariant": "A genuine writer startup failure closes in order; its recovered owner settles the pending Stop without repeated requeueing."
+    },
+    {
+      "id": "cancel-bootstrap-ack-rollback",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/atomic-worker-admission.postgres.test.ts",
+      "test": "settles a rejected Stop acknowledgement during bootstrap without stranding the Runner",
+      "invariant": "A rolled-back Stop acknowledgement cannot start model/Tool work or strand a runner waiting for a cancellation signal."
+    },
+    {
       "id": "cancel-settlement-sql-abort",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/atomic-worker-admission.postgres.test.ts",

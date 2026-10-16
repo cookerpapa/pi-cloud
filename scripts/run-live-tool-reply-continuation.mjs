@@ -110,7 +110,7 @@ async function excludeOtherWork() {
 async function turnTools(id) {
   const detail = await api.getConversation(session.sessionId);
   return (
-    detail.turns.find((t) => t.runId === id)?.transcript.items.filter((i) => i.kind === "tool") ??
+    detail.turns.find((t) => t.runId === id)?.transcript?.items.filter((i) => i.kind === "tool") ??
     []
   );
 }

@@ -958,6 +958,11 @@ is separate: the first matched release is deployed, while an idle completion-chi
 admission recovery gap found in live injection is being repaired. Submit and async
 probes reuse the existing process owner's bounded readiness recovery; healthy
 admission checks memory only. Direct physical probes do not depend on the adapter.
+Stop arriving during producer bootstrap is retained until the bounded authorized
+writer is ready; Pi opens in its existing `stopOnResume` mode with effects blocked
+and settles cancellation normally. Aborting each bootstrap would prevent native
+settlement and requeue the same Stop indefinitely. The implementation/rollout
+record above distinguishes the source repair from its pending matched release.
 Confirmed loss of a user-selected working directory before a fixed Tool starts
 also returns a native Tool error, allowing the Harness to continue the dialogue.
 The guest classifies missing/non-directory paths at preparation; it never repairs

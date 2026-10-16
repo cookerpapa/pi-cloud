@@ -53,6 +53,10 @@ volatile-result loss boundary; reuse the existing internal execution probe.
       admission on a reused VM. Extend the existing bounded readiness recovery
       to Submit/async probes and repeat the native and live gates; retain the
       failed sample and its confirmed adapter/tenant/VM cleanup.
+      Repeated acceptance also exposed Stop aborting every recovered writer
+      bootstrap. Preserve Stop through bootstrap, settle through native Pi with
+      effects blocked, remove the stale Run-history response cap, and complete
+      the isolated fixture's closure/cleanup before the final matched release.
 
 ## Guest → Cubelet result review
 

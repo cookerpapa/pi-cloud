@@ -27,6 +27,28 @@ existing process owner and does not retry an execution, introduce a supervisor,
 change the wire or relax node/position/VM fencing. Add native child-exit/recovery
 and cancellation tests, then repeat the matched artifact release and live checks.
 
+The repeated live fixture subsequently exposed a pre-existing startup/Stop race.
+Stop aborted Kafka producer preparation before a publication finalizer existed;
+ordered recovery requeued the same Run and redelivered Stop into preparation,
+repeating without ever opening Pi for cancellation. Retain the Stop intent while
+the bounded, authorized writer bootstrap completes. Open the native runner in
+its existing `stopOnResume` mode, which blocks model/Tool effects, then deliver
+the acknowledged Stop through normal Pi abort settlement. Startup failure still
+uses ordered closure/recovery; neither Stop nor an operator bypasses producer
+authorization or fencing. Add real-PG startup/cancel/recovery coverage. Remove
+the unrelated 128-item Run-transition response validation cap: legitimate Run
+recovery history must remain readable, without truncating its records. The API
+shape and durable schema do not change. The fixture must tolerate a newly
+accepted Turn whose transcript has not yet materialized.
+
+The owned failed fixture's claim policy is disabled while this repair is verified;
+its records and immutable cleanup targets remain intact. If normal draining is
+blocked by that pending Stop, a scanned Worker image with the same wire/schema
+may settle only the isolated fixture before the full matched cutover. Record the
+temporary rollout, writer closure and physical cleanup, then reconcile the whole
+matched release. Never patch live source or discard the pending Run to pass a
+deployment gate.
+
 ## Review recap and accepted limits
 
 The preceding guest-to-Cubelet findings are already repaired under

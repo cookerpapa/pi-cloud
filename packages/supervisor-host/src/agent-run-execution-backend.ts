@@ -255,7 +255,10 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     string,
     {
       executionReference: string;
-      abort: AbortController;
+      stopOnResume: boolean;
+      cancellationStarted: Promise<void> | undefined;
+      runnerReady: boolean;
+      ready: Promise<void>;
       done: Promise<void>;
     }
   >();
@@ -316,17 +319,19 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     let executionLog: ExecutionLogWriter | undefined;
     let prepared: ReturnType<AgentRunSupervisor["prepare"]> | undefined;
     let tracked: TrackedExecution | undefined;
+    const ready = Promise.withResolvers<void>(),
+      done = Promise.withResolvers<void>();
     const opening = {
       executionReference: admission.executionReference,
-      abort: new AbortController(),
-      ...Promise.withResolvers<void>(),
+      stopOnResume: !!request.stopOnResume,
+      cancellationStarted: undefined as Promise<void> | undefined,
+      runnerReady: false,
+      ready: ready.promise,
+      done: done.promise,
     };
     if (this.#openingExecutions.has(request.runId))
       throw new TurnExecutionBackendError("invalid_state", "Run is already opening", false);
-    this.#openingExecutions.set(request.runId, {
-      ...opening,
-      done: opening.promise,
-    });
+    this.#openingExecutions.set(request.runId, opening);
 
     try {
       executionLog = await measureRunPreparation(
@@ -336,7 +341,6 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         () =>
           this.#executionLogs.open({
             ...admission,
-            signal: opening.abort.signal,
             sessionId: request.sessionId,
             piSession: {
               id: request.piSessionId,
@@ -352,7 +356,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         finish: (terminal) => publication.finish(terminal),
         close: () => publication.close(),
       });
-      opening.abort.signal.throwIfAborted();
+      if (opening.cancellationStarted) await opening.cancellationStarted;
       if (this.#heartbeatFailure) throw this.#heartbeatFailure;
       const parsed = parseControlToSupervisorMessage({
         protocolVersion: 1,
@@ -376,7 +380,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           executionReference: acknowledgement.executionReference,
           nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
           agent: request.agent,
-          ...(request.stopOnResume ? { stopOnResume: true as const } : {}),
+          ...(opening.stopOnResume ? { stopOnResume: true as const } : {}),
           input: {
             kind: "prompt",
             text: request.input.prompt,
@@ -454,6 +458,8 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       this.#openingExecutions.delete(request.runId);
       const execution = prepared.run();
       tracked = this.#registerExecution(request.sessionId, prepared, execution, executionLog);
+      opening.runnerReady = true;
+      ready.resolve();
       try {
         let result: TurnExecutionResult;
         try {
@@ -476,7 +482,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         }
       }
     } catch (error: unknown) {
-      const normalized = normalizeBackendError(opening.abort.signal.reason ?? error);
+      const normalized = normalizeBackendError(error);
       const acknowledged =
         executionLog?.acknowledgedThroughSeq ?? prepared?.lastAcknowledgedEventSeq();
       if (acknowledged !== undefined)
@@ -498,7 +504,8 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         if (executionLog !== undefined && tracked === undefined) await executionLog.drain();
       } finally {
         this.#openingExecutions.delete(request.runId);
-        opening.resolve();
+        ready.resolve();
+        done.resolve();
       }
     }
   }
@@ -511,16 +518,24 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       const acknowledgement = await this.#leaseCoordinator.currentAssignment(request.target);
       const opening = this.#openingExecutions.get(request.target.runId);
       if (opening?.executionReference === acknowledgement.executionReference) {
-        // No runner or Tool exists yet. Abort the control handshake and join its
-        // cleanup before confirming cancellation; never launch a cancelled Run.
-        await lifecycle.started(acknowledgement);
-        opening.abort.abort(new TurnExecutionCancelledError(request.reason, false));
-        await opening.done;
-        return {
-          reason: request.reason,
-          forced: false,
-          lastEventSeq: positiveSafeInteger(request.target.nextEventSeq, "next event sequence") - 1,
-        };
+        // Keep Stop while the bounded, fenced writer bootstrap completes. Pi
+        // must open with effects blocked to settle cancellation; aborting every
+        // recovered bootstrap would indefinitely requeue the same Stop.
+        opening.stopOnResume = true;
+        opening.cancellationStarted = lifecycle.started(acknowledgement);
+        await opening.cancellationStarted;
+        await opening.ready;
+        if (!opening.runnerReady) {
+          // Startup failed independently. Its ordinary terminal/ordered recovery
+          // path retains this acknowledged Stop; no physical stop is asserted.
+          await opening.done;
+          return {
+            reason: request.reason,
+            forced: false,
+            lastEventSeq:
+              positiveSafeInteger(request.target.nextEventSeq, "next event sequence") - 1,
+          };
+        }
       }
       const parsed = parseControlToSupervisorMessage({
         protocolVersion: 1,

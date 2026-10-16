@@ -122,3 +122,34 @@ to assert both the precise timeout state and code, then rerun the remaining
 assertions and crash case. Do not claim this partial run as complete acceptance.
 Adapter restoration and owned tenant/VM cleanup passed. Preserve its evidence
 as `live-unknown-recovery.json`; this assertion repair changes no runtime image.
+
+## Startup Stop race found during repeated acceptance
+
+`live-unknown-complete.json` confirms both result-loss cases and restored browser
+UNKNOWN rendering: inspection completed in 136,990 ms; lost result plus lost
+probe stopped with `timed_out/tool_reply_timeout` in 139,462 ms. Both cases had
+one original effect, retained the same VM, and kept probe nonces out of native
+storage. Before the Cubelet crash was injected, polling a newly accepted Turn
+assumed its optional transcript already existed. Fix that fixture read.
+
+The resulting early cleanup Stop exposed a real existing recovery loop: each
+writer bootstrap was aborted before a finalizer existed, then ordered recovery
+requeued and redelivered Stop into the next bootstrap. The original shortcut
+comes from ingress commit `2462e8b9` and survived the direct-publication migration
+in `4f887b17`. The fixture reached 900 transitions before its tenant claim policy
+was disabled. All old writers are sealed/released; the owned Run remains queued
+with its Stop and cleanup records intact. The fixture has not been fully cleaned
+up, and the crash case has not yet run. Its completion adapter is restored.
+
+The source repair retains Stop through bounded producer initialization and uses
+Pi's existing `stopOnResume` effect barrier before ordinary native cancellation.
+It also joins a pending PG cancellation acknowledgement before starting Pi; a
+rollback fails without starting or stranding the runner. Normal authorization,
+uncertain-publication closure and native result ownership are unchanged. Three
+real-PG cases cover immediate Stop, initial writer failure followed by recovery,
+and acknowledgement rollback. Pinned Harness tests cover effect blocking.
+The stale 128-item Run-transition response cap is removed without dropping
+history. The 255-case fault gate and targeted startup/Harness/API cases pass;
+expanded application/transport checks are in progress.
+scanned Worker recovery of the isolated fixture and a complete matched release
+must precede final live acceptance.

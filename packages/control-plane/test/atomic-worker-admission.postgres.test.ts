@@ -19,7 +19,11 @@ import {
   type EventPublishMessage,
 } from "@pi-cloud/protocol";
 import { AgentRunExecutionBackend } from "../../supervisor-host/src/agent-run-execution-backend.ts";
-import { RunExecutor, type TurnExecutionBackend } from "../../runtime-core/src/run-executor.ts";
+import {
+  RunExecutor,
+  TurnExecutionBackendError,
+  type TurnExecutionBackend,
+} from "../../runtime-core/src/run-executor.ts";
 import { RunCancellationExecutor } from "../../runtime-core/src/run-cancellation-executor.ts";
 import { SessionLeaseCoordinator } from "../../runtime-core/src/session-lease-coordinator.ts";
 import { WorkerExecutionLog } from "../../runtime-core/src/worker-execution-log.ts";
@@ -1605,46 +1609,144 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     expect(f.runner).toHaveBeenCalledOnce();
     expect((await f.state()).admittedRuns).toHaveLength(1);
   });
-  it("cancels a pending publication admission without ever starting the Runner", async () => {
-    const entered = Promise.withResolvers<void>();
-    const f = await fixture(2, async (_permit, signal) => {
-      entered.resolve();
-      await new Promise<void>((_resolve, reject) => {
-        signal!.addEventListener("abort", () => reject(signal!.reason), { once: true });
+  it.each([false, true])(
+    "settles Stop during writer bootstrap without a recovery loop (startup failure=%s)",
+    async (failFirst) => {
+      let entered = Promise.withResolvers<void>(),
+        release = Promise.withResolvers<void>(),
+        opens = 0;
+      const f = await fixture(2, async () => {
+        opens++;
+        entered.resolve();
+        await release.promise;
+        if (failFirst && opens === 1)
+          throw new TurnExecutionBackendError("writer_publication_failed", "lost startup", true);
       });
+      const original = f.runner.getMockImplementation()!;
+      const aborted = vi.fn();
+      f.runner.mockImplementation(async (command, publish, signal) => {
+        // Native stopOnResume blocks model/Tool IO; the pinned Harness test
+        // separately verifies that guarantee. This composes it with real PG.
+        expect(command.payload.stopOnResume).toBe(true);
+        await original(command, publish, signal);
+        await new Promise<void>((resolve) => {
+          if (signal!.aborted) resolve();
+          else signal!.addEventListener("abort", () => resolve(), { once: true });
+        });
+        aborted();
+        throw new PiTurnCancelledError("user_request", false);
+      });
+      const cancellation = new RunCancellationExecutor({
+        database: db,
+        executionAuthority: f.coordinator,
+        backend: f.backend,
+      });
+      const projector = new ExecutionStreamProjector(db),
+        seen = new Set<string>();
+      let offset = 0n;
+      const projectNew = async () => {
+        const seals = await db
+          .selectFrom("outbox")
+          .select("payload")
+          .where("tenant_id", "=", f.tenant.tenantId)
+          .where("aggregate_type", "=", "session_terminal_event")
+          .execute();
+        for (const fact of [
+          ...f.facts,
+          ...seals.map((s) => s.payload as unknown as AcceptedFact),
+        ]) {
+          if (seen.has(fact.factId)) continue;
+          await projector.project({
+            fact,
+            topic: `test-${f.worker}`,
+            partition: 0,
+            offset: offset++,
+          });
+          seen.add(fact.factId);
+        }
+      };
+      for (let attempt = 0; attempt < (failFirst ? 2 : 1); attempt++) {
+        const executing = f.executor().dispatchRun(f.accepted.runId);
+        await entered.promise;
+        if (attempt === 0)
+          await f.store.acceptTurnCancellation(
+            f.session.sessionId,
+            f.accepted.turnId,
+            randomUUID(),
+            {},
+          );
+        const cancelling = cancellation.dispatchTargetRun(f.accepted.runId);
+        await vi.waitFor(async () => expect((await f.state()).run.state).toBe("cancel_requested"));
+        expect(f.runner).not.toHaveBeenCalled();
+        release.resolve();
+        await expect(cancelling).resolves.toMatchObject({ status: "cancelled", forced: false });
+        const result = await executing;
+        await projectNew();
+        if (failFirst && attempt === 0) {
+          expect((await f.state()).run.state).toBe("queued");
+          expect(f.runner).not.toHaveBeenCalled();
+          entered = Promise.withResolvers<void>();
+          release = Promise.withResolvers<void>();
+        } else {
+          expect(result).toMatchObject({ status: "cancelled" });
+          expect((await f.state()).run.state).toBe("cancelled");
+        }
+      }
+      expect(f.runner).toHaveBeenCalledOnce();
+      expect(aborted).toHaveBeenCalledOnce();
+      expect(f.facts.filter((fact) => fact.kind === "work_finished")).toMatchObject([
+        { terminal: { type: "turn.cancelled" } },
+      ]);
+      expect((await f.state()).leases).toEqual([]);
+      expect(await f.executor().dispatchRun(f.accepted.runId)).toMatchObject({ status: "idle" });
+      expect(
+        await db
+          .selectFrom("turn_control_requests")
+          .select("state")
+          .where("target_run_id", "=", f.accepted.runId)
+          .execute(),
+      ).toEqual([{ state: "completed" }]);
+    },
+  );
+
+  it("settles a rejected Stop acknowledgement during bootstrap without stranding the Runner", async () => {
+    const entered = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    const f = await fixture(2, async () => {
+      entered.resolve();
+      await release.promise;
     });
     const executing = f.executor().dispatchRun(f.accepted.runId);
     await entered.promise;
     await f.store.acceptTurnCancellation(f.session.sessionId, f.accepted.turnId, randomUUID(), {});
-    const cancellation = new RunCancellationExecutor({
-      database: db,
-      executionAuthority: f.coordinator,
-      backend: f.backend,
-    });
-    expect(await cancellation.dispatchTargetRun(f.accepted.runId)).toMatchObject({
-      status: "cancelled",
-      forced: false,
-    });
-    await executing;
-    expect(f.runner).not.toHaveBeenCalled();
-    expect(f.facts).toEqual([]);
-    expect((await f.state()).run.state).toBe("cancel_requested");
-    const seal = await db
-      .selectFrom("outbox")
-      .where("aggregate_type", "=", "session_terminal_event")
-      .select("payload")
-      .where("tenant_id", "=", f.tenant.tenantId)
-      .executeTakeFirstOrThrow();
-    expect(seal.payload).toMatchObject({ kind: "execution_seal", recover: true });
-    await f.project();
-    expect((await f.state()).run.state).toBe("queued");
-    expect(
-      await db
-        .selectFrom("turn_control_requests")
-        .select("state")
-        .where("target_run_id", "=", f.accepted.runId)
-        .execute(),
-    ).toEqual([{ state: "pending" }]);
+    await sql`create function reject_bootstrap_stop() returns trigger language plpgsql as $$ begin
+      raise exception 'cancellation acknowledgement rolled back' using errcode='40001'; end $$;
+      create trigger reject_bootstrap_stop before insert on run_transitions
+      for each row when(new.to_state='cancel_requested') execute function reject_bootstrap_stop();`.execute(
+      db,
+    );
+    try {
+      const cancellation = new RunCancellationExecutor({
+        database: db,
+        executionAuthority: f.coordinator,
+        backend: f.backend,
+      });
+      await expect(cancellation.dispatchTargetRun(f.accepted.runId)).rejects.toThrow(
+        "cancellation acknowledgement rolled back",
+      );
+      release.resolve();
+      await expect(executing).resolves.toMatchObject({ status: "failed" });
+      expect(f.runner).not.toHaveBeenCalled();
+      await f.project();
+      expect((await f.state()).run.state).toBe("failed");
+      expect((await f.state()).leases).toEqual([]);
+    } finally {
+      release.resolve();
+      await executing;
+      await sql`drop trigger reject_bootstrap_stop on run_transitions; drop function reject_bootstrap_stop();`.execute(
+        db,
+      );
+    }
   });
 
   it("preserves native completion when a control cancellation has not aborted the Runner", async () => {
