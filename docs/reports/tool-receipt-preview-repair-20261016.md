@@ -282,6 +282,46 @@ with zero VMs, and there are no unfinished Runs, writers, Tool bindings or seals
 Deployment is online; remaining live acceptance and the reconnect investigation
 are pending.
 
+## Recovery timing diagnosis and complete targeted checks
+
+An isolated empty-Session probe reproduced connection recovery without any model
+request or Tool: after forced Control Plane deletion, the Kubernetes replacement
+command returned in 1,240 ms, but SSE's replacement snapshot arrived at 30,377 ms.
+The client retried intervening 502/500 responses and then recovered. Thus the
+earlier 25-second preview assertion expired before this measured connection
+recovery; it did not demonstrate a lost expansion state or broken delta parsing.
+The instrumented browser had remained expanded and was displaying its waiting
+text while the native Run continued running.
+
+The maintained fixture now gives reconnection one shared 60-second window and
+runs a bounded 90-second command with a 180-second Bash timeout, so the Tool is
+still producing output after recovery. It retains every prior assertion and
+records the actual recovery time; this does not change runtime deadlines or
+claim a fleet-wide recovery SLA. The no-model probe and timing diagnostics are
+retained privately under `dist/research/preview-reconnect-20261016/`.
+
+The complete progress/receipt suite subsequently passes, including real CR/ANSI
+overwriting, silence, Stop with no late previews and write/read/edit/bash after
+Stop. The command executes once. Preview recovery is 27,100 ms; 64 envelopes
+contain 50 deltas and 14 resets, totaling 127,597 bytes (maximum 8,571; source view
+maximum 8,192). The repeated real receipt-loss check retains its result at
+5,493 ms with zero scoped-cleanup calls and both background processes alive.
+All fixture resources are confirmed cleaned.
+
+The native-input suite also passes all five cases: consume/edit/retry identity,
+Stop, Worker recovery, stopped streaming and simultaneous Worker/Control Plane
+memory loss. The logical Run and native partial response survive, with no PG
+streaming bodies or retained input-edit bodies. Both process crashes have exit
+137/restart-count evidence. A transient kubectl `container not found` message
+during the injected restart is retained; the complete recovery assertions pass.
+
+The real-browser targeted suite passes lost-response/Stop/returned-input image
+resend, preserving the upload identity and direct vision. Oversized ASCII and
+Unicode Read results retain 51,200 and 51,196 valid UTF-8 bytes respectively and
+their canonical truncation diagnostics. Both suites confirm fixture cleanup.
+The full Cube suite's additional multi-round/background/Volume cases are tracked
+separately; a follow-up attempt still encountered the known external TLS EOF.
+
 ## Windows web entry after reboot
 
 A direct Linux request to `127.0.0.1:8080` succeeded while Windows `curl.exe`

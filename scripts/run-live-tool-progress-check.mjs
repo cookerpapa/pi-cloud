@@ -146,7 +146,7 @@ try {
     const started = Date.now();
     active = await api.acceptTurn(
       session.sessionId,
-      '只执行一次 bash 工具，逐字使用以下命令，不要后台运行、不要重定向、不要子代理：python3 -u -c \'import time; print("x"*100000); [(print("OBS_TICK_"+str(i), flush=True), time.sleep(1)) for i in range(50)]; print("OBS_DONE")\'。完成后简短确认。',
+      '只执行一次 bash 工具，timeout 设置为 180 秒，逐字使用以下命令，不要后台运行、不要重定向、不要子代理：python3 -u -c \'import time; print("x"*100000); [(print("OBS_TICK_"+str(i), flush=True), time.sleep(1)) for i in range(90)]; print("OBS_DONE")\'。完成后简短确认。',
       newIdempotencyKey("live-progress"),
       "low",
     );
@@ -218,12 +218,15 @@ try {
       const before = snapshots;
       const restartStarted = Date.now();
       await replacePod("control-plane");
-      report.projectorReplacementMs = Date.now() - restartStarted;
+      report.replacementCommandMs = Date.now() - restartStarted;
       // Replace the Projector process, not the Worker or the running Tool.
+      // Pod rollout can return before publication ownership/SSE recovers. The
+      // isolated no-model crash probe measured 30 s, beyond the old 25 s check.
+      const deadline = Date.now() + 60000;
       try {
         await page.waitFor(
           "document.querySelector('.product-tool-progress-tail')?.textContent.includes('OBS_TICK_')",
-          25000,
+          60000,
         );
       } catch (error) {
         const run = await api.getRun(active.runId);
@@ -247,13 +250,13 @@ try {
         };
         throw error;
       }
-      const deadline = Date.now() + 25000;
       while (snapshots <= before && Date.now() < deadline) await page.wait(250);
       assert(snapshots > before, "No replacement snapshot after Projector restart");
       const updateCount = updates.length;
       while (updates.length <= updateCount && Date.now() < deadline) await page.wait(250);
       assert(updates.length > updateCount, "No new progress after Projector restart");
       report.projectorRestart = true;
+      report.previewRecoveredMs = Date.now() - restartStarted;
     }
     const run = await waitRun(active.runId);
     assert.equal(run.state, "completed", JSON.stringify(run.failure));
@@ -283,6 +286,7 @@ try {
     );
     report.runs.push({
       kind: "continuous-output",
+      requestedCommandSeconds: 90,
       elapsedMs: Date.now() - started,
       progressCount: sampled.length,
       maximumPreviewBytes: Math.max(...sampled.map((u) => previewBytes(u.view?.text ?? ""))),
