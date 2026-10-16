@@ -1,6 +1,10 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { RunActivityPublisher } from "../src/run-activity-publisher.ts";
-import { parseRunActivityDelivery } from "@pi-cloud/protocol";
+import {
+  parseRunActivityDelivery,
+  EXECUTION_READINESS_PATH,
+  type ExecutionObservationDelivery,
+} from "@pi-cloud/protocol";
 const scope = {
   tenantId: "tenant",
   sessionId: "session",
@@ -31,6 +35,47 @@ it("coalesces activity and republishes quiet state without inventing actual prog
     publisher.forget(scope.runId);
     await vi.advanceTimersByTimeAsync(30_000);
     expect(send).toHaveBeenCalledTimes(2);
+  } finally {
+    publisher.close();
+  }
+});
+
+it("confirms readiness synchronously with one owner redirect and respects Stop", async () => {
+  const delivery: ExecutionObservationDelivery = {
+    scope,
+    partition: 2,
+    kind: "probe",
+    requestId: "nonce",
+    sentAt: 1000,
+    evidence: { bindingId: "binding", targetId: "target", bootId: "boot", observedAt: 1001 },
+  };
+  const send = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      new Response(null, {
+        status: 307,
+        headers: { location: `http://owner:3000${EXECUTION_READINESS_PATH}` },
+      }),
+    )
+    .mockResolvedValueOnce(new Response(null, { status: 204 }));
+  const publisher = new RunActivityPublisher("http://control", "token", send);
+  try {
+    expect(await publisher.confirmExecution(delivery, new AbortController().signal)).toBe(true);
+    expect(send.mock.calls.map(([url]) => String(url))).toEqual([
+      `http://control${EXECUTION_READINESS_PATH}`,
+      `http://owner:3000${EXECUTION_READINESS_PATH}`,
+    ]);
+    const stop = new AbortController();
+    send.mockImplementationOnce(async () => {
+      stop.abort();
+      return new Response(null, { status: 204 });
+    });
+    expect(await publisher.confirmExecution(delivery, stop.signal)).toBe(false);
+    expect(await publisher.confirmExecution(delivery, AbortSignal.abort())).toBe(false);
+    expect(send).toHaveBeenCalledTimes(3);
+    send.mockResolvedValue(new Response(null, { status: 200 }));
+    expect(await publisher.confirmExecution(delivery, new AbortController().signal)).toBe(false);
+    expect(send).toHaveBeenCalledTimes(5);
   } finally {
     publisher.close();
   }

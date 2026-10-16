@@ -477,6 +477,7 @@ export async function startControlPlane(): Promise<void> {
         (partition) => activeAgentEvents.ownerForPartition(partition),
         (delivery) => activeAgentEvents.observations.activity(delivery),
         (delivery) => executionProbes.complete(delivery),
+        (delivery) => executionProbes.ready(delivery),
       ),
       toolProgressIngress: new ToolProgressIngress(
         config.supervisorManagementToken,

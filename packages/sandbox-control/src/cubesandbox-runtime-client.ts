@@ -209,6 +209,15 @@ export class CubeRuntimeClientError extends Error {
   }
 }
 
+/** No trustworthy HTTP response; effects may already have been admitted. */
+export class CubeRuntimeTransportError extends CubeRuntimeClientError {
+  constructor(cause: unknown) {
+    super("CubeSandbox API transport did not return a response");
+    this.name = "CubeRuntimeTransportError";
+    this.cause = cause;
+  }
+}
+
 /** The Guest process ran, but the requested application socket was refused. */
 export class CubeApplicationPortError extends CubeRuntimeClientError {
   constructor() {
@@ -1697,6 +1706,8 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       },
       ...(init.body === undefined ? {} : { body: init.body }),
       signal: AbortSignal.timeout(init.timeoutMs ?? this.#requestTimeoutMs),
+    }).catch((cause: unknown) => {
+      throw new CubeRuntimeTransportError(cause);
     });
     if (!response.ok && !(allowNotFound && response.status === 404)) {
       await response.body?.cancel().catch(() => undefined);

@@ -10,6 +10,7 @@ import { OfficialCubeSandboxRuntimeClient } from "../src/index.ts";
 import {
   CubeExecutionRejected,
   CubeApplicationPortError,
+  CubeRuntimeTransportError,
 } from "../src/cubesandbox-runtime-client.ts";
 import { MAX_IMAGE_GUEST_RESPONSE_BYTES } from "@pi-cloud/protocol";
 
@@ -38,6 +39,7 @@ let observationMode: "present" | "absent" | "unavailable" | "missing-endpoint" |
   "present";
 let executionReply: unknown = {};
 let executionStatus = 200;
+let loseExecutionReply = false;
 let tcpResponse: ServerResponse | undefined;
 let tcpConnectMode: "connected" | "refused" | "unreachable" = "connected";
 beforeEach(() => {
@@ -50,6 +52,7 @@ beforeEach(() => {
   executionTarget.apiUrl = `http://127.0.0.1:${port}`;
   executionReply = {};
   executionStatus = 200;
+  loseExecutionReply = false;
   runtimeState = "running";
   observationMode = "present";
   tcpConnectMode = "connected";
@@ -142,6 +145,10 @@ beforeAll(async () => {
         return;
       }
       if (request.url?.includes("/execution/")) {
+        if (loseExecutionReply) {
+          response.destroy();
+          return;
+        }
         response.writeHead(executionStatus, { "content-type": "application/json" });
         response.end(JSON.stringify(executionReply));
         return;
@@ -390,6 +397,18 @@ beforeAll(async () => {
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   port = (server.address() as AddressInfo).port;
+});
+
+it("classifies a disconnected native HTTP reply as transport uncertainty", async () => {
+  const client = executionClient();
+  try {
+    loseExecutionReply = true;
+    await expect(
+      client.probeExecution(executionTarget, "10000000-0000-4000-8000-000000000099"),
+    ).rejects.toBeInstanceOf(CubeRuntimeTransportError);
+  } finally {
+    await client.close();
+  }
 });
 
 afterAll(async () => {

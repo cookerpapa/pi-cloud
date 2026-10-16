@@ -29,7 +29,9 @@ export function interruptionReasonForFailureCode(code: unknown): RunInterruption
       return "execution_timeout";
     case "cubesandbox_tool_result_unknown":
     case "tool_operation_outcome_unknown":
-    case "tool_command_delivery_unknown":
+    case "tool_reply_timeout":
+    case "tool_handoff_unconfirmed":
+    case "tool_reply_protocol_error":
     case "workflow_result_unknown":
       return "tool_result_unknown";
     case "cubesandbox_tool_unavailable":

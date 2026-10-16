@@ -1709,6 +1709,62 @@
       "file": "test/native-child-history.postgres.test.ts",
       "test": "forks native child history and preserves parent-owned deletion boundaries without a child Run",
       "invariant": "Native child history supports cold fork and parent-owned deletion without adding cloud task rows."
+    },
+    {
+      "id": "unknown-native-inspection",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/trusted-remote-tools.test.ts",
+      "test": "commits UNKNOWN through native Pi then permits a distinct inspection without replay",
+      "invariant": "A validated fresh path permits native inspection after committed UNKNOWN without replaying the original effect or exposing probes to context."
+    },
+    {
+      "id": "unknown-repeated-failure",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/trusted-remote-tools.test.ts",
+      "test": "interrupts a second UNKNOWN instead of looping on successful small probes",
+      "invariant": "A small successful probe cannot cause endless model sampling when actual Tool replies remain unavailable."
+    },
+    {
+      "id": "unknown-stop-during-readiness",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/trusted-remote-tools.test.ts",
+      "test": "Stop during readiness prevents native continuation even if the probe succeeds",
+      "invariant": "User cancellation takes precedence over a concurrent successful readiness check."
+    },
+    {
+      "id": "unknown-protocol-failure",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/trusted-remote-tools.test.ts",
+      "test": "never probes away a hard failure: tool_reply_protocol_error",
+      "invariant": "A malformed final reply retains interruption instead of being downgraded to a lost reply."
+    },
+    {
+      "id": "readiness-current-binding",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/execution-path-probes.test.ts",
+      "test": "requires a fresh matching probe and rechecks current binding admission before readiness",
+      "invariant": "Closed/replaced bindings and expired or mismatched probe evidence cannot confirm readiness."
+    },
+    {
+      "id": "readiness-owner-replacement",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/execution-path-probes.test.ts",
+      "test": "does not let a pre-rebalance probe confirmation cross owner replacement",
+      "invariant": "Projector replacement invalidates an outstanding readiness confirmation."
+    },
+    {
+      "id": "readiness-lost-reply",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/path-probe.test.ts",
+      "test": "ends a fault probe without granting readiness: lost_reply",
+      "invariant": "A missing guest reply ends the fault check within its budget without authorizing continuation."
+    },
+    {
+      "id": "readiness-lost-publication-ack",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/path-probe.test.ts",
+      "test": "ends a fault probe without granting readiness: lost_publication_ack",
+      "invariant": "An unconfirmed probe publication cannot pin a readiness waiter or be treated as successful evidence."
     }
   ]
 }

@@ -152,6 +152,54 @@ it("publishes Projector status immediately and shares one guest probe across VM 
   }
 });
 
+it("requires a fresh matching probe and rechecks current binding admission before readiness", async () => {
+  const f = fixture();
+  try {
+    expect(await f.probes.ready(f.completion())).toBe(false);
+    f.probes.consume(f.fact);
+    await vi.waitFor(() => expect(f.submitProbe).toHaveBeenCalledOnce());
+    expect(await f.probes.ready({ ...f.completion(), requestId: "different" })).toBe(false);
+    expect(
+      await f.probes.ready({
+        ...f.completion(),
+        evidence: { ...f.completion().evidence, bootId: "old-boot" },
+      }),
+    ).toBe(false);
+    expect(await f.probes.ready(f.completion())).toBe(true);
+    expect(await f.probes.ready(f.completion())).toBe(true); // HTTP acknowledgement retry
+    f.get.mockResolvedValueOnce({ ...f.first, dispatchClosed: true });
+    expect(await f.probes.ready(f.completion())).toBe(false);
+    f.get.mockResolvedValueOnce({
+      ...f.first,
+      descriptor: {
+        ...f.first.descriptor,
+        target: { ...f.first.descriptor.target, bootId: "replacement" },
+      },
+    });
+    expect(await f.probes.ready(f.completion())).toBe(false);
+    f.advance(10_001);
+    expect(await f.probes.ready(f.completion())).toBe(false);
+  } finally {
+    await f.probes.close();
+  }
+});
+
+it("does not let a pre-rebalance probe confirmation cross owner replacement", async () => {
+  const f = fixture();
+  try {
+    f.probes.consume(f.fact);
+    await vi.waitFor(() => expect(f.submitProbe).toHaveBeenCalledOnce());
+    const route = Promise.withResolvers<SandboxBinding | undefined>();
+    f.get.mockReturnValueOnce(route.promise);
+    const ready = f.probes.ready(f.completion());
+    f.probes.reset();
+    route.resolve(f.first);
+    expect(await ready).toBe(false);
+  } finally {
+    await f.probes.close();
+  }
+});
+
 it("forwards a guest probe from the same memory view without a binding SELECT", async () => {
   const f = fixture();
   const source = {

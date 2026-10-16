@@ -948,6 +948,13 @@ Explicit before-start cancellation is distinct from interrupted execution.
 Confirmed `not_started` survives Stop; fixed Tools and Workflow share typed
 infrastructure failure policy, blocking further sampling on UNKNOWN while
 ordinary native/business errors stay on Pi's normal Tool error path (ADR-0227).
+Current source implements the narrow [ADR-0253 exception](adr/0253-tool-reply-uncertainty-and-continuation.md):
+fixed-Tool reply deadlines and explicit handoff transport loss can permit inspection
+after a fresh bounded probe and current binding/owner confirmation. Generic
+execution UNKNOWN, protocol failures, Stop and lost ownership still interrupt.
+Probes remain outside native history/model context and never become lease, replay
+or VM-destruction authority. [Verification and rollout status](reports/tool-reply-continuation-20261016.md)
+is separate: the serving release still uses unconditional infrastructure interruption.
 Confirmed loss of a user-selected working directory before a fixed Tool starts
 also returns a native Tool error, allowing the Harness to continue the dialogue.
 The guest classifies missing/non-directory paths at preparation; it never repairs

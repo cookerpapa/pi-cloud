@@ -12,6 +12,18 @@ and the local `delivered:true` receipt. The boot-scoped mailbox is transport, wh
 Pi/Session publication owns canonical history. Delivery retries retain/re-send the
 same result without repeating shell execution; whole-Cubelet loss before confirmed
 delivery can lose an in-memory result and retains the UNKNOWN boundary.
+The owner accepted this loss boundary and, after comparing Pi/Codex waiting,
+approved [ADR-0253's implementation plan](adr/0253-tool-reply-uncertainty-and-continuation.md):
+retain Pi final-result Tools; make waits invocation-specific; on eligible fixed
+Tool uncertainty, use a fresh bounded internal probe to decide whether inspection
+can continue. Probe packets never enter native history or model context. Stop,
+lost ownership, uncertain publication, closed/replaced bindings and Workflow
+channel failures retain interruption. Remove three orphaned error recognizers.
+The [implementation record](reports/tool-reply-continuation-20261016.md) tracks
+source changes and passing targeted checks; full gates, matched rollout and live
+fault acceptance are pending. The owner also requested a WSL disk expansion;
+restart timing is pending and the reading checkpoint is unchanged.
+The walkthrough remains at this hop while that slice is addressed.
 Next: Kafka reply consumption → the original Worker's pending Tool callback and Pi.
 
 Previously covered **guest Tool process → Cubelet result reception**.

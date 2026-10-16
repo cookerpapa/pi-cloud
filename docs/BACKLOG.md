@@ -28,6 +28,28 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## Cube completion → Kafka replies and UNKNOWN continuation
+
+The owner-approved direction and implementation plan are recorded in
+[ADR-0253](adr/0253-tool-reply-uncertainty-and-continuation.md). Source inspection
+confirms a uniform seven-minute fixed-Tool reply wait, unconditional UNKNOWN
+sampling interruption and three orphaned error recognizers. The preceding
+receipt/preview repair is deployed; this new slice is implemented in source with
+[verification and rollout pending](reports/tool-reply-continuation-20261016.md). Keep Pi final-result semantics and the accepted
+volatile-result loss boundary; reuse the existing internal execution probe.
+
+- [x] U1: distinguish effect uncertainty, explicit interruption conditions and
+      fixed-Tool failures eligible for a readiness check; retain native Stop,
+      Workflow interruption, publication fencing and controller-owned recovery.
+- [x] U2: bounded fresh probe through the existing Session/guest/boot-reply path,
+      with current binding/owner checks, coalescing and no native/context/PG sample.
+- [x] U3: commit UNKNOWN then permit inspection only with confirmed readiness;
+      interrupt repeated uncertainty and preserve single settlement/late-reply rules.
+- [ ] U4: invocation-specific wait budget plus existing transport allowance;
+      remove orphaned error branches and complete source/transport/fault gates.
+- [ ] U5: scanned matched release and owned Luna/Cube/browser/input/recovery
+      acceptance, proving one original effect and confirmed fixture cleanup.
+
 ## Guest → Cubelet result review
 
 The [October 16 review](reports/guest-cubelet-result-review-20261016.md) is complete

@@ -290,6 +290,39 @@ export class ExecutionPathProbes {
       }),
     );
   }
+  /** Readiness evidence, never a lease or permission to bypass subsequent admission. */
+  async ready(value: ExecutionObservationDelivery): Promise<boolean> {
+    if (value.kind !== "probe") return false;
+    const generation = this.#generation;
+    const pending = this.#pending.get(this.#key(value.requestId, value.evidence.bindingId));
+    const matches = () =>
+      generation === this.#generation &&
+      pending !== undefined &&
+      this.#pending.get(this.#key(value.requestId, value.evidence.bindingId)) === pending &&
+      this.#valid(value.scope, value.partition) &&
+      isDeepStrictEqual(pending.scope, value.scope) &&
+      pending.sentAt === value.sentAt &&
+      this.#now() - value.sentAt <= EXECUTION_PROBE_TIMEOUT_MS &&
+      value.sentAt <= this.#now() + 5000 &&
+      value.evidence.observedAt >= value.sentAt - 5000 &&
+      value.evidence.observedAt <= this.#now() + 5000 &&
+      value.evidence.targetId === executionTargetId(pending.route.descriptor.target) &&
+      value.evidence.bootId === pending.route.descriptor.target.bootId;
+    if (!matches()) return false;
+    const route = await this.options.routes.get(value.scope, value.evidence.bindingId);
+    if (!matches() || !route || route.dispatchClosed) return false;
+    const identity = parseExecutionReference(route.snapshot.assignment.executionReference);
+    if (
+      identity.runId !== value.scope.runId ||
+      identity.leaseId !== value.scope.writerId ||
+      identity.fencingToken !== value.scope.fencingToken ||
+      executionTargetId(route.descriptor.target) !== value.evidence.targetId ||
+      route.descriptor.target.bootId !== value.evidence.bootId
+    )
+      return false;
+    this.complete(value);
+    return true;
+  }
   complete(value: ExecutionObservationDelivery): void {
     const { evidence, scope } = value,
       now = this.#now();

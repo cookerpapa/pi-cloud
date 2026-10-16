@@ -477,12 +477,20 @@ export class PiWorkerRuntime {
       replies: toolReplies,
       partitionFor: (id) => kafkaProducerLane(id, this.#config.kafka.partitions),
       report: (delivery) => activity.execution(delivery),
+      confirm: (delivery, signal) => activity.confirmExecution(delivery, signal),
     });
     toolReplies.onExecutionEvidence = (id, evidence) =>
       workerLog?.recordExecutionEvidence(id, evidence);
     const runner = new RemoteToolSandboxTurnRunner({
       onRuntimeBinding: (reference, bindingId, conversationId) =>
         workerLog?.bindRuntime(reference, bindingId, conversationId),
+      confirmExecution: (command, bindingId, signal) =>
+        workerLog?.confirmExecution(
+          command.payload.executionReference,
+          bindingId,
+          command.payload.piSession.conversationId,
+          signal,
+        ) ?? Promise.resolve(false),
       onActivity: (command, update) => {
         const p = command.payload;
         if (!update) {

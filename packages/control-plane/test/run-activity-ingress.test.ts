@@ -1,6 +1,10 @@
 import { expect, it, vi } from "vitest";
 import Fastify from "fastify";
-import { RUN_ACTIVITY_PATH, EXECUTION_OBSERVATION_PATH } from "@pi-cloud/protocol";
+import {
+  RUN_ACTIVITY_PATH,
+  EXECUTION_OBSERVATION_PATH,
+  EXECUTION_READINESS_PATH,
+} from "@pi-cloud/protocol";
 import { RunActivityIngress } from "../src/run-activity-ingress.ts";
 
 it("requires Worker management authority, validates bounded payloads and follows partition ownership", async () => {
@@ -49,6 +53,59 @@ it("requires Worker management authority, validates bounded payloads and follows
     owner.mockRejectedValueOnce(new Error("Owner changed"));
     expect((await server.inject(request)).statusCode).toBe(503);
     expect(publish).toHaveBeenCalledOnce();
+  } finally {
+    await server.close();
+  }
+});
+
+it("confirms fault readiness only from the current owner and a validated probe", async () => {
+  const server = Fastify(),
+    owner = vi.fn(async (): Promise<string | undefined> => undefined);
+  const ready = vi.fn(async () => false),
+    observe = vi.fn();
+  new RunActivityIngress("worker-token", owner, vi.fn(), observe, ready).install(server);
+  const payload = {
+    scope: {
+      tenantId: "t",
+      sessionId: "s",
+      turnId: "turn",
+      runId: "run",
+      writerId: "w",
+      piSessionId: "p",
+      fencingToken: 1,
+    },
+    partition: 0,
+    kind: "probe",
+    requestId: "probe",
+    sentAt: 1000,
+    evidence: { bindingId: "binding", targetId: "vm", bootId: "boot", observedAt: 1001 },
+  };
+  const request = {
+    method: "POST" as const,
+    url: EXECUTION_READINESS_PATH,
+    payload,
+    headers: { authorization: "Bearer worker-token" },
+  };
+  try {
+    expect((await server.inject({ ...request, headers: {} })).statusCode).toBe(401);
+    expect(
+      (await server.inject({ ...request, payload: { ...payload, command: "PRIVATE" } })).statusCode,
+    ).toBe(400);
+    expect(
+      (await server.inject({ ...request, payload: { ...payload, kind: "tool" } })).statusCode,
+    ).toBe(409);
+    expect(ready).not.toHaveBeenCalled();
+    expect((await server.inject(request)).statusCode).toBe(409);
+    ready.mockResolvedValueOnce(true);
+    expect((await server.inject(request)).statusCode).toBe(204);
+    owner.mockResolvedValueOnce("http://new-owner:3000");
+    const redirected = await server.inject(request);
+    expect(redirected.statusCode).toBe(307);
+    expect(redirected.headers.location).toBe(`http://new-owner:3000${EXECUTION_READINESS_PATH}`);
+    expect(ready).toHaveBeenCalledTimes(2);
+    expect(observe).not.toHaveBeenCalled();
+    ready.mockRejectedValueOnce(new Error("owner lost"));
+    expect((await server.inject(request)).statusCode).toBe(503);
   } finally {
     await server.close();
   }

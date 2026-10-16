@@ -202,15 +202,23 @@ it.each(["workspace_attach_invalid", "tool_worker_failed"])(
   },
 );
 
-it("rejects mismatched operation identity and an old guest wire before publication", async () => {
+it("returns a blocking protocol failure for mismatched identity or old guest wire", async () => {
   const f = fixture();
   const raw = f.packet.result!.output as any;
   raw.response.operationId = randomUUID();
-  await expect(f.adapter.accept(f.packet)).rejects.toThrow("identity");
+  await f.adapter.accept(f.packet);
   raw.response.operationId = f.packet.operationId;
   raw.toolWorkerProtocolVersion = 3;
-  await expect(f.adapter.accept(f.packet)).rejects.toThrow();
-  expect(f.publish).not.toHaveBeenCalled();
+  await f.adapter.accept(f.packet);
+  expect(f.publish).toHaveBeenCalledTimes(2);
+  for (const [, reply] of f.publish.mock.calls)
+    expect(reply).toMatchObject({
+      kind: "execution_failure",
+      failure: {
+        code: "tool_reply_protocol_error",
+        effect: "unknown",
+      },
+    });
 });
 
 it("marks an unconfirmed scope stop as runtime unavailable without destroying a VM", async () => {

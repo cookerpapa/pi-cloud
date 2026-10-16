@@ -16,7 +16,7 @@ import {
   fauxAssistantMessage,
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 import { nativeToolApi } from "./tool-api.ts";
 import { ScopedDurableModels } from "../src/durable/scoped-models.ts";
 import {
@@ -66,6 +66,7 @@ async function runNativeRemote(
   runtime: ReturnType<typeof createTrustedRemoteAgentTools>,
   replace = false,
   call = fauxToolCall("bash", { command: "echo fixture" }),
+  inspection?: ReturnType<typeof fauxToolCall>,
 ) {
   const provider = fauxProvider({ tokensPerSecond: 1000000 }),
     source = createModels();
@@ -74,6 +75,7 @@ async function runNativeRemote(
     fauxAssistantMessage(call, {
       stopReason: "toolUse",
     }),
+    ...(inspection ? [fauxAssistantMessage(inspection, { stopReason: "toolUse" })] : []),
     fauxAssistantMessage("done"),
   ]);
   const scoped = new ScopedDurableModels(source, async (request) => {
@@ -202,6 +204,281 @@ function configuration(overrides: Partial<TrustedRemoteToolsRuntimeConfiguration
   };
   return { value, publishToolCommand };
 }
+
+function guardedConfiguration(overrides: Partial<TrustedRemoteToolsRuntimeConfiguration>) {
+  let failure: Error | undefined;
+  const capture = createStepCapture();
+  const unavailable = vi.fn((value: { code: string }) => {
+    failure = new Error(value.code);
+  });
+  return {
+    ...configuration({
+      captureStepContext: (tools) => {
+        if (failure) throw failure;
+        return capture(tools);
+      },
+      onToolOperationUnavailable: unavailable,
+      publishToolCommand: async (command) => ({
+        operationId: command.request.operationId,
+        accepted: true,
+      }),
+      ...overrides,
+    }),
+    unavailable,
+  };
+}
+
+it("adds no readiness request to an ordinary confirmed Tool result", async () => {
+  const confirm = vi.fn(async () => true);
+  const f = configuration({ confirmExecution: confirm });
+  const result = await runNativeRemote(createTrustedRemoteAgentTools(f.value));
+  expect(result.requests).toBe(2);
+  expect(confirm).not.toHaveBeenCalled();
+});
+
+it("shares one readiness decision across concurrent uncertain fixed Tools", async () => {
+  const ready = Promise.withResolvers<boolean>(),
+    confirm = vi.fn(() => ready.promise);
+  const f = guardedConfiguration({
+    confirmExecution: confirm,
+    waitForToolReply: async () => {
+      throw new ToolExecutionFailure({
+        code: "tool_reply_timeout",
+        effect: "unknown",
+        message: "No final reply",
+      });
+    },
+  });
+  const read = createTrustedRemoteAgentTools(f.value).tools.find((t) => t.name === "read")!;
+  const pending = Promise.allSettled([
+    read.execute({ path: "a" }, nativeToolApi("a"), BACKGROUND_CONTEXT),
+    read.execute({ path: "b" }, nativeToolApi("b"), BACKGROUND_CONTEXT),
+  ]);
+  await vi.waitFor(() => expect(confirm).toHaveBeenCalledOnce());
+  ready.resolve(true);
+  expect((await pending).map((r) => r.status)).toEqual(["rejected", "rejected"]);
+  expect(f.unavailable).not.toHaveBeenCalled();
+});
+
+it("commits UNKNOWN through native Pi then permits a distinct inspection without replay", async () => {
+  const confirm = vi.fn(async () => true);
+  let executions = 0;
+  const publish = vi.fn(async (command: CandidateToolCommand) => {
+    if (command.request.toolName === "bash") executions++;
+    return { operationId: command.request.operationId, accepted: true as const };
+  });
+  const f = guardedConfiguration({
+    confirmExecution: confirm,
+    publishToolCommand: publish,
+    waitForToolReply: async (request, _signal, callId) => {
+      if (request.toolName === "bash")
+        throw new ToolExecutionFailure({
+          code: "tool_handoff_unconfirmed",
+          effect: "unknown",
+          message: "Inspect effects before repeating the operation",
+        });
+      return {
+        type: "tool_execution_end",
+        toolCallId: callId!,
+        toolName: "read",
+        isError: false,
+        result: { content: [{ type: "text", text: "hello" }] },
+      };
+    },
+  });
+  const result = await runNativeRemote(
+    createTrustedRemoteAgentTools(f.value),
+    false,
+    fauxToolCall("bash", { command: "echo hello >> notes.txt" }),
+    fauxToolCall("read", { path: "notes.txt" }),
+  );
+  expect(result.requests).toBe(3);
+  expect(executions).toBe(1);
+  expect(publish).toHaveBeenCalledTimes(2);
+  expect(confirm).toHaveBeenCalledOnce();
+  expect(f.unavailable).not.toHaveBeenCalled();
+  const outcomes = result.messages.filter((m) => m.role === "toolResult");
+  expect(outcomes).toHaveLength(2);
+  expect(outcomes[0]).toMatchObject({
+    isError: true,
+    content: [{ type: "text", text: expect.stringContaining("tool_handoff_unconfirmed") }],
+  });
+  expect(outcomes[1]).toMatchObject({ isError: false, content: [{ type: "text", text: "hello" }] });
+  expect(JSON.stringify(result.messages)).not.toMatch(
+    /probeId|targetId|execution_probe|execution-readiness/,
+  );
+});
+
+it.each([false, "throws"])(
+  "interrupts native sampling when readiness cannot be confirmed: %s",
+  async (ready) => {
+    const f = guardedConfiguration({
+      confirmExecution: async () => {
+        if (ready === "throws") throw new Error("confirmation connection lost");
+        return false;
+      },
+      waitForToolReply: async () => {
+        throw new ToolExecutionFailure({
+          code: "tool_reply_timeout",
+          effect: "unknown",
+          message: "No confirmed final reply",
+        });
+      },
+    });
+    const result = await runNativeRemote(createTrustedRemoteAgentTools(f.value));
+    expect(result.requests).toBe(1);
+    expect(f.unavailable).toHaveBeenCalledOnce();
+  },
+);
+
+it.each([
+  "ownership_lost",
+  "stale_session_lease",
+  "cubesandbox_tool_unavailable",
+  "tool_reply_protocol_error",
+  "cubesandbox_tool_result_unknown",
+  "workflow_result_unknown",
+])("never probes away a hard failure: %s", async (code) => {
+  const confirm = vi.fn(async () => true);
+  const f = guardedConfiguration({
+    confirmExecution: confirm,
+    waitForToolReply: async () => {
+      throw new ToolExecutionFailure({
+        code,
+        effect: "unknown",
+        message: "Execution cannot continue",
+      });
+    },
+  });
+  const result = await runNativeRemote(createTrustedRemoteAgentTools(f.value));
+  expect(result.requests).toBe(1);
+  expect(confirm).not.toHaveBeenCalled();
+  expect(f.unavailable).toHaveBeenCalledOnce();
+});
+
+it("interrupts a second UNKNOWN instead of looping on successful small probes", async () => {
+  const confirm = vi.fn(async () => true);
+  const f = guardedConfiguration({
+    confirmExecution: confirm,
+    waitForToolReply: async () => {
+      throw new ToolExecutionFailure({
+        code: "tool_reply_timeout",
+        effect: "unknown",
+        message: "Reply missing",
+      });
+    },
+  });
+  const result = await runNativeRemote(
+    createTrustedRemoteAgentTools(f.value),
+    false,
+    fauxToolCall("bash", { command: "echo hello >> notes.txt" }),
+    fauxToolCall("read", { path: "notes.txt" }),
+  );
+  expect(result.requests).toBe(2);
+  expect(confirm).toHaveBeenCalledOnce();
+  expect(f.unavailable).toHaveBeenCalledOnce();
+});
+
+it("resets the uncertainty guard after a confirmed native result", async () => {
+  const confirm = vi.fn(async () => true);
+  let call = 0;
+  const f = guardedConfiguration({
+    confirmExecution: confirm,
+    waitForToolReply: async (request, _signal, id) => {
+      if (++call === 2)
+        return {
+          type: "tool_execution_end",
+          toolCallId: id!,
+          toolName: request.toolName,
+          isError: true,
+          result: { content: [{ type: "text", text: "File does not exist" }] },
+        };
+      throw new ToolExecutionFailure({
+        code: "tool_reply_timeout",
+        effect: "unknown",
+        message: "Reply missing",
+      });
+    },
+  });
+  const runtime = createTrustedRemoteAgentTools(f.value),
+    read = runtime.tools.find((t) => t.name === "read")!;
+  await expect(
+    read.execute({ path: "a" }, nativeToolApi("one"), BACKGROUND_CONTEXT),
+  ).rejects.toThrow("tool_reply_timeout");
+  await expect(
+    read.execute({ path: "b" }, nativeToolApi("two"), BACKGROUND_CONTEXT),
+  ).resolves.toMatchObject({ isError: true });
+  await expect(
+    read.execute({ path: "c" }, nativeToolApi("three"), BACKGROUND_CONTEXT),
+  ).rejects.toThrow("tool_reply_timeout");
+  expect(confirm).toHaveBeenCalledTimes(2);
+  expect(f.unavailable).not.toHaveBeenCalled();
+});
+
+it("Stop during readiness prevents native continuation even if the probe succeeds", async () => {
+  const check = Promise.withResolvers<boolean>(),
+    stop = new AbortController();
+  const confirm = vi.fn(() => check.promise);
+  const f = guardedConfiguration({
+    confirmExecution: confirm,
+    waitForToolReply: async () => {
+      throw new ToolExecutionFailure({
+        code: "tool_reply_timeout",
+        effect: "unknown",
+        message: "Reply missing",
+      });
+    },
+  });
+  const runtime = createTrustedRemoteAgentTools(f.value);
+  const pending = runtime.tools
+    .find((t) => t.name === "read")!
+    .execute(
+      { path: "a" },
+      nativeToolApi("stop"),
+      withAbortSignal(stop.signal, BACKGROUND_CONTEXT),
+    );
+  const rejected = expect(pending).rejects.toThrow("User stopped");
+  await vi.waitFor(() => expect(confirm).toHaveBeenCalledOnce());
+  stop.abort(new Error("User stopped"));
+  check.resolve(true);
+  await rejected;
+  expect(f.unavailable).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["read", { path: "a" }, 180_000],
+  ["bash", { command: "sleep 1", timeout: 30 }, 150_000],
+  ["bash", { command: "sleep 1" }, 420_000],
+] as const)(
+  "uses the invocation budget for %s and preserves typed deadline failure",
+  async (name, args, budget) => {
+    const deadline = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    const waiting = Promise.withResolvers<void>();
+    const f = guardedConfiguration({
+      waitForToolReply: async (_request, signal) => {
+        waiting.resolve();
+        return await new Promise<NativeToolEnd>((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      },
+    });
+    try {
+      const runtime = createTrustedRemoteAgentTools(f.value);
+      const pending = runtime.tools
+        .find((t) => t.name === name)!
+        .execute(args, nativeToolApi("timeout"), BACKGROUND_CONTEXT);
+      const rejected = expect(pending).rejects.toThrow("tool_reply_timeout");
+      await waiting.promise;
+      expect(timeout).toHaveBeenCalledWith(budget);
+      deadline.abort(new DOMException("Time expired", "TimeoutError"));
+      await rejected;
+      expect(f.unavailable).toHaveBeenCalledOnce();
+    } finally {
+      timeout.mockRestore();
+    }
+  },
+);
 
 describe("whole-tool Worker adapter", () => {
   it("retains Read diagnostics through the Worker and native Harness at the full content budget", async () => {

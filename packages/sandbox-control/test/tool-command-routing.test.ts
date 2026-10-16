@@ -4,6 +4,8 @@ import { createExecutionReference, type AcceptedToolCommand } from "@pi-cloud/pr
 import { ToolCommandDispatcher, toolDeliveryFact } from "../src/tool-command-dispatcher.ts";
 import {
   CubeExecutionRejected,
+  CubeRuntimeTransportError,
+  CubeRuntimeClientError,
   type CubeSandboxRuntimeClient,
 } from "../src/cubesandbox-runtime-client.ts";
 import type { SandboxBinding } from "../src/sandbox-bindings.ts";
@@ -110,6 +112,22 @@ function fixture() {
 const record = (fact: any, offset = 0n) => ({ fact, topic: "session-log", partition: 0, offset });
 
 describe("Projector native Cube handoff", () => {
+  it.each([
+    [new CubeRuntimeTransportError(new Error("socket closed")), "tool_handoff_unconfirmed"],
+    [new CubeRuntimeClientError("gateway timeout", 504), "tool_handoff_unconfirmed"],
+    [new CubeRuntimeClientError("wrong operation identity"), "cubesandbox_tool_result_unknown"],
+    [new CubeRuntimeClientError("access refused", 403), "cubesandbox_tool_result_unknown"],
+  ])("distinguishes missing handoff transport from invalid replies: %s", async (error, code) => {
+    const f = fixture();
+    f.cube.submitTool.mockRejectedValue(error);
+    await f.router.consume(record(f.command));
+    expect(f.cube.submitTool).toHaveBeenCalledOnce();
+    expect(f.quarantine).not.toHaveBeenCalled();
+    expect(f.publishReply.mock.calls[0]?.[1]).toMatchObject({
+      kind: "execution_failure",
+      failure: { code, effect: "unknown" },
+    });
+  });
   it("cancels the exact invocation even after new-command routing has closed", async () => {
     const f = fixture();
     f.get.mockResolvedValue({ ...f.route, dispatchClosed: true });

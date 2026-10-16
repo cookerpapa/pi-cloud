@@ -10,6 +10,7 @@ import {
   type ToolSandboxOperationRequest,
   type ToolSandboxOperationResponse,
   type CandidateToolCommand,
+  ToolExecutionFailure,
 } from "@pi-cloud/protocol";
 import type { Message } from "@earendil-works/pi-ai";
 import type { ProviderHeaders } from "@earendil-works/pi-ai";
@@ -30,7 +31,10 @@ import {
   blocksToolSampling,
   confirmsNoToolEffect,
   toolTransportFailure,
+  permitsReadinessCheck,
 } from "./tool-execution-outcome.ts";
+
+export const REMOTE_TOOL_REPLY_MARGIN_MS = 120_000;
 
 type RemoteOperationInput<T = ToolSandboxOperationRequest> = T extends unknown
   ? Omit<
@@ -56,6 +60,7 @@ export type TrustedRemoteToolsRuntimeConfiguration = {
     toolCallId?: string,
     imageScope?: { tenantId: string; runId: string },
   ) => Promise<NativeToolEnd>;
+  confirmExecution?: (bindingId: string, signal: AbortSignal) => Promise<boolean>;
   workflowUrl?: string;
   activationId?: string;
   resolveOperationTarget?: () =>
@@ -186,6 +191,7 @@ function validateRuntimeConfiguration(
       ? { observeToolDuration: candidate.observeToolDuration }
       : {}),
     ...(candidate.waitForToolReply ? { waitForToolReply: candidate.waitForToolReply } : {}),
+    ...(candidate.confirmExecution ? { confirmExecution: candidate.confirmExecution } : {}),
     resolveOperationTarget,
     executionReference,
     turnContextSha256,
@@ -225,6 +231,8 @@ export function createTrustedRemoteAgentTools(
   const runtime = validateRuntimeConfiguration(configuration);
   const tools: PreparedAgentTool[] = [];
   let remainingToolCalls = runtime.remainingToolCalls;
+  let continuedAfterUnknown = false;
+  let readiness: { bindingId: string; result: Promise<boolean> } | undefined;
   const sampling = new SamplingContext({
     turnContextSha256: runtime.turnContextSha256,
     executionContextSha256: runtime.executionContextSha256,
@@ -277,10 +285,11 @@ export function createTrustedRemoteAgentTools(
     });
     signal?.throwIfAborted();
     const pendingAbort = new AbortController();
+    const replyDeadline = AbortSignal.timeout(candidate.timeoutMs + REMOTE_TOOL_REPLY_MARGIN_MS);
     const replySignal = AbortSignal.any([
       pendingAbort.signal,
       ...(signal ? [signal] : []),
-      AbortSignal.timeout(MAX_TOOL_EXECUTION_TIMEOUT_MS + 120_000),
+      replyDeadline,
     ]);
     if (!runtime.waitForToolReply) throw new Error("Native Tool reply transport is unavailable");
     const pending = runtime.waitForToolReply(candidate, replySignal, toolCallId);
@@ -307,7 +316,46 @@ export function createTrustedRemoteAgentTools(
         if (!confirmsNoToolEffect(error)) markCancellationUnconfirmed();
         throw error;
       }
-      const failure = toolTransportFailure(error);
+      const failure =
+        error === replyDeadline.reason && replyDeadline.aborted
+          ? new ToolExecutionFailure(
+              {
+                code: "tool_reply_timeout",
+                effect: "unknown",
+                message:
+                  "No final Tool reply arrived before the deadline. The operation may have executed or may still be running; inspect its effects before deciding to repeat it.",
+              },
+              { cause: error },
+            )
+          : toolTransportFailure(error);
+      if (
+        candidate.operation === "tool.execute" &&
+        runtime.confirmExecution &&
+        permitsReadinessCheck(failure)
+      ) {
+        if (!readiness && !continuedAfterUnknown) {
+          continuedAfterUnknown = true;
+          const check = {
+            bindingId: target.activationId,
+            result: Promise.resolve()
+              .then(() =>
+                runtime.confirmExecution!(target.activationId, signal ?? pendingAbort.signal),
+              )
+              .catch(() => false),
+          };
+          readiness = check;
+          void check.result.finally(() => {
+            if (readiness === check) readiness = undefined;
+          });
+        }
+        const check = readiness;
+        if (check?.bindingId === target.activationId && (await check.result)) {
+          signal?.throwIfAborted();
+          continuedAfterUnknown = true;
+          throw failure; // Pi commits this error; the next model request may inspect effects.
+        }
+        signal?.throwIfAborted();
+      }
       if (blocksToolSampling(failure)) await runtime.onToolOperationUnavailable?.(failure);
       throw failure;
     };
@@ -334,6 +382,7 @@ export function createTrustedRemoteAgentTools(
       result: async () => {
         if (candidate.operation === "tool.execute") {
           const event = await pending.catch(failTransport);
+          continuedAfterUnknown = false;
           return {
             toolBrokerProtocolVersion: 1,
             type: "tool_sandbox.operation_result",

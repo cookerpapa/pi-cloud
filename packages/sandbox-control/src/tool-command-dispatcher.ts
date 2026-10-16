@@ -12,6 +12,8 @@ import { operationalLog, type PiCloudMetrics } from "@pi-cloud/observability";
 import { Agent, fetch as internalFetch } from "undici";
 import {
   CubeExecutionRejected,
+  CubeRuntimeTransportError,
+  CubeRuntimeClientError,
   type CubeSandboxRuntimeClient,
 } from "./cubesandbox-runtime-client.ts";
 import type { ToolLogFact, ToolLogRecord } from "./workflow-command-dispatcher.ts";
@@ -50,6 +52,13 @@ function handoffFailure(error: unknown): {
   let code = "cubesandbox_tool_result_unknown";
   let effect: ToolExecutionFailureData["effect"] = "unknown";
   let quarantine = false;
+  if (
+    error instanceof CubeRuntimeTransportError ||
+    (error instanceof CubeRuntimeClientError &&
+      error.statusCode !== undefined &&
+      (error.statusCode === 408 || error.statusCode === 429 || error.statusCode >= 500))
+  )
+    code = "tool_handoff_unconfirmed";
   if (error instanceof CubeExecutionRejected) {
     switch (error.code) {
       case "executor_replaced":
@@ -83,7 +92,7 @@ function handoffFailure(error: unknown): {
       message:
         effect === "not_started"
           ? "The execution request was refused before admission; this delivery did not start a file or shell action."
-          : "Execution handoff did not return a confirmed result. The operation was not replayed; inspect effects before repeating it.",
+          : "Execution handoff did not return a confirmed result. The operation may have executed or may still be running. It was not replayed; inspect effects before deciding to repeat it.",
     },
   };
 }

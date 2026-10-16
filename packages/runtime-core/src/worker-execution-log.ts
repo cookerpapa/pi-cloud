@@ -40,20 +40,22 @@ export type WorkerExecutionProbeTransport = {
   replies: Pick<ToolReplyMailbox, "waitProbe">;
   partitionFor(id: string): number;
   report(value: ExecutionObservationDelivery): void;
+  confirm(value: ExecutionObservationDelivery, signal: AbortSignal): Promise<boolean>;
 };
+
+type RuntimeBinding = {
+  scope: RuntimeObservationScope;
+  bindingId?: string;
+  successAt: number;
+  pending?: AbortController;
+  check?: { controller: AbortController; result: Promise<boolean> };
+};
+type RequestedProbe = Pick<PathProbe, "factId" | "occurredAt" | "execution">;
 
 /** Worker-local ordering over its physical Session producer; no second lease renewer. */
 export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionLogResolver {
   #probeTransport: WorkerExecutionProbeTransport | undefined;
-  readonly #runtimeBindings = new Map<
-    string,
-    {
-      scope: RuntimeObservationScope;
-      bindingId?: string;
-      successAt: number;
-      pending?: AbortController;
-    }
-  >();
+  readonly #runtimeBindings = new Map<string, RuntimeBinding>();
   readonly #writers = new Map<string, ExecutionLogWriter>();
   readonly #conversationWriters = new Map<string, Map<number, ExecutionLogWriter>>();
   readonly #conversationFactories = new Map<
@@ -65,6 +67,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
     string,
     {
       touched: number;
+      probeAt: number;
       pending: boolean;
       writers: Map<
         string,
@@ -73,7 +76,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
           acknowledge(seq: number): void;
           ready(): boolean;
           due(): boolean;
-          send(): Promise<void>;
+          send(probe?: RequestedProbe): Promise<void>;
         }
       >;
     }
@@ -128,10 +131,112 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
     const runtime = this.#runtimeBindings.get(key);
     if (!runtime || runtime.bindingId === bindingId) return;
     runtime.pending?.abort();
+    runtime.check?.controller.abort();
     delete runtime.pending;
     if (bindingId) runtime.bindingId = bindingId;
     else delete runtime.bindingId;
     runtime.successAt = 0;
+  }
+  /** A fresh round trip and current binding confirmation, never an execution grant. */
+  async confirmExecution(
+    reference: string,
+    bindingId: string,
+    conversationId: number,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    const writer = this.#writers.get(reference);
+    const key =
+      writer?.publication.scope.piConversationId === conversationId
+        ? reference
+        : `${reference}:${conversationId}`;
+    const runtime = this.#runtimeBindings.get(key),
+      transport = this.#probeTransport;
+    const family = writer && this.#families.get(writer.publication.scope.writerId);
+    const publisher = family?.writers.get(reference);
+    if (
+      signal.aborted ||
+      !runtime ||
+      runtime.bindingId !== bindingId ||
+      !transport ||
+      !publisher?.ready()
+    )
+      return false;
+    if (!runtime.check) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), EXECUTION_PROBE_TIMEOUT_MS);
+      timeout.unref();
+      const active = AbortSignal.any([signal, controller.signal]);
+      const id = randomUUID(),
+        sentAt = Math.max(Date.now(), family!.probeAt + 1);
+      family!.probeAt = sentAt;
+      const current = () =>
+        this.#runtimeBindings.get(key) === runtime &&
+        runtime.bindingId === bindingId &&
+        publisher.ready() &&
+        !active.aborted;
+      const work = (async () => {
+        writer?.assertHealthy?.();
+        const reply = transport.replies.waitProbe(id, bindingId, active);
+        const [value] = await Promise.all([
+          reply,
+          publisher.send({
+            factId: id,
+            occurredAt: new Date(sentAt).toISOString(),
+            execution: {
+              replyTopic: transport.topic,
+              bindings: [{ bindingId, scope: runtime.scope, probe: true }],
+            },
+          }),
+        ]);
+        if (
+          !current() ||
+          value.sentAt !== sentAt ||
+          value.probeId !== id ||
+          value.evidence.observedAt < sentAt - 5000 ||
+          value.evidence.observedAt > Date.now() + 5000
+        )
+          return false;
+        const confirmed = await transport.confirm(
+          {
+            scope: runtime.scope,
+            partition: transport.partitionFor(runtime.scope.piSessionId),
+            kind: "probe",
+            requestId: id,
+            sentAt,
+            roundTripMs: Math.max(0, Date.now() - sentAt),
+            evidence: { ...value.evidence, bindingId },
+          },
+          active,
+        );
+        writer?.assertHealthy?.();
+        if (!confirmed || !current()) return false;
+        runtime.successAt = Math.max(runtime.successAt, value.evidence.observedAt);
+        return true;
+      })().catch(() => false);
+      let cancel = () => {};
+      const stopped = new Promise<boolean>((resolve) => {
+        cancel = () => resolve(false);
+        active.addEventListener("abort", cancel, { once: true });
+        if (active.aborted) cancel();
+      });
+      const result = Promise.race([work, stopped]).finally(() => {
+        clearTimeout(timeout);
+        active.removeEventListener("abort", cancel);
+        controller.abort();
+        if (runtime.check?.controller === controller) delete runtime.check;
+      });
+      runtime.check = { controller, result };
+    }
+    const check = runtime.check;
+    return new Promise<boolean>((resolve) => {
+      const abort = () => resolve(false);
+      signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) abort();
+      void check.result.then((ready) => {
+        signal.removeEventListener("abort", abort);
+        resolve(ready && !signal.aborted);
+      });
+    });
   }
   recordExecutionEvidence(operationId: string, evidence: ExecutionEvidence): void {
     const runtime = [...this.#runtimeBindings.values()].find(
@@ -249,12 +354,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
     }
     const permit = request.publication;
     const { leaseId: _lease, piConversationId: _lane, ...observationScope } = permit.scope;
-    const runtimeBinding = { scope: observationScope, successAt: 0 } as {
-      scope: RuntimeObservationScope;
-      bindingId?: string;
-      successAt: number;
-      pending?: AbortController;
-    };
+    const runtimeBinding: RuntimeBinding = { scope: observationScope, successAt: 0 };
     this.#runtimeBindings.set(request.executionReference, runtimeBinding);
     let family = this.#families.get(permit.scope.writerId);
     if (!family)
@@ -262,6 +362,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
         permit.scope.writerId,
         (family = {
           touched: performance.now(),
+          probeAt: 0,
           pending: false,
           writers: new Map(),
         }),
@@ -327,6 +428,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
     };
     const writer: ExecutionLogWriter = {
       assertHealthy: () => {
+        if (closing) throw new PublicationNotSentError("Execution writer is closing");
         const cause = failure ?? this.bus.publicationFailure?.(permit.scope);
         if (cause)
           throw Object.assign(new Error("Session producer stopped"), {
@@ -418,6 +520,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       close: async () => {
         closing = true;
         runtimeBinding.pending?.abort();
+        runtimeBinding.check?.controller.abort();
         this.#runtimeBindings.delete(request.executionReference);
         activeFamily.writers.delete(request.executionReference);
         if (!activeFamily.writers.size) this.#families.delete(permit.scope.writerId);
@@ -484,6 +587,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
           conversations.delete(address.conversationId);
           conversationAcknowledgements.delete(address.sessionId);
           this.#runtimeBindings.get(bindingKey)?.pending?.abort();
+          this.#runtimeBindings.get(bindingKey)?.check?.controller.abort();
           this.#runtimeBindings.delete(bindingKey);
           if (failure) throw failure;
         },
@@ -506,11 +610,16 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
         !!runtimeBinding.bindingId &&
         !runtimeBinding.pending &&
         Date.now() - runtimeBinding.successAt >= this.probeIntervalMs,
-      send: async () => {
+      send: async (requested) => {
         // Probes never establish a recovery floor or consume native/display sequence.
         if (closing || failure || !published) return;
+        if (requested) {
+          await publish({ kind: "path_probe", ...requested });
+          return;
+        }
         const factId = randomUUID(),
-          sentAt = Date.now();
+          sentAt = Math.max(Date.now(), activeFamily.probeAt + 1);
+        activeFamily.probeAt = sentAt;
         const execution = this.#prepareProbe(permit.scope.writerId, factId, sentAt);
         await publish({
           kind: "path_probe",

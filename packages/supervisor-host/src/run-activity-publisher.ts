@@ -4,6 +4,7 @@ import {
   type RunActivityUpdate,
   type RuntimeObservationScope,
   EXECUTION_OBSERVATION_PATH,
+  EXECUTION_READINESS_PATH,
   RUN_OBSERVATION_STALE_MS,
   type ExecutionObservationDelivery,
 } from "@pi-cloud/protocol";
@@ -24,6 +25,7 @@ export class RunActivityPublisher {
   readonly #sending = new Map<string, AbortController>();
   readonly #owners = new Map<number, string>();
   readonly #executions = new Map<string, ExecutionObservationDelivery>();
+  readonly #confirmations = new Set<AbortController>();
   #executionFirst = false;
   readonly #timer: NodeJS.Timeout;
   #closed = false;
@@ -95,6 +97,25 @@ export class RunActivityPublisher {
     if (!previous || previous.evidence.observedAt <= delivery.evidence.observedAt)
       this.#executions.set(observationKey(delivery.scope), delivery);
   }
+  /** Fault-path read only; the caller's deadline covers probing and this confirmation. */
+  async confirmExecution(
+    delivery: ExecutionObservationDelivery,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    if (this.#closed || signal.aborted || this.#confirmations.size >= 4) return false;
+    const controller = new AbortController();
+    this.#confirmations.add(controller);
+    const active = AbortSignal.any([signal, controller.signal]);
+    try {
+      // One retry accommodates the existing partition-owner redirect, never Tool replay.
+      for (let attempt = 0; attempt < 2 && !active.aborted; attempt++)
+        if (await this.#post(EXECUTION_READINESS_PATH, delivery.partition, delivery, active))
+          return !active.aborted && !this.#closed;
+      return false;
+    } finally {
+      this.#confirmations.delete(controller);
+    }
+  }
   #flushExecutions(maximum: number): void {
     let sent = 0;
     for (const [runId, delivery] of this.#executions) {
@@ -135,7 +156,7 @@ export class RunActivityPublisher {
       if (response.status === 307 && owner) this.#owners.set(partition, new URL(owner).origin);
       else if (!response.ok) this.#owners.delete(partition);
       await response.body?.cancel();
-      return response.ok;
+      return path === EXECUTION_READINESS_PATH ? response.status === 204 : response.ok;
     } catch {
       this.#owners.delete(partition);
       return false;
@@ -162,5 +183,6 @@ export class RunActivityPublisher {
     this.#runs.clear();
     this.#executions.clear();
     for (const controller of this.#sending.values()) controller.abort();
+    for (const controller of this.#confirmations) controller.abort();
   }
 }

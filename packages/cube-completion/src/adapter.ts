@@ -149,7 +149,16 @@ export class CubeCompletionAdapter {
       );
       return;
     }
-    const output = parseToolWorkerOutput(packet.result.output);
+    let output: ReturnType<typeof parseToolWorkerOutput>;
+    try {
+      output = parseToolWorkerOutput(packet.result.output);
+    } catch {
+      await fail(
+        "tool_reply_protocol_error",
+        "Guest completion did not match the fixed Tool protocol",
+      );
+      return;
+    }
     if (output.type === "worker.failed") {
       await fail(output.code, output.message);
       return;
@@ -158,17 +167,20 @@ export class CubeCompletionAdapter {
       output.type !== "worker.operation_result" ||
       output.response.operationId !== packet.operationId
     )
-      throw new Error("Guest completion identity changed");
+      return fail("tool_reply_protocol_error", "Guest completion identity changed");
     const response = output.response;
     if (response.type === "tool_sandbox.operation_failed") {
       await fail(response.code, response.message);
       return;
     }
     if (response.operation !== "tool.execute" || response.event.type !== "tool_execution_end")
-      throw new Error("Fixed tool completion requires a native final result");
+      return fail(
+        "tool_reply_protocol_error",
+        "Fixed tool completion requires a native final result",
+      );
     const event = response.event;
     if (event.toolCallId !== context.nativeToolCallId || event.toolName !== context.toolName)
-      throw new Error("Native completion identity changed");
+      return fail("tool_reply_protocol_error", "Native completion identity changed");
     const images = event.result.content.filter((p) => p.type === "image");
     const encoded = await (
       images.length > 1 || (images.length && event.toolName !== "read")

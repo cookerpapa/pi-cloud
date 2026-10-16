@@ -3,9 +3,6 @@ import { Value } from "typebox/value";
 
 /** Transport settlement budget, not a model/Tool execution timeout or product quota. */
 export const TOOL_CANCELLATION_TIMEOUT_MS = 10_000;
-export const TOOL_CANCELLATION_UNKNOWN =
-  "tool_operation_outcome_unknown: Cancellation was requested but the final Tool result could not be confirmed. The command may still be running or may have already changed files or external services. Inspect its effects before retrying.";
-
 const Uuid = Type.String({ format: "uuid" });
 export const ToolCancellationSchema = Type.Object(
   {

@@ -124,6 +124,11 @@ export type RemoteToolSandboxTurnRunnerOptions = {
     readSignal?: AbortSignal,
   ) => Promise<PiCloudSessionHandle>;
   waitForToolReply?: TrustedRemoteToolsRuntimeConfiguration["waitForToolReply"];
+  confirmExecution?: (
+    command: ExecuteTurnCommandMessage,
+    bindingId: string,
+    signal: AbortSignal,
+  ) => Promise<boolean>;
   createTrustedTools?: (
     command: ExecuteTurnCommandMessage,
     context: Readonly<{
@@ -204,6 +209,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   readonly #workspaceSeedResolver: AgentWorkspaceSeedResolver | undefined;
   readonly #openAgentSession: RemoteToolSandboxTurnRunnerOptions["openAgentSession"];
   readonly #waitForToolReply: RemoteToolSandboxTurnRunnerOptions["waitForToolReply"];
+  readonly #confirmExecution: RemoteToolSandboxTurnRunnerOptions["confirmExecution"];
   readonly #decodeInputImages: RemoteToolSandboxTurnRunnerOptions["decodeInputImages"];
   readonly #createTrustedTools: RemoteToolSandboxTurnRunnerOptions["createTrustedTools"];
   readonly #acquireModelPermit: RemoteToolSandboxTurnRunnerOptions["acquireModelPermit"];
@@ -235,6 +241,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     this.#workspaceSeedResolver = options.workspaceSeedResolver;
     this.#openAgentSession = options.openAgentSession;
     this.#waitForToolReply = options.waitForToolReply;
+    this.#confirmExecution = options.confirmExecution;
     this.#decodeInputImages = options.decodeInputImages;
     this.#createTrustedTools = options.createTrustedTools;
     this.#acquireModelPermit = options.acquireModelPermit;
@@ -642,12 +649,16 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         .map((binding) => binding.tool);
       const hasDelegationTool = trustedTools.some((tool) => tool.name === "subagent");
       const hasSupervisorContact = trustedTools.some((tool) => tool.name === "contact_supervisor");
+      let activeSession: PiCloudSessionHandle | undefined;
       const commonRunnerOptions = {
         trustedToolDefinitions: trustedToolBindings.map((binding) => binding.tool),
         onActivity: (update: import("@pi-cloud/protocol").RunActivityUpdate | undefined) =>
           this.#onActivity?.(command, update),
         resolveModelRuntime,
-        openSession: this.#openAgentSession,
+        openSession: async (command: ExecuteTurnCommandMessage, readSignal?: AbortSignal) => {
+          activeSession = await this.#openAgentSession(command, readSignal);
+          return activeSession;
+        },
         ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
         sandboxContinuity: {
           continuityId:
@@ -789,6 +800,29 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             observeToolDuration: (seconds, outcome) =>
               this.#metrics?.toolDuration.observe({ tool: "tool.execute", outcome }, seconds),
             supportsImages: modelRuntimeLease.runtime.inputModalities.includes("image"),
+            ...(this.#confirmExecution
+              ? {
+                  confirmExecution: async (bindingId: string, toolSignal: AbortSignal) => {
+                    if (
+                      !activeSession ||
+                      toolRuntimeFailure ||
+                      activation?.activationId !== bindingId
+                    )
+                      return false;
+                    const active = AbortSignal.any([
+                      signal,
+                      toolSignal,
+                      activeSession.authority.signal,
+                    ]);
+                    active.throwIfAborted();
+                    await activeSession.authority.assertCurrent();
+                    const ready = await this.#confirmExecution!(command, bindingId, active);
+                    active.throwIfAborted();
+                    await activeSession.authority.assertCurrent();
+                    return ready && !toolRuntimeFailure && activation?.activationId === bindingId;
+                  },
+                }
+              : {}),
             ...(this.#waitForToolReply
               ? {
                   waitForToolReply: (request, signal, toolCallId) =>

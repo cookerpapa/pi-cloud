@@ -122,6 +122,29 @@ native-receipt fault fixture on the current single-node deployment:
 PI_CLOUD_LIVE_TOOL_PROGRESS_CHECK=1 PI_CLOUD_TOOL_PROGRESS_RESTART_CHECK=1 PI_CLOUD_LIVE_RECEIPT_CHECK=1 node --import tsx scripts/run-live-tool-progress-check.mjs /private/tool-preview.json
 ```
 
+For ADR-0253's reply continuation, run the owned fault fixture after deploying
+the matching source (real GPT-6 Luna, Cube and browser):
+
+```sh
+PI_CLOUD_LIVE_TOOL_REPLY_CHECK=1 node --import tsx scripts/run-live-tool-reply-continuation.mjs /private/tool-reply.json
+```
+
+It temporarily wraps the trusted completion adapter only in the single Ready
+Cubelet. The wrapper suppresses a marker-bearing result for the exact new fixture
+tenant, optionally suppresses that binding's probe replies, and expires after ten
+minutes. Other packets pass through. It restarts only the completion child,
+retains a checksum/ownership restore receipt before installation and restores the
+original source before testing an owned Cubelet Pod crash. No production fault
+switch is added. Unrelated active work forbids injection; the Pod-crash case also
+requires the owned VM to be the only native VM. The fixture proves a single
+append, same-Run inspection, bounded interruption, no probe in native storage and
+browser UNKNOWN restoration. Physical Workspace purge precedes account cleanup.
+If the operator is interrupted, restore the adapter with the retained receipt:
+
+```sh
+node --import tsx scripts/run-live-tool-reply-continuation.mjs --restore /private/tool-reply.json.adapter-restore.json
+```
+
 It checks incremental observations, a redrawing progress bar, browser reconnect,
 Control Plane replacement, silence, Stop and subsequent coding. The receipt case
 builds an operator helper from the exact patched native module, filters one reverse

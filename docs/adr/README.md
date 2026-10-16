@@ -1,5 +1,12 @@
 # Current architecture decisions
 
+[ADR-0253](0253-tool-reply-uncertainty-and-continuation.md) records the approved
+implementation of bounded fixed-Tool UNKNOWN continuation using existing
+execution probes. [Source verification](../reports/tool-reply-continuation-20261016.md)
+is in progress; it is not deployed. The serving runtime still
+interrupts sampling on infrastructure UNKNOWN; the exception preserves
+ownership/closure checks, native Stop and probe isolation from history/context.
+
 [ADR-0252](0252-tool-receipt-and-ephemeral-preview.md) is accepted and implemented
 in source: receipt-only failure classification, source terminal-aware previews
 and bounded delta/reset delivery over existing HTTP/SSE. The
