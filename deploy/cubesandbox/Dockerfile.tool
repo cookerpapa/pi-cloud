@@ -54,6 +54,7 @@ COPY packages/protocol/src/development-environment-profile.ts \
   packages/protocol/src/native-tool-event.ts \
   packages/protocol/src/protocol-primitives.ts \
   packages/protocol/src/tool-capabilities.ts \
+  packages/protocol/src/tool-preview.ts \
   packages/protocol/src/tool-result.ts \
   packages/protocol/src/tool-sandbox.ts \
   packages/protocol/src/workspace-seed.ts \

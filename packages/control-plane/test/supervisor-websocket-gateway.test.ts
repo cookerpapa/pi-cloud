@@ -10,7 +10,7 @@ import {
   ReconnectingSupervisorWebSocketClient,
 } from "@pi-cloud/sandbox-supervisor";
 import Fastify from "fastify";
-import { type Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import {
@@ -390,7 +390,10 @@ describe.sequential("authenticated supervisor WebSocket transport", () => {
       );
       await database
         .updateTable("supervisor_connections")
-        .set({ expires_at: new Date(Date.now() - 1) })
+        .set({
+          last_heartbeat_at: sql<Date>`now() - interval '2 seconds'`,
+          expires_at: sql<Date>`now() - interval '1 second'`,
+        })
         .where("connection_id", "=", registered.payload.connectionId)
         .execute();
       const sweep = await gateway.manager.expireConnections();
@@ -499,7 +502,10 @@ describe.sequential("authenticated supervisor WebSocket transport", () => {
       const first = await reconnecting.start();
       await database
         .updateTable("supervisor_connections")
-        .set({ expires_at: new Date(Date.now() - 1) })
+        .set({
+          last_heartbeat_at: sql<Date>`now() - interval '2 seconds'`,
+          expires_at: sql<Date>`now() - interval '1 second'`,
+        })
         .where("connection_id", "=", first.payload.connectionId)
         .execute();
       await waitFor(

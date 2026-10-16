@@ -10,7 +10,8 @@ Status: implementation in progress; serving release remains `guest-execution-553
 - [x] Source: guest renders bounded terminal-aware previews independently of final output.
 - [x] Source: revision-bound edits/resets survive tested lossy/coalescing boundaries without
       entering Kafka, PG or model context; final completion retires observations.
-- [ ] Required source/native/race/transport/fault checks and artifact scans pass.
+- [x] Required source/native/race/transport/fault checks pass after the recorded fixture and packaging corrections.
+- [ ] Matched artifact provenance/SBOM/vulnerability scans pass.
 - [ ] Matched release and real Luna/Cube/browser/failure acceptance pass, with
       preserved configuration and confirmed fixture cleanup.
 
@@ -51,3 +52,25 @@ package without JSX enabled. The browser's pure preview store is now a separate
 module shared by the renderer and chain test. This was a test dependency issue;
 the failed sample is retained, and affected build/check stages plus remaining CI
 gates must pass before preparation.
+
+The workspace run then found an existing management-reconnect fixture expiring
+only `expires_at` relative to the host clock; a concurrent heartbeat could make
+that timestamp precede `last_heartbeat_at`, violating the retained PG constraint.
+Both affected fixtures now construct consistent past heartbeat/expiry timestamps
+using PG time. The complete eight-case gateway suite passes without changing
+production lease/reconnect behavior or weakening its assertions. All other
+workspace tests passed in that run.
+
+The guest build-closure gate correctly caught the new `tool-preview.ts` missing
+from the explicit Docker COPY list. That input is added without broadening the
+guest import boundary to model/API modules. The remaining release gates are rerun
+after this packaging fix.
+
+Verification is complete in stages: 1,761 workspace tests and 71 acceptance-helper
+tests pass (1,832 total; ten conditional skips), together with eight real RF3
+Kafka/PG transport tests, 244 deterministic fault cases and the native race suites.
+Dependency audit reports zero vulnerabilities. Installer/runtime-policy, Helm,
+observability, image closure, application builds and workspace typechecks pass.
+The fault artifact records the then-uncommitted test/COPY corrections honestly;
+those corrections have separate passing targeted checks. No failed assertion or
+release gate was skipped. Artifact preparation and live acceptance remain pending.
