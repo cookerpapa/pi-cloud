@@ -1,0 +1,272 @@
+diff --git a/Cubelet/services/cubebox/execution.go b/Cubelet/services/cubebox/execution.go
+index d623b03..dd064b6 100644
+--- a/Cubelet/services/cubebox/execution.go
++++ b/Cubelet/services/cubebox/execution.go
+@@ -39,20 +39,31 @@ func (s *service) resolveExecutionTask(ctx context.Context, r execution.Request)
+ 	}
+ 	return execution.ResolvedTask{Task: task, Namespace: namespace}, nil
+ }
++
++// Recover the existing result-delivery process before accepting new work. An
++// idle child's exit must not require new VM discovery to enable Tools again.
++// Healthy admission stays memory-only; recovery never replays a guest command.
++func (s *service) completionReady(ctx context.Context) bool {
++	if ctx.Err() != nil || s.completions == nil {
++		return false
++	}
++	if s.completions.Ready() {
++		return true
++	}
++	bounded, cancel := context.WithTimeout(ctx, 3*time.Second)
++	defer cancel()
++	return s.completions.EnsureReady(bounded) == nil && bounded.Err() == nil
++}
++
+ func (s *service) ExecutionCapabilities(ctx context.Context, r *cubebox.ExecutionCapabilitiesRequest) (*cubebox.ExecutionCapabilitiesResponse, error) {
+ 	if s.executions == nil {
+ 		return &cubebox.ExecutionCapabilitiesResponse{}, nil
+ 	}
+-	if s.completions != nil {
+-		bounded, cancel := context.WithTimeout(ctx, 3*time.Second)
+-		defer cancel()
+-		_ = s.completions.EnsureReady(bounded)
+-	}
+-	return &cubebox.ExecutionCapabilitiesResponse{BootId: s.executions.BootID, ProtocolVersion: 7, Enabled: s.executions.Accepting() && s.completions != nil && s.completions.Ready(), RuntimeBlocked: s.executions.Unsafe(r.SandboxId)}, nil
++	return &cubebox.ExecutionCapabilitiesResponse{BootId: s.executions.BootID, ProtocolVersion: 7, Enabled: s.executions.Accepting() && s.completionReady(ctx), RuntimeBlocked: s.executions.Unsafe(r.SandboxId)}, nil
+ }
+ 
+ func (s *service) ProbeExecution(ctx context.Context, r *cubebox.ExecutionProbeRequest) (*cubebox.ExecutionProbeResponse, error) {
+-	if s.executions == nil || (len(r.CompletionContext) > 0 && (s.completions == nil || !s.completions.Ready())) {
++	if s.executions == nil || (len(r.CompletionContext) > 0 && !s.completionReady(ctx)) {
+ 		return &cubebox.ExecutionProbeResponse{ProbeId: r.ProbeId, Rejection: "execution_unavailable"}, nil
+ 	}
+ 	result, rejection := s.executions.Probe(ctx, r.BootId, execution.Request{
+@@ -70,8 +81,8 @@ func (s *service) Close() error {
+ 	}
+ 	return nil
+ }
+-func (s *service) SubmitTool(_ context.Context, r *cubebox.SubmitToolRequest) (*cubebox.SubmitToolResponse, error) {
+-	if s.executions == nil || s.completions == nil || !s.completions.Ready() {
++func (s *service) SubmitTool(ctx context.Context, r *cubebox.SubmitToolRequest) (*cubebox.SubmitToolResponse, error) {
++	if s.executions == nil || !s.completionReady(ctx) {
+ 		return &cubebox.SubmitToolResponse{OperationId: r.OperationId, Rejection: "execution_unavailable"}, nil
+ 	}
+ 	var source execution.Position
+diff --git a/Cubelet/services/cubebox/execution_completion_recovery_test.go b/Cubelet/services/cubebox/execution_completion_recovery_test.go
+new file mode 100644
+index 0000000..aa4270b
+--- /dev/null
++++ b/Cubelet/services/cubebox/execution_completion_recovery_test.go
+@@ -0,0 +1,199 @@
++// Copyright (c) 2026 Tencent Inc.
++// SPDX-License-Identifier: Apache-2.0
++package cubebox
++
++import (
++	"bufio"
++	"context"
++	"encoding/json"
++	"fmt"
++	"os"
++	"path/filepath"
++	"strconv"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/google/uuid"
++	api "github.com/tencentcloud/CubeSandbox/Cubelet/api/services/cubebox/v1"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/execution"
++)
++
++// Exercise the real process owner and readiness handshake, including idle exit.
++func TestExecutionCompletionPlugin(t *testing.T) {
++	if len(os.Args) < 4 || os.Args[len(os.Args)-3] != "--completion-plugin" {
++		return
++	}
++	mode, path := os.Args[len(os.Args)-2], os.Args[len(os.Args)-1]
++	if err := os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
++		os.Exit(2)
++	}
++	if mode == "exit" {
++		os.Exit(3)
++	}
++	if mode == "ready" {
++		fmt.Println(`{"type":"ready","protocolVersion":3}`)
++	}
++	scanner := bufio.NewScanner(os.Stdin)
++	for scanner.Scan() {
++		var packet struct {
++			ID string `json:"id"`
++		}
++		if json.Unmarshal(scanner.Bytes(), &packet) != nil {
++			os.Exit(4)
++		}
++		if packet.ID != "" {
++			data, _ := json.Marshal(map[string]interface{}{"id": packet.ID, "delivered": true})
++			fmt.Println(string(data))
++		}
++	}
++	os.Exit(0)
++}
++
++type completionRecoveryDriver struct {
++	calls atomic.Int32
++	ran   chan execution.Request
++}
++
++func (*completionRecoveryDriver) HasRuntime(string) bool { return true }
++func (d *completionRecoveryDriver) Run(ctx context.Context, r execution.Request, update func(json.RawMessage)) execution.Result {
++	d.calls.Add(1)
++	d.ran <- r
++	return probeDriver{}.Run(ctx, r, update)
++}
++
++func completionRecoveryService(t *testing.T, mode string) (*service, *completionRecoveryDriver, string) {
++	t.Helper()
++	path := filepath.Join(t.TempDir(), "completion.pid")
++	if mode == "cancelled-ready" {
++		mode = "ready"
++	}
++	delivery := execution.NewProcessDelivery([]string{os.Args[0], "-test.run=^TestExecutionCompletionPlugin$", "--", "--completion-plugin", mode, path})
++	driver := &completionRecoveryDriver{ran: make(chan execution.Request, 4)}
++	s := &service{executions: execution.New(driver, delivery), completions: delivery}
++	t.Cleanup(func() { _ = s.Close() })
++	return s, driver, path
++}
++
++func completionAdmission(s *service, ctx context.Context, kind string) (bool, string, error) {
++	if kind == "probe" {
++		r, err := s.ProbeExecution(ctx, &api.ExecutionProbeRequest{
++			SandboxId: "vm", BootId: s.executions.BootID, ProbeId: uuid.NewString(),
++			RunId: uuid.NewString(), WriterId: uuid.NewString(), CompletionContext: []byte(`{}`),
++		})
++		return r.Accepted, r.Rejection, err
++	}
++	r, err := s.SubmitTool(ctx, &api.SubmitToolRequest{
++		SandboxId: "vm", BootId: s.executions.BootID, OperationId: uuid.NewString(),
++		RunId: uuid.NewString(), WriterId: uuid.NewString(), Payload: []byte(`{}`),
++		CompletionContext: []byte(`{}`), SourcePosition: []byte(`{"topic":"session","partition":0,"offset":"1"}`),
++		TimeoutMs: 1000, MaximumOutputBytes: 4096,
++	})
++	return r.Accepted, r.Rejection, err
++}
++
++func completionPID(t *testing.T, path string) int {
++	t.Helper()
++	data, err := os.ReadFile(path)
++	if err != nil {
++		t.Fatal(err)
++	}
++	pid, err := strconv.Atoi(string(data))
++	if err != nil {
++		t.Fatal(err)
++	}
++	return pid
++}
++
++func TestExecutionRecoversIdleCompletionBeforeAdmission(t *testing.T) {
++	for _, kind := range []string{"tool", "probe"} {
++		t.Run(kind, func(t *testing.T) {
++			s, driver, path := completionRecoveryService(t, "ready")
++			if err := s.completions.Start(); err != nil {
++				t.Fatal(err)
++			}
++			oldPID := completionPID(t, path)
++			process, err := os.FindProcess(oldPID)
++			if err != nil {
++				t.Fatal(err)
++			}
++			if err := process.Kill(); err != nil {
++				t.Fatal(err)
++			}
++			deadline := time.Now().Add(2 * time.Second)
++			for s.completions.Ready() && time.Now().Before(deadline) {
++				time.Sleep(time.Millisecond)
++			}
++			if s.completions.Ready() {
++				t.Fatal("idle child loss was not observed")
++			}
++			accepted, rejection, err := completionAdmission(s, context.Background(), kind)
++			if err != nil || !accepted || rejection != "" || !s.completions.Ready() {
++				t.Fatalf("admission after idle loss: %v %q %v", accepted, rejection, err)
++			}
++			if completionPID(t, path) == oldPID {
++				t.Fatal("completion child was not replaced")
++			}
++			select {
++			case r := <-driver.ran:
++				if r.Probe != (kind == "probe") {
++					t.Fatal("wrong execution path")
++				}
++			case <-time.After(2 * time.Second):
++				t.Fatal("accepted request did not execute")
++			}
++			_ = s.Close()
++			if driver.calls.Load() != 1 {
++				t.Fatalf("expected one execution, got %d", driver.calls.Load())
++			}
++		})
++	}
++}
++
++func TestExecutionCompletionRecoveryRefusesUnavailableOrCancelled(t *testing.T) {
++	for _, kind := range []string{"tool", "probe"} {
++		for _, mode := range []string{"exit", "waiting", "closed", "cancelled", "cancelled-ready"} {
++			t.Run(kind+"/"+mode, func(t *testing.T) {
++				s, driver, path := completionRecoveryService(t, mode)
++				ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
++				defer cancel()
++				if mode == "closed" {
++					s.completions.Close()
++				}
++				if mode == "cancelled-ready" {
++					if err := s.completions.Start(); err != nil {
++						t.Fatal(err)
++					}
++				}
++				if mode == "cancelled" || mode == "cancelled-ready" {
++					cancel()
++				}
++				start := time.Now()
++				accepted, rejection, err := completionAdmission(s, ctx, kind)
++				if err != nil || accepted || rejection != "execution_unavailable" || driver.calls.Load() != 0 {
++					t.Fatalf("unavailable adapter admitted effect: %v %q %v", accepted, rejection, err)
++				}
++				if time.Since(start) > time.Second {
++					t.Fatal("recovery ignored the caller deadline")
++				}
++				if mode == "cancelled" || mode == "closed" {
++					if _, err := os.Stat(path); !os.IsNotExist(err) {
++						t.Fatal("cancelled/closed request started a child")
++					}
++				}
++			})
++		}
++	}
++}
++
++func TestExecutionCompletionRecoveryHasDefaultBound(t *testing.T) {
++	s, driver, _ := completionRecoveryService(t, "waiting")
++	start := time.Now()
++	accepted, rejection, err := completionAdmission(s, context.Background(), "tool")
++	if err != nil || accepted || rejection != "execution_unavailable" || driver.calls.Load() != 0 {
++		t.Fatalf("unready child admitted execution: %v %q %v", accepted, rejection, err)
++	}
++	if elapsed := time.Since(start); elapsed < 2500*time.Millisecond || elapsed > 5*time.Second {
++		t.Fatalf("recovery should use the existing three-second bound: %v", elapsed)
++	}
++}
+diff --git a/Cubelet/services/cubebox/execution_probe_test.go b/Cubelet/services/cubebox/execution_probe_test.go
+index eddd4f5..c52ad07 100644
+--- a/Cubelet/services/cubebox/execution_probe_test.go
++++ b/Cubelet/services/cubebox/execution_probe_test.go
+@@ -50,7 +50,7 @@ func TestExecutionAdvertisesMatchedProtocol(t *testing.T) {
+ 	s := &service{executions: execution.New(probeDriver{}, probeDelivery{})}
+ 	defer s.executions.Close()
+ 	capabilities, err := s.ExecutionCapabilities(context.Background(), &api.ExecutionCapabilitiesRequest{SandboxId: "vm"})
+-	if err != nil || capabilities.ProtocolVersion != 5 {
++	if err != nil || capabilities.ProtocolVersion != 7 {
+ 		t.Fatalf("capabilities: %+v %v", capabilities, err)
+ 	}
+ }

@@ -49,6 +49,10 @@ volatile-result loss boundary; reuse the existing internal execution probe.
       remove orphaned error branches and complete source/transport/fault gates.
 - [ ] U5: scanned matched release and owned Luna/Cube/browser/input/recovery
       acceptance, proving one original effect and confirmed fixture cleanup.
+      The first deployed injection found idle completion-child loss blocking
+      admission on a reused VM. Extend the existing bounded readiness recovery
+      to Submit/async probes and repeat the native and live gates; retain the
+      failed sample and its confirmed adapter/tenant/VM cleanup.
 
 ## Guest → Cubelet result review
 

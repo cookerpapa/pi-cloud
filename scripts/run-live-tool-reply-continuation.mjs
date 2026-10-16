@@ -166,7 +166,11 @@ try {
     const run = await waitRun(active.runId),
       calls = await turnTools(active.runId);
     const state = readOwnedReplyFault(receipt);
-    assert.equal(state?.nonce, nonce);
+    assert.equal(
+      state?.nonce,
+      nonce,
+      `No matching reply-loss evidence; Run ${run.state}: ${JSON.stringify(run.failure)}`,
+    );
     assert(
       state.results.some((r) => r.runId === active.runId),
       "No owned result was suppressed",

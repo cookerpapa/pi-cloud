@@ -5,7 +5,9 @@
 [ADR-0253](adr/0253-tool-reply-uncertainty-and-continuation.md) records the approved
 direction and current-hop source findings. U1–U4 are implemented and source-verified; the
 [verification record](reports/tool-reply-continuation-20261016.md) separates source
-checks from pending live acceptance and the unchanged `tool-preview-325f0ebd` release.
+checks from live acceptance. The initial `tool-unknown-7e1ca3ff` cutover passed;
+live injection found idle completion-child recovery missing on reused VM admission.
+Its bounded recovery fix must pass native tests and repeat matched/live acceptance.
 
 - [x] U1: trusted failure classification and hard-stop precedence.
 - [x] U2: reuse the existing bounded execution probe through a runtime port.

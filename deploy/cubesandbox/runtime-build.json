@@ -43,6 +43,10 @@
     {
       "file": "0010-containerd-security.patch",
       "sha256": "952eb0ff71f5e6900a2cd9c75650f8ddf184c8aa7eb5b41550657db116294e75"
+    },
+    {
+      "file": "0011-completion-admission-recovery.patch",
+      "sha256": "e3e0a695db91d125d1c1ba1834296f14eef0d70417a2e0bb8ded13a7a355cb72"
     }
   ],
   "buildImages": {

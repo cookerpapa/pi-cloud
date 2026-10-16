@@ -20,9 +20,11 @@ can continue. Probe packets never enter native history or model context. Stop,
 lost ownership, uncertain publication, closed/replaced bindings and Workflow
 channel failures retain interruption. Remove three orphaned error recognizers.
 The [implementation record](reports/tool-reply-continuation-20261016.md) tracks
-source changes and passing full CI/252-case fault checks; matched rollout and live
-fault acceptance are pending. The owner also requested a WSL disk expansion;
-restart timing is pending and the reading checkpoint is unchanged.
+source changes and passing full CI/252-case fault checks. The first matched
+rollout is complete; live injection found an idle completion-child admission
+recovery gap that is being repaired before repeating live fault acceptance.
+The owner completed WSL expansion to 1700 GiB; KVM, cluster and configuration
+preservation checks pass. The reading checkpoint is unchanged.
 The walkthrough remains at this hop while that slice is addressed.
 Next: Kafka reply consumption → the original Worker's pending Tool callback and Pi.
 

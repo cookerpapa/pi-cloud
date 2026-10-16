@@ -1,9 +1,9 @@
 # ADR-0253: Tool reply uncertainty and bounded continuation
 
-Status: implemented and source-verified; matched release/live acceptance pending,
+Status: implemented and source-verified; live acceptance found a recovery gap,
 2026-10-16. [Verification record](../reports/tool-reply-continuation-20261016.md).
 Baseline: `03c3a7ec`; serving release:
-`tool-preview-325f0ebd`.
+`tool-unknown-7e1ca3ff`. Completion admission recovery awaits a new matched release.
 
 The owner accepted retaining Pi's final-result Tool contract, bounded remote
 waiting and a small internal probe after an unconfirmed result. A usable path
@@ -13,6 +13,19 @@ execution. Probe traffic must never enter native history or model context.
 This narrowly amends ADR-0227's unconditional sampling stop on infrastructure
 UNKNOWN, using ADR-0201/0211's existing probes and ADR-0247's current ownership.
 It does not change Pi's loop, writer fencing or Control Plane lifecycle authority.
+
+The first live injection found an adjacent recovery gap: after the idle completion
+child exits, only capability discovery or delivery of an already accepted result
+calls `EnsureReady`. A reused VM's next Submit/async probe simply refuses the
+unready adapter, so the intended lost-result scenario was never admitted. The
+fixture restored the adapter and removed its tenant/VM; no original command ran.
+Extend the existing three-second readiness recovery to Submit and async-probe
+admission. Healthy requests retain their memory-only readiness check; failed or
+cancelled recovery still refuses before execution. Direct physical guest probes
+remain independent of Kafka/adapter availability. This reuses ProcessDelivery's
+existing process owner and does not retry an execution, introduce a supervisor,
+change the wire or relax node/position/VM fencing. Add native child-exit/recovery
+and cancellation tests, then repeat the matched artifact release and live checks.
 
 ## Review recap and accepted limits
 

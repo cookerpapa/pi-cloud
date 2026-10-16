@@ -2,8 +2,8 @@
 
 Date: 2026-10-16. Baseline `03c3a7ec`.
 [ADR-0253](../adr/0253-tool-reply-uncertainty-and-continuation.md) is implemented
-in source; matched deployment and live acceptance are pending. The serving
-release remains `tool-preview-325f0ebd`. This report is not release evidence yet.
+in source and deployed as `tool-unknown-7e1ca3ff`. Live acceptance found the idle
+completion recovery gap below; its repair and repeat acceptance are in progress.
 
 ## Implemented behavior
 
@@ -34,7 +34,7 @@ Readiness checks add no request on the ordinary successful Tool path. The one
 extra HTTP confirmation belongs to eligible failure handling and uses the same
 partition ownership discovery and Worker management authentication.
 
-## Source verification complete; release pending
+## Initial source verification
 
 - Targeted native Harness, mailbox, completion, routing and probe tests pass.
   They cover distinct inspection without original-command replay, repeated
@@ -51,7 +51,7 @@ partition ownership discovery and Worker management authentication.
   committed as `865e0e11`. The final strict HTTP readiness-status change and live
   fixture checks also passed their affected targeted suites.
 - The owned live fixture has been added and its suppression isolation is tested.
-  It has not yet been run on a matching release. It retains a checksum/ownership
+  Its initial matched live run is recorded below. It retains a checksum/ownership
   restore receipt, suppresses only fixture results/probes, expires automatically,
   and restores the adapter before the owned Cubelet crash case. See the
   [operator procedure](../MATCHED_RELEASE.md).
@@ -63,14 +63,51 @@ Do not publish credentials, transcripts or raw host configuration.
 ## Host capacity follow-up
 
 The owner requested enlarging WSL after the release preflight headroom check
-found approximately 14.7% available. The current Ubuntu disk is 1500 GiB on
-`G:\WSL\Ubuntu\ext4.vhdx`; the prepared target is 1700 GiB. No disk resize has
-been performed. A private Windows script first requires a clean source checkpoint,
+found approximately 14.7% available. The Ubuntu disk was 1500 GiB on
+`G:\WSL\Ubuntu\ext4.vhdx`; the prepared target was 1700 GiB. A private Windows
+script required a clean source checkpoint,
 completed CI, no active Runs/writers/resources and a complete empty native VM
 inventory. It records workload replicas/selectors and account/configuration
 fingerprints, stops services normally with retained PVCs, then uses Microsoft's
-supported WSL resize command and restores/validates the cluster. Restart timing
-is pending the owner's answer because WSL termination interrupts this connection.
+supported WSL resize command and restores/validates the cluster. The owner
+authorized automatic restart; the attempt and completed host expansion are below.
 
 The existing seven-day-old unused Docker build-cache cleanup reclaimed zero
 bytes; no image, Volume, account or business history was removed.
+
+## Initial cutover and live finding
+
+The Windows-side automatic resize attempt returned -1 and restored the cluster.
+The owner then had the host Codex complete expansion. Verified block capacity is
+1,825,361,100,800 bytes (1700 GiB), with about 404 GiB free. KVM API 12 and actual
+empty-VM creation, all Pod readiness, Windows/Linux web HTTP 200 and the seven
+account/configuration fingerprints passed after restoration.
+
+Candidate `tool-unknown-7e1ca3ff` passed all eleven image/provenance scans and
+matched preflight, then deployed successfully. Guest identity/templates were
+reused unchanged. This cutover is not yet complete feature acceptance.
+
+The first owned live reply-loss injection failed before the target Tool started:
+restarting the idle completion child left the reused VM's Submit path returning
+`execution_unavailable`. Native capability discovery already calls bounded
+`EnsureReady`, while Submit/async probes only check `Ready`. Record this as an
+execution-readiness recovery gap, not a passing UNKNOWN continuation test. The
+adapter was restored and tenant/VM cleanup completed. ADR-0253 now includes a
+bounded demand-recovery fix before repeating matched release/live acceptance.
+Private evidence: `live-unknown.json` and its adapter restore receipt under the
+release directory above. Preserve this failed sample.
+
+The follow-up native patch reuses `ProcessDelivery.EnsureReady` before Submit and
+async-probe admission, with the existing three-second bound and cancellation
+checks. Healthy requests remain memory-only, and direct physical probes remain
+independent of completion readiness. Real child-process tests cover idle exit,
+single execution after recovery, failed startup, caller cancellation/deadline,
+closed delivery and the default time bound. The maintained service test selection
+now includes these cases and the direct-probe/protocol contract (whose stale
+expected protocol 5 is corrected to the existing protocol 7).
+
+The composed Cube allocation/Volume/execution race suites, service contracts,
+standalone admission suite, 77 acceptance-helper tests, documentation, formatting,
+runtime budgets and image-closure checks pass after this follow-up. It changes
+no TypeScript runtime, schema or wire version. A new matched artifact set and
+the failed live scenario must still pass before U5 can be completed.

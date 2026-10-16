@@ -127,7 +127,7 @@ try {
       { env: { ...process.env, PI_CLOUD_ALLOCATION_MYSQL_DSN: dsn } },
     );
   }
-  // This composes managed allocation cleanup with native paused destruction.
+  // Compose managed cleanup, paused destruction and completion-process recovery.
   // The logic fixture needs no KVM or CGO cubecow library; production builds
   // separately compile the CGO runtime and live tests exercise actual VMs.
   await run("docker", [
@@ -154,7 +154,7 @@ try {
     "-count=1",
     "./services/cubebox",
     "-run",
-    "TestManagedCleanup|TestDestroyAuto",
+    "TestManagedCleanup|TestDestroyAuto|TestExecution",
   ]);
 } finally {
   if (container) await exec("docker", ["stop", "-t", "5", container]).catch(() => {});

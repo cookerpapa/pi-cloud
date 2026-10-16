@@ -954,7 +954,10 @@ after a fresh bounded probe and current binding/owner confirmation. Generic
 execution UNKNOWN, protocol failures, Stop and lost ownership still interrupt.
 Probes remain outside native history/model context and never become lease, replay
 or VM-destruction authority. [Verification and rollout status](reports/tool-reply-continuation-20261016.md)
-is separate: the serving release still uses unconditional infrastructure interruption.
+is separate: the first matched release is deployed, while an idle completion-child
+admission recovery gap found in live injection is being repaired. Submit and async
+probes reuse the existing process owner's bounded readiness recovery; healthy
+admission checks memory only. Direct physical probes do not depend on the adapter.
 Confirmed loss of a user-selected working directory before a fixed Tool starts
 also returns a native Tool error, allowing the Harness to continue the dialogue.
 The guest classifies missing/non-directory paths at preparation; it never repairs
