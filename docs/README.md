@@ -11,7 +11,10 @@ covers receipt-only outcomes, incremental previews, terminal control sequences
 and matched acceptance. Its [adoption note](research/tool-preview-rendering-20261016.md)
 records the pinned parser choice and isolated package checks. Source changes and
 the remaining matched/live gates are tracked in the
-[delivery record](reports/tool-receipt-preview-repair-20261016.md).
+[delivery record](reports/tool-receipt-preview-repair-20261016.md). Source/native/fault
+gates and all eleven artifact scans pass. The October 16 cutover replaced native
+Cube but stopped at guest-template creation because host KVM is unavailable;
+applications remain in maintenance and live acceptance is pending.
 
 The [October 15 Cubelet → guest execution review](reports/cubelet-guest-execution-review-20261015.md)
 records a missing deadline in cleanup, native Read path drift, unused per-Tool

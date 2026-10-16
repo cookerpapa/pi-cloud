@@ -58,7 +58,12 @@ is available on demand.
 node --import tsx scripts/run-matched-release.mjs apply /private/releases/candidate-1
 ```
 
-Apply repeats artifact preflight and imports content before disruption. It requires
+Apply repeats artifact preflight and checks that every scheduled Cube compute node
+is Ready and exposes a readable/writable `/dev/kvm` to Cubelet before importing or
+draining. A Ready Pod alone does not prove host virtualization survived a reboot.
+This device check is read-only and detects missing devices/permissions; it does
+not prove VM creation will succeed. Template creation and live acceptance retain
+that responsibility. It then imports content before disruption and requires
 settled Runs and a complete native inventory with no VM on any node. It stops
 Web/SSH/Workers, lets the still-running Control Plane close writers/project seals,
 then stops Control Plane/Volume Gateway and checks quiescence again, including

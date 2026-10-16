@@ -76,8 +76,15 @@ enter native persistence before validated Tool execution (ADR-0230).
 The [Session work migration](docs/adr/0247-session-work-and-tool-dispatch.md) is
 deployed as `session-work-6ac697f9`: one root Run with native child Conversations,
 unified Tool replies, one Session closure and Worker direct Kafka publication.
-The current matched release, `guest-execution-5536fc73`, uses schema 189, execution-topic v17,
-boot reply v3, guest/Tool Worker protocol 6 and Cube management protocol 7.
+The last fully accepted matched release, `guest-execution-5536fc73`, uses schema 189,
+execution-topic v17, boot reply v3, guest/Tool Worker protocol 6 and Cube management
+protocol 7. The October 16 guest-7 cutover is **in maintenance, not yet serving**:
+native Cube was replaced, but missing host KVM blocked guest template creation.
+The [repair and recovery record](docs/reports/tool-receipt-preview-repair-20261016.md)
+identifies the scanned candidate, exact partial state and remaining live acceptance.
+Current source implements [ADR-0252](docs/adr/0252-tool-receipt-and-ephemeral-preview.md):
+receipt-only loss preserves confirmed results; bounded CR/ANSI-aware previews send
+incremental edits and periodic resets over HTTP/SSE, independently of final results.
 [ADR-0249](docs/adr/0249-compact-projector-publication.md) compacts shared publication
 identity and derives Tool presentation from the same native commit. Private
 projection prefixes keep sequence/identity only, and fixed Tool requests omit
@@ -91,7 +98,7 @@ records that preceding release, real Luna/Cube/browser/child recovery and cleanu
 [ADR-0251](docs/adr/0251-guest-attachment-and-execution-bounds.md) gives ordinary
 Tools a small execution attachment, aligns Read paths with Pi, bounds final native
 cleanup and refuses known-expired work before Start. The
-[current delivery record](docs/reports/cubelet-guest-execution-repair-20261015.md)
+[guest-6 delivery record](docs/reports/cubelet-guest-execution-repair-20261015.md)
 includes the guest 6 rollout, real path/image/child recovery and preserved configuration.
 [Implementation and acceptance evidence](docs/reports/session-work-implementation-20261013.md)
 records source tests, real Luna/Cube/browser checks and rolling-update findings.

@@ -1,9 +1,11 @@
 # ADR-0252: Tool receipt outcomes and incremental, terminal-aware previews
 
-Status: accepted; implementation in progress, 2026-10-16. The owner approved this repair plan following the
+Status: accepted; source and artifact gates pass, matched cutover blocked by host KVM,
+2026-10-16. The owner approved this repair plan following the
 [guest → Cubelet review](../reports/guest-cubelet-result-review-20261016.md) and
 the discussion of bandwidth, progress bars and final Tool results. This document
-records the target contract; implementation and matched deployment are tracked separately.
+records the implemented contract; [delivery evidence](../reports/tool-receipt-preview-repair-20261016.md)
+tracks the partial deployment and remaining real VM/browser acceptance separately.
 
 ## Behavior and boundaries
 

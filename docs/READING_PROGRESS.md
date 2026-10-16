@@ -9,16 +9,18 @@ Current checkpoint: **guest Tool process → Cubelet result reception**.
 Explained structured final results over the existing native process output channel,
 progress/final separation and the bytes-only `scope.received` acknowledgement.
 The [October 16 focused review](reports/guest-cubelet-result-review-20261016.md)
-confirms receipt-loss cleanup and oversized preview loss with isolated evidence;
-the proposed repairs have not changed runtime behavior. Next: Cubelet completion
+confirmed receipt-loss cleanup and oversized preview loss with isolated evidence.
+Next: Cubelet completion
 adapter → Kafka's original-Worker-boot reply transport.
 The subsequent discussion distinguishes disposable browser previews from guest
-final-result collection, and identifies CR/ANSI display limitations. Proposed
+final-result collection, and identifies CR/ANSI display limitations. Accepted
 [ADR-0252](adr/0252-tool-receipt-and-ephemeral-preview.md) records receipt repair,
 incremental/reset preview delivery and a terminal-aware source adapter. The owner
-approved implementation; source is changed and targeted tests pass. The
-[delivery record](reports/tool-receipt-preview-repair-20261016.md) tracks the pending
-complete gates and matched deployment. The reading checkpoint is unchanged.
+approved implementation; source/native/fault gates and all eleven artifact scans
+pass. The [delivery record](reports/tool-receipt-preview-repair-20261016.md) records
+the partial cutover: native Cube changed, missing host KVM blocks guest creation,
+applications remain offline and live acceptance is pending. The reading checkpoint
+is unchanged.
 
 Previously covered **Cubelet → the VM's fixed Tool execution process**.
 Explained per-operation native process startup in a reusable VM, the root scope

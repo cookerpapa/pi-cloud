@@ -7,9 +7,14 @@ CubeSandbox KVM is the only untrusted execution backend.
 
 This document describes ADR-0247 Session ownership and ADR-0248 management reconnect
 with ADR-0249's deployed publication contract, ADR-0250's handoff repair and
-ADR-0251's guest attachment/lifetime repair (schema 189 / topic v17 / boot reply v3 /
-guest protocol 6). [Current delivery evidence](reports/cubelet-guest-execution-repair-20261015.md)
-identifies `guest-execution-5536fc73`; the
+ADR-0251's guest attachment/lifetime repair and ADR-0252's receipt/preview repair
+(schema 189 / topic v17 / boot reply v3 / source guest protocol 7, adapter startup 3).
+The [current delivery record](reports/tool-receipt-preview-repair-20261016.md)
+records the incomplete October 16 cutover: native Cube is replaced, but application
+workloads remain offline because host KVM is unavailable. Source verification and
+artifact scans pass; real VM/browser acceptance has not run on this candidate.
+[Previous acceptance evidence](reports/cubelet-guest-execution-repair-20261015.md)
+identifies the fully accepted guest-6 release `guest-execution-5536fc73`; the
 [handoff evidence](reports/projector-cube-handoff-repair-20261015.md) records
 `handoff-6ab91bb7` and the
 [publication repair evidence](reports/projector-repair-20261015.md) records the
@@ -834,14 +839,16 @@ The [repair record](reports/cubelet-guest-execution-repair-20261015.md) records
 the matched rollout, source/live acceptance, failed samples and cleanup.
 
 The [guest return-path review](reports/guest-cubelet-result-review-20261016.md)
-records two current implementation gaps: loss of the guest receipt can discard
-an already-received successful result and invoke operation-scope cleanup, and
-oversized temporary previews are discarded before their downstream trim. Those
-repairs are proposed, not part of the deployed guest 6 contract.
-The subsequent [ADR-0252 proposal](adr/0252-tool-receipt-and-ephemeral-preview.md)
-also covers incremental/reset delivery and terminal-aware preview rendering.
-Its isolated library checks do not change the current snapshot-only protocol or
-ordinary Bash pipe behavior described below.
+reproduced receipt-only loss discarding a valid result and triggering operation
+cleanup, and oversized temporary previews being dropped. Current source implements
+[ADR-0252](adr/0252-tool-receipt-and-ephemeral-preview.md) in guest protocol 7:
+only the fixed launcher can classify failed reverse receipt after successful local
+settlement as exit 76. Cubelet requires a unique valid final frame and confirmed
+normal/receipt-only exit before retaining the result without scoped cleanup.
+A final observed before the execution deadline gets a bounded settlement join;
+missing/invalid evidence retains UNKNOWN and the existing cleanup boundary.
+Explicit scope cleanup still applies, and late replies never replace Pi abort.
+This does not prove Kafka durability or authorize replay/whole-VM destruction.
 
 Authorized closure revokes publication and binding routing admission before the
 seal. Normal Stop co-commits native abort and cancellation for unfinished fixed
@@ -970,17 +977,24 @@ both pure chat and file-capable Runs. The Step's `activeTools` is explicitly the
 file/shell grant; Pi owns the complete executable Tool registry. Preparing an
 empty file grant does not activate Cube.
 
-Pi source updates are disposable observations, not model context. Bash emits
-bounded snapshots at most once per second; the Cube completion adapter coalesces the newest text per
-active operation (8,192 characters) and sends pooled HTTP to Projector. An internal
-credential protects ingress. Partition ownership redirects use existing Kafka
-membership, not a PG query. Failures drop snapshots and cannot fail the Tool.
-SSE subscribers keep bounded newest observations separately from formal sequence;
-only running Tools can display them. Complete results/terminal events win over
-late progress. Reconnect starts without old observations. The browser renders an
-opt-in fixed-height preview without updating the transcript or scrolling it.
-No Kafka/PG row, replay, Worker callback or background-service log follower is
-created for progress. See [ADR-0184](adr/0184-ephemeral-tool-progress.md).
+Pi source updates are disposable observations, not model context. The guest's
+pinned headless-terminal adapter interprets decoded Bash output before CR stripping;
+the independent final-output collector keeps its existing result policy. Bash
+retains ordinary pipes. The preview has fixed geometry, an 8 KiB UTF-8 text bound
+and a bounded parser queue; overload retires the preview without pausing execution
+or losing the final result. Ordinary changed views emit at most once per second,
+with a self-contained reset every five seconds while the preview is active.
+HTTP/SSE preview schema 2 carries revision-bound edits/resets, without copied Tool
+arguments or final-result metadata, within a 64 KiB encoded frame ceiling.
+Cube completion HTTP and SSE coalesce edits against one bounded view, rather than
+overwriting unrelated deltas. Missing bases or uncertain delivery wait for a reset.
+An internal credential protects ingress; partition redirects use Kafka membership,
+not PG queries. Reconnect starts empty and recovers from a periodic reset even
+during silence. Only running Tools display escaped text in the opt-in fixed-height
+preview. Completion discards pending previews and wins over late progress.
+No Kafka/PG row, model context, durable replay, Worker callback or background-service
+log follower is created for progress. [ADR-0252](adr/0252-tool-receipt-and-ephemeral-preview.md)
+replaces ADR-0184's snapshot body while preserving its observation-only boundary.
 
 Reply topics have bounded retention, are deleted at graceful Worker shutdown,
 and are reaped only after positively completed Worker retirement plus grace.

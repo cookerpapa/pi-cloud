@@ -18,7 +18,9 @@ and subsequent preview discussion, with an ordered implementation plan:
 - [ ] R4: required source/live acceptance and a drained, matched protocol rollout.
 
 R1–R3 are implemented in source; the [delivery record](reports/tool-receipt-preview-repair-20261016.md)
-tracks their tests and the remaining full gates/live cutover. Checkboxes remain
+records passing source/native/fault gates and eleven scanned artifacts, but the
+matched cutover is blocked by host KVM after native replacement; applications are
+offline and real VM/browser acceptance remains pending. Checkboxes remain
 open until their complete acceptance, including the matched runtime, is confirmed.
 
 ## Cubelet → guest execution audit

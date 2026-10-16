@@ -37,7 +37,12 @@ The subsequent discussion and approved repair are recorded in
 [ADR-0252](adr/0252-tool-receipt-and-ephemeral-preview.md). Source implementation
 adds incremental display/reset semantics and terminal-aware previews. The
 [delivery record](reports/tool-receipt-preview-repair-20261016.md) tracks source
-verification and the pending matched deployment/live acceptance.
+verification and the pending matched deployment/live acceptance. All source/native/
+fault gates and eleven artifact scans pass. Native Cube has been replaced, but
+guest-template creation failed because this Windows/WSL host no longer exposes
+KVM. Applications remain offline. Restore host virtualization, prepare/apply from
+an exact clean revision, then run the maintained live checks. The release operator
+now checks KVM device availability on every Cube compute node before draining.
 
 - [ ] R16R-01: distinguish receipt-only transport failure from unfinished or
       unsafe execution. A complete valid result plus confirmed local settlement

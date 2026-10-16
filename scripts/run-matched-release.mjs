@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { guestBuildIdentity, completionBuildIdentity } from "./lib/guest-build-identity.mjs";
 import { verifyMatchedRelease } from "./lib/matched-release.mjs";
+import { assertCubeKvmAvailable } from "./lib/cube-host-preflight.mjs";
 import {
   repositoryRoot as root,
   runtimeDirectory,
@@ -98,6 +99,8 @@ const candidate = await verifyMatchedRelease({ directory, root, capture, current
 phase("matched artifact preflight passed");
 if (action !== "apply") process.exit(0);
 
+assertCubeKvmAvailable({ kubectl });
+phase("Cube KVM device preflight passed");
 const env = environment(candidate.version);
 // Import content before touching live workloads. Existing tags/catalog stay intact.
 run("scripts/production-kubernetes.mjs", ["import-images"], env);
