@@ -30,33 +30,30 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Cube completion → Kafka replies and UNKNOWN continuation
 
-The owner-approved direction and implementation plan are recorded in
-[ADR-0253](adr/0253-tool-reply-uncertainty-and-continuation.md). Source inspection
-confirms a uniform seven-minute fixed-Tool reply wait, unconditional UNKNOWN
-sampling interruption and three orphaned error recognizers. The preceding
-receipt/preview repair is deployed; this new slice is implemented in source with
-[verification and rollout pending](reports/tool-reply-continuation-20261016.md). Keep Pi final-result semantics and the accepted
-volatile-result loss boundary; reuse the existing internal execution probe.
+[ADR-0253](adr/0253-tool-reply-uncertainty-and-continuation.md) is deployed as
+`tool-unknown-791a6ed0`. [Acceptance](reports/tool-reply-continuation-20261016.md)
+covers bounded UNKNOWN continuation, idle completion-process recovery, startup
+Stop settlement, native input/dual-process recovery, browser/image/Read and full
+Cube behavior. Source, transport, 256 fault cases and eleven artifact scans pass.
+The owned Cubelet crash fixture required positively confirmed operator detach
+before normal Volume GC could finish; that operational limit remains below.
 
-- [x] U1: distinguish effect uncertainty, explicit interruption conditions and
-      fixed-Tool failures eligible for a readiness check; retain native Stop,
-      Workflow interruption, publication fencing and controller-owned recovery.
-- [x] U2: bounded fresh probe through the existing Session/guest/boot-reply path,
-      with current binding/owner checks, coalescing and no native/context/PG sample.
-- [x] U3: commit UNKNOWN then permit inspection only with confirmed readiness;
-      interrupt repeated uncertainty and preserve single settlement/late-reply rules.
-- [x] U4: invocation-specific wait budget plus existing transport allowance;
-      remove orphaned error branches and complete source/transport/fault gates.
-- [ ] U5: scanned matched release and owned Luna/Cube/browser/input/recovery
-      acceptance, proving one original effect and confirmed fixture cleanup.
-      The first deployed injection found idle completion-child loss blocking
-      admission on a reused VM. Extend the existing bounded readiness recovery
-      to Submit/async probes and repeat the native and live gates; retain the
-      failed sample and its confirmed adapter/tenant/VM cleanup.
-      Repeated acceptance also exposed Stop aborting every recovered writer
-      bootstrap. Preserve Stop through bootstrap, settle through native Pi with
-      effects blocked, remove the stale Run-history response cap, and complete
-      the isolated fixture's closure/cleanup before the final matched release.
+## Cubelet restart and unconfirmed Volume references
+
+The ADR-0253 live crash case passed Tool interruption, but automatic fixture
+Volume GC remained blocked after Cubelet restart: its durable node reference
+state was `count=0, confirmed=false`, with the same store incarnation. This is
+ADR-0226's conservative recovery behavior, not proof of safe deletion. The
+[acceptance record](reports/tool-reply-continuation-20261016.md) documents an
+operator-confirmed cleanup of the single owned test Volume after closed
+admission, irreversible allocation closure, complete recorded-node absence and
+the pinned POSIX driver's detach receipt. No automatic clearing policy changed.
+
+- [ ] Design bounded reconciliation of these unknown POSIX references before
+      claiming automatic Workspace recovery/GC after active Cubelet loss. Preserve
+      original cleanup identity and obtain positive detach evidence; neither a
+      missing probe, zero count nor replaced metadata can clear the protection.
+      Record any changed recovery authority/protocol in a new ADR first.
 
 ## Guest → Cubelet result review
 

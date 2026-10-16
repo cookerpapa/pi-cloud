@@ -1,9 +1,11 @@
 # Tool reply uncertainty and continuation
 
-Date: 2026-10-16. Baseline `03c3a7ec`.
+Date: 2026-10-16–17. Baseline `03c3a7ec`.
 [ADR-0253](../adr/0253-tool-reply-uncertainty-and-continuation.md) is implemented
-in source and deployed as `tool-unknown-7e1ca3ff`. Live acceptance found the idle
-completion recovery gap below; its repair and repeat acceptance are in progress.
+and deployed as `tool-unknown-791a6ed0`. Source and relevant live acceptance are
+complete. Failed samples and the remaining conservative Volume-reference recovery
+limit are preserved below; the owned crash fixture required confirmed operator
+detach before its normal physical cleanup completed.
 
 ## Implemented behavior
 
@@ -85,7 +87,7 @@ account/configuration fingerprints passed after restoration.
 
 Candidate `tool-unknown-7e1ca3ff` passed all eleven image/provenance scans and
 matched preflight, then deployed successfully. Guest identity/templates were
-reused unchanged. This cutover is not yet complete feature acceptance.
+reused unchanged. This cutover was not yet complete feature acceptance.
 
 The first owned live reply-loss injection failed before the target Tool started:
 restarting the idle completion child left the reused VM's Submit path returning
@@ -109,8 +111,8 @@ expected protocol 5 is corrected to the existing protocol 7).
 The composed Cube allocation/Volume/execution race suites, service contracts,
 standalone admission suite, 77 acceptance-helper tests, documentation, formatting,
 runtime budgets and image-closure checks pass after this follow-up. It changes
-no TypeScript runtime, schema or wire version. A new matched artifact set and
-the failed live scenario must still pass before U5 can be completed.
+no TypeScript runtime, schema or wire version. These checks preceded the next
+matched artifact set and live repeat below.
 
 The follow-up release `tool-unknown-adf6728b` passed all eleven artifact scans,
 matched preflight and drained deployment. The first repeated live case passed:
@@ -137,9 +139,9 @@ writer bootstrap was aborted before a finalizer existed, then ordered recovery
 requeued and redelivered Stop into the next bootstrap. The original shortcut
 comes from ingress commit `2462e8b9` and survived the direct-publication migration
 in `4f887b17`. The fixture reached 900 transitions before its tenant claim policy
-was disabled. All old writers are sealed/released; the owned Run remains queued
-with its Stop and cleanup records intact. The fixture has not been fully cleaned
-up, and the crash case has not yet run. Its completion adapter is restored.
+was disabled. At isolation, all old writers were sealed/released and the owned
+Run stayed queued with its Stop and cleanup records intact. Fixture cleanup and
+the crash case were still pending; the completion adapter had been restored.
 
 The source repair retains Stop through bounded producer initialization and uses
 Pi's existing `stopOnResume` effect barrier before ordinary native cancellation.
@@ -149,10 +151,9 @@ uncertain-publication closure and native result ownership are unchanged. Three
 real-PG cases cover immediate Stop, initial writer failure followed by recovery,
 and acknowledgement rollback. Pinned Harness tests cover effect blocking.
 The stale 128-item Run-transition response cap is removed without dropping
-history. The 255-case fault gate and targeted startup/Harness/API cases pass;
-expanded application/transport checks are in progress.
-scanned Worker recovery of the isolated fixture and a complete matched release
-must precede final live acceptance.
+history. The 255-case fault gate and targeted startup/Harness/API cases passed
+before the expanded application/transport checks. Scanned Worker recovery of
+the isolated fixture and a complete matched release preceded final live acceptance.
 
 Source `d3fcc781` subsequently passed 1,795 application tests, 77 helper tests,
 eight real RF3/PG transport cases, the full 255-case fault gate, builds/types,
@@ -171,11 +172,80 @@ owned conversation/Workspace and waited for physical purge before removing its
 tenant. `isolated-stop-failed-cleanup.json` records cleanup success without
 claiming cancellation acceptance. All original seven account/configuration
 fingerprints match, all Pods are Ready, and no Run/writer/VM/binding remains.
-Only Workers temporarily run `tool-unknown-d3fcc781`; the final complete matched
-release and live acceptance are still required.
+Only Workers temporarily ran `tool-unknown-d3fcc781` at this point; the seed
+follow-up below preceded the final complete matched release and live acceptance.
 
 The seed follow-up passes all 207 sandbox-supervisor and 86 supervisor-host tests,
 the three affected package type checks, documentation/format/runtime/image-closure
 checks and all 256 indexed fault cases. No native Cube, guest wire, schema or
 dependency changed. The live fixture now also checks an immediate Stop after
 claim, and tolerates an as-yet-unmaterialized transcript while awaiting a Tool.
+
+## Matched release and live outcome
+
+`tool-unknown-791a6ed0` passed all eleven image scans and matched preflight, then
+completed the normal drained full rollout. Guest identity `a253c3fee801893e1a916d45d423317f737a0f5d`
+and all four templates were reused; native patch identity remains `3a7e75cece12fef5`.
+`live-unknown-final.json` records passing functional cases: early Stop before the
+first output (cancelled, zero Tools/VM activations), lost reply followed by a
+distinct successful Read (136,285 ms), lost result and probe (timed_out after
+141,700 ms, no later Tool and the same VM), browser UNKNOWN restoration, and a
+real owned Cubelet Pod loss after a confirmed guest effect (one original Tool,
+Run failed without fabricated completion). Probe nonces never entered native
+storage. The completion adapter was restored.
+
+That live command exited unsuccessfully during automatic Workspace cleanup.
+The VM allocation was irreversibly closed/absent and the complete native node
+inventory was 0, but restart reconciliation retained `count=0, confirmed=false`
+for the Volume. ADR-0226 intentionally holds such unknown state. Do not relabel
+the script as a fully automatic passing crash-cleanup test.
+
+A scoped operator recovery on October 17 checked deleted fixture ownership,
+closed Volume admission, zero Master holds, the recorded allocation's closure,
+complete node absence, the pinned POSIX plugin identity and its detach receipt.
+With all writers and VMs drained, it stopped idle Workers/Cubelet, exclusively
+opened the native reference store and compare-and-set only that completed-zero
+record. It retained the store incarnation and advanced revision 779 → 780;
+unrelated records were untouched. Eight guarded helper cases passed before use.
+The first helper image lookup timed out before execution and restored services;
+the retry used a locally verified pinned image with pulling disabled. Native
+reference observation then confirmed zero and the normal deletion reaper removed
+the Volume. The fixture tenant was purged only after physical cleanup confirmed.
+
+Private `volume-repair/receipt.json` and `final-fixture-cleanup.json` preserve that
+evidence separately from the failed automatic cleanup sample. Original account,
+model/provider and credential fingerprints still match. Automatic recovery of
+these unknown Volume references remains a separately tracked operational limit;
+no Volume-safety marker was cleared merely because a heartbeat or reply was lost.
+Native-input, browser/image and full-Cube regression subsequently passed.
+
+## Final acceptance and preservation
+
+- All five native-input/live-stream cases pass, including edits/retry identity,
+  Stop, Worker replacement and simultaneous Control Plane/Worker loss. Native
+  partial content survives; PG retains no streaming bodies. Fixture cleanup passes.
+- Real browser Stop/returned-input retry/image resend passes with the same upload
+  identity and direct vision. Native Read truncation and UTF-8 diagnostics pass
+  for 120,017-byte ASCII and 140,031-byte Unicode files. Fixture cleanup passes.
+- [Full Cube acceptance](cubesandbox-production-acceptance-latest.md) passes on
+  source/runtime `791a6ed0`: pure chat without VM activation, multi-round warm VM
+  reuse, authenticated preview, background service survival, a persistent 1024-file
+  fixture attached to a fresh VM, tenant isolation and rejection of late commands
+  to a deleted VM. Normal allocation/Volume cleanup and the owned tenant purge pass.
+- Final checks show no active Run, writer, binding, VM, development machine or
+  terminal. Native inventory is complete (1/1 nodes, 0 VMs), all matched release
+  participants are Ready, and separately pinned infrastructure retains its own
+  declared versions. Windows and Linux both return web HTTP 200.
+- All seven original account/model/provider/credential fingerprints match:
+  32 tenants/users/API credentials, 5 password credentials, 35 model profiles/
+  credential bindings and no source-control credentials. WSL remains 1700 GiB
+  with approximately 390 GiB free. No user backup or compatibility data reset
+  was introduced.
+
+Source evidence is 1,795 application tests, 77 helper tests and eight real RF3/PG
+transport tests for `d3fcc781`, followed by all 293 tests in the final delta's two
+affected packages, their consumers' type checks and the expanded 256-case fault
+gate. Native Cube contract/race tests and all eleven final artifact scans pass.
+Private final reports, runtime checks and preservation receipts are under the
+release-evidence directory above. The remaining Volume-reference item is an
+explicit operational limitation, not a claim of automatic node-loss recovery.

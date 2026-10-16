@@ -3,11 +3,13 @@
 The approved [Tool reply continuation plan](adr/0253-tool-reply-uncertainty-and-continuation.md)
 consolidates the Cube completion → Kafka walkthrough and subsequent UNKNOWN,
 Pi/Codex timeout and internal-probe discussion. It distinguishes accepted result
-loss from current wait/classification issues. [Source implementation and checks](reports/tool-reply-continuation-20261016.md)
-pass; the initial matched deployment is complete. Live injection found an idle
-completion-child admission recovery gap; its repair and repeat acceptance are
-in progress. The owner-completed WSL expansion and configuration preservation
-are verified in that record.
+loss from current wait/classification issues. [Implementation and acceptance](reports/tool-reply-continuation-20261016.md)
+are complete as `tool-unknown-791a6ed0`: bounded continuation, idle completion
+recovery and startup Stop settlement pass source and real Luna/Cube/browser checks.
+The record preserves failed samples and the operator-confirmed cleanup required
+by ADR-0226's conservative unknown Volume references after Cubelet loss; automatic
+reconciliation remains in the backlog. WSL expansion and original configuration
+preservation are verified.
 
 The [October 16 guest → Cubelet result review](reports/guest-cubelet-result-review-20261016.md)
 records receipt loss incorrectly triggering operation-scope cleanup and oversized

@@ -953,16 +953,17 @@ fixed-Tool reply deadlines and explicit handoff transport loss can permit inspec
 after a fresh bounded probe and current binding/owner confirmation. Generic
 execution UNKNOWN, protocol failures, Stop and lost ownership still interrupt.
 Probes remain outside native history/model context and never become lease, replay
-or VM-destruction authority. [Verification and rollout status](reports/tool-reply-continuation-20261016.md)
-is separate: the first matched release is deployed, while an idle completion-child
-admission recovery gap found in live injection is being repaired. Submit and async
+or VM-destruction authority. [Verified release `tool-unknown-791a6ed0`](reports/tool-reply-continuation-20261016.md)
+includes idle completion-child recovery. Submit and async
 probes reuse the existing process owner's bounded readiness recovery; healthy
 admission checks memory only. Direct physical probes do not depend on the adapter.
 Stop arriving during producer bootstrap is retained until the bounded authorized
 writer is ready; Pi opens in its existing `stopOnResume` mode with effects blocked
 and settles cancellation normally. Aborting each bootstrap would prevent native
-settlement and requeue the same Stop indefinitely. The implementation/rollout
-record above distinguishes the source repair from its pending matched release.
+settlement and requeue the same Stop indefinitely. Pure claimed Workspace seed
+metadata does not intercept the Stop; native Pi completes its abort. The release
+record distinguishes Tool/Worker crash acceptance from ADR-0226's conservative
+unknown Volume-reference state, which still requires positive operator recovery.
 Confirmed loss of a user-selected working directory before a fixed Tool starts
 also returns a native Tool error, allowing the Harness to continue the dialogue.
 The guest classifies missing/non-directory paths at preparation; it never repairs

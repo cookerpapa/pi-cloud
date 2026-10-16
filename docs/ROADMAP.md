@@ -3,17 +3,18 @@
 ## Cube completion → Kafka replies and UNKNOWN continuation
 
 [ADR-0253](adr/0253-tool-reply-uncertainty-and-continuation.md) records the approved
-direction and current-hop source findings. U1–U4 are implemented and source-verified; the
-[verification record](reports/tool-reply-continuation-20261016.md) separates source
-checks from live acceptance. The initial `tool-unknown-7e1ca3ff` cutover passed;
-live injection found idle completion-child recovery missing on reused VM admission.
-Its bounded recovery fix must pass native tests and repeat matched/live acceptance.
+direction and current-hop source findings. U1–U5 are implemented and deployed as
+`tool-unknown-791a6ed0`. The [verification record](reports/tool-reply-continuation-20261016.md)
+separates passing source/live cases from failed samples, the repaired startup
+Stop races and the remaining conservative Volume-reference recovery limit.
+The owned crash fixture was cleaned only after operator-confirmed detach;
+automatic recovery of unknown Volume references remains a separate backlog item.
 
 - [x] U1: trusted failure classification and hard-stop precedence.
 - [x] U2: reuse the existing bounded execution probe through a runtime port.
 - [x] U3: native UNKNOWN settlement with conditional inspection and repeated-uncertainty guard.
 - [x] U4: per-invocation reply deadlines, obsolete-branch removal and verification.
-- [ ] U5: matched deployment, real Luna/Cube/browser/recovery evidence and cleanup.
+- [x] U5: matched deployment, real Luna/Cube/browser/recovery evidence and confirmed cleanup.
 
 No Codex-style process polling, result outbox/cache, new PG health rows or Pi loop
 patch is included. Probe success never changes the original UNKNOWN into success

@@ -1,6 +1,6 @@
 # Architecture reading checkpoint
 
-Updated: 2026-10-16.
+Updated: 2026-10-17.
 
 The walkthrough explains one component-to-component hop at a time, including
 its message, acknowledgement boundary, failure behavior and design tradeoffs.
@@ -19,13 +19,15 @@ Tool uncertainty, use a fresh bounded internal probe to decide whether inspectio
 can continue. Probe packets never enter native history or model context. Stop,
 lost ownership, uncertain publication, closed/replaced bindings and Workflow
 channel failures retain interruption. Remove three orphaned error recognizers.
-The [implementation record](reports/tool-reply-continuation-20261016.md) tracks
-source changes and passing full CI/252-case fault checks. The first matched
-rollout is complete; live injection found an idle completion-child admission
-recovery gap that is being repaired before repeating live fault acceptance.
-The owner completed WSL expansion to 1700 GiB; KVM, cluster and configuration
-preservation checks pass. The reading checkpoint is unchanged.
-The walkthrough remains at this hop while that slice is addressed.
+The [implementation record](reports/tool-reply-continuation-20261016.md) confirms
+matched release `tool-unknown-791a6ed0`, source/transport/256-case fault checks,
+real reply loss and Cubelet failure, early Stop, native input/dual-process recovery,
+browser/image/Read and full Cube acceptance. It retains failed samples and the
+operator-confirmed cleanup needed for an unconfirmed Volume reference after
+Cubelet loss; automatic reconciliation remains in the backlog.
+The owner completed WSL expansion to 1700 GiB; KVM, cluster, Windows/Linux web
+access and original configuration preservation checks pass. This hop's slice is
+complete, and the walkthrough can advance.
 Next: Kafka reply consumption → the original Worker's pending Tool callback and Pi.
 
 Previously covered **guest Tool process → Cubelet result reception**.

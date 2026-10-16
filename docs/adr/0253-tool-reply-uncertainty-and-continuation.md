@@ -1,9 +1,10 @@
 # ADR-0253: Tool reply uncertainty and bounded continuation
 
-Status: implemented and source-verified; live acceptance found a recovery gap,
-2026-10-16. [Verification record](../reports/tool-reply-continuation-20261016.md).
-Baseline: `03c3a7ec`; serving release:
-`tool-unknown-7e1ca3ff`. Completion admission recovery awaits a new matched release.
+Status: implemented, deployed and verified, 2026-10-17.
+[Verification record](../reports/tool-reply-continuation-20261016.md) distinguishes
+passing Tool/Worker cases from the conservative Volume cleanup limit and its
+operator-confirmed fixture cleanup. Baseline: `03c3a7ec`; serving release:
+`tool-unknown-791a6ed0`.
 
 The owner accepted retaining Pi's final-result Tool contract, bounded remote
 waiting and a small internal probe after an unconfirmed result. A usable path

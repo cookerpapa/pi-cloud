@@ -167,6 +167,9 @@ record the limits and verified failure cases.
 
 One physical Session family stays on one Worker, and each Kafka partition keeps
 ordered projection. The single-host profile does not provide physical-node HA.
+An active Cubelet crash can leave Volume references unconfirmed; automatic GC
+then remains blocked pending positive operator recovery
+([tracked limit](docs/BACKLOG.md#cubelet-restart-and-unconfirmed-volume-references)).
 Original images stream to Cube for normalization; native context still
 materializes normalized image content.
 Cube mounts, configuration and completion credentials are rendered into one
