@@ -28,6 +28,24 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## Kafka replies → Worker callback review
+
+The [October 17 review](reports/kafka-worker-reply-review-20261017.md) confirms
+three Worker return-path issues with isolated probes and actual RF3 reassignment.
+Normal duplicate/late handling and native Pi result ownership remain sound.
+
+- [ ] KWR-01: include reply-consumer health in existing Worker admission and
+      define bounded handling of sustained transport loss for pending waits.
+      Preserve long Subagent execution and the outer Run/cancellation boundaries;
+      add no channel lease or PG health store.
+- [ ] KWR-02: distinguish validated execution receipt from attachment restoration.
+      A failed image read or Stop during decoding must not erase known completion
+      or falsely classify the sandbox as unavailable. Preserve native abort and
+      canonical commit ownership without a durable raw-result cache.
+- [ ] KWR-03: resume same-boot reply consumption from completed in-memory delivery
+      progress instead of replaying the retained prefix. Retain bounds/unsettled
+      handler checks and keep Session Projector recovery semantics separate.
+
 ## Cube completion → Kafka replies and UNKNOWN continuation
 
 [ADR-0253](adr/0253-tool-reply-uncertainty-and-continuation.md) is deployed as

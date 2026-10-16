@@ -1,5 +1,16 @@
 # Implementation roadmap
 
+## Kafka replies → Worker callback review
+
+- [x] Review boot reply consumption, operation matching, image restoration,
+      cancellation and the return to pinned Pi's native Tool task.
+- [x] Verify with existing tests, isolated failure probes and a disposable RF3
+      Kafka reassignment test. Record [findings and repair directions](reports/kafka-worker-reply-review-20261017.md).
+
+The three findings are tracked in the backlog. This review introduces no runtime,
+protocol or deployment change; it does not reopen the accepted boot-local reply
+or unsafe Tool recovery contracts.
+
 ## Cube completion → Kafka replies and UNKNOWN continuation
 
 [ADR-0253](adr/0253-tool-reply-uncertainty-and-continuation.md) records the approved

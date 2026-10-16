@@ -1,5 +1,11 @@
 # Documentation map
 
+The [October 17 Kafka → Worker reply review](reports/kafka-worker-reply-review-20261017.md)
+records missing reply-consumer admission health, attachment-restoration failure
+attribution and retained-prefix replay on same-boot reassignment. Isolated probes,
+96 existing tests and a real RF3 reassignment check support the findings. This is
+a review only; no production implementation or deployment changed.
+
 The approved [Tool reply continuation plan](adr/0253-tool-reply-uncertainty-and-continuation.md)
 consolidates the Cube completion → Kafka walkthrough and subsequent UNKNOWN,
 Pi/Codex timeout and internal-probe discussion. It distinguishes accepted result

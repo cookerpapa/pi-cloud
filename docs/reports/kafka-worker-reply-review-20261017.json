@@ -1,0 +1,38 @@
+{
+  "baseline": "85ece0ed88fcd97c57d24cbeb1fe7c55aa56e34b",
+  "scope": "Isolated characterization of real consumer/mailbox/codec/remote Tool adapters. Driver and image store are substituted; no live Kafka, PG, S3, model or Cube mutation.",
+  "reconnect": {
+    "assignedOffsets": [0, 0],
+    "firstPassRecords": 100,
+    "oldRecordsDecodedAgain": 100,
+    "callbacksSettled": 2,
+    "duplicateCallbackDelivery": false
+  },
+  "replyOutage": {
+    "consumerInstancesObserved": 3,
+    "pendingWaitersStillAccepted": 2,
+    "healthExposed": false,
+    "waiterFailedBeforeCancellation": false,
+    "limitation": "No claim/readiness endpoint was exercised here. Actual runtime's monitor composition was separately inspected in runtime.ts:424-431; it only checks Session publication and provider health."
+  },
+  "attachmentFailure": {
+    "validFinalReplyReceived": true,
+    "mailboxWaiters": 0,
+    "executionCompletedFlag": false,
+    "failureCode": "tool_operation_outcome_unknown",
+    "unavailableCallbackCount": 1,
+    "readinessProbeCount": 0,
+    "limitation": "Proves adapter classification and unavailable callback, not destruction of any physical VM."
+  },
+  "stopDuringHydration": {
+    "validFinalReplyReceived": true,
+    "imageDownloadPending": true,
+    "executionCompletedFlag": false,
+    "cancellationUnconfirmedCount": 1
+  },
+  "normalImage": {
+    "exactBytesRestored": true,
+    "completed": true,
+    "readinessProbeCount": 0
+  }
+}

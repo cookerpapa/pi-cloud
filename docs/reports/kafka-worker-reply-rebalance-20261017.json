@@ -1,0 +1,12 @@
+{
+  "baseline": "85ece0ed88fcd97c57d24cbeb1fe7c55aa56e34b",
+  "scope": "Isolated pinned Kafka RF3. A temporary same-group reader forces actual group reassignment; original Worker mailbox object and waiters remain in memory.",
+  "firstPassRecords": 100,
+  "textBytesPerRecord": 16384,
+  "replayedBeforeNext": 100,
+  "oldReplyDeliveries": 2,
+  "callbacksSettled": 2,
+  "finalMailboxSize": 0,
+  "limitation": "A group reassignment is exercised, not production network failure or fleet latency. No duplicate command execution occurs.",
+  "fixtureCleaned": true
+}
