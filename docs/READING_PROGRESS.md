@@ -12,6 +12,11 @@ The [October 16 focused review](reports/guest-cubelet-result-review-20261016.md)
 confirms receipt-loss cleanup and oversized preview loss with isolated evidence;
 the proposed repairs have not changed runtime behavior. Next: Cubelet completion
 adapter → Kafka's original-Worker-boot reply transport.
+The subsequent discussion distinguishes disposable browser previews from guest
+final-result collection, and identifies CR/ANSI display limitations. Proposed
+[ADR-0252](adr/0252-tool-receipt-and-ephemeral-preview.md) records receipt repair,
+incremental/reset preview delivery and a terminal-aware source adapter. No repair
+has been implemented or deployed yet; the reading checkpoint is unchanged.
 
 Previously covered **Cubelet → the VM's fixed Tool execution process**.
 Explained per-operation native process startup in a reusable VM, the root scope

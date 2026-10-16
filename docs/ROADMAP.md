@@ -7,8 +7,17 @@
 - [x] Reproduce receipt-loss cleanup and oversized preview loss with isolated
       guest/PTY/native-driver probes; record [evidence and repair boundaries](reports/guest-cubelet-result-review-20261016.md).
 
-The review makes no runtime/deployment change. The proposed repairs remain in
-the backlog; any changed completion protocol requires an ADR before implementation.
+The review makes no runtime/deployment change. Proposed
+[ADR-0252](adr/0252-tool-receipt-and-ephemeral-preview.md) consolidates the repair
+and subsequent preview discussion, with an ordered implementation plan:
+
+- [ ] R1: distinguish receipt-only failure from local execution/settlement failure,
+      including native final/deadline races and stop-helper receipts.
+- [ ] R2: source-side bounded terminal-aware previews, independent of final output.
+- [ ] R3: revision-bound edits/resets through guest I/O, HTTP coalescing and SSE/browser.
+- [ ] R4: required source/live acceptance and a drained, matched protocol rollout.
+
+These are proposed slices; no runtime code or deployed protocol has changed.
 
 ## Cubelet → guest execution audit
 

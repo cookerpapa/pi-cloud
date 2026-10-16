@@ -33,6 +33,10 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 The [October 16 review](reports/guest-cubelet-result-review-20261016.md) is complete
 against `06559532`, with isolated guest/PTY/native-driver evidence and passing
 existing suites. It changes no runtime or deployed protocol.
+The subsequent discussion is consolidated in proposed
+[ADR-0252](adr/0252-tool-receipt-and-ephemeral-preview.md). It adds incremental
+display/reset semantics and terminal-aware source previews; implementation and
+deployment remain pending.
 
 - [ ] R16R-01: distinguish receipt-only transport failure from unfinished or
       unsafe execution. A complete valid result plus confirmed local settlement
@@ -43,7 +47,14 @@ existing suites. It changes no runtime or deployed protocol.
 - [ ] R16R-02: bound encoded preview data at the guest transport boundary and
       remove repeated arguments/truncation text from observations. Preserve final
       native results and lossy HTTP/SSE semantics; test large/escaped output and
-      ordinary final-result delivery.
+      ordinary final-result delivery. Deliver revision-bound edits plus bounded
+      resets across every coalescing boundary; cover missing bases, reconnect,
+      owner changes and final completion overtaking observations.
+- [ ] R16R-03: interpret CR/ANSI progress updates before forming display edits;
+      current stripping concatenates successive progress labels. Evaluate the
+      pinned headless terminal behind the preview port, keeping ordinary pipe
+      execution and final result collection independent. Verify bounded parser
+      overload, Unicode, split controls and actual guest/browser rendering.
 
 ## Cubelet → guest execution review
 

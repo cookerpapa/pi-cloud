@@ -6,6 +6,10 @@ progress being discarded. [Isolated evidence](reports/guest-cubelet-result-revie
 uses actual guest/PTY behavior and patched native I/O with substituted process
 services; it does not claim live VM destruction. No runtime or deployment changes
 are included; proposed repair boundaries are tracked in the backlog.
+The subsequent [repair proposal](adr/0252-tool-receipt-and-ephemeral-preview.md)
+covers receipt-only outcomes, incremental previews, terminal control sequences
+and matched acceptance. Its [adoption note](research/tool-preview-rendering-20261016.md)
+records the pinned parser choice and isolated package checks; it is not a release.
 
 The [October 15 Cubelet → guest execution review](reports/cubelet-guest-execution-review-20261015.md)
 records a missing deadline in cleanup, native Read path drift, unused per-Tool

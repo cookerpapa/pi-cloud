@@ -1,0 +1,40 @@
+{
+  "name": "@xterm/headless",
+  "version": "6.0.0",
+  "license": "MIT",
+  "main": "lib-headless/xterm-headless.js",
+  "module": "lib/xterm.mjs",
+  "tarballIntegrity": "sha512-5Yj1QINYCyzrZtf8OFIHi47iQtI+0qYFPHmouEfG8dHNxbZ9Tb9YGSuLcsEwj9Z+OL75GJqPyJbyoFer80a2Hw==",
+  "packageBytes": 477641,
+  "node": "v24.12.0",
+  "cases": [
+    {
+      "name": "carriage",
+      "lines": ["progress 30%"]
+    },
+    {
+      "name": "clear-line",
+      "lines": ["done"]
+    },
+    {
+      "name": "split-ansi",
+      "lines": ["ok"]
+    },
+    {
+      "name": "multiline",
+      "lines": ["row A updated", "row B"]
+    },
+    {
+      "name": "unicode",
+      "lines": ["完成"]
+    }
+  ],
+  "esbuildVersion": "0.28.1",
+  "guestStyleEsmBundlePassed": true,
+  "allowProposedApiRequired": true,
+  "scope": "Library parsing and guest-style bundling only; no integrated preview, live VM or load acceptance",
+  "checkedAt": "2026-10-16T01:31:05.457Z",
+  "reviewedRevision": "b3890979",
+  "workspaceDependencyChanged": false,
+  "productionMutations": false
+}

@@ -838,6 +838,10 @@ records two current implementation gaps: loss of the guest receipt can discard
 an already-received successful result and invoke operation-scope cleanup, and
 oversized temporary previews are discarded before their downstream trim. Those
 repairs are proposed, not part of the deployed guest 6 contract.
+The subsequent [ADR-0252 proposal](adr/0252-tool-receipt-and-ephemeral-preview.md)
+also covers incremental/reset delivery and terminal-aware preview rendering.
+Its isolated library checks do not change the current snapshot-only protocol or
+ordinary Bash pipe behavior described below.
 
 Authorized closure revokes publication and binding routing admission before the
 seal. Normal Stop co-commits native abort and cancellation for unfinished fixed
