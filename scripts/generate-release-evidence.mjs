@@ -146,7 +146,13 @@ async function fileEvidence(root, path) {
   };
 }
 
-function trivyContainerArguments({ cacheDirectory, inputDirectory, outputDirectory, network }) {
+function trivyContainerArguments({
+  cacheDirectory,
+  inputDirectory,
+  outputDirectory,
+  network,
+  temporaryMiB = 256,
+}) {
   const uid = process.getuid?.() ?? 1_000;
   const gid = process.getgid?.() ?? 1_000;
   return [
@@ -167,7 +173,7 @@ function trivyContainerArguments({ cacheDirectory, inputDirectory, outputDirecto
     "--user",
     `${String(uid)}:${String(gid)}`,
     "--tmpfs",
-    "/tmp:rw,noexec,nosuid,nodev,size=256m",
+    `/tmp:rw,noexec,nosuid,nodev,size=${temporaryMiB}m`,
     "--mount",
     `type=bind,source=${cacheDirectory},target=/cache`,
     "--mount",
@@ -243,8 +249,23 @@ try {
     inputDirectory: temporaryDirectory,
     outputDirectory: stageDirectory,
     network: process.env.PI_CLOUD_TRIVY_DOWNLOAD_NETWORK ?? "bridge",
+    // OCI download keeps temporary archive copies; the current compressed DB
+    // exceeds 128 MiB. Image scans below retain their separate 256 MiB bound.
+    temporaryMiB: 512,
   });
-  await run("docker", [...trivyBase, "image", "--cache-dir", "/cache", "--download-db-only"]);
+  await run("docker", [
+    ...trivyBase,
+    "image",
+    "--cache-dir",
+    "/cache",
+    "--download-db-only",
+    "--timeout",
+    "15m",
+    "--no-progress",
+    ...(process.env.PI_CLOUD_TRIVY_DB_REPOSITORY
+      ? ["--db-repository", process.env.PI_CLOUD_TRIVY_DB_REPOSITORY]
+      : []),
+  ]);
 
   const images = [];
   const guestIdentity = await guestBuildIdentity(repositoryRoot);

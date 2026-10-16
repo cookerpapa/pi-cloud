@@ -66,6 +66,14 @@ from the explicit Docker COPY list. That input is added without broadening the
 guest import boundary to model/API modules. The remaining release gates are rerun
 after this packaging fix.
 
+The first artifact preparation built all images but stopped during database
+download. The default mirror stalled; an official GHCR attempt hit its five-minute
+budget; the ECR attempt exposed `no space left on device` in the 256 MiB download
+tmpfs with a 128.03 MiB compressed DB. Downloads now have a separate 512 MiB
+temporary bound, a 15-minute budget and an optional official repository selector.
+Offline image-scan bounds and the vulnerability gate remain unchanged. Preparation
+must be repeated from a clean revision with matching artifact provenance.
+
 Verification is complete in stages: 1,761 workspace tests and 71 acceptance-helper
 tests pass (1,832 total; ten conditional skips), together with eight real RF3
 Kafka/PG transport tests, 244 deterministic fault cases and the native race suites.

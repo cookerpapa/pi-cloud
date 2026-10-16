@@ -31,6 +31,12 @@ If Trivy database download needs the host's loopback proxy, set
 variables for preparation. Values are forwarded by environment name, not echoed
 on the command line. Only database download gets that network; image scans remain
 offline and the zero-fixable-HIGH/CRITICAL gate stays enforced.
+Database downloads use a separate 512 MiB temporary filesystem and a 15-minute
+budget; offline image scans retain their 256 MiB temporary bound. If the default
+mirror is unavailable, `PI_CLOUD_TRIVY_DB_REPOSITORY` can select an
+[official database location](https://trivy.dev/docs/latest/configuration/db/),
+for example `public.ecr.aws/aquasecurity/trivy-db:2`. This changes the download
+route, not vulnerability policy or image evidence requirements.
 
 Preflight checks source revision/cleanliness, guest/completion input identities,
 evidence checksums, catalog coverage and local image IDs against those scanned.
