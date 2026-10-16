@@ -20,10 +20,12 @@ import {
   workloads,
   podFor,
   execIn,
+  serviceAddress,
   runtimeImages,
   imageCatalogPath,
 } from "./lib/production-kubernetes.mjs";
 import { selfHostedValues } from "./lib/self-hosted-values.mjs";
+import { ensureWslWebForwarder, removeWslWebForwarder } from "./lib/wsl-web-forwarder.mjs";
 import { validateProductionRuntimeEnvironment } from "./production-runtime-policy.mjs";
 import { guestBuildIdentity, completionBuildIdentity } from "./lib/guest-build-identity.mjs";
 
@@ -328,6 +330,11 @@ async function deploy() {
   }
   if (!available)
     throw new Error("Pods started but all publication partitions did not become available");
+  await ensureWslWebForwarder({
+    port: platform.web.hostPorts.http,
+    hostIP: platform.web.hostIP,
+    upstreamIP: serviceAddress("web"),
+  });
   process.stdout.write(`PiCloud is ready at ${platform.controlPlane.publicOriginBaseUrl}\n`);
 }
 if (action === "build") await build();
@@ -351,8 +358,16 @@ else if (action === "config" || action === "render") {
   process.stdout.write(
     "Kubernetes manifests validated; private rendered files are in runtime/k3s\n",
   );
+} else if (action === "local-web") {
+  const { platform } = await values();
+  await ensureWslWebForwarder({
+    port: platform.web.hostPorts.http,
+    hostIP: platform.web.hostIP,
+    upstreamIP: serviceAddress("web"),
+  });
 } else if (action === "deploy") await deploy();
 else if (action === "down") {
+  await removeWslWebForwarder();
   helmRun(["uninstall", "pi-cloud", "--namespace", namespace, "--wait", "--timeout", "25m"]);
   helmRun([
     "uninstall",
@@ -394,5 +409,5 @@ else if (action === "restart") {
   ]);
 } else
   throw new Error(
-    "Usage: production-kubernetes.mjs build|import-images|config|deploy|status|logs [service]|exec service -- command|restart service|stop service|start service",
+    "Usage: production-kubernetes.mjs build|import-images|config|deploy|local-web|down|status|logs [service]|exec service -- command|restart service|stop service|start service",
   );

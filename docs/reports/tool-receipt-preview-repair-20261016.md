@@ -281,3 +281,19 @@ configuration table fingerprints still match, native inventory scans 1/1 nodes
 with zero VMs, and there are no unfinished Runs, writers, Tool bindings or seals.
 Deployment is online; remaining live acceptance and the reconnect investigation
 are pending.
+
+## Windows web entry after reboot
+
+A direct Linux request to `127.0.0.1:8080` succeeded while Windows `curl.exe`
+could not connect. A temporary native-listener `kubectl port-forward` on 18081
+returned HTTP 200 from Windows. This isolates the local entry problem from the
+web Pod itself: K3s hostPort DNAT did not provide the socket Windows localhost
+discovery needed on this host.
+
+The maintained WSL loopback deployment adapter now uses the installed systemd
+socket proxy to the stable web Service. Real Windows and Linux requests to the
+original port both return 200. Unchanged reconciliation preserves the socket's
+activation timestamp; owned-unit removal/reinstallation and systemd unit
+validation pass. The temporary port-forward has been stopped. This is a host
+operator change with unchanged matched application/guest images; it does not
+claim that a second Windows reboot has already been tested.

@@ -81,6 +81,31 @@ protocol rollback. Operator-process crashes require the same inspection; automat
 operator crash recovery is not claimed. Do not run concurrent release operators
 or edit source while applying a release.
 
+On the supported WSL2/systemd host, the local loopback web profile also installs
+`pi-cloud-local-web.socket` / `.service` in the operator's user systemd directory.
+K3s hostPort DNAT can work inside Linux without a listening socket that Windows
+localhost discovery sees. The adapter provides that socket and uses the existing
+[systemd TCP proxy](https://github.com/systemd/systemd/blob/v255/man/systemd-socket-proxyd.xml)
+to reach the web Service's ClusterIP. It binds only `127.0.0.1`, carries no
+credentials, and preserves application placement/authentication in Kubernetes.
+Unlike a temporary Pod-bound `kubectl port-forward`, its target survives Pod
+replacement. Service recreation or port changes are reconciled on deployment;
+unchanged units keep their active socket. The distro's existing systemd package
+owns the proxy implementation/version, rather than new application relay code.
+`down` removes the owned units; disabling the loopback web profile also removes
+them. Non-WSL deployments do not install this adapter. The initial slice covers
+the main web port, not separate administrative/provider/SSH host ports.
+
+An existing WSL deployment can reconcile just this host entry without replacing
+application images:
+
+```sh
+node scripts/production-kubernetes.mjs local-web
+```
+
+Verify from Windows with `curl.exe --noproxy "*" http://127.0.0.1:8080/`, using the
+configured web port. A Linux-only HTTP 200 does not establish Windows access.
+
 ## Acceptance and fixture restoration
 
 ```sh

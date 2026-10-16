@@ -47,6 +47,10 @@ remains open after repeated external AnyTLS-path failures and one subsequent
 preview-reconnect timeout. The maintained fixture now retains failed-Run and
 restart/observation/browser diagnostics. The release operator checks KVM device
 availability on every Cube compute node before draining.
+The Windows-local web-entry gap found after reboot is repaired with a standard
+systemd socket proxy in the local WSL deployment adapter; direct Windows/Linux
+HTTP checks and removal/reinstallation pass. This does not close the pending
+model/preview acceptance above.
 
 - [ ] R16R-01: distinguish receipt-only transport failure from unfinished or
       unsafe execution. A complete valid result plus confirmed local settlement
