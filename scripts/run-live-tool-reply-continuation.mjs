@@ -182,7 +182,8 @@ try {
     assert.equal(bash[0].input.timeout, 5);
     assert.equal(bash[0].status, "unknown");
     if (dropProbe) {
-      assert.equal(run.state, "failed", JSON.stringify(run.failure));
+      assert.equal(run.state, "timed_out", JSON.stringify(run.failure));
+      assert.equal(run.failure?.code, "tool_reply_timeout");
       assert.equal(calls.length, 1, "Agent continued without confirmed readiness");
       assert(state.probes.every((p) => p.suppressed));
     } else {

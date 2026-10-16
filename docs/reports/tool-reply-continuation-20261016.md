@@ -111,3 +111,14 @@ standalone admission suite, 77 acceptance-helper tests, documentation, formattin
 runtime budgets and image-closure checks pass after this follow-up. It changes
 no TypeScript runtime, schema or wire version. A new matched artifact set and
 the failed live scenario must still pass before U5 can be completed.
+
+The follow-up release `tool-unknown-adf6728b` passed all eleven artifact scans,
+matched preflight and drained deployment. The first repeated live case passed:
+one original append, canonical UNKNOWN, a distinct successful Read and a completed
+Run in 137,493 ms, with no probe nonce in native storage. The next case interrupted
+with `tool_reply_timeout` and `timed_out`, as the existing Run executor's timeout
+classification specifies. Its fixture incorrectly required `failed`; correct it
+to assert both the precise timeout state and code, then rerun the remaining
+assertions and crash case. Do not claim this partial run as complete acceptance.
+Adapter restoration and owned tenant/VM cleanup passed. Preserve its evidence
+as `live-unknown-recovery.json`; this assertion repair changes no runtime image.
