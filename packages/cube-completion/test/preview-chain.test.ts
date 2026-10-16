@@ -12,7 +12,7 @@ import { ToolProgressPublisher } from "@pi-cloud/event-log";
 import { CubeCompletionAdapter, type CompletionPacket } from "../src/adapter.ts";
 import { ToolProgressIngress } from "../../control-plane/src/tool-progress-ingress.ts";
 import { SessionEventHub } from "../../runtime-core/src/session-event-hub.ts";
-import { ToolProgressStore } from "../../web-ui/src/tool-progress.tsx";
+import { ToolProgressStore } from "../../web-ui/src/tool-progress-store.ts";
 
 it("transfers bounded edits through actual HTTP and SSE coalescing, recovering loss and owner changes", async () => {
   const hub = new SessionEventHub(),

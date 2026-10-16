@@ -16,6 +16,7 @@ import {
 } from "./lib/owned-acceptance-cleanup.mjs";
 import { S3ImageBlobStore } from "../packages/session-attachments/src/s3.ts";
 import { ToolPreviewBuffer, previewBytes } from "../packages/protocol/src/tool-preview.ts";
+import { checkOwnedGuestReceipt } from "./lib/live-cube-receipt.mjs";
 
 if (process.env.PI_CLOUD_LIVE_TOOL_PROGRESS_CHECK !== "1")
   throw new Error("Opt in with PI_CLOUD_LIVE_TOOL_PROGRESS_CHECK=1 (Luna tokens, Cube, browser)");
@@ -270,6 +271,12 @@ try {
       ),
       commandExecutions: tools.length,
     });
+    if (process.env.PI_CLOUD_LIVE_RECEIPT_CHECK === "1") {
+      report.receiptFault = await checkOwnedGuestReceipt({
+        tenantId: tenant.tenantId,
+        workspaceId: project.workspaceId,
+      });
+    }
     active = await api.acceptTurn(
       session.sessionId,
       '只调用一次 bash，逐字执行下面命令，不要后台运行或重定向，不要其他工具：python3 -u -c \'import time; [(print("\\r\\x1b[2KOBS_PROGRESS_%03d%%" % i, end="", flush=True), time.sleep(1)) for i in range(15)]; print("\\r\\x1b[2KOBS_PROGRESS_DONE")\'。执行完成后简短确认。',

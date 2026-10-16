@@ -44,3 +44,10 @@ observes about 5.3 MB incremental peak heap. The largest update is 1,759 bytes;
 this particular sample uses short lines. A separate injected oversized input
 retires its preview while the independent final collector retains `FLOOD_DONE`.
 These are bounded local samples, not fleet capacity or live VM acceptance.
+
+The first complete CI invocation passed native/allocation, Helm/installer and
+build gates, then caught a new test importing a React `.tsx` module into a backend
+package without JSX enabled. The browser's pure preview store is now a separate
+module shared by the renderer and chain test. This was a test dependency issue;
+the failed sample is retained, and affected build/check stages plus remaining CI
+gates must pass before preparation.

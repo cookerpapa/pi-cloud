@@ -1,5 +1,5 @@
 import { it, expect, vi } from "vitest";
-import { ToolProgressStore } from "../src/tool-progress.tsx";
+import { ToolProgressStore } from "../src/tool-progress-store.ts";
 import type { ToolProgress } from "@pi-cloud/protocol";
 it("keeps only mounted Tool observations, resets on reconnect and discards finished cards", () => {
   const store = new ToolProgressStore(),

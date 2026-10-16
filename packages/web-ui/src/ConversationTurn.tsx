@@ -7,7 +7,8 @@ import type { TranscriptItem, TurnView } from "./session-view.ts";
 import { compactToolSummary, ToolActivity, type ToolTranscriptItem } from "./ToolActivity.tsx";
 import { useI18n } from "./i18n.tsx";
 import { MessageCopyButton } from "./MessageCopyButton.tsx";
-import { ToolProgressContext, type ToolProgressStore } from "./tool-progress.tsx";
+import { ToolProgressContext } from "./tool-progress.tsx";
+import type { ToolProgressStore } from "./tool-progress-store.ts";
 import { RunStatus, type RunObservationStore } from "./RunStatus.tsx";
 
 const MAXIMUM_PROGRESSIVE_CHARACTERS_PER_FRAME = 32;

@@ -78,6 +78,23 @@ PI_CLOUD_LIVE_NATIVE_INPUT_CHECK=1 node --import tsx scripts/run-live-native-inp
 PI_CLOUD_LIVE_RELEASE_CHECK=1 node --import tsx scripts/run-live-release-acceptance.mjs
 ```
 
+For ADR-0252's guest/preview cutover, also run the maintained real-browser and
+native-receipt fault fixture on the current single-node deployment:
+
+```sh
+PI_CLOUD_LIVE_TOOL_PROGRESS_CHECK=1 PI_CLOUD_TOOL_PROGRESS_RESTART_CHECK=1 PI_CLOUD_LIVE_RECEIPT_CHECK=1 node --import tsx scripts/run-live-tool-progress-check.mjs /private/tool-preview.json
+```
+
+It checks incremental observations, a redrawing progress bar, browser reconnect,
+Control Plane replacement, silence, Stop and subsequent coding. The receipt case
+builds an operator helper from the exact patched native module, filters one reverse
+receipt between real native FIFOs in its owned VM, and checks both the result and
+a background HTTP server/sibling process. It adds no fault switch to production
+services and does not exercise publication admission through that helper; ordinary
+Run cases cover admission/Kafka. It requires one Ready Cubelet, compiles with the
+operator's Go toolchain and removes its helper after use. Workspace lifecycle
+purge must finish before owned account/configuration records are removed.
+
 The native-input driver checks same-Run continuation, durable edits and promotion,
 retry identity, and Stop restoration against the current schema. It waits for
 projected queue visibility after native ACK and for terminal seals before cleanup.
