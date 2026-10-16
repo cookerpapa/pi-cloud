@@ -49,12 +49,14 @@ try:
                 os.write(master, json.dumps(payload).encode() + b"\n")
             elif frame.get("type") == "worker.operation_result":
                 final = frame
-                if mode == "true":
+                if mode in ("true", "child-reserved"):
                     os.write(master, b'{"type":"scope.received"}\n')
+                elif mode == "invalid":
+                    os.write(master, b'{"type":"scope.received","extra":true}\n')
     code = child.wait(timeout=1)
     pathlib.Path(directory, "scope-" + mode + ".jsonl").write_text("\n".join(frames) + "\n")
     print(json.dumps({
-        "acknowledged": mode == "true", "exitCode": code,
+        "acknowledged": mode in ("true", "child-reserved"), "exitCode": code,
         "finalSucceeded": bool(final and not final["response"]["event"]["isError"]),
         "localFinishCompleted": finished.exists(),
         "scopeStopRequired": final["scopeStopRequired"] if final else None,

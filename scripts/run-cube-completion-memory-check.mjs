@@ -81,7 +81,7 @@ const frames = Readable.from(
         },
         result: {
           output: {
-            toolWorkerProtocolVersion: 6,
+            toolWorkerProtocolVersion: 7,
             type: "worker.operation_result",
             scopeStopRequired: false,
             response: {

@@ -1,12 +1,21 @@
-import { replacePod } from "./lib/production-kubernetes.mjs";
+import { replacePod, serviceAddress } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { resolve, dirname } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import { withChromePage } from "./lib/chrome-cdp.mjs";
 import { readWorkerModelTimings } from "./lib/live-run-timing.mjs";
+import { createDatabase } from "../packages/database/src/index.ts";
+import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
+import {
+  purgeOwnedAcceptanceTenant,
+  settleOwnedAcceptanceRuns,
+} from "./lib/owned-acceptance-cleanup.mjs";
+import { S3ImageBlobStore } from "../packages/session-attachments/src/s3.ts";
+import { ToolPreviewBuffer, previewBytes } from "../packages/protocol/src/tool-preview.ts";
 
 if (process.env.PI_CLOUD_LIVE_TOOL_PROGRESS_CHECK !== "1")
   throw new Error("Opt in with PI_CLOUD_LIVE_TOOL_PROGRESS_CHECK=1 (Luna tokens, Cube, browser)");
@@ -16,23 +25,25 @@ const port = (await readFile("deploy/production/runtime/.env", "utf8")).match(
 assert(port);
 const base = `http://127.0.0.1:${port}`,
   suffix = Date.now().toString(36);
-const username = `progress.${suffix}`,
-  password = `Progress ${suffix} !9`,
-  title = `Progress ${suffix}`;
-let cookie = "",
-  project,
-  session,
-  active,
-  stream;
+const title = `Progress ${suffix}`;
+const output = resolve(process.argv[2] ?? "dist/tool-progress-acceptance.json");
+await mkdir(dirname(output), { recursive: true, mode: 0o700 });
+const pg = new URL(
+  (await readFile("deploy/production/runtime/secrets/database-url", "utf8")).trim(),
+);
+pg.hostname = serviceAddress("postgres");
+const db = createDatabase({ connectionString: pg.toString(), maxConnections: 2 });
+let tenant, failure, project, session, active, stream;
 let snapshots = 0;
 const abort = new AbortController();
 const apiFetch = async (path, init = {}) => {
   const response = await fetch(new URL(path, base), {
     ...init,
-    headers: { ...Object.fromEntries(new Headers(init.headers)), ...(cookie ? { cookie } : {}) },
+    headers: {
+      ...Object.fromEntries(new Headers(init.headers)),
+      ...(tenant ? { authorization: `Bearer ${tenant.credential.token}` } : {}),
+    },
   });
-  for (const value of response.headers.getSetCookie())
-    if (value.startsWith("pi_cloud_session=")) cookie = value.split(";")[0];
   return response;
 };
 const api = new PiCloudApi(apiFetch),
@@ -43,21 +54,33 @@ const updates = [],
     checkedAt: new Date().toISOString(),
     model: "gpt-6-luna",
     accepted: false,
+    cleanupConfirmed: false,
     runs: [],
   };
+const views = new Map();
 const terminal = (run) => ["completed", "failed", "cancelled", "timed_out"].includes(run.state);
 async function waitRun(id, timeout = 180000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     const run = await api.getRun(id);
-    if (terminal(run)) return run;
+    if (terminal(run)) {
+      const row = await db
+        .selectFrom("runs")
+        .select(["output_seal_id", "output_sealed_at"])
+        .where("id", "=", id)
+        .executeTakeFirstOrThrow();
+      if (!row.output_seal_id || row.output_sealed_at) return run;
+    }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   throw new Error("Run did not settle");
 }
 try {
-  await api.registerAccount(username, title, password);
-  const identity = await api.getIdentity();
+  tenant = await createPrivateTenant(db, {
+    slug: `release-acceptance-progress-${suffix}`,
+    ownerDisplayName: title,
+    initialModel: { provider: "openai-codex", modelId: report.model },
+  });
   project = await api.createProject(title);
   session = await api.createSession(
     project.projectId,
@@ -69,42 +92,46 @@ try {
     { provider: "openai-codex", modelId: report.model, thinkingLevel: "low", fastMode: false },
   );
   // IDs retained privately for exact, owned metadata cleanup; not transcripts or credentials.
-  await writeFile(
-    ".cache/tool-progress-resources.json",
-    JSON.stringify({
-      username,
-      tenantId: identity.tenantId,
-      userId: identity.userId,
-      projectId: project.projectId,
-      workspaceId: project.workspaceId,
-      sessionId: session.sessionId,
-    }),
-    { mode: 0o600 },
-  );
+  report.resources = {
+    tenantId: tenant.tenantId,
+    projectId: project.projectId,
+    workspaceId: project.workspaceId,
+    sessionId: session.sessionId,
+  };
+  await writeFile(output, JSON.stringify(report, null, 2), { mode: 0o600 });
   stream = streamSessionEvents({
     sessionId: session.sessionId,
     signal: abort.signal,
     fetchImplementation: apiFetch,
     onSnapshot() {
       snapshots++;
+      views.clear();
     },
     onStatus() {},
     onEvent(event) {
       events.push(event);
     },
     onToolProgress(progress) {
-      updates.push({ ...progress, receivedAt: Date.now() });
+      let view = views.get(progress.operationId);
+      if (!view) {
+        view = new ToolPreviewBuffer();
+        views.set(progress.operationId, view);
+      }
+      view.accept(progress.update);
+      updates.push({
+        ...progress,
+        view: view.current,
+        wireBytes: Buffer.byteLength(JSON.stringify(progress)),
+        receivedAt: Date.now(),
+      });
     },
   });
   void stream.catch(() => {});
   await withChromePage({ height: 600 }, async (page) => {
+    await page.send("Network.setExtraHTTPHeaders", {
+      headers: { Authorization: "Bearer " + tenant.credential.token },
+    });
     await page.navigate(base);
-    assert.equal(
-      await page.evaluate(
-        `fetch('/v1/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(${JSON.stringify({ username, password })})}).then(r=>r.status)`,
-      ),
-      200,
-    );
     const select = async () => {
       await page.navigate(base);
       await page.waitFor(
@@ -118,7 +145,7 @@ try {
     const started = Date.now();
     active = await api.acceptTurn(
       session.sessionId,
-      '只执行一次 bash 工具，逐字使用以下命令，不要后台运行、不要重定向、不要子代理：python3 -u -c \'import time; print("x"*1500000); [(print("OBS_TICK_"+str(i), flush=True), time.sleep(1)) for i in range(50)]; print("OBS_DONE")\'。完成后简短确认。',
+      '只执行一次 bash 工具，逐字使用以下命令，不要后台运行、不要重定向、不要子代理：python3 -u -c \'import time; print("x"*100000); [(print("OBS_TICK_"+str(i), flush=True), time.sleep(1)) for i in range(50)]; print("OBS_DONE")\'。完成后简短确认。',
       newIdempotencyKey("live-progress"),
       "low",
     );
@@ -215,17 +242,73 @@ try {
     assert(Buffer.byteLength(JSON.stringify(tools[0].output)) < 65536);
     const sampled = updates.filter((u) => u.turnId === active.turnId);
     assert(sampled.length >= 3);
-    assert(sampled.every((u) => u.text.length <= 8192));
+    assert(sampled.every((u) => previewBytes(u.update.text) <= 8192 && u.wireBytes < 65536));
+    assert(
+      sampled.some((u) => u.update.kind === "delta"),
+      "No incremental preview reached SSE",
+    );
+    assert(
+      sampled.some((u) => u.update.kind === "reset"),
+      "No recovery snapshot reached SSE",
+    );
+    assert(
+      sampled.every((u) => !u.view?.unavailable),
+      "Ordinary output overloaded the preview parser",
+    );
     report.runs.push({
       kind: "continuous-output",
       elapsedMs: Date.now() - started,
       progressCount: sampled.length,
-      maximumProgressCharacters: Math.max(...sampled.map((u) => u.text.length)),
+      maximumPreviewBytes: Math.max(...sampled.map((u) => previewBytes(u.view?.text ?? ""))),
+      maximumWireBytes: Math.max(...sampled.map((u) => u.wireBytes)),
+      totalWireBytes: sampled.reduce((n, u) => n + u.wireBytes, 0),
+      deltaCount: sampled.filter((u) => u.update.kind === "delta").length,
+      resetCount: sampled.filter((u) => u.update.kind === "reset").length,
       modelTransportMs: (await readWorkerModelTimings([active.runId], started)).reduce(
         (sum, t) => sum + t.elapsedMs,
         0,
       ),
       commandExecutions: tools.length,
+    });
+    active = await api.acceptTurn(
+      session.sessionId,
+      '只调用一次 bash，逐字执行下面命令，不要后台运行或重定向，不要其他工具：python3 -u -c \'import time; [(print("\\r\\x1b[2KOBS_PROGRESS_%03d%%" % i, end="", flush=True), time.sleep(1)) for i in range(15)]; print("\\r\\x1b[2KOBS_PROGRESS_DONE")\'。执行完成后简短确认。',
+      newIdempotencyKey("terminal-preview"),
+      "low",
+    );
+    await page.waitFor("document.querySelector('.product-tool-progress button')", 60000);
+    await page.evaluate("document.querySelector('.product-tool-progress button').click()");
+    await page.waitFor(
+      "/OBS_PROGRESS_\\d{3}%/.test(document.querySelector('.product-tool-progress-tail')?.textContent ?? '')",
+      20000,
+    );
+    const bar = await page.evaluate(
+      "document.querySelector('.product-tool-progress-tail').textContent",
+    );
+    assert.equal(
+      (bar.match(/OBS_PROGRESS_/g) ?? []).length,
+      1,
+      "Progress bar labels were concatenated",
+    );
+    assert(
+      !bar.includes("\x1b") && !bar.includes("\r"),
+      "Terminal controls leaked into preview text",
+    );
+    await page.waitFor(
+      `(()=>{const text=document.querySelector('.product-tool-progress-tail')?.textContent;return text&&text!==${JSON.stringify(bar)}&&/OBS_PROGRESS_\\d{3}%/.test(text)})()`,
+      8000,
+    );
+    assert.equal((await waitRun(active.runId)).state, "completed");
+    const barTurn = (await api.getConversation(session.sessionId)).turns.find(
+      (t) => t.runId === active.runId,
+    );
+    const barTools = barTurn.transcript.items.filter((i) => i.kind === "tool");
+    assert.equal(barTools.length, 1);
+    assert(JSON.stringify(barTools[0].output).includes("OBS_PROGRESS_DONE"));
+    report.runs.push({
+      kind: "terminal-progress-bar",
+      commandExecutions: 1,
+      overwrittenInPlace: true,
     });
     const silentStart = Date.now();
     active = await api.acceptTurn(
@@ -280,24 +363,69 @@ try {
     });
   });
   report.accepted = true;
+} catch (error) {
+  failure = error;
+  report.failure = String(error?.message ?? error).slice(0, 600);
 } finally {
   abort.abort();
   await stream?.catch(() => {});
-  if (active && !terminal(await api.getRun(active.runId))) {
-    await api.cancelTurn(
-      session.sessionId,
-      active.turnId,
-      newIdempotencyKey("cleanup-progress-cancel"),
-    );
-    await waitRun(active.runId);
+  try {
+    if (session) {
+      const rows = await db
+        .selectFrom("runs")
+        .select(["id", "turn_id", "state"])
+        .where("session_id", "=", session.sessionId)
+        .execute();
+      await settleOwnedAcceptanceRuns(api, session.sessionId, rows, waitRun);
+      await api.deleteConversation(session.sessionId);
+    }
+    if (project) {
+      await api.deleteWorkspace(
+        project.workspaceId,
+        newIdempotencyKey("cleanup-progress-workspace"),
+      );
+      const deadline = Date.now() + 240000;
+      while (Date.now() < deadline) {
+        const workspace = await db
+          .selectFrom("workspaces")
+          .select("storage_purged_at")
+          .where("id", "=", project.workspaceId)
+          .executeTakeFirst();
+        const pending = await db
+          .selectFrom("outbox")
+          .select("id")
+          .where("tenant_id", "=", tenant.tenantId)
+          .where("published_at", "is", null)
+          .execute();
+        if (workspace?.storage_purged_at && !pending.length) break;
+        await new Promise((r) => setTimeout(r, 250));
+      }
+    }
+    if (tenant) {
+      const blobs = new S3ImageBlobStore({
+        endpoint: `http://${serviceAddress("session-images")}:8333`,
+        region: "us-east-1",
+        bucket: "pi-cloud-session-images",
+        ...JSON.parse(
+          await readFile(
+            "deploy/production/runtime/secrets/session-image-s3-credentials.json",
+            "utf8",
+          ),
+        ),
+      });
+      try {
+        report.cleanup = await purgeOwnedAcceptanceTenant(db, tenant, blobs);
+      } finally {
+        blobs.close();
+      }
+    }
+    report.cleanupConfirmed = true;
+  } catch (error) {
+    report.cleanupFailure = String(error?.message ?? error).slice(0, 600);
+    failure ??= error;
   }
-  if (session) await api.deleteConversation(session.sessionId);
-  if (project)
-    await api.deleteWorkspace(project.workspaceId, newIdempotencyKey("cleanup-progress-workspace"));
-  report.resourcesReleased = true;
-  await writeFile(
-    "docs/reports/tool-progress-acceptance-latest.json",
-    JSON.stringify(report, null, 2) + "\n",
-  );
+  await db.destroy();
+  await writeFile(output, JSON.stringify(report, null, 2) + "\n", { mode: 0o600 });
   console.log(JSON.stringify(report));
 }
+if (failure) throw failure;

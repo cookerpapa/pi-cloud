@@ -400,7 +400,7 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
       };
       if (request.type === "worker.initialize") {
         return this.#result({
-          toolWorkerProtocolVersion: 6,
+          toolWorkerProtocolVersion: 7,
           type: "worker.ready",
           activationId: initialization.activationId,
           environment: {
@@ -417,7 +417,7 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
       const operation = request.request as ToolSandboxOperationRequest;
       if (operation.operation !== "tool.execute") throw new Error("unexpected operation");
       const result = this.#result({
-        toolWorkerProtocolVersion: 6,
+        toolWorkerProtocolVersion: 7,
         type: "worker.operation_result",
         scopeStopRequired: false,
         response: {
@@ -1479,7 +1479,7 @@ describe("CubeSandbox Provider contract", () => {
       runtime.requestForCommand(input).type === "worker.initialize"
         ? {
             stdout: JSON.stringify({
-              toolWorkerProtocolVersion: 6,
+              toolWorkerProtocolVersion: 7,
               type: "worker.failed",
               code: "workspace_attach_invalid",
               message: "Preserved workspace could not be attached",

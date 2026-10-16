@@ -4,6 +4,7 @@ import type {
   RunObservation,
   InputQueueResource,
 } from "@pi-cloud/protocol";
+import { ToolPreviewChannel } from "@pi-cloud/protocol";
 
 export type SessionEventWake = {
   throughSequence: number | null;
@@ -24,7 +25,7 @@ export class SessionEventSubscription {
   #queuedWakes: SessionEventWake[] = [];
   #pendingRead: PendingRead | undefined;
   #closed = false;
-  readonly #progress = new Map<string, ToolProgress>();
+  readonly #progress = new Map<string, { header: ToolProgress; channel: ToolPreviewChannel }>();
   readonly #observations = new Map<string, RunObservation>();
   #inputQueue: InputQueueResource | undefined;
 
@@ -55,23 +56,52 @@ export class SessionEventSubscription {
     if (event.sessionId !== this.#sessionId) {
       throw new TypeError("Session event wake belongs to a different Session");
     }
+    if (
+      event.type === "tool.completed" ||
+      ["turn.completed", "turn.failed", "turn.cancelled"].includes(event.type)
+    )
+      for (const [id, preview] of this.#progress)
+        if (
+          preview.header.turnId === event.turnId &&
+          (event.type !== "tool.completed" ||
+            preview.header.toolCallId === event.payload.toolCallId)
+        )
+          this.#progress.delete(id);
     this.#push({ throughSequence: event.seq, event });
   }
 
   notifyProgress(progress: ToolProgress): void {
     if (this.#closed || this.#queuedWakes.some((wake) => wake.throughSequence === null)) return;
-    if (this.#pendingRead) {
-      const pending = this.#pendingRead;
-      this.#pendingRead = undefined;
-      pending.resolve({ throughSequence: null, progress });
-    } else {
-      // Slow readers keep a bounded newest snapshot, never an observation history.
+    if (progress.sessionId !== this.#sessionId)
+      throw new Error("Tool progress belongs to another Session");
+    let preview = this.#progress.get(progress.operationId);
+    if (!preview) {
       if (this.#progress.size >= 64 && !this.#progress.has(progress.operationId))
         this.#progress.delete(this.#progress.keys().next().value!);
-      const previous = this.#progress.get(progress.operationId);
-      if (!previous || progress.revision > previous.revision)
-        this.#progress.set(progress.operationId, progress);
+      preview = { header: progress, channel: new ToolPreviewChannel() };
+      this.#progress.set(progress.operationId, preview);
+    } else if (
+      preview.header.turnId !== progress.turnId ||
+      preview.header.toolCallId !== progress.toolCallId
+    )
+      return;
+    try {
+      if (!preview.channel.accept(progress.update)) return;
+    } catch {
+      return;
     }
+    preview.header = progress;
+    if (this.#pendingRead) {
+      const update = preview.channel.take();
+      if (!update) return;
+      const pending = this.#pendingRead;
+      this.#pendingRead = undefined;
+      pending.resolve({ throughSequence: null, progress: { ...progress, update } });
+    }
+  }
+
+  forgetProgress(operationId: string): void {
+    this.#progress.delete(operationId);
   }
 
   notifyObservation(observation: RunObservation): void {
@@ -130,10 +160,10 @@ export class SessionEventSubscription {
       this.#observations.delete(observation[0]);
       return Promise.resolve({ throughSequence: null, observation: observation[1] });
     }
-    const progress = this.#progress.values().next().value;
-    if (progress) {
-      this.#progress.delete(progress.operationId);
-      return Promise.resolve({ throughSequence: null, progress });
+    for (const preview of this.#progress.values()) {
+      const update = preview.channel.take();
+      if (update)
+        return Promise.resolve({ throughSequence: null, progress: { ...preview.header, update } });
     }
     if (this.#closed) return Promise.resolve(undefined);
     if (this.#pendingRead !== undefined) {

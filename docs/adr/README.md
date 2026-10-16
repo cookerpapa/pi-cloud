@@ -1,10 +1,11 @@
 # Current architecture decisions
 
-[ADR-0252](0252-tool-receipt-and-ephemeral-preview.md) is a **proposal**, not a
-deployed contract: receipt-only failure classification, source terminal-aware
-previews and bounded delta/reset delivery over existing HTTP/SSE. Its library
-study and isolated parser/bundling evidence do not replace implementation or
-matched live acceptance. The serving guest 6 contract remains ADR-0251 below.
+[ADR-0252](0252-tool-receipt-and-ephemeral-preview.md) is accepted and implemented
+in source: receipt-only failure classification, source terminal-aware previews
+and bounded delta/reset delivery over existing HTTP/SSE. The
+[delivery record](../reports/tool-receipt-preview-repair-20261016.md) separates
+source checks from pending matched/live acceptance. The serving guest 6 contract
+remains ADR-0251 until that cutover completes.
 
 [ADR-0251](0251-guest-attachment-and-execution-bounds.md) is the deployed guest
 execution repair: bounded native cleanup/startup, native Read path parity and

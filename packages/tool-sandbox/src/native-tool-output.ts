@@ -21,8 +21,10 @@ export class NativeToolOutput {
   constructor(maximumBytes = DEFAULT_MAX_BYTES) {
     this.#maximumBytes = Math.min(maximumBytes, DEFAULT_MAX_BYTES);
   }
-  append(stream: "stdout" | "stderr", bytes: Buffer): void {
-    this.#append(this.#decoders[stream].write(bytes));
+  append(stream: "stdout" | "stderr", bytes: Buffer): string {
+    const decoded = this.#decoders[stream].write(bytes);
+    this.#append(decoded);
+    return decoded;
   }
   finish(): void {
     this.#append(this.#decoders.stdout.end());

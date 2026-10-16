@@ -30,7 +30,7 @@ function fixture() {
     context,
     result: {
       output: {
-        toolWorkerProtocolVersion: 6,
+        toolWorkerProtocolVersion: 7,
         type: "worker.operation_result",
         scopeStopRequired: false,
         response: {
@@ -149,15 +149,11 @@ it("keeps progress lossy and outside the final-result channel", async () => {
     ...f.packet,
     kind: "progress",
     output: {
+      type: "worker.preview",
       operationId: f.packet.operationId,
-      sequence: 3,
-      event: {
-        type: "tool_execution_update",
-        toolCallId: "native-call",
-        toolName: "read",
-        args: {},
-        partialResult: { content: [{ type: "text", text: "working" }] },
-      },
+      toolCallId: "native-call",
+      toolName: "read",
+      update: { kind: "reset", revision: 3, text: "working" },
     },
   });
   expect(f.progress.update).toHaveBeenCalledOnce();
@@ -192,7 +188,7 @@ it.each(["workspace_attach_invalid", "tool_worker_failed"])(
   async (code) => {
     const f = fixture();
     f.packet.result!.output = {
-      toolWorkerProtocolVersion: 6,
+      toolWorkerProtocolVersion: 7,
       type: "worker.failed",
       code,
       message: "Guest preparation failed",

@@ -194,7 +194,11 @@ describe("interactive workflow replies without completed-result retention", () =
       expect.objectContaining({
         tenantId: c.scope.tenantId,
         partition: 0,
-        progress: expect.objectContaining({ toolCallId: c.toolCallId, text: "working" }),
+        progress: expect.objectContaining({
+          toolCallId: c.toolCallId,
+          version: 2,
+          update: { kind: "reset", revision: 1, text: "working" },
+        }),
       }),
     );
     expect(f.forget).toHaveBeenCalledWith(c.request.operationId);

@@ -9,7 +9,7 @@ import { createBashTool, createEditTool, createReadTool } from "@earendil-works/
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { executeNativeTool, type NativeToolRequest } from "../src/native-tools.ts";
 import { NativeToolOutput } from "../src/native-tool-output.ts";
-import type { NativeToolUpdate } from "@pi-cloud/protocol";
+import type { ToolPreviewUpdate } from "@pi-cloud/protocol";
 import sharp from "sharp";
 
 const directories: string[] = [];
@@ -544,11 +544,11 @@ describe("whole native tools at the execution source", () => {
   });
   it("observes a long noisy command at most once per second and never after completion", async () => {
     const cwd = await directory();
-    const updates: NativeToolUpdate[] = [];
+    const updates: ToolPreviewUpdate[] = [];
     const result = await executeNativeTool(
       request("bash", {
         command:
-          'python3 -u -c \'import time; [(print("x"*100000), time.sleep(.1)) for _ in range(23)]; print("DONE")\'',
+          'python3 -u -c \'import time; [(print("x"*100000 + str(i)), time.sleep(.1)) for i in range(23)]; print("DONE")\'',
       }),
       cwd,
       new AbortController().signal,
@@ -557,16 +557,14 @@ describe("whole native tools at the execution source", () => {
     expect(result.isError).toBe(false);
     expect(updates.length).toBeGreaterThanOrEqual(2);
     expect(updates.length).toBeLessThanOrEqual(3);
-    expect(
-      updates.every((event) => Buffer.byteLength(JSON.stringify(event.partialResult)) < 110000),
-    ).toBe(true);
+    expect(updates.every((event) => Buffer.byteLength(JSON.stringify(event)) < 65536)).toBe(true);
     expect(JSON.stringify(result.result)).toContain("DONE");
     const count = updates.length;
     await new Promise((resolve) => setTimeout(resolve, 1100));
     expect(updates).toHaveLength(count);
   });
   it("finishes a silent long command without requiring observation heartbeats", async () => {
-    const updates: NativeToolUpdate[] = [];
+    const updates: ToolPreviewUpdate[] = [];
     const result = await executeNativeTool(
       request("bash", { command: "sleep 1.2" }),
       await directory(),
@@ -575,6 +573,18 @@ describe("whole native tools at the execution source", () => {
     );
     expect(result.isError).toBe(false);
     expect(updates).toEqual([]);
+  });
+  it("preserves the final command result when the preview observer throws", async () => {
+    const result = await executeNativeTool(
+      request("bash", { command: "printf observed; sleep 1.2; printf complete" }),
+      await directory(),
+      new AbortController().signal,
+      () => {
+        throw new Error("preview unavailable");
+      },
+    );
+    expect(result.isError).toBe(false);
+    expect(JSON.stringify(result.result)).toContain("observedcomplete");
   });
   it("bounds cancellation and does not treat partial output as success", async () => {
     const cwd = await directory();

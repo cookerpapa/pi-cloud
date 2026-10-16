@@ -884,7 +884,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         await this.#guestJson(
           instance,
           {
-            toolWorkerProtocolVersion: 6,
+            toolWorkerProtocolVersion: 7,
             type: "worker.initialize",
             activationId: spec.activationId,
             toolRoot,

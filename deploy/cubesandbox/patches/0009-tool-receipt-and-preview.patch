@@ -1,0 +1,604 @@
+diff --git a/Cubelet/pkg/execution/containerd.go b/Cubelet/pkg/execution/containerd.go
+index 9af1819..a2bda69 100644
+--- a/Cubelet/pkg/execution/containerd.go
++++ b/Cubelet/pkg/execution/containerd.go
+@@ -20,6 +20,22 @@ import (
+ 
+ const guestScopeProgram = "/opt/pi-cloud/bin/cube-tool-scope.mjs"
+ const finalCleanupKillTimeout = 5 * time.Second
++const scopeReceiptUnconfirmed uint32 = 76
++const toolSettlementTimeout = 7 * time.Second
++
++type resultHeader struct {
++	Type                      string `json:"type"`
++	OperationID               string `json:"operationId"`
++	ToolWorkerProtocolVersion int    `json:"toolWorkerProtocolVersion"`
++	ScopeStopRequired         *bool  `json:"scopeStopRequired"`
++	Response                  struct {
++		Type        string `json:"type"`
++		OperationID string `json:"operationId"`
++	} `json:"response"`
++	ProbeID string `json:"probeId"`
++	Code    string `json:"code"`
++	Empty   bool   `json:"empty"`
++}
+ 
+ type ResolvedTask struct {
+ 	Task      containerd.Task
+@@ -37,16 +53,18 @@ func (d *ContainerdDriver) HasRuntime(sandbox string) bool {
+ }
+ 
+ type toolOutput struct {
+-	mu        sync.Mutex
+-	line      []byte
+-	result    json.RawMessage
+-	limit     int64
+-	failed    chan struct{}
+-	once      sync.Once
+-	ready     chan struct{}
+-	complete  chan struct{}
+-	readyOnce sync.Once
+-	progress  func(json.RawMessage)
++	mu          sync.Mutex
++	line        []byte
++	result      json.RawMessage
++	header      resultHeader
++	completedAt time.Time
++	limit       int64
++	failed      chan struct{}
++	once        sync.Once
++	ready       chan struct{}
++	complete    chan struct{}
++	readyOnce   sync.Once
++	progress    func(json.RawMessage)
+ }
+ 
+ func (o *toolOutput) Write(p []byte) (int, error) {
+@@ -67,10 +85,7 @@ func (o *toolOutput) Write(p []byte) (int, error) {
+ 		if n < 0 {
+ 			return size, nil
+ 		}
+-		var marker struct {
+-			Type        string `json:"type"`
+-			OperationID string `json:"operationId"`
+-		}
++		var marker resultHeader
+ 		if json.Unmarshal(o.line, &marker) != nil {
+ 			o.once.Do(func() { close(o.failed) })
+ 			return 0, errors.New("invalid tool output")
+@@ -85,9 +100,11 @@ func (o *toolOutput) Write(p []byte) (int, error) {
+ 			// Hand the complete immutable frame to the result. Reusing line's
+ 			// backing array would corrupt it; copying it would double each image.
+ 			o.result = o.line
++			o.header = marker
++			o.completedAt = time.Now()
+ 			o.line = nil
+ 			close(o.complete)
+-		} else if marker.OperationID != "" && len(o.line) <= 64*1024 {
++		} else if marker.Type == "worker.preview" && marker.OperationID != "" && len(o.line) <= 64*1024 {
+ 			o.progress(append(json.RawMessage(nil), o.line...))
+ 		}
+ 		o.line = o.line[:0]
+@@ -102,6 +119,81 @@ func (o *toolOutput) resultBytes() json.RawMessage {
+ 	return o.result
+ }
+ 
++func (o *toolOutput) finish() {
++	o.mu.Lock()
++	defer o.mu.Unlock()
++	if len(o.line) != 0 {
++		o.once.Do(func() { close(o.failed) })
++	}
++}
++
++func (o *toolOutput) resultState() (resultHeader, time.Time) {
++	o.mu.Lock()
++	defer o.mu.Unlock()
++	return o.header, o.completedAt
++}
++
++func validResult(h resultHeader, r Request) bool {
++	if r.Probe {
++		return h.Type == "worker.probe_result" && h.ProbeID == r.OperationID
++	}
++	if h.ToolWorkerProtocolVersion != 7 {
++		return false
++	}
++	if h.Type == "worker.failed" {
++		return h.Code != ""
++	}
++	return h.Type == "worker.operation_result" && h.ScopeStopRequired != nil &&
++		h.Response.OperationID == r.OperationID &&
++		(h.Response.Type == "tool_sandbox.operation_result" || h.Response.Type == "tool_sandbox.operation_failed")
++}
++
++func settledScopeExit(code uint32) bool { return code == 0 || code == scopeReceiptUnconfirmed }
++
++// A complete frame observed within the execution budget starts a separate,
++// bounded join. Deadline/result select ordering must not cancel completed work.
++func waitToolExit(ctx context.Context, r Request, output *toolOutput, exits <-chan containerd.ExitStatus) (containerd.ExitStatus, bool, string) {
++	complete := output.complete
++	for {
++		h, at := output.resultState()
++		if !at.IsZero() {
++			if !validResult(h, r) {
++				return containerd.ExitStatus{}, false, "tool_output_invalid"
++			}
++			complete = nil
++			deadline, bounded := ctx.Deadline()
++			if !r.Probe && ctx.Err() != context.Canceled && (!bounded || !at.After(deadline)) {
++				settle, end := context.WithTimeout(context.WithoutCancel(ctx), toolSettlementTimeout)
++				defer end()
++				select {
++				case status, ok := <-exits:
++					return status, ok && status.Error() == nil, ""
++				case <-output.failed:
++					return containerd.ExitStatus{}, false, "tool_output_invalid"
++				case <-settle.Done():
++					return containerd.ExitStatus{}, false, "tool_settlement_unconfirmed"
++				}
++			}
++		}
++		select {
++		case status, ok := <-exits:
++			return status, ok && status.Error() == nil, ""
++		case <-output.failed:
++			return containerd.ExitStatus{}, false, "tool_output_invalid"
++		case <-complete:
++			continue
++		case <-ctx.Done():
++			// Recheck a frame that raced this select before deciding to stop it.
++			_, arrived := output.resultState()
++			deadline, bounded := ctx.Deadline()
++			if !r.Probe && ctx.Err() != context.Canceled && !arrived.IsZero() && bounded && !arrived.After(deadline) {
++				continue
++			}
++			return containerd.ExitStatus{}, false, "tool_cancelled"
++		}
++	}
++}
++
+ type boundedOutput struct {
+ 	mu     sync.Mutex
+ 	buffer bytes.Buffer
+@@ -207,22 +299,13 @@ func (d *ContainerdDriver) Run(ctx context.Context, r Request, progress func(jso
+ 	start, endStart := context.WithTimeout(startParent, 10*time.Second)
+ 	err = process.Start(start)
+ 	endStart()
+-	interrupted := err != nil || ctx.Err() != nil
++	interrupted := err != nil
+ 	failure := ""
+ 	var exit containerd.ExitStatus
+ 	joined := false
+ 	if !interrupted {
+-		select {
+-		case status, ok := <-exits:
+-			exit = status
+-			joined = ok && status.Error() == nil
+-		case <-ctx.Done():
+-			interrupted = true
+-			failure = "tool_cancelled"
+-		case <-output.failed:
+-			interrupted = true
+-			failure = "tool_output_invalid"
+-		}
++		exit, joined, failure = waitToolExit(ctx, r, output, exits)
++		interrupted = failure != ""
+ 	}
+ 	if interrupted {
+ 		if failure == "" {
+@@ -243,6 +326,7 @@ func (d *ContainerdDriver) Run(ctx context.Context, r Request, progress func(jso
+ 		process.IO().Cancel()
+ 		<-ioDone
+ 	}
++	output.finish()
+ 	data := output.resultBytes()
+ 	select {
+ 	case <-output.failed:
+@@ -250,13 +334,10 @@ func (d *ContainerdDriver) Run(ctx context.Context, r Request, progress func(jso
+ 		failure = "tool_output_invalid"
+ 	default:
+ 	}
+-	var marker struct {
+-		ScopeStopRequired bool `json:"scopeStopRequired"`
+-	}
+-	if len(data) > 0 {
+-		_ = json.Unmarshal(data, &marker)
+-	}
+-	if !r.Probe && (interrupted || marker.ScopeStopRequired || exit.ExitCode() != 0 || len(data) == 0) {
++	marker, _ := output.resultState()
++	valid := validResult(marker, r)
++	scopeStop := marker.ScopeStopRequired != nil && *marker.ScopeStopRequired
++	if !r.Probe && (interrupted || scopeStop || !settledScopeExit(exit.ExitCode()) || !valid) {
+ 		if err := d.stopGroup(context.WithoutCancel(ctx), task, processSpec, r.OperationID); err != nil {
+ 			return Result{Failure: "tool_scope_stop_unconfirmed", Quarantine: true}
+ 		}
+@@ -264,7 +345,7 @@ func (d *ContainerdDriver) Run(ctx context.Context, r Request, progress func(jso
+ 	if interrupted {
+ 		return Result{Failure: failure}
+ 	}
+-	if exit.ExitCode() != 0 || len(data) == 0 {
++	if !settledScopeExit(exit.ExitCode()) || !valid {
+ 		return Result{Failure: "tool_result_unknown"}
+ 	}
+ 	return Result{Output: data}
+@@ -291,6 +372,9 @@ func stopMain(ctx context.Context, p containerd.Process, exits <-chan containerd
+ func (d *ContainerdDriver) stopGroup(ctx context.Context, task containerd.Task, spec specs.Process, id string) error {
+ 	ctx, end := context.WithTimeout(ctx, 8*time.Second)
+ 	defer end()
++	// Keep exit observation alive through the existing final cleanup budget.
++	lifetime, endLifetime := context.WithTimeout(context.WithoutCancel(ctx), 8*time.Second+finalCleanupKillTimeout)
++	defer endLifetime()
+ 	spec.Args = []string{"/usr/local/bin/node", guestScopeProgram, "stop", id}
+ 	output := newToolOutput(8192, func(json.RawMessage) {})
+ 	input, endInput := rawTerminalInput(ctx, output, nil, "", nil)
+@@ -299,38 +383,64 @@ func (d *ContainerdDriver) stopGroup(ctx context.Context, task containerd.Task,
+ 	if err != nil {
+ 		return err
+ 	}
+-	defer func() { p.IO().Cancel(); _ = p.IO().Close(); _, _ = p.Delete(ctx) }()
+-	exits, err := p.Wait(ctx)
++	defer func() {
++		p.IO().Cancel()
++		_ = p.IO().Close()
++		remove, endRemove := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
++		defer endRemove()
++		_, _ = p.Delete(remove)
++	}()
++	exits, err := p.Wait(lifetime)
+ 	if err != nil {
+ 		return err
+ 	}
+ 	if err = p.Start(ctx); err != nil {
+ 		return err
+ 	}
++	var exit containerd.ExitStatus
++	joined := false
+ 	select {
+ 	case status, ok := <-exits:
+-		if !ok || status.Error() != nil || status.ExitCode() != 0 {
+-			return errors.New("scope cleanup failed")
+-		}
++		exit, joined = status, ok && status.Error() == nil
+ 	case <-ctx.Done():
+ 		kill, endKill := context.WithTimeout(context.WithoutCancel(ctx), finalCleanupKillTimeout)
+-		_ = p.Kill(kill, syscall.SIGKILL)
+-		endKill()
+-		return ctx.Err()
++		defer endKill()
++		header, at := output.resultState()
++		deadline, bounded := ctx.Deadline()
++		if header.Type == "scope.stop_result" && header.Empty && !at.IsZero() && (!bounded || !at.After(deadline)) {
++			// Expired input releases a receipt waiter; join it before signalling.
++			grace := time.NewTimer(250 * time.Millisecond)
++			select {
++			case status, ok := <-exits:
++				exit, joined = status, ok && status.Error() == nil
++			case <-grace.C:
++			}
++			grace.Stop()
++		}
++		if !joined {
++			_ = p.Kill(kill, syscall.SIGKILL)
++			return ctx.Err()
++		}
++	}
++	if !joined || !settledScopeExit(exit.ExitCode()) {
++		return errors.New("scope cleanup failed")
+ 	}
+ 	drained := make(chan struct{})
+ 	go func() { p.IO().Wait(); close(drained) }()
+ 	select {
+ 	case <-drained:
+-	case <-ctx.Done():
++	case <-time.After(time.Second):
+ 		p.IO().Cancel()
+ 		<-drained
+-		return ctx.Err()
+ 	}
+-	var result struct {
+-		Empty bool `json:"empty"`
++	output.finish()
++	select {
++	case <-output.failed:
++		return errors.New("invalid scope stopping proof")
++	default:
+ 	}
+-	if json.Unmarshal(output.resultBytes(), &result) != nil || !result.Empty {
++	result, _ := output.resultState()
++	if result.Type != "scope.stop_result" || !result.Empty {
+ 		return errors.New("scope empty proof missing")
+ 	}
+ 	return nil
+diff --git a/Cubelet/pkg/execution/containerd_completion_test.go b/Cubelet/pkg/execution/containerd_completion_test.go
+new file mode 100644
+index 0000000..0f6bf10
+--- /dev/null
++++ b/Cubelet/pkg/execution/containerd_completion_test.go
+@@ -0,0 +1,242 @@
++package execution
++
++import (
++	"bufio"
++	"context"
++	"encoding/json"
++	"fmt"
++	"os"
++	"strings"
++	"sync/atomic"
++	"syscall"
++	"testing"
++	"time"
++
++	containerd "github.com/containerd/containerd/v2/client"
++	"github.com/containerd/containerd/v2/pkg/cio"
++	"github.com/opencontainers/runtime-spec/specs-go"
++)
++
++func completedFrame(r Request, stop bool) []byte {
++	data, _ := json.Marshal(map[string]interface{}{
++		"type": "worker.operation_result", "toolWorkerProtocolVersion": 7,
++		"scopeStopRequired": stop,
++		"response":          map[string]interface{}{"type": "tool_sandbox.operation_result", "operationId": r.OperationID},
++	})
++	return append(data, '\n')
++}
++
++type completionProcess struct {
++	containerd.Process
++	t           *testing.T
++	io          cio.IO
++	frames      []byte
++	code        uint32
++	receipt     bool
++	exits       chan containerd.ExitStatus
++	kills       atomic.Int32
++	exitDelay   time.Duration
++	waitContext context.Context
++}
++
++func (p *completionProcess) Start(context.Context) error {
++	go func() {
++		defer func() {
++			time.Sleep(p.exitDelay)
++			p.exits <- *containerd.NewExitStatus(p.code, time.Now(), p.waitContext.Err())
++			close(p.exits)
++		}()
++		out, err := os.OpenFile(p.io.Config().Stdout, os.O_WRONLY, 0)
++		if err != nil {
++			p.t.Error(err)
++			return
++		}
++		defer out.Close()
++		if _, err := out.Write(p.frames); err != nil {
++			return
++		}
++		if !p.receipt {
++			return
++		}
++		in, err := os.OpenFile(p.io.Config().Stdin, os.O_RDONLY, 0)
++		if err != nil {
++			p.t.Error(err)
++			return
++		}
++		defer in.Close()
++		scan := bufio.NewScanner(in)
++		for scan.Scan() {
++			if scan.Text() == `{"type":"scope.received"}` {
++				return
++			}
++		}
++	}()
++	return nil
++}
++func (p *completionProcess) Wait(ctx context.Context) (<-chan containerd.ExitStatus, error) {
++	p.waitContext = ctx
++	return p.exits, nil
++}
++func (p *completionProcess) Kill(context.Context, syscall.Signal, ...containerd.KillOpts) error {
++	p.kills.Add(1)
++	return nil
++}
++func (p *completionProcess) IO() cio.IO { return p.io }
++func (p *completionProcess) Delete(context.Context, ...containerd.ProcessDeleteOpts) (*containerd.ExitStatus, error) {
++	return containerd.NewExitStatus(p.code, time.Now(), nil), nil
++}
++
++type completionTask struct {
++	containerd.Task
++	t                *testing.T
++	frames           []byte
++	code             uint32
++	receipt          bool
++	cleanupCode      uint32
++	cleanups         int
++	cleanupExitDelay time.Duration
++}
++
++func (t *completionTask) Spec(context.Context) (*specs.Spec, error) {
++	return &specs.Spec{Process: &specs.Process{}}, nil
++}
++func (t *completionTask) Exec(_ context.Context, id string, _ *specs.Process, creator cio.Creator) (containerd.Process, error) {
++	output, err := creator(id)
++	if err != nil {
++		return nil, err
++	}
++	frames, code, receipt := t.frames, t.code, t.receipt
++	if strings.HasPrefix(id, "ps-") {
++		t.cleanups++
++		frames = []byte("{\"type\":\"scope.ready\"}\n{\"type\":\"scope.stop_result\",\"empty\":true}\n")
++		code, receipt = t.cleanupCode, true
++	}
++	return &completionProcess{t: t.t, io: output, frames: frames, code: code, receipt: receipt, exits: make(chan containerd.ExitStatus, 1), exitDelay: t.cleanupExitDelay}, nil
++}
++
++func TestCompletedScopeReceiptOutcomes(t *testing.T) {
++	for _, c := range []struct {
++		name                                  string
++		code                                  uint32
++		stop, badIdentity, partial, duplicate bool
++		wantOutput                            bool
++		cleanups                              int
++	}{
++		{"normal", 0, false, false, false, false, true, 0},
++		{"receipt_lost", scopeReceiptUnconfirmed, false, false, false, false, true, 0},
++		{"child_or_bookkeeping_failed", 1, false, false, false, false, false, 1},
++		{"timeout_cleanup_receipt_lost", scopeReceiptUnconfirmed, true, false, false, false, true, 1},
++		{"wrong_identity", scopeReceiptUnconfirmed, false, true, false, false, false, 1},
++		{"partial_trailer", scopeReceiptUnconfirmed, false, false, true, false, false, 1},
++		{"duplicate_final", scopeReceiptUnconfirmed, false, false, false, true, false, 1},
++	} {
++		t.Run(c.name, func(t *testing.T) {
++			r := request()
++			frame := completedFrame(r, c.stop)
++			if c.badIdentity {
++				other := request()
++				frame = completedFrame(other, false)
++			}
++			frames := append([]byte("{\"type\":\"scope.ready\"}\n"), frame...)
++			if c.partial {
++				frames = append(frames, []byte(`{"unfinished":`)...)
++			}
++			if c.duplicate {
++				frames = append(frames, frame...)
++			}
++			task := &completionTask{t: t, frames: frames, code: c.code, receipt: !c.badIdentity && !c.partial && !c.duplicate, cleanupCode: scopeReceiptUnconfirmed}
++			driver := &ContainerdDriver{FIFODirectory: t.TempDir(), Resolve: func(context.Context, Request) (ResolvedTask, error) {
++				return ResolvedTask{Task: task, Namespace: "completion-test"}, nil
++			}}
++			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
++			defer cancel()
++			result := driver.Run(ctx, r, func(json.RawMessage) {})
++			if (len(result.Output) > 0) != c.wantOutput || task.cleanups != c.cleanups || result.Quarantine {
++				t.Fatalf("result=%+v cleanups=%d", result, task.cleanups)
++			}
++		})
++	}
++}
++
++func TestCompletedFrameGetsBoundedSettlementAfterExecutionDeadline(t *testing.T) {
++	r := request()
++	output := newToolOutput(4096, func(json.RawMessage) {})
++	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
++	defer cancel()
++	if _, err := output.Write(completedFrame(r, false)); err != nil {
++		t.Fatal(err)
++	}
++	<-ctx.Done()
++	exits := make(chan containerd.ExitStatus, 1)
++	go func() {
++		time.Sleep(20 * time.Millisecond)
++		exits <- *containerd.NewExitStatus(scopeReceiptUnconfirmed, time.Now(), nil)
++	}()
++	status, joined, failure := waitToolExit(ctx, r, output, exits)
++	if !joined || failure != "" || status.ExitCode() != scopeReceiptUnconfirmed {
++		t.Fatalf("joined=%t failure=%s", joined, failure)
++	}
++}
++
++func TestLateFrameOrCancelledContextDoesNotAcquireSettlementGrace(t *testing.T) {
++	for _, mode := range []string{"late_frame", "context_cancelled", "probe_deadline"} {
++		t.Run(mode, func(t *testing.T) {
++			r := request()
++			output := newToolOutput(4096, func(json.RawMessage) {})
++			ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
++			defer cancel()
++			if mode == "context_cancelled" {
++				cancel()
++			} else {
++				<-ctx.Done()
++			}
++			frame := completedFrame(r, false)
++			if mode == "probe_deadline" {
++				r.Probe = true
++				frame = []byte(fmt.Sprintf("{\"type\":\"worker.probe_result\",\"probeId\":%q}\n", r.OperationID))
++			}
++			if _, err := output.Write(frame); err != nil {
++				t.Fatal(err)
++			}
++			_, joined, failure := waitToolExit(ctx, r, output, make(chan containerd.ExitStatus))
++			if joined || failure != "tool_cancelled" {
++				t.Fatalf("joined=%t failure=%s", joined, failure)
++			}
++		})
++	}
++}
++
++func TestScopeReceiptCodeRequiresCompleteValidResult(t *testing.T) {
++	for _, frame := range []string{`{"type":"worker.operation_result"}`, `{"type":"scope.stop_result","empty":true}`} {
++		var h resultHeader
++		if err := json.Unmarshal([]byte(frame), &h); err != nil {
++			t.Fatal(err)
++		}
++		if validResult(h, request()) {
++			t.Fatal("accepted missing/wrong result proof")
++		}
++	}
++}
++
++func TestCompleteFrameDoesNotGrantUnboundedSettlement(t *testing.T) {
++	r := request()
++	output := newToolOutput(4096, func(json.RawMessage) {})
++	if _, err := output.Write(completedFrame(r, false)); err != nil {
++		t.Fatal(err)
++	}
++	started := time.Now()
++	_, joined, failure := waitToolExit(context.Background(), r, output, make(chan containerd.ExitStatus))
++	if joined || failure != "tool_settlement_unconfirmed" || time.Since(started) > 9*time.Second {
++		t.Fatalf("unbounded or false settlement: joined=%t failure=%s", joined, failure)
++	}
++}
++
++func TestStopProofSurvivesReceiptExitJustAfterDeadline(t *testing.T) {
++	task := &completionTask{t: t, cleanupCode: scopeReceiptUnconfirmed, cleanupExitDelay: 400 * time.Millisecond}
++	driver := &ContainerdDriver{FIFODirectory: t.TempDir()}
++	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
++	defer cancel()
++	if err := driver.stopGroup(ctx, task, specs.Process{}, request().OperationID); err != nil {
++		t.Fatalf("lost a completed scope proof to receipt deadline: %v", err)
++	}
++}
+diff --git a/Cubelet/pkg/execution/delivery_process.go b/Cubelet/pkg/execution/delivery_process.go
+index 7c79dc3..de0f877 100644
+--- a/Cubelet/pkg/execution/delivery_process.go
++++ b/Cubelet/pkg/execution/delivery_process.go
+@@ -124,7 +124,7 @@ func (p *ProcessDelivery) ensure() (*adapterProcess, error) {
+ 			if json.Unmarshal(scanner.Bytes(), &reply) != nil {
+ 				break
+ 			}
+-			if reply.Type == "ready" && reply.ProtocolVersion == 2 {
++			if reply.Type == "ready" && reply.ProtocolVersion == 3 {
+ 				child.accepting.Store(true)
+ 				child.readyOnce.Do(func() { close(child.ready) })
+ 				continue
+diff --git a/Cubelet/pkg/execution/delivery_process_test.go b/Cubelet/pkg/execution/delivery_process_test.go
+index d415e26..5c787cd 100644
+--- a/Cubelet/pkg/execution/delivery_process_test.go
++++ b/Cubelet/pkg/execution/delivery_process_test.go
+@@ -22,7 +22,11 @@ func TestDeliveryPlugin(t *testing.T) {
+ 	if mode == "no-ready" {
+ 		os.Exit(2)
+ 	}
+-	fmt.Println(`{"type":"ready","protocolVersion":2}`)
++	if mode == "old-ready" {
++		fmt.Println(`{"type":"ready","protocolVersion":2}`)
++	} else {
++		fmt.Println(`{"type":"ready","protocolVersion":3}`)
++	}
+ 	scanner := bufio.NewScanner(os.Stdin)
+ 	for scanner.Scan() {
+ 		if mode == "disconnect" {
+@@ -80,3 +84,13 @@ func TestMissingReadinessCannotAdvertiseExecution(t *testing.T) {
+ 		t.Fatal("failed plugin advertised ready")
+ 	}
+ }
++
++func TestOldPreviewAdapterCannotAdvertiseExecution(t *testing.T) {
++	p := plugin("old-ready")
++	defer p.Close()
++	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
++	defer cancel()
++	if p.EnsureReady(ctx) == nil || p.Ready() {
++		t.Fatal("old adapter advertised readiness for the new preview protocol")
++	}
++}

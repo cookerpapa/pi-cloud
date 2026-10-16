@@ -1,7 +1,9 @@
 import {
   parseToolWorkerInput,
   type ToolWorkerOutput,
-  type NativeToolUpdate,
+  ToolPreviewChannel,
+  TOOL_PREVIEW_FRAME_BYTES,
+  type ToolPreviewUpdate,
   type ToolSandboxOperationResponse,
 } from "@pi-cloud/protocol/guest";
 import { executeAttachedNativeTool } from "./native-tools.ts";
@@ -38,7 +40,7 @@ async function main(): Promise<ToolWorkerOutput> {
   if (input.type === "worker.initialize") {
     const environment = await initializeToolExecution(input);
     return {
-      toolWorkerProtocolVersion: 6,
+      toolWorkerProtocolVersion: 7,
       type: "worker.ready",
       activationId: input.activationId,
       environment,
@@ -52,28 +54,47 @@ async function main(): Promise<ToolWorkerOutput> {
     );
   const control = toolCancellationInput(process.stdin, request.operationId);
   try {
-    let sequence = 0;
+    const previews = new ToolPreviewChannel();
     let draining: Promise<unknown> | undefined;
-    let latest: NativeToolUpdate | undefined;
-    const progress = (event: NativeToolUpdate): void => {
-      // onUpdate is synchronous in Pi. Keep only the newest progress snapshot
-      // while the transport is blocked, never an unbounded stdout write queue.
-      if (draining) {
-        latest = event;
+    let settled = false,
+      outputFailed = false;
+    const flush = (): void => {
+      if (draining || settled || outputFailed) return;
+      const update = previews.take();
+      if (!update) return;
+      const frame =
+        JSON.stringify({
+          type: "worker.preview",
+          operationId: request.operationId,
+          toolCallId: request.toolCallId,
+          toolName: request.toolName,
+          update,
+        }) + "\n";
+      if (Buffer.byteLength(frame) > TOOL_PREVIEW_FRAME_BYTES) {
+        previews.resync();
         return;
       }
-      if (
-        !process.stdout.write(
-          `${JSON.stringify({ operationId: request.operationId, sequence: ++sequence, event })}\n`,
-        )
-      ) {
-        draining = once(process.stdout, "drain").then(() => {
-          draining = undefined;
-          const event = latest;
-          latest = undefined;
-          if (event) progress(event);
-        });
+      try {
+        if (!process.stdout.write(frame)) {
+          draining = once(process.stdout, "drain").then(
+            () => {
+              draining = undefined;
+              flush();
+            },
+            () => {
+              draining = undefined;
+              outputFailed = true;
+            },
+          );
+        }
+      } catch {
+        outputFailed = true;
       }
+    };
+    const progress = (update: ToolPreviewUpdate): void => {
+      if (settled || outputFailed) return;
+      previews.accept(update);
+      flush();
     };
     const timeout = AbortSignal.timeout(request.timeoutMs);
     const signal = AbortSignal.any([timeout, control.signal]);
@@ -91,6 +112,8 @@ async function main(): Promise<ToolWorkerOutput> {
       event,
     }));
     let response = await execution.catch((error: unknown) => toolOperationFailure(request, error));
+    // Retire unsent previews; only an already-written frame must drain before final.
+    settled = true;
     let controlFailed = false;
     try {
       control.check();
@@ -106,8 +129,14 @@ async function main(): Promise<ToolWorkerOutput> {
       );
     }
     while (draining) await draining;
+    if (outputFailed)
+      throw new ToolWorkerError(
+        "tool_operation_outcome_unknown",
+        "Native Tool result transport unavailable",
+        false,
+      );
     return {
-      toolWorkerProtocolVersion: 6,
+      toolWorkerProtocolVersion: 7,
       type: "worker.operation_result",
       // Normal Agent cancellation follows Pi's process-group boundary. A setsid
       // child is deliberately outside that boundary; only timeout/fault cleanup
@@ -128,7 +157,7 @@ try {
       ? error
       : new ToolWorkerError("tool_worker_failed", "Tool worker failed", true);
   const output: ToolWorkerOutput = {
-    toolWorkerProtocolVersion: 6,
+    toolWorkerProtocolVersion: 7,
     type: "worker.failed",
     code: failure.code,
     message: failure.message,

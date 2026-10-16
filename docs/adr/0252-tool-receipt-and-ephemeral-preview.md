@@ -1,9 +1,9 @@
 # ADR-0252: Tool receipt outcomes and incremental, terminal-aware previews
 
-Status: proposed, 2026-10-16. The owner requested this repair plan following the
+Status: accepted; implementation in progress, 2026-10-16. The owner approved this repair plan following the
 [guest → Cubelet review](../reports/guest-cubelet-result-review-20261016.md) and
 the discussion of bandwidth, progress bars and final Tool results. This document
-does not authorize treating the proposal as implemented or deployed.
+records the target contract; implementation and matched deployment are tracked separately.
 
 ## Behavior and boundaries
 
@@ -57,8 +57,12 @@ five-second receipt wait (initial target: seven seconds). Do not let a random
 observed completion. If execution expired before that transition, or launcher
 settlement cannot be confirmed, retain UNKNOWN and the existing bounded cleanup.
 Stop still aborts Pi immediately; late physical replies cannot replace native abort.
-Probe and stop-helper budgets retain their existing separate bounds; the Tool-run
-settlement grace is not a blanket extension of health probes or cleanup deadlines.
+Probe and stop-helper execution budgets retain their existing separate bounds;
+the Tool-run settlement grace is not a blanket extension of health probes or
+cleanup deadlines. A stop helper that already delivered an empty-scope proof can
+spend 250 ms of its existing final five-second budget joining a receipt-only exit
+before SIGKILL. Its exit observer survives that budget; output drain and native
+handle deletion each have an independent one-second bound after a confirmed exit.
 
 | Evidence at Cubelet | Decision |
 | --- | --- |
@@ -168,7 +172,7 @@ newest message” rule is safe for snapshots and unsafe for deltas:
 
 ## 4. Matched protocol change and removal
 
-Proposed cutover: guest/Tool Worker protocol 6 → 7; trusted Cubelet/completion
+Matched cutover: guest/Tool Worker protocol 6 → 7; trusted Cubelet/completion
 adapter startup protocol 2 → 3; a versioned replacement for internal HTTP/SSE
 preview bodies. Retain management HTTP schema 7, descriptor 2, PG schema 189,
 Session topic v17 and Worker reply v3 unless implementation reveals an actual

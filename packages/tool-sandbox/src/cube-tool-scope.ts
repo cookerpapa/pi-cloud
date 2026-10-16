@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
 import { open, readFile, unlink } from "node:fs/promises";
+import { ScopeReceiptTransportError, settledScopeReceipt } from "./scope-receipt.ts";
 import {
   enterExecutionCgroup,
   finishExecutionCgroup,
@@ -9,7 +10,19 @@ import {
 
 async function* frames(): AsyncGenerator<string> {
   let pending = Buffer.alloc(0);
-  for await (const chunk of process.stdin) {
+  const input = process.stdin[Symbol.asyncIterator]();
+  while (true) {
+    let next: IteratorResult<Buffer>;
+    try {
+      next = await input.next();
+    } catch {
+      throw new ScopeReceiptTransportError();
+    }
+    if (next.done) {
+      if (pending.length) throw new Error("Incomplete execution control frame");
+      throw new ScopeReceiptTransportError();
+    }
+    const chunk = next.value;
     pending = Buffer.concat([pending, Buffer.from(chunk)]);
     if (pending.length > 16 * 1024 * 1024) throw new Error("Execution scope input too large");
     let end: number;
@@ -19,7 +32,6 @@ async function* frames(): AsyncGenerator<string> {
       yield frame;
     }
   }
-  throw new Error("Execution scope input closed");
 }
 
 /** Fixed trusted guest boundary. Receives one bounded JSON payload on a raw PTY;
@@ -30,15 +42,13 @@ async function main(): Promise<void> {
   process.stdin.setRawMode(true);
   const inputFrames = frames();
   const receipt = async () => {
-    const deadline = setTimeout(
-      () => process.stdin.destroy(new Error("Execution receipt expired")),
-      5000,
-    );
     try {
-      if ((await inputFrames.next()).value !== '{"type":"scope.received"}')
-        throw new Error("Execution receipt required");
+      process.exitCode = await settledScopeReceipt(
+        inputFrames.next().then(({ value }) => {
+          if (value !== '{"type":"scope.received"}') throw new Error("Execution receipt required");
+        }),
+      );
     } finally {
-      clearTimeout(deadline);
       process.stdin.destroy();
     }
   };
@@ -79,7 +89,7 @@ async function main(): Promise<void> {
   const body = Buffer.from((await inputFrames.next()).value ?? "");
   const input = JSON.parse(body.toString("utf8"));
   if (
-    input.toolWorkerProtocolVersion !== 6 ||
+    input.toolWorkerProtocolVersion !== 7 ||
     input.type !== "worker.operation" ||
     input.request?.operation !== "tool.execute" ||
     input.request.operationId !== operationId
@@ -147,21 +157,14 @@ async function main(): Promise<void> {
       child.once("error", reject);
       child.once("exit", (code) => resolve(code ?? 1));
     });
-    process.exitCode = status;
+    // The receipt-only code belongs to this launcher, never to its child.
+    process.exitCode = status === 0 ? 0 : 1;
     await unlink(inputPath).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== "ENOENT") throw error;
     });
     await finishExecutionCgroup(operationId);
     if (status === 0) {
-      const deadline = setTimeout(
-        () => received.reject(new Error("Execution receipt expired")),
-        5000,
-      );
-      try {
-        await received.promise;
-      } finally {
-        clearTimeout(deadline);
-      }
+      process.exitCode = await settledScopeReceipt(received.promise);
     }
   } finally {
     process.removeListener("SIGTERM", forward);

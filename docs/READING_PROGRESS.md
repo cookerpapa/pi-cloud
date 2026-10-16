@@ -15,8 +15,10 @@ adapter → Kafka's original-Worker-boot reply transport.
 The subsequent discussion distinguishes disposable browser previews from guest
 final-result collection, and identifies CR/ANSI display limitations. Proposed
 [ADR-0252](adr/0252-tool-receipt-and-ephemeral-preview.md) records receipt repair,
-incremental/reset preview delivery and a terminal-aware source adapter. No repair
-has been implemented or deployed yet; the reading checkpoint is unchanged.
+incremental/reset preview delivery and a terminal-aware source adapter. The owner
+approved implementation; source is changed and targeted tests pass. The
+[delivery record](reports/tool-receipt-preview-repair-20261016.md) tracks the pending
+complete gates and matched deployment. The reading checkpoint is unchanged.
 
 Previously covered **Cubelet → the VM's fixed Tool execution process**.
 Explained per-operation native process startup in a reusable VM, the root scope

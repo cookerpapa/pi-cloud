@@ -1,7 +1,6 @@
 import {
-  parseNativeToolEvent,
+  parseGuestToolPreview,
   parseToolWorkerOutput,
-  TOOL_PROGRESS_MAX_CHARACTERS,
   type AcceptedToolCommand,
   type NativeToolEnd,
   type ToolProgressDelivery,
@@ -89,36 +88,26 @@ export class CubeCompletionAdapter {
       result: { content: [{ type: "text", text: `${code}: ${message}` }], details: undefined },
     });
     if (packet.kind === "progress") {
-      const raw = packet.output as { operationId: string; sequence: number; event: unknown };
-      const event = parseNativeToolEvent(raw.event);
+      const raw = parseGuestToolPreview(packet.output);
       if (
         raw.operationId !== packet.operationId ||
-        event.type !== "tool_execution_update" ||
-        event.toolCallId !== context.nativeToolCallId ||
-        event.toolName !== context.toolName ||
-        !Number.isSafeInteger(raw.sequence) ||
-        raw.sequence < 1
+        raw.toolCallId !== context.nativeToolCallId ||
+        raw.toolName !== context.toolName
       )
         throw new Error("Progress identity changed");
-      const text = event.partialResult.content
-        .filter((p) => p.type === "text")
-        .map((p) => p.text)
-        .join("\n")
-        .slice(-TOOL_PROGRESS_MAX_CHARACTERS);
-      if (text)
-        this.options.progress.update({
-          tenantId: context.scope.tenantId,
-          partition: context.partition,
-          progress: {
-            type: "tool.progress",
-            sessionId: context.scope.sessionId,
-            turnId: context.scope.turnId,
-            toolCallId: context.toolCallId,
-            operationId: packet.operationId,
-            revision: raw.sequence,
-            text,
-          },
-        });
+      this.options.progress.update({
+        tenantId: context.scope.tenantId,
+        partition: context.partition,
+        progress: {
+          type: "tool.progress",
+          version: 2,
+          sessionId: context.scope.sessionId,
+          turnId: context.scope.turnId,
+          toolCallId: context.toolCallId,
+          operationId: packet.operationId,
+          update: raw.update,
+        },
+      });
       return;
     }
     if (packet.kind !== "result" || !packet.result) throw new Error("Missing execution result");

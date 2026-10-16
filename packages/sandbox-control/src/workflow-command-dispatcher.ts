@@ -6,7 +6,10 @@ import {
   type NativeToolEvent,
   type ToolResultPayload,
   type ToolProgressDelivery,
-  TOOL_PROGRESS_MAX_CHARACTERS,
+  boundedPreviewText,
+  previewUpdate,
+  TOOL_PREVIEW_RESET_MS,
+  type ToolPreviewState,
   serializeSubagentResult,
 } from "@pi-cloud/protocol";
 import {
@@ -131,7 +134,36 @@ export class WorkflowCommandDispatcher {
     if (!command.replyTopic) throw new Error("Tool reply destination is unavailable");
     const topic = command.replyTopic;
     let publicationFailure: unknown;
-    let revision = 0;
+    let preview: ToolPreviewState | undefined;
+    let previewTimer: NodeJS.Timeout | undefined;
+    let previewFinished = false;
+    const sendPreview = (text: string, reset = false) => {
+      if (previewFinished || this.#closedFor(command) || publicationFailure || !this.#progress)
+        return;
+      if (!reset && preview?.text === text) return;
+      const next = { revision: (preview?.revision ?? 0) + 1, text: boundedPreviewText(text) };
+      const update = previewUpdate(preview, next, reset);
+      preview = next;
+      this.#progress.update({
+        tenantId: command.scope.tenantId,
+        partition,
+        progress: {
+          type: "tool.progress",
+          version: 2,
+          sessionId: command.scope.sessionId,
+          turnId: command.scope.turnId,
+          toolCallId: command.toolCallId,
+          operationId: request.operationId,
+          update,
+        },
+      });
+      if (!previewTimer) {
+        previewTimer = setInterval(() => {
+          if (preview) sendPreview(preview.text, true);
+        }, TOOL_PREVIEW_RESET_MS);
+        previewTimer.unref();
+      }
+    };
     const publish = async (reply: Reply) => {
       if (this.#closedFor(command) || publicationFailure) return;
       try {
@@ -155,24 +187,13 @@ export class WorkflowCommandDispatcher {
         const text = event.partialResult.content
           .filter((part) => part.type === "text")
           .map((part) => part.text)
-          .join("\n")
-          .slice(-TOOL_PROGRESS_MAX_CHARACTERS);
-        if (text)
-          this.#progress?.update({
-            tenantId: command.scope.tenantId,
-            partition,
-            progress: {
-              type: "tool.progress",
-              sessionId: command.scope.sessionId,
-              turnId: command.scope.turnId,
-              toolCallId: command.toolCallId,
-              operationId: request.operationId,
-              revision: ++revision,
-              text,
-            },
-          });
+          .join("\n");
+        if (text) sendPreview(text);
         return;
       }
+      previewFinished = true;
+      clearInterval(previewTimer);
+      this.#progress?.forget(request.operationId);
       const { type: _nativeType, ...result } = event;
       await publish({ kind: "tool_result", operationId: request.operationId, sequence: 1, result });
     };
@@ -256,6 +277,8 @@ export class WorkflowCommandDispatcher {
         });
       })
       .finally(() => {
+        previewFinished = true;
+        clearInterval(previewTimer);
         this.#progress?.forget(request.operationId);
         this.#active.delete(request.operationId);
       });

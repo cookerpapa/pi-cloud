@@ -7,7 +7,7 @@
 - [x] Reproduce receipt-loss cleanup and oversized preview loss with isolated
       guest/PTY/native-driver probes; record [evidence and repair boundaries](reports/guest-cubelet-result-review-20261016.md).
 
-The review makes no runtime/deployment change. Proposed
+The review made no runtime/deployment change. The owner approved
 [ADR-0252](adr/0252-tool-receipt-and-ephemeral-preview.md) consolidates the repair
 and subsequent preview discussion, with an ordered implementation plan:
 
@@ -17,7 +17,9 @@ and subsequent preview discussion, with an ordered implementation plan:
 - [ ] R3: revision-bound edits/resets through guest I/O, HTTP coalescing and SSE/browser.
 - [ ] R4: required source/live acceptance and a drained, matched protocol rollout.
 
-These are proposed slices; no runtime code or deployed protocol has changed.
+R1–R3 are implemented in source; the [delivery record](reports/tool-receipt-preview-repair-20261016.md)
+tracks their tests and the remaining full gates/live cutover. Checkboxes remain
+open until their complete acceptance, including the matched runtime, is confirmed.
 
 ## Cubelet → guest execution audit
 

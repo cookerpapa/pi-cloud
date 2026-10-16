@@ -612,6 +612,7 @@ export * from "./control-tool-command.ts";
 export { durableControlIntent } from "./durable-session.ts";
 export { isControlToolCommand, type CandidateToolEffect } from "./tool-command.ts";
 export * from "./tool-progress.ts";
+export * from "./tool-preview.ts";
 export * from "./run-observation.ts";
 export * from "./queued-inputs.ts";
 export {

@@ -8,7 +8,7 @@ import {
   MAX_TOOL_COMMAND_BYTES,
   MAX_TOOL_MUTATION_FILE_BYTES,
   type NativeToolEnd,
-  type NativeToolUpdate,
+  type ToolPreviewUpdate,
   type ToolSandboxOperationRequest,
   type ToolWebProxyBootstrap,
   type ToolExecutionAttachment,
@@ -29,6 +29,7 @@ import {
 import { NativeToolOutput, redactToolText } from "./native-tool-output.ts";
 import { processImageSource } from "./image-processor.ts";
 import { normalizeToolPath, resolveReadToolPath } from "./native-tool-path.ts";
+import { TerminalToolPreview } from "./tool-preview.ts";
 
 export type NativeToolRequest = Extract<ToolSandboxOperationRequest, { operation: "tool.execute" }>;
 
@@ -38,7 +39,7 @@ export async function executeAttachedNativeTool(
   request: NativeToolRequest,
   attachment: ToolExecutionAttachment,
   signal: AbortSignal,
-  onUpdate: (event: NativeToolUpdate) => void,
+  onUpdate: (event: ToolPreviewUpdate) => void,
 ): Promise<NativeToolEnd> {
   let cwd: string;
   try {
@@ -80,13 +81,12 @@ export async function executeNativeTool(
   request: NativeToolRequest,
   cwd: string,
   signal: AbortSignal,
-  onUpdate: (event: NativeToolUpdate) => void,
+  onUpdate: (event: ToolPreviewUpdate) => void,
   webProxy?: ToolWebProxyBootstrap,
 ): Promise<NativeToolEnd> {
   const identity = { toolCallId: request.toolCallId, toolName: request.toolName };
-  const update = (partialResult: NativeToolUpdate["partialResult"]) => {
-    if (!signal.aborted)
-      onUpdate({ type: "tool_execution_update", ...identity, args: request.args, partialResult });
+  const update = (preview: ToolPreviewUpdate) => {
+    if (!signal.aborted) onUpdate(preview);
   };
   try {
     signal.throwIfAborted();
@@ -282,13 +282,14 @@ async function executeNativeBash(
   request: NativeToolRequest,
   cwd: string,
   signal: AbortSignal,
-  update: (partialResult: NativeToolUpdate["partialResult"]) => void,
+  update: (preview: ToolPreviewUpdate) => void,
   webProxy?: ToolWebProxyBootstrap,
 ) {
   if (typeof request.args.command !== "string") throw new Error("Bash command is required");
   if (Buffer.byteLength(request.args.command) > MAX_TOOL_COMMAND_BYTES)
     throw new Error("Bash command exceeds its byte limit");
   const output = new NativeToolOutput(request.maximumOutputBytes);
+  const preview = new TerminalToolPreview(update);
   const child = spawn("/bin/bash", ["--noprofile", "--norc", "-lc", request.args.command], {
     cwd,
     detached: process.platform !== "win32",
@@ -299,19 +300,12 @@ async function executeNativeBash(
   child.once("exit", (_code, signal) => {
     terminationSignal = signal;
   });
-  let dirty = false;
   const append = (stream: "stdout" | "stderr", bytes: Buffer) => {
-    output.append(stream, bytes);
-    dirty = true;
+    const decoded = output.append(stream, bytes);
+    preview.append(decoded);
   };
   child.stdout.on("data", (bytes: Buffer) => append("stdout", bytes));
   child.stderr.on("data", (bytes: Buffer) => append("stderr", bytes));
-  const timer = setInterval(() => {
-    if (dirty) {
-      dirty = false;
-      update(output.snapshot());
-    }
-  }, 1000);
   let force: NodeJS.Timeout | undefined;
   const abort = () => {
     if (signal.reason?.name !== "TimeoutError") {
@@ -339,7 +333,7 @@ async function executeNativeBash(
     if (status) throw new Error([result.content[0]!.text, status].filter(Boolean).join("\n\n"));
     return result;
   } finally {
-    clearInterval(timer);
+    preview.close();
     if (force) clearTimeout(force);
     signal.removeEventListener("abort", abort);
   }

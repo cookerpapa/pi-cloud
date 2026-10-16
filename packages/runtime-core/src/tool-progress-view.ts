@@ -30,11 +30,11 @@ export class ToolProgressView {
     if (
       !tool ||
       (tool.operationId && tool.operationId !== progress.operationId) ||
-      progress.revision <= tool.revision
+      progress.update.revision <= tool.revision
     )
       return false;
     tool.operationId = progress.operationId;
-    tool.revision = progress.revision;
+    tool.revision = progress.update.revision;
     return true;
   }
 }

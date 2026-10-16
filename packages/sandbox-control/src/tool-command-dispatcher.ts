@@ -178,7 +178,7 @@ export class ToolCommandDispatcher {
           executionScopeId: route.bindingId,
           writerId: command.scope.writerId,
           payload: {
-            toolWorkerProtocolVersion: 6,
+            toolWorkerProtocolVersion: 7,
             type: "worker.operation",
             attachment: route.descriptor.attachment,
             request: command.request,

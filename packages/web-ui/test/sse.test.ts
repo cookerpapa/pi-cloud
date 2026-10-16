@@ -111,12 +111,12 @@ it("delivers temporary progress separately from formal events on the same SSE co
     onProgress = vi.fn();
   const progress = {
     type: "tool.progress",
+    version: 2,
     sessionId: SESSION_ID,
     turnId: TURN_ID,
     toolCallId: "call",
     operationId: "op",
-    revision: 1,
-    text: "temporary",
+    update: { kind: "reset", revision: 1, text: "temporary" },
   };
   const frames: string[] = [];
   for await (const frame of sessionJsonFrames(snapshot(), "snapshot")) frames.push(frame);

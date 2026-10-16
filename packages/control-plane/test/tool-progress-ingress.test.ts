@@ -14,12 +14,12 @@ describe("temporary Tool progress ingress", () => {
       partition: 2,
       progress: {
         type: "tool.progress",
+        version: 2,
         sessionId: "s",
         turnId: "turn",
         operationId: "op",
         toolCallId: "tool",
-        revision: 1,
-        text: "hello",
+        update: { kind: "reset", revision: 1, text: "hello" },
       },
     };
     const request = {
@@ -44,7 +44,13 @@ describe("temporary Tool progress ingress", () => {
         (
           await server.inject({
             ...request,
-            payload: { ...payload, progress: { ...payload.progress, text: "x".repeat(8193) } },
+            payload: {
+              ...payload,
+              progress: {
+                ...payload.progress,
+                update: { kind: "reset", revision: 2, text: "x".repeat(8193) },
+              },
+            },
           })
         ).statusCode,
       ).toBe(400);

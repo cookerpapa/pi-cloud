@@ -30,29 +30,47 @@ it("reuses HTTP, drops failures, redirects the next snapshot and forgets complet
     partition: 0,
     progress: {
       type: "tool.progress",
+      version: 2,
       sessionId: "s",
       turnId: "turn",
       toolCallId: "tool",
       operationId: "op",
-      revision: 1,
-      text: "first",
+      update: { kind: "reset", revision: 1, text: "first" },
     },
   };
   try {
     for (let i = 1; i <= 1000; i++)
-      sender.update({ ...payload, progress: { ...payload.progress, revision: i } });
+      sender.update({
+        ...payload,
+        progress: { ...payload.progress, update: { kind: "reset", revision: i, text: "first" } },
+      });
     sender.flush();
     await vi.waitFor(() => expect(delivered).toHaveLength(1));
-    expect(delivered[0]!.progress.revision).toBe(1000);
+    expect(delivered[0]!.progress.update.revision).toBe(1000);
     mode = "failed";
-    sender.update({ ...payload, progress: { ...payload.progress, revision: 1001 } });
+    sender.update({
+      ...payload,
+      progress: { ...payload.progress, update: { kind: "reset", revision: 1001, text: "failed" } },
+    });
     sender.flush();
     await vi.waitFor(() => expect(delivered).toHaveLength(2), { timeout: 2000 });
     mode = "redirect";
-    sender.update({ ...payload, progress: { ...payload.progress, revision: 1002 } });
+    sender.update({
+      ...payload,
+      progress: {
+        ...payload.progress,
+        update: { kind: "reset", revision: 1002, text: "redirected" },
+      },
+    });
     await vi.waitFor(() => expect(delivered).toHaveLength(3), { timeout: 2000 });
     mode = "ok";
-    sender.update({ ...payload, progress: { ...payload.progress, revision: 1003 } });
+    sender.update({
+      ...payload,
+      progress: {
+        ...payload.progress,
+        update: { kind: "reset", revision: 1003, text: "restored" },
+      },
+    });
     await vi.waitFor(() => expect(delivered).toHaveLength(4), { timeout: 2000 });
     expect(connections).toBe(1);
     sender.update(payload);

@@ -405,6 +405,7 @@ const zhCN = {
   "turn.took": "耗时 {duration}",
   "turn.liveOutput": "临时日志",
   "turn.waitingOutput": "等待输出…",
+  "turn.previewUnavailable": "临时预览已暂停，工具仍按原流程运行。",
   "turn.activitySteps": "{count} 个步骤",
   "turn.retryScheduled": "模型请求将在 {delay} 后重试 · 第 {attempt}/{maximum} 次",
   "turn.retryAttempt": "模型请求正在进行第 {attempt} 次尝试",
@@ -871,6 +872,8 @@ const enUS: Record<UiTextKey, string> = {
   "turn.took": "Took {duration}",
   "turn.liveOutput": "Live output",
   "turn.waitingOutput": "Waiting for output…",
+  "turn.previewUnavailable":
+    "Live preview paused. Tool execution and final output collection continue.",
   "turn.activitySteps": "{count} steps",
   "turn.retryScheduled": "Retrying the model request in {delay} · attempt {attempt}/{maximum}",
   "turn.retryAttempt": "Model request continued with attempt {attempt}",

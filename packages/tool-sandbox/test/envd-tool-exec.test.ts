@@ -34,7 +34,7 @@ async function run(
     path,
     JSON.stringify(
       transform({
-        toolWorkerProtocolVersion: 6,
+        toolWorkerProtocolVersion: 7,
         type: "worker.operation",
         attachment: {
           activationId,
@@ -74,7 +74,7 @@ it.each(["attachment identity", "old version", "unused initializer", "old wrappe
           ...input,
           attachment: { ...(input.attachment as object), activationId: randomUUID() },
         };
-      if (kind === "old version") return { ...input, toolWorkerProtocolVersion: 5 };
+      if (kind === "old version") return { ...input, toolWorkerProtocolVersion: 6 };
       if (kind === "unused initializer")
         return {
           ...input,

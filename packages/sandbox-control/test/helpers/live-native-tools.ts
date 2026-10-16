@@ -78,7 +78,7 @@ export async function liveNativeTools(
           executionScopeId: request.activationId,
           writerId: identity.leaseId,
           payload: {
-            toolWorkerProtocolVersion: 6,
+            toolWorkerProtocolVersion: 7,
             type: "worker.operation",
             attachment: binding.descriptor.attachment,
             request,

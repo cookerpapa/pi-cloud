@@ -10,7 +10,8 @@ export {
 export { validGuestDirectoryName } from "./guest-directory.ts";
 export { uploadFileName, uploadRelativePath } from "./user-upload.ts";
 export {} from "./image-attachment.ts";
-export { type NativeToolEnd, type NativeToolUpdate } from "./native-tool-event.ts";
+export { type NativeToolEnd } from "./native-tool-event.ts";
+export * from "./tool-preview.ts";
 export {
   MAX_TOOL_COMMAND_BYTES,
   MAX_TOOL_MUTATION_FILE_BYTES,

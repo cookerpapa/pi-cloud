@@ -6,24 +6,24 @@ it("keeps only mounted Tool observations, resets on reconnect and discards finis
     changed = vi.fn();
   const progress: ToolProgress = {
     type: "tool.progress",
+    version: 2,
     sessionId: "s",
     turnId: "turn",
     toolCallId: "tool",
     operationId: "op",
-    revision: 1,
-    text: "first",
+    update: { kind: "reset", revision: 1, text: "first" },
   };
   store.receive(progress);
   expect(store.get("turn\0tool")).toBeUndefined();
   const unsubscribe = store.subscribe("turn\0tool", changed);
   store.receive(progress);
-  store.receive({ ...progress, revision: 2, text: "replacement" });
+  store.receive({ ...progress, update: { kind: "reset", revision: 2, text: "replacement" } });
   store.receive(progress);
   expect(store.get("turn\0tool")?.text).toBe("replacement");
   expect(changed).toHaveBeenCalledTimes(2);
   store.reset();
   expect(store.get("turn\0tool")).toBeUndefined();
   unsubscribe();
-  store.receive({ ...progress, revision: 3 });
+  store.receive({ ...progress, update: { kind: "reset", revision: 3, text: "late" } });
   expect(store.get("turn\0tool")).toBeUndefined();
 });

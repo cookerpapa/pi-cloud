@@ -18,8 +18,10 @@ native process lifetimes, and Worker Pi processing owns canonical conversation
 results. This review does not justify a new service, queue, per-Tool PG lookup,
 result ledger or automatic shell replay. Two local boundary problems are confirmed.
 
-Reproducible [probes](../../scripts/experiments/review-20261016-guest-result/README.md)
-and [machine-readable evidence](guest-cubelet-result-review-20261016.json) separate
+Original probes are archived in Git
+`b3890979:scripts/experiments/review-20261016-guest-result/`; the approved
+[repair](tool-receipt-preview-repair-20261016.md) replaces them with maintained
+regressions. The [machine-readable evidence](guest-cubelet-result-review-20261016.json) separates
 actual guest/PTY behavior from substituted native process services. Passing these
 characterization probes reproduces the defects; it does not mean they are fixed.
 

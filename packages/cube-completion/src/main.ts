@@ -37,7 +37,7 @@ async function main(): Promise<void> {
       progress,
       publish: (topic, reply) => publisher.publish(topic, reply),
     });
-    process.stdout.write('{"type":"ready","protocolVersion":2}\n');
+    process.stdout.write('{"type":"ready","protocolVersion":3}\n');
     for await (const line of completionFrames(process.stdin)) {
       const packet = JSON.parse(line) as CompletionPacket;
       if (packet.kind === "progress") {

@@ -8,12 +8,13 @@ import {
   useLayoutEffect,
 } from "react";
 import type { ToolProgress } from "@pi-cloud/protocol";
+import { ToolPreviewBuffer, type ToolPreviewState } from "@pi-cloud/protocol";
 import { useI18n } from "./i18n.tsx";
 
 /** Only mounted running Tool cards retain observations; never part of SessionView. */
 export class ToolProgressStore {
   readonly #listeners = new Map<string, Set<() => void>>();
-  readonly #values = new Map<string, ToolProgress>();
+  readonly #values = new Map<string, { operationId: string; buffer: ToolPreviewBuffer }>();
   subscribe(key: string, listener: () => void): () => void {
     let listeners = this.#listeners.get(key);
     if (!listeners) this.#listeners.set(key, (listeners = new Set()));
@@ -26,20 +27,24 @@ export class ToolProgressStore {
       }
     };
   }
-  get(key: string): ToolProgress | undefined {
-    return this.#values.get(key);
+  get(key: string): ToolPreviewState | undefined {
+    return this.#values.get(key)?.buffer.current;
   }
   receive(progress: ToolProgress): void {
     const key = `${progress.turnId}\0${progress.toolCallId}`;
     const listeners = this.#listeners.get(key);
     if (!listeners) return;
-    const previous = this.#values.get(key);
-    if (
-      previous &&
-      (previous.operationId !== progress.operationId || previous.revision >= progress.revision)
-    )
+    let view = this.#values.get(key);
+    if (view && view.operationId !== progress.operationId) return;
+    if (!view) {
+      view = { operationId: progress.operationId, buffer: new ToolPreviewBuffer() };
+      this.#values.set(key, view);
+    }
+    try {
+      if (!view.buffer.accept(progress.update)) return;
+    } catch {
       return;
-    this.#values.set(key, progress);
+    }
     for (const listener of listeners) listener();
   }
   reset(): void {
@@ -85,7 +90,9 @@ function ProgressPreview({ store, id }: { store: ToolProgressStore; id: string }
           aria-label={t("turn.liveOutput")}
           className="product-tool-progress-tail"
         >
-          {progress?.text || t("turn.waitingOutput")}
+          {progress?.unavailable
+            ? [progress.text, t("turn.previewUnavailable")].filter(Boolean).join("\n\n")
+            : progress?.text || t("turn.waitingOutput")}
         </pre>
       ) : null}
     </div>

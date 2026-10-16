@@ -142,8 +142,11 @@ export class OpenSessionEventStream {
           continue;
         }
         if (item.progress) {
+          if (!this.#progress.accept(item.progress)) {
+            this.#subscription.forgetProgress(item.progress.operationId);
+            continue;
+          }
           if (
-            this.#progress.accept(item.progress) &&
             !(await writeChunk(
               response,
               `event: tool.progress\ndata: ${JSON.stringify(item.progress)}\n\n`,

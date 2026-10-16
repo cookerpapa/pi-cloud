@@ -252,7 +252,7 @@ try {
   const runTool = async (request) => {
     const path = `/tmp/pi-cloud-envd-${randomUUID()}.json`;
     await writeEnvdFile(baseUrl, path, {
-      toolWorkerProtocolVersion: 6,
+      toolWorkerProtocolVersion: 7,
       type: "worker.operation",
       attachment,
       request,

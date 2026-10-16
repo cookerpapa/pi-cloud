@@ -33,10 +33,11 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 The [October 16 review](reports/guest-cubelet-result-review-20261016.md) is complete
 against `06559532`, with isolated guest/PTY/native-driver evidence and passing
 existing suites. It changes no runtime or deployed protocol.
-The subsequent discussion is consolidated in proposed
-[ADR-0252](adr/0252-tool-receipt-and-ephemeral-preview.md). It adds incremental
-display/reset semantics and terminal-aware source previews; implementation and
-deployment remain pending.
+The subsequent discussion and approved repair are recorded in
+[ADR-0252](adr/0252-tool-receipt-and-ephemeral-preview.md). Source implementation
+adds incremental display/reset semantics and terminal-aware previews. The
+[delivery record](reports/tool-receipt-preview-repair-20261016.md) tracks source
+verification and the pending matched deployment/live acceptance.
 
 - [ ] R16R-01: distinguish receipt-only transport failure from unfinished or
       unsafe execution. A complete valid result plus confirmed local settlement

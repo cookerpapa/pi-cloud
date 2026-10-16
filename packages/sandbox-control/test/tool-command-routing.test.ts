@@ -217,7 +217,7 @@ describe("Projector native Cube handoff", () => {
         executionScopeId: f.route.bindingId,
         writerId: f.command.scope.writerId,
         payload: {
-          toolWorkerProtocolVersion: 6,
+          toolWorkerProtocolVersion: 7,
           type: "worker.operation",
           attachment: f.route.descriptor.attachment,
           request: f.command.request,
