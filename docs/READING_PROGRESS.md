@@ -19,9 +19,10 @@ incremental/reset preview delivery and a terminal-aware source adapter. The owne
 approved implementation; source/native/fault gates and all eleven artifact scans
 pass. The [delivery record](reports/tool-receipt-preview-repair-20261016.md) records
 the successful KVM recovery and matched `tool-preview-325f0ebd` deployment.
-Continuous previews and the native receipt-loss/background case pass. Complete
-live acceptance is still open after external proxy TLS failures and one preview
-reconnect timeout; the reading checkpoint is unchanged.
+Complete progress/receipt, native input/dual-process recovery, browser/image/Read
+and full Cube acceptance pass. Earlier TLS failures and the measured SSE recovery
+that corrected the fixture's deadline remain recorded. The reading checkpoint is
+unchanged; the next hop is still Cubelet completion → original-Worker Kafka replies.
 
 Previously covered **Cubelet → the VM's fixed Tool execution process**.
 Explained per-operation native process startup in a reusable VM, the root scope

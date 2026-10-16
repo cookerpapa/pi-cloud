@@ -12,12 +12,14 @@ ADR-0251's guest attachment/lifetime repair and ADR-0252's receipt/preview repai
 The [current delivery record](reports/tool-receipt-preview-repair-20261016.md)
 records the October 16 deployment of `tool-preview-325f0ebd`: Windows rollback
 restored KVM and the matched native/template/application cutover completed.
-Source/artifact gates, real continuous previews, one Control Plane replacement and
-the native receipt-loss/background-preservation check pass. Full live acceptance
-remains open: intermittent external proxy TLS failures interrupt model checks, and
-one subsequent preview-reconnect timeout needs diagnosis.
+Source/artifact gates and required live checks pass: incremental/terminal-aware
+previews, receipt loss, cancellation, native input and dual-process recovery,
+browser/image/Read behavior and the full Cube multi-round/Volume suite. A measured
+30-second SSE recovery exposed a too-short 25-second test deadline; the corrected
+fixture records actual recovery and retains all assertions. Earlier external
+proxy TLS failures remain documented separately from this passing release.
 [Previous acceptance evidence](reports/cubelet-guest-execution-repair-20261015.md)
-identifies the fully accepted guest-6 release `guest-execution-5536fc73`; the
+identifies the preceding guest-6 release `guest-execution-5536fc73`; the
 [handoff evidence](reports/projector-cube-handoff-repair-20261015.md) records
 `handoff-6ab91bb7` and the
 [publication repair evidence](reports/projector-repair-20261015.md) records the

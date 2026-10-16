@@ -42,29 +42,29 @@ fault gates and eleven artifact scans pass. The owner-authorized Windows rollbac
 and reboot restored KVM; actual VM creation and all four new templates pass.
 `tool-preview-325f0ebd` is deployed with Ready application workloads. Continuous
 previews, one Control Plane replacement and receipt-only loss preserving the
-result/background server/sibling process pass. Complete model/browser acceptance
-remains open after repeated external AnyTLS-path failures and one subsequent
-preview-reconnect timeout. The maintained fixture now retains failed-Run and
-restart/observation/browser diagnostics. The release operator checks KVM device
+result/background server/sibling process pass. Complete targeted/native-input/
+browser/full-Cube acceptance subsequently passes. The empty-Session recovery
+probe measured 30 seconds, explaining the old 25-second test deadline; the corrected
+fixture retains all assertions and records actual recovery. Earlier external
+AnyTLS-path failures remain a separate backlog item below. The release operator checks KVM device
 availability on every Cube compute node before draining.
 The Windows-local web-entry gap found after reboot is repaired with a standard
 systemd socket proxy in the local WSL deployment adapter; direct Windows/Linux
-HTTP checks and removal/reinstallation pass. This does not close the pending
-model/preview acceptance above.
+HTTP checks and removal/reinstallation pass.
 
-- [ ] R16R-01: distinguish receipt-only transport failure from unfinished or
+- [x] R16R-01: distinguish receipt-only transport failure from unfinished or
       unsafe execution. A complete valid result plus confirmed local settlement
       must not be discarded or trigger operation-cgroup cleanup solely because
       the reverse receipt failed. Preserve the bounded receipt, UNKNOWN for
       missing evidence and Control Plane lifecycle ownership; record the revised
       termination contract in an ADR before implementation.
-- [ ] R16R-02: bound encoded preview data at the guest transport boundary and
+- [x] R16R-02: bound encoded preview data at the guest transport boundary and
       remove repeated arguments/truncation text from observations. Preserve final
       native results and lossy HTTP/SSE semantics; test large/escaped output and
       ordinary final-result delivery. Deliver revision-bound edits plus bounded
       resets across every coalescing boundary; cover missing bases, reconnect,
       owner changes and final completion overtaking observations.
-- [ ] R16R-03: interpret CR/ANSI progress updates before forming display edits;
+- [x] R16R-03: interpret CR/ANSI progress updates before forming display edits;
       current stripping concatenates successive progress labels. Evaluate the
       pinned headless terminal behind the preview port, keeping ordinary pipe
       execution and final result collection independent. Verify bounded parser

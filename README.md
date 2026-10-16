@@ -76,15 +76,14 @@ enter native persistence before validated Tool execution (ADR-0230).
 The [Session work migration](docs/adr/0247-session-work-and-tool-dispatch.md) is
 deployed as `session-work-6ac697f9`: one root Run with native child Conversations,
 unified Tool replies, one Session closure and Worker direct Kafka publication.
-The last fully accepted matched release, `guest-execution-5536fc73`, uses schema 189,
-execution-topic v17, boot reply v3, guest/Tool Worker protocol 6 and Cube management
-protocol 7. The October 16 guest-7 release `tool-preview-325f0ebd` is now deployed:
-Windows rollback restored KVM, all four new templates were created, and the
-application workloads are Ready. Full live acceptance remains open because model
-requests intermittently fail on the external proxy path and one preview-reconnect
-timeout still needs diagnosis.
+The current matched release, `tool-preview-325f0ebd`, uses schema 189, execution-topic
+v17, boot reply v3, guest/Tool Worker protocol 7, completion startup protocol 3,
+preview schema 2 and Cube management protocol 7. Windows rollback restored KVM;
+all four new templates, application workloads and required live acceptance pass.
+The local WSL web adapter also restores Windows localhost access through the
+existing systemd TCP proxy and the Kubernetes web Service.
 The [repair and recovery record](docs/reports/tool-receipt-preview-repair-20261016.md)
-identifies the scanned artifacts, recovery, passing checks and remaining live acceptance.
+identifies the scanned artifacts, recovery, passing checks and earlier failed samples.
 Current source implements [ADR-0252](docs/adr/0252-tool-receipt-and-ephemeral-preview.md):
 receipt-only loss preserves confirmed results; bounded CR/ANSI-aware previews send
 incremental edits and periodic resets over HTTP/SSE, independently of final results.

@@ -14,8 +14,10 @@ the remaining matched/live gates are tracked in the
 [delivery record](reports/tool-receipt-preview-repair-20261016.md). Source/native/fault
 gates and all eleven artifact scans pass. Windows rollback restored host KVM and
 the October 16 matched release `tool-preview-325f0ebd` is deployed. Continuous
-previews and the real receipt-loss/background-process case pass; full acceptance
-remains open after external proxy TLS failures and a preview-reconnect timeout.
+previews, real receipt-loss/background preservation, native input/dual-process
+recovery, browser/image/Read behavior and full Cube acceptance pass. The report
+retains earlier external TLS failures and the measured recovery that corrected
+a too-short fixture deadline. Windows localhost web access is also restored.
 
 The [October 15 Cubelet → guest execution review](reports/cubelet-guest-execution-review-20261015.md)
 records a missing deadline in cleanup, native Read path drift, unused per-Tool

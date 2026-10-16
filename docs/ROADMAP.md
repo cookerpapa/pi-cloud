@@ -11,18 +11,19 @@ The review made no runtime/deployment change. The owner approved
 [ADR-0252](adr/0252-tool-receipt-and-ephemeral-preview.md) consolidates the repair
 and subsequent preview discussion, with an ordered implementation plan:
 
-- [ ] R1: distinguish receipt-only failure from local execution/settlement failure,
+- [x] R1: distinguish receipt-only failure from local execution/settlement failure,
       including native final/deadline races and stop-helper receipts.
-- [ ] R2: source-side bounded terminal-aware previews, independent of final output.
-- [ ] R3: revision-bound edits/resets through guest I/O, HTTP coalescing and SSE/browser.
-- [ ] R4: required source/live acceptance and a drained, matched protocol rollout.
+- [x] R2: source-side bounded terminal-aware previews, independent of final output.
+- [x] R3: revision-bound edits/resets through guest I/O, HTTP coalescing and SSE/browser.
+- [x] R4: required source/live acceptance and a drained, matched protocol rollout.
 
 R1–R3 are implemented in source; the [delivery record](reports/tool-receipt-preview-repair-20261016.md)
 records passing source/native/fault gates and eleven scanned artifacts. Windows
 rollback restored KVM and matched deployment completed as `tool-preview-325f0ebd`.
-Some real preview/receipt checks pass, but complete live acceptance remains open
-after external proxy TLS failures and a preview-reconnect timeout. Checkboxes remain
-open until their complete acceptance, including the matched runtime, is confirmed.
+All required live suites pass, including native input/dual-process recovery and
+the full Cube multi-round/Volume checks. The report retains failed TLS attempts,
+the measured SSE recovery/test-budget correction and verified cleanup. The
+pre-existing external AnyTLS-path issue remains a separate operational backlog item.
 
 ## Cubelet → guest execution audit
 

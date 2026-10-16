@@ -4,10 +4,10 @@
 in source: receipt-only failure classification, source terminal-aware previews
 and bounded delta/reset delivery over existing HTTP/SSE. The
 [delivery record](../reports/tool-receipt-preview-repair-20261016.md) separates
-passing source/artifact gates and the deployed `tool-preview-325f0ebd` from pending
-complete live acceptance. Windows rollback restored KVM and matched cutover
-completed; external proxy TLS failures and a preview-reconnect timeout leave
-remaining acceptance open. ADR-0251 is the last fully accepted baseline.
+passing source/artifact/live gates and the deployed `tool-preview-325f0ebd` from
+earlier failed samples. Windows rollback restored KVM; the measured SSE recovery
+corrected a too-short fixture deadline, and all required acceptance now passes.
+The pre-existing external AnyTLS-path issue remains separately documented.
 
 [ADR-0251](0251-guest-attachment-and-execution-bounds.md) is the deployed guest
 execution repair: bounded native cleanup/startup, native Read path parity and

@@ -1,11 +1,11 @@
 # ADR-0252: Tool receipt outcomes and incremental, terminal-aware previews
 
-Status: accepted; source/artifact gates pass and matched release deployed; full live acceptance pending,
+Status: accepted and deployed as `tool-preview-325f0ebd`; source/artifact and required live gates pass,
 2026-10-16. The owner approved this repair plan following the
 [guest → Cubelet review](../reports/guest-cubelet-result-review-20261016.md) and
 the discussion of bandwidth, progress bars and final Tool results. This document
 records the implemented contract; [delivery evidence](../reports/tool-receipt-preview-repair-20261016.md)
-tracks the deployment, passing real VM checks and remaining live acceptance separately.
+tracks the deployment, passing real VM checks, failed samples and confirmed cleanup.
 
 ## Behavior and boundaries
 

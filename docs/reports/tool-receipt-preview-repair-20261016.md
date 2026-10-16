@@ -2,12 +2,12 @@
 
 Baseline: `39ec5643`. The owner approved [ADR-0252](../adr/0252-tool-receipt-and-ephemeral-preview.md).
 Status: source/native/fault gates and artifact scans pass; **`tool-preview-325f0ebd`
-is deployed and application workloads are Ready; complete live acceptance is still
-open**. Windows rollback and reboot restored KVM. One real continuous-output /
-Control Plane restart case and the native receipt-loss/background-preservation
-case pass. External proxy TLS errors interrupt remaining model checks, and one
-subsequent preview-reconnect timeout needs diagnosis. `guest-execution-5536fc73`
-remains the last fully accepted baseline. Earlier failure stages are retained below.
+is deployed and all required live acceptance passes**. Windows rollback and reboot
+restored KVM; Windows localhost web access is repaired. Complete preview/receipt,
+native-input/dual-process recovery, browser/image/Read and full Cube suites pass.
+The recovery probe explains the earlier too-short fixture deadline. External proxy
+TLS failures are retained as failed samples, not claimed fixed by this release.
+Earlier deployment and investigation stages are retained below.
 
 ## Acceptance and progress
 
@@ -18,7 +18,7 @@ remains the last fully accepted baseline. Earlier failure stages are retained be
       entering Kafka, PG or model context; final completion retires observations.
 - [x] Required source/native/race/transport/fault checks pass after the recorded fixture and packaging corrections.
 - [x] Matched artifact provenance/SBOM/vulnerability scans pass for clean `325f0ebd`.
-- [ ] Matched release and real Luna/Cube/browser/failure acceptance pass, with
+- [x] Matched release and real Luna/Cube/browser/failure acceptance pass, with
       preserved configuration and confirmed fixture cleanup.
 
 Failed samples, release identity, verification counts and measured limitations
@@ -321,6 +321,34 @@ Unicode Read results retain 51,200 and 51,196 valid UTF-8 bytes respectively and
 their canonical truncation diagnostics. Both suites confirm fixture cleanup.
 The full Cube suite's additional multi-round/background/Volume cases are tracked
 separately; a follow-up attempt still encountered the known external TLS EOF.
+
+## Final acceptance and cleanup
+
+The subsequent unchanged full Cube suite passes at 08:27 UTC. Its 21 GPT-6 Luna
+requests cover pure chat without VM activation, real coding, authenticated HTTP
+preview, warm-VM reuse and background-process survival across Run bindings.
+The deterministic 1,024-file fixture survives removal of its source VM and attaches
+to a fresh VM through the same persistent Volume. The original executor rejects
+late Tool and cancellation admission after deletion; final conversation deletion
+and confirmed physical allocation closure release the fixture's runtimes.
+The maintained [full Cube report](cubesandbox-production-acceptance-latest.md) and
+[structured evidence](cubesandbox-production-acceptance-latest.json) retain measurements.
+Its source revision identifies the test checkout; the deployed image is explicitly
+recorded and belongs to the unchanged scanned `325f0ebd` release.
+
+All four required live suites now pass, alongside the earlier source/native/race/
+transport/fault gates and eleven image scans. Failed TLS samples remain retained;
+the pre-existing external AnyTLS-path backlog stays open. No retry layer, credential
+change or application workaround was added to hide those failures.
+
+All newly-created fixture tenants were removed only after normal Workspace purge
+and control settlement. The seven original account/configuration/credential table
+counts and fingerprints still match their pre-cutover values. Final native inventory
+positively scans 1/1 nodes with zero VMs; unfinished Runs, Session writers, Tool
+bindings and unfinished seals are all zero. Application and infrastructure Pods
+are Ready, and Windows/Linux direct web requests return HTTP 200. The temporary
+release worktree, TLS probe source and port-forward process are removed/stopped;
+private evidence is retained under the ignored release-evidence directory.
 
 ## Windows web entry after reboot
 

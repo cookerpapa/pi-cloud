@@ -1,82 +1,82 @@
 {
   "accepted": true,
-  "piCloudRevision": "c9b8b2a32702d5a4968f767bca80cb1cf2c8ee3a",
-  "deployedControlPlaneImage": "sha256:bad863ef2e4053959ccd3344ac95c1f675c1aae627865851c78ed78962506df2",
-  "testRevision": "c9b8b2a32702d5a4968f767bca80cb1cf2c8ee3a",
-  "checkedAt": "2026-10-12T10:23:28.871Z",
+  "piCloudRevision": "611dc2cd096251244ef8b9340d26250cbdbdb9f7",
+  "deployedControlPlaneImage": "sha256:39429c01403c04cdd067285efa5b6e8cacbb91e76d862f8f880b9979329806d2",
+  "testRevision": "611dc2cd096251244ef8b9340d26250cbdbdb9f7",
+  "checkedAt": "2026-10-16T08:27:27.059Z",
   "upstream": "TencentCloud/CubeSandbox@v0.6.0",
   "model": {
     "provider": "openai-codex",
     "modelId": "gpt-6-luna"
   },
   "pureChat": {
-    "acceptedMs": 48,
-    "firstDurableActivityMs": 1918,
+    "acceptedMs": 28,
+    "firstDurableActivityMs": 5959,
     "firstToolStartedMs": null,
-    "firstAssistantTextMs": 1918,
-    "settledMs": 2177,
+    "firstAssistantTextMs": 5959,
+    "settledMs": 6123,
     "toolCalls": 0,
     "cubeActivations": 0,
     "latency": {
-      "acceptedToExecutionMs": 45,
-      "executionToSettlementMs": 1989,
+      "acceptedToExecutionMs": 28,
+      "executionToSettlementMs": 6062,
       "modelRequests": 1,
       "toolOperations": 0,
       "toolBoundaryMs": 0
     },
     "usage": {
       "requests": 1,
-      "inputTokens": 3155,
+      "inputTokens": 2505,
       "outputTokens": 7,
-      "cacheReadTokens": 3328,
+      "cacheReadTokens": 3968,
       "cacheWriteTokens": 0
     }
   },
   "firstCoding": {
-    "acceptedMs": 31,
-    "firstDurableActivityMs": 5371,
-    "firstToolStartedMs": 5371,
-    "firstAssistantTextMs": 21118,
-    "settledMs": 22040,
+    "acceptedMs": 20,
+    "firstDurableActivityMs": 8385,
+    "firstToolStartedMs": 8385,
+    "firstAssistantTextMs": 33829,
+    "settledMs": 34864,
     "toolCalls": 3,
     "cubeActivations": 1,
-    "workspaceFileBytes": 1122,
+    "workspaceFileBytes": 1095,
     "latency": {
-      "acceptedToExecutionMs": 33,
-      "executionToSettlementMs": 21803,
+      "acceptedToExecutionMs": 21,
+      "executionToSettlementMs": 34803,
       "modelRequests": 4,
       "toolOperations": 3,
-      "toolBoundaryMs": 4626.184
+      "toolBoundaryMs": 3019.719
     },
     "usage": {
       "requests": 4,
-      "inputTokens": 6005,
-      "outputTokens": 502,
-      "cacheReadTokens": 21504,
+      "inputTokens": 1449,
+      "outputTokens": 513,
+      "cacheReadTokens": 26112,
       "cacheWriteTokens": 0
     }
   },
   "followUpCoding": {
-    "acceptedMs": 26,
-    "firstDurableActivityMs": 96583,
-    "firstToolStartedMs": 96583,
-    "firstAssistantTextMs": 109986,
-    "settledMs": 111308,
+    "acceptedMs": 23,
+    "firstDurableActivityMs": 8129,
+    "firstToolStartedMs": 8129,
+    "firstAssistantTextMs": 28966,
+    "settledMs": 30768,
     "toolCalls": 4,
     "cubeActivations": 1,
-    "workspaceFileBytes": 1262,
+    "workspaceFileBytes": 1235,
     "latency": {
-      "acceptedToExecutionMs": 35,
-      "executionToSettlementMs": 111096,
+      "acceptedToExecutionMs": 28,
+      "executionToSettlementMs": 30685,
       "modelRequests": 4,
       "toolOperations": 4,
-      "toolBoundaryMs": 2015.06
+      "toolBoundaryMs": 2185.528
     },
     "usage": {
       "requests": 4,
-      "inputTokens": 7432,
-      "outputTokens": 396,
-      "cacheReadTokens": 27648,
+      "inputTokens": 1555,
+      "outputTokens": 402,
+      "cacheReadTokens": 33664,
       "cacheWriteTokens": 0
     }
   },
@@ -88,10 +88,10 @@
     "backgroundProcessSurvived": true,
     "authenticatedHttpPreviewPassed": true,
     "workspaceRestored": true,
-    "finalWorkspaceFileBytes": 1262
+    "finalWorkspaceFileBytes": 1235
   },
   "workspaceIsolation": {
-    "volumeId": "pcw-53c0b12651c62cf93a14809cf5d93f23043195592c28e644",
+    "volumeId": "pcw-f21528f0afab78e87c600926a992c89ac493898f41c4ad55",
     "platformGitMetadataAbsent": true,
     "userGitPresent": false
   },
@@ -101,45 +101,45 @@
   },
   "largeWorkspace": {
     "source": "deterministic 1024-file local fixture",
-    "firstRunId": "c2370ec7-733f-4e12-9e43-e33ca41b2f7b",
-    "followUpRunId": "23c42c4c-1f4f-4643-85a4-bd4716b34a19",
+    "firstRunId": "4202b631-80cf-4311-a105-2ba12fe1ef67",
+    "followUpRunId": "de7f9dfa-c933-4cdc-853b-129e9ecb09c8",
     "firstFileCount": 1025,
     "restoredFileCount": 1026,
     "sourceSandboxDestroyed": true,
     "persistentVolumeRetained": true,
-    "volumeId": "pcw-e680a0276abf31247c67cc2904b9654dc516ba71a4246379",
+    "volumeId": "pcw-e2cbbdacc3c7a40271b51879d3aeb599b6796660a1a827ef",
     "restoredFromPersistentVolume": true,
     "freshCubeMicroVm": true,
     "higherRuntimeGeneration": true,
     "firstUsage": {
       "requests": 2,
-      "inputTokens": 4664,
-      "outputTokens": 262,
-      "cacheReadTokens": 8704,
+      "inputTokens": 674,
+      "outputTokens": 261,
+      "cacheReadTokens": 12672,
       "cacheWriteTokens": 0
     },
     "followUpUsage": {
       "requests": 2,
-      "inputTokens": 2463,
-      "outputTokens": 272,
-      "cacheReadTokens": 11776,
+      "inputTokens": 3842,
+      "outputTokens": 263,
+      "cacheReadTokens": 10368,
       "cacheWriteTokens": 0
     }
   },
   "canonicalConversation": {
     "terminalCount": 5,
     "piEntryCount": 36,
-    "canonicalPayloadBytes": 36604,
-    "terminalThroughSequence": 95
+    "canonicalPayloadBytes": 36434,
+    "terminalThroughSequence": 102
   },
   "eventPlane": {
     "authority": "Kafka acks=all",
     "postgresHotEventTableAbsent": true,
-    "projectedSessionMutations": 174,
-    "publishedTerminalEvents": 5,
+    "projectedSessionMutations": 180,
+    "completedWorkRecords": 5,
     "kafka": {
-      "topic": "pi-cloud.execution-log.v15",
-      "logEndOffsetSum": 2502
+      "topic": "pi-cloud.execution-log.v17",
+      "logEndOffsetSum": 11290
     }
   },
   "scheduler": {
@@ -149,15 +149,16 @@
   },
   "totalUsage": {
     "requests": 21,
-    "inputTokens": 36973,
-    "outputTokens": 2063,
-    "cacheReadTokens": 124160,
+    "inputTokens": 15920,
+    "outputTokens": 2003,
+    "cacheReadTokens": 145792,
     "cacheWriteTokens": 0
   },
   "cleanup": {
     "retainedRunningWorkspaceMicroVmCount": 0,
     "foreignSessionMicroVmCount": 0,
     "conversationDeletionReleasedWorkspaceRuntime": true,
-    "confirmedAllocationClosureVerified": true
+    "confirmedAllocationClosureVerified": true,
+    "deletedVmAdmissionRejected": true
   }
 }

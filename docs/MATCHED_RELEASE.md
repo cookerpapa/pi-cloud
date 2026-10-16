@@ -97,7 +97,8 @@ them. Non-WSL deployments do not install this adapter. The initial slice covers
 the main web port, not separate administrative/provider/SSH host ports.
 
 An existing WSL deployment can reconcile just this host entry without replacing
-application images:
+application images. It reads the deployed web port and Service, preserving the
+stored Helm configuration and avoiding coupling to unshipped guest source edits:
 
 ```sh
 node scripts/production-kubernetes.mjs local-web
