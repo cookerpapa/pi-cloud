@@ -216,12 +216,37 @@ try {
       ]);
       assert.equal(stdout.trim(), active.runId, "Refuse process fault while other Runs are active");
       const before = snapshots;
+      const restartStarted = Date.now();
       await replacePod("control-plane");
+      report.projectorReplacementMs = Date.now() - restartStarted;
       // Replace the Projector process, not the Worker or the running Tool.
-      await page.waitFor(
-        "document.querySelector('.product-tool-progress-tail')?.textContent.includes('OBS_TICK_')",
-        25000,
-      );
+      try {
+        await page.waitFor(
+          "document.querySelector('.product-tool-progress-tail')?.textContent.includes('OBS_TICK_')",
+          25000,
+        );
+      } catch (error) {
+        const run = await api.getRun(active.runId);
+        report.restartFailure = {
+          elapsedMs: Date.now() - restartStarted,
+          runState: run.state,
+          failure: run.failure,
+          snapshotsBefore: before,
+          snapshotsAfter: snapshots,
+          observations: updates
+            .filter((u) => u.receivedAt >= restartStarted)
+            .map((u) => ({
+              elapsedMs: u.receivedAt - restartStarted,
+              kind: u.update.kind,
+              revision: u.update.revision,
+              hasTick: u.view?.text.includes("OBS_TICK_"),
+            })),
+          browser: await page.evaluate(
+            `(()=>{const button=document.querySelector('.product-tool-progress button');const tail=document.querySelector('.product-tool-progress-tail');return {button:!!button,expanded:button?.getAttribute('aria-expanded'),preview:!!tail,textLength:tail?.textContent.length,hasTick:tail?.textContent.includes('OBS_TICK_')}})()`,
+          ),
+        };
+        throw error;
+      }
       const deadline = Date.now() + 25000;
       while (snapshots <= before && Date.now() < deadline) await page.wait(250);
       assert(snapshots > before, "No replacement snapshot after Projector restart");
@@ -373,6 +398,10 @@ try {
 } catch (error) {
   failure = error;
   report.failure = String(error?.message ?? error).slice(0, 600);
+  if (active) {
+    const run = await api.getRun(active.runId).catch(() => undefined);
+    if (run) report.failedRun = { runId: active.runId, state: run.state, failure: run.failure };
+  }
 } finally {
   abort.abort();
   await stream?.catch(() => {});

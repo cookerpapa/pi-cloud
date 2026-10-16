@@ -18,9 +18,10 @@ final-result collection, and identifies CR/ANSI display limitations. Accepted
 incremental/reset preview delivery and a terminal-aware source adapter. The owner
 approved implementation; source/native/fault gates and all eleven artifact scans
 pass. The [delivery record](reports/tool-receipt-preview-repair-20261016.md) records
-the partial cutover: native Cube changed, missing host KVM blocks guest creation,
-applications remain offline and live acceptance is pending. The reading checkpoint
-is unchanged.
+the successful KVM recovery and matched `tool-preview-325f0ebd` deployment.
+Continuous previews and the native receipt-loss/background case pass. Complete
+live acceptance is still open after external proxy TLS failures and one preview
+reconnect timeout; the reading checkpoint is unchanged.
 
 Previously covered **Cubelet → the VM's fixed Tool execution process**.
 Explained per-operation native process startup in a reusable VM, the root scope

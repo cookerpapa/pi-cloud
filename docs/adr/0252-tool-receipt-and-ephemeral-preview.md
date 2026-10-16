@@ -1,11 +1,11 @@
 # ADR-0252: Tool receipt outcomes and incremental, terminal-aware previews
 
-Status: accepted; source and artifact gates pass, matched cutover blocked by host KVM,
+Status: accepted; source/artifact gates pass and matched release deployed; full live acceptance pending,
 2026-10-16. The owner approved this repair plan following the
 [guest → Cubelet review](../reports/guest-cubelet-result-review-20261016.md) and
 the discussion of bandwidth, progress bars and final Tool results. This document
 records the implemented contract; [delivery evidence](../reports/tool-receipt-preview-repair-20261016.md)
-tracks the partial deployment and remaining real VM/browser acceptance separately.
+tracks the deployment, passing real VM checks and remaining live acceptance separately.
 
 ## Behavior and boundaries
 

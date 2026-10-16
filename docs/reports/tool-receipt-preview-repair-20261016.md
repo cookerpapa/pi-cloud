@@ -1,10 +1,13 @@
 # Tool receipt and preview repair
 
 Baseline: `39ec5643`. The owner approved [ADR-0252](../adr/0252-tool-receipt-and-ephemeral-preview.md).
-Status: source/native/fault gates and artifact scans pass; **deployment incomplete,
-applications offline**. Native Cube switched to `tool-preview-325f0ebd`, but host KVM
-is unavailable and guest-template creation failed. `guest-execution-5536fc73` is the
-last fully accepted release, not a currently serving fallback.
+Status: source/native/fault gates and artifact scans pass; **`tool-preview-325f0ebd`
+is deployed and application workloads are Ready; complete live acceptance is still
+open**. Windows rollback and reboot restored KVM. One real continuous-output /
+Control Plane restart case and the native receipt-loss/background-preservation
+case pass. External proxy TLS errors interrupt remaining model checks, and one
+subsequent preview-reconnect timeout needs diagnosis. `guest-execution-5536fc73`
+remains the last fully accepted baseline. Earlier failure stages are retained below.
 
 ## Acceptance and progress
 
@@ -183,7 +186,7 @@ probe and handoff notes are under
 retained with the ignored release evidence. Applications remain offline pending
 the matched release.
 
-## Resume after host repair
+## Resume plan recorded before Windows restart
 
 1. Save open work and restart Windows to finish the staged rollback. Run the
    prepared `verify-after-reboot.ps1`; it loads the existing AMD KVM module and
@@ -209,5 +212,72 @@ the matched release.
 The temporary build relay has stopped and owned native source/build directories
 have been removed. The private candidate, logs and preservation fingerprints are retained under
 `deploy/production/runtime/release-evidence/tool-preview-325f0ebd/` (Git-ignored).
-They contain no replacement authority or new application data store. Source
-implementation is complete; deployment and live acceptance remain externally blocked.
+They contain no replacement authority or new application data store. The subsequent
+deployment and acceptance results follow.
+
+## After Windows restart: deployment and live samples
+
+Windows is now `26200.9457`, the target hotfix is absent, and there is no pending
+reboot. WSL exposes `/dev/kvm`; its API reports version 12 and an actual empty VM
+can be created and closed. KVM inside Cubelet passes the current operator check.
+The initial not-Ready Pods were still recovering from the host boot; they became
+Ready without replacing infrastructure or changing its configuration.
+
+The already-scanned `325f0ebd` candidate was applied from an exact clean detached
+checkout, with the original runtime directory and Cube repository supplied by
+absolute path. Source runtime packages/dependencies/deployment inputs are identical
+to that candidate; later main-branch changes are operator checks and documentation.
+The first retry omitted the Cube repository override and failed before native
+reconciliation because it looked for `/tmp/CubeSandbox`; the next invocation fixed
+that operator path without rebuilding/substituting any scanned image.
+
+At about 15:16 Asia/Shanghai, all four new guest templates and the matched native /
+application release completed. The prepared guest digest remains exactly the
+scanned digest above. Web, Control Plane, both Workers, SSH and Volume Gateway are
+Ready; the web endpoint returns HTTP 200 when accessed directly. The Cube egress
+gateway also becomes Ready after Control Plane supplies its configuration.
+
+Passing real samples:
+
+- Continuous Bash output, browser collapse/expand/reload and one forced Control
+  Plane replacement: the command executed once; 25 preview messages included 19
+  deltas and six resets. Maximum preview text was 8,192 bytes, maximum encoded SSE
+  envelope 8,563 bytes, total envelope bytes 57,424 for this one sample. Final
+  output retained the completion marker. This is not a fleet bandwidth estimate.
+- Exact patched native driver in an owned real VM: one reverse receipt was
+  filtered; result was retained after 5,477 ms, scoped cleanup was not invoked,
+  and both the background HTTP server and sibling process remained alive.
+- The full Cube suite's initial real GPT-6 Luna pure-chat case completed without
+  activating a Cube VM.
+
+Incomplete/failed samples are not hidden:
+
+- The first progress suite's subsequent progress-bar Run failed before Tool
+  execution. CLIProxyAPI reports an upstream TLS-handshake EOF surfaced as HTTP
+  500. Two later initial Runs and the full Cube suite's first coding Run encountered
+  the same failure, at approximately three or five seconds.
+- One intervening progress-suite attempt timed out waiting for visible preview
+  text after Control Plane replacement. Its precise cause is unresolved. The
+  fixture now records replacement time, failed-Run state, snapshots, received
+  preview revisions and browser expansion/text state before cleanup. Later TLS
+  failures occurred before this instrumented path, so no diagnosis is claimed yet.
+- The CR/ANSI browser case, silence, Stop/no-late-preview, subsequent four-tool
+  coding and complete native-input/Worker-recovery/browser suites have not passed
+  for this release. Do not close ADR-0252 acceptance on the earlier baseline's results.
+
+The relay's payload-free audit records attribute the TLS close to its upstream
+proxy side. A fresh credential-free uTLS probe passed three direct-local-proxy and
+three PiCloud-relay handshakes; that small successful sample does not disprove the
+intermittent issue previously reproduced in the
+[October 12 investigation](model-egress-tls-20261012.md). No model retry owner,
+credentials or proxy routes were changed. The owner elected to switch to a backup
+proxy node; wait for confirmation that the switch is complete before continuing
+network-dependent acceptance.
+
+Every progress-suite fixture reports confirmed cleanup. The failed full-Cube
+fixture's normal Workspace deletion settled before its exact newly-created tenant
+was removed using the maintained cleanup helper. The seven original account /
+configuration table fingerprints still match, native inventory scans 1/1 nodes
+with zero VMs, and there are no unfinished Runs, writers, Tool bindings or seals.
+Deployment is online; remaining live acceptance and the reconnect investigation
+are pending.

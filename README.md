@@ -78,10 +78,13 @@ deployed as `session-work-6ac697f9`: one root Run with native child Conversation
 unified Tool replies, one Session closure and Worker direct Kafka publication.
 The last fully accepted matched release, `guest-execution-5536fc73`, uses schema 189,
 execution-topic v17, boot reply v3, guest/Tool Worker protocol 6 and Cube management
-protocol 7. The October 16 guest-7 cutover is **in maintenance, not yet serving**:
-native Cube was replaced, but missing host KVM blocked guest template creation.
+protocol 7. The October 16 guest-7 release `tool-preview-325f0ebd` is now deployed:
+Windows rollback restored KVM, all four new templates were created, and the
+application workloads are Ready. Full live acceptance remains open because model
+requests intermittently fail on the external proxy path and one preview-reconnect
+timeout still needs diagnosis.
 The [repair and recovery record](docs/reports/tool-receipt-preview-repair-20261016.md)
-identifies the scanned candidate, exact partial state and remaining live acceptance.
+identifies the scanned artifacts, recovery, passing checks and remaining live acceptance.
 Current source implements [ADR-0252](docs/adr/0252-tool-receipt-and-ephemeral-preview.md):
 receipt-only loss preserves confirmed results; bounded CR/ANSI-aware previews send
 incremental edits and periodic resets over HTTP/SSE, independently of final results.

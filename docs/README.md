@@ -12,9 +12,10 @@ and matched acceptance. Its [adoption note](research/tool-preview-rendering-2026
 records the pinned parser choice and isolated package checks. Source changes and
 the remaining matched/live gates are tracked in the
 [delivery record](reports/tool-receipt-preview-repair-20261016.md). Source/native/fault
-gates and all eleven artifact scans pass. The October 16 cutover replaced native
-Cube but stopped at guest-template creation because host KVM is unavailable;
-applications remain in maintenance and live acceptance is pending.
+gates and all eleven artifact scans pass. Windows rollback restored host KVM and
+the October 16 matched release `tool-preview-325f0ebd` is deployed. Continuous
+previews and the real receipt-loss/background-process case pass; full acceptance
+remains open after external proxy TLS failures and a preview-reconnect timeout.
 
 The [October 15 Cubelet → guest execution review](reports/cubelet-guest-execution-review-20261015.md)
 records a missing deadline in cleanup, native Read path drift, unused per-Tool

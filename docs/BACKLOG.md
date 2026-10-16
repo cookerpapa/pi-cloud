@@ -38,13 +38,15 @@ The subsequent discussion and approved repair are recorded in
 adds incremental display/reset semantics and terminal-aware previews. The
 [delivery record](reports/tool-receipt-preview-repair-20261016.md) tracks source
 verification and the pending matched deployment/live acceptance. All source/native/
-fault gates and eleven artifact scans pass. Native Cube has been replaced, but
-guest-template creation failed because this Windows/WSL host no longer exposes
-KVM. The owner-authorized Windows update rollback completed its online phase;
-Windows restart and actual KVM/Cube verification are still required. Applications
-remain offline. Restore host virtualization, prepare/apply from
-an exact clean revision, then run the maintained live checks. The release operator
-now checks KVM device availability on every Cube compute node before draining.
+fault gates and eleven artifact scans pass. The owner-authorized Windows rollback
+and reboot restored KVM; actual VM creation and all four new templates pass.
+`tool-preview-325f0ebd` is deployed with Ready application workloads. Continuous
+previews, one Control Plane replacement and receipt-only loss preserving the
+result/background server/sibling process pass. Complete model/browser acceptance
+remains open after repeated external AnyTLS-path failures and one subsequent
+preview-reconnect timeout. The maintained fixture now retains failed-Run and
+restart/observation/browser diagnostics. The release operator checks KVM device
+availability on every Cube compute node before draining.
 
 - [ ] R16R-01: distinguish receipt-only transport failure from unfinished or
       unsafe execution. A complete valid result plus confirmed local settlement

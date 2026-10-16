@@ -10,9 +10,12 @@ with ADR-0249's deployed publication contract, ADR-0250's handoff repair and
 ADR-0251's guest attachment/lifetime repair and ADR-0252's receipt/preview repair
 (schema 189 / topic v17 / boot reply v3 / source guest protocol 7, adapter startup 3).
 The [current delivery record](reports/tool-receipt-preview-repair-20261016.md)
-records the incomplete October 16 cutover: native Cube is replaced, but application
-workloads remain offline because host KVM is unavailable. Source verification and
-artifact scans pass; real VM/browser acceptance has not run on this candidate.
+records the October 16 deployment of `tool-preview-325f0ebd`: Windows rollback
+restored KVM and the matched native/template/application cutover completed.
+Source/artifact gates, real continuous previews, one Control Plane replacement and
+the native receipt-loss/background-preservation check pass. Full live acceptance
+remains open: intermittent external proxy TLS failures interrupt model checks, and
+one subsequent preview-reconnect timeout needs diagnosis.
 [Previous acceptance evidence](reports/cubelet-guest-execution-repair-20261015.md)
 identifies the fully accepted guest-6 release `guest-execution-5536fc73`; the
 [handoff evidence](reports/projector-cube-handoff-repair-20261015.md) records
