@@ -249,3 +249,54 @@ gate. Native Cube contract/race tests and all eleven final artifact scans pass.
 Private final reports, runtime checks and preservation receipts are under the
 release-evidence directory above. The remaining Volume-reference item is an
 explicit operational limitation, not a claim of automatic node-loss recovery.
+
+## Owner-requested resource cleanup, October 17
+
+The unknown fixture Volume was already physically deleted by the operator
+recovery above. A fresh check returns Volume HTTP 404, with no native Volumes,
+node reference rows or holds, no VMs on the complete recorded node and an empty
+Workspace Volume directory. The owner then requested clearing remaining unused
+PiCloud resources.
+
+- Removed 102 already settled business/runtime rows: 18 deleted and physically
+  purged Workspaces and their 18 deleted projects, 13 released runtimes, one
+  released development machine and associated deletion/environment records.
+  The transaction rechecked quiescence and physical-absence evidence; it did not
+  modify account, model/provider, credential or native fencing tables.
+- Removed 318 obsolete Docker tags and 227 obsolete K3s image references after
+  protecting current workload images, the current guest and separately pinned
+  infrastructure. These are reference counts, not unique-layer counts.
+- Removed 15 obsolete registry manifests. Offline collection reclaimed
+  682,950,656 bytes (about 651 MiB). The current guest's three-manifest OCI graph
+  retains all 33 referenced blobs, verified through the registry API. Only its
+  current tag remains; all four current Cube templates retain their IDs/digest
+  and READY state.
+- Removed 86 inactive ReplicaSets, 27 superseded Helm revision records, the
+  completed database-bootstrap Job and three obsolete development database-backup
+  directories. Current Helm records, release evidence and configuration remain.
+
+Registry collection follows Distribution's documented
+[offline garbage-collection procedure](https://distribution.github.io/distribution/about/garbage-collection/).
+Initial maintenance attempts encountered a replaced HTTP connection, already
+deleted manifests' empty directories and Service endpoint convergence. A later
+read-only rollout did not become Ready within its 60-second bound; each attempt
+restored the original configuration. Final collection stopped the registry,
+ran its pinned collector in a disposable Job, then restored normal service with
+deletion disabled. The failed maintenance receipts and final graph verification
+remain separate in private evidence.
+
+Final verification finds zero Sessions, Runs, projects, Workspaces, runtimes,
+development machines and pending control records; S3 lists zero objects and
+unfinished multipart uploads. All 28 serving Pods are Ready, all serving images
+remain available, and Windows/Linux web access returns HTTP 200. Seven original
+account/configuration fingerprints still match. Rounded filesystem availability
+increased from 391 to 412 GiB; this is an observed host-space change, not a sum of
+image sizes. No application behavior or image version changed during cleanup.
+
+Existing Kafka retention and retired-writer/allocation protection records remain
+intact. Two retired Worker mailboxes were still inside the normal 121-minute GC
+grace; their existing collector, rather than an ownership reset, handles expiry.
+The automatic unknown-reference recovery backlog item is unchanged, but the
+specific unknown fixture Volume no longer exists or occupies storage.
+Private `cleanup-*.json` receipts under the release directory record before/after
+state, individual removals and final preservation checks.

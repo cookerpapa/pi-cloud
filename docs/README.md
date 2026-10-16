@@ -8,7 +8,9 @@ are complete as `tool-unknown-791a6ed0`: bounded continuation, idle completion
 recovery and startup Stop settlement pass source and real Luna/Cube/browser checks.
 The record preserves failed samples and the operator-confirmed cleanup required
 by ADR-0226's conservative unknown Volume references after Cubelet loss; automatic
-reconciliation remains in the backlog. WSL expansion and original configuration
+reconciliation remains in the backlog. The October 17 owner-requested cleanup
+confirms no remaining Volume/VM or Workspace bytes and removes obsolete records,
+images and deployment history. WSL expansion and original configuration
 preservation are verified.
 
 The [October 16 guest → Cubelet result review](reports/guest-cubelet-result-review-20261016.md)

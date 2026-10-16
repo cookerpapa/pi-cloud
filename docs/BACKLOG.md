@@ -48,6 +48,8 @@ ADR-0226's conservative recovery behavior, not proof of safe deletion. The
 operator-confirmed cleanup of the single owned test Volume after closed
 admission, irreversible allocation closure, complete recorded-node absence and
 the pinned POSIX driver's detach receipt. No automatic clearing policy changed.
+The fixture Volume and its bytes have been deleted; the open item concerns
+automatic recovery of future unknown references, not an uncleared test Volume.
 
 - [ ] Design bounded reconciliation of these unknown POSIX references before
       claiming automatic Workspace recovery/GC after active Cubelet loss. Preserve

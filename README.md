@@ -76,10 +76,10 @@ enter native persistence before validated Tool execution (ADR-0230).
 The [Session work migration](docs/adr/0247-session-work-and-tool-dispatch.md) is
 deployed as `session-work-6ac697f9`: one root Run with native child Conversations,
 unified Tool replies, one Session closure and Worker direct Kafka publication.
-The current matched release, `tool-preview-325f0ebd`, uses schema 189, execution-topic
+The current matched release, `tool-unknown-791a6ed0`, uses schema 189, execution-topic
 v17, boot reply v3, guest/Tool Worker protocol 7, completion startup protocol 3,
 preview schema 2 and Cube management protocol 7. Windows rollback restored KVM;
-all four new templates, application workloads and required live acceptance pass.
+all four templates, application workloads and required live acceptance pass.
 The local WSL web adapter also restores Windows localhost access through the
 existing systemd TCP proxy and the Kubernetes web Service.
 The [repair and recovery record](docs/reports/tool-receipt-preview-repair-20261016.md)
