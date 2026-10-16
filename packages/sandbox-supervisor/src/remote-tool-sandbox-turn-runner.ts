@@ -506,7 +506,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     let workspaceSeed: Uint8Array | undefined;
     if (this.#workspaceSeedResolver !== undefined) {
       try {
-        workspaceSeed = await this.#workspaceSeedResolver(command, signal);
+        workspaceSeed = await this.#workspaceSeedResolver(command);
       } catch (error: unknown) {
         throw safePiError(
           error,

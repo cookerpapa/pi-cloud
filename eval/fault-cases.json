@@ -416,6 +416,13 @@
       "invariant": "A rolled-back Stop acknowledgement cannot start model/Tool work or strand a runner waiting for a cancellation signal."
     },
     {
+      "id": "cancel-before-native-setup",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/durable-turn-runner.test.ts",
+      "test": "runs native input and admission gates (stop_before_setup)",
+      "invariant": "An already signalled Stop passes immutable Workspace metadata preparation and settles in native Pi without acquiring a model permit or activating Cube."
+    },
+    {
       "id": "cancel-settlement-sql-abort",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/atomic-worker-admission.postgres.test.ts",

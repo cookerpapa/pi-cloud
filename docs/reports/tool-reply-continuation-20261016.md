@@ -153,3 +153,29 @@ history. The 255-case fault gate and targeted startup/Harness/API cases pass;
 expanded application/transport checks are in progress.
 scanned Worker recovery of the isolated fixture and a complete matched release
 must precede final live acceptance.
+
+Source `d3fcc781` subsequently passed 1,795 application tests, 77 helper tests,
+eight real RF3/PG transport cases, the full 255-case fault gate, builds/types,
+documentation/format/runtime/image-closure checks and eleven image scans.
+The scanned Worker rollout ended the isolated recovery loop with a sealed Run,
+but its Stop was classified as `workspace_seed_cancelled`, not native cancellation.
+The pure claimed-seed descriptor still had a pre-Durable abort check. Remove
+that check/parameter and pass the original Stop through native bootstrap. The
+actual remote runner + real seed resolver + pinned Harness now passes an
+already-aborted Stop with zero model permits, zero Cube activation and normal
+native cancellation; both seed variants also pass. Add this to the fault index.
+
+The operator failure remains in `isolated-stop-recovery.json`. Separate normal
+API cleanup read all 903 transitions, confirmed zero Tool calls, deleted the
+owned conversation/Workspace and waited for physical purge before removing its
+tenant. `isolated-stop-failed-cleanup.json` records cleanup success without
+claiming cancellation acceptance. All original seven account/configuration
+fingerprints match, all Pods are Ready, and no Run/writer/VM/binding remains.
+Only Workers temporarily run `tool-unknown-d3fcc781`; the final complete matched
+release and live acceptance are still required.
+
+The seed follow-up passes all 207 sandbox-supervisor and 86 supervisor-host tests,
+the three affected package type checks, documentation/format/runtime/image-closure
+checks and all 256 indexed fault cases. No native Cube, guest wire, schema or
+dependency changed. The live fixture now also checks an immediate Stop after
+claim, and tolerates an as-yet-unmaterialized transcript while awaiting a Tool.

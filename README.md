@@ -138,7 +138,9 @@ skips unchanged replay updates while retaining authority locks
 final-answer text share the typing animation; restored history displays immediately.
 Chat Stop interrupts the Worker Agent and sends operation-scoped cancellation
 through the same Session Kafka path. Durable records the native abort; a late
-physical reply does not replace it. Worker replacement preserves the logical Run,
+physical reply does not replace it. During startup, Stop is retained through
+authorized writer initialization; Pi opens with effects blocked to settle it.
+Worker replacement preserves the logical Run,
 Turn and native input, resuming only after old-writer closure and a new PG lease.
 Unsafe interrupted Tools are reported to the model without automatic replay. Completed background services and independent process groups survive.
 Routing revocation still precedes the final seal. Abnormal retirement carries a
@@ -156,6 +158,12 @@ VMs directly and reuses confirmed execution-path evidence; missing probes do not
 authorize VM destruction or quota release. Recovery never automatically replays
 uncertain commands. Quarantine closes PG bindings before confirming propagation,
 so a publication outage cannot leave a failed VM eligible for new work.
+Fixed Tool reply waits use that invocation's execution budget plus the existing
+120-second transport allowance. An eligible lost reply remains UNKNOWN; a fresh,
+bounded path check can allow a separate inspection Tool. An unconfirmed path or
+repeated uncertainty interrupts the Run. Probe traffic stays outside native
+history and model context. [Implementation and acceptance](docs/reports/tool-reply-continuation-20261016.md)
+record the limits and verified failure cases.
 
 One physical Session family stays on one Worker, and each Kafka partition keeps
 ordered projection. The single-host profile does not provide physical-node HA.

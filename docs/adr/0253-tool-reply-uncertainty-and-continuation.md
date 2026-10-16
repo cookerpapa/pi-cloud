@@ -49,6 +49,16 @@ temporary rollout, writer closure and physical cleanup, then reconcile the whole
 matched release. Never patch live source or discard the pending Run to pass a
 deployment gate.
 
+The scanned recovery ended the loop but exposed an older preparation shortcut:
+the claimed Workspace seed descriptor converted an already delivered Stop into
+`workspace_seed_cancelled` before Pi opened. Seed resolution is pure immutable
+metadata construction and performs no guest/filesystem effect. Remove that
+cancellation parameter/check, and let the original Stop signal reach native Pi
+bootstrap/abort. The production native-session opener already retains authority
+checks independently of the user Stop signal. Cover the actual remote runner,
+real seed resolver and pinned Harness with Stop already signalled, proving zero
+model requests, zero Cube activation and native cancellation settlement.
+
 ## Review recap and accepted limits
 
 The preceding guest-to-Cubelet findings are already repaired under

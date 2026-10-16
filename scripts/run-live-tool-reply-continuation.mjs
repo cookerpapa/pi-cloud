@@ -77,12 +77,12 @@ const report = {
   cases: [],
 };
 const terminal = (run) => ["completed", "failed", "cancelled", "timed_out"].includes(run.state);
-async function until(check, label, ms = 600000) {
+async function until(check, label, ms = 600000, pollMs = 250) {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
     const value = await check();
     if (value) return value;
-    await delay(250);
+    await delay(pollMs);
   }
   throw new Error(`Timed out: ${label}`);
 }
@@ -137,6 +137,44 @@ try {
     sessionId: session.sessionId,
   };
   await writeFile(output, JSON.stringify(report, null, 2), { mode: 0o600, flag: "wx" });
+  active = await api.acceptTurn(
+    session.sessionId,
+    "不要调用任何工具，用几段文字解释排序算法。",
+    newIdempotencyKey("stop-bootstrap"),
+    "low",
+  );
+  const beforeStop = await until(
+    async () => {
+      const row = await db
+        .selectFrom("runs")
+        .select(["state", "output_first_offset"])
+        .where("id", "=", active.runId)
+        .executeTakeFirstOrThrow();
+      return row.state === "running" ? row : undefined;
+    },
+    "claimed Run before early Stop",
+    10000,
+    10,
+  );
+  await api.cancelTurn(session.sessionId, active.turnId, newIdempotencyKey("stop-bootstrap"));
+  assert.equal(
+    (await waitRun(active.runId)).state,
+    "cancelled",
+    "Early Stop did not settle normally",
+  );
+  assert.equal((await turnTools(active.runId)).length, 0, "Early Stop executed a Tool");
+  assert.equal(
+    (await cube.list()).filter((v) => v.metadata["picloud.tenant_id"] === tenant.tenantId).length,
+    0,
+  );
+  report.cases.push({
+    kind: "early-stop",
+    state: "cancelled",
+    beforeFirstOutput: beforeStop.output_first_offset === null,
+    toolCalls: 0,
+    cubeActivations: 0,
+  });
+  await writeFile(output, JSON.stringify(report, null, 2), { mode: 0o600 });
   active = await api.acceptTurn(
     session.sessionId,
     "只调用一次 bash，执行 printf 'REPLY_READY'，然后简短回复。不要其他工具、搜索或委派。",

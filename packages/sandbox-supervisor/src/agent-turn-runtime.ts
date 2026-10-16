@@ -8,7 +8,6 @@ import type { ToolRegistration } from "@earendil-works/pi-durable";
 
 export type AgentWorkspaceSeedResolver = (
   command: ExecuteTurnCommandMessage,
-  signal: AbortSignal,
 ) => Promise<Uint8Array | undefined> | Uint8Array | undefined;
 
 export type ProviderHostedActivity = Readonly<

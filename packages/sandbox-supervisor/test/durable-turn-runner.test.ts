@@ -1,10 +1,15 @@
 import { nativeTestDisplay } from "./fixtures/native-test-display.ts";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { MemoryStorage } from "@earendil-works/pi-durable";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { FakeModelServer, FAKE_MODEL_API_KEY } from "@pi-cloud/fake-model-server";
 import { type EventPublishMessage } from "@pi-cloud/protocol";
 import { PiCloudTurnRunner } from "../src/pi-cloud-turn-runner.ts";
+import { RemoteToolSandboxTurnRunner } from "../src/remote-tool-sandbox-turn-runner.ts";
+import { resolveWorkspaceSeed } from "../../supervisor-host/src/workspace-seed.ts";
 import {
   createCloudTurnContext,
   createCloudExecutionContext,
@@ -16,7 +21,7 @@ import type {
 } from "@pi-cloud/pi-session-postgres/durable";
 import { command } from "./fixtures/durable-command.ts";
 
-it.each(["complete", "stop_on_resume"] as const)(
+it.each(["complete", "stop_on_resume", "stop_before_setup"] as const)(
   "runs native input and admission gates (%s)",
   async (mode) => {
     const fake = new FakeModelServer({ defaultScenario: "text" });
@@ -58,7 +63,7 @@ it.each(["complete", "stop_on_resume"] as const)(
       execution = createCloudExecutionContext({
         command,
         turnContextSha256: turn.sha256,
-        runtimeIdentity: { supervisorId: "s", bootId: "b", sandboxId: "worker" },
+        runtimeIdentity: { supervisorId: "s", bootId: crypto.randomUUID(), sandboxId: "worker" },
       });
     let step = 0,
       acquired = 0,
@@ -88,7 +93,7 @@ it.each(["complete", "stop_on_resume"] as const)(
       preparePublication: () => {},
       close: async () => {},
     };
-    const runner = new PiCloudTurnRunner({
+    let runner: PiCloudTurnRunner | RemoteToolSandboxTurnRunner = new PiCloudTurnRunner({
       onActivity: (value) => {
         if (mode === "stop_on_resume" && value?.phase === "cancelling")
           userStop.abort({
@@ -147,13 +152,79 @@ it.each(["complete", "stop_on_resume"] as const)(
         },
       }),
     });
+    const directory = await mkdtemp(join(tmpdir(), "native-stop-bootstrap-"));
+    const activate = vi.fn(async () => {
+      throw new Error("Cancelled bootstrap must not activate Cube");
+    });
+    const leaseReleased = vi.fn();
+    const selectedCommand =
+      mode === "stop_before_setup"
+        ? {
+            ...command,
+            payload: {
+              ...command.payload,
+              model: {
+                ...command.payload.model,
+                provider: "openai-codex" as const,
+                modelId: "gpt-6-luna" as const,
+              },
+            },
+          }
+        : command;
     try {
+      if (mode === "stop_before_setup") {
+        userStop.abort({
+          kind: "pi-cloud.turn-cancellation",
+          reason: "user_request",
+          gracePeriodMs: 1000,
+        });
+        runner = new RemoteToolSandboxTurnRunner({
+          broker: {
+            create: activate,
+            refreshServices: async () => {},
+            release: async () => ({ retained: false }),
+            workflowUrlFor: () => {
+              throw new Error("No Workflow expected");
+            },
+          },
+          runtimeIdentity: { supervisorId: "s", bootId: crypto.randomUUID(), sandboxId: "worker" },
+          trustedWorkspaceDirectory: directory,
+          workspaceSeedResolver: resolveWorkspaceSeed,
+          openAgentSession: async () => handle,
+          modelRuntimeLeaseResolver: () => ({
+            runtime: {
+              kind: "openai_compatible_gateway",
+              provider: "openai-codex",
+              modelId: "gpt-6-luna",
+              api: "openai-codex-responses",
+              baseUrl: fake.baseUrl,
+              capability: FAKE_MODEL_API_KEY,
+              reasoning: false,
+              inputModalities: ["text"],
+              hostedTools: [],
+              contextWindow: 131072,
+              autoCompactTokenLimit: 100000,
+              maxTokens: 1024,
+              serviceTier: null,
+              requestTimeoutMs: 1000,
+              turnTimeoutMs: 10000,
+            },
+            release: leaseReleased,
+          }),
+          acquireModelPermit: async () => {
+            acquired++;
+            return () => {
+              released++;
+            };
+          },
+        });
+      }
       const executing = runner.run(
         {
-          ...command,
+          ...selectedCommand,
           payload: {
-            ...command.payload,
-            ...(mode === "stop_on_resume" ? { stopOnResume: true as const } : {}),
+            ...selectedCommand.payload,
+            ...(mode !== "complete" ? { stopOnResume: true as const } : {}),
           },
         },
         (event) => {
@@ -161,13 +232,15 @@ it.each(["complete", "stop_on_resume"] as const)(
         },
         userStop.signal,
       );
-      if (mode === "stop_on_resume") {
+      if (mode !== "complete") {
         await expect(executing).rejects.toMatchObject({
           code: "turn_cancelled",
           reason: "user_request",
         });
         expect(acquired).toBe(0);
         expect(released).toBe(0);
+        expect(activate).not.toHaveBeenCalled();
+        if (mode === "stop_before_setup") expect(leaseReleased).toHaveBeenCalledOnce();
         expect(events.some((event) => event.payload.event.type === "model.sampling.started")).toBe(
           false,
         );
@@ -186,6 +259,7 @@ it.each(["complete", "stop_on_resume"] as const)(
     } finally {
       await (await runtime)?.close();
       await fake.stop();
+      await rm(directory, { recursive: true });
     }
   },
   15000,
