@@ -3,14 +3,14 @@
 ## Cube completion → Kafka replies and UNKNOWN continuation
 
 [ADR-0253](adr/0253-tool-reply-uncertainty-and-continuation.md) records the approved
-direction and current-hop source findings. U1–U3 are implemented; the
+direction and current-hop source findings. U1–U4 are implemented and source-verified; the
 [verification record](reports/tool-reply-continuation-20261016.md) separates source
 checks from pending live acceptance and the unchanged `tool-preview-325f0ebd` release.
 
 - [x] U1: trusted failure classification and hard-stop precedence.
 - [x] U2: reuse the existing bounded execution probe through a runtime port.
 - [x] U3: native UNKNOWN settlement with conditional inspection and repeated-uncertainty guard.
-- [ ] U4: per-invocation reply deadlines, obsolete-branch removal and verification.
+- [x] U4: per-invocation reply deadlines, obsolete-branch removal and verification.
 - [ ] U5: matched deployment, real Luna/Cube/browser/recovery evidence and cleanup.
 
 No Codex-style process polling, result outbox/cache, new PG health rows or Pi loop

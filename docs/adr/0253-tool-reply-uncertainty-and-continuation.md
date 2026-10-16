@@ -1,6 +1,8 @@
 # ADR-0253: Tool reply uncertainty and bounded continuation
 
-Status: implementation authorized and in progress, 2026-10-16. Baseline: `03c3a7ec`; serving release:
+Status: implemented and source-verified; matched release/live acceptance pending,
+2026-10-16. [Verification record](../reports/tool-reply-continuation-20261016.md).
+Baseline: `03c3a7ec`; serving release:
 `tool-preview-325f0ebd`.
 
 The owner accepted retaining Pi's final-result Tool contract, bounded remote

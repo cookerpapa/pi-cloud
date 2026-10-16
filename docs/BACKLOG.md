@@ -45,7 +45,7 @@ volatile-result loss boundary; reuse the existing internal execution probe.
       with current binding/owner checks, coalescing and no native/context/PG sample.
 - [x] U3: commit UNKNOWN then permit inspection only with confirmed readiness;
       interrupt repeated uncertainty and preserve single settlement/late-reply rules.
-- [ ] U4: invocation-specific wait budget plus existing transport allowance;
+- [x] U4: invocation-specific wait budget plus existing transport allowance;
       remove orphaned error branches and complete source/transport/fault gates.
 - [ ] U5: scanned matched release and owned Luna/Cube/browser/input/recovery
       acceptance, proving one original effect and confirmed fixture cleanup.

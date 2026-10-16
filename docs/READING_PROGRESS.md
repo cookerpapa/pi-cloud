@@ -20,7 +20,7 @@ can continue. Probe packets never enter native history or model context. Stop,
 lost ownership, uncertain publication, closed/replaced bindings and Workflow
 channel failures retain interruption. Remove three orphaned error recognizers.
 The [implementation record](reports/tool-reply-continuation-20261016.md) tracks
-source changes and passing targeted checks; full gates, matched rollout and live
+source changes and passing full CI/252-case fault checks; matched rollout and live
 fault acceptance are pending. The owner also requested a WSL disk expansion;
 restart timing is pending and the reading checkpoint is unchanged.
 The walkthrough remains at this hop while that slice is addressed.

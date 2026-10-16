@@ -34,7 +34,7 @@ Readiness checks add no request on the ordinary successful Tool path. The one
 extra HTTP confirmation belongs to eligible failure handling and uses the same
 partition ownership discovery and Worker management authentication.
 
-## Verification in progress
+## Source verification complete; release pending
 
 - Targeted native Harness, mailbox, completion, routing and probe tests pass.
   They cover distinct inspection without original-command replay, repeated
@@ -44,8 +44,12 @@ partition ownership discovery and Worker management authentication.
   documentation and runtime-policy checks have passed in the current CI run.
 - Full CI passed: 1,793 workspace tests, 77 acceptance-helper tests, eight real
   RF3/PG transport tests, all 244 previously indexed deterministic fault cases
-  and a security audit with no remaining vulnerabilities. The expanded 252-case
-  run is in progress; all eight new continuation/readiness cases have passed.
+  and a security audit with no remaining vulnerabilities. A subsequent complete
+  expanded run passed all 252 cases, including the eight new continuation/readiness
+  cases. [Machine-readable results](fault-eval-latest.json) retain the baseline
+  revision/dirty-worktree marker from execution start; source was subsequently
+  committed as `865e0e11`. The final strict HTTP readiness-status change and live
+  fixture checks also passed their affected targeted suites.
 - The owned live fixture has been added and its suppression isolation is tested.
   It has not yet been run on a matching release. It retains a checksum/ownership
   restore receipt, suppresses only fixture results/probes, expires automatically,
