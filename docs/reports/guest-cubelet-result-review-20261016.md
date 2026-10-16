@@ -13,6 +13,11 @@ the downstream consequence; Kafka publication/Worker consumption is the next hop
 Sources include the exact pinned Cube commit and all eight verified patches,
 containerd 2.2.2 I/O, and the current guest/transport contracts.
 
+Version correction from release verification: the 2.2.2 I/O source was inspected,
+but patch 0005 resolved the built dependency to 2.2.5. The approved repair's
+release now pins 2.2.7 for a scan finding and repeats the execution contracts;
+see its [delivery record](tool-receipt-preview-repair-20261016.md).
+
 The split remains reasonable: guest Tools produce results, Cubelet owns accepted
 native process lifetimes, and Worker Pi processing owns canonical conversation
 results. This review does not justify a new service, queue, per-Tool PG lookup,

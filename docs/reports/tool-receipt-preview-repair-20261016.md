@@ -74,6 +74,21 @@ temporary bound, a 15-minute budget and an optional official repository selector
 Offline image-scan bounds and the vulnerability gate remain unchanged. Preparation
 must be repeated from a clean revision with matching artifact provenance.
 
+The next scan completed all eleven reports but blocked Cubelet/cubecli on
+`CVE-2026-95837`: the resolved containerd dependency was 2.2.5. The
+[upstream advisory](https://github.com/containerd/containerd/security/advisories/GHSA-p7v4-vr35-mj6f)
+identifies 2.2.7 as the fixed patch line. Patch `0010-containerd-security.patch`
+pins 2.2.7 and its required module graph; CubeMaster's graph is tidied to match
+its local Cubelet module. No vulnerability ignore or experimental CRI restore
+option is added. Presence in the binaries is the scan finding; this report does
+not claim exploitation of the advisory's CRI checkpoint path in PiCloud's KVM runtime.
+
+The dependency recheck passes native execution race tests, maintained cleanup
+service cases and complete Cubelet/CubeMaster compilation. A broader upstream
+CubeMaster service test invocation lacked its upstream `test/conf.yaml` and
+panicked in configuration access; it is not claimed as passing. Required managed
+allocation/Volume/native contracts and live KVM acceptance remain the release gates.
+
 Verification is complete in stages: 1,761 workspace tests and 71 acceptance-helper
 tests pass (1,832 total; ten conditional skips), together with eight real RF3
 Kafka/PG transport tests, 244 deterministic fault cases and the native race suites.

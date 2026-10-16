@@ -39,6 +39,10 @@
     {
       "file": "0009-tool-receipt-and-preview.patch",
       "sha256": "eb9714f999daa8f7e85e8440b75c50ab9c00b2ad2ee6901edc24fbd2d29444c1"
+    },
+    {
+      "file": "0010-containerd-security.patch",
+      "sha256": "952eb0ff71f5e6900a2cd9c75650f8ddf184c8aa7eb5b41550657db116294e75"
     }
   ],
   "buildImages": {
