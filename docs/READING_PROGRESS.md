@@ -5,13 +5,20 @@ Updated: 2026-10-16.
 The walkthrough explains one component-to-component hop at a time, including
 its message, acknowledgement boundary, failure behavior and design tradeoffs.
 
-Current checkpoint: **guest Tool process → Cubelet result reception**.
+Current checkpoint: **Cubelet completion adapter → Kafka Worker-boot reply topic**.
+Explained the trusted host-side Node adapter, command-carried reply destination,
+operation-keyed final result envelope, image externalization, Kafka publication ACK
+and the local `delivered:true` receipt. The boot-scoped mailbox is transport, while
+Pi/Session publication owns canonical history. Delivery retries retain/re-send the
+same result without repeating shell execution; whole-Cubelet loss before confirmed
+delivery can lose an in-memory result and retains the UNKNOWN boundary.
+Next: Kafka reply consumption → the original Worker's pending Tool callback and Pi.
+
+Previously covered **guest Tool process → Cubelet result reception**.
 Explained structured final results over the existing native process output channel,
 progress/final separation and the bytes-only `scope.received` acknowledgement.
 The [October 16 focused review](reports/guest-cubelet-result-review-20261016.md)
 confirmed receipt-loss cleanup and oversized preview loss with isolated evidence.
-Next: Cubelet completion
-adapter → Kafka's original-Worker-boot reply transport.
 The subsequent discussion distinguishes disposable browser previews from guest
 final-result collection, and identifies CR/ANSI display limitations. Accepted
 [ADR-0252](adr/0252-tool-receipt-and-ephemeral-preview.md) records receipt repair,
@@ -22,7 +29,7 @@ the successful KVM recovery and matched `tool-preview-325f0ebd` deployment.
 Complete progress/receipt, native input/dual-process recovery, browser/image/Read
 and full Cube acceptance pass. Earlier TLS failures and the measured SSE recovery
 that corrected the fixture's deadline remain recorded. The reading checkpoint is
-unchanged; the next hop is still Cubelet completion → original-Worker Kafka replies.
+preserved in this document; the walkthrough has now advanced to reply publication.
 
 Previously covered **Cubelet → the VM's fixed Tool execution process**.
 Explained per-operation native process startup in a reusable VM, the root scope
