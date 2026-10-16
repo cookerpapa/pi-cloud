@@ -833,6 +833,12 @@ contract-tested against pinned Pi while retaining bounded reads and images.
 The [repair record](reports/cubelet-guest-execution-repair-20261015.md) records
 the matched rollout, source/live acceptance, failed samples and cleanup.
 
+The [guest return-path review](reports/guest-cubelet-result-review-20261016.md)
+records two current implementation gaps: loss of the guest receipt can discard
+an already-received successful result and invoke operation-scope cleanup, and
+oversized temporary previews are discarded before their downstream trim. Those
+repairs are proposed, not part of the deployed guest 6 contract.
+
 Authorized closure revokes publication and binding routing admission before the
 seal. Normal Stop co-commits native abort and cancellation for unfinished fixed
 Tools or workflow scripts; a late reply cannot replace the native outcome. Binding closure itself has no

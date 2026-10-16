@@ -1,0 +1,76 @@
+{
+  "reviewedRevision": "06559532f0e449dbfe73d65de650c655a8f3ab9e",
+  "checkedAt": "2026-10-16T00:40:44.749Z",
+  "cubeCommit": "8721dd151971ce3c2966482bbd32904ad98f378e",
+  "goVersion": "go version go1.26.0 linux/amd64",
+  "nodeVersion": "v24.12.0",
+  "productionMutations": false,
+  "liveVmFaultInjection": false,
+  "guestFixture": "actual guest and launcher on local PTY; privilege launch and cgroup calls substituted",
+  "nativeFixture": "actual driver, parser and containerd FIFO I/O; process/task services substituted",
+  "guest": {
+    "progress": [
+      {
+        "case": "small",
+        "frameBytes": 1301,
+        "visibleTextBytes": 1024,
+        "duplicateTextBytes": 0,
+        "fitsNativeProgressLimit": true,
+        "finalSucceeded": true
+      },
+      {
+        "case": "truncated",
+        "frameBytes": 102913,
+        "visibleTextBytes": 51200,
+        "duplicateTextBytes": 51200,
+        "fitsNativeProgressLimit": false,
+        "finalSucceeded": true
+      }
+    ],
+    "receipts": [
+      {
+        "acknowledged": true,
+        "exitCode": 0,
+        "finalSucceeded": true,
+        "localFinishCompleted": true,
+        "scopeStopRequired": false,
+        "elapsedMs": 580,
+        "scopeFailureText": false
+      },
+      {
+        "acknowledged": false,
+        "exitCode": 1,
+        "finalSucceeded": true,
+        "localFinishCompleted": true,
+        "scopeStopRequired": false,
+        "elapsedMs": 5571,
+        "scopeFailureText": true
+      }
+    ]
+  },
+  "nativeBaseline": "ok  \tgithub.com/tencentcloud/CubeSandbox/Cubelet/pkg/execution\t15.347s",
+  "nativeProbes": [
+    "=== RUN   TestReviewActualGuestProgress",
+    "    review_result_test.go:39: case=small frame_bytes=1301 forwarded=1",
+    "    review_result_test.go:39: case=truncated frame_bytes=102913 forwarded=0",
+    "--- PASS: TestReviewActualGuestProgress (0.01s)",
+    "=== RUN   TestReviewReceiptFailureDiscardsCompletedResult",
+    "=== RUN   TestReviewReceiptFailureDiscardsCompletedResult/true",
+    "    review_result_test.go:169: acknowledged=true output_retained=true failure= scope_cleanup_calls=0 quarantine=false",
+    "=== RUN   TestReviewReceiptFailureDiscardsCompletedResult/false",
+    "    review_result_test.go:169: acknowledged=false output_retained=false failure=tool_output_invalid scope_cleanup_calls=1 quarantine=false",
+    "--- PASS: TestReviewReceiptFailureDiscardsCompletedResult (0.01s)",
+    "    --- PASS: TestReviewReceiptFailureDiscardsCompletedResult/true (0.01s)",
+    "    --- PASS: TestReviewReceiptFailureDiscardsCompletedResult/false (0.00s)",
+    "PASS",
+    "ok  \tgithub.com/tencentcloud/CubeSandbox/Cubelet/pkg/execution\t1.057s"
+  ],
+  "sourceSha256": {
+    "deploy/cubesandbox/runtime-build.json": "404e5346a037b3ffa5a2b61156120f7aef85a42bff8c9843d588cfdef2288b55",
+    "packages/tool-sandbox/src/cube-tool-scope.ts": "915c0c2de6f78453bc18478683f041d9438802180a755d5a9b374e85550580bc",
+    "packages/tool-sandbox/src/envd-tool-exec.ts": "4b31233a3e188cc189c807f42ae4db4c0ed819d31425d0f57f722d0d05c545be",
+    "packages/tool-sandbox/src/native-tools.ts": "494b375214b76299a64e1a7adc2cbf30c0b0928588efdf786f2151b4ea24fd0f",
+    "packages/tool-sandbox/src/native-tool-output.ts": "6d3aa631c164268489abe7f4aec89800e9d4f7be9dcfa1bb1c12afef93eef3bc",
+    "packages/cube-completion/src/adapter.ts": "5e425a0ee120d7d658287d4332bd6ccc380c5bd93e73aa83caf916a7c8a4ef11"
+  }
+}

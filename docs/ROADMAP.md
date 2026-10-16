@@ -1,5 +1,15 @@
 # Implementation roadmap
 
+## Guest → Cubelet result audit
+
+- [x] Review guest final/progress framing, raw PTY receipts, native output draining
+      and execution cleanup against the exact maintained Cube patches/containerd.
+- [x] Reproduce receipt-loss cleanup and oversized preview loss with isolated
+      guest/PTY/native-driver probes; record [evidence and repair boundaries](reports/guest-cubelet-result-review-20261016.md).
+
+The review makes no runtime/deployment change. The proposed repairs remain in
+the backlog; any changed completion protocol requires an ADR before implementation.
+
 ## Cubelet → guest execution audit
 
 - [x] Review native process startup, guest framing/attachment, fixed Tools,

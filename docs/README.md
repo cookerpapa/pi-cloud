@@ -1,5 +1,12 @@
 # Documentation map
 
+The [October 16 guest → Cubelet result review](reports/guest-cubelet-result-review-20261016.md)
+records receipt loss incorrectly triggering operation-scope cleanup and oversized
+progress being discarded. [Isolated evidence](reports/guest-cubelet-result-review-20261016.json)
+uses actual guest/PTY behavior and patched native I/O with substituted process
+services; it does not claim live VM destruction. No runtime or deployment changes
+are included; proposed repair boundaries are tracked in the backlog.
+
 The [October 15 Cubelet → guest execution review](reports/cubelet-guest-execution-review-20261015.md)
 records a missing deadline in cleanup, native Read path drift, unused per-Tool
 initialization fields and an expired-setup startup optimization. Its

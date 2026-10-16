@@ -5,7 +5,15 @@ Updated: 2026-10-16.
 The walkthrough explains one component-to-component hop at a time, including
 its message, acknowledgement boundary, failure behavior and design tradeoffs.
 
-Current checkpoint: **Cubelet → the VM's fixed Tool execution process**.
+Current checkpoint: **guest Tool process → Cubelet result reception**.
+Explained structured final results over the existing native process output channel,
+progress/final separation and the bytes-only `scope.received` acknowledgement.
+The [October 16 focused review](reports/guest-cubelet-result-review-20261016.md)
+confirms receipt-loss cleanup and oversized preview loss with isolated evidence;
+the proposed repairs have not changed runtime behavior. Next: Cubelet completion
+adapter → Kafka's original-Worker-boot reply transport.
+
+Previously covered **Cubelet → the VM's fixed Tool execution process**.
 Explained per-operation native process startup in a reusable VM, the root scope
 launcher and unprivileged Tool process, working-directory attachment, Bash output,
 ordinary process-group cancellation and stronger timeout/fault cleanup. Bash uses
@@ -15,7 +23,6 @@ All four approved [repairs](reports/cubelet-guest-execution-repair-20261015.md)
 are deployed as `guest-execution-5536fc73`: bounded cleanup/startup, native Read
 path parity and guest 6's smaller execution attachment. Source/live acceptance
 and configuration preservation are verified; failed samples remain recorded.
-Next: guest result → Cubelet's completion adapter; Kafka delivery follows.
 
 Previously covered **Projector → Cube: dispatch and takeover acknowledgement**.
 Explained confirmed dispatch offset before HTTP delivery, in-memory binding

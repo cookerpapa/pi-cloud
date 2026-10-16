@@ -28,6 +28,23 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## Guest → Cubelet result review
+
+The [October 16 review](reports/guest-cubelet-result-review-20261016.md) is complete
+against `06559532`, with isolated guest/PTY/native-driver evidence and passing
+existing suites. It changes no runtime or deployed protocol.
+
+- [ ] R16R-01: distinguish receipt-only transport failure from unfinished or
+      unsafe execution. A complete valid result plus confirmed local settlement
+      must not be discarded or trigger operation-cgroup cleanup solely because
+      the reverse receipt failed. Preserve the bounded receipt, UNKNOWN for
+      missing evidence and Control Plane lifecycle ownership; record the revised
+      termination contract in an ADR before implementation.
+- [ ] R16R-02: bound encoded preview data at the guest transport boundary and
+      remove repeated arguments/truncation text from observations. Preserve final
+      native results and lossy HTTP/SSE semantics; test large/escaped output and
+      ordinary final-result delivery.
+
 ## Cubelet → guest execution review
 
 The [October 15 review](reports/cubelet-guest-execution-review-20261015.md) is complete
