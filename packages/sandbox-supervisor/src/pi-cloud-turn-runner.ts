@@ -34,6 +34,7 @@ import {
   type UserUpload,
   type RunActivityUpdate,
   type RunInterruptionReason,
+  ToolResultAttachmentError,
 } from "@pi-cloud/protocol";
 import type { DurableSessionHandle } from "@pi-cloud/pi-session-postgres/durable";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
@@ -87,6 +88,7 @@ export type PiCloudTurnRunnerOptions = {
   trustedToolDefinitions?: readonly import("@earendil-works/pi-durable").ToolRegistration[];
   acquireModelPermit?: (signal?: AbortSignal) => Promise<() => void>;
   interruptionReason?: () => RunInterruptionReason | undefined;
+  onToolResultUnavailable?: (error: ToolResultAttachmentError) => void;
   metrics?: PiCloudMetrics;
   createAgentTools(context: {
     stepWorldState: PiSessionWorldStateController;
@@ -588,7 +590,7 @@ export class PiCloudTurnRunner {
           }
           const tool = tools.tools.find((tool) => tool.name === invocation.toolName);
           if (!tool?.prepareExecution) throw new Error("Remote Tool has no preparation port");
-          return withToolInvocation(
+          const prepared = await withToolInvocation(
             {
               id: `task:${invocation.taskId}`,
               nativeToolCallId: invocation.callId,
@@ -600,6 +602,22 @@ export class PiCloudTurnRunner {
                 invocation.context.abortSignal,
               ),
           );
+          return {
+            ...prepared,
+            result: async () => {
+              try {
+                return await prepared.result();
+              } catch (error) {
+                if (error instanceof ToolResultAttachmentError) {
+                  combined.throwIfAborted();
+                  owner.authority.signal.throwIfAborted();
+                  invocation.context.abortSignal?.throwIfAborted();
+                  options.onToolResultUnavailable?.(error);
+                }
+                throw error;
+              }
+            },
+          };
         },
         openModel: async (request, native) => {
           await owner.authority.assertCurrent();

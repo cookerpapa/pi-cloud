@@ -5,6 +5,7 @@ import {
   validateSubagentTask,
   type ExecuteTurnCommandMessage,
   type ToolResultPayload,
+  type ToolReplyWait,
   type SubagentTask,
 } from "@pi-cloud/protocol";
 import {
@@ -35,7 +36,7 @@ export class WorkerToolRuntime {
         toolName: string,
         signal: AbortSignal,
         scope: { tenantId: string; runId: string },
-      ): Promise<ToolResultPayload>;
+      ): ToolReplyWait<ToolResultPayload>;
     },
   ) {}
 
@@ -161,13 +162,7 @@ export class WorkerToolRuntime {
             activeSignal,
             { tenantId: scope.tenantId, runId: scope.runId },
           );
-          let completed = false;
-          void pending.then(
-            () => {
-              completed = true;
-            },
-            () => {},
-          );
+          void pending.result.catch(() => {});
           return {
             command: {
               target: "control" as const,
@@ -182,10 +177,10 @@ export class WorkerToolRuntime {
               ...(bindingId ? { bindingId } : {}),
               occurredAt: new Date().toISOString(),
             },
-            completed: () => completed,
+            completed: pending.executionSettled,
             dispose: () => waiting.abort(new Error("Control Tool wait ended")),
             result: async () => {
-              const reply = await pending;
+              const reply = await pending.result;
               return { ...reply.result, isError: reply.isError };
             },
           };

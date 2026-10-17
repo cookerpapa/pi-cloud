@@ -645,14 +645,6 @@ export class TenantModelGateway {
     };
   }
 
-  async checkProviderHealth(): Promise<void> {
-    const response = await this.#fetch(`${this.#providerGatewayBaseUrl}/healthz`, {
-      method: "HEAD",
-      signal: AbortSignal.timeout(3_000),
-    });
-    if (!response.ok) throw new Error("Provider Gateway is unavailable");
-  }
-
   close(): Promise<void> {
     this.#closing ??= this.#close();
     return this.#closing;

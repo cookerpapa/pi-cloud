@@ -6,6 +6,7 @@ import {
   type ToolExecutionFailureData,
   MAX_TOOL_RESPONSE_BYTES,
   type ToolResultPayload,
+  type ToolReplyWait,
   type ImagePacked,
   validateImageReferencePayload,
   parseExecutionProbeReply,
@@ -124,6 +125,7 @@ type Pending = {
   resolve(result: ImagePacked<ToolResultPayload>): void;
   reject(error: unknown): void;
   cleanup(): void;
+  settleExecution(): void;
 };
 
 /** One boot-local mailbox for all slots. A new Worker never resumes old promises. */
@@ -156,9 +158,15 @@ export class ToolReplyMailbox {
     void promise.catch(() => {});
     return promise;
   }
-  wait(operationId: string, toolCallId: string, toolName: string, signal: AbortSignal) {
+  wait(
+    operationId: string,
+    toolCallId: string,
+    toolName: string,
+    signal: AbortSignal,
+  ): ToolReplyWait<ImagePacked<ToolResultPayload>> {
     signal.throwIfAborted();
     if (this.#pending.has(operationId)) throw new Error("Tool operation already waiting");
+    let settled = false;
     const promise = new Promise<ImagePacked<ToolResultPayload>>((resolve, reject) => {
       const abort = () => {
         this.#pending.delete(operationId);
@@ -171,12 +179,15 @@ export class ToolReplyMailbox {
         resolve,
         reject,
         cleanup: () => signal.removeEventListener("abort", abort),
+        settleExecution: () => {
+          settled = true;
+        },
       });
       signal.addEventListener("abort", abort, { once: true });
       if (signal.aborted) abort();
     });
     void promise.catch(() => {}); // cancellation may precede publication completion
-    return promise;
+    return { result: promise, executionSettled: () => settled };
   }
   accept(reply: WorkerReply): void {
     if (reply.kind === "execution_probe") {
@@ -204,11 +215,9 @@ export class ToolReplyMailbox {
     }
     if (reply.kind === "execution_failure") {
       try {
-        this.#finish(
-          reply.operationId,
-          pending,
-          new ToolExecutionFailure(parseToolExecutionFailure(reply.failure)),
-        );
+        const failure = new ToolExecutionFailure(parseToolExecutionFailure(reply.failure));
+        if (failure.effect === "not_started") pending.settleExecution();
+        this.#finish(reply.operationId, pending, failure);
       } catch (error) {
         this.#finish(reply.operationId, pending, error);
       }
@@ -222,6 +231,7 @@ export class ToolReplyMailbox {
       pending.reject(new Error("Tool reply identity/order changed"));
       return;
     }
+    pending.settleExecution();
     pending.resolve(reply.result);
     if (reply.execution) {
       try {
@@ -254,6 +264,15 @@ export class KafkaToolReplyMailbox extends ToolReplyMailbox {
   readonly topic: string;
   readonly #consumer: KafkaLogConsumer<WorkerReply>;
   readonly #admin;
+  /** Current local assignment/consumer state, never a network health probe. */
+  get ready(): boolean {
+    try {
+      this.#consumer.checkHealth();
+      return true;
+    } catch {
+      return false;
+    }
+  }
   constructor(readonly options: { brokers: readonly string[]; bootId: string; replicas: number }) {
     super();
     this.topic = toolReplyTopic(options.bootId);
@@ -271,6 +290,7 @@ export class KafkaToolReplyMailbox extends ToolReplyMailbox {
       groupId: `tool-reply-${options.bootId}`,
       topic: this.topic,
       commitMessages: false,
+      resumeFromMemory: true,
       decode: parseWorkerReply,
       handler: async ({ fact }) => this.accept(fact),
     });

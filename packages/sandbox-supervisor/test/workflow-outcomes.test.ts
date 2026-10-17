@@ -1,3 +1,4 @@
+import { fixtureToolReply } from "./tool-api.ts";
 import { once } from "node:events";
 import { WebSocketServer } from "ws";
 import { expect, it, vi } from "vitest";
@@ -87,9 +88,9 @@ it.each([
       accepted: true as const,
     }));
     const remote = createTrustedRemoteAgentTools({
-      waitForToolReply: async (_request, signal) => {
+      waitForToolReply: (_request, { receipt: signal }) => {
         signal.addEventListener("abort", () => reply.reject(signal.reason), { once: true });
-        return reply.promise;
+        return fixtureToolReply(reply.promise);
       },
       workflowUrl: `http://127.0.0.1:${address.port}/v1/tool-operations`,
       activationId: "10000000-0000-4000-8000-000000000001",

@@ -1793,6 +1793,104 @@
       "file": "test/path-probe.test.ts",
       "test": "ends a fault probe without granting readiness: lost_publication_ack",
       "invariant": "An unconfirmed probe publication cannot pin a readiness waiter or be treated as successful evidence."
+    },
+    {
+      "id": "reply-admission-recovery",
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/parallel-worker-claims.test.ts",
+      "test": "pauses new claims during dependency loss and resumes without stopping active work",
+      "invariant": "Reply dependency failure pauses new claims, preserves active work and recovers without another execution authority."
+    },
+    {
+      "id": "reply-runtime-readiness",
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/runtime.test.ts",
+      "test": "provisions a fresh generation, registers after recovery, and never reuses boot identity",
+      "invariant": "Actual Worker composition gates HTTP readiness and claim admission on local reply state, without provider HEAD or aborting current work."
+    },
+    {
+      "id": "reply-volatile-reconnect",
+      "workspace": "@pi-cloud/event-log",
+      "file": "test/ordered-effects.test.ts",
+      "test": "resumes boot-local callback progress across assignment and reader recreation without commits",
+      "invariant": "Reassignment keeps completed delivery progress in the same boot without a durable second cursor."
+    },
+    {
+      "id": "reply-inflight-reassignment",
+      "workspace": "@pi-cloud/event-log",
+      "file": "test/ordered-effects.test.ts",
+      "test": "joins an old in-flight handler before volatile reassignment and does not skip its stale delivery",
+      "invariant": "Reassignment joins old callbacks and does not skip unfinished or stale handling."
+    },
+    {
+      "id": "reply-inconsistent-position",
+      "workspace": "@pi-cloud/event-log",
+      "file": "test/ordered-effects.test.ts",
+      "test": "retains an impossible local cursor through repeated assignments until metadata is consistent",
+      "invariant": "An impossible local position remains unhealthy across reassignment instead of silently rewinding."
+    },
+    {
+      "id": "reply-attachment-read-failure",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/tool-reply-result.test.ts",
+      "test": "interrupts native execution accurately after a received image reply: download_error",
+      "invariant": "Confirmed reply survives attachment failure; native interruption does not fabricate sandbox loss or cancellation uncertainty."
+    },
+    {
+      "id": "reply-attachment-integrity",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/tool-reply-result.test.ts",
+      "test": "interrupts native execution accurately after a received image reply: integrity_error",
+      "invariant": "Corrupt image bytes never enter native context and do not erase prior execution receipt."
+    },
+    {
+      "id": "reply-stop-during-image",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/tool-reply-result.test.ts",
+      "test": "keeps native Stop authoritative while a received image is still downloading",
+      "invariant": "Stop aborts image restoration without retroactively cancelling completed Tools or accepting late content."
+    },
+    {
+      "id": "reply-receipt-deadline-after-image",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/tool-reply-result.test.ts",
+      "test": "restores the image after its already-satisfied receipt deadline expires",
+      "invariant": "A satisfied receipt deadline cannot turn a subsequent attachment read into execution UNKNOWN."
+    },
+    {
+      "id": "reply-control-image-failure",
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/worker-tool-runtime.test.ts",
+      "test": "retains a control Tool's receipt when restoring its image fails",
+      "invariant": "Control Tool results share the same receipt and attachment boundary as fixed Tools."
+    },
+    {
+      "id": "reply-attachment-stop-after-failure",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/tool-reply-result.test.ts",
+      "test": "preserves higher-priority native termination after attachment failure: stop_after_failure",
+      "invariant": "Native Stop and lost execution/write authority take precedence over an earlier attachment diagnostic."
+    },
+    {
+      "id": "reply-attachment-lease-after-failure",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/tool-reply-result.test.ts",
+      "test": "preserves higher-priority native termination after attachment failure: lease_after_failure",
+      "invariant": "Native Stop and lost execution/write authority take precedence over an earlier attachment diagnostic."
+    },
+    {
+      "id": "reply-attachment-writer-after-failure",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/tool-reply-result.test.ts",
+      "test": "preserves higher-priority native termination after attachment failure: writer_after_failure",
+      "invariant": "Native Stop and lost execution/write authority take precedence over an earlier attachment diagnostic."
+    },
+    {
+      "id": "reply-stop-before-decoded-return",
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/tool-reply-decoding.test.ts",
+      "test": "preserves execution receipt but rejects a Stop delivered just before decoded return",
+      "invariant": "A late microtask Stop rejects delivery without erasing already confirmed execution receipt."
     }
   ]
 }

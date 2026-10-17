@@ -17,7 +17,7 @@ import {
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
-import { nativeToolApi } from "./tool-api.ts";
+import { nativeToolApi, fixtureToolReply } from "./tool-api.ts";
 import { ScopedDurableModels } from "../src/durable/scoped-models.ts";
 import {
   createExecutionReference,
@@ -32,14 +32,21 @@ import {
 } from "../src/trusted-remote-tools.ts";
 import { withToolInvocation } from "../src/tool-invocation.ts";
 
-type TrustedRemoteToolsRuntimeConfiguration = BaseConfiguration & {
+type TrustedRemoteToolsRuntimeConfiguration = Omit<BaseConfiguration, "waitForToolReply"> & {
+  reply(
+    ...args: Parameters<NonNullable<BaseConfiguration["waitForToolReply"]>>
+  ): Promise<NativeToolEnd>;
   publishToolCommand(
     command: CandidateToolCommand,
   ): Promise<{ operationId: string; accepted: true }>;
 };
 
 function createTrustedRemoteAgentTools(configuration: TrustedRemoteToolsRuntimeConfiguration) {
-  const runtime = createRemoteTools(configuration);
+  const { reply, publishToolCommand: _publish, ...ports } = configuration;
+  const runtime = createRemoteTools({
+    ...ports,
+    waitForToolReply: (...args) => fixtureToolReply(reply(...args)),
+  });
   return {
     ...runtime,
     tools: runtime.tools.map((tool) => ({
@@ -185,7 +192,7 @@ function configuration(overrides: Partial<TrustedRemoteToolsRuntimeConfiguration
   });
   const value: TrustedRemoteToolsRuntimeConfiguration = {
     publishToolCommand,
-    waitForToolReply: (_request, signal) =>
+    reply: (_request, { receipt: signal }) =>
       new Promise((resolve, reject) => {
         pending = { resolve };
         signal.addEventListener("abort", () => reject(signal.reason), { once: true });
@@ -241,7 +248,7 @@ it("shares one readiness decision across concurrent uncertain fixed Tools", asyn
     confirm = vi.fn(() => ready.promise);
   const f = guardedConfiguration({
     confirmExecution: confirm,
-    waitForToolReply: async () => {
+    reply: async () => {
       throw new ToolExecutionFailure({
         code: "tool_reply_timeout",
         effect: "unknown",
@@ -270,7 +277,7 @@ it("commits UNKNOWN through native Pi then permits a distinct inspection without
   const f = guardedConfiguration({
     confirmExecution: confirm,
     publishToolCommand: publish,
-    waitForToolReply: async (request, _signal, callId) => {
+    reply: async (request, _signal, callId) => {
       if (request.toolName === "bash")
         throw new ToolExecutionFailure({
           code: "tool_handoff_unconfirmed",
@@ -317,7 +324,7 @@ it.each([false, "throws"])(
         if (ready === "throws") throw new Error("confirmation connection lost");
         return false;
       },
-      waitForToolReply: async () => {
+      reply: async () => {
         throw new ToolExecutionFailure({
           code: "tool_reply_timeout",
           effect: "unknown",
@@ -342,7 +349,7 @@ it.each([
   const confirm = vi.fn(async () => true);
   const f = guardedConfiguration({
     confirmExecution: confirm,
-    waitForToolReply: async () => {
+    reply: async () => {
       throw new ToolExecutionFailure({
         code,
         effect: "unknown",
@@ -360,7 +367,7 @@ it("interrupts a second UNKNOWN instead of looping on successful small probes", 
   const confirm = vi.fn(async () => true);
   const f = guardedConfiguration({
     confirmExecution: confirm,
-    waitForToolReply: async () => {
+    reply: async () => {
       throw new ToolExecutionFailure({
         code: "tool_reply_timeout",
         effect: "unknown",
@@ -384,7 +391,7 @@ it("resets the uncertainty guard after a confirmed native result", async () => {
   let call = 0;
   const f = guardedConfiguration({
     confirmExecution: confirm,
-    waitForToolReply: async (request, _signal, id) => {
+    reply: async (request, _signal, id) => {
       if (++call === 2)
         return {
           type: "tool_execution_end",
@@ -421,7 +428,7 @@ it("Stop during readiness prevents native continuation even if the probe succeed
   const confirm = vi.fn(() => check.promise);
   const f = guardedConfiguration({
     confirmExecution: confirm,
-    waitForToolReply: async () => {
+    reply: async () => {
       throw new ToolExecutionFailure({
         code: "tool_reply_timeout",
         effect: "unknown",
@@ -456,7 +463,7 @@ it.each([
     const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
     const waiting = Promise.withResolvers<void>();
     const f = guardedConfiguration({
-      waitForToolReply: async (_request, signal) => {
+      reply: async (_request, { receipt: signal }) => {
         waiting.resolve();
         return await new Promise<NativeToolEnd>((_resolve, reject) => {
           signal.addEventListener("abort", () => reject(signal.reason), { once: true });
@@ -493,7 +500,7 @@ describe("whole-tool Worker adapter", () => {
         operationId: command.request.operationId,
         accepted: true,
       }),
-      waitForToolReply: async (request) => ({
+      reply: async (request) => ({
         type: "tool_execution_end",
         toolCallId: (request as { toolCallId: string }).toolCallId,
         toolName: "read",
@@ -526,7 +533,7 @@ describe("whole-tool Worker adapter", () => {
       },
       // Production wraps the mailbox in an async attachment decoder, so the
       // mailbox's own rejection observer cannot handle this outer Promise.
-      waitForToolReply: async (_request, signal) => {
+      reply: async (_request, { receipt: signal }) => {
         replySignal = signal;
         return await new Promise<NativeToolEnd>((_resolve, reject) => {
           signal.addEventListener("abort", () => reject(signal.reason), { once: true });
@@ -554,7 +561,7 @@ describe("whole-tool Worker adapter", () => {
     });
     const { value } = configuration({
       publishToolCommand,
-      waitForToolReply: async () => reply.promise,
+      reply: async () => reply.promise,
     });
     const runtime = createTrustedRemoteAgentTools(value);
     await runtime.transformContext([]);
@@ -579,7 +586,7 @@ describe("whole-tool Worker adapter", () => {
           operationId: command.request.operationId,
           accepted: true,
         }),
-        waitForToolReply: async (request) => ({
+        reply: async (request) => ({
           type: "tool_execution_end",
           toolCallId: (request as { toolCallId: string }).toolCallId,
           toolName: "read",
@@ -786,7 +793,7 @@ describe("whole-tool Worker adapter", () => {
     const unavailable = vi.fn();
     const { value } = configuration({
       onToolOperationUnavailable: unavailable,
-      waitForToolReply: async () => {
+      reply: async () => {
         throw new ToolExecutionFailure({
           code: "cubesandbox_tool_result_unknown",
           message: "No confirmed result",
@@ -816,7 +823,7 @@ describe("whole-tool Worker adapter", () => {
         operationId: command.request.operationId,
         accepted: true,
       }),
-      waitForToolReply: async (request) => ({
+      reply: async (request) => ({
         type: "tool_execution_end",
         toolCallId: (request as { toolCallId: string }).toolCallId,
         toolName: request.toolName,
@@ -847,7 +854,6 @@ describe("whole-tool Worker adapter", () => {
   it.each([
     "reply timed out",
     "reply Worker stopped",
-    "image decode failed",
     "reply identity mismatch",
     "structured failure",
     "unavailable before admission",
@@ -876,7 +882,7 @@ describe("whole-tool Worker adapter", () => {
     }));
     const { value } = configuration({
       publishToolCommand: publish,
-      waitForToolReply: async () => {
+      reply: async () => {
         throw cause;
       },
       onToolOperationUnavailable: unavailable,

@@ -11,6 +11,7 @@ try {
   const files = [
     "packages/event-log/test/publication.integration.test.ts",
     "packages/event-log/test/rolling-reader.integration.test.ts",
+    "packages/event-log/test/tool-reply-recovery.integration.test.ts",
     "packages/runtime-core/test/kafka-topic-policy.integration.test.ts",
     "packages/control-plane/test/session-publication.integration.test.ts",
     "packages/control-plane/test/ordered-binding-views.integration.test.ts",

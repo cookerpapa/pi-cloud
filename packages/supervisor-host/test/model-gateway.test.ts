@@ -803,16 +803,6 @@ describe("tenant model gateway", () => {
     expect(wrongModel.status).toBe(403);
     expect(upstream).not.toHaveBeenCalled();
   });
-
-  it("uses Provider Gateway health as the Run-claim readiness dependency", async () => {
-    const upstream = vi.fn<typeof fetch>(async (input) => {
-      expect(String(input)).toBe("http://provider-gateway:8317/healthz");
-      return new Response(null, { status: 200 });
-    });
-    const gateway = createGateway(upstream);
-    await gateway.start();
-    await expect(gateway.checkProviderHealth()).resolves.toBeUndefined();
-  });
 });
 
 it("allows more than 128 model requests on one unlimited Run capability", async () => {

@@ -141,7 +141,7 @@ try {
     const adapter = remoteAdapter({
       submit: async (c, reply) => {
         const wait = mailbox.wait(c.operationId, c.call.id, "bash", AbortSignal.timeout(90000));
-        const receiving = wait.then(
+        const receiving = wait.result.then(
           (event) =>
             reply({ effect: "completed", content: event.result.content, isError: event.isError }),
           (e) => reply({ effect: "unknown", text: e.message, isError: true }),

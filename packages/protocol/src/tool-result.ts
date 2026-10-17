@@ -15,6 +15,24 @@ export type ToolResultPayload = {
   isError: boolean;
 };
 
+/** Invocation-local transport state, never serialized or a canonical Tool receipt. */
+export type ToolReplyWait<T> = Readonly<{
+  result: Promise<T>;
+  executionSettled(): boolean;
+}>;
+
+/** A validated final reply arrived, but its referenced bytes could not be restored. */
+export class ToolResultAttachmentError extends Error {
+  readonly code = "tool_result_attachment_unavailable";
+  constructor(options?: ErrorOptions) {
+    super(
+      "tool_result_attachment_unavailable: The Tool returned a result, but its image attachment could not be read.",
+      options,
+    );
+    this.name = "ToolResultAttachmentError";
+  }
+}
+
 export const ToolResultDataSchema = Type.Unsafe<ToolResultData>(
   Type.Object(
     {

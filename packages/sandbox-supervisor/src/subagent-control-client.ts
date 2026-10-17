@@ -3,6 +3,7 @@ import type {
   CandidateControlToolCommand,
   SubagentControlRequest,
   ToolResultPayload,
+  ToolReplyWait,
 } from "@pi-cloud/protocol";
 import { parseSubagentTaskId, prepareSubagentArguments } from "@pi-cloud/protocol";
 
@@ -22,7 +23,7 @@ export class SubagentControlClient {
         callId: string,
         name: string,
         signal: AbortSignal,
-      ): Promise<ToolResultPayload>;
+      ): ToolReplyWait<ToolResultPayload>;
     },
   ) {}
 
@@ -58,7 +59,7 @@ export class SubagentControlClient {
       waiting.signal,
       ...(input.signal ? [input.signal] : []),
     ]);
-    const result = this.replies.wait(requestId, input.toolCallId, "subagent-control", signal);
+    const { result } = this.replies.wait(requestId, input.toolCallId, "subagent-control", signal);
     // Abort/publication can fail before the caller starts waiting for the response.
     void result.catch(() => {});
     const command: CandidateControlToolCommand = {

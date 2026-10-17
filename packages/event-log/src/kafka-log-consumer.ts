@@ -21,6 +21,8 @@ export type KafkaLogConsumerOptions<T> = {
   groupId: string;
   topic: string;
   commitMessages?: boolean;
+  /** Boot-local callback delivery only; never a durable projection recovery cursor. */
+  resumeFromMemory?: boolean;
   /** Include completed delivery as well as the durable projection recovery floor. */
   groupRecovery?: boolean;
   /** Preserve a monotonic effect-dispatch boundary even when projection replay rewinds. */
@@ -70,6 +72,16 @@ export class KafkaLogConsumer<T> {
   constructor(options: KafkaLogConsumerOptions<T>) {
     if (options.orderedEffects && !options.groupRecovery)
       throw new Error("Ordered effects require durable group progress");
+    if (
+      options.resumeFromMemory &&
+      (options.commitMessages !== false ||
+        options.groupRecovery ||
+        options.orderedEffects ||
+        options.replayOffsets)
+    )
+      throw new Error(
+        "Memory resume requires an uncommitted callback consumer without durable replay",
+      );
     this.#options = options;
     this.#kafka = new KafkaJS.Kafka({
       kafkaJS: {
@@ -290,9 +302,23 @@ export class KafkaLogConsumer<T> {
                     ] as const;
                   }),
                 )
-              : this.#options.replayOffsets
-                ? new Map(await this.#options.replayOffsets(bounds, allBounds.length))
-                : new Map(bounds.map((b) => [b.partition, b.low]));
+              : this.#options.resumeFromMemory
+                ? new Map(
+                    bounds.map((b) => {
+                      const saved = this.#processedOffsets.get(b.partition) ?? b.low;
+                      return [
+                        b.partition,
+                        saved > b.high
+                          ? new Error("Kafka local delivery position is outside retention")
+                          : saved < b.low
+                            ? b.low
+                            : saved,
+                      ] as const;
+                    }),
+                  )
+                : this.#options.replayOffsets
+                  ? new Map(await this.#options.replayOffsets(bounds, allBounds.length))
+                  : new Map(bounds.map((b) => [b.partition, b.low]));
             if (this.#options.groupRecovery && this.#options.replayOffsets) {
               const recovery = await this.#options.replayOffsets(bounds, allBounds.length);
               if (!currentAssignment()) return;
@@ -313,7 +339,10 @@ export class KafkaLogConsumer<T> {
             for (const b of bounds) {
               const offset = offsets.get(b.partition)!;
               if (offset instanceof Error) this.#blocked.set(b.partition, offset);
-              this.#processedOffsets.set(b.partition, offset instanceof Error ? b.low : offset);
+              // An impossible volatile cursor must survive reassignment. Erasing
+              // it here would silently accept a reset/truncated Topic next time.
+              if (!(offset instanceof Error) || !this.#options.resumeFromMemory)
+                this.#processedOffsets.set(b.partition, offset instanceof Error ? b.low : offset);
               this.#initialTargets.set(b.partition, b.high);
             }
             if (!currentAssignment()) return;

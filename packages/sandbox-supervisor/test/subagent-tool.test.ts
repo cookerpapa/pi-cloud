@@ -37,8 +37,8 @@ function mailboxFixture() {
   const mailbox = new ToolReplyMailbox();
   const transport = {
     topic: "pi-cloud.tool-replies.v3.fixture",
-    wait: async (...args: Parameters<ToolReplyMailbox["wait"]>) =>
-      (await mailbox.wait(...args)) as ToolResultPayload,
+    wait: (...args: Parameters<ToolReplyMailbox["wait"]>) =>
+      mailbox.wait(...args) as import("@pi-cloud/protocol").ToolReplyWait<ToolResultPayload>,
   };
   const reply = (
     command: CandidateControlToolCommand,

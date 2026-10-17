@@ -1,3 +1,4 @@
+import { fixtureToolReply } from "./tool-api.ts";
 import { randomUUID, createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -30,7 +31,7 @@ it.each([
     remainingToolCalls: null,
     maximumToolOutputBytes: 4096,
     onToolOperationUnavailable: unavailable,
-    waitForToolReply: async () => pending.promise,
+    waitForToolReply: () => fixtureToolReply(pending.promise),
     captureStepContext: (activeTools) => {
       const context = {
         schemaVersion: 2 as const,

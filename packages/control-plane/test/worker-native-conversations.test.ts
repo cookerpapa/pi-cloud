@@ -128,14 +128,16 @@ it.each([false, true])(
     const control = new SubagentControlClient(native, {
       topic: "pi-cloud.tool-replies.v3.fixture",
       wait: (...args) =>
-        replies.wait(...args) as Promise<import("@pi-cloud/protocol").ToolResultPayload>,
+        replies.wait(...args) as import("@pi-cloud/protocol").ToolReplyWait<
+          import("@pi-cloud/protocol").ToolResultPayload
+        >,
     });
     const tools = new WorkerToolRuntime({
       nativeConversations: native,
       control,
       maximumDepth: null,
       wait: (id, callId, name, signal) =>
-        replies.wait(id, callId, name, signal) as Promise<
+        replies.wait(id, callId, name, signal) as import("@pi-cloud/protocol").ToolReplyWait<
           import("@pi-cloud/protocol").ToolResultPayload
         >,
     });

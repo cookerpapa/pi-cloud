@@ -791,6 +791,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           : {}),
         ...commonRunnerOptions,
         interruptionReason: () => interruptionReasonForFailureCode(toolRuntimeFailure?.code),
+        onToolResultUnavailable: (error) => {
+          // The executor already replied. Stop this Run without diagnosing a
+          // dead sandbox or requesting cleanup for a completed operation.
+          toolRuntimeFailure ??= new PiTurnError(error.code, error.message, false);
+        },
         createAgentTools: ({ stepWorldState, captureSamplingStep }) => {
           recordPreparedInput = () => stepWorldState.recordActive(activation);
           const remoteTools = createTrustedRemoteAgentTools({
@@ -909,9 +914,18 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       const result = await runner.run(command, publishEvent, signal);
       return result;
     } catch (error) {
-      // Pi may surface a secondary sampling/settlement error while unwinding
-      // after a refused next Step. The first Tool transport failure is primary.
-      executionError = toolRuntimeFailure ?? error;
+      // Preserve native cancellation and lost write authority even if a Tool
+      // diagnostic was recorded first. Otherwise a secondary sampling failure
+      // should retain the original, more precise Tool failure.
+      const nativeTermination =
+        error instanceof PiTurnError &&
+        [
+          "turn_cancelled",
+          "worker_shutdown",
+          "session_lease_revoked",
+          "writer_publication_failed",
+        ].includes(error.code);
+      executionError = nativeTermination ? error : (toolRuntimeFailure ?? error);
       throw executionError;
     } finally {
       // A steer can still be preparing pixels when the native operation closes.

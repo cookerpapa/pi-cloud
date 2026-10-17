@@ -35,6 +35,7 @@ import {
 } from "./management-server.ts";
 import { TenantModelGateway } from "./model-gateway.ts";
 import { RunClaimReadinessMonitor } from "./run-claim-readiness.ts";
+import { restoreToolReply } from "./tool-reply-result.ts";
 import {
   PostgresPiWorker,
   type PostgresPiWorkerOptions,
@@ -305,7 +306,7 @@ export class PiWorkerRuntime {
         this.#state === "ready" &&
         client?.state === "connected" &&
         this.#runWorker?.state === "running" &&
-        this.#runClaimReadiness?.ready === true,
+        this.#claimAvailability() !== undefined,
       stopCurrentBoot: () => this.#stopCurrentBoot(),
       assignmentInventory: this.#sandboxControl,
       subagentCommand: async (command) => {
@@ -381,8 +382,6 @@ export class PiWorkerRuntime {
     this.#modelGateway = modelGateway;
     await modelGateway.start();
     this.#assertStarting();
-    await modelGateway.checkProviderHealth();
-    this.#assertStarting();
     const runWorkerIdentity = identity.sandboxId;
     let executionLogs = this.#executionLogs;
     if (!executionLogs) {
@@ -423,13 +422,7 @@ export class PiWorkerRuntime {
     await sessionMutationProducer.checkHealth();
     this.#assertStarting();
     const runClaimReadiness = new RunClaimReadinessMonitor({
-      check: async () => {
-        const [availability] = await Promise.all([
-          executionLogs.publicationAvailability(),
-          modelGateway.checkProviderHealth(),
-        ]);
-        return availability;
-      },
+      check: () => executionLogs.publicationAvailability(),
     });
     this.#runClaimReadiness = runClaimReadiness;
     await runClaimReadiness.start();
@@ -441,20 +434,18 @@ export class PiWorkerRuntime {
     this.#nativeSessions = nativeSessions;
     this.#subagentControl = new SubagentControlClient(nativeSessions, {
       topic: toolReplies.topic,
-      wait: async (...args) => {
-        const reply = await toolReplies.wait(...args);
+      wait: (...args) => {
+        const reply = toolReplies.wait(...args);
         // Hostcall results are structured control data, never inline images.
-        return reply as ToolResultPayload;
+        return reply as import("@pi-cloud/protocol").ToolReplyWait<ToolResultPayload>;
       },
     });
     const trustedTools = new WorkerToolRuntime({
       nativeConversations: nativeSessions,
       control: this.#subagentControl,
       maximumDepth: this.#config.subagentMaximumDepth,
-      wait: async (id, callId, name, signal, scope) => {
-        const reply = await toolReplies.wait(id, callId, name, signal);
-        return decodeSessionImages<ToolResultPayload>(images?.codec, scope, reply, signal);
-      },
+      wait: (id, callId, name, signal, scope) =>
+        restoreToolReply(toolReplies.wait(id, callId, name, signal), images?.codec, scope, signal),
     });
     const modelPermits = new FamilyModelPermits({
       maximum: this.#config.modelConcurrency,
@@ -520,22 +511,22 @@ export class PiWorkerRuntime {
         ),
       acquireModelPermit: (command, signal) =>
         modelPermits.acquire(`${command.payload.tenantId}:${command.payload.piSession.id}`, signal),
-      waitForToolReply: async (request, signal, toolCallId, imageScope) => {
+      waitForToolReply: (request, signals, toolCallId, imageScope) => {
         if (!toolCallId) throw new Error("Tool call identity is unavailable");
-        const reply = await toolReplies.wait(
+        if (!imageScope) throw new Error("Tool image scope is unavailable");
+        const reply = toolReplies.wait(
           request.operationId,
           toolCallId,
           request.toolName,
-          signal,
+          signals.receipt,
         );
-        if (!imageScope) throw new Error("Tool image scope is unavailable");
-        const result = await decodeSessionImages<ToolResultPayload>(
-          images?.codec,
-          imageScope,
-          reply,
-          signal,
-        );
-        return { type: "tool_execution_end", ...result };
+        const restored = restoreToolReply(reply, images?.codec, imageScope, signals.lifetime);
+        const result = restored.result.then((value) => ({
+          type: "tool_execution_end" as const,
+          ...value,
+        }));
+        void result.catch(() => {});
+        return { result, executionSettled: restored.executionSettled };
       },
       broker: this.#sandboxControl,
       conversations: nativeSessions,
@@ -632,7 +623,7 @@ export class PiWorkerRuntime {
       onCapacity: (sample) => this.#metrics?.activeSessionFamilies.set(sample.families),
       canClaimRuns: () =>
         (this.#state === "ready" || this.#state === "draining") && client?.state === "connected",
-      admitRunClaims: async () => runClaimReadiness.publicationAvailability,
+      admitRunClaims: async () => this.#claimAvailability(),
       runExecutor: new RunExecutor({
         database: this.#database,
         backend: runBackend,
@@ -696,6 +687,10 @@ export class PiWorkerRuntime {
     }, 60_000);
     this.#assignmentReaper.unref();
     void client.waitUntilStopped().then((result) => this.#observeClientStop(result));
+  }
+
+  #claimAvailability(): PublicationAvailability | undefined {
+    return this.#toolReplies?.ready ? this.#runClaimReadiness?.publicationAvailability : undefined;
   }
 
   #stopCurrentBoot(): Promise<void> {

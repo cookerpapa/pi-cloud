@@ -11,6 +11,8 @@ import {
   type ToolSandboxOperationResponse,
   type CandidateToolCommand,
   ToolExecutionFailure,
+  ToolResultAttachmentError,
+  type ToolReplyWait,
 } from "@pi-cloud/protocol";
 import type { Message } from "@earendil-works/pi-ai";
 import type { ProviderHeaders } from "@earendil-works/pi-ai";
@@ -56,10 +58,10 @@ export type TrustedRemoteToolsRuntimeConfiguration = {
   onToolCancellationUnconfirmed?: () => void;
   waitForToolReply?: (
     request: ToolSandboxOperationRequest,
-    signal: AbortSignal,
+    signals: { receipt: AbortSignal; lifetime: AbortSignal },
     toolCallId?: string,
     imageScope?: { tenantId: string; runId: string },
-  ) => Promise<NativeToolEnd>;
+  ) => ToolReplyWait<NativeToolEnd>;
   confirmExecution?: (bindingId: string, signal: AbortSignal) => Promise<boolean>;
   workflowUrl?: string;
   activationId?: string;
@@ -286,36 +288,32 @@ export function createTrustedRemoteAgentTools(
     signal?.throwIfAborted();
     const pendingAbort = new AbortController();
     const replyDeadline = AbortSignal.timeout(candidate.timeoutMs + REMOTE_TOOL_REPLY_MARGIN_MS);
-    const replySignal = AbortSignal.any([
-      pendingAbort.signal,
-      ...(signal ? [signal] : []),
-      replyDeadline,
-    ]);
+    const lifetime = AbortSignal.any([pendingAbort.signal, ...(signal ? [signal] : [])]);
+    const replySignal = AbortSignal.any([lifetime, replyDeadline]);
     if (!runtime.waitForToolReply) throw new Error("Native Tool reply transport is unavailable");
-    const pending = runtime.waitForToolReply(candidate, replySignal, toolCallId);
-    let received = false;
+    const pending = runtime.waitForToolReply(
+      candidate,
+      { receipt: replySignal, lifetime },
+      toolCallId,
+    );
     let cancellationUnconfirmed = false;
     const markCancellationUnconfirmed = () => {
       if (cancellationUnconfirmed) return;
       cancellationUnconfirmed = true;
       runtime.onToolCancellationUnconfirmed?.();
     };
-    void pending.then(
-      () => {
-        received = true;
-      },
-      (error) => {
-        received = confirmsNoToolEffect(error);
-      },
-    );
     // The image-decoding adapter adds a Promise above the mailbox. Observe that
     // Promise now: failure/cancellation can precede the command's Kafka ACK.
-    void pending.catch(() => {});
+    void pending.result.catch(() => {});
     const failTransport = async (error: unknown): Promise<never> => {
       if (signal?.aborted) {
-        if (!confirmsNoToolEffect(error)) markCancellationUnconfirmed();
-        throw error;
+        if (!pending.executionSettled() && !confirmsNoToolEffect(error))
+          markCancellationUnconfirmed();
+        throw confirmsNoToolEffect(error) ? error : signal.reason;
       }
+      // The native preparation wrapper records the precise Run interruption.
+      // Attachment failure cannot revoke known receipt or diagnose the sandbox.
+      if (error instanceof ToolResultAttachmentError) throw error;
       const failure =
         error === replyDeadline.reason && replyDeadline.aborted
           ? new ToolExecutionFailure(
@@ -374,14 +372,14 @@ export function createTrustedRemoteAgentTools(
             }
           : {}),
       },
-      completed: () => received,
+      completed: pending.executionSettled,
       dispose: () => {
-        if (signal?.aborted && !received) markCancellationUnconfirmed();
+        if (signal?.aborted && !pending.executionSettled()) markCancellationUnconfirmed();
         pendingAbort.abort(new Error("Tool reply wait closed"));
       },
       result: async () => {
         if (candidate.operation === "tool.execute") {
-          const event = await pending.catch(failTransport);
+          const event = await pending.result.catch(failTransport);
           continuedAfterUnknown = false;
           return {
             toolBrokerProtocolVersion: 1,
@@ -403,7 +401,7 @@ export function createTrustedRemoteAgentTools(
             activationId: target.activationId,
             operationId: candidate.operationId,
             call: workflowCall,
-            completion: pending,
+            completion: pending.result,
             ...(signal ? { signal } : {}),
           }).catch(failTransport);
         }

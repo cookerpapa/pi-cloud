@@ -16,10 +16,14 @@ import Fastify from "fastify";
 import type { Kysely } from "kysely";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+const replies = vi.hoisted(() => ({ ready: true }));
 vi.mock("@pi-cloud/event-log", async (original) => ({
   ...(await original<typeof import("@pi-cloud/event-log")>()),
   KafkaToolReplyMailbox: class {
     topic = "pi-cloud.tool-replies.v3.test";
+    get ready() {
+      return replies.ready;
+    }
     async start() {}
     async shutdown() {}
     async wait() {
@@ -111,7 +115,11 @@ describe("PiWorkerRuntime", () => {
   it("provisions a fresh generation, registers after recovery, and never reuses boot identity", async () => {
     const root = await mkdtemp(join(tmpdir(), "pi-cloud-host-runtime-"));
     const server = Fastify({ logger: false });
-    server.head("/healthz", async (_request, reply) => reply.code(200).send());
+    let providerHealthChecks = 0;
+    server.head("/healthz", async (_request, reply) => {
+      providerHealthChecks++;
+      return reply.code(503).send();
+    });
     const provisioner = new SupervisorBootProvisioner({
       database,
       allowedSupervisorIdPrefix: "supervisor-host-runtime-",
@@ -367,6 +375,7 @@ describe("PiWorkerRuntime", () => {
       });
       await second.start();
       expect(second.state).toBe("ready");
+      expect(providerHealthChecks).toBe(0);
       const secondIdentity = second.identity!;
       expect(secondIdentity.bootId).not.toBe(firstIdentity.bootId);
       expect(secondIdentity.sandboxId).not.toBe(firstIdentity.sandboxId);
@@ -392,6 +401,18 @@ describe("PiWorkerRuntime", () => {
         partitionCount: 1,
         partitions: [0],
       });
+      const stoppedBeforeReplyFailure = stopCalls;
+      replies.ready = false;
+      await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toBeUndefined();
+      expect((await fetch(`${managementAddresses[1]}/health/ready`)).status).toBe(503);
+      expect(second.state).toBe("ready");
+      expect(stopCalls).toBe(stoppedBeforeReplyFailure);
+      replies.ready = true;
+      await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toEqual({
+        partitionCount: 1,
+        partitions: [0],
+      });
+      expect((await fetch(`${managementAddresses[1]}/health/ready`)).status).toBe(200);
       sandboxControlHealthy = false;
       await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 1_100));
       await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toEqual({
@@ -441,10 +462,8 @@ describe("PiWorkerRuntime", () => {
         .mockImplementation(async function (this: TenantModelGateway) {
           await startGateway.call(this);
           gateways.push(this);
+          throw new Error("Local gateway initialization failed after binding");
         });
-      const health = vi
-        .spyOn(TenantModelGateway.prototype, "checkProviderHealth")
-        .mockRejectedValueOnce(new Error("test upstream is unavailable"));
       const failed = new PiWorkerRuntime({
         config: {
           ...baseConfig,
@@ -454,7 +473,7 @@ describe("PiWorkerRuntime", () => {
         database,
         sandboxControl: runtimeSandboxControl,
         runWorkerFactory,
-        // Startup fails at model health, before any queue/log connection starts.
+        // Startup fails after local gateway acquisition, before queue/log startup.
         provisioningClient: {
           async provision() {
             return { accepted: true } as never;
@@ -468,7 +487,6 @@ describe("PiWorkerRuntime", () => {
         expect(() => gateways[0]!.listeningPort).toThrow("not listening");
       } finally {
         started.mockRestore();
-        health.mockRestore();
         for (const gateway of gateways) await gateway.close();
       }
       const publisherStartupFailure = new Error("Publication health failed after acquisition");
@@ -514,12 +532,13 @@ describe("PiWorkerRuntime", () => {
         const gate = new Promise<void>((resolve) => {
           release = resolve;
         });
-        const blockedHealth = vi
-          .spyOn(TenantModelGateway.prototype, "checkProviderHealth")
-          .mockImplementationOnce(async () => {
+        const blockedStart = vi
+          .spyOn(TenantModelGateway.prototype, "start")
+          .mockImplementationOnce(async function (this: TenantModelGateway) {
+            await startGateway.call(this);
             entered();
             await gate;
-            if (outcome === "reject") throw new Error("startup health failed");
+            if (outcome === "reject") throw new Error("local gateway startup failed");
           });
         const latePublisher = vi.fn(async () => {
           throw new Error("post-stop acquisition");
@@ -570,12 +589,13 @@ describe("PiWorkerRuntime", () => {
           expect(latePublisher).not.toHaveBeenCalled();
         } finally {
           release();
-          blockedHealth.mockRestore();
+          blockedStart.mockRestore();
           await opening;
           await stopping.close();
         }
       }
     } finally {
+      replies.ready = true;
       reaping.resolve(0);
       releaseDrain?.();
       listenSpy.mockRestore();

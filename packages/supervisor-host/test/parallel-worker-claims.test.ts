@@ -101,6 +101,32 @@ function fixture(
 }
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 
+it("pauses new claims during dependency loss and resumes without stopping active work", async () => {
+  let healthy = false;
+  const f = fixture(2, async () => (healthy ? { partitionCount: 1, partitions: [0] } : undefined));
+  await f.worker.start();
+  notification.send();
+  await tick();
+  await tick();
+  expect(f.tickets).toHaveLength(0);
+  healthy = true;
+  notification.send();
+  await vi.waitFor(() => expect(f.tickets).toHaveLength(2));
+  f.tickets[0]!.claim("active");
+  healthy = false;
+  f.tickets[1]!.finish();
+  notification.send();
+  await tick();
+  await tick();
+  expect(f.worker.state).toBe("running");
+  expect(f.tickets).toHaveLength(2);
+  healthy = true;
+  notification.send();
+  await vi.waitFor(() => expect(f.tickets).toHaveLength(3));
+  expect(f.tickets[2]!.admission.blockedFamilyKeys).toEqual(["tenant:active"]);
+  expect(f.failure).not.toHaveBeenCalled();
+});
+
 it("caps pending claims at two, then replenishes at commit rather than Agent completion", async () => {
   const f = fixture();
   await f.worker.start();

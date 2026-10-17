@@ -7,7 +7,9 @@ import {
   type WorkflowPreparer,
   type SubagentControlClient,
 } from "@pi-cloud/sandbox-supervisor";
-import type { ExecuteTurnCommandMessage, ToolResultPayload } from "@pi-cloud/protocol";
+import type { ExecuteTurnCommandMessage } from "@pi-cloud/protocol";
+import { ImageAttachmentCodec } from "@pi-cloud/session-attachments";
+import { restoreToolReply } from "../src/tool-reply-result.ts";
 
 const command = {
   payload: {
@@ -20,7 +22,7 @@ const command = {
   },
 } as ExecuteTurnCommandMessage;
 
-function fixture() {
+function fixture(codec?: ImageAttachmentCodec) {
   const mailbox = new ToolReplyMailbox();
   const control = {
     request: vi.fn<SubagentControlClient["request"]>(async (input) => {
@@ -35,8 +37,8 @@ function fixture() {
       childAnchor: async (_ref, inherit) => (inherit ? "3" : null),
       conversationDepth: async () => 3,
     },
-    wait: async (...args) =>
-      (await mailbox.wait(args[0], args[1], args[2], args[3])) as ToolResultPayload,
+    wait: (id, callId, name, signal, scope) =>
+      restoreToolReply(mailbox.wait(id, callId, name, signal), codec, scope, signal),
   });
   return { runtime, mailbox, control };
 }
@@ -82,6 +84,64 @@ it("prepares a control invocation and returns its reply without executing its bu
   });
   prepared.dispose();
   f.mailbox.close();
+});
+
+it("retains a control Tool's receipt when restoring its image fails", async () => {
+  const codec = new ImageAttachmentCodec({
+    async put() {
+      throw Error("Unexpected upload");
+    },
+    async get() {
+      throw Error("Private object-store failure");
+    },
+  });
+  const f = fixture(codec);
+  const bindings = await f.runtime.create({
+    command,
+    prepareEnvironment: async () => "binding",
+    prepareWorkflow: async () => {
+      throw Error("No script");
+    },
+  });
+  const tool = bindings.find((b) => b.tool.name === "preview")!.tool as PreparedAgentTool;
+  const prepared = await withToolInvocation(
+    { id: "task:7", nativeToolCallId: "image-preview" },
+    () => tool.prepareExecution!("image-preview", { port: 3000 }),
+  );
+  try {
+    if (!("operationId" in prepared.command)) throw Error("Expected control command");
+    f.mailbox.accept({
+      kind: "tool_result",
+      sequence: 1,
+      operationId: prepared.command.operationId,
+      result: {
+        toolCallId: "image-preview",
+        toolName: "preview",
+        isError: false,
+        result: {
+          content: [
+            {
+              type: "pi_cloud_image_v1",
+              attachment: {
+                id: "10000000-0000-4000-8000-000000000003",
+                sha256: "a".repeat(64),
+                byteLength: 1,
+                mimeType: "image/png",
+              },
+            },
+          ],
+        },
+      },
+    });
+    expect(prepared.completed()).toBe(true);
+    await expect(prepared.result()).rejects.toMatchObject({
+      code: "tool_result_attachment_unavailable",
+    });
+    expect(prepared.completed()).toBe(true);
+  } finally {
+    prepared.dispose();
+    f.mailbox.close();
+  }
 });
 
 it("publishes one dynamic run request for a workflow key and isolates reused provider call IDs", async () => {

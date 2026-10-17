@@ -12,6 +12,8 @@ const explanations = {
     "The previous execution could not continue because its execution channel or authority was unavailable.",
   tool_result_unknown:
     "A Tool was submitted, but its result could not be confirmed. Its side effects may already have occurred.",
+  tool_result_attachment_unavailable:
+    "The Tool returned a final result, but its image attachment could not be read. This does not imply the Tool failed to execute or the sandbox became unavailable.",
   model_response_interrupted: "The previous model response stream ended before completion.",
   context_limit: "The previous model request could not complete within its context limit.",
 } as const;
@@ -23,6 +25,8 @@ export function isRunInterruptionReason(value: unknown): value is RunInterruptio
 
 export function interruptionReasonForFailureCode(code: unknown): RunInterruptionReason | undefined {
   switch (code) {
+    case "tool_result_attachment_unavailable":
+      return "tool_result_attachment_unavailable";
     case "pi_timeout":
     case "execution_timeout":
     case "tool_timeout":

@@ -69,7 +69,7 @@ export async function liveNativeTools(
         request.toolName,
         combined,
       );
-      void result.catch(() => {});
+      void result.result.catch(() => {});
       const source = position();
       try {
         await client.submitTool(binding.descriptor.target, {
@@ -104,7 +104,10 @@ export async function liveNativeTools(
           maximumOutputBytes:
             request.toolName === "read" ? MAX_IMAGE_GUEST_RESPONSE_BYTES : 8 * 1024 * 1024,
         });
-        const event = parseNativeToolEvent(await result);
+        const event = parseNativeToolEvent({
+          type: "tool_execution_end",
+          ...(await result.result),
+        });
         if (event.type !== "tool_execution_end") throw new Error("Native final result missing");
         return {
           toolBrokerProtocolVersion: 1,

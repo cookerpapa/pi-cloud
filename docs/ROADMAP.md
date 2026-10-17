@@ -8,14 +8,14 @@
       Kafka reassignment test. Record [findings and repair directions](reports/kafka-worker-reply-review-20261017.md).
 
 The subsequent [ADR-0254 repair plan](adr/0254-worker-reply-admission-and-settlement.md)
-records the owner's thin-admission direction. No runtime or deployment change
-has occurred. Implementation order is W1 → W2 → W3, retaining boot-local replies
-and native unsafe Tool recovery.
+records the owner's thin-admission direction. W1–W3 are implemented in source,
+retaining boot-local replies and native unsafe Tool recovery.
+[Verification and release](reports/worker-reply-repair-20261017.md) remain in progress.
 
-- [ ] W1: local reply-consumer admission health; remove provider HEAD startup/
+- [x] W1: local reply-consumer admission health; remove provider HEAD startup/
       periodic admission gates; keep active waits under their existing bounds.
-- [ ] W2: same-boot volatile reply progress across reassignment.
-- [ ] W3: execution receipt separate from image restoration and native settlement.
+- [x] W2: same-boot volatile reply progress across reassignment.
+- [x] W3: execution receipt separate from image restoration and native settlement.
 - [ ] Required source/transport/fault checks, matched release, relevant Luna/Cube/
       browser recovery acceptance and confirmed fixture cleanup.
 

@@ -145,11 +145,12 @@ production defect or a reason to weaken Session-log ordering.
 - 96 existing targeted tests pass: event-log mailbox/ordered effects (17),
   attachment codec (7), remote Tools/native publication/presentation (66), and
   Worker Tool adapters/admission monitor (6).
-- Five baseline characterization cases pass in the
-  [isolated probe](../../scripts/experiments/kafka-worker-review-20261017/reply-hop.test.ts);
+- Five baseline characterization cases passed in `scripts/experiments/kafka-worker-review-20261017/reply-hop.test.ts`
+  (archived at review commit `c1c6470c`);
   [machine-readable evidence](kafka-worker-reply-review-20261017.json) distinguishes
   substituted transport/image storage from inspected runtime wiring.
-- The [real RF3 probe](../../scripts/experiments/kafka-worker-review-20261017/rebalance.mjs)
+- The real RF3 probe `scripts/experiments/kafka-worker-review-20261017/rebalance.mjs`
+  (archived at review commit `c1c6470c`)
   and [its evidence](kafka-worker-reply-rebalance-20261017.json) confirm replay on
   actual reassignment. Its three disposable brokers/network were removed.
   It does not simulate a production network partition or measure fleet capacity.
@@ -161,7 +162,9 @@ production defect or a reason to weaken Session-log ordering.
   not a product failure. No model calls, production failure injection or live
   Cube effects were used in this review.
 
-The probes intentionally characterize the reviewed baseline, including undesirable
-behavior. They are explicit review experiments rather than ordinary acceptance
-tests for a future repaired implementation. Repairs should replace those assertions
-with maintained regression tests and retain the evidence above.
+The probes characterized the reviewed baseline, including undesirable behavior.
+ADR-0254 replaces their obsolete assertions with maintained mailbox/reader tests,
+native image-result settlement tests and
+[RF3 recovery coverage](../../packages/event-log/test/tool-reply-recovery.integration.test.ts).
+The original source and evidence remain in Git rather than requiring the old bug
+to remain in the current test suite.

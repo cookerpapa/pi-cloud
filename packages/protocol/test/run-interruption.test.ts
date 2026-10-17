@@ -10,6 +10,12 @@ it("uses fixed known-cause explanations without reflecting diagnostic strings", 
     "tool_result_unknown",
   );
   expect(interruptionReasonForFailureCode("pi_timeout")).toBe("execution_timeout");
+  expect(interruptionReasonForFailureCode("tool_result_attachment_unavailable")).toBe(
+    "tool_result_attachment_unavailable",
+  );
+  const attachment = runInterruptionMessage("tool_result_attachment_unavailable");
+  expect(attachment).toContain("returned a final result");
+  expect(attachment).not.toContain("result could not be confirmed");
   expect(interruptionReasonForFailureCode("PRIVATE_DIAGNOSTIC_CANARY")).toBeUndefined();
   expect(isRunInterruptionReason("__proto__")).toBe(false);
   const text = runInterruptionMessage("execution_unavailable");

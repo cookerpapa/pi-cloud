@@ -84,6 +84,11 @@ publication endpoint. The availability mask filters the existing PG claim query;
 the PG grant and initialized Session producer still decide write admission.
 Control publication retains Projector assignment and installed-view checks.
 Readiness is an admission hint, not an additional lease or execution authority.
+Current source adds the boot reply consumer's local readiness to new-Run admission
+and removes provider HEAD startup/admission gates under
+[ADR-0254](adr/0254-worker-reply-admission-and-settlement.md). Existing Runs retain
+their original wait/ownership bounds. [Delivery status](reports/worker-reply-repair-20261017.md)
+separates source verification from the serving release.
 
 Binding bootstrap loads assigned partitions in primary-key pages of 256. Each
 owner retains at most 65,536 entries and 64 MiB of serialized binding metadata;
@@ -975,6 +980,13 @@ Kafka Tool replies accept only the final result; typed observation probe replies
 share that mailbox without resolving native Tool callbacks. Guest updates use the separate HTTP
 observation path. The Worker observes its reply Promise before awaiting command
 publication and retires it on every exit, including image-decoding failure.
+ADR-0254 source separates validated execution receipt from attachment restoration
+through an invocation-local wait handle. Image restoration uses caller cancellation
+and its storage budget, independently of the satisfied receipt deadline. An
+attachment failure interrupts with its own reason without declaring sandbox loss
+or retroactively cancelling a completed Tool. Same-boot reply reassignment uses
+the reader's existing volatile progress; this cursor is not Pi history or
+Projector durable recovery state.
 The Projector expands a combined invocation into the native Cube handoff
 only after materializing its native intent. Cancellation before the invocation
 enters its publication queue prevents dispatch; later cancellation can race

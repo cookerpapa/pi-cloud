@@ -1,3 +1,4 @@
+import { fixtureToolReply } from "./tool-api.ts";
 import { nativeTestDisplay } from "./fixtures/native-test-display.ts";
 import { expect, it, vi } from "vitest";
 import { MemoryStorage, type StorageWrite, type Seq } from "@earendil-works/pi-durable";
@@ -196,11 +197,11 @@ async function fixture(
             },
             { publishEvent: purpose !== "context_maintenance" },
           ),
-        waitForToolReply: (request, signal) => {
+        waitForToolReply: (request, { receipt: signal }) => {
           const pending = Promise.withResolvers<NativeToolEnd>();
           replies.set(request.operationId, { request, pending });
           signal.addEventListener("abort", () => pending.reject(signal.reason), { once: true });
-          return pending.promise;
+          return fixtureToolReply(pending.promise);
         },
       }),
     ...override,

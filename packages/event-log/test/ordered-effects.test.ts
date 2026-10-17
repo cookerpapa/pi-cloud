@@ -3,7 +3,10 @@ import type { KafkaJS } from "@confluentinc/kafka-javascript";
 
 const f = vi.hoisted(() => ({
   committed: "3",
+  low: "0",
   high: "5",
+  assignments: [] as number[][],
+  reassign: undefined as (() => Promise<void>) | undefined,
   stale: false,
   commit: vi.fn(),
   consumers: 0,
@@ -24,7 +27,7 @@ vi.mock("@confluentinc/kafka-javascript", () => ({
             async fetchTopicOffsets() {
               return Array.from({ length: f.partitions }, (_, partition) => ({
                 partition,
-                low: "0",
+                low: f.low,
                 high: f.high,
               }));
             },
@@ -51,13 +54,16 @@ vi.mock("../src/kafka-partition-reader.ts", () => ({
     ) {
       f.consumers++;
       f.logger = options.logger;
+      f.reassign = () => this.connect();
     }
     async connect() {
       await this.options.rebalance(
         { code: 1 },
         Array.from({ length: f.partitions }, (_, partition) => ({ topic: "log", partition })),
         {
-          assign() {},
+          assign(values) {
+            f.assignments.push(values.map((v) => v.offset!));
+          },
           unassign() {},
         },
       );
@@ -78,7 +84,10 @@ import { KafkaLogConsumer } from "../src/kafka-log-consumer.ts";
 
 beforeEach(() => {
   f.committed = "3";
+  f.low = "0";
   f.high = "5";
+  f.assignments = [];
+  f.reassign = undefined;
   f.stale = false;
   f.batch = undefined;
   f.consumers = 0;
@@ -86,7 +95,7 @@ beforeEach(() => {
   f.logger = undefined;
   f.commit.mockReset().mockResolvedValue(undefined);
 });
-async function fixture() {
+async function fixture(options?: { memory?: boolean; beforeHandle?: () => Promise<void> }) {
   const effects: number[] = [],
     projected: number[] = [];
   const consumer = new KafkaLogConsumer<{ command: boolean; n: number }>({
@@ -94,11 +103,17 @@ async function fixture() {
     topic: "log",
     groupId: "group",
     clientId: "test",
-    groupRecovery: true,
-    orderedEffects: true,
-    replayOffsets: async () => new Map(Array.from({ length: f.partitions }, (_, p) => [p, 0n])),
+    ...(options?.memory
+      ? { commitMessages: false, resumeFromMemory: true }
+      : {
+          groupRecovery: true,
+          orderedEffects: true,
+          replayOffsets: async () =>
+            new Map(Array.from({ length: f.partitions }, (_, p) => [p, 0n])),
+        }),
     decode: (value) => JSON.parse(value.toString()),
     handler: async ({ fact }, _current, commit) => {
+      await options?.beforeHandle?.();
       projected.push(fact.n);
       if (fact.command && (await commit!())) effects.push(fact.n);
     },
@@ -121,6 +136,149 @@ async function fixture() {
     } as unknown as KafkaJS.EachBatchPayload);
   return { consumer, effects, projected, deliver };
 }
+
+it("resumes boot-local callback progress across assignment and reader recreation without commits", async () => {
+  const test = await fixture({ memory: true });
+  try {
+    await test.deliver([
+      [0, false],
+      [1, false],
+    ]);
+    await f.reassign!();
+    expect(f.assignments.at(-1)).toEqual([2]);
+    f.logger!.error("LibrdKafkaError");
+    await vi.waitFor(() => expect(f.consumers).toBe(2));
+    await test.consumer.waitUntilAssigned(1000);
+    expect(f.assignments.at(-1)).toEqual([2]);
+    await test.deliver([[2, false]]);
+    expect(f.commit).not.toHaveBeenCalled();
+  } finally {
+    await test.consumer.close();
+  }
+});
+
+it("starts a fresh callback consumer at the retained floor, without another boot's progress", async () => {
+  const old = await fixture({ memory: true });
+  await old.deliver([
+    [0, false],
+    [1, false],
+  ]);
+  await old.consumer.close();
+  f.low = "1";
+  const fresh = await fixture({ memory: true });
+  try {
+    expect(f.assignments.at(-1)).toEqual([1]);
+  } finally {
+    await fresh.consumer.close();
+  }
+});
+
+it("clamps reclaimed callback progress to retention without claiming missing callbacks were delivered", async () => {
+  const test = await fixture({ memory: true });
+  try {
+    await test.deliver([[0, false]]);
+    f.low = "3";
+    await f.reassign!();
+    expect(f.assignments.at(-1)).toEqual([3]);
+    expect(test.projected).toEqual([0]);
+    await test.deliver([[3, false]]);
+    expect(test.projected).toEqual([0, 3]);
+  } finally {
+    await test.consumer.close();
+  }
+});
+
+it("retains an impossible local cursor through repeated assignments until metadata is consistent", async () => {
+  const test = await fixture({ memory: true });
+  try {
+    await test.deliver([
+      [0, false],
+      [1, false],
+      [2, false],
+    ]);
+    f.high = "2";
+    for (let i = 0; i < 2; i++) {
+      await f.reassign!();
+      expect(() => test.consumer.checkHealth()).toThrow("unhealthy");
+    }
+    f.high = "5";
+    await f.reassign!();
+    expect(f.assignments.at(-1)).toEqual([3]);
+    expect(() => test.consumer.checkHealth()).not.toThrow();
+  } finally {
+    await test.consumer.close();
+  }
+});
+
+it("does not skip a reply which failed decoding when the partition is reassigned", async () => {
+  const test = await fixture({ memory: true });
+  try {
+    await f.batch!({
+      batch: {
+        topic: "log",
+        partition: 0,
+        messages: [{ offset: "0", value: Buffer.from("invalid JSON") }],
+      },
+      isStale: () => false,
+      resolveOffset() {},
+    } as unknown as KafkaJS.EachBatchPayload);
+    await f.reassign!();
+    expect(f.assignments.at(-1)).toEqual([0]);
+    expect(test.projected).toEqual([]);
+  } finally {
+    await test.consumer.close();
+  }
+});
+
+it("joins an old in-flight handler before volatile reassignment and does not skip its stale delivery", async () => {
+  const entered = Promise.withResolvers<void>(),
+    gate = Promise.withResolvers<void>();
+  const test = await fixture({
+    memory: true,
+    beforeHandle: async () => {
+      entered.resolve();
+      await gate.promise;
+    },
+  });
+  try {
+    const handling = test.deliver([[0, false]]);
+    await entered.promise;
+    let assigned = false;
+    const assignment = f.reassign!().then(() => {
+      assigned = true;
+    });
+    await Promise.resolve();
+    expect(assigned).toBe(false);
+    gate.resolve();
+    await Promise.all([handling, assignment]);
+    expect(f.assignments.at(-1)).toEqual([0]);
+  } finally {
+    gate.resolve();
+    await test.consumer.close();
+  }
+});
+
+it.each([
+  { commitMessages: true },
+  { groupRecovery: true },
+  { groupRecovery: true, orderedEffects: true },
+  { replayOffsets: async () => new Map<number, bigint>() },
+])("refuses volatile progress with incompatible durability options: %j", (extra) => {
+  expect(
+    () =>
+      new KafkaLogConsumer({
+        brokers: ["fake"],
+        topic: "reply",
+        clientId: "test",
+        groupId: "reply",
+        commitMessages: false,
+        resumeFromMemory: true,
+        decode: (value) => JSON.parse(value.toString()),
+        handler: async () => {},
+        ...extra,
+      }),
+  ).toThrow("Memory resume");
+});
 
 it("replays an unfinished display prefix without executing commands below the committed dispatch boundary", async () => {
   const test = await fixture();

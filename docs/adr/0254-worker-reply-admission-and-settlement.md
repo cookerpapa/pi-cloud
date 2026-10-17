@@ -1,9 +1,9 @@
 # ADR-0254: Worker reply admission, receipt and local replay
 
-Status: proposed implementation plan, 2026-10-17. The owner agreed to thin
-admission checks and requested a repair plan for the
+Status: accepted; implementation in progress, 2026-10-17. The owner approved
+the repair plan and implementation following the
 [Kafka → Worker review](../reports/kafka-worker-reply-review-20261017.md).
-No implementation or deployment is claimed by this document.
+Deployment and verification will be recorded separately after the required gates.
 
 ## Scope and existing authorities
 
@@ -108,6 +108,10 @@ Registration and rejection observation still precede intent publication. Observe
 both the raw and image-restoring Promises immediately, and dispose the handle on
 failed publication, uncertain writer closure, cancellation and terminal cleanup.
 A fast receipt does not bypass the original native commit's ACK requirement.
+The receipt deadline bounds waiting for that receipt. Image restoration uses
+the existing attachment-read budget plus the caller's cancellation/ownership
+signal; expiration of an already-satisfied receipt deadline cannot relabel the
+subsequent image read as missing execution evidence.
 
 Classify failed attachment restoration as `tool_result_attachment_unavailable`
 at the Worker adapter. Preserve this reason through the existing Run interruption
