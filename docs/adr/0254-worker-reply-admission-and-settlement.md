@@ -1,9 +1,10 @@
 # ADR-0254: Worker reply admission, receipt and local replay
 
-Status: accepted; implementation in progress, 2026-10-17. The owner approved
+Status: accepted; implemented and source-verified, 2026-10-17. The owner approved
 the repair plan and implementation following the
 [Kafka → Worker review](../reports/kafka-worker-reply-review-20261017.md).
-Deployment and verification will be recorded separately after the required gates.
+[Verification and the host KVM deployment blocker](../reports/worker-reply-repair-20261017.md)
+are recorded separately. This does not claim deployed/live acceptance.
 
 ## Scope and existing authorities
 

@@ -36,7 +36,8 @@ Normal duplicate/late handling and native Pi result ownership remain sound.
 The [ADR-0254 plan](adr/0254-worker-reply-admission-and-settlement.md) incorporates
 the owner's subsequent thin-admission decision. Source repairs are implemented;
 [delivery evidence](reports/worker-reply-repair-20261017.md) tracks remaining
-repository gates, matched deployment and live acceptance before closing this item.
+matched deployment and live acceptance before closing this item. Required
+repository/transport/fault gates pass; current host KVM loss blocks rollout.
 
 - [ ] KWR-01: include reply-consumer health in existing Worker admission and
       remove provider HEAD startup/periodic admission prerequisites. Pending

@@ -8,7 +8,8 @@ a review only; no production implementation or deployment changed.
 The approved [repair](adr/0254-worker-reply-admission-and-settlement.md) is implemented
 in source: thin local admission, separate receipt/attachment settlement and volatile
 reply resume. [Delivery evidence](reports/worker-reply-repair-20261017.md) tracks
-passing targeted/transport checks and the pending repository, release and live gates.
+1,817 workspace tests, 77 helper tests, nine real transport cases and 270 fault
+cases. Deployment/live acceptance is blocked before draining by missing host KVM.
 
 The approved [Tool reply continuation plan](adr/0253-tool-reply-uncertainty-and-continuation.md)
 consolidates the Cube completion → Kafka walkthrough and subsequent UNKNOWN,

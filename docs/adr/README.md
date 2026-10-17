@@ -4,7 +4,8 @@
 Kafka → Worker repair plan following the owner's thin-admission decision:
 local reply health, removal of provider HEAD admission gates, same-boot volatile
 resume and separate receipt/attachment settlement. Source is implemented;
-[verification and deployment](../reports/worker-reply-repair-20261017.md) are in progress.
+[verification](../reports/worker-reply-repair-20261017.md) passes the source gates;
+host KVM loss blocks deployment and live acceptance.
 
 [ADR-0253](0253-tool-reply-uncertainty-and-continuation.md) records the approved
 implementation of bounded fixed-Tool UNKNOWN continuation using existing

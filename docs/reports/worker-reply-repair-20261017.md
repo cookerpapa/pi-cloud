@@ -1,9 +1,12 @@
 # Worker reply delivery repair
 
 Date: 2026-10-17. Plan: [ADR-0254](../adr/0254-worker-reply-admission-and-settlement.md).
-Source implementation is complete; repository gates, scanned matched release
-and live acceptance are being completed. The serving release is still
-`tool-unknown-791a6ed0` until the rollout below is recorded.
+Implementation `0afcad85` passes the required source/repository gates. Matched
+deployment and live acceptance are blocked before draining by the host's missing
+KVM device. The serving release remains `tool-unknown-791a6ed0`. Candidate artifact
+preparation can proceed independently; its signed-off image IDs/checksums are
+recorded by the existing private matched-release evidence, not inferred from
+these source tests.
 
 ## Source behavior
 
@@ -29,7 +32,7 @@ and live acceptance are being completed. The serving release is still
   the old combined-result completion flags and baseline bug-expectation probes
   are removed rather than retained as compatibility paths.
 
-## Verification in progress
+## Source verification
 
 Initial targeted checks pass: Worker lifecycle/model/admission (22), reply mailbox
 and reader tests (29 before the additional decode-retry case), fixed/control
@@ -61,6 +64,42 @@ attachment-failure cases still strictly require one model request and no next
 sampling. The fixture's fake completions provider is explicitly test-only;
 production provider configuration remains pinned to Responses routes.
 
-Final repository, artifact and live results will be recorded here before marking
-the delivery complete. Accounts, model/provider configuration and credentials
-must remain unchanged, and all owned acceptance resources must be cleaned up.
+The complete workspace run passes **1,817 tests**, plus **77 acceptance-helper
+tests**. All **270 indexed fault cases** pass. Dependencies, formatting/docs,
+installer, runtime policy, native Cube admission/allocation/Volume contracts,
+Helm, observability, image closure, builds and all workspace type checks pass.
+The final cancellation-priority delta also passes its affected package type
+checks and the composed native tests. The npm security audit reports no remaining
+vulnerabilities. The nine real RF3/PG tests above are separate from the default
+workspace run's intentionally skipped transport fixtures.
+
+The initial format command encountered the two unstaged deleted review probes;
+staging their removal allowed the required tracked-file formatting gate to pass.
+No acceptance policy was weakened. Private full-check and failed/passing priority
+logs are retained under `deploy/production/runtime/release-evidence/worker-reply-20261017/`.
+
+## Host blocker before deployment
+
+Read-only preflight on October 17 found `/dev/kvm` absent both on the WSL host
+and in Cubelet. The AMD Ryzen 9 7945HX guest exposes neither SVM nor VMX;
+firmware virtualization is enabled. Windows reports build `26200.9711` with
+`KB5127648` installed. The previous October 16 guarded rollback receipt recorded
+that exact update's removal; subsequent evidence confirmed KVM API 12 and an
+actual empty VM before the prior release's successful live tests.
+
+The current observations match the Windows-update regression acknowledged by
+the [WSL maintainers](https://github.com/microsoft/WSL/issues/41917). The merged
+[warning change](https://github.com/microsoft/WSL/pull/41942) explicitly does not
+repair the underlying Windows regression. This is a diagnosis supported by
+matching symptoms/version, not a fresh administrator-level reproduction of the
+HCS failure: this turn's Windows process is not elevated and its HCS queries
+returned `0x8037011B`, so administrator verification remains necessary.
+
+No Windows update removal, host restart or application drain was performed.
+Restore and verify host KVM before applying the matched candidate and running
+Luna/Cube/browser/child recovery acceptance. Do not bypass the preflight or
+substitute another sandbox runtime. Private `before.json` records zero active
+work/writers/VMs and the seven configuration fingerprints: 32 tenants/users/API
+credentials, five password credentials and 35 model profiles/credential bindings.
+Accounts/configuration must remain intact and owned acceptance resources must be
+physically cleaned before this delivery is marked complete.
