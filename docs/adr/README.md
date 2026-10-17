@@ -1,11 +1,16 @@
 # Current architecture decisions
 
+[ADR-0254](0254-worker-reply-admission-and-settlement.md) records the proposed
+Kafka → Worker repair plan following the owner's thin-admission decision:
+local reply health, removal of provider HEAD admission gates, same-boot volatile
+resume and separate receipt/attachment settlement. It is not implemented.
+
 [ADR-0253](0253-tool-reply-uncertainty-and-continuation.md) records the approved
 implementation of bounded fixed-Tool UNKNOWN continuation using existing
-execution probes. [Source verification](../reports/tool-reply-continuation-20261016.md)
-is in progress; it is not deployed. The serving runtime still
-interrupts sampling on infrastructure UNKNOWN; the exception preserves
-ownership/closure checks, native Stop and probe isolation from history/context.
+execution probes. [Verification](../reports/tool-reply-continuation-20261016.md)
+is complete and deployed as `tool-unknown-791a6ed0`. The bounded exception
+preserves ownership/closure checks, native Stop and probe isolation from
+history/context; automatic unknown Volume-reference recovery remains separate.
 
 [ADR-0252](0252-tool-receipt-and-ephemeral-preview.md) is accepted and implemented
 in source: receipt-only failure classification, source terminal-aware previews

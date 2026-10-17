@@ -33,14 +33,17 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 The [October 17 review](reports/kafka-worker-reply-review-20261017.md) confirms
 three Worker return-path issues with isolated probes and actual RF3 reassignment.
 Normal duplicate/late handling and native Pi result ownership remain sound.
+The [ADR-0254 plan](adr/0254-worker-reply-admission-and-settlement.md) incorporates
+the owner's subsequent thin-admission decision; implementation is pending.
 
 - [ ] KWR-01: include reply-consumer health in existing Worker admission and
-      define bounded handling of sustained transport loss for pending waits.
-      Preserve long Subagent execution and the outer Run/cancellation boundaries;
-      add no channel lease or PG health store.
+      remove provider HEAD startup/periodic admission prerequisites. Pending
+      waits retain the existing Tool/outer Run/cancellation bounds; no separate
+      Worker outage timer, channel lease or PG health store is added.
 - [ ] KWR-02: distinguish validated execution receipt from attachment restoration.
       A failed image read or Stop during decoding must not erase known completion
-      or falsely classify the sandbox as unavailable. Preserve native abort and
+      or falsely classify the sandbox as unavailable. Retain Run interruption
+      with an accurate attachment failure reason, native abort precedence and
       canonical commit ownership without a durable raw-result cache.
 - [ ] KWR-03: resume same-boot reply consumption from completed in-memory delivery
       progress instead of replaying the retained prefix. Retain bounds/unsettled

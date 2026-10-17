@@ -7,9 +7,17 @@
 - [x] Verify with existing tests, isolated failure probes and a disposable RF3
       Kafka reassignment test. Record [findings and repair directions](reports/kafka-worker-reply-review-20261017.md).
 
-The three findings are tracked in the backlog. This review introduces no runtime,
-protocol or deployment change; it does not reopen the accepted boot-local reply
-or unsafe Tool recovery contracts.
+The subsequent [ADR-0254 repair plan](adr/0254-worker-reply-admission-and-settlement.md)
+records the owner's thin-admission direction. No runtime or deployment change
+has occurred. Implementation order is W1 → W2 → W3, retaining boot-local replies
+and native unsafe Tool recovery.
+
+- [ ] W1: local reply-consumer admission health; remove provider HEAD startup/
+      periodic admission gates; keep active waits under their existing bounds.
+- [ ] W2: same-boot volatile reply progress across reassignment.
+- [ ] W3: execution receipt separate from image restoration and native settlement.
+- [ ] Required source/transport/fault checks, matched release, relevant Luna/Cube/
+      browser recovery acceptance and confirmed fixture cleanup.
 
 ## Cube completion → Kafka replies and UNKNOWN continuation
 

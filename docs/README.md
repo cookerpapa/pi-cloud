@@ -5,6 +5,10 @@ records missing reply-consumer admission health, attachment-restoration failure
 attribution and retained-prefix replay on same-boot reassignment. Isolated probes,
 96 existing tests and a real RF3 reassignment check support the findings. This is
 a review only; no production implementation or deployment changed.
+The subsequent [repair plan](adr/0254-worker-reply-admission-and-settlement.md)
+combines those findings with the owner's preference for thin admission checks.
+It proposes receipt/attachment separation and volatile reply resume, and removes
+provider HEAD admission gates. Implementation and deployment remain pending.
 
 The approved [Tool reply continuation plan](adr/0253-tool-reply-uncertainty-and-continuation.md)
 consolidates the Cube completion → Kafka walkthrough and subsequent UNKNOWN,
