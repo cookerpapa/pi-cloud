@@ -9,7 +9,10 @@ The approved [repair](adr/0254-worker-reply-admission-and-settlement.md) is impl
 in source: thin local admission, separate receipt/attachment settlement and volatile
 reply resume. [Delivery evidence](reports/worker-reply-repair-20261017.md) tracks
 1,817 workspace tests, 77 helper tests, nine real transport cases and 270 fault
-cases. Deployment/live acceptance is blocked before draining by missing host KVM.
+cases. Host recovery cleared the KVM blocker; `worker-reply-b1f67dba` is deployed
+with all eleven artifact scans and required Luna/Cube/browser/recovery checks
+passing. Three large image replies also survive cold Worker recovery. The record
+retains the early-ending model fixture and confirms physical/configuration cleanup.
 
 The approved [Tool reply continuation plan](adr/0253-tool-reply-uncertainty-and-continuation.md)
 consolidates the Cube completion → Kafka walkthrough and subsequent UNKNOWN,

@@ -76,14 +76,19 @@ enter native persistence before validated Tool execution (ADR-0230).
 The [Session work migration](docs/adr/0247-session-work-and-tool-dispatch.md) is
 deployed as `session-work-6ac697f9`: one root Run with native child Conversations,
 unified Tool replies, one Session closure and Worker direct Kafka publication.
-The current matched release, `tool-unknown-791a6ed0`, uses schema 189, execution-topic
+The current matched release, `worker-reply-b1f67dba`, uses schema 189, execution-topic
 v17, boot reply v3, guest/Tool Worker protocol 7, completion startup protocol 3,
-preview schema 2 and Cube management protocol 7. Windows rollback restored KVM;
-all four templates, application workloads and required live acceptance pass.
+preview schema 2 and Cube management protocol 7. Host KVM is restored; all four
+templates, application workloads and required live acceptance pass.
+The [Worker reply repair](docs/reports/worker-reply-repair-20261017.md) adds local
+reply-consumer health to new-Run admission, resumes same-boot reply delivery from
+memory and distinguishes attachment failure from missing execution evidence.
+Real Luna/Cube checks cover Stop, native input, dual-process recovery, child
+replies, large image cold recovery and the complete Workspace/preview suite.
 The local WSL web adapter also restores Windows localhost access through the
 existing systemd TCP proxy and the Kubernetes web Service.
-The [repair and recovery record](docs/reports/tool-receipt-preview-repair-20261016.md)
-identifies the scanned artifacts, recovery, passing checks and earlier failed samples.
+The [preceding preview repair](docs/reports/tool-receipt-preview-repair-20261016.md)
+records its earlier scanned artifacts, recovery and acceptance samples.
 Current source implements [ADR-0252](docs/adr/0252-tool-receipt-and-ephemeral-preview.md):
 receipt-only loss preserves confirmed results; bounded CR/ANSI-aware previews send
 incremental edits and periodic resets over HTTP/SSE, independently of final results.

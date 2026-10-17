@@ -3,9 +3,10 @@
 [ADR-0254](0254-worker-reply-admission-and-settlement.md) records the approved
 Kafka → Worker repair plan following the owner's thin-admission decision:
 local reply health, removal of provider HEAD admission gates, same-boot volatile
-resume and separate receipt/attachment settlement. Source is implemented;
-[verification](../reports/worker-reply-repair-20261017.md) passes the source gates;
-host KVM loss blocks deployment and live acceptance.
+resume and separate receipt/attachment settlement. The repair is deployed as
+`worker-reply-b1f67dba`; [verification](../reports/worker-reply-repair-20261017.md)
+records source/artifact gates, real Luna/Cube/recovery checks and confirmed cleanup
+after host KVM restoration.
 
 [ADR-0253](0253-tool-reply-uncertainty-and-continuation.md) records the approved
 implementation of bounded fixed-Tool UNKNOWN continuation using existing

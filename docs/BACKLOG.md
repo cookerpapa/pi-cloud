@@ -34,21 +34,21 @@ The [October 17 review](reports/kafka-worker-reply-review-20261017.md) confirms
 three Worker return-path issues with isolated probes and actual RF3 reassignment.
 Normal duplicate/late handling and native Pi result ownership remain sound.
 The [ADR-0254 plan](adr/0254-worker-reply-admission-and-settlement.md) incorporates
-the owner's subsequent thin-admission decision. Source repairs are implemented;
-[delivery evidence](reports/worker-reply-repair-20261017.md) tracks remaining
-matched deployment and live acceptance before closing this item. Required
-repository/transport/fault gates pass; current host KVM loss blocks rollout.
+the owner's subsequent thin-admission decision. The repair is deployed as
+`worker-reply-b1f67dba` after host KVM recovery. [Delivery evidence](reports/worker-reply-repair-20261017.md)
+records passing repository/transport/fault and artifact gates, real Luna/Cube/
+browser/recovery acceptance, retained failed samples and confirmed fixture cleanup.
 
-- [ ] KWR-01: include reply-consumer health in existing Worker admission and
+- [x] KWR-01: include reply-consumer health in existing Worker admission and
       remove provider HEAD startup/periodic admission prerequisites. Pending
       waits retain the existing Tool/outer Run/cancellation bounds; no separate
       Worker outage timer, channel lease or PG health store is added.
-- [ ] KWR-02: distinguish validated execution receipt from attachment restoration.
+- [x] KWR-02: distinguish validated execution receipt from attachment restoration.
       A failed image read or Stop during decoding must not erase known completion
       or falsely classify the sandbox as unavailable. Retain Run interruption
       with an accurate attachment failure reason, native abort precedence and
       canonical commit ownership without a durable raw-result cache.
-- [ ] KWR-03: resume same-boot reply consumption from completed in-memory delivery
+- [x] KWR-03: resume same-boot reply consumption from completed in-memory delivery
       progress instead of replaying the retained prefix. Retain bounds/unsettled
       handler checks and keep Session Projector recovery semantics separate.
 

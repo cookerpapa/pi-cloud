@@ -7,14 +7,16 @@ CubeSandbox KVM is the only untrusted execution backend.
 
 This document describes ADR-0247 Session ownership and ADR-0248 management reconnect
 with ADR-0249's deployed publication contract, ADR-0250's handoff repair and
-ADR-0251's guest attachment/lifetime repair and ADR-0252's receipt/preview repair
-(schema 189 / topic v17 / boot reply v3 / source guest protocol 7, adapter startup 3).
-The [current delivery record](reports/tool-receipt-preview-repair-20261016.md)
-records the October 16 deployment of `tool-preview-325f0ebd`: Windows rollback
-restored KVM and the matched native/template/application cutover completed.
-Source/artifact gates and required live checks pass: incremental/terminal-aware
-previews, receipt loss, cancellation, native input and dual-process recovery,
-browser/image/Read behavior and the full Cube multi-round/Volume suite. A measured
+ADR-0251's guest attachment/lifetime repair, ADR-0252's receipt/preview repair,
+ADR-0253's bounded UNKNOWN continuation and ADR-0254's Worker reply repair
+(schema 189 / topic v17 / boot reply v3 / guest protocol 7, adapter startup 3).
+The [current delivery record](reports/worker-reply-repair-20261017.md) records the
+October 18 deployment of `worker-reply-b1f67dba` after host KVM recovery. Source,
+artifact and relevant live gates pass: native input/Stop, dual-process recovery,
+browser/image/Read, child control replies across replacement and the complete
+Cube multi-round/Volume suite. Large Tool images also survive cold Worker recovery.
+The [preceding preview record](reports/tool-receipt-preview-repair-20261016.md)
+covers terminal-aware previews and receipt loss on `tool-preview-325f0ebd`. A measured
 30-second SSE recovery exposed a too-short 25-second test deadline; the corrected
 fixture records actual recovery and retains all assertions. Earlier external
 proxy TLS failures remain documented separately from this passing release.
@@ -84,11 +86,11 @@ publication endpoint. The availability mask filters the existing PG claim query;
 the PG grant and initialized Session producer still decide write admission.
 Control publication retains Projector assignment and installed-view checks.
 Readiness is an admission hint, not an additional lease or execution authority.
-Current source adds the boot reply consumer's local readiness to new-Run admission
-and removes provider HEAD startup/admission gates under
+The boot reply consumer's local readiness also gates new Runs; provider HEAD
+startup/admission gates are removed under
 [ADR-0254](adr/0254-worker-reply-admission-and-settlement.md). Existing Runs retain
-their original wait/ownership bounds. [Delivery status](reports/worker-reply-repair-20261017.md)
-separates source verification from the serving release.
+their original wait/ownership bounds. [Delivery evidence](reports/worker-reply-repair-20261017.md)
+records source verification, the matched deployment and live acceptance.
 
 Binding bootstrap loads assigned partitions in primary-key pages of 256. Each
 owner retains at most 65,536 entries and 64 MiB of serialized binding metadata;
@@ -980,7 +982,7 @@ Kafka Tool replies accept only the final result; typed observation probe replies
 share that mailbox without resolving native Tool callbacks. Guest updates use the separate HTTP
 observation path. The Worker observes its reply Promise before awaiting command
 publication and retires it on every exit, including image-decoding failure.
-ADR-0254 source separates validated execution receipt from attachment restoration
+ADR-0254 separates validated execution receipt from attachment restoration
 through an invocation-local wait handle. Image restoration uses caller cancellation
 and its storage budget, independently of the satisfied receipt deadline. An
 attachment failure interrupts with its own reason without declaring sandbox loss

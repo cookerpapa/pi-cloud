@@ -11,14 +11,16 @@ The subsequent [ADR-0254 repair plan](adr/0254-worker-reply-admission-and-settle
 records the owner's thin-admission direction. W1–W3 are implemented in source,
 retaining boot-local replies and native unsafe Tool recovery.
 [Verification and release](reports/worker-reply-repair-20261017.md) record passing
-source/transport/fault gates; host KVM currently blocks matched deployment.
+source/transport/fault gates and the October 18 `worker-reply-b1f67dba` deployment
+after host KVM recovery. Required live checks and physical fixture cleanup pass;
+original accounts, model/provider configuration and credentials are preserved.
 
 - [x] W1: local reply-consumer admission health; remove provider HEAD startup/
       periodic admission gates; keep active waits under their existing bounds.
 - [x] W2: same-boot volatile reply progress across reassignment.
 - [x] W3: execution receipt separate from image restoration and native settlement.
 - [x] Required source/transport/fault checks.
-- [ ] Restore host KVM, finish the scanned matched release, relevant Luna/Cube/
+- [x] Restore host KVM, finish the scanned matched release, relevant Luna/Cube/
       browser recovery acceptance and confirmed fixture cleanup.
 
 ## Cube completion → Kafka replies and UNKNOWN continuation
