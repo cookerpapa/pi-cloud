@@ -4,6 +4,11 @@ Status: implemented and validated, 2026-09-27, following owner approval of
 repository-review repairs D1, D3 and D4. This decision covers D1 only.
 See [regression, matched rollout and Luna acceptance](../reports/repository-review-followup-20260927.md).
 
+The [October 18 Pi settlement review](../reports/worker-harness-settlement-review-20261018.md)
+identifies a later integration gap: the native default truncates accepted control
+results below this budget. WHS-01 tracks the adapter correction; this decision's
+complete-result/explicit-oversize policy remains the intended contract.
+
 ## Decision
 
 Keep the existing 900 KiB execution-fact limit and the existing Workspace/image

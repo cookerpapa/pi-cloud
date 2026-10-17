@@ -28,6 +28,25 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## Worker → Pi Tool settlement review
+
+The [October 18 review](reports/worker-harness-settlement-review-20261018.md) checks
+the original Worker's result handoff into native Pi and its Storage commit.
+Atomic final settlement and unsafe recovery pass; the findings below are not
+implemented by this review and do not require a new execution/storage authority.
+
+- [ ] WHS-01 / P2: align the trusted control Tools' native output limits with
+      ADR-0196's 256 KiB admission contract. Accepted JSON and multiline replies
+      must remain complete; retain explicit oversize errors, fixed Tool limits,
+      native hooks and the independent display budget.
+- [ ] WHS-02 / P2: skip sequence reads for body-less committed notifications and
+      make `recordSequence()` read only metadata after eviction. Retain observed
+      progress and ownership guards; sequence lookup must not download images.
+- [ ] WHS-03 / P3: validate final-reply content parts before marking a valid
+      settlement. Cover text/native-image/packed-image boundaries and malformed
+      parts using PiCloud schemas and existing protocol-failure handling. The
+      review reproduces injected bad frames, not a normal malformed producer.
+
 ## Kafka replies → Worker callback review
 
 The [October 17 review](reports/kafka-worker-reply-review-20261017.md) confirms

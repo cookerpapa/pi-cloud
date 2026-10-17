@@ -1,5 +1,13 @@
 # Documentation map
 
+The [October 18 Worker → Pi settlement review](reports/worker-harness-settlement-review-20261018.md)
+checks native final-result processing, atomic task settlement and the committed
+observer. It reproduces control-result truncation below the admitted budget,
+redundant cold body/image reads for sequence lookup, and a malformed-content
+validation gap. 109 existing tests and seven isolated characterizations pass;
+this review changes no runtime or deployment. Repair directions retain Pi's
+public APIs and the existing storage/execution authorities.
+
 The [October 17 Kafka → Worker reply review](reports/kafka-worker-reply-review-20261017.md)
 records missing reply-consumer admission health, attachment-restoration failure
 attribution and retained-prefix replay on same-boot reassignment. Isolated probes,

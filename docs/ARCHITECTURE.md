@@ -1064,9 +1064,13 @@ platform adapter; user-supplied Worker extensions are not supported.
 
 Subagent return admission bounds JSON-encoded text to 256 KiB, leaving space for
 the native Entry and accompanying display event inside the unchanged 900 KiB
-execution-fact limit. Guest completion, trusted receipt and the outer Pi Tool
-apply the same budget. Oversized values/errors become explicit bounded Tool
-errors, not truncated success or automatic effect retries (ADR-0196).
+execution-fact limit. ADR-0196 requires that same budget through guest completion,
+trusted receipt and the outer Pi Tool, with explicit errors for oversized values
+instead of truncated success or automatic retries. The
+[October 18 settlement review](reports/worker-harness-settlement-review-20261018.md)
+found an integration gap: native default output limits can cut an already accepted
+control result at 50 KiB/2,000 lines. WHS-01 tracks the pending adapter correction;
+the intended admission policy is unchanged.
 
 Delegated task input is checked before Tool intent and again before PG child
 admission. It shares the public/Worker 100,000-character prompt bound and has a

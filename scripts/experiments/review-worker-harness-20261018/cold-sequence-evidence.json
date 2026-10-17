@@ -1,0 +1,15 @@
+{
+  "imageBytes": 196608,
+  "entryReads": {
+    "bodyQueries": 2,
+    "imageGets": 2,
+    "transferredBytes": 393216
+  },
+  "sequenceReads": {
+    "bodyQueries": 2,
+    "imageGets": 2,
+    "transferredBytes": 393216
+  },
+  "unavailableBlobBreaksSequenceRead": true,
+  "metadataStillAvailable": true
+}

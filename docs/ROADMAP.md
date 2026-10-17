@@ -1,5 +1,16 @@
 # Implementation roadmap
 
+## Worker → Pi Tool settlement review
+
+- [x] Compare prepared fixed/control Tool returns, native finalization, atomic
+      result/task/live commits and recovery with pinned Pi Durable 1.0.0.
+- [x] Run the existing native/Storage suites and isolated budget, malformed-frame,
+      acknowledgement/recovery and cold image-read probes. Record the
+      [review and repair directions](reports/worker-harness-settlement-review-20261018.md).
+
+This is review evidence only. WHS-01/02/03 remain in the backlog; the serving
+release stays `worker-reply-b1f67dba` with no runtime or authority change.
+
 ## Kafka replies → Worker callback review
 
 - [x] Review boot reply consumption, operation matching, image restoration,
