@@ -52,6 +52,16 @@ type dependencies. The helper is corrected; the browser store is separated from
 its React renderer and the integrated test lives with runtime-core. These do not
 change browser JavaScript compatibility settings or execution semantics.
 
+The first full CI run stopped in Cube's upstream binary-volume test with
+`ETXTBSY` while executing a freshly written `/tmp/.../wrapper.sh`. The pinned
+Go 1.26.9 source and an isolated container probe confirm `testing.TempDir()`
+prefers `GOTMPDIR`; setting only `TMPDIR=/test-tmp` had left test scripts on the
+overlay filesystem because compiler work used `GOTMPDIR=/tmp`. The maintained
+runner now uses Go's `-exec env GOTMPDIR=/test-tmp` for the test subprocess,
+keeping compilation on disk and executable test fixtures on tmpfs. The corrected
+probe asserts the actual directory. No native runtime patch, retry or skipped
+assertion is added; a complete CI rerun is required.
+
 Full CI, real-browser presentation, artifact scans, matched deployment and live
 outcomes will be recorded here after completion. The old defect characterizations
 are archived at `8cd04fda`; maintained desired-behavior regressions replace them.

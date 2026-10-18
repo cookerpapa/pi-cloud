@@ -120,6 +120,10 @@ try {
         "test",
         "-mod=readonly",
         "-race",
+        // Go 1.26 testing.TempDir prefers GOTMPDIR. Keep compiler work on disk,
+        // but execute tests with their temporary plugin directory on tmpfs.
+        "-exec",
+        "env GOTMPDIR=/test-tmp",
         "-v",
         "./pkg/allocation",
         ...(component === "Cubelet" ? ["./plugins/volume/...", "./pkg/execution"] : []),
