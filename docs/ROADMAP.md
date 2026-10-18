@@ -9,13 +9,14 @@
 
 The review itself changed no runtime/deployment. The owner approved
 [ADR-0257](adr/0257-browser-observation-and-buffer-boundaries.md); source repairs
-are implemented and [verification/release](reports/projector-browser-repair-20261018.md)
-remain pending:
+are deployed as `browser-delivery-205e6ac0`.
+[Verification/release](reports/projector-browser-repair-20261018.md) records passing
+source/artifact/live gates and confirmed cleanup with original configuration preserved:
 
 - [x] B1: existing-generation identity through server/browser observations and cache resets.
 - [x] B2: pending-event byte accounting and existing overflow/snapshot recovery.
 - [x] B3: commentary compaction by message identity and corrected maintained guidance.
-- [ ] B4: required checks, matched deployment, live recovery and confirmed cleanup.
+- [x] B4: required checks, matched deployment, live recovery and confirmed cleanup.
 
 ## Session publication and whole-Run completion review
 

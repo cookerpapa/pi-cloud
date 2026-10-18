@@ -34,8 +34,10 @@ The [October 18 review](reports/projector-browser-review-20261018.md) at `5e6a38
 records passing source/isolated-PG/browser checks and bounded reproductions.
 It does not repair or redeploy the serving runtime. The subsequently approved
 [ADR-0257 repair](adr/0257-browser-observation-and-buffer-boundaries.md) is
-implemented in source; [verification/release](reports/projector-browser-repair-20261018.md)
-remain pending.
+deployed as `browser-delivery-205e6ac0`;
+[verification/release](reports/projector-browser-repair-20261018.md) records passing
+source/artifact/live gates and confirmed physical cleanup. Original account,
+model/provider configuration and credential fingerprints match the baseline.
 
 - [x] PBR-01 / P2: align disposable SSE/browser observation revisions with
       same-Run writer replacement. Carry the existing fencing generation through
@@ -50,7 +52,7 @@ remain pending.
 - [x] PBR-03 / P3: remove the obsolete 25 ms public-text coalescing claim from
       maintained architecture/streaming guidance. Native commits, recovery spans
       and browser animation are separate boundaries.
-- [ ] B4: required source/fault/transport/browser gates, scanned matched release,
+- [x] B4: required source/fault/transport/browser gates, scanned matched release,
       real same-connection Worker recovery and relevant live acceptance; preserve
       original configuration and confirm physical fixture cleanup.
 

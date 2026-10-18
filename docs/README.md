@@ -10,9 +10,14 @@ execution/storage authorities; no runtime repair or deployment is included.
 The approved [repair](adr/0257-browser-observation-and-buffer-boundaries.md)
 uses the existing execution generation for status frames, a pending-byte budget
 and same-message commentary compaction. It records why forcing a transcript
-refresh at a recoverable seal is broader than the status fix. B1–B3 are implemented
-in source; the [delivery record](reports/projector-browser-repair-20261018.md)
-tracks full verification and matched/live rollout separately.
+refresh at a recoverable seal is broader than the status fix. The repair is
+deployed as `browser-delivery-205e6ac0`; the
+[delivery record](reports/projector-browser-repair-20261018.md) records 1,884
+workspace tests, 79 helper tests, nine RF3 transport cases, 294 fault cases and
+eleven artifact scans. Same-SSE Worker recovery, browser, image, child and full
+Cube acceptance pass. Owned fixtures are physically cleaned and original
+configuration fingerprints match. The first CI failure and Go test-directory
+correction remain documented separately from the final passing run.
 
 The [October 18 Session publication/completion review](reports/session-publication-completion-review-20261018.md)
 rechecks direct Kafka submission and whole-Run retirement after the recent

@@ -1,8 +1,10 @@
 # ADR-0257: Browser observation generations and bounded pending delivery
 
-Status: accepted and implemented in source, 2026-10-18. The owner approved the repair plan for the
+Status: accepted, implemented and deployed as `browser-delivery-205e6ac0`,
+2026-10-18. The owner approved the repair plan for the
 [Projector/browser review](../reports/projector-browser-review-20261018.md).
-Full verification and deployment remain pending; see the
+Source, artifact and relevant live gates pass; physical cleanup and preservation
+of original configuration are verified. See the
 [delivery record](../reports/projector-browser-repair-20261018.md). This decision refines the
 review's initial resync-first suggestion after checking the recovery transaction.
 

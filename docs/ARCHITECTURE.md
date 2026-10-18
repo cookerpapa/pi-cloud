@@ -9,13 +9,18 @@ This document describes ADR-0247 Session ownership and ADR-0248 management recon
 with ADR-0249's deployed publication contract, ADR-0250's handoff repair and
 ADR-0251's guest attachment/lifetime repair, ADR-0252's receipt/preview repair,
 ADR-0253's bounded UNKNOWN continuation, ADR-0254's Worker reply repair,
-ADR-0255's native result/metadata boundaries and ADR-0256's publication/completion repair
+ADR-0255's native result/metadata boundaries, ADR-0256's publication/completion repair
+and ADR-0257's browser observation/buffer repair
 (schema 189 / topic v17 / boot reply v3 / guest protocol 7, adapter startup 3).
-The [current delivery record](reports/session-publication-completion-repair-20261018.md)
-records the October 18 deployment of `session-completion-6e74fd5b`. Source,
+The [current delivery record](reports/projector-browser-repair-20261018.md)
+records the October 18 deployment of `browser-delivery-205e6ac0`. Source,
 artifact and relevant live gates pass: native input/Stop, dual-process recovery,
 browser/image/Read, child control replies across replacement and the complete
-Cube multi-round/Volume suite. Normal completion replay recovers the stored terminal,
+Cube multi-round/Volume suite. Real Worker recovery keeps one SSE connection and
+accepts new-generation activity from revision 1, including fresh Cube evidence.
+Pending delivery has a byte budget and commentary compacts by message identity.
+The [preceding completion repair](reports/session-publication-completion-repair-20261018.md)
+recovers the stored terminal on replay;
 definite pre-send refusal stays with native Pi, and completion uses one locked Run
 read instead of three. Rejected Tool Results are not automatically retained/retried.
 The [preceding settlement record](reports/worker-harness-settlement-repair-20261018.md)

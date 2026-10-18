@@ -76,10 +76,16 @@ enter native persistence before validated Tool execution (ADR-0230).
 The [Session work migration](docs/adr/0247-session-work-and-tool-dispatch.md) is
 deployed as `session-work-6ac697f9`: one root Run with native child Conversations,
 unified Tool replies, one Session closure and Worker direct Kafka publication.
-The current matched release, `session-completion-6e74fd5b`, uses schema 189, execution-topic
+The current matched release, `browser-delivery-205e6ac0`, uses schema 189, execution-topic
 v17, boot reply v3, guest/Tool Worker protocol 7, completion startup protocol 3,
 preview schema 2 and Cube management protocol 7. Host KVM is restored; all four
 templates, application workloads and required live acceptance pass.
+The [browser delivery repair](docs/reports/projector-browser-repair-20261018.md)
+uses the existing execution generation to refresh Working/VM observations after
+Worker replacement. Pending SSE delivery has byte and count guards with snapshot
+recovery, and same-message commentary compacts in the live cache. Real recovery
+keeps one SSE connection across generation 1 → 2; source, browser, image, child
+and Cube checks pass. Reload open pages for the matched observation schema.
 The [Session completion repair](docs/reports/session-publication-completion-repair-20261018.md)
 restores the persisted terminal notification on replay after a lost PG commit reply.
 Proved pre-send refusal reaches native Pi without unnecessarily aborting the shared
