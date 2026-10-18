@@ -28,6 +28,28 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## Session publication and whole-Run completion review
+
+The [October 18 review](reports/session-publication-completion-review-20261018.md)
+at `6b7bc02b` records these unfinished items. It changes no runtime or deployment.
+
+- [ ] SPC-01: on normal `work_finished` replay, recover the exact persisted
+      terminal/coverage after uncertain PG COMMIT return. Preserve unique events,
+      identity/closure checks and successor fencing; do not add a terminal Outbox.
+- [ ] SPC-02: preserve trusted no-send refusal through the native Session Host.
+      Let Pi handle `StorageRejected` without aborting siblings; keep uncertain
+      ACK, post-ACK failure and producer fencing fatal. Add integrated Host tests.
+- [ ] SPC-03: rewrite RUN_LIFECYCLE and STREAM_DURABILITY around direct Session
+      producers/native children and normal versus forced retirement. Remove
+      obsolete ingress, unsealed counters and per-child claim/seal descriptions.
+- [ ] SPC-O1: reuse transaction-scoped locked Run data in normal completion;
+      the fixture reads the same Run three times. Preserve version/transition
+      checks and intermediate cancellation updates; add no cross-request cache.
+- [ ] SPC-Q1: synchronize transport fixtures with the control changes they are
+      measuring and distinguish duplicate notifications from duplicate effects.
+      The full RF3 suite initially passed 7/9; both failing tests passed a fresh
+      diagnostic repeat with unchanged assertions. Retain that uncertainty.
+
 ## Worker → Pi Tool settlement review
 
 The [October 18 review](reports/worker-harness-settlement-review-20261018.md) checks

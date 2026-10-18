@@ -1,0 +1,59 @@
+{
+  "baseline": "6b7bc02bc1993f8f6f66bdc8e7e1bf3d38fe6def",
+  "servingRelease": "tool-settlement-20ac9696",
+  "runtimeChanged": false,
+  "nativeVersion": "1.0.0",
+  "terminalCommitReturnLoss": {
+    "realPostgres": true,
+    "fault": "throw after the actual transaction commits, before its return is delivered",
+    "terminalRows": 1,
+    "persistedTerminalSequence": 2,
+    "replayReturnsTerminal": false,
+    "liveHighWaterMarkAfterReplay": 1,
+    "liveCachedEventsAfterReplay": 1,
+    "actualTcpFailureInjected": false
+  },
+  "provedPreSendRefusal": {
+    "realPostgresLeaseAndHost": true,
+    "publisherCalls": 1,
+    "successfulPublications": 0,
+    "nativeHeadBefore": 1,
+    "nativeHeadAfter": 1,
+    "firstError": "StorageRejected",
+    "ownerInterrupted": true,
+    "ownerInterruptionCode": "writer_publication_failed",
+    "secondCommitReachesPublisher": false
+  },
+  "normalCompletionSql": {
+    "scope": "project(work_finished), no pending live checkpoint/images/children",
+    "queryPluginStatements": 18,
+    "timeoutConfigurationStatements": 1,
+    "otherStatements": 17,
+    "sameRunSelects": 3,
+    "includesBeginCommit": false,
+    "includesRoutingRevocation": false
+  },
+  "verification": {
+    "existingGroupsPassed": [93, 64],
+    "existingTestsPassed": 157,
+    "defaultGroupKafkaSkipped": 1,
+    "characterizationsPassed": 3,
+    "transportFullFirst": { "passed": 7, "failed": 2 },
+    "transportFailures": [
+      {
+        "test": "agent-stop-binding-closure",
+        "expectedClosureDeliveries": 1,
+        "actualClosureDeliveries": 2
+      },
+      { "test": "subagent-views", "expectedIdleSql": 0, "actualIdleSql": 8 }
+    ],
+    "transportTargetedDiagnosticRepeat": {
+      "passed": 2,
+      "failed": 0,
+      "originalAssertionsRetained": true
+    },
+    "transportFailuresExplainedConclusively": false,
+    "productionFaultInjection": false,
+    "paidModelOrLiveCubeRepeated": false
+  }
+}

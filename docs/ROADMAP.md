@@ -1,5 +1,18 @@
 # Implementation roadmap
 
+## Session publication and whole-Run completion review
+
+- [x] Recheck public Storage adoption, direct Kafka fencing/ACK, descendant-aware
+      completion, input closure, writer drain, normal/forced closure and browser
+      termination against current code and pinned Pi Durable.
+- [x] Run targeted contracts and isolated failure/SQL probes; retain the complete
+      RF3 suite's failed samples and targeted diagnostic repeats in the
+      [review](reports/session-publication-completion-review-20261018.md).
+
+SPC-01/02 are confirmed runtime findings; SPC-03 documents stale guidance,
+SPC-O1 measures redundant transaction-local reads, and SPC-Q1 tracks unresolved
+transport-test timing assumptions. Repair is not part of this review.
+
 ## Worker → Pi Tool settlement review
 
 - [x] Compare prepared fixed/control Tool returns, native finalization, atomic

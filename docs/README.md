@@ -1,5 +1,14 @@
 # Documentation map
 
+The [October 18 Session publication/completion review](reports/session-publication-completion-review-20261018.md)
+rechecks direct Kafka submission and whole-Run retirement after the recent
+changes. It reproduces a missing normal-terminal replay notification and a
+proved pre-send refusal interrupting the native owner; it also measures repeated
+Run reads and identifies obsolete lifecycle guidance. 157 existing tests and
+three isolated characterizations pass. The record preserves two initial RF3
+transport failures and their passing diagnostic repeats without declaring the
+full suite clean. This review changes no runtime or deployment.
+
 The [October 18 Worker → Pi settlement review](reports/worker-harness-settlement-review-20261018.md)
 checks native final-result processing, atomic task settlement and the committed
 observer. It reproduces control-result truncation below the admitted budget,
