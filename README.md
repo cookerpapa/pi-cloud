@@ -76,10 +76,16 @@ enter native persistence before validated Tool execution (ADR-0230).
 The [Session work migration](docs/adr/0247-session-work-and-tool-dispatch.md) is
 deployed as `session-work-6ac697f9`: one root Run with native child Conversations,
 unified Tool replies, one Session closure and Worker direct Kafka publication.
-The current matched release, `tool-settlement-20ac9696`, uses schema 189, execution-topic
+The current matched release, `session-completion-6e74fd5b`, uses schema 189, execution-topic
 v17, boot reply v3, guest/Tool Worker protocol 7, completion startup protocol 3,
 preview schema 2 and Cube management protocol 7. Host KVM is restored; all four
 templates, application workloads and required live acceptance pass.
+The [Session completion repair](docs/reports/session-publication-completion-repair-20261018.md)
+restores the persisted terminal notification on replay after a lost PG commit reply.
+Proved pre-send refusal reaches native Pi without unnecessarily aborting the shared
+Session; uncertain or post-ACK failure still interrupts its writer. Normal completion
+reuses one locked Run read instead of three. This does not add automatic retries or
+preserve an uncommitted Tool Result after native rejection.
 The [native settlement repair](docs/reports/worker-harness-settlement-repair-20261018.md)
 uses Pi's 50 KiB/2,000-line defaults for coordination result text, with explicit
 errors for oversized structured results. Sequence-only reads no longer fetch

@@ -1,7 +1,9 @@
 # ADR-0256: Session publication refusal and completion replay
 
-Status: accepted and implemented in source, full verification and release pending,
-2026-10-18. See the [delivery record](../reports/session-publication-completion-repair-20261018.md).
+Status: accepted, implemented and deployed as `session-completion-6e74fd5b`,
+2026-10-18. Source, artifact and relevant live gates pass; physical fixture cleanup
+and configuration preservation are verified. See the
+[delivery record](../reports/session-publication-completion-repair-20261018.md).
 
 The owner approved the [publication/completion review](../reports/session-publication-completion-review-20261018.md)
 and its repair directions after discussing native `StorageRejected`, the current

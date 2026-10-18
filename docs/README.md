@@ -9,9 +9,14 @@ three isolated characterizations pass. The record preserves two initial RF3
 transport failures and their passing diagnostic repeats without declaring the
 full suite clean. This review changes no runtime or deployment.
 The owner-approved [ADR-0256 repair](adr/0256-session-publication-and-completion-boundaries.md)
-is implemented in source. [Delivery status](reports/session-publication-completion-repair-20261018.md)
-tracks refusal/replay regressions, Run-query reduction, synchronized transport
-fixtures and the pending matched/live gates.
+is deployed as `session-completion-6e74fd5b`.
+[Delivery evidence](reports/session-publication-completion-repair-20261018.md)
+records terminal replay, native refusal handling, one locked Run read instead of
+three, 1,865 workspace tests, nine RF3 transport tests, 288 fault cases and eleven
+artifact scans. Native input/Stop/dual-process recovery, browser, image, child and
+full Cube acceptance pass. Failed TLS/short-output samples are retained; the final
+streaming fixture uses substantive output with unchanged recovery assertions.
+Owned resources are physically cleaned and original configuration is preserved.
 
 The [October 18 Worker → Pi settlement review](reports/worker-harness-settlement-review-20261018.md)
 checks native final-result processing, atomic task settlement and the committed

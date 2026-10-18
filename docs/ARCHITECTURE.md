@@ -8,15 +8,18 @@ CubeSandbox KVM is the only untrusted execution backend.
 This document describes ADR-0247 Session ownership and ADR-0248 management reconnect
 with ADR-0249's deployed publication contract, ADR-0250's handoff repair and
 ADR-0251's guest attachment/lifetime repair, ADR-0252's receipt/preview repair,
-ADR-0253's bounded UNKNOWN continuation, ADR-0254's Worker reply repair and
-ADR-0255's native result/metadata boundaries
+ADR-0253's bounded UNKNOWN continuation, ADR-0254's Worker reply repair,
+ADR-0255's native result/metadata boundaries and ADR-0256's publication/completion repair
 (schema 189 / topic v17 / boot reply v3 / guest protocol 7, adapter startup 3).
-The [current delivery record](reports/worker-harness-settlement-repair-20261018.md)
-records the October 18 deployment of `tool-settlement-20ac9696`. Source,
+The [current delivery record](reports/session-publication-completion-repair-20261018.md)
+records the October 18 deployment of `session-completion-6e74fd5b`. Source,
 artifact and relevant live gates pass: native input/Stop, dual-process recovery,
 browser/image/Read, child control replies across replacement and the complete
-Cube multi-round/Volume suite. Coordination returns preserve valid JSON and reject
-over-budget text explicitly; supervisor replies and large image cold recovery pass.
+Cube multi-round/Volume suite. Normal completion replay recovers the stored terminal,
+definite pre-send refusal stays with native Pi, and completion uses one locked Run
+read instead of three. Rejected Tool Results are not automatically retained/retried.
+The [preceding settlement record](reports/worker-harness-settlement-repair-20261018.md)
+verifies complete coordination JSON, explicit overflow errors and supervisor replies.
 The [preceding Worker reply record](reports/worker-reply-repair-20261017.md)
 records local admission, receipt separation and same-boot reply resume.
 The [preceding preview record](reports/tool-receipt-preview-repair-20261016.md)

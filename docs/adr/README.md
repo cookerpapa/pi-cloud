@@ -3,8 +3,10 @@
 [ADR-0256](0256-session-publication-and-completion-boundaries.md) records the
 approved publication/completion repair: terminal replay, definite pre-send
 refusal, transaction-local Run reuse and current lifecycle documentation.
-The [delivery record](../reports/session-publication-completion-repair-20261018.md)
-tracks implementation, gates and matched/live release separately.
+It is deployed as `session-completion-6e74fd5b`. The
+[delivery record](../reports/session-publication-completion-repair-20261018.md)
+records passing source/artifact/live gates, retained failed samples, confirmed
+fixture cleanup and unchanged configuration fingerprints.
 
 [ADR-0255](0255-native-tool-result-boundaries.md) records the approved settlement
 repairs: native 50 KiB/2,000-line coordination result admission, metadata-only

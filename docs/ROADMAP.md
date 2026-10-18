@@ -15,8 +15,13 @@ the implementation and subsequent validation/release separately from the review.
 
 - [x] SPC-01/02: persisted terminal replay and integrated native no-send/fatal boundaries.
 - [x] SPC-O1/03: transaction-local locked Run reuse and current lifecycle documentation.
-- [ ] SPC-Q1: verify synchronized wake measurement and explicitly duplicated closure delivery.
-- [ ] Complete source/fault/RF3 gates, scanned matched deployment and relevant live acceptance.
+- [x] SPC-Q1: verify synchronized wake measurement and explicitly duplicated closure delivery.
+- [x] Complete source/fault/RF3 gates, scanned matched deployment and relevant live acceptance.
+
+Deployed as `session-completion-6e74fd5b`; original configuration fingerprints
+match, owned fixtures are physically cleaned and all required gates pass. The
+delivery record retains earlier failed samples and the host-only streaming-fixture
+correction. Rejected Tool Results retain Pi's native failure semantics.
 
 ## Worker → Pi Tool settlement review
 

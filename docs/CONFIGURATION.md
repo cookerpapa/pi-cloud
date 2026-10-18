@@ -238,7 +238,7 @@ interpreted as a new limit. Several Worker processes may share a host.
 | `PI_CLOUD_ACCEPTED_FACT_RETENTION_MS` | `7200000` | minimum Kafka retention grace (2 hours); the reaper also requires safe PG projection progress; unprojected facts do not automatically expire |
 | `PI_CLOUD_KAFKA_PARTITIONS` | `32` | Session-keyed AcceptedFact partitions |
 | `PI_CLOUD_KAFKA_REPLICAS` | `3` | Kafka Topic replication factor |
-| `PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES` | `67108864` | per-producer-instance encoded Fact body budget, including queued and submitted-unacknowledged Facts; Helm: `global.kafka.producerPendingBytes` |
+| `PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES` | `67108864` | encoded Fact body budget, including queued and submitted-unacknowledged Facts; shared by all Session writers in one Worker process, with a separate control-publication budget per Control Plane process; Helm: `global.kafka.producerPendingBytes` |
 | `PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS` | `4096` | same budget in records; limit reached rejects before enqueue; Helm: `global.kafka.producerPendingFacts` |
 | `PI_CLOUD_PREVIEW_ORIGIN_BASE_URL` | `http://preview.localhost:8080` | isolated application Preview base domain |
 | `PI_CLOUD_PREVIEW_PORT` | `3001` | internal Control Plane Preview listener; the Helm chart wires Caddy to it automatically; not an application port or a new public port |

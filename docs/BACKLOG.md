@@ -33,8 +33,10 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 The [October 18 review](reports/session-publication-completion-review-20261018.md)
 at `6b7bc02b` records the baseline. The owner-approved
 [ADR-0256 repair](adr/0256-session-publication-and-completion-boundaries.md) is
-implemented in source; [delivery status](reports/session-publication-completion-repair-20261018.md)
-distinguishes that from required verification and release.
+deployed as `session-completion-6e74fd5b`;
+[delivery evidence](reports/session-publication-completion-repair-20261018.md)
+records passing source/artifact/live gates and confirmed physical cleanup with
+original accounts, configuration and credentials preserved.
 
 - [x] SPC-01: on normal `work_finished` replay, recover the exact persisted
       terminal/coverage after uncertain PG COMMIT return. Preserve unique events,
@@ -48,11 +50,11 @@ distinguishes that from required verification and release.
 - [x] SPC-O1: reuse transaction-scoped locked Run data in normal completion;
       the fixture now reads the Run once instead of three times. Preserve version/transition
       checks and intermediate cancellation updates; add no cross-request cache.
-- [ ] SPC-Q1: synchronize transport fixtures with the control changes they are
+- [x] SPC-Q1: synchronize transport fixtures with the control changes they are
       measuring and distinguish duplicate notifications from duplicate effects.
-      The full RF3 suite initially passed 7/9; both failing tests passed a fresh
-      diagnostic repeat with unchanged assertions. Retain that uncertainty.
-- [ ] Complete the required source/fault/transport gates, scanned matched release,
+      The maintained RF3 suite passes 9/9, including intentional duplicate closure
+      delivery. The baseline review retains its earlier 7/9 sample and diagnostic repeats.
+- [x] Complete the required source/fault/transport gates, scanned matched release,
       relevant live acceptance and configuration/physical-cleanup verification.
 
 ## Worker → Pi Tool settlement review

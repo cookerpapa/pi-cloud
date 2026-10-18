@@ -167,6 +167,16 @@ supervisor reply. Normal API deletion and physical Workspace purge precede
 removal of owned account/image fixtures. Run the ordinary native-input,
 browser/Read, Tool-image recovery and full Cube checks alongside this slice.
 
+For ADR-0256's Session publication/completion repair, required source checks
+include real PG commit-return loss, terminal replay/deduplication, native Host
+pre-send refusal versus unknown/post-ACK failure, I/O progress during refusal,
+successive cancellation versions and the synchronized RF3 transport suite.
+Live gates are native-input/Stop/dual-process recovery, browser/Read, Tool-image
+cold recovery, child replies across Control Plane replacement and full Cube.
+The native stream fixture requests substantive long output; early model completion
+is a failed fixture, not a recovery pass. Record the deployed image/source separately
+from any host-only acceptance-script revision. This slice changes no protocol version.
+
 The native-input driver checks same-Run continuation, durable edits and promotion,
 retry identity, and Stop restoration against the current schema. It waits for
 projected queue visibility after native ACK and for terminal seals before cleanup.
