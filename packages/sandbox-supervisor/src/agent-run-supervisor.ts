@@ -322,6 +322,7 @@ export class AgentRunSupervisor {
       acknowledgement.payload.familyLeaseRenewals.map((r) => [r.leaseId, r]),
     );
     const observed = new Map(heartbeat.payload.families.map((f) => [f.leaseId, f]));
+    const deferred = new Set(acknowledgement.payload.familyLeaseDeferrals.map((f) => f.leaseId));
     let renewedAssignments = 0,
       revokedAssignments = 0;
     const revokedSessionIds: string[] = [];
@@ -330,6 +331,7 @@ export class AgentRunSupervisor {
       const ref = parseExecutionReference(assignment.command.payload.executionReference);
       const sent = observed.get(ref.leaseId);
       if (!sent || sent.fencingToken !== ref.fencingToken) continue;
+      if (deferred.has(ref.leaseId)) continue;
       const renewal = renewals.get(ref.leaseId);
       if (
         renewal &&
@@ -698,7 +700,10 @@ export class AgentRunSupervisor {
     acknowledgement: SupervisorHeartbeatAckMessage,
   ): void {
     const observed = new Map(heartbeat.payload.families.map((family) => [family.leaseId, family]));
-    for (const renewal of acknowledgement.payload.familyLeaseRenewals) {
+    for (const renewal of [
+      ...acknowledgement.payload.familyLeaseRenewals,
+      ...acknowledgement.payload.familyLeaseDeferrals,
+    ]) {
       const observation = observed.get(renewal.leaseId);
       if (observation === undefined || observation.fencingToken !== renewal.fencingToken) {
         throw new AgentRunSupervisorError(

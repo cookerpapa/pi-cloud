@@ -566,3 +566,9 @@ DeepSeek Flash uses the Responses route with text/image input and an owner-appro
 search declaration. September 26 probes confirm image input and an accepted search
 parameter, but no actual Responses search. The separate Anthropic-route search
 probe succeeded; this deployment retains Responses.
+
+The Worker lease adapter uses an additional two-connection PG pool, independent
+of the general database pool, on the existing direct notification URL (without
+LISTEN). This avoids routing authority cleanup through PgBouncer. ADR-0258 fixes acquisition and entire-checkout
+budgets at five seconds each. These budgets include renewal COMMIT and prevent
+lease I/O from waiting behind history/claim work; they are not product quotas.

@@ -386,6 +386,7 @@ describe("supervisor/control-plane wire protocol", () => {
       payload: {
         acknowledgedMessageId: IDS.message,
         connectionId: IDS.connection,
+        familyLeaseDeferrals: [],
         familyLeaseRenewals: [
           {
             leaseId: IDS.lease,
@@ -398,6 +399,19 @@ describe("supervisor/control-plane wire protocol", () => {
 
     expect(parseControlToSupervisorMessage(registered)).toEqual(registered);
     expect(parseControlToSupervisorMessage(heartbeatAck)).toEqual(heartbeatAck);
+    const { familyLeaseDeferrals: _deferrals, ...oldPayload } = heartbeatAck.payload;
+    expect(() =>
+      parseControlToSupervisorMessage({ ...heartbeatAck, payload: oldPayload }),
+    ).toThrow();
+    expect(() =>
+      parseControlToSupervisorMessage({
+        ...heartbeatAck,
+        payload: {
+          ...heartbeatAck.payload,
+          familyLeaseDeferrals: [{ leaseId: IDS.lease, fencingToken: 7 }],
+        },
+      }),
+    ).toThrow("duplicate sessionId");
     expect(() =>
       parseControlToSupervisorMessage({
         ...registered,
@@ -409,6 +423,7 @@ describe("supervisor/control-plane wire protocol", () => {
         ...heartbeatAck,
         payload: {
           ...heartbeatAck.payload,
+          familyLeaseDeferrals: [],
           familyLeaseRenewals: [
             heartbeatAck.payload.familyLeaseRenewals[0],
             heartbeatAck.payload.familyLeaseRenewals[0],

@@ -1,21 +1,21 @@
-// Baseline characterizations against disposable PostgreSQL; never production.
+// Real PostgreSQL coverage for ADR-0258 lease renewal boundaries.
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { sql, type Kysely } from "kysely";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { SessionLeaseCoordinator } from "../../../packages/runtime-core/src/session-lease-coordinator.ts";
-import { ControlPlaneStore } from "../../../packages/control-plane/src/control-plane-store.ts";
-import { createPrivateTenant } from "../../../packages/control-plane/src/tenant-administration.ts";
-import { registerTestWorker } from "../../../packages/control-plane/test/fixtures/registered-worker.ts";
-import { RunExecutor } from "../../../packages/runtime-core/src/run-executor.ts";
-import { WorkerExecutionLog } from "../../../packages/runtime-core/src/worker-execution-log.ts";
-import { AgentRunExecutionBackend } from "../../../packages/supervisor-host/src/agent-run-execution-backend.ts";
+import { SessionLeaseCoordinator } from "../../runtime-core/src/session-lease-coordinator.ts";
+import { ControlPlaneStore } from "../src/control-plane-store.ts";
+import { createPrivateTenant } from "../src/tenant-administration.ts";
+import { registerTestWorker } from "./fixtures/registered-worker.ts";
+import { RunExecutor } from "../../runtime-core/src/run-executor.ts";
+import { WorkerExecutionLog } from "../../runtime-core/src/worker-execution-log.ts";
+import { AgentRunExecutionBackend } from "../../supervisor-host/src/agent-run-execution-backend.ts";
 import { AgentRunSupervisor, PiTurnCancelledError } from "@pi-cloud/sandbox-supervisor";
 import type { SupervisorHeartbeatMessage } from "@pi-cloud/protocol";
 
 const endpoint = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
-describe.skipIf(!endpoint)("Worker lease renewal review", () => {
+describe.skipIf(!endpoint)("Worker lease renewal boundaries", () => {
   const name = `pi_lease_review_${randomUUID().replaceAll("-", "")}`;
   let admin: Kysely<Database>, db: Kysely<Database>;
   beforeAll(async () => {
@@ -169,65 +169,82 @@ describe.skipIf(!endpoint)("Worker lease renewal review", () => {
       );
     }
   });
-  it("characterizes one locked lease preventing renewal of another physical Session", async () => {
-    const f = await fixture(2);
-    await db
-      .updateTable("session_leases")
-      .set({ valid_until: sql<Date>`clock_timestamp()+interval '1 second'` })
-      .where("worker_id", "=", f.workerId)
-      .execute();
-    const locked = Promise.withResolvers<void>(),
-      release = Promise.withResolvers<void>();
-    const blocker = db.transaction().execute(async (tx) => {
-      await tx
-        .selectFrom("session_leases")
-        .select("lease_id")
-        .where("lease_id", "=", f.families[0]!.leaseId)
-        .forNoKeyUpdate()
-        .execute();
-      locked.resolve();
-      await release.promise;
-    });
-    let pending: ReturnType<SessionLeaseCoordinator["renewFromHeartbeat"]> | undefined;
-    try {
-      await locked.promise;
-      pending = f.coordinator.renewFromHeartbeat(f.heartbeat());
-      await vi.waitFor(async () => {
-        const waiters = await sql<{
-          n: number;
-        }>`select count(*)::int n from pg_stat_activity where application_name=${name} and wait_event_type='Lock'`.execute(
-          db,
-        );
-        expect(waiters.rows[0]!.n).toBeGreaterThan(0);
+  it.each([false, true])(
+    "renews healthy siblings while A is locked; expire A=%s",
+    async (expire) => {
+      const f = await fixture(2);
+      if (expire)
+        await db
+          .updateTable("session_leases")
+          .set({ valid_until: sql<Date>`clock_timestamp()+interval '1 second'` })
+          .where("worker_id", "=", f.workerId)
+          .execute();
+      const locked = Promise.withResolvers<void>(),
+        release = Promise.withResolvers<void>();
+      const blocker = db.transaction().execute(async (tx) => {
+        await tx
+          .selectFrom("session_leases")
+          .select("lease_id")
+          .where("lease_id", "=", f.families[0]!.leaseId)
+          .forNoKeyUpdate()
+          .execute();
+        locked.resolve();
+        await release.promise;
       });
-      await vi.waitFor(
-        async () => {
-          const rows = await db
-            .selectFrom("session_leases")
-            .select(sql<boolean>`valid_until<=clock_timestamp()`.as("expired"))
-            .where("worker_id", "=", f.workerId)
-            .execute();
-          expect(rows).toEqual([{ expired: true }, { expired: true }]);
-        },
-        { timeout: 3000 },
-      );
-    } finally {
-      release.resolve();
-      await blocker;
-    }
-    const ack = await pending!;
-    expect(ack.payload.familyLeaseRenewals).toEqual([]);
-    process.stdout.write(
-      JSON.stringify({
-        probe: "renewal-lock-coupling",
-        blockedRows: 1,
-        expiredSessions: 2,
-        renewalsAfterUnlock: 0,
-        expiredLeaseRevived: false,
-      }) + "\n",
-    );
-  });
-  it("characterizes local revocation waiting behind the PG quarantine write", async () => {
+      try {
+        await locked.promise;
+        const ack = await f.coordinator.renewFromHeartbeat(f.heartbeat());
+        expect(ack.payload.familyLeaseDeferrals).toEqual([
+          { leaseId: f.families[0]!.leaseId, fencingToken: 1 },
+        ]);
+        expect(ack.payload.familyLeaseRenewals.map((r) => r.leaseId)).toEqual([
+          f.families[1]!.leaseId,
+        ]);
+        for (const changed of [
+          { fencingToken: 2 },
+          { tenantId: randomUUID() },
+          { piSessionId: randomUUID() },
+          { writerId: randomUUID() },
+        ]) {
+          const rejected = await f.coordinator.renewFromHeartbeat(
+            f.heartbeat([{ ...f.families[0]!, ...changed }]),
+          );
+          expect(rejected.payload.familyLeaseDeferrals).toEqual([]);
+          expect(rejected.payload.familyLeaseRenewals).toEqual([]);
+        }
+        if (expire) {
+          await vi.waitFor(
+            async () => {
+              const rows = await db
+                .selectFrom("session_leases")
+                .select(["lease_id", sql<boolean>`valid_until<=clock_timestamp()`.as("expired")])
+                .where("worker_id", "=", f.workerId)
+                .execute();
+              expect(new Map(rows.map((r) => [r.lease_id, r.expired]))).toEqual(
+                new Map([
+                  [f.families[0]!.leaseId, true],
+                  [f.families[1]!.leaseId, false],
+                ]),
+              );
+            },
+            { timeout: 3000 },
+          );
+          const expired = await f.coordinator.renewFromHeartbeat(f.heartbeat());
+          expect(expired.payload.familyLeaseDeferrals).toEqual([]);
+          expect(expired.payload.familyLeaseRenewals.map((r) => r.leaseId)).toEqual([
+            f.families[1]!.leaseId,
+          ]);
+        }
+      } finally {
+        release.resolve();
+        await blocker;
+      }
+      const after = await f.coordinator.renewFromHeartbeat(f.heartbeat());
+      expect(after.payload.familyLeaseDeferrals).toEqual([]);
+      expect(after.payload.familyLeaseRenewals).toHaveLength(expire ? 1 : 2);
+    },
+  );
+  it("revokes locally and rejects new work before awaiting PG quarantine", async () => {
     const f = await fixture(0);
     await registerTestWorker(db, f.workerId);
     const session = await f.store.createSession(
@@ -286,13 +303,14 @@ describe.skipIf(!endpoint)("Worker lease renewal review", () => {
       await quarantineEntered.promise;
       await new Promise((resolve) => setTimeout(resolve, 50));
       expect(runnerSignal).toBeDefined();
-      expect(runnerSignal!.aborted).toBe(false);
+      expect(runnerSignal!.aborted).toBe(true);
+      expect(backend.healthy).toBe(false);
       process.stdout.write(
         JSON.stringify({
           probe: "quarantine-before-local-revoke",
           renewalRejected: true,
           quarantinePending: true,
-          runnerAborted: false,
+          runnerAborted: true,
         }) + "\n",
       );
     } finally {

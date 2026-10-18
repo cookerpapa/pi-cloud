@@ -109,6 +109,15 @@ configured web port. A Linux-only HTTP 200 does not establish Windows access.
 
 ## Acceptance and fixture restoration
 
+ADR-0258 requires `familyLeaseDeferrals` in private heartbeat acknowledgements;
+Worker and Control Plane must be replaced together. Schema 189, execution-topic
+v17, reply v3, guest 7, completion 3, preview 2 and Cube management 7 remain.
+Required source evidence includes pending local-deadline expiration, real-PG
+lock isolation, pool/transport/COMMIT timeout cleanup and local-first revocation.
+Run native-input/Stop/Worker and dual-process recovery, browser/images, full Cube
+acceptance and the existing complete Control Plane outage check: the latter must
+retain both Worker Boots and the active Session lease across management reconnect.
+
 ```sh
 PI_CLOUD_LIVE_CUBESANDBOX_CHECK=1 npm run production:check
 PI_CLOUD_LIVE_NATIVE_INPUT_CHECK=1 node --import tsx scripts/run-live-native-input-check.mjs

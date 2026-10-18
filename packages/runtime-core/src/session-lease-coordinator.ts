@@ -26,6 +26,7 @@ export type SessionLeaseCoordinatorOptions = {
   leaseDurationMs?: number;
   heartbeatConnectionId?: string;
   connectionGuard?: SupervisorConnectionGuard;
+  renewalDatabase?: Kysely<Database>;
 };
 
 export type SupervisorConnectionGuard = {
@@ -93,6 +94,7 @@ type CurrentAssignmentRequest = Pick<
 
 export class SessionLeaseCoordinator implements TurnExecutionAuthority {
   readonly #database: Kysely<Database>;
+  readonly #renewalDatabase: Kysely<Database>;
   readonly #workerId: string;
   readonly #clock: () => Date;
   readonly #idGenerator: () => string;
@@ -102,6 +104,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
 
   constructor(options: SessionLeaseCoordinatorOptions) {
     this.#database = options.database;
+    this.#renewalDatabase = options.renewalDatabase ?? options.database;
     this.#workerId = options.workerId;
     this.#clock = options.clock ?? (() => new Date());
     this.#idGenerator = options.idGenerator ?? (() => globalThis.crypto.randomUUID());
@@ -137,7 +140,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
   }
 
   async heartbeatIdentity(): Promise<SupervisorHeartbeatIdentity> {
-    const worker = await this.#database
+    const worker = await this.#renewalDatabase
       .selectFrom("workers")
       .select(["supervisor_id", "boot_id", "state"])
       .where("id", "=", this.#workerId)
@@ -170,99 +173,119 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         "Worker heartbeat connection is stale",
         false,
       );
-    const { renewals, now } = await this.#database.transaction().execute(async (tx) => {
-      const worker = await tx
-        .selectFrom("workers")
-        .selectAll()
-        .where("id", "=", this.#workerId)
-        .executeTakeFirst();
-      if (
-        !worker ||
-        worker.supervisor_id !== heartbeat.payload.supervisorId ||
-        worker.boot_id !== heartbeat.payload.bootId ||
-        worker.max_concurrent_sessions !== heartbeat.payload.maxConcurrentSessions ||
-        worker.state !== "ready"
-      )
-        throw new SessionLeaseCoordinatorError(
-          "stale_supervisor",
-          "Worker heartbeat identity is stale",
-          false,
-        );
-      const connection = await this.#currentRegisteredConnection(
-        tx,
-        { supervisorId: worker.supervisor_id, bootId: worker.boot_id },
-        false,
-      );
-      // One update per physical Session. Task progress/timeouts are not owner liveness.
-      const families = heartbeat.payload.families;
-      if (families.length) {
-        await tx
-          .selectFrom("session_leases")
-          .select("lease_id")
-          .where("worker_id", "=", this.#workerId)
-          .where("released_at", "is", null)
-          .where(
-            "lease_id",
-            "in",
-            families.map((family) => family.leaseId),
-          )
-          .orderBy("lease_id")
-          .forNoKeyUpdate()
-          .execute();
-      }
-      if (connection) {
-        const renewed = await tx
-          .updateTable("supervisor_connections")
-          .set({
-            accepting_assignments: heartbeat.payload.acceptingAssignments,
-            last_heartbeat_at: sql<Date>`clock_timestamp()`,
-            expires_at: sql<Date>`clock_timestamp() + ${this.#connectionGuard!.heartbeatTimeoutMs} * interval '1 millisecond'`,
-          })
-          .where("connection_id", "=", this.#heartbeatConnectionId)
-          .where("state", "=", "active")
-          .where("expires_at", ">", sql<Date>`clock_timestamp()`)
+    const { renewals, deferrals, now } = await this.#renewalDatabase
+      .transaction()
+      .execute(async (tx) => {
+        const worker = await tx
+          .selectFrom("workers")
+          .selectAll()
+          .where("id", "=", this.#workerId)
           .executeTakeFirst();
-        if (renewed.numUpdatedRows !== 1n)
+        if (
+          !worker ||
+          worker.supervisor_id !== heartbeat.payload.supervisorId ||
+          worker.boot_id !== heartbeat.payload.bootId ||
+          worker.max_concurrent_sessions !== heartbeat.payload.maxConcurrentSessions ||
+          worker.state !== "ready"
+        )
           throw new SessionLeaseCoordinatorError(
-            "stale_connection",
-            "Worker connection expired during renewal",
+            "stale_supervisor",
+            "Worker heartbeat identity is stale",
             false,
           );
-      }
-      const rows =
-        families.length === 0
-          ? []
-          : (
-              await sql<{
-                lease_id: string;
-                fencing_token: string;
-                valid_until: Date;
-                renewed_at: Date;
-              }>`
+        const connection = await this.#currentRegisteredConnection(
+          tx,
+          { supervisorId: worker.supervisor_id, bootId: worker.boot_id },
+          false,
+        );
+        // One update per physical Session. Task progress/timeouts are not owner liveness.
+        const families = heartbeat.payload.families;
+        const locked = families.length
+          ? await tx
+              .selectFrom("session_leases")
+              .select("lease_id")
+              .where("worker_id", "=", this.#workerId)
+              .where("released_at", "is", null)
+              .where(
+                "lease_id",
+                "in",
+                families.map((family) => family.leaseId),
+              )
+              .orderBy("lease_id")
+              .forNoKeyUpdate()
+              .skipLocked()
+              .execute()
+          : [];
+        if (connection) {
+          const renewed = await tx
+            .updateTable("supervisor_connections")
+            .set({
+              accepting_assignments: heartbeat.payload.acceptingAssignments,
+              last_heartbeat_at: sql<Date>`clock_timestamp()`,
+              expires_at: sql<Date>`clock_timestamp() + ${this.#connectionGuard!.heartbeatTimeoutMs} * interval '1 millisecond'`,
+            })
+            .where("connection_id", "=", this.#heartbeatConnectionId)
+            .where("state", "=", "active")
+            .where("expires_at", ">", sql<Date>`clock_timestamp()`)
+            .executeTakeFirst();
+          if (renewed.numUpdatedRows !== 1n)
+            throw new SessionLeaseCoordinatorError(
+              "stale_connection",
+              "Worker connection expired during renewal",
+              false,
+            );
+        }
+        const rows =
+          families.length === 0
+            ? []
+            : (
+                await sql<{
+                  lease_id: string;
+                  fencing_token: string;
+                  valid_until: Date | null;
+                  renewed_at: Date;
+                }>`
         with decision as materialized (select clock_timestamp() as at), reported as (
           select * from jsonb_to_recordset(${JSON.stringify(families)}::jsonb)
             as x("tenantId" uuid,"piSessionId" text,"leaseId" uuid,"writerId" uuid,"fencingToken" bigint)
-        )
-        update session_leases l set valid_until=d.at + ${this.#leaseDurationMs} * interval '1 millisecond', renewed_at=d.at
-          from reported p,decision d,workers owner
+        ), eligible as materialized (
+          select l.lease_id,l.fencing_token from session_leases l, reported p,decision d,workers owner
          where l.lease_id=p."leaseId" and l.tenant_id=p."tenantId" and l.pi_session_id=p."piSessionId"
            and l.lease_id=p."writerId" and l.fencing_token=p."fencingToken" and l.worker_id=${this.#workerId}::uuid
            and l.valid_until>d.at and l.released_at is null
            and owner.id=l.worker_id and owner.state='ready'
            and l.writer_failed_at is null and l.writer_sealed_at is null
-        returning l.lease_id,l.fencing_token,l.valid_until,l.renewed_at
+        ), renewed as (
+          update session_leases l set valid_until=d.at + ${this.#leaseDurationMs} * interval '1 millisecond', renewed_at=d.at
+          from eligible e, decision d where l.lease_id=e.lease_id
+            and l.lease_id=any(${locked.map((row) => row.lease_id)}::uuid[])
+          returning l.lease_id,l.valid_until
+        ) select e.lease_id,e.fencing_token,r.valid_until,d.at as renewed_at
+          from eligible e cross join decision d left join renewed r on r.lease_id=e.lease_id
       `.execute(tx)
-            ).rows;
-      const now = rows[0]?.renewed_at ?? (await databaseTime(tx));
-      return {
-        now,
-        renewals: rows.map((r) => ({
-          leaseId: r.lease_id,
-          fencingToken: Number(r.fencing_token),
-          validUntil: r.valid_until.toISOString(),
-        })),
-      };
-    });
+              ).rows;
+        const now = rows[0]?.renewed_at ?? (await databaseTime(tx));
+        return {
+          now,
+          renewals: rows.flatMap((r) =>
+            r.valid_until === null
+              ? []
+              : [
+                  {
+                    leaseId: r.lease_id,
+                    fencingToken: Number(r.fencing_token),
+                    validUntil: r.valid_until.toISOString(),
+                  },
+                ],
+          ),
+          deferrals: rows
+            .filter((r) => r.valid_until === null)
+            .map((r) => ({
+              leaseId: r.lease_id,
+              fencingToken: Number(r.fencing_token),
+            })),
+        };
+      });
     const ack = parseControlToSupervisorMessage({
       protocolVersion: 1,
       messageId: this.#idGenerator(),
@@ -272,6 +295,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         acknowledgedMessageId: heartbeat.messageId,
         connectionId: heartbeat.payload.connectionId,
         familyLeaseRenewals: renewals,
+        familyLeaseDeferrals: deferrals,
       },
     });
     if (ack.type !== "supervisor.heartbeat.ack")
@@ -281,7 +305,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
 
   async quarantineWorker(): Promise<void> {
     const now = validDate(this.#clock);
-    await this.#database.transaction().execute(async (transaction) => {
+    await this.#renewalDatabase.transaction().execute(async (transaction) => {
       const worker = await transaction
         .selectFrom("workers")
         .select(["state"])

@@ -105,8 +105,16 @@ export class PostgresDurableSessionHost {
   readonly #executions = new Map<string, Owner>();
   readonly #leases: PostgresSessionLeaseObserver;
   #closed = false;
-  constructor(readonly options: { database: Kysely<Database>; images?: ImageAttachmentCodec }) {
-    this.#leases = new PostgresSessionLeaseObserver({ database: options.database });
+  constructor(
+    readonly options: {
+      database: Kysely<Database>;
+      leaseDatabase?: Kysely<Database>;
+      images?: ImageAttachmentCodec;
+    },
+  ) {
+    this.#leases = new PostgresSessionLeaseObserver({
+      database: options.leaseDatabase ?? options.database,
+    });
   }
   hasExecution(reference: string): boolean {
     return this.#executions.has(reference);

@@ -57,6 +57,7 @@ function renewal(
   requestedAt: number,
   ids = [identity()],
   renewed = ids.map((i) => i.leaseId),
+  deferred: string[] = [],
 ) {
   const heartbeat = {
     messageId: "heartbeat",
@@ -67,6 +68,7 @@ function renewal(
     payload: {
       acknowledgedMessageId: "heartbeat",
       connectionId: "connection",
+      familyLeaseDeferrals: deferred.map((leaseId) => ({ leaseId, fencingToken: 1 })),
       familyLeaseRenewals: renewed.map((leaseId) => ({
         leaseId,
         fencingToken: 1,
@@ -123,7 +125,11 @@ it("coalesces cold opens and one-second watches into one query per Worker", asyn
   const f = fixture(),
     second = f.observer.open(identity("second")),
     third = f.observer.open(identity("third"));
-  f.lookup.mockResolvedValue([row(), row("second"), row("third")]);
+  f.lookup.mockResolvedValue([
+    row("lease", "10000"),
+    row("second", "10000"),
+    row("third", "10000"),
+  ]);
   await Promise.all([f.authority.assertCurrent(), second.assertCurrent(), third.assertCurrent()]);
   expect(f.lookup).toHaveBeenCalledTimes(1);
   expect(f.query.where).toHaveBeenCalledWith("lease_id", "in", ["lease", "second", "third"]);
@@ -131,7 +137,7 @@ it("coalesces cold opens and one-second watches into one query per Worker", asyn
   f.advance(2000);
   await vi.advanceTimersByTimeAsync(1000);
   expect(f.lookup).toHaveBeenCalledTimes(2);
-  f.lookup.mockResolvedValue([row(), row("third")]);
+  f.lookup.mockResolvedValue([row("lease", "10000"), row("third", "10000")]);
   f.advance(3000);
   await vi.advanceTimersByTimeAsync(1000);
   expect(second.signal.aborted).toBe(true);
@@ -239,4 +245,91 @@ it("does not apply a late query to a closed or newly opened observer", async () 
   await fresh;
   expect(replacement.signal.aborted).toBe(false);
   expect(f.lookup).toHaveBeenCalledTimes(2);
+});
+
+it("expires active authority independently of a stalled observation and releases its callers", async () => {
+  vi.useFakeTimers();
+  const f = fixture();
+  f.lookup.mockResolvedValueOnce([row("lease", "3000")]);
+  await f.authority.assertCurrent();
+  f.authority.start();
+  const response = Promise.withResolvers<unknown[]>();
+  f.lookup.mockImplementation(() => response.promise);
+  f.advance(2000);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(f.lookup).toHaveBeenCalledTimes(2);
+  // Last confirmation at 1000 + 3000. A busy read cannot hold this deadline.
+  f.advance(4000);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(f.authority.signal.aborted).toBe(true);
+  await expect(f.authority.assertCurrent()).rejects.toThrow("lifetime expired");
+  renewal(f, 4500);
+  expect(f.authority.signal.aborted).toBe(true);
+  await f.observer.close(); // Does not wait for the outstanding response.
+  response.resolve([row("lease", "60000")]);
+  await Promise.resolve();
+  expect(f.authority.signal.aborted).toBe(true);
+});
+
+it("synchronously expires an active owner after event-loop delay rather than refreshing it", async () => {
+  const f = fixture();
+  await f.authority.assertCurrent();
+  f.authority.start();
+  f.advance(2500);
+  await expect(f.authority.assertCurrent()).rejects.toThrow("lifetime expired");
+  expect(f.lookup).toHaveBeenCalledTimes(1);
+});
+
+it("a fresh renewal moves the deadline without letting an old pending read revoke it", async () => {
+  vi.useFakeTimers();
+  const f = fixture();
+  f.lookup.mockResolvedValueOnce([row("lease", "5000")]);
+  await f.authority.assertCurrent();
+  f.authority.start();
+  const response = Promise.withResolvers<unknown[]>();
+  f.lookup.mockImplementation(() => response.promise);
+  f.advance(2000);
+  await vi.advanceTimersByTimeAsync(1000);
+  f.advance(2500);
+  renewal(f, 2500);
+  f.advance(7000);
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(f.authority.signal.aborted).toBe(false);
+  response.resolve([]);
+  await Promise.resolve();
+  await f.authority.assertCurrent();
+  expect(f.authority.signal.aborted).toBe(false);
+});
+
+it("deferral neither revokes an eligible owner nor extends its confirmed lifetime", async () => {
+  vi.useFakeTimers();
+  const f = fixture();
+  await f.authority.assertCurrent();
+  f.authority.start();
+  f.advance(1500);
+  renewal(f, 1500, [identity()], [], ["lease"]);
+  expect(f.authority.signal.aborted).toBe(false);
+  f.advance(2000);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(f.authority.signal.aborted).toBe(true);
+});
+
+it("rejects foreign and overlapping deferrals before adopting any authority", async () => {
+  const f = fixture();
+  await f.authority.assertCurrent();
+  expect(() => renewal(f, 1500, [identity()], [], ["foreign"])).toThrow("scope changed");
+  expect(() => renewal(f, 1500, [identity()], ["lease"], ["lease"])).toThrow("scope changed");
+  expect(f.authority.signal.aborted).toBe(false);
+});
+
+it("close interrupts a cold check without waiting for its PG read", async () => {
+  const f = fixture();
+  const response = Promise.withResolvers<unknown[]>();
+  f.lookup.mockImplementation(() => response.promise);
+  const check = f.authority.assertCurrent();
+  const rejected = expect(check).rejects.toThrow("observer closed");
+  await Promise.resolve();
+  await f.observer.close();
+  await rejected;
+  response.resolve([row()]);
 });

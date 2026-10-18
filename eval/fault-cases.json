@@ -2059,6 +2059,62 @@
       "file": "test/commentary-tail.test.ts",
       "test": "compacts same-message commentary while delivering each original live event and retaining immutable readers",
       "invariant": "Commentary compaction preserves live event order, borrowed snapshots and canonical settlement identity."
+    },
+    {
+      "id": "lease-pending-observer-deadline",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/session-lease-observer.test.ts",
+      "test": "expires active authority independently of a stalled observation and releases its callers",
+      "invariant": "No pending PG read suppresses the last confirmed active-owner deadline; late responses cannot revive it."
+    },
+    {
+      "id": "lease-event-loop-expiry",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/session-lease-observer.test.ts",
+      "test": "synchronously expires an active owner after event-loop delay rather than refreshing it",
+      "invariant": "An overdue active owner fails its next local authority check even before timers run."
+    },
+    {
+      "id": "lease-deferred-not-renewed",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/session-lease-observer.test.ts",
+      "test": "deferral neither revokes an eligible owner nor extends its confirmed lifetime",
+      "invariant": "A busy-row deferral neither grants time nor falsely revokes an eligible owner."
+    },
+    {
+      "id": "lease-pg-lock-isolation",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/lease-renewal.postgres.test.ts",
+      "test": "renews healthy siblings while A is locked",
+      "invariant": "One busy lease does not block healthy Sessions; an expired deferred lease cannot revive."
+    },
+    {
+      "id": "lease-local-revoke-before-pg",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/lease-renewal.postgres.test.ts",
+      "test": "revokes locally and rejects new work before awaiting PG quarantine",
+      "invariant": "Local failure admission and cancellation do not await failed PG persistence."
+    },
+    {
+      "id": "lease-checkout-pool-release",
+      "workspace": "@pi-cloud/database",
+      "file": "test/checkout-budget.postgres.test.ts",
+      "test": "evicts a held transaction, rolls it back and releases capacity before its caller returns",
+      "invariant": "An expired checkout releases locks and pool capacity without waiting for user code."
+    },
+    {
+      "id": "lease-lost-commit-reply",
+      "workspace": "@pi-cloud/database",
+      "file": "test/checkout-budget.postgres.test.ts",
+      "test": "rejects a lost COMMIT reply without retrying a committed effect and removes the socket",
+      "invariant": "Uncertain transaction completion supplies no acknowledgement and is never replayed."
+    },
+    {
+      "id": "lease-connect-timeout",
+      "workspace": "@pi-cloud/database",
+      "file": "test/checkout-budget.postgres.test.ts",
+      "test": "bounds connection establishment when the peer accepts TCP but never answers",
+      "invariant": "Unresponsive establishment cannot indefinitely consume lease I/O capacity."
     }
   ]
 }

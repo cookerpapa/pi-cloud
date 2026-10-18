@@ -194,6 +194,8 @@ handling and isolation, not adding services, a lease broker or per-Step SQL.
   claim that every recovery hop has been re-audited. No credentials, user data or
   runtime configuration are changed.
 
-Reproducers and commands: [experiment notes](../../scripts/experiments/review-worker-lease-20261018/README.md).
+Baseline reproducers/commands are preserved in Git at `ddc404f8` under
+`scripts/experiments/review-worker-lease-20261018/`. The approved repair replaces
+them with maintained observer and real-PG renewal regression tests (ADR-0258).
 Sanitized measurements and source hashes: [evidence](worker-session-lease-review-20261018.json).
 Repair items remain open in [BACKLOG](../BACKLOG.md#worker--postgresql-session-lease-review).

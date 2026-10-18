@@ -1,5 +1,11 @@
 # Current architecture decisions
 
+[ADR-0258](0258-bounded-session-lease-renewal.md) implements independent local
+expiration, bounded lease database I/O, local revocation before quarantine and
+nonblocking batched renewal with explicit deferral. The private acknowledgement
+changes require matched Worker/Control Plane deployment. [Delivery status](../reports/session-lease-repair-20261018.md)
+separates source checks from the still-pending rollout and live acceptance.
+
 [ADR-0257](0257-browser-observation-and-buffer-boundaries.md) records the approved
 Projector/browser repair: reuse the existing execution generation in disposable
 observations, account for pending SSE bytes, compact same-message commentary and

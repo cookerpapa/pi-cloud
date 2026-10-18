@@ -599,6 +599,7 @@ describe("AgentRunSupervisor", () => {
         payload: {
           acknowledgedMessageId: heartbeat.messageId,
           connectionId: IDS.connection,
+          familyLeaseDeferrals: [],
           familyLeaseRenewals: [
             {
               leaseId: IDS.lease,
@@ -725,6 +726,7 @@ describe("AgentRunSupervisor", () => {
           payload: {
             acknowledgedMessageId: heartbeat.messageId,
             connectionId: IDS.connection,
+            familyLeaseDeferrals: [],
             familyLeaseRenewals: heartbeat.payload.families.map((value) => ({
               leaseId: value.leaseId,
               fencingToken: value.fencingToken,
@@ -745,7 +747,7 @@ describe("AgentRunSupervisor", () => {
     },
   );
 
-  it("revokes a running assignment when its heartbeat ACK omits the renewal", async () => {
+  it("preserves a deferred assignment but revokes an explicitly missing renewal", async () => {
     let observedSignal: AbortSignal | undefined;
     const abortingRunner: SupervisorTurnRunner = {
       async run(_value, _publishEvent, signal) {
@@ -766,6 +768,38 @@ describe("AgentRunSupervisor", () => {
     const prepared = supervisor.prepare(command(), rejectUnexpectedEvent);
     const execution = prepared.run();
     void execution.catch(() => undefined);
+    const deferred = supervisor.createHeartbeat({
+      supervisorId: "supervisor-1",
+      bootId: IDS.boot,
+      connectionId: IDS.connection,
+    });
+    const ack = {
+      protocolVersion: 1,
+      messageId: IDS.heartbeatAck,
+      sentAt: "2026-07-18T08:00:01.000Z",
+      type: "supervisor.heartbeat.ack",
+      payload: {
+        acknowledgedMessageId: deferred.messageId,
+        connectionId: IDS.connection,
+        familyLeaseRenewals: [],
+        familyLeaseDeferrals: [{ leaseId: IDS.lease, fencingToken: 1 }],
+      },
+    };
+    expect(() =>
+      supervisor.applyHeartbeatAcknowledgement(deferred, {
+        ...ack,
+        payload: {
+          ...ack.payload,
+          familyLeaseDeferrals: [{ leaseId: IDS.lease2, fencingToken: 1 }],
+        },
+      }),
+    ).toThrow("unobserved assignment");
+    expect(supervisor.applyHeartbeatAcknowledgement(deferred, ack)).toEqual({
+      renewedAssignments: 0,
+      revokedAssignments: 0,
+      revokedSessionIds: [],
+    });
+    expect(observedSignal?.aborted).toBe(false);
     const heartbeat = supervisor.createHeartbeat({
       supervisorId: "supervisor-1",
       bootId: IDS.boot,
@@ -781,6 +815,7 @@ describe("AgentRunSupervisor", () => {
         payload: {
           acknowledgedMessageId: heartbeat.messageId,
           connectionId: IDS.connection,
+          familyLeaseDeferrals: [],
           familyLeaseRenewals: [],
         },
       }),

@@ -357,6 +357,15 @@ export const SupervisorHeartbeatAckMessageSchema = Type.Object(
         acknowledgedMessageId: UuidSchema,
         connectionId: UuidSchema,
         familyLeaseRenewals: Type.Array(FamilyLeaseRenewalSchema),
+        familyLeaseDeferrals: Type.Array(
+          Type.Object(
+            {
+              leaseId: UuidSchema,
+              fencingToken: PositiveSafeIntegerSchema,
+            },
+            { additionalProperties: false },
+          ),
+        ),
       },
       { additionalProperties: false },
     ),
@@ -497,7 +506,9 @@ export function parseControlToSupervisorMessage(value: unknown): ControlToSuperv
 
   if (message.type === "supervisor.heartbeat.ack") {
     assertUniqueSessionIds(
-      message.payload.familyLeaseRenewals.map((f) => ({ sessionId: f.leaseId })),
+      [...message.payload.familyLeaseRenewals, ...message.payload.familyLeaseDeferrals].map(
+        (f) => ({ sessionId: f.leaseId }),
+      ),
       "supervisor.heartbeat.ack familyLeaseRenewals",
     );
   }

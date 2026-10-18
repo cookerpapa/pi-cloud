@@ -30,6 +30,7 @@ export class PostgresSessionLeaseObserver {
   readonly #owners = new Map<string, Observation>();
   #pending: Promise<void> | undefined;
   #timer: NodeJS.Timeout | undefined;
+  #deadlineTimer: NodeJS.Timeout | undefined;
   #closed = false;
 
   constructor(options: {
@@ -59,21 +60,25 @@ export class PostgresSessionLeaseObserver {
     return {
       signal: owner.abort.signal,
       assertCurrent: async (transaction?: Transaction<Database>) => {
+        this.#expire(owner);
         owner.abort.signal.throwIfAborted();
         if (transaction) {
-          await this.#read([owner], transaction);
+          await this.#untilAborted(this.#read([owner], transaction), owner.abort.signal);
           owner.abort.signal.throwIfAborted();
         }
         // Slow cold restore may outlive a cached deadline while PG renews it.
         // Refresh first; a stale cache alone is not evidence of revoked ownership.
         while (owner.deadline === undefined || owner.deadline <= this.#now()) {
-          await this.#refresh();
+          await this.#untilAborted(this.#refresh(), owner.abort.signal);
           owner.abort.signal.throwIfAborted();
         }
       },
       start: () => {
         owner.abort.signal.throwIfAborted();
         owner.watching = true;
+        this.#expire(owner);
+        owner.abort.signal.throwIfAborted();
+        this.#scheduleDeadline();
         this.#schedule();
       },
       close: async () => {
@@ -81,6 +86,7 @@ export class PostgresSessionLeaseObserver {
           new NativeSessionError("storage", "Pi Session execution authority closed"),
         );
         if (this.#owners.get(id) === owner) this.#owners.delete(id);
+        this.#scheduleDeadline();
         if (![...this.#owners.values()].some((o) => o.watching && !o.abort.signal.aborted)) {
           clearTimeout(this.#timer);
           this.#timer = undefined;
@@ -100,12 +106,25 @@ export class PostgresSessionLeaseObserver {
       acknowledgement.payload.connectionId !== heartbeat.payload.connectionId
     )
       throw new Error("Lease observation acknowledgement identity changed");
+    const reported = new Map(heartbeat.payload.families.map((r) => [r.leaseId, r.fencingToken]));
+    const seen = new Set<string>();
+    for (const value of [
+      ...acknowledgement.payload.familyLeaseRenewals,
+      ...acknowledgement.payload.familyLeaseDeferrals,
+    ]) {
+      if (seen.has(value.leaseId) || reported.get(value.leaseId) !== value.fencingToken)
+        throw new Error("Lease observation acknowledgement scope changed");
+      seen.add(value.leaseId);
+    }
     const renewals = new Map(
       acknowledgement.payload.familyLeaseRenewals.map((r) => [r.leaseId, r]),
     );
+    const deferred = new Set(acknowledgement.payload.familyLeaseDeferrals.map((r) => r.leaseId));
     for (const identity of heartbeat.payload.families) {
       const owner = this.#owners.get(key(identity));
       if (!owner || owner.abort.signal.aborted || requestedAt < owner.observedAt) continue;
+      this.#expire(owner);
+      if (deferred.has(identity.leaseId)) continue;
       const renewal = renewals.get(identity.leaseId);
       this.#observe(
         owner,
@@ -117,9 +136,11 @@ export class PostgresSessionLeaseObserver {
           : undefined,
       );
     }
+    this.#scheduleDeadline();
   }
 
   #observe(owner: Observation, requestedAt: number, remaining: number | undefined): void {
+    this.#expire(owner);
     if (owner.abort.signal.aborted || this.#owners.get(key(owner.identity)) !== owner) return;
     owner.revision++;
     owner.observedAt = requestedAt;
@@ -132,6 +153,44 @@ export class PostgresSessionLeaseObserver {
         ),
       );
     } else owner.deadline = deadline;
+  }
+
+  #expire(owner: Observation): void {
+    if (owner.watching && owner.deadline !== undefined && owner.deadline <= this.#now())
+      owner.abort.abort(
+        new NativeSessionError("storage", "Pi Session confirmed lease lifetime expired"),
+      );
+  }
+
+  #scheduleDeadline(): void {
+    clearTimeout(this.#deadlineTimer);
+    this.#deadlineTimer = undefined;
+    if (this.#closed) return;
+    let next = Infinity;
+    for (const owner of this.#owners.values()) {
+      this.#expire(owner);
+      if (owner.watching && !owner.abort.signal.aborted && owner.deadline !== undefined)
+        next = Math.min(next, owner.deadline);
+    }
+    if (Number.isFinite(next)) {
+      this.#deadlineTimer = setTimeout(
+        () => this.#scheduleDeadline(),
+        Math.max(0, next - this.#now()),
+      );
+      this.#deadlineTimer.unref();
+    }
+  }
+
+  #untilAborted(work: Promise<void>, signal: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const abort = () => {
+        signal.removeEventListener("abort", abort);
+        reject(signal.reason);
+      };
+      signal.addEventListener("abort", abort, { once: true });
+      work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+      if (signal.aborted) abort();
+    });
   }
 
   #refresh(): Promise<void> {
@@ -200,6 +259,8 @@ export class PostgresSessionLeaseObserver {
       for (const [index, owner] of owners.entries())
         if (owner.revision === revisions[index]) owner.abort.abort(error);
       throw error;
+    } finally {
+      this.#scheduleDeadline();
     }
   }
 
@@ -226,10 +287,12 @@ export class PostgresSessionLeaseObserver {
   async close(): Promise<void> {
     this.#closed = true;
     clearTimeout(this.#timer);
+    clearTimeout(this.#deadlineTimer);
     this.#timer = undefined;
     for (const owner of this.#owners.values())
       owner.abort.abort(new NativeSessionError("storage", "Session lease observer closed"));
     this.#owners.clear();
-    await this.#pending?.catch(() => {});
+    // Read results check owner identity/abort before adoption. The bounded lease
+    // pool owns socket cleanup; closing local authority must never wait for PG.
   }
 }

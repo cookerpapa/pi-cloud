@@ -42,6 +42,7 @@ server.on("connection", (socket) => {
           payload: {
             acknowledgedMessageId: message.messageId,
             connectionId,
+            familyLeaseDeferrals: [],
             familyLeaseRenewals: [],
           },
         }),

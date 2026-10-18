@@ -204,70 +204,60 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
         .executeTakeFirstOrThrow(),
     ).toEqual({ lease_epoch: "0" });
   });
-  it.each(["renew", "grant"])(
-    "rejects %s if authority expires during lock wait",
-    async (operation) => {
-      const f = await fixture();
-      await db
-        .updateTable("session_leases")
-        .set({ valid_until: sql<Date>`clock_timestamp() + interval '1 second'` })
+  it("rejects grant if authority expires during lock wait", async () => {
+    const f = await fixture();
+    await db
+      .updateTable("session_leases")
+      .set({ valid_until: sql<Date>`clock_timestamp() + interval '1 second'` })
+      .where("lease_id", "=", f.lease.lease_id)
+      .execute();
+    const locked = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    const blocker = db.transaction().execute(async (tx) => {
+      await tx
+        .selectFrom("session_leases")
+        .select("lease_id")
         .where("lease_id", "=", f.lease.lease_id)
+        .forUpdate()
         .execute();
-      const locked = Promise.withResolvers<void>(),
-        release = Promise.withResolvers<void>();
-      const blocker = db.transaction().execute(async (tx) => {
-        await tx
-          .selectFrom("session_leases")
-          .select("lease_id")
-          .where("lease_id", "=", f.lease.lease_id)
-          .forUpdate()
-          .execute();
-        locked.resolve();
-        await release.promise;
-      });
-      let pending: Promise<PromiseSettledResult<unknown>[]> | undefined;
-      try {
-        await locked.promise;
-        pending = Promise.allSettled([
-          operation === "renew"
-            ? f.coordinator.renewFromHeartbeat(f.heartbeat)
-            : f.coordinator.assertCurrentGrant(f.request, { executionReference: f.reference }),
-        ]);
-        await vi.waitFor(async () => {
-          const result = await sql<{
-            n: number;
-          }>`select count(*)::int as n from pg_stat_activity where application_name=${name} and wait_event_type='Lock'`.execute(
-            db,
-          );
-          expect(result.rows[0]!.n).toBeGreaterThan(0);
-        });
-        await vi.waitFor(
-          async () => {
-            const row = await db
-              .selectFrom("session_leases")
-              .select(sql<boolean>`valid_until <= clock_timestamp()`.as("expired"))
-              .where("lease_id", "=", f.lease.lease_id)
-              .executeTakeFirstOrThrow();
-            expect(row.expired).toBe(true);
-          },
-          { timeout: 3000, interval: 20 },
-        );
-      } finally {
-        release.resolve();
-        await blocker;
-      }
-      const result = (await pending)![0]!;
-      if (operation === "renew")
-        expect(result).toMatchObject({
-          status: "fulfilled",
-          value: { payload: { familyLeaseRenewals: [] } },
-        });
-      else expect(result.status).toBe("rejected");
-      await expect(
+      locked.resolve();
+      await release.promise;
+    });
+    let pending: Promise<PromiseSettledResult<unknown>[]> | undefined;
+    try {
+      await locked.promise;
+      pending = Promise.allSettled([
         f.coordinator.assertCurrentGrant(f.request, { executionReference: f.reference }),
-      ).rejects.toThrow();
-    },
-  );
+      ]);
+      await vi.waitFor(async () => {
+        const result = await sql<{
+          n: number;
+        }>`select count(*)::int as n from pg_stat_activity where application_name=${name} and wait_event_type='Lock'`.execute(
+          db,
+        );
+        expect(result.rows[0]!.n).toBeGreaterThan(0);
+      });
+      await vi.waitFor(
+        async () => {
+          const row = await db
+            .selectFrom("session_leases")
+            .select(sql<boolean>`valid_until <= clock_timestamp()`.as("expired"))
+            .where("lease_id", "=", f.lease.lease_id)
+            .executeTakeFirstOrThrow();
+          expect(row.expired).toBe(true);
+        },
+        { timeout: 3000, interval: 20 },
+      );
+    } finally {
+      release.resolve();
+      await blocker;
+    }
+    const result = (await pending)![0]!;
+    expect(result.status).toBe("rejected");
+    await expect(
+      f.coordinator.assertCurrentGrant(f.request, { executionReference: f.reference }),
+    ).rejects.toThrow();
+  });
   it("uses PG expiry for retirement, independent of the reaper clock", async () => {
     const f = await fixture();
     const reaper = (skew: number) =>

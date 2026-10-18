@@ -342,6 +342,20 @@ overwrite newer renewal evidence, late renewals cannot revive a revoked observer
 and closing one Lane retains observation for its siblings. Expired cold-restore
 observations refresh from PG before rejection. Cube boot and closed-scope fencing remain at the external-effect boundary.
 
+[ADR-0258](adr/0258-bounded-session-lease-renewal.md) independently expires an
+active observer's last confirmed monotonic deadline even while its read is pending.
+Production Workers isolate lease renewal/observation/quarantine in a two-connection
+pool, with five-second acquisition and checkout budgets. Checkout covers the
+whole transaction, including COMMIT; failure evicts and destroys its connection.
+Local revocation and admission rejection precede PG quarantine. Renewal selects
+available rows with `SKIP LOCKED`, rechecks PG time and full identity after locking,
+and updates only those rows. Eligible busy rows receive an explicit deferral:
+no new lifetime, no false revocation, and a retry within one second. Missing from
+both renewal and deferral arrays means rejection. The ordinary 60-second lease,
+20-second successful-cycle delay and three business SQL statements are retained.
+These changes require matched Worker/Control Plane heartbeat schemas; they do
+not create a second lease or release ownership before the ordered seal.
+
 Control Plane expiry sweeps and remote Worker retirement run in independent,
 non-overlapping loops. Retirement uses one concurrent claim and the existing
 bounded management requests/retries; slow remote cleanup cannot delay the next

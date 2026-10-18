@@ -7,8 +7,10 @@
 - [x] Run 123 existing tests and four isolated characterizations, measure actual
       renewal SQL and record [findings and directions](reports/worker-session-lease-review-20261018.md).
 
-No runtime/deployment changed. The three bounded-failure/isolation repairs remain
-open in BACKLOG. The next walkthrough hop is expiry detection, ordered Session
+The review changed no runtime/deployment. The owner-approved
+[ADR-0258 repair](adr/0258-bounded-session-lease-renewal.md) is implemented in source.
+[Delivery status](reports/session-lease-repair-20261018.md) tracks full checks,
+matched deployment and live acceptance. The next walkthrough hop is expiry detection, ordered Session
 closure and successor recovery; this review does not claim that whole hop complete.
 
 ## Projector → browser review

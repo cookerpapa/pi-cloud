@@ -10,6 +10,9 @@ export type CreateDatabaseOptions = {
   minConnections?: number;
   /** Dedicated disposable-read pools only; authority writes keep their own budgets. */
   readTimeoutMs?: number;
+  /** Dedicated short authority operations: bound acquisition and entire checkout,
+   * including COMMIT. Expiry evicts the client; never retry an uncertain write. */
+  checkoutTimeoutMs?: number;
 };
 
 const MAX_PREPARED_STATEMENTS_PER_CONNECTION = 128;
@@ -36,6 +39,13 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
     (!Number.isSafeInteger(options.readTimeoutMs) || options.readTimeoutMs < 1)
   )
     throw new Error("readTimeoutMs must be a positive safe integer");
+  if (
+    options.checkoutTimeoutMs !== undefined &&
+    (!Number.isSafeInteger(options.checkoutTimeoutMs) || options.checkoutTimeoutMs < 1)
+  )
+    throw new Error("checkoutTimeoutMs must be a positive safe integer");
+  if (options.readTimeoutMs !== undefined && options.checkoutTimeoutMs !== undefined)
+    throw new Error("Choose a read or checkout database budget");
   // Keep a small warm floor across user/model pauses so named plans survive.
   // pg still creates clients lazily and retires excess idle/broken connections.
   const pool = new Pool({
@@ -48,6 +58,14 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
           connectionTimeoutMillis: options.readTimeoutMs,
           statement_timeout: options.readTimeoutMs,
           query_timeout: options.readTimeoutMs + 1000,
+          keepAlive: true,
+        }),
+    ...(options.checkoutTimeoutMs === undefined
+      ? {}
+      : {
+          connectionTimeoutMillis: options.checkoutTimeoutMs,
+          statement_timeout: options.checkoutTimeoutMs,
+          idle_in_transaction_session_timeout: options.checkoutTimeoutMs,
           keepAlive: true,
         }),
   });
@@ -67,7 +85,7 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
   });
   const connections = new WeakMap<
     PoolClient,
-    { connection: PostgresPoolClient; onError(error: Error): void }
+    { connection: PostgresPoolClient; onError(error: Error): void; acquire(): void }
   >();
   return new Kysely<Database>({
     dialect: new PostgresDialect({
@@ -86,35 +104,66 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
             // Names remain client-local even behind a multiplexing test backend.
             const namespace = `pc_${randomUUID().replaceAll("-", "")}_`;
             let failure: Error | undefined;
+            let released = true,
+              deadline = Infinity;
+            let timer: NodeJS.Timeout | undefined;
             // pg's pool only listens while a client is idle. A checked-out
             // client can disconnect between SQL statements, including COMMIT.
             // Fail that transaction and evict the socket, never retry its SQL.
             const onError = (error: Error) => {
               failure ??= error;
             };
-            const readBudget = <T>(request: Promise<T>): Promise<T> =>
-              options.readTimeoutMs === undefined
-                ? request
-                : request.catch((error: Error) => {
-                    // pg's client timeout alone does not cancel a server query.
-                    // Evict the disposable-read socket on release as well.
-                    failure ??= error;
-                    throw error;
-                  });
+            const release = () => {
+              if (released) return;
+              released = true;
+              clearTimeout(timer);
+              client.removeListener("error", onError);
+              client.release(failure);
+              // pg.end() is graceful between queries. A blackholed peer must
+              // not keep an expired checkout's socket alive awaiting FIN.
+              if (failure && options.checkoutTimeoutMs !== undefined)
+                client.connection.stream.destroy();
+            };
+            const expire = () => {
+              failure ??= Object.assign(new Error("Database connection checkout expired"), {
+                code: "database_checkout_timeout",
+              });
+              release(); // pg ends the socket, rolls back open work and frees the pool slot.
+            };
+            const requestBudget = <T>(request: Promise<T>): Promise<T> =>
+              options.checkoutTimeoutMs !== undefined
+                ? request.then(
+                    (result) => {
+                      if (performance.now() >= deadline) expire();
+                      if (failure) throw failure;
+                      return result;
+                    },
+                    (error: Error) => {
+                      failure ??= error;
+                      release();
+                      throw failure;
+                    },
+                  )
+                : options.readTimeoutMs === undefined
+                  ? request
+                  : request.catch((error: Error) => {
+                      // pg's client timeout alone does not cancel a server query.
+                      // Evict the disposable-read socket on release as well.
+                      failure ??= error;
+                      throw error;
+                    });
             const connection: PostgresPoolClient = {
               get processID() {
                 return (client as PoolClient & { processID: number }).processID;
               },
-              release: () => {
-                client.removeListener("error", onError);
-                client.release(failure);
-              },
+              release,
               query: ((text: unknown, parameters?: readonly unknown[]) => {
+                if (performance.now() >= deadline) expire();
                 if (failure) return Promise.reject(failure);
                 if (text === "commit") {
                   const started = performance.now();
                   const loop = performance.eventLoopUtilization();
-                  return client.query(text).then((result) => {
+                  return requestBudget(client.query(text)).then((result) => {
                     const durationMs = performance.now() - started;
                     if (durationMs >= SLOW_COMMIT_MS) {
                       const elapsed = performance.eventLoopUtilization(loop);
@@ -151,15 +200,30 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
                     statements.set(text, name);
                   }
                   if (name)
-                    return readBudget(client.query({ name, text, values: [...parameters] }));
+                    return requestBudget(client.query({ name, text, values: [...parameters] }));
                 }
-                return readBudget(Reflect.apply(client.query, client, [text, parameters]));
+                return requestBudget(Reflect.apply(client.query, client, [text, parameters]));
               }) as PostgresPoolClient["query"],
             };
-            entry = { connection, onError };
+            entry = {
+              connection,
+              onError,
+              acquire() {
+                released = false;
+                deadline =
+                  options.checkoutTimeoutMs === undefined
+                    ? Infinity
+                    : performance.now() + options.checkoutTimeoutMs;
+                if (options.checkoutTimeoutMs !== undefined) {
+                  timer = setTimeout(expire, options.checkoutTimeoutMs);
+                  timer.unref();
+                }
+              },
+            };
             connections.set(client, entry);
           }
           client.on("error", entry.onError);
+          entry.acquire();
           return entry.connection;
         },
       },

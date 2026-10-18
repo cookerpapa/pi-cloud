@@ -288,6 +288,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     mark: (stage: string) => void,
     facts: ExecutionAdmissionFacts,
   ): Promise<TurnExecutionAdmission> {
+    if (this.#heartbeatFailure) throw this.#heartbeatFailure;
     const reference = await this.#leaseCoordinator.acquireInTransaction(
       transaction,
       request,
@@ -308,6 +309,10 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
     });
     return { ...reference, publication };
+  }
+
+  get healthy(): boolean {
+    return this.#heartbeatFailure === undefined;
   }
 
   async execute(
@@ -697,19 +702,28 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           const tracked = this.#trackedExecutions.get(sessionId);
           if (tracked !== undefined) tracked.failure = this.#leaseRenewalFailure();
         }
-        await wait(this.#heartbeatIntervalMs, signal);
+        await wait(
+          acknowledgement.payload.familyLeaseDeferrals.length
+            ? Math.min(1_000, this.#heartbeatIntervalMs)
+            : this.#heartbeatIntervalMs,
+          signal,
+        );
       }
     } catch (error: unknown) {
       if (signal.aborted) return;
-      this.#onUnexpectedError?.(error);
       const failure = this.#leaseRenewalFailure();
       this.#heartbeatFailure = failure;
-      await this.#leaseCoordinator.quarantineWorker().catch(() => undefined);
       const trackedExecutions = [...this.#trackedExecutions.values()];
       for (const tracked of trackedExecutions) {
         tracked.failure = failure;
         tracked.prepared.revokeExecution();
       }
+      try {
+        this.#onUnexpectedError?.(error);
+      } catch {
+        /* Diagnostics cannot delay revocation. */
+      }
+      await this.#leaseCoordinator.quarantineWorker().catch(() => undefined);
       await Promise.allSettled(trackedExecutions.map((tracked) => tracked.execution));
     }
   }

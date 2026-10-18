@@ -657,6 +657,7 @@ export class SupervisorConnectionManager {
           acknowledgedMessageId: parsed.messageId,
           connectionId: parsed.payload.connectionId,
           familyLeaseRenewals: [],
+          familyLeaseDeferrals: [],
         },
       });
       if (acknowledgement.type !== "supervisor.heartbeat.ack") {

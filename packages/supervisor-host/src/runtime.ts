@@ -53,6 +53,7 @@ export type PiWorkerRuntimeState =
 export type PiWorkerRuntimeOptions = {
   config: SupervisorHostConfig;
   database?: Kysely<Database>;
+  leaseDatabase?: Kysely<Database>;
   provisioningClient?: Pick<SupervisorProvisioningClient, "provision">;
   sandboxControl?: SupervisorSandboxControl;
   idGenerator?: () => string;
@@ -118,6 +119,8 @@ export class PiWorkerRuntime {
   readonly #config: SupervisorHostConfig;
   readonly #database: Kysely<Database>;
   readonly #ownsDatabase: boolean;
+  readonly #leaseDatabase: Kysely<Database>;
+  readonly #ownsLeaseDatabase: boolean;
   readonly #provisioningClient: Pick<SupervisorProvisioningClient, "provision">;
   readonly #sandboxControl: SupervisorSandboxControl;
   readonly #idGenerator: () => string;
@@ -190,6 +193,16 @@ export class PiWorkerRuntime {
         maxConnections: options.config.databaseMaxConnections,
       });
     this.#ownsDatabase = options.database === undefined;
+    this.#leaseDatabase =
+      options.leaseDatabase ??
+      createDatabase({
+        // Reuse the existing direct-PG endpoint; checkout eviction must close
+        // this authority transaction's actual backend, not a pooled frontend.
+        connectionString: options.config.databaseNotificationUrl,
+        maxConnections: 2,
+        checkoutTimeoutMs: 5_000,
+      });
+    this.#ownsLeaseDatabase = options.leaseDatabase === undefined;
     this.#provisioningClient =
       options.provisioningClient ??
       new SupervisorProvisioningClient({
@@ -429,6 +442,7 @@ export class PiWorkerRuntime {
     this.#assertStarting();
     const nativeSessions = new PostgresDurableSessionHost({
       database: this.#database,
+      leaseDatabase: this.#leaseDatabase,
       ...(images ? { images: images.codec } : {}),
     });
     this.#nativeSessions = nativeSessions;
@@ -595,6 +609,7 @@ export class PiWorkerRuntime {
     this.#assertStarting();
     const leaseCoordinator = new SessionLeaseCoordinator({
       database: this.#database,
+      renewalDatabase: this.#leaseDatabase,
       workerId: identity.sandboxId,
     });
     const runBackend = new AgentRunExecutionBackend({
@@ -622,7 +637,9 @@ export class PiWorkerRuntime {
       maximumActiveFamilies: this.#config.maxConcurrentSessions,
       onCapacity: (sample) => this.#metrics?.activeSessionFamilies.set(sample.families),
       canClaimRuns: () =>
-        (this.#state === "ready" || this.#state === "draining") && client?.state === "connected",
+        runBackend.healthy &&
+        (this.#state === "ready" || this.#state === "draining") &&
+        client?.state === "connected",
       admitRunClaims: async () => this.#claimAvailability(),
       runExecutor: new RunExecutor({
         database: this.#database,
@@ -763,6 +780,7 @@ export class PiWorkerRuntime {
       () => (this.#ownsExecutionLogs ? this.#activeExecutionLogs?.close?.() : undefined),
       // A retirement read must finish before its pool closes, not before queue admission stops.
       () => this.#assignmentReaping,
+      () => (this.#ownsLeaseDatabase ? this.#leaseDatabase.destroy() : undefined),
       () => (this.#ownsDatabase ? this.#database.destroy() : undefined),
     ]) {
       try {
