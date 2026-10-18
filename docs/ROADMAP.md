@@ -9,9 +9,14 @@
       RF3 suite's failed samples and targeted diagnostic repeats in the
       [review](reports/session-publication-completion-review-20261018.md).
 
-SPC-01/02 are confirmed runtime findings; SPC-03 documents stale guidance,
-SPC-O1 measures redundant transaction-local reads, and SPC-Q1 tracks unresolved
-transport-test timing assumptions. Repair is not part of this review.
+The owner approved [ADR-0256](adr/0256-session-publication-and-completion-boundaries.md).
+[Repair delivery](reports/session-publication-completion-repair-20261018.md) tracks
+the implementation and subsequent validation/release separately from the review.
+
+- [x] SPC-01/02: persisted terminal replay and integrated native no-send/fatal boundaries.
+- [x] SPC-O1/03: transaction-local locked Run reuse and current lifecycle documentation.
+- [ ] SPC-Q1: verify synchronized wake measurement and explicitly duplicated closure delivery.
+- [ ] Complete source/fault/RF3 gates, scanned matched deployment and relevant live acceptance.
 
 ## Worker → Pi Tool settlement review
 

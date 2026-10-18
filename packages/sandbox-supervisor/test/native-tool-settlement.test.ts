@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { expect, it } from "vitest";
 import {
   MemoryStorage,
+  StorageRejected,
   type Seq,
   type StorageWrite,
   type ToolExecutionResult,
@@ -32,7 +33,7 @@ import { restoreToolReply } from "../../supervisor-host/src/tool-reply-result.ts
 
 async function fixture(
   result: ToolExecutionResult,
-  options: { name?: string; hold?: boolean } = {},
+  options: { name?: string; hold?: boolean; rejectResultOnce?: boolean } = {},
 ) {
   const name = options.name ?? "subagent";
   const definition = controlToolDefinitions().find((tool) => tool.name === name)!;
@@ -46,7 +47,8 @@ async function fixture(
     fauxAssistantMessage("DONE"),
   ]);
   let runtime: DurableAgentSession | undefined,
-    executions = 0;
+    executions = 0,
+    rejectedResult = false;
   const journal: StorageWrite[][] = [],
     resultPrepared = Promise.withResolvers<StorageWrite[]>(),
     ack = Promise.withResolvers<void>();
@@ -62,6 +64,10 @@ async function fixture(
       if (writes.some((w) => w.type === "entry" && w.value.kind === "pi.tool-result")) {
         resultPrepared.resolve(structuredClone([...writes]));
         if (options.hold) await ack.promise;
+        if (options.rejectResultOnce && !rejectedResult) {
+          rejectedResult = true;
+          throw new StorageRejected("Definite result publication refusal");
+        }
       }
       const seq = prepared.apply();
       journal.push(structuredClone([...writes]));
@@ -136,6 +142,36 @@ async function fixture(
     watch,
   };
 }
+
+it("settles a rejected result as a native task fault without replaying the Tool", async () => {
+  const f = await fixture(
+    { content: [{ type: "text", text: "UNCOMMITTED SUCCESS" }] },
+    { rejectResultOnce: true },
+  );
+  try {
+    expect((await f.submission.wait(context)).status).toBe("done");
+    expect(f.executions()).toBe(1);
+    expect(f.provider.state.callCount).toBe(2);
+    const view = await f.conversation.context(context);
+    const result = view.messages.find((message) => message.role === "toolResult");
+    expect(result).toMatchObject({ isError: true, details: { reason: "missing_result" } });
+    expect(JSON.stringify(view.messages)).not.toContain("UNCOMMITTED SUCCESS");
+    expect(
+      f.journal
+        .flat()
+        .some(
+          (write) =>
+            write.type === "task" &&
+            write.value.kind === "pi.tool" &&
+            write.value.state.status === "terminal" &&
+            write.value.state.outcome.status === "faulted",
+        ),
+    ).toBe(true);
+  } finally {
+    await f.watch.stop();
+    await f.runtime.close();
+  }
+});
 
 it.each(["json", "escaped", "multiline"])(
   "preserves a control result at the native %s boundary",

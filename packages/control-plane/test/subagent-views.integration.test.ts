@@ -18,6 +18,7 @@ it.skipIf(!postgres || !brokers)(
     const queries: string[] = [];
     const inFlightQueries = new Set<unknown>();
     const consumedCommits = new Set<number>();
+    let observedWake = 0;
     let executingHandlers = 0;
     const measured = f.database.withPlugin({
       transformQuery({ node, queryId }) {
@@ -84,6 +85,7 @@ it.skipIf(!postgres || !brokers)(
         toolCommands: { consume: async () => {} },
         controlTools: {
           consume: async (record, current) => {
+            if (current?.() !== false) observedWake++;
             await dispatcher.consume(record, current);
             if (current?.() !== false && record.fact.kind === "durable_commit")
               consumedCommits.add(record.fact.commit.seq);
@@ -95,7 +97,10 @@ it.skipIf(!postgres || !brokers)(
           reset: () => dispatcher.reset(),
           prepare: async () => {},
           consume: async (change, current) => {
-            if (current()) dispatcher.wake(change.scope.tenantId, change.scope.piSessionId);
+            if (current()) {
+              observedWake++;
+              dispatcher.wake(change.scope.tenantId, change.scope.piSessionId);
+            }
           },
         },
       });
@@ -143,9 +148,28 @@ it.skipIf(!postgres || !brokers)(
         },
         { timeout: 10_000 },
       );
-      queries.length = 0;
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-      expect(queries).toEqual([]);
+      // Native projection and its PG control-change publication are distinct
+      // ordered records. Restart the bounded observation window only for an
+      // actually observed wake, never merely because an unexplained query ran.
+      let quiet = false;
+      const deadline = performance.now() + 15000;
+      while (performance.now() < deadline) {
+        await vi.waitFor(
+          () => {
+            expect(executingHandlers).toBe(0);
+            expect(inFlightQueries.size).toBe(0);
+          },
+          { timeout: 10000 },
+        );
+        const wake = observedWake;
+        queries.length = 0;
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        if (wake !== observedWake) continue;
+        expect(queries).toEqual([]);
+        quiet = true;
+        break;
+      }
+      expect(quiet).toBe(true);
       await f.settle(command.operationId);
       await vi.waitFor(() => expect(replies.has(command.operationId)).toBe(true), {
         timeout: 10_000,

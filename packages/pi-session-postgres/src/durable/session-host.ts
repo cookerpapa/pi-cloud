@@ -356,8 +356,9 @@ export class PostgresDurableSessionHost {
                     ]
                   : [];
               });
-              await active
-                .publish({
+              let acknowledged = false;
+              try {
+                await active.publish({
                   commit,
                   origins,
                   ...(inputConversations.length
@@ -388,17 +389,26 @@ export class PostgresDurableSessionHost {
                         ]
                       : [],
                   ),
-                })
-                .catch((cause) => {
-                  interruption.abort(
-                    Object.assign(new Error("Native Session publication failed", { cause }), {
-                      code: "writer_publication_failed",
-                    }),
-                  );
-                  throw cause;
                 });
-              preparation?.confirmed();
-              for (const { prepared } of display) prepared.confirmed();
+                acknowledged = true;
+                preparation?.confirmed();
+                for (const { prepared } of display) prepared.confirmed();
+              } catch (cause) {
+                if (!acknowledged && cause instanceof PublicationNotSentError) throw cause;
+                const failure = Object.assign(
+                  new Error(
+                    acknowledged
+                      ? "Native Session acknowledgement adoption failed"
+                      : "Native Session publication failed",
+                    { cause },
+                  ),
+                  { code: "writer_publication_failed" },
+                );
+                interruption.abort(failure);
+                // Even a typed no-send exception after ACK is now uncertain to
+                // native memory. Never let Storage treat it as a rejected draft.
+                throw failure;
+              }
             }),
           waitProjected: (through) => progress.wait(through, authority.signal),
         });

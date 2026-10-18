@@ -8,6 +8,10 @@ Run reads and identifies obsolete lifecycle guidance. 157 existing tests and
 three isolated characterizations pass. The record preserves two initial RF3
 transport failures and their passing diagnostic repeats without declaring the
 full suite clean. This review changes no runtime or deployment.
+The owner-approved [ADR-0256 repair](adr/0256-session-publication-and-completion-boundaries.md)
+is implemented in source. [Delivery status](reports/session-publication-completion-repair-20261018.md)
+tracks refusal/replay regressions, Run-query reduction, synchronized transport
+fixtures and the pending matched/live gates.
 
 The [October 18 Worker → Pi settlement review](reports/worker-harness-settlement-review-20261018.md)
 checks native final-result processing, atomic task settlement and the committed

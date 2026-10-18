@@ -1,5 +1,11 @@
 # Current architecture decisions
 
+[ADR-0256](0256-session-publication-and-completion-boundaries.md) records the
+approved publication/completion repair: terminal replay, definite pre-send
+refusal, transaction-local Run reuse and current lifecycle documentation.
+The [delivery record](../reports/session-publication-completion-repair-20261018.md)
+tracks implementation, gates and matched/live release separately.
+
 [ADR-0255](0255-native-tool-result-boundaries.md) records the approved settlement
 repairs: native 50 KiB/2,000-line coordination result admission, metadata-only
 sequence reads and strict native/packed Tool result shapes. It replaces the old

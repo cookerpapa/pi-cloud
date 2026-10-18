@@ -21,8 +21,8 @@ import type {
 } from "./accepted-fact.ts";
 import { isDeepStrictEqual } from "node:util";
 
-/** One physical Session's native commit and its effects share the existing
- * ingress. Cloud grants remain outside the SDK; image bytes stay outside Kafka. */
+/** One physical Session's native commit and its effects share its direct Kafka
+ * publication. Cloud grants stay outside the SDK; image bytes stay outside Kafka. */
 export class DurableSessionPublisher {
   #closed = false;
   constructor(

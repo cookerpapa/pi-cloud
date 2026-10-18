@@ -1,190 +1,155 @@
 # Streaming durability and recovery
 
-The current path is Worker → control-plane ingress → Kafka → one Session Projector group.
-Projector drives PG history, live views and Tool routing. Tool executors do not
-read Kafka, and the public SSE proxy never builds a second tail.
+The active publication path is Worker → Session Kafka producer → one Session
+Projector group. Projector drives PG native storage, live views and Tool routing.
+The public SSE proxy does not build another tail. Current contracts are defined
+by [ADR-0244](adr/0244-kafka-backed-native-live-state.md),
+[ADR-0245](adr/0245-native-commit-text-presentation.md),
+[ADR-0247](adr/0247-session-work-and-tool-dispatch.md) and
+[ADR-0256](adr/0256-session-publication-and-completion-boundaries.md).
 
-## Boundaries
+## Persistence boundaries
 
-These guarantees concern formal conversation events. Disposable `tool.progress`
-snapshots are a separate HTTP/SSE observation: no Kafka/PG write, durable sequence,
-context entry or reconnect replay. Losing one cannot fail or complete a Tool.
+Native `Storage.commit()` prepares one exact sequence/batch and publishes through
+one transactional producer per active physical Session. Main and child
+Conversations share that writer and lease. PG authorization runs before and
+after producer initialization, not once per token or native commit. Only a
+confirmed Kafka transaction permits the Worker to adopt that batch.
 
-Under ADR-0230, local Tool call argument fragments stay inside the Worker model
-adapter. The public Models stream supplied to Durable contains text/thinking
-progress but no Tool drafts; only a complete successful response admits calls
-to native persistence. Error, abort, deferred and token-limit endings discard
-local calls. A payload-free preparation observation can update Working status.
-Completed calls still require native validation and a durable execute checkpoint
-before dispatch. This changes new model output, never already committed history.
+Complete native messages, tasks and retained document history are materialized
+in PG. Inbox/input metadata and submissions retain authoritative current values.
+In-flight `pi.live` text/thinking stays in Kafka and disposable memory; PG keeps
+small commit headers and exact settlement/ordered-handoff checkpoints. Required
+replay references protect that suffix across root Run anchors.
 
-ADR-0212 adds bounded PG control-change references to the same ordered Kafka
-Session path. They rebuild binding, queue and Subagent read views, without
-creating Pi Entries or changing native sequence. New owners capture Kafka
-bounds before loading PG snapshots, then consume subsequent changes. Binding
-closure installs a synchronous dispatch barrier before its publication.
-ADR-0221 adds an idempotent operation cancellation fact on that same Session
-path. It is control traffic, not native history. Projector replay may redeliver
-cancellation while never replaying the original Tool. Destination VM/partition
-progress prevents a delayed old submit from overtaking its cancellation.
-ADR-0229 adopts native Durable abort settlement; uncommitted late results cannot
-replace it. Operation cancellation co-commits with the native abort. Neither its
-transport ACK nor absent reply proves that the physical process stopped. Closed binding references
-retain immutable cleanup targets for abnormal retirement. There is no stopped
-receipt table. Cancellation transport ambiguity cannot poison native publication.
-The derived `input.queue` SSE snapshot is disposable presentation with its own
-`viewVersion`; reconnect obtains current PG state rather than replaying an old
-queue snapshot as conversation history.
+Display descriptions reference text in the same native commit rather than
+publishing a second copy. Local Tool argument fragments remain in Worker memory
+at the public Models port; only complete successful model responses expose
+calls to native Storage. After native validation, an execute checkpoint and its
+cloud dispatch description commit together before an external effect.
 
-Model-consumed images are durable Session attachments, not disposable observations.
-An image upload must complete before its reference can reach Kafka. The native
-after-hook result becomes canonical through the ordinary writer/Projector path.
-The Projector retains attachment references in the same transaction as the native
-log and projection progress. It never downloads image bytes or executes a Tool
-while replaying. Unsealed source Runs protect uploads until that ordered projection
-can decide retention. A missing/corrupt object causes an explicit read failure.
+Images consumed by models are durable Session attachments. Upload completes
+before an immutable reference enters Kafka; the Projector retains references in
+the native transaction and never downloads image bytes during replay. Worker
+Storage restores exact native images for reads. Missing/corrupt objects cause an
+explicit failure. Workspace Volume bytes have their own lifecycle authority.
 
-- `A`: PG committed execution admission and publication identity;
-- `K`: Kafka durably accepted a record under the configured replication policy;
-- `F`: the execution's first-record recovery floor is committed in PG;
-- `V`: a browser observed valid output through Projector SSE;
-- `P`: complete native state and its PG projection position committed together;
-- `T`: authority requested an immutable execution seal in the PG Outbox;
-- `C`: Projector committed the incarnation seal and either logical termination or recovery admission;
-- `S`: a replacement snapshot contains canonical history plus materialized tail.
+Disposable phase/Tool previews use bounded HTTP/SSE observations. They have no
+Kafka/PG history or model-context role. ADR-0201/0211's bounded path probes are
+an explicit exception on the existing Kafka path; they never become native
+history, renew a lease or authorize VM cleanup.
 
-```text
-V implies A and K and F and validity at that record's position
-next Run in the same Lane implies C(its predecessor)
-new physical Session owner implies every old admitted Run is sealed
-live terminal implies C
-post-seal old records cannot affect history, UI or new Tool dispatch
-Tool effect requires durable model output, validated intent and command
-Tool effect is never inferred from output text or a Kafka ACK
-S requires no browser-provided cursor
-```
+A trusted no-send refusal becomes native `StorageRejected`, preserving the
+previous acknowledged state while rejecting the new draft. Pi decides the
+calling task's failure; this is not a retry promise or retained-result queue.
+An uncertain ACK, producer fence or failure adopting an acknowledged batch
+retires the writer through the existing ordered recovery path.
 
-Kafka ACK is persistence. The ingress closes stale Worker admission before
-publishing the seal; Kafka transactions also fence a replaced ingress producer.
-Projector retains historical position/closure checks for reconstruction.
-Publication scope is recorded once under the current ExecutionReference. Cached
-scope/closure checks at ingress avoid per-record SQL, not the sole PG
-authority. Only the exact PG-requested seal is valid. Normal closure affects one
-Run/Lane; uncertain shared native-writer failure also fences its sibling Lanes.
+## Ordered projection and Tool effects
 
-## One ordered consumer
+The physical Session ID fixes the Kafka key and partition. Partition count
+cannot change within a Topic generation. Projector replicas share one group,
+with disjoint partition ownership and read-committed consumption. Native
+publication, control references and closure use the same Session partition.
+Different producers still require PG admission and confirmed revocation/handoff
+to establish causal order; sharing a key alone does not supply it.
 
-Physical Pi Session ID keys data and boundaries to one immutable Kafka partition.
-Projector replicas share one consumer group. The per-partition handler checks
-scope and closure, applies canonical state, updates the live view and delivers relevant
-commands/control notices to exact owner boots. It never waits for a guest Bash
-to finish. Different partitions run concurrently.
+PG native changes and projection progress commit in one transaction. The Worker
+assigns native IDs and commit sequence; PG applies them unchanged and rejects
+conflicting replay. The first native record also establishes its recovery floor.
+Display/control-only first records persist their floor before visibility/effects.
+PG transaction-local budgets bound lock/statement waits; failed records retry in
+partition order without skipping or dispatching their commands early.
 
-Native PG state and projection progress are one transaction. Fetch position is
-not committed processing progress. On restart/rebalance, replay begins no later
-than PG's canonical/unsealed-prefix floor and the group's committed position.
-For Tool commands, required projection precedes an explicit Kafka offset commit;
-only a confirmed commit permits dispatch. The saved dispatch boundary never
-moves backwards during replay. Old text/history can be reconstructed without
-reissuing commands. A crash between commit and dispatch may omit work and remains
-UNKNOWN. A new executor boot cannot adopt old Tool bindings.
+Before a new Tool command reaches Cube, Projector confirms its monotonic Kafka
+dispatch commit. Read-only replay below that boundary cannot dispatch the command
+again. A crash between commit and dispatch may omit execution and remains
+UNKNOWN. Guest execution and its final reply are not awaited by this handler.
+Operation cancellation is repeatable and travels with native abort through the
+same ordered path. Cube retains its boot/operation/position checks.
 
-First closure also advances Lane readiness in that PG transaction. The Run's
-first-seal trigger decrements its family's unsealed count; duplicate projection
-does neither twice. Input acceptance and readiness advancement serialize on the
-product Session row. Lost wake-up notifications cannot lose committed readiness.
+Control changes use existing PG Outbox references and Projector-owned partition
+publication. Binding views are rebuilt in assigned memory; the Tool route uses
+that view. Synchronous routing revocation and external-effect admission checks
+remain necessary before the delayed close record arrives. Control references
+and wakeups may be delivered more than once; they do not grant a second effect.
 
-The native writer is the Session lease incarnation. Released lease rows retain
-writer-wide cutoff evidence; release does not erase that evidence or authorize
-renewal. Per-Run seals and the shared writer cutoff remain distinct: stopping one
-healthy Lane must not invalidate siblings, while uncertain shared writes must.
+## Completion and ownership handoff
 
-There is no opening marker. First native projection also commits the recovery
-floor; a first display/control-only record commits its floor before delivery.
-Rollback or a lost PG reply retries that first record without changing its floor.
-A seal may be the only record of an admitted execution that produced no output.
+Native descendant-aware idle and child publication cleanup precede root writer
+drain. The Worker then commits `work_finished` through its Session producer.
+Projector closes routing, validates the final native boundary and atomically
+records the logical outcome, terminal event, recovery progress and normal writer
+retirement. Session-locked readiness releases the next root work. There are no
+cloud child Run claims, per-child seals or unsealed-Run counter.
 
-Active text fragments stay in Kafka/rebuildable memory, not PG token rows. A later
-complete message in another Session cannot move recovery beyond an older unsealed
-prefix. Native committed progress and final entries own retained text; Projector does not manufacture a native interrupted-prefix entry at a seal;
-the replacement Harness resumes its native checkpoints and interruption
-semantics after PG authorization. It does not invent a successful Tool result.
+The public terminal becomes visible only after its PG commit. If that commit's
+return is lost, normal completion replay reads the exact stored terminal and
+coverage. Existing live-view deduplication handles an already delivered copy.
+Replay never invents another event ID/sequence or rewrites the winning outcome.
+A browser ACK does not control readiness or lease release.
+
+For unknown writes/owner loss, PG revokes the grant and records one Session seal
+request. The control publisher takes over the same Kafka transactional producer
+identity, rechecks its PG intent and commits under current group ownership.
+Routing revocation precedes the successor boundary. A pending forced seal cannot
+be replaced by voluntary retirement merely because `work_finished` arrives.
+
+A recoverable seal closes the old incarnation and re-readies the same logical
+Run without a fabricated public terminal. Durable resumes checkpoints under the
+new PG lease. Unsafe interrupted Tools are not replayed; a committed result is
+retained. Stop aborts native work and returns unconsumed inputs after reconciliation.
+Writer closure never constitutes evidence that Cube processes have stopped.
 
 ## Snapshot-first browser delivery
 
-The public SSE request has no Last-Event-ID or cursor. Kafka group membership
-locates the assigned Projector; another API replica proxies the authenticated
-request without consuming Kafka. On ownership loss, existing subscriptions close
-and reconnect to an owner whose assigned replay has reached its startup boundary.
+SSE accepts no Kafka cursor or Last-Event-ID. Kafka group membership locates the
+assigned Projector; another API replica proxies the authenticated request. On
+ownership loss, subscriptions reconnect to the owner after assigned startup
+replay completes.
 
-The owner subscribes to live events, captures an immutable tail, then reads
-primary PG. Message-level event/native coverage commits in the same transaction
-as the native semantic append; active Run history can therefore replace covered
-spans before the Run ends. The captured tail cannot refer to coverage newer than
-the subsequent primary-PG snapshot. No PG transaction spans a network write.
+The owner subscribes to live wakes, captures its immutable tail, then reads a
+primary-PG snapshot. That snapshot cannot precede coverage already observed by
+the captured tail. Canonical messages and uncovered spans merge into one view.
+Complete message projection advances display/native coverage on the Run or
+child view, so a refresh does not duplicate text already saved in history.
 
-The v2 snapshot is an already-materialized conversation, sent in bounded
-begin/part/end frames rather than one giant JSON frame. The browser applies it
-only after end, then animates future live deltas. Interrupted partial values are
-discarded. Normal small events retain their immediate path; a large complete
-event is framed as one atomic presentation value as well.
+The Worker interprets native updates; Projector resolves same-commit text
+references. Native stream commits coalesce at Pi's 100 ms boundary, while public
+adjacent text can coalesce for 25 ms. The browser reveals both commentary and
+final text progressively; snapshots/reduced-motion/background views apply already
+received text directly. Presentation pacing changes no persistence boundary.
 
-On committed closure, the same Projector immediately announces the terminal and
-releases covered fragments. There is no second Kafka commit notification or
-pending-successor buffer waiting for it. Readers already holding snapshots keep
-their own references. Slow connections have bounded queues and resnapshot rather
-than pin shared buffers indefinitely. Heartbeats reuse the outstanding read.
+Large snapshots/events use bounded begin/part/end framing. A partial value is
+discarded on disconnect. Slow network writes time out without blocking Kafka or
+other viewers. SSE keepalives keep a connection open but do not poll PG for
+missing events; idempotent terminal replay is therefore required.
 
-Pi text can coalesce for 25 ms after an immediate first delta. Producer batching
-does not change record identity. Thinking, partial Tool arguments and partial
-Tool stdout are not public streams. The lossy runtime activity channel reports Tool argument preparation; the
-complete native Tool boundary supplies durable Tool identity and history.
+Queue views and runtime observations have independent disposable delivery.
+Terminal state wins over late Working/progress frames. Native queue changes
+notify views through the same commit, and queued root/control changes through
+ordered PG references. Reconnect rebuilds views; observations cannot schedule
+or replay work.
 
-## Crash matrix
+## Failure and retention
 
-| Failure point | Required outcome |
+| Failure point | Recovery |
 | --- | --- |
-| Worker and control processes die before requesting a seal, storage survives | ordered old-writer closure precedes a new PG lease; Durable resumes the same logical Run with no unsafe Tool replay |
-| first-record PG commit succeeds, reply lost | replay idempotently with the same first position; do not advance past uncommitted work |
-| semantic message PG commit | retire covered live spans, preserve borrowed reader references and uncovered suffix |
-| connection lost mid-snapshot | discard only the partial browser value; request a new snapshot without a cursor |
-| trusted local port proves rejection before enqueue | restore the uncommitted Lane view; consume no native sequence; sibling Lanes remain writable |
-| submission/ACK outcome is uncertain | fail the shared native writer; no local rollback or invented non-publication proof |
-| Kafka accepted the record but the publisher lost its ACK | it may project before the seal; do not infer it was absent or replay the Agent |
-| after ACK, before Projector | replay accepted positions; a matching execution identity does not bypass its seal |
-| visible partial output, before complete message | rebuild from Kafka; native committed progress determines retained text |
-| model message before validated intent | no effect admitted for that Tool |
-| intent without durable Tool result | that Tool may be UNKNOWN; later unstarted Tools stay unstarted |
-| during PG transaction | rollback state and position; re-read the record |
-| PG commit succeeds, consumer ACK lost | idempotent semantic replay; Tool dispatch requires confirmed commit |
-| native/seal SQL exceeds its local lock/statement budget | server cancellation and rollback leave the offset pending; retry that partition in order, with no Tool dispatch |
-| binding revocation publication fails | retry its durable reference before sealing; preserve metadata and VM quota; do not kill processes |
-| Tool finishes during Agent Stop | native abort owns settlement; results committed before abort remain, late physical replies cannot overwrite it |
-| seal request before Kafka append | retry the same seal after ordered binding closure; next Run stays queued |
-| old data before first seal | valid historical input, even if PG already knows closure |
-| old data after first seal | no PG, UI or new execution effect |
-| seal commit before UI update | replacement snapshot or seal replay restores visibility |
-| rebalance during awaited work | invalidate subscriptions and suppress stale live/dispatch continuations |
-| command offset committed, dispatch or delivery ACK lost | do not redispatch; outcome may be UNKNOWN |
-| executor dies | old binding cannot move to a new boot; ambiguous outcome is UNKNOWN |
-| native reply arrives after seal | no completion of a closed call or publication into closed history |
-| Cube dies | preserve Volume files, not lost processes/memory; Harness reports the reset |
+| Before a batch reaches Kafka, with positive no-send classification | Native draft rejected; Session can remain usable |
+| Kafka ACK unknown or post-ACK adoption fails | Interrupt writer; ordered closure and fresh PG grant |
+| PG transaction rolls back | Retry the same Kafka position; no early effect admission |
+| Native PG commit return lost | Idempotent replay preserves original sequence/content |
+| Completion PG commit return lost | Replay returns the stored terminal/coverage |
+| Worker lost with a Tool executing | Native unsafe interruption; inspect effects, no automatic shell replay |
+| Control Plane replacement | Worker may continue direct publication; projection/dispatch/display can pause |
+| Browser disconnects | Replacement snapshot combines canonical history and uncovered live tail |
 
-## Retention and trust
+Kafka time/size expiry is disabled. Reclamation stays behind PG progress, every
+unclosed prefix and live replay reference, plus grace. Missing progress or PG
+failure stops deletion; a missing required prefix is operator-visible. Kafka is
+not lifetime transcript storage or an unlimited outage buffer.
 
-These recovery rules assume the required PG/Kafka/Volume bytes survive. Kafka
-`acks=all` acknowledges in-sync replication, not per-record physical-disk fsync.
-Replicas on one host do not provide independent power-loss protection. A process
-kill/restart test is not a whole-host power-cut or disaster-recovery test; seals
-cannot recreate missing bytes. See [Kafka's flush policy](https://kafka.apache.org/42/operations/hardware-and-os/#application-vs-os-flush-management).
-
-Automatic Kafka time/size deletion is disabled. A safe reaper uses canonical
-progress, the oldest unsealed start and an additional grace period. Missing PG
-progress blocks reclamation. A known missing active prefix is an error, not a
-reason to quietly continue with older context. Capacity limits remain necessary.
-
-Workers and Projectors are trusted platform code; Cube and browser have no Kafka
-access. Use private networks and appropriate producer/consumer ACLs. There are
-no record signatures: a compromised trusted producer can impersonate another
-recorded execution, which is outside this deployment's threat model. Kafka fencing never retracts
-an already-issued Cube request or guarantees exactly-once external side effects.
+PG remains control/cold-history authority, Kafka the acknowledged active commit
+transport, and Cube Volume the Workspace byte authority. Worker/Kafka/PG are
+trusted private infrastructure; tenant checks and Tool fencing remain. No second
+broker, native writer, per-Step receipt or operation-result ledger is added.

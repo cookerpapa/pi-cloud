@@ -366,6 +366,7 @@ export class ExecutionStreamProjector {
           "output_sealed_at",
           "output_seal_offset",
           "state",
+          "row_version",
           "output_first_topic",
           "output_first_partition",
         ])
@@ -407,7 +408,7 @@ export class ExecutionStreamProjector {
       if (run.output_sealed_at !== null) {
         if (run.output_seal_offset !== null) rootClosed = BigInt(run.output_seal_offset);
         await recordFactProjection(tx, position);
-        return;
+        return this.#readTerminal(tx, fact.scope);
       }
       if (fact.nativeSequence > 0) {
         const head = await sql<{
@@ -424,6 +425,7 @@ export class ExecutionStreamProjector {
       if (retire) await this.#handoffViews(tx, fact.scope);
       const result = await finishWorkIn(
         tx,
+        run,
         fact,
         position,
         this.#prefixes.get(key)?.highWaterMark ?? 0,
@@ -503,31 +505,8 @@ export class ExecutionStreamProjector {
             .execute();
           await releaseIdleSessionLease(transaction, fact.scope.writerId, now);
         }
-        const terminal = await transaction
-          .selectFrom("session_terminal_events")
-          .selectAll()
-          .where("tenant_id", "=", fact.scope.tenantId)
-          .where("turn_id", "=", fact.scope.turnId)
-          .executeTakeFirstOrThrow();
-        const event = parsePiCloudEvent({
-          schemaVersion: terminal.schema_version,
-          eventId: terminal.event_id,
-          sessionId: terminal.session_id,
-          turnId: terminal.turn_id,
-          agentId: terminal.agent_id,
-          seq: Number(terminal.seq),
-          occurredAt: terminal.occurred_at.toISOString(),
-          type: terminal.type,
-          payload: terminal.payload,
-        });
-        if (
-          event.type !== "turn.completed" &&
-          event.type !== "turn.failed" &&
-          event.type !== "turn.cancelled"
-        )
-          throw new Error("Stored execution terminal has an invalid type");
         await recordFactProjection(transaction, position);
-        return event;
+        return this.#readTerminal(transaction, fact.scope);
       }
       if (
         run.output_first_offset !== null &&
@@ -695,6 +674,36 @@ export class ExecutionStreamProjector {
     adopt();
     if (current()) this.#durable.releaseSettled(fact.scope);
     return committed;
+  }
+
+  /** Replay reconstructs the committed presentation without allocating another
+   * event or changing the winning terminal decision. */
+  async #readTerminal(
+    tx: Transaction<Database>,
+    scope: AcceptedFact["scope"],
+  ): Promise<PiCloudEvent> {
+    const terminal = await tx
+      .selectFrom("session_terminal_events")
+      .selectAll()
+      .where("tenant_id", "=", scope.tenantId)
+      .where("run_id", "=", scope.runId)
+      .where("session_id", "=", scope.sessionId)
+      .where("turn_id", "=", scope.turnId)
+      .executeTakeFirstOrThrow();
+    const event = parsePiCloudEvent({
+      schemaVersion: terminal.schema_version,
+      eventId: terminal.event_id,
+      sessionId: terminal.session_id,
+      turnId: terminal.turn_id,
+      agentId: terminal.agent_id,
+      seq: Number(terminal.seq),
+      occurredAt: terminal.occurred_at.toISOString(),
+      type: terminal.type,
+      payload: terminal.payload,
+    });
+    if (!["turn.completed", "turn.failed", "turn.cancelled"].includes(event.type))
+      throw new Error("Stored execution terminal has an invalid type");
+    return event;
   }
 
   /** Event sequences belong to views. A Session handoff must advance every

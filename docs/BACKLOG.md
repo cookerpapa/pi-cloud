@@ -31,24 +31,29 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 ## Session publication and whole-Run completion review
 
 The [October 18 review](reports/session-publication-completion-review-20261018.md)
-at `6b7bc02b` records these unfinished items. It changes no runtime or deployment.
+at `6b7bc02b` records the baseline. The owner-approved
+[ADR-0256 repair](adr/0256-session-publication-and-completion-boundaries.md) is
+implemented in source; [delivery status](reports/session-publication-completion-repair-20261018.md)
+distinguishes that from required verification and release.
 
-- [ ] SPC-01: on normal `work_finished` replay, recover the exact persisted
+- [x] SPC-01: on normal `work_finished` replay, recover the exact persisted
       terminal/coverage after uncertain PG COMMIT return. Preserve unique events,
       identity/closure checks and successor fencing; do not add a terminal Outbox.
-- [ ] SPC-02: preserve trusted no-send refusal through the native Session Host.
+- [x] SPC-02: preserve trusted no-send refusal through the native Session Host.
       Let Pi handle `StorageRejected` without aborting siblings; keep uncertain
       ACK, post-ACK failure and producer fencing fatal. Add integrated Host tests.
-- [ ] SPC-03: rewrite RUN_LIFECYCLE and STREAM_DURABILITY around direct Session
+- [x] SPC-03: rewrite RUN_LIFECYCLE and STREAM_DURABILITY around direct Session
       producers/native children and normal versus forced retirement. Remove
       obsolete ingress, unsealed counters and per-child claim/seal descriptions.
-- [ ] SPC-O1: reuse transaction-scoped locked Run data in normal completion;
-      the fixture reads the same Run three times. Preserve version/transition
+- [x] SPC-O1: reuse transaction-scoped locked Run data in normal completion;
+      the fixture now reads the Run once instead of three times. Preserve version/transition
       checks and intermediate cancellation updates; add no cross-request cache.
 - [ ] SPC-Q1: synchronize transport fixtures with the control changes they are
       measuring and distinguish duplicate notifications from duplicate effects.
       The full RF3 suite initially passed 7/9; both failing tests passed a fresh
       diagnostic repeat with unchanged assertions. Retain that uncertainty.
+- [ ] Complete the required source/fault/transport gates, scanned matched release,
+      relevant live acceptance and configuration/physical-cleanup verification.
 
 ## Worker → Pi Tool settlement review
 

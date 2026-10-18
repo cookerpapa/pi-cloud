@@ -1954,6 +1954,69 @@
       "file": "test/adapter.test.ts",
       "test": "returns a protocol failure for malformed guest content: {\"type\":\"text\",\"text\":17}",
       "invariant": "A malformed guest final content shape is returned as an explicit protocol failure before image handling."
+    },
+    {
+      "id": "normal-completion-commit-return-loss",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/session-completion-boundaries.test.ts",
+      "test": "redelivers the persisted terminal after a lost completion transaction return",
+      "invariant": "A committed normal terminal is restored on replay without a duplicate event or transition."
+    },
+    {
+      "id": "normal-completion-cancel-versions",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/session-completion-boundaries.test.ts",
+      "test": "carries the updated Run version through native cancellation and replays one terminal",
+      "invariant": "Transaction-local snapshot reuse preserves successive cancellation versions and replay idempotency."
+    },
+    {
+      "id": "normal-completion-stale-writer",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/session-completion-boundaries.test.ts",
+      "test": "ignores late completion from a closed writer after the same Run is readmitted",
+      "invariant": "An old work_finished cannot terminate a newly admitted incarnation of the same logical Run."
+    },
+    {
+      "id": "native-host-no-send-refusal",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/session-publication-refusal.test.ts",
+      "test": "keeps the shared Host and native sequence usable after a proved no-send refusal",
+      "invariant": "A definite rejection preserves shared native ownership and the previous committed sequence."
+    },
+    {
+      "id": "native-rejected-result-fault",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/native-tool-settlement.test.ts",
+      "test": "settles a rejected result as a native task fault without replaying the Tool",
+      "invariant": "Native rejection does not preserve an uncommitted result or automatically repeat its external effect."
+    },
+    {
+      "id": "native-host-unknown-ack",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/session-publication-refusal.test.ts",
+      "test": "retires the Host after uncertain or post-ACK failure: unknown_ack",
+      "invariant": "Uncertain or post-ACK failure retires the owner, including a wrongly typed no-send callback exception."
+    },
+    {
+      "id": "native-host-lost-ack-after-commit",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/session-publication-refusal.test.ts",
+      "test": "retires the Host after uncertain or post-ACK failure: lost_ack_after_commit",
+      "invariant": "Uncertain or post-ACK failure retires the owner, including a wrongly typed no-send callback exception."
+    },
+    {
+      "id": "native-host-effect-confirmation",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/session-publication-refusal.test.ts",
+      "test": "retires the Host after uncertain or post-ACK failure: effect_confirmation",
+      "invariant": "Uncertain or post-ACK failure retires the owner, including a wrongly typed no-send callback exception."
+    },
+    {
+      "id": "native-host-display-confirmation",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/session-publication-refusal.test.ts",
+      "test": "retires the Host after uncertain or post-ACK failure: display_confirmation",
+      "invariant": "Uncertain or post-ACK failure retires the owner, including a wrongly typed no-send callback exception."
     }
   ]
 }

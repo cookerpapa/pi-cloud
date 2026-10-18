@@ -423,6 +423,15 @@ idempotent replay. There is no per-Step receipt, second channel lease or signing
 key. The first native append co-commits its recovery floor with semantic state;
 a first display/control record persists its floor before visibility or routing.
 
+[ADR-0256](adr/0256-session-publication-and-completion-boundaries.md) preserves
+proved no-send rejection through the native Session Host. Pi receives
+`StorageRejected` while the shared owner remains usable; this adds no automatic
+retry or rejected-result retention. Unknown ACK and post-ACK adoption errors
+still interrupt the writer. Normal completion replay returns its exact persisted
+terminal/coverage, and the completion transaction reuses its locked Run state
+with checked, updated versions. [Delivery status](reports/session-publication-completion-repair-20261018.md)
+records the implementation and pending matched/live verification.
+
 Hot event and Worker-envelope schemas compile once per server process. Browser
 bundles select the same schemas' non-code-generating checker through package
 conditions, preserving strict CSP. Validation rules and public errors are

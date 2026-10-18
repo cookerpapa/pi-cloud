@@ -2,7 +2,7 @@ import type { Database } from "@pi-cloud/database";
 import { isTerminalRunState, transitionRun, type RunState } from "@pi-cloud/domain";
 import { parseExecutionReference } from "@pi-cloud/protocol";
 import { randomUUID } from "node:crypto";
-import { sql, type Transaction } from "kysely";
+import { sql, type Selectable, type Transaction } from "kysely";
 
 export type RunIdentity = { tenantId: string; runId: string; executionReference?: string };
 export type RunTransitionInput = {
@@ -13,6 +13,9 @@ export type RunTransitionInput = {
   stopReason?: string;
   transitionId?: string;
 };
+export type RunTransitionState = Readonly<
+  Pick<Selectable<Database["runs"]>, "state" | "row_version" | "lease_id" | "fencing_token">
+>;
 
 export async function transitionCurrentRun(
   tx: Transaction<Database>,
@@ -26,6 +29,17 @@ export async function transitionCurrentRun(
     .where("id", "=", identity.runId)
     .forNoKeyUpdate()
     .executeTakeFirstOrThrow();
+  await transitionLockedRun(tx, identity, row, input);
+}
+
+/** The caller holds this Run's row lock in tx. Reuse only within that transaction;
+ * the returned version must replace the snapshot before a subsequent transition. */
+export async function transitionLockedRun(
+  tx: Transaction<Database>,
+  identity: RunIdentity,
+  row: RunTransitionState,
+  input: RunTransitionInput,
+): Promise<RunTransitionState> {
   if (identity.executionReference) {
     const ref = parseExecutionReference(identity.executionReference);
     if (
@@ -57,7 +71,7 @@ export async function transitionCurrentRun(
         .where("tenant_id", "=", identity.tenantId)
         .where("id", "=", identity.runId)
         .where("row_version", "=", row.row_version)
-        .returning("id"),
+        .returning(["id", "row_version"]),
     )
     .with("recorded_transition", (q) =>
       q
@@ -82,8 +96,10 @@ export async function transitionCurrentRun(
     .selectNoFrom([
       sql<number>`(select count(*)::int from updated_run)`.as("runs"),
       sql<number>`(select count(*)::int from recorded_transition)`.as("transitions"),
+      sql<string>`(select row_version::text from updated_run)`.as("version"),
     ])
     .executeTakeFirstOrThrow();
   if (changed.runs !== 1 || changed.transitions !== Number(row.state !== state))
     throw new Error("Run transition did not commit exactly once");
+  return { ...row, state, row_version: changed.version };
 }

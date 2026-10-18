@@ -1,7 +1,7 @@
 import type { Database } from "@pi-cloud/database";
 import { sql, type Transaction } from "kysely";
 
-/** Closing a task does not release a sibling Lane's shared Session owner. */
+/** Root work can release its physical Session owner only after ordered writer closure. */
 export async function releaseExecutionScope(
   tx: Transaction<Database>,
   input: { tenantId: string; runId: string; leaseId: string; fencingToken: number; now: Date },

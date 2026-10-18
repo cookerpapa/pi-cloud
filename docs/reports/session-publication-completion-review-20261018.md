@@ -174,11 +174,14 @@ conformance/Host, native Conversations/turn runner, the Session publisher and
 Kafka writer, normal completion/forced seals, lease retirement, Worker drain,
 cancellation admission, live view and SSE contracts.
 
-The [three isolated characterizations](../../scripts/experiments/session-publication-completion-20261018/review.test.ts)
-pass on this baseline. They deliberately assert the two reproduced defects and
-the current SQL count; they are review evidence outside the maintained package
-test suites, not repair regression tests. [Measurements](session-publication-completion-review-20261018.json)
-retain the results.
+The three isolated characterizations passed on this baseline and are archived
+at Git commit `94ebd1ed`. They deliberately asserted the reproduced defects and
+original SQL count. The approved repair replaces them with maintained
+[completion](../../packages/control-plane/test/session-completion-boundaries.test.ts)
+and [publication](../../packages/control-plane/test/session-publication-refusal.test.ts)
+regressions. [Measurements](session-publication-completion-review-20261018.json)
+retain the baseline results; [delivery](session-publication-completion-repair-20261018.md)
+tracks the repair separately.
 
 The complete disposable RF3 Kafka/PG transport suite initially passes **7/9**:
 

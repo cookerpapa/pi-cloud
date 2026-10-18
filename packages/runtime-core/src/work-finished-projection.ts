@@ -6,29 +6,20 @@ import { parsePiCloudEvent, type PiCloudEvent } from "@pi-cloud/protocol";
 import type { AcceptedWorkFinishedFact } from "./accepted-fact.ts";
 import type { FactPosition } from "./accepted-fact-recovery.ts";
 import { recordFactProjection } from "./accepted-fact-recovery.ts";
-import { transitionCurrentRun } from "./run-state.ts";
+import { transitionLockedRun, type RunTransitionState } from "./run-state.ts";
 import { advanceLaneReadiness } from "./run-readiness.ts";
 
-/** Called under the Root Run and Session writer locks. Pi has already settled
- * the native family; this only materializes cloud work and presentation. */
+/** Called with an unsealed Root Run under its row and Session writer locks.
+ * Pi has settled the family; this materializes cloud work and presentation. */
 export async function finishWorkIn(
   tx: Transaction<Database>,
+  run: RunTransitionState,
   fact: AcceptedWorkFinishedFact,
   position: FactPosition,
   highWaterMark: number,
   retireWriter: boolean,
 ): Promise<PiCloudEvent | undefined> {
   const now = new Date();
-  const run = await tx
-    .selectFrom("runs")
-    .select(["state", "output_sealed_at", "output_seal_id"])
-    .where("tenant_id", "=", fact.scope.tenantId)
-    .where("id", "=", fact.scope.runId)
-    .executeTakeFirstOrThrow();
-  if (run.output_sealed_at !== null) {
-    await recordFactProjection(tx, position);
-    return;
-  }
   // A control-plane terminal decision already in progress remains authoritative.
   // Its pending writer seal will finish the presentation. Recovery requests,
   // which keep the Run live, may be overtaken by a definitive native completion.
@@ -59,12 +50,12 @@ export async function finishWorkIn(
           ? "timed_out"
           : "failed";
   if (state === "cancelled" && run.state !== "cancel_requested")
-    await transitionCurrentRun(tx, fact.scope, {
+    run = await transitionLockedRun(tx, fact.scope, run, {
       runState: "cancel_requested",
       reason: "native_abort",
       now,
     });
-  await transitionCurrentRun(tx, fact.scope, {
+  await transitionLockedRun(tx, fact.scope, run, {
     runState: state,
     reason: "native_work_finished",
     now,

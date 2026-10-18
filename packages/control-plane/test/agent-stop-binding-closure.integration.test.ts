@@ -4,7 +4,11 @@ import { Admin } from "@platformatic/kafka";
 import { sql } from "kysely";
 import { expect, it, vi } from "vitest";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
-import { parseToolCancellation, type ExecutionLogPosition } from "@pi-cloud/protocol";
+import {
+  parseToolCancellation,
+  parseSessionControlChange,
+  type ExecutionLogPosition,
+} from "@pi-cloud/protocol";
 import type { ExecutionPublication } from "../../runtime-core/src/accepted-fact.ts";
 import { SessionProjector } from "../../runtime-core/src/session-projector.ts";
 import { SessionControlOutbox } from "../../runtime-core/src/session-control-outbox.ts";
@@ -79,6 +83,8 @@ it.skipIf(!postgres || !brokers)(
         partitionFor: () => 0,
       });
       const positions: ExecutionLogPosition[] = [];
+      const closureIds = new Set<string>();
+      const observedClosures = new Map<string, import("@pi-cloud/protocol").SessionControlChange>();
       const submit = vi.fn(async () => {});
       const cancel = vi.fn(async () => {});
       const dispatcher = new ToolCommandDispatcher({
@@ -115,6 +121,8 @@ it.skipIf(!postgres || !brokers)(
             const route = view.closure(change, current);
             if (!route) return;
             positions.push(position);
+            closureIds.add(change.factId);
+            observedClosures.set(change.factId, change);
             await dispatcher.closeWorkflowBinding(change, route, position, current);
           },
         },
@@ -233,7 +241,9 @@ it.skipIf(!postgres || !brokers)(
       expect(submit).not.toHaveBeenCalled();
       finish.resolve();
       await execution;
-      await vi.waitFor(() => expect(positions.length).toBe(1), { timeout: 15000 });
+      await vi.waitFor(() => expect(positions.length).toBeGreaterThanOrEqual(1), {
+        timeout: 15000,
+      });
       const run = () =>
         database
           .selectFrom("runs")
@@ -246,6 +256,25 @@ it.skipIf(!postgres || !brokers)(
       expect(positions[0]).toMatchObject({ topic, partition: 0 });
       expect(BigInt(positions[0]!.offset)).toBeGreaterThan(0n);
       expect(BigInt((await run()).output_seal_offset!)).toBeLessThan(BigInt(positions[0]!.offset));
+      // Outbox delivery may repeat. Exercise that contract rather than assuming
+      // exactly one notification, while keeping the same durable outcome.
+      const count = positions.length;
+      const closure = parseSessionControlChange([...observedClosures.values()][0]);
+      await projector.publishControl(closure);
+      await vi.waitFor(() => expect(positions.length).toBeGreaterThan(count), { timeout: 15000 });
+      expect(closureIds.size).toBe(1);
+      for (const position of positions) {
+        expect(position).toMatchObject({ topic, partition: 0 });
+        expect(BigInt(position.offset)).toBeGreaterThan(BigInt((await run()).output_seal_offset!));
+      }
+      expect(
+        await database
+          .selectFrom("session_terminal_events")
+          .select("event_id")
+          .where("run_id", "=", accepted.runId)
+          .execute(),
+      ).toHaveLength(1);
+      expect(cancel).toHaveBeenCalledOnce();
       expect(submit).not.toHaveBeenCalled();
       await bindings.release(bindingId, assignment);
       process.stdout.write(
