@@ -45,3 +45,12 @@ fixture insert, rejection of the unconfirmed return and no automatic replay.
 
 Private evidence is under `deploy/production/runtime/release-evidence/session-lease-20261018/`.
 Do not treat source checks as a serving deployment or new live recovery evidence.
+
+During the full CI run, before its fault stage, inspection found that the new
+lock-isolation matrix entry used a prefix while the evaluator requires an exact
+parameterized title. It is corrected to the `expire A=true` case; the ordinary
+suite still runs both early-unlock and expired cases. This changes only the matrix
+and this record, not runtime or test assertions. The completed first candidate
+for `4b2cc339` is not deployed; a new matched candidate is prepared from the final
+committed matrix revision. Formatting/documentation checks are repeated for
+that correction while the unchanged runtime CI stages continue.

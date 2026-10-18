@@ -2085,7 +2085,7 @@
       "id": "lease-pg-lock-isolation",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/lease-renewal.postgres.test.ts",
-      "test": "renews healthy siblings while A is locked",
+      "test": "renews healthy siblings while A is locked; expire A=true",
       "invariant": "One busy lease does not block healthy Sessions; an expired deferred lease cannot revive."
     },
     {
