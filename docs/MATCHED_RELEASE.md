@@ -129,18 +129,6 @@ the matching source (real GPT-6 Luna, Cube and browser):
 PI_CLOUD_LIVE_TOOL_REPLY_CHECK=1 node --import tsx scripts/run-live-tool-reply-continuation.mjs /private/tool-reply.json
 ```
 
-For ADR-0255's native Tool result boundaries, run the owned coordination check:
-
-```sh
-PI_CLOUD_LIVE_TOOL_SETTLEMENT_CHECK=1 node --import tsx scripts/run-live-tool-settlement-check.mjs /private/tool-settlement.json
-```
-
-It uses GPT-6 Luna and a new private tenant to verify complete structured output,
-50 KiB/2,000-line overflow errors with one prior effect, and an interactive
-supervisor reply. Normal API deletion and physical Workspace purge precede
-removal of owned account/image fixtures. Run the ordinary native-input,
-browser/Read, Tool-image recovery and full Cube checks alongside this slice.
-
 It temporarily wraps the trusted completion adapter only in the single Ready
 Cubelet. The wrapper suppresses a marker-bearing result for the exact new fixture
 tenant, optionally suppresses that binding's probe replies, and expires after ten
@@ -166,6 +154,18 @@ services and does not exercise publication admission through that helper; ordina
 Run cases cover admission/Kafka. It requires one Ready Cubelet, compiles with the
 operator's Go toolchain and removes its helper after use. Workspace lifecycle
 purge must finish before owned account/configuration records are removed.
+
+For ADR-0255's native Tool result boundaries, run the owned coordination check:
+
+```sh
+PI_CLOUD_LIVE_TOOL_SETTLEMENT_CHECK=1 node --import tsx scripts/run-live-tool-settlement-check.mjs /private/tool-settlement.json
+```
+
+It uses GPT-6 Luna and a new private tenant to verify complete structured output,
+50 KiB/2,000-line overflow errors with one prior effect, and an interactive
+supervisor reply. Normal API deletion and physical Workspace purge precede
+removal of owned account/image fixtures. Run the ordinary native-input,
+browser/Read, Tool-image recovery and full Cube checks alongside this slice.
 
 The native-input driver checks same-Run continuation, durable edits and promotion,
 retry identity, and Stop restoration against the current schema. It waits for
