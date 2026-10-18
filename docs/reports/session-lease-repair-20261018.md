@@ -54,3 +54,12 @@ and this record, not runtime or test assertions. The completed first candidate
 for `4b2cc339` is not deployed; a new matched candidate is prepared from the final
 committed matrix revision. Formatting/documentation checks are repeated for
 that correction while the unchanged runtime CI stages continue.
+
+That first full CI run passes native admission/allocation, Helm, policy,
+observability, closure and build gates, then stops at workspace types: the late
+explicit socket-destruction call accesses `connection`, present on pinned pg's
+actual Client but omitted from its PoolClient declaration. A local intersection
+with `Pick<Client, "connection">` makes the adapter boundary explicit without
+changing emitted JavaScript. Corrected formatting/docs/build/workspace checks,
+transport/fault/security gates and a newly scanned matched candidate are required
+before deployment. Neither earlier passing candidate is deployed.

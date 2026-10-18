@@ -122,7 +122,7 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
               // pg.end() is graceful between queries. A blackholed peer must
               // not keep an expired checkout's socket alive awaiting FIN.
               if (failure && options.checkoutTimeoutMs !== undefined)
-                client.connection.stream.destroy();
+                (client as PoolClient & Pick<Client, "connection">).connection.stream.destroy();
             };
             const expire = () => {
               failure ??= Object.assign(new Error("Database connection checkout expired"), {
