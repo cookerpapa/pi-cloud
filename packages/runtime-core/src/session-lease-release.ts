@@ -22,6 +22,14 @@ export async function releaseExecutionScope(
     .where("id", "=", lease.pi_session_id)
     .forUpdate()
     .executeTakeFirstOrThrow();
+  await releaseLockedExecutionScope(tx, input);
+}
+
+/** Caller holds the physical Session and lease locks and verified the exact owner. */
+export async function releaseLockedExecutionScope(
+  tx: Transaction<Database>,
+  input: { tenantId: string; runId: string; leaseId: string; fencingToken: number; now: Date },
+): Promise<void> {
   const released = await tx
     .updateTable("runs")
     .set({ execution_released_at: input.now })

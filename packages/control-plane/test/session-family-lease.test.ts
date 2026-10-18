@@ -9,7 +9,7 @@ import { ExecutionStreamProjector, type AcceptedFact } from "@pi-cloud/runtime-c
 import { parseExecutionReference } from "@pi-cloud/protocol";
 import { it, expect } from "vitest";
 import { ControlPlaneStore, createPrivateTenant } from "../src/index.ts";
-import { AssignmentReconciler } from "../src/assignment-reconciler.ts";
+import { SessionExpiryReconciler } from "../src/session-expiry-reconciler.ts";
 import { PiCloudMetrics } from "@pi-cloud/observability";
 
 async function fixture(capacity = 1, leaseMs = 60000) {
@@ -251,19 +251,9 @@ it("closes one expired Session writer without retiring another physical Session"
       .set({ valid_until: new Date(Date.now() - 1) })
       .where("pi_session_id", "=", f.main.sessionId)
       .execute();
-    const reconciler = new AssignmentReconciler({
-      database: f.db,
-      workerId: f.workerId,
-      inventory: {
-        listAssignments: async () => {
-          throw new Error("Lease retirement must not terminate the Worker");
-        },
-        terminateAndConfirmAbsent: async () => {
-          throw new Error("Unexpected physical termination");
-        },
-      },
+    expect(await new SessionExpiryReconciler(f.db).sweep(1)).toMatchObject({
+      expiredAssignments: 1,
     });
-    expect(await reconciler.retireExpiredAssignments(1)).toMatchObject({ settledAssignments: 1 });
     // Revocation precedes the ordered closure; retained ownership blocks takeover.
     expect(
       await f.db

@@ -132,14 +132,6 @@ describe("PiWorkerRuntime", () => {
       controlPlaneInstanceId: CONTROL_PLANE_ID,
       ownerBoundary: { async stopAndConfirm() {} },
       assignmentRetirerFactory: () => ({
-        async retireExpiredAssignments() {
-          return {
-            inspectedRuntimes: 0,
-            terminatedRuntimes: 0,
-            orphanRuntimes: 0,
-            settledAssignments: 0,
-          };
-        },
         async retireWorker() {
           return {
             inspectedRuntimes: 0,

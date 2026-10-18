@@ -35,6 +35,9 @@ The [October 18 review](reports/control-plane-expiry-review-20261018.md) at
 including explicit probe corrections. The serving runtime remains
 `session-lease-079dbddc`; this review implements no repairs.
 
+The owner approved [ADR-0259](adr/0259-control-plane-expiry-progress.md).
+Implementation and matched-release acceptance are in progress.
+
 - [ ] CPE-01 / P2: bound Control Plane maintenance SQL/lock waits and prevent
       management expiry or an unrelated healthy Session from stalling expiry
       progress. Keep lock order, fresh PG-time checks and conservative ownership.

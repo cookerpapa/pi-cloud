@@ -39,10 +39,12 @@ export async function requestExecutionStreamSeal(
     .innerJoin("sessions as session", "session.id", "run.session_id")
     .select([
       "run.id",
+      "run.tenant_id",
+      "run.session_id",
+      "run.turn_id",
       "run.fencing_token",
       "run.output_seal_id",
       "run.lease_id",
-      "writer.writer_failed_at",
       "session.pi_session_id",
       "session.next_event_seq",
     ])
@@ -52,6 +54,37 @@ export async function requestExecutionStreamSeal(
     .where("run.session_id", "=", input.sessionId)
     .forNoKeyUpdate("run")
     .executeTakeFirstOrThrow();
+  await requestLockedExecutionStreamSeal(transaction, input, execution);
+}
+
+/** Facts read under this transaction's Run/Session locks; never cache across transactions. */
+export type LockedExecutionSeal = {
+  id: string;
+  tenant_id: string;
+  session_id: string;
+  turn_id: string;
+  fencing_token: string | null;
+  output_seal_id: string | null;
+  lease_id: string | null;
+  pi_session_id: string;
+  next_event_seq: string;
+};
+
+/** Caller retains Run/Session locks and has checked the current execution identity. */
+export async function requestLockedExecutionStreamSeal(
+  transaction: Transaction<Database>,
+  input: RequestExecutionStreamSealInput,
+  execution: LockedExecutionSeal,
+): Promise<void> {
+  if (
+    execution.id !== input.runId ||
+    execution.tenant_id !== input.tenantId ||
+    execution.session_id !== input.sessionId ||
+    execution.turn_id !== input.turnId ||
+    execution.lease_id === null ||
+    execution.fencing_token === null
+  )
+    throw new Error("Locked seal identity does not match request");
   if (execution.output_seal_id !== null) return;
   await transaction
     .updateTable("session_leases")

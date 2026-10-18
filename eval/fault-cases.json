@@ -237,7 +237,7 @@
       "id": "lease-sweep-independent-of-retirement",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/control-plane-runtime.test.ts",
-      "test": "keeps sweeping while remote retirement stalls and drains both loops without overlap",
+      "test": "keeps sweeping while management and remote retirement stall and drains without overlap",
       "invariant": "A stalled remote stop cannot stall lease scanning; drain prevents another cleanup claim."
     },
     {
@@ -2115,6 +2115,69 @@
       "file": "test/checkout-budget.postgres.test.ts",
       "test": "bounds connection establishment when the peer accepts TCP but never answers",
       "invariant": "Unresponsive establishment cannot indefinitely consume lease I/O capacity."
+    },
+    {
+      "id": "expiry-busy-page",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/control-plane-expiry.postgres.test.ts",
+      "test": "pages past an entire busy batch and revisits it after unlock",
+      "invariant": "Busy candidates cannot monopolize bounded expiry admission; rollback releases prior locks."
+    },
+    {
+      "id": "expiry-management-isolation",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/control-plane-expiry.postgres.test.ts",
+      "test": "skips a locked management Host while unrelated Session expiry progresses",
+      "invariant": "Management contention cannot prevent independent Session expiry."
+    },
+    {
+      "id": "expiry-pending-seals",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/control-plane-expiry.postgres.test.ts",
+      "test": "admits the eleventh Worker without releasing ten pending seals",
+      "invariant": "Pending closure retains authority evidence without monopolizing the expiry window."
+    },
+    {
+      "id": "expiry-duplicate-admission",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/control-plane-expiry.postgres.test.ts",
+      "test": "reconciles duplicate scans and restart against one durable seal",
+      "invariant": "Concurrent controllers and restart preserve one seal request and ordered takeover."
+    },
+    {
+      "id": "expiry-failed-live-worker",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/control-plane-expiry.postgres.test.ts",
+      "test": "retires a failed connected Worker through durable admission after controller restart",
+      "invariant": "Connection liveness cannot suppress failed Worker retirement or revive its Boot."
+    },
+    {
+      "id": "expiry-failed-host-page",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/control-plane-expiry.postgres.test.ts",
+      "test": "rotates failed-Worker admission past a locked Host",
+      "invariant": "A locked failed Boot does not starve another failed Worker retirement."
+    },
+    {
+      "id": "expiry-seal-commit-loss",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/control-plane-expiry.postgres.test.ts",
+      "test": "recovers a lost seal COMMIT reply from durable state",
+      "invariant": "Uncertain seal admission is reread from PG without duplicate publication intent."
+    },
+    {
+      "id": "expiry-retirement-commit-loss",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/control-plane-expiry.postgres.test.ts",
+      "test": "recovers a lost retirement COMMIT reply from durable state",
+      "invariant": "Uncertain retirement admission preserves the durable Boot target and unique record."
+    },
+    {
+      "id": "expiry-bounded-pg",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/control-plane-expiry.postgres.test.ts",
+      "test": "evicts a stalled maintenance query and releases its PG locks",
+      "invariant": "Short maintenance I/O cannot keep a timed-out PG socket or transaction alive."
     }
   ]
 }

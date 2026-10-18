@@ -208,6 +208,13 @@ is insufficient. This avoids routing authority cleanup through PgBouncer.
 checkout budgets at five seconds each, including renewal COMMIT. These isolate
 lease I/O from history/claim work and are not product quotas.
 
+Control Plane short expiry/retirement-admission operations use a separate
+three-connection pool on that same direct notification URL, with five-second
+acquisition and checkout budgets (ADR-0259). Session, connection and failed-Worker
+scans each process up to 100 candidates per iteration and rotate past busy rows.
+These are maintenance work budgets; they do not limit the number of Sessions or
+Workers. Remote stop/inventory keeps its existing request/claim limits.
+
 The shared database adapter retains at most 128 named, parameterized SELECT/WITH
 statements per physical connection and keeps up to two already-created connections
 warm within each pool's existing maximum. Excess connections still retire after

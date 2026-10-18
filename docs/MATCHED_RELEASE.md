@@ -110,8 +110,12 @@ configured web port. A Linux-only HTTP 200 does not establish Windows access.
 ## Acceptance and fixture restoration
 
 ADR-0258 requires `familyLeaseDeferrals` in private heartbeat acknowledgements;
-Worker and Control Plane must be replaced together. Schema 189, execution-topic
-v17, reply v3, guest 7, completion 3, preview 2 and Cube management 7 remain.
+Worker and Control Plane must be replaced together. ADR-0259 requires schema 190
+for the internal `worker_failed` connection/retirement reason and scan indexes.
+Execution-topic v17, reply v3, guest 7, completion 3, preview 2 and Cube management 7 remain.
+Expiry acceptance includes busy-candidate pagination, live failed-Worker retirement,
+PG checkout/COMMIT failures and SQL costs independent of healthy siblings. Pending
+seals must retain ownership without occupying subsequent expiry admission batches.
 Required source evidence includes pending local-deadline expiration, real-PG
 lock isolation, pool/transport/COMMIT timeout cleanup and local-first revocation.
 Run native-input/Stop/Worker and dual-process recovery, browser/images, full Cube
@@ -278,7 +282,7 @@ source/artifact identities, outcomes and evidence scope in the release report.
 A test/preflight is not a newly deployed release, and readiness is not a completed
 [private pilot](PRIVATE_PILOT.md).
 
-Current schema 189 retains the `expired` management-connection state and matching
+Current schema 190 retains the `expired` management-connection state and matching
 Worker admission behavior. ADR-0249 introduced execution Topic v17; the current
 matched set uses guest/Tool Worker 7, boot reply v3, completion 3, preview 2 and
 Cube management 7. ADR-0258 adds the required private heartbeat deferral array.

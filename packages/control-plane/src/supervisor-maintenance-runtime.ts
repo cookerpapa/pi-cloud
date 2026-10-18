@@ -1,5 +1,6 @@
 import type {
   SupervisorExpirySweepResult,
+  SupervisorConnectionSweepResult,
   SupervisorRetirementWorkResult,
 } from "./supervisor-connection-manager.ts";
 
@@ -7,27 +8,27 @@ const DEFAULT_FAILURE_POLL_MS = 1_000;
 const DEFAULT_MAINTENANCE_INTERVAL_MS = 1_000;
 const DEFAULT_MAINTENANCE_CONNECTION_LIMIT = 100;
 const DEFAULT_MAINTENANCE_RETIREMENT_LIMIT = 10;
-const DEFAULT_MAINTENANCE_LEASE_LIMIT = 10;
+const DEFAULT_MAINTENANCE_LEASE_LIMIT = 100;
 
 export interface SupervisorMaintenanceRunner {
-  sweepExpiredExecutions(options?: {
-    connectionLimit?: number;
-    leaseLimit?: number;
-  }): Promise<SupervisorExpirySweepResult>;
+  sweepExpiredExecutions(limit?: number): Promise<SupervisorExpirySweepResult>;
+  expireConnections(limit?: number): Promise<SupervisorConnectionSweepResult>;
+  admitFailedWorkers(limit?: number): Promise<number>;
   processNextRetirement(): Promise<SupervisorRetirementWorkResult>;
 }
 
 export type SupervisorMaintenanceActivity =
   | {
       type: "maintenance.completed";
-      scannedConnections: number;
-      expiredConnections: number;
+      scannedSessions: number;
       expiredAssignments: number;
     }
+  | { type: "connections.completed"; scannedConnections: number; expiredConnections: number }
+  | { type: "failed_workers.admitted"; count: number }
   | { type: "retirement.completed"; kind: Exclude<SupervisorRetirementWorkResult["kind"], "idle"> }
   | {
       type: "runtime.failure";
-      component: "maintenance" | "retirement";
+      component: "maintenance" | "management" | "retirement";
       code: string;
       retryable: boolean;
     };
@@ -138,6 +139,7 @@ export class SupervisorMaintenanceRuntime {
     this.#controller = new AbortController();
     this.#runPromise = Promise.all([
       this.#run(this.#controller.signal, "maintenance"),
+      this.#run(this.#controller.signal, "management"),
       this.#run(this.#controller.signal, "retirement"),
     ]).then(() => {
       this.#state = "stopped";
@@ -159,7 +161,10 @@ export class SupervisorMaintenanceRuntime {
     await this.#runPromise;
   }
 
-  async #run(signal: AbortSignal, component: "maintenance" | "retirement"): Promise<void> {
+  async #run(
+    signal: AbortSignal,
+    component: "maintenance" | "management" | "retirement",
+  ): Promise<void> {
     // Give healthy Workers one reconnect interval after a Control Plane
     // process replacement before examining the previous instance's channels.
     await abortableWait(this.#maintenanceIntervalMs, signal);
@@ -167,16 +172,33 @@ export class SupervisorMaintenanceRuntime {
       let delayMs = this.#maintenanceIntervalMs;
       try {
         if (component === "maintenance") {
-          const result = await this.#maintenanceRunner.sweepExpiredExecutions({
-            connectionLimit: this.#maintenanceConnectionLimit,
-            leaseLimit: this.#maintenanceLeaseLimit,
-          });
+          const result = await this.#maintenanceRunner.sweepExpiredExecutions(
+            this.#maintenanceLeaseLimit,
+          );
           this.#observe({
             type: "maintenance.completed",
-            scannedConnections: result.connections.scannedConnections,
-            expiredConnections: result.connections.expiredConnections,
+            scannedSessions: result.scannedSessions,
             expiredAssignments: result.expiredAssignments,
           });
+        } else if (component === "management") {
+          // Both scans advance even when the other fails; neither blocks Session expiry.
+          const [connections, failed] = await Promise.allSettled([
+            this.#maintenanceRunner.expireConnections(this.#maintenanceConnectionLimit),
+            this.#maintenanceRunner.admitFailedWorkers(this.#maintenanceConnectionLimit),
+          ]);
+          if (connections.status === "fulfilled")
+            this.#observe({
+              type: "connections.completed",
+              scannedConnections: connections.value.scannedConnections,
+              expiredConnections: connections.value.expiredConnections,
+            });
+          if (failed.status === "fulfilled")
+            this.#observe({ type: "failed_workers.admitted", count: failed.value });
+          for (const outcome of [connections, failed])
+            if (outcome.status === "rejected") {
+              this.#observe({ type: "runtime.failure", component, ...safeFailure(outcome.reason) });
+              delayMs = this.#failurePollMs;
+            }
         } else {
           // One remote retirement at a time, independently of PG lease scans.
           // The existing durable claim and management-client deadline own retries.

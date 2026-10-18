@@ -10,7 +10,7 @@ import {
   type ExecutionAdmissionFacts,
 } from "@pi-cloud/runtime-core/run-executor";
 import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
-import { AssignmentReconciler } from "../src/assignment-reconciler.ts";
+import { SessionExpiryReconciler } from "../src/session-expiry-reconciler.ts";
 import { PostgresWorkspaceRuntimeStateRepository } from "@pi-cloud/sandbox-control";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
@@ -258,25 +258,10 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
       f.coordinator.assertCurrentGrant(f.request, { executionReference: f.reference }),
     ).rejects.toThrow();
   });
-  it("uses PG expiry for retirement, independent of the reaper clock", async () => {
+  it("uses PG expiry for retirement without an application clock", async () => {
     const f = await fixture();
-    const reaper = (skew: number) =>
-      new AssignmentReconciler({
-        database: db,
-        workerId: f.workerId,
-        clock: () => new Date(Date.now() + skew),
-        inventory: {
-          listAssignments: async () => {
-            throw new Error("No physical retirement");
-          },
-          terminateAndConfirmAbsent: async () => {
-            throw new Error("No Tool replay or kill");
-          },
-        },
-      });
-    expect(await reaper(3600000).retireExpiredAssignments()).toMatchObject({
-      settledAssignments: 0,
-    });
+    const reaper = new SessionExpiryReconciler(db);
+    expect(await reaper.sweep()).toMatchObject({ expiredAssignments: 0 });
     await db
       .updateTable("session_leases")
       .set({
@@ -285,8 +270,8 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
       })
       .where("lease_id", "=", f.lease.lease_id)
       .execute();
-    expect(await reaper(-3600000).retireExpiredAssignments()).toMatchObject({
-      settledAssignments: 1,
+    expect(await reaper.sweep()).toMatchObject({
+      expiredAssignments: 1,
     });
     expect(
       (await f.coordinator.renewFromHeartbeat(f.heartbeat)).payload.familyLeaseRenewals,
@@ -311,7 +296,7 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
       written.resolve();
       await commit.promise;
     });
-    let retirement: ReturnType<AssignmentReconciler["retireExpiredAssignments"]> | undefined;
+    let retirement: ReturnType<SessionExpiryReconciler["sweep"]> | undefined;
     try {
       await written.promise;
       await vi.waitFor(
@@ -321,32 +306,15 @@ describe.skipIf(!endpoint)("PostgreSQL authority decision time", () => {
           ),
         { timeout: 3000, interval: 20 },
       );
-      const reaper = new AssignmentReconciler({
-        database: db,
-        workerId: f.workerId,
-        inventory: {
-          listAssignments: async () => {
-            throw new Error("Not a physical retirement");
-          },
-          terminateAndConfirmAbsent: async () => {
-            throw new Error("Not a physical retirement");
-          },
-        },
-      });
-      retirement = reaper.retireExpiredAssignments();
-      await vi.waitFor(async () => {
-        const r = await sql<{
-          n: number;
-        }>`select count(*)::int as n from pg_stat_activity where application_name=${name} and wait_event_type='Lock'`.execute(
-          db,
-        );
-        expect(r.rows[0]!.n).toBeGreaterThan(0);
-      });
+      const reaper = new SessionExpiryReconciler(db);
+      retirement = reaper.sweep();
+      expect(await retirement).toMatchObject({ expiredAssignments: 0 });
     } finally {
       commit.resolve();
       await renewal;
     }
-    expect(await retirement).toMatchObject({ settledAssignments: 0 });
+    expect(await retirement).toMatchObject({ expiredAssignments: 0 });
+    expect(await new SessionExpiryReconciler(db).sweep()).toMatchObject({ expiredAssignments: 0 });
     await f.coordinator.assertCurrentGrant(f.request, { executionReference: f.reference });
   });
   it("issues a fresh owner after a Session lock wait without a task startup timeout", async () => {

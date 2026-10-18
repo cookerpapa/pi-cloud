@@ -83,6 +83,7 @@ export async function startControlPlane(): Promise<void> {
   const config = await loadProductionControlPlaneConfig();
   let ownedObservability: Awaited<ReturnType<typeof startServiceObservability>> | undefined;
   let ownedDatabase: ReturnType<typeof createDatabase> | undefined;
+  let ownedMaintenanceDatabase: ReturnType<typeof createDatabase> | undefined;
   let unattachedSubagents: SubagentController | undefined;
   let unattachedControlTools: ControlToolDispatcher | undefined;
   const controlPlaneInstanceId = randomUUID();
@@ -118,6 +119,7 @@ export async function startControlPlane(): Promise<void> {
       () => sourceControlDispatcher?.close(),
       () => internalSourceControlDispatcher?.close(),
       () => images?.blobs.close(),
+      () => ownedMaintenanceDatabase?.destroy(),
       () => ownedDatabase?.destroy(),
       () => ownedObservability?.close(),
     ]));
@@ -130,6 +132,12 @@ export async function startControlPlane(): Promise<void> {
     ownedObservability = observability;
     const database = createDatabase({ connectionString: config.databaseUrl, maxConnections: 12 });
     ownedDatabase = database;
+    const maintenanceDatabase = createDatabase({
+      connectionString: config.databaseNotificationUrl,
+      maxConnections: 3,
+      checkoutTimeoutMs: 5_000,
+    });
+    ownedMaintenanceDatabase = maintenanceDatabase;
     images = await configuredImageAttachments(database);
     if (images) {
       await images.blobs.checkHealth();
@@ -493,6 +501,7 @@ export async function startControlPlane(): Promise<void> {
       developmentEnvironmentService,
       sshAccessTicketService,
       supervisorAuthorizer: new PostgresSupervisorCredentialAuthorizer({ database }),
+      connectionManager: { maintenanceDatabase },
       supervisorOwnerBoundary: new RoutedHttpSupervisorOwnerBoundary(resolveManagementClient),
       assignmentInventoryFactory: (identity) =>
         new RoutedHttpSandboxAssignmentInventory(resolveManagementClient, identity),

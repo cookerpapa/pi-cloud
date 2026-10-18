@@ -356,18 +356,32 @@ both renewal and deferral arrays means rejection. The ordinary 60-second lease,
 These changes require matched Worker/Control Plane heartbeat schemas; they do
 not create a second lease or release ownership before the ordered seal.
 
-Control Plane expiry sweeps and remote Worker retirement run in independent,
-non-overlapping loops. Retirement uses one concurrent claim and the existing
-bounded management requests/retries; slow remote cleanup cannot delay the next
-lease sweep. The initial expiry query takes one PG-time cutoff, and final
-decisions still recheck authority after locks. The one-second interval is a
-delay between completed scans, not a one-second failure-detection guarantee.
+Under [ADR-0259](adr/0259-control-plane-expiry-progress.md), Session expiry,
+management maintenance and remote Worker retirement advance in independent,
+non-overlapping loops. Management checks connection expiry and failed-Worker
+admission independently; connection liveness cannot suppress durable failure.
+Short maintenance SQL uses a dedicated three-connection direct-PG pool with
+five-second acquisition and checkout budgets. Remote retirement retains its
+existing claim/HTTP budgets and ordinary reconciliation transactions.
 
-The [Control Plane expiry review](reports/control-plane-expiry-review-20261018.md)
-identifies remaining scanner-side gaps: ordinary PG waits are not bounded like
-ADR-0258's Worker pool; pending seals can monopolize a larger fleet's candidate
-window; and failed Workers with live connections can miss retirement admission.
-These are recorded for repair, not changed by the review.
+Expiry selects current Session scopes directly, excluding already-requested seals,
+and pages by lease UUID. Connection and failed-Worker scans similarly page by
+their immutable IDs. Disposable cursors advance past busy candidates and wrap;
+they confer no authority. Each candidate preserves lifecycle lock order, uses
+NOWAIT and rolls back earlier locks on contention. Fresh PG time and the exact
+identity are checked after locking. The default 100-Session batch replaces the
+former ten-Worker-by-ten-family window; it is a work budget, not a product quota.
+The one-second delay follows completed scans, not a detection-time guarantee.
+
+Failed Workers without retirement are admitted under Host/Worker/connection locks
+with the existing Boot identity and `worker_failed` reason. Connection fencing
+and idempotent retirement insertion commit together. Normal completion and ordered
+seal projection own physical lease release; expiry no longer visits unrelated
+healthy leases. Seal/scope updates reuse transaction-local locked facts, retaining
+unsealed ownership and successor fencing. The
+[review](reports/control-plane-expiry-review-20261018.md) records the earlier
+defects; [delivery](reports/control-plane-expiry-repair-20261018.md) tracks verification
+and deployment separately from this source implementation.
 
 Under [ADR-0248](adr/0248-idle-worker-management-reconnect.md), management connection
 expiry is recorded as `expired`. An authorized idle Boot with no unreleased Session

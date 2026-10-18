@@ -11,6 +11,12 @@ This review changes no runtime/deployment. Repairs remain open in BACKLOG;
 Kafka seal publication, physical cleanup and successor bootstrap remain the next
 walkthrough hop, rather than being treated as reviewed end to end here.
 
+The owner approved [ADR-0259](adr/0259-control-plane-expiry-progress.md):
+
+- [ ] Independent bounded maintenance, paged Session expiry and failed Worker admission.
+- [ ] Remove unrelated healthy-owner work and duplicate locked reads.
+- [ ] Concurrency/failure/SQL regressions, required gates and matched live release.
+
 ## Worker → PostgreSQL Session lease review
 
 - [x] Review production direct renewal, shared observer, monotonic lifetime,

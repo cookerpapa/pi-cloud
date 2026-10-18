@@ -222,6 +222,12 @@ describe.sequential("remote control-plane runtime composition", () => {
     let maximumActive = 0;
     const runtime = new SupervisorMaintenanceRuntime({
       maintenanceRunner: {
+        async expireConnections() {
+          return { scannedConnections: 0, expiredConnections: 0, expiredConnectionIds: [] };
+        },
+        async admitFailedWorkers() {
+          return 0;
+        },
         async processNextRetirement() {
           return { kind: "idle" };
         },
@@ -235,11 +241,7 @@ describe.sequential("remote control-plane runtime composition", () => {
             throw { code: "maintenance_probe_failed", retryable: true, secret: TOKEN };
           }
           return {
-            connections: {
-              scannedConnections: 0,
-              expiredConnections: 0,
-              expiredConnectionIds: [],
-            },
+            scannedSessions: 0,
             expiredAssignments: 0,
           };
         },
@@ -269,15 +271,14 @@ describe.sequential("remote control-plane runtime composition", () => {
         {
           type: "maintenance.completed",
           expiredAssignments: 0,
-          scannedConnections: 0,
-          expiredConnections: 0,
+          scannedSessions: 0,
         },
       ]),
     );
     expect(JSON.stringify(activities)).not.toContain(TOKEN);
   });
 
-  it("keeps sweeping while remote retirement stalls and drains both loops without overlap", async () => {
+  it("keeps sweeping while management and remote retirement stall and drains without overlap", async () => {
     const activities: SupervisorMaintenanceActivity[] = [];
     let release!: () => void;
     const blocked = new Promise<void>((resolve) => (release = resolve));
@@ -285,10 +286,18 @@ describe.sequential("remote control-plane runtime composition", () => {
     let retirements = 0;
     const runtime = new SupervisorMaintenanceRuntime({
       maintenanceRunner: {
+        async expireConnections() {
+          await blocked;
+          return { scannedConnections: 0, expiredConnections: 0, expiredConnectionIds: [] };
+        },
+        async admitFailedWorkers() {
+          await blocked;
+          return 0;
+        },
         async sweepExpiredExecutions() {
           scans++;
           return {
-            connections: { scannedConnections: 0, expiredConnections: 0, expiredConnectionIds: [] },
+            scannedSessions: 1,
             expiredAssignments: 1,
           };
         },

@@ -53,8 +53,9 @@ export type TurnInputKind = "prompt";
 export type TurnControlRequestKind = "cancel" | "steer" | "queue";
 export type TurnControlRequestState = DomainTurnControlRequestState;
 export type SupervisorConnectionState = "active" | "superseded" | "expired" | "fenced";
-export type SupervisorConnectionCloseReason = "reconnected" | "heartbeat_timeout" | "new_boot";
-export type WorkerRetirementReason = "heartbeat_timeout" | "new_boot";
+export type SupervisorConnectionCloseReason =
+  "reconnected" | "heartbeat_timeout" | "new_boot" | "worker_failed";
+export type WorkerRetirementReason = "heartbeat_timeout" | "new_boot" | "worker_failed";
 export type WorkerRetirementState = "pending" | "claimed" | "blocked" | "completed";
 export type TenantApiCredentialRole = "owner" | "member" | "viewer";
 export type WorkspaceSeedKind = "empty" | "sample_java";

@@ -17,10 +17,8 @@ import { confirmStoppedWorkerExecutions } from "@pi-cloud/runtime-core/quarantin
 import { createHash } from "node:crypto";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { databaseTime } from "@pi-cloud/database";
-import type {
-  WorkerRetirementResult,
-  AssignmentReconciliationResult,
-} from "./assignment-reconciler.ts";
+import { maintenanceLockBusy, SessionExpiryReconciler } from "./session-expiry-reconciler.ts";
+import type { WorkerRetirementResult } from "./assignment-reconciler.ts";
 import {
   SessionLeaseCoordinator,
   SessionLeaseCoordinatorError,
@@ -36,7 +34,6 @@ const DEFAULT_LEASE_DURATION_MS = 60_000;
 const DEFAULT_RETIREMENT_RETRY_DELAY_MS = 5_000;
 const DEFAULT_RETIREMENT_CLAIM_DURATION_MS = 120_000;
 const DEFAULT_SWEEP_LIMIT = 100;
-const DEFAULT_RETIREMENT_LIMIT = 10;
 
 export type SupervisorTransportAuthority = {
   supervisorId: string;
@@ -61,12 +58,12 @@ export interface SupervisorOwnerBoundary {
 
 export interface SupervisorAssignmentRetirer {
   retireWorker(): Promise<WorkerRetirementResult>;
-  retireExpiredAssignments(limit?: number): Promise<AssignmentReconciliationResult>;
   retireFencedWorker?(): Promise<WorkerRetirementResult>;
 }
 
 export type SupervisorConnectionManagerOptions = {
   database: Kysely<Database>;
+  maintenanceDatabase?: Kysely<Database>;
   controlPlaneInstanceId: string;
   ownerBoundary: SupervisorOwnerBoundary;
   assignmentRetirerFactory: (identity: SupervisorBootIdentity) => SupervisorAssignmentRetirer;
@@ -105,8 +102,8 @@ export type SupervisorRetirementWorkResult =
     };
 
 export type SupervisorExpirySweepResult = {
-  connections: SupervisorConnectionSweepResult;
   expiredAssignments: number;
+  scannedSessions: number;
 };
 
 export class SupervisorConnectionManagerError extends Error {
@@ -246,6 +243,10 @@ function expectOne(updatedRows: bigint, description: string): void {
 
 export class SupervisorConnectionManager {
   readonly #database: Kysely<Database>;
+  readonly #maintenanceDatabase: Kysely<Database>;
+  readonly #expiry: SessionExpiryReconciler;
+  #connectionCursor: string | undefined;
+  #failedWorkerCursor: string | undefined;
   readonly #controlPlaneInstanceId: string;
   readonly #ownerBoundary: SupervisorOwnerBoundary;
   readonly #assignmentRetirerFactory: (
@@ -269,6 +270,8 @@ export class SupervisorConnectionManager {
 
   constructor(options: SupervisorConnectionManagerOptions) {
     this.#database = options.database;
+    this.#maintenanceDatabase = options.maintenanceDatabase ?? options.database;
+    this.#expiry = new SessionExpiryReconciler(this.#maintenanceDatabase);
     this.#controlPlaneInstanceId = requireUuid(
       options.controlPlaneInstanceId,
       "controlPlaneInstanceId",
@@ -754,25 +757,103 @@ export class SupervisorConnectionManager {
 
   async expireConnections(limit = DEFAULT_SWEEP_LIMIT): Promise<SupervisorConnectionSweepResult> {
     const boundedLimit = positiveInteger(limit, "limit");
-    const candidates = await this.#database
+    const candidates = await this.#maintenanceDatabase
       .selectFrom("supervisor_connections")
-      .select(["connection_id"])
+      .select(["connection_id", "worker_id", "supervisor_id"])
       .where("state", "=", "active")
-      .where("expires_at", "<=", sql<Date>`clock_timestamp()`)
-      .orderBy("expires_at", "asc")
-      .orderBy("connection_id", "asc")
+      .where("expires_at", "<=", sql<Date>`(select clock_timestamp())`)
+      .$if(this.#connectionCursor !== undefined, (q) =>
+        q.where("connection_id", ">", this.#connectionCursor!),
+      )
+      .orderBy("connection_id")
       .limit(boundedLimit)
       .execute();
     const expiredConnectionIds: string[] = [];
     for (const candidate of candidates) {
-      const expired = await this.#expireConnection(candidate.connection_id);
-      if (expired) expiredConnectionIds.push(candidate.connection_id);
+      this.#connectionCursor = candidate.connection_id;
+      try {
+        if (await this.#expireConnection(candidate))
+          expiredConnectionIds.push(candidate.connection_id);
+      } catch (error) {
+        if (!maintenanceLockBusy(error)) throw error;
+      }
     }
+    if (candidates.length < boundedLimit) this.#connectionCursor = undefined;
     return {
       scannedConnections: candidates.length,
       expiredConnections: expiredConnectionIds.length,
       expiredConnectionIds,
     };
+  }
+
+  async admitFailedWorkers(limit = DEFAULT_SWEEP_LIMIT): Promise<number> {
+    const boundedLimit = positiveInteger(limit, "limit");
+    const candidates = await this.#maintenanceDatabase
+      .selectFrom("workers as worker")
+      .select(["worker.id", "worker.supervisor_id", "worker.boot_id"])
+      .where("worker.state", "=", "failed")
+      .where((eb) =>
+        eb.not(
+          eb.exists(
+            eb
+              .selectFrom("worker_retirements as retirement")
+              .select("retirement.worker_id")
+              .whereRef("retirement.worker_id", "=", "worker.id"),
+          ),
+        ),
+      )
+      .$if(this.#failedWorkerCursor !== undefined, (q) =>
+        q.where("worker.id", ">", this.#failedWorkerCursor!),
+      )
+      .orderBy("worker.id")
+      .limit(boundedLimit)
+      .execute();
+    let admitted = 0;
+    for (const candidate of candidates) {
+      this.#failedWorkerCursor = candidate.id;
+      try {
+        admitted += await this.#maintenanceDatabase.transaction().execute(async (tx) => {
+          await this.#lockHost(tx, candidate.supervisor_id, true);
+          const worker = await tx
+            .selectFrom("workers")
+            .select(["id", "supervisor_id", "boot_id", "state", "max_concurrent_sessions"])
+            .where("id", "=", candidate.id)
+            .forUpdate()
+            .noWait()
+            .executeTakeFirst();
+          if (
+            !worker ||
+            worker.state !== "failed" ||
+            worker.boot_id !== candidate.boot_id ||
+            worker.supervisor_id !== candidate.supervisor_id
+          )
+            return 0;
+          if (
+            await tx
+              .selectFrom("worker_retirements")
+              .select("worker_id")
+              .where("worker_id", "=", worker.id)
+              .executeTakeFirst()
+          )
+            return 0;
+          await tx
+            .selectFrom("supervisor_connections")
+            .select("connection_id")
+            .where("worker_id", "=", worker.id)
+            .where("state", "=", "active")
+            .orderBy("connection_id")
+            .forUpdate()
+            .noWait()
+            .execute();
+          await this.#fenceSandbox(tx, worker, "worker_failed", await databaseTime(tx));
+          return 1;
+        });
+      } catch (error) {
+        if (!maintenanceLockBusy(error)) throw error;
+      }
+    }
+    if (candidates.length < boundedLimit) this.#failedWorkerCursor = undefined;
+    return admitted;
   }
 
   async processNextRetirement(): Promise<SupervisorRetirementWorkResult> {
@@ -827,44 +908,8 @@ export class SupervisorConnectionManager {
     }
   }
 
-  async sweepExpiredExecutions(
-    options: {
-      connectionLimit?: number;
-      leaseLimit?: number;
-    } = {},
-  ): Promise<SupervisorExpirySweepResult> {
-    const leaseLimit = positiveInteger(
-      options.leaseLimit ?? DEFAULT_RETIREMENT_LIMIT,
-      "leaseLimit",
-    );
-    const connections = await this.expireConnections(
-      options.connectionLimit ?? DEFAULT_SWEEP_LIMIT,
-    );
-    const expired = await this.#database
-      .selectFrom("session_leases as lease")
-      .innerJoin("workers as worker", "worker.id", "lease.worker_id")
-      .select([
-        "worker.id as sandboxId",
-        "worker.supervisor_id as supervisorId",
-        "worker.boot_id as bootId",
-      ])
-      .select((eb) => eb.fn.min<Date>("lease.valid_until").as("oldest"))
-      // One database-time cutoff per sweep; the scalar InitPlan also permits
-      // an indexed range condition instead of a per-row volatile comparison.
-      .where("lease.valid_until", "<=", sql<Date>`(select clock_timestamp())`)
-      .where("worker.state", "=", "ready")
-      .where("lease.released_at", "is", null)
-      .groupBy(["worker.id", "worker.supervisor_id", "worker.boot_id"])
-      .orderBy("oldest")
-      .limit(leaseLimit)
-      .execute();
-    let expiredAssignments = 0;
-    for (const worker of expired) {
-      const result =
-        await this.#assignmentRetirerFactory(worker).retireExpiredAssignments(leaseLimit);
-      expiredAssignments += result.settledAssignments;
-    }
-    return { connections, expiredAssignments };
+  async sweepExpiredExecutions(limit = DEFAULT_SWEEP_LIMIT): Promise<SupervisorExpirySweepResult> {
+    return this.#expiry.sweep(limit);
   }
 
   #parseRegistration(value: unknown): SupervisorRegisterMessage {
@@ -1026,20 +1071,20 @@ export class SupervisorConnectionManager {
       .executeTakeFirst();
   }
 
-  async #expireConnection(connectionId: string): Promise<boolean> {
-    const candidate = await this.#database
-      .selectFrom("supervisor_connections")
-      .select(["worker_id", "supervisor_id"])
-      .where("connection_id", "=", connectionId)
-      .executeTakeFirst();
-    if (candidate === undefined) return false;
-    return this.#database.transaction().execute(async (transaction) => {
-      await this.#lockHost(transaction, candidate.supervisor_id);
+  async #expireConnection(candidate: {
+    connection_id: string;
+    worker_id: string;
+    supervisor_id: string;
+  }): Promise<boolean> {
+    const connectionId = candidate.connection_id;
+    return this.#maintenanceDatabase.transaction().execute(async (transaction) => {
+      await this.#lockHost(transaction, candidate.supervisor_id, true);
       const sandbox = await transaction
         .selectFrom("workers")
         .select(["id", "supervisor_id", "boot_id", "state", "max_concurrent_sessions"])
         .where("id", "=", candidate.worker_id)
         .forUpdate()
+        .noWait()
         .executeTakeFirst();
       if (sandbox === undefined) {
         throw new SupervisorConnectionManagerError(
@@ -1053,6 +1098,7 @@ export class SupervisorConnectionManager {
         .select(["state", "expires_at"])
         .where("connection_id", "=", connectionId)
         .forUpdate()
+        .noWait()
         .executeTakeFirst();
       const now = await databaseTime(transaction);
       if (
@@ -1067,12 +1113,17 @@ export class SupervisorConnectionManager {
     });
   }
 
-  async #lockHost(transaction: Transaction<Database>, supervisorId: string): Promise<void> {
+  async #lockHost(
+    transaction: Transaction<Database>,
+    supervisorId: string,
+    nonblocking = false,
+  ): Promise<void> {
     const host = await transaction
       .selectFrom("supervisor_hosts")
       .select("supervisor_id")
       .where("supervisor_id", "=", supervisorId)
       .forUpdate()
+      .$if(nonblocking, (q) => q.noWait())
       .executeTakeFirst();
     if (!host)
       throw new SupervisorConnectionManagerError(

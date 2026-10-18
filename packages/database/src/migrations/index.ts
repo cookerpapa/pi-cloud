@@ -372,6 +372,7 @@ export const migrationProvider: MigrationProvider = {
       "187_native_text_presentation": nativeTextPresentation,
       "188_session_work_and_tool_dispatch": sessionWorkAndToolDispatch,
       "189_idle_worker_reconnect": idleWorkerReconnect,
+      "190_control_plane_expiry": controlPlaneExpiry,
     };
   },
 };
@@ -385,3 +386,5 @@ import * as nativeLiveCheckpoints from "./186_native_live_checkpoints.ts";
 import * as nativeTextPresentation from "./187_native_text_presentation.ts";
 import * as sessionWorkAndToolDispatch from "./188_session_work_and_tool_dispatch.ts";
 import * as idleWorkerReconnect from "./189_idle_worker_reconnect.ts";
+
+import * as controlPlaneExpiry from "./190_control_plane_expiry.ts";

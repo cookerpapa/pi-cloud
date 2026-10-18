@@ -38,7 +38,7 @@ import {
 import { acceptedFactRetentionFloors } from "../../runtime-core/src/kafka-safe-retention.ts";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
-import { AssignmentReconciler } from "../src/assignment-reconciler.ts";
+import { SessionExpiryReconciler } from "../src/session-expiry-reconciler.ts";
 import { deletePostgresPiSessionsInTransaction } from "@pi-cloud/pi-session-postgres";
 import { ConversationReader } from "../src/conversation-reader.ts";
 import { projectionTransaction } from "../../runtime-core/src/projection-transaction.ts";
@@ -291,7 +291,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     },
   );
 
-  it("serializes the expiry sweep behind an in-flight claim and keeps its rollback queued", async () => {
+  it("skips an in-flight claim during expiry and keeps its rollback queued", async () => {
     const f = await fixture();
     const { manager } = await registerTestWorker(db, f.worker);
     const before = await f.state();
@@ -320,14 +320,13 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
         .where("state", "=", "active")
         .execute();
       sweeping = manager.expireConnections();
-      await vi.waitFor(async () =>
-        expect(
-          (
-            await sql<{ n: number }>`select count(*)::int n from pg_stat_activity
+      expect((await sweeping).expiredConnections).toBe(0);
+      expect(
+        (
+          await sql<{ n: number }>`select count(*)::int n from pg_stat_activity
         where ${pid}=any(pg_blocking_pids(pid))`.execute(db)
-          ).rows[0]!.n,
-        ).toBeGreaterThan(0),
-      );
+        ).rows[0]!.n,
+      ).toBe(0);
     } finally {
       release.resolve();
     }
@@ -2087,12 +2086,7 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       })
       .where("tenant_id", "=", f.tenant.tenantId)
       .execute();
-    const reconciler = new AssignmentReconciler({
-      database: db,
-      workerId: f.worker,
-      inventory: { listAssignments: async () => [], terminateAndConfirmAbsent: async () => {} },
-    });
-    await reconciler.retireExpiredAssignments();
+    await new SessionExpiryReconciler(db).sweep();
     expect((await f.state()).run.state).toBe("running");
     expect(await f.executor().dispatchRun(f.accepted.runId)).toEqual({ status: "idle" });
     await f.project();

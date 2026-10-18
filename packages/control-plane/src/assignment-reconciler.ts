@@ -1,17 +1,11 @@
 import type { Database } from "@pi-cloud/database";
-import {
-  releaseExecutionScope,
-  releaseIdleSessionLease,
-} from "@pi-cloud/runtime-core/session-lease-release";
-import { databaseTime, retryTransaction } from "@pi-cloud/database";
+import { releaseLockedExecutionScope } from "@pi-cloud/runtime-core/session-lease-release";
 import { transitionWorker, type WorkerState } from "@pi-cloud/domain";
 import type { SandboxAssignmentInventory, SandboxRuntimeAssignment } from "@pi-cloud/protocol";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { randomUUID } from "node:crypto";
-import { requestExecutionStreamSeal } from "@pi-cloud/runtime-core/execution-stream-seal";
+import { requestLockedExecutionStreamSeal } from "@pi-cloud/runtime-core/execution-stream-seal";
 import { createExecutionReference, parseExecutionReference } from "@pi-cloud/protocol";
-
-const DEFAULT_RECONCILIATION_LIMIT = 100;
 
 const ACTIVE_SESSION_STATES = new Set(["running", "cancelling"]);
 const ACTIVE_RUN_STATES = new Set(["running", "settling", "cancel_requested"]);
@@ -46,22 +40,14 @@ export class AssignmentReconcilerError extends Error {
   }
 }
 
-type DurableAssignment = {
+export type DurableAssignment = {
   sessionId: string;
   executionReference: string;
-  validUntil: Date;
   runId: string;
   turnId: string;
 };
 
 type Finalization = "settled" | "released" | "skipped";
-
-function positiveInteger(value: number, name: string): number {
-  if (!Number.isSafeInteger(value) || value < 1) {
-    throw new TypeError(`${name} must be a positive safe integer`);
-  }
-  return value;
-}
 
 function validDate(clock: () => Date): Date {
   const value = clock();
@@ -127,35 +113,6 @@ export class AssignmentReconciler {
     this.#workerId = options.workerId;
     this.#inventory = options.inventory;
     this.#clock = options.clock ?? (() => new Date());
-  }
-
-  /** An expired Session lease retires every task of that owner incarnation.
-   * Do not kill unrelated families on a healthy Worker; late effects meet the
-   * ordered closure. The limit counts families, never individual child tasks. */
-  async retireExpiredAssignments(
-    limit = DEFAULT_RECONCILIATION_LIMIT,
-  ): Promise<AssignmentReconciliationResult> {
-    const now = await databaseTime(this.#database),
-      result = emptyResult(0);
-    await this.#releaseIdleFamilies(now);
-    const expired = await this.#loadDurableAssignments(true);
-    const families = new Set(
-      [...new Set(expired.map((a) => parseExecutionReference(a.executionReference).leaseId))].slice(
-        0,
-        positiveInteger(limit, "limit"),
-      ),
-    );
-    const targets = expired.filter((a) =>
-      families.has(parseExecutionReference(a.executionReference).leaseId),
-    );
-    for (const target of targets) {
-      const finalized = await retryTransaction(this.#database, async (tx) => {
-        const outcome = await this.#finalizeLease(tx, target, true);
-        return outcome;
-      });
-      if (finalized !== "skipped") result.settledAssignments++;
-    }
-    return result;
   }
 
   async retireWorker(): Promise<WorkerRetirementResult> {
@@ -246,12 +203,11 @@ export class AssignmentReconciler {
     }
   }
 
-  async #loadDurableAssignments(expiredOnly = false): Promise<DurableAssignment[]> {
+  async #loadDurableAssignments(): Promise<DurableAssignment[]> {
     const grants = await this.#database
       .selectFrom("active_execution_scopes")
-      .select(["session_id", "lease_id", "run_id", "fencing_token", "valid_until", "turn_id"])
+      .select(["session_id", "lease_id", "run_id", "fencing_token", "turn_id"])
       .where("worker_id", "=", this.#workerId)
-      .where(sql<boolean>`(${!expiredOnly} or valid_until <= clock_timestamp())`)
       .orderBy("valid_until", "asc")
       .execute();
     return grants.map((grant) => ({
@@ -261,155 +217,9 @@ export class AssignmentReconciler {
         grant.run_id,
         safeInteger(grant.fencing_token, "fencing token"),
       ),
-      validUntil: new Date(grant.valid_until),
       runId: grant.run_id,
       turnId: grant.turn_id,
     }));
-  }
-
-  async #finalizeLease(
-    transaction: Transaction<Database>,
-    candidate: DurableAssignment,
-    requireExpired: boolean,
-  ): Promise<Finalization> {
-    const execution = parseExecutionReference(candidate.executionReference);
-    // Match lifecycle lock order before touching the lease. A stale candidate
-    // must not hold a new owner's lease while waiting for its Run rows.
-    const current = await transaction
-      .selectFrom("runs as run")
-      .innerJoin("sessions as session", "session.id", "run.session_id")
-      .select(["run.id", "session.tenant_id", "session.pi_session_id"])
-      .where("run.turn_id", "=", candidate.turnId)
-      .where("session.id", "=", candidate.sessionId)
-      .where("run.id", "=", candidate.runId)
-      .where("run.id", "=", execution.runId)
-      .forNoKeyUpdate(["session", "run"])
-      .executeTakeFirst();
-    if (!current) return "skipped";
-    await transaction
-      .selectFrom("pi_sessions")
-      .select("id")
-      .where("tenant_id", "=", current.tenant_id)
-      .where("id", "=", current.pi_session_id)
-      .forUpdate()
-      .executeTakeFirstOrThrow();
-    await transaction
-      .selectFrom("workers")
-      .select("id")
-      .where("id", "=", this.#workerId)
-      .forNoKeyUpdate()
-      .executeTakeFirstOrThrow();
-    await transaction
-      .selectFrom("session_leases")
-      .select("lease_id")
-      .where("lease_id", "=", execution.leaseId)
-      .forNoKeyUpdate()
-      .execute();
-    const grant = await transaction
-      .selectFrom("active_execution_scopes")
-      .select(["lease_id", "run_id", "worker_id", "fencing_token", "valid_until"])
-      .where("session_id", "=", candidate.sessionId)
-      .where(sql<boolean>`(${!requireExpired} or valid_until <= clock_timestamp())`)
-      .executeTakeFirst();
-    if (
-      grant === undefined ||
-      grant.lease_id !== execution.leaseId ||
-      grant.run_id !== execution.runId ||
-      grant.worker_id !== this.#workerId ||
-      safeInteger(grant.fencing_token, "final fencing token") !== execution.fencingToken
-    ) {
-      return "skipped";
-    }
-    const now = await databaseTime(transaction);
-
-    const session = await transaction
-      .selectFrom("sessions")
-      .select(["tenant_id", "state"])
-      .where("id", "=", candidate.sessionId)
-      .forUpdate()
-      .executeTakeFirstOrThrow();
-    const run = await transaction
-      .selectFrom("runs")
-      .select([
-        "id as runId",
-        "turn_id as turnId",
-        "state as runState",
-        "row_version as runVersion",
-      ])
-      .where("tenant_id", "=", session.tenant_id)
-      .where("session_id", "=", candidate.sessionId)
-      .where("id", "=", candidate.runId)
-      .where("turn_id", "=", candidate.turnId)
-      .forNoKeyUpdate()
-      .executeTakeFirstOrThrow();
-    if (!ACTIVE_RUN_STATES.has(run.runState)) {
-      if (ACTIVE_SESSION_STATES.has(session.state))
-        throw new AssignmentReconcilerError(
-          "assignment_invariant",
-          "Active Session has no active execution during reconciliation",
-          false,
-        );
-      await this.#deleteLease(transaction, candidate, now);
-      return "released";
-    }
-    if (!ACTIVE_SESSION_STATES.has(session.state))
-      throw new AssignmentReconcilerError(
-        "assignment_invariant",
-        "Execution and Session lifecycle are inconsistent",
-        false,
-      );
-    await requestExecutionStreamSeal(transaction, {
-      tenantId: session.tenant_id,
-      sessionId: candidate.sessionId,
-      turnId: run.turnId,
-      runId: run.runId,
-      agentId: "root",
-      recover: true,
-      now,
-      eventId: randomUUID(),
-    });
-    await this.#deleteLease(transaction, candidate, now);
-    return "settled";
-  }
-
-  async #deleteLease(
-    tx: Transaction<Database>,
-    assignment: DurableAssignment,
-    now: Date,
-  ): Promise<void> {
-    const ref = parseExecutionReference(assignment.executionReference);
-    const row = await tx
-      .selectFrom("runs")
-      .select("tenant_id")
-      .where("id", "=", assignment.runId)
-      .executeTakeFirstOrThrow();
-    await releaseExecutionScope(tx, {
-      tenantId: row.tenant_id,
-      runId: ref.runId,
-      leaseId: ref.leaseId,
-      fencingToken: ref.fencingToken,
-      now,
-    });
-  }
-
-  async #releaseIdleFamilies(now: Date): Promise<void> {
-    const leases = await this.#database
-      .selectFrom("session_leases")
-      .selectAll()
-      .where("worker_id", "=", this.#workerId)
-      .where("released_at", "is", null)
-      .execute();
-    for (const lease of leases)
-      await retryTransaction(this.#database, async (tx) => {
-        await tx
-          .selectFrom("pi_sessions")
-          .select("id")
-          .where("tenant_id", "=", lease.tenant_id)
-          .where("id", "=", lease.pi_session_id)
-          .forUpdate()
-          .executeTakeFirst();
-        await releaseIdleSessionLease(tx, lease.lease_id, now);
-      });
   }
 
   async #finalizeRetirement(
@@ -419,7 +229,12 @@ export class AssignmentReconciler {
   ): Promise<WorkerRetirementResult> {
     await this.#database.transaction().execute(async (transaction) => {
       for (const assignment of assignments) {
-        const finalized = await this.#finalizeLease(transaction, assignment, false);
+        const finalized = await reconcileExecutionScope(
+          transaction,
+          assignment,
+          this.#workerId,
+          false,
+        );
         if (finalized === "settled" || finalized === "released") {
           result.settledAssignments += 1;
         }
@@ -541,4 +356,115 @@ export class AssignmentReconciler {
       true,
     );
   }
+}
+
+/** Shared final decision for expiry and already-authorized whole-Worker retirement. */
+export async function reconcileExecutionScope(
+  transaction: Transaction<Database>,
+  candidate: DurableAssignment,
+  workerId: string,
+  requireExpired: boolean,
+): Promise<Finalization> {
+  const execution = parseExecutionReference(candidate.executionReference);
+  const current = await transaction
+    .selectFrom("runs as run")
+    .innerJoin("sessions as session", "session.id", "run.session_id")
+    .select([
+      "run.id",
+      "run.tenant_id",
+      "run.session_id",
+      "run.turn_id",
+      "run.state as run_state",
+      "run.output_seal_id",
+      "run.lease_id",
+      "run.fencing_token",
+      "session.pi_session_id",
+      "session.next_event_seq",
+      "session.state as session_state",
+    ])
+    .where("run.turn_id", "=", candidate.turnId)
+    .where("session.id", "=", candidate.sessionId)
+    .where("run.id", "=", candidate.runId)
+    .where("run.id", "=", execution.runId)
+    .forNoKeyUpdate(["session", "run"])
+    .$if(requireExpired, (q) => q.noWait())
+    .executeTakeFirst();
+  if (!current) return "skipped";
+  await transaction
+    .selectFrom("pi_sessions")
+    .select("id")
+    .where("tenant_id", "=", current.tenant_id)
+    .where("id", "=", current.pi_session_id)
+    .forUpdate()
+    .$if(requireExpired, (q) => q.noWait())
+    .executeTakeFirstOrThrow();
+  const worker = await transaction
+    .selectFrom("workers")
+    .select("state")
+    .where("id", "=", workerId)
+    .forNoKeyUpdate()
+    .$if(requireExpired, (q) => q.noWait())
+    .executeTakeFirstOrThrow();
+  if (requireExpired && worker.state !== "ready") return "skipped";
+  await transaction
+    .selectFrom("session_leases")
+    .select("lease_id")
+    .where("lease_id", "=", execution.leaseId)
+    .forNoKeyUpdate()
+    .$if(requireExpired, (q) => q.noWait())
+    .execute();
+  // Fresh PG time after every authority lock; an earlier committed renewal wins.
+  const grant = await transaction
+    .selectFrom("active_execution_scopes")
+    .select(["lease_id", "run_id", "worker_id", "fencing_token"])
+    .select(sql<Date>`clock_timestamp()`.as("decision_at"))
+    .where("session_id", "=", candidate.sessionId)
+    .where(sql<boolean>`(${!requireExpired} or valid_until <= clock_timestamp())`)
+    .executeTakeFirst();
+  if (
+    !grant ||
+    grant.lease_id !== execution.leaseId ||
+    grant.run_id !== execution.runId ||
+    grant.worker_id !== workerId ||
+    safeInteger(grant.fencing_token, "final fencing token") !== execution.fencingToken
+  )
+    return "skipped";
+  const now = grant.decision_at;
+  if (!ACTIVE_RUN_STATES.has(current.run_state)) {
+    if (ACTIVE_SESSION_STATES.has(current.session_state))
+      throw new AssignmentReconcilerError(
+        "assignment_invariant",
+        "Active Session has no active execution during reconciliation",
+        false,
+      );
+  } else {
+    if (!ACTIVE_SESSION_STATES.has(current.session_state))
+      throw new AssignmentReconcilerError(
+        "assignment_invariant",
+        "Execution and Session lifecycle are inconsistent",
+        false,
+      );
+    await requestLockedExecutionStreamSeal(
+      transaction,
+      {
+        tenantId: current.tenant_id,
+        sessionId: candidate.sessionId,
+        turnId: candidate.turnId,
+        runId: candidate.runId,
+        agentId: "root",
+        recover: true,
+        now,
+        eventId: randomUUID(),
+      },
+      current,
+    );
+  }
+  await releaseLockedExecutionScope(transaction, {
+    tenantId: current.tenant_id,
+    runId: execution.runId,
+    leaseId: execution.leaseId,
+    fencingToken: execution.fencingToken,
+    now,
+  });
+  return ACTIVE_RUN_STATES.has(current.run_state) ? "settled" : "released";
 }

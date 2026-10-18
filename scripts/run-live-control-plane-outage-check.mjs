@@ -249,7 +249,7 @@ try {
     .orderBy("name", "desc")
     .limit(1)
     .executeTakeFirstOrThrow();
-  assert.equal(schema.name, "189_idle_worker_reconnect");
+  assert.equal(schema.name, "190_control_plane_expiry");
   report.controlPlaneImage = deployment.spec.template.spec.containers[0].image;
   report.beforePods = workerPods();
   report.initialInventory = await inventory();
