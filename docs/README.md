@@ -1,5 +1,13 @@
 # Documentation map
 
+The [October 18 Projector → browser review](reports/projector-browser-review-20261018.md)
+checks canonical history/live-tail composition, SSE and browser presentation.
+117 existing tests, the real-browser gate and four isolated characterizations
+pass. It finds stale observation revisions across same-Run Worker replacement,
+count-only slow-reader buffering, obsolete commentary compaction rules and stale
+25 ms text-buffer documentation. Repair directions preserve the current
+execution/storage authorities; no runtime repair or deployment is included.
+
 The [October 18 Session publication/completion review](reports/session-publication-completion-review-20261018.md)
 rechecks direct Kafka submission and whole-Run retirement after the recent
 changes. It reproduces a missing normal-terminal replay notification and a

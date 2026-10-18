@@ -1,5 +1,16 @@
 # Implementation roadmap
 
+## Projector → browser review
+
+- [x] Review native display projection, compact tail, canonical snapshot, SSE
+      framing/proxy, browser rendering and terminal/observation precedence.
+- [x] Run 117 existing tests, the real-browser presentation gate and four isolated
+      characterizations; record [findings and repair directions](reports/projector-browser-review-20261018.md).
+
+The review changes no runtime/deployment. PBR-01/02/03 and PBR-O1 remain pending
+in the backlog: recovery observation lifetime, subscriber memory accounting,
+maintained documentation and same-message commentary compaction.
+
 ## Session publication and whole-Run completion review
 
 - [x] Recheck public Storage adoption, direct Kafka fencing/ACK, descendant-aware

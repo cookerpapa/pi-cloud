@@ -1,0 +1,44 @@
+{
+  "reviewedRevision": "5e6a381fa24dab8f4e9c6373ccc8345580fb33a8",
+  "checkedAt": "2026-10-18T05:56:03.163Z",
+  "methodology": "In-process production modules with synthetic scoped records and an in-memory socket. No real Worker crash, PG/Kafka, browser transport or heap benchmark is claimed.",
+  "characterizationsPassed": 4,
+  "facts": {
+    "writerReplacement": {
+      "newWriterAdmitted": true,
+      "oldWriterRejected": true,
+      "sameLogicalRun": true,
+      "oldActivityRevision": 100,
+      "oldExecutionRevision": 10,
+      "newActivityRevision": 1,
+      "newExecutionRevision": 1,
+      "newActivityAndExecutionDeliveredOnExistingSse": false,
+      "browserAlsoRejectsResetRevision": true,
+      "freshViewAcceptsNewActivity": true
+    },
+    "snapshotOvertakesTail": {
+      "snapshotText": "complete",
+      "subsequentSequences": [3],
+      "duplicateText": false
+    },
+    "slowReaderBudget": {
+      "queuedRecords": 128,
+      "queuedToolInputBytes": 33554432,
+      "largestEventBytes": 262514,
+      "resyncRequested": false,
+      "recordLimit": 1024,
+      "limitAtSameBodySizeBytes": 268435456,
+      "measuredHeapBytes": null
+    },
+    "commentaryCompaction": {
+      "events": 1000,
+      "textCharacters": 3000,
+      "commentarySpans": 1000,
+      "finalSpans": 1,
+      "commentaryEstimatedBytes": 336893,
+      "finalEstimatedBytes": 3337,
+      "bodyPreserved": true,
+      "estimationIncludesSpansOnly": true
+    }
+  }
+}

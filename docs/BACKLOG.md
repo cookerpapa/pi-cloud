@@ -28,6 +28,25 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## Projector → browser review
+
+The [October 18 review](reports/projector-browser-review-20261018.md) at `5e6a381f`
+records passing source/isolated-PG/browser checks and bounded reproductions.
+It does not repair or redeploy the serving runtime.
+
+- [ ] PBR-01 / P2: align disposable SSE/browser observation revisions with
+      same-Run writer replacement. Reuse ordered handoff/resync where possible;
+      retain old-scope/freshness checks and terminal precedence, including children.
+- [ ] PBR-02 / P2: bound slow-reader queued bytes as well as event count. Use
+      existing snapshot resync on overflow, release counters on every exit and
+      verify a periodically draining connection alongside a healthy viewer.
+      The review proves 32 MiB of retained Tool input, not a production OOM.
+- [ ] PBR-O1 / P3: compact adjacent commentary appends with the same explicit
+      message identity while preserving replacements, phases and message boundaries.
+- [ ] PBR-03 / P3: remove the obsolete 25 ms public-text coalescing claim from
+      maintained architecture/streaming guidance. Native commits, recovery spans
+      and browser animation are separate boundaries.
+
 ## Session publication and whole-Run completion review
 
 The [October 18 review](reports/session-publication-completion-review-20261018.md)
