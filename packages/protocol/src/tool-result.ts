@@ -1,5 +1,6 @@
-import { Type } from "typebox";
+import { Type, type TSchema } from "typebox";
 import { Value } from "typebox/value";
+import { ImageAttachmentReferenceSchema, type ImagePacked } from "./image-attachment.ts";
 
 /** PiCloud result data shared by trusted handlers and the fixed guest adapter.
  * This is a reply to an invocation, never a native lifecycle/history event. */
@@ -33,12 +34,26 @@ export class ToolResultAttachmentError extends Error {
   }
 }
 
-export const ToolResultDataSchema = Type.Unsafe<ToolResultData>(
+const textPart = Type.Object(
+  { type: Type.Literal("text"), text: Type.String() },
+  { additionalProperties: false },
+);
+const nativeImagePart = Type.Object(
+  {
+    type: Type.Literal("image"),
+    data: Type.String({ minLength: 1 }),
+    mimeType: ImageAttachmentReferenceSchema.properties.mimeType,
+  },
+  { additionalProperties: false },
+);
+const storedImagePart = Type.Object(
+  { type: Type.Literal("pi_cloud_image_v1"), attachment: ImageAttachmentReferenceSchema },
+  { additionalProperties: false },
+);
+const resultData = (imagePart: TSchema) =>
   Type.Object(
     {
-      // Attachment references replace images before transport. The attachment
-      // codec validates that representation independently of the Tool protocol.
-      content: Type.Array(Type.Unknown()),
+      content: Type.Array(Type.Union([textPart, imagePart])),
       details: Type.Optional(Type.Unknown()),
       diagnostics: Type.Optional(
         Type.Array(
@@ -58,20 +73,30 @@ export const ToolResultDataSchema = Type.Unsafe<ToolResultData>(
       ),
     },
     { additionalProperties: false },
-  ),
-);
-export const ToolResultPayloadSchema = Type.Unsafe<ToolResultPayload>(
+  );
+export const ToolResultDataSchema = Type.Unsafe<ToolResultData>(resultData(nativeImagePart));
+const payload = (result: TSchema) =>
   Type.Object(
     {
       toolCallId: Type.String({ minLength: 1 }),
       toolName: Type.String({ minLength: 1 }),
-      result: ToolResultDataSchema,
+      result,
       isError: Type.Boolean(),
     },
     { additionalProperties: false },
-  ),
+  );
+export const ToolResultPayloadSchema = Type.Unsafe<ToolResultPayload>(
+  payload(ToolResultDataSchema),
+);
+export const PackedToolResultPayloadSchema = Type.Unsafe<ImagePacked<ToolResultPayload>>(
+  payload(resultData(storedImagePart)),
 );
 export function parseToolResultPayload(value: unknown): ToolResultPayload {
   if (!Value.Check(ToolResultPayloadSchema, value)) throw new Error("Invalid Tool result payload");
   return value as ToolResultPayload;
+}
+export function parsePackedToolResultPayload(value: unknown): ImagePacked<ToolResultPayload> {
+  if (!Value.Check(PackedToolResultPayloadSchema, value))
+    throw new Error("Invalid packed Tool result payload");
+  return value as ImagePacked<ToolResultPayload>;
 }

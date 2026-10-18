@@ -88,11 +88,28 @@ describe("workflow guest request/response contract", () => {
     },
   );
   it("preserves an exact-boundary return in the guest and trusted receiver", async () => {
-    const f = await start(`return "x".repeat(${MAX_SUBAGENT_RESULT_BYTES - 2});`);
+    const f = await start(`return "x".repeat(${MAX_SUBAGENT_RESULT_BYTES});`);
     await expect(f.result).resolves.toMatchObject({
       ok: true,
-      value: "x".repeat(MAX_SUBAGENT_RESULT_BYTES - 2),
+      value: "x".repeat(MAX_SUBAGENT_RESULT_BYTES),
     });
+  });
+  it.each([`return "\\n".repeat(2000);`, `return "\\u0000".repeat(${MAX_SUBAGENT_RESULT_BYTES});`])(
+    "preserves native line/escaped-byte boundaries in the guest: %s",
+    async (script) => {
+      const f = await start(script);
+      await expect(f.result).resolves.toMatchObject({ ok: true });
+    },
+  );
+  it("rejects a line-overflow result after exactly one effect", async () => {
+    const f = await start(
+      'const fs=await import("node:fs"); fs.appendFileSync("effect-marker","once"); return "line\\n".repeat(2001);',
+    );
+    await expect(f.result).resolves.toMatchObject({
+      ok: false,
+      error: expect.stringContaining("subagent_result_too_large"),
+    });
+    expect(await readFile(join(f.cwd, "effect-marker"), "utf8")).toBe("once");
   });
   it.each([
     [

@@ -4,10 +4,10 @@ Status: implemented and validated, 2026-09-27, following owner approval of
 repository-review repairs D1, D3 and D4. This decision covers D1 only.
 See [regression, matched rollout and Luna acceptance](../reports/repository-review-followup-20260927.md).
 
-The [October 18 Pi settlement review](../reports/worker-harness-settlement-review-20261018.md)
-identifies a later integration gap: the native default truncates accepted control
-results below this budget. WHS-01 tracks the adapter correction; this decision's
-complete-result/explicit-oversize policy remains the intended contract.
+[ADR-0255](0255-native-tool-result-boundaries.md) supersedes the 256 KiB result
+budget after the owner's October 18 choice of Pi's 50 KiB/2,000-line defaults.
+The complete-result/explicit-oversize policy is retained. The original decision
+below explains the historical budget and is not a current 256 KiB mode.
 
 ## Decision
 

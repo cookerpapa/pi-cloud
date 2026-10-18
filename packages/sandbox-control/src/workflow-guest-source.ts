@@ -1,4 +1,8 @@
-import { MAX_SUBAGENT_RESULT_BYTES, SUBAGENT_RESULT_TOO_LARGE } from "@pi-cloud/protocol";
+import {
+  MAX_SUBAGENT_RESULT_BYTES,
+  MAX_SUBAGENT_RESULT_LINES,
+  SUBAGENT_RESULT_TOO_LARGE,
+} from "@pi-cloud/protocol";
 
 /** This source is sent to Cube. It is NEVER evaluated by the trusted host. */
 export function workflowGuestSource(input: {
@@ -7,7 +11,7 @@ export function workflowGuestSource(input: {
   cwd: string;
 }): string {
   return (
-    `const input=${JSON.stringify({ ...input, maximumResultBytes: MAX_SUBAGENT_RESULT_BYTES, resultTooLarge: SUBAGENT_RESULT_TOO_LARGE })};\n` +
+    `const input=${JSON.stringify({ ...input, maximumResultBytes: MAX_SUBAGENT_RESULT_BYTES, maximumResultLines: MAX_SUBAGENT_RESULT_LINES, resultTooLarge: SUBAGENT_RESULT_TOO_LARGE })};\n` +
     String.raw`
 const readline = require('node:readline');
 const fs = require('node:fs');
@@ -20,8 +24,11 @@ const send = (frame) => process.stdout.write(JSON.stringify(frame) + '\n');
 const checkedResult = (value) => {
   const text = typeof value === 'string' ? value : JSON.stringify(value ?? null);
   if (typeof text !== 'string') throw new Error('Subagent result must be JSON serializable');
-  if (Buffer.byteLength(JSON.stringify(text), 'utf8') > input.maximumResultBytes)
+  if (Buffer.byteLength(text, 'utf8') > input.maximumResultBytes)
     throw new Error(input.resultTooLarge);
+  let lines = text === '' || text.endsWith('\n') ? 0 : 1;
+  for (let at = text.indexOf('\n'); at !== -1; at = text.indexOf('\n', at + 1))
+    if (++lines > input.maximumResultLines) throw new Error(input.resultTooLarge);
   return value;
 };
 const call = (method, args) => new Promise((resolve, reject) => {

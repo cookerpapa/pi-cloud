@@ -276,8 +276,8 @@ export class SubagentController {
         }
       }
       if (call.replyMode === "hostcall") {
+        assertSubagentResultBudget(value);
         const result = { content: [], details: { executionReference: reference, value } };
-        assertSubagentResultBudget(result);
         return { result };
       }
       return {

@@ -1891,6 +1891,69 @@
       "file": "test/tool-reply-decoding.test.ts",
       "test": "preserves execution receipt but rejects a Stop delivered just before decoded return",
       "invariant": "A late microtask Stop rejects delivery without erasing already confirmed execution receipt."
+    },
+    {
+      "id": "native-coordination-json-boundary",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/native-tool-settlement.test.ts",
+      "test": "preserves a control result at the native json boundary",
+      "invariant": "Accepted structured text remains complete through native finalization at the native default limit."
+    },
+    {
+      "id": "native-coordination-escaped-boundary",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/native-tool-settlement.test.ts",
+      "test": "preserves a control result at the native escaped boundary",
+      "invariant": "Native UTF-8 budget is distinct from JSON transport escaping; the final batch remains bounded."
+    },
+    {
+      "id": "native-coordination-line-boundary",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/native-tool-settlement.test.ts",
+      "test": "preserves a control result at the native multiline boundary",
+      "invariant": "A 2000-line result including trailing LF survives native settlement without losing its final decision."
+    },
+    {
+      "id": "native-coordination-oversize",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/native-tool-settlement.test.ts",
+      "test": "settles an oversized coordination return as an error without truncating success",
+      "invariant": "Oversized coordination output is a bounded Tool error and never triggers automatic effect replay."
+    },
+    {
+      "id": "native-result-atomic-ack-recovery",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/native-tool-settlement.test.ts",
+      "test": "keeps final result, task end and live end behind one native ACK; neither recovery prefix reexecutes",
+      "invariant": "Native result/task/live settlement is atomic; recovery before or after its commit does not replay the unsafe Tool."
+    },
+    {
+      "id": "native-result-malformed-text",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/native-tool-settlement.test.ts",
+      "test": "rejects malformed final parts before known settlement: {\"type\":\"text\",\"text\":17}",
+      "invariant": "Malformed content cannot be marked as known execution settlement or enter native result processing."
+    },
+    {
+      "id": "native-sequence-without-blobs",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/native-sequence.test.ts",
+      "test": "reads cold sequence metadata without loading an image or body",
+      "invariant": "A scoped metadata sequence query works independently of image-store availability and avoids body fetches."
+    },
+    {
+      "id": "workflow-native-line-overflow",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/workflow-channels.test.ts",
+      "test": "rejects a line-overflow result after exactly one effect",
+      "invariant": "Guest and trusted receiver preserve completed effects while rejecting output beyond native line bounds."
+    },
+    {
+      "id": "guest-malformed-result-shape",
+      "workspace": "@pi-cloud/cube-completion",
+      "file": "test/adapter.test.ts",
+      "test": "returns a protocol failure for malformed guest content: {\"type\":\"text\",\"text\":17}",
+      "invariant": "A malformed guest final content shape is returned as an explicit protocol failure before image handling."
     }
   ]
 }

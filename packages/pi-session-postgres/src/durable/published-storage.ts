@@ -122,7 +122,13 @@ export class PublishedDurableStorage implements Storage {
     return this.#seq;
   }
   recordSequence(id: number): Promise<number | undefined> {
-    return this.#serial(async () => (await this.#get(id))?.seq);
+    return this.#serial(async () => {
+      const local = this.#records.get(id);
+      if (local) return local.seq;
+      if (this.#coldSeq === 0 || id >= this.#coldNextId) return undefined;
+      if (this.#readCache.has(id)) return this.#readCache.get(id)?.seq;
+      return this.#options.projection.recordSequence(id);
+    });
   }
   get bufferedWrites(): number {
     return this.#bufferedWrites;

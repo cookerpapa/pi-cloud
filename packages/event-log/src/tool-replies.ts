@@ -1,6 +1,6 @@
 import kafkaNative from "@confluentinc/kafka-javascript";
 import {
-  parseToolResultPayload,
+  parsePackedToolResultPayload,
   parseToolExecutionFailure,
   ToolExecutionFailure,
   type ToolExecutionFailureData,
@@ -71,7 +71,7 @@ export function parseWorkerReply(value: string | Buffer): WorkerReply {
   if (reply.execution) parseExecutionEvidence(reply.execution);
   return {
     ...reply,
-    result: parseToolResultPayload(reply.result) as ImagePacked<ToolResultPayload>,
+    result: parsePackedToolResultPayload(reply.result),
   };
 }
 
@@ -226,9 +226,16 @@ export class ToolReplyMailbox {
     this.#pending.delete(reply.operationId);
     pending.cleanup();
     try {
-      parseToolResultPayload(reply.result);
+      parsePackedToolResultPayload(reply.result);
     } catch {
-      pending.reject(new Error("Tool reply identity/order changed"));
+      pending.reject(
+        new ToolExecutionFailure({
+          code: "tool_reply_protocol_error",
+          effect: "unknown",
+          message:
+            "Tool completion did not match the final reply protocol; inspect effects before repeating it.",
+        }),
+      );
       return;
     }
     pending.settleExecution();

@@ -1,5 +1,10 @@
 # Current architecture decisions
 
+[ADR-0255](0255-native-tool-result-boundaries.md) records the approved settlement
+repairs: native 50 KiB/2,000-line coordination result admission, metadata-only
+sequence reads and strict native/packed Tool result shapes. It replaces the old
+256 KiB result policy without changing Pi's canonical settlement authority.
+
 [ADR-0254](0254-worker-reply-admission-and-settlement.md) records the approved
 Kafka → Worker repair plan following the owner's thin-admission decision:
 local reply health, removal of provider HEAD admission gates, same-boot volatile

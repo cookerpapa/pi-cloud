@@ -8,8 +8,16 @@
       acknowledgement/recovery and cold image-read probes. Record the
       [review and repair directions](reports/worker-harness-settlement-review-20261018.md).
 
-This is review evidence only. WHS-01/02/03 remain in the backlog; the serving
-release stays `worker-reply-b1f67dba` with no runtime or authority change.
+The owner approved [ADR-0255](adr/0255-native-tool-result-boundaries.md), choosing
+Pi's native defaults for result admission. The
+[delivery record](reports/worker-harness-settlement-repair-20261018.md) distinguishes
+source implementation from verification, matched deployment and live acceptance.
+
+- [x] S1: native 50 KiB/2,000-line coordination budget and compact supervisor metadata.
+- [x] S2: skip empty observer reads; metadata-only cold sequence lookup.
+- [x] S3: distinct strict native/packed result contracts and protocol failures.
+- [ ] S4: required source, transport and fault gates; scanned matched rollout,
+      real Luna/Cube/coordination/image recovery acceptance and physical cleanup.
 
 ## Kafka replies → Worker callback review
 

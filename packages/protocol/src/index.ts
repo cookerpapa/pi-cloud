@@ -304,6 +304,7 @@ export {
 export {
   MAX_EXECUTION_FACT_BYTES,
   MAX_SUBAGENT_RESULT_BYTES,
+  MAX_SUBAGENT_RESULT_LINES,
   SUBAGENT_RESULT_TOO_LARGE,
   assertSubagentResultBudget,
   serializeSubagentResult,

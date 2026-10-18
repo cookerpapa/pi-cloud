@@ -1,6 +1,5 @@
 // Isolated real PostgreSQL plus an in-memory blob port; no production services.
 import { randomUUID } from "node:crypto";
-import { writeFile } from "node:fs/promises";
 import { Pool } from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { sql } from "kysely";
@@ -15,15 +14,15 @@ import {
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
 import { ImageAttachmentCodec, PostgresImageAttachmentStore } from "@pi-cloud/session-attachments";
-import { PublishedDurableStorage } from "../../../packages/pi-session-postgres/src/durable/published-storage.ts";
-import { DurablePostgresProjection } from "../../../packages/pi-session-postgres/src/durable/postgres-projection.ts";
+import { PublishedDurableStorage } from "../src/durable/published-storage.ts";
+import { DurablePostgresProjection } from "../src/durable/postgres-projection.ts";
 
 let db: ReturnType<typeof createDatabase>, admin: Pool, name: string;
 beforeAll(async () => {
   const url = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
   if (!url) throw Error("Use scripts/run-with-test-postgres.mjs; production DBs are not supported");
   admin = new Pool({ connectionString: url, max: 1 });
-  name = `review_worker_harness_${randomUUID().replaceAll("-", "")}`;
+  name = `native_sequence_${randomUUID().replaceAll("-", "")}`;
   await admin.query(`create database "${name}"`);
   const endpoint = new URL(url);
   endpoint.pathname = `/${name}`;
@@ -38,7 +37,7 @@ afterAll(async () => {
   }
 });
 
-it("characterizes redundant cold result and sequence reads fetching the image body", async () => {
+it("reads cold sequence metadata without loading an image or body", async () => {
   const tenantId = randomUUID(),
     sessionId = randomUUID();
   await db.insertInto("tenants").values({ id: tenantId, slug: tenantId }).execute();
@@ -117,56 +116,29 @@ it("characterizes redundant cold result and sequence reads fetching the image bo
     expect((await submission.wait(context)).status).toBe("done");
     const result = (await root.context(context)).entries.find((e) => e.kind === "pi.tool-result")!;
     expect(result).toBeDefined();
+    const sequenceQueries = vi.spyOn(projection, "recordSequence");
     const sequence = await store.recordSequence(result.id);
+    expect(sequenceQueries).not.toHaveBeenCalled();
     await store.flush();
     const bodyQueries = vi.spyOn(projection, "get"),
       imageGets = vi.spyOn(attachments, "get");
     transferred = 0;
-    // This mirrors the two otherwise body-less Tool notifications in the Runner.
-    await store.entry(result.id, context);
-    await store.entry(result.id, context);
-    const entryReads = {
-      bodyQueries: bodyQueries.mock.calls.length,
-      imageGets: imageGets.mock.calls.length,
-      transferredBytes: transferred,
-    };
-    expect(entryReads).toEqual({
-      bodyQueries: 2,
-      imageGets: 2,
-      transferredBytes: bytes.length * 2,
-    });
-    bodyQueries.mockClear();
-    imageGets.mockClear();
-    transferred = 0;
     expect(await store.recordSequence(result.id)).toBe(sequence);
     expect(await store.recordSequence(result.id)).toBe(sequence);
-    const sequenceReads = {
-      bodyQueries: bodyQueries.mock.calls.length,
-      imageGets: imageGets.mock.calls.length,
-      transferredBytes: transferred,
-    };
-    expect(sequenceReads).toEqual(entryReads);
+    expect(bodyQueries).not.toHaveBeenCalled();
+    expect(imageGets).not.toHaveBeenCalled();
+    expect(transferred).toBe(0);
+    expect(sequenceQueries).toHaveBeenCalledTimes(2);
     unavailable = true;
-    await expect(store.recordSequence(result.id)).rejects.toThrow();
-    const { rows } =
-      await sql`select seq from pi_durable_records where tenant_id=${tenantId}::uuid and session_id=${sessionId} and id=${result.id}`.execute(
-        db,
-      );
-    expect(Number(rows[0].seq)).toBe(sequence);
-    await writeFile(
-      new URL("cold-sequence-evidence.json", import.meta.url),
-      JSON.stringify(
-        {
-          imageBytes: bytes.length,
-          entryReads,
-          sequenceReads,
-          unavailableBlobBreaksSequenceRead: true,
-          metadataStillAvailable: true,
-        },
-        null,
-        2,
-      ) + "\n",
+    await expect(store.recordSequence(result.id)).resolves.toBe(sequence);
+    expect(await store.recordSequence(1000000)).toBeUndefined();
+    expect(await store.recordSequence(0)).toBeUndefined();
+    const { rows } = await sql<{
+      seq: string;
+    }>`select seq from pi_durable_records where tenant_id=${tenantId}::uuid and session_id=${sessionId} and id=${result.id}`.execute(
+      db,
     );
+    expect(Number(rows[0]!.seq)).toBe(sequence);
   } finally {
     unavailable = false;
     await harness.close(context);

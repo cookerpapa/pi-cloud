@@ -33,10 +33,14 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 The [October 18 review](reports/worker-harness-settlement-review-20261018.md) checks
 the original Worker's result handoff into native Pi and its Storage commit.
 Atomic final settlement and unsafe recovery pass; the findings below are not
-implemented by this review and do not require a new execution/storage authority.
+implemented by the review and do not require a new execution/storage authority.
+The owner approved repairs and chose native 50 KiB/2,000-line defaults in
+[ADR-0255](adr/0255-native-tool-result-boundaries.md). Source changes and remaining
+verification/release gates are tracked in the
+[delivery record](reports/worker-harness-settlement-repair-20261018.md).
 
-- [ ] WHS-01 / P2: align the trusted control Tools' native output limits with
-      ADR-0196's 256 KiB admission contract. Accepted JSON and multiline replies
+- [ ] WHS-01 / P2: use Pi's native 50 KiB/2,000-line limits for coordination
+      result admission, superseding the 256 KiB policy. Accepted JSON and multiline replies
       must remain complete; retain explicit oversize errors, fixed Tool limits,
       native hooks and the independent display budget.
 - [ ] WHS-02 / P2: skip sequence reads for body-less committed notifications and

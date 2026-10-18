@@ -1,0 +1,70 @@
+{
+  "baseline": "7a9f92429a0b311263c35d1a0f74930c4c3fc385",
+  "probeCommit": "f1d7dbbefb68361d9821b9982c31f5c40b0c55b2",
+  "settlement": {
+    "byteLimit": {
+      "acceptedBytes": 81994,
+      "storedFirstPartBytes": 51200,
+      "invalidJson": true,
+      "isError": false,
+      "calls": 1
+    },
+    "lineLimit": {
+      "acceptedBytes": 20904,
+      "acceptedLines": 2201,
+      "retainedLines": 2000,
+      "completeDetailsStillRetained": true
+    },
+    "atomicSettlement": {
+      "oneBatch": true,
+      "noNextModelBeforeAck": true,
+      "originalExecutions": 1
+    },
+    "observer": {
+      "nativeToolEntryEvents": ["tool_execution_end", "message_end"],
+      "displayBodies": 0,
+      "currentRunnerEntryLookups": 2
+    },
+    "recovery_before": {
+      "replayed": 0,
+      "originalResultPreserved": false
+    },
+    "recovery_after": {
+      "replayed": 0,
+      "originalResultPreserved": true
+    },
+    "malformed_null": {
+      "mailboxAccepted": true,
+      "executionSettled": true,
+      "imageRestorationAccepted": true,
+      "laterPresentationRejected": true
+    },
+    "malformed_text": {
+      "mailboxAccepted": true,
+      "executionSettled": true,
+      "imageRestorationAccepted": true,
+      "laterPresentationRejected": true
+    },
+    "malformed_unexpected": {
+      "mailboxAccepted": true,
+      "executionSettled": true,
+      "imageRestorationAccepted": true,
+      "laterPresentationRejected": true
+    }
+  },
+  "coldSequence": {
+    "imageBytes": 196608,
+    "entryReads": {
+      "bodyQueries": 2,
+      "imageGets": 2,
+      "transferredBytes": 393216
+    },
+    "sequenceReads": {
+      "bodyQueries": 2,
+      "imageGets": 2,
+      "transferredBytes": 393216
+    },
+    "unavailableBlobBreaksSequenceRead": true,
+    "metadataStillAvailable": true
+  }
+}

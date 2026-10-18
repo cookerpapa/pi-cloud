@@ -140,7 +140,7 @@ const subagent: ControlToolDefinition = {
     "Script API: await runs.run(key, {task, context?, sandbox?, cwd?, tools?}); await runs.all([{key,task,...},...]);",
     "An optional tools allowlist can narrow the child's file/shell Tools; [] disables them without removing hosted search or delegation.",
     "runs.run returns {executionId,state,output,...}; runs.all returns results in input order. Return the selected result; logs are not the result.",
-    "Returned text is limited to 256 KiB after JSON encoding. Write larger data explicitly to a Workspace file and return a summary or path. A result-size error does not undo completed effects; inspect before retrying.",
+    "Returned text is limited to 50 KiB of UTF-8 text or 2000 lines, matching Pi's default Tool output budget. Oversized results return an error. Write larger data explicitly to a Workspace file and return a summary or path. A result-size error does not undo completed effects; inspect before retrying.",
     "The script also has runs.status(target), runs.wait(target), runs.cancel(target), runs.send(target,message,delivery), console and emit.",
     "Use a returned executionId or a workflow key as target. notify does not wake an idle Agent; steer targets the current task; follow_up queues later work.",
     "Do not send inherited 'start a subagent' instructions as the child's actual task. Do not replay uncertain external effects.",

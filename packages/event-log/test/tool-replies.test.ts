@@ -113,7 +113,11 @@ it("rejects progress on the final-only Kafka reply transport", async () => {
     sequence: 1,
     result: update,
   } as unknown as ToolReply);
-  await expect(pending.result).rejects.toThrow("identity/order");
+  await expect(pending.result).rejects.toMatchObject({
+    code: "tool_reply_protocol_error",
+    effect: "unknown",
+  });
+  expect(pending.executionSettled()).toBe(false);
   expect(mailbox.size).toBe(0);
 });
 

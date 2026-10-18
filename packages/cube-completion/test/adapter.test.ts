@@ -72,6 +72,24 @@ function fixture() {
   return { packet, context, adapter, put, publish, progress };
 }
 
+it.each([null, { type: "text", text: 17 }, { type: "unexpected" }])(
+  "returns a protocol failure for malformed guest content: %j",
+  async (part) => {
+    const f = fixture();
+    const output = f.packet.result!.output as {
+      response: { event: { result: { content: unknown[] } } };
+    };
+    output.response.event.result.content = [part];
+    await f.adapter.accept(f.packet);
+    expect(f.put).not.toHaveBeenCalled();
+    expect(f.publish).toHaveBeenCalledOnce();
+    expect(f.publish.mock.calls[0]![1]).toMatchObject({
+      kind: "execution_failure",
+      failure: { code: "tool_reply_protocol_error", effect: "unknown" },
+    });
+  },
+);
+
 it.each([
   ["tool_cancelled_before_start", "not_started"],
   ["tool_cancelled", "unknown"],

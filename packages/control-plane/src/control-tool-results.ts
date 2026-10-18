@@ -12,7 +12,12 @@ export function supervisorToolResult(
       : typeof value.output === "string"
         ? value.output
         : JSON.stringify(value);
-  const result: ToolResultData = { content: [{ type: "text", text }], details: value };
-  assertSubagentResultBudget(result);
-  return result;
+  assertSubagentResultBudget(text);
+  const details = Object.fromEntries(
+    Object.entries(value).filter(
+      ([key, part]) => !(["output", "replyMessage"].includes(key) && part === text),
+    ),
+  );
+  assertSubagentResultBudget(details);
+  return { content: [{ type: "text", text }], details };
 }

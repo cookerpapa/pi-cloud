@@ -1062,15 +1062,16 @@ the outer Tool Result. Its `runs.*` duplex host-call channel is unchanged. Varia
 call stacks are not recovery checkpoints. Preview remains a fixed trusted
 platform adapter; user-supplied Worker extensions are not supported.
 
-Subagent return admission bounds JSON-encoded text to 256 KiB, leaving space for
-the native Entry and accompanying display event inside the unchanged 900 KiB
-execution-fact limit. ADR-0196 requires that same budget through guest completion,
-trusted receipt and the outer Pi Tool, with explicit errors for oversized values
-instead of truncated success or automatic retries. The
-[October 18 settlement review](reports/worker-harness-settlement-review-20261018.md)
-found an integration gap: native default output limits can cut an already accepted
-control result at 50 KiB/2,000 lines. WHS-01 tracks the pending adapter correction;
-the intended admission policy is unchanged.
+Under [ADR-0255](adr/0255-native-tool-result-boundaries.md), current source admits
+coordination result text within Pi's native 50 KiB UTF-8/2,000-line defaults.
+A final LF terminates its line; outer JSON escaping is not counted as native
+text. Structured values are serialized once. Oversized values/errors produce
+explicit bounded Tool errors instead of incomplete successful JSON or retries.
+Supervisor metadata omits duplicate output/reply text and retains a separate
+same-budget check; hostcall values are checked before their identity wrapper.
+This supersedes ADR-0196's 256 KiB result budget while retaining the 900 KiB whole
+execution-fact bound. [Delivery status](reports/worker-harness-settlement-repair-20261018.md)
+records source and deployed verification separately.
 
 Delegated task input is checked before Tool intent and again before PG child
 admission. It shares the public/Worker 100,000-character prompt bound and has a

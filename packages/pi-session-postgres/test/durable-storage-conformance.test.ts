@@ -902,13 +902,21 @@ it("does not expose a projected but unacknowledged commit, then rejects uncertai
       visible = true;
       return r;
     });
+    let sequenceVisible = false;
+    const sequenceReading = f.store.recordSequence(1).then((sequence) => {
+      sequenceVisible = true;
+      return sequence;
+    });
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(visible).toBe(false);
+    expect(sequenceVisible).toBe(false);
     release.resolve();
     await commit;
     expect(await reading).toEqual({ id: 1 });
+    expect(await sequenceReading).toBe(1);
     await expect(f.store.commit([], BACKGROUND_CONTEXT)).rejects.toThrow("ACK lost");
     await expect(f.store.commit([], BACKGROUND_CONTEXT)).rejects.toThrow("uncertain publication");
+    await expect(f.store.recordSequence(1)).rejects.toThrow("uncertain publication");
     expect((await f.projection.head()).seq).toBe(2);
     const reopened = await PublishedDurableStorage.open({
       projection: f.projection,

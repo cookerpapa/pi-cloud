@@ -7,6 +7,10 @@ redundant cold body/image reads for sequence lookup, and a malformed-content
 validation gap. 109 existing tests and seven isolated characterizations pass;
 this review changes no runtime or deployment. Repair directions retain Pi's
 public APIs and the existing storage/execution authorities.
+The owner-approved [repair](adr/0255-native-tool-result-boundaries.md) chooses
+native 50 KiB/2,000-line coordination results, metadata-only sequence reads and
+strict content contracts. [Delivery status](reports/worker-harness-settlement-repair-20261018.md)
+tracks implementation, required gates and the pending matched rollout.
 
 The [October 17 Kafka → Worker reply review](reports/kafka-worker-reply-review-20261017.md)
 records missing reply-consumer admission health, attachment-restoration failure

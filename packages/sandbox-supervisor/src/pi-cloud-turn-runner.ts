@@ -712,15 +712,14 @@ export class PiCloudTurnRunner {
           for (const event of batch) {
             const bodies: PiCloudEventBody[] = [];
             await frameBodies.run(bodies, () => events.consume([event]));
+            if (bodies.length === 0) continue;
             const entry =
               event.type === "message_end" || event.type === "entry_appended"
                 ? event.entry
                 : event.type === "tool_execution_end"
                   ? event.entry
                   : undefined;
-            const sequence = entry
-              ? (await owner.storage.entry(entry.id, BACKGROUND_CONTEXT))?.commitSeq
-              : undefined;
+            const sequence = entry ? await owner.recordSequence(entry.id) : undefined;
             for (const [index, body] of bodies.entries())
               await emit(body, index === bodies.length - 1 ? sequence : undefined);
           }

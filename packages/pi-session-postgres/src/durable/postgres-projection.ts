@@ -143,6 +143,12 @@ export class DurablePostgresProjection {
       throw new Error("Native live state requires ordered Kafka recovery before cold open");
     return { seq: Number(row.seq ?? 0), nextId: Number(row.next_id ?? 2) };
   }
+  /** Sequence lookup never requires a history body or image-store availability. */
+  async recordSequence(id: number): Promise<number | undefined> {
+    const { rows } = await sql<{ seq: string }>`select r.seq from pi_durable_records r
+      where ${this.scoped("r")} and r.id=${id}`.execute(this.database);
+    return rows[0] === undefined ? undefined : Number(rows[0].seq);
+  }
   async get(id: number): Promise<IndexedRecord | undefined> {
     const result =
       await sql<RecordRow>`select r.kind,r.seq,r.ordinal,r.fields,r.created_seq,r.retired_seq,l.body
