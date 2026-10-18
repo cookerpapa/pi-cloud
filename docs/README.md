@@ -7,9 +7,12 @@ pass. It finds pending-I/O deadline enforcement, quarantine-before-local-abort
 ordering and cross-Session renewal lock coupling. Ordinary renewal remains three
 business SQL statements for one or eight Sessions. No runtime or deployment
 changes are included; forced closure/successor recovery is the next walkthrough hop.
-The owner-approved [repair](adr/0258-bounded-session-lease-renewal.md) is implemented
-in source; [verification and delivery](reports/session-lease-repair-20261018.md)
-track remaining repository/artifact/live gates.
+The owner-approved [repair](adr/0258-bounded-session-lease-renewal.md) is deployed as
+`session-lease-079dbddc`. [Verification and delivery](reports/session-lease-repair-20261018.md)
+record 1,897 workspace tests, 302 fault cases, eleven artifact scans, live Worker/
+image/child recovery and 65-second control-independent renewal. Original configuration
+checksums match and owned fixtures are physically cleaned; the initial type/fixture
+corrections and upstream TLS sample remain documented.
 
 The [October 18 Projector → browser review](reports/projector-browser-review-20261018.md)
 checks canonical history/live-tail composition, SSE and browser presentation.

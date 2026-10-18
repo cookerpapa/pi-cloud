@@ -1,8 +1,11 @@
 # ADR-0258: Bounded Session lease renewal and local revocation
 
-Status: accepted for implementation, 2026-10-18. The owner approved repairing
+Status: implemented, verified and deployed, 2026-10-18, as
+`session-lease-079dbddc`. [Delivery evidence](../reports/session-lease-repair-20261018.md)
+records source/artifact gates, live recovery, the retained upstream TLS sample
+and confirmed configuration/physical cleanup. The owner approved repairing
 WLR-01/02/03 in the [review](../reports/worker-session-lease-review-20261018.md).
-Baseline: `ddc404f8`; deployment/acceptance remain separate completion gates.
+Baseline: `ddc404f8`; artifact/runtime source: `079dbddc`.
 
 ## Decision and adoption
 

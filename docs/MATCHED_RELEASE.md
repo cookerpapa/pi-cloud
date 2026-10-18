@@ -279,10 +279,11 @@ A test/preflight is not a newly deployed release, and readiness is not a complet
 [private pilot](PRIVATE_PILOT.md).
 
 Current schema 189 retains the `expired` management-connection state and matching
-Worker admission behavior. ADR-0249 changes the execution Topic to v17 and the
-guest/Tool Worker protocol to 5, retaining boot reply v3 and Cube management 7.
-Deploy the complete matching set while drained; do not roll v16/v17 publishers
-or protocol-4/protocol-5 guests together. Native PG storage remains unchanged and
+Worker admission behavior. ADR-0249 introduced execution Topic v17; the current
+matched set uses guest/Tool Worker 7, boot reply v3, completion 3, preview 2 and
+Cube management 7. ADR-0258 adds the required private heartbeat deferral array.
+Deploy the complete matching set while drained; do not mix incompatible publisher,
+guest or private Worker schemas. Native PG storage remains unchanged and
 needs no old-format decoder. Old Kafka Topics may be removed only after all their
 unsealed Run floors and outstanding live replay references are closed, and old
 writers and physical executions have completed the maintained cleanup checks.

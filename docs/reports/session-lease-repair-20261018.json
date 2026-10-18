@@ -1,0 +1,159 @@
+{
+  "format": "pi-cloud.session-lease-delivery.v1",
+  "status": "complete",
+  "release": "session-lease-079dbddc",
+  "artifactAndLiveSource": "079dbddc7c3c523de68c276adf7a7bb8d803fef6",
+  "deployedControlPlaneImage": "sha256:2160f871f6129ade973cd48386de6619b0ac86f25905441e09389ac113eeb0fe",
+  "checkedAt": "2026-10-18T10:26:09.760Z",
+  "gates": {
+    "sourceRevision": "079dbddc7c3c523de68c276adf7a7bb8d803fef6",
+    "workspaceTests": 1897,
+    "workspaceGroups": 22,
+    "helperTests": 79,
+    "transportTests": 9,
+    "faultCases": 302,
+    "validationExitCode": 0,
+    "firstCiStoppedAtTypes": true,
+    "nativeHelmPolicyAndBuildGatesPassedInFirstCi": true,
+    "finalBuildTypesAllTestsTransportFaultSecurityPassed": true,
+    "finalArtifactDirectory": "candidate-079dbddc",
+    "artifactScans": 11,
+    "browserPresentationAccepted": true,
+    "proxy12450Removed": true
+  },
+  "live": {
+    "nativeInputCases": 5,
+    "nativeInputCleanup": true,
+    "sameSseRecovery": {
+      "previousGeneration": 1,
+      "recoveredGeneration": 2,
+      "activityRevision": 1,
+      "confirmedExecutionRevision": 5,
+      "snapshots": 1,
+      "sameSseConnection": true,
+      "browserStoreApplied": true
+    },
+    "browserUploadRead": {
+      "accepted": true,
+      "cleanupConfirmed": true
+    },
+    "images": [
+      {
+        "bytes": 6294271,
+        "canonicalRecordBytes": 596,
+        "detail": "high"
+      },
+      {
+        "bytes": 6294639,
+        "canonicalRecordBytes": 596,
+        "detail": "high"
+      },
+      {
+        "bytes": 25128841,
+        "canonicalRecordBytes": 597,
+        "detail": "original"
+      }
+    ],
+    "coldImageRecovery": {
+      "previousWorker": "31203358-c127-4785-a8fb-b6cc44c07c3a",
+      "nextWorker": "704964fd-8a22-4dfb-996f-1519eee770a1",
+      "changedBoot": true,
+      "visionRecallCorrect": true
+    },
+    "firstImageAttempt": {
+      "accepted": false,
+      "threeImageTransfersPassed": true,
+      "coldRecallUpstreamHttpStatus": 500,
+      "gatewayFailure": "TLS EOF to chatgpt.com",
+      "runtimeLeaseErrorObserved": false,
+      "unchangedRepeatAccepted": true,
+      "physicalCleanupConfirmed": true
+    },
+    "child": {
+      "accepted": true,
+      "replacementMs": 12860,
+      "workerUnchanged": true,
+      "executionCount": 1,
+      "physicalCleanupConfirmed": true
+    },
+    "controlPlaneOutage": {
+      "accepted": true,
+      "actualUnavailableMs": 64722,
+      "restoreToReadyMs": 9335,
+      "sameWorkerAndLease": true,
+      "samePhysicalVm": true,
+      "idleAndBusyWorkersPreserved": true,
+      "eachBashExecutedOnce": true,
+      "cleanupConfirmed": true
+    },
+    "fullCube": {
+      "accepted": true,
+      "modelRequests": 20,
+      "canonicalConversation": {
+        "terminalCount": 5,
+        "piEntryCount": 34,
+        "canonicalPayloadBytes": 35051,
+        "terminalThroughSequence": 98
+      },
+      "projectedNativeCommits": 171,
+      "cleanup": {
+        "retainedRunningWorkspaceMicroVmCount": 0,
+        "foreignSessionMicroVmCount": 0,
+        "conversationDeletionReleasedWorkspaceRuntime": true,
+        "confirmedAllocationClosureVerified": true,
+        "deletedVmAdmissionRejected": true
+      }
+    }
+  },
+  "cleanup": {
+    "imageObjectsRemoved": 6,
+    "fixtureProjectsRemoved": 4,
+    "fixtureTenantRemoved": true,
+    "physicalAbsenceConfirmed": true,
+    "originalConfigurationFingerprintsMatch": true,
+    "originalConfigurationCounts": {
+      "tenants": 32,
+      "users": 32,
+      "tenant_api_credentials": 32,
+      "user_password_credentials": 5,
+      "model_profiles": 35,
+      "credential_bindings": 35,
+      "source_control_credentials": 0
+    },
+    "finalState": {
+      "at": "2026-10-18T10:26:09.760Z",
+      "counts": {
+        "projects": 0,
+        "workspaces": 0,
+        "sessions": 0,
+        "runs": 0,
+        "session_uploads": 0,
+        "session_image_objects": 0,
+        "session_image_references": 0
+      },
+      "nativeVolumesNodesHoldsOpenAllocations": [0, 0, 0, 0],
+      "podsReady": 28,
+      "windowsHttpStatus": 200,
+      "wslHttpStatus": 200,
+      "temporaryBuildProxyAbsent": true,
+      "disposableDockerContainersAbsent": true
+    }
+  },
+  "limits": [
+    "Single-host acceptance, not multi-node HA or a live PG failover test.",
+    "First CI type failures and the fixture timing correction are retained in the delivery record.",
+    "The unchanged image repeat passed; upstream TLS instability is not claimed fixed.",
+    "Native/Helm/policy gates passed before the TypeScript-only boundary correction; final build/types/test/transport/fault/security gates passed afterward."
+  ],
+  "sourceSha256": {
+    "packages/database/src/client.ts": "aff4c80fcf458edd3865decee8d86cf25fb4202635d3b8e0d099db49c8789f33",
+    "packages/runtime-core/src/session-lease-coordinator.ts": "518c3c68ba73bc2e4cf0ce409a748400bb1c67ded96ed2403c61fdb7cb550f2a",
+    "packages/pi-session-postgres/src/postgres-session-lease-observer.ts": "1c2b3c612e38c29e32077e970b342d9b3debe4f1d2881848f9fc89370b5fd23f",
+    "packages/supervisor-host/src/agent-run-execution-backend.ts": "3c4cb16e2a57d459322f5a1c3220495eb5d1757972613bd38c2a8d01a7c526e9",
+    "packages/supervisor-host/src/runtime.ts": "8215f7b59b4429efb470e89e04cf8244a6aef0f8840838ccde6eddb577d8d7c7",
+    "packages/sandbox-supervisor/src/agent-run-supervisor.ts": "72f6b9ddf193c26a480ad9e1f26cf92f127100b77bc0c926392f7840d8233168",
+    "packages/pi-session-postgres/src/durable/session-host.ts": "f47e8b55de58ea0d720ced2b32a99e9f226d4d2868c808efd65cb20e5a14d20d",
+    "packages/protocol/src/supervisor-wire.ts": "04c75ce2351e4b01a9d4a159f103c2eee435ce5bd222228b2f3b432fc95f6931",
+    "packages/control-plane/src/supervisor-connection-manager.ts": "5dd950fd5935aa297d1dc6c9516826c522c798d24bc9fbf71092c16038543972"
+  }
+}

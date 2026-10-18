@@ -3,8 +3,10 @@
 [ADR-0258](0258-bounded-session-lease-renewal.md) implements independent local
 expiration, bounded lease database I/O, local revocation before quarantine and
 nonblocking batched renewal with explicit deferral. The private acknowledgement
-changes require matched Worker/Control Plane deployment. [Delivery status](../reports/session-lease-repair-20261018.md)
-separates source checks from the still-pending rollout and live acceptance.
+changes are deployed on matched Worker/Control Plane artifacts as
+`session-lease-079dbddc`. [Delivery evidence](../reports/session-lease-repair-20261018.md)
+records passing gates, real recovery/control-independent renewal and confirmed
+configuration/physical cleanup, retaining the initial failures separately.
 
 [ADR-0257](0257-browser-observation-and-buffer-boundaries.md) records the approved
 Projector/browser repair: reuse the existing execution generation in disposable

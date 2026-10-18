@@ -200,6 +200,14 @@ observe pool wait time under the configured model/Lane concurrency, and use a
 connection proxy before multiplying connections across many replicas. Sandbox-management
 heartbeat must leave more than one missed interval before lease expiry.
 
+The Worker lease adapter uses an additional two-connection PG pool on the existing
+direct notification URL (without LISTEN). It must reach the same authority database
+with permission to read/renew leases and quarantine its Worker; a LISTEN-only role
+is insufficient. This avoids routing authority cleanup through PgBouncer.
+[ADR-0258](adr/0258-bounded-session-lease-renewal.md) fixes acquisition and complete
+checkout budgets at five seconds each, including renewal COMMIT. These isolate
+lease I/O from history/claim work and are not product quotas.
+
 The shared database adapter retains at most 128 named, parameterized SELECT/WITH
 statements per physical connection and keeps up to two already-created connections
 warm within each pool's existing maximum. Excess connections still retire after
@@ -211,7 +219,7 @@ results and parameter values are never cached. Other statements use the same
 The bound lives in `packages/database/src/client.ts`; schema-changing deployment
 still requires draining/restarting the affected processes.
 
-Lease/startup-claim deadlines and final expiry decisions use primary PostgreSQL
+Session lease deadlines and final expiry decisions use primary PostgreSQL
 time after authority locks (ADR-0170). Worker/control-plane local timers use conservative
 monotonic observations, not application wall clocks. There is no legacy-clock
 switch. Keep the database host clock disciplined; this does not certify clock
@@ -566,9 +574,3 @@ DeepSeek Flash uses the Responses route with text/image input and an owner-appro
 search declaration. September 26 probes confirm image input and an accepted search
 parameter, but no actual Responses search. The separate Anthropic-route search
 probe succeeded; this deployment retains Responses.
-
-The Worker lease adapter uses an additional two-connection PG pool, independent
-of the general database pool, on the existing direct notification URL (without
-LISTEN). This avoids routing authority cleanup through PgBouncer. ADR-0258 fixes acquisition and entire-checkout
-budgets at five seconds each. These budgets include renewal COMMIT and prevent
-lease I/O from waiting behind history/claim work; they are not product quotas.

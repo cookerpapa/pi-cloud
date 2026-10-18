@@ -34,9 +34,9 @@ The [October 18 review](reports/worker-session-lease-review-20261018.md) at
 `85eb2f07` records 123 passing existing tests, four isolated characterizations
 and constant three-business-statement batch renewal. The review changed no runtime or
 deployment. The owner-approved [ADR-0258 repair](adr/0258-bounded-session-lease-renewal.md)
-is implemented in source; [delivery status](reports/session-lease-repair-20261018.md)
-tracks the remaining gates. Preserve PG authority, shared physical-Session ownership and direct
-Kafka fencing; repair directions require implementation/acceptance separately.
+is deployed as `session-lease-079dbddc`; [delivery evidence](reports/session-lease-repair-20261018.md)
+records passing checks, real recovery/outage acceptance and confirmed physical
+cleanup with original configuration fingerprints preserved.
 
 - [x] WLR-01 / P2: enforce the active owner's last confirmed monotonic deadline
       independently of pending PG reads; bound database/pool/close waits. Keep
@@ -50,7 +50,7 @@ Kafka fencing; repair directions require implementation/acceptance separately.
       extend authority from skipped rows. Keep post-lock PG-time checks and
       test healthy siblings, expiry, closure, pool/network stalls and late replies.
 
-- [ ] Complete full source/transport/fault gates, scanned matched release, relevant
+- [x] Complete full source/transport/fault gates, scanned matched release, relevant
       Luna/Cube/recovery and Control Plane outage acceptance, configuration preservation
       and physical fixture cleanup.
 
@@ -422,6 +422,10 @@ storage tables and Session-local sequence; no runtime change was deployed.
       full Cube suite passed at 05:23 UTC; that closes the acceptance gap without
       proving intermittent connectivity fixed. Preserve the failed samples and
       keep Pi as the single model retry owner.
+      The [October 18 lease delivery](reports/session-lease-repair-20261018.md)
+      retains another TLS EOF/HTTP 500 during cold image recall; an unchanged
+      owned-fixture repeat and the remaining live suite pass. This does not close
+      the external connectivity item or justify a second model retry mechanism.
 
 The approved [publication-registration optimization](reports/publication-admission-20261011.md)
 is deployed as `publication-admission-c39a78f8`: known stale/closed identities
