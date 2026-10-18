@@ -95,7 +95,7 @@ export async function checkNativeLiveProgress({
     const session = await createSession(scenario);
     const root = await api.acceptTurn(
       session.sessionId,
-      "This is a streaming-output acceptance test. Do not use any tools. In your final answer, directly write 2000 numbered lines. Each line must contain its number and the sentence: LIVE_BUFFER abcdefghijklmnopqrstuvwxyz 0123456789. Do not summarize, explain or use a code block. Keep writing the lines.",
+      "This is a streaming-output acceptance test. Do not use any tools. Write a substantial technical handbook on validating a cloud coding-agent runtime. Use 80 numbered sections, each around 100 words, with a concrete failure scenario, expected invariant and verification steps. Include the literal marker LIVE_BUFFER in every section. Cover storage commits, leases, cancellation, child agents, image attachments, streaming and recovery using distinct examples. Begin directly with section 1 and keep writing the handbook; do not reply with an acknowledgement, outline or a script for generating it.",
       newIdempotencyKey("live-progress"),
     );
     assert.equal(root.kind, "run");

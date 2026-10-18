@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { serviceAddress } from "./lib/production-kubernetes.mjs";
 import { sql } from "kysely";
@@ -26,6 +26,12 @@ pg.hostname = serviceAddress("postgres");
 const db = createDatabase({ connectionString: pg.toString(), maxConnections: 2 });
 const report = {
   checkedAt: new Date().toISOString(),
+  scriptSha256: createHash("sha256")
+    .update(await readFile(new URL(import.meta.url)))
+    .digest("hex"),
+  nativeProgressSha256: createHash("sha256")
+    .update(await readFile(new URL("./lib/live-native-progress.mjs", import.meta.url)))
+    .digest("hex"),
   model: "gpt-6-luna",
   accepted: false,
   cases: [],
@@ -198,7 +204,15 @@ try {
       assert.equal(returned.items[1].text, "Without using tools, reply EDITED_INPUT_MARKER.");
       await api.acknowledgeReturnedInputs(session.sessionId, returned.requestId);
     } else {
-      assert.equal((await finished(root.runId)).state, "completed");
+      const outcome = await finished(root.runId);
+      if (outcome.state !== "completed")
+        report.runFailure = {
+          scenario,
+          runId: root.runId,
+          state: outcome.state,
+          failureCode: outcome.failure?.code,
+        };
+      assert.equal(outcome.state, "completed");
       const history = await api.getConversation(session.sessionId);
       assert.equal(history.turns.length, 1);
       assert.deepEqual(
