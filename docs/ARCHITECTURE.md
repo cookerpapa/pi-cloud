@@ -363,6 +363,12 @@ lease sweep. The initial expiry query takes one PG-time cutoff, and final
 decisions still recheck authority after locks. The one-second interval is a
 delay between completed scans, not a one-second failure-detection guarantee.
 
+The [Control Plane expiry review](reports/control-plane-expiry-review-20261018.md)
+identifies remaining scanner-side gaps: ordinary PG waits are not bounded like
+ADR-0258's Worker pool; pending seals can monopolize a larger fleet's candidate
+window; and failed Workers with live connections can miss retirement admission.
+These are recorded for repair, not changed by the review.
+
 Under [ADR-0248](adr/0248-idle-worker-management-reconnect.md), management connection
 expiry is recorded as `expired`. An authorized idle Boot with no unreleased Session
 lease or retirement can reconnect without a process restart. Fresh PG execution

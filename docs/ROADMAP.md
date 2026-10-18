@@ -1,5 +1,16 @@
 # Implementation roadmap
 
+## Control Plane → PG expiry review
+
+- [x] Explain and review sweep scheduling, connection/lease selection, locked
+      authority rechecks, seal intent and the retirement-queue boundary.
+- [x] Run 50 existing tests and six isolated PG characterizations, measure SQL
+      and record [findings and directions](reports/control-plane-expiry-review-20261018.md).
+
+This review changes no runtime/deployment. Repairs remain open in BACKLOG;
+Kafka seal publication, physical cleanup and successor bootstrap remain the next
+walkthrough hop, rather than being treated as reviewed end to end here.
+
 ## Worker → PostgreSQL Session lease review
 
 - [x] Review production direct renewal, shared observer, monotonic lifetime,

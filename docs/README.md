@@ -1,5 +1,13 @@
 # Documentation map
 
+The [October 18 Control Plane → PG expiry review](reports/control-plane-expiry-review-20261018.md)
+explains timed scans, locked rechecks and atomic seal-request admission. Fifty
+existing tests and six isolated characterizations support lock-wait coupling,
+failed-Worker retirement gaps and a default-window starvation case with eleven
+Workers. SQL traces show two idle-scan statements and unnecessary growth with
+healthy Sessions. Probe corrections and the current two-Worker scope are explicit;
+no runtime or deployment changes are included.
+
 The [October 18 Worker → PG Session lease review](reports/worker-session-lease-review-20261018.md)
 checks direct renewal, local authority observation, SQL/lock boundaries and
 management reconnect. 123 existing tests and four isolated characterizations

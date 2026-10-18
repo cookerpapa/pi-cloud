@@ -1,0 +1,96 @@
+{
+  "reviewedRevision": "3494ff927f0188cf0eeccb33bf5f84845e895601",
+  "servingRelease": "session-lease-079dbddc",
+  "runtimeChanged": false,
+  "productionFaultInjected": false,
+  "existingContracts": {
+    "files": 8,
+    "passed": 50
+  },
+  "characterizations": {
+    "confirmedCases": 6,
+    "firstRunPassed": 5,
+    "firstRunFailed": 1,
+    "failure": "Probe incorrectly expected a current seal pointer to remain after the real Projector requeued its Run.",
+    "correction": "Check ten current pointers, eleven immutable Outbox requests and the eleventh Worker new pointer.",
+    "focusedRepeatPassed": 1,
+    "focusedRepeatSkippedByNameFilter": 5,
+    "finalStrictTypecheckPassed": true,
+    "typeCorrection": "Explicit string type for a defaulted UUID instance-ID helper parameter."
+  },
+  "methodology": "Real isolated migrated PG and production admission/sweep/quarantine/seal code, with substituted Runner/Kafka and forbidden physical inventory/stop ports. No live Kafka takeover, VM/process fault or fleet capacity claim.",
+  "facts": [
+    {
+      "probe": "sweep-sql",
+      "sessions": 1,
+      "expired": 1,
+      "idleSql": 2,
+      "sqlIncludingTransaction": 28,
+      "businessSql": 24,
+      "physicalSessionLocks": 3
+    },
+    {
+      "probe": "sweep-sql",
+      "sessions": 8,
+      "expired": 1,
+      "idleSql": 2,
+      "sqlIncludingTransaction": 56,
+      "businessSql": 38,
+      "physicalSessionLocks": 10
+    },
+    {
+      "probe": "healthy-session-lock",
+      "blockedMsAtLeast": 1250,
+      "sealsWhileBlocked": 0,
+      "sealsAfterUnlock": 2,
+      "healthyOwnerRevoked": false
+    },
+    {
+      "probe": "management-lock",
+      "sessionSealWhileHostLocked": false,
+      "sessionSealAfterUnlock": true
+    },
+    {
+      "probe": "failed-connected-worker",
+      "localBackendHealthy": false,
+      "workerState": "failed",
+      "heartbeatAcks": 3,
+      "connectionState": "active",
+      "retirementRows": 0,
+      "localRunRecoveryRequested": true
+    },
+    {
+      "probe": "scan-window-starvation",
+      "workers": 11,
+      "defaultWorkerWindow": 10,
+      "initialSeals": 10,
+      "repeatedNewSeals": [0, 0, 0],
+      "newSealsAfterOneOldSealProjects": 1
+    }
+  ],
+  "runtimeReadOnlyObservation": {
+    "at": "2026-10-18T10:54:27.880Z",
+    "mode": "read-only",
+    "settings": {
+      "statement_timeout": "0",
+      "lock_timeout": "0",
+      "idle_in_transaction_session_timeout": "0",
+      "unreleased_leases": 0
+    },
+    "configuredWorkerReplicas": 2,
+    "readyWorkerReplicas": 2
+  },
+  "sourceSha256": {
+    "packages/control-plane/src/supervisor-maintenance-runtime.ts": "82340247e631f515c427533b52a7591cf5ae09165b9102dda830d0f95840bb7a",
+    "packages/control-plane/src/supervisor-connection-manager.ts": "5dd950fd5935aa297d1dc6c9516826c522c798d24bc9fbf71092c16038543972",
+    "packages/control-plane/src/assignment-reconciler.ts": "a84ba645ce7414db8161dbf91388a465ff65c126cbfbf1649de7cb6ba975169e",
+    "packages/control-plane/src/control-plane-runtime.ts": "629332f6922cc694a155734b70390334bbe91f28b905d9febe68cd703e0601d3",
+    "packages/control-plane/src/main.ts": "aaedef7fa565dce1e036231c4da6f17f58061bfe497cd3d76819f27da9098ad1",
+    "packages/runtime-core/src/session-lease-release.ts": "d27f5f195878c20cfb904f825b303aa44cf4c616648a538c8951981b6bafbacd",
+    "packages/runtime-core/src/execution-stream-seal.ts": "97a14c5f347677b6a5a07d85fb44aeec087a77c328ae2052609ec9ff60a149af",
+    "packages/runtime-core/src/execution-stream-projection.ts": "a2eaaa991983b763885a8e29baf5c2c6addf558a9a3dab596014321b8938e34e",
+    "packages/runtime-core/src/session-lease-coordinator.ts": "518c3c68ba73bc2e4cf0ce409a748400bb1c67ded96ed2403c61fdb7cb550f2a",
+    "packages/supervisor-host/src/agent-run-execution-backend.ts": "3c4cb16e2a57d459322f5a1c3220495eb5d1757972613bd38c2a8d01a7c526e9",
+    "packages/supervisor-host/src/runtime.ts": "8215f7b59b4429efb470e89e04cf8244a6aef0f8840838ccde6eddb577d8d7c7"
+  }
+}

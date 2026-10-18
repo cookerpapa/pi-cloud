@@ -28,6 +28,29 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## Control Plane → PG expiry review
+
+The [October 18 review](reports/control-plane-expiry-review-20261018.md) at
+`3494ff92` records 50 passing existing tests and six isolated characterizations,
+including explicit probe corrections. The serving runtime remains
+`session-lease-079dbddc`; this review implements no repairs.
+
+- [ ] CPE-01 / P2: bound Control Plane maintenance SQL/lock waits and prevent
+      management expiry or an unrelated healthy Session from stalling expiry
+      progress. Keep lock order, fresh PG-time checks and conservative ownership.
+- [ ] CPE-02 / P2: converge authoritative failed Workers into existing retirement
+      even while their management heartbeat stays healthy. Preserve healthy idle/
+      busy reconnect and exact Boot/Session closure; one expired Session must
+      not retire its healthy Worker siblings.
+- [ ] CPE-03 / P2: select expiry work still needing closure admission so pending
+      seals do not monopolize the ten-Worker window. Keep ownership evidence
+      until ordered closure. The eleven-Worker repro is an expansion case;
+      the current deployment has two Workers.
+- [ ] CPE-O1 / P3: remove all-healthy-Session work from ordinary expiry and reuse
+      transaction-local locked facts. One-expiry cost grows from 28 to 56 statements
+      for one versus eight Sessions; idle scans remain two. Prove any residual
+      orphan-release need before removing its protection; add no competing cache.
+
 ## Worker → PostgreSQL Session lease review
 
 The [October 18 review](reports/worker-session-lease-review-20261018.md) at
