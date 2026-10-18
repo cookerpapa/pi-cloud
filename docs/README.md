@@ -1,5 +1,14 @@
 # Documentation map
 
+The [October 19 Outbox → Kafka seal review](reports/seal-publication-review-20261019.md)
+checks persisted requests, retries, PG authority reads, producer takeover and
+publication retirement. Forty-six existing tests, six isolated characterizations
+and one real RF3/PG integration case pass. Findings cover unbounded PG waits,
+consumer lifetime during background restart and a stale peer route already
+deferred in the backlog. Three authority reads straddle different actions; the
+measured no-binding local path uses six SQL statements. This is review-only;
+Kafka → Projector closure and successor bootstrap remain the next walkthrough.
+
 The [October 18 Control Plane → PG expiry review](reports/control-plane-expiry-review-20261018.md)
 explains timed scans, locked rechecks and atomic seal-request admission. Fifty
 existing tests and six isolated characterizations support lock-wait coupling,

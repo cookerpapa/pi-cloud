@@ -28,6 +28,32 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## PG Outbox → Kafka Session seal review
+
+The [October 19 review](reports/seal-publication-review-20261019.md) at `596f9b92`
+records 46 passing existing tests, six isolated characterizations and one existing
+real RF3/PG integration case. Runtime and deployment are unchanged; fixture/type
+corrections and the limits of substituted callback evidence are explicit.
+
+- [ ] SP-01 / P2: bound publication PG acquisition/SQL and retirement waits using
+      existing database facilities. Preserve immutable Outbox retries and drain
+      old-generation work before replacement; do not bypass pending work by
+      starting overlapping same-Session producers.
+- [ ] SP-02 / P2: join all transactions borrowing the consumer during its own
+      background restart, including external Session seal writers. Preserve
+      group/dispatch ordering; normal whole-Projector close already drains them.
+      Callback tests establish disposal ordering, not a native crash or stale
+      broker commit.
+- [ ] SP-03 / P2: invalidate an unreachable cached owner and rediscover under a
+      bounded retry policy. This reproduces the previously deferred surviving-
+      forwarder case; it is relevant to multiple Control Planes, not evidence of
+      an outage in the single-process baseline.
+
+The no-binding local seal uses six measured client SQL statements. Three authority
+reads bracket distinct actions; no removal or replacement with a cache is proposed.
+Kafka → Projector closure/checkpoint/release and successor bootstrap remain the
+next focused walkthrough segment.
+
 ## Control Plane → PG expiry review
 
 The [October 18 review](reports/control-plane-expiry-review-20261018.md) at
@@ -356,8 +382,9 @@ not a new deployment operator or a guarantee for every active transport.
       the input receipt read repair, preserved configuration and physical cleanup.
 - [ ] Verify the dispatch-commit/Cube-handoff window and interactive workflow,
       terminal and preview connections before claiming fully transparent Control Plane updates.
-- [ ] Test owner-address cache invalidation when one surviving Control Plane keeps
-      forwarding to an exited peer; the zero-replica check restarts all such caches.
+- [ ] Repair and verify owner-address cache invalidation under SP-03 above. The
+      surviving-forwarder case is now reproduced; the zero-replica check restarts
+      all such caches and does not cover it.
 - [ ] After the handoff gates, provide a maintained compatible Control Plane-only
       image-replacement procedure with readiness, graceful exit, measured recovery
       and recorded rollback. The full matched-release operator still drains work;

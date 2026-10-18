@@ -1,0 +1,109 @@
+{
+  "reviewedRevision": "596f9b9245e392c56a1038b9b94e6180cc47bedc",
+  "startedOn": "2026-10-18",
+  "completedOn": "2026-10-19",
+  "timezone": "Asia/Shanghai",
+  "releaseBaseline": "control-expiry-c9d8112d",
+  "runtimeChanged": false,
+  "productionFaultInjected": false,
+  "nativeCrashExperimentPerformed": false,
+  "existingContracts": {
+    "files": 8,
+    "passed": 46,
+    "paths": [
+      "packages/runtime-core/test/terminal-outbox-relay.test.ts",
+      "packages/runtime-core/test/session-publication-ingress.test.ts",
+      "packages/runtime-core/test/session-projector-handoffs.test.ts",
+      "packages/runtime-core/test/session-projector-readiness.test.ts",
+      "packages/event-log/test/kafka-session-writer.test.ts",
+      "packages/event-log/test/partition-commit-isolation.test.ts",
+      "packages/control-plane/test/execution-stream-seal.test.ts",
+      "packages/control-plane/test/session-publication-refusal.test.ts"
+    ]
+  },
+  "characterizations": {
+    "files": 2,
+    "passed": 6,
+    "firstCombinedRun": {
+      "passed": 49,
+      "failed": 1,
+      "existingPassed": 46,
+      "newPassed": 3
+    },
+    "correction": "The SQL probe initially sent a bootstrap control reference to its seal-only stub. Mark earlier fixture control references published before measurement and reject unexpected Fact kinds.",
+    "fullCorrectedRepeatPassed": 6,
+    "subsequentHttpOnlyRepeat": {
+      "passed": 1,
+      "skippedByNameFilter": 3,
+      "refinement": "All retries explicitly reuse one Fact ID."
+    },
+    "finalStrictTypecheckPassed": true,
+    "typeCorrections": "Explicit stub argument types, interface casts and callback mock signatures; no runtime source changes."
+  },
+  "kafkaIntegration": {
+    "path": "packages/control-plane/test/session-publication.integration.test.ts",
+    "replicationFactor": 3,
+    "isolatedPostgres": true,
+    "passed": 1,
+    "scope": "Existing direct-write, ordered closure, same-Run successor, closed-seal replay and delayed-initializer recovery contract; no native crash or VM/model check."
+  },
+  "facts": [
+    {
+      "probe": "stale-peer",
+      "failedRetries": 3,
+      "oldClientRediscovered": false,
+      "freshClientSucceeded": true,
+      "applicability": "Surviving forwarder and replaced peer; not established as a current single-Control-Plane incident."
+    },
+    {
+      "probe": "relay-pg-wait",
+      "blockedAfterStopMsAtLeast": 1250,
+      "healthReportedReady": true,
+      "scope": "Relay own health only; real disposable PG table lock; fixture lock released and protected by a test-only watchdog."
+    },
+    {
+      "probe": "owner-generation-coalescing",
+      "newOwnerBorrowedOldPromise": true,
+      "firstNewOwnerCallRejected": true,
+      "freshRetrySucceeded": true,
+      "scope": "Real PG read with one held result callback; symbolic local ownership change."
+    },
+    {
+      "probe": "seal-sql",
+      "statements": 6,
+      "bindings": 0,
+      "authorityReads": 3,
+      "scope": "One local seal, actual PG, substituted Kafka, previously published fixture control references; no binding propagation or background traffic."
+    },
+    {
+      "probe": "reader-send-retirement",
+      "rejectedBeforeGroupTransaction": true,
+      "transport": "substituted-native-callbacks"
+    },
+    {
+      "probe": "reader-transaction-lifetime",
+      "disconnectedWithPublicationPending": true,
+      "requestedCommitAfterDisconnect": true,
+      "transport": "substituted-native-callbacks",
+      "realBrokerCommitEstablished": false,
+      "crashOrDataLossEstablished": false
+    }
+  ],
+  "cleanup": {
+    "disposableTestContainersRemaining": 0,
+    "disposableTestNetworksRemaining": 0,
+    "productionMutated": false
+  },
+  "sourceSha256": {
+    "packages/runtime-core/src/session-outbox-relay.ts": "1f89b03ca69e4b3837f6eb986ec1f0fdcbc06a73c5c2a310afe496aa184af862",
+    "packages/runtime-core/src/postgres-publication-control.ts": "0ca0b0336aa99b0c8de122922cc1a1eb16976dd7f659dae5ec4ff18f58e7d798",
+    "packages/runtime-core/src/http-publication-client.ts": "a3ef13c229b3034b5ede2c4238db35f07f2f3b8e09d5797044d0d3fbc44ff1c1",
+    "packages/runtime-core/src/session-projector.ts": "4d7666ae0473a3973155cff124b1a779a07997454121516bc6af6f2316ecfa8d",
+    "packages/event-log/src/kafka-log-consumer.ts": "60cf6346ee2d3a4c76167e3fded4cd3c3761b8b8cd4a4b41991a1af8d3de520b",
+    "packages/event-log/src/kafka-partition-reader.ts": "ac2aee781193eef99814348c4ccf62dfd7b13c666ff501718367303ba5fc98a0",
+    "packages/event-log/src/kafka-session-writer.ts": "a32a43d3f9837a225d5d2f6be489073bc4aa47f4b68d87a357bb0e0a1b05d40b",
+    "packages/control-plane/src/main.ts": "d71037869af2dd9eaf3d829eb71916eafab70773c3da2c3200b5844540ece4c3",
+    "packages/control-plane/src/session-publication-service.ts": "18ee383f7ee6dd3693cb180ef8124705bf55973115b981dfcd70ca877e2b78b0",
+    "packages/database/src/client.ts": "aff4c80fcf458edd3865decee8d86cf25fb4202635d3b8e0d099db49c8789f33"
+  }
+}

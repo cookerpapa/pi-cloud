@@ -1,6 +1,6 @@
 # Architecture reading checkpoint
 
-Updated: 2026-10-18, after `control-expiry-c9d8112d`.
+Updated: 2026-10-19; runtime remains `control-expiry-c9d8112d`.
 
 The owner asked to reconcile the complete hop-by-hop conversation with the
 recorded reviews. The ordinary Tool execution loop, normal Run completion,
@@ -8,10 +8,13 @@ browser delivery, Worker renewal and Control Plane expiry admission have been
 covered. The provider request branch was explicitly deferred during the October
 12–15 walkthrough and has not received the same complete focused treatment.
 
-Current checkpoint: **Control Plane → PG: confirm expired Session ownership and
-persist the existing Outbox seal/recovery request**. [Review](reports/control-plane-expiry-review-20261018.md)
-and [repair/release](reports/control-plane-expiry-repair-20261018.md) are complete.
-Expiry admission does not itself grant a successor or prove physical process death.
+Current checkpoint: **PG Outbox → Control Plane seal publisher → Kafka**.
+The [focused review](reports/seal-publication-review-20261019.md) is complete;
+SP-01–03 repairs remain open. The preceding PG expiry
+[review](reports/control-plane-expiry-review-20261018.md) and
+[repair/release](reports/control-plane-expiry-repair-20261018.md) are complete.
+Kafka seal acknowledgement is not yet PG-projected closure, a successor grant
+or physical process-death evidence.
 
 ## Covered hops
 
@@ -31,7 +34,8 @@ Expiry admission does not itself grant a successor or prove physical process dea
 | Formal Tool Result commit and whole-Run normal completion | Loop closed; deliberately re-reviewed after recent changes | [publication/completion](reports/session-publication-completion-review-20261018.md) |
 | Projector → browser, refresh/reconnect and Working state | Explained, reviewed and repaired | [browser delivery](reports/projector-browser-review-20261018.md) |
 | Worker → PG lease renewal | Explained, reviewed and repaired | [renewal](reports/worker-session-lease-review-20261018.md) |
-| Control Plane → PG expiry/seal admission | Explained, reviewed and repaired; current checkpoint | [expiry](reports/control-plane-expiry-review-20261018.md) |
+| Control Plane → PG expiry/seal admission | Explained, reviewed and repaired | [expiry](reports/control-plane-expiry-review-20261018.md) |
+| PG Outbox → control seal publisher → Kafka | Explained and reviewed; three repairs open; current checkpoint | [seal publication](reports/seal-publication-review-20261019.md) |
 
 These statuses distinguish walkthrough coverage from focused audit scope. Storage
 research does not establish a complete new audit of every native recovery branch,
@@ -41,15 +45,13 @@ historical; the maintained path is direct Worker → Kafka under ADR-0247.
 
 ## Remaining main walkthrough segments
 
-1. **Forced closure and replacement after the persisted PG request.** Continue
-   with existing Outbox → Control Plane control publisher → Kafka ordered Session
-   seal; then Kafka → Projector closure/checkpoint/release; then new PG claim →
-   replacement Worker/Harness continuation. Inspect retry/uncertain publication,
-   old/new publisher competition, delayed stale producer initialization, exact
-   release proof and unsafe Tool non-replay. Fencing and recovery have already
-   been discussed, implemented and exercised; the remaining work is a focused
-   continuous review of this segment in the current topology. Do not repeat the
-   just-completed renewal/expiry review or present recovery as wholly unexamined.
+1. **Ordered seal materialization and replacement.** Outbox → Kafka publication
+   has now been reviewed. Continue with Kafka → Projector closure/checkpoint/
+   release; then new PG claim → replacement Worker/Harness continuation. Inspect
+   exact release proof, retained live suffix, compaction/bootstrap and unsafe Tool
+   non-replay. Fencing and recovery have already been discussed, implemented and
+   exercised; these remaining hops still need their focused current-code review.
+   Do not repeat renewal/expiry/publication or present recovery as wholly unexamined.
 2. **Native model request and response.** Pi → Worker-local Model Gateway →
    CLIProxyAPI → provider, and the streamed response back to Pi. Cover request
    construction/model settings, local model permits, credential boundaries,

@@ -87,11 +87,15 @@ Chat Stop → durable PG request → Worker Agent.abort()
 The Projector currently runs in the Control Plane process. Its modules remain
 separate from authentication, resource APIs and the Agent Loop. There is one
 execution-log consumer group, not separate canonical, live and Tool groups.
-Native append and seal transactions have PostgreSQL-local lock/statement budgets;
-timeout rolls back without advancing offsets or admitting a Tool. Failed records
+Native append and seal **projection** transactions have PostgreSQL-local lock/statement
+budgets; timeout rolls back without advancing offsets or admitting a Tool. Failed records
 retry in partition order. Phase metrics and payload-free slow-record diagnostics
 locate waits without introducing another consumer or a skip/dead-letter path
 ([ADR-0199](adr/0199-bounded-publication-and-projection.md)).
+This does not bound the control publisher's separate Outbox/authority queries.
+The [October 19 publication review](reports/seal-publication-review-20261019.md)
+records that gap, a consumer-retirement gap and stale peer discovery; repairs
+remain pending. The review changes no execution or storage authority.
 Worker admission reads Kafka partition availability and validates the fixed Topic's
 replication policy and in-sync replicas. It does not depend on a Control Plane
 publication endpoint. The availability mask filters the existing PG claim query;

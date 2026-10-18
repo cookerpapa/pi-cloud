@@ -1,5 +1,18 @@
 # Implementation roadmap
 
+## PG Outbox → Kafka Session seal review
+
+- [x] Explain claim/CAS, forwarding, routing closure, Session producer takeover,
+      PG rechecks and Kafka group transaction acknowledgement.
+- [x] Complete 46 existing tests, six isolated characterizations and one existing
+      RF3/PG integration case; record [findings and repair directions](reports/seal-publication-review-20261019.md).
+
+This review changes no runtime or deployment. SP-01–03 remain open in the
+[backlog](BACKLOG.md): bounded PG progress, consumer/transaction retirement and
+stale peer discovery. No new execution authority or storage protocol is proposed.
+The reading checkpoint advances to Kafka seal → Projector → PG closure/checkpoint/
+release; successor Worker bootstrap follows.
+
 ## Control Plane → PG expiry review
 
 - [x] Explain and review sweep scheduling, connection/lease selection, locked
