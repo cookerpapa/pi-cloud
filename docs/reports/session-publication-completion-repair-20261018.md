@@ -14,6 +14,11 @@ Serving release remains `tool-settlement-20ac9696` until the rollout below is re
   the actual Session Host. Unknown ACK or post-ACK confirmation/adoption failure
   interrupts the owner; even a wrongly typed no-send callback exception after ACK
   cannot make a committed batch appear rejected.
+  A refused publication yields one Node I/O turn before returning the error,
+  preventing repeated native fault-settlement attempts from starving Kafka/lease
+  callbacks. An isolated pinned-Pi probe reached 200 consecutive refusals in
+  31.6 ms before a zero-delay timer ran. This is cooperative scheduling, not an
+  automatic batch retry or a queue-space wait.
 - SPC-O1: completion passes its locked Run to the transition helper, which still
   checks row version and returns the updated version for a subsequent cancellation
   transition. The measured fixture uses 16 statements instead of 18, and one Run

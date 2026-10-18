@@ -1,5 +1,6 @@
 import { NativeProjectionProgress } from "../native-projection-progress.ts";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { setImmediate as yieldToIo } from "node:timers/promises";
 import type { Kysely } from "kysely";
 import type { Database } from "@pi-cloud/database";
 import {
@@ -394,7 +395,13 @@ export class PostgresDurableSessionHost {
                 preparation?.confirmed();
                 for (const { prepared } of display) prepared.confirmed();
               } catch (cause) {
-                if (!acknowledged && cause instanceof PublicationNotSentError) throw cause;
+                if (!acknowledged && cause instanceof PublicationNotSentError) {
+                  // Native fault settlement can itself be refused. Give Kafka
+                  // ACKs and lease timers an IO turn before Pi handles the error;
+                  // do not resubmit the batch or wait for queue capacity here.
+                  await yieldToIo();
+                  throw cause;
+                }
                 const failure = Object.assign(
                   new Error(
                     acknowledged

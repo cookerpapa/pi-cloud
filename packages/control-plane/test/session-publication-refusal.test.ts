@@ -46,9 +46,14 @@ it("keeps the shared Host and native sequence usable after a proved no-send refu
     });
     const head = root.committedSequence();
     reject = true;
+    let ioRan = false;
+    setImmediate(() => {
+      ioRan = true;
+    });
     await expect(root.storage.commit([entry(3)], context)).rejects.toMatchObject({
       name: "StorageRejected",
     });
+    expect(ioRan).toBe(true);
     expect(root.committedSequence()).toBe(head);
     expect((await f.projection.head()).seq).toBe(head);
     expect(root.authority.signal.aborted).toBe(false);

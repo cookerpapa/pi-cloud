@@ -21,6 +21,12 @@ remain unchanged; schema and transport versions do not change.
   draft rollback/task failure. Ambiguous publication, mismatched ACK, fencing
   and every failure while adopting an acknowledged publication still interrupt
   the entire owner. A post-ACK exception cannot claim the batch was not sent.
+- Returning a definite refusal yields one Node I/O turn. Native fault settlement
+  may itself encounter the same refusal; an isolated persistent-refusal probe
+  performs 200 native attempts in about 32 ms before a timer can run. Cooperative
+  yielding lets Kafka ACKs and lease timers progress without retrying the batch
+  or waiting for queue space. The integrated Host test asserts that scheduling
+  boundary while retaining sequence and sibling continuation checks.
 - This does not add storage retries or waiting for queue space. In particular,
   retaining the owner does not preserve a rejected Tool Result automatically:
   native task fault settlement may produce missing-result context. Bounded
