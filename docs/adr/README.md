@@ -1,5 +1,11 @@
 # Current architecture decisions
 
+[ADR-0257](0257-browser-observation-and-buffer-boundaries.md) proposes the
+Projector/browser repair: reuse the existing execution generation in disposable
+observations, account for pending SSE bytes, compact same-message commentary and
+correct streaming documentation. It refines the review's resync-first suggestion
+after inspecting the queued recovery interval. Implementation is pending.
+
 [ADR-0256](0256-session-publication-and-completion-boundaries.md) records the
 approved publication/completion repair: terminal replay, definite pre-send
 refusal, transaction-local Run reuse and current lifecycle documentation.

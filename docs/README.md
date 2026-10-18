@@ -7,6 +7,11 @@ pass. It finds stale observation revisions across same-Run Worker replacement,
 count-only slow-reader buffering, obsolete commentary compaction rules and stale
 25 ms text-buffer documentation. Repair directions preserve the current
 execution/storage authorities; no runtime repair or deployment is included.
+The requested [repair proposal](adr/0257-browser-observation-and-buffer-boundaries.md)
+uses the existing execution generation for status frames, a pending-byte budget
+and same-message commentary compaction. It records why forcing a transcript
+refresh at a recoverable seal is broader than the status fix. Implementation and
+matched deployment remain pending.
 
 The [October 18 Session publication/completion review](reports/session-publication-completion-review-20261018.md)
 rechecks direct Kafka submission and whole-Run retirement after the recent

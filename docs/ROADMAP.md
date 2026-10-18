@@ -9,7 +9,14 @@
 
 The review changes no runtime/deployment. PBR-01/02/03 and PBR-O1 remain pending
 in the backlog: recovery observation lifetime, subscriber memory accounting,
-maintained documentation and same-message commentary compaction.
+maintained documentation and same-message commentary compaction. The requested
+[ADR-0257 proposal](adr/0257-browser-observation-and-buffer-boundaries.md) defines
+the following slices; it is not yet an implemented release:
+
+- [ ] B1: existing-generation identity through server/browser observations and cache resets.
+- [ ] B2: pending-event byte accounting and existing overflow/snapshot recovery.
+- [ ] B3: commentary compaction by message identity and corrected maintained guidance.
+- [ ] B4: required checks, matched deployment, live recovery and confirmed cleanup.
 
 ## Session publication and whole-Run completion review
 

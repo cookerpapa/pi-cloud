@@ -32,11 +32,14 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 The [October 18 review](reports/projector-browser-review-20261018.md) at `5e6a381f`
 records passing source/isolated-PG/browser checks and bounded reproductions.
-It does not repair or redeploy the serving runtime.
+It does not repair or redeploy the serving runtime. The requested
+[ADR-0257 proposal](adr/0257-browser-observation-and-buffer-boundaries.md) refines
+the repair scope; implementation is pending.
 
 - [ ] PBR-01 / P2: align disposable SSE/browser observation revisions with
-      same-Run writer replacement. Reuse ordered handoff/resync where possible;
-      retain old-scope/freshness checks and terminal precedence, including children.
+      same-Run writer replacement. Carry the existing fencing generation through
+      public observations; reset old-generation state in both filtering layers.
+      Retain scope/freshness checks, child/terminal behavior and same-writer cache resets.
 - [ ] PBR-02 / P2: bound slow-reader queued bytes as well as event count. Use
       existing snapshot resync on overflow, release counters on every exit and
       verify a periodically draining connection alongside a healthy viewer.

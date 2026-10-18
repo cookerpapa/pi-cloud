@@ -10,6 +10,12 @@ browser reducer, text animation, runtime observations and terminal display.
 This is a review with isolated characterizations. It changes no runtime,
 schema, public protocol or production deployment and injects no production fault.
 
+Subsequent planning is recorded in the proposed
+[ADR-0257](../adr/0257-browser-observation-and-buffer-boundaries.md). It refines the
+initial resync-first repair direction after checking the recoverable Run's queued
+interval, choosing existing execution-generation metadata for observations.
+The review findings/evidence below remain the baseline; no repair is claimed.
+
 ## Findings
 
 ### PBR-01 — P2: Worker replacement leaves old observation revisions in the open page
