@@ -1,6 +1,8 @@
 # ADR-0255: Native result limits and metadata-only settlement observation
 
-Status: accepted, 2026-10-18. Following the
+Status: accepted, implemented, deployed and verified, 2026-10-18. See the
+[delivery record](../reports/worker-harness-settlement-repair-20261018.md).
+Following the
 [Worker → Pi review](../reports/worker-harness-settlement-review-20261018.md),
 the owner chose Pi's native default limits and approved WHS-01/02/03 repairs.
 This supersedes ADR-0196's 256 KiB result budget, retaining its explicit

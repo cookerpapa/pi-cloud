@@ -9,8 +9,10 @@ this review changes no runtime or deployment. Repair directions retain Pi's
 public APIs and the existing storage/execution authorities.
 The owner-approved [repair](adr/0255-native-tool-result-boundaries.md) chooses
 native 50 KiB/2,000-line coordination results, metadata-only sequence reads and
-strict content contracts. [Delivery status](reports/worker-harness-settlement-repair-20261018.md)
-tracks implementation, required gates and the pending matched rollout.
+strict content contracts. [Delivery evidence](reports/worker-harness-settlement-repair-20261018.md)
+records the deployed `tool-settlement-20ac9696` release, 1,855 workspace tests,
+279 fault cases, eleven artifact scans and complete relevant live acceptance.
+Owned fixtures are physically cleaned and original configuration is preserved.
 
 The [October 17 Kafka → Worker reply review](reports/kafka-worker-reply-review-20261017.md)
 records missing reply-consumer admission health, attachment-restoration failure

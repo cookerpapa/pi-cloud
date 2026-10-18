@@ -1,14 +1,14 @@
 # CubeSandbox production acceptance
 
-- Checked at: 2026-10-17T16:46:33.734Z
+- Checked at: 2026-10-18T02:00:48.786Z
 - Provider/model: openai-codex / gpt-6-luna
-- Pure-chat first activity / assistant text / settled: 2349 / 2349 / 2868 ms
-- Pure-chat accepted-to-execution / execution-to-settlement: 33 / 2802 ms
+- Pure-chat first activity / assistant text / settled: 3192 / 3192 / 3392 ms
+- Pure-chat accepted-to-execution / execution-to-settlement: 41 / 3313 ms
 - Pure-chat Tool calls / Cube activations: 0 / 0
-- First coding first activity / Tool / assistant text / settled: 7259 / 7259 / 23447 / 24884 ms
-- Follow-up first activity / Tool / assistant text / settled: 3067 / 3067 / 19317 / 20655 ms
-- First coding accepted-to-execution / native Tool boundaries: 25 / 3417.364 ms
-- Follow-up accepted-to-execution / native Tool boundaries: 32 / 1206.764 ms
+- First coding first activity / Tool / assistant text / settled: 5317 / 5317 / 18976 / 20049 ms
+- Follow-up first activity / Tool / assistant text / settled: 3065 / 3065 / 15789 / 17417 ms
+- First coding accepted-to-execution / native Tool boundaries: 27 / 3360.607 ms
+- Follow-up accepted-to-execution / native Tool boundaries: 21 / 1193.052 ms
 - Coding Tool calls: 3 + 3
 - Same running Workspace Cube KVM guest reused: true
 - Agent Preview / background process survived cross-Run Tool bindings: true / true
@@ -17,9 +17,9 @@
 - Platform Git metadata absent / user-managed .git present: true / false
 - Large Workspace files on the persistent Volume: 1025
 - Large Workspace fresh-VM cold restore: true
-- Real input/output/cache-read tokens: 18047 / 2120 / 135040
-- Canonical conversation: 5 terminal Turns / 33 Pi entries / 37083 bytes
-- Current Kafka topic / end-offset sum / completed work records: pi-cloud.execution-log.v17 / 17998 / 5
+- Real input/output/cache-read tokens: 23742 / 1769 / 126464
+- Canonical conversation: 5 terminal Turns / 33 Pi entries / 33639 bytes
+- Current Kafka topic / end-offset sum / completed work records: pi-cloud.execution-log.v17 / 20072 / 5
 - PostgreSQL hot-event table absent / projected Session mutations: true / 168
 - Scheduler / Worker pool: PostgreSQL / shared
 - Cross-tenant conversation hidden: true

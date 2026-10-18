@@ -16,8 +16,11 @@ source implementation from verification, matched deployment and live acceptance.
 - [x] S1: native 50 KiB/2,000-line coordination budget and compact supervisor metadata.
 - [x] S2: skip empty observer reads; metadata-only cold sequence lookup.
 - [x] S3: distinct strict native/packed result contracts and protocol failures.
-- [ ] S4: required source, transport and fault gates; scanned matched rollout,
+- [x] S4: required source, transport and fault gates; scanned matched rollout,
       real Luna/Cube/coordination/image recovery acceptance and physical cleanup.
+
+Deployed as `tool-settlement-20ac9696`; all relevant checks pass, temporary test
+resources are removed and original accounts/configuration/credentials are preserved.
 
 ## Kafka replies → Worker callback review
 

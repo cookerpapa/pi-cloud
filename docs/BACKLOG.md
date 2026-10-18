@@ -35,18 +35,18 @@ the original Worker's result handoff into native Pi and its Storage commit.
 Atomic final settlement and unsafe recovery pass; the findings below are not
 implemented by the review and do not require a new execution/storage authority.
 The owner approved repairs and chose native 50 KiB/2,000-line defaults in
-[ADR-0255](adr/0255-native-tool-result-boundaries.md). Source changes and remaining
-verification/release gates are tracked in the
-[delivery record](reports/worker-harness-settlement-repair-20261018.md).
+[ADR-0255](adr/0255-native-tool-result-boundaries.md). The
+[delivery record](reports/worker-harness-settlement-repair-20261018.md) records
+`tool-settlement-20ac9696`, passing source/artifact/live gates and confirmed cleanup.
 
-- [ ] WHS-01 / P2: use Pi's native 50 KiB/2,000-line limits for coordination
+- [x] WHS-01 / P2: use Pi's native 50 KiB/2,000-line limits for coordination
       result admission, superseding the 256 KiB policy. Accepted JSON and multiline replies
       must remain complete; retain explicit oversize errors, fixed Tool limits,
       native hooks and the independent display budget.
-- [ ] WHS-02 / P2: skip sequence reads for body-less committed notifications and
+- [x] WHS-02 / P2: skip sequence reads for body-less committed notifications and
       make `recordSequence()` read only metadata after eviction. Retain observed
       progress and ownership guards; sequence lookup must not download images.
-- [ ] WHS-03 / P3: validate final-reply content parts before marking a valid
+- [x] WHS-03 / P3: validate final-reply content parts before marking a valid
       settlement. Cover text/native-image/packed-image boundaries and malformed
       parts using PiCloud schemas and existing protocol-failure handling. The
       review reproduces injected bad frames, not a normal malformed producer.
@@ -713,6 +713,10 @@ separate design questions, not an implicit part of the completed query merge.
       endpoint. October 10 uncached pulls needed a temporary loopback relay;
       it was removed after building and is not a runtime component. Host service
       configuration was not changed by that release.
+      The October 18 [settlement release](reports/worker-harness-settlement-repair-20261018.md)
+      again found the daemon using an inactive loopback endpoint. A temporary
+      systemd socket proxy restored build access and was removed before rollout
+      and live acceptance; the permanent host configuration remains unresolved.
 
 - [ ] Investigate Cube standard-template snapshot restoration returning
       `reset guest time failed` despite READY status. Recreating the same-image

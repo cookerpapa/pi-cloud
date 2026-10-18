@@ -76,15 +76,19 @@ enter native persistence before validated Tool execution (ADR-0230).
 The [Session work migration](docs/adr/0247-session-work-and-tool-dispatch.md) is
 deployed as `session-work-6ac697f9`: one root Run with native child Conversations,
 unified Tool replies, one Session closure and Worker direct Kafka publication.
-The current matched release, `worker-reply-b1f67dba`, uses schema 189, execution-topic
+The current matched release, `tool-settlement-20ac9696`, uses schema 189, execution-topic
 v17, boot reply v3, guest/Tool Worker protocol 7, completion startup protocol 3,
 preview schema 2 and Cube management protocol 7. Host KVM is restored; all four
 templates, application workloads and required live acceptance pass.
+The [native settlement repair](docs/reports/worker-harness-settlement-repair-20261018.md)
+uses Pi's 50 KiB/2,000-line defaults for coordination result text, with explicit
+errors for oversized structured results. Sequence-only reads no longer fetch
+history bodies/images, and native/packed Tool replies have strict content schemas.
+Real Luna/Cube checks cover boundary errors, supervisor replies, images, Stop,
+Worker/Control Plane recovery and the full Workspace/preview suite.
 The [Worker reply repair](docs/reports/worker-reply-repair-20261017.md) adds local
 reply-consumer health to new-Run admission, resumes same-boot reply delivery from
 memory and distinguishes attachment failure from missing execution evidence.
-Real Luna/Cube checks cover Stop, native input, dual-process recovery, child
-replies, large image cold recovery and the complete Workspace/preview suite.
 The local WSL web adapter also restores Windows localhost access through the
 existing systemd TCP proxy and the Kubernetes web Service.
 The [preceding preview repair](docs/reports/tool-receipt-preview-repair-20261016.md)

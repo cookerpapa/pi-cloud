@@ -8,13 +8,17 @@ CubeSandbox KVM is the only untrusted execution backend.
 This document describes ADR-0247 Session ownership and ADR-0248 management reconnect
 with ADR-0249's deployed publication contract, ADR-0250's handoff repair and
 ADR-0251's guest attachment/lifetime repair, ADR-0252's receipt/preview repair,
-ADR-0253's bounded UNKNOWN continuation and ADR-0254's Worker reply repair
+ADR-0253's bounded UNKNOWN continuation, ADR-0254's Worker reply repair and
+ADR-0255's native result/metadata boundaries
 (schema 189 / topic v17 / boot reply v3 / guest protocol 7, adapter startup 3).
-The [current delivery record](reports/worker-reply-repair-20261017.md) records the
-October 18 deployment of `worker-reply-b1f67dba` after host KVM recovery. Source,
+The [current delivery record](reports/worker-harness-settlement-repair-20261018.md)
+records the October 18 deployment of `tool-settlement-20ac9696`. Source,
 artifact and relevant live gates pass: native input/Stop, dual-process recovery,
 browser/image/Read, child control replies across replacement and the complete
-Cube multi-round/Volume suite. Large Tool images also survive cold Worker recovery.
+Cube multi-round/Volume suite. Coordination returns preserve valid JSON and reject
+over-budget text explicitly; supervisor replies and large image cold recovery pass.
+The [preceding Worker reply record](reports/worker-reply-repair-20261017.md)
+records local admission, receipt separation and same-boot reply resume.
 The [preceding preview record](reports/tool-receipt-preview-repair-20261016.md)
 covers terminal-aware previews and receipt loss on `tool-preview-325f0ebd`. A measured
 30-second SSE recovery exposed a too-short 25-second test deadline; the corrected
@@ -989,6 +993,12 @@ attachment failure interrupts with its own reason without declaring sandbox loss
 or retroactively cancelling a completed Tool. Same-boot reply reassignment uses
 the reader's existing volatile progress; this cursor is not Pi history or
 Projector durable recovery state.
+Committed observer notifications which produce no outgoing display body do not
+read an Entry or its sequence. Observed Entry progress still advances. Sequence
+lookups use acknowledged in-memory metadata or select only `seq` from the scoped
+record index after eviction, without restoring bodies or images. Native guest
+results and packed Kafka replies use distinct content schemas; malformed content
+cannot mark a mailbox invocation as validly settled (ADR-0255).
 The Projector expands a combined invocation into the native Cube handoff
 only after materializing its native intent. Cancellation before the invocation
 enters its publication queue prevents dispatch; later cancellation can race
@@ -1062,7 +1072,7 @@ the outer Tool Result. Its `runs.*` duplex host-call channel is unchanged. Varia
 call stacks are not recovery checkpoints. Preview remains a fixed trusted
 platform adapter; user-supplied Worker extensions are not supported.
 
-Under [ADR-0255](adr/0255-native-tool-result-boundaries.md), current source admits
+Under [ADR-0255](adr/0255-native-tool-result-boundaries.md), coordination tools admit
 coordination result text within Pi's native 50 KiB UTF-8/2,000-line defaults.
 A final LF terminates its line; outer JSON escaping is not counted as native
 text. Structured values are serialized once. Oversized values/errors produce

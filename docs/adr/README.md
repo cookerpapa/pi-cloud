@@ -4,6 +4,9 @@
 repairs: native 50 KiB/2,000-line coordination result admission, metadata-only
 sequence reads and strict native/packed Tool result shapes. It replaces the old
 256 KiB result policy without changing Pi's canonical settlement authority.
+It is deployed as `tool-settlement-20ac9696`; the
+[delivery record](../reports/worker-harness-settlement-repair-20261018.md) separates
+source, artifact and real Luna/Cube verification and confirms cleanup.
 
 [ADR-0254](0254-worker-reply-admission-and-settlement.md) records the approved
 Kafka → Worker repair plan following the owner's thin-admission decision:
