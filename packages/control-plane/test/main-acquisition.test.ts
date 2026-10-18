@@ -64,15 +64,24 @@ it("closes the acquired metrics listener if database construction fails", async 
 
 it("cleans database and telemetry when Subagent construction fails before the Projector", async () => {
   const close = vi.fn(async () => {}),
-    destroy = vi.fn(async () => {});
+    destroy = vi.fn(async () => {}),
+    destroyMaintenance = vi.fn(async () => {});
   const failure = new Error("Subagent construction failed");
   calls.observability.mockResolvedValue({ metrics: {}, close });
-  calls.database.mockReturnValue({ destroy });
+  calls.database
+    .mockReturnValueOnce({ destroy })
+    .mockReturnValueOnce({ destroy: destroyMaintenance });
   calls.subagents.mockImplementation(function () {
     throw failure;
   });
   await expect(startControlPlane()).rejects.toBe(failure);
   expect(destroy).toHaveBeenCalledOnce();
+  expect(destroyMaintenance).toHaveBeenCalledOnce();
+  expect(calls.database).toHaveBeenNthCalledWith(2, {
+    connectionString: "postgresql://direct-fixture",
+    maxConnections: 3,
+    checkoutTimeoutMs: 5000,
+  });
   expect(close).toHaveBeenCalledOnce();
   expect(calls.sandboxClose).toHaveBeenCalledOnce();
 });
@@ -80,11 +89,15 @@ it("cleans database and telemetry when Subagent construction fails before the Pr
 it("closes a constructed Subagent controller when Projector ownership was never established", async () => {
   const close = vi.fn(async () => {}),
     destroy = vi.fn(async () => {}),
+    destroyMaintenance = vi.fn(async () => {}),
     destroyReads = vi.fn(async () => {}),
     subagentClose = vi.fn(async () => {});
   const failure = new Error("Projector construction failed");
   calls.observability.mockResolvedValue({ metrics: {}, close });
-  calls.database.mockReturnValueOnce({ destroy }).mockReturnValueOnce({ destroy: destroyReads });
+  calls.database
+    .mockReturnValueOnce({ destroy })
+    .mockReturnValueOnce({ destroy: destroyMaintenance })
+    .mockReturnValueOnce({ destroy: destroyReads });
   calls.subagents.mockImplementation(function () {
     return { close: subagentClose };
   });
@@ -95,11 +108,26 @@ it("closes a constructed Subagent controller when Projector ownership was never 
   expect(subagentClose).toHaveBeenCalledOnce();
   expect(calls.sandboxClose).toHaveBeenCalledOnce();
   expect(destroy).toHaveBeenCalledOnce();
+  expect(destroyMaintenance).toHaveBeenCalledOnce();
   expect(destroyReads).toHaveBeenCalledOnce();
   expect(calls.database).toHaveBeenLastCalledWith(
     expect.objectContaining({ maxConnections: 2, readTimeoutMs: 5000 }),
   );
   expect(close).toHaveBeenCalledOnce();
+});
+
+it("closes the ordinary pool if maintenance pool construction fails", async () => {
+  const close = vi.fn(async () => {}),
+    destroy = vi.fn(async () => {});
+  const failure = new Error("Maintenance database construction failed");
+  calls.observability.mockResolvedValue({ metrics: {}, close });
+  calls.database.mockReturnValueOnce({ destroy }).mockImplementationOnce(() => {
+    throw failure;
+  });
+  await expect(startControlPlane()).rejects.toBe(failure);
+  expect(destroy).toHaveBeenCalledOnce();
+  expect(close).toHaveBeenCalledOnce();
+  expect(calls.sandbox).not.toHaveBeenCalled();
 });
 
 it("preserves an early primary failure as well as cleanup failures", async () => {

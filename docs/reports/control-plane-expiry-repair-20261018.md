@@ -39,3 +39,12 @@ concurrent admission and restart. Duplicate maintenance-loop fixtures were then
 consolidated before the final full-suite run. Full source/fault/transport gates,
 scanned matched release and live acceptance are pending. No production fault or deployment is
 claimed by this intermediate source record.
+
+The first monolithic CI stops in the unchanged upstream Cube binary-plugin test
+with ETXTBSY executing its freshly written tmpfs script. The complete allocation
+check passes on an unchanged repeat; no assertion or runtime fallback is relaxed.
+The following workspace run exposes an old startup-cleanup mock returning the
+same object for both ordinary and new maintenance pools. The fixture now uses
+three distinct ordinary/maintenance/queue-read pools and checks each closes once,
+along with failure while constructing the maintenance pool. These test changes
+will be included in the final candidate; the initial candidate is not deployed.
