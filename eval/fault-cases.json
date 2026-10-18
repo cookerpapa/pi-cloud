@@ -2017,6 +2017,48 @@
       "file": "test/session-publication-refusal.test.ts",
       "test": "retires the Host after uncertain or post-ACK failure: display_confirmation",
       "invariant": "Uncertain or post-ACK failure retires the owner, including a wrongly typed no-send callback exception."
+    },
+    {
+      "id": "browser-observation-writer-handoff",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/observation-handoff.test.ts",
+      "test": "keeps root and child SSE open across writer handoff, resets all observations and rejects late old generations",
+      "invariant": "Existing execution generations permit same-Run recovery without stale Working or VM state and reject late old observations."
+    },
+    {
+      "id": "browser-observation-cache-expiry",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/run-observations.test.ts",
+      "test": "resyncs readers when same-generation observation counters expire",
+      "invariant": "Nonterminal observation eviction cannot silently reset counters beneath an existing reader."
+    },
+    {
+      "id": "browser-event-byte-overflow",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-event-buffer.test.ts",
+      "test": "admits the exact encoded byte budget, releases it on dequeue and clears every pending channel on overflow",
+      "invariant": "Slow-reader overflow releases retained data and requests replacement without stale queued channels."
+    },
+    {
+      "id": "browser-slow-periodic-drain",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-event-buffer.test.ts",
+      "test": "resyncs a periodically draining slow socket without delaying a healthy reader or losing replacement content",
+      "invariant": "Partial network progress cannot bypass the pending-byte budget or block another viewer."
+    },
+    {
+      "id": "browser-large-event-replacement",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-event-buffer.test.ts",
+      "test": "recovers a single over-budget pending event through a larger framed snapshot",
+      "invariant": "A pending-event budget cannot make a large canonical snapshot permanently undisplayable."
+    },
+    {
+      "id": "browser-commentary-coverage",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/commentary-tail.test.ts",
+      "test": "compacts same-message commentary while delivering each original live event and retaining immutable readers",
+      "invariant": "Commentary compaction preserves live event order, borrowed snapshots and canonical settlement identity."
     }
   ]
 }

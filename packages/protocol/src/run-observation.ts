@@ -114,7 +114,13 @@ export const ExecutionPathStatusSchema = Type.Object(
   { additionalProperties: false },
 );
 export type ExecutionPathStatus = Static<typeof ExecutionPathStatusSchema>;
-const identity = { sessionId: id, turnId: id, runId: id };
+const identity = {
+  sessionId: id,
+  turnId: id,
+  runId: id,
+  // Existing physical Session lease epoch, not a separately allocated UI counter.
+  generation: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+};
 export const RunObservationSchema = Type.Union([
   Type.Object(
     {

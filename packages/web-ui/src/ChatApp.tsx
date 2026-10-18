@@ -55,7 +55,7 @@ import { isConversationTailVisible } from "./conversation-scroll.ts";
 import { activeTurn, createInitialSessionView, sessionViewReducer } from "./session-view.ts";
 import { streamSessionEvents } from "./sse.ts";
 import { ToolProgressStore } from "./tool-progress-store.ts";
-import { RunObservationStore } from "./RunStatus.tsx";
+import { RunObservationStore } from "./run-observation-store.ts";
 import { errorMessage } from "./ui-errors.ts";
 import { WorkspaceInspector } from "./WorkspaceInspector.tsx";
 import { useResizablePanel } from "./use-resizable-panel.ts";

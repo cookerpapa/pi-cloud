@@ -50,6 +50,7 @@ describe("Session snapshot and live stream", () => {
     await vi.advanceTimersByTimeAsync(0);
     const activity = {
       type: "run.activity" as const,
+      generation: 1,
       sessionId: "s",
       turnId: "turn",
       runId: "run",

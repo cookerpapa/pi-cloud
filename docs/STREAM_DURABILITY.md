@@ -115,8 +115,10 @@ Complete message projection advances display/native coverage on the Run or
 child view, so a refresh does not duplicate text already saved in history.
 
 The Worker interprets native updates; Projector resolves same-commit text
-references. Native stream commits coalesce at Pi's 100 ms boundary, while public
-adjacent text can coalesce for 25 ms. The browser reveals both commentary and
+references. Native stream commits coalesce at Pi's 100 ms boundary; Projector
+immediately forwards their original display events. Its recovery cache can merge
+adjacent commentary/final appends sharing one explicit message identity, without
+delaying live delivery. The browser reveals both commentary and
 final text progressively; snapshots/reduced-motion/background views apply already
 received text directly. Presentation pacing changes no persistence boundary.
 
@@ -124,9 +126,17 @@ Large snapshots/events use bounded begin/part/end framing. A partial value is
 discarded on disconnect. Slow network writes time out without blocking Kafka or
 other viewers. SSE keepalives keep a connection open but do not poll PG for
 missing events; idempotent terminal replay is therefore required.
+Pending formal events per subscriber have both a 1,024-record and 16 MiB encoded-byte
+budget. Overflow discards disposable delivery and closes for a replacement
+snapshot. In-flight values and complete snapshots retain bounded framing; their
+total size is not constrained by the pending-event budget.
 
 Queue views and runtime observations have independent disposable delivery.
-Terminal state wins over late Working/progress frames. Native queue changes
+Terminal state wins over late Working/progress frames. Public activity/path/
+execution observations require the existing execution `generation`. Newer
+generations clear old phase/path/VM state in both SSE and browser views; older
+generations are rejected. Same-generation cache eviction resyncs its readers.
+Native queue changes
 notify views through the same commit, and queued root/control changes through
 ordered PG references. Reconnect rebuilds views; observations cannot schedule
 or replay work.

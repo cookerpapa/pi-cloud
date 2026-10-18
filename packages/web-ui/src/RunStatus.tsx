@@ -3,61 +3,7 @@ import { RUN_OBSERVATION_STALE_MS, type RunObservation, type RunPhase } from "@p
 import type { TurnView } from "./session-view.ts";
 import { useI18n } from "./i18n.tsx";
 
-type Observations = {
-  activity?: Extract<RunObservation, { type: "run.activity" }>;
-  path?: Extract<RunObservation, { type: "run.path" }>;
-  execution?: Extract<RunObservation, { type: "run.execution" }>;
-  toolActivityAt?: number;
-};
-/** Health is disposable UI state, separate from transcript/history. */
-export class RunObservationStore {
-  readonly #values = new Map<string, Observations>();
-  readonly #listeners = new Map<string, Set<() => void>>();
-  get(turnId: string): Observations | undefined {
-    return this.#values.get(turnId);
-  }
-  subscribe(turnId: string, listener: () => void): () => void {
-    let listeners = this.#listeners.get(turnId);
-    if (!listeners) this.#listeners.set(turnId, (listeners = new Set()));
-    listeners.add(listener);
-    return () => {
-      listeners.delete(listener);
-      if (!listeners.size) {
-        this.#listeners.delete(turnId);
-        this.#values.delete(turnId);
-      }
-    };
-  }
-  receive(value: RunObservation): void {
-    const listeners = this.#listeners.get(value.turnId);
-    if (!listeners) return;
-    const previous = this.#values.get(value.turnId);
-    const knownRun =
-      previous?.activity?.runId ?? previous?.path?.runId ?? previous?.execution?.runId;
-    if (knownRun && knownRun !== value.runId) return;
-    if (value.type === "run.activity") {
-      if (previous?.activity && previous.activity.revision >= value.revision) return;
-      this.#values.set(value.turnId, { ...previous, activity: value });
-    } else if (value.type === "run.execution") {
-      if (previous?.execution && previous.execution.revision >= value.revision) return;
-      this.#values.set(value.turnId, { ...previous, execution: value });
-    } else {
-      if (previous?.path && previous.path.sentAt >= value.sentAt) return;
-      this.#values.set(value.turnId, { ...previous, path: value });
-    }
-    for (const listener of listeners) listener();
-  }
-  toolProgress(turnId: string): void {
-    const listeners = this.#listeners.get(turnId);
-    if (!listeners) return;
-    this.#values.set(turnId, { ...this.#values.get(turnId), toolActivityAt: Date.now() });
-    for (const listener of listeners) listener();
-  }
-  reset(): void {
-    this.#values.clear();
-    for (const listeners of this.#listeners.values()) for (const listener of listeners) listener();
-  }
-}
+import { type Observations, type RunObservationStore } from "./run-observation-store.ts";
 
 export function runStatus(
   turn: TurnView,

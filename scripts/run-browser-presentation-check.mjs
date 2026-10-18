@@ -35,7 +35,7 @@ const fixture = `
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { ConversationTurn } from "/src/ConversationTurn.tsx";
-import { RunObservationStore } from "/src/RunStatus.tsx";
+import { RunObservationStore } from "/src/run-observation-store.ts";
 import { useResizablePanel } from "/src/use-resizable-panel.ts";
 import ChatApp from "/src/ChatApp.tsx";
 import { AdminPage } from "/src/AdminPage.tsx";
@@ -525,7 +525,7 @@ try {
     // Working survives already-rendered commentary and silent model intervals.
     await page.waitFor("document.querySelector('.product-run-status')");
     await page.evaluate(
-      `runObservations.receive({type:'run.activity',sessionId:'s',turnId:'turn',runId:'run',revision:1,phase:'waiting_model',observedAt:Date.now(),lastActivityAt:Date.now()-20000});runObservations.receive({type:'run.path',sessionId:'s',turnId:'turn',runId:'run',sentAt:Date.now(),observedAt:Date.now()})`,
+      `runObservations.receive({type:'run.activity',generation:1,sessionId:'s',turnId:'turn',runId:'run',revision:1,phase:'waiting_model',observedAt:Date.now(),lastActivityAt:Date.now()-20000});runObservations.receive({type:'run.path',generation:1,sessionId:'s',turnId:'turn',runId:'run',sentAt:Date.now(),observedAt:Date.now()})`,
     );
     await page.waitFor(
       "document.querySelector('.product-run-status').dataset.runPhase==='waiting_model'",
@@ -535,11 +535,24 @@ try {
       /最近活动 (?:19|20|21) 秒前/u,
     );
     await page.evaluate(
-      "runObservations.receive({type:'run.path',sessionId:'s',turnId:'turn',runId:'run',sentAt:Date.now()+1,observedAt:Date.now()+1})",
+      "runObservations.receive({type:'run.path',generation:1,sessionId:'s',turnId:'turn',runId:'run',sentAt:Date.now()+1,observedAt:Date.now()+1})",
     );
     assert.match(
       await page.evaluate("document.querySelector('.product-run-status').textContent"),
       /最近活动 (?:19|20|21) 秒前/u,
+    );
+    await page.evaluate(
+      "runObservations.receive({type:'run.activity',generation:2,sessionId:'s',turnId:'turn',runId:'run',revision:1,phase:'executing_tool',observedAt:Date.now(),lastActivityAt:Date.now()})",
+    );
+    await page.waitFor(
+      "document.querySelector('.product-run-status').dataset.runPhase==='executing_tool'",
+    );
+    await page.evaluate(
+      "runObservations.receive({type:'run.activity',generation:1,sessionId:'s',turnId:'turn',runId:'run',revision:100,phase:'waiting_model',observedAt:Date.now(),lastActivityAt:Date.now()})",
+    );
+    assert.equal(
+      await page.evaluate("document.querySelector('.product-run-status').dataset.runPhase"),
+      "executing_tool",
     );
     await page.evaluate(`renderTurn(${JSON.stringify(target)})`);
     await page.waitFor('document.querySelector(".product-agent-answer")');
@@ -1263,6 +1276,7 @@ try {
       machineWorkspaceRebind: true,
       rebindRetryUsesSameTargetAndKey: true,
       persistentRuntimeStatus: true,
+      observationGenerationRecovery: true,
       separateActivityAndPath: true,
       firstImageOnlyMessage: true,
       uploadIdentityOnRetry: true,

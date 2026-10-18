@@ -5,6 +5,7 @@ import { serviceAddress } from "./lib/production-kubernetes.mjs";
 import { sql } from "kysely";
 import { crashOwnedWorker } from "./lib/owned-worker-crash.mjs";
 import { checkNativeLiveProgress } from "./lib/live-native-progress.mjs";
+import { watchNativeRecoveryObservations } from "./lib/live-native-observations.mjs";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
 import { S3ImageBlobStore } from "../packages/session-attachments/src/s3.ts";
@@ -32,11 +33,15 @@ const report = {
   nativeProgressSha256: createHash("sha256")
     .update(await readFile(new URL("./lib/live-native-progress.mjs", import.meta.url)))
     .digest("hex"),
+  nativeObservationsSha256: createHash("sha256")
+    .update(await readFile(new URL("./lib/live-native-observations.mjs", import.meta.url)))
+    .digest("hex"),
   model: "gpt-6-luna",
   accepted: false,
   cases: [],
 };
 const sessions = [];
+const observationWatchers = [];
 let tenant, api, project, failure;
 const terminal = (state) => ["completed", "failed", "cancelled", "timed_out"].includes(state);
 async function until(read, label, timeout = 180000) {
@@ -110,6 +115,18 @@ try {
       newIdempotencyKey("turn"),
     );
     assert.equal(root.kind, "run");
+    const observations =
+      scenario === "recover"
+        ? watchNativeRecoveryObservations({
+            sessionId: session.sessionId,
+            turnId: root.turnId,
+            runId: root.runId,
+            authorizationToken: tenant.credential.token,
+            fetchImplementation: (url, init) => fetch(new URL(String(url), base), init),
+            until,
+          })
+        : undefined;
+    if (observations) observationWatchers.push(observations);
     await until(async () => {
       const r = await api.getRun(root.runId);
       if (terminal(r.state))
@@ -131,12 +148,16 @@ try {
       const q = await api.getInputQueue(session.sessionId);
       return q.items.some((i) => i.inputId === input.inputId) && q;
     }, "First native input projection");
+    const editedText =
+      scenario === "recover"
+        ? "After recovery, run bash exactly once: sleep 35; printf RECOVERY_OBSERVATION_OK. Then reply EDITED_INPUT_MARKER."
+        : "Without using tools, reply EDITED_INPUT_MARKER.";
     await api.mutateQueuedInput(
       session.sessionId,
       input.inputId,
       {
         action: "edit",
-        text: "Without using tools, reply EDITED_INPUT_MARKER.",
+        text: editedText,
         revision: queue.revision,
       },
       newIdempotencyKey("edit"),
@@ -188,8 +209,11 @@ try {
       db,
     );
     assert.equal(old.rows.length, 0, "Input edits must not enter retained native history");
-    let crash;
-    if (scenario === "recover") crash = await crashOwnedWorker(db, tenant.tenantId, root.runId);
+    let crash, observationRecovery, previousGeneration;
+    if (scenario === "recover") {
+      previousGeneration = await observations.beforeCrash();
+      crash = await crashOwnedWorker(db, tenant.tenantId, root.runId);
+    }
     if (scenario === "stop") {
       await api.cancelTurn(session.sessionId, root.turnId, newIdempotencyKey("cancel"));
       await finished(root.runId);
@@ -231,6 +255,7 @@ try {
           .where("reason", "=", "native_execution_recovery")
           .execute();
         assert(recovered.length > 0, "Queued inputs require an actual recovered Run");
+        observationRecovery = await observations.afterRecovery(previousGeneration);
       }
     }
     const runs = await db
@@ -247,7 +272,9 @@ try {
       editedNativeInput: true,
       noRetainedEditBodies: true,
       ...(crash ? { crash } : {}),
+      ...(observationRecovery ? { observationRecovery } : {}),
     });
+    await observations?.close();
   }
   report.cases.push(
     ...(await checkNativeLiveProgress({
@@ -277,6 +304,7 @@ try {
       errors.push(error);
     }
   };
+  for (const watcher of observationWatchers) await clean(() => watcher.close());
   for (const session of sessions)
     await clean(async () => {
       const runs = await db

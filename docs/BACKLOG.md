@@ -32,23 +32,27 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 The [October 18 review](reports/projector-browser-review-20261018.md) at `5e6a381f`
 records passing source/isolated-PG/browser checks and bounded reproductions.
-It does not repair or redeploy the serving runtime. The requested
-[ADR-0257 proposal](adr/0257-browser-observation-and-buffer-boundaries.md) refines
-the repair scope; implementation is pending.
+It does not repair or redeploy the serving runtime. The subsequently approved
+[ADR-0257 repair](adr/0257-browser-observation-and-buffer-boundaries.md) is
+implemented in source; [verification/release](reports/projector-browser-repair-20261018.md)
+remain pending.
 
-- [ ] PBR-01 / P2: align disposable SSE/browser observation revisions with
+- [x] PBR-01 / P2: align disposable SSE/browser observation revisions with
       same-Run writer replacement. Carry the existing fencing generation through
       public observations; reset old-generation state in both filtering layers.
       Retain scope/freshness checks, child/terminal behavior and same-writer cache resets.
-- [ ] PBR-02 / P2: bound slow-reader queued bytes as well as event count. Use
+- [x] PBR-02 / P2: bound slow-reader queued bytes as well as event count. Use
       existing snapshot resync on overflow, release counters on every exit and
       verify a periodically draining connection alongside a healthy viewer.
       The review proves 32 MiB of retained Tool input, not a production OOM.
-- [ ] PBR-O1 / P3: compact adjacent commentary appends with the same explicit
+- [x] PBR-O1 / P3: compact adjacent commentary appends with the same explicit
       message identity while preserving replacements, phases and message boundaries.
-- [ ] PBR-03 / P3: remove the obsolete 25 ms public-text coalescing claim from
+- [x] PBR-03 / P3: remove the obsolete 25 ms public-text coalescing claim from
       maintained architecture/streaming guidance. Native commits, recovery spans
       and browser animation are separate boundaries.
+- [ ] B4: required source/fault/transport/browser gates, scanned matched release,
+      real same-connection Worker recovery and relevant live acceptance; preserve
+      original configuration and confirm physical fixture cleanup.
 
 ## Session publication and whole-Run completion review
 

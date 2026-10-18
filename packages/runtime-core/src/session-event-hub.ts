@@ -4,7 +4,10 @@ import type {
   RunObservation,
   InputQueueResource,
 } from "@pi-cloud/protocol";
-import { ToolPreviewChannel } from "@pi-cloud/protocol";
+import { ToolPreviewChannel, SESSION_STREAM_PART_CHARACTERS } from "@pi-cloud/protocol";
+import { stringifyChunked } from "@discoveryjs/json-ext";
+
+export const SESSION_EVENT_PENDING_BYTES = 16 * 1024 * 1024;
 
 export type SessionEventWake = {
   throughSequence: number | null;
@@ -22,7 +25,9 @@ export class SessionEventSubscription {
   readonly #tenantId: string;
   readonly #sessionId: string;
   readonly #onClose: (subscription: SessionEventSubscription) => void;
-  #queuedWakes: SessionEventWake[] = [];
+  #queuedWakes: { wake: SessionEventWake; bytes: number }[] = [];
+  #queuedBytes = 0;
+  #resync = false;
   #pendingRead: PendingRead | undefined;
   #closed = false;
   readonly #progress = new Map<string, { header: ToolProgress; channel: ToolPreviewChannel }>();
@@ -33,7 +38,10 @@ export class SessionEventSubscription {
     tenantId: string,
     sessionId: string,
     onClose: (subscription: SessionEventSubscription) => void,
+    readonly maximumPendingBytes = SESSION_EVENT_PENDING_BYTES,
   ) {
+    if (!Number.isSafeInteger(maximumPendingBytes) || maximumPendingBytes < 1)
+      throw new TypeError("Invalid pending Session event byte budget");
     this.#tenantId = tenantId;
     this.#sessionId = sessionId;
     this.#onClose = onClose;
@@ -51,8 +59,8 @@ export class SessionEventSubscription {
     return this.#closed;
   }
 
-  notifyEvent(event: PiCloudEvent): void {
-    if (this.#closed) return;
+  notifyEvent(event: PiCloudEvent, encodedBytes: () => number): void {
+    if (this.#closed || this.#resync) return;
     if (event.sessionId !== this.#sessionId) {
       throw new TypeError("Session event wake belongs to a different Session");
     }
@@ -67,11 +75,11 @@ export class SessionEventSubscription {
             preview.header.toolCallId === event.payload.toolCallId)
         )
           this.#progress.delete(id);
-    this.#push({ throughSequence: event.seq, event });
+    this.#push(event, encodedBytes);
   }
 
   notifyProgress(progress: ToolProgress): void {
-    if (this.#closed || this.#queuedWakes.some((wake) => wake.throughSequence === null)) return;
+    if (this.#closed || this.#resync) return;
     if (progress.sessionId !== this.#sessionId)
       throw new Error("Tool progress belongs to another Session");
     let preview = this.#progress.get(progress.operationId);
@@ -105,7 +113,7 @@ export class SessionEventSubscription {
   }
 
   notifyObservation(observation: RunObservation): void {
-    if (this.#closed || this.#queuedWakes.some((wake) => wake.throughSequence === null)) return;
+    if (this.#closed || this.#resync) return;
     if (this.#pendingRead) {
       const pending = this.#pendingRead;
       this.#pendingRead = undefined;
@@ -113,43 +121,69 @@ export class SessionEventSubscription {
       return;
     }
     const key = `${observation.turnId}\0${observation.type}`;
+    for (const pending of this.#observations.values())
+      if (pending.turnId === observation.turnId && pending.generation > observation.generation)
+        return;
+    for (const [id, pending] of this.#observations)
+      if (pending.turnId === observation.turnId && pending.generation < observation.generation)
+        this.#observations.delete(id);
+    const previous = this.#observations.get(key);
+    const position = (value: RunObservation) =>
+      value.type === "run.path" ? value.sentAt : value.revision;
+    if (previous && position(previous) >= position(observation)) return;
     if (this.#observations.size >= 64 && !this.#observations.has(key))
       this.#observations.delete(this.#observations.keys().next().value!);
     this.#observations.set(key, observation);
   }
 
   resync(): void {
-    if (this.#closed) return;
+    if (this.#closed || this.#resync) return;
+    this.#resync = true;
+    this.#clearPending();
+    const pending = this.#pendingRead;
+    this.#pendingRead = undefined;
+    if (pending) pending.resolve({ throughSequence: null });
+    else this.#queuedWakes.push({ wake: { throughSequence: null }, bytes: 0 });
+  }
+
+  #clearPending(): void {
+    this.#queuedWakes = [];
+    this.#queuedBytes = 0;
     this.#progress.clear();
     this.#observations.clear();
     this.#inputQueue = undefined;
-    this.#push({ throughSequence: null });
   }
 
-  #push(wake: SessionEventWake): void {
+  #push(event: PiCloudEvent, encodedBytes: () => number): void {
+    const wake = { throughSequence: event.seq, event };
     if (this.#pendingRead !== undefined) {
       const pending = this.#pendingRead;
       this.#pendingRead = undefined;
       pending.resolve(wake);
       return;
     }
-    if (wake.throughSequence === null) {
-      this.#queuedWakes = [{ throughSequence: null }];
-      return;
-    }
-    if (this.#queuedWakes.some((queued) => queued.throughSequence === null)) return;
     if (this.#queuedWakes.length >= 1_024) {
-      this.#queuedWakes = [{ throughSequence: null }];
+      this.resync();
       return;
     }
-    this.#queuedWakes.push(wake);
+    const bytes = encodedBytes();
+    if (this.#queuedBytes + bytes > this.maximumPendingBytes) {
+      this.resync();
+      return;
+    }
+    this.#queuedBytes += bytes;
+    this.#queuedWakes.push({ wake, bytes });
   }
 
   next(): Promise<SessionEventWake | undefined>;
   next(heartbeatMs: number): Promise<SessionEventWake | "heartbeat" | undefined>;
   next(heartbeatMs?: number): Promise<SessionEventWake | "heartbeat" | undefined> {
-    const wake = this.#queuedWakes.shift();
-    if (wake !== undefined) return Promise.resolve(wake);
+    const queued = this.#queuedWakes.shift();
+    if (queued !== undefined) {
+      this.#queuedBytes -= queued.bytes;
+      return Promise.resolve(queued.wake);
+    }
+    if (this.#closed || this.#resync) return Promise.resolve(undefined);
     if (this.#inputQueue) {
       const inputQueue = this.#inputQueue;
       this.#inputQueue = undefined;
@@ -165,7 +199,6 @@ export class SessionEventSubscription {
       if (update)
         return Promise.resolve({ throughSequence: null, progress: { ...preview.header, update } });
     }
-    if (this.#closed) return Promise.resolve(undefined);
     if (this.#pendingRead !== undefined) {
       throw new Error("Only one pending session-event read is allowed");
     }
@@ -191,10 +224,7 @@ export class SessionEventSubscription {
   close(): void {
     if (this.#closed) return;
     this.#closed = true;
-    this.#inputQueue = undefined;
-    this.#queuedWakes = [];
-    this.#progress.clear();
-    this.#observations.clear();
+    this.#clearPending();
     const pending = this.#pendingRead;
     this.#pendingRead = undefined;
     pending?.resolve(undefined);
@@ -202,7 +232,7 @@ export class SessionEventSubscription {
   }
 
   notifyInputQueue(inputQueue: InputQueueResource): void {
-    if (this.#closed || this.#queuedWakes.some((w) => w.throughSequence === null)) return;
+    if (this.#closed || this.#resync) return;
     if (inputQueue.sessionId !== this.#sessionId)
       throw new Error("Input queue belongs to another Session");
     if (this.#inputQueue && BigInt(this.#inputQueue.viewVersion) > BigInt(inputQueue.viewVersion))
@@ -218,10 +248,18 @@ export class SessionEventSubscription {
 export class SessionEventHub {
   readonly #subscriptions = new Map<string, Set<SessionEventSubscription>>();
 
+  constructor(readonly maximumPendingBytes = SESSION_EVENT_PENDING_BYTES) {
+    if (!Number.isSafeInteger(maximumPendingBytes) || maximumPendingBytes < 1)
+      throw new TypeError("Invalid pending Session event byte budget");
+  }
+
   subscribe(tenantId: string, sessionId: string): SessionEventSubscription {
     const key = this.#key(tenantId, sessionId);
-    const subscription = new SessionEventSubscription(tenantId, sessionId, (closed) =>
-      this.#remove(closed),
+    const subscription = new SessionEventSubscription(
+      tenantId,
+      sessionId,
+      (closed) => this.#remove(closed),
+      this.maximumPendingBytes,
     );
     const current = this.#subscriptions.get(key);
     if (current === undefined) {
@@ -235,7 +273,22 @@ export class SessionEventHub {
   publish(tenantId: string, event: PiCloudEvent): void {
     const current = this.#subscriptions.get(this.#key(tenantId, event.sessionId));
     if (current === undefined) return;
-    for (const subscription of [...current]) subscription.notifyEvent(event);
+    // Count only when a reader actually queues this event, once for this broadcast.
+    // Retain numbers/references in queues, not an extra serialized body per viewer.
+    let bytes: number | undefined;
+    const encodedBytes = () => {
+      if (bytes === undefined) {
+        bytes = 0;
+        for (const chunk of stringifyChunked(event, {
+          highWaterMark: SESSION_STREAM_PART_CHARACTERS,
+        })) {
+          bytes += Buffer.byteLength(chunk);
+          if (bytes > this.maximumPendingBytes) break;
+        }
+      }
+      return bytes;
+    };
+    for (const subscription of [...current]) subscription.notifyEvent(event, encodedBytes);
   }
 
   publishProgress(tenantId: string, progress: ToolProgress): void {

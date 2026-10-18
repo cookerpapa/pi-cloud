@@ -627,11 +627,18 @@ Internal forwarding bypasses the external Provider HTTP proxy.
 Existing readers retain immutable references while semantic commits remove
 covered spans. Completed snapshot objects are released after sending, not held
 for the lifetime of an SSE connection. Blocked writes have a 30-second deadline;
-slow readers disconnect without blocking Kafka or other viewers. Pending text
+each subscriber's additional pending formal events are bounded by 1,024 records
+and 16 MiB of encoded event bytes. Size is counted lazily once per broadcast when
+queuing is necessary. Overflow clears pending delivery and requests the existing
+replacement snapshot; it cannot hold Kafka or another viewer. This budget is not
+a limit on complete snapshots, total output or actual process heap. Pending text
 still needs memory proportional to its actual content, not constant RAM for
-unbounded output. SSE heartbeats keep idle connections open. Pi Durable coalesces model partials at its native 100ms trailing-write boundary;
-committed text changes then enter the public display stream, whose adjacent text
-may coalesce for 25ms. Complete terminal responses remain visible when no partial
+unbounded output. SSE heartbeats keep idle connections open. Pi Durable coalesces
+model partials at its native 100 ms trailing-write boundary. Projector resolves
+committed descriptions and immediately publishes their original display events.
+The recovery tail compacts adjacent appends to the same explicitly identified
+commentary or final message; that cache has no public-text delay timer.
+Complete terminal responses remain visible when no partial
 was committed. Phase metadata is preserved and can be corrected by later provider
 information; the adapter does not require a text_end event or fabricate a typing
 stream. Tool argument drafts and thinking are not public text streams. Tool
@@ -652,6 +659,13 @@ The existing Worker management credential protects this private ingress.
 `run.activity`, `run.path` and `run.execution` are unsequenced, disposable SSE frames. Slow readers
 retain only the latest values; reconnect starts without old observation history.
 Only active turns may display them, and terminal state wins over late frames.
+Under [ADR-0257](adr/0257-browser-observation-and-buffer-boundaries.md), each frame
+requires `generation`, copied from the already-admitted Session fencing token.
+Higher generations reset all old observation/revision state in the SSE view and
+browser; lower generations are discarded. A cache eviction which resets counters
+within the same generation resyncs the affected Session. No new execution counter,
+PG read or durable health record is introduced. Source and rollout status are
+tracked in the [delivery record](reports/projector-browser-repair-20261018.md).
 
 Ordinary successfully processed execution records provide path evidence. After
 publication silence or stale execution evidence, one physical Session emits at

@@ -74,8 +74,7 @@ export class CompactEventTail {
       left.event.payload.replace ||
       right.event.payload.replace ||
       left.event.payload.messageId !== right.event.payload.messageId ||
-      left.event.payload.phase === "commentary" ||
-      right.event.payload.phase === "commentary" ||
+      (left.event.payload.phase === "commentary" && !left.event.payload.messageId) ||
       left.event.payload.phase !== right.event.payload.phase ||
       left.event.turnId !== right.event.turnId ||
       left.event.sessionId !== right.event.sessionId ||

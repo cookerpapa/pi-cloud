@@ -9,7 +9,8 @@ import { useI18n } from "./i18n.tsx";
 import { MessageCopyButton } from "./MessageCopyButton.tsx";
 import { ToolProgressContext } from "./tool-progress.tsx";
 import type { ToolProgressStore } from "./tool-progress-store.ts";
-import { RunStatus, type RunObservationStore } from "./RunStatus.tsx";
+import { RunStatus } from "./RunStatus.tsx";
+import type { RunObservationStore } from "./run-observation-store.ts";
 
 const MAXIMUM_PROGRESSIVE_CHARACTERS_PER_FRAME = 32;
 const PROGRESSIVE_BOUNDARY_LOOKAHEAD = 4;

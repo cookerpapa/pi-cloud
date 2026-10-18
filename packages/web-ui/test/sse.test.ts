@@ -70,6 +70,7 @@ it("parses activity and path frames separately from sequenced transcript events"
   for await (const frame of sessionJsonFrames(snapshot(), "snapshot")) frames.push(frame);
   const activity = {
     type: "run.activity",
+    generation: 1,
     sessionId: SESSION_ID,
     turnId: TURN_ID,
     runId: "run",
@@ -80,6 +81,7 @@ it("parses activity and path frames separately from sequenced transcript events"
   };
   const path = {
     type: "run.path",
+    generation: 1,
     sessionId: SESSION_ID,
     turnId: TURN_ID,
     runId: "run",

@@ -330,6 +330,13 @@ reconnect always receives a replacement PostgreSQL + Gateway-tail snapshot;
 there is no public cursor or HTTP 410 replay path. Volume queue wait must be
 shorter than its request timeout.
 
+SSE subscriptions have code-owned guards of 1,024 pending formal events and
+16 MiB of encoded event bytes (ADR-0257). Counting is shared for each broadcast
+and skipped when no reader needs to queue the event. Overflow uses replacement
+snapshots. These protect disposable per-connection backlog; they do not cap
+conversation output, total snapshot size or process heap. The current in-flight
+value and the existing 30-second blocked-write deadline are separate boundaries.
+
 Direct private CIDRs are frozen when a Cube is created. Commands receive the
 same CIDRs and their exact IP members in `NO_PROXY`, so older HTTP(S) clients
 that do not understand CIDR syntax still bypass the public-only egress proxy.

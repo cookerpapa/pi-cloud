@@ -9,13 +9,20 @@ import {
 export class RunObservationView {
   readonly #running = new Map<
     string,
-    { runId?: string; revision: number; pathAt: number; executionRevision: number }
+    {
+      runId?: string;
+      generation: number;
+      revision: number;
+      pathAt: number;
+      executionRevision: number;
+    }
   >();
   constructor(conversation: ConversationDetailResource) {
     for (const turn of conversation.turns)
       if (["running", "cancelling"].includes(turn.state))
         this.#running.set(turn.turnId, {
           runId: turn.runId,
+          generation: 0,
           revision: 0,
           pathAt: 0,
           executionRevision: 0,
@@ -24,7 +31,12 @@ export class RunObservationView {
   event(event: PiCloudEvent): void {
     if (!event.turnId) return;
     if (event.type === "turn.started" && !this.#running.has(event.turnId))
-      this.#running.set(event.turnId, { revision: 0, pathAt: 0, executionRevision: 0 });
+      this.#running.set(event.turnId, {
+        generation: 0,
+        revision: 0,
+        pathAt: 0,
+        executionRevision: 0,
+      });
     if (["turn.completed", "turn.failed", "turn.cancelled"].includes(event.type))
       this.#running.delete(event.turnId);
   }
@@ -34,11 +46,18 @@ export class RunObservationView {
     if (
       !run ||
       (run.runId && run.runId !== value.runId) ||
+      value.generation < run.generation ||
       at < Date.now() - RUN_OBSERVATION_STALE_MS ||
       at > Date.now() + 5_000
     )
       return false;
     run.runId = value.runId;
+    if (value.generation > run.generation) {
+      run.generation = value.generation;
+      run.revision = 0;
+      run.pathAt = 0;
+      run.executionRevision = 0;
+    }
     if (value.type === "run.path") {
       if (value.sentAt <= run.pathAt) return false;
       run.pathAt = value.sentAt;

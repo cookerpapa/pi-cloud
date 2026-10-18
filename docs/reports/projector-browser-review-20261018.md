@@ -10,11 +10,12 @@ browser reducer, text animation, runtime observations and terminal display.
 This is a review with isolated characterizations. It changes no runtime,
 schema, public protocol or production deployment and injects no production fault.
 
-Subsequent planning is recorded in the proposed
+The subsequently approved repair is recorded in
 [ADR-0257](../adr/0257-browser-observation-and-buffer-boundaries.md). It refines the
 initial resync-first repair direction after checking the recoverable Run's queued
 interval, choosing existing execution-generation metadata for observations.
-The review findings/evidence below remain the baseline; no repair is claimed.
+The review findings/evidence below remain the baseline. Current implementation
+and verification status are in the [delivery record](projector-browser-repair-20261018.md).
 
 ## Findings
 
@@ -178,7 +179,8 @@ or browser-owned execution authority is not needed for the proposed repairs.
 pass against the reviewed baseline; these assert observations of the current
 defects/limits rather than silently turning them into desired-behavior contracts.
 The [JSON evidence](projector-browser-review-20261018.json) records their scope and
-measurements. Reproduce without production access:
+measurements. The characterization sources are archived at review commit
+`8cd04fda`; from that checkout, reproduce without production access:
 
 ```sh
 node --import tsx scripts/experiments/review-projector-browser-20261018/probe.ts /tmp/projector-browser-review.json
@@ -188,6 +190,9 @@ The probe uses actual runtime modules, synthetic scoped records and an in-memory
 socket. The pending PG snapshot is controlled by the fixture; no actual PG
 network failure, Kafka rebalance or Worker crash is injected by that probe.
 The separate 26-test group uses a real disposable PG instance.
+Current maintained regressions replace those defect expectations in
+`runtime-core/test/observation-handoff.test.ts`, `session-event-buffer.test.ts`
+and `commentary-tail.test.ts`, with protocol and browser-state tests alongside.
 
 Private logs are under
 `deploy/production/runtime/release-evidence/projector-browser-review-20261018/`:

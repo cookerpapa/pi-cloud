@@ -7,15 +7,14 @@
 - [x] Run 117 existing tests, the real-browser presentation gate and four isolated
       characterizations; record [findings and repair directions](reports/projector-browser-review-20261018.md).
 
-The review changes no runtime/deployment. PBR-01/02/03 and PBR-O1 remain pending
-in the backlog: recovery observation lifetime, subscriber memory accounting,
-maintained documentation and same-message commentary compaction. The requested
-[ADR-0257 proposal](adr/0257-browser-observation-and-buffer-boundaries.md) defines
-the following slices; it is not yet an implemented release:
+The review itself changed no runtime/deployment. The owner approved
+[ADR-0257](adr/0257-browser-observation-and-buffer-boundaries.md); source repairs
+are implemented and [verification/release](reports/projector-browser-repair-20261018.md)
+remain pending:
 
-- [ ] B1: existing-generation identity through server/browser observations and cache resets.
-- [ ] B2: pending-event byte accounting and existing overflow/snapshot recovery.
-- [ ] B3: commentary compaction by message identity and corrected maintained guidance.
+- [x] B1: existing-generation identity through server/browser observations and cache resets.
+- [x] B2: pending-event byte accounting and existing overflow/snapshot recovery.
+- [x] B3: commentary compaction by message identity and corrected maintained guidance.
 - [ ] B4: required checks, matched deployment, live recovery and confirmed cleanup.
 
 ## Session publication and whole-Run completion review

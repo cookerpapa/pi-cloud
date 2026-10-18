@@ -69,7 +69,7 @@ export class RunObservations {
       let family = this.#families.get(scope.writerId);
       if (!family) this.#families.set(scope.writerId, (family = new Set()));
       family.add(observationKey(scope));
-      if (this.#runs.size > 65_536) this.#remove(this.#runs.keys().next().value!);
+      if (this.#runs.size > 65_536) this.#remove(this.#runs.keys().next().value!, true);
     }
     if (!active) return;
     active.touched = this.clock();
@@ -92,6 +92,7 @@ export class RunObservations {
         sessionId: target.scope.sessionId,
         turnId: target.scope.turnId,
         runId: target.scope.runId,
+        generation: target.scope.fencingToken,
         sentAt,
         observedAt: now,
       });
@@ -119,6 +120,7 @@ export class RunObservations {
       sessionId: active.scope.sessionId,
       turnId: active.scope.turnId,
       runId: active.scope.runId,
+      generation: active.scope.fencingToken,
       revision: delivery.revision,
       phase: delivery.phase,
       observedAt: delivery.observedAt,
@@ -176,6 +178,7 @@ export class RunObservations {
       sessionId: scope.sessionId,
       turnId: scope.turnId,
       runId: scope.runId,
+      generation: scope.fencingToken,
       revision: active.executionRevision,
       observedAt: now,
       execution: active.execution,
@@ -183,15 +186,18 @@ export class RunObservations {
   }
   sweep(): void {
     for (const [id, active] of this.#runs)
-      if (active.touched < this.clock() - 300_000) this.#remove(id);
+      if (active.touched < this.clock() - 300_000) this.#remove(id, true);
   }
   #fresh(at: number, now: number): boolean {
     return Number.isFinite(at) && at <= now + 5_000 && at >= now - RUN_OBSERVATION_STALE_MS;
   }
-  #remove(id: string): void {
+  #remove(id: string, resync = false): void {
     const active = this.#runs.get(id);
     if (!active) return;
     this.#runs.delete(id);
+    // A cache eviction may reset counters without changing the writer epoch.
+    // Existing readers must discard their old observation baselines as well.
+    if (resync) this.hub.resyncSession(active.scope.tenantId, active.scope.sessionId);
     const family = this.#families.get(active.scope.writerId);
     family?.delete(id);
     if (!family?.size) this.#families.delete(active.scope.writerId);

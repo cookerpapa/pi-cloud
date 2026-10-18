@@ -51,7 +51,7 @@ it("records stage confirmations without replacing activity, preserves freshness 
   await sub.next();
   observations.executionTargets(scope.writerId, [], now);
   expect(await sub.next()).toMatchObject({
-    observation: { type: "run.execution", execution: { status: "not_applicable" } },
+    observation: { type: "run.execution", generation: 1, execution: { status: "not_applicable" } },
   });
   now += 1000;
   observations.execution(scope, {
@@ -128,8 +128,12 @@ it("shares Session path evidence across Lanes while rejecting replay, stale and 
     },
   };
   observations.record(probe, true);
-  expect(await main.next()).toMatchObject({ observation: { type: "run.path", sentAt: now } });
-  expect(await child.next()).toMatchObject({ observation: { type: "run.path", sentAt: now } });
+  expect(await main.next()).toMatchObject({
+    observation: { type: "run.path", generation: 1, sentAt: now },
+  });
+  expect(await child.next()).toMatchObject({
+    observation: { type: "run.path", generation: 1, sentAt: now },
+  });
   observations.record(probe, true);
   observations.record(
     {
@@ -177,7 +181,7 @@ it("authenticates observations against projected scopes and closes all Lanes on 
   expect(await sub.next(1)).toBe("heartbeat");
   observations.activity(value);
   expect(await sub.next()).toMatchObject({
-    observation: { type: "run.activity", lastActivityAt: now - 10_000 },
+    observation: { type: "run.activity", generation: 1, lastActivityAt: now - 10_000 },
   });
   observations.activity(value);
   expect(await sub.next(1)).toBe("heartbeat");
@@ -231,6 +235,7 @@ it("keeps latest bounded SSE observations and lets terminal events win", async (
     now = Date.now();
   const value = {
     type: "run.activity" as const,
+    generation: 1,
     sessionId: "session",
     turnId: "turn",
     runId: "run",
@@ -253,5 +258,64 @@ it("keeps latest bounded SSE observations and lets terminal events win", async (
   sub.close();
   const reopened = hub.subscribe("tenant", "session");
   expect(await reopened.next(1)).toBe("heartbeat");
+  hub.onApplicationShutdown();
+});
+
+it("resyncs readers when same-generation observation counters expire", async () => {
+  let now = Date.now();
+  const hub = new SessionEventHub(),
+    observations = new RunObservations(hub, () => now);
+  const sub = hub.subscribe(scope.tenantId, scope.sessionId);
+  observations.record(record(now, 1n), true);
+  await sub.next();
+  now += 300_001;
+  observations.sweep();
+  expect(await sub.next()).toEqual({ throughSequence: null });
+  expect(observations.isActive(scope)).toBe(false);
+  sub.close();
+  const fresh = hub.subscribe(scope.tenantId, scope.sessionId);
+  observations.record(record(now, 2n), true);
+  await fresh.next();
+  observations.executionTargets(scope.writerId, [], now);
+  expect(await fresh.next()).toMatchObject({ observation: { generation: 1, revision: 1 } });
+  hub.onApplicationShutdown();
+});
+
+it("coalesces across observation generations without retaining older types or lower revisions", async () => {
+  const hub = new SessionEventHub(),
+    sub = hub.subscribe("t", "s");
+  const base = {
+    sessionId: "s",
+    turnId: "turn",
+    runId: "run",
+    generation: 1,
+    observedAt: Date.now(),
+    lastActivityAt: Date.now(),
+  };
+  hub.publishObservation("t", {
+    ...base,
+    type: "run.activity",
+    revision: 100,
+    phase: "waiting_model",
+  });
+  hub.publishObservation("t", {
+    ...base,
+    type: "run.execution",
+    revision: 100,
+    execution: { status: "not_applicable", stage: "projector", sentAt: Date.now() },
+  });
+  const next = { ...base, generation: 2, type: "run.path" as const, sentAt: Date.now() };
+  hub.publishObservation("t", next);
+  hub.publishObservation("t", {
+    ...base,
+    type: "run.activity",
+    revision: 1000,
+    phase: "waiting_model",
+  });
+  expect(await sub.next()).toMatchObject({ observation: next });
+  expect(await sub.next(1)).toBe("heartbeat");
+  hub.publishObservation("t", { ...next, sentAt: next.sentAt + 1 });
+  hub.publishObservation("t", next);
+  expect(await sub.next()).toMatchObject({ observation: { sentAt: next.sentAt + 1 } });
   hub.onApplicationShutdown();
 });

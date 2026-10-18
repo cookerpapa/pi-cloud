@@ -1,8 +1,9 @@
 # ADR-0257: Browser observation generations and bounded pending delivery
 
-Status: proposed, 2026-10-18. The owner requested a repair plan for the
+Status: accepted and implemented in source, 2026-10-18. The owner approved the repair plan for the
 [Projector/browser review](../reports/projector-browser-review-20261018.md).
-Implementation and deployment have not started. This proposal refines the
+Full verification and deployment remain pending; see the
+[delivery record](../reports/projector-browser-repair-20261018.md). This decision refines the
 review's initial resync-first suggestion after checking the recovery transaction.
 
 ## Scope and existing mechanisms
@@ -65,7 +66,7 @@ protocol remain unchanged. Open browser pages reload at matched deployment.
 
 ## B2: Account for slow-reader bytes in the existing subscription
 
-Keep the 1,024-event count guard and add a proposed initial **16 MiB encoded-byte
+Keep the 1,024-event count guard and add an initial **16 MiB encoded-byte
 budget per subscription's pending formal events**. This is a disposable backlog
 budget, not an output/file-size or Session-count quota. It is not a total-process
 heap bound: event bodies may be shared, and each socket/snapshot has separate

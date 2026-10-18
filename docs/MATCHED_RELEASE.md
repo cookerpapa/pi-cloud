@@ -177,6 +177,18 @@ The native stream fixture requests substantive long output; early model completi
 is a failed fixture, not a recovery pass. Record the deployed image/source separately
 from any host-only acceptance-script revision. This slice changes no protocol version.
 
+ADR-0257 adds required execution `generation` to public activity/path/execution
+observations. Control Plane and Web must be replaced together and existing browser
+pages reloaded; no old-observation decoder is retained. PG schema, Kafka/native
+transport and guest versions are unchanged. The native-input recovery scenario
+keeps one real SSE connection through Worker-only loss, uses the browser's actual
+parser/store, and requires newer-generation activity and confirmed Cube evidence.
+Its recovery follow-up holds a Tool open long enough to observe the existing path
+probe. The separate real-browser presentation gate verifies DOM generation
+changes. Also run slow-reader/large-snapshot contracts, normal browser acceptance,
+image/child recovery and full Cube checks. All fixtures retain their ownership and
+physical-purge guards.
+
 The native-input driver checks same-Run continuation, durable edits and promotion,
 retry identity, and Stop restoration against the current schema. It waits for
 projected queue visibility after native ACK and for terminal seals before cleanup.
