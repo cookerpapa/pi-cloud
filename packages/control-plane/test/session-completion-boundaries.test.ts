@@ -164,17 +164,15 @@ it("ignores late completion from a closed writer after the same Run is readmitte
   resources.push(f);
   const projector = new ExecutionStreamProjector(f.database),
     sealId = crypto.randomUUID();
-  await f.database
-    .transaction()
-    .execute((tx) =>
-      requestExecutionStreamSeal(tx, {
-        ...f.scope,
-        agentId: "root",
-        recover: true,
-        now: new Date(),
-        eventId: sealId,
-      }),
-    );
+  await f.database.transaction().execute((tx) =>
+    requestExecutionStreamSeal(tx, {
+      ...f.scope,
+      agentId: "root",
+      recover: true,
+      now: new Date(),
+      eventId: sealId,
+    }),
+  );
   const row = await f.database
     .selectFrom("outbox")
     .select("payload")
