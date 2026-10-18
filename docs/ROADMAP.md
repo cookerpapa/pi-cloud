@@ -7,9 +7,15 @@
 - [x] Complete 46 existing tests, six isolated characterizations and one existing
       RF3/PG integration case; record [findings and repair directions](reports/seal-publication-review-20261019.md).
 
-This review changes no runtime or deployment. SP-01–03 remain open in the
-[backlog](BACKLOG.md): bounded PG progress, consumer/transaction retirement and
-stale peer discovery. No new execution authority or storage protocol is proposed.
+The review changed no runtime or deployment. The owner approved
+[ADR-0260](adr/0260-session-seal-publication-lifetimes.md):
+
+- [ ] SP-01: bounded publication/binding PG work and ordered pending-owner retirement.
+- [ ] SP-02: reader-owned group transaction lifetime and idempotent disconnect.
+- [ ] SP-03: stale-peer invalidation with existing immutable Outbox retries.
+- [ ] Required regression/transport checks, matched release and relevant live acceptance.
+
+No new execution authority or storage protocol is introduced.
 The reading checkpoint advances to Kafka seal → Projector → PG closure/checkpoint/
 release; successor Worker bootstrap follows.
 

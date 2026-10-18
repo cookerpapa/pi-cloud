@@ -138,6 +138,7 @@ it.skipIf(!postgres || !brokers)(
         });
         return new SessionProjector({
           database: measured,
+          publicationDatabase: measured,
           notificationConnectionString: endpoint.toString(),
           brokers: brokers!,
           clientId: topic,

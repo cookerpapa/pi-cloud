@@ -65,7 +65,7 @@ export class SessionOutboxRelay {
   }
 
   checkHealth(): void {
-    if (this.#task === undefined || this.#failure !== undefined) {
+    if (this.#task === undefined || this.#abort?.signal.aborted || this.#failure !== undefined) {
       throw new Error("Session Outbox relay is unhealthy");
     }
   }
@@ -218,6 +218,9 @@ export class SessionOutboxRelay {
         if (this.#retryAt <= performance.now()) this.#retryAt = Infinity;
         try {
           const rows = await this.#claim(this.#concurrency - this.#active.size);
+          // A bounded claim can finish after stop. Its immutable rows remain
+          // eligible after the claim deadline; do not start new delivery here.
+          if (signal.aborted) break;
           this.#failure = undefined;
           for (const row of rows) {
             const task = this.#publish(row)

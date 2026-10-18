@@ -1,4 +1,5 @@
 import { MAX_EXECUTION_FACT_BYTES } from "@pi-cloud/protocol";
+import { createDatabase } from "@pi-cloud/database";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Admin } from "@platformatic/kafka";
 import { sql } from "kysely";
@@ -22,6 +23,11 @@ it.skipIf(!brokers || !postgres)(
   async () => {
     const f = await nativeSubagentFixture(),
       topic = `direct-session-${crypto.randomUUID()}`;
+    const publicationDatabase = createDatabase({
+      connectionString: f.url,
+      maxConnections: 4,
+      checkoutTimeoutMs: 5000,
+    });
     const admin = new Admin({ clientId: topic, bootstrapBrokers: brokers! });
     const measured = new AsyncLocalStorage<boolean>(),
       queries: string[] = [];
@@ -69,6 +75,7 @@ it.skipIf(!brokers || !postgres)(
       new SessionProjector({
         ...options,
         database: f.database,
+        publicationDatabase,
         notificationConnectionString: f.url,
         retentionMs: 600000,
         publicationToken: "fixture-".repeat(8),
@@ -258,6 +265,7 @@ it.skipIf(!brokers || !postgres)(
       await projector?.close();
       await admin.deleteTopics({ topics: [topic] }).catch(() => {});
       await admin.close();
+      await publicationDatabase.destroy();
       await f.close();
     }
   },

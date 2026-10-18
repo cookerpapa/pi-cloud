@@ -29,6 +29,7 @@ import { SandboxControlClient } from "./sandbox-control-client.ts";
 /** A control-plane module. It has no standalone process, database pool or Run lease. */
 export async function createSandboxControl(options: {
   database: Kysely<Database>;
+  publicationDatabase: Kysely<Database>;
   instanceId: string;
   managementToken: string;
   metrics: PiCloudMetrics;
@@ -111,7 +112,7 @@ export async function createSandboxControl(options: {
     );
     cleanup.push(() => wake.close());
     const bindings = new PostgresSandboxBindings(
-      database,
+      options.publicationDatabase,
       config.sandboxDomainId,
       instanceId,
       config.advertisedBaseUrl,

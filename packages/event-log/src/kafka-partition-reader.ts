@@ -42,6 +42,7 @@ export class KafkaPartitionReader {
   readonly #commitLocks = new Map<number, Promise<void>>();
   #generation = 0;
   #closing = false;
+  #disconnecting: Promise<void> | undefined;
   #connected = false;
   #polling = false;
   #pollGeneration = 0;
@@ -310,6 +311,7 @@ export class KafkaPartitionReader {
   }
 
   commitOffset(position: K.TopicPartitionOffsetAndMetadata): Promise<void> {
+    if (this.#closing) return Promise.reject(new Error("Kafka consumer is closing"));
     const offset = { ...position },
       generation = this.#generation;
     // A partition waiting for its publication never reserves another partition
@@ -376,6 +378,7 @@ export class KafkaPartitionReader {
     producer: Producer,
     send: () => Promise<void>,
   ): Promise<void> {
+    if (this.#closing) throw new Error("Kafka consumer is closing");
     const generation = this.#generation;
     await this.#withCommitLock(partition, async () => {
       if (this.#closing || generation !== this.#generation || !this.#assigned.has(partition))
@@ -393,20 +396,29 @@ export class KafkaPartitionReader {
           (error) => (error ? reject(error) : resolve()),
         ),
       );
+      if (this.#closing || generation !== this.#generation || !this.#assigned.has(partition))
+        throw new Error("Publication owner changed during group transaction");
       await new Promise<void>((resolve, reject) =>
         producer.commitTransaction(5000, (error) => (error ? reject(error) : resolve())),
       );
     });
   }
 
-  async disconnect(): Promise<void> {
-    if (this.#closing) return;
+  disconnect(): Promise<void> {
+    return (this.#disconnecting ??= this.#disconnect());
+  }
+
+  async #disconnect(): Promise<void> {
     this.#closing = true;
     this.#generation++;
     this.#commit?.reject(new Error("Kafka consumer stopped during commit"));
     await this.#loop;
     await Promise.allSettled([...this.#active.values()]);
     await this.#commitTail;
+    // Session seal writers are external to KafkaLogConsumer's partition writer
+    // set. Every group transaction borrows this native client through these
+    // locks, so join them before disposal even during consumer-only restart.
+    await Promise.allSettled([...this.#commitLocks.values()]);
     if (this.#connected)
       await new Promise<void>((resolve, reject) =>
         this.#client.disconnect((error) => (error ? reject(error) : resolve())),

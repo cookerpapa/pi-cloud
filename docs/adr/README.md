@@ -1,5 +1,11 @@
 # Current architecture decisions
 
+[ADR-0260](0260-session-seal-publication-lifetimes.md) records the owner-approved
+seal publication repair: bounded PG metadata work, reader-owned transaction
+retirement and cached peer rediscovery. Source implementation is complete;
+[verification/delivery](../reports/seal-publication-repair-20261019.md) is in progress.
+The existing Session/Outbox/Kafka authorities and wire schemas are preserved.
+
 [ADR-0259](0259-control-plane-expiry-progress.md) implements independent bounded
 maintenance, paged Session candidates, failed Worker retirement admission and
 transaction-local SQL reuse. It is deployed as `control-expiry-c9d8112d`, schema

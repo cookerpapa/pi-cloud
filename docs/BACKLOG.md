@@ -35,6 +35,10 @@ records 46 passing existing tests, six isolated characterizations and one existi
 real RF3/PG integration case. Runtime and deployment are unchanged; fixture/type
 corrections and the limits of substituted callback evidence are explicit.
 
+The owner approved [ADR-0260](adr/0260-session-seal-publication-lifetimes.md).
+Repairs are implemented in source; [verification and delivery](reports/seal-publication-repair-20261019.md)
+remain in progress. Checklist completion below includes the matched/live gates.
+
 - [ ] SP-01 / P2: bound publication PG acquisition/SQL and retirement waits using
       existing database facilities. Preserve immutable Outbox retries and drain
       old-generation work before replacement; do not bypass pending work by

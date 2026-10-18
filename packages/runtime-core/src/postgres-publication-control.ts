@@ -12,7 +12,10 @@ import { encodeSessionLogFact } from "./session-log-envelope.ts";
 /** Forced closure takes over the same Kafka identity only under a fresh PG
  * closure grant. Completed evidence never initializes another producer. */
 export class PostgresPublicationControl {
-  readonly #pending = new Map<string, Promise<AcceptedFactReceipt>>();
+  readonly #pending = new Map<
+    string,
+    { owner: PublicationOwnership; promise: Promise<AcceptedFactReceipt> }
+  >();
   readonly #writers = new Set<KafkaSessionWriter>();
   #closed = false;
   constructor(
@@ -65,11 +68,17 @@ export class PostgresPublicationControl {
       return Promise.reject(new PublicationIngressRejected("not_owner"));
     const key = JSON.stringify([fact.scope.tenantId, fact.factId]);
     const prior = this.#pending.get(key);
-    if (prior) return prior;
+    if (prior) {
+      // Join the old incarnation through writer disposal. Only a failed old
+      // owner needs a fresh attempt, and seal() rechecks the replacement owner.
+      return prior.owner === owner
+        ? prior.promise
+        : prior.promise.catch(() => this.seal(owner, fact));
+    }
     const promise = this.#seal(owner, fact).finally(() => {
-      if (this.#pending.get(key) === promise) this.#pending.delete(key);
+      if (this.#pending.get(key)?.promise === promise) this.#pending.delete(key);
     });
-    this.#pending.set(key, promise);
+    this.#pending.set(key, { owner, promise });
     return promise;
   }
   async #seal(
@@ -107,6 +116,6 @@ export class PostgresPublicationControl {
   async close(): Promise<void> {
     this.#closed = true;
     await Promise.allSettled([...this.#writers].map((writer) => writer.close()));
-    await Promise.allSettled(this.#pending.values());
+    await Promise.allSettled([...this.#pending.values()].map(({ promise }) => promise));
   }
 }

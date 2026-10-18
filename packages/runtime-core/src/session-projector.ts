@@ -58,6 +58,7 @@ export class SessionProjector {
       metrics?: PiCloudMetrics;
       retentionMs: number;
       database: Kysely<Database>;
+      publicationDatabase: Kysely<Database>;
       notificationConnectionString: string;
       advertisedBaseUrl: string;
       publicationToken: string;
@@ -93,7 +94,7 @@ export class SessionProjector {
     this.#topic = new ExecutionLogTopic(options);
     this.publication = new SessionPublicationIngress(options.capacity, options.metrics);
     this.#publicationControl = new PostgresPublicationControl({
-      database: options.database,
+      database: options.publicationDatabase,
       current: (owner) =>
         this.publication.ownership(owner.partition) === owner &&
         this.#consumer.ownsPartition(owner.partition),
@@ -274,7 +275,7 @@ export class SessionProjector {
       },
     });
     this.#relay = new SessionOutboxRelay({
-      database: options.database,
+      database: options.publicationDatabase,
       notificationConnectionString: options.notificationConnectionString,
       bus: {
         append: (fact) => {
@@ -347,7 +348,7 @@ export class SessionProjector {
       throw new PublicationIngressRejected("not_owner");
     const current = () =>
       this.publication.ownership(partition) === owner && this.#consumer.ownsPartition(partition);
-    await assertCommittedControlChange(this.options.database, change);
+    await assertCommittedControlChange(this.options.publicationDatabase, change);
     if (!this.options.controlChanges && change.entity === "sandbox_binding")
       throw new Error("Sandbox control view is not installed");
     await this.options.controlChanges?.prepare(change, current);

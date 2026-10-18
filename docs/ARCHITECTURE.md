@@ -92,10 +92,12 @@ budgets; timeout rolls back without advancing offsets or admitting a Tool. Faile
 retry in partition order. Phase metrics and payload-free slow-record diagnostics
 locate waits without introducing another consumer or a skip/dead-letter path
 ([ADR-0199](adr/0199-bounded-publication-and-projection.md)).
-This does not bound the control publisher's separate Outbox/authority queries.
-The [October 19 publication review](reports/seal-publication-review-20261019.md)
-records that gap, a consumer-retirement gap and stale peer discovery; repairs
-remain pending. The review changes no execution or storage authority.
+Under [ADR-0260](adr/0260-session-seal-publication-lifetimes.md), control publication
+uses a separate four-connection direct-PG pool with five-second acquisition and
+checkout budgets for Outbox/authority/binding metadata. Reader retirement joins
+all group transactions before disposal; a failed cached peer is rediscovered on
+the existing immutable-Fact retry. [Delivery](reports/seal-publication-repair-20261019.md)
+is pending; execution/storage authority and wire formats are unchanged.
 Worker admission reads Kafka partition availability and validates the fixed Topic's
 replication policy and in-sync replicas. It does not depend on a Control Plane
 publication endpoint. The availability mask filters the existing PG claim query;

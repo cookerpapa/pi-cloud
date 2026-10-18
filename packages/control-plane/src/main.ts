@@ -84,6 +84,7 @@ export async function startControlPlane(): Promise<void> {
   let ownedObservability: Awaited<ReturnType<typeof startServiceObservability>> | undefined;
   let ownedDatabase: ReturnType<typeof createDatabase> | undefined;
   let ownedMaintenanceDatabase: ReturnType<typeof createDatabase> | undefined;
+  let ownedPublicationDatabase: ReturnType<typeof createDatabase> | undefined;
   let unattachedSubagents: SubagentController | undefined;
   let unattachedControlTools: ControlToolDispatcher | undefined;
   const controlPlaneInstanceId = randomUUID();
@@ -119,6 +120,7 @@ export async function startControlPlane(): Promise<void> {
       () => sourceControlDispatcher?.close(),
       () => internalSourceControlDispatcher?.close(),
       () => images?.blobs.close(),
+      () => ownedPublicationDatabase?.destroy(),
       () => ownedMaintenanceDatabase?.destroy(),
       () => ownedDatabase?.destroy(),
       () => ownedObservability?.close(),
@@ -138,6 +140,12 @@ export async function startControlPlane(): Promise<void> {
       checkoutTimeoutMs: 5_000,
     });
     ownedMaintenanceDatabase = maintenanceDatabase;
+    const publicationDatabase = createDatabase({
+      connectionString: config.databaseNotificationUrl,
+      maxConnections: 4,
+      checkoutTimeoutMs: 5_000,
+    });
+    ownedPublicationDatabase = publicationDatabase;
     images = await configuredImageAttachments(database);
     if (images) {
       await images.blobs.checkHealth();
@@ -149,7 +157,7 @@ export async function startControlPlane(): Promise<void> {
         }),
       );
     }
-    const controlChanges = new SessionControlOutbox(database, {
+    const controlChanges = new SessionControlOutbox(publicationDatabase, {
       publishControl: async (change) => {
         if (!agentEvents) throw new Error("Session publication is not ready");
         return agentEvents.publishControl(change);
@@ -157,6 +165,7 @@ export async function startControlPlane(): Promise<void> {
     });
     sandboxControl = await createSandboxControl({
       database,
+      publicationDatabase,
       instanceId: controlPlaneInstanceId,
       managementToken: config.supervisorManagementToken,
       metrics: observability.metrics,
@@ -253,6 +262,7 @@ export async function startControlPlane(): Promise<void> {
     agentEvents = new SessionProjector({
       publicationToken: config.supervisorManagementToken,
       database,
+      publicationDatabase,
       notificationConnectionString: config.databaseNotificationUrl,
       brokers: config.kafkaBrokers,
       clientId: controlPlaneInstanceId,

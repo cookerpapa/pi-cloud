@@ -422,9 +422,9 @@ export class KafkaLogConsumer<T> {
         this.#options.onReset?.();
         for (const retry of this.#retries.values()) clearTimeout(retry.timer);
         this.#retries.clear();
-        // sendOffsetsToTransaction borrows this native consumer's group
-        // metadata. Join every producer, including initialization, before
-        // disconnecting that consumer object.
+        // Retire partition producers, including initialization. The reader
+        // also joins group transactions borrowed by external Session seal
+        // writers before disconnecting its native consumer.
         await this.#retirePublicationWriters();
         await consumer.disconnect().catch(() => undefined);
         await Promise.allSettled(progressing.values());

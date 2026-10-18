@@ -163,6 +163,7 @@ async function start() {
   const { createSandboxControl } = await import("../src/sandbox-control-runtime.ts");
   return createSandboxControl({
     database: database as any,
+    publicationDatabase: database as any,
     instanceId: "test-controller",
     managementToken: "m".repeat(64),
     publishBindingChanges: async () => {},

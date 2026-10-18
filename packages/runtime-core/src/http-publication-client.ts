@@ -63,6 +63,7 @@ export class HttpPublicationClient implements SessionControlPublisher {
           ]),
         });
       } catch (error) {
+        this.#forgetOwner(sessionId, base);
         throw error;
       }
       if (response.status === 307) {
@@ -78,7 +79,10 @@ export class HttpPublicationClient implements SessionControlPublisher {
         if (this.#owners.size > 4096) this.#owners.delete(this.#owners.keys().next().value!);
         continue;
       }
-      const payload = (await response.json()) as {
+      const payload = (await response.json().catch((error) => {
+        this.#forgetOwner(sessionId, base);
+        throw error;
+      })) as {
         factId?: string;
         durable?: boolean;
         error?: { code?: string; reason?: string };
@@ -87,7 +91,7 @@ export class HttpPublicationClient implements SessionControlPublisher {
       if (payload.error?.code === "publication_not_sent") {
         const reason = payload.error.reason;
         if (reason === "not_owner" && Date.now() < deadline) {
-          this.#owners.delete(sessionId);
+          this.#forgetOwner(sessionId, base);
           base = this.options.baseUrl;
           await delay(50, undefined, { signal });
           continue;
@@ -98,6 +102,11 @@ export class HttpPublicationClient implements SessionControlPublisher {
       }
       throw new Error("Publication commit could not be confirmed");
     }
+  }
+
+  #forgetOwner(sessionId: string, attempted: string): void {
+    // A late failure from an old request must not erase a newer discovered peer.
+    if (this.#owners.get(sessionId) === attempted) this.#owners.delete(sessionId);
   }
 
   async publicationAvailability(

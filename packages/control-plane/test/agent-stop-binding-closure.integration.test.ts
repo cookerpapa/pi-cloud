@@ -99,6 +99,7 @@ it.skipIf(!postgres || !brokers)(
       });
       projector = new SessionProjector({
         database,
+        publicationDatabase: database,
         notificationConnectionString: endpoint.toString(),
         brokers: brokers!,
         topic,

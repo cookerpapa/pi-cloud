@@ -52,6 +52,7 @@ afterEach(() => {
 function fixture() {
   return new SessionProjector({
     database: {} as Kysely<Database>,
+    publicationDatabase: {} as Kysely<Database>,
     brokers: ["unused"],
     clientId: "test",
     notificationConnectionString: "postgresql://unused/test",

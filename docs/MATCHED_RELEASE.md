@@ -109,6 +109,14 @@ configured web port. A Linux-only HTTP 200 does not establish Windows access.
 
 ## Acceptance and fixture restoration
 
+ADR-0260 changes only publication I/O/lifetime behavior. Keep all current schema
+and transport versions. Required source coverage includes bounded Outbox/authority/
+binding SQL, startup pool cleanup, old-owner drain, reader transaction retirement,
+stale-peer rediscovery and the real RF3 Session closure/recovery contract. Run the
+existing native recovery, browser/images, child handoff, Control Plane replacement
+and full Cube acceptance after the maintained drained matched release. Native
+crash experiments are not required; controlled callbacks verify the disposal gap.
+
 ADR-0258 requires `familyLeaseDeferrals` in private heartbeat acknowledgements;
 Worker and Control Plane must be replaced together. ADR-0259 requires schema 190
 for the internal `worker_failed` connection/retirement reason and scan indexes.

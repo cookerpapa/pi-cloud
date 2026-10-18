@@ -1,4 +1,4 @@
-// Review characterization: actual reader, fully substituted native callbacks.
+// ADR-0260: actual reader with fully substituted native callbacks.
 // No broker, native transaction, network interruption or process fault is used.
 import { expect, it, vi } from "vitest";
 import type { Producer, KafkaJS } from "@confluentinc/kafka-javascript";
@@ -36,7 +36,7 @@ vi.mock("@confluentinc/kafka-javascript", async () => {
     },
   };
 });
-import { KafkaPartitionReader } from "../../../packages/event-log/src/kafka-partition-reader.ts";
+import { KafkaPartitionReader } from "../src/kafka-partition-reader.ts";
 
 async function reader() {
   const result = new KafkaPartitionReader({
@@ -68,23 +68,24 @@ it("guards a publication whose send is still pending at reader retirement", asyn
   void pending.catch(() => {});
   try {
     await entered.promise;
-    await r.disconnect();
+    const closing = r.disconnect();
+    expect(r.disconnect()).toBe(closing);
     release.resolve();
     await expect(pending).rejects.toThrow("Publication owner changed before transaction commit");
     expect(producer.sendOffsetsToTransaction).not.toHaveBeenCalled();
     expect(producer.commitTransaction).not.toHaveBeenCalled();
+    await closing;
   } finally {
     release.resolve();
     await Promise.allSettled([pending, r.disconnect()]);
   }
 });
 
-it("disconnects before an outstanding group transaction callback and then requests commit", async () => {
+it("joins an outstanding group transaction before disposal and rejects a stale commit", async () => {
   const r = await reader(),
     entered = Promise.withResolvers<void>();
   let releaseOffsets: (() => void) | undefined,
-    settled = false,
-    requestedCommitAfterDisconnect = false;
+    settled = false;
   const producer = {
     sendOffsetsToTransaction: vi.fn(
       (_offsets: unknown, _consumer: unknown, _timeout: number, done: () => void) => {
@@ -93,7 +94,6 @@ it("disconnects before an outstanding group transaction callback and then reques
       },
     ),
     commitTransaction: vi.fn((_timeout: number, done: () => void) => {
-      requestedCommitAfterDisconnect = state.disconnected;
       done();
     }),
   };
@@ -105,21 +105,24 @@ it("disconnects before an outstanding group transaction callback and then reques
   void pending.catch(() => {});
   try {
     await entered.promise;
-    await r.disconnect();
-    expect(state.disconnected).toBe(true);
+    let disconnected = false;
+    const closing = r.disconnect();
+    expect(r.disconnect()).toBe(closing);
+    void closing.then(() => {
+      disconnected = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(state.disconnected).toBe(false);
+    expect(disconnected).toBe(false);
     expect(settled).toBe(false);
     releaseOffsets!();
-    await pending;
-    expect(requestedCommitAfterDisconnect).toBe(true);
-    process.stdout.write(
-      JSON.stringify({
-        probe: "reader-transaction-lifetime",
-        transport: "substituted-native-callbacks",
-        disconnectedWithPublicationPending: true,
-        requestedCommitAfterDisconnect: true,
-        realBrokerCommitEstablished: false,
-      }) + "\n",
-    );
+    await expect(pending).rejects.toThrow("Publication owner changed during group transaction");
+    expect(producer.commitTransaction).not.toHaveBeenCalled();
+    await closing;
+    expect(state.disconnected).toBe(true);
+    await expect(
+      r.commitPublication(0, producer as unknown as Producer, async () => {}),
+    ).rejects.toThrow("closing");
   } finally {
     releaseOffsets?.();
     await Promise.allSettled([pending, r.disconnect()]);
