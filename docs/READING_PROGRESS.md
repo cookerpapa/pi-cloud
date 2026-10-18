@@ -1,34 +1,83 @@
 # Architecture reading checkpoint
 
-Updated: 2026-10-17.
+Updated: 2026-10-18, after `control-expiry-c9d8112d`.
 
-The walkthrough explains one component-to-component hop at a time, including
-its message, acknowledgement boundary, failure behavior and design tradeoffs.
+The owner asked to reconcile the complete hop-by-hop conversation with the
+recorded reviews. The ordinary Tool execution loop, normal Run completion,
+browser delivery, Worker renewal and Control Plane expiry admission have been
+covered. The provider request branch was explicitly deferred during the October
+12–15 walkthrough and has not received the same complete focused treatment.
 
-Current checkpoint: **Cubelet completion adapter → Kafka Worker-boot reply topic**.
-Explained the trusted host-side Node adapter, command-carried reply destination,
-operation-keyed final result envelope, image externalization, Kafka publication ACK
-and the local `delivered:true` receipt. The boot-scoped mailbox is transport, while
-Pi/Session publication owns canonical history. Delivery retries retain/re-send the
-same result without repeating shell execution; whole-Cubelet loss before confirmed
-delivery can lose an in-memory result and retains the UNKNOWN boundary.
-The owner accepted this loss boundary and, after comparing Pi/Codex waiting,
-approved [ADR-0253's implementation plan](adr/0253-tool-reply-uncertainty-and-continuation.md):
-retain Pi final-result Tools; make waits invocation-specific; on eligible fixed
-Tool uncertainty, use a fresh bounded internal probe to decide whether inspection
-can continue. Probe packets never enter native history or model context. Stop,
-lost ownership, uncertain publication, closed/replaced bindings and Workflow
-channel failures retain interruption. Remove three orphaned error recognizers.
-The [implementation record](reports/tool-reply-continuation-20261016.md) confirms
-matched release `tool-unknown-791a6ed0`, source/transport/256-case fault checks,
-real reply loss and Cubelet failure, early Stop, native input/dual-process recovery,
-browser/image/Read and full Cube acceptance. It retains failed samples and the
-operator-confirmed cleanup needed for an unconfirmed Volume reference after
-Cubelet loss; automatic reconciliation remains in the backlog.
-The owner completed WSL expansion to 1700 GiB; KVM, cluster, Windows/Linux web
-access and original configuration preservation checks pass. This hop's slice is
-complete, and the walkthrough can advance.
-Next: Kafka reply consumption → the original Worker's pending Tool callback and Pi.
+Current checkpoint: **Control Plane → PG: confirm expired Session ownership and
+persist the existing Outbox seal/recovery request**. [Review](reports/control-plane-expiry-review-20261018.md)
+and [repair/release](reports/control-plane-expiry-repair-20261018.md) are complete.
+Expiry admission does not itself grant a successor or prove physical process death.
+
+## Covered hops
+
+| Hop or boundary | Walkthrough/review status | Evidence |
+| --- | --- | --- |
+| Browser → Control Plane → PG initial input | Explained, table/intake reviewed and repaired | [Session/Run fields](reports/session-turn-run-review-20261008.md), [intake](reports/input-admission-20261010.md) |
+| PG queue → Worker claim and Session lease | Explained, focused schema/admission review and repair; later ownership migration accounted for | [Worker claim](reports/worker-claim-schema-review-20261010.md), [current Session work](adr/0247-session-work-and-tool-dispatch.md) |
+| Worker → native Harness/Storage, context reads | Opening/context explained; storage layout and retention separately reviewed/redesigned | [Storage review](reports/append-only-storage-review-20261011.md), [current inputs](adr/0243-native-input-current-state.md), [live state](adr/0244-kafka-backed-native-live-state.md) |
+| Pi Storage → Worker → Kafka | Explained; direct-publication migration and current implementation re-reviewed | [publication/completion](reports/session-publication-completion-review-20261018.md) |
+| Kafka → Projector, PG/live projection and dispatch preparation | Explained and focused review/repair | [envelope review](reports/projector-envelope-review-20261015.md), [projection SQL](reports/projection-sql-20261009.md) |
+| Projector → Cube API/Master/Cubelet acceptance | Explained as the handoff segment and reviewed | [handoff](reports/projector-cube-handoff-review-20261015.md) |
+| Cubelet → guest fixed Tool execution | Explained, reviewed and repaired | [guest execution](reports/cubelet-guest-execution-review-20261015.md) |
+| Guest result/progress → Cubelet | Explained, reviewed and repaired | [result reception](reports/guest-cubelet-result-review-20261016.md) |
+| Cubelet completion → Kafka reply transport | Explained; waiting/UNKNOWN/probe discussion and repair complete | [continuation](adr/0253-tool-reply-uncertainty-and-continuation.md) |
+| Kafka reply → original Worker callback | Explained, reviewed and repaired | [Worker replies](reports/kafka-worker-reply-review-20261017.md) |
+| Worker Tool return → native Pi settlement | Explained, reviewed and repaired | [Harness settlement](reports/worker-harness-settlement-review-20261018.md) |
+| Formal Tool Result commit and whole-Run normal completion | Loop closed; deliberately re-reviewed after recent changes | [publication/completion](reports/session-publication-completion-review-20261018.md) |
+| Projector → browser, refresh/reconnect and Working state | Explained, reviewed and repaired | [browser delivery](reports/projector-browser-review-20261018.md) |
+| Worker → PG lease renewal | Explained, reviewed and repaired | [renewal](reports/worker-session-lease-review-20261018.md) |
+| Control Plane → PG expiry/seal admission | Explained, reviewed and repaired; current checkpoint | [expiry](reports/control-plane-expiry-review-20261018.md) |
+
+These statuses distinguish walkthrough coverage from focused audit scope. Storage
+research does not establish a complete new audit of every native recovery branch,
+and an end-to-end acceptance pass does not mean every internal hop has been
+independently reviewed. Old Worker → HTTP publication ingress descriptions are
+historical; the maintained path is direct Worker → Kafka under ADR-0247.
+
+## Remaining main walkthrough segments
+
+1. **Forced closure and replacement after the persisted PG request.** Continue
+   with existing Outbox → Control Plane control publisher → Kafka ordered Session
+   seal; then Kafka → Projector closure/checkpoint/release; then new PG claim →
+   replacement Worker/Harness continuation. Inspect retry/uncertain publication,
+   old/new publisher competition, delayed stale producer initialization, exact
+   release proof and unsafe Tool non-replay. Fencing and recovery have already
+   been discussed, implemented and exercised; the remaining work is a focused
+   continuous review of this segment in the current topology. Do not repeat the
+   just-completed renewal/expiry review or present recovery as wholly unexamined.
+2. **Native model request and response.** Pi → Worker-local Model Gateway →
+   CLIProxyAPI → provider, and the streamed response back to Pi. Cover request
+   construction/model settings, local model permits, credential boundaries,
+   response parsing, incomplete local Tool calls, cancellation and transport
+   failures. Context/token estimation, Compaction and TLS diagnostics have been
+   discussed separately; this full branch was deferred and has not been walked
+   through at the same granularity.
+
+Suggested order: finish forced closure/replacement from the current checkpoint,
+then cover the model branch. That gives this main-message walkthrough a bounded
+completion point, followed by actual use and evidence-driven follow-up.
+
+## Related branches already discussed
+
+Native steer/follow-up editing and durable Inbox ownership, Stop/late-result
+semantics, image claim checks, native Subagents/shared ownership, VM/Volume
+lifecycle and compatible Control Plane replacement all have prior discussion,
+implementation reviews or acceptance evidence. They are not blank areas.
+
+Workspace activation/binding propagation, Subagent control dispatch and
+upload/terminal/preview flows can be separate future walkthroughs if needed.
+That is a different scope from identifying the remaining main-message hops;
+there is no standing plan to repeat every earlier whole-repository review.
+
+## Earlier walkthrough notes through October 17
+
+The following notes retain earlier decisions and links. The current checkpoint
+and coverage list above supersede their historical "next hop" statements.
 
 Previously covered **guest Tool process → Cubelet result reception**.
 Explained structured final results over the existing native process output channel,

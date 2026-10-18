@@ -267,9 +267,11 @@ The preceding [native input release](reports/native-input-release-20261009.md) d
 owned fixtures are removed and original accounts/configuration/credentials remain.
 The report records the corrected model-egress endpoint and updated operator drivers.
 
-The [reading checkpoint](READING_PROGRESS.md) now covers atomic Worker claim,
-Session-lease admission, native Harness/context opening, Storage publication,
-Kafka commit/fencing and Projector consumption/envelope handling. The
+The [reading checkpoint](READING_PROGRESS.md) reconciles the full hop-by-hop
+walkthrough through Control Plane expiry admission. Tool execution/replies,
+normal Run completion, browser delivery and renewal are covered. The remaining
+main segments are ordered forced closure/replacement and the previously deferred
+Worker-local model request/response branch. The
 [claim-table review](reports/worker-claim-schema-review-20261010.md)
 preserves this ownership design and records two index-access issues, unused
 physical-Session metadata and Worker naming debt. The owner-approved repairs follow
