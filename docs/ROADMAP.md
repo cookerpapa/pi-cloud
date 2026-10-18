@@ -1,5 +1,16 @@
 # Implementation roadmap
 
+## Worker → PostgreSQL Session lease review
+
+- [x] Review production direct renewal, shared observer, monotonic lifetime,
+      acknowledgement ordering and management/expiry boundaries at `85eb2f07`.
+- [x] Run 123 existing tests and four isolated characterizations, measure actual
+      renewal SQL and record [findings and directions](reports/worker-session-lease-review-20261018.md).
+
+No runtime/deployment changed. The three bounded-failure/isolation repairs remain
+open in BACKLOG. The next walkthrough hop is expiry detection, ordered Session
+closure and successor recovery; this review does not claim that whole hop complete.
+
 ## Projector → browser review
 
 - [x] Review native display projection, compact tail, canonical snapshot, SSE

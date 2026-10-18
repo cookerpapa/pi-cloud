@@ -28,6 +28,26 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## Worker → PostgreSQL Session lease review
+
+The [October 18 review](reports/worker-session-lease-review-20261018.md) at
+`85eb2f07` records 123 passing existing tests, four isolated characterizations
+and constant three-business-statement batch renewal. It changes no runtime or
+deployment. Preserve PG authority, shared physical-Session ownership and direct
+Kafka fencing; repair directions require implementation/acceptance separately.
+
+- [ ] WLR-01 / P2: enforce the active owner's last confirmed monotonic deadline
+      independently of pending PG reads; bound database/pool/close waits. Keep
+      cold-restore reauthorization and reject late revival; local expiry is not
+      PG release, physical cleanup or successor authorization.
+- [ ] WLR-02 / P2: signal local failure/revocation before waiting for the PG
+      Worker quarantine write. Bound persistence without bypassing eventual
+      retirement/ordered closure; retain uncertain-publication failure semantics.
+- [ ] WLR-03 / P2: prevent one lock-busy Session from blocking all batched
+      renewals. Distinguish unconfirmed/busy from rejected owners and never
+      extend authority from skipped rows. Keep post-lock PG-time checks and
+      test healthy siblings, expiry, closure, pool/network stalls and late replies.
+
 ## Projector → browser review
 
 The [October 18 review](reports/projector-browser-review-20261018.md) at `5e6a381f`

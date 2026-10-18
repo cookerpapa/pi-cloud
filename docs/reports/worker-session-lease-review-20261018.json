@@ -1,0 +1,79 @@
+{
+  "reviewedRevision": "85eb2f073eb90b678327b38bf712bbc225daf6a5",
+  "servingRelease": "browser-delivery-205e6ac0",
+  "runtimeChanged": false,
+  "productionFaultInjected": false,
+  "existingTests": {
+    "passed": 123,
+    "files": 8,
+    "firstBatchPassed": 111,
+    "reconnectPassed": 12
+  },
+  "characterizations": {
+    "passed": 4,
+    "files": 2,
+    "diagnosticRepeat": true,
+    "reason": "Capture measurement stdout; console.log records were absent from the first passing run."
+  },
+  "productionReadOnlyObservation": {
+    "at": "2026-10-18T08:53:41.336Z",
+    "mode": "read-only",
+    "settings": {
+      "statement_timeout": "0",
+      "lock_timeout": "0",
+      "idle_in_transaction_session_timeout": "0",
+      "active_leases": 0
+    },
+    "podsReady": true
+  },
+  "measurements": [
+    {
+      "probe": "renewal-sql",
+      "sessions": 1,
+      "samples": 10,
+      "sqlIncludingTransaction": [5, 5, 5, 5, 5, 5, 5, 5, 5, 5],
+      "verbs": ["begin", "select", "select", "with", "commit"],
+      "p50Ms": 5.864187999999558,
+      "p95Ms": 9.50641700000051
+    },
+    {
+      "probe": "renewal-sql",
+      "sessions": 8,
+      "samples": 10,
+      "sqlIncludingTransaction": [5, 5, 5, 5, 5, 5, 5, 5, 5, 5],
+      "verbs": ["begin", "select", "select", "with", "commit"],
+      "p50Ms": 5.831175000001167,
+      "p95Ms": 6.0884749999986525
+    },
+    {
+      "probe": "renewal-lock-coupling",
+      "blockedRows": 1,
+      "expiredSessions": 2,
+      "renewalsAfterUnlock": 0,
+      "expiredLeaseRevived": false
+    },
+    {
+      "probe": "quarantine-before-local-revoke",
+      "renewalRejected": true,
+      "quarantinePending": true,
+      "runnerAborted": false
+    },
+    {
+      "probe": "observer-pending",
+      "deadline": 3000,
+      "observedAt": 10000,
+      "aborted": false,
+      "newAuthorityCheck": "pending"
+    }
+  ],
+  "methodology": "Actual observer with controlled pending read and monotonic time; actual renewal SQL and row locking on disposable migrated PG; real Run backend/Supervisor with substituted runner, Kafka and renewal/quarantine failure outcomes. No live Pi/Cube fault or expired-publication bypass is claimed.",
+  "sourceSha256": {
+    "packages/runtime-core/src/session-lease-coordinator.ts": "6bef654c668705a5ff43e49aa50d022aa2447893e7c3c9c46d4c4ed50b3d24f7",
+    "packages/supervisor-host/src/agent-run-execution-backend.ts": "d2f6f4d222e2a3c0c81b51f7b5d02f719b79ff6de47e52cecce4251d6884835f",
+    "packages/pi-session-postgres/src/postgres-session-lease-observer.ts": "d02011e8c6c3fb9778e77b73efeb154504c14f1e7cdcbfeb284e62414a662f0e",
+    "packages/database/src/client.ts": "4800cdc36256c2afa71fb349f7dbdad8fe12b482ce75f096536f072c2179b3e4",
+    "packages/supervisor-host/src/runtime.ts": "adaf4eb16ad403f34d2d6e584c1865de2017c656f35e4d73bb59ce44330f9ba3",
+    "packages/sandbox-supervisor/src/agent-run-supervisor.ts": "8cd1646ace84e1e8b3db18130526eec9c5b814ba7412f2627c14fac5e2937764",
+    "packages/pi-session-postgres/src/durable/session-host.ts": "0ba813f78ed10a3bde513700692e1165705404e4eb1fa4e88b58fd72aea618b2"
+  }
+}

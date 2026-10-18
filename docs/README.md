@@ -1,5 +1,13 @@
 # Documentation map
 
+The [October 18 Worker → PG Session lease review](reports/worker-session-lease-review-20261018.md)
+checks direct renewal, local authority observation, SQL/lock boundaries and
+management reconnect. 123 existing tests and four isolated characterizations
+pass. It finds pending-I/O deadline enforcement, quarantine-before-local-abort
+ordering and cross-Session renewal lock coupling. Ordinary renewal remains three
+business SQL statements for one or eight Sessions. No runtime or deployment
+changes are included; forced closure/successor recovery is the next walkthrough hop.
+
 The [October 18 Projector → browser review](reports/projector-browser-review-20261018.md)
 checks canonical history/live-tail composition, SSE and browser presentation.
 117 existing tests, the real-browser gate and four isolated characterizations
