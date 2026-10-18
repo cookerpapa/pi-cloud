@@ -8,10 +8,13 @@ Workers. SQL traces show two idle-scan statements and unnecessary growth with
 healthy Sessions. Probe corrections and the current two-Worker scope are explicit;
 no runtime or deployment changes are included.
 
-The approved [ADR-0259 repair](adr/0259-control-plane-expiry-progress.md) is now
-implemented in source. [Verification and release](reports/control-plane-expiry-repair-20261018.md)
-track targeted tests, constant expiry SQL, schema 190 and remaining gates;
-the serving deployment is unchanged until the matched release completes.
+The approved [ADR-0259 repair](adr/0259-control-plane-expiry-progress.md) is deployed
+as `control-expiry-c9d8112d`, schema 190. [Verification and release](reports/control-plane-expiry-repair-20261018.md)
+record 1,912 distinct workspace tests across the original run and focused correction,
+79 helpers, nine RF3 cases, 311 fault cases and eleven artifact scans. Native,
+browser/image, child, Control Plane outage and full Cube acceptance pass. Original
+configuration fingerprints match and owned fixtures are physically cleaned; the
+initial test failures and retained upstream TLS sample are explicit.
 
 The [October 18 Worker → PG Session lease review](reports/worker-session-lease-review-20261018.md)
 checks direct renewal, local authority observation, SQL/lock boundaries and

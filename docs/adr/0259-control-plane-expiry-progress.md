@@ -1,8 +1,10 @@
 # ADR-0259: Control Plane expiry progress and failed Worker retirement
 
-Status: accepted for implementation, 2026-10-18. The owner approved the repair
+Status: implemented, verified and deployed, 2026-10-18, as
+`control-expiry-c9d8112d`. The owner approved the repair
 plan for CPE-01/02/03/O1 in the [review](../reports/control-plane-expiry-review-20261018.md).
-Baseline: `b9338bc8`. Verification and deployment are not yet complete.
+Baseline: `b9338bc8`. [Delivery evidence](../reports/control-plane-expiry-repair-20261018.md)
+records passing gates, live recovery, retained failed samples and confirmed cleanup.
 
 ## Decision and adoption
 

@@ -32,27 +32,34 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 The [October 18 review](reports/control-plane-expiry-review-20261018.md) at
 `3494ff92` records 50 passing existing tests and six isolated characterizations,
-including explicit probe corrections. The serving runtime remains
-`session-lease-079dbddc`; this review implements no repairs.
+including explicit probe corrections. The review itself changed no runtime.
+The approved repair is now deployed as
+`control-expiry-c9d8112d`, schema 190.
 
-The owner approved [ADR-0259](adr/0259-control-plane-expiry-progress.md).
-Implementation and matched-release acceptance are in progress.
+The owner-approved [ADR-0259](adr/0259-control-plane-expiry-progress.md) is complete.
+[Delivery evidence](reports/control-plane-expiry-repair-20261018.md) records source,
+artifact, live recovery and physical cleanup, including original configuration
+fingerprints and the unchanged upstream TLS sample.
 
-- [ ] CPE-01 / P2: bound Control Plane maintenance SQL/lock waits and prevent
+- [x] CPE-01 / P2: bound Control Plane maintenance SQL/lock waits and prevent
       management expiry or an unrelated healthy Session from stalling expiry
       progress. Keep lock order, fresh PG-time checks and conservative ownership.
-- [ ] CPE-02 / P2: converge authoritative failed Workers into existing retirement
+- [x] CPE-02 / P2: converge authoritative failed Workers into existing retirement
       even while their management heartbeat stays healthy. Preserve healthy idle/
       busy reconnect and exact Boot/Session closure; one expired Session must
       not retire its healthy Worker siblings.
-- [ ] CPE-03 / P2: select expiry work still needing closure admission so pending
-      seals do not monopolize the ten-Worker window. Keep ownership evidence
+- [x] CPE-03 / P2: select expiry work still needing closure admission so pending
+      seals no longer monopolize the former ten-Worker window. Keep ownership evidence
       until ordered closure. The eleven-Worker repro is an expansion case;
       the current deployment has two Workers.
-- [ ] CPE-O1 / P3: remove all-healthy-Session work from ordinary expiry and reuse
-      transaction-local locked facts. One-expiry cost grows from 28 to 56 statements
-      for one versus eight Sessions; idle scans remain two. Prove any residual
-      orphan-release need before removing its protection; add no competing cache.
+- [x] CPE-O1 / P3: remove all-healthy-Session work from ordinary expiry and reuse
+      transaction-local locked facts. One expiry now uses 13 statements for
+      1/8/64 Sessions; separate management scans add two reads. Normal and forced
+      closure release eligible owners atomically; no orphan-cleanup replacement
+      or competing cache is needed.
+
+- [x] Required source/fault/transport gates, scanned matched release, live recovery
+      and complete owned-fixture cleanup with original configuration preserved.
 
 ## Worker → PostgreSQL Session lease review
 

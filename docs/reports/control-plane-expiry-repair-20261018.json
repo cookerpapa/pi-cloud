@@ -1,0 +1,163 @@
+{
+  "status": "deployed-and-verified",
+  "date": "2026-10-18",
+  "release": "control-expiry-c9d8112d",
+  "schema": 190,
+  "implementationRevision": "4791c658bfa662fdaf3a64cdf2639d5f9f3d1f66",
+  "artifactRevision": "c9d8112d1fed6bd7bafae1b7727cdd696fa3e6bf",
+  "controlPlaneImage": "sha256:3dbff72689d61c44303ed5bec417df0a0d5e6d0ff6e19968f044104c9bda95f3",
+  "scannedArtifacts": 11,
+  "sourceVerification": {
+    "workspaceInitialPassed": 1910,
+    "workspaceInitialFailed": 1,
+    "correctedAcquisitionTestsPassed": 5,
+    "distinctWorkspaceTestsCovered": 1912,
+    "monolithicGreenRunClaimed": false,
+    "helpersPassed": 79,
+    "rf3TransportPassed": 9,
+    "faultCasesPassed": 311,
+    "faultExecutionGroups": 93,
+    "strictTypesPassed": true,
+    "formatDocsPolicyBuildSecurityPassed": true
+  },
+  "retainedFailures": [
+    {
+      "stage": "first CI",
+      "cause": "Unchanged upstream Cube temporary-script ETXTBSY",
+      "resolution": "Full allocation gate passed unchanged on repeat; no assertion relaxation."
+    },
+    {
+      "stage": "workspace suite",
+      "cause": "Old startup-cleanup fixture reused one pool mock",
+      "resolution": "Distinct ordinary/maintenance/queue-read pool assertions and new construction-failure case pass; runtime code unchanged."
+    },
+    {
+      "stage": "first live child handoff",
+      "cause": "Final model request HTTP 500 with concurrent CLIProxyAPI TLS/EOF to chatgpt.com",
+      "resolution": "Unchanged fresh-fixture repeat passed; upstream issue not fixed."
+    }
+  ],
+  "sql": {
+    "scope": "One expired Session; excludes separate management and retirement loops. Includes BEGIN/COMMIT, not server-internal trigger SQL.",
+    "samples": [
+      {
+        "sessions": 1,
+        "businessStatements": 11,
+        "totalStatements": 13,
+        "physicalSessionLockReads": 1
+      },
+      {
+        "sessions": 8,
+        "businessStatements": 11,
+        "totalStatements": 13,
+        "physicalSessionLockReads": 1
+      },
+      {
+        "sessions": 64,
+        "businessStatements": 11,
+        "totalStatements": 13,
+        "physicalSessionLockReads": 1
+      }
+    ],
+    "emptySessionSweep": 1,
+    "emptyManagementScans": 2,
+    "idleRetirementTotal": 3,
+    "oldCombinedSweepTotals": {
+      "oneSession": 28,
+      "eightSessions": 56
+    }
+  },
+  "live": {
+    "model": "gpt-6-luna",
+    "nativeInput": {
+      "passedCases": 5,
+      "sameRunRecovery": true,
+      "sameSseGenerationRecovery": true,
+      "partialTextPreserved": true,
+      "cleanupConfirmed": true
+    },
+    "browser": {
+      "accepted": true,
+      "cleanupConfirmed": true,
+      "directVision": true,
+      "readBudgetBytes": 51200
+    },
+    "toolImages": {
+      "sourceBytes": [6294569, 6294202, 25129800],
+      "canonicalRecordBytes": [596, 596, 597],
+      "changedBoot": true,
+      "visionRecallCorrect": true,
+      "physicalCleanupConfirmed": true
+    },
+    "child": {
+      "replacementMs": 13982,
+      "workerUnchanged": true,
+      "controlToolReplyRecovered": true,
+      "executionCount": 1,
+      "physicalCleanupConfirmed": true
+    },
+    "controlOutage": {
+      "actualUnavailableMs": 63813,
+      "restoreToReadyMs": 8384,
+      "idleAndBusyWorkersPreserved": true,
+      "sameWorkerAndLease": true,
+      "samePhysicalVm": true,
+      "eachBashExecutedOnce": true,
+      "cleanupConfirmed": true
+    },
+    "fullCube": {
+      "accepted": true,
+      "modelRequests": 22,
+      "terminalCount": 5,
+      "nativeEntries": 37,
+      "canonicalBytes": 35910,
+      "projectedMutations": 172,
+      "pureChatActivations": 0,
+      "persistentVolumeRestored": true,
+      "deletedVmAdmissionRejected": true
+    }
+  },
+  "cleanup": {
+    "confirmed": true,
+    "imageObjectsRemoved": 3,
+    "bootstrapProjectsRemoved": 4,
+    "fixtureTenantRemoved": true,
+    "configurationFingerprintsMatched": true,
+    "configurationCounts": {
+      "tenants": 32,
+      "users": 32,
+      "tenant_api_credentials": 32,
+      "user_password_credentials": 5,
+      "model_profiles": 35,
+      "credential_bindings": 35,
+      "source_control_credentials": 0
+    },
+    "native": {
+      "volumes": 0,
+      "nodeReferences": 0,
+      "holds": 0,
+      "openAllocations": 0
+    },
+    "metadata": {
+      "schema": "190_control_plane_expiry",
+      "projects": 0,
+      "workspaces": 0,
+      "sessions": 0,
+      "runs": 0,
+      "images": 0,
+      "ready_workers": 2
+    },
+    "readyPods": 28,
+    "windowsHttp": 200,
+    "wslHttp": 200,
+    "watchdogRestored": true,
+    "temporaryBuildProxyRemoved": true,
+    "dockerTestContainersRemaining": 0,
+    "unusedCandidateTagsRemoved": 11
+  },
+  "limits": [
+    "Two production Workers; eleven-Worker starvation and 64-Session SQL cases use isolated real PG, not fleet throughput evidence.",
+    "One-host KVM profile is not physical-node HA.",
+    "Upstream TLS/EOF remains intermittent; provider retry policy is unchanged."
+  ]
+}

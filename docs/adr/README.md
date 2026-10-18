@@ -1,9 +1,11 @@
 # Current architecture decisions
 
-[ADR-0259](0259-control-plane-expiry-progress.md) records the approved expiry
-repair: independent bounded maintenance, paged Session candidates, failed Worker
-retirement admission and transaction-local SQL reuse. Implementation and release
-verification are pending; existing ownership and ordered closure remain.
+[ADR-0259](0259-control-plane-expiry-progress.md) implements independent bounded
+maintenance, paged Session candidates, failed Worker retirement admission and
+transaction-local SQL reuse. It is deployed as `control-expiry-c9d8112d`, schema
+190. [Delivery evidence](../reports/control-plane-expiry-repair-20261018.md) records
+source/artifact/live gates, retained failed samples and confirmed fixture cleanup
+with original configuration fingerprints preserved.
 
 [ADR-0258](0258-bounded-session-lease-renewal.md) implements independent local
 expiration, bounded lease database I/O, local revocation before quarantine and

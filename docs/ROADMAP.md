@@ -7,15 +7,19 @@
 - [x] Run 50 existing tests and six isolated PG characterizations, measure SQL
       and record [findings and directions](reports/control-plane-expiry-review-20261018.md).
 
-This review changes no runtime/deployment. Repairs remain open in BACKLOG;
+The review itself changed no runtime/deployment. The repair is now complete;
 Kafka seal publication, physical cleanup and successor bootstrap remain the next
 walkthrough hop, rather than being treated as reviewed end to end here.
 
 The owner approved [ADR-0259](adr/0259-control-plane-expiry-progress.md):
 
-- [ ] Independent bounded maintenance, paged Session expiry and failed Worker admission.
-- [ ] Remove unrelated healthy-owner work and duplicate locked reads.
-- [ ] Concurrency/failure/SQL regressions, required gates and matched live release.
+- [x] Independent bounded maintenance, paged Session expiry and failed Worker admission.
+- [x] Remove unrelated healthy-owner work and duplicate locked reads.
+- [x] Concurrency/failure/SQL regressions, required gates and matched live release.
+
+Deployed as `control-expiry-c9d8112d`, schema 190. [Delivery evidence](reports/control-plane-expiry-repair-20261018.md)
+records the initial failed samples, corrected tests, live recovery and physical
+cleanup with original account/configuration fingerprints preserved.
 
 ## Worker → PostgreSQL Session lease review
 

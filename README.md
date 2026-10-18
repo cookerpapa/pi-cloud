@@ -53,7 +53,7 @@ additional messages go to the running Pi native queue and are confirmed after
 its Kafka-backed Storage commit. An unavailable Worker leaves the browser draft
 unconfirmed. [ADR-0238](docs/adr/0238-native-input-queue-and-run-record.md) is deployed;
 the [Worker claim cleanup](docs/adr/0242-worker-claim-schema-cleanup.md) is retained
-in the current schema 189 runtime.
+in the current schema 190 runtime.
 
 The intake path shares its locked Session and request lookup between
 routing and Run creation: eight ordinary business SQL statements, two on an
@@ -76,10 +76,18 @@ enter native persistence before validated Tool execution (ADR-0230).
 The [Session work migration](docs/adr/0247-session-work-and-tool-dispatch.md) is
 deployed as `session-work-6ac697f9`: one root Run with native child Conversations,
 unified Tool replies, one Session closure and Worker direct Kafka publication.
-The current matched release, `session-lease-079dbddc`, uses schema 189, execution-topic
+The current matched release, `control-expiry-c9d8112d`, uses schema 190, execution-topic
 v17, boot reply v3, guest/Tool Worker protocol 7, completion startup protocol 3,
 preview schema 2 and Cube management protocol 7. Host KVM is restored; all four
 templates, application workloads and required live acceptance pass.
+The [Control Plane expiry repair](docs/reports/control-plane-expiry-repair-20261018.md)
+advances past busy Sessions and pending seals, admits failed Workers into existing
+retirement even with live management connections, and removes healthy-Session
+cleanup from expiry. One-expiry SQL stays at 13 statements for 1/8/64 Sessions;
+management scans are separate. Live recovery, images, child handoff and full Cube
+acceptance pass, including 63.8 seconds without a Control Plane while both Worker
+Boots and the active lease remain unchanged. Initial test corrections and one
+upstream TLS/EOF sample remain documented.
 The [Session lease repair](docs/reports/session-lease-repair-20261018.md) enforces
 local deadlines independently of pending PG reads, revokes locally before waiting
 for quarantine, and renews healthy Sessions without waiting for another Session's
