@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createDatabase } from "../packages/database/src/index.ts";
@@ -28,6 +28,9 @@ const db = createDatabase({ connectionString: pg.toString(), maxConnections: 2 }
 const base = "http://127.0.0.1:" + runtimeEnvironment().PI_CLOUD_HTTP_PORT;
 const report = {
   checkedAt: new Date().toISOString(),
+  scriptSha256: createHash("sha256")
+    .update(await readFile(new URL(import.meta.url)))
+    .digest("hex"),
   model: "gpt-6-luna",
   accepted: false,
   cleanupConfirmed: false,
@@ -76,7 +79,7 @@ async function run(prompt) {
 }
 try {
   tenant = await createPrivateTenant(db, {
-    slug: "release-acceptance-settlement-" + randomUUID(),
+    slug: "release-acceptance-" + randomUUID(),
     ownerDisplayName: "Native Tool settlement acceptance",
     initialModel: { provider: "openai-codex", modelId: report.model },
   });
