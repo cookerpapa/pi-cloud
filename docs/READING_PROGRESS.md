@@ -14,6 +14,9 @@ provider and the streamed return. The [focused review](reports/model-request-res
 records four confirmed findings, the whole-Run timeout discussion and passing
 existing/characterization/upstream tests. Runtime is unchanged. Repair remains
 separate work; walkthrough completion does not claim the four defects are fixed.
+The [proposed repair plan](reports/model-request-response-repair-plan-20261019.md)
+now defines the four-defect slice and native-abort acceptance boundary. The
+ten-minute lifetime policy remains separate; implementation has not started.
 
 The preceding **replacement Worker → Pi Harness opening and continuation**
 [review](reports/worker-harness-recovery-review-20261019.md) and

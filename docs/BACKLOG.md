@@ -37,6 +37,11 @@ settlement. Ninety-two existing Node cases, twelve new cross-layer
 characterizations and twelve CLIProxyAPI test functions pass (30 Go test/subtest
 events). The source investigation covers pinned Pi 1.0 and CLIProxyAPI `48549e65`.
 Runtime and deployment are unchanged; repairs below remain open.
+The [proposed repair plan](reports/model-request-response-repair-plan-20261019.md)
+combines MR-01–04 at the public Models boundary, starting with native progress/
+abort durability tests. It removes the replaced Gateway parser/plumbing after
+cutover and keeps MR-D1's lifetime policy as a separate decision. No repair is
+implemented or deployed by this plan.
 
 - [ ] MR-01 / P2: preserve native transient-error classification when Gateway
       connection failures become HTTP or streaming errors. The Codex Harness

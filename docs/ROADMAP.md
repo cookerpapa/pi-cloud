@@ -11,6 +11,11 @@
       hosted-item retention and transport/model outcome separation.
 - [ ] Discuss MR-D1's existing whole-Run timeout before changing long-work behavior.
 
+The [proposed repair plan](reports/model-request-response-repair-plan-20261019.md)
+defines one response-adapter slice, its native-abort validation gate, deletion
+scope, required checks and matched live acceptance. It leaves the duration policy
+for a separate lifetime/recovery decision; implementation has not started.
+
 The main-message walkthrough is complete. Runtime remains `native-recovery-8c00826a`;
 this review adds evidence and records repairs, not deployment changes. The public
 Pi provider-event hook offers a smaller response-semantics boundary. Optional

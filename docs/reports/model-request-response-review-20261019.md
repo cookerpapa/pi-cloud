@@ -11,6 +11,8 @@ provider forwarding → streaming response/native settlement. This closes the
 remaining main-message walkthrough branch. Four confirmed findings require
 repair; the existing whole-Run time policy is a separate discussion item.
 No runtime implementation, deployment or provider/account configuration changed.
+The subsequent [repair plan](model-request-response-repair-plan-20261019.md)
+is proposed; its existence does not close these findings.
 
 ## Confirmed findings
 
