@@ -114,8 +114,12 @@ while the SQL-local budgets remain. Duplicate closure retires the exact old
 writer's disposable view after PG confirmation, preserving successor views and
 generation/object guards. Latest-hash proof reads start at each existing replay
 reference; recovery reuses its transaction-local locked Run. No storage authority
-or protocol changes. [Delivery](reports/seal-projection-repair-20261019.md) is in
-progress; the serving release still uses the prior implementation.
+or protocol changes. [Delivery](reports/seal-projection-repair-20261019.md) is deployed
+as `seal-projection-0de1fe7f`; source/artifact and native/browser/child/outage/full-Cube
+gates pass, while large-image cold recall remains unaccepted. The separate
+[Worker recovery review](reports/worker-harness-recovery-review-20261019.md) records
+remaining ordinary-pool read bounds and cancellation gaps during native cold open;
+Projector and lease-pool budgets do not cover those data reads.
 Under [ADR-0260](adr/0260-session-seal-publication-lifetimes.md), control publication
 uses a separate four-connection direct-PG pool with five-second acquisition and
 checkout budgets for Outbox/authority/binding metadata. Reader retirement joins

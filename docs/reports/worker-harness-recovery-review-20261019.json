@@ -1,0 +1,234 @@
+{
+  "reviewedAt": "2026-10-19T04:41:50.388Z",
+  "reviewedRevision": "e131a2ea0407db928abc6219a5267b84ab2d95d1",
+  "servingRelease": "seal-projection-0de1fe7f",
+  "servingSourceRevision": "0de1fe7fc7d8d3ec09e93e17d47df34730d02ab1",
+  "piVersion": "1.0.0",
+  "runtimeModified": false,
+  "deploymentPerformed": false,
+  "verification": {
+    "existingTestsPassed": 110,
+    "existingTestFiles": 9,
+    "isolatedBehaviorCases": 7,
+    "costSamples": 6,
+    "tests": [
+      {
+        "file": "packages/control-plane/test/durable-execution-recovery.test.ts",
+        "passed": 3
+      },
+      {
+        "file": "packages/control-plane/test/native-session-host.test.ts",
+        "passed": 2
+      },
+      {
+        "file": "packages/control-plane/test/worker-native-conversations.test.ts",
+        "passed": 2
+      },
+      {
+        "file": "packages/pi-session-postgres/test/durable-storage-conformance.test.ts",
+        "passed": 74
+      },
+      {
+        "file": "packages/sandbox-supervisor/test/durable-agent-session.test.ts",
+        "passed": 9
+      },
+      {
+        "file": "packages/sandbox-supervisor/test/durable-compaction-recovery.test.ts",
+        "passed": 3
+      },
+      {
+        "file": "packages/sandbox-supervisor/test/durable-human-inputs.test.ts",
+        "passed": 4
+      },
+      {
+        "file": "packages/sandbox-supervisor/test/durable-tool-call-publication.test.ts",
+        "passed": 10
+      },
+      {
+        "file": "packages/sandbox-supervisor/test/durable-turn-runner.test.ts",
+        "passed": 3
+      }
+    ],
+    "io": {
+      "at": "2026-10-19T04:38:10.098Z",
+      "revision": "e131a2ea0407db928abc6219a5267b84ab2d95d1",
+      "piVersion": "1.0.0",
+      "scope": "Owned disposable PG and native public interfaces; no production/Kafka/VM/provider access",
+      "cases": [
+        {
+          "name": "cold_open_pool_acquisition",
+          "observedWaitMs": 250.40195700000004,
+          "settledBeforeConnectionReleased": false
+        },
+        {
+          "name": "cancelled_cold_read",
+          "observedAfterAbortMs": 250.40094399999907,
+          "readSettled": false,
+          "storageCloseSettled": false,
+          "resolvedDespiteCancelledContext": true
+        },
+        {
+          "name": "cancelled_native_image_read",
+          "callerAborted": true,
+          "blobSignalAborted": false,
+          "readSettled": false,
+          "storeHasOwn60sDeadline": true
+        },
+        {
+          "name": "one_image_context_reads",
+          "blobReads": 2,
+          "uniqueImages": 1,
+          "nativeEntries": 1
+        }
+      ],
+      "probeSha256": "262d47966aa20d34daeb0fc07bed2519bb9bdbe188045b14ad503d0d585e5113",
+      "completed": true
+    },
+    "family": {
+      "at": "2026-10-19T04:38:08.039Z",
+      "revision": "e131a2ea0407db928abc6219a5267b84ab2d95d1",
+      "scope": "Real pinned Harness reopened from a captured committed prefix; in-memory Storage and faux models, no process crash or provider",
+      "cases": [
+        {
+          "mode": "continue",
+          "restoredActiveChild": true,
+          "rootFinalDidNotEndFamily": true,
+          "grantRequired": true,
+          "bindingBarrierHeld": true,
+          "delegations": 1,
+          "originalAskExecutions": 1,
+          "queuedReceiptCount": 1,
+          "queuedStatus": "done",
+          "newChildModelCalls": 2
+        },
+        {
+          "mode": "stop",
+          "restoredActiveChild": true,
+          "rootFinalDidNotEndFamily": true,
+          "grantRequired": true,
+          "bindingBarrierHeld": true,
+          "delegations": 1,
+          "originalAskExecutions": 1,
+          "queuedReceiptCount": 1,
+          "queuedStatus": "unanswered",
+          "newChildModelCalls": 0
+        }
+      ],
+      "probeSha256": "17c3dc644aff8bb53d3da5a0659ee64088635590944c6fc61efe06caa8c69e38",
+      "completed": true
+    },
+    "stopDuringChildBootstrap": {
+      "at": "2026-10-19T04:46:45.834Z",
+      "revision": "e131a2ea0407db928abc6219a5267b84ab2d95d1",
+      "scope": "Real RemoteToolSandboxTurnRunner + native Harness over captured committed MemoryStorage; controlled ownership/publication/view ports, no PG, Kafka, VM or provider",
+      "probeSha256": "14944aaacef2e4fb35b0c1e16b125487ab9ed58967301c78046f0cec0f563ff7",
+      "outcome": {
+        "resolved": false,
+        "name": "PiTurnCancelledError",
+        "code": "turn_cancelled",
+        "reason": "user_request",
+        "message": "Turn cancellation was confirmed"
+      },
+      "stopDelivered": true,
+      "modelPermits": 0,
+      "vmActivations": 0,
+      "childTerminalEvents": [
+        {
+          "type": "turn.cancelled"
+        }
+      ],
+      "completed": true
+    },
+    "cost": {
+      "at": "2026-10-19T04:31:10.767Z",
+      "revision": "e131a2ea0407db928abc6219a5267b84ab2d95d1",
+      "scope": "Isolated native cold reads and child bootstrap source/cursor queries; not total production recovery latency",
+      "context": [
+        {
+          "historicalEntries": 0,
+          "activeEntries": 2,
+          "sqlStatements": 12,
+          "returnedBodyBytes": 766,
+          "oldBodiesRead": 0,
+          "localMs": 20.651300000001356
+        },
+        {
+          "historicalEntries": 1000,
+          "activeEntries": 2,
+          "sqlStatements": 12,
+          "returnedBodyBytes": 790,
+          "oldBodiesRead": 0,
+          "localMs": 13.119310000000041
+        },
+        {
+          "historicalEntries": 10000,
+          "activeEntries": 2,
+          "sqlStatements": 12,
+          "returnedBodyBytes": 798,
+          "oldBodiesRead": 0,
+          "localMs": 18.313618999998653
+        }
+      ],
+      "children": [
+        {
+          "activeChildren": 1,
+          "sourceReads": 1,
+          "cursorReads": 1,
+          "metadataSqlStatements": 2
+        },
+        {
+          "activeChildren": 8,
+          "sourceReads": 8,
+          "cursorReads": 8,
+          "metadataSqlStatements": 16
+        },
+        {
+          "activeChildren": 32,
+          "sourceReads": 32,
+          "cursorReads": 32,
+          "metadataSqlStatements": 64
+        }
+      ],
+      "probeSha256": "21bd0b15f654be63e26dd4c3d1870e08694a0f6325ea24488b8afdc5e464c2ca",
+      "completed": true
+    }
+  },
+  "findings": [
+    {
+      "id": "WHR-01",
+      "priority": "P2",
+      "kind": "reliability",
+      "title": "Worker cold PG reads have no acquisition or query lifetime bound"
+    },
+    {
+      "id": "WHR-02",
+      "priority": "P2",
+      "kind": "reliability",
+      "title": "Cold reads discard caller cancellation before PG and image hydration"
+    },
+    {
+      "id": "WHR-O1",
+      "priority": "P3",
+      "kind": "optimization",
+      "title": "Active child metadata recovery performs two SQL statements per child"
+    },
+    {
+      "id": "WHR-O2",
+      "priority": "P3",
+      "kind": "discussion",
+      "title": "One native context read hydrates the same immutable image twice"
+    }
+  ],
+  "limitations": [
+    "Controlled committed-prefix reopening is not an OS crash or distributed handoff test",
+    "Child metadata costs isolate the real loader with a controlled active-view port; not full child boot cost",
+    "Short deliberate waits establish cancellation/budget boundaries, not an observed infinite outage",
+    "Single-image read uses a 1x1 PNG and proves duplicate object reads, not large-image model timeout causality",
+    "Prior live large-image cold recall remains unaccepted"
+  ],
+  "cleanup": {
+    "ownedPostgresContainersRemoved": true,
+    "temporaryDirectoryRemoved": true,
+    "productionUntouched": true
+  }
+}

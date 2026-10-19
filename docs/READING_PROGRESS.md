@@ -8,17 +8,21 @@ browser delivery, Worker renewal and Control Plane expiry admission have been
 covered. The provider request branch was explicitly deferred during the October
 12–15 walkthrough and has not received the same complete focused treatment.
 
-Current checkpoint: **Kafka seal → Projector → PG checkpoint/closure/release**.
-The [focused review](reports/seal-projection-review-20261019.md) is complete:
-175 existing tests, five isolated characterizations and four query-cost cases.
-Checkpoint/release atomicity and successor admission hold in the tested schedules.
-The [SPJ-01/02/O1/O2 repair and deployment](reports/seal-projection-repair-20261019.md)
-are implemented and deployed: bounded PG waits, confirmed old-writer memory
-cleanup, pending-range proof reads and one locked Run read. Source/artifact and
-native/browser/child/outage/full-Cube gates pass, with physical/configuration
-cleanup confirmed. Large-image cold recall remains unaccepted after model
-response-header timeouts. Initial failures are retained separately.
-Next: replacement Worker → native Harness opening and continuation.
+Current checkpoint: **replacement Worker → Pi Harness opening and continuation**.
+The [focused review](reports/worker-harness-recovery-review-20261019.md) is complete:
+110 existing tests, seven isolated behavior cases and six cost samples. Latest-head
+reads skip old history; current input, native children, unsafe Tool handling and
+Stop retain the inspected ownership semantics. Worker data-read bounds and
+cancellation need repair; child metadata batching and image hydration are recorded
+optimization items. Runtime/deployment are unchanged by this review.
+Next: native Pi → Worker-local Model Gateway → CLIProxyAPI → provider and response.
+The earlier large-image cold-recall acceptance is still incomplete and belongs
+in that transport investigation; duplicate object reads are not its proven cause.
+
+The preceding **Kafka seal → Projector → PG checkpoint/closure/release**
+[review](reports/seal-projection-review-20261019.md) and
+[SPJ-01/02/O1/O2 implementation/deployment](reports/seal-projection-repair-20261019.md)
+are complete, with the image acceptance limitation above retained.
 
 For the preceding **PG Outbox → Control Plane seal publisher → Kafka** hop,
 the [focused review](reports/seal-publication-review-20261019.md) and
@@ -51,7 +55,8 @@ or physical process-death evidence.
 | Worker → PG lease renewal | Explained, reviewed and repaired | [renewal](reports/worker-session-lease-review-20261018.md) |
 | Control Plane → PG expiry/seal admission | Explained, reviewed and repaired | [expiry](reports/control-plane-expiry-review-20261018.md) |
 | PG Outbox → control seal publisher → Kafka | Explained, reviewed and repaired | [seal publication](reports/seal-publication-repair-20261019.md) |
-| Kafka seal → Projector → PG checkpoint/closure/release | Explained, reviewed, repaired and deployed; current checkpoint | [seal projection](reports/seal-projection-review-20261019.md) |
+| Kafka seal → Projector → PG checkpoint/closure/release | Explained, reviewed, repaired and deployed | [seal projection](reports/seal-projection-review-20261019.md) |
+| Replacement Worker → native Harness continuation | Explained and reviewed; findings recorded, repair pending; current checkpoint | [Worker recovery](reports/worker-harness-recovery-review-20261019.md) |
 
 These statuses distinguish walkthrough coverage from focused audit scope. Storage
 research does not establish a complete new audit of every native recovery branch,
@@ -61,24 +66,19 @@ historical; the maintained path is direct Worker → Kafka under ADR-0247.
 
 ## Remaining main walkthrough segments
 
-1. **Replacement Worker/Harness continuation.** Ordered publication and seal
-   materialization have now been reviewed. Continue with new PG claim →
-   replacement Worker/Harness continuation. Inspect checkpoint reads, native
-   task/input restoration, compaction/bootstrap and unsafe Tool non-replay.
-   Fencing and recovery have already been discussed, implemented and exercised;
-   this remaining hop still needs its focused current-code review.
-   Do not repeat renewal/expiry/publication or present recovery as wholly unexamined.
-2. **Native model request and response.** Pi → Worker-local Model Gateway →
+1. **Native model request and response.** Pi → Worker-local Model Gateway →
    CLIProxyAPI → provider, and the streamed response back to Pi. Cover request
    construction/model settings, local model permits, credential boundaries,
    response parsing, incomplete local Tool calls, cancellation and transport
    failures. Context/token estimation, Compaction and TLS diagnostics have been
-   discussed separately; this full branch was deferred and has not been walked
-   through at the same granularity.
+   discussed separately; this full branch was deferred and still needs its
+   focused walkthrough/review. Include the incomplete large-image request/header
+   timing evidence without presupposing a proxy, provider or attachment cause.
 
-Suggested order: finish forced closure/replacement from the current checkpoint,
-then cover the model branch. That gives this main-message walkthrough a bounded
-completion point, followed by actual use and evidence-driven follow-up.
+Replacement Harness continuation now has its focused review above. After the
+remaining model branch, this main-message walkthrough has a bounded completion
+point, followed by actual use and evidence-driven follow-up. Findings remain
+separate repair work; reviewed does not mean every finding has been fixed.
 
 ## Related branches already discussed
 

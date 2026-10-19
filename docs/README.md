@@ -1,5 +1,14 @@
 # Documentation map
 
+The [October 19 replacement Worker → Pi Harness review](reports/worker-harness-recovery-review-20261019.md)
+checks native cold open, pending input, child rebinding, unsafe Tool non-replay and
+Stop during restoration. 110 existing tests, seven isolated behavior cases and
+six cost samples pass. It records unbounded Worker data reads, dropped read
+cancellation, per-child metadata round trips and repeated image hydration.
+The architecture still uses one Session owner and Pi's native scheduler. Runtime
+code/deployment are unchanged; the next main walkthrough is the model branch.
+The prior large-image cold-recall gate remains unaccepted.
+
 The [October 19 Kafka seal → Projector → PG review](reports/seal-projection-review-20261019.md)
 checks exact handoff checkpoints, atomic closure/release, duplicate seals and
 successor admission. 175 existing tests, five isolated characterizations and four

@@ -1,5 +1,20 @@
 # Implementation roadmap
 
+## Replacement Worker → Pi Harness recovery review
+
+- [x] Review native checkpoint opening, original Submission identity, current
+      Inbox, live child rebinding, Compaction and unsafe Tool recovery.
+- [x] Run 110 existing tests, seven isolated behavior cases and six cost samples;
+      record [findings and repair directions](reports/worker-harness-recovery-review-20261019.md).
+- [x] Verify descendant-aware completion and Stop during child bootstrap without
+      dispatching a model or VM effect.
+
+WHR-01/02 identify read lifetime/cancellation defects; WHR-O1/02 record child SQL
+batching and image hydration opportunities. Runtime repairs remain pending; the
+image reuse boundary needs explicit evaluation against the existing per-decode
+policy. The serving release is unchanged. Next main walkthrough: the native
+model request/response branch, including outstanding large-image header waits.
+
 ## Kafka seal → Projector → PG closure review
 
 - [x] Explain and review native checkpoint reconstruction, atomic closure/lease

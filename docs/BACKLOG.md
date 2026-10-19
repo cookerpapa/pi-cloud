@@ -28,6 +28,30 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## Replacement Worker → Pi Harness recovery review
+
+The [October 19 review](reports/worker-harness-recovery-review-20261019.md) at
+`e131a2ea` completes this hop with 110 existing tests, seven isolated behavior
+cases and six cost samples. Indexed latest-head/context reads remain independent
+of old history in the fixture; native family continuation/Stop preserve ownership,
+input identity and unsafe Tool non-replay. Runtime and deployment are unchanged.
+
+- [ ] WHR-01 / P2: bound native recovery PG acquisition and reads through existing
+      database facilities, including child/image metadata. Keep authority writes
+      separate and define transient bootstrap-failure handling through ordered
+      closure instead of adding timers that leave SQL or writers alive.
+- [ ] WHR-02 / P2: preserve read cancellation across Runner, Session host, Storage
+      and image hydration. Distinguish owner/read cancellation from native Stop
+      settlement; maintain acknowledged-commit and pending-input guarantees.
+- [ ] WHR-O1 / P3: batch exact active-child source/cursor reads. Current measured
+      metadata cost is 2/16/64 SQL statements for 1/8/32 active children; preserve
+      source identity, tenant/root scope and missing-state failure checks.
+- [ ] WHR-O2 / P3, discussion: one native context assembly fetches the same image
+      twice. Evaluate bounded within-operation reuse against the existing
+      per-decode validation policy before implementation. Do not add an unbounded
+      cross-Run cache or alter Pi's Storage contract; accepting the cost remains
+      valid if a sound public-API reuse boundary is unavailable.
+
 ## Kafka seal → Projector → PG closure review
 
 The [October 19 review](reports/seal-projection-review-20261019.md) at `1d84ea59`
