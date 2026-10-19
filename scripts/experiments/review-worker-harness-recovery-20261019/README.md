@@ -14,6 +14,7 @@ node --import tsx scripts/experiments/review-worker-harness-recovery-20261019/co
 node --import tsx scripts/experiments/review-worker-harness-recovery-20261019/family.mjs /tmp/pi-cloud-worker-recovery-family.json
 node --import tsx scripts/experiments/review-worker-harness-recovery-20261019/bootstrap-stop.mjs /tmp/pi-cloud-worker-recovery-stop.json
 node --import tsx scripts/experiments/review-worker-harness-recovery-20261019/submission-status-cost.mjs /tmp/pi-cloud-submission-status-cost.json
+node --import tsx scripts/experiments/review-worker-harness-recovery-20261019/family-restore-timing.mjs /tmp/pi-cloud-family-restore-timing.json 1,8,32,128
 ```
 
 - `probe.mjs` always starts its own disposable official-PG container. It briefly
@@ -43,6 +44,18 @@ node --import tsx scripts/experiments/review-worker-harness-recovery-20261019/su
   isolate receipt metadata from transcript size. It captures actual status-query
   plans before/after a disposable comparison index. That index is never deployed;
   the experiment does not validate generic prepared plans or whole-family latency.
+- `family-restore-timing.mjs` captures a real native committed prefix containing
+  a completing root and active short-text children, materializes it in owned PG,
+  checkpoints live progress and reopens through the actual Session host and
+  remote Runner. Child source/cursor reads, shared native Harness and sequential
+  rebinding are real. It counts arrival at the model-permit port for every child,
+  then cancels without contacting a model or VM. The resource fixture supplies
+  already-granted authority; publication projects synchronously to PG instead of
+  Kafka. Timings exclude failure detection, writer closure, Pod startup, Kafka
+  acknowledgement and provider response. PG caches may be warm from seeding;
+  there are no attachments, long contexts or large completed-history background.
+  The optional count list is bounded to 128 for this experiment only. It is not
+  a product quota, production recovery SLA or full distributed failover test.
 
 Each output records the reviewed revision and probe hash. Temporary PG containers
 and the wrapper's directory are removed. The 1×1 image probe does not replace the

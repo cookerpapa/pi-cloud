@@ -221,6 +221,51 @@ children still require proportional task/context restoration even after this
 historical filtering overhead is removed; child binding currently completes for
 the whole family before effects are admitted.
 
+## Follow-up: active family restore preparation timing
+
+At source `dca67f85`, a new owned-PG experiment reopens a real native committed
+prefix through `PostgresDurableSessionHost` and `RemoteToolSandboxTurnRunner`.
+The root has answered but remains completing while its children are active.
+Child source/cursor queries, native task/configuration reads, root/child binding,
+context preparation and the family effects barrier use current implementation.
+Each child is held at the model-permit port; no model or VM is called.
+The boundary precedes local permit waiting and the remaining cloud request
+transformation; it is not the time of an outbound provider HTTP request.
+
+| Active children | All child bindings ready | All children reach model-permit request |
+| --- | --- | --- |
+| 1 | 0.128 s | 0.157 s |
+| 8 | 0.534 s | 0.534 s |
+| 32 | 1.757 s | 1.758 s |
+| 128 | 8.339 s | 8.341 s |
+
+These are one sample per size with short fresh text contexts, no attachments or
+large completed-history background, on loopback PostgreSQL. Cold means a new
+native host/Harness, not an emptied OS/database cache. Fixture seeding may warm
+PG. Authorization is pre-granted and Kafka publication is replaced by synchronous
+PG projection; this substitution makes these neither production upper nor lower
+bounds. Failure detection, old-writer closure, Pod startup, Kafka acknowledgement,
+provider latency and VM creation are excluded. The observations support a
+seconds-scale preparation cost for these small contexts, not a full-recovery SLA
+or an extrapolation to thousands of children or million-token contexts.
+
+The instrumented host issues 64 / 260 / 1,041 / 4,372 SQL statements, excluding
+lease-observer and substituted projection queries. Thus WHR-O1's 2N metadata
+queries are only a portion of total native restoration work. Sequential child
+binding occupies most of the observed interval; batching cloud metadata alone
+cannot be assumed to remove it. The fixture reports 6 / 20 / 68 / 260 native
+commits projected synchronously before the measurement boundary. Memory deltas
+are retained as raw diagnostics, not peak-memory or capacity evidence.
+
+Two initial fixture failures were corrected before measurement: the synthetic
+resource root omitted the native built-in documents, and a copied JSON column
+needed JSON encoding. They did not identify runtime defects. An intermediate
+1/8/32 run measured first-model-permit arrival only; the final script adds the
+all-child boundary and the 128-child sample. Private failed/intermediate outputs
+remain separate. Temporary PG resources are removed; runtime and deployment
+remain unchanged. Aggregate final evidence is in this review's JSON under
+`verification.familyRestoreTiming`.
+
 ## Verification and limits
 
 - **110 existing tests in nine files pass**, including real-PG Storage conformance,

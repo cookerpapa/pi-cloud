@@ -39,6 +39,10 @@ The [proposed repair plan](reports/worker-harness-recovery-repair-plan-20261019.
 combines bounded/cancellable read lifetimes, typed recovery failures, status
 indexing and native child reattachment. Image reuse depends on proving a suitable
 public-API operation boundary. No runtime implementation has started.
+An additional owned-PG timing baseline restores 1/8/32/128 short-text children
+to the model-permit boundary in 0.157/0.534/1.758/8.341 seconds. Pre-granted
+authority and synchronous PG publication exclude full failover/Kafka latency;
+native binding work extends beyond the two cloud metadata queries per child.
 
 - [ ] WHR-01 / P2: bound native recovery PG acquisition and reads through existing
       database facilities, including child/image metadata. Keep authority writes

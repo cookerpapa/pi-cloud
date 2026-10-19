@@ -139,6 +139,15 @@ first admitted effect, query/row counts and memory; provider response latency is
 a separate measurement. Retain the native conformance, queue/Stop, unsafe Tool,
 family, RF3 and ordered-closure tests.
 
+The subsequent [baseline timing](worker-harness-recovery-review-20261019.md#follow-up-active-family-restore-preparation-timing)
+measures 1/8/32/128 short-text children reaching the model-permit port in
+0.157/0.534/1.758/8.341 seconds. It uses pre-granted authority, a new native host
+and synchronous PG publication in place of Kafka, so it is not production
+failover timing. The separate 2N cloud metadata lookups are a small fraction of
+total SQL; profile sequential native binding before promising improvement from
+batching alone. Repair acceptance still needs realistic context/image sizes and
+the actual transport boundary.
+
 After required source/artifact checks, use the maintained drained matched release
 and relevant native/browser/image/child/Control Plane outage/full Cube acceptance.
 Preserve accounts, model/provider configuration and credentials. Confirm owned

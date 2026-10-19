@@ -390,7 +390,76 @@
       "comparisonIndexScope": "Disposable fixture only; no product migration or prepared/generic-plan acceptance",
       "completed": true
     },
-    "additionalStatusPlans": 12
+    "additionalStatusPlans": 12,
+    "familyRestoreTiming": {
+      "at": "2026-10-19T06:20:57.685Z",
+      "revision": "dca67f850d521385cfabb252fecb341ae93bf9fd",
+      "scope": "Already-admitted cold native/Runner restore on owned loopback PG; short fresh text children, no attachments; synchronous PG projection substitutes Kafka publication",
+      "excluded": [
+        "failure detection",
+        "old-writer fencing/closure latency",
+        "Pod startup",
+        "Kafka/RF3 acknowledgement",
+        "real model response",
+        "VM creation"
+      ],
+      "cases": [
+        {
+          "activeChildren": 1,
+          "nativeHeadOpenMs": 10.901,
+          "allChildBindingsMs": 127.997,
+          "firstModelPermitRequestMs": 157.442,
+          "allChildModelPermitRequestsMs": 157.443,
+          "sqlStatementsExcludingLeaseObserver": 64,
+          "nativeCommitsProjectedSynchronously": 6,
+          "seedCommits": 22,
+          "seedSerializedBytes": 14304,
+          "heapDeltaBytes": 5725272,
+          "rssDeltaBytes": 1835008
+        },
+        {
+          "activeChildren": 8,
+          "nativeHeadOpenMs": 2.942,
+          "allChildBindingsMs": 533.723,
+          "firstModelPermitRequestMs": 534,
+          "allChildModelPermitRequestsMs": 534.302,
+          "sqlStatementsExcludingLeaseObserver": 260,
+          "nativeCommitsProjectedSynchronously": 20,
+          "seedCommits": 72,
+          "seedSerializedBytes": 60263,
+          "heapDeltaBytes": 19398064,
+          "rssDeltaBytes": 11010048
+        },
+        {
+          "activeChildren": 32,
+          "nativeHeadOpenMs": 3.236,
+          "allChildBindingsMs": 1756.905,
+          "firstModelPermitRequestMs": 1757.302,
+          "allChildModelPermitRequestsMs": 1757.782,
+          "sqlStatementsExcludingLeaseObserver": 1041,
+          "nativeCommitsProjectedSynchronously": 68,
+          "seedCommits": 240,
+          "seedSerializedBytes": 218906,
+          "heapDeltaBytes": -5830256,
+          "rssDeltaBytes": 3932160
+        },
+        {
+          "activeChildren": 128,
+          "nativeHeadOpenMs": 3.39,
+          "allChildBindingsMs": 8338.562,
+          "firstModelPermitRequestMs": 8339.196,
+          "allChildModelPermitRequestsMs": 8341.016,
+          "sqlStatementsExcludingLeaseObserver": 4372,
+          "nativeCommitsProjectedSynchronously": 260,
+          "seedCommits": 912,
+          "seedSerializedBytes": 856729,
+          "heapDeltaBytes": 5495728,
+          "rssDeltaBytes": 7598080
+        }
+      ],
+      "probeSha256": "4cdabad55e72c1e1bb030b739432fe1aad57efb347a6df80cd093595be523fcc",
+      "completed": true
+    }
   },
   "findings": [
     {
@@ -430,7 +499,8 @@
     "Short deliberate waits establish cancellation/budget boundaries, not an observed infinite outage",
     "Single-image read uses a 1x1 PNG and proves duplicate object reads, not large-image model timeout causality",
     "Prior live large-image cold recall remains unaccepted",
-    "The original constant SQL-count context sample varied old Entries only; it did not cover completed Submission growth. Comparison index exists only in the disposable fixture."
+    "The original constant SQL-count context sample varied old Entries only; it did not cover completed Submission growth. Comparison index exists only in the disposable fixture.",
+    "Family timing uses fresh short-text children, pre-granted authority and synchronous PG projection instead of Kafka. Native host is cold; PG caches may be warm from seeding. No full failover SLA, large-context or fleet-capacity claim."
   ],
   "cleanup": {
     "ownedPostgresContainersRemoved": true,
