@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { withDatabaseReadSignal, type Database } from "@pi-cloud/database";
+import type { Database } from "@pi-cloud/database";
+import { withDatabaseReadSignal } from "@pi-cloud/database/client";
 import { parseImageAttachmentReference, type ImageAttachmentReference } from "@pi-cloud/protocol";
 import { sql, type Kysely } from "kysely";
 import type { ImageAttachmentSource, ImageAttachmentStore, ImageScope } from "./codec.ts";
