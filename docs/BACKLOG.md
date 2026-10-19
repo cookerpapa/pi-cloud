@@ -35,6 +35,9 @@ records 175 existing tests, five isolated characterizations and four query-cost
 cases. Checkpoint, closure and release remain atomic in the tested rollback,
 lost-return and concurrent-claim schedules. No runtime or deployment changed.
 
+The owner approved [ADR-0261](adr/0261-session-seal-projection-boundaries.md).
+Implementation and verification are in progress; delivery remains pending.
+
 - [ ] SPJ-01 / P2: bound projection PG acquisition and entire checkout using
       existing database facilities, including cold boundary reads and COMMIT
       return handling. Preserve ordered replay and SQL-local cancellation; do

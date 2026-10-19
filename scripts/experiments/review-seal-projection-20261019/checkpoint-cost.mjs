@@ -39,7 +39,8 @@ try {
     const measured = database.withPlugin({
       transformQuery({ node, queryId }) {
         const compiled = database.getExecutor().compileQuery(node, queryId);
-        if (compiled.sql.includes("select distinct on (h.key)")) proofQuery = compiled;
+        if (compiled.sql.includes("select pending.id,proof.seq::text,proof.hash"))
+          proofQuery = compiled;
         return node;
       },
       async transformResult({ result }) {
@@ -105,7 +106,7 @@ try {
     const scannedHeaders = nodes
       .filter((node) => node["Relation Name"] === "pi_durable_commits")
       .reduce((sum, node) => sum + node["Actual Rows"] * node["Actual Loops"], 0);
-    assert.equal(scannedHeaders, priorHeaders + 2);
+    assert.equal(scannedHeaders, 1);
     await view.assertComplete();
     assert.equal(
       (await view.revisions(2, progress.seq))[0].checkpoint.generation.message.text,

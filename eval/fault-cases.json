@@ -2178,6 +2178,90 @@
       "file": "test/control-plane-expiry.postgres.test.ts",
       "test": "evicts a stalled maintenance query and releases its PG locks",
       "invariant": "Short maintenance I/O cannot keep a timed-out PG socket or transaction alive."
+    },
+    {
+      "id": "seal-projection-rollback",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/session-seal-projection.test.ts",
+      "test": "rolls back checkpoint, closure and readiness together; replay can then finish",
+      "invariant": "Native checkpoints and release remain atomic on rollback."
+    },
+    {
+      "id": "seal-projection-recovery-commit-loss",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/session-seal-projection.test.ts",
+      "test": "reconciles a lost seal COMMIT return and retires the old live cache (recover=true)",
+      "invariant": "Lost COMMIT return preserves exact recovery and releases old live memory on replay."
+    },
+    {
+      "id": "seal-projection-terminal-commit-loss",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/session-seal-projection.test.ts",
+      "test": "reconciles a lost seal COMMIT return and retires the old live cache (recover=false)",
+      "invariant": "Terminal closure replays the persisted outcome and retires old memory."
+    },
+    {
+      "id": "seal-projection-successor",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/session-seal-projection.test.ts",
+      "test": "does not admit a successor before closure COMMIT and ignores the old seal after a new grant",
+      "invariant": "Old closure/prefix replay cannot revoke or discard a successor live suffix."
+    },
+    {
+      "id": "seal-projection-pool-bound",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/session-seal-projection.test.ts",
+      "test": "bounds acquisition even while the previous checkout caller remains held",
+      "invariant": "Pool capacity recovers without waiting for a stale caller."
+    },
+    {
+      "id": "seal-projection-cold-bound",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/session-seal-projection.test.ts",
+      "test": "bounds a locked cold boundary and preserves closure for retry",
+      "invariant": "Cold boundary reads are bounded and retain closure authority on timeout."
+    },
+    {
+      "id": "seal-projection-checkout-bound",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/session-seal-projection.test.ts",
+      "test": "bounds a locked seal transaction and preserves closure for retry",
+      "invariant": "Timed-out closure queries release locks without granting successor admission."
+    },
+    {
+      "id": "seal-projection-stale-cleanup",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/session-seal-projection.test.ts",
+      "test": "does not let a delayed cleanup callback remove a replacement projection object",
+      "invariant": "Delayed cleanup cannot discard a newer projection object."
+    },
+    {
+      "id": "seal-checkpoint-proof-missing",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-storage-conformance.test.ts",
+      "test": "requires the latest proof for interleaved pending live documents (missing)",
+      "invariant": "Bounded proof lookup must reject missing, stale or changed live checkpoints without clearing replay references."
+    },
+    {
+      "id": "seal-checkpoint-proof-old-sequence",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-storage-conformance.test.ts",
+      "test": "requires the latest proof for interleaved pending live documents (old_sequence)",
+      "invariant": "Bounded proof lookup must reject missing, stale or changed live checkpoints without clearing replay references."
+    },
+    {
+      "id": "seal-checkpoint-proof-changed-body",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-storage-conformance.test.ts",
+      "test": "requires the latest proof for interleaved pending live documents (changed_body)",
+      "invariant": "Bounded proof lookup must reject missing, stale or changed live checkpoints without clearing replay references."
+    },
+    {
+      "id": "projection-pool-startup-cleanup",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/main-acquisition.test.ts",
+      "test": "closes earlier pools when the projection pool cannot be constructed",
+      "invariant": "Failed projection pool construction releases previously acquired resources."
     }
   ]
 }

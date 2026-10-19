@@ -8,8 +8,9 @@ export const PROJECTION_BUDGET: ProjectionBudget = Object.freeze({
 });
 
 /** Server cancellation and transaction rollback, not a client Promise timeout.
- * Budgets cover each lock/statement; pool acquisition and COMMIT ambiguity keep
- * the database driver's semantics. No offset is advanced after an SQL failure. */
+ * Budgets cover each lock/statement. Production also supplies a bounded checkout
+ * pool for acquisition and client I/O, including COMMIT. An uncertain return is
+ * reconciled by ordered replay; no offset advances after an SQL failure. */
 export async function projectionTransaction<T>(
   database: Kysely<Database>,
   work: (transaction: Transaction<Database>) => Promise<T>,

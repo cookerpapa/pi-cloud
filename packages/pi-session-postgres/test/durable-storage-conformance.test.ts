@@ -572,6 +572,83 @@ it("replays interleaved Conversations after one live document has already settle
   }
 });
 
+it.each(["missing", "old_sequence", "changed_body"] as const)(
+  "requires the latest proof for interleaved pending live documents (%s)",
+  async (damage) => {
+    const f = await fixture();
+    const a = 10 as import("@earendil-works/pi-durable").DocumentId,
+      b = 11 as typeof a;
+    const update = (id: typeof a, text: string): StorageWrite => ({
+      type: "document.change",
+      id,
+      content: {
+        kind: "delta",
+        version: 1,
+        ops: [["s", ["generation"], { attempt: 1, message: { text } }]],
+      },
+    });
+    try {
+      await f.store.commit(
+        [
+          { type: "conversation", value: { id: 1 } },
+          { type: "conversation", value: { id: 2 } },
+          ...[a, b].map((id, index) => ({
+            type: "document.create",
+            record: {
+              id,
+              kind: "pi.live",
+              scope: { kind: "conversation", conversationId: index + 1 },
+              history: "latest",
+              fork: "initial",
+            },
+            content: { kind: "base", version: 1, value: {} },
+          })),
+        ] as StorageWrite[],
+        BACKGROUND_CONTEXT,
+      );
+      await f.store.commit([update(a, "A early")], BACKGROUND_CONTEXT);
+      const early = f.projection.liveState.rows.get(a)!;
+      await f.store.commit([update(a, "A middle")], BACKGROUND_CONTEXT);
+      await f.store.commit([update(b, "B first")], BACKGROUND_CONTEXT);
+      await f.store.commit([update(a, "A final")], BACKGROUND_CONTEXT);
+      await f.store.commit([update(b, "B final")], BACKGROUND_CONTEXT);
+      const pending = await sql<{ id: string; replay_seq: string }>`select id::text,replay_seq::text
+        from pi_durable_current where tenant_id=${f.tenantId}::uuid and replay_seq is not null order by id`.execute(
+        database,
+      );
+      expect(pending.rows).toEqual([
+        { id: "10", replay_seq: "2" },
+        { id: "11", replay_seq: "4" },
+      ]);
+      const bad = f.projection.liveState.fork();
+      if (damage === "missing") bad.rows.delete(a);
+      else if (damage === "old_sequence") bad.rows.set(a, early);
+      else {
+        const latest = bad.rows.get(a)!;
+        const body = JSON.parse(latest.body);
+        body.content.value.generation.message.text = "changed after projection";
+        bad.rows.set(a, { ...latest, body: JSON.stringify(body) });
+      }
+      await expect(
+        database.transaction().execute((tx) => f.projection.checkpointLiveIn(tx, bad)),
+      ).rejects.toThrow("checkpoint is incomplete or changed");
+      await expect(f.projection.assertComplete()).rejects.toThrow("Kafka recovery");
+      await database
+        .transaction()
+        .execute((tx) => f.projection.checkpointLiveIn(tx, f.projection.liveState.fork()));
+      await f.projection.assertComplete();
+      expect((await f.projection.revisions(a, 6))[0]?.checkpoint).toEqual({
+        generation: { attempt: 1, message: { text: "A final" } },
+      });
+      expect((await f.projection.revisions(b, 6))[0]?.checkpoint).toEqual({
+        generation: { attempt: 1, message: { text: "B final" } },
+      });
+    } finally {
+      await f.close();
+    }
+  },
+);
+
 it("keeps one Inbox/Submission body across edits, atomically consumes it, and rebuilds without edit history", async () => {
   const f = await fixture();
   const id = 2 as import("@earendil-works/pi-durable").DocumentId;

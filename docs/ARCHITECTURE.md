@@ -99,12 +99,15 @@ budgets; timeout rolls back without advancing offsets or admitting a Tool. Faile
 retry in partition order. Phase metrics and payload-free slow-record diagnostics
 locate waits without introducing another consumer or a skip/dead-letter path
 ([ADR-0199](adr/0199-bounded-publication-and-projection.md)).
-The [October 19 closure review](reports/seal-projection-review-20261019.md) verifies
-checkpoint/release atomicity and records remaining implementation work: these
-SQL-local budgets do not bound pool acquisition/client-response waits; duplicate
-closure after a lost COMMIT return can retain old live memory. Lifetime header
-proof scans and one repeated locked Run read are optimization candidates.
-These review findings are not implemented repairs or new storage authorities.
+The source repair under [ADR-0261](adr/0261-session-seal-projection-boundaries.md)
+adds a dedicated 12-connection direct-PG projection pool with 30-second acquisition
+and checkout bounds. It covers projection/cold boundary/replay/retention metadata,
+while the SQL-local budgets remain. Duplicate closure retires the exact old
+writer's disposable view after PG confirmation, preserving successor views and
+generation/object guards. Latest-hash proof reads start at each existing replay
+reference; recovery reuses its transaction-local locked Run. No storage authority
+or protocol changes. [Delivery](reports/seal-projection-repair-20261019.md) is in
+progress; the serving release still uses the prior implementation.
 Under [ADR-0260](adr/0260-session-seal-publication-lifetimes.md), control publication
 uses a separate four-connection direct-PG pool with five-second acquisition and
 checkout budgets for Outbox/authority/binding metadata. Reader retirement joins

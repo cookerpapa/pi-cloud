@@ -1,4 +1,4 @@
-import { transitionCurrentRun } from "./run-state.ts";
+import { transitionLockedRun } from "./run-state.ts";
 import { PostgresDurableCommitProjector } from "./postgres-durable-commit-projector.ts";
 import type { Database } from "@pi-cloud/database";
 import { recoverQuarantinedSession } from "./quarantined-session-recovery.ts";
@@ -382,7 +382,10 @@ export class ExecutionStreamProjector {
         .forNoKeyUpdate()
         .executeTakeFirst();
       if (!run || !writer) return;
-      if (writer.writer_seal_offset !== null) writerClosed = BigInt(writer.writer_seal_offset);
+      if (writer.writer_seal_offset !== null) {
+        writerClosed = BigInt(writer.writer_seal_offset);
+        adopt = this.#durable.closedWriterCleanup(fact.scope, current);
+      }
       if (
         run.lease_id !== fact.scope.writerId ||
         (writerClosed !== undefined && position.offset > writerClosed)
@@ -463,6 +466,7 @@ export class ExecutionStreamProjector {
           "output_seal_id",
           "lease_id",
           "state",
+          "row_version",
           "output_sealed_at",
           "fencing_token",
           "output_seal_offset",
@@ -484,6 +488,8 @@ export class ExecutionStreamProjector {
         .forNoKeyUpdate()
         .executeTakeFirst();
       if (!writer) return;
+      if (writer.writer_seal_offset !== null)
+        adopt = this.#durable.closedWriterCleanup(fact.scope, current);
       if (run.lease_id !== fact.scope.writerId && writer.writer_seal_offset !== null) {
         await recordFactProjection(transaction, position);
         return;
@@ -570,9 +576,10 @@ export class ExecutionStreamProjector {
           .where("kind", "=", "cancel")
           .where("state", "in", ["dispatched", "acknowledged"])
           .execute();
-        await transitionCurrentRun(
+        await transitionLockedRun(
           transaction,
           { tenantId: fact.scope.tenantId, runId: fact.scope.runId },
+          run,
           { runState: "queued", reason: "native_execution_recovery", now },
         );
         await transaction

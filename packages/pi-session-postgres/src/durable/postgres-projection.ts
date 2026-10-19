@@ -655,11 +655,19 @@ export class DurablePostgresProjection {
     }
     if (state.through !== head.seq)
       throw new Error("Native live handoff must replay through the projected head");
-    const expected = await sql<{ id: string; seq: string; hash: string }>`select distinct on (h.key)
-      h.key as id,c.seq,h.value as hash from pi_durable_commits c
-      cross join lateral jsonb_each_text(c.current_hashes) h
-      where ${this.scoped("c")} and h.key=any(${pending.map((r) => String(r.id))}::text[])
-      order by h.key,c.seq desc`.execute(tx);
+    // Every pending document has an update at/after its protected replay_seq.
+    // Seek its latest proof within that suffix, never expand lifetime headers.
+    const expected = await sql<{
+      id: string;
+      seq: string;
+      hash: string;
+    }>`select pending.id,proof.seq::text,proof.hash
+      from unnest(${pending.map((r) => String(r.id))}::text[],${pending.map((r) => r.replay_seq)}::bigint[]) pending(id,first_seq)
+      cross join lateral (
+        select c.seq,c.current_hashes->>pending.id as hash from pi_durable_commits c
+        where ${this.scoped("c")} and c.seq>=pending.first_seq and c.current_hashes ? pending.id
+        order by c.seq desc limit 1
+      ) proof`.execute(tx);
     const checkpoints = pending.map((row) => {
       const latest = state.rows.get(Number(row.id));
       const proof = expected.rows.find((r) => r.id === String(row.id));

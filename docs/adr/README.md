@@ -1,5 +1,10 @@
 # Current architecture decisions
 
+[ADR-0261](0261-session-seal-projection-boundaries.md) records the approved closure
+projection repair: bounded PG I/O, writer-owned disposable live views, bounded
+checkpoint proof lookup and transaction-local Run reuse. Implementation and
+delivery are in progress; current execution/storage authorities and protocols remain.
+
 [ADR-0260](0260-session-seal-publication-lifetimes.md) records the owner-approved
 seal publication repair: bounded PG metadata work, reader-owned transaction
 retirement and cached peer rediscovery. It is deployed as

@@ -1,18 +1,19 @@
-// Review characterizations, not repaired-behavior regression contracts.
-// Use only the disposable PG runner documented next to this file.
+// ADR-0261: real PG closure, replay, resource lifetime and admission contracts.
 import { afterEach, expect, it, vi } from "vitest";
 import { sql, type Kysely } from "kysely";
 import { createDatabase, type Database } from "@pi-cloud/database";
 import { DurablePostgresProjection } from "@pi-cloud/pi-session-postgres/durable";
-import { nativeSubagentFixture } from "../../../packages/control-plane/test/native-subagent-fixture.ts";
-import { createTestWorker } from "../../../packages/control-plane/test/admit-test-execution.ts";
-import { ExecutionStreamProjector } from "../../../packages/runtime-core/src/execution-stream-projection.ts";
-import { requestExecutionStreamSeal } from "../../../packages/runtime-core/src/execution-stream-seal.ts";
+import { nativeSubagentFixture } from "./native-subagent-fixture.ts";
+import { createTestWorker } from "./admit-test-execution.ts";
+import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
+import { requestExecutionStreamSeal } from "../../runtime-core/src/execution-stream-seal.ts";
 import type {
   AcceptedDurableCommitFact,
   AcceptedExecutionSealFact,
-} from "../../../packages/runtime-core/src/accepted-fact.ts";
-import { projectionTransaction } from "../../../packages/runtime-core/src/projection-transaction.ts";
+} from "../../runtime-core/src/accepted-fact.ts";
+import { PostgresDurableCommitProjector } from "../../runtime-core/src/postgres-durable-commit-projector.ts";
+import { projectionTransaction } from "../../runtime-core/src/projection-transaction.ts";
+import { transitionCurrentRun } from "../../runtime-core/src/run-state.ts";
 
 const resources: Array<Awaited<ReturnType<typeof nativeSubagentFixture>>> = [];
 afterEach(async () => {
@@ -72,17 +73,35 @@ function liveFacts(f: Fixture, text = "accepted partial") {
     ]),
   ] as const;
 }
-async function request(f: Fixture) {
+async function request(f: Fixture, recover = true) {
   const id = crypto.randomUUID();
-  await f.database.transaction().execute((tx) =>
-    requestExecutionStreamSeal(tx, {
+  await f.database.transaction().execute(async (tx) => {
+    if (!recover)
+      await transitionCurrentRun(
+        tx,
+        { tenantId: f.scope.tenantId, runId: f.scope.runId },
+        {
+          runState: "failed",
+          reason: "fixture_terminal",
+          now: new Date(),
+          failure: { code: "fixture_failure", message: "Terminal fixture", retryable: false },
+        },
+      );
+    await requestExecutionStreamSeal(tx, {
       ...f.scope,
       eventId: id,
       agentId: "root",
       now: new Date(),
-      recover: true,
-    }),
-  );
+      ...(recover
+        ? { recover: true as const }
+        : {
+            body: {
+              type: "turn.failed" as const,
+              payload: { code: "fixture_failure", message: "Terminal fixture", retryable: false },
+            },
+          }),
+    });
+  });
   const row = await f.database
     .selectFrom("outbox")
     .select("payload")
@@ -186,80 +205,86 @@ it("rolls back checkpoint, closure and readiness together; replay can then finis
   });
 }, 30000);
 
-it("keeps PG recovery correct after a lost seal COMMIT return, but retains the old live cache", async () => {
-  const f = await fixture();
-  let lose = false;
-  const database = loseTransactionReturn(f.database, () => {
-    if (!lose) return false;
-    lose = false;
-    return true;
-  });
-  let firstView: DurablePostgresProjection | undefined;
-  const originalApply = DurablePostgresProjection.prototype.applyIn;
-  vi.spyOn(DurablePostgresProjection.prototype, "applyIn").mockImplementation(function (
-    this: DurablePostgresProjection,
-    ...args
-  ) {
-    firstView ??= this;
-    return originalApply.apply(this, args);
-  });
-  const projector = new ExecutionStreamProjector(database);
-  const text = "x".repeat(1024 * 1024);
-  const [seed, progress] = liveFacts(f, text);
-  await projector.project(record(seed, 10n));
-  await projector.project(record(progress, 20n));
-  const seal = record(await request(f), 30n);
-  lose = true;
-  await expect(projector.project(seal)).rejects.toThrow("COMMIT return lost");
-  expect(await state(f)).toEqual({
-    state: "queued",
-    lease: null,
-    released: true,
-    sealed: true,
-    pending: 0,
-    seq: "3",
-  });
-  await projector.project(seal);
-  await projector.project(seal);
-  await f.projection.assertComplete();
-  expect((await f.projection.revisions(2, 3))[0]?.checkpoint).toEqual({
-    generation: { attempt: 1, message: { text } },
-  });
+it.each([true, false])(
+  "reconciles a lost seal COMMIT return and retires the old live cache (recover=%s)",
+  async (recover) => {
+    const f = await fixture();
+    let lose = false;
+    const database = loseTransactionReturn(f.database, () => {
+      if (!lose) return false;
+      lose = false;
+      return true;
+    });
+    let firstView: DurablePostgresProjection | undefined;
+    const originalApply = DurablePostgresProjection.prototype.applyIn;
+    vi.spyOn(DurablePostgresProjection.prototype, "applyIn").mockImplementation(function (
+      this: DurablePostgresProjection,
+      ...args
+    ) {
+      firstView ??= this;
+      return originalApply.apply(this, args);
+    });
+    const projector = new ExecutionStreamProjector(database);
+    const text = "x".repeat(1024 * 1024);
+    const [seed, progress] = liveFacts(f, text);
+    await projector.project(record(seed, 10n));
+    await projector.project(record(progress, 20n));
+    const seal = record(await request(f, recover), 30n);
+    lose = true;
+    await expect(projector.project(seal)).rejects.toThrow("COMMIT return lost");
+    expect(await state(f)).toEqual({
+      state: recover ? "queued" : "failed",
+      lease: recover ? null : f.scope.writerId,
+      released: true,
+      sealed: true,
+      pending: 0,
+      seq: "3",
+    });
+    const replay = await projector.project(seal);
+    expect(await projector.project(seal)).toEqual(replay);
+    if (!recover) expect(replay?.terminal?.type).toBe("turn.failed");
+    await f.projection.assertComplete();
+    expect((await f.projection.revisions(2, 3))[0]?.checkpoint).toEqual({
+      generation: { attempt: 1, message: { text } },
+    });
 
-  // Observe the actual retained map entry through its ordinary read-only replay
-  // port. No private-field access, heap snapshot or simulated unsafe publication.
-  let replayView: DurablePostgresProjection | undefined;
-  const originalReplay = DurablePostgresProjection.prototype.replayLiveIn;
-  vi.spyOn(DurablePostgresProjection.prototype, "replayLiveIn").mockImplementation(function (
-    this: DurablePostgresProjection,
-    ...args
-  ) {
-    replayView = this;
-    return originalReplay.apply(this, args);
-  });
-  await projector.project(record(seed, 10n));
-  expect(replayView).toBe(firstView);
-  const retainedBytes = [...replayView!.liveState.rows.values()].reduce(
-    (n, row) => n + Buffer.byteLength(row.body),
-    0,
-  );
-  expect(retainedBytes).toBeGreaterThanOrEqual(text.length);
-  expect(projector.statistics()).toEqual({ prefixes: 0, pendingEventIds: 0 });
-  process.stdout.write(
-    JSON.stringify({
-      measurement: "seal_lost_commit_return",
-      exactPgCheckpoint: true,
-      oldLeaseReleased: true,
-      duplicateSealAccepted: true,
-      retainedLiveRows: replayView!.liveState.rows.size,
-      retainedBodyBytes: retainedBytes,
-    }) + "\n",
-  );
-  projector.reset();
-  await projector.project(record(seed, 10n));
-  expect(replayView).not.toBe(firstView);
-  expect(replayView!.liveState.rows.size).toBe(0);
-}, 30000);
+    // Ordinary read-only replay must create an empty view instead of reaching
+    // the old cached body. No private-field access or heap snapshot is needed.
+    let replayView: DurablePostgresProjection | undefined;
+    const originalReplay = DurablePostgresProjection.prototype.replayLiveIn;
+    vi.spyOn(DurablePostgresProjection.prototype, "replayLiveIn").mockImplementation(function (
+      this: DurablePostgresProjection,
+      ...args
+    ) {
+      replayView = this;
+      return originalReplay.apply(this, args);
+    });
+    await projector.project(record(seed, 10n));
+    expect(replayView).not.toBe(firstView);
+    const retainedBytes = [...replayView!.liveState.rows.values()].reduce(
+      (n, row) => n + Buffer.byteLength(row.body),
+      0,
+    );
+    expect(retainedBytes).toBe(0);
+    expect(projector.statistics()).toEqual({ prefixes: 0, pendingEventIds: 0 });
+    process.stdout.write(
+      JSON.stringify({
+        measurement: "seal_lost_commit_return",
+        recover,
+        exactPgCheckpoint: true,
+        oldLeaseReleased: true,
+        duplicateSealAccepted: true,
+        retainedLiveRows: replayView!.liveState.rows.size,
+        retainedBodyBytes: retainedBytes,
+      }) + "\n",
+    );
+    projector.reset();
+    await projector.project(record(seed, 10n));
+    expect(replayView).not.toBe(firstView);
+    expect(replayView!.liveState.rows.size).toBe(0);
+  },
+  30000,
+);
 
 it("does not admit a successor before closure COMMIT and ignores the old seal after a new grant", async () => {
   const f = await fixture();
@@ -333,7 +358,65 @@ it("does not admit a successor before closure COMMIT and ignores the old seal af
       .executeTakeFirstOrThrow();
     expect(before.lease_id).not.toBe(f.scope.writerId);
     expect(Number(before.fencing_token)).toBe(2);
+    const next = {
+      ...progress,
+      scope: { ...f.scope, writerId: before.lease_id!, fencingToken: Number(before.fencing_token) },
+      commit: { ...progress.commit, seq: 4 },
+    };
+    await projector.project(record(next, 40n));
     await projector.project(seal);
+    // Historical prefix reconstruction and old closure cannot discard the new
+    // writer's unapplied-to-PG suffix; its next delta requires that exact memory.
+    await projector.project(record(seed, 10n));
+    await projector.project(seal);
+    await projector.project(
+      record(
+        {
+          ...next,
+          factId: crypto.randomUUID(),
+          commit: {
+            ...next.commit,
+            seq: 5,
+            writes: [
+              {
+                type: "document.change",
+                id: 2,
+                content: {
+                  kind: "delta",
+                  version: 1,
+                  ops: [["a", ["generation", "message", "text"], " continued"]],
+                },
+              },
+            ],
+          },
+        },
+        50n,
+      ),
+    );
+    await projector.project(
+      record(
+        {
+          ...next,
+          factId: crypto.randomUUID(),
+          commit: {
+            ...next.commit,
+            seq: 6,
+            writes: [
+              {
+                type: "document.change",
+                id: 2,
+                content: {
+                  kind: "base",
+                  version: 1,
+                  value: {},
+                },
+              },
+            ],
+          },
+        },
+        60n,
+      ),
+    );
     expect(
       await f.database
         .selectFrom("runs")
@@ -349,7 +432,7 @@ it("does not admit a successor before closure COMMIT and ignores the old seal af
   }
 }, 30000);
 
-it("records the recovery SQL count and the repeated locked Run read", async () => {
+it("reuses the locked Run during recovery with nineteen business SQL statements", async () => {
   const f = await fixture();
   const queries: string[] = [];
   const database = f.database.withPlugin({
@@ -369,7 +452,8 @@ it("records the recovery SQL count and the repeated locked Run read", async () =
   queries.length = 0;
   await projector.project(seal);
   const reads = queries.filter((q) => /^select\b/.test(q) && q.includes('from "runs"'));
-  expect(reads).toHaveLength(2);
+  expect(reads).toHaveLength(1);
+  expect(queries).toHaveLength(20);
   process.stdout.write(
     JSON.stringify({
       measurement: "recovery_seal_sql",
@@ -381,9 +465,13 @@ it("records the recovery SQL count and the repeated locked Run read", async () =
   );
 }, 30000);
 
-it("does not apply the SQL budget while a projection waits for its pool connection", async () => {
+it("bounds acquisition even while the previous checkout caller remains held", async () => {
   const f = await fixture();
-  const database = createDatabase({ connectionString: f.url, maxConnections: 1 });
+  const database = createDatabase({
+    connectionString: f.url,
+    maxConnections: 1,
+    checkoutTimeoutMs: 150,
+  });
   const held = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
   const holder = database.connection().execute(async () => {
@@ -391,30 +479,32 @@ it("does not apply the SQL budget while a projection waits for its pool connecti
     await release.promise;
   });
   void holder.catch(held.reject);
-  let settled = false,
-    begun = false;
+  let settled = false;
   let operation: Promise<unknown> | undefined;
   try {
     await held.promise;
     const start = performance.now();
     operation = projectionTransaction(
       database,
-      async () => {
-        begun = true;
+      async (tx) => {
+        await sql`select 1`.execute(tx);
       },
       { lockTimeoutMs: 20, statementTimeoutMs: 60 },
-    ).finally(() => {
-      settled = true;
-    });
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    expect(begun).toBe(false);
-    expect(settled).toBe(false);
+    )
+      .catch((error: Error) => {
+        expect(error.message).toMatch(/timeout|expired|terminated|closed/i);
+      })
+      .finally(() => {
+        settled = true;
+      });
+    await vi.waitFor(() => expect(settled).toBe(true), { timeout: 2000 });
+    await operation;
+    await expect(sql`select 1`.execute(database)).resolves.toBeDefined();
     process.stdout.write(
       JSON.stringify({
         measurement: "projection_pool_wait",
-        configuredStatementMs: 60,
+        checkoutMs: 150,
         observationMs: performance.now() - start,
-        began: begun,
         settled,
       }) + "\n",
     );
@@ -424,4 +514,73 @@ it("does not apply the SQL budget while a projection waits for its pool connecti
     await operation;
     await database.destroy();
   }
+}, 30000);
+
+it.each(["cold boundary", "seal transaction"])(
+  "bounds a locked %s and preserves closure for retry",
+  async (phase) => {
+    const f = await fixture();
+    const database = createDatabase({
+      connectionString: f.url,
+      maxConnections: 1,
+      checkoutTimeoutMs: 500,
+    });
+    const projector = new ExecutionStreamProjector(database);
+    const [seed, progress] = liveFacts(f);
+    await projector.project(record(seed, 10n));
+    await projector.project(record(progress, 20n));
+    const seal = record(await request(f), 30n);
+    if (phase === "cold boundary") projector.reset();
+    const held = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    const holder = f.database.transaction().execute(async (tx) => {
+      await sql`set local idle_in_transaction_session_timeout='10s'`.execute(tx);
+      if (phase === "cold boundary")
+        await sql`lock table runs in access exclusive mode`.execute(tx);
+      else
+        await tx
+          .selectFrom("runs")
+          .select("id")
+          .where("id", "=", f.scope.runId)
+          .forNoKeyUpdate()
+          .execute();
+      held.resolve();
+      await release.promise;
+    });
+    void holder.catch(held.reject);
+    try {
+      await held.promise;
+      const failure = projector.project(phase === "cold boundary" ? record(seed, 10n) : seal);
+      await expect(failure).rejects.toBeInstanceOf(Error);
+      release.resolve();
+      await holder;
+      expect(await state(f)).toMatchObject({ released: false, sealed: false, pending: 1 });
+      await projector.project(record(seed, 10n));
+      await projector.project(record(progress, 20n));
+      await projector.project(seal);
+      expect(await state(f)).toMatchObject({ released: true, sealed: true, pending: 0 });
+    } finally {
+      release.resolve();
+      await holder;
+      await database.destroy();
+    }
+  },
+  30000,
+);
+
+it("does not let a delayed cleanup callback remove a replacement projection object", async () => {
+  const f = await fixture(),
+    projector = new PostgresDurableCommitProjector(f.database);
+  const [seed, progress] = liveFacts(f);
+  await projector.project(seed, record(seed, 10n));
+  await projector.project(progress, record(progress, 20n));
+  const cleanup = await f.database
+    .transaction()
+    .execute((tx) => projector.checkpointLiveIn(tx, f.scope, () => true));
+  projector.reset();
+  const next = { ...progress, factId: crypto.randomUUID(), commit: { ...progress.commit, seq: 4 } };
+  await projector.project(next, record(next, 40n));
+  cleanup();
+  const last = { ...progress, factId: crypto.randomUUID(), commit: { ...progress.commit, seq: 5 } };
+  await expect(projector.project(last, record(last, 50n))).resolves.toBeDefined();
 }, 30000);

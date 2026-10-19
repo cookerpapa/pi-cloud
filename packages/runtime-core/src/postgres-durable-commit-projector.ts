@@ -21,7 +21,9 @@ export class PostgresDurableCommitProjector {
     readonly budget?: ProjectionBudget,
   ) {}
   #key(scope: AcceptedDurableCommitFact["scope"]): string {
-    return JSON.stringify([scope.tenantId, scope.piSessionId]);
+    // All Conversations/anchors of one physical writer share this view. Old
+    // closure replay must never evict the next lease incarnation's live suffix.
+    return JSON.stringify([scope.tenantId, scope.piSessionId, scope.writerId]);
   }
   #view(scope: AcceptedDurableCommitFact["scope"]): DurablePostgresProjection {
     const key = this.#key(scope);
@@ -43,6 +45,24 @@ export class PostgresDurableCommitProjector {
   releaseSettled(scope: AcceptedDurableCommitFact["scope"]): void {
     const key = this.#key(scope);
     if (this.#views.get(key)?.liveState.rows.size === 0) this.#views.delete(key);
+  }
+  /** Caller has confirmed closure/checkpoint in its transaction. Invoke only
+   * after COMMIT, including when reconciling a previously lost commit return. */
+  closedWriterCleanup(
+    scope: AcceptedDurableCommitFact["scope"],
+    current: () => boolean,
+  ): () => void {
+    const key = this.#key(scope);
+    return this.#viewCleanup(key, this.#views.get(key), current);
+  }
+  #viewCleanup(
+    key: string,
+    view: DurablePostgresProjection | undefined,
+    current: () => boolean,
+  ): () => void {
+    return () => {
+      if (current() && view !== undefined && this.#views.get(key) === view) this.#views.delete(key);
+    };
   }
   async project(
     fact: AcceptedDurableCommitFact,
@@ -237,9 +257,6 @@ export class PostgresDurableCommitProjector {
       state = view.liveState.fork();
     await view.checkpointLiveIn(tx, state);
     if (!current()) throw new Error("Native checkpoint owner changed before commit");
-    return () => {
-      if (current() && this.#views.get(this.#key(scope)) === view)
-        this.#views.delete(this.#key(scope));
-    };
+    return this.#viewCleanup(this.#key(scope), view, current);
   }
 }

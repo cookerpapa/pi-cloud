@@ -66,13 +66,15 @@ it("cleans database and telemetry when Subagent construction fails before the Pr
   const close = vi.fn(async () => {}),
     destroy = vi.fn(async () => {}),
     destroyMaintenance = vi.fn(async () => {}),
-    destroyPublication = vi.fn(async () => {});
+    destroyPublication = vi.fn(async () => {}),
+    destroyProjection = vi.fn(async () => {});
   const failure = new Error("Subagent construction failed");
   calls.observability.mockResolvedValue({ metrics: {}, close });
   calls.database
     .mockReturnValueOnce({ destroy })
     .mockReturnValueOnce({ destroy: destroyMaintenance })
-    .mockReturnValueOnce({ destroy: destroyPublication });
+    .mockReturnValueOnce({ destroy: destroyPublication })
+    .mockReturnValueOnce({ destroy: destroyProjection });
   calls.subagents.mockImplementation(function () {
     throw failure;
   });
@@ -80,6 +82,12 @@ it("cleans database and telemetry when Subagent construction fails before the Pr
   expect(destroy).toHaveBeenCalledOnce();
   expect(destroyMaintenance).toHaveBeenCalledOnce();
   expect(destroyPublication).toHaveBeenCalledOnce();
+  expect(destroyProjection).toHaveBeenCalledOnce();
+  expect(calls.database).toHaveBeenNthCalledWith(4, {
+    connectionString: "postgresql://direct-fixture",
+    maxConnections: 12,
+    checkoutTimeoutMs: 30000,
+  });
   expect(calls.database).toHaveBeenNthCalledWith(3, {
     connectionString: "postgresql://direct-fixture",
     maxConnections: 4,
@@ -102,6 +110,7 @@ it("closes a constructed Subagent controller when Projector ownership was never 
     destroy = vi.fn(async () => {}),
     destroyMaintenance = vi.fn(async () => {}),
     destroyPublication = vi.fn(async () => {}),
+    destroyProjection = vi.fn(async () => {}),
     destroyReads = vi.fn(async () => {}),
     subagentClose = vi.fn(async () => {});
   const failure = new Error("Projector construction failed");
@@ -110,6 +119,7 @@ it("closes a constructed Subagent controller when Projector ownership was never 
     .mockReturnValueOnce({ destroy })
     .mockReturnValueOnce({ destroy: destroyMaintenance })
     .mockReturnValueOnce({ destroy: destroyPublication })
+    .mockReturnValueOnce({ destroy: destroyProjection })
     .mockReturnValueOnce({ destroy: destroyReads });
   calls.subagents.mockImplementation(function () {
     return { close: subagentClose };
@@ -123,8 +133,12 @@ it("closes a constructed Subagent controller when Projector ownership was never 
   expect(destroy).toHaveBeenCalledOnce();
   expect(destroyMaintenance).toHaveBeenCalledOnce();
   expect(destroyPublication).toHaveBeenCalledOnce();
+  expect(destroyProjection).toHaveBeenCalledOnce();
   expect(calls.projector).toHaveBeenCalledWith(
-    expect.objectContaining({ publicationDatabase: { destroy: destroyPublication } }),
+    expect.objectContaining({
+      database: { destroy: destroyProjection },
+      publicationDatabase: { destroy: destroyPublication },
+    }),
   );
   expect(destroyReads).toHaveBeenCalledOnce();
   expect(calls.database).toHaveBeenLastCalledWith(
@@ -180,6 +194,21 @@ it("closes earlier pools when the publication pool cannot be constructed", async
   await expect(startControlPlane()).rejects.toBe(failure);
   expect(destroy).toHaveBeenCalledOnce();
   expect(destroyMaintenance).toHaveBeenCalledOnce();
+  expect(close).toHaveBeenCalledOnce();
+  expect(calls.sandbox).not.toHaveBeenCalled();
+});
+
+it("closes earlier pools when the projection pool cannot be constructed", async () => {
+  const close = vi.fn(async () => {});
+  const destroys = Array.from({ length: 3 }, () => vi.fn(async () => {}));
+  const failure = new Error("Projection database construction failed");
+  calls.observability.mockResolvedValue({ metrics: {}, close });
+  for (const destroy of destroys) calls.database.mockReturnValueOnce({ destroy });
+  calls.database.mockImplementationOnce(() => {
+    throw failure;
+  });
+  await expect(startControlPlane()).rejects.toBe(failure);
+  for (const destroy of destroys) expect(destroy).toHaveBeenCalledOnce();
   expect(close).toHaveBeenCalledOnce();
   expect(calls.sandbox).not.toHaveBeenCalled();
 });

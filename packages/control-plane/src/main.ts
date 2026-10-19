@@ -85,6 +85,7 @@ export async function startControlPlane(): Promise<void> {
   let ownedDatabase: ReturnType<typeof createDatabase> | undefined;
   let ownedMaintenanceDatabase: ReturnType<typeof createDatabase> | undefined;
   let ownedPublicationDatabase: ReturnType<typeof createDatabase> | undefined;
+  let ownedProjectionDatabase: ReturnType<typeof createDatabase> | undefined;
   let unattachedSubagents: SubagentController | undefined;
   let unattachedControlTools: ControlToolDispatcher | undefined;
   const controlPlaneInstanceId = randomUUID();
@@ -120,6 +121,7 @@ export async function startControlPlane(): Promise<void> {
       () => sourceControlDispatcher?.close(),
       () => internalSourceControlDispatcher?.close(),
       () => images?.blobs.close(),
+      () => ownedProjectionDatabase?.destroy(),
       () => ownedPublicationDatabase?.destroy(),
       () => ownedMaintenanceDatabase?.destroy(),
       () => ownedDatabase?.destroy(),
@@ -146,6 +148,14 @@ export async function startControlPlane(): Promise<void> {
       checkoutTimeoutMs: 5_000,
     });
     ownedPublicationDatabase = publicationDatabase;
+    // Projection includes multi-statement handoff checkpoints. Keep its I/O
+    // bounded independently of API traffic and the shorter publication budget.
+    const projectionDatabase = createDatabase({
+      connectionString: config.databaseNotificationUrl,
+      maxConnections: 12,
+      checkoutTimeoutMs: 30_000,
+    });
+    ownedProjectionDatabase = projectionDatabase;
     images = await configuredImageAttachments(database);
     if (images) {
       await images.blobs.checkHealth();
@@ -261,7 +271,7 @@ export async function startControlPlane(): Promise<void> {
     const { bindingView, consumeBindingChange } = sandboxControl;
     agentEvents = new SessionProjector({
       publicationToken: config.supervisorManagementToken,
-      database,
+      database: projectionDatabase,
       publicationDatabase,
       notificationConnectionString: config.databaseNotificationUrl,
       brokers: config.kafkaBrokers,

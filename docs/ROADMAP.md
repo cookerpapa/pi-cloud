@@ -9,9 +9,10 @@
 - [x] Verify a successor cannot claim before closure COMMIT and an old repeated
       seal cannot modify the next grant; preserve the exact live checkpoint.
 
-Runtime/schema/protocol and serving `seal-publication-8d9e7bc2` are unchanged.
-SPJ-01/02 and SPJ-O1/O2 are recorded for repair in the backlog; this review does
-not implement them. The next walkthrough is the replacement Worker's native
+The owner approved [ADR-0261](adr/0261-session-seal-projection-boundaries.md).
+SPJ-01/02 and SPJ-O1/O2 implementation and verification are in progress; the
+serving `seal-publication-8d9e7bc2` release is unchanged. Schema/protocol remain
+unchanged. The next walkthrough is the replacement Worker's native
 Harness opening/continuation, then the deferred model request/response branch.
 
 ## PG Outbox → Kafka Session seal review

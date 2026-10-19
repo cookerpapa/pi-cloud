@@ -109,6 +109,14 @@ configured web port. A Linux-only HTTP 200 does not establish Windows access.
 
 ## Acceptance and fixture restoration
 
+ADR-0261 repairs projection I/O bounds, duplicate-closure memory cleanup,
+checkpoint proof lookup and locked Run reuse. Schema and transport versions stay
+unchanged. Required source coverage includes bounded pool/cold-read/transaction
+waits, lost COMMIT return, stale cleanup versus successor state, interleaved live
+document proofs, SQL counts and the existing RF3/PG recovery contract. Run native
+input/Stop/dual-process recovery, browser/image, child handoff, Control Plane
+outage and full Cube acceptance after the drained matched release below.
+
 ADR-0260 changes only publication I/O/lifetime behavior. Keep all current schema
 and transport versions. Required source coverage includes bounded Outbox/authority/
 binding SQL, startup pool cleanup, old-owner drain, reader transaction retirement,
