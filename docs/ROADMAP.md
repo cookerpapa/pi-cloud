@@ -1,5 +1,19 @@
 # Implementation roadmap
 
+## Kafka seal → Projector → PG closure review
+
+- [x] Explain and review native checkpoint reconstruction, atomic closure/lease
+      release, Run requeue, pending Stop and duplicate-seal handling.
+- [x] Complete 175 existing tests, five isolated characterizations and four
+      checkpoint-query cost cases; record [findings and directions](reports/seal-projection-review-20261019.md).
+- [x] Verify a successor cannot claim before closure COMMIT and an old repeated
+      seal cannot modify the next grant; preserve the exact live checkpoint.
+
+Runtime/schema/protocol and serving `seal-publication-8d9e7bc2` are unchanged.
+SPJ-01/02 and SPJ-O1/O2 are recorded for repair in the backlog; this review does
+not implement them. The next walkthrough is the replacement Worker's native
+Harness opening/continuation, then the deferred model request/response branch.
+
 ## PG Outbox → Kafka Session seal review
 
 - [x] Explain claim/CAS, forwarding, routing closure, Session producer takeover,
@@ -23,8 +37,8 @@ node before the unchanged full-Cube repeat passed. Owned physical resources and
 metadata are cleaned and original configuration fingerprints match.
 
 No new execution authority or storage protocol is introduced.
-The reading checkpoint advances to Kafka seal → Projector → PG closure/checkpoint/
-release; successor Worker bootstrap follows.
+The subsequent [closure projection review](reports/seal-projection-review-20261019.md)
+is now complete; successor Worker bootstrap follows.
 
 ## Control Plane → PG expiry review
 

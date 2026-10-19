@@ -8,8 +8,16 @@ browser delivery, Worker renewal and Control Plane expiry admission have been
 covered. The provider request branch was explicitly deferred during the October
 12–15 walkthrough and has not received the same complete focused treatment.
 
-Current checkpoint: **PG Outbox → Control Plane seal publisher → Kafka**.
-The [focused review](reports/seal-publication-review-20261019.md) and
+Current checkpoint: **Kafka seal → Projector → PG checkpoint/closure/release**.
+The [focused review](reports/seal-projection-review-20261019.md) is complete:
+175 existing tests, five isolated characterizations and four query-cost cases.
+Checkpoint/release atomicity and successor admission hold in the tested schedules.
+Outer PG wait bounds, lost-return memory cleanup, lifetime header scans and a
+duplicate Run read are recorded for repair; runtime/deployment are unchanged.
+Next: replacement Worker → native Harness opening and continuation.
+
+For the preceding **PG Outbox → Control Plane seal publisher → Kafka** hop,
+the [focused review](reports/seal-publication-review-20261019.md) and
 [SP-01–03 repair/delivery](reports/seal-publication-repair-20261019.md) are complete.
 Required live gates and physical/configuration cleanup pass; upstream failed
 samples and the unchanged repeat after proxy-node switching remain recorded.
@@ -38,7 +46,8 @@ or physical process-death evidence.
 | Projector → browser, refresh/reconnect and Working state | Explained, reviewed and repaired | [browser delivery](reports/projector-browser-review-20261018.md) |
 | Worker → PG lease renewal | Explained, reviewed and repaired | [renewal](reports/worker-session-lease-review-20261018.md) |
 | Control Plane → PG expiry/seal admission | Explained, reviewed and repaired | [expiry](reports/control-plane-expiry-review-20261018.md) |
-| PG Outbox → control seal publisher → Kafka | Explained, reviewed and repaired; current checkpoint | [seal publication](reports/seal-publication-repair-20261019.md) |
+| PG Outbox → control seal publisher → Kafka | Explained, reviewed and repaired | [seal publication](reports/seal-publication-repair-20261019.md) |
+| Kafka seal → Projector → PG checkpoint/closure/release | Explained and reviewed; findings recorded, repair pending; current checkpoint | [seal projection](reports/seal-projection-review-20261019.md) |
 
 These statuses distinguish walkthrough coverage from focused audit scope. Storage
 research does not establish a complete new audit of every native recovery branch,
@@ -48,12 +57,12 @@ historical; the maintained path is direct Worker → Kafka under ADR-0247.
 
 ## Remaining main walkthrough segments
 
-1. **Ordered seal materialization and replacement.** Outbox → Kafka publication
-   has now been reviewed. Continue with Kafka → Projector closure/checkpoint/
-   release; then new PG claim → replacement Worker/Harness continuation. Inspect
-   exact release proof, retained live suffix, compaction/bootstrap and unsafe Tool
-   non-replay. Fencing and recovery have already been discussed, implemented and
-   exercised; these remaining hops still need their focused current-code review.
+1. **Replacement Worker/Harness continuation.** Ordered publication and seal
+   materialization have now been reviewed. Continue with new PG claim →
+   replacement Worker/Harness continuation. Inspect checkpoint reads, native
+   task/input restoration, compaction/bootstrap and unsafe Tool non-replay.
+   Fencing and recovery have already been discussed, implemented and exercised;
+   this remaining hop still needs its focused current-code review.
    Do not repeat renewal/expiry/publication or present recovery as wholly unexamined.
 2. **Native model request and response.** Pi → Worker-local Model Gateway →
    CLIProxyAPI → provider, and the streamed response back to Pi. Cover request

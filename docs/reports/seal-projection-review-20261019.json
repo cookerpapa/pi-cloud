@@ -1,0 +1,299 @@
+{
+  "reviewedAt": "2026-10-19",
+  "revision": "1d84ea59b49a517d41705fb5e4b15192c7d44382",
+  "servingRelease": "seal-publication-8d9e7bc2",
+  "scope": "Kafka execution_seal -> Projector -> PG checkpoint/closure/release",
+  "runtimeChanged": false,
+  "deploymentChanged": false,
+  "existingTests": {
+    "initialGroup": {
+      "files": 7,
+      "passed": 45,
+      "failed": 0,
+      "paths": [
+        "packages/control-plane/test/execution-stream-seal.test.ts",
+        "packages/control-plane/test/durable-execution-recovery.test.ts",
+        "packages/control-plane/test/session-completion-boundaries.test.ts",
+        "packages/control-plane/test/work-finished-projection.test.ts",
+        "packages/pi-session-postgres/test/native-projection-progress.test.ts",
+        "packages/runtime-core/test/session-projector-handoffs.test.ts",
+        "packages/runtime-core/test/projection-timing.test.ts"
+      ]
+    },
+    "nativeAndAdmission": {
+      "files": 3,
+      "passed": 130,
+      "failed": 0,
+      "paths": [
+        "packages/control-plane/test/atomic-worker-admission.postgres.test.ts",
+        "packages/control-plane/test/session-family-lease.test.ts",
+        "packages/pi-session-postgres/test/durable-storage-conformance.test.ts"
+      ]
+    },
+    "totalPassed": 175
+  },
+  "characterizations": {
+    "passed": 5,
+    "failed": 0,
+    "cases": [
+      {
+        "name": "rolls back checkpoint, closure and readiness together; replay can then finish",
+        "status": "passed"
+      },
+      {
+        "name": "keeps PG recovery correct after a lost seal COMMIT return, but retains the old live cache",
+        "status": "passed"
+      },
+      {
+        "name": "does not admit a successor before closure COMMIT and ignores the old seal after a new grant",
+        "status": "passed"
+      },
+      {
+        "name": "records the recovery SQL count and the repeated locked Run read",
+        "status": "passed"
+      },
+      {
+        "name": "does not apply the SQL budget while a projection waits for its pool connection",
+        "status": "passed"
+      }
+    ]
+  },
+  "measurements": [
+    {
+      "measurement": "seal_lost_commit_return",
+      "exactPgCheckpoint": true,
+      "oldLeaseReleased": true,
+      "duplicateSealAccepted": true,
+      "retainedLiveRows": 1,
+      "retainedBodyBytes": 1048821
+    },
+    {
+      "measurement": "recovery_seal_sql",
+      "statements": 21,
+      "runReads": 2,
+      "businessStatements": 20
+    },
+    {
+      "measurement": "projection_pool_wait",
+      "configuredStatementMs": 60,
+      "observationMs": 250.86616499999946,
+      "began": false,
+      "settled": false
+    }
+  ],
+  "checkpointQuery": {
+    "measuredAt": "2026-10-19T01:11:20.081Z",
+    "scope": "owned loopback PG, actual checkpoint query; bulk-loaded consistent no-op historical headers",
+    "limitation": "One pending document/change. No claim about production latency, an observed timeout, fleet capacity or real Harness ingestion.",
+    "cases": [
+      {
+        "priorHeaders": 1,
+        "pendingDocuments": 1,
+        "pendingChanges": 1,
+        "scannedHeaders": 3,
+        "returnedProofs": 1,
+        "queryExecutionMs": 0.072,
+        "checkpointMs": 12.477,
+        "sharedHitBlocks": 1,
+        "sharedReadBlocks": 0,
+        "planNodes": [
+          {
+            "type": "Unique",
+            "rows": 1,
+            "loops": 1
+          },
+          {
+            "type": "Sort",
+            "rows": 2,
+            "loops": 1
+          },
+          {
+            "type": "Nested Loop",
+            "rows": 2,
+            "loops": 1
+          },
+          {
+            "type": "Seq Scan",
+            "relation": "pi_durable_commits",
+            "rows": 3,
+            "loops": 1
+          },
+          {
+            "type": "Function Scan",
+            "rows": 1,
+            "loops": 3
+          }
+        ]
+      },
+      {
+        "priorHeaders": 1000,
+        "pendingDocuments": 1,
+        "pendingChanges": 1,
+        "scannedHeaders": 1002,
+        "returnedProofs": 1,
+        "queryExecutionMs": 0.365,
+        "checkpointMs": 10.902,
+        "sharedHitBlocks": 34,
+        "sharedReadBlocks": 0,
+        "planNodes": [
+          {
+            "type": "Unique",
+            "rows": 1,
+            "loops": 1
+          },
+          {
+            "type": "Sort",
+            "rows": 2,
+            "loops": 1
+          },
+          {
+            "type": "Nested Loop",
+            "rows": 2,
+            "loops": 1
+          },
+          {
+            "type": "Seq Scan",
+            "relation": "pi_durable_commits",
+            "rows": 1002,
+            "loops": 1
+          },
+          {
+            "type": "Memoize",
+            "rows": 0,
+            "loops": 1002
+          },
+          {
+            "type": "Function Scan",
+            "rows": 1,
+            "loops": 3
+          }
+        ]
+      },
+      {
+        "priorHeaders": 10000,
+        "pendingDocuments": 1,
+        "pendingChanges": 1,
+        "scannedHeaders": 10002,
+        "returnedProofs": 1,
+        "queryExecutionMs": 3.038,
+        "checkpointMs": 13.352,
+        "sharedHitBlocks": 367,
+        "sharedReadBlocks": 0,
+        "planNodes": [
+          {
+            "type": "Unique",
+            "rows": 1,
+            "loops": 1
+          },
+          {
+            "type": "Sort",
+            "rows": 2,
+            "loops": 1
+          },
+          {
+            "type": "Nested Loop",
+            "rows": 2,
+            "loops": 1
+          },
+          {
+            "type": "Seq Scan",
+            "relation": "pi_durable_commits",
+            "rows": 10002,
+            "loops": 1
+          },
+          {
+            "type": "Memoize",
+            "rows": 0,
+            "loops": 10002
+          },
+          {
+            "type": "Function Scan",
+            "rows": 1,
+            "loops": 3
+          }
+        ]
+      },
+      {
+        "priorHeaders": 50000,
+        "pendingDocuments": 1,
+        "pendingChanges": 1,
+        "scannedHeaders": 50002,
+        "returnedProofs": 1,
+        "queryExecutionMs": 16.742,
+        "checkpointMs": 23.855,
+        "sharedHitBlocks": 2034,
+        "sharedReadBlocks": 0,
+        "planNodes": [
+          {
+            "type": "Unique",
+            "rows": 1,
+            "loops": 1
+          },
+          {
+            "type": "Sort",
+            "rows": 2,
+            "loops": 1
+          },
+          {
+            "type": "Nested Loop",
+            "rows": 2,
+            "loops": 1
+          },
+          {
+            "type": "Seq Scan",
+            "relation": "pi_durable_commits",
+            "rows": 50002,
+            "loops": 1
+          },
+          {
+            "type": "Memoize",
+            "rows": 0,
+            "loops": 50002
+          },
+          {
+            "type": "Function Scan",
+            "rows": 1,
+            "loops": 3
+          }
+        ]
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "SPJ-01",
+      "priority": "P2",
+      "issue": "SQL-local projection budgets do not bound pool acquisition or client response waits",
+      "evidence": "Actual PG pool checkout held; 60 ms SQL budget had not begun at 250.9 ms. Production has no outer checkout budget; no production duration claim."
+    },
+    {
+      "id": "SPJ-02",
+      "priority": "P3",
+      "issue": "Lost seal COMMIT return leaves the already-checkpointed live view retained on duplicate replay",
+      "evidence": "Exact PG checkpoint and released old lease, but 1048821 bytes retained in the old cached view after duplicate seals; reset removes it."
+    },
+    {
+      "id": "SPJ-O1",
+      "priority": "P3",
+      "issue": "Latest live checkpoint hash proof examines lifetime Session commit headers",
+      "evidence": "50002 matching headers examined for one pending document/change; 16.742 ms local query, no observed timeout."
+    },
+    {
+      "id": "SPJ-O2",
+      "priority": "P3",
+      "issue": "Recovery rereads the Run already locked within the same transaction",
+      "evidence": "21 client SQL statements include budget configuration and two locked Run reads; driver BEGIN/COMMIT and trigger internals excluded."
+    }
+  ],
+  "verification": {
+    "strictTypecheck": "passed after adding explicit this annotations to two test spies",
+    "productionFaults": false,
+    "modelRequests": false,
+    "vmOperations": false,
+    "freshKafkaTransportSuite": false,
+    "formatting": "passed",
+    "documentation": "passed; includes separate review report/experiment link check",
+    "testContainersRemaining": 0
+  },
+  "nextHop": "PG successor claim -> replacement Worker -> native Harness open and continuation"
+}

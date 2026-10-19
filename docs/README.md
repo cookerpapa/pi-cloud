@@ -1,5 +1,13 @@
 # Documentation map
 
+The [October 19 Kafka seal → Projector → PG review](reports/seal-projection-review-20261019.md)
+checks exact handoff checkpoints, atomic closure/release, duplicate seals and
+successor admission. 175 existing tests, five isolated characterizations and four
+query-cost cases pass. Findings cover unbounded outer PG waits, a retained live
+cache after lost COMMIT return, lifetime header scanning and a duplicate locked
+Run read. This is review-only; the serving release is unchanged. Replacement
+Worker/Harness bootstrap is the next focused walkthrough hop.
+
 The [October 19 Outbox → Kafka seal review](reports/seal-publication-review-20261019.md)
 checks persisted requests, retries, PG authority reads, producer takeover and
 publication retirement. Forty-six existing tests, six isolated characterizations

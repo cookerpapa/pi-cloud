@@ -28,6 +28,32 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## Kafka seal → Projector → PG closure review
+
+The [October 19 review](reports/seal-projection-review-20261019.md) at `1d84ea59`
+records 175 existing tests, five isolated characterizations and four query-cost
+cases. Checkpoint, closure and release remain atomic in the tested rollback,
+lost-return and concurrent-claim schedules. No runtime or deployment changed.
+
+- [ ] SPJ-01 / P2: bound projection PG acquisition and entire checkout using
+      existing database facilities, including cold boundary reads and COMMIT
+      return handling. Preserve ordered replay and SQL-local cancellation; do
+      not leave timed-out work alive or bypass uncertain closure.
+- [ ] SPJ-02 / P3: reconcile old live-view cleanup after a committed seal loses
+      its return. PG recovery remains correct; the reproduced 1 MiB partial is
+      unnecessarily retained in memory. Never clear a successor's newer state
+      merely because an old closure record is replayed.
+- [ ] SPJ-O1 / P3: bound latest-hash proof lookup to the existing pending replay
+      ranges, retaining exact latest-sequence/hash checks and physical-Session
+      coverage. One pending delta currently examines 50,002 matching headers in
+      the 50,000-history fixture; its 16.742 ms sample is not a production timeout.
+- [ ] SPJ-O2 / P3: reuse the transaction-local locked Run via the existing
+      transition helper. The measured seal has 20 business SQL statements plus
+      one budget statement, including two Run reads. Keep CAS, transition history
+      and the trigger-enforced release-before-assignment-clear sequence.
+
+Replacement Worker/Harness bootstrap remains the next focused walkthrough hop.
+
 ## PG Outbox → Kafka Session seal review
 
 The [October 19 review](reports/seal-publication-review-20261019.md) at `596f9b92`
@@ -57,8 +83,8 @@ confirmed cleanup with original configuration fingerprints preserved.
 
 The no-binding local seal uses six measured client SQL statements. Three authority
 reads bracket distinct actions; no removal or replacement with a cache is proposed.
-Kafka → Projector closure/checkpoint/release and successor bootstrap remain the
-next focused walkthrough segment.
+The subsequent [closure projection review](reports/seal-projection-review-20261019.md)
+is complete; successor bootstrap remains the next focused walkthrough hop.
 
 ## Control Plane → PG expiry review
 
