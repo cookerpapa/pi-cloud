@@ -1,14 +1,14 @@
 # CubeSandbox production acceptance
 
-- Checked at: 2026-10-19T00:40:03.316Z
+- Checked at: 2026-10-19T03:36:54.537Z
 - Provider/model: openai-codex / gpt-6-luna
-- Pure-chat first activity / assistant text / settled: 2684 / 2684 / 2900 ms
-- Pure-chat accepted-to-execution / execution-to-settlement: 31 / 2830 ms
+- Pure-chat first activity / assistant text / settled: 2335 / 2335 / 2574 ms
+- Pure-chat accepted-to-execution / execution-to-settlement: 31 / 2512 ms
 - Pure-chat Tool calls / Cube activations: 0 / 0
-- First coding first activity / Tool / assistant text / settled: 4133 / 4133 / 19655 / 20660 ms
-- Follow-up first activity / Tool / assistant text / settled: 2992 / 2992 / 14745 / 15729 ms
-- First coding accepted-to-execution / native Tool boundaries: 42 / 2885.83 ms
-- Follow-up accepted-to-execution / native Tool boundaries: 23 / 1185.139 ms
+- First coding first activity / Tool / assistant text / settled: 4810 / 4810 / 21141 / 22069 ms
+- Follow-up first activity / Tool / assistant text / settled: 4856 / 4856 / 18268 / 19142 ms
+- First coding accepted-to-execution / native Tool boundaries: 25 / 3300.124 ms
+- Follow-up accepted-to-execution / native Tool boundaries: 17 / 1615.506 ms
 - Coding Tool calls: 3 + 3
 - Same running Workspace Cube KVM guest reused: true
 - Agent Preview / background process survived cross-Run Tool bindings: true / true
@@ -17,10 +17,10 @@
 - Platform Git metadata absent / user-managed .git present: true / false
 - Large Workspace files on the persistent Volume: 1025
 - Large Workspace fresh-VM cold restore: true
-- Real input/output/cache-read tokens: 21440 / 2068 / 145408
-- Canonical conversation: 5 terminal Turns / 35 Pi entries / 40397 bytes
-- Current Kafka topic / end-offset sum / completed work records: pi-cloud.execution-log.v17 / 31602 / 5
-- PostgreSQL hot-event table absent / projected Session mutations: true / 173
+- Real input/output/cache-read tokens: 26290 / 1899 / 125824
+- Canonical conversation: 5 terminal Turns / 33 Pi entries / 34130 bytes
+- Current Kafka topic / end-offset sum / completed work records: pi-cloud.execution-log.v17 / 34388 / 5
+- PostgreSQL hot-event table absent / projected Session mutations: true / 158
 - Scheduler / Worker pool: PostgreSQL / shared
 - Cross-tenant conversation hidden: true
 - Final-conversation cleanup and confirmed native allocation closure / remaining Cube microVMs: true / 0

@@ -5,11 +5,15 @@ checks exact handoff checkpoints, atomic closure/release, duplicate seals and
 successor admission. 175 existing tests, five isolated characterizations and four
 query-cost cases pass. Findings cover unbounded outer PG waits, a retained live
 cache after lost COMMIT return, lifetime header scanning and a duplicate locked
-Run read. This is review-only; the serving release is unchanged. Replacement
-Worker/Harness bootstrap is the next focused walkthrough hop.
+Run read. The review itself changed no runtime.
 The owner-approved [ADR-0261 repair](adr/0261-session-seal-projection-boundaries.md)
-is implemented; [verification and delivery](reports/seal-projection-repair-20261019.md)
-track remaining full source, matched rollout and live gates separately.
+is deployed as `seal-projection-0de1fe7f`; [verification and delivery](reports/seal-projection-repair-20261019.md)
+record 1,937 workspace tests, nine RF3 cases, 323 fault cases and eleven artifact
+scans. Native/browser/child/outage/full-Cube gates and physical cleanup pass;
+large-image cold recall remains unaccepted after model response-header timeouts.
+Original configuration is preserved. Initial fixture/artifact and
+upstream failures are retained separately. Replacement Worker/Harness bootstrap
+remains the next focused walkthrough hop.
 
 The [October 19 Outbox → Kafka seal review](reports/seal-publication-review-20261019.md)
 checks persisted requests, retries, PG authority reads, producer takeover and

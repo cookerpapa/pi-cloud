@@ -35,25 +35,27 @@ records 175 existing tests, five isolated characterizations and four query-cost
 cases. Checkpoint, closure and release remain atomic in the tested rollback,
 lost-return and concurrent-claim schedules. No runtime or deployment changed.
 
-The owner approved [ADR-0261](adr/0261-session-seal-projection-boundaries.md).
-Implementation and verification are in progress; delivery remains pending.
+The owner-approved [ADR-0261](adr/0261-session-seal-projection-boundaries.md)
+is deployed as `seal-projection-0de1fe7f`. [Delivery evidence](reports/seal-projection-repair-20261019.md)
+records passing source/artifact and native/browser/child/outage/full-Cube gates,
+retained failures and confirmed physical cleanup with original configuration
+preserved. Full live acceptance still awaits image cold recall.
 
-- [ ] SPJ-01 / P2: bound projection PG acquisition and entire checkout using
-      existing database facilities, including cold boundary reads and COMMIT
-      return handling. Preserve ordered replay and SQL-local cancellation; do
-      not leave timed-out work alive or bypass uncertain closure.
-- [ ] SPJ-02 / P3: reconcile old live-view cleanup after a committed seal loses
-      its return. PG recovery remains correct; the reproduced 1 MiB partial is
-      unnecessarily retained in memory. Never clear a successor's newer state
-      merely because an old closure record is replayed.
-- [ ] SPJ-O1 / P3: bound latest-hash proof lookup to the existing pending replay
-      ranges, retaining exact latest-sequence/hash checks and physical-Session
-      coverage. One pending delta currently examines 50,002 matching headers in
-      the 50,000-history fixture; its 16.742 ms sample is not a production timeout.
-- [ ] SPJ-O2 / P3: reuse the transaction-local locked Run via the existing
-      transition helper. The measured seal has 20 business SQL statements plus
-      one budget statement, including two Run reads. Keep CAS, transition history
-      and the trigger-enforced release-before-assignment-clear sequence.
+- [x] SPJ-01 / P2: bound projection acquisition and complete checkout, including
+      cold reads and COMMIT waits, through the existing PG adapter.
+- [x] SPJ-02 / P3: retire the exact old writer's live view after confirmed closure,
+      including lost-return replay, without clearing successor state.
+- [x] SPJ-O1 / P3: retain exact latest-sequence/hash proof using existing pending
+      replay ranges; one pending delta now reads one matching header in the
+      50,000-history fixture instead of 50,002.
+- [x] SPJ-O2 / P3: reuse the transaction-local locked Run. The measured recovery
+      path uses 19 business statements plus one budget statement, with one Run
+      read instead of two; CAS/history/release ordering remain.
+- [ ] Complete the unchanged large-image cold-Worker recall gate. Three stored
+      images (6/6/25 MB) and exact native references are verified; repeated model
+      response-header waits exhaust the fixture deadline before cold recall.
+      Investigate request transfer/response timing before changing budgets; do
+      not count stored attachments as completed visual-recovery acceptance.
 
 Replacement Worker/Harness bootstrap remains the next focused walkthrough hop.
 
@@ -891,14 +893,18 @@ separate design questions, not an implicit part of the completed query merge.
       regression; retain fail-closed cutover and physical cleanup requirements.
       [Evidence](reports/projector-repair-20261015.md).
 
-- [ ] Reconcile the build host's Docker daemon proxy with its current proxy
+- [x] Reconcile the build host's Docker daemon proxy with its current proxy
       endpoint. October 10 uncached pulls needed a temporary loopback relay;
       it was removed after building and is not a runtime component. Host service
       configuration was not changed by that release.
       The October 18 [settlement release](reports/worker-harness-settlement-repair-20261018.md)
       again found the daemon using an inactive loopback endpoint. A temporary
       systemd socket proxy restored build access and was removed before rollout
-      and live acceptance; the permanent host configuration remains unresolved.
+      and live acceptance. The owner-authorized October 19 permanent fix points
+      Docker HTTP/HTTPS at the active 10808 endpoint, preserves NO_PROXY, restarts
+      the daemon and verifies an actual image pull. The temporary relay is removed;
+      [delivery evidence](reports/seal-projection-repair-20261019.md) retains the
+      initial restart caller timeout and subsequent verified service recovery.
 
 - [ ] Investigate Cube standard-template snapshot restoration returning
       `reset guest time failed` despite READY status. Recreating the same-image

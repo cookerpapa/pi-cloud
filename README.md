@@ -76,10 +76,20 @@ enter native persistence before validated Tool execution (ADR-0230).
 The [Session work migration](docs/adr/0247-session-work-and-tool-dispatch.md) is
 deployed as `session-work-6ac697f9`: one root Run with native child Conversations,
 unified Tool replies, one Session closure and Worker direct Kafka publication.
-The current matched release, `seal-publication-8d9e7bc2`, uses schema 190, execution-topic
+The current matched release, `seal-projection-0de1fe7f`, uses schema 190, execution-topic
 v17, boot reply v3, guest/Tool Worker protocol 7, completion startup protocol 3,
 preview schema 2 and Cube management protocol 7. Host KVM is restored; all four
-templates, application workloads and required live acceptance pass.
+templates and application workloads are ready. Native/browser/child/outage/full-Cube
+acceptance passes; large-image cold recall remains unaccepted.
+The [Session seal projection repair](docs/reports/seal-projection-repair-20261019.md)
+bounds projection PG I/O, retires closed-writer live views after lost commit
+returns, limits checkpoint proof reads to pending ranges and reuses the locked
+Run. The measured recovery transaction uses 19 business SQL statements instead
+of 20. Source/artifact and native/browser/child/outage/full-Cube gates pass.
+Large-image cold recall remains unaccepted after model response-header timeouts.
+Owned fixtures are physically cleaned and original configuration is preserved.
+Failed upstream samples remain recorded separately. Docker's persistent build
+proxy now uses the active port.
 The [Session seal publication repair](docs/reports/seal-publication-repair-20261019.md)
 bounds control-publication PG work, joins borrowed group transactions before
 consumer disposal and rediscovers failed cached peers through existing Outbox

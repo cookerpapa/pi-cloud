@@ -2,8 +2,12 @@
 
 [ADR-0261](0261-session-seal-projection-boundaries.md) records the approved closure
 projection repair: bounded PG I/O, writer-owned disposable live views, bounded
-checkpoint proof lookup and transaction-local Run reuse. Implementation and
-delivery are in progress; current execution/storage authorities and protocols remain.
+checkpoint proof lookup and transaction-local Run reuse. It is deployed as
+`seal-projection-0de1fe7f`; [verification/delivery](../reports/seal-projection-repair-20261019.md)
+record passing source/artifact and native/browser/child/outage/full-Cube gates,
+retained failures and confirmed physical/configuration cleanup. Large-image cold
+recall remains unaccepted after model response-header timeouts. Current authorities
+and protocols remain.
 
 [ADR-0260](0260-session-seal-publication-lifetimes.md) records the owner-approved
 seal publication repair: bounded PG metadata work, reader-owned transaction

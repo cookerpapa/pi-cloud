@@ -10,10 +10,13 @@
       seal cannot modify the next grant; preserve the exact live checkpoint.
 
 The owner approved [ADR-0261](adr/0261-session-seal-projection-boundaries.md).
-SPJ-01/02 and SPJ-O1/O2 implementation and verification are in progress; the
-serving `seal-publication-8d9e7bc2` release is unchanged. Schema/protocol remain
-unchanged. The next walkthrough is the replacement Worker's native
-Harness opening/continuation, then the deferred model request/response branch.
+SPJ-01/02 and SPJ-O1/O2 are deployed as `seal-projection-0de1fe7f`.
+[Delivery evidence](reports/seal-projection-repair-20261019.md) records passing
+source/artifact and native/browser/child/outage/full-Cube gates, retained failures
+and confirmed physical/configuration cleanup. Large-image cold recall remains
+unaccepted after model response-header timeouts. Schema/protocol remain unchanged.
+The next walkthrough is the replacement Worker's native Harness opening/
+continuation, then the deferred model request/response branch.
 
 ## PG Outbox → Kafka Session seal review
 

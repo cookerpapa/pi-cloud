@@ -1,6 +1,8 @@
 # ADR-0261: Bounded seal projection and writer-owned live views
 
-Status: implemented; verification and delivery in progress, 2026-10-19.
+Status: implemented and deployed as `seal-projection-0de1fe7f`, 2026-10-19.
+Source/artifact and native/browser/child/outage/full-Cube gates pass; image cold
+recall remains unaccepted after model response-header timeouts. Cleanup is confirmed.
 The owner approved repairing SPJ-01/02 and SPJ-O1/O2 from the
 [closure review](../reports/seal-projection-review-20261019.md).
 Baseline: `450a1efd`. No schema, public API, Kafka, Pi or guest protocol change.

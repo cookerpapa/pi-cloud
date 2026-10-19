@@ -1,0 +1,429 @@
+{
+  "sourceRevision": "0de1fe7fc7d8d3ec09e93e17d47df34730d02ab1",
+  "release": "seal-projection-0de1fe7f",
+  "implemented": true,
+  "deployed": true,
+  "liveAcceptance": "incomplete_image_cold_recovery",
+  "verification": {
+    "workspacePassed": 1937,
+    "workspaceSkipped": 11,
+    "acceptanceHelpersPassed": 79,
+    "realRf3TestsPassed": 9,
+    "faultCasesPassed": 323,
+    "faultGroups": 95,
+    "artifactScans": 11
+  },
+  "nativeInput": {
+    "accepted": true,
+    "cleanupConfirmed": true,
+    "cases": [
+      {
+        "scenario": "consume",
+        "oneRun": true,
+        "noRetainedEditBodies": true
+      },
+      {
+        "scenario": "stop",
+        "oneRun": true,
+        "noRetainedEditBodies": true
+      },
+      {
+        "scenario": "recover",
+        "oneRun": true,
+        "noRetainedEditBodies": true,
+        "observationRecovery": {
+          "previousGeneration": 1,
+          "recoveredGeneration": 2,
+          "activityRevision": 1,
+          "confirmedExecutionRevision": 5,
+          "snapshots": 1,
+          "sameSseConnection": true,
+          "browserStoreApplied": true
+        }
+      },
+      {
+        "scenario": "stream_stop",
+        "oneRun": true,
+        "noPgStreamingBodies": true,
+        "preservedNativePartial": true,
+        "observedCharacters": 159
+      },
+      {
+        "scenario": "stream_both_crash",
+        "oneRun": true,
+        "noPgStreamingBodies": true,
+        "preservedNativePartial": true,
+        "observedCharacters": 134
+      }
+    ]
+  },
+  "browserRead": {
+    "accepted": true,
+    "cleanupConfirmed": true,
+    "draftRemovalPreservesQueuedImage": true,
+    "readPathAliases": true,
+    "read": [
+      {
+        "kind": "wide-ascii.txt",
+        "sourceBytes": 120017,
+        "contentBytes": 51200,
+        "utf8Valid": true,
+        "canonicalDiagnostic": true
+      },
+      {
+        "kind": "wide-unicode.txt",
+        "sourceBytes": 140031,
+        "contentBytes": 51196,
+        "utf8Valid": true,
+        "canonicalDiagnostic": true
+      }
+    ]
+  },
+  "projection": {
+    "connectionCount": 12,
+    "acquisitionAndCheckoutBudgetMs": 30000,
+    "businessSql": 19,
+    "budgetSql": 1,
+    "lockedRunReads": 1,
+    "onePendingDocumentMatchedHeaders": 1,
+    "syntheticHistoryHeaders": 50000,
+    "warmQueryMs": 0.067
+  },
+  "docker": {
+    "proxyPort": 10808,
+    "configPersisted": true,
+    "daemonRestarted": true,
+    "pinnedPullVerified": true,
+    "temporaryBridgeRemoved": true
+  },
+  "child": {
+    "accepted": true,
+    "nativeChildOnly": true,
+    "replacementMs": 13590,
+    "completionAfterReadyMs": 38062,
+    "artifactsUnchanged": true,
+    "workerUnchanged": true,
+    "executionCount": 1,
+    "controlToolReplyRecovered": true,
+    "physicalCleanupConfirmed": true
+  },
+  "artifacts": {
+    "imageVersion": "seal-projection-0de1fe7f",
+    "revision": "0de1fe7fc7d8d3ec09e93e17d47df34730d02ab1",
+    "dirty": false,
+    "maximumFixableHighCritical": 0,
+    "images": [
+      {
+        "reference": "pi-cloud/control-plane:seal-projection-0de1fe7f",
+        "imageId": "sha256:0abec2bfc6d38654d6f9b7e6d02753550dd799213bed0eea019d5b492d205e27",
+        "policyVulnerabilities": {
+          "HIGH": {
+            "total": 56,
+            "fixable": 0
+          },
+          "CRITICAL": {
+            "total": 1,
+            "fixable": 0
+          }
+        }
+      },
+      {
+        "reference": "pi-cloud/supervisor-host:seal-projection-0de1fe7f",
+        "imageId": "sha256:b039249c0d2179a316105098fc52b3b922ed00dce661b9e0a3cc261798a115c7",
+        "policyVulnerabilities": {
+          "HIGH": {
+            "total": 56,
+            "fixable": 0
+          },
+          "CRITICAL": {
+            "total": 1,
+            "fixable": 0
+          }
+        }
+      },
+      {
+        "reference": "pi-cloud/workspace-volume-gateway:seal-projection-0de1fe7f",
+        "imageId": "sha256:41d7f51a16cd97b73617969f387affe4efe67156567319bc6b57af446687ec69",
+        "policyVulnerabilities": {
+          "HIGH": {
+            "total": 67,
+            "fixable": 0
+          },
+          "CRITICAL": {
+            "total": 1,
+            "fixable": 0
+          }
+        }
+      },
+      {
+        "reference": "pi-cloud/web-ui:seal-projection-0de1fe7f",
+        "imageId": "sha256:765b6769fe658668de876676c74952fa167c7a682cf0a9106e6426d7f0369b0b",
+        "policyVulnerabilities": {
+          "HIGH": {
+            "total": 0,
+            "fixable": 0
+          },
+          "CRITICAL": {
+            "total": 0,
+            "fixable": 0
+          }
+        }
+      },
+      {
+        "reference": "pi-cloud/provider-egress-relay:seal-projection-0de1fe7f",
+        "imageId": "sha256:60abdbe9fea66abec6c05fc6f327ba2d4c006c565791993432e80bb376bd461e",
+        "policyVulnerabilities": {
+          "HIGH": {
+            "total": 56,
+            "fixable": 0
+          },
+          "CRITICAL": {
+            "total": 1,
+            "fixable": 0
+          }
+        }
+      },
+      {
+        "reference": "pi-cloud/ssh-gateway:seal-projection-0de1fe7f",
+        "imageId": "sha256:c6f73977d17b23797318665dce052f914aa91bba5fbcff94ee53deb6ae6b348f",
+        "policyVulnerabilities": {
+          "HIGH": {
+            "total": 56,
+            "fixable": 0
+          },
+          "CRITICAL": {
+            "total": 1,
+            "fixable": 0
+          }
+        }
+      },
+      {
+        "reference": "pi-cloud/cli-proxy-api:seal-projection-0de1fe7f",
+        "imageId": "sha256:52b0a89f252337dfc25f05c098253c3fa7883c9e77d7abdd37d1ba5bdaa3749b",
+        "policyVulnerabilities": {
+          "HIGH": {
+            "total": 58,
+            "fixable": 0
+          },
+          "CRITICAL": {
+            "total": 1,
+            "fixable": 0
+          }
+        }
+      },
+      {
+        "reference": "pi-cloud/cube-api:seal-projection-0de1fe7f",
+        "imageId": "sha256:730a89bd8d5d501e9fe16e7509f3f72cc16a81880050d5aea988b8158e219afd",
+        "policyVulnerabilities": {
+          "HIGH": {
+            "total": 0,
+            "fixable": 0
+          },
+          "CRITICAL": {
+            "total": 0,
+            "fixable": 0
+          }
+        }
+      },
+      {
+        "reference": "pi-cloud/cube-master:seal-projection-0de1fe7f",
+        "imageId": "sha256:e03bf7cb4fffcf3931fc1903a530782ecc47f2e77c04feeb61dc75cb2188ed74",
+        "policyVulnerabilities": {
+          "HIGH": {
+            "total": 0,
+            "fixable": 0
+          },
+          "CRITICAL": {
+            "total": 0,
+            "fixable": 0
+          }
+        }
+      },
+      {
+        "reference": "pi-cloud/cubelet:seal-projection-0de1fe7f",
+        "imageId": "sha256:6b382a702ece2343afb74994e944f14596ea3917b556da8398544a976a4890e0",
+        "policyVulnerabilities": {
+          "HIGH": {
+            "total": 0,
+            "fixable": 0
+          },
+          "CRITICAL": {
+            "total": 0,
+            "fixable": 0
+          }
+        }
+      },
+      {
+        "reference": "localhost:5000/pi-cloud/cubesandbox-tool:5d775367299e1cfc7877a2bf2544f857f4690f08",
+        "imageId": "sha256:49b703d8cc91ef3c21fcb4df670ab2f71ddb8e91b5e7bc46930df870739a7503",
+        "policyVulnerabilities": {
+          "HIGH": {
+            "total": 0,
+            "fixable": 0
+          },
+          "CRITICAL": {
+            "total": 0,
+            "fixable": 0
+          }
+        }
+      }
+    ]
+  },
+  "fullCube": {
+    "accepted": true,
+    "checkedAt": "2026-10-19T03:36:54.537Z",
+    "testRevision": "0de1fe7fc7d8d3ec09e93e17d47df34730d02ab1",
+    "totalUsage": {
+      "requests": 20,
+      "inputTokens": 26290,
+      "outputTokens": 1899,
+      "cacheReadTokens": 125824,
+      "cacheWriteTokens": 0
+    },
+    "multiRound": {
+      "sameCubeMicroVm": true,
+      "runningWorkspaceRuntimeReuse": true,
+      "elasticSandboxPolicy": true,
+      "agentPreviewPublished": true,
+      "backgroundProcessSurvived": true,
+      "authenticatedHttpPreviewPassed": true,
+      "workspaceRestored": true,
+      "finalWorkspaceFileBytes": 1243
+    },
+    "largeWorkspace": {
+      "source": "deterministic 1024-file local fixture",
+      "firstFileCount": 1025,
+      "restoredFileCount": 1026,
+      "persistentVolumeRetained": true,
+      "freshCubeMicroVm": true,
+      "restoredFromPersistentVolume": true
+    },
+    "cleanup": {
+      "retainedRunningWorkspaceMicroVmCount": 0,
+      "foreignSessionMicroVmCount": 0,
+      "conversationDeletionReleasedWorkspaceRuntime": true,
+      "confirmedAllocationClosureVerified": true,
+      "deletedVmAdmissionRejected": true
+    }
+  },
+  "controlOutage": {
+    "accepted": true,
+    "checkedAt": "2026-10-19T03:38:10.338Z",
+    "actualUnavailableMs": 65322,
+    "restoreToReadyMs": 7921,
+    "idleAndBusyWorkersPreserved": true,
+    "managementReconnect": true,
+    "sameWorkerAndLease": true,
+    "samePhysicalVm": true,
+    "eachBashExecutedOnce": true,
+    "bufferedToolIntents": 2,
+    "cleanupConfirmed": true
+  },
+  "images": {
+    "accepted": false,
+    "checkedAt": "2026-10-19T03:40:30.233Z",
+    "sourceBytes": [6294157, 6294292, 25129963],
+    "recordBytes": [596, 596, 597],
+    "nativeReferencesAndS3HashesVerified": true,
+    "coldWorkerRecallReached": false,
+    "fixtureRunWaitBudgetMs": 600000,
+    "requestHeaderWaitBudgetMs": 120000,
+    "cleanupConfirmed": true
+  },
+  "failedSamples": [
+    {
+      "gate": "images",
+      "attempt": 1,
+      "upstreamStatus": 500,
+      "tlsHandshakeEof": true
+    },
+    {
+      "gate": "images",
+      "attempt": 2,
+      "noHeaderWaitMs": 120198.421,
+      "laterStatuses": [520, 429]
+    },
+    {
+      "gate": "images",
+      "attempt": 3,
+      "completedImageTurns": 2,
+      "noHeaderTimeouts": 4,
+      "timeoutMs": 120000
+    },
+    {
+      "gate": "images",
+      "attempt": 4,
+      "completedImageTurns": 2,
+      "persistedImages": 3,
+      "wholeRunWaitBudgetMs": 600000,
+      "coldWorkerRecallReached": false
+    },
+    {
+      "gate": "controlOutage",
+      "attempt": 1,
+      "upstreamStatus": 500,
+      "tlsHandshakeEof": true,
+      "nextToolGenerated": false,
+      "restored": true,
+      "cleanupConfirmed": true
+    },
+    {
+      "gate": "controlOutage",
+      "attempt": 2,
+      "upstreamStatus": 500,
+      "tlsHandshakeEof": true,
+      "nextToolBuffered": true,
+      "newRequestCompleted": true,
+      "restored": true,
+      "cleanupConfirmed": true
+    },
+    {
+      "gate": "fullCube",
+      "attempt": 1,
+      "tlsHandshakeEof": true,
+      "stage": "cold VM continuation"
+    }
+  ],
+  "cleanup": {
+    "confirmed": true,
+    "configurationFingerprintsMatch": true,
+    "configurationCounts": {
+      "tenants": 32,
+      "users": 32,
+      "tenant_api_credentials": 32,
+      "user_password_credentials": 5,
+      "model_profiles": 35,
+      "credential_bindings": 35,
+      "source_control_credentials": 0
+    },
+    "active": {
+      "runs": 0,
+      "writers": 0,
+      "bindings": 0,
+      "runtimes": 0,
+      "machines": 0,
+      "terminals": 0,
+      "controls": 0
+    },
+    "pg": {
+      "projects": 0,
+      "workspaces": 0,
+      "sessions": 0,
+      "runs": 0,
+      "images": 0
+    },
+    "native": {
+      "volumes": 0,
+      "nodeReferences": 0,
+      "holds": 0,
+      "openAllocations": 0
+    },
+    "removedImages": 6,
+    "readyPods": 28,
+    "readyWorkerReplicas": 2,
+    "web": {
+      "wsl": 200,
+      "windows": 200
+    }
+  }
+}

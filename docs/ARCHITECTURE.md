@@ -11,10 +11,18 @@ ADR-0251's guest attachment/lifetime repair, ADR-0252's receipt/preview repair,
 ADR-0253's bounded UNKNOWN continuation, ADR-0254's Worker reply repair,
 ADR-0255's native result/metadata boundaries, ADR-0256's publication/completion repair
 and ADR-0257's browser observation/buffer repair, ADR-0258/0259's bounded lease/
-expiry maintenance and ADR-0260's publication/reader retirement repair
+expiry maintenance, ADR-0260's publication/reader retirement repair and
+ADR-0261's bounded projection and writer-view cleanup
 (schema 190 / topic v17 / boot reply v3 / guest protocol 7, adapter startup 3).
-The [current delivery record](reports/seal-publication-repair-20261019.md) records
-the October 19 `seal-publication-8d9e7bc2` deployment. Publication/binding metadata
+The [current delivery record](reports/seal-projection-repair-20261019.md) records
+the October 19 `seal-projection-0de1fe7f` deployment. Projection uses bounded
+direct-PG I/O, confirmed closure clears the exact old writer's live view, latest
+hash proofs use pending replay ranges, and recovery reuses its locked Run.
+Source/artifact and native/browser/child/outage/full-Cube gates pass. Large-image
+cold recall remains unaccepted after model response-header timeouts. Physical
+cleanup and original configuration preservation are confirmed; failures remain explicit.
+The [preceding publication repair](reports/seal-publication-repair-20261019.md)
+deployed `seal-publication-8d9e7bc2`. Publication/binding metadata
 uses bounded PG I/O, reader disposal joins group transactions, and failed peer
 routes are rediscovered on existing immutable-Fact retries. Required acceptance
 and physical cleanup pass; original configuration is preserved. Retained model
