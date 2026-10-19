@@ -10,10 +10,17 @@ with ADR-0249's deployed publication contract, ADR-0250's handoff repair and
 ADR-0251's guest attachment/lifetime repair, ADR-0252's receipt/preview repair,
 ADR-0253's bounded UNKNOWN continuation, ADR-0254's Worker reply repair,
 ADR-0255's native result/metadata boundaries, ADR-0256's publication/completion repair
-and ADR-0257's browser observation/buffer repair
-(schema 189 / topic v17 / boot reply v3 / guest protocol 7, adapter startup 3).
-The [current delivery record](reports/projector-browser-repair-20261018.md)
-records the October 18 deployment of `browser-delivery-205e6ac0`. Source,
+and ADR-0257's browser observation/buffer repair, ADR-0258/0259's bounded lease/
+expiry maintenance and ADR-0260's publication/reader retirement repair
+(schema 190 / topic v17 / boot reply v3 / guest protocol 7, adapter startup 3).
+The [current delivery record](reports/seal-publication-repair-20261019.md) records
+the October 19 `seal-publication-8d9e7bc2` deployment. Publication/binding metadata
+uses bounded PG I/O, reader disposal joins group transactions, and failed peer
+routes are rediscovered on existing immutable-Fact retries. Required acceptance
+and physical cleanup pass; original configuration is preserved. Retained model
+TLS/response-timeout samples are distinguished from these runtime repairs.
+The [preceding browser delivery record](reports/projector-browser-repair-20261018.md)
+records the October 18 `browser-delivery-205e6ac0` release. Source,
 artifact and relevant live gates pass: native input/Stop, dual-process recovery,
 browser/image/Read, child control replies across replacement and the complete
 Cube multi-round/Volume suite. Real Worker recovery keeps one SSE connection and
@@ -97,7 +104,8 @@ uses a separate four-connection direct-PG pool with five-second acquisition and
 checkout budgets for Outbox/authority/binding metadata. Reader retirement joins
 all group transactions before disposal; a failed cached peer is rediscovered on
 the existing immutable-Fact retry. [Delivery](reports/seal-publication-repair-20261019.md)
-is pending; execution/storage authority and wire formats are unchanged.
+and relevant acceptance are complete; execution/storage authority and wire formats
+are unchanged.
 Worker admission reads Kafka partition availability and validates the fixed Topic's
 replication policy and in-sync replicas. It does not depend on a Control Plane
 publication endpoint. The availability mask filters the existing PG claim query;

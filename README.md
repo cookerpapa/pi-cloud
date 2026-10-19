@@ -76,10 +76,16 @@ enter native persistence before validated Tool execution (ADR-0230).
 The [Session work migration](docs/adr/0247-session-work-and-tool-dispatch.md) is
 deployed as `session-work-6ac697f9`: one root Run with native child Conversations,
 unified Tool replies, one Session closure and Worker direct Kafka publication.
-The current matched release, `control-expiry-c9d8112d`, uses schema 190, execution-topic
+The current matched release, `seal-publication-8d9e7bc2`, uses schema 190, execution-topic
 v17, boot reply v3, guest/Tool Worker protocol 7, completion startup protocol 3,
 preview schema 2 and Cube management protocol 7. Host KVM is restored; all four
 templates, application workloads and required live acceptance pass.
+The [Session seal publication repair](docs/reports/seal-publication-repair-20261019.md)
+bounds control-publication PG work, joins borrowed group transactions before
+consumer disposal and rediscovers failed cached peers through existing Outbox
+retries. Source, RF3, native/image/child/outage and full Cube acceptance pass;
+owned fixtures are cleaned and original configuration is preserved. Initial
+upstream TLS failures and slow image requests remain documented separately.
 The [Control Plane expiry repair](docs/reports/control-plane-expiry-repair-20261018.md)
 advances past busy Sessions and pending seals, admits failed Workers into existing
 retirement even with live management connections, and removes healthy-Session

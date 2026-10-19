@@ -36,19 +36,21 @@ real RF3/PG integration case. Runtime and deployment are unchanged; fixture/type
 corrections and the limits of substituted callback evidence are explicit.
 
 The owner approved [ADR-0260](adr/0260-session-seal-publication-lifetimes.md).
-Repairs are implemented in source; [verification and delivery](reports/seal-publication-repair-20261019.md)
-remain in progress. Checklist completion below includes the matched/live gates.
+Repairs are deployed as `seal-publication-8d9e7bc2`.
+[Verification and delivery](reports/seal-publication-repair-20261019.md) record
+passing source/artifact/live gates, retained upstream TLS/timeout samples and
+confirmed cleanup with original configuration fingerprints preserved.
 
-- [ ] SP-01 / P2: bound publication PG acquisition/SQL and retirement waits using
+- [x] SP-01 / P2: bound publication PG acquisition/SQL and retirement waits using
       existing database facilities. Preserve immutable Outbox retries and drain
       old-generation work before replacement; do not bypass pending work by
       starting overlapping same-Session producers.
-- [ ] SP-02 / P2: join all transactions borrowing the consumer during its own
+- [x] SP-02 / P2: join all transactions borrowing the consumer during its own
       background restart, including external Session seal writers. Preserve
       group/dispatch ordering; normal whole-Projector close already drains them.
       Callback tests establish disposal ordering, not a native crash or stale
       broker commit.
-- [ ] SP-03 / P2: invalidate an unreachable cached owner and rediscover under a
+- [x] SP-03 / P2: invalidate an unreachable cached owner and rediscover under a
       bounded retry policy. This reproduces the previously deferred surviving-
       forwarder case; it is relevant to multiple Control Planes, not evidence of
       an outage in the single-process baseline.
@@ -386,7 +388,7 @@ not a new deployment operator or a guarantee for every active transport.
       the input receipt read repair, preserved configuration and physical cleanup.
 - [ ] Verify the dispatch-commit/Cube-handoff window and interactive workflow,
       terminal and preview connections before claiming fully transparent Control Plane updates.
-- [ ] Repair and verify owner-address cache invalidation under SP-03 above. The
+- [x] Repair and verify owner-address cache invalidation under SP-03 above. The
       surviving-forwarder case is now reproduced; the zero-replica check restarts
       all such caches and does not cover it.
 - [ ] After the handoff gates, provide a maintained compatible Control Plane-only

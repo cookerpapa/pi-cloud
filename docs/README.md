@@ -9,9 +9,13 @@ deferred in the backlog. Three authority reads straddle different actions; the
 measured no-binding local path uses six SQL statements. This is review-only;
 Kafka → Projector closure and successor bootstrap remain the next walkthrough.
 The approved [ADR-0260 repair](adr/0260-session-seal-publication-lifetimes.md)
-is implemented in source. [Verification and delivery](reports/seal-publication-repair-20261019.md)
-track the bounded publication pool, reader retirement and peer rediscovery;
-matched deployment is pending.
+is deployed as `seal-publication-8d9e7bc2`.
+[Verification and delivery](reports/seal-publication-repair-20261019.md) record
+the bounded publication pool, reader retirement and peer rediscovery, 1,924
+workspace tests, nine RF3 cases, 311 fault cases and eleven artifact scans. Relevant
+live gates and physical cleanup pass with original configuration preserved.
+Initial upstream TLS/timeout failures and the unchanged repeat after the owner's
+proxy-node switch remain explicit.
 
 The [October 18 Control Plane → PG expiry review](reports/control-plane-expiry-review-20261018.md)
 explains timed scans, locked rechecks and atomic seal-request admission. Fifty

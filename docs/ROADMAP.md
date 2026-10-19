@@ -10,10 +10,17 @@
 The review changed no runtime or deployment. The owner approved
 [ADR-0260](adr/0260-session-seal-publication-lifetimes.md):
 
-- [ ] SP-01: bounded publication/binding PG work and ordered pending-owner retirement.
-- [ ] SP-02: reader-owned group transaction lifetime and idempotent disconnect.
-- [ ] SP-03: stale-peer invalidation with existing immutable Outbox retries.
-- [ ] Required regression/transport checks, matched release and relevant live acceptance.
+- [x] SP-01: bounded publication/binding PG work and ordered pending-owner retirement.
+- [x] SP-02: reader-owned group transaction lifetime and idempotent disconnect.
+- [x] SP-03: stale-peer invalidation with existing immutable Outbox retries.
+- [x] Required regression/transport checks, matched release and relevant live acceptance.
+
+Deployed as `seal-publication-8d9e7bc2`, schema 190.
+[Delivery evidence](reports/seal-publication-repair-20261019.md) records 1,924
+workspace tests, nine RF3 cases, 311 fault cases, eleven artifact scans and passing
+live acceptance. Upstream failed samples are retained; the owner switched proxy
+node before the unchanged full-Cube repeat passed. Owned physical resources and
+metadata are cleaned and original configuration fingerprints match.
 
 No new execution authority or storage protocol is introduced.
 The reading checkpoint advances to Kafka seal → Projector → PG closure/checkpoint/

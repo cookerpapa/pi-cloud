@@ -1,0 +1,206 @@
+{
+  "sourceRevision": "8d9e7bc2203f006e5a822283cc01af266a2c6dd6",
+  "release": "seal-publication-8d9e7bc2",
+  "controlPlaneImage": "sha256:bcbc51ffca3194ec394bbe7a0f9a64f4e9d2bb4b746953bcc82ff42f3b290dda",
+  "schema": 190,
+  "protocols": {
+    "executionTopic": 17,
+    "reply": 3,
+    "guest": 7,
+    "completion": 3,
+    "preview": 2,
+    "cubeManagement": 7
+  },
+  "source": {
+    "workspacePassed": 1924,
+    "workspaceSummaries": 22,
+    "helpersPassed": 79,
+    "workspaceSkippedByEnvironment": 11,
+    "ciExitCode": 0,
+    "ciMonolithicPassed": true,
+    "sourceRevision": "8d9e7bc2203f006e5a822283cc01af266a2c6dd6",
+    "focusedPassed": 51,
+    "rf3Passed": 9,
+    "faultsPassed": 311,
+    "faultGroups": 93,
+    "artifactScansPassed": 11,
+    "initialFormatPrecheck": "Deleted experiment paths were not yet staged; staging those deletions corrected the check before CI."
+  },
+  "sql": {
+    "localUnboundSealStatements": 6,
+    "authorityReads": 3,
+    "includesBindingPropagation": false
+  },
+  "native": {
+    "accepted": true,
+    "caseCount": 5,
+    "cases": [
+      {
+        "scenario": "consume",
+        "oneRun": true
+      },
+      {
+        "scenario": "stop",
+        "oneRun": true
+      },
+      {
+        "scenario": "recover",
+        "oneRun": true,
+        "observationRecovery": {
+          "previousGeneration": 1,
+          "recoveredGeneration": 2,
+          "activityRevision": 1,
+          "confirmedExecutionRevision": 5,
+          "snapshots": 1,
+          "sameSseConnection": true,
+          "browserStoreApplied": true
+        }
+      },
+      {
+        "scenario": "stream_stop",
+        "oneRun": true,
+        "observedCharacters": 156,
+        "noPgStreamingBodies": true,
+        "preservedNativePartial": true
+      },
+      {
+        "scenario": "stream_both_crash",
+        "oneRun": true,
+        "observedCharacters": 124,
+        "noPgStreamingBodies": true,
+        "preservedNativePartial": true
+      }
+    ],
+    "cleanupConfirmed": true
+  },
+  "browser": {
+    "accepted": true,
+    "cleanupConfirmed": true,
+    "read": [
+      {
+        "kind": "wide-ascii.txt",
+        "sourceBytes": 120017,
+        "contentBytes": 51200,
+        "utf8Valid": true,
+        "canonicalDiagnostic": true
+      },
+      {
+        "kind": "wide-unicode.txt",
+        "sourceBytes": 140031,
+        "contentBytes": 51196,
+        "utf8Valid": true,
+        "canonicalDiagnostic": true
+      }
+    ]
+  },
+  "images": {
+    "accepted": true,
+    "cleanupCompleted": true,
+    "bytes": [6294601, 6294277, 25128663],
+    "recordBytes": [596, 596, 597],
+    "changedBoot": true,
+    "visionRecallCorrect": true,
+    "firstAttemptFailedTls": true,
+    "retryNoHeaderTimeoutsMs": [120287.265, 120242.543]
+  },
+  "child": {
+    "accepted": true,
+    "replacementMs": 13085,
+    "workerUnchanged": true,
+    "executionCount": 1,
+    "physicalCleanupConfirmed": true
+  },
+  "outage": {
+    "accepted": true,
+    "actualUnavailableMs": 63918,
+    "restoreToReadyMs": 8048,
+    "idleAndBusyWorkersPreserved": true,
+    "sameWorkerAndLease": true,
+    "samePhysicalVm": true,
+    "eachBashExecutedOnce": true,
+    "cleanupConfirmed": true
+  },
+  "fullCube": {
+    "accepted": true,
+    "testRevision": "8d9e7bc2203f006e5a822283cc01af266a2c6dd6",
+    "checkedAt": "2026-10-19T00:40:03.316Z",
+    "requests": 21,
+    "terminalOutcomes": 5,
+    "nativeEntries": 35,
+    "projectedMutations": 173,
+    "numberedFixtureFiles": 1024,
+    "initialVolumeFiles": 1025,
+    "restoredVolumeFiles": 1026,
+    "restorationProofAddsOneFile": true,
+    "persistentVolumeRetained": true,
+    "freshVm": true,
+    "cleanup": {
+      "retainedRunningWorkspaceMicroVmCount": 0,
+      "foreignSessionMicroVmCount": 0,
+      "conversationDeletionReleasedWorkspaceRuntime": true,
+      "confirmedAllocationClosureVerified": true,
+      "deletedVmAdmissionRejected": true
+    },
+    "firstAttemptFailedTls": true,
+    "unchangedRepeatAfterOwnerConfirmedProxyNodeSwitch": true
+  },
+  "cleanup": {
+    "physicalAbsenceConfirmed": true,
+    "removedImageObjects": 6,
+    "finalBootstrapProjectsRemoved": 4,
+    "finalBootstrapWorkspacesRemoved": 4,
+    "finalCubeTenantRemoved": true,
+    "earlierFailedCubeTenantAndForeignProjectRemoved": true,
+    "originalConfigurationFingerprintsMatch": true,
+    "originalConfigurationCounts": {
+      "tenants": 32,
+      "users": 32,
+      "tenant_api_credentials": 32,
+      "user_password_credentials": 5,
+      "model_profiles": 35,
+      "credential_bindings": 35,
+      "source_control_credentials": 0
+    },
+    "active": {
+      "runs": 0,
+      "writers": 0,
+      "bindings": 0,
+      "runtimes": 0,
+      "machines": 0,
+      "terminals": 0,
+      "controls": 0
+    },
+    "remaining": {
+      "at": "2026-10-19T00:44:54.440Z",
+      "schema": "190_control_plane_expiry",
+      "pg": {
+        "projects": 0,
+        "workspaces": 0,
+        "sessions": 0,
+        "runs": 0,
+        "images": 0
+      },
+      "native": {
+        "volumes": 0,
+        "nodeReferences": 0,
+        "holds": 0,
+        "openAllocations": 0
+      },
+      "readyWorkerReplicas": 2,
+      "readyPods": 28,
+      "web": {
+        "wsl": 200,
+        "windows": 200
+      }
+    },
+    "freeGiB": 400,
+    "testContainersRemaining": 0,
+    "testNetworksRemaining": 0,
+    "temporaryBuildProxyStopped": true
+  },
+  "limits": [
+    "Single compute node and two Workers; not fleet capacity or physical-node HA evidence.",
+    "Reader disposal regressions use controlled callbacks, not a native-library crash experiment.",
+    "Upstream TLS handshake EOF and image no-header timeouts were retained; this repair does not change provider retry policy or claim to repair that network."
+  ]
+}

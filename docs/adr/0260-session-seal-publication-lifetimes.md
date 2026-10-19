@@ -1,8 +1,12 @@
 # ADR-0260: Bounded Session seal publication and transport retirement
 
-Status: implemented in source, verification/delivery pending, 2026-10-19. The owner approved fixing
+Status: implemented, verified and deployed, 2026-10-19, as
+`seal-publication-8d9e7bc2`. The owner approved fixing
 SP-01–03 in the [publication review](../reports/seal-publication-review-20261019.md).
 Baseline: `f5bb08ed`. No schema, Kafka envelope, guest or public API change.
+[Delivery evidence](../reports/seal-publication-repair-20261019.md) records passing
+gates, retained upstream failed samples, physical cleanup and unchanged original
+configuration fingerprints.
 
 ## Decision
 

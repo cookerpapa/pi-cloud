@@ -1,6 +1,6 @@
 # Architecture reading checkpoint
 
-Updated: 2026-10-19; runtime remains `control-expiry-c9d8112d`.
+Updated: 2026-10-19; runtime is `seal-publication-8d9e7bc2`.
 
 The owner asked to reconcile the complete hop-by-hop conversation with the
 recorded reviews. The ordinary Tool execution loop, normal Run completion,
@@ -9,8 +9,11 @@ covered. The provider request branch was explicitly deferred during the October
 12–15 walkthrough and has not received the same complete focused treatment.
 
 Current checkpoint: **PG Outbox → Control Plane seal publisher → Kafka**.
-The [focused review](reports/seal-publication-review-20261019.md) is complete;
-SP-01–03 repairs remain open. The preceding PG expiry
+The [focused review](reports/seal-publication-review-20261019.md) and
+[SP-01–03 repair/delivery](reports/seal-publication-repair-20261019.md) are complete.
+Required live gates and physical/configuration cleanup pass; upstream failed
+samples and the unchanged repeat after proxy-node switching remain recorded.
+The preceding PG expiry
 [review](reports/control-plane-expiry-review-20261018.md) and
 [repair/release](reports/control-plane-expiry-repair-20261018.md) are complete.
 Kafka seal acknowledgement is not yet PG-projected closure, a successor grant
@@ -35,7 +38,7 @@ or physical process-death evidence.
 | Projector → browser, refresh/reconnect and Working state | Explained, reviewed and repaired | [browser delivery](reports/projector-browser-review-20261018.md) |
 | Worker → PG lease renewal | Explained, reviewed and repaired | [renewal](reports/worker-session-lease-review-20261018.md) |
 | Control Plane → PG expiry/seal admission | Explained, reviewed and repaired | [expiry](reports/control-plane-expiry-review-20261018.md) |
-| PG Outbox → control seal publisher → Kafka | Explained and reviewed; three repairs open; current checkpoint | [seal publication](reports/seal-publication-review-20261019.md) |
+| PG Outbox → control seal publisher → Kafka | Explained, reviewed and repaired; current checkpoint | [seal publication](reports/seal-publication-repair-20261019.md) |
 
 These statuses distinguish walkthrough coverage from focused audit scope. Storage
 research does not establish a complete new audit of every native recovery branch,

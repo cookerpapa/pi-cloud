@@ -2,8 +2,10 @@
 
 [ADR-0260](0260-session-seal-publication-lifetimes.md) records the owner-approved
 seal publication repair: bounded PG metadata work, reader-owned transaction
-retirement and cached peer rediscovery. Source implementation is complete;
-[verification/delivery](../reports/seal-publication-repair-20261019.md) is in progress.
+retirement and cached peer rediscovery. It is deployed as
+`seal-publication-8d9e7bc2`; [verification/delivery](../reports/seal-publication-repair-20261019.md)
+record passing source/artifact/live gates, retained provider failures and confirmed
+physical/configuration cleanup.
 The existing Session/Outbox/Kafka authorities and wire schemas are preserved.
 
 [ADR-0259](0259-control-plane-expiry-progress.md) implements independent bounded
