@@ -34,43 +34,33 @@ The [October 19 review](reports/worker-harness-recovery-review-20261019.md) at
 `e131a2ea` completes this hop with 110 existing tests, seven isolated behavior
 cases and six cost samples. Indexed latest-head/context reads remain independent
 of old history in the fixture; native family continuation/Stop preserve ownership,
-input identity and unsafe Tool non-replay. Runtime and deployment are unchanged.
-The [proposed repair plan](reports/worker-harness-recovery-repair-plan-20261019.md)
-combines bounded/cancellable read lifetimes, typed recovery failures, status
-indexing and native child reattachment. Image reuse depends on proving a suitable
-public-API operation boundary. [ADR-0262](adr/0262-native-recovery-read-lifetimes.md)
-is implemented in source; full checks and matched rollout are in progress.
-The image feasibility check retains per-decode validation because public hooks
-run after context construction. Image cancellation propagation is implemented.
-[Implementation and delivery status](reports/worker-harness-recovery-repair-20261019.md)
-track the required checks and remaining live gates.
-An additional owned-PG timing baseline restores 1/8/32/128 short-text children
-to the model-permit boundary in 0.157/0.534/1.758/8.341 seconds. Pre-granted
-authority and synchronous PG publication exclude full failover/Kafka latency;
-native binding work extends beyond the two cloud metadata queries per child.
+input identity and unsafe Tool non-replay. The review itself changed no runtime.
+The approved [repair plan](reports/worker-harness-recovery-repair-plan-20261019.md)
+and [ADR-0262](adr/0262-native-recovery-read-lifetimes.md) are deployed as
+`native-recovery-8c00826a`, schema 191. [Delivery evidence](reports/worker-harness-recovery-repair-20261019.md)
+records source/artifact, native/browser, actual child Worker recovery, Control Plane
+outage, large-image cold recall and full Cube acceptance. Physical cleanup and
+the original configuration/resource comparison pass.
 
-- [ ] WHR-01 / P2: bound native recovery PG acquisition and reads through existing
-      database facilities, including child/image metadata. Keep authority writes
-      separate and define transient bootstrap-failure handling through ordered
-      closure instead of adding timers that leave SQL or writers alive.
-- [ ] WHR-02 / P2: preserve read cancellation across Runner, Session host, Storage
-      and image hydration. Distinguish owner/read cancellation from native Stop
-      settlement; maintain acknowledged-commit and pending-input guarantees.
-- [ ] WHR-O1 / P3: batch exact active-child source/cursor reads. Current measured
-      metadata cost is 2/16/64 SQL statements for 1/8/32 active children; preserve
-      source identity, tenant/root scope and missing-state failure checks.
-- [ ] WHR-O2 / P3, discussion: one native context assembly fetches the same image
-      twice. Evaluate bounded within-operation reuse against the existing
-      per-decode validation policy before implementation. Do not add an unbounded
-      cross-Run cache or alter Pi's Storage contract; accepting the cost remains
-      valid if a sound public-API reuse boundary is unavailable.
-- [ ] WHR-O3 / P3: add an appropriate indexed path for native queued/placed
-      Submission scans. Follow-up measurement finds accumulated completed
-      receipts being filtered: 10,000 target completed receipts yield 11,012
-      examined record rows across the coexisting fixtures for one queued result.
-      A disposable comparison index reduces this to one. Verify named/generic
-      query plans and retain native receipts; constant SQL count alone does not
-      prove recovery work is independent of historical metadata.
+- [x] WHR-01 / P2: separate bounded native-read pool and existing ordered
+      closure/same-Run recovery for typed transient failures; use the existing
+      PG queue timestamp for a five-second delay.
+- [x] WHR-02 / P2: carry owner/read cancellation through startup, SQL and image
+      hydration while preserving native Stop settlement and acknowledged commits.
+- [x] WHR-O1 / P3: reattach the original child Submission/configuration without
+      prompt lookup or another configuration commit. Batch 257 active child views
+      in three metadata queries; preserve identity and the family effects barrier.
+- [x] WHR-O2 / P3: evaluate the public operation boundary. Pi's hooks start after
+      context construction, so retain per-decode validation/reuse. Image-read
+      cancellation is fixed; no global cache or private Pi patch is introduced.
+- [x] WHR-O3 / P3: index pending Submission status/ID for custom and actual named
+      generic plans. The 10,000-completed/two-queued fixture examines at most two
+      matching record rows, retaining all completed receipts.
+
+The final bounded short-text family sample prepares 1/8/32/128 children in
+0.154/0.393/1.298/5.934 seconds. Pre-granted authority and synchronous PG projection
+exclude failure detection, writer closure, Kafka and real model/VM response;
+these are not full-failover or fleet-capacity timings.
 
 ## Kafka seal → Projector → PG closure review
 
@@ -83,7 +73,8 @@ The owner-approved [ADR-0261](adr/0261-session-seal-projection-boundaries.md)
 is deployed as `seal-projection-0de1fe7f`. [Delivery evidence](reports/seal-projection-repair-20261019.md)
 records passing source/artifact and native/browser/child/outage/full-Cube gates,
 retained failures and confirmed physical cleanup with original configuration
-preserved. Full live acceptance still awaits image cold recall.
+preserved. That release's image cold recall remained unaccepted; the current
+recovery release passes the unchanged gate.
 
 - [x] SPJ-01 / P2: bound projection acquisition and complete checkout, including
       cold reads and COMMIT waits, through the existing PG adapter.
@@ -95,13 +86,13 @@ preserved. Full live acceptance still awaits image cold recall.
 - [x] SPJ-O2 / P3: reuse the transaction-local locked Run. The measured recovery
       path uses 19 business statements plus one budget statement, with one Run
       read instead of two; CAS/history/release ordering remain.
-- [ ] Complete the unchanged large-image cold-Worker recall gate. Three stored
-      images (6/6/25 MB) and exact native references are verified; repeated model
-      response-header waits exhaust the fixture deadline before cold recall.
-      Investigate request transfer/response timing before changing budgets; do
-      not count stored attachments as completed visual-recovery acceptance.
+- [x] Complete the unchanged large-image cold-Worker recall gate on
+      `native-recovery-8c00826a`. After the owner's proxy-node switch, 6/6/25 MB
+      images are correctly recalled by a different Worker without Tools. Payloads
+      and deadlines are unchanged; preceding response-header failures remain
+      recorded separately and their underlying network cause is not established.
 
-Replacement Worker/Harness bootstrap remains the next focused walkthrough hop.
+Replacement Worker/Harness bootstrap is reviewed and repaired above.
 
 ## PG Outbox → Kafka Session seal review
 
@@ -336,7 +327,7 @@ The subsequent discussion and approved repair are recorded in
 [ADR-0252](adr/0252-tool-receipt-and-ephemeral-preview.md). Source implementation
 adds incremental display/reset semantics and terminal-aware previews. The
 [delivery record](reports/tool-receipt-preview-repair-20261016.md) tracks source
-verification and the pending matched deployment/live acceptance. All source/native/
+verification and matched deployment/live acceptance. All source/native/
 fault gates and eleven artifact scans pass. The owner-authorized Windows rollback
 and reboot restored KVM; actual VM creation and all four new templates pass.
 `tool-preview-325f0ebd` is deployed with Ready application workloads. Continuous

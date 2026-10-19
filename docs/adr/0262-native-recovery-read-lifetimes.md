@@ -1,6 +1,6 @@
 # ADR-0262: Native recovery read lifetimes and child reattachment
 
-Status: accepted for implementation, 2026-10-19.
+Status: deployed as `native-recovery-8c00826a`, schema 191, 2026-10-19.
 
 The owner approved the [Worker/Harness recovery repairs](../reports/worker-harness-recovery-repair-plan-20261019.md).
 The [review and isolated timing](../reports/worker-harness-recovery-review-20261019.md)
@@ -62,7 +62,7 @@ and validation rather than introducing a cache with a guessed lifetime.
 ## Adopt versus build
 
 Use the already-pinned node-postgres Pool/client, Kysely dialect and native Pi
-Context rather than a second connection pool, scheduler or storage framework.
+Context rather than a new pool implementation, scheduler or storage framework.
 The maintained database adapter already owns connection eviction, read/checkout
 budgets and named plans; cancellation belongs at that existing boundary. Existing
 Session closure, PG Run queue and native task recovery provide continuation. The
@@ -87,5 +87,8 @@ non-replay. Record actual prepared query plans and 1/8/32/128-child measurements
 
 Required source/artifact checks precede a drained matched application/schema
 release and relevant live acceptance. Preserve accounts/configuration/credentials,
-confirm physical fixture cleanup and keep the previous large-image acceptance
-limitation explicit. No deployment is claimed by this decision document.
+confirm physical fixture cleanup and retain failed upstream samples separately.
+[Delivery evidence](../reports/worker-harness-recovery-repair-20261019.md) records
+the deployed source, checks and bounded measurements. Native/child recovery,
+Control Plane outage, unchanged large-image cold recall and full Cube acceptance
+pass; physical cleanup and original configuration preservation are confirmed.

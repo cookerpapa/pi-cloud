@@ -53,7 +53,7 @@ additional messages go to the running Pi native queue and are confirmed after
 its Kafka-backed Storage commit. An unavailable Worker leaves the browser draft
 unconfirmed. [ADR-0238](docs/adr/0238-native-input-queue-and-run-record.md) is deployed;
 the [Worker claim cleanup](docs/adr/0242-worker-claim-schema-cleanup.md) is retained
-in the current schema 190 runtime.
+in the current schema 191 runtime.
 
 The intake path shares its locked Session and request lookup between
 routing and Run creation: eight ordinary business SQL statements, two on an
@@ -76,17 +76,23 @@ enter native persistence before validated Tool execution (ADR-0230).
 The [Session work migration](docs/adr/0247-session-work-and-tool-dispatch.md) is
 deployed as `session-work-6ac697f9`: one root Run with native child Conversations,
 unified Tool replies, one Session closure and Worker direct Kafka publication.
-The current matched release, `seal-projection-0de1fe7f`, uses schema 190, execution-topic
+The current matched release, `native-recovery-8c00826a`, uses schema 191, execution-topic
 v17, boot reply v3, guest/Tool Worker protocol 7, completion startup protocol 3,
-preview schema 2 and Cube management protocol 7. Host KVM is restored; all four
-templates and application workloads are ready. Native/browser/child/outage/full-Cube
-acceptance passes; large-image cold recall remains unaccepted.
+preview schema 2 and Cube management protocol 7. Host KVM is available; templates
+and application workloads are ready. The [Worker/Harness recovery repair](docs/reports/worker-harness-recovery-repair-20261019.md)
+bounds and cancels native data reads, indexes pending Submissions and reattaches
+existing children without another prompt/configuration commit. Native/browser,
+child Worker recovery, Control Plane outage, 6/6/25 MB image cold recall and full
+Cube acceptance pass. Owned resources are cleaned and original configuration is
+preserved. Image hydration retains per-decode validation because Pi's public hooks
+start after context reads.
 The [Session seal projection repair](docs/reports/seal-projection-repair-20261019.md)
 bounds projection PG I/O, retires closed-writer live views after lost commit
 returns, limits checkpoint proof reads to pending ranges and reuses the locked
 Run. The measured recovery transaction uses 19 business SQL statements instead
 of 20. Source/artifact and native/browser/child/outage/full-Cube gates pass.
-Large-image cold recall remains unaccepted after model response-header timeouts.
+That release's large-image cold recall remained unaccepted after model
+response-header timeouts; the current recovery release passes the unchanged gate.
 Owned fixtures are physically cleaned and original configuration is preserved.
 Failed upstream samples remain recorded separately. Docker's persistent build
 proxy now uses the active port.

@@ -15,12 +15,15 @@ WHR-O3: pending Submission status scans filter accumulated completed receipts;
 the earlier Entry-only cost sample did not cover this path. The
 [proposed repair plan](reports/worker-harness-recovery-repair-plan-20261019.md)
 specifies execution/read boundaries, failure handling and acceptance. Runtime
-repairs are implemented under [ADR-0262](adr/0262-native-recovery-read-lifetimes.md),
-with full verification and rollout in progress. The image feasibility check
-retains per-decode validation because existing public hooks start too late.
-The serving release is unchanged until matched deployment succeeds.
+repairs are deployed under [ADR-0262](adr/0262-native-recovery-read-lifetimes.md)
+as `native-recovery-8c00826a`, schema 191. [Delivery](reports/worker-harness-recovery-repair-20261019.md)
+records source/artifact, native/browser, child Worker recovery, Control Plane
+outage, large-image cold recall and full Cube acceptance, with physical cleanup
+and original configuration preserved. The image feasibility check retains
+per-decode validation because existing public hooks start too late.
 Next main walkthrough: the native
-model request/response branch, including outstanding large-image header waits.
+model request/response branch. Earlier upstream timeouts remain recorded, although
+the unchanged large-image acceptance now passes after the proxy-node switch.
 
 ## Kafka seal → Projector → PG closure review
 
@@ -36,9 +39,10 @@ SPJ-01/02 and SPJ-O1/O2 are deployed as `seal-projection-0de1fe7f`.
 [Delivery evidence](reports/seal-projection-repair-20261019.md) records passing
 source/artifact and native/browser/child/outage/full-Cube gates, retained failures
 and confirmed physical/configuration cleanup. Large-image cold recall remains
-unaccepted after model response-header timeouts. Schema/protocol remain unchanged.
-The next walkthrough is the replacement Worker's native Harness opening/
-continuation, then the deferred model request/response branch.
+unaccepted in that release after model response-header timeouts; the current
+recovery release passes the unchanged gate. That slice retained schema/protocol.
+The replacement Worker's native Harness opening/continuation is repaired above;
+the next walkthrough is the deferred model request/response branch.
 
 ## PG Outbox → Kafka Session seal review
 

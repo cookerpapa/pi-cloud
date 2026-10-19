@@ -1,7 +1,10 @@
 # Worker / Harness recovery repair plan
 
-Status: approved and implemented in source, 2026-10-19. Full verification and
-matched rollout are in progress under [ADR-0262](../adr/0262-native-recovery-read-lifetimes.md).
+Status: approved and deployed as `native-recovery-8c00826a`, 2026-10-19, under
+[ADR-0262](../adr/0262-native-recovery-read-lifetimes.md). [Delivery evidence](worker-harness-recovery-repair-20261019.md)
+records passing source/artifact, recovery/image/full-Cube and cleanup
+verification. The conditional image cache was not added because
+public hooks do not encompass context reads; per-decode validation is retained.
 Baseline: `2483e425`. Findings and evidence:
 [recovery review](worker-harness-recovery-review-20261019.md).
 

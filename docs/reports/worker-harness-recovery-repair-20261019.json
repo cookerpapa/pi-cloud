@@ -1,0 +1,535 @@
+{
+  "sourceRevision": "8c00826a09a1d1141c52a1bd38ef4561bf23aef8",
+  "release": "native-recovery-8c00826a",
+  "schema": 191,
+  "implemented": true,
+  "deployed": true,
+  "liveAcceptance": "passed",
+  "checkedAt": "2026-10-19T09:31:37.170Z",
+  "verification": {
+    "workspacePassed": 1955,
+    "workspaceSkipped": 11,
+    "workspaceCount": 22,
+    "acceptanceHelpersPassed": 79,
+    "rf3Passed": 9,
+    "faultCasesPassed": 341,
+    "faultGroups": 99,
+    "dependencyAuditPassed": true,
+    "artifactScans": 11,
+    "packagingFixVerifiedByAttachmentTests": 22,
+    "scope": "Workspace run plus targeted corrected/new-case reruns; post-check packaging change narrows import to the same database client module."
+  },
+  "nativeReads": {
+    "separateConnections": 4,
+    "operationBudgetMs": 30000,
+    "pgClientConnectionCheckMs": 1000,
+    "ownerAndReadCancellation": true,
+    "userStopRetainsNativeSettlementReads": true,
+    "acknowledgedCommitAdoptionPreserved": true,
+    "transientFailure": "native_storage_unavailable",
+    "existingRunReadmissionDelayMs": 5000
+  },
+  "submissions": {
+    "index": "pi_durable_submission_status",
+    "completedFixtureReceipts": 10000,
+    "queuedFixtureReceipts": 2,
+    "maximumExaminedRecordRows": 2,
+    "namedGenericPlansVerified": true,
+    "completedReceiptsRetained": true
+  },
+  "childReattachment": {
+    "metadataBatchSize": 128,
+    "fixtureChildren": 257,
+    "metadataQueries": 3,
+    "originalSubmissionPreserved": true,
+    "noInitialPromptRead": true,
+    "noRepeatedConfigurationCommit": true,
+    "familyEffectsBarrierPreserved": true
+  },
+  "imageReuse": {
+    "policy": "existing per-decode validation/reuse",
+    "publicHooksEncompassContextRead": false,
+    "globalCacheAdded": false,
+    "cancellationPropagated": true
+  },
+  "boundedFamilyTiming": {
+    "at": "2026-10-19T08:07:54.904Z",
+    "revision": "416e3cdf1979d328a88d99ce102db47086ead654",
+    "scope": "Already-admitted cold native/Runner restore on owned loopback PG; short fresh text children, no attachments; synchronous PG projection substitutes Kafka publication",
+    "excluded": [
+      "failure detection",
+      "old-writer fencing/closure latency",
+      "Pod startup",
+      "Kafka/RF3 acknowledgement",
+      "real model response",
+      "VM creation"
+    ],
+    "cases": [
+      {
+        "activeChildren": 1,
+        "nativeHeadOpenMs": 11.652,
+        "allChildBindingsMs": 123.653,
+        "firstModelPermitRequestMs": 153.821,
+        "allChildModelPermitRequestsMs": 153.823,
+        "sqlStatementsExcludingLeaseObserver": 62,
+        "nativeCommitsProjectedSynchronously": 5,
+        "seedCommits": 22,
+        "seedSerializedBytes": 14296,
+        "heapDeltaBytes": 5853752,
+        "rssDeltaBytes": 2359296
+      },
+      {
+        "activeChildren": 8,
+        "nativeHeadOpenMs": 3.048,
+        "allChildBindingsMs": 392.324,
+        "firstModelPermitRequestMs": 392.441,
+        "allChildModelPermitRequestsMs": 392.518,
+        "sqlStatementsExcludingLeaseObserver": 237,
+        "nativeCommitsProjectedSynchronously": 12,
+        "seedCommits": 72,
+        "seedSerializedBytes": 60293,
+        "heapDeltaBytes": -11663984,
+        "rssDeltaBytes": 12845056
+      },
+      {
+        "activeChildren": 32,
+        "nativeHeadOpenMs": 3.147,
+        "allChildBindingsMs": 1297.664,
+        "firstModelPermitRequestMs": 1297.917,
+        "allChildModelPermitRequestsMs": 1298.22,
+        "sqlStatementsExcludingLeaseObserver": 916,
+        "nativeCommitsProjectedSynchronously": 36,
+        "seedCommits": 240,
+        "seedSerializedBytes": 218885,
+        "heapDeltaBytes": 28317824,
+        "rssDeltaBytes": 0
+      },
+      {
+        "activeChildren": 128,
+        "nativeHeadOpenMs": 2.556,
+        "allChildBindingsMs": 5932.241,
+        "firstModelPermitRequestMs": 5932.726,
+        "allChildModelPermitRequestsMs": 5933.865,
+        "sqlStatementsExcludingLeaseObserver": 3735,
+        "nativeCommitsProjectedSynchronously": 132,
+        "seedCommits": 912,
+        "seedSerializedBytes": 856705,
+        "heapDeltaBytes": 8793080,
+        "rssDeltaBytes": 16306176
+      }
+    ],
+    "mode": "prepare",
+    "probeSha256": "8def85a61053ca33c2d4276224f2617c136f12f82066b18cf94159d4acebceb3",
+    "completed": true
+  },
+  "stopDuringFamilyRestore": {
+    "at": "2026-10-19T08:08:54.223Z",
+    "revision": "416e3cdf1979d328a88d99ce102db47086ead654",
+    "scope": "Already-admitted cold native/Runner restore on owned loopback PG; short fresh text children, no attachments; synchronous PG projection substitutes Kafka publication",
+    "excluded": [
+      "failure detection",
+      "old-writer fencing/closure latency",
+      "Pod startup",
+      "Kafka/RF3 acknowledgement",
+      "real model response",
+      "VM creation"
+    ],
+    "cases": [
+      {
+        "activeChildren": 8,
+        "cancelledAfterFirstChildBinding": true,
+        "modelPermitRequests": 0,
+        "vmActivations": 0,
+        "queuedInputStatus": "unanswered",
+        "queuedInputCount": 8,
+        "stopSettledMs": 733.846
+      }
+    ],
+    "mode": "stop-during-restore",
+    "probeSha256": "8def85a61053ca33c2d4276224f2617c136f12f82066b18cf94159d4acebceb3",
+    "completed": true
+  },
+  "childWorkerRecovery": {
+    "accepted": true,
+    "cleanupConfirmed": true,
+    "scriptSha256": "3f06df356155a931acbf7ebe258dd0de619c8d7f3bdce61a515ef54c01507fbd",
+    "sameRun": true,
+    "sameChild": true,
+    "sameReceipt": true,
+    "configurationUnchanged": true,
+    "oneAppend": true
+  },
+  "nativeInput": {
+    "accepted": true,
+    "cleanupConfirmed": true,
+    "cases": [
+      {
+        "scenario": "consume",
+        "oneRun": true,
+        "stableRetryIdentity": true,
+        "editedNativeInput": true,
+        "noRetainedEditBodies": true
+      },
+      {
+        "scenario": "stop",
+        "oneRun": true,
+        "stableRetryIdentity": true,
+        "editedNativeInput": true,
+        "noRetainedEditBodies": true
+      },
+      {
+        "scenario": "recover",
+        "oneRun": true,
+        "stableRetryIdentity": true,
+        "editedNativeInput": true,
+        "noRetainedEditBodies": true,
+        "observationRecovery": {
+          "previousGeneration": 1,
+          "recoveredGeneration": 2,
+          "activityRevision": 2,
+          "confirmedExecutionRevision": 5,
+          "snapshots": 1,
+          "sameSseConnection": true,
+          "browserStoreApplied": true
+        }
+      },
+      {
+        "scenario": "stream_stop",
+        "oneRun": true,
+        "noPgStreamingBodies": true,
+        "preservedNativePartial": true,
+        "observedCharacters": 127
+      },
+      {
+        "scenario": "stream_both_crash",
+        "oneRun": true,
+        "noPgStreamingBodies": true,
+        "preservedNativePartial": true,
+        "observedCharacters": 144
+      }
+    ]
+  },
+  "browserRead": {
+    "accepted": true,
+    "cleanupConfirmed": true,
+    "draftRemovalPreservesQueuedImage": true,
+    "readPathAliases": true,
+    "returnedInput": {
+      "nativeInputInOriginalRun": true,
+      "realBrowser": true,
+      "requests": 2,
+      "distinctKeys": 2,
+      "distinctAdmissions": 2,
+      "originalRunCancelled": true,
+      "newRunCompleted": true,
+      "sameUploadId": true,
+      "directVision": true,
+      "activeRunCancelled": true
+    },
+    "read": [
+      {
+        "kind": "wide-ascii.txt",
+        "sourceBytes": 120017,
+        "contentBytes": 51200,
+        "utf8Valid": true,
+        "canonicalDiagnostic": true
+      },
+      {
+        "kind": "wide-unicode.txt",
+        "sourceBytes": 140031,
+        "contentBytes": 51196,
+        "utf8Valid": true,
+        "canonicalDiagnostic": true
+      }
+    ]
+  },
+  "childControlHandoff": {
+    "accepted": true,
+    "nativeChildOnly": true,
+    "compatibleRollingReplacement": true,
+    "artifactsUnchanged": true,
+    "replacementMs": 13788,
+    "completionAfterReadyMs": 39347,
+    "controlToolReplyRecovered": true,
+    "executionCount": 1,
+    "workerUnchanged": true,
+    "physicalCleanupConfirmed": true
+  },
+  "controlPlaneOutage": {
+    "accepted": true,
+    "actualUnavailableMs": 63896,
+    "restoreToReadyMs": 9166,
+    "idleAndBusyWorkersPreserved": true,
+    "sameWorkerAndLease": true,
+    "samePhysicalVm": true,
+    "eachBashExecutedOnce": true,
+    "cleanupConfirmed": true
+  },
+  "imageAcceptance": {
+    "accepted": true,
+    "scriptSha256": "846abb4671acb8c5f1eb3a899bc22ef7dce87ce15d36e3a3141278284a4ccd87",
+    "model": "gpt-6-luna",
+    "images": [
+      {
+        "byteLength": 6294598,
+        "recordBytes": 596,
+        "detail": "high"
+      },
+      {
+        "byteLength": 6294221,
+        "recordBytes": 596,
+        "detail": "high"
+      },
+      {
+        "byteLength": 25130191,
+        "recordBytes": 597,
+        "detail": "original"
+      }
+    ],
+    "changedWorker": true,
+    "changedBoot": true,
+    "visionRecallCorrect": true,
+    "recallToolCalls": 0,
+    "cleanupConfirmed": true
+  },
+  "fullCube": {
+    "accepted": true,
+    "checkedAt": "2026-10-19T09:29:33.203Z",
+    "sourceRevision": "8c00826a09a1d1141c52a1bd38ef4561bf23aef8",
+    "cleanup": {
+      "retainedRunningWorkspaceMicroVmCount": 0,
+      "foreignSessionMicroVmCount": 0,
+      "conversationDeletionReleasedWorkspaceRuntime": true,
+      "confirmedAllocationClosureVerified": true,
+      "deletedVmAdmissionRejected": true
+    },
+    "report": "cubesandbox-production-acceptance-latest.json"
+  },
+  "retainedFailureEvidence": {
+    "firstArtifactCandidate": "slim Cubelet runtime import used database root; fixed to database/client before rollout",
+    "firstChildFixture": "Workspace readiness polling failed before fault injection; cleaned and corrected",
+    "firstImageAttempt": {
+      "accepted": false,
+      "completedImageRuns": 2,
+      "storedImageBytes": [6294447, 6294299, 25129440],
+      "reachedColdRecall": false,
+      "runDeadlineMs": 600000,
+      "recentEmptyUpstreamWaitMs": [120704.989, 120271.603, 120273.011],
+      "physicalCleanupConfirmed": true
+    },
+    "nodeSwitch": "Owner switched v2rayN; unchanged retry passed without payload/deadline changes. Earlier network root cause remains unestablished."
+  },
+  "artifacts": {
+    "imageVersion": "native-recovery-8c00826a",
+    "revision": "8c00826a09a1d1141c52a1bd38ef4561bf23aef8",
+    "dirty": false,
+    "maximumFixableHighCritical": 0,
+    "images": [
+      {
+        "reference": "pi-cloud/control-plane:native-recovery-8c00826a",
+        "imageId": "sha256:62405ddf66fd83d263b7e8e2ac6f45685c8fe62055984655e8a9d8db06ab0c62",
+        "policyVulnerabilities": {
+          "HIGH": {
+            "total": 56,
+            "fixable": 0
+          },
+          "CRITICAL": {
+            "total": 1,
+            "fixable": 0
+          }
+        }
+      },
+      {
+        "reference": "pi-cloud/supervisor-host:native-recovery-8c00826a",
+        "imageId": "sha256:d44bbd5b07176abcadf540a83952752842f345faaabd677dfd2cc24abe85201b",
+        "policyVulnerabilities": {
+          "HIGH": {
+            "total": 56,
+            "fixable": 0
+          },
+          "CRITICAL": {
+            "total": 1,
+            "fixable": 0
+          }
+        }
+      },
+      {
+        "reference": "pi-cloud/workspace-volume-gateway:native-recovery-8c00826a",
+        "imageId": "sha256:4ffc0ea89552689bcd534fd5b63b1876abc227bf2889c68f167902cd0f20e58c",
+        "policyVulnerabilities": {
+          "HIGH": {
+            "total": 67,
+            "fixable": 0
+          },
+          "CRITICAL": {
+            "total": 1,
+            "fixable": 0
+          }
+        }
+      },
+      {
+        "reference": "pi-cloud/web-ui:native-recovery-8c00826a",
+        "imageId": "sha256:6a254d1770e57a3e1eb49a35cfd084f36763d93a6e0965727ccb59dd7ab1f06e",
+        "policyVulnerabilities": {
+          "HIGH": {
+            "total": 0,
+            "fixable": 0
+          },
+          "CRITICAL": {
+            "total": 0,
+            "fixable": 0
+          }
+        }
+      },
+      {
+        "reference": "pi-cloud/provider-egress-relay:native-recovery-8c00826a",
+        "imageId": "sha256:ae794e4605dbe46dc7338b049843d1e08a957a66318cb6df23ed4e0852849390",
+        "policyVulnerabilities": {
+          "HIGH": {
+            "total": 56,
+            "fixable": 0
+          },
+          "CRITICAL": {
+            "total": 1,
+            "fixable": 0
+          }
+        }
+      },
+      {
+        "reference": "pi-cloud/ssh-gateway:native-recovery-8c00826a",
+        "imageId": "sha256:98a47a945c46d240510576d3157b2869f71268027fca6807873d7e8fc58b66e3",
+        "policyVulnerabilities": {
+          "HIGH": {
+            "total": 56,
+            "fixable": 0
+          },
+          "CRITICAL": {
+            "total": 1,
+            "fixable": 0
+          }
+        }
+      },
+      {
+        "reference": "pi-cloud/cli-proxy-api:native-recovery-8c00826a",
+        "imageId": "sha256:44f8bceeb4fed47769bcfe0d073e469c64b59638585a3c950cf5a2e4289dfdff",
+        "policyVulnerabilities": {
+          "HIGH": {
+            "total": 58,
+            "fixable": 0
+          },
+          "CRITICAL": {
+            "total": 1,
+            "fixable": 0
+          }
+        }
+      },
+      {
+        "reference": "pi-cloud/cube-api:native-recovery-8c00826a",
+        "imageId": "sha256:08ba44d56f30b98bf5f46046bc583cc55a2464578eae9b7a239839d3f91377d5",
+        "policyVulnerabilities": {
+          "HIGH": {
+            "total": 0,
+            "fixable": 0
+          },
+          "CRITICAL": {
+            "total": 0,
+            "fixable": 0
+          }
+        }
+      },
+      {
+        "reference": "pi-cloud/cube-master:native-recovery-8c00826a",
+        "imageId": "sha256:921d00e9c249a431511b48d4e2d6a8726df0c76f080eeca2a92ff7ab76fe5bbf",
+        "policyVulnerabilities": {
+          "HIGH": {
+            "total": 0,
+            "fixable": 0
+          },
+          "CRITICAL": {
+            "total": 0,
+            "fixable": 0
+          }
+        }
+      },
+      {
+        "reference": "pi-cloud/cubelet:native-recovery-8c00826a",
+        "imageId": "sha256:9dbe17779c0819d96f2af8d3c6317fef576a13084bde0dedb348cd5942c4128c",
+        "policyVulnerabilities": {
+          "HIGH": {
+            "total": 0,
+            "fixable": 0
+          },
+          "CRITICAL": {
+            "total": 0,
+            "fixable": 0
+          }
+        }
+      },
+      {
+        "reference": "localhost:5000/pi-cloud/cubesandbox-tool:5d775367299e1cfc7877a2bf2544f857f4690f08",
+        "imageId": "sha256:49b703d8cc91ef3c21fcb4df670ab2f71ddb8e91b5e7bc46930df870739a7503",
+        "policyVulnerabilities": {
+          "HIGH": {
+            "total": 0,
+            "fixable": 0
+          },
+          "CRITICAL": {
+            "total": 0,
+            "fixable": 0
+          }
+        }
+      }
+    ]
+  },
+  "cleanup": {
+    "physicalAbsenceConfirmed": true,
+    "originalConfigurationFingerprintsMatched": true,
+    "configurationCounts": {
+      "tenants": 32,
+      "users": 32,
+      "tenant_api_credentials": 32,
+      "user_password_credentials": 5,
+      "model_profiles": 35,
+      "credential_bindings": 35,
+      "source_control_credentials": 0
+    },
+    "active": {
+      "runs": 0,
+      "writers": 0,
+      "bindings": 0,
+      "runtimes": 0,
+      "machines": 0,
+      "terminals": 0,
+      "controls": 0
+    },
+    "business": {
+      "projects": 0,
+      "workspaces": 0,
+      "sessions": 0,
+      "runs": 0,
+      "images": 0
+    },
+    "native": {
+      "volumes": 0,
+      "nodeReferences": 0,
+      "holds": 0,
+      "openAllocations": 0
+    },
+    "finalScopedImageObjectsRemoved": 6,
+    "podsReady": true,
+    "readyPodCount": 28,
+    "freeGiB": 395,
+    "failedCandidateLocalTagsRemoved": 3,
+    "completedJobPodCount": 1
+  },
+  "httpAccess": {
+    "at": "2026-10-19T09:29:45.463860+00:00",
+    "wslLocalhost8080": 200,
+    "windowsLocalhost8080": 200
+  },
+  "limits": [
+    "Short fresh text family timing with pre-granted ownership and synchronous PG projection substitutes Kafka; not full failover or fleet capacity.",
+    "Repeated image hydration is retained without a suitable public operation boundary.",
+    "Single-host deployment does not provide physical-node HA."
+  ]
+}

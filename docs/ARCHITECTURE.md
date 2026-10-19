@@ -1,7 +1,7 @@
 # Architecture
 
-[ADR-0262](adr/0262-native-recovery-read-lifetimes.md) is implemented in source,
-pending full checks and matched rollout. Worker native data reads use a separate
+[ADR-0262](adr/0262-native-recovery-read-lifetimes.md) is deployed as
+`native-recovery-8c00826a`. Worker native data reads use a separate
 four-connection direct-PG pool with 30-second per-operation bounds. Native read
 Context/owner cancellation reaches SQL and attachment reads, while User Stop
 retains abort/queue settlement and acknowledged commits are still adopted.
@@ -13,8 +13,7 @@ cloud view/cursor reads and no initial-prompt lookup or redundant configuration
 commit. The private execution envelope accepts `{input:{kind:"resume"}}` only
 for existing child views; root PG admission still uses prompt input. The family
 effect barrier remains. Image hydration keeps per-decode validation because
-pinned public hooks do not encompass context reads. Serving status below remains
-the preceding release until matched deployment completes.
+pinned public hooks do not encompass context reads.
 
 PiCloud is a private/self-hosted multi-tenant Coding Agent. Pi Durable 1.0.0 owns the Harness,
 native tasks, model context, input placement, Tool selection and Compaction. PiCloud owns cloud intake confirmation,
@@ -28,14 +27,19 @@ ADR-0253's bounded UNKNOWN continuation, ADR-0254's Worker reply repair,
 ADR-0255's native result/metadata boundaries, ADR-0256's publication/completion repair
 and ADR-0257's browser observation/buffer repair, ADR-0258/0259's bounded lease/
 expiry maintenance, ADR-0260's publication/reader retirement repair and
-ADR-0261's bounded projection and writer-view cleanup
-(schema 190 / topic v17 / boot reply v3 / guest protocol 7, adapter startup 3).
-The [current delivery record](reports/seal-projection-repair-20261019.md) records
-the October 19 `seal-projection-0de1fe7f` deployment. Projection uses bounded
+ADR-0261's bounded projection/writer-view cleanup and ADR-0262's native recovery reads
+(schema 191 / topic v17 / boot reply v3 / guest protocol 7, adapter startup 3).
+The [current delivery record](reports/worker-harness-recovery-repair-20261019.md)
+records the October 19 `native-recovery-8c00826a` deployment. Source/artifact,
+native/browser, child Worker recovery, Control Plane outage and large-image cold
+recall/full-Cube gates pass. Physical cleanup and original configuration
+preservation are confirmed; bounded family timing is not a full-failover SLA.
+The [preceding projection repair](reports/seal-projection-repair-20261019.md)
+deployed `seal-projection-0de1fe7f`. Projection uses bounded
 direct-PG I/O, confirmed closure clears the exact old writer's live view, latest
 hash proofs use pending replay ranges, and recovery reuses its locked Run.
-Source/artifact and native/browser/child/outage/full-Cube gates pass. Large-image
-cold recall remains unaccepted after model response-header timeouts. Physical
+Source/artifact and native/browser/child/outage/full-Cube gates passed. Its large-image
+cold recall remained unaccepted after model response-header timeouts. Physical
 cleanup and original configuration preservation are confirmed; failures remain explicit.
 The [preceding publication repair](reports/seal-publication-repair-20261019.md)
 deployed `seal-publication-8d9e7bc2`. Publication/binding metadata
@@ -132,10 +136,10 @@ generation/object guards. Latest-hash proof reads start at each existing replay
 reference; recovery reuses its transaction-local locked Run. No storage authority
 or protocol changes. [Delivery](reports/seal-projection-repair-20261019.md) is deployed
 as `seal-projection-0de1fe7f`; source/artifact and native/browser/child/outage/full-Cube
-gates pass, while large-image cold recall remains unaccepted. The separate
-[Worker recovery review](reports/worker-harness-recovery-review-20261019.md) records
-remaining ordinary-pool read bounds and cancellation gaps during native cold open;
-Projector and lease-pool budgets do not cover those data reads.
+gates passed; its large-image limitation is resolved by the current unchanged gate.
+The [Worker recovery repair](reports/worker-harness-recovery-repair-20261019.md)
+adds a separate bounded, cancellable read pool for native cold open and image
+metadata. Projector and lease-pool budgets remain separate from those data reads.
 Under [ADR-0260](adr/0260-session-seal-publication-lifetimes.md), control publication
 uses a separate four-connection direct-PG pool with five-second acquisition and
 checkout budgets for Outbox/authority/binding metadata. Reader retirement joins
@@ -523,7 +527,7 @@ retry or rejected-result retention. Unknown ACK and post-ACK adoption errors
 still interrupt the writer. Normal completion replay returns its exact persisted
 terminal/coverage, and the completion transaction reuses its locked Run state
 with checked, updated versions. [Delivery status](reports/session-publication-completion-repair-20261018.md)
-records the implementation and pending matched/live verification.
+records the implementation, matched deployment and passing live verification.
 
 Hot event and Worker-envelope schemas compile once per server process. Browser
 bundles select the same schemas' non-code-generating checker through package

@@ -10,15 +10,16 @@ paths: completed receipts can increase filtering work despite a constant SQL cou
 The [proposed repair plan](reports/worker-harness-recovery-repair-plan-20261019.md)
 records bounded/cancellable reads, existing closure-based retry, status indexes,
 native child reattachment and conditional scoped image reuse.
-[ADR-0262](adr/0262-native-recovery-read-lifetimes.md) now implements the read,
-status-index and child reattachment repairs in source; full verification and
-matched deployment are in progress. The image check retains per-decode validation
-because Pi's public hooks run after context has already been read.
+[ADR-0262](adr/0262-native-recovery-read-lifetimes.md) deploys the read,
+status-index and child reattachment repairs as `native-recovery-8c00826a`, schema 191.
+The image check retains per-decode validation because Pi's public hooks run after
+context has already been read.
 [Implementation and verification](reports/worker-harness-recovery-repair-20261019.md)
-track source checks separately from the pending matched release and live gates.
-The architecture still uses one Session owner and Pi's native scheduler. Runtime
-deployment is unchanged; the next main walkthrough is the model branch.
-The prior large-image cold-recall gate remains unaccepted.
+record source/artifact, native/browser, actual child Worker recovery, Control Plane
+outage, unchanged 6/6/25 MB image cold recall and full Cube acceptance. Physical
+cleanup and original configuration preservation are confirmed. The architecture
+still uses one Session owner and Pi's native scheduler; the next main walkthrough
+is the model branch.
 
 The [October 19 Kafka seal → Projector → PG review](reports/seal-projection-review-20261019.md)
 checks exact handoff checkpoints, atomic closure/release, duplicate seals and
@@ -29,11 +30,12 @@ Run read. The review itself changed no runtime.
 The owner-approved [ADR-0261 repair](adr/0261-session-seal-projection-boundaries.md)
 is deployed as `seal-projection-0de1fe7f`; [verification and delivery](reports/seal-projection-repair-20261019.md)
 record 1,937 workspace tests, nine RF3 cases, 323 fault cases and eleven artifact
-scans. Native/browser/child/outage/full-Cube gates and physical cleanup pass;
-large-image cold recall remains unaccepted after model response-header timeouts.
+scans. Native/browser/child/outage/full-Cube gates and physical cleanup pass.
+That release's large-image cold recall remained unaccepted after model
+response-header timeouts; the current release passes the unchanged gate.
 Original configuration is preserved. Initial fixture/artifact and
 upstream failures are retained separately. Replacement Worker/Harness bootstrap
-remains the next focused walkthrough hop.
+is reviewed and repaired above.
 
 The [October 19 Outbox → Kafka seal review](reports/seal-publication-review-20261019.md)
 checks persisted requests, retries, PG authority reads, producer takeover and

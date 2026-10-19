@@ -3,8 +3,10 @@
 [ADR-0262](0262-native-recovery-read-lifetimes.md) records the approved native
 recovery repair: bounded/cancellable Worker reads, same-Run continuation through
 ordered closure, indexed pending Submissions and native child reattachment.
-Source checks pass; artifact preparation and matched acceptance remain. The serving release
-remains unchanged. Image reuse requires a proven public operation boundary.
+It is deployed as `native-recovery-8c00826a`, schema 191. [Delivery](../reports/worker-harness-recovery-repair-20261019.md)
+records passing source/artifact, native/browser, child Worker recovery, Control Plane
+outage, large-image cold recall and full-Cube/cleanup verification.
+Public hooks do not encompass context reads, so image reuse stays within one decode.
 
 [ADR-0261](0261-session-seal-projection-boundaries.md) records the approved closure
 projection repair: bounded PG I/O, writer-owned disposable live views, bounded
@@ -12,7 +14,8 @@ checkpoint proof lookup and transaction-local Run reuse. It is deployed as
 `seal-projection-0de1fe7f`; [verification/delivery](../reports/seal-projection-repair-20261019.md)
 record passing source/artifact and native/browser/child/outage/full-Cube gates,
 retained failures and confirmed physical/configuration cleanup. Large-image cold
-recall remains unaccepted after model response-header timeouts. Current authorities
+recall remained unaccepted in that release after model response-header timeouts;
+the current recovery release passes the unchanged gate. Current authorities
 and protocols remain.
 
 [ADR-0260](0260-session-seal-publication-lifetimes.md) records the owner-approved
