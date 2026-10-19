@@ -7,6 +7,9 @@ six cost samples pass. It records unbounded Worker data reads, dropped read
 cancellation, per-child metadata round trips and repeated image hydration.
 The subsequent historical-growth check adds missing Submission-status access
 paths: completed receipts can increase filtering work despite a constant SQL count.
+The [proposed repair plan](reports/worker-harness-recovery-repair-plan-20261019.md)
+records bounded/cancellable reads, existing closure-based retry, status indexes,
+native child reattachment and conditional scoped image reuse.
 The architecture still uses one Session owner and Pi's native scheduler. Runtime
 code/deployment are unchanged; the next main walkthrough is the model branch.
 The prior large-image cold-recall gate remains unaccepted.

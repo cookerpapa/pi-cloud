@@ -35,6 +35,10 @@ The [October 19 review](reports/worker-harness-recovery-review-20261019.md) at
 cases and six cost samples. Indexed latest-head/context reads remain independent
 of old history in the fixture; native family continuation/Stop preserve ownership,
 input identity and unsafe Tool non-replay. Runtime and deployment are unchanged.
+The [proposed repair plan](reports/worker-harness-recovery-repair-plan-20261019.md)
+combines bounded/cancellable read lifetimes, typed recovery failures, status
+indexing and native child reattachment. Image reuse depends on proving a suitable
+public-API operation boundary. No runtime implementation has started.
 
 - [ ] WHR-01 / P2: bound native recovery PG acquisition and reads through existing
       database facilities, including child/image metadata. Keep authority writes
