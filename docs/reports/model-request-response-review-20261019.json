@@ -1,0 +1,216 @@
+{
+  "reviewedRevision": "3625350fe9c1f7434ac2bb94341e1923ebff8867",
+  "servingRelease": "native-recovery-8c00826a",
+  "runtimeChanged": false,
+  "piAiVersion": "1.0.0",
+  "piDurableVersion": "1.0.0",
+  "cliProxyRevision": "48549e65b86d17648029190331807b89e7fd65f4",
+  "verification": {
+    "existingNodePassed": 92,
+    "existingNodeFiles": 16,
+    "existingNodeFailed": 0,
+    "characterizations": 12,
+    "cliProxyTopLevelTestsPassed": 12,
+    "cliProxyTestAndSubtestPassEvents": 30,
+    "cliProxyPackagesPassed": 3,
+    "localGoToolchain": "1.26.0"
+  },
+  "findings": [
+    {
+      "id": "MR-01",
+      "priority": "P2",
+      "summary": "Gateway error normalization loses native transient retry classification",
+      "fixed": false
+    },
+    {
+      "id": "MR-02",
+      "priority": "P2",
+      "summary": "Early text phase ordinal differs from native content index",
+      "fixed": false
+    },
+    {
+      "id": "MR-03",
+      "priority": "P2",
+      "summary": "Completed hosted search items absent from interrupted model results",
+      "fixed": false
+    },
+    {
+      "id": "MR-04",
+      "priority": "P3",
+      "summary": "Successful Codex terminal before HTTP EOF is counted as model failure",
+      "fixed": false
+    }
+  ],
+  "discussion": {
+    "id": "MR-D1",
+    "summary": "Existing 600-second Runner deadline includes progressing work; coordinate capability and shutdown policy before enabling long work",
+    "configuration": {
+      "at": "2026-10-19T11:50:47.187Z",
+      "providerRetryRounds": 0,
+      "streamingBootstrapRetries": 0,
+      "streamingKeepaliveSeconds": 0,
+      "codexBootstrapBuffering": false,
+      "providerOverrideRetryValues": [],
+      "worker": [
+        {
+          "name": "pi-worker",
+          "image": "pi-cloud/supervisor-host:native-recovery-8c00826a",
+          "settings": [
+            {
+              "name": "PI_CLOUD_WORKER_MODEL_CONCURRENCY",
+              "value": "unlimited"
+            },
+            {
+              "name": "PI_CLOUD_SESSION_MODEL_CONCURRENCY",
+              "value": "unlimited"
+            },
+            {
+              "name": "PI_CLOUD_MODEL_GATEWAY_CAPABILITY_TTL_MS",
+              "value": "900000"
+            },
+            {
+              "name": "PI_CLOUD_MODEL_GATEWAY_UPSTREAM_CONNECT_TIMEOUT_MS",
+              "value": "120000"
+            },
+            {
+              "name": "PI_CLOUD_MODEL_GATEWAY_UPSTREAM_IDLE_TIMEOUT_MS",
+              "value": "300000"
+            },
+            {
+              "name": "PI_CLOUD_PI_MODEL_REQUEST_TIMEOUT_MS",
+              "value": "150000"
+            },
+            {
+              "name": "PI_CLOUD_PI_TURN_TIMEOUT_MS",
+              "value": "600000"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "probe": {
+    "at": "2026-10-19T11:55:55.635Z",
+    "sourceRevision": "3625350fe9c1f7434ac2bb94341e1923ebff8867",
+    "scriptSha256": "192a86437a7f0b7ad42e6140818808bd805163522dbd8982b68278ba06685bc8",
+    "scope": "Loopback Model Gateway + pinned Pi 1.0 public Models adapters; synthetic upstream streams",
+    "cases": [
+      {
+        "name": "native-harness-retry-after-header-reset",
+        "provider": "openai-codex",
+        "upstreamSends": 1,
+        "nativeSubmissionStatus": "unanswered",
+        "assistantStopReasons": ["error"]
+      },
+      {
+        "name": "native-harness-retry-after-header-reset",
+        "provider": "deepseek",
+        "upstreamSends": 2,
+        "nativeSubmissionStatus": "done",
+        "assistantStopReasons": ["error", "stop"]
+      },
+      {
+        "name": "early-phase-after-reasoning",
+        "sourcePhase": "commentary",
+        "partialContentIndex": 1,
+        "observedPhaseOrdinal": 0,
+        "presentedPhase": null,
+        "finalSignatureHasPhase": true
+      },
+      {
+        "name": "header-reset",
+        "provider": "openai-codex",
+        "stopReason": "error",
+        "errorMessage": "Provider Gateway request failed",
+        "nativeRetryable": false,
+        "retainedCharacters": 0,
+        "modelPermitReleases": 1,
+        "upstreamSends": 1,
+        "publicProviderHookFrames": 0
+      },
+      {
+        "name": "stream-reset",
+        "provider": "openai-codex",
+        "stopReason": "error",
+        "errorMessage": "Codex error: Provider Gateway request failed",
+        "nativeRetryable": false,
+        "retainedCharacters": 16,
+        "modelPermitReleases": 1,
+        "upstreamSends": 1,
+        "publicProviderHookFrames": 4
+      },
+      {
+        "name": "header-reset",
+        "provider": "deepseek",
+        "stopReason": "error",
+        "errorMessage": "deepseek API error (502): {\"code\":\"provider_gateway_unavailable\",\"message\":\"Provider Gateway request failed\"}",
+        "nativeRetryable": true,
+        "retainedCharacters": 0,
+        "modelPermitReleases": 1,
+        "upstreamSends": 1,
+        "publicProviderHookFrames": 0
+      },
+      {
+        "name": "stream-reset",
+        "provider": "deepseek",
+        "stopReason": "error",
+        "errorMessage": "Error Code provider_gateway_unavailable: Provider Gateway request failed",
+        "nativeRetryable": false,
+        "retainedCharacters": 16,
+        "modelPermitReleases": 1,
+        "upstreamSends": 1,
+        "publicProviderHookFrames": 4
+      },
+      {
+        "name": "completed-hosted-search",
+        "outcome": "success",
+        "stopReason": "stop",
+        "observedSearchCompleted": true,
+        "publicHookSawCompletedSearch": true,
+        "finalHostedItems": 1,
+        "transcriptCallbacks": 1
+      },
+      {
+        "name": "completed-hosted-search",
+        "outcome": "network-error",
+        "stopReason": "error",
+        "observedSearchCompleted": true,
+        "publicHookSawCompletedSearch": true,
+        "finalHostedItems": 0,
+        "transcriptCallbacks": 0
+      },
+      {
+        "name": "completed-hosted-search",
+        "outcome": "user-stop",
+        "stopReason": "aborted",
+        "observedSearchCompleted": true,
+        "publicHookSawCompletedSearch": true,
+        "finalHostedItems": 0,
+        "transcriptCallbacks": 0
+      },
+      {
+        "name": "successful-terminal-before-http-eof",
+        "nativeStopReason": "stop",
+        "gatewayMetric": "failed",
+        "upstreamCancelled": true
+      },
+      {
+        "name": "two-text-phases-after-reasoning",
+        "expected": ["commentary", "final_answer"],
+        "actual": ["final_answer", null]
+      }
+    ],
+    "completed": true
+  },
+  "publicProviderEventHookFeasible": true,
+  "fixtureCorrections": [
+    "Initial Harness extension omitted required registry.",
+    "Initial outcome assertion assumed native Entry pages were chronological; final fixture sorts by native Entry ID."
+  ],
+  "limits": [
+    "Loopback synthetic providers and native MemoryStorage for characterization; no production PG/Kafka writes or VM effects.",
+    "No paid/provider availability test; earlier TLS EOF and 120-second waits are not diagnosed.",
+    "Upstream selected source tests use Go 1.26.0; production image has separately pinned toolchain/dependency updates.",
+    "Native full-abort and cold-replay hosted-item repair remain to be implemented and verified."
+  ]
+}

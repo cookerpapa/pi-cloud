@@ -28,6 +28,37 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## Native model request / response review
+
+The [October 19 combined review](reports/model-request-response-review-20261019.md)
+at `3625350f` completes the remaining main-message walkthrough branch: public
+Models admission, local Gateway/CLIProxyAPI forwarding and native response
+settlement. Ninety-two existing Node cases, twelve new cross-layer
+characterizations and twelve CLIProxyAPI test functions pass (30 Go test/subtest
+events). The source investigation covers pinned Pi 1.0 and CLIProxyAPI `48549e65`.
+Runtime and deployment are unchanged; repairs below remain open.
+
+- [ ] MR-01 / P2: preserve native transient-error classification when Gateway
+      connection failures become HTTP or streaming errors. The Codex Harness
+      currently stops after a recoverable reset; DeepSeek loses retryability
+      after headers too. Keep Durable as the retry owner.
+- [ ] MR-02 / P2: align early phase identity with native content when reasoning,
+      local Tool slots and multiple message items precede streamed text.
+- [ ] MR-03 / P2: preserve completed hosted search items across later response
+      failure/Stop through native progress/settlement, with cold replay checks.
+      Keep incomplete local Tool calls out of history and retain native abort authority.
+- [ ] MR-04 / P3: separate transport disconnection/EOF from semantic model outcome;
+      normal Codex terminal completion can currently increment failed-model metrics.
+- [ ] MR-D1 / discussion: confirm the desired whole-Run duration policy. The
+      deployed 600-second Runner timer includes progressing model/Tool/input work,
+      distinct from the 120/150-second header and 300-second idle budgets. Long
+      work requires a coordinated capability/shutdown policy, not one timer edit.
+
+The pinned public `onProviderStreamEvent` hook can carry request-local phase,
+hosted-item and terminal semantics inside the trusted Models adapter, avoiding
+the Gateway's duplicate SSE parser and cross-layer state plumbing. This is a
+reviewed repair direction, not an implemented protocol change or a new authority.
+
 ## Replacement Worker → Pi Harness recovery review
 
 The [October 19 review](reports/worker-harness-recovery-review-20261019.md) at

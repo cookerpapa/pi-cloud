@@ -1,5 +1,15 @@
 # Documentation map
 
+The [October 19 combined model request/response review](reports/model-request-response-review-20261019.md)
+completes the remaining main-message branch. It compares pinned Pi and CLIProxyAPI
+with cloud Models admission, forwarding and streaming settlement. Ninety-two
+existing Node cases, twelve new characterizations and selected upstream tests
+cover four confirmed findings: lost retry classification, mismatched early phases,
+interrupted completed-search retention and misleading model-failure metrics.
+The existing ten-minute Runner policy is recorded separately for discussion.
+Runtime/deployment are unchanged; [reading progress](READING_PROGRESS.md) now
+distinguishes completed walkthrough coverage from outstanding repairs.
+
 The [October 19 replacement Worker → Pi Harness review](reports/worker-harness-recovery-review-20261019.md)
 checks native cold open, pending input, child rebinding, unsafe Tool non-replay and
 Stop during restoration. 110 existing tests, seven isolated behavior cases and
@@ -18,8 +28,8 @@ context has already been read.
 record source/artifact, native/browser, actual child Worker recovery, Control Plane
 outage, unchanged 6/6/25 MB image cold recall and full Cube acceptance. Physical
 cleanup and original configuration preservation are confirmed. The architecture
-still uses one Session owner and Pi's native scheduler; the next main walkthrough
-is the model branch.
+still uses one Session owner and Pi's native scheduler; the subsequent model-branch
+review is recorded above.
 
 The [October 19 Kafka seal → Projector → PG review](reports/seal-projection-review-20261019.md)
 checks exact handoff checkpoints, atomic closure/release, duplicate seals and
@@ -324,8 +334,8 @@ The report records the corrected model-egress endpoint and updated operator driv
 The [reading checkpoint](READING_PROGRESS.md) reconciles the full hop-by-hop
 walkthrough through ordered closure and replacement Worker/Harness recovery.
 Tool execution/replies, normal Run completion, browser delivery and renewal are
-covered. The remaining main branch is model request/response, split into local
-request admission, upstream forwarding and response handling. The
+covered. The final model request/response branch is also reviewed, with its
+findings retained as separate repair work. The
 [claim-table review](reports/worker-claim-schema-review-20261010.md)
 preserves this ownership design and records two index-access issues, unused
 physical-Session metadata and Worker naming debt. The owner-approved repairs follow

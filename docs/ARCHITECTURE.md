@@ -1283,6 +1283,15 @@ use independent product authority; they are not Agent execution commands.
 
 ## Models, Subagents and integrations
 
+The [October 19 focused review](reports/model-request-response-review-20261019.md)
+records four current adapter defects without changing these authorities: Gateway
+error normalization can hide retryability, early text phases use inconsistent
+indexes, interrupted replies can omit completed hosted items, and a normal Codex
+terminal close can count as a failed model request. The public provider-event hook
+offers a way to consolidate response semantics at Models; that repair is pending.
+The deployed 600-second Runner deadline is a whole-invocation policy, separately
+documented from connection/idle timeouts and requiring a decision for long work.
+
 CLIProxyAPI owns upstream subscription/API credentials and account affinity.
 Workers see only scoped model-runtime access through their local Model Gateway.
 Revocation also aborts incomplete request uploads. After body validation, the

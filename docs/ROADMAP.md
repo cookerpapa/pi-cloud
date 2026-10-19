@@ -1,5 +1,21 @@
 # Implementation roadmap
 
+## Native model request / response review
+
+- [x] Trace Pi/public Models → local Model Gateway → CLIProxyAPI/provider and
+      streamed return through native settlement as one branch.
+- [x] Compare pinned native retry/parsing/abort behavior with cloud adapters;
+      verify 92 existing Node cases, 12 cross-layer characterizations and selected
+      CLIProxyAPI contracts. [Findings and evidence](reports/model-request-response-review-20261019.md).
+- [ ] Resolve MR-01–04: retry classification, early phase identity, completed
+      hosted-item retention and transport/model outcome separation.
+- [ ] Discuss MR-D1's existing whole-Run timeout before changing long-work behavior.
+
+The main-message walkthrough is complete. Runtime remains `native-recovery-8c00826a`;
+this review adds evidence and records repairs, not deployment changes. The public
+Pi provider-event hook offers a smaller response-semantics boundary. Optional
+Workspace/Subagent/upload/preview walkthroughs are independent future scope.
+
 ## Replacement Worker → Pi Harness recovery review
 
 - [x] Review native checkpoint opening, original Submission identity, current
@@ -21,8 +37,8 @@ records source/artifact, native/browser, child Worker recovery, Control Plane
 outage, large-image cold recall and full Cube acceptance, with physical cleanup
 and original configuration preserved. The image feasibility check retains
 per-decode validation because existing public hooks start too late.
-Next main walkthrough: the native
-model request/response branch. Earlier upstream timeouts remain recorded, although
+The subsequent native model request/response review is complete above.
+Earlier upstream timeouts remain recorded, although
 the unchanged large-image acceptance now passes after the proxy-node switch.
 
 ## Kafka seal → Projector → PG closure review
@@ -461,8 +477,8 @@ The [reading checkpoint](READING_PROGRESS.md) now covers PG input acceptance,
 Worker claim/Session ownership, native context, direct Kafka publication, Tool
 execution/replies, browser delivery and forced closure/replacement. The historical
 publication ingress is removed. The [claim-table review](reports/worker-claim-schema-review-20261010.md)
-repairs remain deployed under ADR-0242. The remaining main branch is model
-request/response; its first segment is native Pi → Worker-local Model Gateway.
+repairs remain deployed under ADR-0242. The model request/response review above
+completes the remaining main branch; its findings remain separate repair work.
 
 ## Architecture evidence and private-use readiness
 

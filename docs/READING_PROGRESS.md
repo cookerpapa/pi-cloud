@@ -6,11 +6,14 @@ The owner asked to reconcile the complete hop-by-hop conversation with the
 recorded reviews. The ordinary Tool execution loop, normal Run completion,
 browser delivery, Worker renewal and Control Plane expiry admission have been
 covered. The provider request branch was explicitly deferred during the October
-12–15 walkthrough and has not received the same complete focused treatment.
+12–15 walkthrough and now has the combined focused review recorded below.
 
-Current checkpoint: **native Pi → Worker-local Model Gateway**, the first segment
-of the remaining model request/response branch. Its ordinary request path has
-been traced for explanation; a focused failure/performance review is still pending.
+Current checkpoint: **the main-message walkthrough is complete**. The owner
+requested one combined review of native Pi → local Model Gateway → CLIProxyAPI/
+provider and the streamed return. The [focused review](reports/model-request-response-review-20261019.md)
+records four confirmed findings, the whole-Run timeout discussion and passing
+existing/characterization/upstream tests. Runtime is unchanged. Repair remains
+separate work; walkthrough completion does not claim the four defects are fixed.
 
 The preceding **replacement Worker → Pi Harness opening and continuation**
 [review](reports/worker-harness-recovery-review-20261019.md) and
@@ -63,6 +66,7 @@ or physical process-death evidence.
 | PG Outbox → control seal publisher → Kafka | Explained, reviewed and repaired | [seal publication](reports/seal-publication-repair-20261019.md) |
 | Kafka seal → Projector → PG checkpoint/closure/release | Explained, reviewed, repaired and deployed | [seal projection](reports/seal-projection-review-20261019.md) |
 | Replacement Worker → native Harness continuation | Explained, reviewed, repaired and deployed | [Worker recovery delivery](reports/worker-harness-recovery-repair-20261019.md) |
+| Native Models → local Gateway → CLIProxyAPI/provider → native response | Combined focused review complete; MR-01–04 repairs and MR-D1 discussion open | [Model branch review](reports/model-request-response-review-20261019.md) |
 
 These statuses distinguish walkthrough coverage from focused audit scope. Storage
 research does not establish a complete new audit of every native recovery branch,
@@ -70,12 +74,12 @@ and an end-to-end acceptance pass does not mean every internal hop has been
 independently reviewed. Old Worker → HTTP publication ingress descriptions are
 historical; the maintained path is direct Worker → Kafka under ADR-0247.
 
-## Remaining main walkthrough segments
+## Completed final model branch
 
-One main branch remains. For explanation, split it into three segments, rather
-than counting each reverse network hop as another independent review:
+The final branch was reviewed together in these three segments. There are no
+additional mandatory main-message hops queued after it:
 
-1. **Native Pi → Worker-local Model Gateway** (current segment). Native context,
+1. **Native Pi → Worker-local Model Gateway**. Native context,
    model settings and Tool definitions reach the public Models adapter. It checks
    current ownership/family readiness, obtains the local model permit and resolves
    the live model route. Pi's provider adapter sends HTTP to the local gateway.
@@ -89,14 +93,14 @@ than counting each reverse network hop as another independent review:
    model permits are released before native Tool/child scheduling. Completed native
    output then rejoins the already-reviewed Storage/Kafka/Projector path.
 
-Context/token estimation, Compaction and TLS diagnostics have been discussed
-separately; that discussion and passing live gates do not replace a focused
-review of this full branch.
+Context/token estimation, Compaction and TLS diagnostics had been discussed
+separately; the combined review now adds focused whole-branch evidence. Local
+characterizations do not establish the external TLS failure's root cause.
 
-Replacement Harness continuation now has its focused review above. After the
-remaining model branch, this main-message walkthrough has a bounded completion
-point, followed by actual use and evidence-driven follow-up. Findings remain
-separate repair work; reviewed does not mean every finding has been fixed.
+Replacement Harness continuation and this model branch complete the walkthrough.
+The next work is fixing the recorded findings and discussing the existing timeout
+policy, then actual use and evidence-driven follow-up. Reviewed does not mean
+every finding has been fixed.
 
 ## Related branches already discussed
 
