@@ -15,6 +15,10 @@ reads skip old history; current input, native children, unsafe Tool handling and
 Stop retain the inspected ownership semantics. Worker data-read bounds and
 cancellation need repair; child metadata batching and image hydration are recorded
 optimization items. Runtime/deployment are unchanged by this review.
+The historical-growth follow-up adds WHR-O3: queued/placed Submission lookups
+currently filter completed receipt rows. Constant query count in the Entry-only
+context sample does not establish constant total recovery cost. Many active
+children also require restoring their individual state/context and bindings.
 Next: native Pi → Worker-local Model Gateway → CLIProxyAPI → provider and response.
 The earlier large-image cold-recall acceptance is still incomplete and belongs
 in that transport investigation; duplicate object reads are not its proven cause.

@@ -10,7 +10,9 @@
       dispatching a model or VM effect.
 
 WHR-01/02 identify read lifetime/cancellation defects; WHR-O1/02 record child SQL
-batching and image hydration opportunities. Runtime repairs remain pending; the
+batching and image hydration opportunities. The historical-growth follow-up adds
+WHR-O3: pending Submission status scans filter accumulated completed receipts;
+the earlier Entry-only cost sample did not cover this path. Runtime repairs remain pending; the
 image reuse boundary needs explicit evaluation against the existing per-decode
 policy. The serving release is unchanged. Next main walkthrough: the native
 model request/response branch, including outstanding large-image header waits.

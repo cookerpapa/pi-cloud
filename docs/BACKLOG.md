@@ -51,6 +51,13 @@ input identity and unsafe Tool non-replay. Runtime and deployment are unchanged.
       per-decode validation policy before implementation. Do not add an unbounded
       cross-Run cache or alter Pi's Storage contract; accepting the cost remains
       valid if a sound public-API reuse boundary is unavailable.
+- [ ] WHR-O3 / P3: add an appropriate indexed path for native queued/placed
+      Submission scans. Follow-up measurement finds accumulated completed
+      receipts being filtered: 10,000 target completed receipts yield 11,012
+      examined record rows across the coexisting fixtures for one queued result.
+      A disposable comparison index reduces this to one. Verify named/generic
+      query plans and retain native receipts; constant SQL count alone does not
+      prove recovery work is independent of historical metadata.
 
 ## Kafka seal → Projector → PG closure review
 

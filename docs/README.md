@@ -5,6 +5,8 @@ checks native cold open, pending input, child rebinding, unsafe Tool non-replay 
 Stop during restoration. 110 existing tests, seven isolated behavior cases and
 six cost samples pass. It records unbounded Worker data reads, dropped read
 cancellation, per-child metadata round trips and repeated image hydration.
+The subsequent historical-growth check adds missing Submission-status access
+paths: completed receipts can increase filtering work despite a constant SQL count.
 The architecture still uses one Session owner and Pi's native scheduler. Runtime
 code/deployment are unchanged; the next main walkthrough is the model branch.
 The prior large-image cold-recall gate remains unaccepted.

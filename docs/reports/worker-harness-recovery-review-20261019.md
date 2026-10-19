@@ -4,6 +4,11 @@ Reviewed on 2026-10-19 at `e131a2ea0407db928abc6219a5267b84ab2d95d1`.
 Serving source/release remain `0de1fe7f` / `seal-projection-0de1fe7f`, schema 190.
 [Structured evidence](worker-harness-recovery-review-20261019.json).
 
+Follow-up on historical growth: the owner's question prompted the additional
+Submission-status measurement at `c3aed8ed`. WHR-O3 below is a new confirmed
+scaling gap. The earlier fixed-query-count context sample covered old Entries,
+not accumulated completed Submission receipts or complete family recovery.
+
 Scope: after ordered old-writer closure and new PG admission, opening native
 Storage/Harness, restoring context and pending input, rebinding live child
 Conversations, and continuing or stopping native tasks. This does not repeat the
@@ -171,6 +176,51 @@ Storage records, patching native private fields or adding an unbounded cross-Run
 image cache would be inappropriate. Accepting the current cost is also valid until
 the intended optimization has a sound lifecycle and measured benefit.
 
+### WHR-O3 — P3: status filtering can scan accumulated completed Submissions
+
+Native scheduler opening/reconciliation and `Harness.inspect()` query `queued`
+and `placed` Submission records for the physical Session. Current indexes cover
+Task status and Submission request identity, but not Submission status. Having
+one current value per Submission removes edit-version history; it does not remove
+the completed receipt itself. Finished child Conversations can therefore leave
+many matching-kind rows which status queries still need to filter.
+
+The new probe publishes synthetic receipts through the real Storage/projection
+adapter and measures the actual status SELECT with `EXPLAIN ANALYZE`. It retains
+one queued receipt and varies completed receipts:
+
+| Completed receipts in target Session | Rows examined for queued lookup | Returned queued receipts |
+| --- | --- | --- |
+| 0 | 4 | 1 |
+| 1,000 | 1,008 | 1 |
+| 10,000 | 11,012 | 1 |
+
+The three scopes coexist in the disposable database, so these observed sequential
+scans include earlier fixture rows too; the count is not exactly target receipts
+plus one. `placed`, which returns zero rows, examines the same row counts. The
+10,000-receipt samples take 2.501 / 1.764 ms locally. This establishes avoidable
+database work as metadata accumulates, not a present production timeout or a
+prediction of whole-Session recovery duration.
+
+A comparison index on `(tenant_id, session_id, fields->>'status', id)` for
+`kind='submission'`, created **only in that disposable database**, yields one
+examined row for queued and zero for placed in all three cases. No production
+index or migration is applied. A repair should validate the actual named-query
+and generic-plan behavior as well as the index shape before choosing its final
+SQL/schema form.
+
+Locations: `packages/database/src/migrations/177_durable_native_storage.ts:28`,
+`packages/pi-session-postgres/src/durable/published-storage.ts:434`,
+pinned Pi `dist/harness/scheduler.js:389` and `dist/harness/harness.js:159`.
+
+Direction: provide a matching indexed access path for current pending-state
+queries, retaining complete native Submission identity/state. Measure examined
+rows and physical I/O, not merely query count. This needs no second scheduler,
+new checkpoint authority or automatic deletion of native receipts. Many live
+children still require proportional task/context restoration even after this
+historical filtering overhead is removed; child binding currently completes for
+the whole family before effects are admitted.
+
 ## Verification and limits
 
 - **110 existing tests in nine files pass**, including real-PG Storage conformance,
@@ -195,6 +245,10 @@ the intended optimization has a sound lifecycle and measured benefit.
   real model-compaction latency or fleet-capacity measurements.
 - The three child-loader measurements isolate WHR-O1. No arbitrary shell
   exactly-once or whole-system recovery claim follows from these tests.
+- The historical-growth follow-up adds six baseline status plans and six
+  disposable-index comparison plans. It uses synthetic current receipts with
+  shared Entry references to isolate metadata growth; it does not run a large
+  live Subagent family or extend the earlier two-entry context timing claim.
 
 [Reproduction commands and fixture boundaries](../../scripts/experiments/review-worker-harness-recovery-20261019/README.md).
 The earlier release section in `ARCHITECTURE.md` incorrectly still said ADR-0261

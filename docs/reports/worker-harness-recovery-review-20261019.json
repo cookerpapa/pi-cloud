@@ -191,7 +191,206 @@
       ],
       "probeSha256": "21bd0b15f654be63e26dd4c3d1870e08694a0f6325ea24488b8afdc5e464c2ca",
       "completed": true
-    }
+    },
+    "submissionStatusGrowth": {
+      "at": "2026-10-19T05:30:58.056Z",
+      "revision": "c3aed8edb888bdf9bd26ce4f844334f8f2363a2a",
+      "scope": "Actual native Submission status query on consistent synthetic current receipts in owned PG; not an end-to-end recovery benchmark",
+      "before": [
+        {
+          "completedSubmissions": 0,
+          "status": "queued",
+          "returned": 1,
+          "recordRowsExamined": 4,
+          "queryMs": 0.077,
+          "nodes": [
+            {
+              "type": "Seq Scan",
+              "rows": 1,
+              "removed": 3,
+              "loops": 1
+            }
+          ]
+        },
+        {
+          "completedSubmissions": 0,
+          "status": "placed",
+          "returned": 0,
+          "recordRowsExamined": 4,
+          "queryMs": 0.063,
+          "nodes": [
+            {
+              "type": "Seq Scan",
+              "rows": 0,
+              "removed": 4,
+              "loops": 1
+            }
+          ]
+        },
+        {
+          "completedSubmissions": 1000,
+          "status": "queued",
+          "returned": 1,
+          "recordRowsExamined": 1008,
+          "queryMs": 0.354,
+          "nodes": [
+            {
+              "type": "Seq Scan",
+              "rows": 1,
+              "removed": 1007,
+              "loops": 1
+            }
+          ]
+        },
+        {
+          "completedSubmissions": 1000,
+          "status": "placed",
+          "returned": 0,
+          "recordRowsExamined": 1008,
+          "queryMs": 0.278,
+          "nodes": [
+            {
+              "type": "Seq Scan",
+              "rows": 0,
+              "removed": 1008,
+              "loops": 1
+            }
+          ]
+        },
+        {
+          "completedSubmissions": 10000,
+          "status": "queued",
+          "returned": 1,
+          "recordRowsExamined": 11012,
+          "queryMs": 2.501,
+          "nodes": [
+            {
+              "type": "Seq Scan",
+              "rows": 1,
+              "removed": 11011,
+              "loops": 1
+            }
+          ]
+        },
+        {
+          "completedSubmissions": 10000,
+          "status": "placed",
+          "returned": 0,
+          "recordRowsExamined": 11012,
+          "queryMs": 1.764,
+          "nodes": [
+            {
+              "type": "Seq Scan",
+              "rows": 0,
+              "removed": 11012,
+              "loops": 1
+            }
+          ]
+        }
+      ],
+      "comparison": [
+        {
+          "completedSubmissions": 0,
+          "status": "queued",
+          "returned": 1,
+          "recordRowsExamined": 1,
+          "queryMs": 0.144,
+          "nodes": [
+            {
+              "type": "Index Scan",
+              "index": "review_submission_status",
+              "rows": 1,
+              "removed": 0,
+              "loops": 1
+            }
+          ]
+        },
+        {
+          "completedSubmissions": 0,
+          "status": "placed",
+          "returned": 0,
+          "recordRowsExamined": 0,
+          "queryMs": 0.084,
+          "nodes": [
+            {
+              "type": "Index Scan",
+              "index": "review_submission_status",
+              "rows": 0,
+              "removed": 0,
+              "loops": 1
+            }
+          ]
+        },
+        {
+          "completedSubmissions": 1000,
+          "status": "queued",
+          "returned": 1,
+          "recordRowsExamined": 1,
+          "queryMs": 0.124,
+          "nodes": [
+            {
+              "type": "Index Scan",
+              "index": "review_submission_status",
+              "rows": 1,
+              "removed": 0,
+              "loops": 1
+            }
+          ]
+        },
+        {
+          "completedSubmissions": 1000,
+          "status": "placed",
+          "returned": 0,
+          "recordRowsExamined": 0,
+          "queryMs": 0.07,
+          "nodes": [
+            {
+              "type": "Index Scan",
+              "index": "review_submission_status",
+              "rows": 0,
+              "removed": 0,
+              "loops": 1
+            }
+          ]
+        },
+        {
+          "completedSubmissions": 10000,
+          "status": "queued",
+          "returned": 1,
+          "recordRowsExamined": 1,
+          "queryMs": 0.143,
+          "nodes": [
+            {
+              "type": "Index Scan",
+              "index": "review_submission_status",
+              "rows": 1,
+              "removed": 0,
+              "loops": 1
+            }
+          ]
+        },
+        {
+          "completedSubmissions": 10000,
+          "status": "placed",
+          "returned": 0,
+          "recordRowsExamined": 0,
+          "queryMs": 0.075,
+          "nodes": [
+            {
+              "type": "Index Scan",
+              "index": "review_submission_status",
+              "rows": 0,
+              "removed": 0,
+              "loops": 1
+            }
+          ]
+        }
+      ],
+      "probeSha256": "ba0eb5b151fccd6555cd3687297686b7abf90669d228aa5e74eba229c1f92769",
+      "comparisonIndexScope": "Disposable fixture only; no product migration or prepared/generic-plan acceptance",
+      "completed": true
+    },
+    "additionalStatusPlans": 12
   },
   "findings": [
     {
@@ -217,6 +416,12 @@
       "priority": "P3",
       "kind": "discussion",
       "title": "One native context read hydrates the same immutable image twice"
+    },
+    {
+      "id": "WHR-O3",
+      "priority": "P3",
+      "kind": "scaling",
+      "title": "Pending Submission status queries filter accumulated completed receipts without a matching status index"
     }
   ],
   "limitations": [
@@ -224,7 +429,8 @@
     "Child metadata costs isolate the real loader with a controlled active-view port; not full child boot cost",
     "Short deliberate waits establish cancellation/budget boundaries, not an observed infinite outage",
     "Single-image read uses a 1x1 PNG and proves duplicate object reads, not large-image model timeout causality",
-    "Prior live large-image cold recall remains unaccepted"
+    "Prior live large-image cold recall remains unaccepted",
+    "The original constant SQL-count context sample varied old Entries only; it did not cover completed Submission growth. Comparison index exists only in the disposable fixture."
   ],
   "cleanup": {
     "ownedPostgresContainersRemoved": true,

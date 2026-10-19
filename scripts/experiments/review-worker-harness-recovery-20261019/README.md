@@ -13,6 +13,7 @@ node --import tsx scripts/experiments/review-worker-harness-recovery-20261019/pr
 node --import tsx scripts/experiments/review-worker-harness-recovery-20261019/cost.mjs /tmp/pi-cloud-worker-recovery-cost.json
 node --import tsx scripts/experiments/review-worker-harness-recovery-20261019/family.mjs /tmp/pi-cloud-worker-recovery-family.json
 node --import tsx scripts/experiments/review-worker-harness-recovery-20261019/bootstrap-stop.mjs /tmp/pi-cloud-worker-recovery-stop.json
+node --import tsx scripts/experiments/review-worker-harness-recovery-20261019/submission-status-cost.mjs /tmp/pi-cloud-submission-status-cost.json
 ```
 
 - `probe.mjs` always starts its own disposable official-PG container. It briefly
@@ -35,6 +36,13 @@ node --import tsx scripts/experiments/review-worker-harness-recovery-20261019/bo
   root/child runner code are real; authority, active-view and publication ports
   are controlled. Model and VM entry are forbidden and counted. It tests wrapper
   cancellation, not distributed ownership or physical execution shutdown.
+- `submission-status-cost.mjs` checks the dimension missing from the Entry-only
+  sample: current completed Submission receipts. Three scopes coexist in owned
+  PG with 0/1,000/10,000 completed receipts and one queued receipt each. Real
+  projection writes maintain native indexes/current bodies; shared Entry references
+  isolate receipt metadata from transcript size. It captures actual status-query
+  plans before/after a disposable comparison index. That index is never deployed;
+  the experiment does not validate generic prepared plans or whole-family latency.
 
 Each output records the reviewed revision and probe hash. Temporary PG containers
 and the wrapper's directory are removed. The 1×1 image probe does not replace the
