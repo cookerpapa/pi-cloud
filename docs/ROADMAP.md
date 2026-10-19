@@ -457,13 +457,12 @@ cross-version/schema upgrades and records the observed text-update gap.
 the [matched deployment](reports/native-input-release-20261009.md) and real
 Luna/Cube/browser acceptance are also complete.
 
-The [reading checkpoint](READING_PROGRESS.md) covers PG input acceptance, queue
-notification, atomic Worker claim/Session-lease admission, native Harness/context
-opening, Storage publication through ingress, and Kafka commit/fencing.
-The focused
-[claim-table review](reports/worker-claim-schema-review-20261010.md) is complete;
-its approved repairs are implemented and deployed under ADR-0242. The next hop is
-Kafka consumption by Projector; provider requests remain a separate walkthrough.
+The [reading checkpoint](READING_PROGRESS.md) now covers PG input acceptance,
+Worker claim/Session ownership, native context, direct Kafka publication, Tool
+execution/replies, browser delivery and forced closure/replacement. The historical
+publication ingress is removed. The [claim-table review](reports/worker-claim-schema-review-20261010.md)
+repairs remain deployed under ADR-0242. The remaining main branch is model
+request/response; its first segment is native Pi → Worker-local Model Gateway.
 
 ## Architecture evidence and private-use readiness
 

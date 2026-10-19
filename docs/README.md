@@ -322,10 +322,10 @@ owned fixtures are removed and original accounts/configuration/credentials remai
 The report records the corrected model-egress endpoint and updated operator drivers.
 
 The [reading checkpoint](READING_PROGRESS.md) reconciles the full hop-by-hop
-walkthrough through Control Plane expiry admission. Tool execution/replies,
-normal Run completion, browser delivery and renewal are covered. The remaining
-main segments are ordered forced closure/replacement and the previously deferred
-Worker-local model request/response branch. The
+walkthrough through ordered closure and replacement Worker/Harness recovery.
+Tool execution/replies, normal Run completion, browser delivery and renewal are
+covered. The remaining main branch is model request/response, split into local
+request admission, upstream forwarding and response handling. The
 [claim-table review](reports/worker-claim-schema-review-20261010.md)
 preserves this ownership design and records two index-access issues, unused
 physical-Session metadata and Worker naming debt. The owner-approved repairs follow

@@ -1,6 +1,6 @@
 # Architecture reading checkpoint
 
-Updated: 2026-10-19; runtime is `seal-projection-0de1fe7f`.
+Updated: 2026-10-19; runtime is `native-recovery-8c00826a`, schema 191.
 
 The owner asked to reconcile the complete hop-by-hop conversation with the
 recorded reviews. The ordinary Tool execution loop, normal Run completion,
@@ -8,25 +8,27 @@ browser delivery, Worker renewal and Control Plane expiry admission have been
 covered. The provider request branch was explicitly deferred during the October
 12–15 walkthrough and has not received the same complete focused treatment.
 
-Current checkpoint: **replacement Worker → Pi Harness opening and continuation**.
-The [focused review](reports/worker-harness-recovery-review-20261019.md) is complete:
-110 existing tests, seven isolated behavior cases and six cost samples. Latest-head
-reads skip old history; current input, native children, unsafe Tool handling and
-Stop retain the inspected ownership semantics. Worker data-read bounds and
-cancellation need repair; child metadata batching and image hydration are recorded
-optimization items. Runtime/deployment are unchanged by this review.
-The historical-growth follow-up adds WHR-O3: queued/placed Submission lookups
-currently filter completed receipt rows. Constant query count in the Entry-only
-context sample does not establish constant total recovery cost. Many active
-children also require restoring their individual state/context and bindings.
-Next: native Pi → Worker-local Model Gateway → CLIProxyAPI → provider and response.
-The earlier large-image cold-recall acceptance is still incomplete and belongs
-in that transport investigation; duplicate object reads are not its proven cause.
+Current checkpoint: **native Pi → Worker-local Model Gateway**, the first segment
+of the remaining model request/response branch. Its ordinary request path has
+been traced for explanation; a focused failure/performance review is still pending.
+
+The preceding **replacement Worker → Pi Harness opening and continuation**
+[review](reports/worker-harness-recovery-review-20261019.md) and
+[repair/deployment](reports/worker-harness-recovery-repair-20261019.md) are complete.
+Worker native reads are bounded/cancellable, pending Submissions have an indexed
+status path, and children reattach their original Submission/configuration with
+batched metadata reads. Image hydration retains per-decode validation because
+the public hooks do not encompass context reads. Required source/artifact and
+native/browser/child/outage/full-Cube gates pass, with physical cleanup and original
+configuration preserved. The unchanged 6/6/25 MB cold-image recall gate also passes
+after the owner's proxy-node switch. Earlier response-header waits remain recorded;
+their underlying network cause is not established.
 
 The preceding **Kafka seal → Projector → PG checkpoint/closure/release**
 [review](reports/seal-projection-review-20261019.md) and
 [SPJ-01/02/O1/O2 implementation/deployment](reports/seal-projection-repair-20261019.md)
-are complete, with the image acceptance limitation above retained.
+are complete. Its previously incomplete image gate now passes on the current
+release; the earlier release's failed samples remain historical evidence.
 
 For the preceding **PG Outbox → Control Plane seal publisher → Kafka** hop,
 the [focused review](reports/seal-publication-review-20261019.md) and
@@ -60,7 +62,7 @@ or physical process-death evidence.
 | Control Plane → PG expiry/seal admission | Explained, reviewed and repaired | [expiry](reports/control-plane-expiry-review-20261018.md) |
 | PG Outbox → control seal publisher → Kafka | Explained, reviewed and repaired | [seal publication](reports/seal-publication-repair-20261019.md) |
 | Kafka seal → Projector → PG checkpoint/closure/release | Explained, reviewed, repaired and deployed | [seal projection](reports/seal-projection-review-20261019.md) |
-| Replacement Worker → native Harness continuation | Explained and reviewed; findings recorded, repair pending; current checkpoint | [Worker recovery](reports/worker-harness-recovery-review-20261019.md) |
+| Replacement Worker → native Harness continuation | Explained, reviewed, repaired and deployed | [Worker recovery delivery](reports/worker-harness-recovery-repair-20261019.md) |
 
 These statuses distinguish walkthrough coverage from focused audit scope. Storage
 research does not establish a complete new audit of every native recovery branch,
@@ -70,14 +72,26 @@ historical; the maintained path is direct Worker → Kafka under ADR-0247.
 
 ## Remaining main walkthrough segments
 
-1. **Native model request and response.** Pi → Worker-local Model Gateway →
-   CLIProxyAPI → provider, and the streamed response back to Pi. Cover request
-   construction/model settings, local model permits, credential boundaries,
-   response parsing, incomplete local Tool calls, cancellation and transport
-   failures. Context/token estimation, Compaction and TLS diagnostics have been
-   discussed separately; this full branch was deferred and still needs its
-   focused walkthrough/review. Include the incomplete large-image request/header
-   timing evidence without presupposing a proxy, provider or attachment cause.
+One main branch remains. For explanation, split it into three segments, rather
+than counting each reverse network hop as another independent review:
+
+1. **Native Pi → Worker-local Model Gateway** (current segment). Native context,
+   model settings and Tool definitions reach the public Models adapter. It checks
+   current ownership/family readiness, obtains the local model permit and resolves
+   the live model route. Pi's provider adapter sends HTTP to the local gateway.
+   The request body does not go through Projector/Cube dispatch; native generation
+   checkpoints and streamed progress still use the existing Storage/Kafka path.
+2. **Local Model Gateway → CLIProxyAPI → provider.** Trace forwarding, model and
+   request options, credentials, request-body transfer and response-header/idle
+   waits. Keep failed upstream samples separate from confirmed application defects.
+3. **Provider stream → gateways → native Pi.** Trace text and Tool-call parsing,
+   partial Tool-call suppression, completion/error/cancellation and usage. Confirm
+   model permits are released before native Tool/child scheduling. Completed native
+   output then rejoins the already-reviewed Storage/Kafka/Projector path.
+
+Context/token estimation, Compaction and TLS diagnostics have been discussed
+separately; that discussion and passing live gates do not replace a focused
+review of this full branch.
 
 Replacement Harness continuation now has its focused review above. After the
 remaining model branch, this main-message walkthrough has a bounded completion
