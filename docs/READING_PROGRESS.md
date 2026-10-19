@@ -16,7 +16,8 @@ existing/characterization/upstream tests. Runtime is unchanged. Repair remains
 separate work; walkthrough completion does not claim the four defects are fixed.
 The [proposed repair plan](reports/model-request-response-repair-plan-20261019.md)
 now defines the four-defect slice and native-abort acceptance boundary. The
-ten-minute lifetime policy remains separate; implementation has not started.
+owner has now chosen no overall runtime limit, and the plan includes the associated
+grant, shutdown and retention checks. Implementation has not started.
 
 The preceding **replacement Worker → Pi Harness opening and continuation**
 [review](reports/worker-harness-recovery-review-20261019.md) and
@@ -101,8 +102,8 @@ separately; the combined review now adds focused whole-branch evidence. Local
 characterizations do not establish the external TLS failure's root cause.
 
 Replacement Harness continuation and this model branch complete the walkthrough.
-The next work is fixing the recorded findings and discussing the existing timeout
-policy, then actual use and evidence-driven follow-up. Reviewed does not mean
+The next work is fixing the recorded findings and implementing the owner's
+no-total-duration policy, then actual use and evidence-driven follow-up. Reviewed does not mean
 every finding has been fixed.
 
 ## Related branches already discussed

@@ -1,12 +1,14 @@
 # Native model request / response repair plan
 
 Status: proposed, 2026-10-19; implementation has not started.
+Owner amendment: Agent work has no overall runtime limit. The lifetime changes
+below are part of the plan, not an optional whole-work budget or a larger timeout.
 Baseline: `4cb3440b`. Findings: [combined review](model-request-response-review-20261019.md).
 Serving runtime remains `native-recovery-8c00826a`, schema 191.
 
 ## Objective and authority boundaries
 
-Repair MR-01–04 as one response-adapter slice. Keep native Pi's scheduling,
+Repair MR-01–04 and the owner-decided MR-D1 lifetime policy. Keep native Pi's scheduling,
 retry, cancellation, Storage commits and Tool execution semantics. Continue to
 use one physical-Session writer and the existing Kafka/PG recovery path.
 
@@ -24,6 +26,80 @@ second parser in the Gateway, separate retry owner or compatibility path.
 
 Before production edits, record the accepted ownership/metadata/metric decisions
 in a current ADR. This plan proposes changes; it does not mark them implemented.
+
+## 0. Remove the whole-work duration limit — owner decision MR-D1
+
+A Run may continue while it has valid execution ownership, until native family
+completion, user Stop, an unrecoverable failure or an explicit ownership handoff.
+Progressing work must not be stopped merely because ten minutes, fifteen minutes
+or another total wall-clock duration has elapsed. Per-request/network/Tool and
+shutdown bounds remain independent operational controls.
+
+### Delete the total-duration mechanism
+
+Remove the Runner-wide timer and the duration selection in the remote Runner,
+not replace them with a very large number or a renewal timer. Remove the matching
+`turnTimeoutMs`/`PI_CLOUD_PI_TURN_TIMEOUT_MS` fields, Helm values/schema, runtime
+budget checks, command `maximumRunDurationMs` and its current PG policy column
+and constraint. Preserve unrelated policy fields and accounts/configuration.
+Use a new matched migration; old migrations remain historical evidence.
+Test-fixture deadlines stay owned by tests rather than reintroducing a runtime
+limit as a convenience. Keep actual Run-duration telemetry.
+
+### Tie model capabilities to existing execution ownership
+
+The current fixed model capability TTL would otherwise stop a long Run's next
+request. Replace that independent wall-clock validity with the active trusted
+Run/Conversation grant under its physical Session lease incarnation and Worker
+boot. The existing PG lease remains the authority; there is no second renewable
+lease, periodic token-refresh scheduler or per-model-request PG authorization.
+
+Bind revocation to native work closure, user cancellation, Session ownership loss
+and Worker retirement. Revoke immediately, including uploads/in-flight requests,
+before awaiting unrelated sandbox cleanup. A replacement Worker issues a new
+local grant; old boot/owner credentials never regain admission. Child capabilities
+retain their existing task scope under the shared family owner.
+
+Remove the fixed Gateway TTL and its coupling to total Turn duration. Keep only
+the token envelope required by the pinned Pi adapter, verified by both supported
+routes; do not depend on an artificial far-future expiry. Native/Worker-local
+execution-grant checks and active capability membership still apply.
+
+### Bound Worker retirement independently of Agent completion
+
+`waitUntilAssignmentsSettled()` cannot remain the only shutdown path once Runs
+may be unlimited. Stop new claims, give current work a bounded drain opportunity,
+then use existing ownership retirement/ordered Session closure and same-Run
+recovery for remaining families. This is Worker handoff, not user Stop: do not
+convert their native work or pending input into user-cancelled outcomes.
+
+Derive process shutdown grace from drain/handoff and resource cleanup budgets,
+not maximum Run duration. A missing closure ACK is never permission to issue a
+successor grant or erase ownership. If an outage prevents completion, preserve
+existing durable recovery intent and fencing behavior. Compatible Control Plane
+replacement still leaves healthy Workers running; changing this policy does not
+introduce model-boundary migration or another routing layer.
+
+Remove retention checks that assume every Run ends before a total deadline.
+Retain the current explicit Kafka cleanup and outstanding native replay-reference
+protection; the execution topic already disables independent age/byte expiry.
+Verify active recovery prefixes remain protected beyond the ordinary cleanup
+age. Add no periodic full-history checkpoint or second recovery head.
+
+### Acceptance
+
+- With controlled clocks, continue root and child model/Tool/input work beyond
+  the former ten-minute Run and fifteen-minute capability thresholds.
+- Stop, native completion, lease expiry/revocation and old Worker restoration
+  still revoke the exact grant and preserve writer/effect fencing.
+- On Worker shutdown, a nonterminating family reaches bounded retirement and
+  existing same-Run recovery; pending inputs remain and unsafe Tools are not
+  automatically replayed. Include unavailable PG/Kafka/Control Plane schedules.
+- Retention preserves an active native replay prefix beyond its normal age and
+  allows cleanup after settlement/confirmed handoff.
+- A real owned Luna acceptance Run crosses both former time thresholds and makes
+  another model request, then stops or completes and physically cleans up. This
+  is not an unmeasured multi-day reliability claim.
 
 ## 1. Establish the native progress and cancellation contract first
 
@@ -159,7 +235,8 @@ failure. Metrics/logging failure must not change model execution or native settl
 
 ## 5. Verification, cutover and documentation
 
-Implementation order: native contract tests → request-local semantic adapter and
+Implementation order: lifetime/native contract tests → remove total duration with
+owner-bound grants and bounded handoff → request-local semantic adapter and
 MR-02/03 → MR-01 → MR-04 → remove old plumbing → required repository checks →
 drained matched release → relevant live acceptance and owned-fixture cleanup.
 These are internal implementation stages of one slice, not parallel live paths.
@@ -168,11 +245,14 @@ Required verification includes the existing model/Runner suites, new full-Harnes
 and PG/Kafka cold-recovery cases, faulty-stream contracts and the repository's
 type/build/format/docs/native/fault/transport checks. Record protocol or native
 metadata changes in the ADR and matched release requirements before rollout.
-No new database table or separate checkpoint is planned. If an unavoidable stored
-format change is found, use a matched development cutover, not dual readers.
+No new database table or separate checkpoint is planned. Removing the obsolete
+duration policy column and private command fields requires a matched schema/
+application cutover. Any additional stored-format change must use that development
+cutover, not dual readers.
 
 Live acceptance uses `gpt-6-luna`: ordinary text/Tools, commentary/final phases,
-Stop and pending input, native child concurrency, Worker recovery, image cold
+Stop and pending input, work beyond the removed duration/TTL thresholds, native
+child concurrency, bounded Worker handoff, Worker recovery, image cold
 recall and relevant Cube/Control Plane recovery gates. Real hosted search is
 tested only on a route that actually supports it; deterministic interruption
 experiments provide the reproducible failure boundaries. Failed upstream samples
@@ -185,19 +265,6 @@ credentials, and confirm physical owned-fixture deletion before discarding their
 ownership records. Update architecture, reading progress, backlog and a release
 report with source and live acceptance separately identified.
 
-## Separate discussion: ten-minute Runner policy — MR-D1
-
-This four-defect repair keeps the current time budgets. The 600-second timer is
-a whole Runner invocation, including progressing output, Tools and follow-ups;
-it is not a network-idle timeout.
-
-If long-running Agent work is the intended next slice, the recommended direction
-is an explicit optional whole-work budget plus independently bounded network and
-Tool operations. Current Session ownership remains the execution authority.
-Model capability expiry/renewal and revocation must fit that ownership, while
-deployment draining/recovery must not require waiting for an unlimited Run to
-finish. Preserve ordered writer closure and same-Run recovery.
-
-That decision needs its own complete lifetime/recovery plan and tests. It does
-not follow from removing one `setTimeout`, increasing a TTL or removing all
-request-idle bounds; no such change is included implicitly in MR-01–04.
+The owner resolved MR-D1 after the original proposal: no overall Agent runtime
+limit. Section 0 supersedes the earlier optional-budget suggestion. The deployed
+runtime still has its existing limits until this plan is implemented and verified.

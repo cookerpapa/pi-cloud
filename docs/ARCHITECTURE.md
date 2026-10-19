@@ -1290,7 +1290,10 @@ indexes, interrupted replies can omit completed hosted items, and a normal Codex
 terminal close can count as a failed model request. The public provider-event hook
 offers a way to consolidate response semantics at Models; that repair is pending.
 The deployed 600-second Runner deadline is a whole-invocation policy, separately
-documented from connection/idle timeouts and requiring a decision for long work.
+documented from connection/idle timeouts. The owner has chosen to remove the
+overall runtime limit; the [amended plan](reports/model-request-response-repair-plan-20261019.md)
+also addresses model-grant lifetime and bounded Worker handoff. This is not yet
+implemented; current runtime behavior remains the documented finite policy.
 
 CLIProxyAPI owns upstream subscription/API credentials and account affinity.
 Workers see only scoped model-runtime access through their local Model Gateway.

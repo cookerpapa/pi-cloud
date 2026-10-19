@@ -9,12 +9,15 @@
       CLIProxyAPI contracts. [Findings and evidence](reports/model-request-response-review-20261019.md).
 - [ ] Resolve MR-01–04: retry classification, early phase identity, completed
       hosted-item retention and transport/model outcome separation.
-- [ ] Discuss MR-D1's existing whole-Run timeout before changing long-work behavior.
+- [x] Resolve MR-D1 with the owner: no overall Agent runtime limit.
+- [ ] Remove the duration mechanism with owner-bound model grants, bounded Worker
+      handoff and protected native replay; verify work past the former thresholds.
 
 The [proposed repair plan](reports/model-request-response-repair-plan-20261019.md)
 defines one response-adapter slice, its native-abort validation gate, deletion
-scope, required checks and matched live acceptance. It leaves the duration policy
-for a separate lifetime/recovery decision; implementation has not started.
+scope, required checks and matched live acceptance. The owner's lifetime amendment
+adds removal of the total-duration mechanism and its grant/shutdown dependencies;
+implementation has not started.
 
 The main-message walkthrough is complete. Runtime remains `native-recovery-8c00826a`;
 this review adds evidence and records repairs, not deployment changes. The public

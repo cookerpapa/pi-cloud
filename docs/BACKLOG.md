@@ -40,8 +40,9 @@ Runtime and deployment are unchanged; repairs below remain open.
 The [proposed repair plan](reports/model-request-response-repair-plan-20261019.md)
 combines MR-01–04 at the public Models boundary, starting with native progress/
 abort durability tests. It removes the replaced Gateway parser/plumbing after
-cutover and keeps MR-D1's lifetime policy as a separate decision. No repair is
-implemented or deployed by this plan.
+cutover. The owner subsequently decided MR-D1: no overall Agent runtime limit.
+The plan now includes removing duration fields, owner-bound model capabilities
+and bounded Worker handoff. No repair is implemented or deployed by this plan.
 
 - [ ] MR-01 / P2: preserve native transient-error classification when Gateway
       connection failures become HTTP or streaming errors. The Codex Harness
@@ -54,10 +55,11 @@ implemented or deployed by this plan.
       Keep incomplete local Tool calls out of history and retain native abort authority.
 - [ ] MR-04 / P3: separate transport disconnection/EOF from semantic model outcome;
       normal Codex terminal completion can currently increment failed-model metrics.
-- [ ] MR-D1 / discussion: confirm the desired whole-Run duration policy. The
-      deployed 600-second Runner timer includes progressing model/Tool/input work,
-      distinct from the 120/150-second header and 300-second idle budgets. Long
-      work requires a coordinated capability/shutdown policy, not one timer edit.
+- [x] MR-D1 decision: the owner wants no overall Agent runtime limit.
+- [ ] Implement MR-D1: delete the whole-Run timer and policy/protocol/configuration
+      fields; bind model capability validity to existing execution ownership;
+      bound Worker retirement independently of task completion. Preserve request/
+      Tool bounds, native replay references, ordered closure and same-Run recovery.
 
 The pinned public `onProviderStreamEvent` hook can carry request-local phase,
 hosted-item and terminal semantics inside the trusted Models adapter, avoiding

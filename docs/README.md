@@ -6,14 +6,16 @@ with cloud Models admission, forwarding and streaming settlement. Ninety-two
 existing Node cases, twelve new characterizations and selected upstream tests
 cover four confirmed findings: lost retry classification, mismatched early phases,
 interrupted completed-search retention and misleading model-failure metrics.
-The existing ten-minute Runner policy is recorded separately for discussion.
+The review also records the existing ten-minute Runner policy; the owner has
+since chosen its removal in the amended plan below.
 Runtime/deployment are unchanged; [reading progress](READING_PROGRESS.md) now
 distinguishes completed walkthrough coverage from outstanding repairs.
 The [repair plan](reports/model-request-response-repair-plan-20261019.md) proposes
 request-local response semantics at Pi's public Models boundary, native progress/
 abort preservation, retry classification and separate transport/model outcomes.
-It includes removal of the replaced path and acceptance criteria; the ten-minute
-Runner policy remains a separate discussion, and no implementation is claimed.
+It includes removal of the replaced path and acceptance criteria. The owner has
+chosen no overall runtime limit; the amended plan removes the duration mechanism
+and addresses owner-bound grants/Worker handoff. No implementation is claimed.
 
 The [October 19 replacement Worker → Pi Harness review](reports/worker-harness-recovery-review-20261019.md)
 checks native cold open, pending input, child rebinding, unsafe Tool non-replay and
