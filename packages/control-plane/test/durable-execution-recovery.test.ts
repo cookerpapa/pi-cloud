@@ -38,11 +38,17 @@ afterAll(async () => {
   await db?.destroy();
 });
 
-it.each(["none", "before_seal", "after_seal"] as const)(
-  "re-admits the same Run after closure and preserves Stop (%s)",
-  async (stop) => {
+it.each(
+  (["none", "before_seal", "after_seal"] as const).flatMap((stop) =>
+    (["worker_shutdown", "native_storage_unavailable"] as const).map(
+      (failure) => [stop, failure] as const,
+    ),
+  ),
+)(
+  "re-admits the same Run after closure and preserves Stop (%s, %s)",
+  async (stop, failure) => {
     const project = await store.createProject({
-      name: `Recovery-${stop}`,
+      name: `Recovery-${stop}-${failure}`,
       source: { kind: "empty" },
     });
     await db
@@ -63,7 +69,7 @@ it.each(["none", "before_seal", "after_seal"] as const)(
       replacement = await createTestWorker(db);
     const first = old.executor({
       execute: async () => {
-        throw new TurnExecutionBackendError("worker_shutdown", "owner stopped", true);
+        throw new TurnExecutionBackendError(failure, "owner stopped", true);
       },
     });
     expect((await first.dispatchRun(turn.runId)).status).toBe("recovering");
@@ -147,6 +153,16 @@ it.each(["none", "before_seal", "after_seal"] as const)(
         .where("kind", "=", "cancel")
         .executeTakeFirstOrThrow();
       expect(control.payload).toMatchObject({ inputReturnPending: true });
+    }
+    if (failure === "native_storage_unavailable") {
+      expect(queued.available_at.getTime()).toBeGreaterThan(Date.parse(seal.occurredAt));
+      expect(await next.dispatchRun(turn.runId)).toEqual({ status: "idle" });
+      // Advance this owned queue fixture after proving closure retained its delay.
+      await db
+        .updateTable("runs")
+        .set({ available_at: new Date(0) })
+        .where("id", "=", turn.runId)
+        .execute();
     }
     const running = next.dispatchRun(turn.runId);
     try {

@@ -1,5 +1,11 @@
 # Current architecture decisions
 
+[ADR-0262](0262-native-recovery-read-lifetimes.md) records the approved native
+recovery repair: bounded/cancellable Worker reads, same-Run continuation through
+ordered closure, indexed pending Submissions and native child reattachment.
+Source checks pass; artifact preparation and matched acceptance remain. The serving release
+remains unchanged. Image reuse requires a proven public operation boundary.
+
 [ADR-0261](0261-session-seal-projection-boundaries.md) records the approved closure
 projection repair: bounded PG I/O, writer-owned disposable live views, bounded
 checkpoint proof lookup and transaction-local Run reuse. It is deployed as

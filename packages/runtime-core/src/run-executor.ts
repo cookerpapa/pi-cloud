@@ -447,9 +447,14 @@ export class RunExecutor {
                 "session_lease_revoked",
                 "session_lease_renewal_failed",
                 "writer_publication_failed",
+                "native_storage_unavailable",
               ].includes(failure.code)
             )
-              return this.#requestRecovery(claim, acknowledgement);
+              return this.#requestRecovery(
+                claim,
+                acknowledgement,
+                failure.code === "native_storage_unavailable" ? 5_000 : 0,
+              );
             if (failure.quarantineSession)
               return this.#recordFailure(claim, failure, acknowledgement);
             if (finalizer) {
@@ -1047,6 +1052,7 @@ export class RunExecutor {
   async #requestRecovery(
     claim: ClaimedTurn,
     grant: TurnExecutionReference,
+    retryDelayMs = 0,
   ): Promise<RunExecutionResult> {
     const now = safeDate(this.#clock),
       ref = parseExecutionReference(grant.executionReference);
@@ -1100,6 +1106,7 @@ export class RunExecutor {
         runId: claim.request.runId,
         agentId: "root",
         recover: true,
+        ...(retryDelayMs ? { retryDelayMs } : {}),
         now,
         eventId: this.#idGenerator(),
       });

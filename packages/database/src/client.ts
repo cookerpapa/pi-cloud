@@ -2,6 +2,7 @@ import { Kysely, PostgresDialect, type PostgresPoolClient } from "kysely";
 import { Client, Pool, type PoolClient } from "pg";
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { Database } from "./database-types.ts";
 
 export type CreateDatabaseOptions = {
@@ -17,6 +18,82 @@ export type CreateDatabaseOptions = {
 
 const MAX_PREPARED_STATEMENTS_PER_CONNECTION = 128;
 const SLOW_COMMIT_MS = 100;
+const readSignals = new AsyncLocalStorage<AbortSignal | undefined>();
+
+/** Read-only adapter scope; ordinary/authority pools deliberately ignore it. */
+export function withDatabaseReadSignal<T>(signal: AbortSignal | undefined, read: () => T): T {
+  const parent = readSignals.getStore();
+  const active =
+    parent && signal && parent !== signal ? AbortSignal.any([parent, signal]) : (signal ?? parent);
+  active?.throwIfAborted();
+  return readSignals.run(active, read);
+}
+
+export function databaseReadSignal(): AbortSignal | undefined {
+  return readSignals.getStore();
+}
+
+export function isTransientDatabaseReadError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code = (error as { code?: string }).code;
+  return (
+    typeof code === "string" &&
+    (["08000", "08001", "08003", "08006", "08007"].includes(code) ||
+      [
+        "57014",
+        "57P01",
+        "57P02",
+        "57P03",
+        "53300",
+        "ECONNREFUSED",
+        "ECONNRESET",
+        "ETIMEDOUT",
+        "EPIPE",
+        "ENETUNREACH",
+        "EHOSTUNREACH",
+        "EAI_AGAIN",
+        "database_read_unavailable",
+      ].includes(code))
+  );
+}
+
+function readFailure(error: Error): Error {
+  // AbortSignal.reason can be a primitive; preserve it rather than masking a
+  // cancelled acquisition with an error from inspecting the reason itself.
+  if (!(error instanceof Error)) return error;
+  if (
+    !("code" in error) &&
+    /^(timeout exceeded when trying to connect|Connection terminated|Query read timeout)/i.test(
+      error.message,
+    )
+  )
+    return Object.assign(new Error("Database read connection is unavailable", { cause: error }), {
+      code: "database_read_unavailable",
+    });
+  return error;
+}
+
+async function acquireRead(pool: Pool, signal: AbortSignal | undefined): Promise<PoolClient> {
+  signal?.throwIfAborted();
+  if (!signal) return pool.connect();
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    void pool.connect().then(
+      (client) => {
+        signal.removeEventListener("abort", abort);
+        // pg does not expose cancellation of a queued acquisition. Its existing
+        // acquisition deadline bounds the queue; late arrivals never execute SQL.
+        if (signal.aborted) client.release();
+        else resolve(client);
+      },
+      (error: Error) => {
+        signal.removeEventListener("abort", abort);
+        reject(readFailure(error));
+      },
+    );
+  });
+}
 
 export function createDatabase(options: CreateDatabaseOptions): Kysely<Database> {
   if (options.connectionString.trim().length === 0) {
@@ -58,6 +135,9 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
           connectionTimeoutMillis: options.readTimeoutMs,
           statement_timeout: options.readTimeoutMs,
           query_timeout: options.readTimeoutMs + 1000,
+          // PG otherwise may keep computing after a client socket is evicted.
+          // Native peer checks bound that work without another cancellation pool.
+          options: "-c client_connection_check_interval=1000",
           keepAlive: true,
         }),
     ...(options.checkoutTimeoutMs === undefined
@@ -85,7 +165,11 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
   });
   const connections = new WeakMap<
     PoolClient,
-    { connection: PostgresPoolClient; onError(error: Error): void; acquire(): void }
+    {
+      connection: PostgresPoolClient;
+      onError(error: Error): void;
+      acquire(signal?: AbortSignal): void;
+    }
   >();
   return new Kysely<Database>({
     dialect: new PostgresDialect({
@@ -94,7 +178,12 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
         options: pool.options,
         end: () => pool.end(),
         async connect() {
-          const client = await pool.connect();
+          const signal = options.readTimeoutMs === undefined ? undefined : databaseReadSignal();
+          const client = await (options.readTimeoutMs === undefined
+            ? pool.connect()
+            : acquireRead(pool, signal).catch((error: Error) => {
+                throw readFailure(error);
+              }));
           let entry = connections.get(client);
           if (!entry) {
             // pg owns parsing, binding, reconnects and errors. Only give stable
@@ -107,6 +196,7 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
             let released = true,
               deadline = Infinity;
             let timer: NodeJS.Timeout | undefined;
+            let readSignal: AbortSignal | undefined;
             // pg's pool only listens while a client is idle. A checked-out
             // client can disconnect between SQL statements, including COMMIT.
             // Fail that transaction and evict the socket, never retry its SQL.
@@ -117,12 +207,23 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
               if (released) return;
               released = true;
               clearTimeout(timer);
+              readSignal?.removeEventListener("abort", cancelRead);
               client.removeListener("error", onError);
               client.release(failure);
               // pg.end() is graceful between queries. A blackholed peer must
               // not keep an expired checkout's socket alive awaiting FIN.
-              if (failure && options.checkoutTimeoutMs !== undefined)
+              if (
+                failure &&
+                (options.checkoutTimeoutMs !== undefined || options.readTimeoutMs !== undefined)
+              )
                 (client as PoolClient & Pick<Client, "connection">).connection.stream.destroy();
+            };
+            const cancelRead = () => {
+              failure ??=
+                readSignal?.reason instanceof Error
+                  ? readSignal.reason
+                  : new Error("Database read was cancelled", { cause: readSignal?.reason });
+              release();
             };
             const expire = () => {
               failure ??= Object.assign(new Error("Database connection checkout expired"), {
@@ -146,12 +247,21 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
                   )
                 : options.readTimeoutMs === undefined
                   ? request
-                  : request.catch((error: Error) => {
-                      // pg's client timeout alone does not cancel a server query.
-                      // Evict the disposable-read socket on release as well.
-                      failure ??= error;
-                      throw error;
-                    });
+                  : request.then(
+                      (result) => {
+                        readSignal?.throwIfAborted();
+                        if (failure) throw failure;
+                        return result;
+                      },
+                      (error: Error) => {
+                        // pg's client timeout alone does not cancel a server query.
+                        // Evict the disposable-read socket on release as well.
+                        failure ??= readFailure(error);
+                        release();
+                        readSignal?.throwIfAborted();
+                        throw failure;
+                      },
+                    );
             const connection: PostgresPoolClient = {
               get processID() {
                 return (client as PoolClient & { processID: number }).processID;
@@ -208,8 +318,11 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
             entry = {
               connection,
               onError,
-              acquire() {
+              acquire(signal) {
                 released = false;
+                readSignal = signal;
+                readSignal?.addEventListener("abort", cancelRead, { once: true });
+                if (readSignal?.aborted) cancelRead();
                 deadline =
                   options.checkoutTimeoutMs === undefined
                     ? Infinity
@@ -223,7 +336,7 @@ export function createDatabase(options: CreateDatabaseOptions): Kysely<Database>
             connections.set(client, entry);
           }
           client.on("error", entry.onError);
-          entry.acquire();
+          entry.acquire(signal);
           return entry.connection;
         },
       },

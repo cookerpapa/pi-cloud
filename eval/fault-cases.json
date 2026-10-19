@@ -1238,21 +1238,21 @@
       "id": "durable-same-run-recovery",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/durable-execution-recovery.test.ts",
-      "test": "re-admits the same Run after closure and preserves Stop (none)",
+      "test": "re-admits the same Run after closure and preserves Stop (none, worker_shutdown)",
       "invariant": "Replacement retains logical Run/Turn identity, waits for old closure and rejects stale owner callbacks."
     },
     {
       "id": "durable-stop-before-recovery-seal",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/durable-execution-recovery.test.ts",
-      "test": "re-admits the same Run after closure and preserves Stop (before_seal)",
+      "test": "re-admits the same Run after closure and preserves Stop (before_seal, worker_shutdown)",
       "invariant": "A Stop racing old-owner closure is preserved for the replacement owner without consuming the queued input."
     },
     {
       "id": "durable-stop-after-recovery-seal",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/durable-execution-recovery.test.ts",
-      "test": "re-admits the same Run after closure and preserves Stop (after_seal)",
+      "test": "re-admits the same Run after closure and preserves Stop (after_seal, worker_shutdown)",
       "invariant": "A Stop after recovery closure cannot be lost between queued and admitted native ownership."
     },
     {
@@ -2262,6 +2262,132 @@
       "file": "test/main-acquisition.test.ts",
       "test": "closes earlier pools when the projection pool cannot be constructed",
       "invariant": "Failed projection pool construction releases previously acquired resources."
+    },
+    {
+      "id": "native-read-recovery-none",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/durable-execution-recovery.test.ts",
+      "test": "re-admits the same Run after closure and preserves Stop (none, native_storage_unavailable)",
+      "invariant": "Unavailable native data preserves the logical Run and pending Stop through ordered closure and delayed re-admission, without admitting a successor early."
+    },
+    {
+      "id": "native-read-recovery-before-seal",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/durable-execution-recovery.test.ts",
+      "test": "re-admits the same Run after closure and preserves Stop (before_seal, native_storage_unavailable)",
+      "invariant": "Unavailable native data preserves the logical Run and pending Stop through ordered closure and delayed re-admission, without admitting a successor early."
+    },
+    {
+      "id": "native-read-recovery-after-seal",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/durable-execution-recovery.test.ts",
+      "test": "re-admits the same Run after closure and preserves Stop (after_seal, native_storage_unavailable)",
+      "invariant": "Unavailable native data preserves the logical Run and pending Stop through ordered closure and delayed re-admission, without admitting a successor early."
+    },
+    {
+      "id": "native-read-socket-cancellation",
+      "workspace": "@pi-cloud/database",
+      "file": "test/read-pool-budget.postgres.test.ts",
+      "test": "cancels the actual read backend and replaces it without affecting authority work",
+      "invariant": "Cancelled disposable reads terminate their PG backend and free capacity while authority SQL remains independent."
+    },
+    {
+      "id": "native-read-queued-acquisition",
+      "workspace": "@pi-cloud/database",
+      "file": "test/read-pool-budget.postgres.test.ts",
+      "test": "rejects a cancelled acquisition promptly and never runs its late SQL",
+      "invariant": "A cancelled pool waiter cannot execute late SQL or take over the connection held by another caller."
+    },
+    {
+      "id": "native-recovery-locked-read-close",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-read-lifetime.postgres.test.ts",
+      "test": "cancels a locked native read and a queued read, and closes without unlocking the fixture first",
+      "invariant": "Native Context cancellation reaches running/queued reads and Storage close joins actual cleanup."
+    },
+    {
+      "id": "native-recovery-transient-vs-corrupt",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-read-lifetime.postgres.test.ts",
+      "test": "classifies unavailable data for recovery but keeps corrupt content fatal",
+      "invariant": "Transient native reads are recoverable; corrupt stored content is not treated as transient or silently empty."
+    },
+    {
+      "id": "native-recovery-image-body-cancellation",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-read-lifetime.postgres.test.ts",
+      "test": "propagates native read cancellation to image hydration",
+      "invariant": "Native read cancellation reaches the immutable image reader without changing authority or result identity."
+    },
+    {
+      "id": "native-recovery-image-inventory-cancellation",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-read-lifetime.postgres.test.ts",
+      "test": "cancels attachment inventory reads on the dedicated read pool",
+      "invariant": "Cancelled attachment metadata reads do not start object transfer or affect inventory mutations."
+    },
+    {
+      "id": "native-recovery-cold-open-acquisition",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-read-lifetime.postgres.test.ts",
+      "test": "reports a bounded cold-open acquisition failure without borrowing authority capacity",
+      "invariant": "Cold opening under pool saturation fails within the read budget and preserves authority pool availability."
+    },
+    {
+      "id": "native-recovery-ack-after-cancel",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-read-lifetime.postgres.test.ts",
+      "test": "still adopts an acknowledged commit when its caller is cancelled",
+      "invariant": "Read cancellation cannot abandon an already-acknowledged native commit or duplicate its later admission."
+    },
+    {
+      "id": "native-submission-status-index",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/durable-submission-status.postgres.test.ts",
+      "test": "uses the Submission status index with actual named custom/generic plans and preserves paging/receipts",
+      "invariant": "Pending status scans remain indexed as completed receipts accumulate, including actual generic plans, paging and state changes."
+    },
+    {
+      "id": "native-child-view-batching",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/native-child-reattachment.test.ts",
+      "test": "batches active native child metadata without loading original prompts and retains exact view identity",
+      "invariant": "Batched active-child views preserve tenant/root/source/cursor identity without rereading initial Tool prompt bodies."
+    },
+    {
+      "id": "native-bootstrap-context",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/durable-child-reattachment.test.ts",
+      "test": "carries owner cancellation through public Harness bootstrap reads",
+      "invariant": "Public Harness startup observes owner cancellation before any model or Tool effect."
+    },
+    {
+      "id": "native-child-reattach-continue",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/durable-child-reattachment.test.ts",
+      "test": "reattaches existing native child configuration and queued input (continue)",
+      "invariant": "Reattachment retains native configuration, receipt IDs and queued input without a duplicate initial Submission or configuration commit."
+    },
+    {
+      "id": "native-child-reattach-stop",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/durable-child-reattachment.test.ts",
+      "test": "reattaches existing native child configuration and queued input (stop)",
+      "invariant": "Reattachment retains native configuration, receipt IDs and queued input without a duplicate initial Submission or configuration commit."
+    },
+    {
+      "id": "native-cold-open-revocation",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/native-child-reattachment.test.ts",
+      "test": "revokes an owner while its cold head is still blocked and preserves the recovery classification",
+      "invariant": "Lease observation starts before cold data loading, cancels revoked-owner reads and preserves ordered recovery even before the Runner receives its handle."
+    },
+    {
+      "id": "native-cold-open-incomplete",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/native-child-reattachment.test.ts",
+      "test": "does not turn an incomplete cold checkpoint into a recoverable lease error during cleanup",
+      "invariant": "An incomplete handoff remains an explicit failure; closing the partially initialized authority cannot turn it into an automatic recovery loop."
     }
   ]
 }

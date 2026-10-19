@@ -109,6 +109,16 @@ configured web port. A Linux-only HTTP 200 does not establish Windows access.
 
 ## Acceptance and fixture restoration
 
+ADR-0262 requires schema 191 and matched application code for native read failure
+recovery and explicit child resume envelopes. Kafka/guest/reply protocols remain
+unchanged. Run real-PG read cancellation/termination, pool isolation, image-read
+cancellation, acknowledged adoption, delayed same-Run recovery, actual named/
+generic status query plans, child metadata batching and native reattachment/Stop
+tests. Exercise owned 1/8/32/128-child preparation and Stop during restoration.
+After the drained matched release, run native input/Stop/Worker recovery,
+browser/Read/images, child handoff, Control Plane outage and full Cube acceptance.
+Retain the prior image recall limitation until that live gate itself passes.
+
 ADR-0261 repairs projection I/O bounds, duplicate-closure memory cleanup,
 checkpoint proof lookup and locked Run reuse. Schema and transport versions stay
 unchanged. Required source coverage includes bounded pool/cold-read/transaction

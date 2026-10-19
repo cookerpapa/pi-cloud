@@ -28,11 +28,14 @@ import {
 } from "../../../packages/pi-session-postgres/src/durable/index.ts";
 import { DurableAgentSession } from "../../../packages/sandbox-supervisor/src/durable/agent-session.ts";
 import { RemoteToolSandboxTurnRunner } from "../../../packages/sandbox-supervisor/src/remote-tool-sandbox-turn-runner.ts";
+import { CloudModelRegistry } from "../../../packages/sandbox-supervisor/src/durable/model-registry.ts";
 import { command as sample } from "../../../packages/sandbox-supervisor/test/fixtures/durable-command.ts";
 
 const output = resolve(process.argv[2] ?? "dist/reviews/family-restore-timing-20261019.json");
 const counts = (process.argv[3] ?? "1,8,32").split(",").map(Number);
 assert(counts.length > 0 && counts.every((n) => Number.isSafeInteger(n) && n > 0 && n <= 128));
+const mode = process.argv[4] ?? "prepare";
+assert(["prepare", "stop-during-restore"].includes(mode));
 const report = {
   at: new Date().toISOString(),
   revision: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
@@ -47,6 +50,7 @@ const report = {
     "VM creation",
   ],
   cases: [],
+  mode,
 };
 let pg;
 const round = (n) => Math.round(n * 1000) / 1000;
@@ -143,6 +147,16 @@ async function seed(f, count) {
       });
       const child = await runtime.bind(config(id, [], view));
       await child.submit({ type: "input", content: args.task, requestId: f.scope.runId }, context);
+      if (mode === "stop-during-restore")
+        await child.submit(
+          {
+            type: "input",
+            content: "Owned queued follow-up",
+            requestId: "input-stop-fixture",
+            whenBusy: "followUp",
+          },
+          context,
+        );
       children.push({ id, view, prompt: args.task });
       return { content: [{ type: "text", text: "Child started" }] };
     },
@@ -244,6 +258,8 @@ async function seed(f, count) {
   }
   return {
     children,
+    provider: provider.provider,
+    model: provider.getModel(),
     prefixBytes: Buffer.byteLength(JSON.stringify(prefix)),
     commits: prefix.length,
   };
@@ -256,10 +272,20 @@ async function measure(count) {
   if (prior === undefined) delete process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
   else process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL = prior;
   const directory = await mkdtemp(join(tmpdir(), "pi-family-restore-timing-"));
-  let host, work, deadline;
+  let host,
+    work,
+    deadline,
+    measuredSuccessfully = false;
+  const configure = CloudModelRegistry.prototype.configure;
   const stop = new AbortController();
   try {
     const seeded = await seed(f, count);
+    // Preserve the same faux model descriptor across the cold boundary. The
+    // model-permit port below still prevents any actual provider request.
+    CloudModelRegistry.prototype.configure = function () {
+      this.models.setProvider(seeded.provider);
+      return seeded.model;
+    };
     const projection = new DurablePostgresProjection(f.database, {
       tenantId: f.scope.tenantId,
       sessionId: f.scope.piSessionId,
@@ -361,11 +387,17 @@ async function measure(count) {
       },
       turnTimeoutMs: 300000,
     });
-    const startChild = runner.startConversation.bind(runner);
-    runner.startConversation = async (...args) => {
+    const startChild = runner.restoreConversation.bind(runner);
+    runner.restoreConversation = async (...args) => {
       const value = await startChild(...args);
       readyChildren++;
       if (readyChildren === count) allBoundMs = performance.now() - started;
+      if (mode === "stop-during-restore" && readyChildren === 1)
+        stop.abort({
+          kind: "pi-cloud.turn-cancellation",
+          reason: "user_request",
+          gracePeriodMs: 1000,
+        });
       return value;
     };
     const command = structuredClone(sample);
@@ -389,6 +421,40 @@ async function measure(count) {
     const timeout = new Promise((_, reject) => {
       deadline = setTimeout(() => reject(Error("Owned restore benchmark exceeded 120s")), 120000);
     });
+    if (mode === "stop-during-restore") {
+      const outcome = await Promise.race([
+        work.then(
+          () => undefined,
+          (error) => error,
+        ),
+        timeout,
+      ]);
+      assert.equal(outcome?.code, "turn_cancelled");
+      assert.equal(permitChildren.size, 0);
+      assert.equal(vmActivations, 0);
+      const current =
+        await sql`select body from pi_durable_current where tenant_id=${f.scope.tenantId}::uuid and session_id=${f.scope.piSessionId} and kind='submission'`.execute(
+          f.database,
+        );
+      const queued = current.rows
+        .map((row) => JSON.parse(row.body).value)
+        .filter((value) => value.requestId === "input-stop-fixture");
+      assert.equal(queued.length, count);
+      assert(queued.every((input) => input.status === "unanswered"));
+      const result = {
+        activeChildren: count,
+        cancelledAfterFirstChildBinding: true,
+        modelPermitRequests: 0,
+        vmActivations: 0,
+        queuedInputStatus: queued[0].status,
+        queuedInputCount: queued.length,
+        stopSettledMs: round(performance.now() - started),
+      };
+      report.cases.push(result);
+      measuredSuccessfully = true;
+      console.log(JSON.stringify({ phase: "stopped", ...result }));
+      return;
+    }
     const allEffectsMs = await Promise.race([
       allEffects.promise,
       work.then(() => {
@@ -414,14 +480,23 @@ async function measure(count) {
       rssDeltaBytes: memoryAfter.rss - memoryBefore.rss,
     };
     report.cases.push(result);
+    measuredSuccessfully = true;
     console.log(JSON.stringify({ phase: "measured", ...result }));
   } finally {
     clearTimeout(deadline);
     stop.abort({ kind: "pi-cloud.turn-cancellation", reason: "user_request", gracePeriodMs: 1000 });
-    if (work) await work.catch(() => {});
+    let outcome;
+    if (work) {
+      outcome = await work.then(
+        () => undefined,
+        (error) => error,
+      );
+    }
+    CloudModelRegistry.prototype.configure = configure;
     await host?.close();
     await f.close();
     await rm(directory, { recursive: true, force: true });
+    if (measuredSuccessfully) assert.equal(outcome?.code, "turn_cancelled");
   }
 }
 try {

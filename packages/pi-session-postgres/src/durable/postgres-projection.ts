@@ -1,7 +1,7 @@
 import { assertIdleNativeSession } from "../idle-session-mutation.ts";
 import { createHash } from "node:crypto";
 import { sql, type Kysely, type Transaction, type RawBuilder } from "kysely";
-import type { Database } from "@pi-cloud/database";
+import { databaseReadSignal, type Database } from "@pi-cloud/database";
 import { validateImageReferencePayload, type DurableRecordOrigin } from "@pi-cloud/protocol";
 import {
   decodeSessionImages,
@@ -158,7 +158,12 @@ export class DurablePostgresProjection {
       result.rows[0] &&
       (this.imageRepresentation === "references"
         ? decodeRecord(result.rows[0])
-        : decodeSessionImages<IndexedRecord>(this.images, this.scope, decodeRecord(result.rows[0])))
+        : decodeSessionImages<IndexedRecord>(
+            this.images,
+            this.scope,
+            decodeRecord(result.rows[0]),
+            databaseReadSignal(),
+          ))
     );
   }
   async scan(
@@ -166,7 +171,9 @@ export class DurablePostgresProjection {
     limit: number,
     exclude: readonly number[] = [],
   ): Promise<IndexedRecord[]> {
-    const clauses: RawBuilder<unknown>[] = [this.scoped("r"), sql`r.kind=${query.kind}`];
+    // Kind comes from the fixed Storage method, never native record content.
+    // Keeping it literal lets named generic plans prove the partial status index.
+    const clauses: RawBuilder<unknown>[] = [this.scoped("r"), sql`r.kind=${sql.lit(query.kind)}`];
     for (const [key, value] of Object.entries(query.fields ?? {})) {
       if (!INDEX_FIELDS.has(key)) throw new Error("Unsupported native index field");
       // Only code-owned keys are literal. User-supplied values remain bound;
@@ -194,6 +201,7 @@ export class DurablePostgresProjection {
       this.images,
       this.scope,
       result.rows.map(decodeRecord),
+      databaseReadSignal(),
     );
   }
   async revisions(id: number, through: number): Promise<DocumentRevision[]> {
@@ -202,6 +210,7 @@ export class DurablePostgresProjection {
       this.images,
       this.scope,
       await this.#storedRevisions(id, through),
+      databaseReadSignal(),
     );
   }
   async #storedRevisions(id: number, through: number): Promise<DocumentRevision[]> {

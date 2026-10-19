@@ -174,7 +174,10 @@ export const ExecuteTurnCommandMessageSchema = Type.Object(
         nextEventSeq: PositiveSafeIntegerSchema,
         stopOnResume: Type.Optional(Type.Literal(true)),
         agent: AgentRevisionSnapshotSchema,
-        input: PromptInputSchema,
+        input: Type.Union([
+          PromptInputSchema,
+          Type.Object({ kind: Type.Literal("resume") }, { additionalProperties: false }),
+        ]),
         sessionKind: Type.Union([Type.Literal("conversation"), Type.Literal("subagent")]),
         workspaceSeedKind: Type.Union([Type.Literal("empty"), Type.Literal("sample_java")]),
         executionMode: ExecutionModeSchema,
@@ -490,7 +493,14 @@ export function parseControlToSupervisorMessage(value: unknown): ControlToSuperv
   const message = value as ControlToSupervisorMessage;
   if (message.type === "command.turn.execute") {
     try {
-      assertUserInputBudget(message.payload.input.text, message.payload.input.uploads);
+      if (message.payload.input.kind === "prompt")
+        assertUserInputBudget(message.payload.input.text, message.payload.input.uploads);
+      else if (
+        !message.payload.conversationWork ||
+        message.payload.piSession.conversationId === 1 ||
+        message.payload.sessionKind !== "subagent"
+      )
+        throw new Error("Native resume requires an existing child Conversation");
     } catch (error) {
       throw new PiCloudWireProtocolError((error as Error).message);
     }

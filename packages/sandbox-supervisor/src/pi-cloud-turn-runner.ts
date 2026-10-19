@@ -38,7 +38,7 @@ import {
 } from "@pi-cloud/protocol";
 import type { DurableSessionHandle } from "@pi-cloud/pi-session-postgres/durable";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
-import { DurableAgentSession } from "./durable/agent-session.ts";
+import { DurableAgentSession, type DurableRunConfiguration } from "./durable/agent-session.ts";
 import { DurableRunEvents } from "./durable/run-events.ts";
 import { CloudModelRegistry } from "./durable/model-registry.ts";
 import {
@@ -317,8 +317,12 @@ export class PiCloudTurnRunner {
     const options = this.#options,
       p = command.payload;
     this.#identity = { tenantId: p.tenantId, sessionId: p.sessionId, runId: p.runId };
-    if (p.input.kind !== "prompt")
-      throw new PiTurnError("unsupported_input", "Pi supports prompt input", false);
+    if (p.input.kind === "resume" && (!p.conversationWork || p.piSession.conversationId === 1))
+      throw new PiTurnError(
+        "unsupported_input",
+        "Native resume requires an existing child Conversation",
+        false,
+      );
     const clock = options.clock ?? (() => new Date()),
       id = options.idGenerator ?? (() => crypto.randomUUID());
     const activity = new PiRunActivity(options.onActivity);
@@ -343,6 +347,18 @@ export class PiCloudTurnRunner {
       text: DurableTextPresentation | undefined;
     let toolSampling: ModelSamplingIdentity | undefined;
     const cleanup: (() => void)[] = [];
+    // User Stop still needs native reads to withdraw queued input and settle
+    // aborts. Worker retirement, unlike Stop, cancels this owner's startup I/O.
+    const readLifetime = new AbortController();
+    const retireReads = () => {
+      if (!["user_request", "timeout"].includes(cancellationReason(combined)))
+        readLifetime.abort(
+          new PiTurnError("worker_shutdown", "The native owner is stopping", true),
+        );
+    };
+    combined.addEventListener("abort", retireReads, { once: true });
+    cleanup.push(() => combined.removeEventListener("abort", retireReads));
+    if (combined.aborted) retireReads();
     let delivery = Promise.resolve(),
       deliveryFailure: unknown;
     let factory = createPiCloudEventFactory(
@@ -399,7 +415,7 @@ export class PiCloudTurnRunner {
     };
     try {
       const config = validateRuntimeConfig(command, await options.resolveModelRuntime(p.model));
-      handle = await options.openSession(command, combined);
+      handle = await options.openSession(command, readLifetime.signal);
       const owner = handle;
       text = new DurableTextPresentation({
         conversationId: p.piSession.conversationId,
@@ -431,24 +447,33 @@ export class PiCloudTurnRunner {
       const model = registry.configure(config);
       // Schemas are code-owned; constructing them does not access a guest.
       family = await owner.runtime(async () => {
-        const runtime = await DurableAgentSession.open(owner.storage, {
-          models: registry.models,
-          remoteTools: [
-            ...fixedRemoteToolDefinitions(),
-            ...(options.trustedToolDefinitions ?? []).filter((tool) => "prepareExecution" in tool),
-          ],
-          infrastructureTools: options.trustedToolDefinitions ?? [],
-          settings: {
-            stream: {
-              timeoutMs: options.requestTimeoutMs ?? 10000,
-              ...(config.transport ? { transport: config.transport } : {}),
-            },
-            compaction: {
-              reserveTokens: p.budgets?.compactionReserveTokens ?? 16384,
-              keepRecentTokens: p.budgets?.compactionKeepRecentTokens ?? 20000,
+        const runtime = await DurableAgentSession.open(
+          owner.storage,
+          {
+            models: registry.models,
+            remoteTools: [
+              ...fixedRemoteToolDefinitions(),
+              ...(options.trustedToolDefinitions ?? []).filter(
+                (tool) => "prepareExecution" in tool,
+              ),
+            ],
+            infrastructureTools: options.trustedToolDefinitions ?? [],
+            settings: {
+              stream: {
+                timeoutMs: options.requestTimeoutMs ?? 10000,
+                ...(config.transport ? { transport: config.transport } : {}),
+              },
+              compaction: {
+                reserveTokens: p.budgets?.compactionReserveTokens ?? 16384,
+                keepRecentTokens: p.budgets?.compactionKeepRecentTokens ?? 20000,
+              },
             },
           },
-        });
+          withAbortSignal(
+            AbortSignal.any([readLifetime.signal, owner.authority.signal]),
+            BACKGROUND_CONTEXT,
+          ),
+        );
         owner.preparePublication((commit) => runtime.preparePublication(commit));
         return runtime;
       });
@@ -535,13 +560,13 @@ export class PiCloudTurnRunner {
       });
       if (unsubscribeActivity) cleanup.push(unsubscribeActivity);
       const prompt = [
-        languageAlignmentInstruction(p.input.text),
+        p.input.kind === "prompt" ? languageAlignmentInstruction(p.input.text) : undefined,
         BASE_SYSTEM_PROMPT,
         p.agentSystemPrompt,
       ]
         .filter(Boolean)
         .join("\n\n");
-      const conversation = await runtime.bind({
+      const binding: DurableRunConfiguration = {
         runId: p.runId,
         conversationId: p.piSession.conversationId,
         model,
@@ -553,11 +578,14 @@ export class PiCloudTurnRunner {
           turnId: p.turnId,
           ...(p.conversationWork ? { view: JSON.parse(JSON.stringify(p.conversationWork)) } : {}),
         },
-        agent: {
-          instructions: await tools.systemPrompt(prompt),
-          cwd: p.workingDirectory,
-          thinkingLevel: p.model.thinkingLevel,
-        },
+        agent:
+          p.input.kind === "resume"
+            ? {}
+            : {
+                instructions: await tools.systemPrompt(prompt),
+                cwd: p.workingDirectory,
+                thinkingLevel: p.model.thinkingLevel,
+              },
         remoteTools: tools.tools.filter((tool) => tool.prepareExecution).map((tool) => tool.name),
         tools: tools.tools.filter((tool) => !tool.prepareExecution),
         assertCurrent: () => owner.authority.assertCurrent(),
@@ -702,7 +730,11 @@ export class PiCloudTurnRunner {
                 }),
             }
           : {}),
-      });
+      };
+      const conversation = await runtime.bind(
+        binding,
+        p.input.kind === "resume" ? "reattach" : "initialize",
+      );
       await options.onNativeBound?.();
       stream = await runtime.watch(conversation.id, async (batch) => {
         try {
@@ -789,6 +821,8 @@ export class PiCloudTurnRunner {
           BACKGROUND_CONTEXT,
         );
         if (!existing) {
+          if (p.input.kind === "resume")
+            throw new Error("Native child initial Submission is missing");
           await emit({ type: "turn.started", payload: { inputKind: "prompt" } });
           const content = await this.#prepareInput(p.input.text, p.input.uploads, combined);
           await conversation.submit(
@@ -897,6 +931,15 @@ export class PiCloudTurnRunner {
       if (handle?.authority.signal.aborted) {
         if (
           (handle.authority.signal.reason as { code?: string })?.code ===
+          "native_storage_unavailable"
+        )
+          throw new PiTurnError(
+            "native_storage_unavailable",
+            "Native Session data could not be read",
+            true,
+          );
+        if (
+          (handle.authority.signal.reason as { code?: string })?.code ===
           "writer_publication_failed"
         )
           throw new PiTurnError(
@@ -915,9 +958,12 @@ export class PiCloudTurnRunner {
         handle &&
         !(
           error instanceof PiTurnError &&
-          ["worker_shutdown", "session_lease_revoked", "writer_publication_failed"].includes(
-            error.code,
-          )
+          [
+            "worker_shutdown",
+            "session_lease_revoked",
+            "writer_publication_failed",
+            "native_storage_unavailable",
+          ].includes(error.code)
         )
       ) {
         const cancelled =

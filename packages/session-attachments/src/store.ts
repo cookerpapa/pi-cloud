@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { Database } from "@pi-cloud/database";
+import { withDatabaseReadSignal, type Database } from "@pi-cloud/database";
 import { parseImageAttachmentReference, type ImageAttachmentReference } from "@pi-cloud/protocol";
 import { sql, type Kysely } from "kysely";
 import type { ImageAttachmentSource, ImageAttachmentStore, ImageScope } from "./codec.ts";
@@ -41,6 +41,7 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
   constructor(
     readonly database: Kysely<Database>,
     readonly blobs: ImageBlobStore,
+    readonly readDatabase: Kysely<Database> = database,
   ) {}
   async #bounded<T>(bytes: number, fn: () => Promise<T>, signal: AbortSignal): Promise<T> {
     while (this.#inFlightBytes > 0 && this.#inFlightBytes + bytes > 128 * 1024 * 1024) {
@@ -200,8 +201,10 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
     signal?.throwIfAborted();
     const {
       rows: [row],
-    } = await sql<Inventory>`select * from session_image_objects
-      where tenant_id=${tenantId}::uuid and id=${ref.id}::uuid`.execute(this.database);
+    } = await withDatabaseReadSignal(signal, () =>
+      sql<Inventory>`select * from session_image_objects
+      where tenant_id=${tenantId}::uuid and id=${ref.id}::uuid`.execute(this.readDatabase),
+    );
     if (
       !row ||
       row.state !== "ready" ||

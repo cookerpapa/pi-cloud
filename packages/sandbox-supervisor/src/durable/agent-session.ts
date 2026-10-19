@@ -14,6 +14,7 @@ import {
 import type { Context, JsonValue } from "@earendil-works/chord";
 import {
   Harness,
+  AgentDoc,
   DEFAULT_COMPACTION_POLICY,
   createRegistry,
   defineExtension,
@@ -238,64 +239,70 @@ export class DurableAgentSession {
       settings?: HarnessSettings;
       report?: (error: unknown) => void;
     },
+    context: Context = BACKGROUND_CONTEXT,
   ): Promise<DurableAgentSession> {
     const session = new DurableAgentSession(storage, options);
     session.#reserveTokens =
       options.settings?.compaction?.reserveTokens ?? DEFAULT_COMPACTION_POLICY.reserveTokens;
     session.#installTools(options.infrastructureTools ?? []);
-    session.#harness = await Harness.open(
-      storage,
-      {
-        models: session.#models.models,
-        registry: session.#registry,
-        // Existing product Runs finish when their foreground work finishes. Keep
-        // automatic Compaction blocking until independent background admission is exposed.
-        settings: {
-          ...options.settings,
-          compaction: { ...options.settings?.compaction, backgroundTokens: 0 },
+    try {
+      session.#harness = await Harness.open(
+        storage,
+        {
+          models: session.#models.models,
+          registry: session.#registry,
+          // Existing product Runs finish when their foreground work finishes. Keep
+          // automatic Compaction blocking until independent background admission is exposed.
+          settings: {
+            ...options.settings,
+            compaction: { ...options.settings?.compaction, backgroundTokens: 0 },
+          },
+          ...(options.report ? { onReport: options.report } : {}),
         },
-        ...(options.report ? { onReport: options.report } : {}),
-      },
-      BACKGROUND_CONTEXT,
-    );
-    // Only live task conversations need restored routes. Historical child
-    // documents never turn into a lifetime Session bootstrap scan.
-    const inspection = await session.#harness.inspect(BACKGROUND_CONTEXT);
-    // Compaction resumes summarize/retry without rerunning beforeCompact. The
-    // request identity is derived from that committed task, never a new grant.
-    // Generation's request phase refreshes this through beforeRequest.
-    // Background compaction is disabled,
-    // so only one model-producing task can own a Conversation at this boundary.
-    for (const { record } of inspection.tasks) {
-      if (!("checkpoint" in record.state)) continue;
-      const phase = (record.state.checkpoint as { phase?: string }).phase;
-      const compaction =
-        record.kind === "pi.compaction" && ["summarize", "retry"].includes(phase ?? "");
-      if (!compaction) continue;
-      session.#requests.set(record.conversationId, {
-        taskId: record.id,
-        conversationId: record.conversationId,
-        purpose: "context_maintenance",
-      });
-    }
-    for (const conversationId of new Set(
-      inspection.tasks.map((task) => task.record.conversationId),
-    )) {
-      const state = await session.#harness.snapshot(
-        CloudRunDocument,
-        conversationId,
-        BACKGROUND_CONTEXT,
+        context,
       );
-      if (typeof state?.runId !== "string" || !state.model) continue;
-      session.#conversations.set(conversationId, state.runId);
-      session.#models.register(state.runId, conversationId, state.model as unknown as Model<Api>);
+      // Only live task conversations need restored routes. Historical child
+      // documents never turn into a lifetime Session bootstrap scan.
+      const inspection = await session.#harness.inspect(context);
+      // Compaction resumes summarize/retry without rerunning beforeCompact. The
+      // request identity is derived from that committed task, never a new grant.
+      // Generation's request phase refreshes this through beforeRequest.
+      // Background compaction is disabled,
+      // so only one model-producing task can own a Conversation at this boundary.
+      for (const { record } of inspection.tasks) {
+        if (!("checkpoint" in record.state)) continue;
+        const phase = (record.state.checkpoint as { phase?: string }).phase;
+        const compaction =
+          record.kind === "pi.compaction" && ["summarize", "retry"].includes(phase ?? "");
+        if (!compaction) continue;
+        session.#requests.set(record.conversationId, {
+          taskId: record.id,
+          conversationId: record.conversationId,
+          purpose: "context_maintenance",
+        });
+      }
+      for (const conversationId of new Set(
+        inspection.tasks.map((task) => task.record.conversationId),
+      )) {
+        const state = await session.#harness.snapshot(CloudRunDocument, conversationId, context);
+        if (typeof state?.runId !== "string" || !state.model) continue;
+        session.#conversations.set(conversationId, state.runId);
+        session.#models.register(state.runId, conversationId, state.model as unknown as Model<Api>);
+      }
+      return session;
+    } catch (error) {
+      session.#abort.abort(error);
+      await session.#harness?.close(BACKGROUND_CONTEXT).catch(() => {});
+      throw error;
     }
-    return session;
   }
   get harness(): Harness {
     return this.#harness;
   }
-  async bind(run: DurableRunConfiguration): Promise<Conversation> {
+  async bind(
+    run: DurableRunConfiguration,
+    mode: "initialize" | "reattach" = "initialize",
+  ): Promise<Conversation> {
     await run.assertCurrent();
     let conversation = await this.#harness.conversation(
       run.conversationId as ConversationId,
@@ -309,6 +316,39 @@ export class DurableAgentSession {
       conversation.id,
       BACKGROUND_CONTEXT,
     );
+    if (mode === "reattach") {
+      const agent = await this.#harness.snapshot(AgentDoc, conversation.id, BACKGROUND_CONTEXT);
+      const receipt = await this.storage.submissionByRequest(
+        conversation.id,
+        run.runId,
+        BACKGROUND_CONTEXT,
+      );
+      if (
+        !receipt ||
+        previous?.runId !== run.runId ||
+        previous.sessionId !== run.context.sessionId ||
+        previous.turnId !== run.context.turnId ||
+        !isDeepStrictEqual(previous.view, run.context.view) ||
+        !previous.model ||
+        !agent?.model
+      )
+        throw new Error("Native child restoration state is missing or changed");
+      const model = previous.model as unknown as Model<Api>;
+      if (
+        model.provider !== run.model.provider ||
+        model.id !== run.model.id ||
+        model.api !== run.model.api
+      )
+        throw new Error("Native child model does not match accepted work");
+      const reference = this.#models.register(run.runId, run.conversationId, model);
+      if (!isDeepStrictEqual(agent.model, reference))
+        throw new Error("Native child agent configuration is inconsistent");
+      this.#bindings.set(run.conversationId, run);
+      this.#conversations.set(run.conversationId, run.runId);
+      this.#installTools(run.tools);
+      for (const wake of this.#waiters.get(`${run.runId}:${run.conversationId}`) ?? []) wake();
+      return conversation;
+    }
     if (typeof previous?.runId === "string" && previous.runId !== run.runId) {
       const live = await this.#harness.inspect(BACKGROUND_CONTEXT);
       if (live.tasks.some((task) => task.record.conversationId === conversation!.id))

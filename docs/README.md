@@ -10,8 +10,14 @@ paths: completed receipts can increase filtering work despite a constant SQL cou
 The [proposed repair plan](reports/worker-harness-recovery-repair-plan-20261019.md)
 records bounded/cancellable reads, existing closure-based retry, status indexes,
 native child reattachment and conditional scoped image reuse.
+[ADR-0262](adr/0262-native-recovery-read-lifetimes.md) now implements the read,
+status-index and child reattachment repairs in source; full verification and
+matched deployment are in progress. The image check retains per-decode validation
+because Pi's public hooks run after context has already been read.
+[Implementation and verification](reports/worker-harness-recovery-repair-20261019.md)
+track source checks separately from the pending matched release and live gates.
 The architecture still uses one Session owner and Pi's native scheduler. Runtime
-code/deployment are unchanged; the next main walkthrough is the model branch.
+deployment is unchanged; the next main walkthrough is the model branch.
 The prior large-image cold-recall gate remains unaccepted.
 
 The [October 19 Kafka seal → Projector → PG review](reports/seal-projection-review-20261019.md)

@@ -1,8 +1,10 @@
 import { NativeProjectionProgress } from "../native-projection-progress.ts";
+import { nativeRead } from "./read-lifetime.ts";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { setImmediate as yieldToIo } from "node:timers/promises";
 import type { Kysely } from "kysely";
-import type { Database } from "@pi-cloud/database";
+import { isTransientDatabaseReadError, type Database } from "@pi-cloud/database";
+import { NativeSessionError } from "../native-session-error.ts";
 import {
   parseExecutionReference,
   PublicationNotSentError,
@@ -17,11 +19,7 @@ import { PostgresSessionLeaseObserver } from "../postgres-session-lease-observer
 import { DurablePostgresProjection } from "./postgres-projection.ts";
 import { PublishedDurableStorage, type NativeDocumentChange } from "./published-storage.ts";
 import { sql } from "kysely";
-import {
-  durableControlIntent,
-  prepareSubagentArguments,
-  type ConversationWorkView,
-} from "@pi-cloud/protocol";
+import { type ConversationWorkView } from "@pi-cloud/protocol";
 
 export type DurableRunBinding = Readonly<{
   tenantId: string;
@@ -35,6 +33,8 @@ export type DurableRunBinding = Readonly<{
 }>;
 export type DurableSessionOpen = {
   binding: DurableRunBinding;
+  /** Owner/startup lifetime, excluding User Stop's native settlement. */
+  signal?: AbortSignal;
   publish(publication: DurableCommitPublication): Promise<void>;
 };
 export type NativePublicationPreparation = {
@@ -83,6 +83,7 @@ type Owner = {
   releaseTail: Promise<unknown>;
   closing?: Promise<void>;
   interruption: AbortController;
+  readSignal: AbortSignal;
 };
 export type DurableSessionHandle = {
   binding: DurableRunBinding;
@@ -227,7 +228,6 @@ export class PostgresDurableSessionHost {
     Array<{
       conversationId: number;
       view: ConversationWorkView;
-      prompt: string;
       nextEventSeq: number;
     }>
   > {
@@ -236,40 +236,67 @@ export class PostgresDurableSessionHost {
     await owner.authority.assertCurrent();
     const binding = owner.runs.values().next().value!.binding;
     const views = (await (await owner.runtime)?.activeConversationViews?.(binding.runId)) ?? [];
-    return Promise.all(
-      views.map(async (entry) => {
-        const { source } = entry.view;
-        const record = await sql<{ body: string }>`select body from pi_durable_log
-        where tenant_id=${binding.tenantId}::uuid and session_id=${binding.piSessionId}
-          and seq=${source.sequence} and record_id=${source.documentId ?? source.taskId}
-          and record_kind=${source.documentId === undefined ? "task" : "document.create"}`.execute(
-          this.options.database,
-        );
-        if (record.rows.length !== 1) throw new Error("Native child source is missing");
-        const intent = durableControlIntent(
-          { seq: source.sequence, nextId: 2, writes: [JSON.parse(record.rows[0]!.body)] },
-          {
-            taskId: source.taskId,
-            ...(source.documentId ? { sourceDocumentId: source.documentId } : {}),
-            operationId: entry.view.id,
-            conversationId: entry.view.parentConversationId,
-            toolName: "subagent",
-          },
-        );
-        const args = prepareSubagentArguments(intent.arguments);
-        if (args.action !== "run") throw new Error("Native child source is not a delegation");
-        const cursor = await this.options.database
-          .selectFrom("sessions as s")
-          .innerJoin("subagent_conversations as v", "v.child_session_id", "s.id")
-          .select(sql<string>`greatest(s.next_event_seq,v.output_display_seq+1)`.as("next"))
-          .where("s.tenant_id", "=", binding.tenantId)
-          .where("s.id", "=", entry.view.sessionId)
-          .where("v.root_run_id", "=", binding.runId)
-          .executeTakeFirstOrThrow();
-        return { ...entry, prompt: args.task, nextEventSeq: Number(cursor.next) };
-      }),
+    return nativeRead(
+      async () => {
+        const result: Array<{
+          conversationId: number;
+          view: ConversationWorkView;
+          nextEventSeq: number;
+        }> = [];
+        for (let first = 0; first < views.length; first += 128) {
+          const batch = views.slice(first, first + 128);
+          const rows = await this.options.database
+            .selectFrom("subagent_conversations as v")
+            .innerJoin("sessions as s", (join) =>
+              join
+                .onRef("s.id", "=", "v.child_session_id")
+                .onRef("s.tenant_id", "=", "v.tenant_id"),
+            )
+            .select([
+              "v.id",
+              "v.child_session_id",
+              "v.child_turn_id",
+              "v.source_sequence",
+              "v.source_record_id",
+              "v.source_kind",
+              "s.pi_conversation_id",
+              sql<string>`greatest(s.next_event_seq,v.output_display_seq+1)`.as("next"),
+            ])
+            .where("v.tenant_id", "=", binding.tenantId)
+            .where("v.root_run_id", "=", binding.runId)
+            .where("v.root_session_id", "=", binding.sessionId)
+            .where("s.pi_session_id", "=", binding.piSessionId)
+            .where(
+              "v.id",
+              "in",
+              batch.map((entry) => entry.view.id),
+            )
+            .execute();
+          const byId = new Map(rows.map((row) => [row.id, row]));
+          for (const entry of batch) {
+            const row = byId.get(entry.view.id),
+              source = entry.view.source;
+            if (
+              !row ||
+              row.child_session_id !== entry.view.sessionId ||
+              row.child_turn_id !== entry.view.turnId ||
+              Number(row.source_sequence) !== source.sequence ||
+              Number(row.source_record_id) !== (source.documentId ?? source.taskId) ||
+              row.source_kind !== (source.documentId === undefined ? "task" : "document.create") ||
+              (row.pi_conversation_id !== null &&
+                Number(row.pi_conversation_id) !== entry.conversationId)
+            )
+              throw new Error("Native child view is missing or changed");
+            result.push({ ...entry, nextEventSeq: Number(row.next) });
+          }
+        }
+        return result;
+      },
+      owner.readSignal,
+      (error) => owner.interruption.abort(error),
     );
   }
+
   observeLeaseRenewals(
     heartbeat: SupervisorHeartbeatMessage,
     ack: SupervisorHeartbeatAckMessage,
@@ -279,6 +306,7 @@ export class PostgresDurableSessionHost {
   }
   async open(input: DurableSessionOpen): Promise<DurableSessionHandle> {
     if (this.#closed) throw new Error("Native Session host is closed");
+    input.signal?.throwIfAborted();
     const binding = input.binding,
       identity = parseExecutionReference(binding.executionReference);
     if (
@@ -309,14 +337,21 @@ export class PostgresDurableSessionHost {
       });
       const interruption = new AbortController();
       const authority = {
-        signal: AbortSignal.any([lease.signal, interruption.signal]),
+        signal: AbortSignal.any([
+          lease.signal,
+          interruption.signal,
+          ...(input.signal ? [input.signal] : []),
+        ]),
         assertCurrent: async () => {
+          input.signal?.throwIfAborted();
           interruption.signal.throwIfAborted();
           await lease.assertCurrent();
         },
         start: () => lease.start(),
         close: () => lease.close(),
       };
+      const readSignal = authority.signal;
+      const readFailed = (error: Error) => interruption.abort(error);
       const projection = new DurablePostgresProjection(
         this.options.database,
         { tenantId: binding.tenantId, sessionId: binding.piSessionId },
@@ -327,12 +362,17 @@ export class PostgresDurableSessionHost {
       const progress = new NativeProjectionProgress({
         initialThrough: 0,
         assertCurrent: () => authority.assertCurrent(),
-        read: async () => (await projection.head()).seq,
+        read: () => nativeRead(async () => (await projection.head()).seq, readSignal, readFailed),
       });
       const storage = (async () => {
         await authority.assertCurrent();
+        // Watch ownership while the cold head is still loading, not only after
+        // it returns. The separate lease pool can revoke a blocked data read.
+        authority.start();
         const store = await PublishedDurableStorage.open({
           projection,
+          signal: readSignal,
+          onReadFailure: readFailed,
           assertCurrent: () => authority.assertCurrent(),
           publish: (batch, inputConversations = [], documents = []) =>
             this.#serialize(this.#owners.get(key)!, async () => {
@@ -427,7 +467,6 @@ export class PostgresDurableSessionHost {
             }),
           waitProjected: (through) => progress.wait(through, authority.signal),
         });
-        authority.start();
         return store;
       })();
       owner = {
@@ -436,6 +475,7 @@ export class PostgresDurableSessionHost {
         runs,
         bindings,
         interruption,
+        readSignal,
         display: new Map(),
         publicationTail: Promise.resolve(),
         releaseTail: Promise.resolve(),
@@ -497,8 +537,32 @@ export class PostgresDurableSessionHost {
         },
       };
     } catch (error) {
-      await release();
-      throw error;
+      // Before open returns, the Runner has no handle from which to recover
+      // the authority failure. Capture it before release closes that authority;
+      // a corrupt head must not become a recoverable lease error during cleanup.
+      const revoked = owner.authority.signal.aborted;
+      const reason: unknown = owner.authority.signal.reason;
+      const reasonCode = reason instanceof Error ? (reason as { code?: string }).code : undefined;
+      const code = [
+        "native_storage_unavailable",
+        "writer_publication_failed",
+        "worker_shutdown",
+      ].includes(reasonCode ?? "")
+        ? reasonCode
+        : reason instanceof NativeSessionError && reason.code === "storage"
+          ? "session_lease_revoked"
+          : isTransientDatabaseReadError(reason)
+            ? "native_storage_unavailable"
+            : undefined;
+      const failure =
+        revoked && code
+          ? Object.assign(
+              new Error("Native Session opening lost its execution authority", { cause: error }),
+              { code, retryable: true },
+            )
+          : error;
+      await release().catch(() => {});
+      throw failure;
     }
   }
   #serialize<T>(owner: Owner, work: () => Promise<T>): Promise<T> {
@@ -525,6 +589,13 @@ export class PostgresDurableSessionHost {
   }
   async close(): Promise<void> {
     this.#closed = true;
+    for (const owner of this.#owners.values())
+      owner.interruption.abort(
+        Object.assign(new Error("Native Session host is retiring"), {
+          code: "worker_shutdown",
+          retryable: true,
+        }),
+      );
     const results = await Promise.allSettled(
       [...this.#owners].map(([key, owner]) => this.#closeOwner(key, owner)),
     );

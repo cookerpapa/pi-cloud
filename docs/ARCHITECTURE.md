@@ -1,5 +1,21 @@
 # Architecture
 
+[ADR-0262](adr/0262-native-recovery-read-lifetimes.md) is implemented in source,
+pending full checks and matched rollout. Worker native data reads use a separate
+four-connection direct-PG pool with 30-second per-operation bounds. Native read
+Context/owner cancellation reaches SQL and attachment reads, while User Stop
+retains abort/queue settlement and acknowledged commits are still adopted.
+Transient `native_storage_unavailable` failures use existing ordered Session
+closure and a five-second PG queue delay before same-Run re-admission.
+Schema 191 adds the native Submission status index. Existing child reattachment
+uses persisted agent configuration and the original Submission, with batched
+cloud view/cursor reads and no initial-prompt lookup or redundant configuration
+commit. The private execution envelope accepts `{input:{kind:"resume"}}` only
+for existing child views; root PG admission still uses prompt input. The family
+effect barrier remains. Image hydration keeps per-decode validation because
+pinned public hooks do not encompass context reads. Serving status below remains
+the preceding release until matched deployment completes.
+
 PiCloud is a private/self-hosted multi-tenant Coding Agent. Pi Durable 1.0.0 owns the Harness,
 native tasks, model context, input placement, Tool selection and Compaction. PiCloud owns cloud intake confirmation,
 execution authority, distributed placement, output projection and Cube lifetimes.

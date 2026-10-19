@@ -38,7 +38,12 @@ input identity and unsafe Tool non-replay. Runtime and deployment are unchanged.
 The [proposed repair plan](reports/worker-harness-recovery-repair-plan-20261019.md)
 combines bounded/cancellable read lifetimes, typed recovery failures, status
 indexing and native child reattachment. Image reuse depends on proving a suitable
-public-API operation boundary. No runtime implementation has started.
+public-API operation boundary. [ADR-0262](adr/0262-native-recovery-read-lifetimes.md)
+is implemented in source; full checks and matched rollout are in progress.
+The image feasibility check retains per-decode validation because public hooks
+run after context construction. Image cancellation propagation is implemented.
+[Implementation and delivery status](reports/worker-harness-recovery-repair-20261019.md)
+track the required checks and remaining live gates.
 An additional owned-PG timing baseline restores 1/8/32/128 short-text children
 to the model-permit boundary in 0.157/0.534/1.758/8.341 seconds. Pre-granted
 authority and synchronous PG publication exclude full failover/Kafka latency;

@@ -91,7 +91,6 @@ export type RemoteToolSandboxTurnRunnerOptions = {
       Array<{
         conversationId: number;
         view: ConversationWorkView;
-        prompt: string;
         nextEventSeq: number;
       }>
     >;
@@ -322,9 +321,12 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           (outcome) =>
             outcome.status === "rejected" &&
             outcome.reason instanceof PiTurnError &&
-            ["writer_publication_failed", "worker_shutdown", "session_lease_revoked"].includes(
-              outcome.reason.code,
-            ),
+            [
+              "writer_publication_failed",
+              "worker_shutdown",
+              "session_lease_revoked",
+              "native_storage_unavailable",
+            ].includes(outcome.reason.code),
         );
         if (failure?.status === "rejected") {
           this.#activePiRunners.delete(key);
@@ -355,10 +357,36 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       if (this.#conversationLines.get(key) === next) this.#conversationLines.delete(key);
     }
   }
-  startConversation(
-    request: ConversationStartRequest,
-    restored?: { conversationId: number; nextEventSeq: number },
+  startConversation(request: ConversationStartRequest): Promise<number> {
+    return this.#attachConversation({
+      ...request,
+      input: { kind: "prompt", text: request.prompt },
+    });
+  }
+  restoreConversation(
+    reference: string,
+    child: { conversationId: number; view: ConversationWorkView; nextEventSeq: number },
   ): Promise<number> {
+    return this.#attachConversation({
+      executionReference: reference,
+      view: child.view,
+      input: { kind: "resume" },
+      restored: child,
+    });
+  }
+  #attachConversation(
+    request: {
+      executionReference: string;
+      view: ConversationWorkView;
+    } & (
+      | { input: { kind: "prompt"; text: string }; restored?: never }
+      | {
+          input: { kind: "resume" };
+          restored: { conversationId: number; nextEventSeq: number };
+        }
+    ),
+  ): Promise<number> {
+    const restored = request.restored;
     return this.#conversationLine(request.executionReference, request.view.id, async () => {
       const family = this.#families.get(request.executionReference);
       if (!family || !this.#conversationHost || !this.#openConversationLog)
@@ -393,7 +421,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           conversationWork: view,
           sessionKind: "subagent",
           nextEventSeq: restored?.nextEventSeq ?? 1,
-          input: { kind: "prompt", text: request.prompt },
+          input: request.input,
           workingDirectory: view.workingDirectory,
           toolCapabilities: view.toolCapabilities,
           agentSystemPrompt: view.agentSystemPrompt,
@@ -713,14 +741,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                   for (const child of (await this.#conversationHost?.activeConversations(
                     command.payload.executionReference,
                   )) ?? [])
-                    await this.startConversation(
-                      {
-                        executionReference: command.payload.executionReference,
-                        view: child.view,
-                        prompt: child.prompt,
-                      },
-                      child,
-                    );
+                    await this.restoreConversation(command.payload.executionReference, child);
                   family.bindingsReady.resolve();
                 } catch (error) {
                   family.bindingsReady.reject(error);

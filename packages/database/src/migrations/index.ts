@@ -373,6 +373,7 @@ export const migrationProvider: MigrationProvider = {
       "188_session_work_and_tool_dispatch": sessionWorkAndToolDispatch,
       "189_idle_worker_reconnect": idleWorkerReconnect,
       "190_control_plane_expiry": controlPlaneExpiry,
+      "191_native_submission_status": nativeSubmissionStatus,
     };
   },
 };
@@ -388,3 +389,4 @@ import * as sessionWorkAndToolDispatch from "./188_session_work_and_tool_dispatc
 import * as idleWorkerReconnect from "./189_idle_worker_reconnect.ts";
 
 import * as controlPlaneExpiry from "./190_control_plane_expiry.ts";
+import * as nativeSubmissionStatus from "./191_native_submission_status.ts";

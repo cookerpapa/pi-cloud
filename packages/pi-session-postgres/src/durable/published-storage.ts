@@ -1,5 +1,12 @@
 import type { Context, JsonValue } from "@earendil-works/chord";
 import {
+  BACKGROUND_CONTEXT,
+  awaitWithContext,
+  withAbortSignal,
+} from "@earendil-works/chord/context";
+import { withDatabaseReadSignal } from "@pi-cloud/database";
+import { nativeRead, type NativeReadUnavailableError } from "./read-lifetime.ts";
+import {
   StorageRejected,
   type ConversationId,
   type ConversationQuery,
@@ -72,6 +79,8 @@ export type DurableStorageOptions = {
   ): Promise<void>;
   waitProjected(through: number): Promise<void>;
   assertCurrent?(): Promise<void>;
+  signal?: AbortSignal;
+  onReadFailure?(error: NativeReadUnavailableError): void;
   maximumBufferedWrites?: number;
   maximumBufferedBytes?: number;
 };
@@ -108,6 +117,7 @@ export class PublishedDurableStorage implements Storage {
   #closed = false;
   #failed: unknown;
   #tail: Promise<unknown> = Promise.resolve();
+  readonly #readClose = new AbortController();
   private constructor(options: DurableStorageOptions, head: { seq: number; nextId: number }) {
     this.#options = options;
     this.#seq = head.seq;
@@ -116,13 +126,16 @@ export class PublishedDurableStorage implements Storage {
     this.#coldNextId = head.nextId;
   }
   static async open(options: DurableStorageOptions): Promise<PublishedDurableStorage> {
-    return new PublishedDurableStorage(options, await options.projection.head(true));
+    return new PublishedDurableStorage(
+      options,
+      await nativeRead(() => options.projection.head(true), options.signal, options.onReadFailure),
+    );
   }
   get committedSequence(): number {
     return this.#seq;
   }
   recordSequence(id: number): Promise<number | undefined> {
-    return this.#serial(async () => {
+    return this.#read(BACKGROUND_CONTEXT, async () => {
       const local = this.#records.get(id);
       if (local) return local.seq;
       if (this.#coldSeq === 0 || id >= this.#coldNextId) return undefined;
@@ -140,13 +153,24 @@ export class PublishedDurableStorage implements Storage {
         cause: this.#failed,
       });
   }
-  #serial<T>(work: () => Promise<T>): Promise<T> {
+  #serial<T>(work: () => Promise<T>, signal = this.#options.signal): Promise<T> {
     const result = this.#tail.then(async () => {
       this.#assertOpen();
-      return work();
+      return withDatabaseReadSignal(signal, work);
     });
     this.#tail = result.catch(() => {});
     return result;
+  }
+  #read<T>(context: Context, work: () => Promise<T>): Promise<T> {
+    const signal = AbortSignal.any([
+      ...(context.abortSignal ? [context.abortSignal] : []),
+      this.#readClose.signal,
+      ...(this.#options.signal ? [this.#options.signal] : []),
+    ]);
+    return awaitWithContext(
+      this.#serial(() => nativeRead(work, signal, this.#options.onReadFailure), signal),
+      withAbortSignal(signal, context),
+    );
   }
   async mintId<I extends Id<string>>(): Promise<I> {
     this.#assertOpen();
@@ -162,8 +186,12 @@ export class PublishedDurableStorage implements Storage {
         this.#bufferedWrites >= (this.#options.maximumBufferedWrites ?? 2048) ||
         this.#bufferedBytes >= (this.#options.maximumBufferedBytes ?? 16 * 1024 * 1024)
       )
-        await this.#flush();
-      const prepared = await this.#prepare(detached);
+        await nativeRead(() => this.#flush(), this.#options.signal, this.#options.onReadFailure);
+      const prepared = await nativeRead(
+        () => this.#prepare(detached),
+        this.#options.signal,
+        this.#options.onReadFailure,
+      );
       await this.#options.assertCurrent?.();
       try {
         await this.#options.publish(
@@ -219,7 +247,9 @@ export class PublishedDurableStorage implements Storage {
   }
   /** Host eviction and tests can explicitly drain the same projection watermark. */
   flush(): Promise<void> {
-    return this.#serial(() => this.#flush());
+    return this.#serial(() =>
+      nativeRead(() => this.#flush(), this.#options.signal, this.#options.onReadFailure),
+    );
   }
   async #flush(): Promise<void> {
     if (!this.#bufferedWrites) return;
@@ -275,8 +305,9 @@ export class PublishedDurableStorage implements Storage {
     if (!record) throw new Error(`Unknown conversation: ${id}`);
     return record;
   }
-  conversation(id: ConversationId, _context: Context): Promise<ConversationRecord | undefined> {
-    return this.#serial(
+  conversation(id: ConversationId, context: Context): Promise<ConversationRecord | undefined> {
+    return this.#read(
+      context,
       async () =>
         cloneNative((await this.#record<ConversationRecord>(id, "conversation")) ?? null) ??
         undefined,
@@ -286,9 +317,9 @@ export class PublishedDurableStorage implements Storage {
     query: ConversationQuery,
     limit: number,
     cursor: Cursor | undefined,
-    _context: Context,
+    context: Context,
   ): Promise<Page<ConversationRecord, Cursor>> {
-    return this.#serial(async () => {
+    return this.#read(context, async () => {
       const fields: Record<string, string> = {};
       if (query.ownerConversationId !== undefined)
         fields.ownerConversation = String(query.ownerConversationId);
@@ -314,7 +345,8 @@ export class PublishedDurableStorage implements Storage {
     idOrContext: EntryId | Context,
     context?: Context,
   ): Promise<{ entry: EntryRecord; commitSeq: Seq } | undefined> {
-    return this.#serial(async () => {
+    const readContext = context ?? (idOrContext as Context);
+    return this.#read(readContext, async () => {
       const id = context === undefined ? idOrConversation : idOrContext;
       if (typeof id !== "number") throw new TypeError("Storage.entry() requires an entry ID");
       let conversation =
@@ -377,9 +409,9 @@ export class PublishedDurableStorage implements Storage {
   findLatestHeadMarker(
     conversationId: ConversationId,
     atOrBeforeEntryId: EntryId | undefined,
-    _context: Context,
+    context: Context,
   ): Promise<(EntryRecord & { head: EntryId }) | undefined> {
-    return this.#serial(async () => {
+    return this.#read(context, async () => {
       const rows = await this.#entries(
         {
           conversationId,
@@ -396,12 +428,15 @@ export class PublishedDurableStorage implements Storage {
     query: EntryQuery,
     limit: number,
     cursor: Cursor | undefined,
-    _context: Context,
+    context: Context,
   ): Promise<Page<EntryRecord, Cursor>> {
-    return this.#serial(async () => page(await this.#entries(query, limit + 1, cursor), limit));
+    return this.#read(context, async () =>
+      page(await this.#entries(query, limit + 1, cursor), limit),
+    );
   }
-  task(id: TaskId, _context: Context): Promise<StoredTask | undefined> {
-    return this.#serial(
+  task(id: TaskId, context: Context): Promise<StoredTask | undefined> {
+    return this.#read(
+      context,
       async () => cloneNative((await this.#record<StoredTask>(id, "task")) ?? null) ?? undefined,
     );
   }
@@ -409,9 +444,9 @@ export class PublishedDurableStorage implements Storage {
     query: TaskQuery,
     limit: number,
     cursor: Cursor | undefined,
-    _context: Context,
+    context: Context,
   ): Promise<Page<StoredTask, Cursor>> {
-    return this.#serial(async () => {
+    return this.#read(context, async () => {
       const fields: Record<string, string> = {};
       if (query.conversationId !== undefined) fields.conversation = String(query.conversationId);
       if (query.kind !== undefined) fields.nativeKind = JSON.stringify(query.kind);
@@ -426,8 +461,9 @@ export class PublishedDurableStorage implements Storage {
       );
     });
   }
-  submission(id: SubmissionId, _context: Context): Promise<SubmissionRecord | undefined> {
-    return this.#serial(
+  submission(id: SubmissionId, context: Context): Promise<SubmissionRecord | undefined> {
+    return this.#read(
+      context,
       async () =>
         cloneNative((await this.#record<SubmissionRecord>(id, "submission")) ?? null) ?? undefined,
     );
@@ -436,9 +472,9 @@ export class PublishedDurableStorage implements Storage {
     query: SubmissionQuery,
     limit: number,
     cursor: Cursor | undefined,
-    _context: Context,
+    context: Context,
   ): Promise<Page<SubmissionRecord, Cursor>> {
-    return this.#serial(async () => {
+    return this.#read(context, async () => {
       const fields: Record<string, string> = {};
       if (query.conversationId !== undefined) fields.conversation = String(query.conversationId);
       if (query.status !== undefined) fields.status = query.status;
@@ -456,9 +492,9 @@ export class PublishedDurableStorage implements Storage {
   submissionByRequest(
     conversationId: ConversationId,
     requestId: string,
-    _context: Context,
+    context: Context,
   ): Promise<SubmissionRecord | undefined> {
-    return this.#serial(async () => {
+    return this.#read(context, async () => {
       const rows = await this.#scan(
         {
           kind: "submission",
@@ -495,9 +531,10 @@ export class PublishedDurableStorage implements Storage {
   findDocument(
     address: DocumentAddress,
     at: DocumentPoint,
-    _context: Context,
+    context: Context,
   ): Promise<DocumentRecord | undefined> {
-    return this.#serial(
+    return this.#read(
+      context,
       async () => cloneNative((await this.#findDocument(address, at)) ?? null) ?? undefined,
     );
   }
@@ -537,17 +574,17 @@ export class PublishedDurableStorage implements Storage {
   document(
     id: DocumentId,
     at: DocumentPoint,
-    _context: Context,
+    context: Context,
   ): Promise<StoredDocument | undefined> {
-    return this.#serial(() => this.#document(id, at));
+    return this.#read(context, () => this.#document(id, at));
   }
   scanDocuments(
     query: DocumentQuery,
     limit: number,
     cursor: Cursor | undefined,
-    _context: Context,
+    context: Context,
   ): Promise<Page<DocumentRecord, Cursor>> {
-    return this.#serial(async () => {
+    return this.#read(context, async () => {
       const fields: Record<string, string> = { scope: documentScope(query.scope) };
       if (query.kind !== undefined) fields.nativeKind = JSON.stringify(query.kind);
       return page(
@@ -562,6 +599,7 @@ export class PublishedDurableStorage implements Storage {
     });
   }
   async close(_context: Context): Promise<void> {
+    this.#readClose.abort(new Error("Native Storage reads closed"));
     await this.#tail;
     this.#closed = true;
     this.#records.clear();

@@ -54,6 +54,7 @@ export type PiWorkerRuntimeOptions = {
   config: SupervisorHostConfig;
   database?: Kysely<Database>;
   leaseDatabase?: Kysely<Database>;
+  readDatabase?: Kysely<Database>;
   provisioningClient?: Pick<SupervisorProvisioningClient, "provision">;
   sandboxControl?: SupervisorSandboxControl;
   idGenerator?: () => string;
@@ -121,6 +122,8 @@ export class PiWorkerRuntime {
   readonly #ownsDatabase: boolean;
   readonly #leaseDatabase: Kysely<Database>;
   readonly #ownsLeaseDatabase: boolean;
+  readonly #readDatabase: Kysely<Database>;
+  readonly #ownsReadDatabase: boolean;
   readonly #provisioningClient: Pick<SupervisorProvisioningClient, "provision">;
   readonly #sandboxControl: SupervisorSandboxControl;
   readonly #idGenerator: () => string;
@@ -203,6 +206,14 @@ export class PiWorkerRuntime {
         checkoutTimeoutMs: 5_000,
       });
     this.#ownsLeaseDatabase = options.leaseDatabase === undefined;
+    this.#readDatabase =
+      options.readDatabase ??
+      createDatabase({
+        connectionString: options.config.databaseNotificationUrl,
+        maxConnections: 4,
+        readTimeoutMs: 30_000,
+      });
+    this.#ownsReadDatabase = options.readDatabase === undefined;
     this.#provisioningClient =
       options.provisioningClient ??
       new SupervisorProvisioningClient({
@@ -419,7 +430,7 @@ export class PiWorkerRuntime {
     this.#toolReplies = toolReplies;
     await toolReplies.start();
     this.#assertStarting();
-    const images = await configuredImageAttachments(this.#database!);
+    const images = await configuredImageAttachments(this.#database, this.#readDatabase);
     this.#images = images;
     if (images) await images.blobs.checkHealth();
     const sessionMutationProducer =
@@ -441,7 +452,7 @@ export class PiWorkerRuntime {
     await runClaimReadiness.start();
     this.#assertStarting();
     const nativeSessions = new PostgresDurableSessionHost({
-      database: this.#database,
+      database: this.#readDatabase,
       leaseDatabase: this.#leaseDatabase,
       ...(images ? { images: images.codec } : {}),
     });
@@ -563,8 +574,9 @@ export class PiWorkerRuntime {
       },
       runtimeIdentity: identity,
       trustedWorkspaceDirectory: this.#config.trustedWorkspaceDirectory,
-      openAgentSession: (command) =>
+      openAgentSession: (command, signal) =>
         nativeSessions.open({
+          ...(signal ? { signal } : {}),
           binding: {
             tenantId: command.payload.tenantId,
             sessionId: command.payload.sessionId,
@@ -781,6 +793,7 @@ export class PiWorkerRuntime {
       // A retirement read must finish before its pool closes, not before queue admission stops.
       () => this.#assignmentReaping,
       () => (this.#ownsLeaseDatabase ? this.#leaseDatabase.destroy() : undefined),
+      () => (this.#ownsReadDatabase ? this.#readDatabase.destroy() : undefined),
       () => (this.#ownsDatabase ? this.#database.destroy() : undefined),
     ]) {
       try {

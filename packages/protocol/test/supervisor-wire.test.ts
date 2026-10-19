@@ -211,6 +211,41 @@ describe("supervisor/control-plane wire protocol", () => {
       [execute, cancel].map((message) => parseControlToSupervisorMessage(message).type),
     ).toEqual(["command.turn.execute", "command.turn.cancel"]);
     expect(() => parseControlToSupervisorMessage(steer)).toThrow();
+    const resume = {
+      ...execute,
+      payload: {
+        ...execute.payload,
+        piSession: { ...execute.payload.piSession, conversationId: 7 },
+        sessionKind: "subagent",
+        input: { kind: "resume" },
+        conversationWork: {
+          id: IDS.targetCommand,
+          sessionId: IDS.message2,
+          turnId: IDS.run,
+          parentConversationId: 1,
+          ownerTaskId: 5,
+          contextAnchor: null,
+          workingDirectory: "/workspace",
+          computeSessionId: null,
+          toolCapabilities: [],
+          agentSystemPrompt: "",
+          source: { sequence: 4, taskId: 5 },
+        },
+      },
+    };
+    expect(parseControlToSupervisorMessage(resume)).toEqual(resume);
+    expect(() =>
+      parseControlToSupervisorMessage({
+        ...resume,
+        payload: { ...resume.payload, input: { kind: "resume", text: "not a new prompt" } },
+      }),
+    ).toThrow(PiCloudWireProtocolError);
+    expect(() =>
+      parseControlToSupervisorMessage({
+        ...execute,
+        payload: { ...execute.payload, input: { kind: "resume" } },
+      }),
+    ).toThrow(PiCloudWireProtocolError);
     const parsedExecute = parseControlToSupervisorMessage(execute);
     if (parsedExecute.type !== "command.turn.execute") throw new Error("Expected execute command");
     expect(parsedExecute.payload.traceContext?.traceparent).toContain(

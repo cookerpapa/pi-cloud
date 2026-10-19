@@ -17,7 +17,7 @@ export type RequestExecutionStreamSealInput = {
   now: Date;
   eventId: string;
 } & (
-  | { recover: true; body?: never }
+  | { recover: true; body?: never; retryDelayMs?: number }
   | {
       recover?: false;
       body: Extract<
@@ -113,7 +113,16 @@ export async function requestLockedExecutionStreamSeal(
     .updateTable("runs")
     .set({
       output_seal_id: fact.factId,
-      ...(input.recover ? { recovery_requested_at: input.now } : {}),
+      ...(input.recover
+        ? {
+            recovery_requested_at: input.now,
+            ...(input.retryDelayMs
+              ? {
+                  available_at: sql<Date>`greatest(available_at,clock_timestamp()+${input.retryDelayMs} * interval '1 millisecond')`,
+                }
+              : {}),
+          }
+        : {}),
     })
     .where("id", "=", execution.id)
     .executeTakeFirstOrThrow();

@@ -13,6 +13,7 @@ export type ConfiguredImageAttachments = {
 };
 export async function configuredImageAttachments(
   database: Kysely<Database>,
+  readDatabase: Kysely<Database> = database,
 ): Promise<ConfiguredImageAttachments | undefined> {
   const endpoint = process.env.PI_CLOUD_IMAGE_S3_ENDPOINT;
   if (!endpoint) return undefined;
@@ -30,7 +31,7 @@ export async function configuredImageAttachments(
     bucket: process.env.PI_CLOUD_IMAGE_S3_BUCKET ?? "pi-cloud-session-images",
     ...credentials,
   });
-  const store = new PostgresImageAttachmentStore(database, blobs);
+  const store = new PostgresImageAttachmentStore(database, blobs, readDatabase);
   return { codec: new ImageAttachmentCodec(store), store, blobs };
 }
 

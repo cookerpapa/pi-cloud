@@ -1,7 +1,7 @@
 # Worker / Harness recovery repair plan
 
-Status: proposed, 2026-10-19. This records the owner's request for a concrete
-repair plan; implementation and rollout have not started.
+Status: approved and implemented in source, 2026-10-19. Full verification and
+matched rollout are in progress under [ADR-0262](../adr/0262-native-recovery-read-lifetimes.md).
 Baseline: `2483e425`. Findings and evidence:
 [recovery review](worker-harness-recovery-review-20261019.md).
 
@@ -103,6 +103,12 @@ delegation or unsafe Tool dispatch occurs. Additional cloud metadata reads grow
 with bounded batches instead of the current two-per-child pattern.
 
 ## 4. Validate scoped image reuse — WHR-O2
+
+Feasibility outcome: pinned Pi builds context before `beforeRequest` and
+`beforeCompact`; resumed Compaction also reads context without the latter hook.
+Those public hooks cannot encompass the decode operation. This slice preserves
+per-decode validation/reuse and fixes cancellation propagation. A guessed cache
+lifetime or private task patch is not adopted.
 
 Target repeated hydration of the same immutable reference within one context
 assembly/restoration operation. The reuse key must include tenant and complete

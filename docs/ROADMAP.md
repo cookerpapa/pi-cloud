@@ -15,8 +15,10 @@ WHR-O3: pending Submission status scans filter accumulated completed receipts;
 the earlier Entry-only cost sample did not cover this path. The
 [proposed repair plan](reports/worker-harness-recovery-repair-plan-20261019.md)
 specifies execution/read boundaries, failure handling and acceptance. Runtime
-repairs remain pending; the image reuse boundary needs explicit evaluation
-against the existing per-decode policy. The serving release is unchanged.
+repairs are implemented under [ADR-0262](adr/0262-native-recovery-read-lifetimes.md),
+with full verification and rollout in progress. The image feasibility check
+retains per-decode validation because existing public hooks start too late.
+The serving release is unchanged until matched deployment succeeds.
 Next main walkthrough: the native
 model request/response branch, including outstanding large-image header waits.
 
