@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID, createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { sql } from "kysely";
+import WebSocket from "ws";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
 import { S3ImageBlobStore } from "../packages/session-attachments/src/s3.ts";
@@ -51,7 +52,11 @@ async function until(read, label, timeout = 180000) {
   }
   throw new Error(`${label} did not settle`);
 }
-let tenant, project, session, api, failure;
+let tenant, project, session, api, failure, terminalProject, terminalSession, terminalSocket;
+let terminalOutput = "",
+  terminalFrame,
+  terminalFailure,
+  terminalOpenedAt;
 async function finished(id, timeout = 180000) {
   const run = await until(
     async () => {
@@ -90,7 +95,7 @@ try {
     .orderBy("name", "desc")
     .limit(1)
     .executeTakeFirstOrThrow();
-  assert.equal(schema.name, "192_unbounded_agent_work");
+  assert.equal(schema.name, "194_upload_lifetimes");
   const other = await db
     .selectFrom("runs")
     .select("id")
@@ -123,6 +128,55 @@ try {
     workspaceId: project.workspaceId,
     sessionId: session.sessionId,
   };
+  terminalProject = await api.createProject("Owned terminal lifetime", { kind: "empty" });
+  terminalSession = await api.createSession(
+    terminalProject.projectId,
+    terminalProject.workspaceId,
+    "Terminal-only compute",
+    "elastic",
+    "starter",
+    "/workspace",
+    { provider: "openai-codex", modelId: report.model, thinkingLevel: "low", fastMode: false },
+  );
+  Object.assign(report.resources, {
+    terminalProjectId: terminalProject.projectId,
+    terminalWorkspaceId: terminalProject.workspaceId,
+    terminalSessionId: terminalSession.sessionId,
+  });
+  await save();
+  terminalSocket = new WebSocket(
+    `${base.replace("http:", "ws:")}/v1/conversations/${terminalSession.sessionId}/terminal`,
+    { headers: { authorization: `Bearer ${tenant.credential.token}` }, handshakeTimeout: 15000 },
+  );
+  terminalSocket.on("error", (error) => {
+    terminalFailure = error.message;
+  });
+  terminalSocket.on("message", (raw) => {
+    const frame = JSON.parse(raw.toString());
+    if (frame.type === "workspace_terminal.ready") terminalFrame = frame;
+    if (frame.type === "workspace_terminal.output")
+      terminalOutput = (terminalOutput + Buffer.from(frame.data, "base64").toString("utf8")).slice(
+        -32768,
+      );
+    if (frame.type === "workspace_terminal.error") terminalFailure = frame.code;
+  });
+  await until(async () => {
+    if (terminalFailure) throw new Error(terminalFailure);
+    return terminalFrame;
+  }, "Owned terminal ready");
+  terminalOpenedAt = performance.now();
+  const terminalRuntime = () =>
+    db
+      .selectFrom("workspace_runtimes")
+      .select(["id", "runtime_id"])
+      .where("tenant_id", "=", tenant.tenantId)
+      .where("workspace_id", "=", terminalProject.workspaceId)
+      .where("state", "!=", "released")
+      .orderBy("id")
+      .execute();
+  const originalTerminalRuntime = await terminalRuntime();
+  assert.equal(originalTerminalRuntime.length, 1);
+  assert(originalTerminalRuntime[0].runtime_id);
   const prompt = (n) =>
     `This is an owned runtime-lifetime acceptance. Call bash exactly once with command "sleep 240; printf '%s\\n' STAGE_${n} >> /workspace/model-runtime.txt" and timeout 270 seconds. Wait for it to finish, then reply only STAGE_${n}_DONE. Do not shorten the sleep, background it, use other tools or create subagents.`;
   await phase("start one Run with four sequential native inputs across the former time limits");
@@ -188,6 +242,28 @@ try {
     recoveryCount: 0,
     sequentialToolEffects: 4,
     nativeInputs: inputs.length,
+  };
+  assert.equal(terminalSocket.readyState, WebSocket.OPEN, terminalFailure);
+  const terminalMarker = `TERMINAL_ALIVE_${randomUUID().replaceAll("-", "")}`;
+  terminalSocket.send(
+    JSON.stringify({
+      workspaceTerminalProtocolVersion: 1,
+      type: "workspace_terminal.input",
+      data: Buffer.from(`printf '\\n%s\\n' '${terminalMarker}'\r`).toString("base64"),
+    }),
+  );
+  await until(
+    async () => new RegExp(`(?:^|[\\r\\n])${terminalMarker}\\r?\\n`).test(terminalOutput),
+    "Same terminal after warm TTL",
+  );
+  assert.deepEqual(await terminalRuntime(), originalTerminalRuntime);
+  assert(performance.now() - terminalOpenedAt > 900000);
+  report.terminalHolder = {
+    accepted: true,
+    heldMs: Math.round(performance.now() - terminalOpenedAt),
+    sameConnection: true,
+    samePhysicalRuntime: true,
+    pid: terminalFrame.pid,
   };
   await save();
 
@@ -275,6 +351,36 @@ try {
         errors.push({ name: e.name, code: e.code });
       }
     };
+  if (terminalSocket)
+    await clean(async () => {
+      if (terminalSocket.readyState !== WebSocket.CLOSED)
+        await new Promise((resolve) => {
+          const timer = setTimeout(() => terminalSocket.terminate(), 5000);
+          terminalSocket.once("close", () => {
+            clearTimeout(timer);
+            resolve();
+          });
+          terminalSocket.close();
+        });
+    });
+  if (terminalSession) await clean(() => api.deleteConversation(terminalSession.sessionId));
+  if (terminalProject)
+    await clean(async () => {
+      await api.deleteWorkspace(terminalProject.workspaceId, newIdempotencyKey("terminal-clean"));
+      await until(
+        async () =>
+          Boolean(
+            (
+              await db
+                .selectFrom("workspaces")
+                .select("storage_purged_at")
+                .where("id", "=", terminalProject.workspaceId)
+                .executeTakeFirst()
+            )?.storage_purged_at,
+          ),
+        "Terminal Workspace physical purge",
+      );
+    });
   if (session)
     await clean(async () => {
       const rows = await db

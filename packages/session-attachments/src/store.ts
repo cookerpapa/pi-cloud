@@ -6,6 +6,8 @@ import { sql, type Kysely } from "kysely";
 import type { ImageAttachmentSource, ImageAttachmentStore, ImageScope } from "./codec.ts";
 
 export interface ImageBlobStore {
+  /** One remote attempt per call. Failure ends local transmission; a completed
+   * body with a lost receipt may still commit remotely. No partial objects. */
   put(key: string, bytes: Buffer, mimeType: string, signal: AbortSignal): Promise<void>;
   putStream?(
     key: string,
@@ -163,13 +165,22 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
       await this.#writeCompleted(scope.tenantId, ref.id, false);
       signal.throwIfAborted();
     }
-    await this.blobs.putStream(
-      key(scope.tenantId, ref.id),
-      verified,
-      ref.byteLength,
-      mimeType,
-      signal,
-    );
+    try {
+      await this.blobs.putStream(
+        key(scope.tenantId, ref.id),
+        verified,
+        ref.byteLength,
+        mimeType,
+        signal,
+      );
+    } catch (error) {
+      // S3 cannot publish a partial PutObject. length counts bytes before they
+      // are yielded to the sole transport attempt; unconsumed bytes cannot
+      // arrive after that attempt has stopped. A fully transmitted body is
+      // deliberately still uncertain when its receipt is lost.
+      if (length < ref.byteLength) await this.#writeCompleted(scope.tenantId, ref.id, false);
+      throw error;
+    }
     const ready = await this.#writeCompleted(scope.tenantId, ref.id, complete);
     if (!complete) throw new Error("Image upload did not consume the complete stream");
     signal.throwIfAborted();

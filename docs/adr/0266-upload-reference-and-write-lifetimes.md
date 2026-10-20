@@ -44,12 +44,16 @@ failure before sending also ends the writer obligation. A transport error or
 process crash without positive completion leaves the obligation uncertain.
 The S3 port performs one attempt per call: an automatic retry cannot leave an
 older same-key PUT running behind an acknowledged newer attempt.
+If that attempt stops before receiving the complete declared request body, S3's
+no-partial-object contract proves failure; record writer completion while keeping
+the upload unpublishable. A complete body without a receipt stays uncertain.
 
 Draft removal signals cancellation to its local uploader and joins known local
 work. It does not erase image inventory. GC may repeatedly delete an unreachable
 uncertain object, retaining its small inventory/cleanup marker and deferring the
 next sweep. It removes inventory only after positive writer completion plus
 successful deletion. Thus a late PUT never produces an untracked blob.
+Fixture account cleanup obeys the same writer-completion prerequisite.
 Completion must be known before issuing that DELETE. If it becomes known during
 the delete request, another cleanup pass is required before forgetting inventory.
 

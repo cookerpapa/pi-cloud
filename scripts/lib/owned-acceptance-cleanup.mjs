@@ -59,6 +59,7 @@ export async function purgeOwnedAcceptanceTenant(database, tenant, blobs) {
       (select count(*) from workspaces where tenant_id=${tenant.tenantId}::uuid and (deleted_at is null or storage_purged_at is null))::int as workspaces,
       (select count(*) from outbox where tenant_id=${tenant.tenantId}::uuid and published_at is null)::int as controls,
       (select count(*) from session_image_references where tenant_id=${tenant.tenantId}::uuid)::int as images,
+      (select count(*) from session_image_objects where tenant_id=${tenant.tenantId}::uuid and write_completed_at is null)::int as unfinished_image_writers,
       (select count(*) from session_uploads where tenant_id=${tenant.tenantId}::uuid)::int as uploads`.execute(
       db,
     );

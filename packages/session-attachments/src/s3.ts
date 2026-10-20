@@ -10,6 +10,7 @@ import type { ImageBlobStore } from "./store.ts";
 
 export class S3ImageBlobStore implements ImageBlobStore {
   readonly #client: S3Client;
+  readonly #writes: S3Client;
   constructor(
     readonly options: {
       endpoint: string;
@@ -33,17 +34,13 @@ export class S3ImageBlobStore implements ImageBlobStore {
     for (const timeout of [options.idleTimeoutMs ?? 60_000, options.connectionTimeoutMs ?? 5000])
       if (!Number.isSafeInteger(timeout) || timeout < 1)
         throw new Error("Invalid attachment transport timeout");
-    this.#client = new S3Client({
+    const configuration = {
       endpoint: options.endpoint,
       region: options.region,
       forcePathStyle: true,
       credentials: { accessKeyId: options.accessKeyId, secretAccessKey: options.secretAccessKey },
-      // One remote PUT per inventory identity. A timed-out first request may
-      // still complete after a retry succeeds; that would invalidate GC's
-      // positive writer-completion proof. Reads surface transport failure too.
-      maxAttempts: 1,
-      requestChecksumCalculation: "WHEN_REQUIRED",
-      responseChecksumValidation: "WHEN_REQUIRED",
+      requestChecksumCalculation: "WHEN_REQUIRED" as const,
+      responseChecksumValidation: "WHEN_REQUIRED" as const,
       // Socket inactivity includes the final receipt wait but does not limit
       // the total duration of a progressing upload/download. Let Smithy own
       // request destruction rather than racing an uncancelled send promise.
@@ -51,7 +48,11 @@ export class S3ImageBlobStore implements ImageBlobStore {
         connectionTimeout: options.connectionTimeoutMs ?? 5000,
         socketTimeout: options.idleTimeoutMs ?? 60_000,
       },
-    });
+    };
+    this.#client = new S3Client({ ...configuration, maxAttempts: 2 });
+    // One remote PUT per inventory identity. A timed-out first request may
+    // still complete after a retry succeeds, invalidating writer completion.
+    this.#writes = new S3Client({ ...configuration, maxAttempts: 1 });
   }
   async checkHealth() {
     await this.#client.send(new HeadBucketCommand({ Bucket: this.options.bucket }), {
@@ -59,7 +60,7 @@ export class S3ImageBlobStore implements ImageBlobStore {
     });
   }
   async put(key: string, bytes: Buffer, mimeType: string, signal: AbortSignal) {
-    await this.#client.send(
+    await this.#writes.send(
       new PutObjectCommand({
         Bucket: this.options.bucket,
         Key: key,
@@ -79,7 +80,7 @@ export class S3ImageBlobStore implements ImageBlobStore {
   ) {
     const body = Readable.from(chunks, { objectMode: false, highWaterMark: 65536 });
     try {
-      await this.#client.send(
+      await this.#writes.send(
         new PutObjectCommand({
           Bucket: this.options.bucket,
           Key: key,
@@ -125,5 +126,6 @@ export class S3ImageBlobStore implements ImageBlobStore {
   }
   close() {
     this.#client.destroy();
+    this.#writes.destroy();
   }
 }

@@ -333,7 +333,13 @@ try {
   if (process.env.PI_CLOUD_LIVE_FAMILY_FAULT === "1") {
     const crash = await start(
       a,
-      "Use subagent, context fresh, sandbox shared. Its task: run bash with timeout:90 to append exactly one line to crash-once.txt, then sleep 60. Wait for the actual child result.",
+      [
+        "Use exactly one subagent, context fresh, sandbox shared.",
+        "Its task: run bash with timeout:90 to append exactly one line to crash-once.txt, then sleep 60.",
+        "If execution is interrupted or uncertain, never append again; inspect crash-once.txt and verify exactly one line, then report the observed result.",
+        "Wait for that same child's actual result. Never replace it with another delegation.",
+        "After it returns, use subagent_control action:list and confirm this Run has exactly one child. Finally reply FAMILY-SAME-RUN-RECOVERED.",
+      ].join(" "),
       "worker-loss",
     );
     await until(async () => {
@@ -349,19 +355,52 @@ try {
       "0",
       "Refusing to interrupt unrelated work",
     );
-    const owner = await sql(
+    const ownerPod = await sql(
       `select h.supervisor_id from runs r join workers h on h.id=r.worker_id where r.id=${quote(crash.accepted.runId)}`,
     );
-    assert(/^pi-cloud-pi-worker-primary-v1-[01]$/.test(owner));
-    await kubectlAsync(["delete", "pod", owner, "--grace-period=0", "--force", "--wait=true"]);
-    const failed = await crash.finished;
-    assert.equal(failed.terminal.type, "turn.failed");
+    assert(/^pi-cloud-pi-worker-primary-v1-[01]$/.test(ownerPod));
+    const beforeGrant = JSON.parse(
+      await sql(
+        `select json_build_object('writer',lease_id,'worker',worker_id) from runs where id=${quote(crash.accepted.runId)}`,
+      ),
+    );
+    const originalChildren = JSON.parse(
+      await sql(
+        `select coalesce(json_agg(json_build_object('id',e.id,'conversation',s.pi_conversation_id) order by e.id),'[]')
+       from subagent_executions e join sessions s on s.id=e.child_session_id where e.root_run_id=${quote(crash.accepted.runId)}`,
+      ),
+    );
+    assert.equal(originalChildren.length, 1);
+    await kubectlAsync(["delete", "pod", ownerPod, "--grace-period=0", "--force", "--wait=true"]);
+    const recovered = await succeeded(crash.finished);
+    assert.match(recovered.text, /FAMILY-SAME-RUN-RECOVERED/);
     await until(
       async () =>
-        (await sql(`select count(*) from runs a join runs r on r.id=a.run_id join sessions s on s.id=r.session_id
-      where s.pi_session_id=${quote(a.sessionId)} and a.output_seal_id is not null and a.output_sealed_at is null`)) ===
+        (await sql(`select count(*) from session_leases
+          where pi_session_id=${quote(a.sessionId)} and writer_failed_at is not null and writer_sealed_at is null`)) ===
         "0",
       "family closure projection",
+    );
+    const afterGrant = JSON.parse(
+      await sql(
+        `select json_build_object('writer',lease_id,'worker',worker_id) from runs where id=${quote(crash.accepted.runId)}`,
+      ),
+    );
+    assert.notEqual(afterGrant.writer, beforeGrant.writer);
+    assert.notEqual(afterGrant.worker, beforeGrant.worker);
+    const recoveredChildren = JSON.parse(
+      await sql(
+        `select coalesce(json_agg(json_build_object('id',e.id,'conversation',s.pi_conversation_id) order by e.id),'[]')
+       from subagent_executions e join sessions s on s.id=e.child_session_id where e.root_run_id=${quote(crash.accepted.runId)}`,
+      ),
+    );
+    assert.deepEqual(recoveredChildren, originalChildren);
+    assert.equal(
+      await sql(`select count(*) from pi_durable_records where tenant_id=${quote(tenantId)}
+      and session_id=${quote(a.sessionId)} and kind='submission'
+      and fields->>'conversation'=${quote(originalChildren[0].conversation)}
+      and fields->>'request'=${quote(JSON.stringify(crash.accepted.runId))}`),
+      "1",
     );
     await kubectlAsync([
       "rollout",
@@ -371,7 +410,7 @@ try {
     ]);
     const resumed = await start(
       a,
-      "The previous run was interrupted. Do not repeat the old append or launch script. Do this check yourself with bash: verify crash-once.txt has exactly one line, then run python3 insertion_sort.py && python3 binary_search.py && python3 fibonacci.py. Only if every check exits successfully, write recovery-verified.txt containing FAMILY-RECOVERY-OK and reply exactly FAMILY-RECOVERY-OK. If tools fail, report the failure without the success marker; do not retry more than once.",
+      "The Worker was replaced. Do not repeat the old append or launch script. Do this check yourself with bash: verify crash-once.txt has exactly one line, then run python3 insertion_sort.py && python3 binary_search.py && python3 fibonacci.py. Only if every check exits successfully, write recovery-verified.txt containing FAMILY-RECOVERY-OK and reply exactly FAMILY-RECOVERY-OK. If tools fail, report the failure without the success marker; do not retry more than once.",
       "replacement-worker",
     );
     const resumedResult = await succeeded(resumed.finished);
@@ -394,8 +433,9 @@ try {
         .split(/\r?\n/).length,
       1,
     );
-    assert.notEqual(await owner(resumed.accepted.runId), ownerId);
     report.scenarios.workerLoss = {
+      sameRunRecovered: true,
+      originalChildAndSubmissionPreserved: true,
       familyClosedBeforeReplacement: true,
       changedWorker: true,
       explicitInspectionWithoutScriptReplay: true,

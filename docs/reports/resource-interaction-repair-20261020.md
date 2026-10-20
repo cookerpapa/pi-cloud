@@ -214,3 +214,22 @@ guest-relay cancellation test initially referenced a fixture variable cleared
 by its successful cleanup; it now retains the actual connection object and
 passes. Controlled endpoints prove connection ownership, not live application
 continuity; that remains a matched-release gate.
+
+## Combined release verification in progress
+
+Before live acceptance, the owned-fixture cleanup helper now refuses unfinished
+image writers. A single PUT stopped before the complete declared body is sent
+can record definite failure under the S3 no-partial-object contract; a full body
+without an ACK remains uncertain. Nineteen targeted cleanup/upload cases and
+five S3 transport cases pass. Read/delete retries retain their existing SDK policy.
+
+Maintained live gates now check safe child continuation/discovery, original
+Submission/configuration and one canonical delegation result. The long-work
+gate also holds a real terminal-only VM beyond fifteen minutes. Obsolete
+RunAttempt-shaped SQL and failure-only expectations in the family gate are removed.
+These live gates have not yet been run against the candidate.
+
+The first broad CI pass began before these final follow-ups; it recorded one
+upload-lifetime case failure among 443 Control Plane cases. A fresh run of that
+package's entire nine-case upload file passes. Keep the original log and complete
+frozen-source verification before deployment; no failed sample is counted as passing.

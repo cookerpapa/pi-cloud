@@ -22,6 +22,7 @@ let app: NestFastifyApplication;
 const blobs = new Map<string, Buffer>();
 let holdPut: (() => Promise<void>) | undefined;
 let holdDelete: (() => Promise<void>) | undefined;
+let rejectPartialPut = false;
 let holdRead: ((signal: AbortSignal) => Promise<void>) | undefined;
 const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2uV8AAAAASUVORK5CYII=",
@@ -77,6 +78,13 @@ beforeAll(async () => {
       blobs.set(key, Buffer.from(bytes));
     },
     async putStream(key, chunks, _length, _mime, signal) {
+      if (rejectPartialPut) {
+        rejectPartialPut = false;
+        const iterator = chunks[Symbol.asyncIterator]();
+        await iterator.next();
+        await iterator.return?.();
+        throw new Error("Incomplete single-attempt request body");
+      }
       const bytes = await collect(chunks);
       const delayed = holdPut;
       await delayed?.();
@@ -335,6 +343,39 @@ it("closes the sniffed source when PG rejects its upload claim", async () => {
     ),
   ).rejects.toMatchObject({ code: "not_found" });
   expect(closed).toBe(true);
+});
+
+it("can retire an image write that stopped before transmitting its complete body", async () => {
+  const id = randomUUID();
+  const bytes = Buffer.concat([png, Buffer.alloc(2 * 1024 * 1024)]);
+  rejectPartialPut = true;
+  const chunks = (async function* () {
+    for (let at = 0; at < bytes.length; at += 65536) yield bytes.subarray(at, at + 65536);
+  })();
+  await expect(
+    uploads.upload(
+      f.tenant.tenantId,
+      f.tenant.ownerUserId,
+      f.scope.sessionId,
+      id,
+      "incomplete.png",
+      { ...content(bytes), chunks },
+    ),
+  ).rejects.toMatchObject({ code: "conflict" });
+  const row = await f.database
+    .selectFrom("session_uploads")
+    .select(["state", "image_id"])
+    .where("id", "=", id)
+    .executeTakeFirstOrThrow();
+  expect(row.state).toBe("failed");
+  const ended = await sql`select id from session_image_objects where id=${row.image_id}::uuid
+    and state='uploading' and write_completed_at is not null`.execute(f.database);
+  expect(ended.rows).toHaveLength(1);
+  await uploads.remove(f.tenant.tenantId, f.scope.sessionId, id);
+  await sql`update session_image_objects set created_at=to_timestamp(0) where id=${row.image_id}::uuid`.execute(
+    f.database,
+  );
+  expect(await images.reap()).toBe(1);
 });
 
 it("rechecks provisional pins after waiting for concurrent upload admission", async () => {

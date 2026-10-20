@@ -10,6 +10,7 @@ import {
 } from "./owned-acceptance-cleanup.mjs";
 import { ControlPlaneStore } from "../../packages/control-plane/src/control-plane-store.ts";
 import { randomUUID } from "node:crypto";
+import { PostgresImageAttachmentStore } from "../../packages/session-attachments/src/store.ts";
 
 let pg, database, api, settings, actor;
 it("refreshes siblings withdrawn by Stop and uses the queue revision for still-queued cleanup", async () => {
@@ -173,6 +174,47 @@ it("refuses installation when an administrator edited settings after the snapsho
     enabled: false,
     proxyUrl: "http://127.0.0.1:20091",
   });
+});
+
+it("retains an owned tenant while its image writer has no completion proof", async () => {
+  const tenant = await createPrivateTenant(database, {
+    slug: `release-acceptance-write-${randomUUID()}`,
+    ownerDisplayName: "Owned writer",
+  });
+  const entered = Promise.withResolvers(),
+    complete = Promise.withResolvers();
+  let deleted = 0;
+  const blobs = {
+    async put() {
+      entered.resolve();
+      await complete.promise;
+    },
+    async *readStream() {
+      throw new Error("Not a read fixture");
+    },
+    async delete() {
+      deleted++;
+    },
+  };
+  const store = new PostgresImageAttachmentStore(database, blobs);
+  const writing = store.put({ tenantId: tenant.tenantId }, Buffer.from("owned"), "image/png");
+  try {
+    await entered.promise;
+    await expect(purgeOwnedAcceptanceTenant(database, tenant, blobs)).rejects.toThrow(
+      "settled/purged",
+    );
+    expect(deleted).toBe(0);
+    complete.resolve();
+    await writing;
+    expect(await purgeOwnedAcceptanceTenant(database, tenant, blobs)).toMatchObject({
+      tenantRemoved: true,
+      imagesRemoved: 1,
+    });
+    expect(deleted).toBe(1);
+  } finally {
+    complete.resolve();
+    await writing;
+  }
 });
 
 it.each(["release-acceptance-", "native-input-", "cube-check-"])(
