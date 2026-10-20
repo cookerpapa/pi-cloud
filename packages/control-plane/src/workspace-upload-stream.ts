@@ -8,15 +8,23 @@ export async function sniffUpload(chunks: AsyncIterable<Uint8Array>) {
   const prefix: Buffer[] = [];
   const pending: Uint8Array[] = [];
   let size = 0;
-  while (size < 12) {
-    const next = await iterator.next();
-    if (next.done) break;
-    pending.push(next.value);
-    const head = Buffer.from(next.value.subarray(0, 12 - size));
-    prefix.push(head);
-    size += head.length;
+  let closing: Promise<unknown> | undefined;
+  const close = () => (closing ??= Promise.resolve(iterator.return?.()).catch(() => {}));
+  try {
+    while (size < 12) {
+      const next = await iterator.next();
+      if (next.done) break;
+      pending.push(next.value);
+      const head = Buffer.from(next.value.subarray(0, 12 - size));
+      prefix.push(head);
+      size += head.length;
+    }
+  } catch (error) {
+    await close();
+    throw error;
   }
   return {
+    close,
     prefix: Buffer.concat(prefix),
     chunks: (async function* () {
       try {
@@ -27,7 +35,7 @@ export async function sniffUpload(chunks: AsyncIterable<Uint8Array>) {
           yield next.value;
         }
       } finally {
-        void iterator.return?.().catch(() => {});
+        await close();
       }
     })(),
   };

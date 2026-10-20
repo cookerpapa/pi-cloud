@@ -1,4 +1,5 @@
 import { SessionPublicationService } from "./session-publication-service.ts";
+import { reconcileUploadPins } from "./upload-input-pins.ts";
 import { SubagentController } from "./subagent-controller.ts";
 import { ControlToolDispatcher } from "./control-tool-dispatcher.ts";
 import { executePreviewTool } from "./control-preview-tool.ts";
@@ -159,12 +160,20 @@ export async function startControlPlane(): Promise<void> {
     images = await configuredImageAttachments(database);
     if (images) {
       await images.blobs.checkHealth();
-      imageReaper = new ImageAttachmentReaper(images.store, () =>
-        operationalLog({
-          service: "pi-cloud-control-plane",
-          level: "error",
-          event: "image.cleanup.failed",
-        }),
+      const store = images.store;
+      imageReaper = new ImageAttachmentReaper(
+        {
+          async reap(grace, signal) {
+            await reconcileUploadPins(maintenanceDatabase, signal);
+            return store.reap(grace, signal);
+          },
+        },
+        () =>
+          operationalLog({
+            service: "pi-cloud-control-plane",
+            level: "error",
+            event: "image.cleanup.failed",
+          }),
       );
     }
     const controlChanges = new SessionControlOutbox(publicationDatabase, {

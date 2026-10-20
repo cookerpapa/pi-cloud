@@ -512,7 +512,7 @@ producer. A delayed stale initialization can fence a valid successor, but its
 post-init PG check forbids data publication; the successor recovers through the
 same closure protocol. Arbitrary unsafe Tools are never replayed by projection.
 
-The code-owned topic is `pi-cloud.execution-log.v18` (schema 193, ADR-0264).
+The code-owned topic is `pi-cloud.execution-log.v18` (schema 194, ADR-0264/0266).
 Physical Session ID fixes its Kafka partition; partition count cannot change in
 place. Native producers use short RF3/acks-all transactions; no model/Tool wait
 holds an open transaction. Consumers read committed records. Control changes
@@ -941,6 +941,11 @@ Unsealed source Runs protect unprojected uploads. Cleanup claims reachability in
 PG and deletes S3 bytes outside the transaction. Workspace bytes remain solely on
 Cube Volumes. There is no old SessionStorage backend, operation ledger, JSONL
 replay, or patched Agent loop. See [ADR-0229](adr/0229-native-durable-runtime.md).
+Provisional user-upload pins bind exact native operations and writer incarnations;
+only a receipt or ordered closure resolves uncertain acceptance. Unacknowledged
+PUTs retain cleanup inventory even after a DELETE, until positive write completion
+precedes another delete pass. Source previews use scoped verified streams
+([ADR-0266](adr/0266-upload-reference-and-write-lifetimes.md)).
 
 ## Tools and Cube
 

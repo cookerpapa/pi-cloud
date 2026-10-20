@@ -62,6 +62,11 @@ not defects. A transport close never proves VM or user-process death.
 
 ## Upload and attachment lifecycle review
 
+UPL-01–04/O1 source fixes and targeted regressions now pass under
+[ADR-0266](adr/0266-upload-reference-and-write-lifetimes.md). Matched S3/Cube
+acceptance remains pending. Uncertain remote PUTs retain small cleanup markers
+until writer completion is proven; successful DELETE alone does not erase them.
+
 The [October 20 upload review](reports/upload-lifecycle-review-20261020.md) is
 complete at `cf12b444`; no runtime fix is included. Existing tests pass and four
 isolated PG/HTTP/source-lifetime probes reproduce the recorded findings.

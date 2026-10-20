@@ -25,6 +25,7 @@ import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { WorkspaceUploadService, type WorkspaceUploader } from "../src/workspace-upload-service.ts";
 import { QueuedInputService } from "../src/queued-input-service.ts";
 import { emptyEventRuntime } from "./fixtures/event-runtime.ts";
+import { reconcileUploadPins } from "../src/upload-input-pins.ts";
 
 function content(bytes: Buffer) {
   return {
@@ -242,7 +243,11 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
       .where("id", "=", image.id)
       .execute();
     await images.reap(0);
-    expect((await uploads.image(tenant.tenantId, s.sessionId, image.id)).bytes).toEqual(png);
+    expect(
+      await uploads.withImage(tenant.tenantId, s.sessionId, image.id, (_image, chunks) =>
+        collect(chunks),
+      ),
+    ).toEqual(png);
     const otherSession = await session();
     await expect(
       store.acceptTurn(otherSession.sessionId, "wrong-scope", {
@@ -334,6 +339,127 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
     }
   });
 
+  it("reconciles uncertain input/edit pins after native receipts and ordered owner closure", async () => {
+    const s = await session();
+    const first = await store.acceptTurn(s.sessionId, "pin-owner", { prompt: "Hold for input" });
+    const native = await startNativeInputAgent(db, tenant.tenantId, first);
+    let closed = false;
+    const committed = Promise.withResolvers<void>(),
+      ack = Promise.withResolvers<void>();
+    let holdAck = true;
+    const lost = new QueuedInputService({
+      database: db,
+      backendFactory: async () => ({
+        humanInput: async (command) => {
+          await native.backend.humanInput(command);
+          committed.resolve();
+          if (holdAck) await ack.promise;
+          throw new Error("Acknowledgement lost after native commit");
+        },
+      }),
+    });
+    const unavailable = new QueuedInputService({
+      database: db,
+      backendFactory: async () => {
+        throw new Error("No Worker route; command never sent");
+      },
+    });
+    const pendingPins = () =>
+      sql<{ count: string }>`select count(*)::text as count from session_upload_pins
+      where run_id=${first.runId}::uuid`
+        .execute(db)
+        .then((r) => Number(r.rows[0]!.count));
+    const reconcile = async () => {
+      await sql`update session_upload_pins set reconcile_after=to_timestamp(0)
+        where run_id=${first.runId}::uuid`.execute(db);
+      await reconcileUploadPins(db);
+    };
+    try {
+      const original = await upload(s.sessionId),
+        edited = await upload(s.sessionId);
+      const request = lost.accept(store, tenant.tenantId, s.sessionId, "uncertain-accepted", {
+        prompt: "Inspect original",
+        uploadIds: [original.id],
+      });
+      void request.catch(() => {});
+      await committed.promise;
+      // A concurrent definite failure may only remove its own pin.
+      await expect(
+        unavailable.accept(store, tenant.tenantId, s.sessionId, "definitely-unsent", {
+          prompt: "Same image, different input",
+          uploadIds: [original.id],
+        }),
+      ).rejects.toMatchObject({ code: "input_delivery_unavailable" });
+      expect(await pendingPins()).toBe(1);
+      ack.resolve();
+      await expect(request).rejects.toMatchObject({ code: "input_delivery_unavailable" });
+      holdAck = false;
+      const queue = new QueuedInputService({
+        database: db,
+        backendFactory: async () => native.backend,
+      });
+      let snapshot = await queue.list(tenant.tenantId, s.sessionId);
+      const inputId = snapshot.items[0]!.inputId;
+      await expect(
+        lost.mutate(tenant.tenantId, s.sessionId, inputId, "uncertain-edit", {
+          action: "edit",
+          revision: snapshot.revision,
+          text: "Inspect edited",
+          uploadIds: [edited.id],
+        }),
+      ).rejects.toMatchObject({ code: "input_delivery_unavailable" });
+      snapshot = await queue.list(tenant.tenantId, s.sessionId);
+      expect(snapshot.items[0]!.uploads).toEqual([edited]);
+      await queue.mutate(tenant.tenantId, s.sessionId, inputId, "withdraw-after-acceptance", {
+        action: "cancel",
+        revision: snapshot.revision,
+      });
+      // A fresh maintenance instance can confirm receipts even though the
+      // current input payload has been withdrawn. It never resends an input.
+      expect(await pendingPins()).toBe(2);
+      await reconcile();
+      expect(await pendingPins()).toBe(0);
+      for (const image of [original, edited]) {
+        const row = await db
+          .selectFrom("session_uploads")
+          .select("accepted_at")
+          .where("id", "=", image.id)
+          .executeTakeFirstOrThrow();
+        expect(row.accepted_at).not.toBeNull();
+      }
+      const uncertainImage = await upload(s.sessionId);
+      const unknown = new QueuedInputService({
+        database: db,
+        backendFactory: async () => ({
+          humanInput: async () => {
+            throw new Error("Unknown request outcome");
+          },
+        }),
+      });
+      await expect(
+        unknown.accept(store, tenant.tenantId, s.sessionId, "unknown-no-receipt", {
+          prompt: "Possibly sent",
+          uploadIds: [uncertainImage.id],
+        }),
+      ).rejects.toMatchObject({ code: "input_delivery_unavailable" });
+      await reconcile();
+      expect(await pendingPins()).toBe(1); // absent projection is not refusal
+      await native.close();
+      closed = true;
+      await reconcile();
+      expect(await pendingPins()).toBe(0); // ordered writer closure proves absence
+      const row = await db
+        .selectFrom("session_uploads")
+        .select("accepted_at")
+        .where("id", "=", uncertainImage.id)
+        .executeTakeFirstOrThrow();
+      expect(row.accepted_at).toBeNull();
+    } finally {
+      ack.resolve();
+      if (!closed) await native.close();
+    }
+  }, 30000);
+
   it("expires unaccepted image drafts and rejects completion after a claim is removed", async () => {
     const s = await session(),
       draft = await upload(s.sessionId);
@@ -343,7 +469,11 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
       .where("id", "=", draft.id)
       .execute();
     await images.reap(0);
-    await expect(uploads.image(tenant.tenantId, s.sessionId, draft.id)).rejects.toMatchObject({
+    await expect(
+      uploads.withImage(tenant.tenantId, s.sessionId, draft.id, (_image, chunks) =>
+        collect(chunks),
+      ),
+    ).rejects.toMatchObject({
       code: "not_found",
     });
     const entered = Promise.withResolvers<void>(),
@@ -358,7 +488,14 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
       .catch((error: unknown) => error);
     try {
       await entered.promise;
-      await uploads.remove(tenant.tenantId, s.sessionId, id);
+      const removal = uploads.remove(tenant.tenantId, s.sessionId, id);
+      await vi.waitFor(async () =>
+        expect(
+          await db.selectFrom("session_uploads").select("id").where("id", "=", id).execute(),
+        ).toHaveLength(0),
+      );
+      finish.resolve();
+      await removal;
     } finally {
       hold = undefined;
       finish.resolve();

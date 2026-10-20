@@ -44,6 +44,12 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
     readonly blobs: ImageBlobStore,
     readonly readDatabase: Kysely<Database> = database,
   ) {}
+  async #writeCompleted(tenantId: string, id: string, ready = true): Promise<boolean> {
+    const { rows } = await sql<{ state: string }>`update session_image_objects set
+      write_completed_at=clock_timestamp(),state=case when state='uploading' and ${ready} then 'ready' else state end
+      where tenant_id=${tenantId}::uuid and id=${id}::uuid returning state`.execute(this.database);
+    return rows[0]?.state === "ready";
+  }
   async #bounded<T>(bytes: number, fn: () => Promise<T>, signal: AbortSignal): Promise<T> {
     while (this.#inFlightBytes > 0 && this.#inFlightBytes + bytes > 128 * 1024 * 1024) {
       signal.throwIfAborted();
@@ -92,14 +98,14 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
         values(${scope.tenantId}::uuid,${ref.id}::uuid,${scope.runId ?? null}::uuid,'uploading',${ref.sha256},${ref.byteLength},${mimeType})`.execute(
           this.database,
         );
+        if (abort.aborted) {
+          await this.#writeCompleted(scope.tenantId, ref.id, false);
+          abort.throwIfAborted();
+        }
         await this.blobs.put(objectKey, bytes, mimeType, abort);
+        const ready = await this.#writeCompleted(scope.tenantId, ref.id);
         abort.throwIfAborted();
-        const result = await sql`update session_image_objects set state='ready'
-        where tenant_id=${scope.tenantId}::uuid and id=${ref.id}::uuid and state='uploading' returning id`.execute(
-          this.database,
-        );
-        if (!result.rows.length)
-          throw new Error("Image attachment upload lost its inventory identity");
+        if (!ready) throw new Error("Image attachment upload lost its inventory identity");
         return ref;
       },
       abort,
@@ -153,6 +159,10 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
         throw new Error("Image upload digest changed");
       complete = true;
     })();
+    if (signal.aborted) {
+      await this.#writeCompleted(scope.tenantId, ref.id, false);
+      signal.throwIfAborted();
+    }
     await this.blobs.putStream(
       key(scope.tenantId, ref.id),
       verified,
@@ -160,13 +170,10 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
       mimeType,
       signal,
     );
+    const ready = await this.#writeCompleted(scope.tenantId, ref.id, complete);
     if (!complete) throw new Error("Image upload did not consume the complete stream");
     signal.throwIfAborted();
-    const ready =
-      await sql`update session_image_objects set state='ready' where tenant_id=${scope.tenantId}::uuid and id=${ref.id}::uuid and state='uploading' returning id`.execute(
-        this.database,
-      );
-    if (!ready.rows.length) throw new Error("Image upload lost its inventory identity");
+    if (!ready) throw new Error("Image upload lost its inventory identity");
     return ref;
   }
   async get(
@@ -240,17 +247,20 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
     let complete = false;
     const verified = (async function* () {
       let length = 0;
+      let last: Uint8Array | undefined;
       const hash = createHash("sha256");
       for await (const chunk of source) {
         combined.throwIfAborted();
         length += chunk.byteLength;
         if (length > ref.byteLength) throw new Error("Image attachment integrity check failed");
         hash.update(chunk);
-        yield chunk;
+        if (last) yield last;
+        last = chunk;
       }
       if (length !== ref.byteLength || hash.digest("hex") !== ref.sha256)
         throw new Error("Image attachment integrity check failed");
       complete = true;
+      if (last) yield last;
     })();
     try {
       const value = await consume(verified, combined);
@@ -269,7 +279,9 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
     // Draft claims expire independently of Runs; accepted user input is retained
     // with its native Session even before Worker consumption/projection.
     await sql`delete from session_uploads where id in (
-      select id from session_uploads where accepted_at is null and expires_at<clock_timestamp()
+      select id from session_uploads u where accepted_at is null and expires_at<clock_timestamp()
+        and (state<>'uploading' or lease_expires_at<=clock_timestamp())
+        and not exists(select 1 from session_upload_pins p where p.upload_id=u.id)
       order by expires_at limit 32 for update skip locked
     )`.execute(this.database);
     const rows = await this.database.transaction().execute(async (tx) => {
@@ -286,12 +298,13 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
       const { rows } = await sql<{
         tenant_id: string;
         id: string;
+        write_completed_at: Date | null;
       }>`update session_image_objects o set state='deleting'
         where (tenant_id,id) in (${sql.join(candidates.map((r) => sql`(${r.tenant_id}::uuid,${r.id}::uuid)`))})
           and not exists(select 1 from session_image_references r where r.tenant_id=o.tenant_id and r.image_id=o.id)
           and not exists(select 1 from session_uploads u where u.tenant_id=o.tenant_id and u.image_id=o.id)
           and not exists(select 1 from runs where id=o.source_run_id and output_sealed_at is null)
-        returning tenant_id,id`.execute(tx);
+        returning tenant_id,id,write_completed_at`.execute(tx);
       return rows;
     });
     const failures: unknown[] = [];
@@ -300,11 +313,21 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
       signal?.throwIfAborted();
       try {
         await this.blobs.delete(key(row.tenant_id, row.id), deadline(signal));
-        const removed =
-          await sql`delete from session_image_objects where tenant_id=${row.tenant_id}::uuid and id=${row.id}::uuid and state='deleting' returning id`.execute(
+        // Completion must have been known BEFORE this DELETE. A PUT that
+        // completes between the network delete and this statement needs another
+        // delete pass, even if its local callback has now recorded completion.
+        if (row.write_completed_at !== null) {
+          const removed =
+            await sql`delete from session_image_objects where tenant_id=${row.tenant_id}::uuid and id=${row.id}::uuid and state='deleting' and write_completed_at is not null returning id`.execute(
+              this.database,
+            );
+          deleted += removed.rows.length;
+        } else {
+          await sql`update session_image_objects set cleanup_available_at=clock_timestamp()+interval '1 minute'
+            where tenant_id=${row.tenant_id}::uuid and id=${row.id}::uuid and state='deleting'`.execute(
             this.database,
           );
-        deleted += removed.rows.length;
+        }
       } catch (error) {
         signal?.throwIfAborted();
         await sql`update session_image_objects set

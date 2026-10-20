@@ -61,6 +61,19 @@ The idle budget includes waiting for a final PUT receipt and resets while bytes
 make progress; it does not cap total upload duration. Upload failure still cancels
 and joins both byte-placement branches before ending the claim (ADR-0216).
 
+Additional native inputs and edits retain provisional upload pins until Pi
+acknowledges them. Definite non-delivery releases only that delivery's pins;
+ambiguous responses are reconciled against native receipts or ordered writer
+closure. These rows contain attachment/operation references, never another input
+queue. Confirmed attachments still live with the Session after withdrawal.
+
+Image inventory also retains an unfinished PUT's cleanup identity. A late PUT
+cannot recreate an untracked object after draft removal. Failed/uncertain writes
+may keep a small cleanup marker while periodic deletion removes any late bytes;
+absence or timeout does not establish writer quiescence. S3 writes use one
+attempt per call so an older automatic retry cannot outlive a successful receipt.
+See [ADR-0266](adr/0266-upload-reference-and-write-lifetimes.md).
+
 Image normalization applies EXIF orientation, including mirroring, before sizing
 and PNG encoding. Both attached images and fixed Tool reads use this processor;
 the immutable original source remains unchanged.
@@ -78,6 +91,9 @@ previews use an authenticated API; no object-store credentials or public bucket
 URLs are exposed. History, queue edits/reordering and promotion to steer retain
 attachments. Ordinary files remain Workspace assets; only images get immutable
 Session copies in this slice.
+Original previews stream with cancellation and backpressure. The final chunk is
+held until length/hash validation; a failed check cannot complete a full successful
+response. Removing an active draft cancels and joins its local upload work.
 
 ## Public API
 
@@ -131,7 +147,7 @@ with at most eight waiting requests and a 30-second queue wait. The existing
 Run/Cube authority, guest deadline and stop lifecycle apply. No result ledger,
 new event consumer, storage service or Pi loop patch is introduced.
 
-Deploy migrations through 168 and matched API, Worker, Cube runtime, Volume Gateway, Web and Cube
+Deploy migrations through 194 and matched API, Worker, Cube runtime, Volume Gateway, Web and Cube
 guest builds. Preserve native history and existing image objects. The guest now
 contains `envd-input-files.mjs`; an old template is not a supported fallback.
 The decision and acceptance scope are in

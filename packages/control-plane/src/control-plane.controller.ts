@@ -749,16 +749,37 @@ export class ControlPlaneController {
     @Param("uploadId") uploadValue: unknown,
   ) {
     const identity = this.tenantRequestContext.resolve(request);
-    const image = await this.workspaceUploads.image(
-      identity.tenantId,
-      parseUuidPathParameter(sessionValue, "sessionId"),
-      parseUuidPathParameter(uploadValue, "uploadId"),
-    );
-    await reply
-      .header("cache-control", "private, no-store")
-      .header("x-content-type-options", "nosniff")
-      .header("content-type", image.mimeType)
-      .send(image.bytes);
+    const abort = new AbortController();
+    const closed = () => {
+      if (!reply.raw.writableEnded) abort.abort(new Error("Image caller disconnected"));
+    };
+    reply.raw.on("close", closed);
+    try {
+      await this.workspaceUploads.withImage(
+        identity.tenantId,
+        parseUuidPathParameter(sessionValue, "sessionId"),
+        parseUuidPathParameter(uploadValue, "uploadId"),
+        async (image, chunks, signal) => {
+          signal.throwIfAborted();
+          reply.hijack();
+          reply.raw.writeHead(200, {
+            "cache-control": "private, no-store",
+            "x-content-type-options": "nosniff",
+            "content-type": image.mimeType,
+            "content-length": image.byteLength,
+          });
+          await pipeline(
+            Readable.from(chunks, { objectMode: false, highWaterMark: 65536 }),
+            reply.raw,
+            { signal },
+          );
+        },
+        abort.signal,
+      );
+    } finally {
+      abort.abort();
+      reply.raw.removeListener("close", closed);
+    }
   }
 
   @Get("sessions/:sessionId/workspace/directory")

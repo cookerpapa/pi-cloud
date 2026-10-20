@@ -109,6 +109,12 @@ configured web port. A Linux-only HTTP 200 does not establish Windows access.
 
 ## Acceptance and fixture restoration
 
+ADR-0266 adds schema 194 for provisional attachment pins and positive object-write
+completion. Verify uncertain input/edit receipts, old-writer closure, late PUT
+cleanup and cancelled/corrupt source previews. ADR-0265 also requires matching
+Cube patch 0012 and native stale-holder/receipt-retention tests plus owned live
+KVM cleanup. Neither change revokes cleanup evidence by timeout or guessed zero.
+
 ADR-0264 requires matched schema 193, Session topic v18 and the separated
 `subagent` / `subagent_control` / `workflow` catalog. Drain and close all native
 writers before replacing old development history or old supervisor requests.

@@ -376,6 +376,7 @@ export const migrationProvider: MigrationProvider = {
       "191_native_submission_status": nativeSubmissionStatus,
       "192_unbounded_agent_work": unboundedAgentWork,
       "193_supervisor_native_caller": supervisorNativeCaller,
+      "194_upload_lifetimes": uploadLifetimes,
     };
   },
 };
@@ -395,3 +396,4 @@ import * as nativeSubmissionStatus from "./191_native_submission_status.ts";
 import * as unboundedAgentWork from "./192_unbounded_agent_work.ts";
 
 import * as supervisorNativeCaller from "./193_supervisor_native_caller.ts";
+import * as uploadLifetimes from "./194_upload_lifetimes.ts";

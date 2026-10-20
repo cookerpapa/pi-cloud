@@ -10,7 +10,7 @@ The last verified serving release remains `model-runtime-058925bb`, schema 192.
 | 2 — Supervisor/workflow lifetimes | Implemented; 31 distinct targeted cases and both affected typechecks pass | Pending matched release |
 | 3 — Delegation recovery/discovery | Implemented; native recovery, PG catalog/supervision and RF3 replacement cases pass | Pending matched release |
 | 4 — Unknown Volume references | Implemented; native race and full allocation/Master/service contracts pass | Pending matched KVM acceptance |
-| 5 — Attachment lifetimes | Pending evidence/protocol decision and implementation | Pending |
+| 5 — Attachment lifetimes | Implemented; native/PG pin, upload/streaming/cancellation and S3 transport cases pass | Pending matched S3/Cube acceptance |
 | 6 — Terminal/preview lifetimes | Pending | Pending |
 
 ## Slice 1
@@ -161,3 +161,33 @@ Cubelet, real-MySQL Master and service-level physical-evidence contracts. The
 obsolete characterization driver is removed; regressions are maintained in the
 patch. A final additional historical-Unknown guard case is included in the
 release-wide rerun. No live VM restart is claimed before matched deployment.
+
+## Slice 5
+
+[ADR-0266](../adr/0266-upload-reference-and-write-lifetimes.md) records schema 194.
+Additional inputs/edits acquire delivery-specific upload pins. Definite no-send
+or native refusal releases only its pins; ACK promotes retention. Maintenance
+uses native current receipts, or that exact writer's projected seal, to settle
+uncertainty. Initial Run admission remains one PG transaction. Pins contain no
+input text and perform no delivery. Inputs without uploads incur no pin SQL.
+Removal rechecks pins in a fresh statement after taking the upload admission lock.
+
+Image inventory records positive write completion. GC retains uncertain writer
+markers and deletes late bytes on subsequent passes; it cannot forget an object
+whose PUT completed during DELETE. The S3 port disables automatic repeated writes
+of one object identity. An unacknowledged crashed write can retain a small cleanup
+marker indefinitely; neither timeout nor absent bytes prove writer quiescence.
+
+MIME/claim rejection closes the sniffed source. Removing a local active draft
+cancels and joins its placement. Image preview forwards the original through
+the scoped stream with browser cancellation; its last chunk waits for complete
+length/hash verification.
+
+Four integrated suites pass 44 tests, including real native submit/edit receipts,
+concurrent same-image delivery, withdrawal, fresh maintenance and ordered owner
+closure. Additional regressions verify admission/remove locking, corrupt HTTP
+response refusal, early claim cleanup and one-attempt buffered S3 PUT. The three
+expanded upload/storage/S3 suites pass all 23 cases. Schema 194 verification
+initially found the migration-count assertion still at 192; corrected verification
+passes. Affected source typechecks pass. Owned loopback/controlled blob tests do
+not claim actual S3/Cube live acceptance.

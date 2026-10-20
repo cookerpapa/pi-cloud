@@ -1,11 +1,11 @@
 # Upload/attachment review characterizations
 
 Baseline: `cf12b444`, deployed `model-runtime-058925bb`, schema 192.
-These assertions reproduce baseline behavior, not repaired acceptance.
+The original characterizations are retained in Git. They have been replaced by
+maintained desired-behavior regressions:
 
 ```sh
-npx tsc -p scripts/experiments/review-upload-20261020/tsconfig.json
-node scripts/run-with-test-postgres.mjs -- node node_modules/vitest/vitest.mjs run scripts/experiments/review-upload-20261020/upload.test.ts --maxWorkers=1 --testTimeout=15000 --hookTimeout=60000
+node scripts/run-with-test-postgres.mjs -- node node_modules/vitest/vitest.mjs run packages/control-plane/test/upload-lifetimes.postgres.test.ts packages/control-plane/test/workspace-uploads.postgres.test.ts packages/session-attachments/test/storage.postgres.test.ts --maxWorkers=1 --testTimeout=30000 --hookTimeout=60000
 ```
 
 The wrapper owns an isolated PostgreSQL container/database. The API cancellation

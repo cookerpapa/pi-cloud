@@ -1,5 +1,9 @@
 # Current architecture decisions
 
+[ADR-0266](0266-upload-reference-and-write-lifetimes.md) binds provisional upload
+pins to native receipts and preserves uncertain object-write cleanup identity.
+Original-image previews use the verified streaming source and caller cancellation.
+
 [ADR-0265](0265-volume-reference-recovery-evidence.md) preserves stale node Volume
 holder identities and requires closed allocation plus exact physical absence
 before the fixed POSIX detach. Allocation receipts remain until Volume cleanup

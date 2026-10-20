@@ -38,7 +38,10 @@ export class S3ImageBlobStore implements ImageBlobStore {
       region: options.region,
       forcePathStyle: true,
       credentials: { accessKeyId: options.accessKeyId, secretAccessKey: options.secretAccessKey },
-      maxAttempts: 2,
+      // One remote PUT per inventory identity. A timed-out first request may
+      // still complete after a retry succeeds; that would invalidate GC's
+      // positive writer-completion proof. Reads surface transport failure too.
+      maxAttempts: 1,
       requestChecksumCalculation: "WHEN_REQUIRED",
       responseChecksumValidation: "WHEN_REQUIRED",
       // Socket inactivity includes the final receipt wait but does not limit

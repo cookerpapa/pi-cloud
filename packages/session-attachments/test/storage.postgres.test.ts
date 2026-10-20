@@ -272,7 +272,7 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
       streaming.withStream(tenantId, ref, async (chunks) => {
         for await (const chunk of chunks) {
           expect(chunk.byteLength).toBe(64 * 1024);
-          expect(chunksRead).toBe(1);
+          expect(chunksRead).toBe(2); // one chunk held until integrity is known
           throw sinkError;
         }
       }),
@@ -285,13 +285,13 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
     ).rejects.toThrow("complete source");
     expect(closes).toBe(2);
     corrupt = true;
+    let corruptBytes = 0;
     await expect(
       streaming.withStream(tenantId, ref, async (chunks) => {
-        for await (const _chunk of chunks) {
-          /* consume */
-        }
+        for await (const chunk of chunks) corruptBytes += chunk.byteLength;
       }),
     ).rejects.toThrow("integrity");
+    expect(corruptBytes).toBe(value.length - 64 * 1024);
     corrupt = false;
     let consumed = 0;
     await streaming.withStream(tenantId, ref, async (chunks) => {
@@ -306,8 +306,8 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
     const ref = await store.put({ tenantId }, data, "image/png");
     await sql`update session_image_objects set created_at=clock_timestamp()-interval '2 days'
       where tenant_id=${tenantId}::uuid and id=${ref.id}::uuid`.execute(db);
-    await sql`insert into session_image_objects(tenant_id,id,state,sha256,byte_length,mime_type)
-      values(${otherTenant}::uuid,${ref.id}::uuid,'ready',${ref.sha256},${ref.byteLength},${ref.mimeType})`.execute(
+    await sql`insert into session_image_objects(tenant_id,id,state,sha256,byte_length,mime_type,write_completed_at)
+      values(${otherTenant}::uuid,${ref.id}::uuid,'ready',${ref.sha256},${ref.byteLength},${ref.mimeType},clock_timestamp())`.execute(
       db,
     );
     bytes.set(`session-images/${otherTenant}/${ref.id}`, data);
@@ -380,7 +380,18 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
     const remaining = await sql`select id from session_image_objects where state!='ready'`.execute(
       db,
     );
-    expect(remaining.rows).toHaveLength(0);
+    expect(remaining.rows).toEqual([{ id: upload!.id }]);
+    // A dead API's unacknowledged PUT can still arrive after DELETE. Keep its
+    // marker across a new reaper, remove the bytes again, never guess quiescence.
+    const objectKey = `session-images/${tenantId}/${upload!.id}`;
+    bytes.set(objectKey, Buffer.from("late"));
+    await sql`update session_image_objects set cleanup_available_at=clock_timestamp()
+      where tenant_id=${tenantId}::uuid and id=${upload!.id}::uuid`.execute(db);
+    expect(await retry.reap(0)).toBe(0);
+    expect(bytes.has(objectKey)).toBe(false);
+    const marker = await sql`select id from session_image_objects where id=${upload!.id}::uuid
+      and state='deleting' and write_completed_at is null`.execute(db);
+    expect(marker.rows).toHaveLength(1);
   });
 
   it("protects uploads until their Run is sealed, including the unprojected Kafka interval", async () => {

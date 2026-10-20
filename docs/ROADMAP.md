@@ -33,7 +33,7 @@ the subsequent Pi examples and recovery discussion.
       the matched Tool catalog and SAR-N1 documentation.
 - [ ] Slice 4 (source verified; live pending): WVL-03 — recorded evidence protocol and converging
       unknown Volume-reference recovery without weakening physical cleanup proof.
-- [ ] Slice 5: UPL-01–04/O1 — provisional/confirmed references, late PUT cleanup,
+- [ ] Slice 5 (source verified; live pending): UPL-01–04/O1 — provisional/confirmed references, late PUT cleanup,
       cancellation and streamed previews.
 - [ ] Slice 6: TPR-01–04 — redirect/handshake/pending-connect/shutdown lifetimes;
       verify explicit live reconnect without replaying keystrokes.

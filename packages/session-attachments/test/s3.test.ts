@@ -50,6 +50,18 @@ it("terminates a streamed PUT whose complete body is accepted without a receipt"
   expect(received).toBe(1024);
 });
 
+it("does not start a second buffered PUT after losing the first response", async () => {
+  let requests = 0;
+  const store = await fixture((request) => {
+    requests++;
+    request.resume();
+  });
+  await expect(
+    store.put("one-writer", Buffer.alloc(1024), "image/png", AbortSignal.timeout(3000)),
+  ).rejects.toMatchObject({ name: "TimeoutError" });
+  expect(requests).toBe(1);
+});
+
 it("allows a progressing PUT longer than the socket idle deadline", async () => {
   let received = 0;
   const store = await fixture((request, response) => {

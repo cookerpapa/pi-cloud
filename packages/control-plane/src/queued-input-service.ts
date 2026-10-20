@@ -6,6 +6,7 @@ import {
   reviewedModel,
   parseUserUploads,
   parseInputQueueResource,
+  parseExecutionReference,
   type AcceptTurnRequest,
   type AcceptedConversationInputResource,
   type NativeInputAccepted,
@@ -30,6 +31,7 @@ import { readReturnedInputs } from "./stopped-inputs.ts";
 import { bindInputUploads } from "./workspace-upload-service.ts";
 import type { ControlPlaneStore } from "./control-plane-store.ts";
 import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
+import { settleUploadPins } from "./upload-input-pins.ts";
 
 export interface NativeInputBackend {
   humanInput(command: NativeInputCommand): Promise<NativeInputResult>;
@@ -147,11 +149,13 @@ export class QueuedInputService {
   async #deliver(
     target: InputTarget,
     command: WithoutGrant<NativeInputCommand>,
+    pinId?: string,
   ): Promise<NativeInputResult> {
     const workerId = target.worker_id,
       backendFactory = this.options.backendFactory;
-    if (!workerId || !backendFactory) unavailable();
+    let attempted = false;
     try {
+      if (!workerId || !backendFactory) unavailable();
       const grant = await new SessionLeaseCoordinator({
         database: this.options.database,
         workerId: workerId,
@@ -164,13 +168,24 @@ export class QueuedInputService {
         turnId: target.turn_id,
       });
       const backend = await backendFactory(workerId);
-      return await backend.humanInput({
+      if (parseExecutionReference(grant.executionReference).leaseId !== target.lease_id)
+        unavailable();
+      attempted = true;
+      const result = await backend.humanInput({
         ...command,
         executionReference: grant.executionReference,
       } as NativeInputCommand);
+      if (command.action === "submit" && !result.acceptedAt) unavailable();
+      if (pinId) await settleUploadPins(this.options.database, pinId, true);
+      return result;
     } catch (error) {
       const code =
         typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
+      if (
+        pinId &&
+        (!attempted || ["idempotency_conflict", "input_conflict", "input_closed"].includes(code))
+      )
+        await settleUploadPins(this.options.database, pinId, false);
       if (code === "idempotency_conflict")
         throw new ControlPlaneStoreError(code, "Input identity was reused for another operation");
       if (["input_conflict", "input_closed"].includes(code))
@@ -195,6 +210,7 @@ export class QueuedInputService {
     targetTurnId?: string,
   ): Promise<AcceptedConversationInputResource> {
     const inputId = nativeHumanInputId(tenantId, sessionId, key);
+    const pinId = randomUUID();
     const fingerprint = hash({
       delivery,
       targetTurnId: targetTurnId ?? null,
@@ -267,6 +283,7 @@ export class QueuedInputService {
           return { accepted: await acceptInitial() };
         }
         await this.#assertReceiving(tx, target);
+        if (!target.lease_id || session.pi_conversation_id === null) unavailable();
         if (targetTurnId !== undefined && target.turn_id !== targetTurnId)
           conflict("The target Run changed");
         if (request.thinkingLevel !== undefined && request.thinkingLevel !== target.thinking_level)
@@ -277,6 +294,16 @@ export class QueuedInputService {
           workspaceId: target.workspace_id,
           workingDirectory: target.working_directory,
           ids: request.uploadIds ?? [],
+          pin: {
+            id: pinId,
+            piSessionId: session.pi_session_id,
+            conversationId: Number(session.pi_conversation_id),
+            runId: target.id,
+            writerId: target.lease_id,
+            kind: "submit",
+            operationId: inputId,
+            fingerprint,
+          },
         });
         this.#validate(request.prompt, uploads, target);
         return { target, uploads };
@@ -284,21 +311,25 @@ export class QueuedInputService {
     );
     if (decision.accepted) return decision.accepted;
     const acceptedAt = new Date().toISOString();
-    const result = await this.#deliver(decision.target!, {
-      action: "submit",
-      tenantId,
-      sessionId,
-      runId: decision.target!.id,
-      input: {
-        inputId,
-        idempotencyKey: key,
-        fingerprint,
-        text: request.prompt,
-        uploads: decision.uploads!,
-        mode: delivery,
-        acceptedAt,
+    const result = await this.#deliver(
+      decision.target!,
+      {
+        action: "submit",
+        tenantId,
+        sessionId,
+        runId: decision.target!.id,
+        input: {
+          inputId,
+          idempotencyKey: key,
+          fingerprint,
+          text: request.prompt,
+          uploads: decision.uploads!,
+          mode: delivery,
+          acceptedAt,
+        },
       },
-    });
+      decision.uploads?.length ? pinId : undefined,
+    );
     if (!result.acceptedAt)
       throw new ControlPlaneStoreError(
         "input_delivery_unavailable",
@@ -409,6 +440,7 @@ export class QueuedInputService {
       return this.#mutateInitial(tenantId, sessionId, inputId, key, request);
     const operationId = mutationId(tenantId, sessionId, key),
       fingerprint = hash({ inputId, request });
+    const pinId = randomUUID();
     const session = await this.#session(this.options.database, tenantId, sessionId);
     if (session.pi_conversation_id === null) unavailable();
     const scope = {
@@ -430,18 +462,35 @@ export class QueuedInputService {
       return { queue: await this.list(tenantId, sessionId), replayed: true };
     }
     await this.#assertReceiving(this.options.database, target);
+    if (!target.lease_id) unavailable();
     let uploads: UserUpload[] | undefined;
     if (request.action === "edit" && request.uploadIds !== undefined)
-      uploads = await this.options.database.transaction().execute((tx) =>
-        bindInputUploads(tx, {
+      uploads = await this.options.database.transaction().execute(async (tx) => {
+        const files = await bindInputUploads(tx, {
           tenantId,
           sessionId,
           workspaceId: target.workspace_id,
           workingDirectory: target.working_directory,
           ids: request.uploadIds!,
-        }),
-      );
-    if ((request.action === "edit" || request.action === "steer") && request.text !== undefined)
+          pin: {
+            id: pinId,
+            piSessionId: scope.sessionId,
+            conversationId: scope.conversationId,
+            runId: target.id,
+            writerId: target.lease_id!,
+            kind: "mutate",
+            operationId,
+            fingerprint,
+          },
+        });
+        this.#validate(request.text, files, target);
+        return files;
+      });
+    if (
+      uploads === undefined &&
+      (request.action === "edit" || request.action === "steer") &&
+      request.text !== undefined
+    )
       this.#validate(
         request.text,
         uploads ?? parseUserUploads(stored.state.inputs[inputId]?.uploads ?? []),
@@ -458,19 +507,23 @@ export class QueuedInputService {
                 ...(request.text === undefined ? {} : { text: request.text.trim() }),
               }
             : { action: request.action };
-    const result = await this.#deliver(target, {
-      action: "mutate",
-      tenantId,
-      sessionId,
-      runId: target.id,
-      mutation: {
-        operationId,
-        fingerprint,
-        inputId,
-        revision: request.revision.split(".")[0]!,
-        change,
+    const result = await this.#deliver(
+      target,
+      {
+        action: "mutate",
+        tenantId,
+        sessionId,
+        runId: target.id,
+        mutation: {
+          operationId,
+          fingerprint,
+          inputId,
+          revision: request.revision.split(".")[0]!,
+          change,
+        },
       },
-    });
+      uploads?.length ? pinId : undefined,
+    );
     return {
       replayed: result.replayed,
       queue: await this.#nativeView(tenantId, sessionId, target.turn_id, result.queue),

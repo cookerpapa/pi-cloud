@@ -22,7 +22,11 @@ import type { SourceControlService } from "./source-control-service.ts";
 import type { ToolProgressIngress } from "./tool-progress-ingress.ts";
 import type { RunActivityIngress } from "./run-activity-ingress.ts";
 import type { WorkspaceUploader } from "./workspace-upload-service.ts";
-import type { ImageAttachmentStore, ImageUploadStore } from "@pi-cloud/session-attachments";
+import type {
+  ImageAttachmentStore,
+  ImageUploadStore,
+  ImageAttachmentSource,
+} from "@pi-cloud/session-attachments";
 
 export type ControlPlaneApplicationOptions = Omit<
   ControlPlaneStoreOptions,
@@ -39,7 +43,7 @@ export type ControlPlaneApplicationOptions = Omit<
   publicRegistration?: PublicTenantRegistrationConfiguration;
   workspaceBrowser?: TrustedWorkspaceBrowser;
   workspaceUploader?: WorkspaceUploader;
-  imageAttachmentStore?: ImageAttachmentStore & ImageUploadStore;
+  imageAttachmentStore?: ImageAttachmentStore & ImageUploadStore & ImageAttachmentSource;
   webAuthentication?: WebAuthenticationService;
   platformOperatorTenantId?: string;
   platformModelSourceTenantId?: string;
