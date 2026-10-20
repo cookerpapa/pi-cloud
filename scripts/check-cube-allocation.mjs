@@ -158,7 +158,7 @@ try {
     "-count=1",
     "./services/cubebox",
     "-run",
-    "TestManagedCleanup|TestDestroyAuto|TestExecution",
+    "TestManagedCleanup|TestDestroyAuto|TestExecution|TestVolumeHolder",
   ]);
 } finally {
   if (container) await exec("docker", ["stop", "-t", "5", container]).catch(() => {});

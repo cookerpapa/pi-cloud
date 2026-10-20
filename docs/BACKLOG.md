@@ -99,6 +99,11 @@ characterizations and a bounded GC/reachability probe record the following work.
 
 ## Workspace and Volume lifecycle review
 
+WVL-03 source repair follows [ADR-0265](adr/0265-volume-reference-recovery-evidence.md):
+retain missing holder identities, reconcile only after closed-allocation and
+exact-node evidence, and retain receipt dependencies until detach finishes.
+Native race tests pass; full matched Cube and live verification remain pending.
+
 The [October 20 resource review](reports/workspace-volume-lifecycle-review-20261020.md)
 is complete at `f9ca385e`; it changes no production behavior. Existing lifecycle
 contracts pass, while seven real-PG characterizations and three native reference

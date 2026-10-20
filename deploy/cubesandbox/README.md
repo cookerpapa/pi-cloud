@@ -236,6 +236,13 @@ protocols do not gain an implicit direct route through that gateway.
 
 ## Lifecycle and rollback
 
+The maintained stale-reference recovery retains missing holder IDs across node
+restart. It reconciles only closed managed allocations with exact physical
+absence, then completes the fixed POSIX detach receipt. Surviving shared holders
+can detach; unrelated Volumes continue normally. Missing identities or
+unavailable evidence remain unconfirmed. See
+[ADR-0265](../../docs/adr/0265-volume-reference-recovery-evidence.md).
+
 Cube compute instances are not data authorities. The installer loads the
 `picloud-posix` binary Volume Plugin into CubeMaster and Cubelet. Each
 deterministic Workspace-bound physical Volume is a trusted envelope:

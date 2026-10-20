@@ -1,5 +1,10 @@
 # Current architecture decisions
 
+[ADR-0265](0265-volume-reference-recovery-evidence.md) preserves stale node Volume
+holder identities and requires closed allocation plus exact physical absence
+before the fixed POSIX detach. Allocation receipts remain until Volume cleanup
+releases them; unknown evidence never becomes a guessed zero count.
+
 [ADR-0264](0264-subagent-recovery-and-discovery.md) has source implementation and
 passing native/PG/RF3 recovery checks; matched deployment is pending.
 The [delivery record](../reports/resource-interaction-repair-20261020.md) separates

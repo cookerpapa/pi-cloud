@@ -31,7 +31,7 @@ the subsequent Pi examples and recovery discussion.
 - [ ] Slice 3 (source verified; matched release/live acceptance pending): accepted [ADR-0264](adr/0264-subagent-recovery-and-discovery.md)
       for original-delegation continuation and target-free discovery; update
       the matched Tool catalog and SAR-N1 documentation.
-- [ ] Slice 4: WVL-03 — record the evidence protocol and implement converging
+- [ ] Slice 4 (source verified; live pending): WVL-03 — recorded evidence protocol and converging
       unknown Volume-reference recovery without weakening physical cleanup proof.
 - [ ] Slice 5: UPL-01–04/O1 — provisional/confirmed references, late PUT cleanup,
       cancellation and streamed previews.

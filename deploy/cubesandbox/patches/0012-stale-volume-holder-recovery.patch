@@ -1,0 +1,690 @@
+diff --git a/Cubelet/pkg/allocation/store.go b/Cubelet/pkg/allocation/store.go
+index 3d9ea08..26598e5 100644
+--- a/Cubelet/pkg/allocation/store.go
++++ b/Cubelet/pkg/allocation/store.go
+@@ -6,6 +6,7 @@ import (
+ 	"encoding/binary"
+ 	"encoding/json"
+ 	"errors"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/plugins/volume/refcount"
+ 	bolt "go.etcd.io/bbolt"
+ 	"time"
+ )
+@@ -144,23 +145,40 @@ func (s *Store) Collect() error {
+ 			return e
+ 		}
+ 		c := b.Bucket(expiry).Cursor()
++		held, e := refcount.ReferencedSandboxes(tx)
++		if e != nil {
++			return e
++		}
++		var postponed [][]byte
++		k, id := c.First()
+ 		for n := 0; n < 128; n++ {
+-			k, id := c.First()
+ 			if k == nil || int64(binary.BigEndian.Uint64(k[:8])) > now {
+-				return nil
++				break
+ 			}
+ 			r, e := decode(b.Bucket(records).Get(id))
+ 			if e != nil {
+ 				return e
+ 			}
+ 			if r != nil && r.Closed && r.Phase == "absent" && r.NotAfter+retention <= now {
+-				if e = b.Bucket(records).Delete(id); e != nil {
++				if _, referenced := held[r.SandboxID]; referenced {
++					postponed = append(postponed, append([]byte(nil), id...))
++				} else if e = b.Bucket(records).Delete(id); e != nil {
+ 					return e
+ 				}
+ 			}
+ 			if e = c.Delete(); e != nil {
+ 				return e
+ 			}
++			k, id = c.Next()
++		}
++		// Do not let retained holders starve unrelated expired receipts.
++		for _, id := range postponed {
++			k := make([]byte, 8+len(id))
++			binary.BigEndian.PutUint64(k, uint64(now+int64(time.Minute/time.Millisecond)))
++			copy(k[8:], id)
++			if e = b.Bucket(expiry).Put(k, id); e != nil {
++				return e
++			}
+ 		}
+ 		return nil
+ 	})
+diff --git a/Cubelet/pkg/allocation/volume_evidence_test.go b/Cubelet/pkg/allocation/volume_evidence_test.go
+new file mode 100644
+index 0000000..af0b97a
+--- /dev/null
++++ b/Cubelet/pkg/allocation/volume_evidence_test.go
+@@ -0,0 +1,76 @@
++package allocation
++
++import (
++	"context"
++	"fmt"
++	"testing"
++	"time"
++
++	"github.com/tencentcloud/CubeSandbox/Cubelet/plugins/volume/refcount"
++)
++
++func TestVolumeEvidenceOutlivesReceiptTTLWithoutBlockingUnrelatedCollection(t *testing.T) {
++	m, db, now := fixture(t)
++	refs, err := refcount.New(db)
++	if err != nil {
++		t.Fatal(err)
++	}
++	ctx := context.Background()
++	ids := make([]Identity, 0, 130)
++	for n := 0; n < 130; n++ {
++		i := identity()
++		i.ID = fmt.Sprintf("12345678-1234-1234-1234-%012x", n)
++		if _, err = m.Create(ctx, i, time.Second, success); err != nil {
++			t.Fatal(err)
++		}
++		if n < 129 {
++			if _, err = refs.Acquire("default", fmt.Sprintf("v%d", n), SandboxID(i.ID), "picloud-posix"); err != nil {
++				t.Fatal(err)
++			}
++		}
++		if _, err = m.Close(ctx, i, time.Second, absent); err != nil {
++			t.Fatal(err)
++		}
++		ids = append(ids, i)
++	}
++	if _, err = refs.RecoverRefCounts(nil); err != nil {
++		t.Fatal(err)
++	}
++	now.Store(identity().NotAfter + retention + 1)
++	// Each invocation scans at most 128 receipts. Retained evidence is postponed
++	// so unrelated expired allocation 129 can be reclaimed on the next pass.
++	for n := 0; n < 2; n++ {
++		if err = m.Store.Collect(); err != nil {
++			t.Fatal(err)
++		}
++	}
++	if r, e := m.Store.Get(ids[129].ID); e != nil || r != nil {
++		t.Fatal(r, e)
++	}
++	if r, e := m.Store.Get(ids[0].ID); e != nil || r == nil {
++		t.Fatal("lost stale holder evidence", r, e)
++	}
++	if _, err = refs.BeginDetach("default", "v0", SandboxID(ids[0].ID), nil); err != nil {
++		t.Fatal(err)
++	}
++	now.Add(60001)
++	if err = m.Store.Collect(); err != nil {
++		t.Fatal(err)
++	}
++	if r, e := m.Store.Get(ids[0].ID); e != nil || r == nil {
++		t.Fatal("lost pending detach evidence", r, e)
++	}
++	if err = refs.CompleteDetach("default", "v0", SandboxID(ids[0].ID)); err != nil {
++		t.Fatal(err)
++	}
++	now.Add(60001)
++	if err = m.Store.Collect(); err != nil {
++		t.Fatal(err)
++	}
++	if r, e := m.Store.Get(ids[0].ID); e != nil || r != nil {
++		t.Fatal(r, e)
++	}
++	if _, err = m.Create(ctx, ids[0], time.Second, success); err != ErrExpired {
++		t.Fatal("late create admitted", err)
++	}
++}
+diff --git a/Cubelet/plugins/volume/manager.go b/Cubelet/plugins/volume/manager.go
+index ab1c880..8d788c5 100644
+--- a/Cubelet/plugins/volume/manager.go
++++ b/Cubelet/plugins/volume/manager.go
+@@ -137,6 +137,11 @@ func (m *Manager) Attach(ctx context.Context, req *AttachRequest) (*AttachResult
+ 	if err := m.finishPendingDetach(ctx, req.Namespace, volID); err != nil {
+ 		return nil, err
+ 	}
++	if rec, _, err := m.rcStore.GetRecord(req.Namespace, volID); err != nil {
++		return nil, err
++	} else if len(rec.StaleSandboxIDs) != 0 {
++		return nil, fmt.Errorf("Volume holders require physical reconciliation")
++	}
+ 
+ 	// Acquire ref-count and pass the BEFORE value to the plugin.
+ 	// before == 0 means this is the first sandbox to attach the volume.
+@@ -235,6 +240,12 @@ func (m *Manager) finishPendingDetach(ctx context.Context, namespace, volumeID s
+ }
+ 
+ func (m *Manager) ObserveReference(ctx context.Context, namespace, volumeID string) (refcount.State, error) {
++	return m.ReconcileReference(ctx, namespace, volumeID, nil)
++}
++
++// The proof port only observes closed allocation/physical evidence. It must
++// never acquire an allocation lifecycle lock or initiate VM destruction here.
++func (m *Manager) ReconcileReference(ctx context.Context, namespace, volumeID string, absent func(context.Context, string) (bool, error)) (refcount.State, error) {
+ 	unlock, err := m.lockVolume(ctx, volumeID)
+ 	if err != nil {
+ 		return refcount.State{}, err
+@@ -245,7 +256,28 @@ func (m *Manager) ObserveReference(ctx context.Context, namespace, volumeID stri
+ 	}
+ 	// A failed reconciliation is still queryable as unconfirmed. Missing
+ 	// probes/metadata never turn it into a zero reference count.
+-	_ = m.finishPendingDetach(ctx, namespace, volumeID)
++	if err := m.finishPendingDetach(ctx, namespace, volumeID); err == nil && absent != nil {
++		rec, _, err := m.rcStore.GetRecord(namespace, volumeID)
++		if err != nil {
++			return refcount.State{}, err
++		}
++		// The fixed POSIX detach requires no successful Attach metadata.
++		// Other plugins cannot inherit that guarantee.
++		if rec.Driver == "picloud-posix" && !rec.Unknown {
++			for sandboxID := range rec.StaleSandboxIDs {
++				proven, err := absent(ctx, sandboxID)
++				if err != nil || !proven {
++					continue
++				}
++				if _, err := m.rcStore.BeginDetach(namespace, volumeID, sandboxID, nil); err != nil {
++					break
++				}
++				if err := m.finishPendingDetach(ctx, namespace, volumeID); err != nil {
++					break
++				}
++			}
++		}
++	}
+ 	return m.rcStore.State(namespace, volumeID)
+ }
+ 
+diff --git a/Cubelet/plugins/volume/refcount/state.go b/Cubelet/plugins/volume/refcount/state.go
+index 64be310..7764b2d 100644
+--- a/Cubelet/plugins/volume/refcount/state.go
++++ b/Cubelet/plugins/volume/refcount/state.go
+@@ -61,7 +61,31 @@ func (s *Store) State(namespace, volumeID string) (State, error) {
+ 			return err
+ 		}
+ 		result.Count = rec.Count
+-		result.Confirmed = !rec.Unknown && rec.Pending == nil
++		result.Confirmed = !rec.Unknown && rec.Pending == nil && len(rec.StaleSandboxIDs) == 0
++		return nil
++	})
++	return result, err
++}
++
++// Allocation receipt collection shares this Bolt transaction. Preserve the
++// original evidence until every Volume holder/pending detach has released it.
++func ReferencedSandboxes(tx *bolt.Tx) (map[string]struct{}, error) {
++	result := make(map[string]struct{})
++	b := tx.Bucket([]byte(BucketName))
++	if b == nil {
++		return result, nil
++	}
++	err := b.ForEach(func(k, _ []byte) error {
++		rec, err := getRecord(b, k)
++		if err != nil {
++			return err
++		}
++		for id := range rec.SandboxIDs {
++			result[id] = struct{}{}
++		}
++		if rec.Pending != nil {
++			result[rec.Pending.SandboxID] = struct{}{}
++		}
+ 		return nil
+ 	})
+ 	return result, err
+diff --git a/Cubelet/plugins/volume/refcount/store.go b/Cubelet/plugins/volume/refcount/store.go
+index 21b3e38..16109dc 100644
+--- a/Cubelet/plugins/volume/refcount/store.go
++++ b/Cubelet/plugins/volume/refcount/store.go
+@@ -40,9 +40,8 @@
+ //
+ // Call RecoverRefCounts with all StorageInfo records loaded from the sandbox
+ // DB on startup to reconcile any mismatch between persisted ref-counts and
+-// the actual set of live sandboxes.  Sandboxes that are no longer present
+-// (host reboot, crash, …) are removed from every record; records that reach
+-// zero are deleted.
++// the recovered StorageInfo set. Missing holders retain their identity until
++// closed allocation admission and physical absence permit an exact detach.
+ package refcount
+ 
+ import (
+@@ -67,8 +66,9 @@ type PendingDetach struct {
+ 	Metadata  map[string]string `json:"metadata,omitempty"`
+ }
+ type RefCountRecord struct {
+-	Pending *PendingDetach `json:"pending_detach,omitempty"`
+-	Unknown bool           `json:"unknown,omitempty"`
++	Pending         *PendingDetach      `json:"pending_detach,omitempty"`
++	Unknown         bool                `json:"unknown,omitempty"`
++	StaleSandboxIDs map[string]struct{} `json:"stale_sandbox_ids,omitempty"`
+ 	// Count is the number of live sandbox references.
+ 	Count int64 `json:"count"`
+ 
+@@ -213,6 +213,7 @@ func (s *Store) BeginDetach(namespace, volumeID, sandboxID string, metadata map[
+ 		}
+ 
+ 		delete(rec.SandboxIDs, sandboxID)
++		delete(rec.StaleSandboxIDs, sandboxID)
+ 		rec.Count = int64(len(rec.SandboxIDs))
+ 		res.After = rec.Count
+ 
+@@ -310,17 +311,16 @@ func (s *Store) ListForSandbox(sandboxID string) ([]SandboxRecord, error) {
+ 
+ // RecoverResult is a summary of what RecoverRefCounts did.
+ type RecoverResult struct {
+-	RecordsScanned   int
+-	StaleRefsRemoved int
+-	RecordsDeleted   int
++	RecordsScanned  int
++	StaleRefsMarked int
+ }
+ 
+ // RecoverRefCounts reconciles the persisted ref-count store against the set of
+ // actually-live sandbox IDs.  Call this once on cubelet startup, after loading
+ // all StorageInfo records from the sandbox DB.
+ //
+-// Any sandboxID that appears in the store but is absent from liveSandboxIDs is
+-// treated as dead and removed.  Records that reach 0 refs are deleted.
++// StorageInfo absence alone is not physical absence. Keep missing holders and
++// mark them for evidence-based reconciliation; never fabricate confirmed zero.
+ func (s *Store) RecoverRefCounts(liveSandboxIDs map[string]struct{}) (RecoverResult, error) {
+ 
+ 	var res RecoverResult
+@@ -359,16 +359,20 @@ func (s *Store) RecoverRefCounts(liveSandboxIDs map[string]struct{}) (RecoverRes
+ 			changed := false
+ 			for sid := range rec.SandboxIDs {
+ 				if _, live := liveSandboxIDs[sid]; !live {
+-					delete(rec.SandboxIDs, sid)
+-					res.StaleRefsRemoved++
+-					changed = true
++					if _, marked := rec.StaleSandboxIDs[sid]; !marked {
++						if rec.StaleSandboxIDs == nil {
++							rec.StaleSandboxIDs = make(map[string]struct{})
++						}
++						rec.StaleSandboxIDs[sid] = struct{}{}
++						res.StaleRefsMarked++
++						changed = true
++					}
+ 				}
+ 			}
+ 			if !changed {
+ 				continue
+ 			}
+ 			rec.Count = int64(len(rec.SandboxIDs))
+-			rec.Unknown = true
+ 			if err := putRecord(b, item.k, rec); err != nil {
+ 				return err
+ 			}
+diff --git a/Cubelet/plugins/volume/stale_reference_test.go b/Cubelet/plugins/volume/stale_reference_test.go
+new file mode 100644
+index 0000000..7b04374
+--- /dev/null
++++ b/Cubelet/plugins/volume/stale_reference_test.go
+@@ -0,0 +1,229 @@
++package volume
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"path/filepath"
++	"testing"
++	"time"
++
++	"github.com/tencentcloud/CubeSandbox/Cubelet/plugins/volume/refcount"
++	bolt "go.etcd.io/bbolt"
++)
++
++func TestMissingHistoricalHolderIdentityRemainsUnknown(t *testing.T) {
++	raw, err := bolt.Open(filepath.Join(t.TempDir(), "refs.db"), 0600, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer raw.Close()
++	store, err := refcount.New(raw)
++	if err != nil {
++		t.Fatal(err)
++	}
++	err = raw.Update(func(tx *bolt.Tx) error {
++		data, e := json.Marshal(refcount.RefCountRecord{Unknown: true, Driver: "picloud-posix"})
++		if e != nil {
++			return e
++		}
++		return tx.Bucket([]byte(refcount.BucketName)).Put([]byte("default\x00lost"), data)
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	p := &referencePlugin{}
++	m := &Manager{byName: map[string]VolumePlugin{"picloud-posix": p}, rcStore: store}
++	for n := 0; n < 3; n++ {
++		if _, err = store.RecoverRefCounts(nil); err != nil {
++			t.Fatal(err)
++		}
++		state, e := m.ReconcileReference(context.Background(), "default", "lost", func(context.Context, string) (bool, error) { t.Fatal("invented lost identity"); return true, nil })
++		if e != nil || state.Confirmed || p.detaches != 0 {
++			t.Fatal(state, e)
++		}
++	}
++}
++
++func TestStaleHolderEvidenceSurvivesRestartAndDetachFailure(t *testing.T) {
++	for _, shared := range []bool{false, true} {
++		for _, loseReceipt := range []bool{false, true} {
++			t.Run(fmtCase(shared, loseReceipt), func(t *testing.T) {
++				raw, err := bolt.Open(filepath.Join(t.TempDir(), "refs.db"), 0600, nil)
++				if err != nil {
++					t.Fatal(err)
++				}
++				defer raw.Close()
++				db := &failReceiptDB{DB: raw}
++				store, err := refcount.New(db)
++				if err != nil {
++					t.Fatal(err)
++				}
++				p := &referencePlugin{}
++				m := &Manager{byName: map[string]VolumePlugin{"picloud-posix": p}, rcStore: store}
++				ctx := context.Background()
++				attach := func(id, vol string) error {
++					_, err := m.Attach(ctx, &AttachRequest{Namespace: "default", VolumeID: vol, SandboxID: id, Driver: "picloud-posix"})
++					return err
++				}
++				if err := attach("lost", "shared"); err != nil {
++					t.Fatal(err)
++				}
++				live := map[string]struct{}{}
++				if shared {
++					if err := attach("survivor", "shared"); err != nil {
++						t.Fatal(err)
++					}
++					live["survivor"] = struct{}{}
++				}
++				before, _ := store.State("default", "shared")
++				recovery, err := store.RecoverRefCounts(live)
++				if err != nil || recovery.StaleRefsMarked != 1 {
++					t.Fatal(recovery, err)
++				}
++				rec, _, _ := store.GetRecord("default", "shared")
++				if len(rec.StaleSandboxIDs) != 1 || len(rec.SandboxIDs) != len(live)+1 || rec.Unknown {
++					t.Fatal(rec)
++				}
++				if recovery, err = store.RecoverRefCounts(live); err != nil || recovery.StaleRefsMarked != 0 {
++					t.Fatal(recovery, err)
++				}
++				if err := attach("late", "shared"); err == nil {
++					t.Fatal("late attachment admitted")
++				}
++				if err := attach("other", "unrelated"); err != nil {
++					t.Fatal(err)
++				}
++				uncertain, err := m.ReconcileReference(ctx, "default", "shared", func(context.Context, string) (bool, error) { return false, errors.New("node evidence unavailable") })
++				if err != nil || uncertain.Confirmed || uncertain.Epoch != before.Epoch || uncertain.Revision <= before.Revision {
++					t.Fatal(uncertain, err)
++				}
++				if p.detaches != 0 {
++					t.Fatal("detached without evidence")
++				}
++				if loseReceipt {
++					p.onDetach = func(*DetachRequest) { db.fail = true; p.onDetach = nil }
++				}
++				prove := func(_ context.Context, id string) (bool, error) {
++					if id != "lost" {
++						t.Fatal("surviving holder probed as stale", id)
++					}
++					return true, nil
++				}
++				state, err := m.ReconcileReference(ctx, "default", "shared", prove)
++				if err != nil {
++					t.Fatal(err)
++				}
++				if loseReceipt {
++					if state.Confirmed {
++						t.Fatal("lost receipt was confirmed")
++					}
++					// A new Store/Manager models a node restart after the hook.
++					store, err = refcount.New(db)
++					if err != nil {
++						t.Fatal(err)
++					}
++					m = &Manager{byName: map[string]VolumePlugin{"picloud-posix": p}, rcStore: store}
++					state, err = m.ObserveReference(ctx, "default", "shared")
++				}
++				if err != nil || !state.Confirmed || state.Count != int64(len(live)) {
++					t.Fatal(state, err)
++				}
++				if shared {
++					if err = m.Detach(ctx, &DetachRequest{Namespace: "default", VolumeID: "shared", SandboxID: "survivor", Driver: "picloud-posix"}); err != nil {
++						t.Fatal(err)
++					}
++				}
++				state, err = m.ObserveReference(ctx, "default", "shared")
++				if err != nil || !state.Confirmed || state.Count != 0 {
++					t.Fatal(state, err)
++				}
++				if state.Epoch != before.Epoch || state.Revision <= uncertain.Revision {
++					t.Fatal("nonmonotonic reference state")
++				}
++			})
++		}
++	}
++}
++
++func fmtCase(shared, receipt bool) string {
++	if shared {
++		if receipt {
++			return "shared-lost-receipt"
++		}
++		return "shared"
++	}
++	if receipt {
++		return "last-lost-receipt"
++	}
++	return "last"
++}
++
++func TestStaleHolderAllowsSurvivorDetachButNotUnprovenOrForeignRecovery(t *testing.T) {
++	raw, err := bolt.Open(filepath.Join(t.TempDir(), "refs.db"), 0600, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer raw.Close()
++	store, err := refcount.New(raw)
++	if err != nil {
++		t.Fatal(err)
++	}
++	p := &referencePlugin{}
++	m := &Manager{byName: map[string]VolumePlugin{"test": p}, rcStore: store}
++	for _, id := range []string{"lost", "survivor"} {
++		_, err = m.Attach(context.Background(), &AttachRequest{Namespace: "default", VolumeID: "v", SandboxID: id, Driver: "test"})
++		if err != nil {
++			t.Fatal(err)
++		}
++	}
++	if _, err = store.RecoverRefCounts(map[string]struct{}{"survivor": {}}); err != nil {
++		t.Fatal(err)
++	}
++	if err = m.Detach(context.Background(), &DetachRequest{Namespace: "default", VolumeID: "v", SandboxID: "survivor", Driver: "test"}); err != nil {
++		t.Fatal(err)
++	}
++	state, err := m.ReconcileReference(context.Background(), "default", "v", func(context.Context, string) (bool, error) { t.Fatal("foreign plugin recovery"); return true, nil })
++	if err != nil || state.Confirmed || state.Count != 1 || p.detaches != 1 {
++		t.Fatal(state, err, p.detaches)
++	}
++}
++
++func TestStaleHolderReconciliationSerializesLateAttachment(t *testing.T) {
++	raw, err := bolt.Open(filepath.Join(t.TempDir(), "refs.db"), 0600, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer raw.Close()
++	store, err := refcount.New(raw)
++	if err != nil {
++		t.Fatal(err)
++	}
++	p := &referencePlugin{}
++	m := &Manager{byName: map[string]VolumePlugin{"picloud-posix": p}, rcStore: store}
++	_, err = m.Attach(context.Background(), &AttachRequest{Namespace: "default", VolumeID: "v", SandboxID: "lost", Driver: "picloud-posix"})
++	if err != nil {
++		t.Fatal(err)
++	}
++	store.RecoverRefCounts(nil)
++	entered, release, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
++	go func() {
++		_, err := m.ReconcileReference(context.Background(), "default", "v", func(context.Context, string) (bool, error) { close(entered); <-release; return true, nil })
++		done <- err
++	}()
++	<-entered
++	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
++	defer cancel()
++	_, err = m.Attach(ctx, &AttachRequest{Namespace: "default", VolumeID: "v", SandboxID: "new", Driver: "picloud-posix"})
++	if !errors.Is(err, context.DeadlineExceeded) {
++		t.Fatal(err)
++	}
++	close(release)
++	if err = <-done; err != nil {
++		t.Fatal(err)
++	}
++	_, err = m.Attach(context.Background(), &AttachRequest{Namespace: "default", VolumeID: "v", SandboxID: "new", Driver: "picloud-posix"})
++	if err != nil {
++		t.Fatal(err)
++	}
++}
+diff --git a/Cubelet/services/cubebox/volume_holder_evidence_test.go b/Cubelet/services/cubebox/volume_holder_evidence_test.go
+new file mode 100644
+index 0000000..32c2016
+--- /dev/null
++++ b/Cubelet/services/cubebox/volume_holder_evidence_test.go
+@@ -0,0 +1,67 @@
++package cubebox
++
++import (
++	"context"
++	"errors"
++	"path/filepath"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/allocation"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/utils"
++	bolt "go.etcd.io/bbolt"
++)
++
++func TestVolumeHolderRequiresClosedAllocationAndExactPhysicalAbsence(t *testing.T) {
++	db, err := bolt.Open(filepath.Join(t.TempDir(), "metadata.db"), 0600, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer db.Close()
++	store, err := allocation.NewStore(db, time.Now)
++	if err != nil {
++		t.Fatal(err)
++	}
++	manager := allocation.NewManager(store, "boot")
++	catalog := &observationCatalog{failure: utils.ErrorKeyNotFound}
++	s := &service{allocations: manager, cubeboxMgr: &local{cubeboxManger: catalog}}
++	id := "12345678-1234-1234-1234-123456789abc"
++	sandbox := allocation.SandboxID(id)
++	proof := func(want bool) {
++		t.Helper()
++		got, _ := s.closedVolumeHolderAbsent(context.Background(), sandbox)
++		if got != want {
++			t.Fatalf("got proof %v, want %v", got, want)
++		}
++	}
++	proof(false)
++	_, err = store.Update(id, func(*allocation.Record, int64) (*allocation.Record, error) {
++		return &allocation.Record{ID: id, SandboxID: sandbox, Digest: strings.Repeat("a", 64), NotAfter: time.Now().UnixMilli() + 60000, StartedBoot: "boot", Phase: "ready", CreateFinished: true}, nil
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	proof(false)
++	_, err = store.Update(id, func(r *allocation.Record, _ int64) (*allocation.Record, error) {
++		r.Closed = true
++		r.Phase = "closing"
++		return r, nil
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	proof(false)
++	_, err = store.Update(id, func(r *allocation.Record, _ int64) (*allocation.Record, error) { r.Phase = "absent"; return r, nil })
++	if err != nil {
++		t.Fatal(err)
++	}
++	proof(true)
++	catalog.failure = errors.New("runtime recovery incomplete")
++	proof(false)
++	catalog.failure = nil
++	proof(false)
++	if ok, _ := s.closedVolumeHolderAbsent(context.Background(), "1234"); ok {
++		t.Fatal("partial sandbox identity accepted")
++	}
++}
+diff --git a/Cubelet/services/cubebox/volume_references.go b/Cubelet/services/cubebox/volume_references.go
+index ca949f4..b8117a9 100644
+--- a/Cubelet/services/cubebox/volume_references.go
++++ b/Cubelet/services/cubebox/volume_references.go
+@@ -4,7 +4,10 @@ import (
+ 	"context"
+ 	"encoding/json"
+ 	"errors"
++	"github.com/google/uuid"
+ 	"github.com/tencentcloud/CubeSandbox/Cubelet/api/services/cubebox/v1"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/allocation"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/utils"
+ 	"github.com/tencentcloud/CubeSandbox/Cubelet/plugins/volume"
+ 	"github.com/tencentcloud/CubeSandbox/Cubelet/plugins/volume/refcount"
+ 	"strings"
+@@ -19,7 +22,7 @@ func (s *service) ObserveVolumeReferences(ctx context.Context, r *cubebox.Volume
+ 		if id == "" || len(id) > 128 || strings.ContainsRune(id, 0) {
+ 			return nil, errors.New("invalid Volume identity")
+ 		}
+-		state, err := volume.Global().ObserveReference(ctx, r.Namespace, id)
++		state, err := volume.Global().ReconcileReference(ctx, r.Namespace, id, s.closedVolumeHolderAbsent)
+ 		if err != nil {
+ 			return nil, err
+ 		}
+@@ -28,3 +31,25 @@ func (s *service) ObserveVolumeReferences(ctx context.Context, r *cubebox.Volume
+ 	raw, err := json.Marshal(states)
+ 	return &cubebox.VolumeReferenceResponse{State: raw}, err
+ }
++
++func (s *service) closedVolumeHolderAbsent(ctx context.Context, sandboxID string) (bool, error) {
++	if s.allocations == nil {
++		return false, errors.New("allocation metadata unavailable")
++	}
++	id, err := uuid.Parse(sandboxID)
++	if err != nil || allocation.SandboxID(id.String()) != sandboxID {
++		return false, nil
++	}
++	record, err := s.allocations.Store.Get(id.String())
++	if err != nil {
++		return false, err
++	}
++	if record == nil || record.SandboxID != sandboxID || !record.Closed || record.Phase != "absent" {
++		return false, nil
++	}
++	_, err = s.cubeboxMgr.cubeboxManger.Observe(ctx, sandboxID)
++	if errors.Is(err, utils.ErrorKeyNotFound) {
++		return true, nil
++	}
++	return false, err
++}
+diff --git a/Cubelet/storage/plugin.go b/Cubelet/storage/plugin.go
+index 12fcc48..af60b73 100644
+--- a/Cubelet/storage/plugin.go
++++ b/Cubelet/storage/plugin.go
+@@ -456,8 +456,8 @@ func initVolumePlugins(ctx context.Context, cfg *Config) error {
+ 			if err != nil {
+ 				CubeLog.Warnf("[plugin_volume] refcount recovery: %v", err)
+ 			} else {
+-				CubeLog.Infof("[plugin_volume] refcount recovery: scanned=%d stale_removed=%d records_deleted=%d",
+-					res.RecordsScanned, res.StaleRefsRemoved, res.RecordsDeleted)
++				CubeLog.Infof("[plugin_volume] refcount recovery: scanned=%d stale_marked=%d",
++					res.RecordsScanned, res.StaleRefsMarked)
+ 			}
+ 		}
+ 	}

@@ -9,7 +9,7 @@ The last verified serving release remains `model-runtime-058925bb`, schema 192.
 | 1 — Live compute ownership/admission | Implemented; nine real-PG regressions, 95 existing tests and both affected typechecks pass | Pending matched release |
 | 2 — Supervisor/workflow lifetimes | Implemented; 31 distinct targeted cases and both affected typechecks pass | Pending matched release |
 | 3 — Delegation recovery/discovery | Implemented; native recovery, PG catalog/supervision and RF3 replacement cases pass | Pending matched release |
-| 4 — Unknown Volume references | Pending evidence/protocol decision and implementation | Pending |
+| 4 — Unknown Volume references | Implemented; native race and full allocation/Master/service contracts pass | Pending matched KVM acceptance |
 | 5 — Attachment lifetimes | Pending evidence/protocol decision and implementation | Pending |
 | 6 — Terminal/preview lifetimes | Pending | Pending |
 
@@ -138,3 +138,26 @@ acceptance remain release gates, not claims made by these controlled tests.
 The production Worker Runner/Session Host/Tool catalog bridge also passes both
 real-PG tests with Faux models: native follow-up stays in the child Conversation,
 and child publication failure remains contained under the shared writer.
+
+## Slice 4
+
+[ADR-0265](../adr/0265-volume-reference-recovery-evidence.md) records upstream
+comparison and the evidence contract. Cube patch 0012 preserves missing holder
+IDs and conservative counts at restart. Reference observation reconciles only
+the fixed POSIX plugin after the original allocation is durably closed/absent
+and exact-node Observe confirms physical absence. The existing pending-detach
+receipt handles hook/receipt interruption. Surviving shared holders may detach;
+new attachment remains blocked until stale references converge.
+
+Allocation GC retains records named by node holders or pending detaches in the
+same Bolt transaction, deferring those expiry entries so unrelated collection
+continues. No new database, controller, guest protocol or VM destruction authority
+is introduced. Unrecoverable historical Unknown records stay unconfirmed.
+
+Pinned Go race tests pass for lost last/shared holders, repeated restart,
+unavailable evidence, failed detach receipts, late-attachment serialization and
+allocation evidence retention. The maintained full allocation check also passes
+Cubelet, real-MySQL Master and service-level physical-evidence contracts. The
+obsolete characterization driver is removed; regressions are maintained in the
+patch. A final additional historical-Unknown guard case is included in the
+release-wide rerun. No live VM restart is claimed before matched deployment.
