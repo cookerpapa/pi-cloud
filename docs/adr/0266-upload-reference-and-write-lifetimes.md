@@ -35,6 +35,10 @@ matching receipt confirms acceptance even after edit/withdrawal. An absent
 receipt permits release only after that exact old writer's ordered seal has
 materialized. Missing projection progress alone proves nothing. Concurrent
 deliveries using the same upload cannot release each other's pins.
+For submit, the preparation metadata/fingerprint is insufficient: also require
+the original indexed native Submission. Image preparation may fail after metadata
+commits but before any input reaches Pi's Inbox. Edit receipts are written with
+their native queue mutation and already prove that mutation.
 
 ## Byte writer and cleanup lifetimes
 

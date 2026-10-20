@@ -1,29 +1,32 @@
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PostgresSandboxHttpServiceRegistry } from "../src/index.ts";
 
 const resources: Array<() => Promise<void>> = [];
 
-afterEach(async () => {
+afterAll(async () => {
   for (const close of resources.splice(0).reverse()) await close();
 });
 
+let database: ReturnType<typeof createDatabase>;
+beforeAll(async () => {
+  const pglite = await PGlite.create();
+  const socket = new PGLiteSocketServer({ db: pglite, host: "127.0.0.1", port: 0 });
+  await socket.start();
+  database = createDatabase({
+    connectionString: `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`,
+    maxConnections: 2,
+  });
+  resources.push(async () => pglite.close());
+  resources.push(async () => socket.stop());
+  resources.push(async () => database.destroy());
+  await runMigrations(database, "up");
+}, 60_000);
+
 describe("PostgreSQL Sandbox HTTP service registry", () => {
   it("upserts one runtime-port identity and ends it when the listener disappears", async () => {
-    const pglite = await PGlite.create();
-    const socket = new PGLiteSocketServer({ db: pglite, host: "127.0.0.1", port: 0 });
-    await socket.start();
-    const database = createDatabase({
-      connectionString: `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`,
-      maxConnections: 2,
-    });
-    resources.push(async () => pglite.close());
-    resources.push(async () => socket.stop());
-    resources.push(async () => database.destroy());
-    await runMigrations(database, "up");
-
     const tenantId = "40000000-0000-4000-8000-000000000001";
     const projectId = "40000000-0000-4000-8000-000000000002";
     const workspaceId = "40000000-0000-4000-8000-000000000003";

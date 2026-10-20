@@ -1567,17 +1567,22 @@ describe("provider-backed Sandbox controller", () => {
       disposition: "keep_warm",
     });
 
-    const connection = await manager.openPreviewConnection({
-      tenantId: assignment.tenantId,
-      userId: "user-provider-test",
-      workspaceId: assignment.workspaceId,
-      target: { kind: "conversation", sessionId: assignment.sessionId },
-      port: 8000,
-      expiresAt: Date.now() + 60_000,
-    });
+    const controller = new AbortController();
+    const connection = await manager.openPreviewConnection(
+      {
+        tenantId: assignment.tenantId,
+        userId: "user-provider-test",
+        workspaceId: assignment.workspaceId,
+        target: { kind: "conversation", sessionId: assignment.sessionId },
+        port: 8000,
+        expiresAt: Date.now() + 60_000,
+      },
+      controller.signal,
+    );
     expect(fixture.openPreviewConnection).toHaveBeenCalledWith(
       expect.objectContaining({ activationId: ACTIVATION_ID }),
       8000,
+      controller.signal,
     );
     connection.destroy();
     await manager.close();

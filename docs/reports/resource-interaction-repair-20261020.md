@@ -233,3 +233,21 @@ The first broad CI pass began before these final follow-ups; it recorded one
 upload-lifetime case failure among 443 Control Plane cases. A fresh run of that
 package's entire nine-case upload file passes. Keep the original log and complete
 frozen-source verification before deployment; no failed sample is counted as passing.
+
+Final cross-check also distinguishes preparatory input metadata from an actual
+native Submission. A failed image-preparation stage retains a provisional pin
+while its writer is active, then releases it after ordered closure if no native
+Submission exists. The three input/upload suites pass all 38 cases, and the
+Control Plane typecheck passes.
+
+The full repeat has passed all 443 Control Plane cases, other workspace unit
+suites, 81 operator-helper cases and the nine RF3/PG transport cases; fault
+evaluation and dependency audit continue. The old two-argument preview assertion
+now verifies cancellation propagation; registry database initialization is in a
+separate 60-second setup hook while its unchanged business test retains 20 seconds.
+All 54 targeted controller/registry cases pass.
+
+An initial artifact preparation built the guest/native/application images but
+refused scanning because final fixes left the checkout dirty. It was not applied.
+Rebuild/relabel from the final clean commit and repeat artifact evidence before
+cutover; do not use the incomplete candidate or bypass the clean-source check.

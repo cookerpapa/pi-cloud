@@ -427,6 +427,31 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
           .executeTakeFirstOrThrow();
         expect(row.accepted_at).not.toBeNull();
       }
+      const preparingImage = await upload(s.sessionId);
+      const preparation = vi
+        .spyOn(native.inputs.options, "prepare")
+        .mockRejectedValueOnce(new Error("Image preparation failed before native submission"));
+      try {
+        await expect(
+          queue.accept(store, tenant.tenantId, s.sessionId, "prepared-only", {
+            prompt: "This input never reaches the native Inbox",
+            uploadIds: [preparingImage.id],
+          }),
+        ).rejects.toMatchObject({ code: "input_delivery_unavailable" });
+      } finally {
+        preparation.mockRestore();
+      }
+      await reconcile();
+      expect(await pendingPins()).toBe(1); // metadata is durable, but not a Submission
+      expect(
+        (
+          await db
+            .selectFrom("session_uploads")
+            .select("accepted_at")
+            .where("id", "=", preparingImage.id)
+            .executeTakeFirstOrThrow()
+        ).accepted_at,
+      ).toBeNull();
       const uncertainImage = await upload(s.sessionId);
       const unknown = new QueuedInputService({
         database: db,
@@ -443,7 +468,7 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
         }),
       ).rejects.toMatchObject({ code: "input_delivery_unavailable" });
       await reconcile();
-      expect(await pendingPins()).toBe(1); // absent projection is not refusal
+      expect(await pendingPins()).toBe(2); // absent projection is not refusal
       await native.close();
       closed = true;
       await reconcile();
@@ -454,6 +479,15 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
         .where("id", "=", uncertainImage.id)
         .executeTakeFirstOrThrow();
       expect(row.accepted_at).toBeNull();
+      expect(
+        (
+          await db
+            .selectFrom("session_uploads")
+            .select("accepted_at")
+            .where("id", "=", preparingImage.id)
+            .executeTakeFirstOrThrow()
+        ).accepted_at,
+      ).toBeNull();
     } finally {
       ack.resolve();
       if (!closed) await native.close();

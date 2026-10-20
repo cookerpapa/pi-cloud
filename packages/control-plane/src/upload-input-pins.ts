@@ -1,6 +1,9 @@
 import type { Database } from "@pi-cloud/database";
 import { withDatabaseReadSignal } from "@pi-cloud/database/client";
-import { readHumanInputMetadataBatch } from "@pi-cloud/pi-session-postgres/durable";
+import {
+  readHumanInputMetadataBatch,
+  readNativeHumanSubmission,
+} from "@pi-cloud/pi-session-postgres/durable";
 import { sql, type Kysely, type Transaction } from "kysely";
 
 export type UploadInputPin = {
@@ -73,7 +76,23 @@ export async function reconcileUploadPins(db: Kysely<Database>, signal?: AbortSi
             pin.kind === "submit"
               ? state?.inputs[pin.operation_id]
               : state?.receipts[pin.operation_id];
-          if (receipt?.fingerprint === pin.fingerprint) {
+          const accepted =
+            receipt?.fingerprint === pin.fingerprint &&
+            (pin.kind === "mutate" ||
+              (
+                await readNativeHumanSubmission(
+                  tx,
+                  {
+                    tenantId: pin.tenant_id,
+                    sessionId: pin.pi_session_id,
+                    conversationId: Number(pin.conversation_id),
+                  },
+                  pin.operation_id,
+                )
+              )?.runId === pin.run_id);
+          // Input metadata precedes image preparation and native submit. That
+          // preparatory record alone cannot confirm a successfully placed input.
+          if (accepted) {
             await settle(tx, id, true);
             return;
           }
