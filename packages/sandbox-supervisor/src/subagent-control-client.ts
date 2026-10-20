@@ -5,7 +5,11 @@ import type {
   ToolResultPayload,
   ToolReplyWait,
 } from "@pi-cloud/protocol";
-import { parseSubagentTaskId, prepareSubagentArguments } from "@pi-cloud/protocol";
+import {
+  parseSubagentTaskId,
+  prepareSubagentArguments,
+  prepareSubagentControlArguments,
+} from "@pi-cloud/protocol";
 
 /** Dynamic workflow host calls reuse the Worker's one boot-scoped reply mailbox. */
 export class SubagentControlClient {
@@ -13,7 +17,7 @@ export class SubagentControlClient {
   #closed = false;
   constructor(
     readonly native: {
-      publishHostCall(taskId: number, command: CandidateControlToolCommand): Promise<void>;
+      publishControl(taskId: number, command: CandidateControlToolCommand): Promise<void>;
       retireHostCall(reference: string, taskId: number, id: string): Promise<void>;
     },
     readonly replies: {
@@ -44,14 +48,13 @@ export class SubagentControlClient {
     const args =
       request.action === "run"
         ? prepareSubagentArguments({
-            action: "run",
             task: request.task,
             context: request.context,
             sandbox: request.sandbox === "none" ? "shared" : request.sandbox,
             ...(request.cwd ? { cwd: request.cwd } : {}),
             ...(request.tools ? { tools: request.tools } : {}),
           })
-        : prepareSubagentArguments(request);
+        : prepareSubagentControlArguments(request);
     const requestId = randomUUID();
     const waiting = new AbortController();
     const signal = AbortSignal.any([
@@ -69,7 +72,7 @@ export class SubagentControlClient {
       toolCallId: input.toolCallId,
       nativeCallId: input.toolCallId,
       conversationId: input.conversationId,
-      toolName: "subagent",
+      toolName: request.action === "run" ? "subagent" : "subagent_control",
       arguments: args,
       replyMode: "hostcall",
       contextAnchor:
@@ -78,7 +81,7 @@ export class SubagentControlClient {
       occurredAt: new Date().toISOString(),
     };
     try {
-      await this.native.publishHostCall(taskId, command);
+      await this.native.publishControl(taskId, command);
       input.onPublished?.();
       const reply = await result;
       const receipt = reply.result.details as

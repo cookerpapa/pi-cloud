@@ -8,8 +8,8 @@ import {
   DurableCommitIndex,
   type AcceptedToolCommand,
 } from "@pi-cloud/protocol";
-import type { AcceptedFact, SessionLogFact, AcceptedControlToolCommand } from "./accepted-fact.ts";
-import { toolCommandsForFact, controlToolsForFact } from "./tool-invocation-fact.ts";
+import type { AcceptedFact, SessionLogFact } from "./accepted-fact.ts";
+import { toolCommandsForFact, validateControlToolReferences } from "./tool-invocation-fact.ts";
 import { expandSessionLogEnvelope } from "./session-log-envelope.ts";
 export { encodeSessionLogFact } from "./session-log-envelope.ts";
 export {
@@ -42,13 +42,12 @@ export function parseSessionLogFact(value: string | Buffer): SessionLogFact {
 export type PreparedSessionLogFact = Readonly<{
   fact: SessionLogFact;
   tools: readonly AcceptedToolCommand[];
-  controlTools: readonly AcceptedControlToolCommand[];
 }>;
 
 export function decodeSessionLogFact(value: string | Buffer): PreparedSessionLogFact {
   const parsed = expandSessionLogEnvelope(JSON.parse(value.toString()));
   return parsed?.kind === "control_change"
-    ? { fact: parseSessionControlChange(parsed), tools: [], controlTools: [] }
+    ? { fact: parseSessionControlChange(parsed), tools: [] }
     : prepareAcceptedFact(parsed);
 }
 
@@ -61,11 +60,8 @@ export function prepareAcceptedFact(
 ): PreparedSessionLogFact & { fact: AcceptedFact } {
   const fact = validateAcceptedFact(value);
   const index = fact.kind === "durable_commit" ? new DurableCommitIndex(fact.commit) : undefined;
-  return {
-    fact,
-    tools: toolCommandsForFact(fact, index),
-    controlTools: controlToolsForFact(fact, index),
-  };
+  validateControlToolReferences(fact, index);
+  return { fact, tools: toolCommandsForFact(fact, index) };
 }
 
 function validateAcceptedFact(value: unknown): AcceptedFact {

@@ -409,7 +409,7 @@ try {
     session.sessionId,
     [
       "Call the subagent Tool exactly once.",
-      'Use subagent action:"workflow" with this exact script: return runs.run("development-shared", {context:"fresh", sandbox:"shared", tools:["read","bash"], task:"Use bash to confirm the current directory is /home/user/empty-project and ./test.sh passes, then reply exactly DEVELOPMENT-SUBAGENT-OK"})',
+      'Use workflow with this exact script: return runs.run("development-shared", {context:"fresh", sandbox:"shared", tools:["read","bash"], task:"Use bash to confirm the current directory is /home/user/empty-project and ./test.sh passes, then reply exactly DEVELOPMENT-SUBAGENT-OK"})',
       "After it finishes, reply exactly DEVELOPMENT-SUBAGENT-OK.",
     ].join(" "),
     newIdempotencyKey("turn"),
@@ -442,7 +442,7 @@ try {
   const temporarySubagentRun = await api.acceptTurn(
     session.sessionId,
     [
-      'Call subagent action:"run" exactly once with context:"fresh", sandbox:"ephemeral", cwd:"/home/user/empty-project", task:',
+      'Call subagent exactly once with context:"fresh", sandbox:"ephemeral", cwd:"/home/user/empty-project", task:',
       '"Use bash to verify pwd is /home/user/empty-project, ./test.sh passes and /etc/pi-cloud-exclusive-marker does NOT exist in this new compute environment. Create child-home-index.html containing HOME-COMPUTE-OK in the current directory. Start python3 -m http.server 5173 --bind 0.0.0.0 --directory /home/user/empty-project as a detached background server with all stdio redirected. Verify the server, call preview for port 5173 and path /child-home-index.html, then reply HOME-COMPUTE-OK. Do not create subagents."',
       "After the actual child finishes, reply HOME-COMPUTE-OK. Do not start a server yourself.",
     ].join(" "),

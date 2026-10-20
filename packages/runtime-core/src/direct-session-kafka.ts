@@ -26,9 +26,9 @@ export function assertSessionPublication(
   check(fact.scope);
   if (fact.kind === "execution_seal")
     throw new PublicationNotSentError("Workers publish only native intents and work records");
-  const prepared = prepareAcceptedFact(fact);
+  prepareAcceptedFact(fact);
   if (fact.kind === "durable_commit") {
-    for (const tool of [...prepared.tools, ...prepared.controlTools]) check(tool.scope);
+    for (const tool of fact.tools) check(tool.scope);
     for (const cancel of fact.cancellations) check(cancel.scope);
     for (const display of fact.display) check(display.scope);
   }

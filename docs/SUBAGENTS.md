@@ -1,13 +1,13 @@
 # Subagents
 
-PiCloud provides one role-free `subagent` tool. The Agent may delegate a task
-directly or submit a JavaScript workflow. Users can request either in ordinary
-language; they do not configure Workers or Kafka.
+PiCloud exposes `subagent` for direct delegation, `subagent_control` for discovery
+and management, and `workflow` for JavaScript orchestration. Users request these
+in ordinary language; they do not configure Workers or Kafka.
 
 ## Direct task
 
 ```js
-subagent({ action: "run", task: "Check the collision logic", context: "branch", sandbox: "shared" })
+subagent({ task: "Check the collision logic", context: "branch", sandbox: "shared" })
 ```
 
 `fresh` starts from the task. `branch` inherits the frozen history before the
@@ -51,7 +51,7 @@ compute does not remove the shared Volume or worktree.
 ## Workflow
 
 ```js
-subagent({ action: "workflow", script: `
+workflow({ script: `
   const results = await runs.all([
     { key: "ui", task: "Review interaction errors", context: "branch" },
     { key: "api", task: "Review API validation", context: "fresh" }
@@ -69,8 +69,8 @@ return value, and do not create model messages. Their newest bounded text may
 appear in the disposable Tool log preview; they never enter Kafka or PG. Actual
 `runs.*` control and messaging requests retain their durable execution path.
 
-Explicit returns and direct child/control results are limited to 256 KiB of
-JSON-encoded text, including UTF-8 and escaping. Small results are preserved
+Explicit returns and direct child/control results follow Pi's default limits:
+50 KiB of UTF-8 text or 2,000 lines. Small results are preserved
 exactly; an oversized value or error becomes an explicit `subagent_result_too_large`
 Tool error. The script may already have changed files or completed child tasks.
 Inspect those effects before retrying; write large data explicitly to the
@@ -87,34 +87,49 @@ the control log.
 ## Cloud contract
 
 Requests go through the owning Worker's existing Kafka publication. One
-Projector orders admission/control, PostgreSQL retains dispatch/result and
-consumption state, and the Worker Session Host owns all native Conversations
-(Lanes) and commit sequence allocation. Pi mints each Conversation ID and its
-creation receipt; child PG admission cannot allocate that native identity. Ordinary child output uses the same native log as parent
+Projector reconciles control operations from native Tool intents. PostgreSQL
+materializes the native log and existing child relationships; there is no second
+command queue or raw-result ledger. The Worker Session Host owns all native
+Conversations (Lanes) and commit sequence allocation. Pi mints each Conversation
+ID and its creation receipt. Child output uses the same native log as parent
 output. Internal notifications never use the public model egress proxy.
 
-The partition owner retains bounded pending references and caches Worker routes,
-target identities, status and supervisor-request reads. Committed PG control
-changes invalidate the relevant family; native input consumption and seals wake
-its pending work. Timers cover known retries/expiry instead of globally polling
-pending commands each second. Reassignment reloads current pending references
-after the Kafka recovery boundary. Large command/result bodies remain in PG
-outside the bounded working cache. Actual input delivery still checks the current
-Run and consumption marker in PG; cached status is not delivery authority.
-See [ADR-0212](adr/0212-ordered-control-read-models.md).
+The partition owner retains pending references and a bounded cache of replies
+awaiting publication. Native outcomes and committed PG supervisor changes wake
+waiters; unchanged reads do not wake themselves. Timers cover known retries and
+expiry. Reassignment reloads nonterminal references. An unanswered supervisor
+decision takes precedence over later progress updates. Multiple decisions are
+ordered by creation time, then request ID; ended native callers and replaced
+writers no longer block a child or accept new replies.
 
-A family occupies one Worker slot and one owner lease. Child Runs keep task
-identities, not independently renewed leases. Quiet tasks are managed by task/
-model/Tool deadlines. Actual model requests (including Compaction) take a fair
-permit and release it before waiting for children or Tools. Cancelling one task
-does not revoke the common owner. Losing the owner closes that incarnation
-before PG can authorize native recovery of the family under a new lease.
+A family occupies one Worker slot, one owner lease and one cloud Run. Children
+are native Conversations and Tasks, not additional Run queue rows. There is no
+overall Agent duration limit. Actual model requests (including Compaction) take
+a fair permit and release it before waiting for children or Tools. Cancelling one
+task does not revoke the common owner. Losing the owner closes that incarnation
+before PG authorizes recovery of the family under a new lease.
 
-Duplicate delivery cannot create another child or duplicate a consumed Agent
-message. Lost notifications are redelivered from persisted state. Seals and
-native Tool completion retire unfinished owned work, except an explicit
-supervisor handoff that remains owned by the parent Run. Already-issued guest
-effects may be UNKNOWN. There is no automatic script replay or JS-memory resume.
+Direct delegation is native replay-safe. The restored caller publishes a small
+reference to its original immutable intent under its current writer; the
+Projector resolves the same child and initial Submission, and sends the original
+outcome to the current boot mailbox. It does not replay the old mailbox or select
+a later unrelated child answer. Cancelled or terminal callers cannot continue.
+Unsafe Tools inside the child remain unsafe; this wrapper does not replay Bash.
+
+`subagent_control({action:"list"})` discovers existing children without an ID.
+It includes completed children of the current root work, source Task identity,
+parent relationship, state and a short task summary. Follow `nextCursor` for the
+next page. Use the returned execution ID with `status`, `wait`, `send` or `cancel`.
+These management operations and `workflow` are unsafe on native crash recovery.
+Inspect existing effects before deciding to repeat them. Similar prompts in new
+Tool calls intentionally create distinct children.
+
+Children retain generation ownership so a direct delegation can return a
+supervisor question while the child remains available for the parent's answer.
+Workflow hostcall results are retained only while that script invocation is
+open; late hostcalls after disposal are rejected. No script replay or JS-memory
+resume is promised.
 
 See [ADR-0166](adr/0166-log-driven-subagents.md),
-[ADR-0171](adr/0171-shared-volume-subagent-compute.md) and [configuration](CONFIGURATION.md).
+[ADR-0171](adr/0171-shared-volume-subagent-compute.md),
+[ADR-0264](adr/0264-subagent-recovery-and-discovery.md) and [configuration](CONFIGURATION.md).

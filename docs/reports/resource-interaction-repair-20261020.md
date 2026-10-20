@@ -8,7 +8,7 @@ The last verified serving release remains `model-runtime-058925bb`, schema 192.
 | --- | --- | --- |
 | 1 — Live compute ownership/admission | Implemented; nine real-PG regressions, 95 existing tests and both affected typechecks pass | Pending matched release |
 | 2 — Supervisor/workflow lifetimes | Implemented; 31 distinct targeted cases and both affected typechecks pass | Pending matched release |
-| 3 — Delegation recovery/discovery | ADR-0264 approved; public-API prototype pending | Pending |
+| 3 — Delegation recovery/discovery | Implemented; native recovery, PG catalog/supervision and RF3 replacement cases pass | Pending matched release |
 | 4 — Unknown Volume references | Pending evidence/protocol decision and implementation | Pending |
 | 5 — Attachment lifetimes | Pending evidence/protocol decision and implementation | Pending |
 | 6 — Terminal/preview lifetimes | Pending | Pending |
@@ -82,3 +82,59 @@ supervision suite also passes, adding a real-PG child-cancellation/reply race an
 checking multiple pending decisions (31 distinct cases in total). Control Plane
 and Supervisor Host typechecks pass. Review characterizations were moved into
 maintained tests; baseline evidence remains in Git.
+
+## Slice 3 native prototype
+
+The fixed native Harness passes interruption after child creation, configuration,
+input admission and completion, plus Stop after restoration. Each keeps the
+same source Task/child/initial Submission and does not rerun an unsafe child Tool.
+The completion case adds a later child answer before restarting; the resumed
+delegation still returns its original Submission's answer. Normal preparation
+runs once while safe execution resumes.
+
+These five new cases and four existing native family contracts pass; the
+Sandbox Supervisor typecheck passes. Storage is a public MemoryStorage journal
+restored into a fresh instance, and Models are Faux. The existing creation
+adapter represents the management endpoint inside the test process. Distributed
+PG/RF3 handoff and actual Cloud tool registration are not yet verified by this
+prototype and remain the next implementation step.
+
+## Slice 3 integration
+
+The model catalog now separates safe direct `subagent` delegation from unsafe
+`subagent_control` management and `workflow` scripts. Old combined action forms
+are removed. Live-check prompts and Subagent documentation use the new catalog.
+The matched Session topic advances to v18. Schema 193 attaches supervisor
+requests to the original native Task and writer: a continuing child cannot
+remain blocked on an interrupted unsafe caller from the previous owner.
+
+The generic remote adapter can reprepare a safe Tool through its public native
+execute path. A task-owned `pi-cloud.tool-recovery` document stores only the
+original commit/operation reference; the new callback has a fresh operation ID
+and boot mailbox. Original arguments and context remain at their initial
+checkpoint. The Projector validates current authority and resolves that original
+intent. The child association reuses the original identity and returns its
+initial Submission's answer, even if later input produced another answer.
+Target-free paginated discovery uses existing family/native associations.
+
+The native bridge test additionally verifies reference persistence before
+adopting a fast reply. Component suites cover current/stale callback correlation,
+original answer selection, paginated discovery, ended native supervisor callers
+and replaced writers. Initial catalog tests passed 47 cases; the expanded
+recovery suite initially passed 39/40, with the remaining fixture incorrectly
+trying to admit prohibited NUL task text. The corrected controller/activity
+suite passes all eight cases.
+
+The RF3 integration test performs two ordered old-writer closures and actual
+PG queue claims, creates two new boot mailboxes, reads the original intent through
+the production Session host, loses a reply, replaces the control dispatcher,
+and receives the original outcome without a second child or Submission. Terminal
+callers do not reappear on another dispatcher recovery. Both this test and the
+same-boot mailbox reassignment test pass. The first broader transport attempt
+also found an omitted version in its manually constructed document fixture;
+that fixture is corrected. Actual cloud Worker management and KVM/model
+acceptance remain release gates, not claims made by these controlled tests.
+
+The production Worker Runner/Session Host/Tool catalog bridge also passes both
+real-PG tests with Faux models: native follow-up stays in the child Conversation,
+and child publication failure remains contained under the shared writer.

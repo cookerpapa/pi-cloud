@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import type { Database } from "@pi-cloud/database";
 import {
   durableControlIntent,
+  durableControlRecovery,
   parseControlToolDispatch,
   parseToolResultPayload,
   type ToolResultData,
@@ -125,7 +126,8 @@ export class ControlToolDispatcher {
           if (
             pending.dispatch.scope.tenantId === fact.scope.tenantId &&
             pending.dispatch.scope.piSessionId === fact.scope.piSessionId &&
-            pending.dispatch.sourceDocumentId === write.id
+            (pending.dispatch.sourceDocumentId === write.id ||
+              pending.dispatch.recovery?.documentId === write.id)
           )
             this.#remove(key);
     }
@@ -193,6 +195,10 @@ export class ControlToolDispatcher {
             select 1 from pi_durable_records doc where doc.tenant_id=c.tenant_id
               and doc.session_id=c.session_id and doc.id=(effect->>'sourceDocumentId')::bigint
               and doc.kind='document' and doc.retired_seq is null))
+          and (effect->'recovery' is null or exists(
+            select 1 from pi_durable_records doc where doc.tenant_id=c.tenant_id
+              and doc.session_id=c.session_id and doc.id=(effect->'recovery'->>'documentId')::bigint
+              and doc.kind='document' and doc.retired_seq is null))
           and p.session_hash % ${this.options.partitions} = any(${[...partitions]}::int[])
           and ${cursor ? sql`(c.tenant_id,c.session_id,c.seq,effect->>'operationId')>(${cursor.tenant}::uuid,${cursor.session},${cursor.seq}::bigint,${cursor.operation})` : sql`true`}
         order by c.tenant_id,c.session_id,c.seq,effect->>'operationId' limit 128`.execute(
@@ -217,10 +223,15 @@ export class ControlToolDispatcher {
     const d = pending.dispatch;
     // Authority and the current task are checked together. This control-effect
     // admission query is not added to fixed Cube Tool dispatch.
-    const row = await sql<{ body: string }>`select l.body from pi_durable_records r
+    const sourceSequence = d.recovery?.sequence ?? pending.sequence;
+    const row = await sql<{
+      body: string;
+      cloud_metadata: string | null;
+    }>`select l.body,c.cloud_metadata from pi_durable_records r
       join pi_durable_log l on l.tenant_id=r.tenant_id and l.session_id=r.session_id
-        and l.seq=${pending.sequence} and l.record_id=${d.sourceDocumentId ?? d.taskId}
+        and l.seq=${sourceSequence} and l.record_id=${d.sourceDocumentId ?? d.taskId}
         and l.record_kind=${d.sourceDocumentId === undefined ? "task" : "document.create"}
+      join pi_durable_commits c on c.tenant_id=l.tenant_id and c.session_id=l.session_id and c.seq=l.seq
       join active_execution_scopes a on a.tenant_id=r.tenant_id
         and a.pi_session_id=r.session_id and a.run_id=${d.scope.runId}::uuid
       where r.tenant_id=${d.scope.tenantId}::uuid and r.session_id=${d.scope.piSessionId}
@@ -239,9 +250,57 @@ export class ControlToolDispatcher {
         and kind='document' and retired_seq is null`.execute(this.options.database);
       if (!live.rows.length) return;
     }
+    if (d.recovery) {
+      const receipt = await sql<{ body: string }>`select l.body from pi_durable_records doc
+        join pi_durable_log l on l.tenant_id=doc.tenant_id and l.session_id=doc.session_id
+          and l.seq=${pending.sequence} and l.record_kind='document.create' and l.record_id=doc.id
+        where doc.tenant_id=${d.scope.tenantId}::uuid and doc.session_id=${d.scope.piSessionId}
+          and doc.id=${d.recovery.documentId} and doc.kind='document' and doc.retired_seq is null`.execute(
+        this.options.database,
+      );
+      if (!receipt.rows[0]) return;
+      durableControlRecovery(
+        {
+          seq: pending.sequence,
+          nextId: d.recovery.documentId + 1,
+          writes: [JSON.parse(receipt.rows[0].body)],
+        },
+        d,
+      );
+      const metadata = JSON.parse(row.rows[0].cloud_metadata ?? "{}") as {
+        controlTools?: unknown[];
+      };
+      const source = metadata.controlTools?.find((candidate) => {
+        const ref = candidate as DurableControlToolDispatch;
+        return (
+          ref.target === "control" &&
+          ref.taskId === d.taskId &&
+          ref.operationId === d.recovery!.operationId &&
+          !ref.recovery
+        );
+      }) as DurableControlToolDispatch | undefined;
+      if (!source) throw new Error("Original delegation dispatch is unavailable");
+      parseControlToolDispatch(source);
+      if (
+        source.toolName !== d.toolName ||
+        source.conversationId !== d.conversationId ||
+        source.sourceDocumentId !== undefined ||
+        source.replyMode !== undefined ||
+        source.contextAnchor !== d.contextAnchor ||
+        ["tenantId", "piSessionId", "runId", "sessionId", "turnId"].some(
+          (field) =>
+            source.scope[field as keyof typeof source.scope] !==
+            d.scope[field as keyof typeof d.scope],
+        )
+      )
+        throw new Error("Delegation recovery changed its original work");
+      const task = write.value as { state?: { checkpoint?: { replay?: string } } };
+      if (task.state?.checkpoint?.replay !== "safe")
+        throw new Error("Original delegation was unsafe");
+    }
     const intent = durableControlIntent(
       {
-        seq: pending.sequence,
+        seq: sourceSequence,
         nextId: Math.max(d.taskId, d.sourceDocumentId ?? 0) + 1,
         writes: [write],
       },
@@ -252,7 +311,7 @@ export class ControlToolDispatcher {
       kind: "control_tool",
       arguments: intent.arguments,
       nativeCallId: intent.callId,
-      nativeSequence: pending.sequence,
+      nativeSequence: sourceSequence,
     };
   }
   #drain(): void {

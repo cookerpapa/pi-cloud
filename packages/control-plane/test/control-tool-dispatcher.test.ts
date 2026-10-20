@@ -43,7 +43,7 @@ async function fixture() {
     operationId: "operation",
     taskId: 4,
     conversationId: 1,
-    toolName: "subagent",
+    toolName: "subagent_control",
     contextAnchor: null,
     replyTopic: "worker-boot",
     scope: {
@@ -143,7 +143,7 @@ describe("native control Tool reconciliation", () => {
       operationId: "operation",
       sequence: 1,
       result: {
-        toolName: "subagent",
+        toolName: "subagent_control",
         toolCallId: "provider-call",
         isError: false,
         result: { content: [{ type: "text", text: "ready" }] },

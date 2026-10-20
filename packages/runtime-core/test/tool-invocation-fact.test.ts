@@ -4,7 +4,7 @@ import type { AcceptedFact, AcceptedFactReceipt } from "../src/accepted-fact.ts"
 import { WorkerExecutionLog } from "../src/worker-execution-log.ts";
 import { DurableSessionPublisher } from "../src/durable-session-publisher.ts";
 import { parseKafkaAcceptedFact, encodeSessionLogFact } from "../src/kafka-accepted-fact.ts";
-import { toolCommandsForFact, controlToolsForFact } from "../src/tool-invocation-fact.ts";
+import { toolCommandsForFact, validateControlToolReferences } from "../src/tool-invocation-fact.ts";
 import { assertSessionPublication } from "../src/direct-session-kafka.ts";
 import { toolInvocationFixture } from "./tool-invocation-fixture.ts";
 const logs: WorkerExecutionLog[] = [];
@@ -183,16 +183,8 @@ it("routes control tools from the same validated native commit without copying t
   expect(encoded.match(/q{80000}/g)).toHaveLength(1);
   const parsed = parseKafkaAcceptedFact(encoded);
   expect(toolCommandsForFact(parsed)).toEqual([]);
-  expect(controlToolsForFact(parsed)).toMatchObject([
-    {
-      operationId: publication.tools[0]!.command.operationId,
-      arguments: args,
-      conversationId: 1,
-      toolName: "subagent",
-      nativeCallId: "provider-1",
-      nativeSequence: commit.seq,
-    },
-  ]);
+  expect(() => validateControlToolReferences(parsed)).not.toThrow();
+
   f.ack.resolve({ factId: fact.factId, durable: true });
   await published;
   expect(() => assertSessionPublication({ scope: f.scope }, parsed)).not.toThrow();

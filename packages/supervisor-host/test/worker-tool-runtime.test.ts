@@ -34,6 +34,9 @@ function fixture(codec?: ImageAttachmentCodec) {
     maximumDepth: 3,
     control,
     nativeConversations: {
+      originalControlIntent: async () => {
+        throw new Error("No recovery source in this fixture");
+      },
       childAnchor: async (_ref, inherit) => (inherit ? "3" : null),
       conversationDepth: async () => 3,
     },
@@ -56,7 +59,7 @@ it("prepares a control invocation and returns its reply without executing its bu
   });
   const tool = bindings.find((b) => b.tool.name === "subagent")!.tool as PreparedAgentTool;
   const prepared = await withToolInvocation({ id: "task:4", nativeToolCallId: "call" }, () =>
-    tool.prepareExecution!("call", { action: "run", task: "Check code", context: "branch" }),
+    tool.prepareExecution!("call", { task: "Check code", context: "branch" }),
   );
   expect(prepared.command).toMatchObject({
     target: "control",
@@ -64,7 +67,7 @@ it("prepares a control invocation and returns its reply without executing its bu
     nativeCallId: "call",
     conversationId: 1,
     contextAnchor: 3,
-    arguments: { action: "run", task: "Check code" },
+    arguments: { task: "Check code" },
   });
   expect(f.control.request).not.toHaveBeenCalled();
   if (!("operationId" in prepared.command)) throw Error("Expected control command");
@@ -82,6 +85,75 @@ it("prepares a control invocation and returns its reply without executing its bu
   await expect(prepared.result()).resolves.toMatchObject({
     content: [{ type: "text", text: "DONE" }],
   });
+  prepared.dispose();
+  f.mailbox.close();
+});
+
+it("recovers a delegation with its original effect and a fresh callback identity", async () => {
+  const f = fixture();
+  const source = {
+    sequence: 18,
+    operationId: "original-child",
+    taskId: 44,
+    conversationId: 1,
+    toolName: "subagent" as const,
+    nativeCallId: "recover-call",
+    arguments: { task: "Original task" },
+    contextAnchor: 3,
+  };
+  vi.spyOn(f.runtime.options.nativeConversations, "originalControlIntent").mockResolvedValue(
+    source,
+  );
+  const bindings = await f.runtime.create({
+    command,
+    prepareEnvironment: async () => {
+      throw new Error("No VM for delegation");
+    },
+    prepareWorkflow: async () => {
+      throw new Error("No script replay");
+    },
+  });
+  const tool = bindings.find((b) => b.tool.name === "subagent")!.tool as PreparedAgentTool;
+  expect(tool.replay).toBe("safe");
+  const recover = (args: unknown) =>
+    withToolInvocation({ id: "task:44", nativeToolCallId: "recover-call" }, () =>
+      tool.prepareRecovery!("recover-call", args),
+    );
+  await expect(recover({ task: "Changed task" })).rejects.toThrow("differs");
+  expect(f.mailbox.size).toBe(0);
+  const prepared = await recover(source.arguments);
+  if (!("target" in prepared.command) || prepared.command.target !== "control")
+    throw new Error("Expected control recovery");
+  expect(prepared.command.operationId).not.toBe(source.operationId);
+  expect(prepared.command).toMatchObject({
+    recovery: { sequence: 18, operationId: "original-child" },
+    contextAnchor: 3,
+  });
+  // Old delivery cannot satisfy the freshly registered wait.
+  f.mailbox.accept({
+    kind: "tool_result",
+    operationId: source.operationId,
+    sequence: 1,
+    result: {
+      toolName: "subagent",
+      toolCallId: "recover-call",
+      isError: false,
+      result: { content: [{ type: "text", text: "stale" }] },
+    },
+  });
+  expect(f.mailbox.size).toBe(1);
+  f.mailbox.accept({
+    kind: "tool_result",
+    operationId: prepared.command.operationId,
+    sequence: 1,
+    result: {
+      toolName: "subagent",
+      toolCallId: "recover-call",
+      isError: false,
+      result: { content: [{ type: "text", text: "current" }] },
+    },
+  });
+  expect(await prepared.result()).toMatchObject({ content: [{ text: "current" }] });
   prepared.dispose();
   f.mailbox.close();
 });
@@ -160,10 +232,10 @@ it("publishes one dynamic run request for a workflow key and isolates reused pro
       };
     },
   });
-  const tool = bindings.find((b) => b.tool.name === "subagent")!.tool as PreparedAgentTool;
+  const tool = bindings.find((b) => b.tool.name === "workflow")!.tool as PreparedAgentTool;
   for (const id of ["task:4", "task:5"]) {
     await withToolInvocation({ id, nativeToolCallId: "same-provider-id" }, () =>
-      tool.prepareExecution!("same-provider-id", { action: "workflow", script: "return 1" }),
+      tool.prepareExecution!("same-provider-id", { script: "return 1" }),
     );
     const args = { key: "one", task: { task: "Check code" } };
     expect(await callback!("run", args)).toEqual(await callback!("run", args));
@@ -226,9 +298,9 @@ it("cancels outstanding workflow host calls and rejects late callbacks after dis
       };
     },
   });
-  const tool = bindings.find((b) => b.tool.name === "subagent")!.tool as PreparedAgentTool;
+  const tool = bindings.find((b) => b.tool.name === "workflow")!.tool as PreparedAgentTool;
   const prepared = await withToolInvocation({ id: "task:13", nativeToolCallId: "workflow" }, () =>
-    tool.prepareExecution!("workflow", { action: "workflow", script: "return 1" }),
+    tool.prepareExecution!("workflow", { script: "return 1" }),
   );
   const running = callback!("run", { key: "one", task: { task: "Pending child" } });
   void running.catch(() => {});

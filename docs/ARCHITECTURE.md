@@ -512,7 +512,7 @@ producer. A delayed stale initialization can fence a valid successor, but its
 post-init PG check forbids data publication; the successor recovers through the
 same closure protocol. Arbitrary unsafe Tools are never replayed by projection.
 
-The code-owned topic is `pi-cloud.execution-log.v17` (schema 189, ADR-0249).
+The code-owned topic is `pi-cloud.execution-log.v18` (schema 193, ADR-0264).
 Physical Session ID fixes its Kafka partition; partition count cannot change in
 place. Native producers use short RF3/acks-all transactions; no model/Tool wait
 holds an open transaction. Consumers read committed records. Control changes

@@ -194,12 +194,20 @@ describe("native Subagent resource and query views", () => {
   it("preserves supervisor request deduplication and reply ownership without child Runs", async () => {
     const call = await f.command({ task: "Needs a decision" }),
       child = await provider().start(input(call));
-    const channel = new PostgresSubagentSupervisorChannel(f.database),
-      requestId = crypto.randomUUID();
+    const channel = new PostgresSubagentSupervisorChannel(f.database);
+    const view = f.children.get(child.executionId)!;
+    const contact = await f.command(
+      { reason: "need_decision", message: "Which branch?" },
+      { ...view.request.view, conversationId: view.conversationId },
+      "contact_supervisor",
+    );
+    const requestId = contact.operationId;
     const request = {
       tenantId: f.scope.tenantId,
       childSessionId: child.childSessionId,
       rootRunId: f.scope.runId,
+      taskId: contact.taskId,
+      writerId: f.scope.writerId,
       requestId,
       reason: "need_decision" as const,
       message: "Which branch?",

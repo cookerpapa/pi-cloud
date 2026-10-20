@@ -16,7 +16,8 @@ describe.skipIf(!endpoint)("Subagent PG clock decisions", () => {
     parent = randomUUID(),
     session = randomUUID(),
     run = randomUUID(),
-    execution = randomUUID();
+    execution = randomUUID(),
+    writer = randomUUID();
   beforeAll(async () => {
     admin = createDatabase({ connectionString: endpoint!, maxConnections: 1 });
     await sql`create database ${sql.id(name)}`.execute(admin);
@@ -30,13 +31,30 @@ describe.skipIf(!endpoint)("Subagent PG clock decisions", () => {
         `
       create table subagent_conversations(id uuid primary key,tenant_id uuid,parent_session_id uuid,child_session_id uuid,root_run_id uuid);
       create view subagent_executions as select *, 'running'::text state from subagent_conversations;
-      create table subagent_supervisor_requests(id uuid primary key,tenant_id uuid,execution_id uuid,reason text,message text,expects_reply bool,interview jsonb,reply_message text,created_at timestamptz default clock_timestamp(),expires_at timestamptz,replied_at timestamptz);
+      create table subagent_supervisor_requests(id uuid primary key,tenant_id uuid,execution_id uuid,native_task_id bigint,writer_id uuid,reason text,message text,expects_reply bool,interview jsonb,reply_message text,created_at timestamptz default clock_timestamp(),expires_at timestamptz,replied_at timestamptz);
+      create table sessions(id uuid,tenant_id uuid,pi_session_id text,pi_conversation_id bigint);
+      create table active_execution_scopes(tenant_id uuid,run_id uuid,writer_id uuid,valid_until timestamptz,accepting_effects boolean);
+      create table pi_durable_records(tenant_id uuid,session_id text,id bigint,kind text,fields jsonb);
     `,
       )
       .execute(database);
     await sql`insert into subagent_conversations values(${execution}::uuid,${tenant}::uuid,${parent}::uuid,${session}::uuid,${run}::uuid)`.execute(
       database,
     );
+    await sql`insert into sessions values(${session}::uuid,${tenant}::uuid,${parent},2)`.execute(
+      database,
+    );
+    await sql`insert into active_execution_scopes values(${tenant}::uuid,${run}::uuid,${writer}::uuid,clock_timestamp()+interval '1 hour',true)`.execute(
+      database,
+    );
+    await sql`insert into pi_durable_records values(${tenant}::uuid,${parent},1,'task',${JSON.stringify(
+      {
+        conversation: "2",
+        status: "running",
+        nativeKind: '"pi.tool"',
+        abortRequested: "false",
+      },
+    )}::jsonb)`.execute(database);
   });
   afterAll(async () => {
     vi.useRealTimers();
@@ -53,6 +71,8 @@ describe.skipIf(!endpoint)("Subagent PG clock decisions", () => {
       tenantId: tenant,
       childSessionId: session,
       rootRunId: run,
+      taskId: 1,
+      writerId: writer,
       reason: "need_decision",
       message: "fixture",
     });

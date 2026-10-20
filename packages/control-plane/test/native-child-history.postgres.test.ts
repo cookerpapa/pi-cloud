@@ -10,7 +10,7 @@ import { ExecutionStreamProjector } from "../../runtime-core/src/execution-strea
 it("forks native child history and preserves parent-owned deletion boundaries without a child Run", async () => {
   const f = await nativeSubagentFixture();
   try {
-    const call = await f.command({ action: "run", task: "Read this child history" });
+    const call = await f.command({ task: "Read this child history" });
     const child = await new PostgresSubagentConversations({
       database: f.database,
       native: f.native,

@@ -574,14 +574,16 @@ export class PiCloudTurnRunner {
             sampling.select({ sequence, attempt: 1, publish: false });
           }
           const tool = tools.tools.find((tool) => tool.name === invocation.toolName);
-          if (!tool?.prepareExecution) throw new Error("Remote Tool has no preparation port");
+          const prepare = invocation.recovery ? tool?.prepareRecovery : tool?.prepareExecution;
+          if (!tool || !prepare) throw new Error("Remote Tool has no matching preparation port");
           const prepared = await withToolInvocation(
             {
               id: `task:${invocation.taskId}`,
               nativeToolCallId: invocation.callId,
             },
             () =>
-              tool.prepareExecution!(
+              prepare.call(
+                tool,
                 invocation.callId,
                 invocation.args,
                 invocation.context.abortSignal,

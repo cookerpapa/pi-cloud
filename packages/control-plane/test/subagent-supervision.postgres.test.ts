@@ -40,7 +40,7 @@ function value(outcome: ControlToolOutcome) {
   );
 }
 async function child(task: string) {
-  const run = await f.command({ action: "run", task });
+  const run = await f.command({ task });
   expect(await host.executeTool(run, () => true)).toEqual({ waiting: true });
   const entry = f.children.get(run.operationId)!;
   return { run, view: { ...entry.request.view, conversationId: entry.conversationId } };
@@ -195,6 +195,42 @@ it("returns cancellation instead of a stale supervisor question", async () => {
   );
 });
 
+it.each(["task_ended", "writer_changed"] as const)(
+  "does not block a continuing child on a supervisor request after %s",
+  async (boundary) => {
+    const c = await child("Continue after an interrupted contact");
+    const question = await f.command(
+      { reason: "need_decision", message: "An old contact" },
+      c.view,
+      "contact_supervisor",
+    );
+    await host.executeTool(question, () => true);
+    expect(value(await host.executeTool(c.run, () => true)).state).toBe("blocked");
+    if (boundary === "task_ended") {
+      await f.finishCall(question);
+    } else {
+      await f.database
+        .updateTable("subagent_supervisor_requests")
+        .set({ writer_id: crypto.randomUUID() })
+        .where("id", "=", question.operationId)
+        .execute();
+    }
+    const status = await f.command({ action: "status", target: c.run.operationId });
+    expect(value(await host.executeTool(status, () => true)).state).toBe("running");
+    expect(await host.executeTool(c.run, () => true)).toEqual({ waiting: true });
+    const pending = await f.command({ action: "pending" }, undefined, "subagent_supervisor");
+    expect(value(await host.executeTool(pending, () => true)).requests).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ requestId: question.operationId })]),
+    );
+    const reply = await f.command(
+      { action: "reply", replyTo: question.operationId, message: "Too late" },
+      undefined,
+      "subagent_supervisor",
+    );
+    expect(await host.executeTool(reply, () => true)).toMatchObject({ isError: true });
+  },
+);
+
 it("deduplicates one launch while preserving distinct model commands", async () => {
   const c = await child("One owned child");
   const before = f.children.size;
@@ -206,7 +242,7 @@ it("deduplicates one launch while preserving distinct model commands", async () 
   }
   const known = await f.command({ action: "status", target: c.run.operationId });
   expect(value(await host.executeTool(known, () => true)).state).toBe("running");
-  const different = await f.command({ action: "run", task: "One owned child" });
+  const different = await f.command({ task: "One owned child" });
   await host.executeTool(different, () => true);
   expect(f.children.size).toBe(before + 1);
   process.stdout.write(

@@ -3,6 +3,7 @@ import { PiTurnError } from "../pi-turn-runtime.ts";
 import { isDeepStrictEqual } from "node:util";
 import {
   parseExecutionReference,
+  isControlToolCommand,
   type CandidateControlToolCommand,
   type DurableSessionCommit,
 } from "@pi-cloud/protocol";
@@ -90,6 +91,17 @@ const HostCallDocument = defineDocFamily<HostCallValue, HostCallValue>({
   family: true,
   initial: (value) => value,
 });
+const ControlRecoveryDocument = defineDocFamily<
+  { sequence: number; operationId: string },
+  { sequence: number; operationId: string }
+>({
+  kind: "pi-cloud.tool-recovery",
+  version: 1,
+  scope: "task",
+  family: true,
+  initial: (value) => value,
+});
+
 export type NativeRequestContext = {
   taskId: number;
   conversationId: number;
@@ -126,7 +138,10 @@ export class DurableAgentSession {
   readonly #abort = new AbortController();
   readonly #registry = createRegistry();
   readonly #installed = new Set<string>();
-  readonly #hostCalls = new Map<string, { taskId: number; command: CandidateControlToolCommand }>();
+  readonly #controlPublications = new Map<
+    string,
+    { taskId: number; command: CandidateControlToolCommand }
+  >();
   readonly #models: ScopedDurableModels;
   readonly remote: DurableRemoteTools;
   #harness!: Harness;
@@ -135,7 +150,7 @@ export class DurableAgentSession {
     readonly storage: Storage,
     options: {
       models: Models;
-      remoteTools: readonly Omit<ToolRegistration, "execute" | "replay">[];
+      remoteTools: readonly Omit<ToolRegistration, "execute">[];
       infrastructureTools?: readonly ToolRegistration[];
     },
   ) {
@@ -151,17 +166,18 @@ export class DurableAgentSession {
     });
     this.remote = new DurableRemoteTools({
       definitions: options.remoteTools,
-      prepare: async (invocation) => {
-        const id = this.#conversations.get(invocation.conversationId);
-        if (!id) throw new Error("Tool conversation has no cloud Run binding");
-        const run = await this.#awaitRun(
-          id,
-          invocation.conversationId,
-          invocation.context.abortSignal,
-        );
-        await run.assertCurrent();
-        await run.beforeEffect?.(invocation.context.abortSignal);
-        return run.prepareRemote(invocation);
+      prepare: (invocation) => this.#prepareRemote(invocation),
+      recover: async (invocation) => {
+        const prepared = await this.#prepareRemote(invocation);
+        try {
+          if (!isControlToolCommand(prepared.command) || !prepared.command.recovery)
+            throw new Error("Remote recovery must publish an original control reference");
+          await this.publishControl(invocation.taskId, prepared.command);
+          return prepared;
+        } catch (error) {
+          prepared.dispose();
+          throw error;
+        }
       },
     });
     for (const definition of this.remote.definitions) this.#installed.add(definition.name);
@@ -200,6 +216,15 @@ export class DurableAgentSession {
       }),
     );
   }
+  async #prepareRemote(invocation: RemoteInvocation): Promise<PreparedRemoteInvocation> {
+    const id = this.#conversations.get(invocation.conversationId);
+    if (!id) throw new Error("Tool conversation has no cloud Run binding");
+    const run = await this.#awaitRun(id, invocation.conversationId, invocation.context.abortSignal);
+    await run.assertCurrent();
+    await run.beforeEffect?.(invocation.context.abortSignal);
+    return run.prepareRemote(invocation);
+  }
+
   #installTools(tools: readonly ToolRegistration[]): void {
     for (const tool of tools) {
       if (this.#installed.has(tool.name)) continue;
@@ -234,7 +259,7 @@ export class DurableAgentSession {
     storage: Storage,
     options: {
       models: Models;
-      remoteTools: readonly Omit<ToolRegistration, "execute" | "replay">[];
+      remoteTools: readonly Omit<ToolRegistration, "execute">[];
       infrastructureTools?: readonly ToolRegistration[];
       settings?: HarnessSettings;
       report?: (error: unknown) => void;
@@ -540,24 +565,34 @@ export class DurableAgentSession {
     for (const write of commit.writes) {
       if (write.type !== "document.create") continue;
       const record = write.record as { id: number; kind: string; key?: string };
-      if (record.kind !== "pi-cloud.tool-hostcall" || !record.key) continue;
-      const pending = this.#hostCalls.get(record.key);
+      if (
+        !["pi-cloud.tool-hostcall", "pi-cloud.tool-recovery"].includes(record.kind) ||
+        !record.key
+      )
+        continue;
+      const pending = this.#controlPublications.get(record.key);
       if (!pending) throw new Error("Native hostcall has no prepared dispatch");
       tools.push({
         taskId: pending.taskId,
-        command: { ...pending.command, sourceDocumentId: record.id },
+        command:
+          record.kind === "pi-cloud.tool-recovery"
+            ? {
+                ...pending.command,
+                recovery: { ...pending.command.recovery!, documentId: record.id },
+              }
+            : { ...pending.command, sourceDocumentId: record.id },
       });
     }
     return { ...prepared, tools };
   }
-  async publishHostCall(taskId: number, command: CandidateControlToolCommand): Promise<void> {
+  async publishControl(taskId: number, command: CandidateControlToolCommand): Promise<void> {
     const runId = parseExecutionReference(command.executionReference).runId;
     const binding = this.#bindings.get(command.conversationId);
     if (binding?.runId !== runId) throw new Error("Native hostcall invocation has ended");
     await binding.assertCurrent();
-    if (this.#hostCalls.has(command.operationId))
+    if (this.#controlPublications.has(command.operationId))
       throw new Error("Native hostcall is already publishing");
-    this.#hostCalls.set(command.operationId, { taskId, command });
+    this.#controlPublications.set(command.operationId, { taskId, command });
     try {
       await this.#harness.commit(async (tx) => {
         const task = await tx.task(taskId as TaskId);
@@ -569,18 +604,33 @@ export class DurableAgentSession {
           (task.state.checkpoint as { phase?: string }).phase !== "execute"
         )
           throw new Error("Native hostcall invocation has ended");
-        const seed: HostCallValue = {
-          conversationId: command.conversationId,
-          toolName: command.toolName,
-          callId: command.nativeCallId,
-          arguments: command.arguments as Record<string, JsonValue>,
-        };
-        const value = await tx.doc(HostCallDocument, taskId as TaskId, command.operationId, seed);
-        if (!isDeepStrictEqual(JSON.parse(JSON.stringify(value)), seed))
-          throw new Error("Native hostcall identity changed arguments");
+        if (command.recovery) {
+          const seed = {
+            sequence: command.recovery.sequence,
+            operationId: command.recovery.operationId,
+          };
+          const value = await tx.doc(
+            ControlRecoveryDocument,
+            taskId as TaskId,
+            command.operationId,
+            seed,
+          );
+          if (!isDeepStrictEqual(JSON.parse(JSON.stringify(value)), seed))
+            throw new Error("Native recovery identity changed");
+        } else {
+          const seed: HostCallValue = {
+            conversationId: command.conversationId,
+            toolName: command.toolName,
+            callId: command.nativeCallId,
+            arguments: command.arguments as Record<string, JsonValue>,
+          };
+          const value = await tx.doc(HostCallDocument, taskId as TaskId, command.operationId, seed);
+          if (!isDeepStrictEqual(JSON.parse(JSON.stringify(value)), seed))
+            throw new Error("Native hostcall identity changed arguments");
+        }
       }, BACKGROUND_CONTEXT);
     } finally {
-      this.#hostCalls.delete(command.operationId);
+      this.#controlPublications.delete(command.operationId);
     }
   }
   async retireHostCall(taskId: number, id: string): Promise<void> {

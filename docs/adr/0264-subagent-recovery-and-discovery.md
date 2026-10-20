@@ -1,7 +1,8 @@
 # ADR-0264: Recoverable delegation and scoped child discovery
 
 Status: accepted by the owner with the six-slice repair plan, 2026-10-20.
-Public-API prototype and implementation remain pending; no deployment is claimed.
+The public-API prototype and PG/RF3 integration pass; live acceptance remains pending.
+No deployment is claimed.
 Context: [resource repair plan](../reports/resource-interaction-repair-plan-20261020.md),
 [SAR-D1 review](../reports/subagent-lifecycle-review-20261020.md).
 This proposal refines ADR-0229/0247 for explicitly replay-safe direct delegation;
@@ -110,6 +111,19 @@ deadline and never infer it from a new consumer start time.
 
 ## Required proof before adoption
 
+The native prototype in `packages/sandbox-supervisor/test/native-session-work.test.ts`
+passes five cases: interruption after creation, configuration, input admission
+and child completion, plus Stop on restoration. The actual pinned Harness and
+existing generation-owned creation adapter preserve one child, one original
+Submission and one source Tool identity. Unsafe child execution occurs once;
+a later child answer does not replace the original answer. Normal Tool
+preparation runs once while safe execution resumes. Four existing native-family
+contracts also pass, as does the package typecheck.
+
+This is an in-process native API proof with journal restoration and Faux models.
+It does not establish the distributed recovery-reference, PG authority or Kafka
+delivery contract; those gates below remain required.
+
 Native contract tests must cover same-task rerun, child creation/input ACK loss,
 exact-result selection, generation ownership and supervisor blocking/reply.
 PG/RF3 tests must cover both Projector-only and Worker replacement, the fresh
@@ -123,3 +137,33 @@ structured results into invalid output.
 Only after that proof should the matched Tool/dispatch contract be implemented
 and released. This accepted ADR does not relabel the current runtime safe,
 change old committed native checkpoints, or authorize a blanket replay mode.
+
+## Recovery-reference representation
+
+Keep the original control operation ID as the logical child identity. Each
+resumed delivery receives a fresh operation ID and callback; its ordered native
+commit carries a task-scoped `pi-cloud.tool-recovery` document containing only
+the original intent position and operation identity. Dispatch metadata binds
+that document to the original Tool task and current owner/mailbox.
+
+The original arguments remain in the original execute checkpoint. Recovery
+does not copy them into another document or rewrite an old scope. The Worker
+checks the restored invocation against that committed intent. After projection,
+the control dispatcher reads that intent under current authority and uses the
+original operation ID for child admission. Its reply correlates with the fresh
+delivery ID. The recovery document is retired with its native Tool.
+
+Validate control references at the Kafka envelope boundary; expand their input
+only at the PG-backed control handler boundary. Cube handoff keeps its existing
+same-commit argument expansion and dispatch-offset contract. Superseded recovery
+references cannot authorize effects through the current lease, and a native
+terminal/aborted task cannot acquire a new wait.
+
+Supervisor requests must identify the native calling Task and its original
+Session writer. Checking only that the child is still running is insufficient:
+an unsafe contact can end during recovery while the child continues. Pending
+queries and new replies therefore require that exact Task and writer to remain
+active. These immutable references add no renewable lease or execution state.
+Keep identical committed reply receipts readable. The matched development
+migration discards old supervisor request rows only after writer quiescence;
+it does not retain a nullable legacy interpretation.

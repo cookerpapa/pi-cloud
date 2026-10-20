@@ -151,7 +151,6 @@ it("retains native ephemeral child compute under its shared root lease", async (
   const f = await fixture();
   try {
     const call = await f.command({
-      action: "run",
       task: "Owned child fixture",
       sandbox: "ephemeral",
     });
@@ -597,7 +596,6 @@ it("keeps live native child compute alive through actual Controller/PG cleanup",
   let c: Awaited<ReturnType<typeof controllerFixture>> | undefined;
   try {
     const call = await f.command({
-      action: "run",
       task: "Owned child fixture",
       sandbox: "ephemeral",
     });

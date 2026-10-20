@@ -23,6 +23,7 @@ export type RemoteInvocation = {
   toolName: string;
   args: Record<string, unknown>;
   context: Context;
+  recovery?: true;
 };
 export type PreparedRemoteInvocation = {
   command: CandidateToolEffect;
@@ -45,9 +46,12 @@ export class DurableRemoteTools {
   readonly definitions: readonly ToolRegistration[];
   readonly hook;
   constructor(options: {
-    definitions: readonly Omit<ToolRegistration, "execute" | "replay">[];
+    definitions: readonly Omit<ToolRegistration, "execute">[];
     prepare(invocation: RemoteInvocation): Promise<PreparedRemoteInvocation>;
+    recover?(invocation: RemoteInvocation): Promise<PreparedRemoteInvocation>;
   }) {
+    if (options.definitions.some((tool) => tool.replay === "safe") && !options.recover)
+      throw new Error("Replay-safe remote Tools require a recovery port");
     const names = new Set(options.definitions.map((tool) => tool.name));
     this.hook = hook(ToolTask, {
       beforeTool: async (call, api, context) => {
@@ -84,9 +88,26 @@ export class DurableRemoteTools {
     });
     this.definitions = options.definitions.map((definition) => ({
       ...definition,
-      replay: "unsafe",
-      execute: async (_args, api) => {
-        const pending = this.#pending.get(api.taskId);
+      replay: definition.replay ?? "unsafe",
+      execute: async (args, api, context) => {
+        let pending = this.#pending.get(api.taskId);
+        if (!pending && definition.replay === "safe") {
+          const prepared = await options.recover!({
+            taskId: api.taskId,
+            conversationId: api.conversationId,
+            callId: api.callId,
+            toolName: definition.name,
+            args: args as Record<string, unknown>,
+            context,
+            recovery: true,
+          });
+          if (context.abortSignal?.aborted) {
+            prepared.dispose();
+            context.abortSignal.throwIfAborted();
+          }
+          pending = { prepared, dispatched: true, cancelled: false };
+          this.#pending.set(api.taskId, pending);
+        }
         if (!pending?.dispatched || !pending.prepared.result)
           throw new Error("Remote Tool has no acknowledged execution intent");
         return pending.prepared.result();

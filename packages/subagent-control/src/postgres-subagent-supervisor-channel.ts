@@ -51,6 +51,24 @@ function resource(row: {
   };
 }
 
+function activeCaller(table: string) {
+  return sql<boolean>`exists (
+    select 1 from subagent_executions e
+    join sessions child on child.tenant_id=e.tenant_id and child.id=e.child_session_id
+    join active_execution_scopes authority on authority.tenant_id=e.tenant_id
+      and authority.run_id=e.root_run_id and authority.writer_id=${sql.ref(`${table}.writer_id`)}
+    join pi_durable_records caller on caller.tenant_id=child.tenant_id
+      and caller.session_id=child.pi_session_id and caller.id=${sql.ref(`${table}.native_task_id`)}
+    where e.tenant_id=${sql.ref(`${table}.tenant_id`)} and e.id=${sql.ref(`${table}.execution_id`)}
+      and e.state in ('preparing','running') and authority.accepting_effects
+      and authority.valid_until>clock_timestamp() and caller.kind='task'
+      and caller.fields->>'conversation'=child.pi_conversation_id::text
+      and caller.fields->>'nativeKind'='"pi.tool"'
+      and caller.fields->>'status' in ('pending','running')
+      and coalesce(caller.fields->>'abortRequested','false')='false'
+  )`;
+}
+
 export class PostgresSubagentSupervisorChannel {
   readonly #database: Kysely<Database>;
 
@@ -62,6 +80,8 @@ export class PostgresSubagentSupervisorChannel {
     tenantId: string;
     childSessionId: string;
     rootRunId: string;
+    taskId: number;
+    writerId: string;
     reason: SubagentSupervisorReason;
     message: string;
     interview?: Record<string, unknown>;
@@ -121,6 +141,8 @@ export class PostgresSubagentSupervisorChannel {
           id: requestId,
           tenant_id: input.tenantId,
           execution_id: execution.id,
+          native_task_id: input.taskId,
+          writer_id: input.writerId,
           reason: input.reason,
           message,
           interview: input.interview ?? null,
@@ -187,14 +209,7 @@ export class PostgresSubagentSupervisorChannel {
       .where("expects_reply", "=", true)
       .where("reply_message", "is", null)
       .where("expires_at", ">", sql<Date>`clock_timestamp()`)
-      .where(
-        sql<boolean>`exists (
-        select 1 from subagent_executions execution
-        where execution.tenant_id=subagent_supervisor_requests.tenant_id
-          and execution.id=subagent_supervisor_requests.execution_id
-          and execution.state in ('preparing','running')
-      )`,
-      )
+      .where(activeCaller("subagent_supervisor_requests"))
       .orderBy("created_at", "asc")
       .orderBy("id", "asc")
       .limit(1)
@@ -225,7 +240,7 @@ export class PostgresSubagentSupervisorChannel {
       ])
       .where("request.tenant_id", "=", tenantId)
       .where("execution.parent_session_id", "=", parentSessionId)
-      .where("execution.state", "in", ["preparing", "running"])
+      .where(activeCaller("request"))
       .where("request.expects_reply", "=", true)
       .where("request.reply_message", "is", null)
       .where("request.expires_at", ">", sql<Date>`clock_timestamp()`)
@@ -310,19 +325,12 @@ export class PostgresSubagentSupervisorChannel {
         .where("id", "=", input.requestId)
         .where("reply_message", "is", null)
         .where("expires_at", ">", sql<Date>`clock_timestamp()`)
-        .where(
-          sql<boolean>`exists (
-          select 1 from subagent_executions execution
-          where execution.tenant_id=subagent_supervisor_requests.tenant_id
-            and execution.id=subagent_supervisor_requests.execution_id
-            and execution.state in ('preparing','running')
-        )`,
-        )
+        .where(activeCaller("subagent_supervisor_requests"))
         .returning("id")
         .executeTakeFirst();
       if (!replied)
         throw new SupervisorChannelError(
-          "Supervisor request has expired or its child has finished",
+          "Supervisor request has expired or its child has finished waiting",
         );
     });
     return this.request(input.tenantId, input.requestId);

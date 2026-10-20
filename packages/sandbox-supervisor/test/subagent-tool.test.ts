@@ -1,6 +1,6 @@
 import { ToolReplyMailbox } from "@pi-cloud/event-log";
 import {
-  controlToolDefinitions,
+  infrastructureToolDefinitions,
   prepareSubagentArguments,
   validateSubagentTask,
   type ToolResultPayload,
@@ -13,24 +13,26 @@ import { SubagentControlClient } from "../src/subagent-control-client.ts";
 it.each(["x".repeat(100001), "汉".repeat(100000), "\u0001".repeat(50000)])(
   "rejects oversized delegation input before native intent",
   (task) => {
-    expect(() => prepareSubagentArguments({ action: "run", task })).toThrow();
+    expect(() => prepareSubagentArguments({ task })).toThrow();
     expect(() => validateSubagentTask({ key: "one", task })).toThrow();
   },
 );
 it("keeps the role-free public tool schema and rejects retired invocation forms", () => {
-  const schema = controlToolDefinitions().find((tool) => tool.name === "subagent")!.parameters;
+  const schema = infrastructureToolDefinitions().find(
+    (tool) => tool.name === "subagent",
+  )!.parameters;
   for (const args of [
+    { action: "run", task: "inspect" },
+    { action: "workflow", script: "return 1" },
     { agent: "researcher", task: "inspect" },
     { workflowScript: "return 1" },
-    { action: "run", task: "inspect", workspace: "isolated" },
-    { action: "run", task: "inspect", sandbox: "isolated" },
-    { action: "run", task: "inspect", cwd: "relative/path" },
-    { action: "run", task: "inspect", context: "fork" },
+    { task: "inspect", workspace: "isolated" },
+    { task: "inspect", sandbox: "isolated" },
+    { task: "inspect", cwd: "relative/path" },
+    { task: "inspect", context: "fork" },
   ])
     expect(Value.Check(schema, args)).toBe(false);
-  expect(
-    Value.Check(schema, { action: "run", task: "inspect", context: "fresh", sandbox: "shared" }),
-  ).toBe(true);
+  expect(Value.Check(schema, { task: "inspect", context: "fresh", sandbox: "shared" })).toBe(true);
 });
 
 function mailboxFixture() {
@@ -65,7 +67,7 @@ describe("Subagent control result correlation through the shared Kafka mailbox",
     let ack!: () => void, command!: CandidateControlToolCommand;
     const client = new SubagentControlClient(
       {
-        publishHostCall: async (_task, c) => {
+        publishControl: async (_task, c) => {
           command = c;
           f.reply(c, { state: "completed" });
           await new Promise<void>((resolve) => {
@@ -101,7 +103,7 @@ describe("Subagent control result correlation through the shared Kafka mailbox",
     let command!: CandidateControlToolCommand;
     const client = new SubagentControlClient(
       {
-        publishHostCall: async (_task, c) => {
+        publishControl: async (_task, c) => {
           command = c;
         },
         retireHostCall: async () => {},
@@ -131,7 +133,7 @@ describe("Subagent control result correlation through the shared Kafka mailbox",
     const f = mailboxFixture();
     const client = new SubagentControlClient(
       {
-        publishHostCall: async () => {},
+        publishControl: async () => {},
         retireHostCall: async () => {},
       },
       f.transport,

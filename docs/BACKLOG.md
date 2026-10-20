@@ -39,7 +39,8 @@ and implement one vertical repair slice at a time.
 The [six-slice repair plan](reports/resource-interaction-repair-plan-20261020.md)
 is owner-approved. [ADR-0264](adr/0264-subagent-recovery-and-discovery.md) records
 original-delegation continuation plus scoped discovery using public Pi APIs;
-its prototype and implementation remain pending, and deployed replay policy is unchanged.
+its prototype and source integration pass targeted tests, including two RF3/PG
+owner replacements. Matched deployment and live acceptance remain pending.
 
 ## Terminal and application-preview lifecycle review
 
@@ -87,7 +88,7 @@ characterizations and a bounded GC/reachability probe record the following work.
       supervisor questions; do not reopen native work.
 - [ ] SAR-04 / P2: release completed workflow host-call cache entries with their
       owning Tool invocation instead of retaining every result for the whole Run.
-- [ ] SAR-D1: prove the proposed native safe-delegation recovery and target-free
+- [ ] SAR-D1 (source verified; live pending): native safe-delegation recovery and target-free
       family discovery in ADR-0264. Preserve original child/Submission identities;
       separate the Tool replay policies and retain generation-owned supervision.
       Distinct model commands remain distinct; no cross-boot raw-result mailbox

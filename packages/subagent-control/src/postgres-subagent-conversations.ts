@@ -438,13 +438,35 @@ export class PostgresSubagentConversations {
     tenantId: string,
     id: string,
     knownStatus?: SubagentConversationStatus,
+    originalInput = false,
   ): Promise<SubagentConversationStatus> {
     const status = knownStatus ?? (await this.status(tenantId, id));
     if (!["completed", "failed", "cancelled"].includes(status.state)) return status;
+    let answerId: number | undefined;
+    if (originalInput) {
+      // Submissions are authoritative current values (ADR-0243), not log versions.
+      const input = await sql<{ body: string }>`select c.body from subagent_conversations e
+        join sessions s on s.tenant_id=e.tenant_id and s.id=e.child_session_id
+        join pi_durable_records r on r.tenant_id=s.tenant_id and r.session_id=s.pi_session_id
+          and r.kind='submission' and r.fields->>'conversation'=s.pi_conversation_id::text
+          and r.fields->>'request'=${JSON.stringify(status.rootRunId)}
+        join pi_durable_current c on c.tenant_id=r.tenant_id and c.session_id=r.session_id and c.id=r.id
+        where e.tenant_id=${tenantId}::uuid and e.id=${id}::uuid`.execute(this.options.database);
+      if (!input.rows[0]) throw new Error("Original child Submission is unavailable");
+      const value = JSON.parse(input.rows[0].body).value as {
+        type: string;
+        status: string;
+        answer?: number;
+      };
+      if (value.type !== "input" || value.status !== "done") return status;
+      if (!Number.isSafeInteger(value.answer)) throw new Error("Original child answer is invalid");
+      answerId = value.answer;
+    }
     const rows = await sql<{ body: string }>`select l.body from pi_durable_records r
       join pi_durable_log l using(tenant_id,session_id,seq,ordinal)
       where r.tenant_id=${tenantId}::uuid and r.kind='entry' and r.fields->>'cloudSession'=${status.childSessionId}
         and r.fields->>'run'=${status.rootRunId} and r.fields->>'role'='assistant'
+        and ${answerId === undefined ? sql`true` : sql`r.id=${answerId}`}
       order by r.id desc limit 1`.execute(this.options.database);
     const message = rows.rows[0]
       ? JSON.parse(rows.rows[0].body).value.model?.find(
@@ -456,6 +478,49 @@ export class PostgresSubagentConversations {
       .map((p: { text: string }) => p.text)
       .join("");
     return { ...status, ...(output ? { output } : {}) };
+  }
+  async list(
+    tenantId: string,
+    piSessionId: string,
+    runId: string,
+    cursor?: string,
+  ): Promise<Record<string, unknown>> {
+    const pageSize = 24;
+    const rows = await sql<{
+      id: string;
+      state: SubagentExecutionState;
+      parent_execution_id: string | null;
+      parent_tool_call_id: string;
+      source_kind: string;
+      body: string;
+    }>`select e.id::text,e.state,e.parent_execution_id::text,e.parent_tool_call_id,e.source_kind,l.body
+      from subagent_executions e join sessions s on s.tenant_id=e.tenant_id and s.id=e.child_session_id
+      join pi_durable_log l on l.tenant_id=s.tenant_id and l.session_id=s.pi_session_id
+        and l.seq=e.source_sequence and l.record_id=e.source_record_id and l.record_kind=e.source_kind
+      where e.tenant_id=${tenantId}::uuid and s.pi_session_id=${piSessionId} and e.root_run_id=${runId}::uuid
+        and ${cursor === undefined ? sql`true` : sql`e.id>${cursor}::uuid`}
+      order by e.id limit ${pageSize + 1}`.execute(this.options.database);
+    const agents = rows.rows.slice(0, pageSize).map((row) => {
+      const source = JSON.parse(row.body);
+      const args =
+        row.source_kind === "task"
+          ? source.value?.state?.checkpoint?.arguments
+          : source.content?.value?.arguments;
+      if (typeof args?.task !== "string") throw new Error("Child intent is unavailable");
+      return {
+        executionId: row.id,
+        state: row.state,
+        task: Array.from(args.task.trim() as string)
+          .slice(0, 160)
+          .join(""),
+        sourceTaskId: parseSubagentTaskId(row.parent_tool_call_id),
+        ...(row.parent_execution_id ? { parentExecutionId: row.parent_execution_id } : {}),
+      };
+    });
+    return {
+      agents,
+      ...(rows.rows.length > pageSize ? { nextCursor: agents.at(-1)!.executionId } : {}),
+    };
   }
   async cancel(
     tenantId: string,

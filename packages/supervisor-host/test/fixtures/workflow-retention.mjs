@@ -13,7 +13,13 @@ let resultBytes = 0,
 const runId = randomUUID();
 const runtime = new WorkerToolRuntime({
   maximumDepth: null,
-  nativeConversations: { childAnchor: async () => null, conversationDepth: async () => 0 },
+  nativeConversations: {
+    originalControlIntent: async () => {
+      throw new Error("No recovery in memory fixture");
+    },
+    childAnchor: async () => null,
+    conversationDepth: async () => 0,
+  },
   control: {
     request: async (input) => {
       input.onPublished?.();
@@ -58,14 +64,13 @@ let bindings = await runtime.create({
     };
   },
 });
-let tool = bindings.find((x) => x.tool.name === "subagent").tool;
+let tool = bindings.find((x) => x.tool.name === "workflow").tool;
 async function executeAndDispose(index) {
   const callId = `call-${index}`;
   const prepared = await withToolInvocation(
     { id: `task:${index + 1}`, nativeToolCallId: callId },
     () =>
       tool.prepareExecution(callId, {
-        action: "workflow",
         script: "return await runs.run('one', {task:'fixture'})",
       }),
   );

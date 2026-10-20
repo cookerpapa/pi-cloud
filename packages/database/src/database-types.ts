@@ -667,6 +667,8 @@ export interface SubagentSupervisorRequestTable {
   id: string;
   tenant_id: string;
   execution_id: string;
+  native_task_id: Int8;
+  writer_id: string;
   reason: SubagentSupervisorReason;
   message: string;
   interview: GeneratedNullable<Record<string, unknown>>;

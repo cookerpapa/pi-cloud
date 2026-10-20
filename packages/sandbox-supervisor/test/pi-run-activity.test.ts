@@ -24,7 +24,7 @@ it("reports observed phases and activity without exposing private deltas or argu
     type: "tool_execution_start",
     toolCallId: "child",
     toolName: "subagent",
-    args: { action: "run", task: "PRIVATE" },
+    args: { task: "PRIVATE" },
   });
   event({
     type: "tool_execution_start",

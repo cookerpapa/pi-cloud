@@ -37,10 +37,9 @@ it.each([false, true])(
       tokensPerSecond: 1_000_000,
     });
     provider.setResponses([
-      fauxAssistantMessage(
-        fauxToolCall("subagent", { action: "run", task: "Child task", tools: [] }),
-        { stopReason: "toolUse" },
-      ),
+      fauxAssistantMessage(fauxToolCall("subagent", { task: "Child task", tools: [] }), {
+        stopReason: "toolUse",
+      }),
       async () => {
         childStarted.resolve();
         await continueChild.promise;
@@ -52,7 +51,7 @@ it.each([false, true])(
           context.messages.some(
             (message) =>
               message.role === "toolResult" &&
-              JSON.stringify(message.content).includes("CHILD DONE"),
+              JSON.stringify(message.content).includes("FIRST CHILD ANSWER"),
           ),
         ).toBe(true);
         parentWaiting.resolve();

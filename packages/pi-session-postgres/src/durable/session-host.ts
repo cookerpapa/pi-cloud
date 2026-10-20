@@ -7,11 +7,14 @@ import { isTransientDatabaseReadError, type Database } from "@pi-cloud/database"
 import { NativeSessionError } from "../native-session-error.ts";
 import {
   parseExecutionReference,
+  parseControlToolDispatch,
+  durableControlIntent,
   PublicationNotSentError,
   type SupervisorHeartbeatMessage,
   type SupervisorHeartbeatAckMessage,
   type DurableCommitPublication,
   type DurableSessionCommit,
+  type OriginalControlToolIntent,
 } from "@pi-cloud/protocol";
 import type { ImageAttachmentCodec } from "@pi-cloud/session-attachments";
 import type { ActiveExecutionAuthority } from "../execution-authority.ts";
@@ -53,7 +56,7 @@ type PrepareDisplay = (
 ) => NativeDisplayPreparation;
 export type ManagedNativeRuntime = {
   close(): Promise<void>;
-  publishHostCall?(
+  publishControl?(
     taskId: number,
     command: import("@pi-cloud/protocol").CandidateControlToolCommand,
   ): Promise<void>;
@@ -158,7 +161,7 @@ export class PostgresDurableSessionHost {
     }
     return depth;
   }
-  async publishHostCall(
+  async publishControl(
     taskId: number,
     command: import("@pi-cloud/protocol").CandidateControlToolCommand,
   ): Promise<void> {
@@ -166,8 +169,80 @@ export class PostgresDurableSessionHost {
     if (!owner) throw new Error("Native hostcall owner is unavailable");
     await owner.authority.assertCurrent();
     const runtime = await owner.runtime;
-    if (!runtime?.publishHostCall) throw new Error("Native hostcall port is unavailable");
-    await runtime.publishHostCall(taskId, command);
+    if (!runtime?.publishControl) throw new Error("Native hostcall port is unavailable");
+    await runtime.publishControl(taskId, command);
+  }
+  async originalControlIntent(
+    reference: string,
+    conversationId: number,
+    taskId: number,
+    signal?: AbortSignal,
+  ): Promise<OriginalControlToolIntent> {
+    const owner = this.#executions.get(reference);
+    const binding = owner?.bindings.get(conversationId);
+    if (!owner || !binding) throw new Error("Control recovery owner is unavailable");
+    await owner.authority.assertCurrent();
+    return nativeRead(
+      async () => {
+        let after = 0;
+        for (;;) {
+          // History is indexed by this one Task identity, never a Session journal scan.
+          const rows = await sql<{ seq: string; body: string; cloud_metadata: string }>`
+          select l.seq::text,l.body,c.cloud_metadata
+          from pi_durable_log l join pi_durable_commits c using(tenant_id,session_id,seq)
+          where l.tenant_id=${binding.tenantId}::uuid and l.session_id=${binding.piSessionId}
+            and l.record_kind='task' and l.record_id=${taskId}
+            and l.seq>${after} and c.cloud_metadata is not null
+          order by l.seq limit 16`.execute(this.options.database);
+          for (const row of rows.rows) {
+            let metadata: { controlTools?: unknown[] }, write: Record<string, unknown>;
+            try {
+              metadata = JSON.parse(row.cloud_metadata);
+              write = JSON.parse(row.body);
+            } catch {
+              throw new Error("Stored control recovery source is invalid");
+            }
+            for (const candidate of metadata.controlTools ?? []) {
+              const d = parseControlToolDispatch(candidate);
+              if (d.taskId !== taskId || d.sourceDocumentId !== undefined || d.recovery) continue;
+              const scope = (candidate as { scope: Record<string, unknown> }).scope;
+              if (
+                d.toolName !== "subagent" ||
+                d.conversationId !== conversationId ||
+                scope?.tenantId !== binding.tenantId ||
+                scope.piSessionId !== binding.piSessionId ||
+                scope.runId !== binding.runId ||
+                scope.sessionId !== binding.sessionId ||
+                scope.turnId !== binding.turnId
+              )
+                throw new Error("Control recovery source belongs to different work");
+              const task = write.value as { state?: { checkpoint?: { replay?: string } } };
+              if (task.state?.checkpoint?.replay !== "safe")
+                throw new Error("Original control intent is not replay-safe");
+              const sequence = Number(row.seq);
+              const intent = durableControlIntent(
+                { seq: sequence, nextId: taskId + 1, writes: [write] },
+                d,
+              );
+              return {
+                sequence,
+                operationId: d.operationId,
+                taskId,
+                conversationId,
+                toolName: d.toolName,
+                nativeCallId: intent.callId,
+                arguments: intent.arguments,
+                contextAnchor: d.contextAnchor,
+              };
+            }
+          }
+          if (rows.rows.length < 16) throw new Error("Original control intent is unavailable");
+          after = Number(rows.rows.at(-1)!.seq);
+        }
+      },
+      signal ? AbortSignal.any([owner.readSignal, signal]) : owner.readSignal,
+      (error) => owner.interruption.abort(error),
+    );
   }
   async retireHostCall(reference: string, taskId: number, id: string): Promise<void> {
     const owner = this.#executions.get(reference);

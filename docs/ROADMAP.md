@@ -28,7 +28,7 @@ the subsequent Pi examples and recovery discussion.
 - [ ] Slice 2 (source verified; matched release/live acceptance pending):
       SAR-01–04 and O1 — supervisor quiescence/question precedence,
       terminal-state handling and Tool-scoped workflow memory.
-- [ ] Slice 3: prove and implement accepted [ADR-0264](adr/0264-subagent-recovery-and-discovery.md)
+- [ ] Slice 3 (source verified; matched release/live acceptance pending): accepted [ADR-0264](adr/0264-subagent-recovery-and-discovery.md)
       for original-delegation continuation and target-free discovery; update
       the matched Tool catalog and SAR-N1 documentation.
 - [ ] Slice 4: WVL-03 — record the evidence protocol and implement converging

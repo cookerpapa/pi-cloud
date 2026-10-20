@@ -45,7 +45,7 @@ try {
     {
       name: "supervisor",
       prompt: [
-        "Delegate exactly ONE fresh child with tools:[] using subagent action:run.",
+        "Delegate exactly ONE fresh child with tools:[] using subagent.",
         "Its exact task is: Call contact_supervisor with reason need_decision and ask for the approved colour; wait for the reply and answer with that colour. Do not delegate.",
         "When it returns blocked, call subagent_supervisor action:reply with the returned replyTo ID and message APPROVED-TEAL.",
         "Wait for that same child's actual result; do not launch another child. Finally reply SUPERVISOR-TEAL-OK.",
@@ -55,14 +55,14 @@ try {
     },
     {
       name: "messaging",
-      prompt: `Call subagent action:workflow once with this JavaScript, await it, then report its result.\n\`\`\`js\nconst child = runs.run("receiver", {context:"fresh",sandbox:"shared",task:"First use bash to sleep 3 seconds, then reply with the secret code received in an Agent message. Do not read files or delegate."}); await runs.send("receiver", "${marker}", "steer"); return await child;\n\`\`\``,
+      prompt: `Call workflow once with this JavaScript, await it, then report its result.\n\`\`\`js\nconst child = runs.run("receiver", {context:"fresh",sandbox:"shared",task:"First use bash to sleep 3 seconds, then reply with the secret code received in an Agent message. Do not read files or delegate."}); await runs.send("receiver", "${marker}", "steer"); return await child;\n\`\`\``,
       marker,
       count: 1,
     },
     {
       name: "parallel",
       prompt:
-        'Call subagent action:workflow once with this script: return await runs.all([{key:"left",context:"fresh",tools:[],task:"Reply LEFT-DURABLE-OK. Do not delegate."},{key:"right",context:"fresh",tools:[],task:"Reply RIGHT-DURABLE-OK. Do not delegate."}]); Wait for both results, then reply PARALLEL-DURABLE-OK.',
+        'Call workflow once with this script: return await runs.all([{key:"left",context:"fresh",tools:[],task:"Reply LEFT-DURABLE-OK. Do not delegate."},{key:"right",context:"fresh",tools:[],task:"Reply RIGHT-DURABLE-OK. Do not delegate."}]); Wait for both results, then reply PARALLEL-DURABLE-OK.',
       marker: "PARALLEL-DURABLE-OK",
       count: 2,
     },
@@ -73,14 +73,14 @@ try {
     childState: "cancelled",
     marker: "SUBAGENT-CANCEL-OK",
     prompt:
-      'Call subagent action:workflow exactly once with this script: const child=runs.run("cancel-me", {context:"fresh",tools:[],task:"Write a detailed 6000-word comparison of sorting algorithms. Do not use tools."}).catch(error => error.result || {state:"failed",error:error.message}); await new Promise(resolve=>setTimeout(resolve,2000)); const cancellation=await runs.cancel("cancel-me"); return {cancellation,child:await child}; After it returns, reply SUBAGENT-CANCEL-OK. Do not start replacement work.',
+      'Call workflow exactly once with this script: const child=runs.run("cancel-me", {context:"fresh",tools:[],task:"Write a detailed 6000-word comparison of sorting algorithms. Do not use tools."}).catch(error => error.result || {state:"failed",error:error.message}); await new Promise(resolve=>setTimeout(resolve,2000)); const cancellation=await runs.cancel("cancel-me"); return {cancellation,child:await child}; After it returns, reply SUBAGENT-CANCEL-OK. Do not start replacement work.',
   });
   scenarios.push({
     name: "guest-boundary",
     count: 0,
     marker: "GUEST-BOUNDARY-OK",
     prompt:
-      "Call subagent action:workflow once with exactly this script: return {cwd:process.cwd(),uid:process.getuid(),leakedKeys:Object.keys(process.env).filter(k=>/^(DATABASE_URL|KAFKA_BROKERS|OPENAI_API_KEY|DEEPSEEK_API_KEY|PI_CLOUD_SANDBOX_CONTROL_TOKEN)$/.test(k))}; Then reply GUEST-BOUNDARY-OK.",
+      "Call workflow once with exactly this script: return {cwd:process.cwd(),uid:process.getuid(),leakedKeys:Object.keys(process.env).filter(k=>/^(DATABASE_URL|KAFKA_BROKERS|OPENAI_API_KEY|DEEPSEEK_API_KEY|PI_CLOUD_SANDBOX_CONTROL_TOKEN)$/.test(k))}; Then reply GUEST-BOUNDARY-OK.",
   });
   const selected = scenarios.filter(
     (scenario) =>
@@ -149,7 +149,7 @@ try {
     }
     if (scenario.name === "guest-boundary") {
       const tool = turn.transcript.items.find(
-        (item) => item.kind === "tool" && item.toolName === "subagent",
+        (item) => item.kind === "tool" && item.toolName === "workflow",
       );
       const value = JSON.parse(tool.output.content.find((part) => part.type === "text").text);
       assert.equal(value.cwd, "/workspace");

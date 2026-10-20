@@ -1,5 +1,20 @@
 import { isControlToolName, type ControlToolName } from "./control-tools.ts";
 
+export type ControlToolRecoverySource = Readonly<{
+  sequence: number;
+  operationId: string;
+}>;
+export type ControlToolRecovery = ControlToolRecoverySource & Readonly<{ documentId: number }>;
+export type OriginalControlToolIntent = ControlToolRecoverySource &
+  Readonly<{
+    taskId: number;
+    conversationId: number;
+    toolName: ControlToolName;
+    nativeCallId: string;
+    arguments: Record<string, unknown>;
+    contextAnchor: number | null;
+  }>;
+
 /** Prepared by the trusted Worker; arguments are removed from the transport
  * descriptor and resolved from the same native execute checkpoint. */
 export type CandidateControlToolCommand = Readonly<{
@@ -14,6 +29,7 @@ export type CandidateControlToolCommand = Readonly<{
   contextAnchor: number | null;
   bindingId?: string;
   sourceDocumentId?: number;
+  recovery?: ControlToolRecoverySource & { documentId?: number };
   replyMode?: "hostcall";
   workflowKey?: string;
   occurredAt: string;
@@ -28,6 +44,7 @@ export type ControlToolDispatch = Readonly<{
   contextAnchor: number | null;
   bindingId?: string;
   sourceDocumentId?: number;
+  recovery?: ControlToolRecovery;
   replyMode?: "hostcall";
   workflowKey?: string;
   replyTopic: string;
@@ -58,5 +75,24 @@ export function parseControlToolDispatch(value: unknown): ControlToolDispatch {
     "args" in v
   )
     throw new Error("Invalid control Tool dispatch reference");
+  const recovery = v.recovery;
+  if (
+    recovery !== undefined &&
+    (!recovery ||
+      v.toolName !== "subagent" ||
+      v.sourceDocumentId !== undefined ||
+      v.replyMode !== undefined ||
+      v.workflowKey !== undefined ||
+      v.bindingId !== undefined ||
+      !Number.isSafeInteger(recovery.documentId) ||
+      recovery.documentId < 1 ||
+      !Number.isSafeInteger(recovery.sequence) ||
+      recovery.sequence < 1 ||
+      typeof recovery.operationId !== "string" ||
+      !recovery.operationId ||
+      recovery.operationId === v.operationId ||
+      Object.keys(recovery).sort().join(",") !== "documentId,operationId,sequence")
+  )
+    throw new Error("Invalid control Tool recovery reference");
   return v;
 }

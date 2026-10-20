@@ -4,6 +4,7 @@ import {
   createExecutionReference,
   parseExecutionReference,
   prepareSubagentArguments,
+  prepareSubagentControlArguments,
   serializeSubagentResult,
   assertSubagentResultBudget,
   SUBAGENT_RESULT_TOO_LARGE,
@@ -116,6 +117,8 @@ export class SubagentController {
           tenantId: scope.tenantId,
           childSessionId: scope.sessionId,
           rootRunId: scope.runId,
+          taskId: call.taskId,
+          writerId: scope.writerId,
           ...args,
           requestId: call.operationId,
         });
@@ -169,20 +172,18 @@ export class SubagentController {
         }
         return { result: supervisorToolResult("supervisor", value) };
       }
-      if (call.toolName !== "subagent")
+      if (call.toolName !== "subagent" && call.toolName !== "subagent_control")
         throw new SubagentConversationError(
           "invalid_control_request",
           "Unknown orchestration Tool",
         );
-      const args = prepareSubagentArguments(call.arguments);
-      if (args.action === "workflow")
-        throw new SubagentConversationError(
-          "invalid_control_request",
-          "Workflow execution belongs in Cube",
-        );
+      const args =
+        call.toolName === "subagent"
+          ? { action: "run" as const, ...prepareSubagentArguments(call.arguments) }
+          : prepareSubagentControlArguments(call.arguments);
       if (args.action === "run") {
         const child = await this.#jobs.start({
-          id: call.operationId,
+          id: call.recovery?.operationId ?? call.operationId,
           tenantId: scope.tenantId,
           rootRunId: scope.runId,
           parentSessionId: scope.sessionId,
@@ -202,7 +203,7 @@ export class SubagentController {
           ...(args.tools ? { requestedToolCapabilities: args.tools } : {}),
         });
         if (!current()) return { waiting: true };
-        const result = await this.#nativeWait(scope.tenantId, child.executionId, child);
+        const result = await this.#nativeWait(scope.tenantId, child.executionId, child, true);
         if (!result) return { waiting: true };
         value = result;
         if (["failed", "cancelled", "unknown"].includes(String(value.state)))
@@ -215,6 +216,8 @@ export class SubagentController {
                 : {}),
             },
           };
+      } else if (args.action === "list") {
+        value = await this.#jobs.list(scope.tenantId, scope.piSessionId, scope.runId, args.cursor);
       } else {
         if (args.action === "send" && ["main", "parent"].includes(args.target)) {
           const target =
@@ -386,10 +389,11 @@ export class SubagentController {
     tenantId: string,
     id: string,
     status?: SubagentConversationStatus,
+    originalInput = false,
   ): Promise<Record<string, unknown> | undefined> {
     const child = status ?? (await this.#jobs.status(tenantId, id));
     if (!["preparing", "running"].includes(child.state))
-      return object(await this.#jobs.result(tenantId, id, child));
+      return object(await this.#jobs.result(tenantId, id, child, originalInput));
     const blocked = await this.#supervisor.pendingDecisionForExecution(tenantId, id);
     if (blocked?.expectsReply && blocked.replyMessage === undefined)
       return {

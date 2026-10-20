@@ -167,7 +167,9 @@ export async function nativeSubagentFixture() {
   const command = async (
     args: Record<string, unknown>,
     view?: { sessionId: string; turnId: string; conversationId: number },
-    name: AcceptedControlToolCommand["toolName"] = "subagent",
+    name: AcceptedControlToolCommand["toolName"] = "action" in args
+      ? "subagent_control"
+      : "subagent",
   ) => {
     const taskId = nextId++;
     const call = {
@@ -205,7 +207,11 @@ export async function nativeSubagentFixture() {
             abortRequested: false,
             state: {
               status: "running",
-              checkpoint: { phase: "execute", arguments: args, replay: "unsafe" },
+              checkpoint: {
+                phase: "execute",
+                arguments: args,
+                replay: name === "subagent" ? "safe" : "unsafe",
+              },
             },
           },
         },
@@ -356,6 +362,7 @@ export async function nativeSubagentFixture() {
     append,
     command,
     children,
+    allocateId: () => nextId++,
     setPublisher(callback: (fact: AcceptedDurableCommitFact) => Promise<void>) {
       publish = callback;
     },

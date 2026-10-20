@@ -17,7 +17,7 @@ import {
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
 import {
-  controlToolDefinitions,
+  infrastructureToolDefinitions,
   serializeSubagentResult,
   parseToolResultPayload,
   MAX_SUBAGENT_RESULT_BYTES,
@@ -35,10 +35,12 @@ async function fixture(
   result: ToolExecutionResult,
   options: { name?: string; hold?: boolean; rejectResultOnce?: boolean } = {},
 ) {
-  const name = options.name ?? "subagent";
-  const definition = controlToolDefinitions().find((tool) => tool.name === name)!;
+  const name = options.name ?? "subagent_control";
+  const definition = infrastructureToolDefinitions().find((tool) => tool.name === name)!;
   const args =
-    name === "subagent" ? { action: "status", target: "owned-child" } : { action: "pending" };
+    name === "subagent_control"
+      ? { action: "status", target: "owned-child" }
+      : { action: "pending" };
   const models = createModels(),
     provider = fauxProvider({ tokensPerSecond: 1_000_000 });
   models.setProvider(provider.provider);

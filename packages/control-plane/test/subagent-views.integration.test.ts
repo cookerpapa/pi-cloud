@@ -6,6 +6,16 @@ import { ControlToolDispatcher } from "../src/control-tool-dispatcher.ts";
 import { SubagentController } from "../src/subagent-controller.ts";
 import { nativeSubagentFixture } from "./native-subagent-fixture.ts";
 import type { ToolReply } from "@pi-cloud/event-log";
+import { KafkaToolReplyMailbox, KafkaToolReplyPublisher } from "@pi-cloud/event-log";
+import { requestExecutionStreamSeal } from "../../runtime-core/src/execution-stream-seal.ts";
+import { createTestWorker } from "./admit-test-execution.ts";
+import { PostgresDurableSessionHost } from "@pi-cloud/pi-session-postgres/durable";
+import { createExecutionReference } from "@pi-cloud/protocol";
+import type {
+  DurableControlToolDispatch,
+  ExecutionPublication,
+} from "@pi-cloud/runtime-core/accepted-fact";
+import { sql } from "kysely";
 
 const postgres = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 const brokers = process.env.PI_CLOUD_KAFKA_INTEGRATION_BROKERS?.split(",");
@@ -41,6 +51,12 @@ it.skipIf(!postgres || !brokers)(
       replicas: 3,
     });
     const replies = new Map<string, ToolReply>();
+    const replyPublisher = new KafkaToolReplyPublisher(brokers!, topic);
+    const mailboxes: KafkaToolReplyMailbox[] = [];
+    const executions: Promise<unknown>[] = [];
+    const finished = Promise.withResolvers<void>();
+    const nativeHost = new PostgresDurableSessionHost({ database: f.database });
+    let dropReply = false;
     let waitingHandlers = 0;
     const controller = new SubagentController({
       database: measured,
@@ -52,25 +68,31 @@ it.skipIf(!postgres || !brokers)(
           return f.native.stop(request.executionReference, request.requestId);
       },
     });
-    const dispatcher = new ControlToolDispatcher({
-      database: measured,
-      partitions: 1,
-      ownsPartition: (partition) => projector?.ownsPartition(partition) === true,
-      execute: async (command, current) => {
-        executingHandlers++;
-        try {
-          const result = await controller.executeTool(command, current);
-          if (current() && "waiting" in result) waitingHandlers++;
-          return result;
-        } finally {
-          executingHandlers--;
-        }
-      },
-      publish: async (_topic, reply) => {
-        replies.set(reply.operationId, reply);
-      },
-    });
+    const createDispatcher = () =>
+      new ControlToolDispatcher({
+        database: measured,
+        partitions: 1,
+        ownsPartition: (partition) => projector?.ownsPartition(partition) === true,
+        execute: async (command, current) => {
+          executingHandlers++;
+          try {
+            const result = await controller.executeTool(command, current);
+            if (current() && "waiting" in result) waitingHandlers++;
+            return result;
+          } finally {
+            executingHandlers--;
+          }
+        },
+        publish: async (replyTopic, reply) => {
+          if (dropReply) throw new Error("Injected loss before mailbox publication");
+          replies.set(reply.operationId, reply);
+          if (mailboxes.some((mailbox) => mailbox.topic === replyTopic))
+            await replyPublisher.publish(replyTopic, reply);
+        },
+      });
+    let dispatcher = createDispatcher();
     try {
+      await replyPublisher.start();
       projector = new SessionProjector({
         database: f.database,
         publicationDatabase: f.database,
@@ -123,7 +145,7 @@ it.skipIf(!postgres || !brokers)(
           timeout: 10_000,
         });
       });
-      const command = await f.command({ action: "run", task: "A native child" });
+      const command = await f.command({ task: "A native child" });
       await vi.waitFor(() => expect(f.children.has(command.operationId)).toBe(true), {
         timeout: 10_000,
       });
@@ -181,15 +203,156 @@ it.skipIf(!postgres || !brokers)(
         result: { isError: false, toolName: "subagent" },
       });
       expect(await f.database.selectFrom("runs").select("id").execute()).toHaveLength(1);
+
+      // The caller never committed this reply. Replace the Worker twice through
+      // the real ordered seal + PG claim path; each new mailbox must receive the
+      // original outcome without another child/input or adopting the old mailbox.
+      for (let incarnation = 0; incarnation < 2; incarnation++) {
+        const oldScope = { ...f.scope };
+        await f.database.transaction().execute((tx) =>
+          requestExecutionStreamSeal(tx, {
+            ...f.scope,
+            agentId: "root",
+            now: new Date(),
+            eventId: crypto.randomUUID(),
+            recover: true,
+          }),
+        );
+        await vi.waitFor(
+          async () => {
+            const run = await f.database
+              .selectFrom("runs")
+              .select("state")
+              .where("id", "=", f.scope.runId)
+              .executeTakeFirstOrThrow();
+            expect(run.state).toBe("queued");
+          },
+          { timeout: 30000 },
+        );
+        await bus.forget(oldScope);
+        const worker = await createTestWorker(f.database);
+        const entered = Promise.withResolvers<ExecutionPublication>();
+        const execution = worker
+          .executor({
+            execute: async (_request, _life, admission) => {
+              entered.resolve(admission.publication);
+              await finished.promise;
+              return { stopReason: "stop" };
+            },
+            finish: async () => {},
+          })
+          .dispatchRun(f.scope.runId);
+        void execution.catch(entered.reject);
+        executions.push(execution);
+        const publication = await entered.promise;
+        Object.assign(f.scope, {
+          writerId: publication.scope.writerId,
+          fencingToken: publication.scope.fencingToken,
+        });
+        await bus.open(publication);
+        const reference = createExecutionReference(
+          f.scope.writerId,
+          f.scope.runId,
+          f.scope.fencingToken,
+        );
+        const handle = await nativeHost.open({
+          binding: { ...f.scope, conversationId: 1, executionReference: reference },
+          publish: async () => {
+            throw new Error("Read-only host fixture");
+          },
+        });
+        const original = await nativeHost.originalControlIntent(reference, 1, command.taskId);
+        expect(original).toMatchObject({
+          operationId: command.operationId,
+          sequence: command.nativeSequence,
+          arguments: { task: "A native child" },
+        });
+        await handle.close();
+        const mailbox = new KafkaToolReplyMailbox({
+          brokers: brokers!,
+          bootId: crypto.randomUUID(),
+          replicas: 3,
+        });
+        mailboxes.push(mailbox);
+        await mailbox.start();
+        const operationId = crypto.randomUUID(),
+          documentId = f.allocateId();
+        const wait = mailbox.wait(
+          operationId,
+          command.nativeCallId,
+          "subagent",
+          AbortSignal.timeout(15000),
+        );
+        const recovery: DurableControlToolDispatch = {
+          target: "control",
+          operationId,
+          taskId: command.taskId,
+          conversationId: 1,
+          toolName: "subagent",
+          contextAnchor: null,
+          replyTopic: mailbox.topic,
+          scope: { ...f.scope },
+          recovery: { sequence: original.sequence, operationId: original.operationId, documentId },
+        };
+        // Lost response followed by Projector replacement must reconstruct the
+        // same reference and resolve the original answer, not rerun creation.
+        dropReply = true;
+        const before = waitingHandlers;
+        await f.append(
+          [
+            {
+              type: "document.create",
+              record: {
+                id: documentId,
+                kind: "pi-cloud.tool-recovery",
+                scope: { kind: "task", taskId: command.taskId },
+                key: operationId,
+              },
+              content: {
+                kind: "base",
+                version: 1,
+                value: { sequence: original.sequence, operationId: original.operationId },
+              },
+            },
+          ],
+          undefined,
+          { controlTools: [recovery] },
+        );
+        await vi.waitFor(() => expect(executingHandlers).toBe(0));
+        await dispatcher.close();
+        dispatcher = createDispatcher();
+        dropReply = false;
+        await dispatcher.recover([0], () => true);
+        const recovered = await wait.result;
+        expect(recovered).toMatchObject({ toolName: "subagent", isError: false });
+        expect(JSON.stringify(recovered)).toContain("Child answer");
+        expect(f.children.size).toBe(1);
+        expect(waitingHandlers).toBe(before);
+        const submissions = await sql`select id from pi_durable_current
+          where tenant_id=${f.scope.tenantId}::uuid and session_id=${f.scope.piSessionId}
+            and kind='submission'`.execute(f.database);
+        expect(submissions.rows).toHaveLength(1);
+      }
+      await f.finishCall(command);
+      await dispatcher.close();
+      dispatcher = createDispatcher();
+      replies.clear();
+      await dispatcher.recover([0], () => true);
+      expect(replies.size).toBe(0);
     } finally {
+      finished.resolve();
+      await Promise.allSettled(executions);
+      await nativeHost.close();
       await bus.close();
       await projector?.close();
       await dispatcher.close();
       await controller.close();
+      await Promise.allSettled(mailboxes.map((mailbox) => mailbox.shutdown()));
+      await replyPublisher.close();
       await admin.deleteTopics({ topics: [topic] }).catch(() => {});
       await admin.close();
       await f.close();
     }
   },
-  60_000,
+  150_000,
 );

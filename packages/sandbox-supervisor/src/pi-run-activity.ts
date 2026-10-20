@@ -38,9 +38,9 @@ export class PiRunActivity {
         const args = event.args as { action?: unknown; reason?: unknown } | undefined;
         this.#tools.set(
           event.toolCallId,
-          ((event.toolName === "subagent" || event.toolName === "subagent_supervisor") &&
+          ((event.toolName === "subagent_control" || event.toolName === "subagent_supervisor") &&
             args?.action === "wait") ||
-            (event.toolName === "subagent" && args?.action === "run") ||
+            event.toolName === "subagent" ||
             (event.toolName === "contact_supervisor" &&
               (args?.reason === "need_decision" || args?.reason === "interview_request")),
         );

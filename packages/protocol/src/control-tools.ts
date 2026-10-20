@@ -23,22 +23,25 @@ const cwd = Type.String({
   maxLength: 4096,
   pattern: "^/[^\\u0000-\\u001f\\u007f]*$",
 });
-const actions = Type.Union([
+export const SubagentToolSchema = Type.Object(
+  {
+    task: Type.String({ minLength: 1, maxLength: MAX_AGENT_INPUT_CHARACTERS }),
+    context: Type.Optional(context),
+    sandbox: Type.Optional(sandbox),
+    cwd: Type.Optional(cwd),
+    tools: Type.Optional(CloudToolCapabilitySnapshotSchema),
+  },
+  { additionalProperties: false },
+);
+const controlActions = Type.Union([
   Type.Object(
     {
-      action: Type.Literal("run"),
-      task: Type.String({ minLength: 1, maxLength: MAX_AGENT_INPUT_CHARACTERS }),
-      context: Type.Optional(context),
-      sandbox: Type.Optional(sandbox),
-      cwd: Type.Optional(cwd),
-      tools: Type.Optional(CloudToolCapabilitySnapshotSchema),
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      action: Type.Literal("workflow"),
-      script: Type.String({ minLength: 1, maxLength: MAX_TOOL_COMMAND_BYTES }),
+      action: Type.Literal("list"),
+      cursor: Type.Optional(
+        Type.String({
+          pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        }),
+      ),
     },
     { additionalProperties: false },
   ),
@@ -63,25 +66,17 @@ const actions = Type.Union([
     { additionalProperties: false },
   ),
 ]);
-// Providers expect a top-level object schema. Pi's preparation hook enforces
-// the action-specific contract before any durable execution intent is written.
-export const SubagentToolSchema = Type.Object(
+const SubagentControlSchema = Type.Object(
   {
     action: Type.Union([
-      Type.Literal("run"),
-      Type.Literal("workflow"),
+      Type.Literal("list"),
       Type.Literal("status"),
       Type.Literal("wait"),
       Type.Literal("cancel"),
       Type.Literal("send"),
     ]),
-    task: Type.Optional(Type.String({ minLength: 1, maxLength: MAX_AGENT_INPUT_CHARACTERS })),
-    script: Type.Optional(Type.String({ minLength: 1, maxLength: MAX_TOOL_COMMAND_BYTES })),
-    context: Type.Optional(context),
-    sandbox: Type.Optional(sandbox),
-    cwd: Type.Optional(cwd),
-    tools: Type.Optional(CloudToolCapabilitySnapshotSchema),
     target: Type.Optional(Type.String({ minLength: 1 })),
+    cursor: Type.Optional(Type.String()),
     message: Type.Optional(Type.String({ minLength: 1 })),
     delivery: Type.Optional(
       Type.Union([Type.Literal("notify"), Type.Literal("steer"), Type.Literal("follow_up")]),
@@ -89,61 +84,86 @@ export const SubagentToolSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export function prepareSubagentArguments(value: unknown): Static<typeof actions> {
-  if (!Value.Check(actions, value))
-    throw new Error("Invalid subagent arguments for the selected action");
-  if (value.action === "run") assertSubagentTaskInputBudget(value.task);
+export function prepareSubagentArguments(value: unknown): Static<typeof SubagentToolSchema> {
+  if (!Value.Check(SubagentToolSchema, value)) throw new Error("Invalid delegation arguments");
+  assertSubagentTaskInputBudget(value.task);
+  return value;
+}
+export function prepareSubagentControlArguments(value: unknown): Static<typeof controlActions> {
+  if (!Value.Check(controlActions, value)) throw new Error("Invalid Subagent control arguments");
   return value;
 }
 export function validateSubagentTask(value: SubagentTask): void {
   const { key, ...task } = value;
-  if (typeof key !== "string" || !key || "action" in task)
-    throw new Error("Invalid Subagent task key");
-  prepareSubagentArguments({ action: "run", ...task });
+  if (typeof key !== "string" || !key) throw new Error("Invalid Subagent task key");
+  prepareSubagentArguments(task);
 }
 export function validateSubagentControl(
   value: unknown,
-): Extract<Static<typeof actions>, { target: string }> {
-  const request = prepareSubagentArguments(value);
+): Exclude<Static<typeof controlActions>, { action: "list" }> {
+  const request = prepareSubagentControlArguments(value);
   if (!("target" in request)) throw new Error("Expected a Subagent control request");
   return request;
 }
 
-export type ControlToolName = "subagent" | "contact_supervisor" | "subagent_supervisor" | "preview";
-export type ControlToolDefinition = {
-  name: ControlToolName;
+export type ControlToolName =
+  "subagent" | "subagent_control" | "contact_supervisor" | "subagent_supervisor" | "preview";
+export type InfrastructureToolDefinition = {
+  name: ControlToolName | "workflow";
   description: string;
   parameters: TSchema;
+  replay?: "safe" | "unsafe";
   prepareArguments?(value: unknown): unknown;
   requiresEnvironment?: true;
   availability?: "child" | "delegation";
   inheritedContext?(args: Record<string, unknown>): boolean;
   workflowScript?(args: Record<string, unknown>): string | undefined;
 };
-
-const subagent: ControlToolDefinition = {
+const subagent: InfrastructureToolDefinition = {
   name: "subagent",
+  replay: "safe",
   parameters: SubagentToolSchema,
   prepareArguments: prepareSubagentArguments,
   availability: "delegation",
   inheritedContext: (args) => args.context === "branch",
-  workflowScript: (args) => (args.action === "workflow" ? String(args.script) : undefined),
   description: [
-    "Delegate a concrete task to another Pi Agent. No persona/profile is required.",
-    "Task text is limited to 100,000 characters and 256 KiB after JSON encoding. Use shared context or Workspace paths for larger input.",
-    "run waits for one child; fresh starts with the task only, branch inherits a frozen parent context.",
-    "All children share the parent's persistent files. sandbox=shared reuses the parent's compute (default); sandbox=ephemeral lazily allocates separate temporary compute on the same Volume, without copying files.",
-    "Ephemeral compute shares /workspace for elastic Workspaces or /home/user for cloud development machines; other system-disk directories are not copied.",
-    "cwd selects an existing absolute working directory and defaults to the parent's directory. Missing or inaccessible directories fail; no directory is created and no fallback is used.",
-    "For independent code branches, first use bash to create a Git worktree, then pass its absolute path as cwd. Inspect uncommitted changes first: a Git worktree starts from a commit and does not automatically inherit them. Do not commit, stash or discard user changes without authorization. You manage review, merge and worktree cleanup; VM expiry does not delete these files.",
-    "For JavaScript orchestration use workflow with an explicit return value. The script runs in Cube, not in the trusted Agent host.",
-    "Script API: await runs.run(key, {task, context?, sandbox?, cwd?, tools?}); await runs.all([{key,task,...},...]);",
-    "An optional tools allowlist can narrow the child's file/shell Tools; [] disables them without removing hosted search or delegation.",
-    "runs.run returns {executionId,state,output,...}; runs.all returns results in input order. Return the selected result; logs are not the result.",
-    "Returned text is limited to 50 KiB of UTF-8 text or 2000 lines, matching Pi's default Tool output budget. Oversized results return an error. Write larger data explicitly to a Workspace file and return a summary or path. A result-size error does not undo completed effects; inspect before retrying.",
-    "The script also has runs.status(target), runs.wait(target), runs.cancel(target), runs.send(target,message,delivery), console and emit.",
-    "Use a returned executionId or a workflow key as target. notify does not wake an idle Agent; steer targets the current task; follow_up queues later work.",
-    "Do not send inherited 'start a subagent' instructions as the child's actual task. Do not replay uncertain external effects.",
+    "Delegate one concrete task to another Pi Agent and wait for its result or supervisor question.",
+    "Recovery continues this same delegation; a new Tool call creates distinct work. Use subagent_control to list, inspect or message existing children.",
+    "Task text is limited to 100,000 characters and 256 KiB of JSON. fresh uses the task only; branch inherits a frozen parent context.",
+    "Children share persistent files. sandbox=shared reuses parent compute; ephemeral lazily creates temporary compute on the same Volume without copying files.",
+    "cwd must already exist. Use a Git worktree for independent code changes and coordinate shared-file edits. Do not commit or discard user changes without permission.",
+    "tools narrows file/shell capabilities; [] disables them. Hosted tools and delegation remain independently configured.",
+    "Results are limited to 50 KiB UTF-8 or 2000 lines. Return a summary/path for larger output; a result-size error does not undo effects.",
+  ].join(" "),
+};
+const subagentControl: InfrastructureToolDefinition = {
+  name: "subagent_control",
+  replay: "unsafe",
+  parameters: SubagentControlSchema,
+  prepareArguments: prepareSubagentControlArguments,
+  description: [
+    "Inspect and manage children of this physical Session. list needs no target and returns execution IDs, task summaries and state; follow nextCursor for more.",
+    "Use an executionId from list or delegation as target for status/wait/send/cancel. list includes ended children in the current root work.",
+    "send uses notify, steer or follow_up. notify does not wake an idle Agent; steer reaches active work; follow_up queues input.",
+    "send may target main or parent. cancel stops current child work. Interrupted management is not automatically replayed; inspect state before repeating it.",
+  ].join(" "),
+};
+const workflow: InfrastructureToolDefinition = {
+  name: "workflow",
+  replay: "unsafe",
+  availability: "delegation",
+  parameters: Type.Object(
+    { script: Type.String({ minLength: 1, maxLength: MAX_TOOL_COMMAND_BYTES }) },
+    { additionalProperties: false },
+  ),
+  workflowScript: (args) => String(args.script),
+  description: [
+    "Run a JavaScript orchestration script inside Cube. Return the selected value explicitly; console output is not the result.",
+    "Use await runs.run(key,{task,context?,sandbox?,cwd?,tools?}) or runs.all([{key,task,...}]); replies contain executionId,state,output.",
+    "runs.status(target), runs.wait(target), runs.cancel(target), runs.send(target,message,delivery), console and emit are available.",
+    "A target is an executionId or a key within this script. Duplicate keys reuse one child during this invocation.",
+    "Interrupted scripts are not automatically rerun. Use subagent_control to inspect existing children before deciding what to do next.",
+    "Returned text is limited to 50 KiB UTF-8 or 2000 lines. Store larger output in Workspace and return a summary/path.",
   ].join(" "),
 };
 const contactSchema = Type.Object(
@@ -177,9 +197,11 @@ const PreviewToolSchema = Type.Object(
 );
 
 /** Frozen code-owned catalogue; handlers never import the Pi Runner. */
-export function controlToolDefinitions(): readonly ControlToolDefinition[] {
+export function infrastructureToolDefinitions(): readonly InfrastructureToolDefinition[] {
   return [
     subagent,
+    subagentControl,
+    workflow,
     {
       name: "contact_supervisor",
       availability: "child",
@@ -203,7 +225,11 @@ export function controlToolDefinitions(): readonly ControlToolDefinition[] {
   ];
 }
 export function isControlToolName(value: unknown): value is ControlToolName {
-  return ["subagent", "contact_supervisor", "subagent_supervisor", "preview"].includes(
-    String(value),
-  );
+  return [
+    "subagent",
+    "subagent_control",
+    "contact_supervisor",
+    "subagent_supervisor",
+    "preview",
+  ].includes(String(value));
 }

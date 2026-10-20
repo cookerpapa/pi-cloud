@@ -1,6 +1,6 @@
 import type { DurableDisplayPreparation } from "./durable-display.ts";
 import type { CandidateToolEffect } from "./tool-command.ts";
-import type { ControlToolDispatch } from "./control-tool-command.ts";
+import type { ControlToolDispatch, ControlToolRecoverySource } from "./control-tool-command.ts";
 import type { CandidateToolCancellation } from "./tool-cancellation.ts";
 
 /** PiCloud's private transport envelope. Native SDK objects are opaque JSON at
@@ -150,4 +150,35 @@ export function durableControlIntent(
   )
     throw new Error("Control Tool requires its committed native hostcall");
   return { callId: value.callId, arguments: value.arguments as Record<string, unknown> };
+}
+
+/** Recovery records contain only a reference; arguments remain at the original
+ * execute checkpoint. Its current caller/authority is checked by the handler. */
+export function durableControlRecovery(
+  commit: DurableSessionCommit,
+  reference: Pick<ControlToolDispatch, "taskId" | "operationId" | "recovery">,
+  index = new DurableCommitIndex(commit),
+): ControlToolRecoverySource {
+  if (index.commit !== commit) throw new Error("Native recovery index belongs to another commit");
+  const recovery = reference.recovery;
+  const write = recovery && index.document(recovery.documentId);
+  const record = write?.record as
+    { kind?: string; key?: string; scope?: { kind: string; taskId: number } } | undefined;
+  const content = write?.content as { kind?: string; value?: Record<string, unknown> } | undefined;
+  const value = content?.value;
+  if (
+    !recovery ||
+    recovery.sequence >= commit.seq ||
+    record?.kind !== "pi-cloud.tool-recovery" ||
+    record.key !== reference.operationId ||
+    record.scope?.kind !== "task" ||
+    record.scope.taskId !== reference.taskId ||
+    content?.kind !== "base" ||
+    !value ||
+    value.sequence !== recovery.sequence ||
+    value.operationId !== recovery.operationId ||
+    Object.keys(value).sort().join(",") !== "operationId,sequence"
+  )
+    throw new Error("Control recovery requires its committed native reference");
+  return { sequence: recovery.sequence, operationId: recovery.operationId };
 }

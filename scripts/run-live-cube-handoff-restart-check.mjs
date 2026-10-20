@@ -136,7 +136,7 @@ try {
     "Use bash exactly once with this command: printf 'started\\n' >> once.txt; sleep 45; printf 'finished\\n' >> once.txt; printf 'CUBE_HANDOFF_SURVIVED'. Set timeout to 120 seconds. Do not use other tools or delegate. After completion reply CUBE_HANDOFF_SURVIVED.";
   const prompt =
     scenario === "child"
-      ? `Call subagent action:run exactly once with context:fresh, sandbox:shared and tools:["bash"]. Give it this exact task: ${task} Wait for that child's result and then reply CUBE_HANDOFF_SURVIVED. Do not use workflow, start another child, or use Bash yourself.`
+      ? `Call subagent exactly once with context:fresh, sandbox:shared and tools:["bash"]. Give it this exact task: ${task} Wait for that child's result and then reply CUBE_HANDOFF_SURVIVED. Do not use workflow, start another child, or use Bash yourself.`
       : scenario === "stream-image"
         ? "Read the six digits in the attached image directly and put them on the first line. Then write a thorough 4000-word technical tutorial in English about browser rendering, HTML parsing, CSS layout, painting, compositing, animation and performance measurement. Use numbered sections and concrete examples. This is also a streaming acceptance test, so develop each section fully instead of giving a short outline. Start the tutorial immediately after the digits. Do not use any tools."
         : task;

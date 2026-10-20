@@ -3,6 +3,7 @@ import { nativeSubagentFixture } from "./native-subagent-fixture.ts";
 import { SubagentController } from "../src/subagent-controller.ts";
 import type { SubagentHostRequest } from "@pi-cloud/protocol";
 import type { ControlToolOutcome } from "../src/control-tool-dispatcher.ts";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 
 let f: Awaited<ReturnType<typeof nativeSubagentFixture>>;
 const inputs: Extract<SubagentHostRequest, { action: "input" }>[] = [];
@@ -44,7 +45,7 @@ function value(outcome: ControlToolOutcome) {
 }
 
 it("starts and waits through one native invocation, with no start/wait command rows or child Run", async () => {
-  const call = await f.command({ action: "run", task: "Inspect code" });
+  const call = await f.command({ task: "Inspect code" });
   expect(await host.executeTool(call, () => true)).toEqual({ waiting: true });
   expect(await f.database.selectFrom("runs").select("id").execute()).toHaveLength(1);
   const child = f.children.get(call.operationId)!;
@@ -59,8 +60,83 @@ it("starts and waits through one native invocation, with no start/wait command r
   expect(f.children.size).toBe(1);
 });
 
+it("returns the original delegation answer even after a separate later child answer", async () => {
+  const call = await f.command({ task: "Original answer identity" });
+  await host.executeTool(call, () => true);
+  await f.settle(call.operationId, "completed", "ORIGINAL");
+  const child = f.children.get(call.operationId)!;
+  const entryId = f.allocateId();
+  const answerId = f.allocateId();
+  const submissionId = f.allocateId();
+  await f.append(
+    [
+      {
+        type: "entry",
+        value: {
+          id: entryId,
+          conversationId: child.conversationId,
+          kind: "pi.user",
+          model: [{ role: "user", content: "Later input", timestamp: Date.now() }],
+        },
+      },
+      {
+        type: "entry",
+        value: {
+          id: answerId,
+          conversationId: child.conversationId,
+          kind: "pi.assistant",
+          model: [fauxAssistantMessage("LATER")],
+        },
+      },
+      {
+        type: "submission",
+        value: {
+          id: submissionId,
+          conversationId: child.conversationId,
+          type: "input",
+          requestId: "later-question",
+          status: "done",
+          entry: entryId,
+          answer: answerId,
+        },
+      },
+    ],
+    child.request.view,
+  );
+  expect(value(await host.executeTool(call, () => true)).output).toBe("ORIGINAL");
+  const wait = await f.command({ action: "wait", target: call.operationId });
+  expect(value(await host.executeTool(wait, () => true)).output).toBe("LATER");
+});
+
+it("lists current-family children without a target, including completed children", async () => {
+  const task = "Inspect the database";
+  const call = await f.command({ task });
+  await host.executeTool(call, () => true);
+  await f.settle(call.operationId);
+  for (let index = 0; index < 25; index++) {
+    const next = await f.command({ task: `Paged child ${index}` });
+    await host.executeTool(next, () => true);
+  }
+  const ids: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const list = await f.command({ action: "list", ...(cursor ? { cursor } : {}) });
+    const page = value(await host.executeTool(list, () => true));
+    expect(page.agents.length).toBeLessThanOrEqual(24);
+    for (const agent of page.agents) {
+      ids.push(agent.executionId);
+      if (agent.executionId === call.operationId) {
+        expect(agent).toMatchObject({ task, state: "completed", sourceTaskId: call.taskId });
+      }
+    }
+    cursor = page.nextCursor;
+  } while (cursor);
+  expect(ids.length).toBe(new Set(ids).size);
+  expect(new Set(ids)).toEqual(new Set(f.children.keys()));
+});
+
 it("unblocks the parent for supervisor interaction while the child remains a native task", async () => {
-  const run = await f.command({ action: "run", task: "Ask a question" });
+  const run = await f.command({ task: "Ask a question" });
   await host.executeTool(run, () => true);
   const child = f.children.get(run.operationId)!;
   const childView = { ...child.request.view, conversationId: child.conversationId };
@@ -88,7 +164,7 @@ it("unblocks the parent for supervisor interaction while the child remains a nat
 });
 
 it("addresses input and cancellation by Conversation under the current root grant", async () => {
-  const run = await f.command({ action: "run", task: "Receive a message" });
+  const run = await f.command({ task: "Receive a message" });
   await host.executeTool(run, () => true);
   const child = f.children.get(run.operationId)!;
   const send = await f.command({
@@ -128,7 +204,7 @@ it("addresses input and cancellation by Conversation under the current root gran
 it("keeps infrastructure uncertainty retryable but settles invalid targets and oversized results", async () => {
   const invalid = await f.command({ action: "status", target: "missing-child" });
   expect(await host.executeTool(invalid, () => true)).toMatchObject({ isError: true });
-  const run = await f.command({ action: "run", task: "Large response" });
+  const run = await f.command({ task: "Large response" });
   await host.executeTool(run, () => true);
   await f.settle(run.operationId, "completed", "x".repeat(300_000));
   expect(await host.executeTool(run, () => true)).toMatchObject({
@@ -146,7 +222,7 @@ it("keeps infrastructure uncertainty retryable but settles invalid targets and o
     }),
   });
   try {
-    const uncertain = await f.command({ action: "run", task: "Retry delivery" });
+    const uncertain = await f.command({ task: "Retry delivery" });
     await expect(fail.executeTool(uncertain, () => true)).rejects.toThrow("delivery unconfirmed");
   } finally {
     await fail.close();

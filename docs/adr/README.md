@@ -1,11 +1,11 @@
 # Current architecture decisions
 
-[ADR-0264](0264-subagent-recovery-and-discovery.md) is **accepted**, with prototype and
-implementation pending; it is not yet a deployed runtime contract. The [repair plan](../reports/resource-interaction-repair-plan-20261020.md)
-uses pinned Pi examples to propose recoverable direct delegation, target-free
-child discovery and separate safe/unsafe Tool registrations. It requires native
-and PG/RF3 failure proof before implementation; boot mailboxes and unsafe
-shell/workflow semantics remain deployed as described by existing ADRs.
+[ADR-0264](0264-subagent-recovery-and-discovery.md) has source implementation and
+passing native/PG/RF3 recovery checks; matched deployment is pending.
+The [delivery record](../reports/resource-interaction-repair-20261020.md) separates
+these proofs from live acceptance. Direct delegation recovers its original
+child and Submission through a fresh current-owner reply. Child discovery and
+separate safe/unsafe Tool registrations preserve boot-local mailbox semantics.
 
 [ADR-0263](0263-model-response-and-work-lifetimes.md) records the owner-approved
 model-response and unbounded-work repair: response semantics at public Models,

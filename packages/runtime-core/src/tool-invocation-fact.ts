@@ -1,16 +1,13 @@
 import {
   durableToolIntent,
   durableControlIntent,
+  durableControlRecovery,
   DurableCommitIndex,
   parseControlToolDispatch,
   parseToolSandboxOperationRequest,
   type AcceptedToolCommand,
 } from "@pi-cloud/protocol";
-import type {
-  AcceptedFact,
-  AcceptedControlToolCommand,
-  DurableCubeToolDispatch,
-} from "./accepted-fact.ts";
+import type { AcceptedFact, DurableCubeToolDispatch } from "./accepted-fact.ts";
 
 /** Arguments appear once in Kafka, in the native execute checkpoint. Expand
  * the owned Cube command only at the external-effect dispatch boundary. */
@@ -41,32 +38,26 @@ export function toolCommandsForFact(
     });
 }
 
-/** Control effects share the native checkpoint; this expansion is not a
- * separately published command or a second copy of its input parameters. */
-export function controlToolsForFact(
+/** Control input is expanded once by the PG-backed handler. This boundary
+ * validates only the committed intent or the task-owned recovery reference. */
+export function validateControlToolReferences(
   fact: AcceptedFact,
   index?: DurableCommitIndex,
-): readonly AcceptedControlToolCommand[] {
-  if (fact.kind !== "durable_commit") return [];
+): void {
+  if (fact.kind !== "durable_commit") return;
   index ??= new DurableCommitIndex(fact.commit);
-  return fact.tools.flatMap((tool) => {
-    if (tool.target !== "control") return [];
+  for (const tool of fact.tools) {
+    if (tool.target !== "control") continue;
     const reference = parseControlToolDispatch(tool);
-    const intent = durableControlIntent(fact.commit, tool, index);
-    const task = index!.task(tool.taskId);
-    if (
-      reference.sourceDocumentId === undefined &&
-      task?.conversationId !== reference.conversationId
-    )
-      throw new Error("Control Tool conversation changed");
-    return [
-      {
-        ...tool,
-        kind: "control_tool" as const,
-        nativeCallId: intent.callId,
-        arguments: intent.arguments,
-        nativeSequence: fact.commit.seq,
-      },
-    ];
-  });
+    if (reference.recovery) {
+      durableControlRecovery(fact.commit, reference, index);
+    } else {
+      durableControlIntent(fact.commit, reference, index);
+      if (
+        reference.sourceDocumentId === undefined &&
+        index.task(reference.taskId)?.conversationId !== reference.conversationId
+      )
+        throw new Error("Control Tool conversation changed");
+    }
+  }
 }

@@ -126,14 +126,14 @@ try {
   ]) {
     console.log(JSON.stringify({ phase: c.name }));
     const result = await run(
-      "严格只调用一次 subagent 工具，action 为 workflow，script 必须逐字使用下面代码。不要启动子 Agent，不要使用其他工具，也不要重试。工具结束后无论成功或报错，只回复 CHECKED，不要复述返回数据。\n" +
+      "严格只调用一次 workflow 工具，script 必须逐字使用下面代码。不要启动子 Agent，不要使用其他工具，也不要重试。工具结束后无论成功或报错，只回复 CHECKED，不要复述返回数据。\n" +
         c.script,
     );
     const calls = result.messages
       .filter((m) => m.role === "assistant")
       .flatMap((m) => m.content.filter((p) => p.type === "toolCall"));
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].name, "subagent");
+    assert.equal(calls[0].name, "workflow");
     assert.equal(calls[0].arguments.script, c.script);
     const results = result.messages.filter((m) => m.role === "toolResult");
     assert.equal(results.length, 1);
@@ -163,7 +163,7 @@ try {
   }
   console.log(JSON.stringify({ phase: "supervisor-reply" }));
   const result = await run(
-    'Delegate exactly one fresh child with tools:[] using subagent action:run. Its task: Call contact_supervisor with reason need_decision and ask for an approved colour; wait for the reply and answer with that colour. When the child returns blocked, use subagent_supervisor action:reply with its replyTo request ID and message "APPROVED-TEAL". Do not launch another child or use workflow. Wait for the actual child response, then answer SUPERVISOR-TEAL-OK.',
+    'Delegate exactly one fresh child with tools:[] using subagent. Its task: Call contact_supervisor with reason need_decision and ask for an approved colour; wait for the reply and answer with that colour. When the child returns blocked, use subagent_supervisor action:reply with its replyTo request ID and message "APPROVED-TEAL". Do not launch another child or use workflow. Wait for the actual child response, then answer SUPERVISOR-TEAL-OK.',
   );
   const replies = result.messages.filter((m) => m.role === "toolResult");
   assert(

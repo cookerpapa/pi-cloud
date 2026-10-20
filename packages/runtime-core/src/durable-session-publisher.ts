@@ -5,6 +5,7 @@ import {
   PublicationNotSentError,
   durableToolIntent,
   durableControlIntent,
+  durableControlRecovery,
   DurableCommitIndex,
   isControlToolCommand,
   parseDurableDisplayDescription,
@@ -88,17 +89,30 @@ export class DurableSessionPublisher {
                 : (sourceTask?.conversationId as number | undefined),
             );
             if (isControlToolCommand(command)) {
-              const intent = durableControlIntent(
-                publication.commit,
-                { ...command, taskId },
-                index,
-              );
-              if (
-                command.toolCallId !== `task:${taskId}` ||
-                command.nativeCallId !== intent.callId ||
-                !isDeepStrictEqual(command.arguments, intent.arguments)
-              )
-                throw new Error("Control Tool intent changed");
+              let recovery;
+              if (command.recovery) {
+                if (command.recovery.documentId === undefined)
+                  throw new Error("Control recovery has no native document");
+                recovery = { ...command.recovery, documentId: command.recovery.documentId };
+                durableControlRecovery(
+                  publication.commit,
+                  { taskId, operationId: command.operationId, recovery },
+                  index,
+                );
+              } else {
+                const intent = durableControlIntent(
+                  publication.commit,
+                  { ...command, taskId },
+                  index,
+                );
+                if (
+                  command.nativeCallId !== intent.callId ||
+                  !isDeepStrictEqual(command.arguments, intent.arguments)
+                )
+                  throw new Error("Control Tool intent changed");
+              }
+              if (command.toolCallId !== `task:${taskId}`)
+                throw new Error("Control Tool task changed");
               return {
                 target: "control",
                 operationId: command.operationId,
@@ -106,6 +120,7 @@ export class DurableSessionPublisher {
                 conversationId: command.conversationId,
                 toolName: command.toolName,
                 contextAnchor: command.contextAnchor,
+                ...(recovery ? { recovery } : {}),
                 ...(command.bindingId ? { bindingId: command.bindingId } : {}),
                 ...(command.sourceDocumentId ? { sourceDocumentId: command.sourceDocumentId } : {}),
                 ...(command.replyMode ? { replyMode: command.replyMode } : {}),

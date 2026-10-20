@@ -174,6 +174,7 @@ export function expandSessionLogEnvelope(input: unknown): SessionLogFact {
             "contextAnchor",
             "bindingId",
             "sourceDocumentId",
+            "recovery",
             "replyMode",
             "workflowKey",
             "view",

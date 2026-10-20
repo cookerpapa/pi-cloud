@@ -241,7 +241,7 @@ try {
   const first = await start(
     a,
     [
-      "Use subagent action workflow with runs.all to launch exactly three fresh shared-workspace children in parallel.",
+      "Use workflow with runs.all to launch exactly three fresh shared-workspace children in parallel.",
       "Their separate tasks: implement insertion_sort.py with unit tests; implement binary_search.py with unit tests; implement fibonacci.py with unit tests.",
       "Each child must write and test only its own file, covering empty/boundary/normal/error inputs where applicable.",
       "After tests pass, each child MUST execute bash with timeout:60 to append one line to its own marker (insertion_sort.py.done, binary_search.py.done or fibonacci.py.done) and sleep 35 seconds, then report success.",
@@ -319,7 +319,7 @@ try {
 
   const next = await start(
     a,
-    "Use subagent action run with context branch and sandbox shared. Ask it to read the three algorithm files from the previous turn, run all three test suites and verify that each .done file has exactly one line. After its actual result, reply FAMILY-RESTORE-OK.",
+    "Use subagent with context branch and sandbox shared. Ask it to read the three algorithm files from the previous turn, run all three test suites and verify that each .done file has exactly one line. After its actual result, reply FAMILY-RESTORE-OK.",
     "multi-round-branch",
   );
   const nextResult = await succeeded(next.finished);
@@ -333,7 +333,7 @@ try {
   if (process.env.PI_CLOUD_LIVE_FAMILY_FAULT === "1") {
     const crash = await start(
       a,
-      "Use subagent action run, context fresh, sandbox shared. Its task: run bash with timeout:90 to append exactly one line to crash-once.txt, then sleep 60. Wait for the actual child result.",
+      "Use subagent, context fresh, sandbox shared. Its task: run bash with timeout:90 to append exactly one line to crash-once.txt, then sleep 60. Wait for the actual child result.",
       "worker-loss",
     );
     await until(async () => {

@@ -15,4 +15,9 @@ export type PreparedAgentTool = ToolRegistration & {
     args: unknown,
     signal?: AbortSignal,
   ) => Promise<PreparedToolExecution>;
+  prepareRecovery?: (
+    callId: string,
+    args: unknown,
+    signal?: AbortSignal,
+  ) => Promise<PreparedToolExecution>;
 };

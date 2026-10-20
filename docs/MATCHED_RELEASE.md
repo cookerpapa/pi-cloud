@@ -109,6 +109,14 @@ configured web port. A Linux-only HTTP 200 does not establish Windows access.
 
 ## Acceptance and fixture restoration
 
+ADR-0264 requires matched schema 193, Session topic v18 and the separated
+`subagent` / `subagent_control` / `workflow` catalog. Drain and close all native
+writers before replacing old development history or old supervisor requests.
+Preserve accounts, model/provider configuration and credentials. Verify native
+safe delegation, original Submission answers, multiple owner replacements,
+lost reply/Projector replacement, target-free discovery and supervisor recovery.
+Boot reply transport and guest Tool protocol remain unchanged by this slice.
+
 ADR-0263 requires schema 192 and matched application/protocol metadata: no total
 Run duration fields or fixed model-capability TTL; completed hosted content uses
 native empty-text metadata carriers instead of the old non-native block. Drain
