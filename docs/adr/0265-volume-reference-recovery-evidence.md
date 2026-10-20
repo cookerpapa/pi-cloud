@@ -1,7 +1,9 @@
 # ADR-0265: Preserve and reconcile stale Volume holders
 
 Status: accepted implementation decision under the owner-approved repair plan,
-2026-10-20. Extends ADR-0226; deployment and live acceptance pending.
+2026-10-20. Extends ADR-0226; deployed in `resource-repair-1cdccb80`, 2026-10-21.
+Native loss/race contracts and owned node-restart/Volume cleanup pass in the
+[delivery record](../reports/resource-interaction-repair-20261020.md).
 
 ## Evidence and adoption
 

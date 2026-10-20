@@ -29,10 +29,12 @@ covers 60/90-second outages and a Control Plane process crash. Full matched
 application/schema updates still use the drained release procedure above.
 
 The [resource and interaction repair](docs/reports/resource-interaction-repair-20261020.md)
-has six implemented source slices, including recoverable direct Subagents,
+is deployed as `resource-repair-1cdccb80`, including recoverable direct Subagents,
 shared-VM holder protection, Volume evidence, attachment cleanup and connection
-lifetimes. It targets schema 194 and Session topic v18; combined release checks
-and live acceptance are still pending. The serving release is identified below.
+lifetimes. Schema 194 / Session topic v18, source/artifact gates, native recovery,
+long work, browser, S3 cancellation and full Cube acceptance pass. Single-image
+24.2 MB vision/cold recall passes; the combined 6/6/25 MB model gate remains open
+after upstream timeouts. Original configuration and confirmed cleanup are preserved.
 
 ## Architecture
 
@@ -59,7 +61,7 @@ additional messages go to the running Pi native queue and are confirmed after
 its Kafka-backed Storage commit. An unavailable Worker leaves the browser draft
 unconfirmed. [ADR-0238](docs/adr/0238-native-input-queue-and-run-record.md) is deployed;
 the [Worker claim cleanup](docs/adr/0242-worker-claim-schema-cleanup.md) is retained
-in the current schema 192 runtime.
+in the current schema 194 runtime.
 
 The intake path shares its locked Session and request lookup between
 routing and Run creation: eight ordinary business SQL statements, two on an
@@ -82,16 +84,16 @@ enter native persistence before validated Tool execution (ADR-0230).
 The [Session work migration](docs/adr/0247-session-work-and-tool-dispatch.md) is
 deployed as `session-work-6ac697f9`: one root Run with native child Conversations,
 unified Tool replies, one Session closure and Worker direct Kafka publication.
-The current matched release, `model-runtime-058925bb`, uses schema 192, execution-topic
-v17, boot reply v3, guest/Tool Worker protocol 7, completion startup protocol 3,
+The current matched release, `resource-repair-1cdccb80`, uses schema 194, execution-topic
+v18, boot reply v3, guest/Tool Worker protocol 7, completion startup protocol 3,
 preview schema 2 and Cube management protocol 7. Host KVM is available; templates
-and application workloads are ready. The [model response/lifetime repair](docs/reports/model-runtime-repair-20261020.md)
+and application workloads are ready. The preceding [model response/lifetime repair](docs/reports/model-runtime-repair-20261020.md)
 removes the overall Agent duration limit and fixed model-grant TTL. Grants follow
 existing ownership; Worker retirement remains bounded and resumes the same Run.
 One Models adapter preserves native retry classification, text phases and completed
 hosted searches; Gateway transport metrics are separate from model outcomes.
 A real 16-minute Run, graceful Worker handoff, native/browser/child/outage/image
-and full Cube gates pass. The report retains one failed model-generated repeat
+and full Cube gates passed on that preceding release. Its report retains one failed model-generated repeat
 delegation sample and the unchanged passing repeat. Physical cleanup and original
 configuration preservation are confirmed.
 The [Worker/Harness recovery repair](docs/reports/worker-harness-recovery-repair-20261019.md)

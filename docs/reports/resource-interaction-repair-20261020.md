@@ -1,17 +1,19 @@
 # Resource and interaction repair delivery
 
-Status: implementation in progress, 2026-10-20. Not yet deployed.
+Status: all six source slices deployed as `resource-repair-1cdccb80`,
+2026-10-21; schema 194, Session topic v18. One combined multi-image model gate
+remains unverified after upstream timeouts. This is not an unconditional
+release-acceptance completion.
 The owner approved the [six-slice plan](resource-interaction-repair-plan-20261020.md).
-The last verified serving release remains `model-runtime-058925bb`, schema 192.
 
 | Slice | Source and verification | Live acceptance |
 | --- | --- | --- |
-| 1 — Live compute ownership/admission | Implemented; nine real-PG regressions, 95 existing tests and both affected typechecks pass | Pending matched release |
-| 2 — Supervisor/workflow lifetimes | Implemented; 31 distinct targeted cases and both affected typechecks pass | Pending matched release |
-| 3 — Delegation recovery/discovery | Implemented; native recovery, PG catalog/supervision and RF3 replacement cases pass | Pending matched release |
-| 4 — Unknown Volume references | Implemented; native race and full allocation/Master/service contracts pass | Pending matched KVM acceptance |
-| 5 — Attachment lifetimes | Implemented; native/PG pin, upload/streaming/cancellation and S3 transport cases pass | Pending matched S3/Cube acceptance |
-| 6 — Terminal/preview lifetimes | Implemented; terminal/HTTP/WS/relay lifetime regressions pass | Pending compatible-replacement acceptance |
+| 1 — Live compute ownership/admission | Nine real-PG regressions, 95 existing tests and affected typechecks pass | Shared/ephemeral children and a terminal held beyond 17 minutes pass |
+| 2 — Supervisor/workflow lifetimes | 31 targeted cases and affected typechecks pass | All five native supervisor/workflow interaction scenarios pass |
+| 3 — Delegation recovery/discovery | Native recovery, PG catalog/supervision and RF3 replacement cases pass | Actual Worker replacement preserves the original child, Submission and single effect; discovery passes |
+| 4 — Unknown Volume references | Native race and allocation/Master/service contracts pass | Owned node restart, retained Volume bytes and positive cleanup pass |
+| 5 — Attachment lifetimes | Native/PG pins, cancellation and S3 transport regressions pass | 34.7 MB transport/cancellation and 24.2 MB upload/cold recall pass; combined 6/6/25 MB model gate remains open |
+| 6 — Terminal/preview lifetimes | Terminal/HTTP/WS/relay and refused-upgrade shutdown regressions pass | Compatible replacement, explicit terminal reconnect, retained VM/application and 97 browser controls pass |
 
 ## Slice 1
 
@@ -314,3 +316,53 @@ was positively closed and absent. This matches the existing October 4 snapshot
 restoration backlog item. Refreshing only that template from the same immutable
 image and repeating its actual boot is in progress; no smaller profile or weaker
 browser assertion substitutes for the failed gate.
+
+## Serving release and remaining gate
+
+The final `resource-repair-1cdccb80` artifacts pass the eleven-image evidence gate,
+preflight and drained matched apply. Native schema/topic/guest compatibility is
+unchanged from the first six-slice deployment. The following additional live
+checks pass on this release:
+
+- Compatible Control Plane replacement becomes Ready in 13,121 ms. The terminal
+  test observes sixteen retryable establishment refusals during ownership transfer,
+  then reconnects explicitly. The old Pod exits, the same physical VM and background
+  HTTP service remain, and the first terminal command is not replayed. No immediate
+  resource availability or old-PTY restoration is claimed.
+- The unchanged full browser gate passes 97 controls, including the performance
+  profile, steer, Stop, terminal input, Fork/prune, development-machine pause/resume,
+  SSH controls and resource cleanup.
+- The full Luna/Cube gate passes pure chat without a VM, real coding, warm reuse,
+  persistent background work, authenticated preview, and a 1,024-file fixture
+  reattached to a fresh VM through its original Volume. It uses 22 model requests.
+
+The performance snapshot was regenerated from the identical OCI digest and
+specification. A real VM boot/command passed before selecting the replacement.
+The old template's release-time deletion timed out; an explicit bounded retry
+later confirmed deletion. The underlying Cube guest-time-reset failure remains
+the existing operational investigation, not a repaired upstream defect.
+
+The combined Tool-image gate still fails: the first two approximately 6 MB images
+complete, and the 25,128,879-byte third image is successfully stored with positive
+write completion, but the subsequent multi-image model request receives no upstream
+response for 120 seconds. Native retries continue until the unchanged ten-minute
+acceptance budget ends. All three source objects are present and verified through
+the normal write path; the final model answer and three-image cold recall are **not**
+claimed. This does not invalidate the separately passing 24.2 MB upload/vision/cold
+recall gate. The owner was asked to switch the proxy node again; no weaker assertion,
+smaller fixture or longer test deadline substitutes for the pending repeat.
+
+All owned test Sessions, VMs, Volumes, upload objects and tenant/configuration
+fixtures are cleaned after positive physical/writer completion evidence. Eight
+remaining fixture tenants, ten image objects and four bootstrap-tenant project
+tombstones were removed in the final scoped cleanup. Earlier self-cleaning gates
+retain their own receipts. The original seven account/configuration table
+fingerprints match: 32 tenants/users/API credentials, five password credentials,
+35 model profiles and credential bindings, and no source-control credentials.
+No active Run, writer, binding, machine, terminal or control publication remains;
+all Pods are Ready and Windows localhost returns HTTP 200.
+
+Private evidence is under
+`deploy/production/runtime/release-evidence/resource-repair-20261020/`.
+Failed source, fixture, snapshot and upstream samples are retained separately.
+The main-message walkthrough remains complete; the private pilot has not started.

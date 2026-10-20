@@ -6,9 +6,12 @@ It prioritizes live VM holders and supervisor quiescence, then proposes native
 delegation recovery/discovery, evidence-based Volume cleanup, attachment
 lifetimes and terminal/preview teardown. [ADR-0264](adr/0264-subagent-recovery-and-discovery.md)
 is owner-approved for the child contract, including separate safe/unsafe Tool
-registrations and current-owner reply delivery. Implementation is in progress;
-the [delivery record](reports/resource-interaction-repair-20261020.md) separates
-source verification from pending matched release and live acceptance.
+registrations and current-owner reply delivery. All six source slices are deployed
+as `resource-repair-1cdccb80`, schema 194 / Session topic v18. The
+[delivery record](reports/resource-interaction-repair-20261020.md) records passing
+source/artifact, recovery, long-work, browser, upload and Cube gates plus scoped
+cleanup. The combined 6/6/25 MB model gate remains open after upstream timeouts;
+single-image 24.2 MB upload/vision/cold recall passes.
 
 The [October 20 combined resource/interaction review](reports/resource-interaction-review-20261020.md)
 completes all four agreed branches and prioritizes 16 findings. The final
@@ -16,13 +19,14 @@ completes all four agreed branches and prioritizes 16 findings. The final
 redirect, handshake, pending-connect cancellation and shutdown races, supported
 by 70 existing cases and four isolated transport characterizations. The combined
 report separates confirmed defects, design discussion and evidence gaps.
-These are review records; runtime fixes and deployment are not included.
+These are historical review records; the subsequent deployed fixes are linked above.
 
 The [October 20 upload/attachment review](reports/upload-lifecycle-review-20261020.md)
 is the third resource/interaction slice. It records premature permanent pins,
 late PUT/GC inventory loss for long uploads, missing image-read cancellation and
 early-refusal source cleanup. Existing and isolated tests are distinguished from
-live S3/Cube acceptance. Runtime remains unchanged; the final slice is linked above.
+live S3/Cube acceptance. The review itself made no runtime change; its deployed
+repair is linked above.
 
 The [October 20 Subagent lifecycle review](reports/subagent-lifecycle-review-20261020.md)
 is the second resource/interaction slice. It records four runtime findings, a

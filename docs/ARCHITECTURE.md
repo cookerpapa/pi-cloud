@@ -1,16 +1,17 @@
 # Architecture
 
 The [resource/interaction repair plan](reports/resource-interaction-repair-plan-20261020.md)
-and [accepted ADR-0264](adr/0264-subagent-recovery-and-discovery.md) are being
-implemented in [separate slices](reports/resource-interaction-repair-20261020.md).
-Source slices 1–6 implement shared-holder retirement, supervisor quiescence,
+and [accepted ADR-0264](adr/0264-subagent-recovery-and-discovery.md) are deployed as
+`resource-repair-1cdccb80`, schema 194 / Session topic v18.
+[Slices 1–6](reports/resource-interaction-repair-20261020.md) implement shared-holder retirement, supervisor quiescence,
 recoverable direct delegation/discovery, retained Volume cleanup evidence,
 attachment lifetime reconciliation and connection teardown. They retain the
-existing PG/Session/Kafka authority. Targeted regressions pass; release-wide
-checks, matched deployment and live acceptance are tracked in the delivery record.
-The last verified deployment remains the release below until that cutover.
+existing PG/Session/Kafka authority. Source/artifact, native recovery, long-work,
+browser, S3 cancellation and full Cube gates pass with original configuration
+preserved. Single-image 24.2 MB cold recall passes; a combined 6/6/25 MB model
+request still times out upstream and remains an open acceptance item.
 
-[ADR-0263](adr/0263-model-response-and-work-lifetimes.md) is deployed as
+[ADR-0263](adr/0263-model-response-and-work-lifetimes.md) was deployed as
 `model-runtime-058925bb`, schema 192. Agent work has no total duration ceiling;
 model grants follow existing execution ownership instead of a fixed TTL. Worker
 retirement has an independent bounded drain/closure path. Pi's public Models port
@@ -48,13 +49,14 @@ ADR-0255's native result/metadata boundaries, ADR-0256's publication/completion 
 and ADR-0257's browser observation/buffer repair, ADR-0258/0259's bounded lease/
 expiry maintenance, ADR-0260's publication/reader retirement repair and
 ADR-0261's bounded projection/writer-view cleanup, ADR-0262's native recovery reads
-and ADR-0263's model semantics/unbounded work
-(schema 192 / topic v17 / boot reply v3 / guest protocol 7, adapter startup 3).
-The [current delivery record](reports/model-runtime-repair-20261020.md)
-records the October 20 `model-runtime-058925bb` deployment. Source/artifact,
-long-work/handoff, native/browser, child recovery, Control Plane outage and
-large-image cold recall/full-Cube gates pass. Physical cleanup and original
-configuration preservation are confirmed; these samples are not a multi-day SLA.
+and ADR-0263's model semantics/unbounded work, ADR-0264's recoverable delegation,
+ADR-0265's retained Volume evidence and ADR-0266's attachment lifetimes
+(schema 194 / topic v18 / boot reply v3 / guest protocol 7, adapter startup 3).
+The [current delivery record](reports/resource-interaction-repair-20261020.md)
+records the October 21 `resource-repair-1cdccb80` deployment and distinguishes
+passing checks from the outstanding combined multi-image provider gate. Physical
+cleanup and original configuration preservation are confirmed; these samples
+are not a multi-day SLA.
 The [preceding projection repair](reports/seal-projection-repair-20261019.md)
 deployed `seal-projection-0de1fe7f`. Projection uses bounded
 direct-PG I/O, confirmed closure clears the exact old writer's live view, latest

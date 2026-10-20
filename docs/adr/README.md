@@ -9,10 +9,11 @@ holder identities and requires closed allocation plus exact physical absence
 before the fixed POSIX detach. Allocation receipts remain until Volume cleanup
 releases them; unknown evidence never becomes a guessed zero count.
 
-[ADR-0264](0264-subagent-recovery-and-discovery.md) has source implementation and
-passing native/PG/RF3 recovery checks; matched deployment is pending.
-The [delivery record](../reports/resource-interaction-repair-20261020.md) separates
-these proofs from live acceptance. Direct delegation recovers its original
+[ADR-0264](0264-subagent-recovery-and-discovery.md) and the two decisions above
+are deployed as `resource-repair-1cdccb80`, schema 194 / topic v18. Native/PG/RF3
+and actual child-recovery checks pass. The
+[delivery record](../reports/resource-interaction-repair-20261020.md) records live
+evidence and the remaining multi-image provider gate. Direct delegation recovers its original
 child and Submission through a fresh current-owner reply. Child discovery and
 separate safe/unsafe Tool registrations preserve boot-local mailbox semantics.
 

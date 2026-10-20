@@ -1,6 +1,6 @@
 # Architecture reading checkpoint
 
-Updated: 2026-10-20; runtime is `model-runtime-058925bb`, schema 192.
+Updated: 2026-10-21; runtime is `resource-repair-1cdccb80`, schema 194 / topic v18.
 
 The owner has now authorized the separate resource/interaction branch reviews.
 The first, [Workspace/Volume lifecycle](reports/workspace-volume-lifecycle-review-20261020.md),
@@ -14,10 +14,13 @@ four connection-lifetime findings. The
 [combined review](reports/resource-interaction-review-20261020.md) completes the
 agreed scope, with 16 findings and a proposed repair order. These reviews include
 no production repairs. The [repair plan](reports/resource-interaction-repair-plan-20261020.md)
-is approved and implementation has started, including the subsequent official Pi foreground/background examples
+is approved and its six source slices are deployed, including the subsequent official Pi foreground/background examples
 and mailbox/identity discussion. Accepted ADR-0264 separates recoverable direct
 delegation from unsafe management/scripts and adds scoped discovery. [Delivery](reports/resource-interaction-repair-20261020.md) tracks
-all six source repair slices and pending combined release/live gates;
+passing native recovery, long-work, supervisor, browser, S3/upload and Cube
+acceptance, confirmed cleanup and preserved configuration. The combined 6/6/25 MB
+model/cold-recall gate remains open after upstream timeouts, while single-image
+24.2 MB cold recall passes;
 this is not a restart of the completed main-message walkthrough.
 
 The owner asked to reconcile the complete hop-by-hop conversation with the

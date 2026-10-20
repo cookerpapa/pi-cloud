@@ -28,123 +28,25 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
-## Completed resource/interaction review and repair priorities
+## Resource/interaction release acceptance
 
-The [combined October 20 review](reports/resource-interaction-review-20261020.md)
-completes Workspace/Volume, Subagent, upload and terminal/preview review.
-The review itself resolved none of the 16 findings;
-[repair implementation](reports/resource-interaction-repair-20261020.md) is now in progress. Address WVL-01/02 shared
-VM retirement and SAR-01 self-wake first; retain existing PG/Session/Kafka authority
-and implement one vertical repair slice at a time.
-The [six-slice repair plan](reports/resource-interaction-repair-plan-20261020.md)
-is owner-approved. [ADR-0264](adr/0264-subagent-recovery-and-discovery.md) records
-original-delegation continuation plus scoped discovery using public Pi APIs;
-its prototype and source integration pass targeted tests, including two RF3/PG
-owner replacements. Matched deployment and live acceptance remain pending.
+The [combined review](reports/resource-interaction-review-20261020.md) and all six
+source repair slices are implemented and deployed as `resource-repair-1cdccb80`,
+schema 194 / Session topic v18. The [delivery record](reports/resource-interaction-repair-20261020.md)
+contains the 16 findings, query reductions, native/PG/RF3 contracts and actual
+shared/ephemeral child, long-work, terminal, supervisor, upload, browser and Cube
+acceptance. Two additional live findings—cancelled upload stream errors and
+refused WebSocket shutdown sockets—are repaired. Original configuration
+fingerprints and confirmed physical cleanup pass.
 
-All six slices are now deployed as `resource-repair-3a045bf7`. Live native
-input/recovery, shared and ephemeral child recovery, long work/terminal ownership,
-supervisor interactions and owned Cube restart/Volume cleanup pass. Actual
-cancelled upload exposed an unhandled S3 body-stream error that restarted the
-Control Plane; its fix passes 30 attachment/upload transport cases and affected
-typechecks. The corrected matched release, image gates and final fixture cleanup
-remain open; failed upstream-model samples are retained separately.
-The `resource-repair-7a05942f` follow-up now passes actual S3 cancellation,
-large-image upload/recall, queued-image editing and Control Plane replacement.
-A further refused-WebSocket shutdown fix passes 33 source regressions and
-awaits deployment. Full browser acceptance exposed the existing performance
-template snapshot/time-reset failure, tracked in the operational item below.
-
-## Terminal and application-preview lifecycle review
-
-TPR-01–04 source fixes and connection regressions pass. Terminal establishment
-is bounded; healthy sessions remain unbounded. Preview caller/shutdown teardown
-now cancels and joins pending opens. Compatible-replacement live acceptance remains.
-
-The [October 20 terminal/preview review](reports/terminal-preview-review-20261020.md)
-is complete at `901da9ed`. Seventy existing tests and four owned transport
-characterizations pass; no runtime fix or live replacement is included.
-
-- [ ] TPR-01 / P2: make a pending valid owner redirect survive closure of the old
-      WebSocket while retaining PG validation and user-cancellation precedence.
-- [ ] TPR-02 / P2: bound terminal upstream connection establishment and report a
-      retryable failure; do not impose an active terminal or Agent duration limit.
-- [ ] TPR-03 / P2: cancel the internal preview CONNECT when its caller/Agent closes,
-      including pending redirects and disposal of late sockets.
-- [ ] TPR-04 / P2: include pending preview opens in shutdown cleanup and reject
-      late establishment after readiness closes; join teardown of owned streams.
-
-Existing explicit terminal reconnect and preview-access expiry remain policies,
-not defects. A transport close never proves VM or user-process death.
-
-## Upload and attachment lifecycle review
-
-UPL-01–04/O1 source fixes and targeted regressions now pass under
-[ADR-0266](adr/0266-upload-reference-and-write-lifetimes.md). Matched S3/Cube
-acceptance remains pending. Uncertain remote PUTs retain small cleanup markers
-until writer completion is proven; successful DELETE alone does not erase them.
-
-The [October 20 upload review](reports/upload-lifecycle-review-20261020.md) is
-complete at `cf12b444`; no runtime fix is included. Existing tests pass and four
-isolated PG/HTTP/source-lifetime probes reproduce the recorded findings.
-
-- [ ] UPL-01 / P2: reconcile provisional attachment pins after known unaccepted
-      native inputs, while protecting uncertain acknowledgements and other accepted uses.
-- [ ] UPL-02 / P2: retain cleanup identity across a long in-flight image PUT when
-      its draft is removed; original object age alone must not forget the writer.
-- [ ] UPL-03 / P2: propagate browser image-request cancellation into source reads.
-- [ ] UPL-04 / P3: close started upload iterators on pre-transfer refusal too.
-- [ ] UPL-O1: consider streaming original-image previews through the existing
-      attachment source port, with cancellation/integrity and response completion joined.
-
-## Subagent lifecycle and interaction review
-
-The [October 20 Subagent review](reports/subagent-lifecycle-review-20261020.md)
-is complete at `6a9f5c9a`, with no runtime change. Existing tests pass; five real-PG
-characterizations and a bounded GC/reachability probe record the following work.
-
-- [ ] SAR-01 / P1: stop unchanged supervisor reads from waking their own pending
-      control reference; preserve actual-change and known deadline/retry wakes.
-- [ ] SAR-02 / P2: keep actionable decisions visible when newer progress arrives.
-- [ ] SAR-03 / P2: respect terminal child state before returning/listing pending
-      supervisor questions; do not reopen native work.
-- [ ] SAR-04 / P2: release completed workflow host-call cache entries with their
-      owning Tool invocation instead of retaining every result for the whole Run.
-- [ ] SAR-D1 (source verified; live pending): native safe-delegation recovery and target-free
-      family discovery in ADR-0264. Preserve original child/Submission identities;
-      separate the Tool replay policies and retain generation-owned supervision.
-      Distinct model commands remain distinct; no cross-boot raw-result mailbox
-      or automatic arbitrary-script replay is added.
-- [ ] SAR-O1/N1: reduce repeated admission-shaped reads for confirmed children
-      (seven business SQL in the sample), and align Subagent docs with native
-      Conversations, 50 KiB result limits and the actual cache/dispatch ownership.
-
-## Workspace and Volume lifecycle review
-
-WVL-03 source repair follows [ADR-0265](adr/0265-volume-reference-recovery-evidence.md):
-retain missing holder identities, reconcile only after closed-allocation and
-exact-node evidence, and retain receipt dependencies until detach finishes.
-Native race tests pass; full matched Cube and live verification remain pending.
-
-The [October 20 resource review](reports/workspace-volume-lifecycle-review-20261020.md)
-is complete at `f9ca385e`; it changes no production behavior. Existing lifecycle
-contracts pass, while seven real-PG characterizations and three native reference
-scenarios establish the findings below. Provider destruction in the new probes
-is a controlled callback, not a live VM fault.
-
-- [ ] WVL-01 / P1: include active human terminals and native child compute in
-      orphan-retirement eligibility under existing shared Session authority.
-- [ ] WVL-02 / P1: include terminal-only holders in local recovery/idle accounting;
-      do not adopt the same live VM into a second warm runtime object.
-- [ ] WVL-03 / P2: complete evidence-based unknown Volume-reference reconciliation;
-      retain exact recovery identity and shared holders. See the earlier observed
-      Cubelet-crash limit below; no zero-count-only clearing is authorized.
-- [ ] WVL-04 / P2: align Run/terminal Session/Workspace lock order while preserving
-      atomic admission versus deletion. Current bounded lock timeout prevents a
-      permanent deadlock but returns an avoidable terminal admission error.
-- [ ] WVL-O1/O2: consider combining five independent deletion occupancy reads
-      (13 ordinary business SQL in the empty-Workspace sample) and remove the
-      unused resource-policy `turnWallClockTimeoutMs` field. No new cache/authority.
+- [ ] Complete the unchanged combined 6/6/25 MB Tool-image model and cold-recall
+      gate after upstream connectivity improves. The first two images complete;
+      all three originals, including the 25 MB object, reach durable storage, but
+      the subsequent model request receives no upstream response for 120 seconds
+      and retries exhaust the acceptance budget. Single-image 24.2 MB direct
+      vision/read/cold recovery, queued-image editing and 34.7 MB transport/
+      cancellation already pass. Do not report the combined gate as successful
+      or weaken its image sizes, assertions or deadline.
 
 ## Native model request / response review
 
@@ -433,26 +335,20 @@ covers bounded UNKNOWN continuation, idle completion-process recovery, startup
 Stop settlement, native input/dual-process recovery, browser/image/Read and full
 Cube behavior. Source, transport, 256 fault cases and eleven artifact scans pass.
 The owned Cubelet crash fixture required positively confirmed operator detach
-before normal Volume GC could finish; that operational limit remains below.
+before normal Volume GC could finish; the subsequent repair is described below.
 
-## Cubelet restart and unconfirmed Volume references
+## Cubelet restart and retained Volume evidence
 
-The ADR-0253 live crash case passed Tool interruption, but automatic fixture
-Volume GC remained blocked after Cubelet restart: its durable node reference
-state was `count=0, confirmed=false`, with the same store incarnation. This is
-ADR-0226's conservative recovery behavior, not proof of safe deletion. The
-[acceptance record](reports/tool-reply-continuation-20261016.md) documents an
-operator-confirmed cleanup of the single owned test Volume after closed
-admission, irreversible allocation closure, complete recorded-node absence and
-the pinned POSIX driver's detach receipt. No automatic clearing policy changed.
-The fixture Volume and its bytes have been deleted; the open item concerns
-automatic recovery of future unknown references, not an uncleared test Volume.
+The earlier ADR-0253 crash fixture needed operator-confirmed detach because
+holder identity had already been discarded. [ADR-0265](adr/0265-volume-reference-recovery-evidence.md)
+and the [deployed repair](reports/resource-interaction-repair-20261020.md) now retain
+missing holder identities and reconcile them through closed allocation,
+recorded-node absence and the existing POSIX detach receipt. Native race tests
+and owned live node-restart/Volume cleanup pass.
 
-- [ ] Design bounded reconciliation of these unknown POSIX references before
-      claiming automatic Workspace recovery/GC after active Cubelet loss. Preserve
-      original cleanup identity and obtain positive detach evidence; neither a
-      missing probe, zero count nor replaced metadata can clear the protection.
-      Record any changed recovery authority/protocol in a new ADR first.
+Historical Unknown records whose identity was already lost still require positive
+operator evidence. A missing probe, zero holder count or replaced metadata is
+never sufficient. There is no remaining owned test Volume awaiting this cleanup.
 
 ## Guest → Cubelet result review
 
@@ -1079,7 +975,10 @@ separate design questions, not an implicit part of the completed query merge.
 
 - [ ] Investigate Cube standard/performance-template snapshot restoration returning
       `reset guest time failed` despite READY status. Recreating the same-image
-      template restores boot and image-queue acceptance, but the upstream failure
+      template restores boot and image-queue acceptance. The October 21 performance
+      template repeated this failure; same-image regeneration restores its real
+      boot and all 97 browser controls, and a bounded retry confirms deletion of
+      the old template. The upstream failure
       mechanism is not established. Preserve creation uncertainty and node-absence
       requirements; no forced quota release or identity fabrication for failed
       allocations lacking a recorded VM/node. [Original evidence](reports/review-repair-20261004.md).

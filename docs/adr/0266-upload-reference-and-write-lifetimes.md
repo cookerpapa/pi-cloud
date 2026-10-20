@@ -1,7 +1,11 @@
 # ADR-0266: Attachment pins and unfinished object writes
 
 Status: accepted implementation decision under the owner-approved resource repair
-plan, 2026-10-20. Source regressions pass; matched live acceptance pending.
+plan, 2026-10-20. Deployed in `resource-repair-1cdccb80`, 2026-10-21. Source
+regressions, actual S3 cancellation, upload/queue and single-image cold recall
+pass. The combined multi-image provider gate remains open after upstream
+timeouts; [delivery evidence](../reports/resource-interaction-repair-20261020.md)
+keeps that limitation separate from confirmed storage/transport behavior.
 
 ## Authority and evidence
 

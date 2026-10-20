@@ -2,45 +2,36 @@
 
 ## Resource and interaction branch reviews
 
-The [combined review](reports/resource-interaction-review-20261020.md) completes
-the agreed four slices. Its 16 findings remain repair work; no production
-behavior changed during these reviews. The
-[repair plan](reports/resource-interaction-repair-plan-20261020.md) now includes
-the subsequent Pi examples and recovery discussion.
+The [combined review](reports/resource-interaction-review-20261020.md) and the
+owner-approved [repair plan](reports/resource-interaction-repair-plan-20261020.md)
+are implemented in the serving `resource-repair-1cdccb80` release. Schema 194 /
+Session topic v18 retains existing PG, native Session and Kafka authority.
+[Delivery evidence](reports/resource-interaction-repair-20261020.md) separates
+source verification, passing live gates and the remaining provider-dependent gate.
 
-- [x] Review Workspace/Volume creation, binding, recovery and retirement; record
-      [four findings and two opportunities](reports/workspace-volume-lifecycle-review-20261020.md)
-      with real-PG/native characterizations. This review makes no runtime change.
-- [x] Review native Subagent creation/discovery, control operations and family settlement;
-      [findings and measurements](reports/subagent-lifecycle-review-20261020.md) include
-      supervisor self-wake, decision visibility, terminal state and workflow cache lifetime.
-- [x] Review upload/attachment placement, acknowledgement and cleanup across failures;
-      [four findings and streaming opportunity](reports/upload-lifecycle-review-20261020.md)
-      are supported by isolated PG/HTTP/source-lifetime probes.
-- [x] Review terminal/preview connection and process lifetimes across replacement;
-      [four connection-lifetime findings](reports/terminal-preview-review-20261020.md)
-      are reproduced with owned loopback peers.
-- [x] Prepare a complete repair plan and proposed ADR-0264; distinguish planning
-      from accepted implementation and deployed behavior.
-- [ ] Slice 1 (source implemented, verification/live acceptance tracked in the
-      [delivery record](reports/resource-interaction-repair-20261020.md)): WVL-01/02/04 and O1/O2 — live compute holders, local runtime identity,
-      admission lock order and bounded SQL/obsolete-field cleanup.
-- [ ] Slice 2 (source verified; matched release/live acceptance pending):
-      SAR-01–04 and O1 — supervisor quiescence/question precedence,
-      terminal-state handling and Tool-scoped workflow memory.
-- [ ] Slice 3 (source verified; matched release/live acceptance pending): accepted [ADR-0264](adr/0264-subagent-recovery-and-discovery.md)
-      for original-delegation continuation and target-free discovery; update
-      the matched Tool catalog and SAR-N1 documentation.
-- [ ] Slice 4 (source verified; live pending): WVL-03 — recorded evidence protocol and converging
-      unknown Volume-reference recovery without weakening physical cleanup proof.
-- [ ] Slice 5 (source verified; live pending): UPL-01–04/O1 — provisional/confirmed references, late PUT cleanup,
-      cancellation and streamed previews.
-- [ ] Slice 6 (source verified; live pending): TPR-01–04 — redirect/handshake/pending-connect/shutdown lifetimes;
-      verify explicit live reconnect without replaying keystrokes.
+- [x] Review all four resource/interaction branches and record 16 findings.
+- [x] Slice 1: shared/terminal/child compute holders, local runtime identity,
+      admission lock order and deletion SQL cleanup; real shared/ephemeral and
+      seventeen-minute terminal/Run acceptance pass.
+- [x] Slice 2: supervisor quiescence, decision precedence, terminal caller state
+      and Tool-scoped workflow memory; five real interaction scenarios pass.
+- [x] Slice 3: public native safe delegation and scoped discovery under ADR-0264;
+      original child/Submission and single-effect recovery pass across Worker loss.
+- [x] Slice 4: retained Volume evidence under ADR-0265; native loss/race contracts
+      and owned Cube node restart/physical cleanup pass.
+- [ ] Slice 5: source and actual upload pins/cancellation/34.7 MB preview/24.2 MB
+      image cold recall pass under ADR-0266; finish the unchanged combined
+      6/6/25 MB model gate after upstream no-response timeouts are resolved.
+- [x] Slice 6: redirect, handshake, pending-connect, refused-upgrade and shutdown
+      lifetimes; compatible replacement preserves VM/application state and
+      supports explicit terminal reconnect without replaying keystrokes.
+- [x] Matched deployment, full browser/Cube gates, scoped fixture cleanup and
+      original account/model/provider configuration fingerprint verification.
+- [ ] Close combined release acceptance after the remaining multi-image gate.
 
-Each slice includes its regression and relevant live acceptance. No overall
-Agent duration limit, old-mailbox offset takeover, arbitrary-script replay or
-new scheduling authority is proposed. The plan-only work changes no runtime.
+Healthy Agent work remains unbounded. No old-mailbox replay, arbitrary-script
+retry, second scheduler or storage authority is introduced. The private pilot
+has not started.
 
 ## Native model request / response review
 
@@ -66,7 +57,7 @@ evidence and the unchanged passing repeat are retained.
 
 The main-message walkthrough and this repair are complete. The later authorized
 Workspace/Subagent/upload/terminal/preview reviews are complete as recorded above;
-their newly identified repairs remain separate work.
+their repairs are deployed, with the remaining acceptance gate recorded above.
 
 ## Replacement Worker → Pi Harness recovery review
 

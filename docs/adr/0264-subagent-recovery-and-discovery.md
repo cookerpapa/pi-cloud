@@ -1,12 +1,13 @@
 # ADR-0264: Recoverable delegation and scoped child discovery
 
-Status: accepted by the owner with the six-slice repair plan, 2026-10-20.
-The public-API prototype and PG/RF3 integration pass; live acceptance remains pending.
-No deployment is claimed.
+Status: accepted by the owner on 2026-10-20; deployed in
+`resource-repair-1cdccb80`, 2026-10-21. Public-API, PG/RF3 and actual shared/
+ephemeral Worker-replacement acceptance pass; see the
+[delivery record](../reports/resource-interaction-repair-20261020.md).
 Context: [resource repair plan](../reports/resource-interaction-repair-plan-20261020.md),
 [SAR-D1 review](../reports/subagent-lifecycle-review-20261020.md).
-This proposal refines ADR-0229/0247 for explicitly replay-safe direct delegation;
-their deployed unsafe-tool and boot-mailbox contracts remain current until cutover.
+This decision refines ADR-0229/0247 for explicitly replay-safe direct delegation.
+Other unsafe Tool policies and boot-scoped reply transport are preserved.
 
 ## Problem
 
