@@ -8,9 +8,13 @@ is complete with four findings and two opportunities. The second,
 [Subagent lifecycle](reports/subagent-lifecycle-review-20261020.md), records four
 runtime findings, a discovery discussion and measured simplification work.
 The third, [upload/attachment lifecycle](reports/upload-lifecycle-review-20261020.md),
-records four findings and a streaming opportunity. These reviews include no
-production repairs. Continue with terminal/preview lifetimes. This is additional scope
-after the completed main-message walkthrough, not a restart of that walkthrough.
+records four findings and a streaming opportunity. The fourth,
+[terminal/preview lifecycle](reports/terminal-preview-review-20261020.md), records
+four connection-lifetime findings. The
+[combined review](reports/resource-interaction-review-20261020.md) completes the
+agreed scope, with 16 findings and a proposed repair order. These reviews include
+no production repairs. Next is discussion/implementation of accepted repairs,
+not a restart of the completed main-message walkthrough.
 
 The owner asked to reconcile the complete hop-by-hop conversation with the
 recorded reviews. The ordinary Tool execution loop, normal Run completion,
@@ -115,7 +119,7 @@ characterizations do not establish the external TLS failure's root cause.
 
 Replacement Harness continuation and this model branch complete the walkthrough;
 their approved repairs, including no overall Run deadline, are deployed. The
-additional resource/interaction reviews above are now in progress. Review status
+additional resource/interaction reviews above are now complete. Review status
 still remains distinct from implementation of each newly recorded finding.
 
 ## Related branches already discussed
@@ -126,9 +130,10 @@ lifecycle and compatible Control Plane replacement all have prior discussion,
 implementation reviews or acceptance evidence. They are not blank areas.
 
 Workspace activation/binding propagation, Subagent control dispatch and
-upload/terminal/preview flows can be separate future walkthroughs if needed.
-That is a different scope from identifying the remaining main-message hops;
-there is no standing plan to repeat every earlier whole-repository review.
+upload/terminal/preview flows have now received the agreed focused branch reviews
+linked above. Their new findings remain distinct from the previously completed
+main-message repairs; there is no standing plan to repeat every earlier
+whole-repository review.
 
 ## Earlier walkthrough notes through October 17
 

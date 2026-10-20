@@ -1,24 +1,32 @@
 # Documentation map
 
+The [October 20 combined resource/interaction review](reports/resource-interaction-review-20261020.md)
+completes all four agreed branches and prioritizes 16 findings. The final
+[terminal/preview slice](reports/terminal-preview-review-20261020.md) records
+redirect, handshake, pending-connect cancellation and shutdown races, supported
+by 70 existing cases and four isolated transport characterizations. The combined
+report separates confirmed defects, design discussion and evidence gaps.
+These are review records; runtime fixes and deployment are not included.
+
 The [October 20 upload/attachment review](reports/upload-lifecycle-review-20261020.md)
 is the third resource/interaction slice. It records premature permanent pins,
 late PUT/GC inventory loss for long uploads, missing image-read cancellation and
 early-refusal source cleanup. Existing and isolated tests are distinguished from
-live S3/Cube acceptance. Runtime remains unchanged; terminal/preview review follows.
+live S3/Cube acceptance. Runtime remains unchanged; the final slice is linked above.
 
 The [October 20 Subagent lifecycle review](reports/subagent-lifecycle-review-20261020.md)
 is the second resource/interaction slice. It records four runtime findings, a
 direct-child discovery design gap, seven-SQL repeat reconciliation and documentation
 drift. Five real-PG probes and a bounded result-reachability experiment distinguish
 confirmed behavior from the earlier live model's repeated delegation. No fix or
-deployment is included; upload/attachment and terminal/preview reviews follow.
+deployment is included; the subsequent reviews are linked above.
 
 The [October 20 Workspace/Volume lifecycle review](reports/workspace-volume-lifecycle-review-20261020.md)
 starts the agreed resource/interaction branch reviews. It confirms in-use compute
 retirement, terminal-only duplicate adoption, nonconverging unknown Volume references
 and admission lock-order findings, plus two simplification opportunities. Existing
 tests and isolated PG/native probes are recorded separately; no runtime repair or
-deployment is claimed. Subagent, upload and terminal/preview reviews follow in order.
+deployment is claimed. The subsequent branches are now complete as linked above.
 
 The [October 19 model request/response review](reports/model-request-response-review-20261019.md)
 and [approved repair](reports/model-request-response-repair-plan-20261019.md) are

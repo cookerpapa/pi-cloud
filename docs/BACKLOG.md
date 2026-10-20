@@ -28,6 +28,32 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## Completed resource/interaction review and repair priorities
+
+The [combined October 20 review](reports/resource-interaction-review-20261020.md)
+completes Workspace/Volume, Subagent, upload and terminal/preview review.
+All 16 findings below remain unresolved by this review. Address WVL-01/02 shared
+VM retirement and SAR-01 self-wake first; retain existing PG/Session/Kafka authority
+and implement one vertical repair slice at a time.
+
+## Terminal and application-preview lifecycle review
+
+The [October 20 terminal/preview review](reports/terminal-preview-review-20261020.md)
+is complete at `901da9ed`. Seventy existing tests and four owned transport
+characterizations pass; no runtime fix or live replacement is included.
+
+- [ ] TPR-01 / P2: make a pending valid owner redirect survive closure of the old
+      WebSocket while retaining PG validation and user-cancellation precedence.
+- [ ] TPR-02 / P2: bound terminal upstream connection establishment and report a
+      retryable failure; do not impose an active terminal or Agent duration limit.
+- [ ] TPR-03 / P2: cancel the internal preview CONNECT when its caller/Agent closes,
+      including pending redirects and disposal of late sockets.
+- [ ] TPR-04 / P2: include pending preview opens in shutdown cleanup and reject
+      late establishment after readiness closes; join teardown of owned streams.
+
+Existing explicit terminal reconnect and preview-access expiry remain policies,
+not defects. A transport close never proves VM or user-process death.
+
 ## Upload and attachment lifecycle review
 
 The [October 20 upload review](reports/upload-lifecycle-review-20261020.md) is

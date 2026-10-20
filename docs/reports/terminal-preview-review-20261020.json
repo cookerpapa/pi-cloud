@@ -1,0 +1,76 @@
+{
+  "baseline": "901da9ed",
+  "runtimeRelease": "model-runtime-058925bb",
+  "schema": 192,
+  "reviewOnly": true,
+  "productionModified": false,
+  "existingTests": {
+    "files": 10,
+    "passed": 70
+  },
+  "newCharacterizations": 4,
+  "findings": [
+    {
+      "id": "TPR-01",
+      "priority": "P2",
+      "issue": "valid terminal redirect loses to old connection close during PG lookup"
+    },
+    {
+      "id": "TPR-02",
+      "priority": "P2",
+      "issue": "upstream terminal WebSocket handshake lacks a transport deadline"
+    },
+    {
+      "id": "TPR-03",
+      "priority": "P2",
+      "issue": "caller teardown does not cancel pending preview CONNECT"
+    },
+    {
+      "id": "TPR-04",
+      "priority": "P2",
+      "issue": "preview establishment escapes the shutdown cleanup pass"
+    }
+  ],
+  "measurements": [
+    {
+      "case": "terminal_redirect_close_race",
+      "authorizedNextOwner": true,
+      "browserClosedDuringValidation": true,
+      "newConnections": 0,
+      "databasePort": "controlled"
+    },
+    {
+      "case": "terminal_handshake_without_deadline",
+      "observedWaitMs": 16003,
+      "browserOpen": true,
+      "frames": 0,
+      "note": "Finite observation plus source inspection; user disconnect still cancels it"
+    },
+    {
+      "case": "preview_pending_connect_not_cancelled",
+      "originalRequestDestroyed": true,
+      "ownerSocketStillOpen": true,
+      "sourceConnectDeadlineMs": 15000
+    },
+    {
+      "case": "preview_late_accept_while_server_closes",
+      "serverCloseStillWaiting": true,
+      "lateStatus": 200,
+      "streamStillOpen": true
+    }
+  ],
+  "fixtureCorrections": [
+    "Do not wait for cancelled outer request close before releasing its pending CONNECT.",
+    "Server close is still draining at late acceptance, not already completed."
+  ],
+  "limits": [
+    "Controlled DB/backend ports; owned real loopback connections.",
+    "No real VM, model or production database fault.",
+    "No transparent PTY continuity or detached-descendant guarantee."
+  ],
+  "sourceHashes": {
+    "README.md": "8c16ed5b212b8ad013c6b6996d2429423d4499146d629b60dc1db5b0992fca84",
+    "connections.test.ts": "72703c1c43861279366bd4155b88442eb5328d954da9f3f2ea8380be99f28620",
+    "tsconfig.json": "a538939a8ec2b0ec2731a6a34fb2256cfd925fe89458b68a35f44ade233d0f36"
+  }
+}

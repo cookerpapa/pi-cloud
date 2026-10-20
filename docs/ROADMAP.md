@@ -2,6 +2,10 @@
 
 ## Resource and interaction branch reviews
 
+The [combined review](reports/resource-interaction-review-20261020.md) completes
+the agreed four slices. Its 16 findings remain repair work; no production
+behavior changed during these reviews.
+
 - [x] Review Workspace/Volume creation, binding, recovery and retirement; record
       [four findings and two opportunities](reports/workspace-volume-lifecycle-review-20261020.md)
       with real-PG/native characterizations. This review makes no runtime change.
@@ -15,7 +19,11 @@
       [four findings and streaming opportunity](reports/upload-lifecycle-review-20261020.md)
       are supported by isolated PG/HTTP/source-lifetime probes.
 - [ ] Implement the accepted UPL repairs in a separate slice, preserving uncertain-input pins.
-- [ ] Review terminal/preview connection and process lifetimes across replacement.
+- [x] Review terminal/preview connection and process lifetimes across replacement;
+      [four connection-lifetime findings](reports/terminal-preview-review-20261020.md)
+      are reproduced with owned loopback peers.
+- [ ] Implement TPR-01–04 separately; verify live reconnect/shutdown semantics
+      without promising transparent PTY continuation or replaying keystrokes.
 
 ## Native model request / response review
 
@@ -39,8 +47,9 @@ physical cleanup with original configuration preserved. The first child-recovery
 sample failed because the model issued a second distinct delegation; its native
 evidence and the unchanged passing repeat are retained.
 
-The main-message walkthrough and this repair are complete. Optional
-Workspace/Subagent/upload/preview walkthroughs are independent future scope.
+The main-message walkthrough and this repair are complete. The later authorized
+Workspace/Subagent/upload/terminal/preview reviews are complete as recorded above;
+their newly identified repairs remain separate work.
 
 ## Replacement Worker → Pi Harness recovery review
 
