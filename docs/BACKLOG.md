@@ -28,6 +28,25 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## Subagent lifecycle and interaction review
+
+The [October 20 Subagent review](reports/subagent-lifecycle-review-20261020.md)
+is complete at `6a9f5c9a`, with no runtime change. Existing tests pass; five real-PG
+characterizations and a bounded GC/reachability probe record the following work.
+
+- [ ] SAR-01 / P1: stop unchanged supervisor reads from waking their own pending
+      control reference; preserve actual-change and known deadline/retry wakes.
+- [ ] SAR-02 / P2: keep actionable decisions visible when newer progress arrives.
+- [ ] SAR-03 / P2: respect terminal child state before returning/listing pending
+      supervisor questions; do not reopen native work.
+- [ ] SAR-04 / P2: release completed workflow host-call cache entries with their
+      owning Tool invocation instead of retaining every result for the whole Run.
+- [ ] SAR-D1: discuss direct-child discovery after an interrupted launch result.
+      Reuse native identity/association views; distinct model commands remain distinct.
+- [ ] SAR-O1/N1: reduce repeated admission-shaped reads for confirmed children
+      (seven business SQL in the sample), and align Subagent docs with native
+      Conversations, 50 KiB result limits and the actual cache/dispatch ownership.
+
 ## Workspace and Volume lifecycle review
 
 The [October 20 resource review](reports/workspace-volume-lifecycle-review-20261020.md)

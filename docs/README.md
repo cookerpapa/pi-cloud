@@ -1,5 +1,12 @@
 # Documentation map
 
+The [October 20 Subagent lifecycle review](reports/subagent-lifecycle-review-20261020.md)
+is the second resource/interaction slice. It records four runtime findings, a
+direct-child discovery design gap, seven-SQL repeat reconciliation and documentation
+drift. Five real-PG probes and a bounded result-reachability experiment distinguish
+confirmed behavior from the earlier live model's repeated delegation. No fix or
+deployment is included; upload/attachment and terminal/preview reviews follow.
+
 The [October 20 Workspace/Volume lifecycle review](reports/workspace-volume-lifecycle-review-20261020.md)
 starts the agreed resource/interaction branch reviews. It confirms in-use compute
 retirement, terminal-only duplicate adoption, nonconverging unknown Volume references

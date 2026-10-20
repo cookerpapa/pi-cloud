@@ -1,0 +1,103 @@
+{
+  "baseline": "6a9f5c9a",
+  "runtimeRelease": "model-runtime-058925bb",
+  "schema": 192,
+  "reviewOnly": true,
+  "productionModified": false,
+  "existingTests": {
+    "files": 15,
+    "passed": 64
+  },
+  "pgCharacterizations": 5,
+  "retentionProbe": 1,
+  "firstFixtureFailure": "Synthetic cancellation stopped generation but left its contact Tool active; corrected before characterizing terminal state.",
+  "findings": [
+    {
+      "id": "SAR-01",
+      "priority": "P1",
+      "issue": "unchanged pending supervisor reads self-wake reconciliation"
+    },
+    {
+      "id": "SAR-02",
+      "priority": "P2",
+      "issue": "newer progress hides an outstanding decision"
+    },
+    {
+      "id": "SAR-03",
+      "priority": "P2",
+      "issue": "terminal child wait reports stale supervisor blocking"
+    },
+    {
+      "id": "SAR-04",
+      "priority": "P2",
+      "issue": "Run-level map retains disposed workflow results"
+    }
+  ],
+  "discussion": "SAR-D1 direct-child discovery before launch reply",
+  "opportunities": [
+    "SAR-O1 pending child revisit uses seven business SQL/two locks",
+    "SAR-N1 Subagent documentation drift"
+  ],
+  "measurements": [
+    {
+      "case": "progress_masks_decision",
+      "pendingDecisionStillExists": true,
+      "parentStateBefore": "blocked",
+      "parentStateAfter": "waiting",
+      "realPostgres": true
+    },
+    {
+      "case": "terminal_child_still_blocked",
+      "childState": "cancelled",
+      "waitState": "blocked",
+      "requestStillListed": true,
+      "realPostgres": true
+    },
+    {
+      "case": "child_discovery",
+      "sameCommandDeduplicated": true,
+      "providerCallIdLookup": "rejected",
+      "nativeTaskIdLookup": "rejected",
+      "listAction": "absent",
+      "knownExecutionIdWorks": true,
+      "distinctCommandCreatesAnotherChild": true
+    },
+    {
+      "case": "pending_child_revisit_sql",
+      "businessSql": 7,
+      "workerCalls": 0,
+      "lockedReads": 2,
+      "excludesBeginCommit": true,
+      "realPostgres": true
+    },
+    {
+      "case": "supervisor_self_wakeup",
+      "executions": 20,
+      "wakeups": 20,
+      "businessSql": 63,
+      "elapsedMs": 76,
+      "supervisorRows": 1,
+      "replies": 0,
+      "timerAdvances": 0,
+      "nativeUpdatesAfterConsume": 0,
+      "boundedByFixtureAt": 20,
+      "realPostgres": true
+    },
+    {
+      "case": "completed_workflow_result_retention",
+      "completedAndDisposedTools": 64,
+      "resultBytes": 527927,
+      "retainedWhileRunOpen": 64,
+      "retainedAfterBindingRelease": 0,
+      "proof": "WeakRef reachability with explicit GC; not a production heap capacity estimate",
+      "modelCalls": 0,
+      "vmEffects": 0
+    }
+  ],
+  "sourceHashes": {
+    "README.md": "413e190630a0ef8cb3072d10691880e53e9ad489fb31231cf9d77eea389cb812",
+    "subagent.test.ts": "d481e69a203d20f23760a09164afff6cc1437257da8d3b2dd38a8ec18c2c5463",
+    "workflow-retention.mjs": "434f2cc59063bb211327edf85f8798af0e065de9b6fb49f8233edf812a6e7706",
+    "tsconfig.json": "1ce3f5d032a7549abd107b571502a7b4f4c45ec4b2bc9a2f5d3dbdaa5e14654b"
+  }
+}

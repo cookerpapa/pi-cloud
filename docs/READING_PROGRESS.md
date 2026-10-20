@@ -4,9 +4,11 @@ Updated: 2026-10-20; runtime is `model-runtime-058925bb`, schema 192.
 
 The owner has now authorized the separate resource/interaction branch reviews.
 The first, [Workspace/Volume lifecycle](reports/workspace-volume-lifecycle-review-20261020.md),
-is complete with four findings and two opportunities; no production repair is
-included. Continue with native Subagent creation/discovery and family settlement,
-then upload/attachment and terminal/preview lifetimes. This is additional scope
+is complete with four findings and two opportunities. The second,
+[Subagent lifecycle](reports/subagent-lifecycle-review-20261020.md), records four
+runtime findings, a discovery discussion and measured simplification work.
+Neither review includes production repairs. Continue with upload/attachment,
+then terminal/preview lifetimes. This is additional scope
 after the completed main-message walkthrough, not a restart of that walkthrough.
 
 The owner asked to reconcile the complete hop-by-hop conversation with the
