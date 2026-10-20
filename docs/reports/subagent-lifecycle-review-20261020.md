@@ -109,6 +109,14 @@ derived from existing native identities/PG associations. Do not deduplicate
 different Tool tasks merely because their text is similar, add child cloud Runs,
 or mark arbitrary script/shell work safe to replay.
 
+Subsequent discussion verified Pi 1.0's official foreground safe-delegation
+example and background named-directory/unsafe-management example. The
+[repair plan](resource-interaction-repair-plan-20261020.md) and
+[proposed ADR-0264](../adr/0264-subagent-recovery-and-discovery.md) extend this
+direction to original-call continuation plus discovery. They preserve PiCloud's
+generation ownership and require public-API/failure proof; this does not change
+the current unsafe registration or claim a deployed fix.
+
 **SAR-O1: repeat reconciliation performs avoidable admission-shaped reads.**
 Revisiting one already acknowledged pending direct child uses seven business SQL
 statements, including two locked reads, with zero Worker RPCs. Full control

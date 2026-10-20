@@ -5,6 +5,11 @@ Runtime fixes are not implemented by this review. Serving source remains
 `058925bb2036e8ea9dd8f906c631961b0fee1787` (`model-runtime-058925bb`, schema 192).
 Approval functionality remains deferred.
 
+Follow-up: the [repair plan](resource-interaction-repair-plan-20261020.md) now
+incorporates the owner's mailbox/idempotency discussion and verified Pi 1.0
+foreground/background examples. ADR-0264 is proposed for direct-delegation
+continuation and discovery; the findings below remain unrepaired baseline evidence.
+
 ## Assessment
 
 The findings do not justify replacing PG, Kafka, native Pi Durable or Cube.

@@ -1,5 +1,10 @@
 # Architecture
 
+The [resource/interaction repair plan](reports/resource-interaction-repair-plan-20261020.md)
+and [proposed ADR-0264](adr/0264-subagent-recovery-and-discovery.md) are planning
+documents. Their safe-delegation/catalog changes are not implemented; the
+deployed ownership, Tool replay and boot-mailbox contracts below remain current.
+
 [ADR-0263](adr/0263-model-response-and-work-lifetimes.md) is deployed as
 `model-runtime-058925bb`, schema 192. Agent work has no total duration ceiling;
 model grants follow existing execution ownership instead of a fixed TTL. Worker

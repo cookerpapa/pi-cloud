@@ -4,26 +4,41 @@
 
 The [combined review](reports/resource-interaction-review-20261020.md) completes
 the agreed four slices. Its 16 findings remain repair work; no production
-behavior changed during these reviews.
+behavior changed during these reviews. The
+[repair plan](reports/resource-interaction-repair-plan-20261020.md) now includes
+the subsequent Pi examples and recovery discussion.
 
 - [x] Review Workspace/Volume creation, binding, recovery and retirement; record
       [four findings and two opportunities](reports/workspace-volume-lifecycle-review-20261020.md)
       with real-PG/native characterizations. This review makes no runtime change.
-- [ ] Discuss and implement WVL-01–04 in a separate repair slice with its required
-      shared-resource, cancellation and recovery acceptance.
 - [x] Review native Subagent creation/discovery, control operations and family settlement;
       [findings and measurements](reports/subagent-lifecycle-review-20261020.md) include
       supervisor self-wake, decision visibility, terminal state and workflow cache lifetime.
-- [ ] Discuss SAR-D1 discovery and implement the accepted SAR repairs separately.
 - [x] Review upload/attachment placement, acknowledgement and cleanup across failures;
       [four findings and streaming opportunity](reports/upload-lifecycle-review-20261020.md)
       are supported by isolated PG/HTTP/source-lifetime probes.
-- [ ] Implement the accepted UPL repairs in a separate slice, preserving uncertain-input pins.
 - [x] Review terminal/preview connection and process lifetimes across replacement;
       [four connection-lifetime findings](reports/terminal-preview-review-20261020.md)
       are reproduced with owned loopback peers.
-- [ ] Implement TPR-01–04 separately; verify live reconnect/shutdown semantics
-      without promising transparent PTY continuation or replaying keystrokes.
+- [x] Prepare a complete repair plan and proposed ADR-0264; distinguish planning
+      from accepted implementation and deployed behavior.
+- [ ] Slice 1: WVL-01/02/04 and O1/O2 — live compute holders, local runtime identity,
+      admission lock order and bounded SQL/obsolete-field cleanup.
+- [ ] Slice 2: SAR-01–04 and O1 — supervisor quiescence/question precedence,
+      terminal-state handling and Tool-scoped workflow memory.
+- [ ] Slice 3: prove and adopt [ADR-0264](adr/0264-subagent-recovery-and-discovery.md)
+      for original-delegation continuation and target-free discovery; update
+      the matched Tool catalog and SAR-N1 documentation.
+- [ ] Slice 4: WVL-03 — record the evidence protocol and implement converging
+      unknown Volume-reference recovery without weakening physical cleanup proof.
+- [ ] Slice 5: UPL-01–04/O1 — provisional/confirmed references, late PUT cleanup,
+      cancellation and streamed previews.
+- [ ] Slice 6: TPR-01–04 — redirect/handshake/pending-connect/shutdown lifetimes;
+      verify explicit live reconnect without replaying keystrokes.
+
+Each slice includes its regression and relevant live acceptance. No overall
+Agent duration limit, old-mailbox offset takeover, arbitrary-script replay or
+new scheduling authority is proposed. The plan-only work changes no runtime.
 
 ## Native model request / response review
 

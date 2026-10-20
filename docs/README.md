@@ -1,5 +1,14 @@
 # Documentation map
 
+The [October 20 resource/interaction repair plan](reports/resource-interaction-repair-plan-20261020.md)
+organizes the 16 findings and follow-up discussion into six repair slices.
+It prioritizes live VM holders and supervisor quiescence, then proposes native
+delegation recovery/discovery, evidence-based Volume cleanup, attachment
+lifetimes and terminal/preview teardown. [ADR-0264](adr/0264-subagent-recovery-and-discovery.md)
+is proposed for the child contract, including separate safe/unsafe Tool
+registrations and current-owner reply delivery. No runtime implementation or
+deployment is included in these planning documents.
+
 The [October 20 combined resource/interaction review](reports/resource-interaction-review-20261020.md)
 completes all four agreed branches and prioritizes 16 findings. The final
 [terminal/preview slice](reports/terminal-preview-review-20261020.md) records

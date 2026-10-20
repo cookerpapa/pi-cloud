@@ -35,6 +35,10 @@ completes Workspace/Volume, Subagent, upload and terminal/preview review.
 All 16 findings below remain unresolved by this review. Address WVL-01/02 shared
 VM retirement and SAR-01 self-wake first; retain existing PG/Session/Kafka authority
 and implement one vertical repair slice at a time.
+The [six-slice repair plan](reports/resource-interaction-repair-plan-20261020.md)
+is prepared. [ADR-0264](adr/0264-subagent-recovery-and-discovery.md) proposes
+original-delegation continuation plus scoped discovery using public Pi APIs;
+it is not yet an implemented or accepted change to the deployed replay policy.
 
 ## Terminal and application-preview lifecycle review
 
@@ -82,8 +86,11 @@ characterizations and a bounded GC/reachability probe record the following work.
       supervisor questions; do not reopen native work.
 - [ ] SAR-04 / P2: release completed workflow host-call cache entries with their
       owning Tool invocation instead of retaining every result for the whole Run.
-- [ ] SAR-D1: discuss direct-child discovery after an interrupted launch result.
-      Reuse native identity/association views; distinct model commands remain distinct.
+- [ ] SAR-D1: prove the proposed native safe-delegation recovery and target-free
+      family discovery in ADR-0264. Preserve original child/Submission identities;
+      separate the Tool replay policies and retain generation-owned supervision.
+      Distinct model commands remain distinct; no cross-boot raw-result mailbox
+      or automatic arbitrary-script replay is added.
 - [ ] SAR-O1/N1: reduce repeated admission-shaped reads for confirmed children
       (seven business SQL in the sample), and align Subagent docs with native
       Conversations, 50 KiB result limits and the actual cache/dispatch ownership.

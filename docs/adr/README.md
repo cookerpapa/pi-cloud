@@ -1,5 +1,12 @@
 # Current architecture decisions
 
+[ADR-0264](0264-subagent-recovery-and-discovery.md) is **proposed**, not a current
+runtime contract. The [repair plan](../reports/resource-interaction-repair-plan-20261020.md)
+uses pinned Pi examples to propose recoverable direct delegation, target-free
+child discovery and separate safe/unsafe Tool registrations. It requires native
+and PG/RF3 failure proof before implementation; boot mailboxes and unsafe
+shell/workflow semantics remain deployed as described by existing ADRs.
+
 [ADR-0263](0263-model-response-and-work-lifetimes.md) records the owner-approved
 model-response and unbounded-work repair: response semantics at public Models,
 native hosted progress carriers, preserved native retry classification, distinct
