@@ -282,3 +282,35 @@ All 30 attachment/upload transport cases and both affected typechecks pass.
 The fix still requires a new matched release and actual cancellation repetition.
 Large-image model acceptance also encountered upstream timeouts/TLS EOF; the
 owner switched the proxy node, and those unchanged gates remain to be rerun.
+
+## Upload correction and replacement acceptance
+
+`resource-repair-7a05942f` passed the matched artifact gates and deployed. The
+actual 34.7 MB preview/cancellation test now passes with the same Control Plane
+process and zero restarts. Partial-write termination is recorded and the entire
+owned fixture is physically cleaned. The earlier crashed writer was settled
+only after its process exit and a controlled object-store process replacement
+with no other active writers; its evidence is retained.
+
+The unchanged Luna upload gate passes a 24,163,430-byte image and six attachments
+totalling 60,863,590 bytes. Browser reload, direct vision, read Tool, ordinary
+file contents and cold Worker image recall pass. Image-only queue admission,
+editing, promotion to steer and one native consumption within the same Run pass.
+The Control Plane replacement gate completes in 12,198 ms, retaining the Worker
+and one physical command execution.
+
+Additional terminal/preview replacement acceptance reproduced a refused upgrade
+holding the old Sandbox control open. Its readiness `onRequest` ran before
+the WebSocket plugin marked the request, so the plugin's response cleanup did
+not close the detached socket. Readiness now uses `preValidation`, allowing
+that existing plugin to own refusal cleanup. An isolated child-process test
+fails before the fix and passes after it; all 33 connection/server cases and
+the Sandbox control typecheck pass. This follow-up still requires deployment.
+
+The full browser gate's missing running Tool was traced to Cube refusing
+performance-profile VM creation, rather than a missing UI event. An owned
+native request reproduces HTTP 500 with `reset guest time failed`; its allocation
+was positively closed and absent. This matches the existing October 4 snapshot
+restoration backlog item. Refreshing only that template from the same immutable
+image and repeating its actual boot is in progress; no smaller profile or weaker
+browser assertion substitutes for the failed gate.

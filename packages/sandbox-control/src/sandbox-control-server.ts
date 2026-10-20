@@ -228,7 +228,9 @@ export class SandboxControlServer {
       requestTimeout: 0,
       keepAliveTimeout: 5_000,
     });
-    this.#server.addHook("onRequest", async (request, reply) => {
+    // Let @fastify/websocket's onRequest mark upgrades before rejecting them.
+    // Its onResponse then owns closing a refused upgrade's detached socket.
+    this.#server.addHook("preValidation", async (request, reply) => {
       if (!this.#ready && request.url !== SANDBOX_CONTROL_LIVE_PATH)
         await reply.code(503).send({ error: "sandbox_control_unavailable" });
     });

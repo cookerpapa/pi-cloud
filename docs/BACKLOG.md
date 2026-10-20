@@ -49,6 +49,11 @@ cancelled upload exposed an unhandled S3 body-stream error that restarted the
 Control Plane; its fix passes 30 attachment/upload transport cases and affected
 typechecks. The corrected matched release, image gates and final fixture cleanup
 remain open; failed upstream-model samples are retained separately.
+The `resource-repair-7a05942f` follow-up now passes actual S3 cancellation,
+large-image upload/recall, queued-image editing and Control Plane replacement.
+A further refused-WebSocket shutdown fix passes 33 source regressions and
+awaits deployment. Full browser acceptance exposed the existing performance
+template snapshot/time-reset failure, tracked in the operational item below.
 
 ## Terminal and application-preview lifecycle review
 
@@ -1072,7 +1077,7 @@ separate design questions, not an implicit part of the completed query merge.
       [delivery evidence](reports/seal-projection-repair-20261019.md) retains the
       initial restart caller timeout and subsequent verified service recovery.
 
-- [ ] Investigate Cube standard-template snapshot restoration returning
+- [ ] Investigate Cube standard/performance-template snapshot restoration returning
       `reset guest time failed` despite READY status. Recreating the same-image
       template restores boot and image-queue acceptance, but the upstream failure
       mechanism is not established. Preserve creation uncertainty and node-absence
