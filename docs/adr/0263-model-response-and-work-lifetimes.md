@@ -1,6 +1,7 @@
 # ADR-0263: Model response interpretation and unbounded Agent work
 
-Status: accepted for implementation, 2026-10-20.
+Status: implemented and deployed as `model-runtime-058925bb`, schema 192, 2026-10-20.
+[Delivery and limits](../reports/model-runtime-repair-20261020.md).
 Owner-approved [plan](../reports/model-request-response-repair-plan-20261019.md)
 and [review evidence](../reports/model-request-response-review-20261019.md).
 

@@ -7,23 +7,22 @@
 - [x] Compare pinned native retry/parsing/abort behavior with cloud adapters;
       verify 92 existing Node cases, 12 cross-layer characterizations and selected
       CLIProxyAPI contracts. [Findings and evidence](reports/model-request-response-review-20261019.md).
-- [ ] Resolve MR-01–04: retry classification, early phase identity, completed
+- [x] Resolve MR-01–04: retry classification, early phase identity, completed
       hosted-item retention and transport/model outcome separation.
 - [x] Resolve MR-D1 with the owner: no overall Agent runtime limit.
-- [ ] Remove the duration mechanism with owner-bound model grants, bounded Worker
+- [x] Remove the duration mechanism with owner-bound model grants, bounded Worker
       handoff and protected native replay; verify work past the former thresholds.
 
-The [proposed repair plan](reports/model-request-response-repair-plan-20261019.md)
-defines one response-adapter slice, its native-abort validation gate, deletion
-scope, required checks and matched live acceptance. The owner's lifetime amendment
-adds removal of the total-duration mechanism and its grant/shutdown dependencies;
-source implementation is in progress under [ADR-0263](adr/0263-model-response-and-work-lifetimes.md).
-[Delivery evidence](reports/model-runtime-repair-20261020.md) tracks verification
-and the still-pending matched release/long-work acceptance.
+The [approved repair plan](reports/model-request-response-repair-plan-20261019.md)
+is deployed under [ADR-0263](adr/0263-model-response-and-work-lifetimes.md) as
+`model-runtime-058925bb`, schema 192. [Delivery evidence](reports/model-runtime-repair-20261020.md)
+records source/artifact gates, a real 16-minute Run, graceful Worker handoff,
+hosted replay, native/browser/child/outage/image/full-Cube acceptance and confirmed
+physical cleanup with original configuration preserved. The first child-recovery
+sample failed because the model issued a second distinct delegation; its native
+evidence and the unchanged passing repeat are retained.
 
-The main-message walkthrough is complete. Runtime remains `native-recovery-8c00826a`;
-this review adds evidence and records repairs, not deployment changes. The public
-Pi provider-event hook offers a smaller response-semantics boundary. Optional
+The main-message walkthrough and this repair are complete. Optional
 Workspace/Subagent/upload/preview walkthroughs are independent future scope.
 
 ## Replacement Worker → Pi Harness recovery review

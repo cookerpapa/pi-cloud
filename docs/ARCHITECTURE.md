@@ -1,5 +1,15 @@
 # Architecture
 
+[ADR-0263](adr/0263-model-response-and-work-lifetimes.md) is deployed as
+`model-runtime-058925bb`, schema 192. Agent work has no total duration ceiling;
+model grants follow existing execution ownership instead of a fixed TTL. Worker
+retirement has an independent bounded drain/closure path. Pi's public Models port
+owns response phases, completed hosted content, native retry classification and
+semantic outcome; the local Gateway owns HTTP transport. Required acceptance and
+cleanup are recorded in the [delivery report](reports/model-runtime-repair-20261020.md),
+including a real 16-minute Run, graceful handoff and the retained first failed
+child-delegation sample. One Session lease/writer and native scheduling remain.
+
 [ADR-0262](adr/0262-native-recovery-read-lifetimes.md) is deployed as
 `native-recovery-8c00826a`. Worker native data reads use a separate
 four-connection direct-PG pool with 30-second per-operation bounds. Native read
@@ -27,13 +37,14 @@ ADR-0253's bounded UNKNOWN continuation, ADR-0254's Worker reply repair,
 ADR-0255's native result/metadata boundaries, ADR-0256's publication/completion repair
 and ADR-0257's browser observation/buffer repair, ADR-0258/0259's bounded lease/
 expiry maintenance, ADR-0260's publication/reader retirement repair and
-ADR-0261's bounded projection/writer-view cleanup and ADR-0262's native recovery reads
-(schema 191 / topic v17 / boot reply v3 / guest protocol 7, adapter startup 3).
-The [current delivery record](reports/worker-harness-recovery-repair-20261019.md)
-records the October 19 `native-recovery-8c00826a` deployment. Source/artifact,
-native/browser, child Worker recovery, Control Plane outage and large-image cold
-recall/full-Cube gates pass. Physical cleanup and original configuration
-preservation are confirmed; bounded family timing is not a full-failover SLA.
+ADR-0261's bounded projection/writer-view cleanup, ADR-0262's native recovery reads
+and ADR-0263's model semantics/unbounded work
+(schema 192 / topic v17 / boot reply v3 / guest protocol 7, adapter startup 3).
+The [current delivery record](reports/model-runtime-repair-20261020.md)
+records the October 20 `model-runtime-058925bb` deployment. Source/artifact,
+long-work/handoff, native/browser, child recovery, Control Plane outage and
+large-image cold recall/full-Cube gates pass. Physical cleanup and original
+configuration preservation are confirmed; these samples are not a multi-day SLA.
 The [preceding projection repair](reports/seal-projection-repair-20261019.md)
 deployed `seal-projection-0de1fe7f`. Projection uses bounded
 direct-PG I/O, confirmed closure clears the exact old writer's live view, latest
@@ -1284,18 +1295,12 @@ use independent product authority; they are not Agent execution commands.
 ## Models, Subagents and integrations
 
 The [October 19 focused review](reports/model-request-response-review-20261019.md)
-records four current adapter defects without changing these authorities: Gateway
-error normalization can hide retryability, early text phases use inconsistent
-indexes, interrupted replies can omit completed hosted items, and a normal Codex
-terminal close can count as a failed model request. The public provider-event hook
-offers a way to consolidate response semantics at Models; that repair is pending.
-The deployed 600-second Runner deadline is a whole-invocation policy, separately
-documented from connection/idle timeouts. The owner has chosen to remove the
-overall runtime limit; the [amended plan](reports/model-request-response-repair-plan-20261019.md)
-also addresses model-grant lifetime and bounded Worker handoff. This is not yet
-deployed; [ADR-0263](adr/0263-model-response-and-work-lifetimes.md) is implemented
-in source with [verification/delivery](reports/model-runtime-repair-20261020.md)
-in progress. Source schema 192 removes the duration policy; hosted completion is
+is repaired under [ADR-0263](adr/0263-model-response-and-work-lifetimes.md), with
+[source and live evidence](reports/model-runtime-repair-20261020.md).
+Schema 192 removes the whole-Run duration policy. Existing ownership revokes model
+grants on closure, Stop, lease loss and Worker retirement; there is no fixed
+capability TTL, refresh scheduler or per-model-request PG lookup. Network/Tool
+and retirement bounds remain independent. Hosted completion is
 an empty native text slot carrying PiCloud-owned metadata, replayed as the exact
 provider item at the public payload hook. Gateway is transport-only. The Models
 boundary owns phases, hosted content and semantic outcomes. Native Store/Kafka
@@ -1303,15 +1308,20 @@ commit and abort boundaries are unchanged, including exclusion of aborted/error
 Assistant entries from later Pi model context. Worker retirement has a bounded
 drain and closes late admission before entering existing same-Run recovery.
 
+Known transient failures retain Pi's native retry classification; quota, billing,
+configuration and cancellation outcomes remain distinct. Durable is the sole
+sampling retry owner. Semantic execution and HTTP transport have separate metrics.
+
 CLIProxyAPI owns upstream subscription/API credentials and account affinity.
 Workers see only scoped model-runtime access through their local Model Gateway.
 Revocation also aborts incomplete request uploads. After body validation, the
 Gateway atomically rechecks its local capability and reserves the request count
 before contacting the provider. This adds no database query. Usage remains in
 native Pi history; dormant billing tables and monetary budgets are removed.
-Provider/model/reasoning/Fast settings are immutable per accepted Turn. Hosted
-search stays provider-native; verified GPT/DeepSeek actions and citations are
-stored in native assistant messages, with portable replay across providers.
+Provider/model/reasoning/Fast settings are immutable per accepted Turn. Completed
+hosted search items replay only to the issuing provider/API/model; canonical
+display retains normalized actions and citations. A different model receives
+ordinary portable message content without those provider-native carriers.
 The selectable DeepSeek model is V4.1 Flash; V4 Pro is hidden. Flash declares
 `web_search` on Responses at the owner's request, although the upstream currently
 ignores it. Search activity still requires actual provider events/results;

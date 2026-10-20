@@ -30,44 +30,21 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Native model request / response review
 
-The [October 19 combined review](reports/model-request-response-review-20261019.md)
-at `3625350f` completes the remaining main-message walkthrough branch: public
-Models admission, local Gateway/CLIProxyAPI forwarding and native response
-settlement. Ninety-two existing Node cases, twelve new cross-layer
-characterizations and twelve CLIProxyAPI test functions pass (30 Go test/subtest
-events). The source investigation covers pinned Pi 1.0 and CLIProxyAPI `48549e65`.
-Runtime and deployment are unchanged; repairs below remain open.
-The [proposed repair plan](reports/model-request-response-repair-plan-20261019.md)
-combines MR-01–04 at the public Models boundary, starting with native progress/
-abort durability tests. It removes the replaced Gateway parser/plumbing after
-cutover. The owner subsequently decided MR-D1: no overall Agent runtime limit.
-The plan now includes removing duration fields, owner-bound model capabilities
-and bounded Worker handoff. [ADR-0263](adr/0263-model-response-and-work-lifetimes.md)
-is now implemented in source; required repository and matched/live verification
-are in progress. [Delivery status](reports/model-runtime-repair-20261020.md) keeps
-source checks, deployment and actual long-work acceptance distinct.
+The [October 19 review](reports/model-request-response-review-20261019.md) completes
+this main-message branch. MR-01–04 and the owner-decided removal of the total
+Agent duration limit are implemented under
+[ADR-0263](adr/0263-model-response-and-work-lifetimes.md), deployed as
+`model-runtime-058925bb`, schema 192. One Models adapter preserves native retry,
+phase identity and completed hosted content; the Gateway owns transport only.
+Owner-bound grants replace the fixed TTL, and Worker retirement is independently
+bounded. No additional queue, checkpoint authority or compatibility path remains.
 
-- [ ] MR-01 / P2: preserve native transient-error classification when Gateway
-      connection failures become HTTP or streaming errors. The Codex Harness
-      currently stops after a recoverable reset; DeepSeek loses retryability
-      after headers too. Keep Durable as the retry owner.
-- [ ] MR-02 / P2: align early phase identity with native content when reasoning,
-      local Tool slots and multiple message items precede streamed text.
-- [ ] MR-03 / P2: preserve completed hosted search items across later response
-      failure/Stop through native progress/settlement, with cold replay checks.
-      Keep incomplete local Tool calls out of history and retain native abort authority.
-- [ ] MR-04 / P3: separate transport disconnection/EOF from semantic model outcome;
-      normal Codex terminal completion can currently increment failed-model metrics.
-- [x] MR-D1 decision: the owner wants no overall Agent runtime limit.
-- [ ] Implement MR-D1: delete the whole-Run timer and policy/protocol/configuration
-      fields; bind model capability validity to existing execution ownership;
-      bound Worker retirement independently of task completion. Preserve request/
-      Tool bounds, native replay references, ordered closure and same-Run recovery.
-
-The pinned public `onProviderStreamEvent` hook can carry request-local phase,
-hosted-item and terminal semantics inside the trusted Models adapter, avoiding
-the Gateway's duplicate SSE parser and cross-layer state plumbing. This is a
-reviewed repair direction, not an implemented protocol change or a new authority.
+[Delivery evidence](reports/model-runtime-repair-20261020.md) records source/artifact,
+real long-work/handoff, hosted/native/browser/child/outage/image/full-Cube gates and
+confirmed physical cleanup. Original accounts/configuration/credentials are unchanged.
+The first child-recovery sample failed after the model issued a second distinct
+launch; native Kafka evidence and the unchanged passing repeat are retained. This
+slice does not promise effect deduplication across different model-generated tasks.
 
 ## Replacement Worker → Pi Harness recovery review
 

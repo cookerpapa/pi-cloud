@@ -1,0 +1,97 @@
+{
+  "status": "deployed",
+  "date": "2026-10-20",
+  "release": "model-runtime-058925bb",
+  "sourceRevision": "058925bb2036e8ea9dd8f906c631961b0fee1787",
+  "schema": 192,
+  "adr": 263,
+  "source": {
+    "workspaceTestsPassed": 1976,
+    "workspaceSkipped": 11,
+    "workspaces": 22,
+    "acceptanceHelpersPassed": 80,
+    "realRf3PgTestsPassed": 9,
+    "faultCasesPassed": 361,
+    "artifactScansPassed": 11,
+    "fixableHighCritical": 0,
+    "firstCiUncaughtFixtureErrors": 3,
+    "correctedSupervisorTestsPassed": 85,
+    "uninterruptedGreenCiInvocation": false
+  },
+  "live": {
+    "model": "gpt-6-luna",
+    "longWork": {
+      "accepted": true,
+      "elapsedMs": 1000231,
+      "modelRequestSpanMs": 993002,
+      "modelRequests": 9,
+      "sameRun": true,
+      "oneWorkerProcess": true,
+      "recoveryCount": 0,
+      "sequentialToolEffects": 4,
+      "nativeInputs": 4
+    },
+    "gracefulRetirementMs": 32464,
+    "gracefulHandoff": {
+      "accepted": true,
+      "sameRun": true,
+      "followUpConsumed": true,
+      "onePhysicalAppend": true,
+      "recoveryCount": 1,
+      "exitCode": 0
+    },
+    "hostedSearchReplay": true,
+    "nativeInputCasesPassed": 5,
+    "browserUploadRead": true,
+    "childWorkerRecovery": true,
+    "firstChildSample": {
+      "accepted": false,
+      "cause": "model-issued second delegation with a distinct Tool ID",
+      "readCommittedKafkaRecordsInspected": 168,
+      "unchangedRepeatPassed": true
+    },
+    "childControlPlaneReplacementMs": 15795,
+    "controlPlaneOutageMs": 63977,
+    "imageBytes": [6294269, 6294393, 25129437],
+    "imageReferenceBytes": [596, 596, 597],
+    "imageRecallAfterWorkerChange": true,
+    "fullCube": true
+  },
+  "cleanup": {
+    "confirmed": true,
+    "finalScopedImageObjectsRemoved": 3,
+    "finalScopedProjectsRemoved": 3,
+    "originalConfigurationFingerprintsMatched": 7,
+    "active": {
+      "runs": 0,
+      "writers": 0,
+      "bindings": 0,
+      "runtimes": 0,
+      "machines": 0,
+      "terminals": 0,
+      "controls": 0
+    },
+    "business": {
+      "projects": 0,
+      "workspaces": 0,
+      "sessions": 0,
+      "runs": 0,
+      "images": 0
+    },
+    "native": {
+      "volumes": 0,
+      "nodeReferences": 0,
+      "holds": 0,
+      "openAllocations": 0
+    },
+    "nativeVMs": 0,
+    "allServicePodsReady": true,
+    "linuxHttpStatus": 200,
+    "windowsHttpStatus": 200
+  },
+  "limits": [
+    "Real long-work gate covers former ten/fifteen-minute limits, not a multi-day uptime SLA.",
+    "Hosted interruption/Stop/handoff is native-Harness/PG evidence; real hosted search gate covers success and next-Run replay.",
+    "Distinct model-issued commands can repeat external effects; first child sample remains failed."
+  ]
+}

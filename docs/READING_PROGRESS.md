@@ -1,6 +1,6 @@
 # Architecture reading checkpoint
 
-Updated: 2026-10-19; runtime is `native-recovery-8c00826a`, schema 191.
+Updated: 2026-10-20; runtime is `model-runtime-058925bb`, schema 192.
 
 The owner asked to reconcile the complete hop-by-hop conversation with the
 recorded reviews. The ordinary Tool execution loop, normal Run completion,
@@ -11,14 +11,15 @@ covered. The provider request branch was explicitly deferred during the October
 Current checkpoint: **the main-message walkthrough is complete**. The owner
 requested one combined review of native Pi → local Model Gateway → CLIProxyAPI/
 provider and the streamed return. The [focused review](reports/model-request-response-review-20261019.md)
-records four confirmed findings, the whole-Run timeout discussion and passing
-existing/characterization/upstream tests. Runtime is unchanged. Repair remains
-separate work; walkthrough completion does not claim the four defects are fixed.
-The [proposed repair plan](reports/model-request-response-repair-plan-20261019.md)
-now defines the four-defect slice and native-abort acceptance boundary. The
-owner has now chosen no overall runtime limit, and the plan includes the associated
-grant, shutdown and retention checks. [Implementation](reports/model-runtime-repair-20261020.md)
-is in progress under ADR-0263; matched deployment/live acceptance is still pending.
+records four confirmed findings and the whole-Run timeout discussion. The
+[approved repair](reports/model-request-response-repair-plan-20261019.md) is now
+implemented and deployed under ADR-0263: one Models response adapter, preserved
+native retry/abort boundaries, owner-bound model grants and no overall Run limit.
+[Delivery](reports/model-runtime-repair-20261020.md) records source/artifact gates,
+real long work and Worker handoff, hosted/native/browser/child/outage/image/Cube
+acceptance, cleanup and unchanged original configuration. A first failed child
+sample was traced to a second distinct model-issued delegation; the unchanged
+repeat passes. This remains separate from automatic replay of the original Tool.
 
 The preceding **replacement Worker → Pi Harness opening and continuation**
 [review](reports/worker-harness-recovery-review-20261019.md) and

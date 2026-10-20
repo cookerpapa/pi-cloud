@@ -1,10 +1,10 @@
 # Native model request / response repair plan
 
-Status: approved; implementation and verification in progress, 2026-10-20.
+Status: implemented, verified and deployed, 2026-10-20.
 Owner amendment: Agent work has no overall runtime limit. The lifetime changes
 below are part of the plan, not an optional whole-work budget or a larger timeout.
 Baseline: `4cb3440b`. Findings: [combined review](model-request-response-review-20261019.md).
-Serving runtime remains `native-recovery-8c00826a`, schema 191.
+Serving runtime is `model-runtime-058925bb`, schema 192.
 
 ## Objective and authority boundaries
 
@@ -267,5 +267,6 @@ ownership records. Update architecture, reading progress, backlog and a release
 report with source and live acceptance separately identified.
 
 The owner resolved MR-D1 after the original proposal: no overall Agent runtime
-limit. Section 0 supersedes the earlier optional-budget suggestion. The deployed
-runtime still has its existing limits until this plan is implemented and verified.
+limit. Section 0 supersedes the earlier optional-budget suggestion. The
+[delivery record](model-runtime-repair-20261020.md) confirms the matched cutover,
+long-work acceptance and retained failed samples.

@@ -4,8 +4,9 @@
 model-response and unbounded-work repair: response semantics at public Models,
 native hosted progress carriers, preserved native retry classification, distinct
 transport/model outcomes and owner-bound capabilities with bounded Worker
-retirement. Source implementation and verification are in progress; [delivery](../reports/model-runtime-repair-20261020.md)
-does not claim deployment until matched/live gates pass.
+retirement. It is deployed as `model-runtime-058925bb`, schema 192;
+[delivery](../reports/model-runtime-repair-20261020.md) records required source,
+artifact, long-work/handoff and live acceptance, retained failed samples and cleanup.
 
 [ADR-0262](0262-native-recovery-read-lifetimes.md) records the approved native
 recovery repair: bounded/cancellable Worker reads, same-Run continuation through

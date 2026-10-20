@@ -1,23 +1,17 @@
 # Documentation map
 
-The [October 19 combined model request/response review](reports/model-request-response-review-20261019.md)
-completes the remaining main-message branch. It compares pinned Pi and CLIProxyAPI
-with cloud Models admission, forwarding and streaming settlement. Ninety-two
-existing Node cases, twelve new characterizations and selected upstream tests
-cover four confirmed findings: lost retry classification, mismatched early phases,
-interrupted completed-search retention and misleading model-failure metrics.
-The review also records the existing ten-minute Runner policy; the owner has
-since chosen its removal in the amended plan below.
-Runtime/deployment are unchanged; [reading progress](READING_PROGRESS.md) now
-distinguishes completed walkthrough coverage from outstanding repairs.
-The [repair plan](reports/model-request-response-repair-plan-20261019.md) proposes
-request-local response semantics at Pi's public Models boundary, native progress/
-abort preservation, retry classification and separate transport/model outcomes.
-It includes removal of the replaced path and acceptance criteria. The owner has
-chosen no overall runtime limit; the amended plan removes the duration mechanism
-and addresses owner-bound grants/Worker handoff. [ADR-0263](adr/0263-model-response-and-work-lifetimes.md)
-is implemented in source; [verification and rollout status](reports/model-runtime-repair-20261020.md)
-track the remaining required checks separately from deployment.
+The [October 19 model request/response review](reports/model-request-response-review-20261019.md)
+and [approved repair](reports/model-request-response-repair-plan-20261019.md) are
+complete. [ADR-0263](adr/0263-model-response-and-work-lifetimes.md) is deployed as
+`model-runtime-058925bb`, schema 192: no overall Agent deadline, owner-bound model
+grants, bounded Worker retirement and one public Models response adapter. Native
+retry, early phases, completed hosted content and semantic outcomes retain one
+owner; Gateway remains HTTP transport.
+[Delivery evidence](reports/model-runtime-repair-20261020.md) records source/artifact,
+real 16-minute work, graceful handoff, hosted/native/browser/child/outage/image/Cube
+acceptance and cleanup. It retains the first failed child sample, its model-issued
+second delegation and the unchanged passing repeat.
+[Reading progress](READING_PROGRESS.md) records the completed main-message walkthrough.
 
 The [October 19 replacement Worker → Pi Harness review](reports/worker-harness-recovery-review-20261019.md)
 checks native cold open, pending input, child rebinding, unsafe Tool non-replay and
