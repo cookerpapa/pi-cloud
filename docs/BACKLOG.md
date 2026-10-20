@@ -39,14 +39,13 @@ acceptance. Two additional live findings—cancelled upload stream errors and
 refused WebSocket shutdown sockets—are repaired. Original configuration
 fingerprints and confirmed physical cleanup pass.
 
-- [ ] Complete the unchanged combined 6/6/25 MB Tool-image model and cold-recall
-      gate after upstream connectivity improves. The first two images complete;
-      all three originals, including the 25 MB object, reach durable storage, but
-      the subsequent model request receives no upstream response for 120 seconds
-      and retries exhaust the acceptance budget. Single-image 24.2 MB direct
-      vision/read/cold recovery, queued-image editing and 34.7 MB transport/
-      cancellation already pass. Do not report the combined gate as successful
-      or weaken its image sizes, assertions or deadline.
+The unchanged combined 6/6/25 MB Tool-image and cold-recall repeat now passes.
+The first post-switch sample completed every request but answered one chart
+ranking incorrectly. Original-byte integrity and controlled recovery/provider
+conversion checks passed; that failed answer and the earlier upstream timeouts
+are retained separately from the subsequent passing repeat. All six repair
+slices and their release acceptance are complete. The independent Cube snapshot
+root-cause investigation below remains open.
 
 ## Native model request / response review
 

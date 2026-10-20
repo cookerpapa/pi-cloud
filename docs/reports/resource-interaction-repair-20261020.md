@@ -1,9 +1,9 @@
 # Resource and interaction repair delivery
 
-Status: all six source slices deployed as `resource-repair-1cdccb80`,
-2026-10-21; schema 194, Session topic v18. One combined multi-image model gate
-remains unverified after upstream timeouts. This is not an unconditional
-release-acceptance completion.
+Status: all six slices and release acceptance complete, 2026-10-21. Serving
+release `resource-repair-1cdccb80`, schema 194 / Session topic v18. The unchanged
+combined multi-image repeat now passes. Earlier upstream and model-answer
+failures remain recorded separately.
 The owner approved the [six-slice plan](resource-interaction-repair-plan-20261020.md).
 
 | Slice | Source and verification | Live acceptance |
@@ -12,7 +12,7 @@ The owner approved the [six-slice plan](resource-interaction-repair-plan-2026102
 | 2 — Supervisor/workflow lifetimes | 31 targeted cases and affected typechecks pass | All five native supervisor/workflow interaction scenarios pass |
 | 3 — Delegation recovery/discovery | Native recovery, PG catalog/supervision and RF3 replacement cases pass | Actual Worker replacement preserves the original child, Submission and single effect; discovery passes |
 | 4 — Unknown Volume references | Native race and allocation/Master/service contracts pass | Owned node restart, retained Volume bytes and positive cleanup pass |
-| 5 — Attachment lifetimes | Native/PG pins, cancellation and S3 transport regressions pass | 34.7 MB transport/cancellation and 24.2 MB upload/cold recall pass; combined 6/6/25 MB model gate remains open |
+| 5 — Attachment lifetimes | Native/PG pins, cancellation and S3 transport regressions pass | 34.7 MB transport/cancellation, 24.2 MB upload/cold recall and the unchanged combined 6/6/25 MB model/cold-recall repeat pass |
 | 6 — Terminal/preview lifetimes | Terminal/HTTP/WS/relay and refused-upgrade shutdown regressions pass | Compatible replacement, explicit terminal reconnect, retained VM/application and 97 browser controls pass |
 
 ## Slice 1
@@ -317,7 +317,7 @@ restoration backlog item. Refreshing only that template from the same immutable
 image and repeating its actual boot is in progress; no smaller profile or weaker
 browser assertion substitutes for the failed gate.
 
-## Serving release and remaining gate
+## Serving release and acceptance history
 
 The final `resource-repair-1cdccb80` artifacts pass the eleven-image evidence gate,
 preflight and drained matched apply. Native schema/topic/guest compatibility is
@@ -342,15 +342,15 @@ The old template's release-time deletion timed out; an explicit bounded retry
 later confirmed deletion. The underlying Cube guest-time-reset failure remains
 the existing operational investigation, not a repaired upstream defect.
 
-The combined Tool-image gate still fails: the first two approximately 6 MB images
-complete, and the 25,128,879-byte third image is successfully stored with positive
-write completion, but the subsequent multi-image model request receives no upstream
-response for 120 seconds. Native retries continue until the unchanged ten-minute
-acceptance budget ends. All three source objects are present and verified through
-the normal write path; the final model answer and three-image cold recall are **not**
-claimed. This does not invalidate the separately passing 24.2 MB upload/vision/cold
+The earlier combined Tool-image attempt failed: the first two approximately 6 MB images
+complete, and the 25,128,879-byte third image was successfully stored with positive
+write completion, but the subsequent multi-image model request received no upstream
+response for 120 seconds. Native retries continued until the unchanged ten-minute
+acceptance budget ended. All three source objects are present and verified through
+the normal write path; that sample did **not** pass its final model answer or three-image
+cold recall checks. This does not invalidate the separately passing 24.2 MB upload/vision/cold
 recall gate. The owner was asked to switch the proxy node again; no weaker assertion,
-smaller fixture or longer test deadline substitutes for the pending repeat.
+smaller fixture or longer test deadline was substituted for the repeat below.
 
 All owned test Sessions, VMs, Volumes, upload objects and tenant/configuration
 fixtures are cleaned after positive physical/writer completion evidence. Eight
@@ -366,3 +366,48 @@ Private evidence is under
 `deploy/production/runtime/release-evidence/resource-repair-20261020/`.
 Failed source, fixture, snapshot and upstream samples are retained separately.
 The main-message walkthrough remains complete; the private pilot has not started.
+
+
+## October 21 multi-image confirmation
+
+After the owner switched the proxy node, the idle CLIProxyAPI Pod was replaced
+with the same image to discard old connections. The existing Luna test script,
+image sizes, prompts, assertions and ten-minute per-Run budget were unchanged.
+
+The first repeat completed all three image Runs and its post-restart model
+request without a timeout, but failed the exact ranking assertion: the first
+chart's BLUE and ORANGE order was reversed. This remains a failed sample.
+All three original objects were reread and hash-verified; direct pixel counts
+agree with the expected rankings. A separate controlled check using a fresh
+attachment codec and the pinned native Responses converter preserves all three
+ordered image hashes. That check is not a capture of the failed live request,
+and it does not prove why the model answered incorrectly. No runtime change
+was made on the basis of this answer.
+
+A second unchanged maintained run passes every assertion:
+
+| Original image bytes | Native record bytes | Read detail |
+| --- | --- | --- |
+| 6,294,468 | 596 | high |
+| 6,294,239 | 596 | high |
+| 25,129,432 | 597 | original |
+
+Each Run calls Bash then Read, and each original's hash is verified against
+object storage. The image path is overwritten between Runs. After the owning
+Worker is replaced, a different Worker/Boot answers all three unseen height
+rankings correctly using the restored history, with no additional Tool call.
+The cold model request returns HTTP 200 in about 20.8 seconds; its first response
+byte arrives in about 19.0 seconds. This is bounded compatibility evidence,
+not a promise of deterministic model vision accuracy.
+
+Both repeat fixtures are physically purged, their six S3 originals and project
+metadata are removed, and all seven original account/configuration table
+fingerprints match again. No active Run, writer, VM, terminal, binding or control
+publication remains; all running Pods are Ready. The serving application code
+and schema remain unchanged.
+
+Private evidence: `image-repeat-20261021/` retains the first semantic failure,
+original-byte/pixel/controlled-conversion checks and cleanup receipts;
+`image-confirm-20261021/` contains the unchanged passing run and final inventory.
+These directories are beneath the release-evidence root above. The previously
+open combined image gate and this six-slice release acceptance are now closed.

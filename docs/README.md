@@ -10,8 +10,9 @@ registrations and current-owner reply delivery. All six source slices are deploy
 as `resource-repair-1cdccb80`, schema 194 / Session topic v18. The
 [delivery record](reports/resource-interaction-repair-20261020.md) records passing
 source/artifact, recovery, long-work, browser, upload and Cube gates plus scoped
-cleanup. The combined 6/6/25 MB model gate remains open after upstream timeouts;
-single-image 24.2 MB upload/vision/cold recall passes.
+cleanup. The unchanged combined 6/6/25 MB model/cold-recall gate also passes
+after the proxy-node change. Earlier upstream timeouts and one incorrect
+model answer remain recorded separately; single-image 24.2 MB recovery passes too.
 
 The [October 20 combined resource/interaction review](reports/resource-interaction-review-20261020.md)
 completes all four agreed branches and prioritizes 16 findings. The final

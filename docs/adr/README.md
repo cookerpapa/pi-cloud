@@ -13,7 +13,7 @@ releases them; unknown evidence never becomes a guessed zero count.
 are deployed as `resource-repair-1cdccb80`, schema 194 / topic v18. Native/PG/RF3
 and actual child-recovery checks pass. The
 [delivery record](../reports/resource-interaction-repair-20261020.md) records live
-evidence and the remaining multi-image provider gate. Direct delegation recovers its original
+evidence, the passing multi-image repeat and retained failed samples. Direct delegation recovers its original
 child and Submission through a fresh current-owner reply. Child discovery and
 separate safe/unsafe Tool registrations preserve boot-local mailbox semantics.
 

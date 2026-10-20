@@ -8,8 +8,9 @@ recoverable direct delegation/discovery, retained Volume cleanup evidence,
 attachment lifetime reconciliation and connection teardown. They retain the
 existing PG/Session/Kafka authority. Source/artifact, native recovery, long-work,
 browser, S3 cancellation and full Cube gates pass with original configuration
-preserved. Single-image 24.2 MB cold recall passes; a combined 6/6/25 MB model
-request still times out upstream and remains an open acceptance item.
+preserved. Single-image 24.2 MB and combined 6/6/25 MB model/cold-recall
+acceptance pass. Earlier upstream timeouts and one incorrect model answer are
+retained as separate failed samples; they are not counted as passing checks.
 
 [ADR-0263](adr/0263-model-response-and-work-lifetimes.md) was deployed as
 `model-runtime-058925bb`, schema 192. Agent work has no total duration ceiling;
@@ -53,8 +54,8 @@ and ADR-0263's model semantics/unbounded work, ADR-0264's recoverable delegation
 ADR-0265's retained Volume evidence and ADR-0266's attachment lifetimes
 (schema 194 / topic v18 / boot reply v3 / guest protocol 7, adapter startup 3).
 The [current delivery record](reports/resource-interaction-repair-20261020.md)
-records the October 21 `resource-repair-1cdccb80` deployment and distinguishes
-passing checks from the outstanding combined multi-image provider gate. Physical
+records the October 21 `resource-repair-1cdccb80` deployment, completed combined
+acceptance and retained failed upstream/model-answer samples. Physical
 cleanup and original configuration preservation are confirmed; these samples
 are not a multi-day SLA.
 The [preceding projection repair](reports/seal-projection-repair-20261019.md)

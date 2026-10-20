@@ -7,7 +7,7 @@ owner-approved [repair plan](reports/resource-interaction-repair-plan-20261020.m
 are implemented in the serving `resource-repair-1cdccb80` release. Schema 194 /
 Session topic v18 retains existing PG, native Session and Kafka authority.
 [Delivery evidence](reports/resource-interaction-repair-20261020.md) separates
-source verification, passing live gates and the remaining provider-dependent gate.
+source verification, passing live gates and retained failed samples.
 
 - [x] Review all four resource/interaction branches and record 16 findings.
 - [x] Slice 1: shared/terminal/child compute holders, local runtime identity,
@@ -19,15 +19,15 @@ source verification, passing live gates and the remaining provider-dependent gat
       original child/Submission and single-effect recovery pass across Worker loss.
 - [x] Slice 4: retained Volume evidence under ADR-0265; native loss/race contracts
       and owned Cube node restart/physical cleanup pass.
-- [ ] Slice 5: source and actual upload pins/cancellation/34.7 MB preview/24.2 MB
-      image cold recall pass under ADR-0266; finish the unchanged combined
-      6/6/25 MB model gate after upstream no-response timeouts are resolved.
+- [x] Slice 5: source and actual upload pins/cancellation/34.7 MB preview/24.2 MB
+      image cold recall pass under ADR-0266; the unchanged combined 6/6/25 MB
+      model and cold-recall repeat passes, with earlier failed samples retained.
 - [x] Slice 6: redirect, handshake, pending-connect, refused-upgrade and shutdown
       lifetimes; compatible replacement preserves VM/application state and
       supports explicit terminal reconnect without replaying keystrokes.
 - [x] Matched deployment, full browser/Cube gates, scoped fixture cleanup and
       original account/model/provider configuration fingerprint verification.
-- [ ] Close combined release acceptance after the remaining multi-image gate.
+- [x] Close combined release acceptance after the unchanged multi-image gate passes.
 
 Healthy Agent work remains unbounded. No old-mailbox replay, arbitrary-script
 retry, second scheduler or storage authority is introduced. The private pilot

@@ -18,9 +18,9 @@ is approved and its six source slices are deployed, including the subsequent off
 and mailbox/identity discussion. Accepted ADR-0264 separates recoverable direct
 delegation from unsafe management/scripts and adds scoped discovery. [Delivery](reports/resource-interaction-repair-20261020.md) tracks
 passing native recovery, long-work, supervisor, browser, S3/upload and Cube
-acceptance, confirmed cleanup and preserved configuration. The combined 6/6/25 MB
-model/cold-recall gate remains open after upstream timeouts, while single-image
-24.2 MB cold recall passes;
+acceptance, confirmed cleanup and preserved configuration. Single-image 24.2 MB
+and combined 6/6/25 MB model/cold-recall acceptance now pass. Earlier upstream
+timeouts and an incorrect model answer remain in the delivery record;
 this is not a restart of the completed main-message walkthrough.
 
 The owner asked to reconcile the complete hop-by-hop conversation with the

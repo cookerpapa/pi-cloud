@@ -33,8 +33,9 @@ is deployed as `resource-repair-1cdccb80`, including recoverable direct Subagent
 shared-VM holder protection, Volume evidence, attachment cleanup and connection
 lifetimes. Schema 194 / Session topic v18, source/artifact gates, native recovery,
 long work, browser, S3 cancellation and full Cube acceptance pass. Single-image
-24.2 MB vision/cold recall passes; the combined 6/6/25 MB model gate remains open
-after upstream timeouts. Original configuration and confirmed cleanup are preserved.
+24.2 MB vision/cold recall and the unchanged combined 6/6/25 MB model/cold-recall
+gate pass. Failed upstream and model-answer samples remain in the delivery record.
+Original configuration and confirmed cleanup are preserved.
 
 ## Architecture
 
