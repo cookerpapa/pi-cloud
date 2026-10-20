@@ -53,69 +53,108 @@ export class WorkerToolRuntime {
             scope.piSession.conversationId,
           )
         : 0;
-    const hostcalls = new Map<
-      string,
-      {
-        fingerprint: string;
-        result: Promise<Record<string, unknown>>;
-        published: Promise<void>;
-      }
-    >();
-    const workflowCall = async (
-      id: string,
-      method: string,
-      args: Record<string, unknown>,
-      signal?: AbortSignal,
-    ): Promise<Record<string, unknown>> => {
-      if (method === "run") {
-        if (typeof args.key !== "string" || !args.task || typeof args.task !== "object")
-          throw new Error("runs.run requires a key and task specification");
-        const task = { ...args.task, key: args.key } as SubagentTask;
-        validateSubagentTask(task);
-        const key = JSON.stringify([id, task.key]),
-          fingerprint = JSON.stringify(task);
-        const prior = hostcalls.get(key);
-        if (prior) {
-          if (prior.fingerprint !== fingerprint) throw new Error("Workflow key changed arguments");
-          return prior.result;
+    const prepareWorkflow = async (
+      nativeCallId: string,
+      invocationId: string,
+      script: string,
+      signal: AbortSignal | undefined,
+      toolName: string,
+    ) => {
+      const lifetime = new AbortController();
+      const activeSignal = signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal;
+      const hostcalls = new Map<
+        string,
+        {
+          fingerprint: string;
+          result: Promise<Record<string, unknown>>;
+          published: Promise<void>;
         }
-        const publication = Promise.withResolvers<void>();
-        void publication.promise.catch(() => {});
-        const result = (async () =>
-          this.options.control.request({
-            executionReference: scope.executionReference,
-            conversationId: scope.piSession.conversationId,
-            toolCallId: id,
-            request: {
-              action: "run",
-              key: task.key,
-              task: task.task,
-              context: task.context ?? "fresh",
-              sandbox: task.tools?.length === 0 ? "none" : (task.sandbox ?? "shared"),
-              anchor: await this.options.nativeConversations.childAnchor(
-                scope.executionReference,
-                task.context === "branch",
-                scope.piSession.conversationId,
-              ),
-              ...(task.cwd ? { cwd: task.cwd } : {}),
-              ...(task.tools ? { tools: task.tools } : {}),
-            },
-            onPublished: () => publication.resolve(),
-            ...(signal ? { signal } : {}),
-          }))();
-        void result.catch(publication.reject);
-        hostcalls.set(key, { fingerprint, result, published: publication.promise });
-        return result;
+      >();
+      const workflowCall = async (
+        method: string,
+        args: Record<string, unknown>,
+        callerSignal?: AbortSignal,
+      ): Promise<Record<string, unknown>> => {
+        const signal = callerSignal ? AbortSignal.any([activeSignal, callerSignal]) : activeSignal;
+        signal.throwIfAborted();
+        if (method === "run") {
+          if (typeof args.key !== "string" || !args.task || typeof args.task !== "object")
+            throw new Error("runs.run requires a key and task specification");
+          const task = { ...args.task, key: args.key } as SubagentTask;
+          validateSubagentTask(task);
+          const key = task.key,
+            fingerprint = JSON.stringify(task);
+          const prior = hostcalls.get(key);
+          if (prior) {
+            if (prior.fingerprint !== fingerprint)
+              throw new Error("Workflow key changed arguments");
+            return prior.result;
+          }
+          const publication = Promise.withResolvers<void>();
+          void publication.promise.catch(() => {});
+          const result = (async () =>
+            this.options.control.request({
+              executionReference: scope.executionReference,
+              conversationId: scope.piSession.conversationId,
+              toolCallId: invocationId,
+              request: {
+                action: "run",
+                key: task.key,
+                task: task.task,
+                context: task.context ?? "fresh",
+                sandbox: task.tools?.length === 0 ? "none" : (task.sandbox ?? "shared"),
+                anchor: await this.options.nativeConversations.childAnchor(
+                  scope.executionReference,
+                  task.context === "branch",
+                  scope.piSession.conversationId,
+                ),
+                ...(task.cwd ? { cwd: task.cwd } : {}),
+                ...(task.tools ? { tools: task.tools } : {}),
+              },
+              onPublished: () => publication.resolve(),
+              ...(signal ? { signal } : {}),
+            }))();
+          void result.catch(publication.reject);
+          hostcalls.set(key, { fingerprint, result, published: publication.promise });
+          return result;
+        }
+        if (typeof args.target === "string") await hostcalls.get(args.target)?.published;
+        return this.options.control.request({
+          executionReference: scope.executionReference,
+          conversationId: scope.piSession.conversationId,
+          toolCallId: invocationId,
+          request: validateSubagentControl({ ...args, action: method }),
+          ...(signal ? { signal } : {}),
+        });
+      };
+
+      try {
+        const prepared = await context.prepareWorkflow(
+          nativeCallId,
+          script,
+          workflowCall,
+          activeSignal,
+          toolName,
+        );
+        let disposed = false;
+        return {
+          ...prepared,
+          dispose() {
+            if (disposed) return;
+            disposed = true;
+            lifetime.abort(new Error("Workflow invocation has closed"));
+            try {
+              prepared.dispose();
+            } finally {
+              hostcalls.clear();
+            }
+          },
+        };
+      } catch (error) {
+        lifetime.abort(error);
+        hostcalls.clear();
+        throw error;
       }
-      if (typeof args.target === "string")
-        await hostcalls.get(JSON.stringify([id, args.target]))?.published;
-      return this.options.control.request({
-        executionReference: scope.executionReference,
-        conversationId: scope.piSession.conversationId,
-        toolCallId: id,
-        request: validateSubagentControl({ ...args, action: method }),
-        ...(signal ? { signal } : {}),
-      });
     };
 
     return controlToolDefinitions().map((definition) => ({
@@ -137,13 +176,7 @@ export class WorkerToolRuntime {
             invocationId = toolInvocationId(nativeCallId);
           const script = definition.workflowScript?.(args);
           if (script !== undefined)
-            return context.prepareWorkflow(
-              nativeCallId,
-              script,
-              (method, args, signal) => workflowCall(invocationId, method, args, signal),
-              signal,
-              definition.name,
-            );
+            return prepareWorkflow(nativeCallId, invocationId, script, signal, definition.name);
           const operationId = randomUUID();
           const bindingId = definition.requiresEnvironment
             ? await context.prepareEnvironment()

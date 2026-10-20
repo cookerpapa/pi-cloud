@@ -5,6 +5,10 @@ and [accepted ADR-0264](adr/0264-subagent-recovery-and-discovery.md) are being
 implemented in [separate slices](reports/resource-interaction-repair-20261020.md).
 Their safe-delegation/catalog changes are not implemented; the
 deployed ownership, Tool replay and boot-mailbox contracts below remain current.
+Source slices 1–2 have passed focused regressions: shared compute retirement
+rechecks holders under PG admission locks, and supervisor reconciliation uses
+existing ordered control changes rather than read-triggered self-wakes.
+Deployment and the remaining slices are tracked in the delivery record.
 
 [ADR-0263](adr/0263-model-response-and-work-lifetimes.md) is deployed as
 `model-runtime-058925bb`, schema 192. Agent work has no total duration ceiling;

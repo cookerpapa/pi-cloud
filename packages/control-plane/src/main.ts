@@ -193,7 +193,6 @@ export async function startControlPlane(): Promise<void> {
       database,
       managementToken: config.supervisorManagementToken,
       allowInsecureHttp: config.allowInsecureInternalHttp,
-      changed: (tenant, session) => controlTools.wake(tenant, session),
       treePolicy: config.subagentTreePolicy,
       validateDirectory: async (target) => {
         const machine =

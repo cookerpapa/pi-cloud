@@ -166,7 +166,7 @@ export class PostgresSubagentSupervisorChannel {
     return resource(row);
   }
 
-  async latestForExecution(
+  async pendingDecisionForExecution(
     tenantId: string,
     executionId: string,
   ): Promise<CloudSupervisorRequest | undefined> {
@@ -184,16 +184,19 @@ export class PostgresSubagentSupervisorChannel {
       ])
       .where("tenant_id", "=", tenantId)
       .where("execution_id", "=", executionId)
-      .where((expression) =>
-        expression.or([
-          expression("expects_reply", "=", false),
-          expression.and([
-            expression("reply_message", "is", null),
-            expression("expires_at", ">", sql<Date>`clock_timestamp()`),
-          ]),
-        ]),
+      .where("expects_reply", "=", true)
+      .where("reply_message", "is", null)
+      .where("expires_at", ">", sql<Date>`clock_timestamp()`)
+      .where(
+        sql<boolean>`exists (
+        select 1 from subagent_executions execution
+        where execution.tenant_id=subagent_supervisor_requests.tenant_id
+          and execution.id=subagent_supervisor_requests.execution_id
+          and execution.state in ('preparing','running')
+      )`,
       )
-      .orderBy("created_at", "desc")
+      .orderBy("created_at", "asc")
+      .orderBy("id", "asc")
       .limit(1)
       .executeTakeFirst();
     return row === undefined ? undefined : resource(row);
@@ -222,10 +225,12 @@ export class PostgresSubagentSupervisorChannel {
       ])
       .where("request.tenant_id", "=", tenantId)
       .where("execution.parent_session_id", "=", parentSessionId)
+      .where("execution.state", "in", ["preparing", "running"])
       .where("request.expects_reply", "=", true)
       .where("request.reply_message", "is", null)
       .where("request.expires_at", ">", sql<Date>`clock_timestamp()`)
       .orderBy("request.created_at", "asc")
+      .orderBy("request.id", "asc")
       .limit(100)
       .execute();
     return rows.map(resource);
@@ -305,9 +310,20 @@ export class PostgresSubagentSupervisorChannel {
         .where("id", "=", input.requestId)
         .where("reply_message", "is", null)
         .where("expires_at", ">", sql<Date>`clock_timestamp()`)
+        .where(
+          sql<boolean>`exists (
+          select 1 from subagent_executions execution
+          where execution.tenant_id=subagent_supervisor_requests.tenant_id
+            and execution.id=subagent_supervisor_requests.execution_id
+            and execution.state in ('preparing','running')
+        )`,
+        )
         .returning("id")
         .executeTakeFirst();
-      if (!replied) throw new SupervisorChannelError("Supervisor request has expired");
+      if (!replied)
+        throw new SupervisorChannelError(
+          "Supervisor request has expired or its child has finished",
+        );
     });
     return this.request(input.tenantId, input.requestId);
   }

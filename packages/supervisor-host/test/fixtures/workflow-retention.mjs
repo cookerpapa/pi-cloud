@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import { setImmediate as nextTurn } from "node:timers/promises";
-import { WorkerToolRuntime } from "../../../packages/supervisor-host/src/tools/worker-tool-runtime.ts";
-import { withToolInvocation } from "../../../packages/sandbox-supervisor/src/tool-invocation.ts";
-import { createExecutionReference } from "../../../packages/protocol/src/execution-reference.ts";
+import { WorkerToolRuntime } from "../../src/tools/worker-tool-runtime.ts";
+import { withToolInvocation } from "../../../sandbox-supervisor/src/tool-invocation.ts";
+import { createExecutionReference } from "../../../protocol/src/execution-reference.ts";
 
 assert.equal(typeof global.gc, "function", "Run node --expose-gc --import tsx");
 const refs = [];
+const closedCallbacks = [];
 let resultBytes = 0,
   callback;
 const runId = randomUUID();
@@ -46,6 +47,7 @@ let bindings = await runtime.create({
   },
   prepareWorkflow: async (_id, _script, call) => {
     callback = call;
+    closedCallbacks.push(call);
     return {
       command: {},
       completed: () => true,
@@ -80,7 +82,8 @@ async function collect() {
   return refs.filter((x) => x.deref() !== undefined).length;
 }
 const retainedWhileRunOpen = await collect();
-assert.equal(retainedWhileRunOpen, 64);
+assert.equal(retainedWhileRunOpen, 0);
+assert.equal(closedCallbacks.length, 64);
 tool = undefined;
 bindings = undefined;
 const retainedAfterBindingRelease = await collect();
@@ -91,6 +94,7 @@ console.log(
     completedAndDisposedTools: 64,
     resultBytes,
     retainedWhileRunOpen,
+    retainedClosedCallbacks: closedCallbacks.length,
     retainedAfterBindingRelease,
     proof: "WeakRef reachability with explicit GC; not a production heap capacity estimate",
     modelCalls: 0,

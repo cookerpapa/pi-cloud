@@ -203,3 +203,41 @@ it("derives tool exposure from native ancestry and prepares environment only for
   prepared.dispose();
   f.mailbox.close();
 });
+
+it("cancels outstanding workflow host calls and rejects late callbacks after disposal", async () => {
+  const f = fixture();
+  let callback: Parameters<WorkflowPreparer>[2] | undefined;
+  f.control.request.mockImplementation(async (input) => {
+    input.onPublished?.();
+    return new Promise((_, reject) => {
+      input.signal!.addEventListener("abort", () => reject(input.signal!.reason), { once: true });
+    });
+  });
+  const bindings = await f.runtime.create({
+    command,
+    prepareEnvironment: async () => "unused",
+    prepareWorkflow: async (_id, _script, call) => {
+      callback = call;
+      return {
+        command: {} as never,
+        completed: () => false,
+        dispose() {},
+        result: async () => ({}),
+      };
+    },
+  });
+  const tool = bindings.find((b) => b.tool.name === "subagent")!.tool as PreparedAgentTool;
+  const prepared = await withToolInvocation({ id: "task:13", nativeToolCallId: "workflow" }, () =>
+    tool.prepareExecution!("workflow", { action: "workflow", script: "return 1" }),
+  );
+  const running = callback!("run", { key: "one", task: { task: "Pending child" } });
+  void running.catch(() => {});
+  await vi.waitFor(() => expect(f.control.request).toHaveBeenCalledOnce());
+  prepared.dispose();
+  await expect(running).rejects.toThrow("Workflow invocation has closed");
+  await expect(callback!("run", { key: "two", task: { task: "Late child" } })).rejects.toThrow(
+    "Workflow invocation has closed",
+  );
+  expect(f.control.request).toHaveBeenCalledOnce();
+  f.mailbox.close();
+});

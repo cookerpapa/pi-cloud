@@ -45,7 +45,6 @@ export class SubagentController {
       treePolicy?: CloudSubagentTreePolicy;
       validateDirectory?(target: SubagentDirectoryTarget): Promise<void>;
       deliver?(lease: string, request: SubagentHostRequest): Promise<unknown>;
-      changed?(tenantId: string, piSessionId: string): void;
     },
   ) {
     this.#supervisor = new PostgresSubagentSupervisorChannel(options.database);
@@ -121,7 +120,6 @@ export class SubagentController {
           requestId: call.operationId,
         });
         if (!current()) return { waiting: true };
-        this.options.changed?.(scope.tenantId, scope.piSessionId);
         if (request.expectsReply && request.replyMessage === undefined) {
           if (request.expiresAt && Date.parse(request.expiresAt) <= Date.now())
             throw new SubagentConversationError(
@@ -165,7 +163,6 @@ export class SubagentController {
                   args.replyTo,
                 );
           if (!current()) return { waiting: true };
-          this.options.changed?.(scope.tenantId, scope.piSessionId);
           const child = await this.#jobs.status(scope.tenantId, request.executionId);
           if (["preparing", "running"].includes(child.state)) return { waiting: true };
           value = object(await this.#jobs.result(scope.tenantId, child.executionId));
@@ -391,7 +388,9 @@ export class SubagentController {
     status?: SubagentConversationStatus,
   ): Promise<Record<string, unknown> | undefined> {
     const child = status ?? (await this.#jobs.status(tenantId, id));
-    const blocked = await this.#supervisor.latestForExecution(tenantId, id);
+    if (!["preparing", "running"].includes(child.state))
+      return object(await this.#jobs.result(tenantId, id, child));
+    const blocked = await this.#supervisor.pendingDecisionForExecution(tenantId, id);
     if (blocked?.expectsReply && blocked.replyMessage === undefined)
       return {
         ...child,
@@ -399,8 +398,7 @@ export class SubagentController {
         supervisorRequest: blocked,
         output: `Child needs supervisor input: ${blocked.message}. Reply using subagent_supervisor with replyTo=${blocked.requestId}.`,
       };
-    if (["preparing", "running"].includes(child.state)) return;
-    return object(await this.#jobs.result(tenantId, id));
+    return;
   }
 
   reset(): void {

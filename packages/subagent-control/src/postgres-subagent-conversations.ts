@@ -60,6 +60,28 @@ export type SubagentConversationStatus = {
   failureCode?: string;
   failureMessage?: string;
 };
+function statusResource(row: {
+  id: string;
+  child_session_id: string;
+  child_turn_id: string;
+  root_run_id: string;
+  state: SubagentExecutionState;
+  failure_code: string | null;
+  failure_message: string | null;
+  pi_conversation_id: string | null;
+}): SubagentConversationStatus {
+  return {
+    executionId: row.id,
+    childSessionId: row.child_session_id,
+    childTurnId: row.child_turn_id,
+    rootRunId: row.root_run_id,
+    state: row.state,
+    ...(row.pi_conversation_id === null ? {} : { conversationId: Number(row.pi_conversation_id) }),
+    ...(row.failure_code === null ? {} : { failureCode: row.failure_code }),
+    ...(row.failure_message === null ? {} : { failureMessage: row.failure_message }),
+  };
+}
+
 export class SubagentConversationError extends Error {
   constructor(
     readonly code: string,
@@ -103,6 +125,43 @@ export class PostgresSubagentConversations {
     const fingerprint = createHash("sha256")
       .update(JSON.stringify({ ...input, executionReference: undefined }))
       .digest("hex");
+    // Reconciliation after acknowledged native admission reads the current
+    // outcome. Keep creation locks/RPCs for first or uncertain admission only.
+    const known = await this.options.database
+      .selectFrom("subagent_executions as e")
+      .innerJoin("sessions as s", (join) =>
+        join.onRef("s.tenant_id", "=", "e.tenant_id").onRef("s.id", "=", "e.child_session_id"),
+      )
+      .innerJoin("active_execution_scopes as a", (join) =>
+        join.onRef("a.tenant_id", "=", "e.tenant_id").onRef("a.run_id", "=", "e.root_run_id"),
+      )
+      .select([
+        "e.id",
+        "e.child_session_id",
+        "e.child_turn_id",
+        "e.root_run_id",
+        "e.state",
+        "e.failure_code",
+        "e.failure_message",
+        "e.request_sha256",
+        "s.pi_conversation_id",
+      ])
+      .where("e.tenant_id", "=", input.tenantId)
+      .where("e.id", "=", input.id)
+      .where("e.root_run_id", "=", input.rootRunId)
+      .where("a.lease_id", "=", grant.leaseId)
+      .where("a.fencing_token", "=", String(grant.fencingToken))
+      .where("a.accepting_effects", "=", true)
+      .where("a.valid_until", ">", sql<Date>`clock_timestamp()`)
+      .executeTakeFirst();
+    if (known) {
+      if (known.request_sha256 !== fingerprint)
+        throw new SubagentConversationError(
+          "idempotency_conflict",
+          "Child identity changed arguments",
+        );
+      if (known.pi_conversation_id !== null) return statusResource(known);
+    }
     const prepared = await this.options.database.transaction().execute(async (tx) => {
       const root = await tx
         .selectFrom("runs")
@@ -372,21 +431,15 @@ export class PostgresSubagentConversations {
       .executeTakeFirst();
     if (!row)
       throw new SubagentConversationError("not_found", "Subagent conversation was not found");
-    return {
-      executionId: row.id,
-      childSessionId: row.child_session_id,
-      childTurnId: row.child_turn_id,
-      rootRunId: row.root_run_id,
-      state: row.state,
-      ...(row.pi_conversation_id === null
-        ? {}
-        : { conversationId: Number(row.pi_conversation_id) }),
-      ...(row.failure_code === null ? {} : { failureCode: row.failure_code }),
-      ...(row.failure_message === null ? {} : { failureMessage: row.failure_message }),
-    };
+    return statusResource(row);
   }
-  async result(tenantId: string, id: string): Promise<SubagentConversationStatus> {
-    const status = await this.status(tenantId, id);
+
+  async result(
+    tenantId: string,
+    id: string,
+    knownStatus?: SubagentConversationStatus,
+  ): Promise<SubagentConversationStatus> {
+    const status = knownStatus ?? (await this.status(tenantId, id));
     if (!["completed", "failed", "cancelled"].includes(status.state)) return status;
     const rows = await sql<{ body: string }>`select l.body from pi_durable_records r
       join pi_durable_log l using(tenant_id,session_id,seq,ordinal)
