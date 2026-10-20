@@ -40,6 +40,7 @@ const sessions = [],
 let project, failure;
 try {
   project = await api.createProject(`Durable interaction ${Date.now()}`);
+  report.resources = { projectId: project.projectId, workspaceId: project.workspaceId };
   const marker = `MESSAGE_${randomUUID().slice(0, 8)}`;
   const scenarios = [
     {

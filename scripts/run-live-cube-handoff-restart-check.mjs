@@ -115,6 +115,11 @@ try {
     "/workspace",
     { provider: "openai-codex", modelId: "gpt-6-luna", thinkingLevel: "low", fastMode: false },
   );
+  report.resources = {
+    projectId: project.projectId,
+    workspaceId: project.workspaceId,
+    sessionId: session.sessionId,
+  };
   let uploadIds;
   if (scenario === "stream-image") {
     const png = await sharp(

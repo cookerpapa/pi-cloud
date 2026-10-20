@@ -1229,6 +1229,11 @@ try {
   );
   const report = {
     accepted: true,
+    fixtureResources: {
+      tenantId,
+      foreignProjectId: foreignProject.projectId,
+      foreignWorkspaceId: foreignProject.workspaceId,
+    },
     piCloudRevision: testedRevision,
     deployedControlPlaneImage,
     testRevision: testedRevision,

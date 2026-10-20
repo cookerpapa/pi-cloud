@@ -251,3 +251,34 @@ An initial artifact preparation built the guest/native/application images but
 refused scanning because final fixes left the checkout dirty. It was not applied.
 Rebuild/relabel from the final clean commit and repeat artifact evidence before
 cutover; do not use the incomplete candidate or bypass the clean-source check.
+
+## First matched deployment and additional live finding
+
+The frozen-source suite, RF3/PG transport, fault evaluation and dependency audit
+completed successfully. Eleven image artifacts passed the maintained evidence
+gate. `resource-repair-3a045bf7` deployed with schema 194 and Session topic v18;
+all Pods became Ready and the Windows localhost entry returned HTTP 200.
+
+Actual Luna/Cube acceptance passes native input/Stop and Worker/Control Plane
+recovery, safe shared/ephemeral delegation without a duplicate child or initial
+Submission, all five supervisor/workflow interaction scenarios, and owned node
+restart/Volume cleanup. The long-work gate held the same Run and Worker for
+1,020 seconds and an existing warm VM's human terminal for 1,021 seconds, then
+verified graceful Worker handoff. Initial live fixture errors (obsolete column
+name and an incorrect standalone-terminal inventory assumption) are retained;
+the corrected gate uses a normally warmed Agent VM and passes.
+
+The actual S3 preview gate uploaded a 34,744,889-byte original, cancelled its
+preview after 13,692 bytes and verified a subsequent complete read by hash.
+The following partial-upload cancellation exposed a separate runtime defect:
+an S3 request body's unhandled Readable error terminated the Control Plane.
+The owned failing image inventory remains until writer quiescence is proven.
+
+The adapter now owns the body's error/completion lifetime, aborts the remote
+request on source failure and joins stream teardown. Four child-process tests
+exercise cancellation at different points through real loopback HTTP and the
+AWS SDK; the source-error case previously exited with an unhandled error.
+All 30 attachment/upload transport cases and both affected typechecks pass.
+The fix still requires a new matched release and actual cancellation repetition.
+Large-image model acceptance also encountered upstream timeouts/TLS EOF; the
+owner switched the proxy node, and those unchanged gates remain to be rerun.

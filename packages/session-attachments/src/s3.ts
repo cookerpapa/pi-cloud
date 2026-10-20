@@ -1,4 +1,5 @@
 import { addAbortSignal, Readable } from "node:stream";
+import { finished } from "node:stream/promises";
 import {
   S3Client,
   PutObjectCommand,
@@ -79,6 +80,12 @@ export class S3ImageBlobStore implements ImageBlobStore {
     signal: AbortSignal,
   ) {
     const body = Readable.from(chunks, { objectMode: false, highWaterMark: 65536 });
+    const sourceFailure = new AbortController();
+    const requestSignal = AbortSignal.any([signal, sourceFailure.signal]);
+    // Source failure can precede HTTP cancellation. Keep an owner for the
+    // Readable's error event even as Smithy tears down its request listeners.
+    const bodyClosed = finished(body, { cleanup: true });
+    void bodyClosed.catch((error) => sourceFailure.abort(error));
     try {
       await this.#writes.send(
         new PutObjectCommand({
@@ -88,10 +95,13 @@ export class S3ImageBlobStore implements ImageBlobStore {
           ContentType: mimeType,
           ContentLength: byteLength,
         }),
-        { abortSignal: signal },
+        { abortSignal: requestSignal },
       );
+      await bodyClosed;
     } finally {
       body.destroy();
+      await bodyClosed.catch(() => {});
+      sourceFailure.abort();
     }
   }
   async *readStream(key: string, maximumBytes: number, signal: AbortSignal) {

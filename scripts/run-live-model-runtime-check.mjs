@@ -144,6 +144,17 @@ try {
     terminalSessionId: terminalSession.sessionId,
   });
   await save();
+  const warmed = await api.acceptTurn(
+    terminalSession.sessionId,
+    "Call bash exactly once with command printf '%s\\n' TERMINAL_WARMED, then reply TERMINAL_WARMED. Do not use other tools or delegate.",
+    newIdempotencyKey("terminal-warm"),
+    "low",
+  );
+  assert.equal(warmed.kind, "run");
+  report.terminalWarmRunId = warmed.runId;
+  await save();
+  const warmedOutcome = await finished(warmed.runId);
+  assert.equal(warmedOutcome.state, "completed", warmedOutcome.failure?.code);
   terminalSocket = new WebSocket(
     `${base.replace("http:", "ws:")}/v1/conversations/${terminalSession.sessionId}/terminal`,
     { headers: { authorization: `Bearer ${tenant.credential.token}` }, handshakeTimeout: 15000 },
@@ -168,11 +179,11 @@ try {
   const terminalRuntime = () =>
     db
       .selectFrom("workspace_runtimes")
-      .select(["id", "runtime_id"])
+      .select(["workspace_runtime_id", "runtime_id"])
       .where("tenant_id", "=", tenant.tenantId)
       .where("workspace_id", "=", terminalProject.workspaceId)
       .where("state", "!=", "released")
-      .orderBy("id")
+      .orderBy("workspace_runtime_id")
       .execute();
   const originalTerminalRuntime = await terminalRuntime();
   assert.equal(originalTerminalRuntime.length, 1);
@@ -322,6 +333,7 @@ try {
     .selectFrom("runs")
     .select("id")
     .where("tenant_id", "=", tenant.tenantId)
+    .where("session_id", "=", session.sessionId)
     .execute();
   assert.equal(all.length, 2);
   report.handoff = {
@@ -363,7 +375,17 @@ try {
           terminalSocket.close();
         });
     });
-  if (terminalSession) await clean(() => api.deleteConversation(terminalSession.sessionId));
+  if (terminalSession)
+    await clean(async () => {
+      const rows = await db
+        .selectFrom("runs")
+        .select(["id", "turn_id"])
+        .where("tenant_id", "=", tenant.tenantId)
+        .where("session_id", "=", terminalSession.sessionId)
+        .execute();
+      await settleOwnedAcceptanceRuns(api, terminalSession.sessionId, rows, finished);
+      await api.deleteConversation(terminalSession.sessionId);
+    });
   if (terminalProject)
     await clean(async () => {
       await api.deleteWorkspace(terminalProject.workspaceId, newIdempotencyKey("terminal-clean"));

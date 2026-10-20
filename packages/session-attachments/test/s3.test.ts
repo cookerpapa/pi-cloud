@@ -62,6 +62,23 @@ it("does not start a second buffered PUT after losing the first response", async
   expect(requests).toBe(1);
 });
 
+it("owns a failing request-body stream and cancels its HTTP request", async () => {
+  const store = await fixture((request) => request.resume());
+  const sourceError = new Error("Owned source failed");
+  await expect(
+    store.putStream(
+      "failed-source",
+      (async function* () {
+        yield Buffer.alloc(512);
+        throw sourceError;
+      })(),
+      1024,
+      "image/png",
+      AbortSignal.timeout(3000),
+    ),
+  ).rejects.toBeInstanceOf(Error);
+});
+
 it("allows a progressing PUT longer than the socket idle deadline", async () => {
   let received = 0;
   const store = await fixture((request, response) => {

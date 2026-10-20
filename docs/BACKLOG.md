@@ -42,6 +42,14 @@ original-delegation continuation plus scoped discovery using public Pi APIs;
 its prototype and source integration pass targeted tests, including two RF3/PG
 owner replacements. Matched deployment and live acceptance remain pending.
 
+All six slices are now deployed as `resource-repair-3a045bf7`. Live native
+input/recovery, shared and ephemeral child recovery, long work/terminal ownership,
+supervisor interactions and owned Cube restart/Volume cleanup pass. Actual
+cancelled upload exposed an unhandled S3 body-stream error that restarted the
+Control Plane; its fix passes 30 attachment/upload transport cases and affected
+typechecks. The corrected matched release, image gates and final fixture cleanup
+remain open; failed upstream-model samples are retained separately.
+
 ## Terminal and application-preview lifecycle review
 
 TPR-01–04 source fixes and connection regressions pass. Terminal establishment
