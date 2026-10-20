@@ -10,15 +10,15 @@ import WebSocket, { WebSocketServer } from "ws";
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
 import { PREVIEW_SCOPE_HEADER, SANDBOX_CONTROL_SANDBOX_PREVIEW_PATH } from "@pi-cloud/protocol";
-import { ProductionHttpGateway } from "../../../packages/control-plane/src/production-http-gateway.ts";
-import { WorkspaceTerminalGateway } from "../../../packages/control-plane/src/workspace-terminal-gateway.ts";
-import { previewConnectionAgent } from "../../../packages/control-plane/src/preview-connect.ts";
+import { ProductionHttpGateway } from "../src/production-http-gateway.ts";
+import { WorkspaceTerminalGateway } from "../src/workspace-terminal-gateway.ts";
+import { previewConnectionAgent } from "../src/preview-connect.ts";
 import {
   SandboxControlServer,
   type SandboxControlBackend,
-} from "../../../packages/sandbox-control/src/sandbox-control-server.ts";
+} from "../../sandbox-control/src/sandbox-control-server.ts";
 
-// Baseline characterizations, not fixed acceptance. All endpoints and streams
+// Owned connection-lifetime regressions. All endpoints and streams
 // belong to this process. The DB port supplies explicit test authority only;
 // no production database, VM, credentials or external network is used.
 const token = "terminal-review-" + "a".repeat(48);
@@ -42,9 +42,6 @@ afterEach(async () => {
 });
 const address = (server: { address(): AddressInfo | string | null }) =>
   `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-function record(value: object) {
-  process.stdout.write(JSON.stringify(value) + "\n");
-}
 async function httpOwner() {
   const server = createServer();
   const sockets = new Set<Socket>();
@@ -134,76 +131,79 @@ async function terminalGateway(
   return browser;
 }
 
-it("characterizes a valid terminal redirect losing to the old owner's close while PG validation waits", async () => {
-  const oldOwner = await wsOwner();
-  const nextOwner = await wsOwner();
-  let newConnections = 0;
-  nextOwner.on("connection", () => newConnections++);
-  const validationEntered = Promise.withResolvers<void>();
-  const releaseValidation = Promise.withResolvers<void>();
-  oldOwner.on("connection", (socket) => {
-    socket.once("message", () => {
-      socket.send(
-        JSON.stringify({
-          workspaceTerminalProtocolVersion: 1,
-          type: "workspace_terminal.owner_redirect",
-          ownerBaseUrl: address(nextOwner),
-        }),
-        () => socket.close(1000, "following owner redirect"),
-      );
+it.each(["valid", "invalid", "cancelled"])(
+  "handles terminal redirect/old-peer close while validation waits (%s)",
+  async (mode) => {
+    const oldOwner = await wsOwner(),
+      nextOwner = await wsOwner();
+    let newConnections = 0;
+    nextOwner.on("connection", () => newConnections++);
+    const entered = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    oldOwner.on("connection", (socket) =>
+      socket.once("message", () =>
+        socket.send(
+          JSON.stringify({
+            workspaceTerminalProtocolVersion: 1,
+            type: "workspace_terminal.owner_redirect",
+            ownerBaseUrl: address(nextOwner),
+          }),
+          () => socket.close(1000, "following owner redirect"),
+        ),
+      ),
+    );
+    const browser = await terminalGateway(address(oldOwner), async () => {
+      entered.resolve();
+      await release.promise;
+      if (mode === "invalid") throw new Error("Owner changed during validation");
+      return { owner_base_url: new URL(address(nextOwner)).toString() };
     });
-  });
-  const browser = await terminalGateway(address(oldOwner), async () => {
-    validationEntered.resolve();
-    await releaseValidation.promise;
-    return { owner_base_url: new URL(address(nextOwner)).toString() };
-  });
-  const closed = once(browser, "close");
-  await validationEntered.promise;
-  try {
-    await closed;
-    expect(browser.readyState).toBe(WebSocket.CLOSED);
-    releaseValidation.resolve();
-    await delay(30);
-    expect(newConnections).toBe(0);
-    record({
-      case: "terminal_redirect_close_race",
-      authorizedNextOwner: true,
-      browserClosedDuringValidation: true,
-      newConnections,
-      databasePort: "controlled",
-    });
-  } finally {
-    releaseValidation.resolve();
-  }
-});
+    await entered.promise;
+    try {
+      await delay(30);
+      expect(browser.readyState).toBe(WebSocket.OPEN);
+      if (mode === "cancelled") {
+        const closed = once(browser, "close");
+        browser.terminate();
+        await closed;
+      }
+      release.resolve();
+      if (mode === "valid") {
+        await vi.waitFor(() => expect(newConnections).toBe(1));
+        expect(browser.readyState).toBe(WebSocket.OPEN);
+      } else {
+        await vi.waitFor(() => expect(browser.readyState).toBe(WebSocket.CLOSED));
+        expect(newConnections).toBe(0);
+      }
+    } finally {
+      release.resolve();
+    }
+  },
+);
 
-it("characterizes an upstream terminal WebSocket handshake staying pending beyond 15 seconds", async () => {
+it("bounds terminal connection establishment and returns a retryable error", async () => {
   const owner = await httpOwner();
   const entered = Promise.withResolvers<void>();
   owner.on("upgrade", () => entered.resolve());
   const browser = await terminalGateway(address(owner));
-  let frames = 0;
-  browser.on("message", () => frames++);
+  const frames: unknown[] = [];
+  browser.on("message", (raw) => frames.push(JSON.parse(raw.toString())));
+  const closed = once(browser, "close");
   await entered.promise;
-  const started = performance.now();
-  await delay(16_000);
-  expect(browser.readyState).toBe(WebSocket.OPEN);
-  expect(frames).toBe(0);
-  record({
-    case: "terminal_handshake_without_deadline",
-    observedWaitMs: Math.round(performance.now() - started),
-    browserOpen: true,
-    frames,
-    note: "Finite observation plus source inspection; user disconnect still cancels it",
-  });
-}, 25_000);
+  await closed;
+  expect(frames).toContainEqual(
+    expect.objectContaining({ type: "workspace_terminal.error", retryable: true }),
+  );
+  expect(browser.readyState).toBe(WebSocket.CLOSED);
+}, 20000);
 
-it("characterizes request/agent destruction not cancelling its pending preview CONNECT", async () => {
+it("cancels an owned pending CONNECT when the outer request and agent are destroyed", async () => {
   const owner = await httpOwner();
   const entered = Promise.withResolvers<Socket>();
   owner.on("connect", (_request, socket) => {
     socket.on("error", () => {});
+    socket.once("end", () => socket.end());
+    socket.resume();
     entered.resolve(socket as Socket);
   });
   const agent = previewConnectionAgent(address(owner), token, scope, true);
@@ -213,28 +213,19 @@ it("characterizes request/agent destruction not cancelling its pending preview C
   const socket = await entered.promise;
   request.destroy();
   agent.destroy(); // Same teardown used by SandboxPreviewGateway.
-  await delay(50);
-  expect(socket.destroyed).toBe(false);
-  record({
-    case: "preview_pending_connect_not_cancelled",
-    originalRequestDestroyed: request.destroyed,
-    ownerSocketStillOpen: !socket.destroyed,
-    sourceConnectDeadlineMs: 15_000,
-  });
-  // Completing the owned CONNECT lets Node discard the late socket. Never wait
-  // for the production deadline or leave the deliberately blocked peer open.
-  socket.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
   await vi.waitFor(() => expect(socket.destroyed).toBe(true));
 });
 
-it("characterizes Sandbox control accepting a late preview while close is draining", async () => {
+it("joins pending preview opens and disposes late streams during server shutdown", async () => {
   const entered = Promise.withResolvers<void>();
   const complete = Promise.withResolvers<PassThrough>();
   const stream = new PassThrough();
+  let openSignal: AbortSignal | undefined;
   const backend = {
     checkHealth: async () => {},
     close: async () => {},
-    openPreviewConnection: async () => {
+    openPreviewConnection: async (_scope: unknown, signal: AbortSignal) => {
+      openSignal = signal;
       entered.resolve();
       return complete.promise;
     },
@@ -263,6 +254,7 @@ it("characterizes Sandbox control accepting a late preview while close is draini
   });
   const accepted = Promise.withResolvers<{ status: number; socket: Socket }>();
   request.on("error", accepted.reject);
+  void accepted.promise.catch(() => {});
   request.once("connect", (response, socket) =>
     accepted.resolve({ status: response.statusCode!, socket }),
   );
@@ -278,20 +270,14 @@ it("characterizes Sandbox control accepting a late preview while close is draini
   });
   let late: { status: number; socket: Socket } | undefined;
   try {
-    await delay(50);
+    await vi.waitFor(() => expect(openSignal?.aborted).toBe(true));
+    expect(closed).toBe(false); // joining the controlled late open
     complete.resolve(stream);
-    late = await accepted.promise;
-    late.socket.on("error", () => {});
-    expect(late.status).toBe(200);
-    expect(stream.destroyed).toBe(false);
-    await delay(50);
-    expect(closed).toBe(false);
-    record({
-      case: "preview_late_accept_while_server_closes",
-      serverCloseStillWaiting: !closed,
-      lateStatus: late.status,
-      streamStillOpen: !stream.destroyed,
-    });
+    late = await accepted.promise.catch(() => undefined);
+    await closing;
+    expect(late?.status).not.toBe(200);
+    expect(stream.destroyed).toBe(true);
+    expect(closed).toBe(true);
   } finally {
     complete.resolve(stream);
     late?.socket.destroy();

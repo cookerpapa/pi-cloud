@@ -3,12 +3,12 @@
 The [resource/interaction repair plan](reports/resource-interaction-repair-plan-20261020.md)
 and [accepted ADR-0264](adr/0264-subagent-recovery-and-discovery.md) are being
 implemented in [separate slices](reports/resource-interaction-repair-20261020.md).
-Their safe-delegation/catalog changes are not implemented; the
-deployed ownership, Tool replay and boot-mailbox contracts below remain current.
-Source slices 1–2 have passed focused regressions: shared compute retirement
-rechecks holders under PG admission locks, and supervisor reconciliation uses
-existing ordered control changes rather than read-triggered self-wakes.
-Deployment and the remaining slices are tracked in the delivery record.
+Source slices 1–6 implement shared-holder retirement, supervisor quiescence,
+recoverable direct delegation/discovery, retained Volume cleanup evidence,
+attachment lifetime reconciliation and connection teardown. They retain the
+existing PG/Session/Kafka authority. Targeted regressions pass; release-wide
+checks, matched deployment and live acceptance are tracked in the delivery record.
+The last verified deployment remains the release below until that cutover.
 
 [ADR-0263](adr/0263-model-response-and-work-lifetimes.md) is deployed as
 `model-runtime-058925bb`, schema 192. Agent work has no total duration ceiling;
@@ -1360,8 +1360,12 @@ the shared Session authority. Compaction threshold checks ignore usage retained
 from before the latest Compaction and use Pi's structural estimate until a new
 valid usage-bearing Entry follows that boundary (ADR-0193).
 
-The role-free Subagent tool uses Pi's public runtime/storage contracts and the
-community `runs.run`/`runs.all` programming model, not a CLI-emulation backend.
+The role-free `subagent` direct delegation uses Pi's public replay-safe Task
+contract. It recovers its original child/Submission through a current-owner
+reference and fresh boot reply. `subagent_control` provides bounded discovery
+and management; `workflow` keeps the existing `runs.run`/`runs.all` programming
+model in Cube. Management and arbitrary scripts remain unsafe for automatic
+replay. None use a CLI-emulation backend.
 Fresh context and inherited context are independent of shared/ephemeral compute
 selection and working directory. All active Lanes share one physical Session owner; Pi holds durable
 parent/child input and cancellation state; PG retains product/resource associations. Recursive depth, descendant

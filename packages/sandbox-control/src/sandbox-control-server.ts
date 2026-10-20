@@ -199,6 +199,7 @@ export class SandboxControlServer {
   #address: string | undefined;
   #ready = false;
   readonly #previewConnections = new Set<import("node:stream").Duplex>();
+  readonly #previewOpens = new Set<Promise<void>>();
 
   constructor(options: SandboxControlServerOptions) {
     if (options.host.trim().length === 0) throw new TypeError("host must not be empty");
@@ -242,69 +243,79 @@ export class SandboxControlServer {
     this.#installRoutes();
     this.#server.server.on("connect", (request, socket, head) => {
       socket.on("error", () => socket.destroy());
-      let scopeAccepted = false;
-      void (async () => {
-        if (request.url !== SANDBOX_CONTROL_SANDBOX_PREVIEW_PATH || !this.#ready) {
-          socket.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
-          return;
-        }
-        if (!this.#terminalAuthorized(request.headers.authorization)) {
-          socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
-          return;
-        }
-        const raw = request.headers[PREVIEW_SCOPE_HEADER];
-        if (typeof raw !== "string" || raw.length > 4096) throw new Error("Invalid preview scope");
-        const scope = parseSandboxPreviewConnection(
-          JSON.parse(Buffer.from(raw, "base64url").toString()),
-        );
-        const lifetime = scope.expiresAt - Date.now();
-        if (lifetime <= 0 || lifetime > PREVIEW_ACCESS_TTL_MS)
-          throw new Error("Expired preview scope");
-        scopeAccepted = true;
-        const stream = await this.#broker.openPreviewConnection!(scope);
-        if (socket.destroyed || scope.expiresAt <= Date.now()) {
-          stream.destroy();
-          if (!socket.destroyed)
-            socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
-          return;
-        }
-        this.#previewConnections.add(socket);
-        const timer = setTimeout(() => socket.destroy(), Math.max(1, scope.expiresAt - Date.now()));
-        timer.unref();
-        socket.once("close", () => {
-          clearTimeout(timer);
-          this.#previewConnections.delete(socket);
-          stream.destroy();
-        });
-        stream.once("error", () => socket.destroy());
-        stream.once("close", () => {
-          if (stream.readableEnded) socket.end();
-          else socket.destroy();
-        });
-        socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
-        if (head.length > 0) stream.write(head);
-        socket.pipe(stream);
-        stream.pipe(socket);
-      })().catch((error: unknown) => {
-        if (error instanceof SandboxOwnerRedirectError) {
-          socket.end(
-            `HTTP/1.1 307 Temporary Redirect\r\nLocation: ${error.ownerBaseUrl}\r\nConnection: close\r\n\r\n`,
-          );
-        } else if (!scopeAccepted) {
-          socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
-        } else {
-          const applicationUnavailable =
-            error instanceof SandboxControlError &&
-            error.code === "sandbox_application_unavailable";
-          const code = applicationUnavailable
-            ? "sandbox_application_unavailable"
-            : "sandbox_execution_unavailable";
-          reportFailure("preview_connection_failed", safeFailure(error), error);
-          socket.end(
-            `HTTP/1.1 ${applicationUnavailable ? "502 Bad Gateway" : "503 Service Unavailable"}\r\n${PREVIEW_FAILURE_HEADER}: ${code}\r\nConnection: close\r\n\r\n`,
-          );
-        }
+      const connectionAbort = new AbortController();
+      let stream: import("node:stream").Duplex | undefined;
+      let timer: NodeJS.Timeout | undefined;
+      this.#previewConnections.add(socket);
+      socket.once("close", () => {
+        connectionAbort.abort(new Error("Preview caller disconnected"));
+        clearTimeout(timer);
+        this.#previewConnections.delete(socket);
+        stream?.destroy();
       });
+      let scopeAccepted = false;
+      const opening = Promise.resolve()
+        .then(async () => {
+          if (request.url !== SANDBOX_CONTROL_SANDBOX_PREVIEW_PATH || !this.#ready) {
+            socket.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
+            return;
+          }
+          if (!this.#terminalAuthorized(request.headers.authorization)) {
+            socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+            return;
+          }
+          const raw = request.headers[PREVIEW_SCOPE_HEADER];
+          if (typeof raw !== "string" || raw.length > 4096)
+            throw new Error("Invalid preview scope");
+          const scope = parseSandboxPreviewConnection(
+            JSON.parse(Buffer.from(raw, "base64url").toString()),
+          );
+          const lifetime = scope.expiresAt - Date.now();
+          if (lifetime <= 0 || lifetime > PREVIEW_ACCESS_TTL_MS)
+            throw new Error("Expired preview scope");
+          scopeAccepted = true;
+          timer = setTimeout(() => socket.destroy(), Math.max(1, lifetime));
+          timer.unref();
+          stream = await this.#broker.openPreviewConnection!(scope, connectionAbort.signal);
+          if (!this.#ready || socket.destroyed || scope.expiresAt <= Date.now()) {
+            stream.destroy();
+            if (!socket.destroyed)
+              socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+            return;
+          }
+          stream.once("error", () => socket.destroy());
+          stream.once("close", () => {
+            if (stream!.readableEnded) socket.end();
+            else socket.destroy();
+          });
+          socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+          if (head.length > 0) stream.write(head);
+          socket.pipe(stream);
+          stream.pipe(socket);
+        })
+        .catch((error: unknown) => {
+          if (!this.#ready || socket.destroyed) return;
+          if (error instanceof SandboxOwnerRedirectError) {
+            socket.end(
+              `HTTP/1.1 307 Temporary Redirect\r\nLocation: ${error.ownerBaseUrl}\r\nConnection: close\r\n\r\n`,
+            );
+          } else if (!scopeAccepted) {
+            socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+          } else {
+            const applicationUnavailable =
+              error instanceof SandboxControlError &&
+              error.code === "sandbox_application_unavailable";
+            const code = applicationUnavailable
+              ? "sandbox_application_unavailable"
+              : "sandbox_execution_unavailable";
+            reportFailure("preview_connection_failed", safeFailure(error), error);
+            socket.end(
+              `HTTP/1.1 ${applicationUnavailable ? "502 Bad Gateway" : "503 Service Unavailable"}\r\n${PREVIEW_FAILURE_HEADER}: ${code}\r\nConnection: close\r\n\r\n`,
+            );
+          }
+        })
+        .finally(() => this.#previewOpens.delete(opening));
+      this.#previewOpens.add(opening);
     });
   }
 
@@ -333,6 +344,7 @@ export class SandboxControlServer {
     } catch (error) {
       errors.push(error);
     }
+    await Promise.allSettled([...this.#previewOpens]);
     this.#address = undefined;
     try {
       await this.#server.close();

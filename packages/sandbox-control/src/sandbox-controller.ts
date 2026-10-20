@@ -1560,8 +1560,11 @@ export class SandboxController {
 
   async openPreviewConnection(
     request: SandboxPreviewConnectionRequest,
+    signal?: AbortSignal,
   ): Promise<import("node:stream").Duplex> {
+    signal?.throwIfAborted();
     const handle = await this.#previewHandle(request);
+    signal?.throwIfAborted();
     if (handle.assignment.workspaceId !== request.workspaceId)
       throw new SandboxControlError(
         "sandbox_preview_binding_changed",
@@ -1574,7 +1577,7 @@ export class SandboxController {
         "Application connections are unavailable",
         false,
       );
-    return this.#provider.openPreviewConnection(handle, request.port);
+    return this.#provider.openPreviewConnection(handle, request.port, signal);
   }
 
   async create(

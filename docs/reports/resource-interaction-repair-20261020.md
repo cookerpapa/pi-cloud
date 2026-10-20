@@ -11,7 +11,7 @@ The last verified serving release remains `model-runtime-058925bb`, schema 192.
 | 3 — Delegation recovery/discovery | Implemented; native recovery, PG catalog/supervision and RF3 replacement cases pass | Pending matched release |
 | 4 — Unknown Volume references | Implemented; native race and full allocation/Master/service contracts pass | Pending matched KVM acceptance |
 | 5 — Attachment lifetimes | Implemented; native/PG pin, upload/streaming/cancellation and S3 transport cases pass | Pending matched S3/Cube acceptance |
-| 6 — Terminal/preview lifetimes | Pending | Pending |
+| 6 — Terminal/preview lifetimes | Implemented; terminal/HTTP/WS/relay lifetime regressions pass | Pending compatible-replacement acceptance |
 
 ## Slice 1
 
@@ -191,3 +191,26 @@ expanded upload/storage/S3 suites pass all 23 cases. Schema 194 verification
 initially found the migration-count assertion still at 192; corrected verification
 passes. Affected source typechecks pass. Owned loopback/controlled blob tests do
 not claim actual S3/Cube live acceptance.
+
+## Slice 6
+
+Terminal redirect state is established before PG validation. Closure of the
+previous peer cannot close a valid successor attempt; invalid validation,
+browser cancellation and stale peer callbacks retain their own boundaries.
+The upstream WebSocket has a 15-second handshake deadline and reports a
+retryable connection error. Healthy connection/Agent lifetimes gain no limit.
+
+Destroying a preview Agent now aborts its internal CONNECT, including redirects
+and late socket delivery. Sandbox control tracks connections before opening the
+backend, aborts pending opens on caller/shutdown closure and joins them before
+shutdown returns. Late streams are destroyed without a 200 response. Cancellation
+passes through the provider to the guest relay connection; known relay-start
+failure joins its bounded cleanup request.
+
+Five targeted suites pass 60 cases, covering redirect validation/cancellation,
+stalled handshakes, pending CONNECT teardown, late shutdown streams, binary HTTP,
+SSE, WebSocket and PTY control. Both affected typechecks pass. An additional
+guest-relay cancellation test initially referenced a fixture variable cleared
+by its successful cleanup; it now retains the actual connection object and
+passes. Controlled endpoints prove connection ownership, not live application
+continuity; that remains a matched-release gate.

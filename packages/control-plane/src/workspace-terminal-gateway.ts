@@ -224,6 +224,7 @@ export class WorkspaceTerminalGateway {
           headers: { authorization: `Bearer ${this.#terminalToken}` },
           maxPayload: MAX_WORKSPACE_TERMINAL_FRAME_BYTES * 2,
           perMessageDeflate: false,
+          handshakeTimeout: 15_000,
         },
       );
       upstream = connected;
@@ -235,13 +236,16 @@ export class WorkspaceTerminalGateway {
       let followingRedirect = false;
       connected.on("message", (data: RawData) => {
         void (async () => {
+          if (closed || upstream !== connected || followingRedirect) return;
           const frame = parseWorkspaceTerminalServerFrame(JSON.parse(textFrame(data)) as unknown);
           if (frame.type === "workspace_terminal.owner_redirect") {
+            followingRedirect = true;
+            ready = false;
             const next = await this.#validatedOwnerRedirect(
               descriptor.domainId,
               frame.ownerBaseUrl,
             );
-            followingRedirect = true;
+            if (closed || upstream !== connected) return;
             connected.close(1_000, "following owner redirect");
             await connect(next, redirects + 1);
             return;

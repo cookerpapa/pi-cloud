@@ -41,7 +41,7 @@ let executionReply: unknown = {};
 let executionStatus = 200;
 let loseExecutionReply = false;
 let tcpResponse: ServerResponse | undefined;
-let tcpConnectMode: "connected" | "refused" | "unreachable" = "connected";
+let tcpConnectMode: "connected" | "refused" | "unreachable" | "pending" = "connected";
 beforeEach(() => {
   loseCreateReply = false;
   allocationClosed = false;
@@ -56,6 +56,7 @@ beforeEach(() => {
   runtimeState = "running";
   observationMode = "present";
   tcpConnectMode = "connected";
+  tcpResponse = undefined;
 });
 
 it("uses the same native probe endpoint for direct guest evidence and asynchronous mailbox delivery", async () => {
@@ -169,6 +170,7 @@ beforeAll(async () => {
           if (typeof body === "object" && body !== null && "stdin" in body && body.stdin === true) {
             tcpResponse = response;
             response.write(connectFrame({ event: { start: { pid: 74 } } }));
+            if (tcpConnectMode === "pending") return;
             if (tcpConnectMode === "unreachable") {
               response.end(connectFrame({ event: { end: { exitCode: 127 } } }));
               return;
@@ -598,6 +600,46 @@ describe("official CubeSandbox HTTP compatibility client", () => {
       }
     },
   );
+  it("cancels a pending application relay handshake and joins its cleanup request", async () => {
+    const client = new OfficialCubeSandboxRuntimeClient({
+      apiUrl: `http://127.0.0.1:${port}`,
+      apiKey: "k".repeat(48),
+      proxyNodeIp: "127.0.0.1",
+      proxyPort: port,
+      proxyScheme: "http",
+      sandboxDomain: "cube.test",
+      egressProxyIp: "10.255.255.254",
+    });
+    tcpConnectMode = "pending";
+    const controller = new AbortController();
+    try {
+      const instance = await client.create({
+        allocation,
+        templateId: "pi-cloud-tool-v1",
+        timeoutSeconds: 900,
+        metadata: {},
+        allowInternetAccess: true,
+        allowPublicTraffic: false,
+      });
+      const pending = client.openTcp(instance, 4173, controller.signal);
+      const failed = expect(pending).rejects.toBeInstanceOf(Error);
+      await vi.waitFor(() => expect(tcpResponse).toBeDefined());
+      const connection = tcpResponse!;
+      controller.abort(new Error("Preview closed during connection"));
+      await failed;
+      expect(observed).toContainEqual(
+        expect.objectContaining({
+          path: "/process.Process/SendSignal",
+          body: { process: { pid: 74 }, signal: "SIGNAL_SIGKILL" },
+        }),
+      );
+      await vi.waitFor(() => expect(connection.destroyed).toBe(true));
+    } finally {
+      controller.abort();
+      tcpResponse?.destroy();
+      await client.close();
+    }
+  });
   it("reconciles an HTTP 408 pause from the eventual physical state", async () => {
     runtimeState = "running";
     pauseReturnsTimeout = true;

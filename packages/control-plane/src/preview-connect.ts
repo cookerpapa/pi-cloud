@@ -36,8 +36,18 @@ export function previewConnectionAgent(
   allowHttp: boolean,
 ): Agent {
   const agent = new Agent({ keepAlive: false });
+  const lifetime = new AbortController();
+  const destroy = agent.destroy.bind(agent);
+  agent.destroy = () => {
+    lifetime.abort(new Error("Preview connection owner closed"));
+    destroy();
+  };
   const open = (address: string, redirects = 0): Promise<Socket> =>
     new Promise((resolve, reject) => {
+      if (lifetime.signal.aborted) {
+        reject(lifetime.signal.reason);
+        return;
+      }
       const target = new URL(SANDBOX_CONTROL_SANDBOX_PREVIEW_PATH, address);
       if (
         redirects > 3 ||
@@ -48,6 +58,7 @@ export function previewConnectionAgent(
       }
       const request = (target.protocol === "https:" ? httpsRequest : httpRequest)(target, {
         method: "CONNECT",
+        signal: lifetime.signal,
         agent: target.protocol === "https:" ? directHttpsAgent : directHttpAgent,
         headers: {
           authorization: `Bearer ${serviceToken}`,
@@ -66,6 +77,11 @@ export function previewConnectionAgent(
       request.once("connect", (response, socket, head) => {
         clearTimeout(timeout);
         request.setTimeout(0);
+        if (lifetime.signal.aborted) {
+          socket.destroy();
+          reject(lifetime.signal.reason);
+          return;
+        }
         if (response.statusCode === 307 && response.headers.location) {
           socket.destroy();
           void open(response.headers.location, redirects + 1).then(resolve, reject);
@@ -94,7 +110,12 @@ export function previewConnectionAgent(
     });
   agent.createConnection = (_options, callback) => {
     void open(baseUrl).then(
-      (socket) => callback!(null, socket),
+      (socket) => {
+        if (lifetime.signal.aborted) {
+          socket.destroy();
+          callback!(lifetime.signal.reason, undefined as unknown as Socket);
+        } else callback!(null, socket);
+      },
       (error) => callback!(error, undefined as unknown as Socket),
     );
     return undefined as unknown as Socket;

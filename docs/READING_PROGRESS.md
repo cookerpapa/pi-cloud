@@ -17,7 +17,7 @@ no production repairs. The [repair plan](reports/resource-interaction-repair-pla
 is approved and implementation has started, including the subsequent official Pi foreground/background examples
 and mailbox/identity discussion. Accepted ADR-0264 separates recoverable direct
 delegation from unsafe management/scripts and adds scoped discovery. [Delivery](reports/resource-interaction-repair-20261020.md) tracks
-the repair slices, beginning with live resource ownership;
+all six source repair slices and pending combined release/live gates;
 this is not a restart of the completed main-message walkthrough.
 
 The owner asked to reconcile the complete hop-by-hop conversation with the

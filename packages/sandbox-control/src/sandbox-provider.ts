@@ -204,7 +204,11 @@ export interface SandboxProvider {
     handle: SandboxHandle,
     input: { script: string; operationId: string; cwd: string },
   ): Promise<Duplex>;
-  openPreviewConnection?(handle: SandboxHandle, port: number): Promise<Duplex>;
+  openPreviewConnection?(
+    handle: SandboxHandle,
+    port: number,
+    signal?: AbortSignal,
+  ): Promise<Duplex>;
   readonly providerId: string;
   readonly cleanPrewarmCount?: number;
   /** Provider-specific policy selected only by trusted deployment config. */

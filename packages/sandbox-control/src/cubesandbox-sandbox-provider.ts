@@ -1100,6 +1100,7 @@ export class CubeSandboxProvider implements SandboxProvider {
   async openPreviewConnection(
     handle: SandboxHandle,
     port: number,
+    signal?: AbortSignal,
   ): Promise<import("node:stream").Duplex> {
     const activation = this.#dataOwned(handle);
     if (
@@ -1113,7 +1114,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       );
     }
     try {
-      return await this.#client.openTcp(activation.instance, port);
+      return await this.#client.openTcp(activation.instance, port, signal);
     } catch (error) {
       throw new SandboxControlError(
         error instanceof CubeApplicationPortError

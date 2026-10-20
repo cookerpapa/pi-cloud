@@ -113,7 +113,7 @@ export interface CubeSandboxRuntimeClient {
     instance: CubeSandboxInstance,
     input: { script: string; cwd: string },
   ): Promise<Duplex>;
-  openTcp?(instance: CubeSandboxInstance, port: number): Promise<Duplex>;
+  openTcp?(instance: CubeSandboxInstance, port: number, signal?: AbortSignal): Promise<Duplex>;
   checkHealth(): Promise<void>;
   ensureVolume(volumeId: string, driver: string): Promise<CubeSandboxVolume>;
   deleteVolume(volumeId: string): Promise<void>;
@@ -1246,7 +1246,12 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     }
   }
 
-  async openTcp(instance: CubeSandboxInstance, port: number): Promise<Duplex> {
+  async openTcp(
+    instance: CubeSandboxInstance,
+    port: number,
+    signal?: AbortSignal,
+  ): Promise<Duplex> {
+    signal?.throwIfAborted();
     if (
       !Number.isInteger(port) ||
       port < 1024 ||
@@ -1262,7 +1267,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       s.on('error',()=>process.stderr.write('PI_CLOUD_TCP_FAILED\\n',()=>process.exit(1)));s.on('end',()=>process.stdout.end(()=>process.exit(0)));
       process.stdout.on('error',()=>process.exit(0));process.on('SIGTERM',()=>s.end());
       setTimeout(()=>process.exit(0),${PREVIEW_ACCESS_TTL_MS}).unref();`;
-    return this.#openProgram(instance, script, "/tmp", "PI_CLOUD_TCP_CONNECTED\n");
+    return this.#openProgram(instance, script, "/tmp", "PI_CLOUD_TCP_CONNECTED\n", signal);
   }
 
   async openProgram(
@@ -1282,8 +1287,11 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     script: string,
     cwd: string,
     readyMarker: string,
+    signal?: AbortSignal,
   ): Promise<Duplex> {
+    signal?.throwIfAborted();
     const controller = new AbortController();
+    const active = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     const timeout = setTimeout(() => controller.abort(), this.#requestTimeoutMs);
     timeout.unref();
     let killRelay: (() => Promise<void>) | undefined;
@@ -1321,7 +1329,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
               }),
             ),
           ),
-          signal: controller.signal,
+          signal: active,
         },
       );
       if (!response.ok || response.body === null)
@@ -1438,18 +1446,22 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         },
       });
       const duplex = Duplex.from({ readable, writable });
+      const abort = () => duplex.destroy();
+      signal?.addEventListener("abort", abort, { once: true });
       duplex.once("close", () => {
+        signal?.removeEventListener("abort", abort);
         const cleanup = ended
           ? Promise.resolve()
           : unary("SendSignal", { signal: "SIGNAL_SIGKILL" });
         void cleanup.catch(() => undefined).finally(() => controller.abort());
       });
+      if (signal?.aborted) duplex.destroy();
       return duplex;
     } catch (error) {
       clearTimeout(timeout);
       controller.abort();
       // Terminate only this connection's relay, never the user's web server.
-      void killRelay?.().catch(() => undefined);
+      await killRelay?.().catch(() => undefined);
       throw error;
     }
   }

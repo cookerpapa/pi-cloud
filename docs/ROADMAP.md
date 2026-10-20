@@ -35,7 +35,7 @@ the subsequent Pi examples and recovery discussion.
       unknown Volume-reference recovery without weakening physical cleanup proof.
 - [ ] Slice 5 (source verified; live pending): UPL-01–04/O1 — provisional/confirmed references, late PUT cleanup,
       cancellation and streamed previews.
-- [ ] Slice 6: TPR-01–04 — redirect/handshake/pending-connect/shutdown lifetimes;
+- [ ] Slice 6 (source verified; live pending): TPR-01–04 — redirect/handshake/pending-connect/shutdown lifetimes;
       verify explicit live reconnect without replaying keystrokes.
 
 Each slice includes its regression and relevant live acceptance. No overall

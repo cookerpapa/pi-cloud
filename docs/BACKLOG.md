@@ -44,6 +44,10 @@ owner replacements. Matched deployment and live acceptance remain pending.
 
 ## Terminal and application-preview lifecycle review
 
+TPR-01–04 source fixes and connection regressions pass. Terminal establishment
+is bounded; healthy sessions remain unbounded. Preview caller/shutdown teardown
+now cancels and joins pending opens. Compatible-replacement live acceptance remains.
+
 The [October 20 terminal/preview review](reports/terminal-preview-review-20261020.md)
 is complete at `901da9ed`. Seventy existing tests and four owned transport
 characterizations pass; no runtime fix or live replacement is included.

@@ -28,6 +28,12 @@ Control Plane outages. [Current recovery evidence](docs/reports/idle-worker-reco
 covers 60/90-second outages and a Control Plane process crash. Full matched
 application/schema updates still use the drained release procedure above.
 
+The [resource and interaction repair](docs/reports/resource-interaction-repair-20261020.md)
+has six implemented source slices, including recoverable direct Subagents,
+shared-VM holder protection, Volume evidence, attachment cleanup and connection
+lifetimes. It targets schema 194 and Session topic v18; combined release checks
+and live acceptance are still pending. The serving release is identified below.
+
 ## Architecture
 
 ```text
