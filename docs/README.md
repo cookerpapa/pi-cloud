@@ -1,5 +1,11 @@
 # Documentation map
 
+The [October 20 upload/attachment review](reports/upload-lifecycle-review-20261020.md)
+is the third resource/interaction slice. It records premature permanent pins,
+late PUT/GC inventory loss for long uploads, missing image-read cancellation and
+early-refusal source cleanup. Existing and isolated tests are distinguished from
+live S3/Cube acceptance. Runtime remains unchanged; terminal/preview review follows.
+
 The [October 20 Subagent lifecycle review](reports/subagent-lifecycle-review-20261020.md)
 is the second resource/interaction slice. It records four runtime findings, a
 direct-child discovery design gap, seven-SQL repeat reconciliation and documentation

@@ -1,0 +1,76 @@
+{
+  "baseline": "cf12b444",
+  "runtimeRelease": "model-runtime-058925bb",
+  "schema": 192,
+  "reviewOnly": true,
+  "productionModified": false,
+  "existingTests": {
+    "files": 10,
+    "passed": 64
+  },
+  "newCharacterizations": 4,
+  "findings": [
+    {
+      "id": "UPL-01",
+      "priority": "P2",
+      "issue": "unaccepted native input permanently pins draft upload"
+    },
+    {
+      "id": "UPL-02",
+      "priority": "P2",
+      "issue": "old in-flight PUT can finish after GC forgets inventory"
+    },
+    {
+      "id": "UPL-03",
+      "priority": "P2",
+      "issue": "browser image disconnect does not cancel blob read"
+    },
+    {
+      "id": "UPL-04",
+      "priority": "P3",
+      "issue": "early refusal does not close started upload iterator"
+    }
+  ],
+  "opportunity": "UPL-O1 original-image preview can reuse streaming attachment port",
+  "measurements": [
+    {
+      "case": "unsent_input_upload_pin",
+      "backendLookups": 1,
+      "nativeCalls": 0,
+      "acceptedMarkerSet": true,
+      "explicitRemoveRetainedRow": true,
+      "expiredDraftStillPinned": true,
+      "realPostgres": true
+    },
+    {
+      "case": "late_upload_put_after_gc",
+      "objectAgeDays": 2,
+      "claimInitiallyCurrent": true,
+      "inventoryDeletedBeforePut": true,
+      "blobExistsAfterFailure": true,
+      "secondReapDeleted": 0,
+      "realPostgres": true,
+      "blobStore": "controlled"
+    },
+    {
+      "case": "cancelled_preview_source_read",
+      "clientDisconnected": true,
+      "sourceAborted": false,
+      "sourceStillPending": true,
+      "realHttp": true,
+      "realPostgres": true,
+      "blobStore": "controlled"
+    },
+    {
+      "case": "early_upload_iterator_cleanup",
+      "rejected": true,
+      "sourceIteratorClosed": false,
+      "vmEffects": 0
+    }
+  ],
+  "sourceHashes": {
+    "upload.test.ts": "a57f874eee4e7307d876966c5bfae22a92055881ad82e040fda02deed0d9b927",
+    "README.md": "5fb9ecc8b33d1304d1171c5685a3094da92fbde7bea0f158e729365f8b3033a6",
+    "tsconfig.json": "3f7cdbc91fcafa96d24d6b2476f1bf867cadcf41a4f81b0d8ee12297220980a1"
+  }
+}

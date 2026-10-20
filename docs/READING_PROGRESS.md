@@ -7,8 +7,9 @@ The first, [Workspace/Volume lifecycle](reports/workspace-volume-lifecycle-revie
 is complete with four findings and two opportunities. The second,
 [Subagent lifecycle](reports/subagent-lifecycle-review-20261020.md), records four
 runtime findings, a discovery discussion and measured simplification work.
-Neither review includes production repairs. Continue with upload/attachment,
-then terminal/preview lifetimes. This is additional scope
+The third, [upload/attachment lifecycle](reports/upload-lifecycle-review-20261020.md),
+records four findings and a streaming opportunity. These reviews include no
+production repairs. Continue with terminal/preview lifetimes. This is additional scope
 after the completed main-message walkthrough, not a restart of that walkthrough.
 
 The owner asked to reconcile the complete hop-by-hop conversation with the

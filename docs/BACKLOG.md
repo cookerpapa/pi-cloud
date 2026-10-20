@@ -28,6 +28,21 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## Upload and attachment lifecycle review
+
+The [October 20 upload review](reports/upload-lifecycle-review-20261020.md) is
+complete at `cf12b444`; no runtime fix is included. Existing tests pass and four
+isolated PG/HTTP/source-lifetime probes reproduce the recorded findings.
+
+- [ ] UPL-01 / P2: reconcile provisional attachment pins after known unaccepted
+      native inputs, while protecting uncertain acknowledgements and other accepted uses.
+- [ ] UPL-02 / P2: retain cleanup identity across a long in-flight image PUT when
+      its draft is removed; original object age alone must not forget the writer.
+- [ ] UPL-03 / P2: propagate browser image-request cancellation into source reads.
+- [ ] UPL-04 / P3: close started upload iterators on pre-transfer refusal too.
+- [ ] UPL-O1: consider streaming original-image previews through the existing
+      attachment source port, with cancellation/integrity and response completion joined.
+
 ## Subagent lifecycle and interaction review
 
 The [October 20 Subagent review](reports/subagent-lifecycle-review-20261020.md)

@@ -11,7 +11,10 @@
       [findings and measurements](reports/subagent-lifecycle-review-20261020.md) include
       supervisor self-wake, decision visibility, terminal state and workflow cache lifetime.
 - [ ] Discuss SAR-D1 discovery and implement the accepted SAR repairs separately.
-- [ ] Review upload/attachment placement, acknowledgement and cleanup across failures.
+- [x] Review upload/attachment placement, acknowledgement and cleanup across failures;
+      [four findings and streaming opportunity](reports/upload-lifecycle-review-20261020.md)
+      are supported by isolated PG/HTTP/source-lifetime probes.
+- [ ] Implement the accepted UPL repairs in a separate slice, preserving uncertain-input pins.
 - [ ] Review terminal/preview connection and process lifetimes across replacement.
 
 ## Native model request / response review
