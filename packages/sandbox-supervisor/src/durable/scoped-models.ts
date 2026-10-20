@@ -7,7 +7,10 @@ import {
   type Model,
 } from "@earendil-works/pi-ai";
 import type { Models } from "@earendil-works/pi-ai/models";
-import { completeModelResponse, durableModelProgress } from "./model-stream-policy.ts";
+import { isRetryableAssistantError } from "@earendil-works/pi-ai/utils/retry";
+import { completeModelResponse } from "./model-stream-policy.ts";
+import { ProviderResponse } from "./provider-response.ts";
+import type { ProviderHostedActivity } from "../agent-turn-runtime.ts";
 
 type ModelOperation = "stream" | "streamSimple" | "streamDeferred" | "cancelDeferred";
 type RequestOptions = Record<string, unknown> & { signal?: AbortSignal };
@@ -17,7 +20,18 @@ export type CloudModelPermit = {
   input?: unknown;
   /** Lossy activity only. Tool names, IDs and arguments never leave this port. */
   onToolCallProgress?(): void;
-  decorate?(message: AssistantMessage): void;
+  onHostedActivity?(activity: ProviderHostedActivity): void;
+  onOutcome?(sample: {
+    outcome: "completed" | "error" | "aborted" | "deferred";
+    startedAtMs: number;
+    startedMonotonicMs: number;
+    processStartedAtMs: number;
+    durationMs: number;
+    firstFrameMs?: number;
+    firstTextMs?: number;
+    firstToolMs?: number;
+    firstSearchMs?: number;
+  }): void;
   release(): void;
 };
 export type CloudModelRequest = {
@@ -143,20 +157,77 @@ export class ScopedDurableModels {
     const output = createAssistantMessageEventStream();
     void (async () => {
       let permit: CloudModelPermit | undefined;
+      let response: ProviderResponse | undefined;
+      let sourceStream: AssistantMessageEventStream | undefined;
+      const requestLifetime = new AbortController();
+      let report: ((outcome: "completed" | "error" | "aborted" | "deferred") => void) | undefined;
       try {
         permit = await this.#permit(operation, model, input, options);
-        const stream = Reflect.apply(this.source[operation], this.source, [
+        const startedAt = performance.now();
+        const startedAtMs = Date.now();
+        const observe = permit.onOutcome;
+        let reported = false;
+        report = (outcome) => {
+          if (reported) return;
+          reported = true;
+          try {
+            observe?.({
+              outcome,
+              startedAtMs,
+              startedMonotonicMs: response?.startedAt ?? startedAt,
+              processStartedAtMs: performance.timeOrigin,
+              durationMs: performance.now() - startedAt,
+              ...response?.timing,
+            });
+          } catch {
+            /* Telemetry is not an execution authority. */
+          }
+        };
+        response = new ProviderResponse(
+          permit.model,
+          (event) => output.push(event),
+          permit.onHostedActivity,
+        );
+        let status: number | undefined;
+        const previousResponse = permit.options.onResponse as
+          | ((
+              value: { status: number; headers: Record<string, string> },
+              model: Model<Api>,
+            ) => void | Promise<void>)
+          | undefined;
+        const previous = permit.options.onProviderStreamEvent as
+          ((event: unknown, model: Model<Api>) => void | Promise<void>) | undefined;
+        const stream = (sourceStream = Reflect.apply(this.source[operation], this.source, [
           permit.model,
           permit.input ?? input,
-          permit.options,
-        ]) as AssistantMessageEventStream;
+          {
+            ...permit.options,
+            signal: permit.options.signal
+              ? AbortSignal.any([permit.options.signal, requestLifetime.signal])
+              : requestLifetime.signal,
+            onResponse: async (
+              value: { status: number; headers: Record<string, string> },
+              real: Model<Api>,
+            ) => {
+              status = value.status;
+              await previousResponse?.(value, real);
+            },
+            onProviderStreamEvent: async (event: unknown, real: Model<Api>) => {
+              response!.observe(event);
+              await previous?.(event, real);
+            },
+          },
+        ]) as AssistantMessageEventStream);
         let terminal: Extract<AssistantMessageEvent, { type: "done" | "error" }> | undefined;
         for await (const event of stream) {
           if (event.type === "done" || event.type === "error") terminal = event;
           else {
-            const progress = durableModelProgress(event);
-            if (progress) output.push(progress);
-            else {
+            response.progress(event);
+            if (
+              event.type === "toolcall_start" ||
+              event.type === "toolcall_delta" ||
+              event.type === "toolcall_end"
+            ) {
               try {
                 permit.onToolCallProgress?.();
               } catch {
@@ -165,10 +236,20 @@ export class ScopedDurableModels {
             }
           }
         }
-        const result = completeModelResponse(await stream.result());
-        permit.decorate?.(result);
+        const result = completeModelResponse(response.result(await stream.result()));
+        if (
+          result.stopReason === "error" &&
+          ((status !== undefined && status >= 500 && status <= 599) || response.transientFailure)
+        ) {
+          const errorMessage = `Model provider server error${status && status >= 500 ? ` (HTTP ${status})` : ""}: ${result.errorMessage ?? "upstream failure"}`;
+          // Preserve Pi's own terminal quota/billing exclusions even when an
+          // upstream misuses a server status. This is classification, not retry.
+          if (isRetryableAssistantError({ ...result, errorMessage }))
+            result.errorMessage = errorMessage;
+        }
         const ids = new Set<string>();
         if (
+          result.stopReason === "pending" ||
           result.content.some(
             (part) =>
               part.type === "toolCall" &&
@@ -177,7 +258,8 @@ export class ScopedDurableModels {
         ) {
           result.stopReason = "error";
           result.content = completeModelResponse(result).content;
-          result.errorMessage = "Provider returned ambiguous tool call identities";
+          result.errorMessage =
+            "Provider returned an incomplete response or ambiguous Tool identities";
           terminal = { type: "error", reason: "error", error: result };
         }
         // Completion can immediately schedule a Tool/Child. Release the model
@@ -185,6 +267,15 @@ export class ScopedDurableModels {
         const completed = permit;
         permit = undefined;
         completed.release();
+        report(
+          result.stopReason === "aborted"
+            ? "aborted"
+            : result.stopReason === "error"
+              ? "error"
+              : result.stopReason === "deferred"
+                ? "deferred"
+                : "completed",
+        );
         if (terminal)
           output.push(
             terminal.type === "done"
@@ -193,8 +284,15 @@ export class ScopedDurableModels {
           );
         output.end(result);
       } catch {
+        requestLifetime.abort();
+        // The fixed adapters honor AbortSignal. Join provider cleanup before
+        // releasing its concurrency slot, including local interpretation errors.
+        await sourceStream?.result().catch(() => undefined);
         const real = this.#descriptors.get(model.id)?.model ?? model;
-        const message: AssistantMessage = {
+        const message: AssistantMessage = response?.failure(
+          options.signal?.aborted ? "aborted" : "error",
+          "Cloud model response processing is unavailable",
+        ) ?? {
           role: "assistant",
           api: real.api,
           provider: real.provider,
@@ -217,8 +315,10 @@ export class ScopedDurableModels {
           reason: message.stopReason as "error" | "aborted",
           error: message,
         });
+        report?.(message.stopReason === "aborted" ? "aborted" : "error");
         output.end(message);
       } finally {
+        response?.close("failed");
         permit?.release();
       }
     })();

@@ -1,6 +1,6 @@
 # Native model request / response repair plan
 
-Status: proposed, 2026-10-19; implementation has not started.
+Status: approved; implementation and verification in progress, 2026-10-20.
 Owner amendment: Agent work has no overall runtime limit. The lifetime changes
 below are part of the plan, not an optional whole-work budget or a larger timeout.
 Baseline: `4cb3440b`. Findings: [combined review](model-request-response-review-20261019.md).
@@ -24,8 +24,9 @@ events. Reuse existing hosted-action normalization, transcript replay and native
 Storage facilities. Add no service, scheduler, sidecar store, provider SDK fork,
 second parser in the Gateway, separate retry owner or compatibility path.
 
-Before production edits, record the accepted ownership/metadata/metric decisions
-in a current ADR. This plan proposes changes; it does not mark them implemented.
+The accepted ownership/metadata/metric decisions are recorded in
+[ADR-0263](../adr/0263-model-response-and-work-lifetimes.md).
+[Delivery status](model-runtime-repair-20261020.md) tracks source and live gates separately.
 
 ## 0. Remove the whole-work duration limit — owner decision MR-D1
 

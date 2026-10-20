@@ -439,7 +439,6 @@ export interface TenantRuntimePolicyTable {
   maximum_model_requests_per_run: GeneratedNullable<number>;
   maximum_tool_calls_per_run: GeneratedNullable<number>;
   maximum_tool_output_bytes: GeneratedInteger;
-  maximum_run_duration_ms: GeneratedInteger;
   compaction_reserve_tokens: GeneratedInteger;
   compaction_keep_recent_tokens: GeneratedInteger;
   created_at: GeneratedTimestamp;

@@ -10,7 +10,6 @@ import {
 
 const MAX_SECRET_BYTES = 16 * 1_024;
 const REMOTE_TOOL_TRANSPORT_MARGIN_MS = 60_000;
-const MODEL_CAPABILITY_EXPIRY_MARGIN_MS = 60_000;
 
 export type SupervisorHostEnvironment = Readonly<Record<string, string | undefined>>;
 
@@ -44,12 +43,12 @@ export type SupervisorHostConfig = {
   modelGatewayHost: string;
   modelGatewayPort: number;
   modelGatewayAdvertisedBaseUrl: string;
-  modelGatewayCapabilityTtlMs: number;
   modelGatewayMaximumRequestsPerTurn: number | null;
   modelGatewayUpstreamConnectTimeoutMs: number;
   modelGatewayUpstreamIdleTimeoutMs: number;
   piModelRequestTimeoutMs: number;
-  piTurnTimeoutMs: number;
+  workerDrainGraceMs: number;
+  workerRetirementTimeoutMs: number;
 };
 
 function required(environment: SupervisorHostEnvironment, name: string): string {
@@ -232,6 +231,9 @@ async function optionalSecret(
 export async function loadSupervisorHostConfig(
   environment: SupervisorHostEnvironment = process.env,
 ): Promise<SupervisorHostConfig> {
+  for (const name of ["PI_CLOUD_PI_TURN_TIMEOUT_MS", "PI_CLOUD_MODEL_GATEWAY_CAPABILITY_TTL_MS"])
+    if (environment[name] !== undefined)
+      throw new TypeError(`${name} was removed; Agent work follows execution ownership`);
   const allowInsecureInternalHttp = booleanValue(
     environment,
     "PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP",
@@ -248,19 +250,19 @@ export async function loadSupervisorHostConfig(
     1_000,
     900_000,
   );
-  const piTurnTimeoutMs = integerValue(
+  const workerDrainGraceMs = integerValue(
     environment,
-    "PI_CLOUD_PI_TURN_TIMEOUT_MS",
-    10 * 60_000,
-    1_000,
-    15 * 60_000,
+    "PI_CLOUD_WORKER_DRAIN_GRACE_MS",
+    30_000,
+    1,
+    300_000,
   );
-  const modelGatewayCapabilityTtlMs = integerValue(
+  const workerRetirementTimeoutMs = integerValue(
     environment,
-    "PI_CLOUD_MODEL_GATEWAY_CAPABILITY_TTL_MS",
-    15 * 60_000,
+    "PI_CLOUD_WORKER_RETIREMENT_TIMEOUT_MS",
+    660_000,
     1_000,
-    60 * 60_000,
+    1_200_000,
   );
   const modelGatewayUpstreamConnectTimeoutMs = integerValue(
     environment,
@@ -296,15 +298,8 @@ export async function loadSupervisorHostConfig(
       "Model upstream connect timeout cannot exceed the Pi response-header timeout",
     );
   }
-  if (piModelRequestTimeoutMs > piTurnTimeoutMs) {
-    throw new TypeError("Pi model-request timeout cannot exceed the Pi Turn timeout");
-  }
-  if (modelGatewayUpstreamIdleTimeoutMs > piTurnTimeoutMs) {
-    throw new TypeError("Model upstream idle timeout cannot exceed the Pi Turn timeout");
-  }
-  if (modelGatewayCapabilityTtlMs < piTurnTimeoutMs + MODEL_CAPABILITY_EXPIRY_MARGIN_MS) {
-    throw new TypeError("Model capability TTL must outlive the Pi Turn timeout and expiry margin");
-  }
+  if (workerRetirementTimeoutMs < sandboxControlRequestTimeoutMs + 300_000)
+    throw new TypeError("Worker retirement timeout must cover operation cleanup and settlement");
   const subagentMaximumNodes = resourceLimit(
     environment.PI_CLOUD_SUBAGENT_MAXIMUM_NODES,
     "PI_CLOUD_SUBAGENT_MAXIMUM_NODES",
@@ -426,7 +421,6 @@ export async function loadSupervisorHostConfig(
     modelGatewayAdvertisedBaseUrl: modelGatewayBaseUrl(
       required(environment, "PI_CLOUD_MODEL_GATEWAY_ADVERTISED_URL"),
     ),
-    modelGatewayCapabilityTtlMs,
     modelGatewayMaximumRequestsPerTurn: resourceLimit(
       environment.PI_CLOUD_MODEL_GATEWAY_MAXIMUM_REQUESTS_PER_TURN,
       "PI_CLOUD_MODEL_GATEWAY_MAXIMUM_REQUESTS_PER_TURN",
@@ -434,6 +428,7 @@ export async function loadSupervisorHostConfig(
     modelGatewayUpstreamConnectTimeoutMs,
     modelGatewayUpstreamIdleTimeoutMs,
     piModelRequestTimeoutMs,
-    piTurnTimeoutMs,
+    workerDrainGraceMs,
+    workerRetirementTimeoutMs,
   };
 }

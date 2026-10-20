@@ -13,16 +13,10 @@
 {{- if gt (int $timeouts.modelUpstreamConnectMs) (int $timeouts.modelRequestMs) -}}
 {{- fail "runtime.timeouts.modelUpstreamConnectMs cannot exceed modelRequestMs" -}}
 {{- end -}}
-{{- if gt (int $timeouts.modelUpstreamIdleMs) (int $timeouts.turnMs) -}}
-{{- fail "runtime.timeouts.modelUpstreamIdleMs cannot exceed turnMs" -}}
+{{- if lt (int $timeouts.workerRetirementMs) (add (int $timeouts.sandboxControlRequestMs) 300000) -}}
+{{- fail "runtime.timeouts.workerRetirementMs must cover operation cleanup and ownership settlement" -}}
 {{- end -}}
-{{- if gt (int $timeouts.modelRequestMs) (int $timeouts.turnMs) -}}
-{{- fail "runtime.timeouts.modelRequestMs cannot exceed turnMs" -}}
-{{- end -}}
-{{- if lt (int $timeouts.modelCapabilityTtlMs) (add (int $timeouts.turnMs) 60000) -}}
-{{- fail "runtime.timeouts.modelCapabilityTtlMs must outlive turnMs by one minute" -}}
-{{- end -}}
-{{- $requiredTerminationGraceMs := add (int $timeouts.turnMs) (int $timeouts.sandboxControlRequestMs) 360000 -}}
+{{- $requiredTerminationGraceMs := add (int $timeouts.workerDrainMs) (int $timeouts.workerRetirementMs) 60000 -}}
 {{- if lt (mul (int .Values.lifecycle.terminationGracePeriodSeconds) 1000) $requiredTerminationGraceMs -}}
 {{- fail "lifecycle.terminationGracePeriodSeconds cannot expire before Worker settlement" -}}
 {{- end -}}
@@ -201,16 +195,16 @@ spec:
               value: "4200"
             - name: PI_CLOUD_MODEL_GATEWAY_ADVERTISED_URL
               value: http://127.0.0.1:4200
-            - name: PI_CLOUD_MODEL_GATEWAY_CAPABILITY_TTL_MS
-              value: {{ .Values.runtime.timeouts.modelCapabilityTtlMs | quote }}
+            - name: PI_CLOUD_WORKER_DRAIN_GRACE_MS
+              value: {{ .Values.runtime.timeouts.workerDrainMs | quote }}
+            - name: PI_CLOUD_WORKER_RETIREMENT_TIMEOUT_MS
+              value: {{ .Values.runtime.timeouts.workerRetirementMs | quote }}
             - name: PI_CLOUD_MODEL_GATEWAY_UPSTREAM_CONNECT_TIMEOUT_MS
               value: {{ .Values.runtime.timeouts.modelUpstreamConnectMs | quote }}
             - name: PI_CLOUD_MODEL_GATEWAY_UPSTREAM_IDLE_TIMEOUT_MS
               value: {{ .Values.runtime.timeouts.modelUpstreamIdleMs | quote }}
             - name: PI_CLOUD_PI_MODEL_REQUEST_TIMEOUT_MS
               value: {{ .Values.runtime.timeouts.modelRequestMs | quote }}
-            - name: PI_CLOUD_PI_TURN_TIMEOUT_MS
-              value: {{ .Values.runtime.timeouts.turnMs | quote }}
             - name: PI_CLOUD_METRICS_HOST
               value: 0.0.0.0
             - name: PI_CLOUD_METRICS_PORT

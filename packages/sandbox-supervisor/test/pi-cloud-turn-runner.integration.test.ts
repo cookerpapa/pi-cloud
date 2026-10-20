@@ -152,7 +152,6 @@ async function fixture(
       contextWindow: 131072,
       maxTokens: 1024,
     }),
-    turnTimeoutMs: 30000,
     requestTimeoutMs: 30000,
     acquireModelPermit: async (signal) => {
       signal?.throwIfAborted();

@@ -1293,7 +1293,15 @@ The deployed 600-second Runner deadline is a whole-invocation policy, separately
 documented from connection/idle timeouts. The owner has chosen to remove the
 overall runtime limit; the [amended plan](reports/model-request-response-repair-plan-20261019.md)
 also addresses model-grant lifetime and bounded Worker handoff. This is not yet
-implemented; current runtime behavior remains the documented finite policy.
+deployed; [ADR-0263](adr/0263-model-response-and-work-lifetimes.md) is implemented
+in source with [verification/delivery](reports/model-runtime-repair-20261020.md)
+in progress. Source schema 192 removes the duration policy; hosted completion is
+an empty native text slot carrying PiCloud-owned metadata, replayed as the exact
+provider item at the public payload hook. Gateway is transport-only. The Models
+boundary owns phases, hosted content and semantic outcomes. Native Store/Kafka
+commit and abort boundaries are unchanged, including exclusion of aborted/error
+Assistant entries from later Pi model context. Worker retirement has a bounded
+drain and closes late admission before entering existing same-Run recovery.
 
 CLIProxyAPI owns upstream subscription/API credentials and account affinity.
 Workers see only scoped model-runtime access through their local Model Gateway.

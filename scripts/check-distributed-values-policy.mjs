@@ -28,11 +28,11 @@ const valid = {
       sessionModelConcurrency: 4,
       timeouts: {
         sandboxControlRequestMs: 360_000,
-        modelCapabilityTtlMs: 900_000,
+        workerDrainMs: 30_000,
+        workerRetirementMs: 660_000,
         modelUpstreamConnectMs: 120_000,
         modelUpstreamIdleMs: 300_000,
         modelRequestMs: 150_000,
-        turnMs: 600_000,
       },
     },
   },

@@ -228,10 +228,10 @@ export function projectDurableTranscript(
             proposals.set(block.id, { name: block.name, input: block.arguments ?? null });
           } else if (
             !proposalOnly.has(row.id) &&
-            block.type === "providerHostedToolCall" &&
-            block.toolName === "web_search"
+            block.type === "text" &&
+            record(block.providerHostedTool)?.toolName === "web_search"
           ) {
-            const native = record(block.nativeItem);
+            const native = record(record(block.providerHostedTool)?.nativeItem);
             if (typeof native?.id !== "string") continue;
             const action = normalizeProviderHostedWebSearchAction(native);
             items.push({

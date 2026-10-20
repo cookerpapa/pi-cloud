@@ -162,13 +162,19 @@ describe("Supervisor host production configuration", () => {
         PI_CLOUD_MODEL_GATEWAY_UPSTREAM_IDLE_TIMEOUT_MS: "601000",
         PI_CLOUD_PI_TURN_TIMEOUT_MS: "600000",
       }),
-    ).rejects.toThrow("upstream idle timeout");
+    ).rejects.toThrow("was removed");
     await expect(
       loadSupervisorHostConfig({
         ...environment,
         PI_CLOUD_MODEL_GATEWAY_CAPABILITY_TTL_MS: "600000",
       }),
-    ).rejects.toThrow("capability TTL");
+    ).rejects.toThrow("was removed");
+    await expect(
+      loadSupervisorHostConfig({
+        ...environment,
+        PI_CLOUD_WORKER_RETIREMENT_TIMEOUT_MS: "1000",
+      }),
+    ).rejects.toThrow("retirement timeout");
     await expect(
       loadSupervisorHostConfig({
         ...environment,

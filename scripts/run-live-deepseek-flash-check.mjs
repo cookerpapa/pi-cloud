@@ -122,7 +122,7 @@ async function turn(name, prompt, thinkingLevel, uploads = []) {
     .executeTakeFirstOrThrow();
   const hosted = messages
     .flatMap((m) => m.content ?? [])
-    .filter((p) => p.type === "providerHostedToolCall");
+    .filter((p) => p.type === "text" && p.providerHostedTool?.toolName === "web_search");
   const entry = {
     name,
     runId: run.runId,

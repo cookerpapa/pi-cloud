@@ -15,7 +15,9 @@ request-local response semantics at Pi's public Models boundary, native progress
 abort preservation, retry classification and separate transport/model outcomes.
 It includes removal of the replaced path and acceptance criteria. The owner has
 chosen no overall runtime limit; the amended plan removes the duration mechanism
-and addresses owner-bound grants/Worker handoff. No implementation is claimed.
+and addresses owner-bound grants/Worker handoff. [ADR-0263](adr/0263-model-response-and-work-lifetimes.md)
+is implemented in source; [verification and rollout status](reports/model-runtime-repair-20261020.md)
+track the remaining required checks separately from deployment.
 
 The [October 19 replacement Worker → Pi Harness review](reports/worker-harness-recovery-review-20261019.md)
 checks native cold open, pending input, child rebinding, unsafe Tool non-replay and

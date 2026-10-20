@@ -284,17 +284,14 @@
           "additionalProperties": false,
           "required": [
             "sandboxControlRequestMs",
-            "modelCapabilityTtlMs",
             "modelUpstreamConnectMs",
             "modelUpstreamIdleMs",
             "modelRequestMs",
-            "turnMs"
+            "workerDrainMs",
+            "workerRetirementMs"
           ],
           "properties": {
             "sandboxControlRequestMs": {
-              "$ref": "#/$defs/positiveMs"
-            },
-            "modelCapabilityTtlMs": {
               "$ref": "#/$defs/positiveMs"
             },
             "modelUpstreamConnectMs": {
@@ -306,7 +303,10 @@
             "modelRequestMs": {
               "$ref": "#/$defs/positiveMs"
             },
-            "turnMs": {
+            "workerDrainMs": {
+              "$ref": "#/$defs/positiveMs"
+            },
+            "workerRetirementMs": {
               "$ref": "#/$defs/positiveMs"
             }
           }

@@ -17,7 +17,8 @@ separate work; walkthrough completion does not claim the four defects are fixed.
 The [proposed repair plan](reports/model-request-response-repair-plan-20261019.md)
 now defines the four-defect slice and native-abort acceptance boundary. The
 owner has now chosen no overall runtime limit, and the plan includes the associated
-grant, shutdown and retention checks. Implementation has not started.
+grant, shutdown and retention checks. [Implementation](reports/model-runtime-repair-20261020.md)
+is in progress under ADR-0263; matched deployment/live acceptance is still pending.
 
 The preceding **replacement Worker → Pi Harness opening and continuation**
 [review](reports/worker-harness-recovery-review-20261019.md) and

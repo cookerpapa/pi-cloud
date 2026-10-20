@@ -2388,6 +2388,146 @@
       "file": "test/native-child-reattachment.test.ts",
       "test": "does not turn an incomplete cold checkpoint into a recoverable lease error during cleanup",
       "invariant": "An incomplete handoff remains an explicit failure; closing the partially initialized authority cannot turn it into an automatic recovery loop."
+    },
+    {
+      "id": "native-model-connect-openai-codex",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/model-response-harness.test.ts",
+      "test": "native Harness retries Gateway connection loss on openai-codex",
+      "invariant": "Gateway transport normalization preserves native retry ownership; the next native attempt can succeed without a hidden Gateway resend."
+    },
+    {
+      "id": "native-model-stream-openai-codex",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/model-response-harness.test.ts",
+      "test": "native Harness preserves partial text and retries a broken openai-codex stream",
+      "invariant": "Broken response streams retain partial text and native retry semantics on both maintained routes."
+    },
+    {
+      "id": "native-model-billing-openai-codex",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/model-response-harness.test.ts",
+      "test": "native error policy keeps openai-codex HTTP 500 / billing quota exceeded at 1 sends",
+      "invariant": "A server status does not override native terminal billing/quota classification."
+    },
+    {
+      "id": "native-model-connect-deepseek",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/model-response-harness.test.ts",
+      "test": "native Harness retries Gateway connection loss on deepseek",
+      "invariant": "Gateway transport normalization preserves native retry ownership; the next native attempt can succeed without a hidden Gateway resend."
+    },
+    {
+      "id": "native-model-stream-deepseek",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/model-response-harness.test.ts",
+      "test": "native Harness preserves partial text and retries a broken deepseek stream",
+      "invariant": "Broken response streams retain partial text and native retry semantics on both maintained routes."
+    },
+    {
+      "id": "native-model-billing-deepseek",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/model-response-harness.test.ts",
+      "test": "native error policy keeps deepseek HTTP 500 / billing quota exceeded at 1 sends",
+      "invariant": "A server status does not override native terminal billing/quota classification."
+    },
+    {
+      "id": "native-hosted-stop",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/model-response-harness.test.ts",
+      "test": "native Stop and cold reopening retain an acknowledged hosted-only partial",
+      "invariant": "A completed hosted item can commit without later text and survives native Stop without a second recovery store."
+    },
+    {
+      "id": "native-hosted-pg-stop",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/hosted-native-storage.postgres.test.ts",
+      "test": "keeps hosted progress out of PG streaming history, then restores its aborted canonical entry",
+      "invariant": "PG stores canonical aborted hosted content and cold history without retaining in-flight progress bodies."
+    },
+    {
+      "id": "native-hosted-pg-handoff",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/hosted-native-storage.postgres.test.ts",
+      "test": "checkpoints committed hosted progress on writer handoff and resumes the original native input",
+      "invariant": "An ordered native checkpoint preserves completed hosted metadata and the original Submission across fresh native reopening."
+    },
+    {
+      "id": "model-semantic-terminal-eof",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/model-response-harness.test.ts",
+      "test": "semantic success remains successful when Codex closes before HTTP EOF",
+      "invariant": "Transport disconnection after a completed model response does not count as semantic model failure."
+    },
+    {
+      "id": "model-phase-content-identity",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/model-response-harness.test.ts",
+      "test": "real Codex parsing keeps commentary/final phases after a thinking item",
+      "invariant": "Text phases map to real native content identities instead of mixed ordinal indexes."
+    },
+    {
+      "id": "model-owned-grant-unbounded",
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/model-gateway.test.ts",
+      "test": "keeps an owned model grant beyond the former TTL and rejects it immediately after revocation",
+      "invariant": "Model grants follow existing ownership without elapsed-time expiry, and revoked tokens immediately lose admission."
+    },
+    {
+      "id": "model-upload-owner-revocation",
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/model-gateway.test.ts",
+      "test": "rejects an in-flight upload after owner_loss",
+      "invariant": "Owner revocation interrupts an unfinished upload before it can reach the provider."
+    },
+    {
+      "id": "runner-no-total-duration",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/durable-turn-runner.test.ts",
+      "test": "runs native input and admission gates (long_work)",
+      "invariant": "A healthy native Runner outlives the removed total deadline while individual requests remain bounded."
+    },
+    {
+      "id": "worker-bounded-retirement",
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/worker-retirement.test.ts",
+      "test": "bounds natural drain then joins execution exit before returning proof",
+      "invariant": "A long-running family enters bounded retirement and cannot report exit before local settlement."
+    },
+    {
+      "id": "worker-unconfirmed-retirement",
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/worker-retirement.test.ts",
+      "test": "never confirms retirement when PG-backed settlement cannot finish",
+      "invariant": "Unavailable settlement leaves retirement unconfirmed instead of admitting a replacement early."
+    },
+    {
+      "id": "worker-retirement-admission",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/agent-run-supervisor.test.ts",
+      "test": "does not report assignment settlement until revoked runner teardown finishes",
+      "invariant": "Retirement closes admission to late claims, revokes the old family and joins teardown before positive exit evidence."
+    },
+    {
+      "id": "worker-failed-cleanup-hard-exit",
+      "workspace": "@pi-cloud/supervisor-host",
+      "file": "test/main.test.ts",
+      "test": "attempts every cleanup once and preserves startup and cleanup errors",
+      "invariant": "Failed dependency cleanup preserves its errors and leaves a bounded process exit armed; it does not claim successful owner settlement."
+    },
+    {
+      "id": "model-spent-budget-openai-codex",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/model-response-harness.test.ts",
+      "test": "a spent cloud request budget stays terminal on openai-codex",
+      "invariant": "An explicitly finite request budget is a terminal admission refusal, not a transient provider failure or hidden resend."
+    },
+    {
+      "id": "model-spent-budget-deepseek",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/model-response-harness.test.ts",
+      "test": "a spent cloud request budget stays terminal on deepseek",
+      "invariant": "An explicitly finite request budget is a terminal admission refusal, not a transient provider failure or hidden resend."
     }
   ]
 }

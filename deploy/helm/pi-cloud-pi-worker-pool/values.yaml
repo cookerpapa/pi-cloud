@@ -69,11 +69,11 @@ runtime:
     maximumNodes: null
   timeouts:
     sandboxControlRequestMs: 360000
-    modelCapabilityTtlMs: 900000
+    workerDrainMs: 30000
+    workerRetirementMs: 660000
     modelUpstreamConnectMs: 120000
     modelUpstreamIdleMs: 300000
     modelRequestMs: 150000
-    turnMs: 600000
 
 state:
   storageClassName: ""

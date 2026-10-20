@@ -140,7 +140,6 @@ export type RemoteToolSandboxTurnRunnerOptions = {
     signal?: AbortSignal,
   ) => Promise<() => void>;
   requestTimeoutMs?: number;
-  turnTimeoutMs?: number;
   idGenerator?: () => string;
   metrics?: PiCloudMetrics;
 };
@@ -215,7 +214,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   readonly #onActivity: RemoteToolSandboxTurnRunnerOptions["onActivity"];
   readonly #onRuntimeBinding: RemoteToolSandboxTurnRunnerOptions["onRuntimeBinding"];
   readonly #requestTimeoutMs: number | undefined;
-  readonly #turnTimeoutMs: number | undefined;
   readonly #idGenerator: () => string;
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #activePiRunners = new Map<
@@ -245,7 +243,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     this.#createTrustedTools = options.createTrustedTools;
     this.#acquireModelPermit = options.acquireModelPermit;
     this.#requestTimeoutMs = options.requestTimeoutMs;
-    this.#turnTimeoutMs = options.turnTimeoutMs;
     this.#idGenerator = options.idGenerator ?? (() => globalThis.crypto.randomUUID());
     this.#metrics = options.metrics;
   }
@@ -545,7 +542,12 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     }
     const cloudTurn = createCloudTurnContext(command);
 
-    const modelRuntimeLease = await this.#modelRuntimeLeaseResolver(command);
+    const modelGrant = new AbortController();
+    const modelGrantSignal = signal
+      ? AbortSignal.any([signal, modelGrant.signal])
+      : modelGrant.signal;
+    const modelRuntimeLease = await this.#modelRuntimeLeaseResolver(command, modelGrantSignal);
+    let detachModelOwner: (() => void) | undefined;
     if (
       modelRuntimeLease.runtime.provider !== command.payload.model.provider ||
       modelRuntimeLease.runtime.modelId !== command.payload.model.modelId
@@ -685,6 +687,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         resolveModelRuntime,
         openSession: async (command: ExecuteTurnCommandMessage, readSignal?: AbortSignal) => {
           activeSession = await this.#openAgentSession(command, readSignal);
+          const ownerSignal = activeSession.authority.signal;
+          const revoke = () => modelGrant.abort(ownerSignal.reason);
+          ownerSignal.addEventListener("abort", revoke, { once: true });
+          detachModelOwner = () => ownerSignal.removeEventListener("abort", revoke);
+          if (ownerSignal.aborted) revoke();
           return activeSession;
         },
         ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
@@ -698,30 +705,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           toolPolicySha256: cloudTurn.toolPolicySha256,
         },
         onSettled,
-        ...(modelRuntimeLease.subscribeHostedActivity === undefined
-          ? {}
-          : { subscribeHostedActivity: modelRuntimeLease.subscribeHostedActivity }),
-        ...(modelRuntimeLease.subscribeHostedTranscript === undefined
-          ? {}
-          : { subscribeHostedTranscript: modelRuntimeLease.subscribeHostedTranscript }),
         ...(this.#requestTimeoutMs === undefined
           ? {
               requestTimeoutMs: modelRuntimeLease.runtime.requestTimeoutMs,
             }
           : { requestTimeoutMs: this.#requestTimeoutMs }),
-        ...(this.#turnTimeoutMs === undefined
-          ? {
-              turnTimeoutMs: Math.min(
-                command.payload.budgets?.maximumRunDurationMs ?? Number.MAX_SAFE_INTEGER,
-                modelRuntimeLease.runtime.turnTimeoutMs,
-              ),
-            }
-          : {
-              turnTimeoutMs: Math.min(
-                this.#turnTimeoutMs,
-                command.payload.budgets?.maximumRunDurationMs ?? Number.MAX_SAFE_INTEGER,
-              ),
-            }),
       };
       let recordPreparedInput: (() => Promise<void>) | undefined;
       const runner = new PiCloudTurnRunner({
@@ -799,11 +787,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           );
           return preparing;
         },
-        ...(modelRuntimeLease.resolveAssistantTextPhase === undefined
-          ? {}
-          : {
-              resolveAssistantTextPhase: modelRuntimeLease.resolveAssistantTextPhase,
-            }),
         ...(this.#acquireModelPermit
           ? {
               acquireModelPermit: (signal?: AbortSignal) =>
@@ -951,6 +934,12 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     } finally {
       // A steer can still be preparing pixels when the native operation closes.
       // Join its reservation before deciding which Cube binding to release.
+      modelGrant.abort();
+      detachModelOwner?.();
+      let cleanupError: unknown;
+      await releaseModelRuntimeLease(modelRuntimeLease).catch((error: unknown) => {
+        cleanupError = error;
+      });
       inputPreparationAbort.abort(
         new PiTurnError(
           "steer_target_unavailable",
@@ -968,7 +957,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       } catch {
         /* Observation only. */
       }
-      let cleanupError: unknown;
       if (activation !== undefined) {
         // Tool callbacks have settled or recorded UNKNOWN. Preserve unconfirmed
         // cleanup intent when retiring metadata; VM lifetime remains separate.
@@ -985,9 +973,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             cleanupError = error;
           });
       }
-      await releaseModelRuntimeLease(modelRuntimeLease).catch((error: unknown) => {
-        cleanupError ??= error;
-      });
       if (cleanupError !== undefined && executionError !== undefined) {
         operationalLog({
           service: "pi-cloud-trusted-runner",

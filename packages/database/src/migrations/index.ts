@@ -374,6 +374,7 @@ export const migrationProvider: MigrationProvider = {
       "189_idle_worker_reconnect": idleWorkerReconnect,
       "190_control_plane_expiry": controlPlaneExpiry,
       "191_native_submission_status": nativeSubmissionStatus,
+      "192_unbounded_agent_work": unboundedAgentWork,
     };
   },
 };
@@ -390,3 +391,4 @@ import * as idleWorkerReconnect from "./189_idle_worker_reconnect.ts";
 
 import * as controlPlaneExpiry from "./190_control_plane_expiry.ts";
 import * as nativeSubmissionStatus from "./191_native_submission_status.ts";
+import * as unboundedAgentWork from "./192_unbounded_agent_work.ts";

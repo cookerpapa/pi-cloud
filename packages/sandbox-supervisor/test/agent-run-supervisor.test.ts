@@ -884,7 +884,7 @@ describe("AgentRunSupervisor", () => {
       settled = true;
     });
 
-    expect(supervisor.revokeAllAssignments()).toEqual({
+    expect(supervisor.retire()).toEqual({
       releasedPreparations: 0,
       releasedCancellations: 0,
       revokedExecutions: 1,
@@ -892,6 +892,12 @@ describe("AgentRunSupervisor", () => {
     await Promise.resolve();
     expect(abortObserved).toBe(true);
     expect(settled).toBe(false);
+    const delayedClaim = supervisor.prepare(
+      command({ runId: IDS.command2, generation: 2 }),
+      rejectUnexpectedEvent,
+    );
+    expect(delayedClaim.ack.payload).toMatchObject({ status: "rejected", code: "worker_shutdown" });
+    await expect(delayedClaim.run()).rejects.toMatchObject({ code: "worker_shutdown" });
 
     finishTeardown?.();
     await settlement;

@@ -77,6 +77,7 @@ export async function readWorkerModelTimings(runIds, sinceMs, options = {}) {
   const targets = await localWorkerTargets(options);
   const ids = new Set(runIds);
   const records = [];
+  const responses = [];
   for (const target of targets) {
     for (const previous of target.previous ? [false, true] : [false]) {
       const output = await execute(
@@ -90,13 +91,38 @@ export async function readWorkerModelTimings(runIds, sinceMs, options = {}) {
         { maxBuffer: 16 * 1024 * 1024 },
       );
       for (const line of (output.stdout + "\n" + output.stderr).split("\n")) {
-        if (!line.startsWith('{"timestamp"') || !line.includes('"model.transport.timing"'))
+        if (
+          !line.startsWith('{"timestamp"') ||
+          (!line.includes('"model.transport.timing"') && !line.includes('"model.response.timing"'))
+        )
           continue;
         const record = JSON.parse(line);
         if (record.event === "model.transport.timing" && ids.has(record.attributes.runId))
           records.push(record.attributes);
+        if (record.event === "model.response.timing" && ids.has(record.attributes.runId))
+          responses.push(record.attributes);
       }
     }
+  }
+  for (const transport of records) {
+    const response = responses.find(
+      (r) =>
+        r.runId === transport.runId &&
+        r.stepSequence === transport.stepSequence &&
+        r.stepSha256 === transport.stepSha256 &&
+        r.samplingAttempt === transport.samplingAttempt &&
+        r.processStartedAtMs === transport.processStartedAtMs &&
+        Number.isFinite(r.startedMonotonicMs) &&
+        Number.isFinite(transport.receivedMonotonicMs) &&
+        r.startedMonotonicMs <= transport.receivedMonotonicMs &&
+        r.startedMonotonicMs + r.durationMs >= transport.receivedMonotonicMs,
+    );
+    if (!response) continue;
+    for (const field of ["firstFrameMs", "firstTextMs", "firstToolMs", "firstSearchMs"])
+      if (response[field] !== undefined)
+        transport[field] =
+          response.startedMonotonicMs + response[field] - transport.receivedMonotonicMs;
+    transport.modelOutcome = response.outcome;
   }
   return records.sort((a, b) => a.receivedAtMs - b.receivedAtMs);
 }

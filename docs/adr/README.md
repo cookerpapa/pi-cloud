@@ -1,5 +1,12 @@
 # Current architecture decisions
 
+[ADR-0263](0263-model-response-and-work-lifetimes.md) records the owner-approved
+model-response and unbounded-work repair: response semantics at public Models,
+native hosted progress carriers, preserved native retry classification, distinct
+transport/model outcomes and owner-bound capabilities with bounded Worker
+retirement. Source implementation and verification are in progress; [delivery](../reports/model-runtime-repair-20261020.md)
+does not claim deployment until matched/live gates pass.
+
 [ADR-0262](0262-native-recovery-read-lifetimes.md) records the approved native
 recovery repair: bounded/cancellable Worker reads, same-Run continuation through
 ordered closure, indexed pending Submissions and native child reattachment.

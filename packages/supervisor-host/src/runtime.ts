@@ -1,3 +1,4 @@
+import { settleWorkerExecutions } from "./worker-retirement.ts";
 import { resourceLimit } from "@pi-cloud/domain";
 import type { PublicationAvailability } from "@pi-cloud/protocol";
 import { DirectSessionKafkaBus } from "@pi-cloud/runtime-core/direct-session-kafka";
@@ -395,12 +396,10 @@ export class PiWorkerRuntime {
       advertisedBaseUrl: this.#config.modelGatewayAdvertisedBaseUrl,
       providerGatewayBaseUrl: this.#config.providerGatewayBaseUrl,
       providerGatewayApiKey: this.#config.providerGatewayApiKey,
-      capabilityTtlMs: this.#config.modelGatewayCapabilityTtlMs,
       maximumRequestsPerTurn: this.#config.modelGatewayMaximumRequestsPerTurn,
       upstreamConnectTimeoutMs: this.#config.modelGatewayUpstreamConnectTimeoutMs,
       upstreamIdleTimeoutMs: this.#config.modelGatewayUpstreamIdleTimeoutMs,
       piRequestTimeoutMs: this.#config.piModelRequestTimeoutMs,
-      piTurnTimeoutMs: this.#config.piTurnTimeoutMs,
       ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
     });
     this.#modelGateway = modelGateway;
@@ -591,9 +590,8 @@ export class PiWorkerRuntime {
             sessionMutationProducer.scoped(command.payload.executionReference).publish(publication),
         }),
       createTrustedTools: (command, context) => trustedTools.create({ command, ...context }),
-      modelRuntimeLeaseResolver: (command) => modelGateway.issue(command),
+      modelRuntimeLeaseResolver: (command, signal) => modelGateway.issue(command, signal),
       workspaceSeedResolver: resolveWorkspaceSeed,
-      turnTimeoutMs: this.#config.piTurnTimeoutMs,
       ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
     });
     this.#agentRunner = runner;
@@ -730,14 +728,27 @@ export class PiWorkerRuntime {
       this.#state = "draining";
       clearInterval(this.#assignmentReaper);
       this.#client?.setAcceptingAssignments(false);
-      this.#runSupervisor?.revokeAllAssignments();
-      await this.#runWorker?.stop();
+      this.#runSupervisor?.retire();
+      await this.#settleExecutions(false);
       await this.#client?.stop();
-      await this.#runSupervisor?.waitUntilAssignmentsSettled();
       this.#resolveOwnerStopped();
       this.#settleTerminal("owner_stopped");
     })();
     return this.#ownerStopping;
+  }
+
+  async #settleExecutions(allowDrain: boolean): Promise<void> {
+    await settleWorkerExecutions({
+      stopClaimsAndJoin: () => this.#runWorker?.stop() ?? Promise.resolve(),
+      waitAssignments: () =>
+        this.#runSupervisor?.waitUntilAssignmentsSettled() ?? Promise.resolve(),
+      retire: () => {
+        this.#runSupervisor?.retire();
+      },
+      drainMs: this.#config.workerDrainGraceMs,
+      retirementMs: this.#config.workerRetirementTimeoutMs,
+      allowDrain,
+    });
   }
 
   close(): Promise<void> {
@@ -772,12 +783,10 @@ export class PiWorkerRuntime {
     this.#client?.setAcceptingAssignments(false);
     this.#runClaimReadiness?.close();
     this.#runClaimReadiness = undefined;
-    // A Kubernetes scale-in is a drain, not a fencing event. Stop queue
-    // polling first and give the active Runs their bounded settlement window;
-    // owner replacement still uses stopCurrentBoot(), which revokes immediately.
+    // Give work a bounded drain opportunity, then use existing ownership
+    // retirement. Agent work itself has no duration deadline.
     for (const close of [
-      () => this.#runWorker?.stop(),
-      () => this.#runSupervisor?.waitUntilAssignmentsSettled(),
+      () => this.#settleExecutions(true),
       () => this.#modelPermits?.close(),
       () => this.#activity?.close(),
       () => this.#nativeSessions?.close(),

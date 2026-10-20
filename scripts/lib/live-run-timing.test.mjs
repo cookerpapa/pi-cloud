@@ -9,6 +9,60 @@ import {
 } from "./live-run-timing.mjs";
 
 describe("deployed Worker timing inventory", () => {
+  it("joins native semantic timing to the same boot and sampling without subtracting wall clocks", async () => {
+    const records = [
+      {
+        event: "model.transport.timing",
+        attributes: {
+          runId: "run",
+          stepSequence: 1,
+          stepSha256: "a",
+          samplingAttempt: 1,
+          processStartedAtMs: 100,
+          receivedAtMs: 9000,
+          receivedMonotonicMs: 20,
+          upstreamStartMs: 2,
+        },
+      },
+      {
+        event: "model.response.timing",
+        attributes: {
+          runId: "run",
+          stepSequence: 1,
+          stepSha256: "a",
+          samplingAttempt: 1,
+          processStartedAtMs: 100,
+          startedAtMs: 1000,
+          startedMonotonicMs: 10,
+          durationMs: 500,
+          firstTextMs: 100,
+          outcome: "completed",
+        },
+      },
+    ];
+    const result = await readWorkerModelTimings(["run"], 1, {
+      runtimeDirectory: "/fixture",
+      execute: async (_binary, args) => {
+        if (args.includes("get"))
+          return {
+            stdout: JSON.stringify({
+              items: [
+                {
+                  metadata: { name: "worker" },
+                  spec: { containers: [{ name: "pi-worker" }] },
+                  status: { containerStatuses: [{ name: "pi-worker", restartCount: 0 }] },
+                },
+              ],
+            }),
+          };
+        return {
+          stdout: records.map((r) => JSON.stringify({ timestamp: "now", ...r })).join("\n"),
+          stderr: "",
+        };
+      },
+    });
+    expect(result[0]).toMatchObject({ firstTextMs: 90, modelOutcome: "completed" });
+  });
   it("detects container replacement even when a Kubernetes Pod keeps its name and UID", async () => {
     let incarnation = "container-one";
     const options = {

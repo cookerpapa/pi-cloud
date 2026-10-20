@@ -17,9 +17,15 @@ beforeEach(() => {
   calls.config.mockResolvedValue({
     databaseUrl: "postgresql://fixture",
     databaseMaxConnections: 2,
+    workerDrainGraceMs: 30_000,
+    workerRetirementTimeoutMs: 660_000,
   });
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  if (vi.isFakeTimers()) vi.clearAllTimers();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 it("drains in dependency order and removes its process listeners", async () => {
   const before = [process.listenerCount("SIGINT"), process.listenerCount("SIGTERM")];
@@ -52,6 +58,7 @@ it("drains in dependency order and removes its process listeners", async () => {
 });
 
 it("closes observability if database construction throws", async () => {
+  vi.useFakeTimers();
   const close = vi.fn(async () => {});
   const failure = new Error("Database constructor failed");
   calls.observability.mockResolvedValue({ metrics: {}, close });
@@ -64,6 +71,7 @@ it("closes observability if database construction throws", async () => {
 });
 
 it("closes acquired resources if the runtime constructor throws", async () => {
+  vi.useFakeTimers();
   const close = vi.fn(async () => {}),
     destroy = vi.fn(async () => {});
   const failure = new Error("Runtime constructor failed");
@@ -78,6 +86,9 @@ it("closes acquired resources if the runtime constructor throws", async () => {
 });
 
 it("attempts every cleanup once and preserves startup and cleanup errors", async () => {
+  vi.useFakeTimers();
+  const exit = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+  vi.spyOn(process.stderr, "write").mockReturnValue(true);
   const startup = new Error("Startup failed"),
     runtimeFailure = new Error("Runtime cleanup failed"),
     metricsFailure = new Error("Metrics cleanup failed");
@@ -104,4 +115,7 @@ it("attempts every cleanup once and preserves startup and cleanup errors", async
   expect(runtimeClose).toHaveBeenCalledTimes(1);
   expect(metricsClose).toHaveBeenCalledTimes(1);
   expect(destroy).toHaveBeenCalledTimes(1);
+  expect(exit).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(750_000);
+  expect(exit).toHaveBeenCalledExactlyOnceWith(1);
 });

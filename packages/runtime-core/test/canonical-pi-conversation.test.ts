@@ -56,13 +56,16 @@ it("reconstructs native text phases, hosted search, compaction, retry and Tool d
       3,
       assistant([
         {
-          type: "providerHostedToolCall",
-          toolName: "web_search",
-          nativeItem: {
-            id: "search",
-            type: "web_search_call",
-            status: "completed",
-            action: { type: "search", queries: ["official docs"] },
+          type: "text",
+          text: "",
+          providerHostedTool: {
+            toolName: "web_search",
+            nativeItem: {
+              id: "search",
+              type: "web_search_call",
+              status: "completed",
+              action: { type: "search", queries: ["official docs"] },
+            },
           },
         },
       ]),

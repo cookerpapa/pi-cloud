@@ -99,46 +99,37 @@ function command(
 
 const gateways: TenantModelGateway[] = [];
 
-it("scopes early assistant phases to the issued Codex lease, never DeepSeek or a released lease", async () => {
-  const gateway = createGateway(
-    async () =>
-      new Response(
-        [
-          { type: "response.created", response: { id: "response" } },
-          {
-            type: "response.output_item.added",
-            item: { id: "message", type: "message", phase: "commentary" },
-          },
-        ]
-          .map((e) => `data: ${JSON.stringify(e)}\n\n`)
-          .join(""),
-        { headers: { "content-type": "text/event-stream" } },
-      ),
-  );
-  await gateway.start();
-  const a = gateway.issue(command("openai-codex", "gpt-6-luna"));
-  const b = gateway.issue(command("openai-codex", "gpt-6-luna"));
-  const d = gateway.issue(command("deepseek", "deepseek-v4-pro"));
-  const response = await fetch(`http://127.0.0.1:${gateway.listeningPort}/codex/responses`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${a.runtime.capability}`,
-      "content-type": "application/json",
-      ...samplingHeaders(),
-    },
-    body: JSON.stringify({ model: "gpt-6-luna", stream: true, input: [] }),
-  });
-  expect(response.ok).toBe(true);
-  await response.text();
-  expect(a.resolveAssistantTextPhase?.("response", 0)).toBe("commentary");
-  expect(b.resolveAssistantTextPhase?.("response", 0)).toBeUndefined();
-  expect(d.resolveAssistantTextPhase).toBeUndefined();
-  await a.release();
-  expect(a.resolveAssistantTextPhase?.("response", 0)).toBeUndefined();
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await Promise.all(gateways.splice(0).map((gateway) => gateway.close()));
 });
 
-afterEach(async () => {
-  await Promise.all(gateways.splice(0).map((gateway) => gateway.close()));
+it("keeps an owned model grant beyond the former TTL and rejects it immediately after revocation", async () => {
+  const upstream = vi.fn<typeof fetch>(async () => new Response("ok"));
+  const gateway = createGateway(upstream);
+  await gateway.start();
+  const owner = new AbortController();
+  const lease = gateway.issue(command(), owner.signal);
+  const token = JSON.parse(
+    Buffer.from(lease.runtime.capability.split(".")[1]!, "base64url").toString(),
+  );
+  expect(token).not.toHaveProperty("exp");
+  vi.spyOn(Date, "now").mockReturnValue(Date.now() + 24 * 60 * 60_000);
+  const send = () =>
+    fetch(`http://127.0.0.1:${gateway.listeningPort}/v1/responses`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${lease.runtime.capability}`, ...samplingHeaders() },
+      body: JSON.stringify({ model: "deepseek-v4-flash", stream: true, input: [] }),
+    });
+  const active = await send();
+  expect(active.status).toBe(200);
+  await active.text();
+  owner.abort();
+  const stale = await send();
+  expect(stale.status).toBe(401);
+  await stale.text();
+  expect(upstream).toHaveBeenCalledOnce();
+  await expect(() => gateway.issue(command(), owner.signal)).toThrow();
 });
 
 function createGateway(
@@ -148,7 +139,6 @@ function createGateway(
     upstreamConnectTimeoutMs?: number;
     upstreamIdleTimeoutMs?: number;
     metrics?: PiCloudMetrics;
-    clock?: () => Date;
   } = {},
 ) {
   const gateway = new TenantModelGateway({
@@ -207,6 +197,7 @@ describe("tenant model gateway", () => {
   });
   function partialRequest(gateway: TenantModelGateway, capability: string) {
     let request!: ClientRequest;
+    const started = Promise.withResolvers<void>();
     const response = new Promise<{ status?: number; error?: NodeJS.ErrnoException }>((resolve) => {
       request = httpRequest(
         `http://127.0.0.1:${gateway.listeningPort}/v1/responses`,
@@ -215,6 +206,7 @@ describe("tenant model gateway", () => {
           headers: {
             authorization: `Bearer ${capability}`,
             "content-type": "application/json",
+            expect: "100-continue",
             ...samplingHeaders(),
           },
         },
@@ -224,39 +216,29 @@ describe("tenant model gateway", () => {
         },
       );
       request.once("error", (error) => resolve({ error }));
+      request.once("continue", () => started.resolve());
       request.setTimeout(3000, () => request.destroy(new Error("Test upload did not settle")));
       request.write('{"model":"deepseek-v4-pro",');
     });
-    return { request, response };
+    return { request, response, started: started.promise };
   }
 
-  it.each(["release", "shutdown", "expiry"])(
+  it.each(["release", "shutdown", "owner_loss"])(
     "rejects an in-flight upload after %s",
     async (action) => {
       const upstream = vi.fn<typeof fetch>();
-      const checked = Promise.withResolvers<void>();
-      let armed = false,
-        now = Date.now();
-      const gateway = createGateway(upstream, 1, {
-        clock: () => {
-          if (armed) checked.resolve();
-          return new Date(now);
-        },
-      });
+      const owner = new AbortController();
+      const gateway = createGateway(upstream, 1);
       await gateway.start();
-      const lease = gateway.issue(command("deepseek", "deepseek-v4-pro"));
-      armed = true;
+      const lease = gateway.issue(command("deepseek", "deepseek-v4-pro"), owner.signal);
       const upload = partialRequest(gateway, lease.runtime.capability);
       try {
-        await checked.promise;
-        if (action === "expiry") {
-          now += 60 * 60_000;
-          upload.request.end('"stream":true,"input":[]}');
-        } else if (action === "release") await lease.release();
+        await upload.started;
+        if (action === "owner_loss") owner.abort();
+        else if (action === "release") await lease.release();
         else await gateway.close();
         const result = await upload.response;
-        if (action === "expiry") expect(result.status).toBe(401);
-        else expect(result.error?.code).toBe("ECONNRESET");
+        expect(result.error?.code).toBe("ECONNRESET");
         expect(upstream).not.toHaveBeenCalled();
       } finally {
         upload.request.destroy();
@@ -272,24 +254,15 @@ describe("tenant model gateway", () => {
           headers: { "content-type": "text/event-stream" },
         }),
     );
-    let checks = 0,
-      armed = false;
-    const checked = Promise.withResolvers<void>();
-    const gateway = createGateway(upstream, 1, {
-      clock: () => {
-        if (armed && ++checks === 2) checked.resolve();
-        return new Date();
-      },
-    });
+    const gateway = createGateway(upstream, 1);
     await gateway.start();
     const lease = gateway.issue(command("deepseek", "deepseek-v4-pro"));
-    armed = true;
     const uploads = [
       partialRequest(gateway, lease.runtime.capability),
       partialRequest(gateway, lease.runtime.capability),
     ];
     try {
-      await checked.promise;
+      await Promise.all(uploads.map((upload) => upload.started));
       for (const upload of uploads) upload.request.end('"stream":true,"input":[]}');
       expect(
         (await Promise.all(uploads.map((u) => u.response))).map((r) => r.status).sort(),
@@ -523,73 +496,6 @@ describe("tenant model gateway", () => {
     expect(upstream).toHaveBeenCalledTimes(1);
   });
 
-  it("observes Hosted Web Search progress without changing the Provider stream", async () => {
-    const stream = [
-      'data: {"type":"response.output_item.added","output_index":0,"item":{"id":"ws-1","type":"web_search_call","status":"in_progress"}}\n\n',
-      'data: {"type":"response.web_search_call.searching","item_id":"ws-1"}\n\n',
-      'data: {"type":"response.web_search_call.completed","item_id":"ws-1"}\n\n',
-      'data: {"type":"response.output_text.delta","output_index":1,"delta":"found"}\n\n',
-      'data: {"type":"response.completed","response":{"id":"r1","output":[{"id":"ws-1","type":"web_search_call","status":"completed","action":{"type":"search","query":"official source"}},{"id":"msg-1","type":"message","content":[{"type":"output_text","text":"found","annotations":[] }]}]}}\n\n',
-    ].join("");
-    const gateway = createGateway(
-      vi.fn<typeof fetch>(async () =>
-        Promise.resolve(
-          new Response(stream, {
-            status: 200,
-            headers: { "content-type": "text/event-stream" },
-          }),
-        ),
-      ),
-    );
-    await gateway.start();
-    const lease = gateway.issue(command("openai-codex", "gpt-6-luna"));
-    const activities: unknown[] = [];
-    const transcripts: unknown[] = [];
-    lease.subscribeHostedActivity?.((activity) => activities.push(activity));
-    lease.subscribeHostedTranscript?.((transcript) => transcripts.push(transcript));
-
-    const headers = samplingHeaders();
-
-    const response = await fetch(
-      `http://127.0.0.1:${String(gateway.listeningPort)}/codex/responses`,
-      {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${lease.runtime.capability}`,
-          "content-type": "application/json",
-          ...headers,
-        },
-        body: JSON.stringify({ model: "gpt-6-luna", stream: true, input: [] }),
-      },
-    );
-
-    expect(await response.text()).toBe(stream);
-    expect(activities).toEqual([
-      { phase: "started", toolName: "web_search", activityId: "ws-1" },
-      {
-        phase: "completed",
-        toolName: "web_search",
-        activityId: "ws-1",
-        outcome: "completed",
-        action: { type: "search", queries: ["official source"] },
-      },
-    ]);
-    expect(transcripts).toEqual([
-      expect.objectContaining({
-        provider: "openai-codex",
-        api: "openai-codex-responses",
-        modelId: "gpt-6-luna",
-        stepSequence: Number(headers["x-pi-cloud-step-sequence"]),
-        stepSha256: headers["x-pi-cloud-step-sha256"],
-        samplingAttempt: 1,
-        items: [
-          expect.objectContaining({ type: "web_search_call", id: "ws-1" }),
-          expect.objectContaining({ type: "message", id: "msg-1" }),
-        ],
-      }),
-    ]);
-  });
-
   it("leaves failed sampling retries to the Runner instead of hiding extra upstream sends", async () => {
     let attempts = 0;
     const upstream = vi.fn<typeof fetch>(async () => {
@@ -727,7 +633,7 @@ describe("tenant model gateway", () => {
 
   it("releases a backpressured Provider response when the Pi client disconnects", async () => {
     const metrics = new PiCloudMetrics("gateway-disconnect-test");
-    const observe = vi.spyOn(metrics.modelDuration, "observe");
+    const observe = vi.spyOn(metrics.modelTransportDuration, "observe");
     const cancelled = vi.fn();
     const chunk = new TextEncoder().encode(
       `data: ${JSON.stringify({ type: "response.output_text.delta", delta: "x".repeat(8 * 1024 * 1024) })}\n\n`,
@@ -767,7 +673,7 @@ describe("tenant model gateway", () => {
       await vi.waitFor(() => expect(cancelled).toHaveBeenCalledOnce());
       await vi.waitFor(() =>
         expect(observe).toHaveBeenCalledWith(
-          expect.objectContaining({ outcome: "failed" }),
+          expect.objectContaining({ outcome: "disconnected" }),
           expect.any(Number),
         ),
       );

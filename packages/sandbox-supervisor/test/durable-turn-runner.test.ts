@@ -4,7 +4,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemoryStorage } from "@earendil-works/pi-durable";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import {
+  BACKGROUND_CONTEXT,
+  awaitWithContext,
+  withAbortSignal,
+} from "@earendil-works/chord/context";
 import { FakeModelServer, FAKE_MODEL_API_KEY } from "@pi-cloud/fake-model-server";
 import { type EventPublishMessage } from "@pi-cloud/protocol";
 import { PiCloudTurnRunner } from "../src/pi-cloud-turn-runner.ts";
@@ -21,7 +25,7 @@ import type {
 } from "@pi-cloud/pi-session-postgres/durable";
 import { command } from "./fixtures/durable-command.ts";
 
-it.each(["complete", "stop_on_resume", "stop_before_setup"] as const)(
+it.each(["complete", "stop_on_resume", "stop_before_setup", "long_work"] as const)(
   "runs native input and admission gates (%s)",
   async (mode) => {
     const fake = new FakeModelServer({ defaultScenario: "text" });
@@ -57,6 +61,9 @@ it.each(["complete", "stop_on_resume", "stop_before_setup"] as const)(
       }
     })();
     const userStop = new AbortController();
+    const enteredPermit = Promise.withResolvers<void>(),
+      releasePermit = Promise.withResolvers<void>();
+    const stopping = mode === "stop_on_resume" || mode === "stop_before_setup";
     let runtime: Promise<ManagedNativeRuntime> | undefined;
     const controller = new AbortController();
     const turn = createCloudTurnContext(command),
@@ -112,9 +119,15 @@ it.each(["complete", "stop_on_resume", "stop_before_setup"] as const)(
         contextWindow: 131072,
         maxTokens: 1024,
       }),
-      turnTimeoutMs: 10000,
-      acquireModelPermit: async () => {
+      acquireModelPermit: async (signal) => {
         acquired++;
+        if (mode === "long_work") {
+          enteredPermit.resolve();
+          await awaitWithContext(
+            releasePermit.promise,
+            withAbortSignal(signal!, BACKGROUND_CONTEXT),
+          );
+        }
         return () => {
           released++;
         };
@@ -207,7 +220,6 @@ it.each(["complete", "stop_on_resume", "stop_before_setup"] as const)(
               maxTokens: 1024,
               serviceTier: null,
               requestTimeoutMs: 1000,
-              turnTimeoutMs: 10000,
             },
             release: leaseReleased,
           }),
@@ -219,12 +231,13 @@ it.each(["complete", "stop_on_resume", "stop_before_setup"] as const)(
           },
         });
       }
+      if (mode === "long_work") vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       const executing = runner.run(
         {
           ...selectedCommand,
           payload: {
             ...selectedCommand.payload,
-            ...(mode !== "complete" ? { stopOnResume: true as const } : {}),
+            ...(stopping ? { stopOnResume: true as const } : {}),
           },
         },
         (event) => {
@@ -232,7 +245,13 @@ it.each(["complete", "stop_on_resume", "stop_before_setup"] as const)(
         },
         userStop.signal,
       );
-      if (mode !== "complete") {
+      if (mode === "long_work") {
+        await enteredPermit.promise;
+        await vi.advanceTimersByTimeAsync(60 * 60_000);
+        vi.useRealTimers();
+        releasePermit.resolve();
+      }
+      if (stopping) {
         await expect(executing).rejects.toMatchObject({
           code: "turn_cancelled",
           reason: "user_request",
@@ -257,6 +276,8 @@ it.each(["complete", "stop_on_resume", "stop_before_setup"] as const)(
       expect(submissions.items[0]?.requestId).toBe(command.payload.runId);
       expect(submissions.items[0]?.status).toBe("done");
     } finally {
+      vi.useRealTimers();
+      releasePermit.resolve();
       await (await runtime)?.close();
       await fake.stop();
       await rm(directory, { recursive: true });

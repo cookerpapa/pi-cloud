@@ -10,6 +10,7 @@ export class PiCloudMetrics {
   readonly runPreparationDuration: Histogram<"stage" | "outcome">;
   readonly sandboxDuration: Histogram<"operation" | "outcome">;
   readonly modelDuration: Histogram<"provider" | "model" | "outcome">;
+  readonly modelTransportDuration: Histogram<"provider" | "model" | "outcome">;
   readonly modelTokens: Counter<"provider" | "model" | "kind">;
   readonly modelCostMicrousd: Counter<"provider" | "model">;
   readonly toolDuration: Histogram<"tool" | "outcome">;
@@ -150,8 +151,15 @@ export class PiCloudMetrics {
       registers: [this.registry],
     });
     this.modelDuration = new Histogram({
-      name: "pi_cloud_model_request_seconds",
-      help: "Model Gateway request duration",
+      name: "pi_cloud_model_execution_seconds",
+      help: "Admitted native model invocation duration and semantic outcome",
+      labelNames: ["provider", "model", "outcome"],
+      buckets: DURATION_BUCKETS,
+      registers: [this.registry],
+    });
+    this.modelTransportDuration = new Histogram({
+      name: "pi_cloud_model_transport_seconds",
+      help: "Model Gateway HTTP lifetime; EOF and disconnect are transport outcomes",
       labelNames: ["provider", "model", "outcome"],
       buckets: DURATION_BUCKETS,
       registers: [this.registry],

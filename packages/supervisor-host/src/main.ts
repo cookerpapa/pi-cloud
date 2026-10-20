@@ -76,6 +76,16 @@ export async function startSupervisorHost(): Promise<void> {
   } catch (error: unknown) {
     errors.push(error);
   }
+  // A failed dependency may prevent a cleanup ACK. Never claim owner exit in
+  // that case; stop this boot and let existing PG/Kafka closure recover it.
+  const shutdownTimer = setTimeout(
+    () => {
+      process.stderr.write("PiCloud Supervisor host failed code=worker_shutdown_timeout\n");
+      process.exit(1);
+    },
+    config.workerDrainGraceMs + config.workerRetirementTimeoutMs + 60_000,
+  );
+  shutdownTimer.unref();
   for (const close of [
     removeSignals,
     () => runtime?.close(),
@@ -88,6 +98,9 @@ export async function startSupervisorHost(): Promise<void> {
       errors.push(error);
     }
   }
+  // Failed cleanup may leave a queue/socket alive. Keep the unref'd hard bound
+  // in that case; it does not hold up an otherwise clean process exit.
+  if (errors.length === 0) clearTimeout(shutdownTimer);
   if (errors.length === 1) throw errors[0];
   if (errors.length > 1)
     throw new AggregateError(errors, "Pi Worker startup/shutdown failed", { cause: errors[0] });

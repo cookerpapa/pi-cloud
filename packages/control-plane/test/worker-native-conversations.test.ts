@@ -208,11 +208,9 @@ it.each([false, true])(
           hostedTools: [],
           serviceTier: null,
           requestTimeoutMs: 5000,
-          turnTimeoutMs: 15000,
         },
         release,
       }),
-      turnTimeoutMs: 15000,
     });
     const command = structuredClone(sample);
     Object.assign(command.payload, {

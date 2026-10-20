@@ -132,22 +132,24 @@ it("places coverage before a new partial and isolates Conversations", () => {
   ).toEqual([]);
 });
 it("updates a phase without another text body and adopts metadata only after ACK", () => {
-  let phase: "final_answer" | undefined;
-  const text = new DurableTextPresentation({ conversationId: 1, phase: () => phase }),
+  const text = new DurableTextPresentation({ conversationId: 1 }),
     f = factory(),
     first = value("done");
   first.generation!.message!.responseId = "response";
   const a = text.prepare(commit(1), [change(undefined, first)], f);
   a.confirmed();
-  phase = "final_answer";
-  const p = text.prepare(commit(2), [change(first, first)], f);
+  const next = structuredClone(first);
+  const block = next.generation!.message!.content[0]!;
+  if (block.type !== "text") throw new Error("Expected native text");
+  block.textSignature = JSON.stringify({ v: 1, id: "message", phase: "final_answer" });
+  const p = text.prepare(commit(2), [change(first, next)], f);
   expect(p.events[0]).toMatchObject({
     source: { kind: "empty" },
     event: { payload: { phase: "final_answer" } },
   });
-  expect(text.prepare(commit(2), [change(first, first)], f).events).toHaveLength(1);
+  expect(text.prepare(commit(2), [change(first, next)], f).events).toHaveLength(1);
   p.confirmed();
-  expect(text.prepare(commit(3), [change(first, first)], f).events).toEqual([]);
+  expect(text.prepare(commit(3), [change(next, next)], f).events).toEqual([]);
 });
 
 it("clears a streamed block removed by the final Assistant Entry", () => {

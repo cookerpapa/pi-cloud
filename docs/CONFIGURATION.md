@@ -449,21 +449,29 @@ unused lifetime is 24 hours.
 
 ## Safety-coupled one-host budgets
 
-The one-host K3s profile fixes Tool, model, Turn and shutdown budgets as a
+The maintained source fixes Tool, model-request and shutdown budgets as a
 validated set. They are not ordinary `.env` knobs because increasing one may
-make another service kill a still-valid operation. Current defaults are:
+make another service kill a still-valid operation. Under ADR-0263 there is no
+overall Agent/Run duration limit or independent model-capability TTL. Source defaults are:
 
 ```text
-model upstream connect 120 s <= Pi response-header wait 150 s <= Pi Turn 600 s
-model upstream stream idle 300 s <= Pi Turn 600 s
+model upstream connect 120 s <= Pi response-header wait 150 s
+model upstream stream idle 300 s
 Sandbox management/workflow request 360 s; fixed Tool handoff 5 s
-model capability TTL 900 s
+Worker natural-drain grace 30 s; retirement/settlement bound 660 s
+process cleanup hard bound: 30 + 660 + 60 = 750 s
 Worker termination grace 1320 s
 Workspace Volume request 660 s < Volume gateway termination grace 720 s
 ```
 
 Changing these requires editing the deployment policy and running
 `npm run runtime-policy:check`; do not change only one container variable.
+`PI_CLOUD_PI_TURN_TIMEOUT_MS` and `PI_CLOUD_MODEL_GATEWAY_CAPABILITY_TTL_MS` are
+removed and rejected. Model grants are revoked on work closure, Stop, ownership
+loss or boot retirement. Worker shutdown closes claims and uses existing ordered
+recovery after its drain grace; it does not wait forever for Agent completion.
+The [delivery record](reports/model-runtime-repair-20261020.md) distinguishes
+source implementation from the serving release during this matched cutover.
 
 ## Distributed Helm values
 

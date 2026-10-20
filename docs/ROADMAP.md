@@ -17,7 +17,9 @@ The [proposed repair plan](reports/model-request-response-repair-plan-20261019.m
 defines one response-adapter slice, its native-abort validation gate, deletion
 scope, required checks and matched live acceptance. The owner's lifetime amendment
 adds removal of the total-duration mechanism and its grant/shutdown dependencies;
-implementation has not started.
+source implementation is in progress under [ADR-0263](adr/0263-model-response-and-work-lifetimes.md).
+[Delivery evidence](reports/model-runtime-repair-20261020.md) tracks verification
+and the still-pending matched release/long-work acceptance.
 
 The main-message walkthrough is complete. Runtime remains `native-recovery-8c00826a`;
 this review adds evidence and records repairs, not deployment changes. The public

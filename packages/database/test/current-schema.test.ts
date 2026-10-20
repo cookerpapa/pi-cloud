@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(191);
+      expect(firstMigrationPass.rows).toHaveLength(192);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("191_native_submission_status");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("192_unbounded_agent_work");
       const terminalColumns = await sql<{ column_name: string }>`select column_name
         from information_schema.columns where table_name='workspace_terminal_sessions'`.execute(
         database,
@@ -117,6 +117,19 @@ describe("current PiCloud schema", () => {
         where table_schema='public' and table_name='source_control_issue_jobs'
           and column_name='claim_sync_pending'`.execute(database);
       expect(retiredIssueFlag.rows).toHaveLength(0);
+      const durationPolicy = await sql`select 1 from information_schema.columns
+        where table_name='tenant_runtime_policies' and column_name='maximum_run_duration_ms'`.execute(
+        database,
+      );
+      expect(durationPolicy.rows).toHaveLength(0);
+      const policyCheck = await sql<{
+        definition: string;
+      }>`select pg_get_constraintdef(oid) definition
+        from pg_constraint where conname='tenant_runtime_policies_execution_limits'`.execute(
+        database,
+      );
+      expect(policyCheck.rows[0]!.definition).toContain("maximum_tool_output_bytes");
+      expect(policyCheck.rows[0]!.definition).not.toContain("maximum_run_duration_ms");
       for (const retired of [
         "pi_session_mutation_results",
         "workspace_sources",

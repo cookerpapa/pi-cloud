@@ -45,7 +45,11 @@ export function validateDistributedDeploymentValues(values) {
   }
 
   const runtime = values["pi-workers"]?.runtime;
-  const turnMs = integer(runtime?.timeouts?.turnMs, "Pi Worker Turn timeout");
+  const drainMs = integer(runtime?.timeouts?.workerDrainMs, "Pi Worker drain grace");
+  const retirementMs = integer(
+    runtime?.timeouts?.workerRetirementMs,
+    "Pi Worker retirement timeout",
+  );
   const sandboxControlRequestMs = integer(
     runtime?.timeouts?.sandboxControlRequestMs,
     "Pi Worker Sandbox control timeout",
@@ -55,37 +59,22 @@ export function validateDistributedDeploymentValues(values) {
     runtime?.timeouts?.modelUpstreamConnectMs,
     "Pi Worker model upstream connect timeout",
   );
-  const upstreamIdleMs = integer(
-    runtime?.timeouts?.modelUpstreamIdleMs,
-    "Pi Worker model upstream idle timeout",
-  );
-  const capabilityMs = integer(
-    runtime?.timeouts?.modelCapabilityTtlMs,
-    "Pi Worker model capability TTL",
-  );
-  if (upstreamConnectMs > modelRequestMs || modelRequestMs > turnMs || upstreamIdleMs > turnMs) {
-    throw new Error(
-      "Model connection, stream idle, response-header and Turn timeouts are not ordered",
-    );
+  integer(runtime?.timeouts?.modelUpstreamIdleMs, "Pi Worker model upstream idle timeout");
+  if (upstreamConnectMs > modelRequestMs) {
+    throw new Error("Model response-header waits are not ordered");
   }
-  if (capabilityMs < turnMs + 60_000) {
-    throw new Error("Model capability TTL must outlive the Turn and expiry margin");
+  if (retirementMs < sandboxControlRequestMs + 5 * 60_000) {
+    throw new Error("Pi Worker retirement cannot cover operation cleanup and settlement");
   }
   const terminationMs =
     integer(
       values["pi-workers"]?.lifecycle?.terminationGracePeriodSeconds,
       "Pi Worker termination grace",
     ) * 1_000;
-  if (terminationMs < turnMs + sandboxControlRequestMs + 6 * 60_000) {
-    throw new Error("Pi Worker termination grace is shorter than the Run drain budget");
+  if (terminationMs < drainMs + retirementMs + 60_000) {
+    throw new Error("Pi Worker termination grace is shorter than its retirement budget");
   }
-  const retentionMs = integer(
-    values.global?.kafka?.acceptedFactRetentionMs,
-    "Kafka AcceptedFact retention",
-  );
-  if (retentionMs < turnMs + 5 * 60_000) {
-    throw new Error("Kafka retention can omit a recoverable Run");
-  }
+  integer(values.global?.kafka?.acceptedFactRetentionMs, "Kafka AcceptedFact retention");
   const models =
     runtime?.modelConcurrency == null
       ? null

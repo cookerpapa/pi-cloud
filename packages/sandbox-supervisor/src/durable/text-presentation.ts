@@ -1,4 +1,6 @@
-import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
+import { providerTextPhase } from "./provider-response.ts";
+import { isHostedToolBlock } from "../provider-hosted-transcript.ts";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { EntryRecord, LiveState } from "@earendil-works/pi-durable";
 import type { NativeDocumentChange } from "@pi-cloud/pi-session-postgres/durable";
 import type {
@@ -20,21 +22,8 @@ export class DurableTextPresentation {
   constructor(
     readonly options: {
       conversationId: number;
-      phase?(responseId: string, index: number): AssistantMessagePhase | undefined;
     },
   ) {}
-  #phase(message: AssistantMessage, block: TextContent, index: number) {
-    if (block.textSignature?.startsWith("{")) {
-      try {
-        const s = JSON.parse(block.textSignature);
-        if (s.v === 1 && ["commentary", "final_answer"].includes(s.phase))
-          return s.phase as AssistantMessagePhase;
-      } catch {
-        /* Opaque provider signature. */
-      }
-    }
-    return message.responseId ? this.options.phase?.(message.responseId, index) : undefined;
-  }
   prepare(
     commit: DurableSessionCommit,
     documents: readonly NativeDocumentChange[],
@@ -85,7 +74,7 @@ export class DurableTextPresentation {
             task === undefined
               ? `entry:${entry.id}:${index}`
               : key(task, before?.generation?.attempt ?? 1, index);
-          if (block?.type !== "text") {
+          if (block?.type !== "text" || isHostedToolBlock(block)) {
             // Final responses may remove or replace a previously visible block.
             // Clear it before coverage retires the live prefix.
             if (old?.type === "text" && old.text.length)
@@ -95,7 +84,7 @@ export class DurableTextPresentation {
               );
             continue;
           }
-          const phase = this.#phase(message, block, index);
+          const phase = providerTextPhase(block);
           emit(
             {
               messageId,
@@ -132,15 +121,15 @@ export class DurableTextPresentation {
       ) {
         const block = message.content[index],
           old = oldMessage?.content[index];
-        if (block?.type !== "text" && old?.type !== "text") continue;
+        if (isHostedToolBlock(block) || (block?.type !== "text" && old?.type !== "text")) continue;
         const text = block?.type === "text" ? block.text : "",
           previous = old?.type === "text" ? old.text : "";
         const messageId = key(after?.run?.taskId, after?.generation?.attempt ?? 1, index);
-        const phase = block?.type === "text" ? this.#phase(message, block, index) : undefined;
+        const phase = block?.type === "text" ? providerTextPhase(block) : undefined;
         const oldPhase = phases.has(messageId)
           ? phases.get(messageId)
           : old?.type === "text" && oldMessage
-            ? this.#phase(oldMessage, old, index)
+            ? providerTextPhase(old)
             : undefined;
         phases.set(messageId, phase);
         if (text === previous && phase === oldPhase) continue;

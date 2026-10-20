@@ -109,6 +109,18 @@ configured web port. A Linux-only HTTP 200 does not establish Windows access.
 
 ## Acceptance and fixture restoration
 
+ADR-0263 requires schema 192 and matched application/protocol metadata: no total
+Run duration fields or fixed model-capability TTL; completed hosted content uses
+native empty-text metadata carriers instead of the old non-native block. Drain
+writers and remove obsolete development business history when required, preserving
+accounts, model/provider configuration and credentials. Verify bounded Worker
+retirement, refusal of late claims, old-token revocation, native hosted Stop/PG
+reopen/handoff, native retries, phase identity and semantic/transport metrics.
+Run the owned long-work/Worker-handoff acceptance across the removed 10/15-minute
+thresholds, then the relevant native/browser/image/child/outage/full-Cube gates.
+Physical cleanup must precede fixture ownership removal. Kafka topic, boot reply
+and guest execution protocol versions are unchanged by this slice.
+
 ADR-0262 requires schema 191 and matched application code for native read failure
 recovery and explicit child resume envelopes. Kafka/guest/reply protocols remain
 unchanged. Run real-PG read cancellation/termination, pool isolation, image-read

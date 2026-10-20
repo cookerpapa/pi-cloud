@@ -371,7 +371,6 @@ async function measure(count) {
           maxTokens: 2048,
           serviceTier: null,
           requestTimeoutMs: 300000,
-          turnTimeoutMs: 300000,
         },
         release: async () => {},
       }),
@@ -385,7 +384,6 @@ async function measure(count) {
         await awaitWithContext(new Promise(() => {}), withAbortSignal(signal, context));
         throw Error("unreachable");
       },
-      turnTimeoutMs: 300000,
     });
     const startChild = runner.restoreConversation.bind(runner);
     runner.restoreConversation = async (...args) => {

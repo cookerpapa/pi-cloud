@@ -341,7 +341,7 @@ try {
     false,
     "Codex Provider search was incorrectly projected as a Pi/Sandbox control Tool",
   );
-  durableHostedMessageCount = countPiSessionPayloads(session.sessionId, "providerHostedToolCall");
+  durableHostedMessageCount = countPiSessionPayloads(session.sessionId, "providerHostedTool");
   durableCitationMessageCount = countPiSessionPayloads(session.sessionId, "providerAnnotations");
   assert.ok(
     durableHostedMessageCount >= 2,

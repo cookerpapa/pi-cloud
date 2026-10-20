@@ -128,6 +128,7 @@ function sameCancellationIdentity(
 }
 
 export class AgentRunSupervisor {
+  #retiring = false;
   readonly #runner: SupervisorTurnRunner;
   readonly #maxConcurrentSessions: number | null;
   readonly #clock: () => Date;
@@ -247,6 +248,12 @@ export class AgentRunSupervisor {
     return { releasedPreparations, releasedCancellations, revokedExecutions };
   }
 
+  /** Close admission before revoking: a pending PG claim must not start later. */
+  retire(): RevokedSupervisorAssignments {
+    this.#retiring = true;
+    return this.revokeAllAssignments();
+  }
+
   createHeartbeat(
     identity: AgentRunHeartbeatIdentity,
     acceptingAssignments = true,
@@ -360,6 +367,13 @@ export class AgentRunSupervisor {
       );
     }
     const command = parsed;
+    if (this.#retiring)
+      return this.#rejected(
+        command,
+        "worker_shutdown",
+        "Worker execution admission is closed",
+        true,
+      );
     const duplicate = this.#byRun.get(command.payload.runId);
     if (duplicate !== undefined) {
       if (!sameIdentity(duplicate.command, command)) {
@@ -522,7 +536,13 @@ export class AgentRunSupervisor {
 
   #rejected(
     command: ExecuteTurnCommandMessage,
-    code: "stale_session_lease" | "invalid_state" | "capacity" | "invalid_command" | "unsupported",
+    code:
+      | "stale_session_lease"
+      | "invalid_state"
+      | "capacity"
+      | "invalid_command"
+      | "unsupported"
+      | "worker_shutdown",
     message: string,
     retryable: boolean,
   ): PreparedTurnExecution {
@@ -571,7 +591,8 @@ export class AgentRunSupervisor {
             | "invalid_state"
             | "capacity"
             | "invalid_command"
-            | "unsupported";
+            | "unsupported"
+            | "worker_shutdown";
           message: string;
           retryable: boolean;
         },

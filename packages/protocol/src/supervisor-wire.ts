@@ -98,7 +98,6 @@ export const TurnBudgetSnapshotSchema = Type.Object(
     maximumToolCalls: ResourceLimitSchema,
     remainingToolCalls: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
     maximumToolOutputBytes: Type.Integer({ minimum: 1_024, maximum: 1_048_576 }),
-    maximumRunDurationMs: Type.Integer({ minimum: 1_000, maximum: 3_600_000 }),
     compactionReserveTokens: Type.Integer({ minimum: 1_024, maximum: 1_000_000 }),
     compactionKeepRecentTokens: Type.Integer({ minimum: 1_024, maximum: 1_000_000 }),
   },
@@ -242,6 +241,7 @@ const RejectedCommandAckPayloadSchema = Type.Object(
     status: Type.Literal("rejected"),
     code: Type.Union([
       Type.Literal("stale_session_lease"),
+      Type.Literal("worker_shutdown"),
       Type.Literal("invalid_state"),
       Type.Literal("capacity"),
       Type.Literal("invalid_command"),

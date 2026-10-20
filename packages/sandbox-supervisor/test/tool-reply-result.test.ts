@@ -228,7 +228,6 @@ async function fixture(mode: Mode) {
         maxTokens: 1024,
         serviceTier: null,
         requestTimeoutMs: 10000,
-        turnTimeoutMs: 15000,
         // This isolated HTTP model implements the SDK's completions port. Production
         // provider configuration still admits only its pinned Responses routes.
       } as unknown as TrustedModelRuntimeLease["runtime"],

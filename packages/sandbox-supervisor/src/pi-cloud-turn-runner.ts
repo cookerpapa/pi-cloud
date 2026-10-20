@@ -25,9 +25,6 @@ import {
   parseUserUploads,
   assertPreparedUserInputBudget,
   MAX_INPUT_IMAGE_HINT_BYTES,
-  MODEL_STEP_SEQUENCE_HEADER,
-  MODEL_STEP_SHA256_HEADER,
-  MODEL_SAMPLING_ATTEMPT_HEADER,
   type ExecuteTurnCommandMessage,
   type PiCloudEventBody,
   type ModelSamplingIdentity,
@@ -37,7 +34,7 @@ import {
   ToolResultAttachmentError,
 } from "@pi-cloud/protocol";
 import type { DurableSessionHandle } from "@pi-cloud/pi-session-postgres/durable";
-import type { PiCloudMetrics } from "@pi-cloud/observability";
+import { operationalLog, type PiCloudMetrics } from "@pi-cloud/observability";
 import { DurableAgentSession, type DurableRunConfiguration } from "./durable/agent-session.ts";
 import { DurableRunEvents } from "./durable/run-events.ts";
 import { CloudModelRegistry } from "./durable/model-registry.ts";
@@ -60,16 +57,10 @@ import {
 import type { TrustedRemoteAgentTools } from "./trusted-remote-tools.ts";
 import { mergeProviderHostedTools, mergeProviderServiceTier } from "./provider-hosted-tools.ts";
 import {
-  applyProviderHostedTranscript,
   nativeProviderContext,
   replayProviderHostedTranscripts,
 } from "./provider-hosted-transcript.ts";
-import type {
-  AssistantTextPhaseResolver,
-  ProviderHostedActivitySubscriber,
-  ProviderHostedTranscriptSubscriber,
-  ProviderHostedTranscript,
-} from "./agent-turn-runtime.ts";
+import type { ProviderHostedActivity } from "./agent-turn-runtime.ts";
 
 export type PiCloudSessionHandle = DurableSessionHandle;
 export type PiCloudTurnRunnerOptions = {
@@ -102,12 +93,8 @@ export type PiCloudTurnRunnerOptions = {
   onNativeBound?: () => Promise<void>;
   beforeEffect?: (signal?: AbortSignal) => Promise<void>;
   onActivity?: (update: RunActivityUpdate | undefined) => void;
-  subscribeHostedActivity?: ProviderHostedActivitySubscriber;
-  resolveAssistantTextPhase?: AssistantTextPhaseResolver;
-  subscribeHostedTranscript?: ProviderHostedTranscriptSubscriber;
   settlementPolicy?: PiSettlementGatePolicy;
   requestTimeoutMs?: number;
-  turnTimeoutMs?: number;
   clock?: () => Date;
   idGenerator?: () => string;
 };
@@ -130,11 +117,6 @@ function languageAlignmentInstruction(prompt: string): string | undefined {
     return "用户正在使用中文。所有对用户可见的内容，包括工具调用前后的进度说明和最终回答，都必须使用中文。";
   }
   return undefined;
-}
-
-function positiveInteger(value: number, name: string): number {
-  if (!Number.isSafeInteger(value) || value < 1) throw new TypeError(`${name} must be positive`);
-  return value;
 }
 
 function validDate(clock: () => Date): Date {
@@ -205,11 +187,6 @@ function cancellationReason(signal: AbortSignal): PiCancellationSignal["reason"]
     reason?.reason === "session_lease_revoked"
     ? reason.reason
     : "shutdown";
-}
-function hostedKey(headers: ProviderHeaders): string {
-  return [MODEL_STEP_SEQUENCE_HEADER, MODEL_STEP_SHA256_HEADER, MODEL_SAMPLING_ATTEMPT_HEADER]
-    .map((key) => headers[key])
-    .join(":");
 }
 
 /** One admitted logical Run on the family's native Harness. Pi owns execution,
@@ -327,20 +304,8 @@ export class PiCloudTurnRunner {
       id = options.idGenerator ?? (() => crypto.randomUUID());
     const activity = new PiRunActivity(options.onActivity);
     activity.phase("preparing");
-    const timeout = new AbortController();
-    const combined = signal ? AbortSignal.any([signal, timeout.signal]) : timeout.signal;
-    const timer = p.stopOnResume
-      ? undefined
-      : setTimeout(
-          () =>
-            timeout.abort({
-              kind: "pi-cloud.turn-cancellation",
-              reason: "timeout",
-              gracePeriodMs: 0,
-            }),
-          positiveInteger(options.turnTimeoutMs ?? 30000, "turnTimeoutMs"),
-        );
-    timer?.unref();
+    // Work follows native settlement and execution ownership, not elapsed time.
+    const combined = signal ?? new AbortController().signal;
     let handle: DurableSessionHandle | undefined,
       family: DurableAgentSession | undefined,
       stream: AgentEventStream | undefined,
@@ -419,7 +384,6 @@ export class PiCloudTurnRunner {
       const owner = handle;
       text = new DurableTextPresentation({
         conversationId: p.piSession.conversationId,
-        ...(options.resolveAssistantTextPhase ? { phase: options.resolveAssistantTextPhase } : {}),
       });
       owner.prepareDisplay((commit, documents) => {
         const candidate = createPiCloudEventFactory(
@@ -537,15 +501,7 @@ export class PiCloudTurnRunner {
           return step;
         },
       });
-      const transcripts = new Map<string, ProviderHostedTranscript>();
-      const unsubscribeTranscript = options.subscribeHostedTranscript?.((value) => {
-        transcripts.set(
-          `${value.stepSequence}:${value.stepSha256}:${value.samplingAttempt}`,
-          value,
-        );
-      });
-      if (unsubscribeTranscript) cleanup.push(unsubscribeTranscript);
-      const unsubscribeActivity = options.subscribeHostedActivity?.((value) => {
+      const onHostedActivity = (value: ProviderHostedActivity) => {
         void emit({
           type:
             value.phase === "started"
@@ -554,11 +510,12 @@ export class PiCloudTurnRunner {
           payload: {
             toolName: value.toolName,
             activityId: value.activityId,
-            ...(value.phase === "completed" ? { outcome: value.outcome } : {}),
+            ...(value.phase === "completed"
+              ? { outcome: value.outcome, ...(value.action ? { action: value.action } : {}) }
+              : {}),
           },
         } as PiCloudEventBody).catch(() => undefined);
-      });
-      if (unsubscribeActivity) cleanup.push(unsubscribeActivity);
+      };
       const prompt = [
         p.input.kind === "prompt" ? languageAlignmentInstruction(p.input.text) : undefined,
         BASE_SYSTEM_PROMPT,
@@ -682,13 +639,13 @@ export class PiCloudTurnRunner {
             const headers = await tools.transformHeaders(
               request.options.headers as ProviderHeaders,
             );
-            const key = hostedKey(headers);
+            const requestSampling = toolSampling;
             activity.phase(
               native?.purpose === "context_maintenance" ? "compacting" : "waiting_model",
             );
             return {
               model,
-              input: nativeProviderContext(context),
+              input: nativeProviderContext(context, model),
               release,
               ...(native.purpose === "agent"
                 ? { onToolCallProgress: () => activity.phase("preparing_tool") }
@@ -707,10 +664,31 @@ export class PiCloudTurnRunner {
                     config.serviceTier,
                   ),
               },
-              decorate: (message) => {
-                const transcript = transcripts.get(key);
-                if (transcript) applyProviderHostedTranscript(message, transcript);
-                transcripts.delete(key);
+              onHostedActivity,
+              onOutcome: (sample) => {
+                options.metrics?.modelDuration.observe(
+                  { provider: model.provider, model: model.id, outcome: sample.outcome },
+                  sample.durationMs / 1000,
+                );
+                operationalLog({
+                  service: "pi-cloud-trusted-runner",
+                  level: "info",
+                  event: "model.response.timing",
+                  attributes: {
+                    runId: p.runId,
+                    conversationId: p.piSession.conversationId,
+                    ...(requestSampling
+                      ? {
+                          stepSequence: requestSampling.stepSequence,
+                          stepSha256: requestSampling.stepSha256,
+                          samplingAttempt: requestSampling.samplingAttempt,
+                        }
+                      : {}),
+                    provider: model.provider,
+                    model: model.id,
+                    ...sample,
+                  },
+                });
               },
             };
           } catch (error) {
@@ -989,7 +967,6 @@ export class PiCloudTurnRunner {
       this.#ready.reject(
         new PiTurnError("steer_target_unavailable", "Pi Run has closed input delivery", false),
       );
-      clearTimeout(timer);
       for (const dispose of cleanup) dispose();
       await stream?.stop();
       await delivery.catch(() => undefined);

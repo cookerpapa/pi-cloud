@@ -42,7 +42,10 @@ combines MR-01–04 at the public Models boundary, starting with native progress
 abort durability tests. It removes the replaced Gateway parser/plumbing after
 cutover. The owner subsequently decided MR-D1: no overall Agent runtime limit.
 The plan now includes removing duration fields, owner-bound model capabilities
-and bounded Worker handoff. No repair is implemented or deployed by this plan.
+and bounded Worker handoff. [ADR-0263](adr/0263-model-response-and-work-lifetimes.md)
+is now implemented in source; required repository and matched/live verification
+are in progress. [Delivery status](reports/model-runtime-repair-20261020.md) keeps
+source checks, deployment and actual long-work acceptance distinct.
 
 - [ ] MR-01 / P2: preserve native transient-error classification when Gateway
       connection failures become HTTP or streaming errors. The Codex Harness

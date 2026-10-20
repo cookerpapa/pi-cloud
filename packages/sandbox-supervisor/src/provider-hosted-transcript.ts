@@ -1,212 +1,128 @@
-import type { Api, AssistantMessage, Context, Model } from "@earendil-works/pi-ai";
-import type { ProviderHostedWebSearchAction } from "@pi-cloud/protocol";
-import { normalizeProviderHostedWebSearchAction } from "@pi-cloud/protocol";
-import type { ProviderHostedTranscript } from "./agent-turn-runtime.ts";
+import type { Api, AssistantMessage, Context, Model, TextContent } from "@earendil-works/pi-ai";
+import {
+  normalizeProviderHostedWebSearchAction,
+  type ProviderHostedWebSearchAction,
+} from "@pi-cloud/protocol";
 
-type JsonRecord = Record<string, unknown>;
+export type ProviderHostedToolCallContent = TextContent &
+  Readonly<{
+    text: "";
+    textSignature: string;
+    providerHostedTool: Readonly<{
+      toolName: "web_search";
+      nativeItem: Readonly<Record<string, unknown>>;
+      action?: ProviderHostedWebSearchAction;
+    }>;
+  }>;
+export type ProviderAnnotatedTextContent = TextContent &
+  Readonly<{
+    providerAnnotations?: readonly Readonly<Record<string, unknown>>[];
+  }>;
+const record = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
-export type ProviderHostedToolCallContent = Readonly<{
-  type: "providerHostedToolCall";
-  toolName: "web_search";
-  nativeItem: Readonly<JsonRecord>;
-  action?: ProviderHostedWebSearchAction;
-  previousItemId?: string;
-  nextItemId?: string;
-}>;
-
-type ProviderAnnotatedTextContent = Readonly<{
-  type: "text";
-  text: string;
-  textSignature?: string;
-  providerAnnotations?: readonly Readonly<JsonRecord>[];
-}>;
-
-function isRecord(value: unknown): value is JsonRecord {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+export function isHostedToolBlock(value: unknown): value is ProviderHostedToolCallContent {
+  return (
+    record(value) &&
+    value.type === "text" &&
+    value.text === "" &&
+    typeof value.textSignature === "string" &&
+    record(value.providerHostedTool) &&
+    value.providerHostedTool.toolName === "web_search" &&
+    record(value.providerHostedTool.nativeItem)
+  );
 }
 
-function contentItemId(value: unknown): string | undefined {
-  if (!isRecord(value) || typeof value.type !== "string") return undefined;
-  if (value.type === "toolCall" && typeof value.id === "string") {
-    return value.id.split("|")[1];
-  }
-  const signature = value.type === "text" ? value.textSignature : value.thinkingSignature;
-  if (typeof signature !== "string" || !signature.startsWith("{")) return undefined;
+/** Valid native progress with no invented visible text or local Tool effect. */
+export function hostedSearchContent(
+  nativeItem: Readonly<Record<string, unknown>>,
+  previous?: unknown,
+): ProviderHostedToolCallContent {
+  const action = normalizeProviderHostedWebSearchAction(nativeItem);
+  return {
+    type: "text",
+    text: "",
+    textSignature: isHostedToolBlock(previous)
+      ? previous.textSignature
+      : JSON.stringify({
+          v: 1,
+          id: `msg_picloud_hosted_${crypto.randomUUID().replaceAll("-", "")}`,
+        }),
+    providerHostedTool: {
+      toolName: "web_search",
+      nativeItem: structuredClone(nativeItem),
+      ...(action ? { action } : {}),
+    },
+  };
+}
+
+function sameModel(message: AssistantMessage, model: Model<Api>): boolean {
+  return (
+    message.provider === model.provider && message.api === model.api && message.model === model.id
+  );
+}
+
+/** Same-model carriers become provider-native items in onPayload; cross-model
+ * context has no synthetic empty message or foreign provider item. */
+export function nativeProviderContext(context: Context, model: Model<Api>): Context {
+  return {
+    ...context,
+    messages: context.messages.flatMap((message) => {
+      if (message.role !== "assistant" || sameModel(message, model)) return [message];
+      const content = message.content.filter((block) => !isHostedToolBlock(block));
+      return content.length ? [{ ...message, content }] : [];
+    }),
+  };
+}
+
+function signatureId(value: TextContent): string | undefined {
+  if (!value.textSignature?.startsWith("{")) return undefined;
   try {
-    const parsed = JSON.parse(signature) as unknown;
-    return isRecord(parsed) && typeof parsed.id === "string" ? parsed.id : undefined;
+    const parsed: unknown = JSON.parse(value.textSignature);
+    return record(parsed) && typeof parsed.id === "string" ? parsed.id : undefined;
   } catch {
     return undefined;
   }
 }
 
-function isHostedToolBlock(value: unknown): value is ProviderHostedToolCallContent {
-  return (
-    isRecord(value) &&
-    value.type === "providerHostedToolCall" &&
-    value.toolName === "web_search" &&
-    isRecord(value.nativeItem)
-  );
-}
-
-/** Native Pi estimators accept only Pi content blocks; replay uses the original context. */
-export function nativeProviderContext(context: Context): Context {
-  return {
-    ...context,
-    messages: context.messages.map((message) =>
-      message.role === "assistant" && message.content.some(isHostedToolBlock)
-        ? { ...message, content: message.content.filter((block) => !isHostedToolBlock(block)) }
-        : message,
-    ),
-  };
-}
-
-function nearestItemId(
-  items: ProviderHostedTranscript["items"],
-  start: number,
-  direction: -1 | 1,
-): string | undefined {
-  for (let index = start + direction; index >= 0 && index < items.length; index += direction) {
-    const id = items[index]?.id;
-    if (typeof id === "string" && items[index]?.type !== "web_search_call") return id;
-  }
-  return undefined;
-}
-
-/**
- * Adds Provider-native Hosted Tool items to the exact Pi assistant message
- * produced by the same Responses request. The Agent Loop still sees only
- * ordinary `toolCall` blocks as locally executable Tools.
- */
-export function applyProviderHostedTranscript(
-  message: AssistantMessage,
-  transcript: ProviderHostedTranscript,
-): void {
-  if (
-    message.provider !== transcript.provider ||
-    message.api !== transcript.api ||
-    message.model !== transcript.modelId
-  ) {
-    return;
-  }
-
-  const original = message.content as unknown[];
-  const byId = new Map<string, unknown>();
-  for (const block of original) {
-    const id = contentItemId(block);
-    if (id !== undefined) byId.set(id, block);
-  }
-  const existingHostedById = new Map<string, ProviderHostedToolCallContent>();
-  for (const block of original.filter(isHostedToolBlock)) {
-    if (typeof block.nativeItem.id === "string") {
-      existingHostedById.set(block.nativeItem.id, block);
-    }
-  }
-  const ordered: unknown[] = [];
-  const used = new Set<unknown>();
-
-  for (let index = 0; index < transcript.items.length; index += 1) {
-    const item = transcript.items[index]!;
-    if (item.type === "web_search_call" && item.nativeItem !== undefined) {
-      const nativeId = item.nativeItem.id;
-      const existing = typeof nativeId === "string" ? existingHostedById.get(nativeId) : undefined;
-      if (existing !== undefined) {
-        ordered.push(existing);
-        used.add(existing);
-        continue;
-      }
-      const previousItemId = nearestItemId(transcript.items, index, -1);
-      const nextItemId = nearestItemId(transcript.items, index, 1);
-      const action = normalizeProviderHostedWebSearchAction(item.nativeItem);
-      ordered.push({
-        type: "providerHostedToolCall",
-        toolName: "web_search",
-        nativeItem: item.nativeItem,
-        ...(action === undefined ? {} : { action }),
-        ...(previousItemId === undefined ? {} : { previousItemId }),
-        ...(nextItemId === undefined ? {} : { nextItemId }),
-      } satisfies ProviderHostedToolCallContent);
-      continue;
-    }
-    if (item.id === undefined) continue;
-    const block = byId.get(item.id);
-    if (block === undefined) continue;
-    if (item.type === "message" && item.annotations !== undefined && isRecord(block)) {
-      block.providerAnnotations = item.annotations;
-    }
-    ordered.push(block);
-    used.add(block);
-  }
-
-  for (const block of original) {
-    if (!used.has(block)) ordered.push(block);
-  }
-  original.splice(0, original.length, ...ordered);
-}
-
-function inputItems(payload: unknown): JsonRecord[] | undefined {
-  if (!isRecord(payload) || !Array.isArray(payload.input)) return undefined;
-  return payload.input.every(isRecord) ? payload.input : undefined;
-}
-
-function findInputItem(items: readonly JsonRecord[], id: string): number {
-  return items.findIndex((item) => item.id === id);
-}
-
-function replayAnnotations(items: JsonRecord[], block: ProviderAnnotatedTextContent): void {
-  if (block.providerAnnotations === undefined || block.providerAnnotations.length === 0) return;
-  const id = contentItemId(block);
-  if (id === undefined) return;
-  const item = items.find((candidate) => candidate.id === id && candidate.type === "message");
-  if (item === undefined || !Array.isArray(item.content)) return;
-  const outputText = item.content.find(
-    (candidate): candidate is JsonRecord => isRecord(candidate) && candidate.type === "output_text",
-  );
-  if (outputText !== undefined) outputText.annotations = block.providerAnnotations;
-}
-
-function insertHostedItem(items: JsonRecord[], block: ProviderHostedToolCallContent): void {
-  const nativeId = block.nativeItem.id;
-  if (typeof nativeId === "string" && findInputItem(items, nativeId) >= 0) return;
-  const nextIndex = block.nextItemId === undefined ? -1 : findInputItem(items, block.nextItemId);
-  if (nextIndex >= 0) {
-    items.splice(nextIndex, 0, { ...block.nativeItem });
-    return;
-  }
-  const previousIndex =
-    block.previousItemId === undefined ? -1 : findInputItem(items, block.previousItemId);
-  if (previousIndex >= 0) {
-    // Several trailing searches share the same preceding non-search item.
-    // Append after that group rather than reversing it at the same insertion point.
-    let insertion = previousIndex + 1;
-    while (items[insertion]?.type === "web_search_call") insertion++;
-    items.splice(insertion, 0, { ...block.nativeItem });
-  }
-}
-
-/** Replays native IDs only to the exact Provider/API/model that issued them. */
+/** Pi's ordinary text conversion preserves each owned marker's exact position.
+ * Replace it, never forward it as an assistant message to the provider. */
 export function replayProviderHostedTranscripts(
   payload: unknown,
   context: Context,
   model: Model<Api>,
 ): unknown {
-  const items = inputItems(payload);
-  if (items === undefined) return payload;
+  if (!record(payload) || !Array.isArray(payload.input) || !payload.input.every(record))
+    return payload;
+  const items = payload.input as Record<string, unknown>[];
   for (const message of context.messages) {
-    if (
-      message.role !== "assistant" ||
-      message.provider !== model.provider ||
-      message.api !== model.api ||
-      message.model !== model.id
-    ) {
-      continue;
-    }
-    for (const block of message.content as unknown[]) {
-      if (isHostedToolBlock(block)) insertHostedItem(items, block);
-      else if (isRecord(block) && block.type === "text") {
-        replayAnnotations(items, block as ProviderAnnotatedTextContent);
+    if (message.role !== "assistant" || !sameModel(message, model)) continue;
+    for (const block of message.content) {
+      if (block.type !== "text") continue;
+      const id = signatureId(block);
+      if (!id) continue;
+      const index = items.findIndex((item) => item.id === id);
+      // Pi may omit an entire message from its normalized model context.
+      if (index < 0) continue;
+      if (isHostedToolBlock(block)) {
+        items[index] = structuredClone(block.providerHostedTool.nativeItem);
+      } else {
+        const annotated = block as ProviderAnnotatedTextContent;
+        const content = items[index]!.content;
+        if (!annotated.providerAnnotations?.length || !Array.isArray(content)) continue;
+        const text = content.find((item: unknown) => record(item) && item.type === "output_text");
+        if (record(text)) text.annotations = structuredClone(annotated.providerAnnotations);
       }
     }
   }
+  if (
+    items.some(
+      (item) =>
+        item.type === "message" &&
+        typeof item.id === "string" &&
+        item.id.startsWith("msg_picloud_hosted_"),
+    )
+  )
+    throw new Error("Completed hosted content has no provider replay item");
   return payload;
 }

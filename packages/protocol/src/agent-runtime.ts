@@ -30,7 +30,6 @@ const AgentModelRuntimeCommonSchema = {
   autoCompactTokenLimit: Type.Integer({ minimum: 1_024, maximum: 1_000_000 }),
   maxTokens: Type.Integer({ minimum: 128, maximum: 65_536 }),
   requestTimeoutMs: Type.Integer({ minimum: 1_000, maximum: 300_000 }),
-  turnTimeoutMs: Type.Integer({ minimum: 1_000, maximum: 900_000 }),
   inputModalities: Type.Array(Type.Union([Type.Literal("text"), Type.Literal("image")]), {
     minItems: 1,
     maxItems: 2,

@@ -792,7 +792,6 @@ export class RunExecutor {
           "policy.maximum_model_requests_per_run as maximumModelRequests",
           "policy.maximum_tool_calls_per_run as maximumToolCalls",
           "policy.maximum_tool_output_bytes as maximumToolOutputBytes",
-          "policy.maximum_run_duration_ms as maximumRunDurationMs",
           "policy.compaction_reserve_tokens as compactionReserveTokens",
           "policy.compaction_keep_recent_tokens as compactionKeepRecentTokens",
         ])
@@ -888,10 +887,6 @@ export class RunExecutor {
           maximumToolOutputBytes: safeNonNegativeInteger(
             row.maximumToolOutputBytes,
             "tool output budget",
-          ),
-          maximumRunDurationMs: safeNonNegativeInteger(
-            row.maximumRunDurationMs,
-            "Run duration budget",
           ),
           compactionReserveTokens: safeNonNegativeInteger(
             row.compactionReserveTokens,

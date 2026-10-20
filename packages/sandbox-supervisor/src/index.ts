@@ -78,11 +78,6 @@ export {
 export {
   type AgentWorkspaceSeedResolver,
   type ProviderHostedActivity,
-  type AssistantTextPhaseResolver,
-  type ProviderHostedActivitySubscriber,
-  type ProviderHostedTranscript,
-  type ProviderHostedTranscriptItem,
-  type ProviderHostedTranscriptSubscriber,
   type TrustedAgentTool,
   type TrustedToolExecutionPlane,
   type TrustedModelRuntimeLease,
@@ -90,7 +85,9 @@ export {
 } from "./agent-turn-runtime.ts";
 
 export {
-  applyProviderHostedTranscript,
+  hostedSearchContent,
+  isHostedToolBlock,
+  nativeProviderContext,
   replayProviderHostedTranscripts,
   type ProviderHostedToolCallContent,
 } from "./provider-hosted-transcript.ts";

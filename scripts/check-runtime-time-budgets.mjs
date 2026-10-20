@@ -4,7 +4,6 @@ import { parseDocument } from "yaml";
 
 const MAX_TOOL_EXECUTION_MS = 5 * 60_000;
 const TOOL_TRANSPORT_MARGIN_MS = 60_000;
-const MODEL_CAPABILITY_MARGIN_MS = 60_000;
 const WORKER_SETTLEMENT_GRACE_MS = 5 * 60_000;
 const PROCESS_SHUTDOWN_MARGIN_MS = 60_000;
 const WORKSPACE_VOLUME_GATEWAY_HTTP_MS = 11 * 60_000;
@@ -28,14 +27,14 @@ function durationMs(value, description) {
 
 function validateWorkerPolicy(policy, description) {
   const manager = integer(policy.sandboxControlRequestMs, `${description} Sandbox control timeout`);
-  const capability = integer(policy.modelCapabilityTtlMs, `${description} model capability TTL`);
+  const drain = integer(policy.workerDrainMs, `${description} Worker drain`);
+  const retirement = integer(policy.workerRetirementMs, `${description} Worker retirement`);
   const upstreamConnect = integer(
     policy.modelUpstreamConnectMs,
     `${description} upstream connect timeout`,
   );
-  const upstreamIdle = integer(policy.modelUpstreamIdleMs, `${description} upstream idle timeout`);
+  integer(policy.modelUpstreamIdleMs, `${description} upstream idle timeout`);
   const model = integer(policy.modelRequestMs, `${description} Pi model timeout`);
-  const turn = integer(policy.turnMs, `${description} Pi Turn timeout`);
   const termination = integer(policy.terminationGraceMs, `${description} termination grace`);
 
   assert.ok(
@@ -46,15 +45,13 @@ function validateWorkerPolicy(policy, description) {
     upstreamConnect <= model,
     `${description} Pi may time out before its model gateway returns response headers`,
   );
-  assert.ok(upstreamIdle <= turn, `${description} upstream stream can outlive its Turn`);
-  assert.ok(model <= turn, `${description} Turn may time out before one model request`);
   assert.ok(
-    capability >= turn + MODEL_CAPABILITY_MARGIN_MS,
-    `${description} model capability can expire before its Turn boundary`,
+    retirement >= manager + WORKER_SETTLEMENT_GRACE_MS,
+    `${description} retirement can outlive cleanup`,
   );
   assert.ok(
-    termination >= turn + manager + WORKER_SETTLEMENT_GRACE_MS + PROCESS_SHUTDOWN_MARGIN_MS,
-    `${description} process can be killed before its fenced Run drain completes`,
+    termination >= drain + retirement + PROCESS_SHUTDOWN_MARGIN_MS,
+    `${description} process can be killed before its fenced retirement completes`,
   );
 }
 

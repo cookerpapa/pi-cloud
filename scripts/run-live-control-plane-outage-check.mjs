@@ -249,7 +249,7 @@ try {
     .orderBy("name", "desc")
     .limit(1)
     .executeTakeFirstOrThrow();
-  assert.equal(schema.name, "191_native_submission_status");
+  assert.equal(schema.name, "192_unbounded_agent_work");
   report.controlPlaneImage = deployment.spec.template.spec.containers[0].image;
   report.beforePods = workerPods();
   report.initialInventory = await inventory();

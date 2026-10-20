@@ -1,5 +1,5 @@
 import { resourceLimit, minimumResourceLimit } from "@pi-cloud/domain";
-import { reviewedModel, type ReviewedModel, type AssistantMessagePhase } from "@pi-cloud/protocol";
+import { reviewedModel, type ReviewedModel } from "@pi-cloud/protocol";
 import {
   MODEL_SAMPLING_ATTEMPT_HEADER,
   MODEL_STEP_SEQUENCE_HEADER,
@@ -9,11 +9,7 @@ import {
   type ExecuteTurnCommandMessage,
   type ModelSamplingIdentity,
 } from "@pi-cloud/protocol";
-import type {
-  ProviderHostedActivity,
-  ProviderHostedTranscript,
-  TrustedModelRuntimeLease,
-} from "@pi-cloud/sandbox-supervisor";
+import type { TrustedModelRuntimeLease } from "@pi-cloud/sandbox-supervisor";
 import {
   operationalLog,
   parseTraceCarrier,
@@ -26,7 +22,6 @@ import type { AddressInfo } from "node:net";
 import { once } from "node:events";
 import { addAbortSignal } from "node:stream";
 import { zstdDecompressSync } from "node:zlib";
-import { ResponsesHostedActivityObserver } from "./responses-hosted-activity.ts";
 
 const CODEX_RESPONSES_PATH = "/codex/responses";
 const PROVIDER_RESPONSES_PATH = "/v1/responses";
@@ -55,13 +50,10 @@ type ActiveCapabilityFields = {
   runId: string;
   modelProfileId: string;
   serviceTier: "fast" | null;
-  expiresAt: number;
+  detachOwner?: () => void;
   budget: RootModelBudget;
   revoked: boolean;
   requestControllers: Set<AbortController>;
-  hostedActivityListeners: Set<(activity: ProviderHostedActivity) => void>;
-  hostedTranscriptListeners: Set<(transcript: ProviderHostedTranscript) => void>;
-  assistantTextPhases: Map<string, Map<number, AssistantMessagePhase>>;
 };
 
 type ActiveCapability =
@@ -74,14 +66,11 @@ export type TenantModelGatewayOptions = {
   advertisedBaseUrl: string;
   providerGatewayBaseUrl: string;
   providerGatewayApiKey: string;
-  capabilityTtlMs?: number;
   maximumRequestsPerTurn?: number | null;
   upstreamConnectTimeoutMs?: number;
   upstreamIdleTimeoutMs?: number;
   piRequestTimeoutMs?: number;
-  piTurnTimeoutMs?: number;
   fetchImplementation?: typeof fetch;
-  clock?: () => Date;
   randomBytes?: (size: number) => Buffer;
   metrics?: PiCloudMetrics;
 };
@@ -150,24 +139,13 @@ function providerGatewayApiKey(value: string): string {
   return value;
 }
 
-function validDate(clock: () => Date): Date {
-  const value = clock();
-  if (!(value instanceof Date) || Number.isNaN(value.valueOf())) {
-    throw new TenantModelGatewayError(
-      "invalid_gateway_configuration",
-      "Model Gateway clock returned an invalid date",
-    );
-  }
-  return value;
-}
-
 function bearerCapability(value: string | undefined): string | undefined {
   return value === undefined
     ? undefined
     : /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43})$/.exec(value)?.[1];
 }
 
-function capabilityToken(signature: Buffer, sessionId: string, expiresAt: number): string {
+function capabilityToken(signature: Buffer, sessionId: string): string {
   const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT", pcmg: 1 }), "utf8").toString(
     "base64url",
   );
@@ -177,7 +155,6 @@ function capabilityToken(signature: Buffer, sessionId: string, expiresAt: number
         chatgpt_account_id: "pi-cloud-provider-gateway",
       },
       sid: sessionId,
-      exp: Math.floor(expiresAt / 1_000),
     }),
     "utf8",
   ).toString("base64url");
@@ -363,14 +340,11 @@ export class TenantModelGateway {
   readonly #advertisedBaseUrl: string;
   readonly #providerGatewayBaseUrl: string;
   readonly #providerGatewayApiKey: string;
-  readonly #capabilityTtlMs: number;
   readonly #maximumRequestsPerTurn: number | null;
   readonly #upstreamConnectTimeoutMs: number;
   readonly #upstreamIdleTimeoutMs: number;
   readonly #piRequestTimeoutMs: number;
-  readonly #piTurnTimeoutMs: number;
   readonly #fetch: typeof fetch;
-  readonly #clock: () => Date;
   readonly #randomBytes: (size: number) => Buffer;
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #server: Server;
@@ -397,11 +371,6 @@ export class TenantModelGateway {
       false,
     );
     this.#providerGatewayApiKey = providerGatewayApiKey(options.providerGatewayApiKey);
-    this.#capabilityTtlMs = positiveInteger(
-      options.capabilityTtlMs ?? 10 * 60_000,
-      "capabilityTtlMs",
-      60 * 60_000,
-    );
     this.#maximumRequestsPerTurn = resourceLimit(
       options.maximumRequestsPerTurn,
       "maximumRequestsPerTurn",
@@ -421,13 +390,7 @@ export class TenantModelGateway {
       "piRequestTimeoutMs",
       300_000,
     );
-    this.#piTurnTimeoutMs = positiveInteger(
-      options.piTurnTimeoutMs ?? 10 * 60_000,
-      "piTurnTimeoutMs",
-      15 * 60_000,
-    );
     this.#fetch = options.fetchImplementation ?? globalThis.fetch.bind(globalThis);
-    this.#clock = options.clock ?? (() => new Date());
     this.#randomBytes = options.randomBytes ?? randomBytes;
     this.#metrics = options.metrics;
     this.#server = createServer((request, response) => {
@@ -462,10 +425,17 @@ export class TenantModelGateway {
         },
         run: () => this.#handle(request, response),
       }).then(
-        () =>
-          this.#observe(active, response.statusCode < 400 ? "completed" : "rejected", startedAt),
+        () => this.#observe(active, response.statusCode < 400 ? "eof" : "rejected", startedAt),
         (error: unknown) => {
-          this.#observe(active, "failed", startedAt);
+          this.#observe(
+            active,
+            active?.revoked
+              ? "revoked"
+              : error instanceof SafeGatewayHttpError && error.code === "downstream_disconnected"
+                ? "disconnected"
+                : "failed",
+            startedAt,
+          );
           if (error instanceof SafeGatewayHttpError) {
             if (response.headersSent) {
               if (error.code === "downstream_disconnected") response.destroy();
@@ -512,7 +482,8 @@ export class TenantModelGateway {
     });
   }
 
-  issue(command: ExecuteTurnCommandMessage): TrustedModelRuntimeLease {
+  issue(command: ExecuteTurnCommandMessage, signal?: AbortSignal): TrustedModelRuntimeLease {
+    signal?.throwIfAborted();
     if (!this.#started) {
       throw new TenantModelGatewayError("gateway_not_started", "Model Gateway is not listening");
     }
@@ -533,8 +504,7 @@ export class TenantModelGateway {
         "Model Gateway capability generation failed",
       );
     }
-    const expiresAt = validDate(this.#clock).valueOf() + this.#capabilityTtlMs;
-    const capability = capabilityToken(random, command.payload.sessionId, expiresAt);
+    const capability = capabilityToken(random, command.payload.sessionId);
     const digest = capabilityDigest(capability);
     if (this.#capabilities.has(digest)) {
       throw new TenantModelGatewayError(
@@ -571,15 +541,16 @@ export class TenantModelGateway {
       runId: command.payload.runId,
       modelProfileId: command.payload.model.profileId,
       serviceTier: command.payload.model.serviceTier,
-      expiresAt,
       budget,
       revoked: false,
       requestControllers: new Set(),
-      hostedActivityListeners: new Set(),
-      hostedTranscriptListeners: new Set(),
-      assistantTextPhases: new Map(),
     };
     this.#capabilities.set(digest, active);
+    if (signal) {
+      const revoke = () => this.#revoke(active);
+      signal.addEventListener("abort", revoke, { once: true });
+      active.detachOwner = () => signal.removeEventListener("abort", revoke);
+    }
     let released = false;
     const runtime: AgentModelRuntime =
       active.provider === "deepseek"
@@ -598,7 +569,6 @@ export class TenantModelGateway {
             hostedTools: [...active.hostedTools],
             serviceTier: null,
             requestTimeoutMs: this.#piRequestTimeoutMs,
-            turnTimeoutMs: this.#piTurnTimeoutMs,
           }
         : {
             kind: "openai_compatible_gateway",
@@ -615,28 +585,9 @@ export class TenantModelGateway {
             hostedTools: [...active.hostedTools],
             serviceTier: active.serviceTier,
             requestTimeoutMs: this.#piRequestTimeoutMs,
-            turnTimeoutMs: this.#piTurnTimeoutMs,
           };
     return {
       runtime,
-      // DeepSeek currently revises final_answer to commentary at item completion;
-      // only the verified Codex route supplies a reliable early phase contract.
-      ...(active.provider === "openai-codex"
-        ? {
-            resolveAssistantTextPhase: (responseId: string, index: number) =>
-              active.assistantTextPhases.get(responseId)?.get(index),
-          }
-        : {}),
-      subscribeHostedActivity: (listener) => {
-        if (released || active.revoked) return () => undefined;
-        active.hostedActivityListeners.add(listener);
-        return () => active.hostedActivityListeners.delete(listener);
-      },
-      subscribeHostedTranscript: (listener) => {
-        if (released || active.revoked) return () => undefined;
-        active.hostedTranscriptListeners.add(listener);
-        return () => active.hostedTranscriptListeners.delete(listener);
-      },
       release: () => {
         if (released) return;
         released = true;
@@ -702,7 +653,6 @@ export class TenantModelGateway {
     request.once("aborted", abortOnRequest);
     response.once("close", abortOnResponse);
     active.requestControllers.add(controller);
-    let hostedActivity: ResponsesHostedActivityObserver | undefined;
     const timing: Record<string, number> = {};
     const elapsed = () => Math.round((performance.now() - startedAt) * 1000) / 1000;
     let upstreamAttempts = 0,
@@ -715,7 +665,7 @@ export class TenantModelGateway {
         throw new SafeGatewayHttpError(
           429,
           "model_upload_capacity_exhausted",
-          "Model image/context upload capacity is exhausted",
+          "Model upload service unavailable: capacity is exhausted",
         );
       this.#requestBytes += bytes;
       reservedBytes += bytes;
@@ -758,7 +708,7 @@ export class TenantModelGateway {
         throw new SafeGatewayHttpError(
           429,
           "model_request_limit_exceeded",
-          "Model request limit was exceeded",
+          "Model request quota exceeded",
         );
       }
       active.budget.started++;
@@ -789,26 +739,6 @@ export class TenantModelGateway {
         response.end();
         return;
       }
-      hostedActivity = new ResponsesHostedActivityObserver(
-        (activity) => this.#notifyHostedActivity(active, activity),
-        (items) =>
-          this.#notifyHostedTranscript(active, {
-            provider: active.provider,
-            api: active.api,
-            modelId: active.modelId,
-            ...requestSamplingIdentity,
-            items,
-          }),
-        (kind) => {
-          timing[`first${kind}Ms`] = elapsed();
-        },
-        (responseId, index, phase) => {
-          if (active.provider !== "openai-codex" || phase === undefined) return;
-          const phases = active.assistantTextPhases.get(responseId) ?? new Map();
-          phases.set(index, phase);
-          active.assistantTextPhases.set(responseId, phases);
-        },
-      );
       armUpstreamTimeout("idle", this.#upstreamIdleTimeoutMs);
       for await (const rawChunk of upstream.body) {
         timing.firstByteMs ??= elapsed();
@@ -823,15 +753,12 @@ export class TenantModelGateway {
             "Model response exceeded the Gateway limit",
           );
         }
-        hostedActivity.push(chunk);
         await writeChunk(response, chunk, controller.signal);
       }
       clearUpstreamTimeout();
-      hostedActivity.finish("completed");
       transportCompleted = true;
       response.end();
     } catch (error: unknown) {
-      hostedActivity?.finish("failed");
       if (error instanceof SafeGatewayHttpError) throw error;
       throw new SafeGatewayHttpError(
         timeoutPhase === undefined ? 502 : 504,
@@ -845,8 +772,8 @@ export class TenantModelGateway {
         timeoutPhase === "connect"
           ? "Provider Gateway response headers timed out"
           : timeoutPhase === "idle"
-            ? "Provider Gateway response stream became idle"
-            : "Provider Gateway request failed",
+            ? "Provider Gateway response stream idle timeout"
+            : "Model provider connection error",
       );
     } finally {
       clearUpstreamTimeout();
@@ -861,10 +788,13 @@ export class TenantModelGateway {
         attributes: {
           runId: active.runId,
           stepSequence: requestSamplingIdentity.stepSequence,
+          stepSha256: requestSamplingIdentity.stepSha256,
           samplingAttempt: requestSamplingIdentity.samplingAttempt,
           provider: active.provider,
           model: active.modelId,
           receivedAtMs,
+          receivedMonotonicMs: startedAt,
+          processStartedAtMs: performance.timeOrigin,
           ...timing,
           elapsedMs: elapsed(),
           upstreamAttempts,
@@ -877,15 +807,7 @@ export class TenantModelGateway {
   }
 
   #requireCapability(active: ActiveCapability | undefined): ActiveCapability {
-    const expired = active !== undefined && active.expiresAt <= validDate(this.#clock).valueOf();
-    if (
-      !active ||
-      active.revoked ||
-      expired ||
-      this.#capabilities.get(active.tokenDigest) !== active
-    ) {
-      if (active && expired && this.#capabilities.get(active.tokenDigest) === active)
-        this.#revoke(active);
+    if (!active || active.revoked || this.#capabilities.get(active.tokenDigest) !== active) {
       throw new SafeGatewayHttpError(
         401,
         "invalid_capability",
@@ -897,44 +819,22 @@ export class TenantModelGateway {
 
   #observe(
     active: ActiveCapability | undefined,
-    outcome: "completed" | "rejected" | "failed",
+    outcome: "eof" | "rejected" | "failed" | "disconnected" | "revoked",
     startedAt: number,
   ): void {
     if (active === undefined) return;
-    this.#metrics?.modelDuration.observe(
+    this.#metrics?.modelTransportDuration.observe(
       { provider: active.provider, model: active.modelId, outcome },
       (performance.now() - startedAt) / 1_000,
     );
   }
 
-  #notifyHostedActivity(active: ActiveCapability, activity: ProviderHostedActivity): void {
-    for (const listener of active.hostedActivityListeners) {
-      try {
-        listener(activity);
-      } catch {
-        // Run presentation observers cannot interfere with the Provider stream.
-      }
-    }
-  }
-
-  #notifyHostedTranscript(active: ActiveCapability, transcript: ProviderHostedTranscript): void {
-    for (const listener of active.hostedTranscriptListeners) {
-      try {
-        listener(transcript);
-      } catch {
-        // Canonical transcript observers cannot interfere with the Provider stream.
-      }
-    }
-  }
-
   #revoke(active: ActiveCapability): void {
     if (active.revoked) return;
     active.revoked = true;
+    active.detachOwner?.();
     for (const controller of active.requestControllers) controller.abort();
     active.requestControllers.clear();
-    active.hostedActivityListeners.clear();
-    active.hostedTranscriptListeners.clear();
-    active.assistantTextPhases.clear();
     this.#capabilities.delete(active.tokenDigest);
     if (--active.budget.holders === 0 && this.#budgets.get(active.budget.key) === active.budget)
       this.#budgets.delete(active.budget.key);
