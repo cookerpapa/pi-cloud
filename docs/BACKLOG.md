@@ -28,6 +28,28 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## Workspace and Volume lifecycle review
+
+The [October 20 resource review](reports/workspace-volume-lifecycle-review-20261020.md)
+is complete at `f9ca385e`; it changes no production behavior. Existing lifecycle
+contracts pass, while seven real-PG characterizations and three native reference
+scenarios establish the findings below. Provider destruction in the new probes
+is a controlled callback, not a live VM fault.
+
+- [ ] WVL-01 / P1: include active human terminals and native child compute in
+      orphan-retirement eligibility under existing shared Session authority.
+- [ ] WVL-02 / P1: include terminal-only holders in local recovery/idle accounting;
+      do not adopt the same live VM into a second warm runtime object.
+- [ ] WVL-03 / P2: complete evidence-based unknown Volume-reference reconciliation;
+      retain exact recovery identity and shared holders. See the earlier observed
+      Cubelet-crash limit below; no zero-count-only clearing is authorized.
+- [ ] WVL-04 / P2: align Run/terminal Session/Workspace lock order while preserving
+      atomic admission versus deletion. Current bounded lock timeout prevents a
+      permanent deadlock but returns an avoidable terminal admission error.
+- [ ] WVL-O1/O2: consider combining five independent deletion occupancy reads
+      (13 ordinary business SQL in the empty-Workspace sample) and remove the
+      unused resource-policy `turnWallClockTimeoutMs` field. No new cache/authority.
+
 ## Native model request / response review
 
 The [October 19 review](reports/model-request-response-review-20261019.md) completes

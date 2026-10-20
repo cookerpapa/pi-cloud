@@ -1,5 +1,12 @@
 # Documentation map
 
+The [October 20 Workspace/Volume lifecycle review](reports/workspace-volume-lifecycle-review-20261020.md)
+starts the agreed resource/interaction branch reviews. It confirms in-use compute
+retirement, terminal-only duplicate adoption, nonconverging unknown Volume references
+and admission lock-order findings, plus two simplification opportunities. Existing
+tests and isolated PG/native probes are recorded separately; no runtime repair or
+deployment is claimed. Subagent, upload and terminal/preview reviews follow in order.
+
 The [October 19 model request/response review](reports/model-request-response-review-20261019.md)
 and [approved repair](reports/model-request-response-repair-plan-20261019.md) are
 complete. [ADR-0263](adr/0263-model-response-and-work-lifetimes.md) is deployed as

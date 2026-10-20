@@ -1,0 +1,116 @@
+{
+  "baseline": "f9ca385e",
+  "runtimeRelease": "model-runtime-058925bb",
+  "schema": 192,
+  "reviewOnly": true,
+  "productionModified": false,
+  "existingNodeTests": {
+    "files": 11,
+    "passed": 205
+  },
+  "newPgCharacterizations": {
+    "passed": 7,
+    "physicalProvider": "controlled counters",
+    "nativeTasks": "public-record projection fixture, not real Harness"
+  },
+  "nativeReferenceScenarios": 3,
+  "nativeReferencePackageTests": {
+    "topLevel": 8,
+    "passEventsIncludingSubtests": 12,
+    "raceDetector": true
+  },
+  "maintainedNativeContracts": {
+    "topLevel": 55,
+    "passEventsIncludingSubtests": 77,
+    "cubeboxIntegrationPackagePassed": true
+  },
+  "findings": [
+    {
+      "id": "WVL-01",
+      "priority": "P1",
+      "issue": "unbound cleanup ignores terminal and native-child users"
+    },
+    {
+      "id": "WVL-02",
+      "priority": "P1",
+      "issue": "terminal-only runtime is redundantly adopted into warm pool"
+    },
+    {
+      "id": "WVL-03",
+      "priority": "P2",
+      "issue": "unknown native Volume references have no converging recovery step"
+    },
+    {
+      "id": "WVL-04",
+      "priority": "P2",
+      "issue": "Run/terminal admission lock order inversion"
+    }
+  ],
+  "opportunities": [
+    "WVL-O1: combine independent occupancy SQL under existing lock",
+    "WVL-O2: remove unused turnWallClockTimeoutMs resource-policy field"
+  ],
+  "measurements": [
+    {
+      "case": "live_terminal_cleanup",
+      "terminalState": "active",
+      "selectedForRetirement": 1,
+      "realPostgres": true,
+      "vmEffects": 0
+    },
+    {
+      "case": "native_child_cleanup",
+      "childState": "running",
+      "validRootAuthorities": 1,
+      "selectedForRetirement": 1,
+      "cloudRuns": 1,
+      "realPostgres": true,
+      "vmEffects": 0
+    },
+    {
+      "case": "controller_terminal_retirement",
+      "terminalState": "active",
+      "providerDestroyCalls": 1,
+      "realPostgres": true,
+      "realVM": false
+    },
+    {
+      "case": "terminal_duplicate_adoption",
+      "terminalState": "active",
+      "duplicateAdoptions": 1,
+      "providerDestroyCalls": 1,
+      "realPostgres": true,
+      "realVM": false,
+      "shortenedWarmTtlMs": 1000
+    },
+    {
+      "case": "controller_child_retirement",
+      "childState": "running",
+      "validRootAuthorities": 1,
+      "providerDestroyCalls": 1,
+      "realPostgres": true,
+      "realVM": false
+    },
+    {
+      "case": "terminal_admission_lock_inversion",
+      "agent": "fulfilled",
+      "terminal": "rejected",
+      "pgCode": "55P03",
+      "elapsedMs": 522,
+      "realPostgres": true
+    },
+    {
+      "case": "workspace_delete_sql",
+      "businessStatements": 13,
+      "realPostgres": true,
+      "excludesBeginCommit": true
+    }
+  ],
+  "sourceHashes": {
+    "reference_review_test.go": "6440442b395915a2f4063163ee55c963bbff7f67ff8eb3e2ffb5354f880b1bdf",
+    "lifecycle.test.ts": "a90f0cb6c33aac518fa940df808f0ad71127dd503bf9dd4c6af3c3b51d426d7f",
+    "README.md": "7f26b46b7f52c1fe7ed932cb7381749565e8821b8cde2010d1647b30f4744eab",
+    "native-check.mjs": "b5661d6ed997f5783eb5f1c574b9447594df06eb3a3ca502a68b35f35ccaec58",
+    "tsconfig.json": "5252c370cc9e53beec122643fe98babf1218ec18bff341c2455c55de77834bcf"
+  }
+}

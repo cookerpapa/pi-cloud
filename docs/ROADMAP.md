@@ -1,5 +1,16 @@
 # Implementation roadmap
 
+## Resource and interaction branch reviews
+
+- [x] Review Workspace/Volume creation, binding, recovery and retirement; record
+      [four findings and two opportunities](reports/workspace-volume-lifecycle-review-20261020.md)
+      with real-PG/native characterizations. This review makes no runtime change.
+- [ ] Discuss and implement WVL-01–04 in a separate repair slice with its required
+      shared-resource, cancellation and recovery acceptance.
+- [ ] Review native Subagent creation/discovery, control operations and family settlement.
+- [ ] Review upload/attachment placement, acknowledgement and cleanup across failures.
+- [ ] Review terminal/preview connection and process lifetimes across replacement.
+
 ## Native model request / response review
 
 - [x] Trace Pi/public Models → local Model Gateway → CLIProxyAPI/provider and

@@ -2,6 +2,13 @@
 
 Updated: 2026-10-20; runtime is `model-runtime-058925bb`, schema 192.
 
+The owner has now authorized the separate resource/interaction branch reviews.
+The first, [Workspace/Volume lifecycle](reports/workspace-volume-lifecycle-review-20261020.md),
+is complete with four findings and two opportunities; no production repair is
+included. Continue with native Subagent creation/discovery and family settlement,
+then upload/attachment and terminal/preview lifetimes. This is additional scope
+after the completed main-message walkthrough, not a restart of that walkthrough.
+
 The owner asked to reconcile the complete hop-by-hop conversation with the
 recorded reviews. The ordinary Tool execution loop, normal Run completion,
 browser delivery, Worker renewal and Control Plane expiry admission have been
@@ -72,7 +79,7 @@ or physical process-death evidence.
 | PG Outbox → control seal publisher → Kafka | Explained, reviewed and repaired | [seal publication](reports/seal-publication-repair-20261019.md) |
 | Kafka seal → Projector → PG checkpoint/closure/release | Explained, reviewed, repaired and deployed | [seal projection](reports/seal-projection-review-20261019.md) |
 | Replacement Worker → native Harness continuation | Explained, reviewed, repaired and deployed | [Worker recovery delivery](reports/worker-harness-recovery-repair-20261019.md) |
-| Native Models → local Gateway → CLIProxyAPI/provider → native response | Combined focused review complete; MR-01–04 repairs and MR-D1 discussion open | [Model branch review](reports/model-request-response-review-20261019.md) |
+| Native Models → local Gateway → CLIProxyAPI/provider → native response | Reviewed, MR-01–04 and owner-decided MR-D1 repaired and deployed | [Model branch delivery](reports/model-runtime-repair-20261020.md) |
 
 These statuses distinguish walkthrough coverage from focused audit scope. Storage
 research does not establish a complete new audit of every native recovery branch,
@@ -103,10 +110,10 @@ Context/token estimation, Compaction and TLS diagnostics had been discussed
 separately; the combined review now adds focused whole-branch evidence. Local
 characterizations do not establish the external TLS failure's root cause.
 
-Replacement Harness continuation and this model branch complete the walkthrough.
-The next work is fixing the recorded findings and implementing the owner's
-no-total-duration policy, then actual use and evidence-driven follow-up. Reviewed does not mean
-every finding has been fixed.
+Replacement Harness continuation and this model branch complete the walkthrough;
+their approved repairs, including no overall Run deadline, are deployed. The
+additional resource/interaction reviews above are now in progress. Review status
+still remains distinct from implementation of each newly recorded finding.
 
 ## Related branches already discussed
 
