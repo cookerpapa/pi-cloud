@@ -14,10 +14,10 @@ four connection-lifetime findings. The
 [combined review](reports/resource-interaction-review-20261020.md) completes the
 agreed scope, with 16 findings and a proposed repair order. These reviews include
 no production repairs. The [repair plan](reports/resource-interaction-repair-plan-20261020.md)
-is prepared, including the subsequent official Pi foreground/background examples
-and mailbox/identity discussion. Proposed ADR-0264 separates recoverable direct
-delegation from unsafe management/scripts and adds scoped discovery. Next is
-implementation of accepted repair slices, beginning with live resource ownership;
+is approved and implementation has started, including the subsequent official Pi foreground/background examples
+and mailbox/identity discussion. Accepted ADR-0264 separates recoverable direct
+delegation from unsafe management/scripts and adds scoped discovery. [Delivery](reports/resource-interaction-repair-20261020.md) tracks
+the repair slices, beginning with live resource ownership;
 this is not a restart of the completed main-message walkthrough.
 
 The owner asked to reconcile the complete hop-by-hop conversation with the

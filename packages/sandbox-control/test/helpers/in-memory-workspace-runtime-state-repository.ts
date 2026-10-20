@@ -65,6 +65,7 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   onQuarantine?: (physicalActivationId: string) => void;
   readonly #terminals = new Map<string, OrphanedWorkspaceTerminal>();
   readonly #activations = new Map<string, WorkspaceRuntimeReservation>();
+  readonly #runtimeStates = new Map<string, SandboxControlWorkspaceRuntimeState>();
   readonly #developmentEnvironments = new Map<
     string,
     { reservation: DevelopmentEnvironmentReservation; state: DevelopmentEnvironmentState }
@@ -98,6 +99,7 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       return { status: "busy" };
     }
     this.#activations.set(input.activationId, input);
+    this.#runtimeStates.set(input.activationId, "reserved");
     const development = this.#developmentEnvironments.get(input.activationId);
     return development === undefined
       ? { status: "reserved" }
@@ -262,8 +264,24 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     state: SandboxControlWorkspaceRuntimeState,
     _detail?: { handle?: SandboxHandle; failureCode?: string },
   ): Promise<void> {
+    this.#runtimeStates.set(activationId, state);
     if (state === "unknown") this.onQuarantine?.(activationId);
     if (state === "released") this.#activations.delete(activationId);
+  }
+  async claimWarmRuntimeRetirement(activationId: string): Promise<boolean> {
+    const runtime = this.#activations.get(activationId);
+    if (!runtime || this.#runtimeStates.get(activationId) !== "warm") return false;
+    if (
+      runtime.computeSessionId === undefined &&
+      [...this.#terminals.values()].some(
+        (terminal) =>
+          terminal.tenantId === runtime.assignment.tenantId &&
+          terminal.workspaceId === runtime.assignment.workspaceId,
+      )
+    )
+      return false;
+    this.#runtimeStates.set(activationId, "cleaning");
+    return true;
   }
   async claimOrphanedWorkspaceRuntimes(): Promise<readonly OrphanedWorkspaceRuntime[]> {
     return [];

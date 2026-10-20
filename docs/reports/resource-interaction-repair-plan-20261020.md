@@ -1,6 +1,7 @@
 # Resource and interaction repair plan
 
-Status: proposed, 2026-10-20. This document implements no runtime change.
+Status: owner-approved; implementation in progress, 2026-10-20.
+Source/live completion is tracked in the [delivery record](resource-interaction-repair-20261020.md).
 Source baseline: `a89e97a2`; serving runtime: `model-runtime-058925bb`, schema 192.
 Scope: the [16 review findings](resource-interaction-review-20261020.md), SAR-D1
 recovery/discovery discussion, and the measured simplification/documentation items.
@@ -10,9 +11,9 @@ recovery/discovery discussion, and the measured simplification/documentation ite
 Repair the existing architecture in six independently verifiable slices.
 Protect live resource users first, stop repeated no-change control work next,
 then finish child recovery, Volume reference recovery, attachments and connections.
-The proposed child-recovery contract is recorded in
-[ADR-0264](../adr/0264-subagent-recovery-and-discovery.md); it is not yet accepted
-or deployed. Volume/reference and attachment-retention changes need their own
+The accepted child-recovery contract is recorded in
+[ADR-0264](../adr/0264-subagent-recovery-and-discovery.md); its prototype and
+implementation are not yet complete or deployed. Volume/reference and attachment-retention changes need their own
 focused decisions before implementation.
 
 Keep PG as control authority, native Pi as task/continuation authority, one

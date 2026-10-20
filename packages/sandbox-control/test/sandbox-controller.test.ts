@@ -486,6 +486,7 @@ describe("provider-backed Sandbox controller", () => {
         activationId: ACTIVATION_ID,
         runtimeCapsule: "test-exclusive-machine-capsule",
         sandboxProfileKey: "standard",
+        workspace: assignment,
       },
     ]);
     vi.spyOn(fixture.provider, "adoptPersistentCapsule").mockResolvedValue(handle);
@@ -535,6 +536,7 @@ describe("provider-backed Sandbox controller", () => {
                 activationId: handle.activationId,
                 runtimeCapsule: "test-exclusive-machine-capsule",
                 sandboxProfileKey: "standard",
+                workspace: assignment,
               },
             ],
     );

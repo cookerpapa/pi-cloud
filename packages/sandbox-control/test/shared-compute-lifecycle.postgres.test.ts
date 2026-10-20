@@ -1,26 +1,23 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "kysely";
 import { expect, it } from "vitest";
-import { nativeSubagentFixture } from "../../../packages/control-plane/test/native-subagent-fixture.ts";
-import { PostgresSubagentConversations } from "../../../packages/subagent-control/src/postgres-subagent-conversations.ts";
-import { PostgresWorkspaceRuntimeStateRepository } from "../../../packages/sandbox-control/src/workspace-runtime-state-repository.ts";
-import { SandboxController } from "../../../packages/sandbox-control/src/sandbox-controller.ts";
-import { CUBESANDBOX_TOOL_POLICY } from "../../../packages/sandbox-control/src/cubesandbox-sandbox-provider.ts";
-import type {
-  SandboxProvider,
-  SandboxHandle,
-} from "../../../packages/sandbox-control/src/sandbox-provider.ts";
-import { InMemorySandboxBindings } from "../../../packages/sandbox-control/test/helpers/in-memory-sandbox-bindings.ts";
-import { ControlPlaneStore } from "../../../packages/control-plane/src/control-plane-store.ts";
+import { nativeSubagentFixture } from "../../control-plane/test/native-subagent-fixture.ts";
+import { PostgresSubagentConversations } from "../../subagent-control/src/postgres-subagent-conversations.ts";
+import { PostgresWorkspaceRuntimeStateRepository } from "../src/workspace-runtime-state-repository.ts";
+import { SandboxController } from "../src/sandbox-controller.ts";
+import { CUBESANDBOX_TOOL_POLICY } from "../src/cubesandbox-sandbox-provider.ts";
+import type { SandboxProvider, SandboxHandle } from "../src/sandbox-provider.ts";
+import { InMemorySandboxBindings } from "./helpers/in-memory-sandbox-bindings.ts";
+import { ControlPlaneStore } from "../../control-plane/src/control-plane-store.ts";
 import {
   parseEnvironmentRuntimeSnapshot,
   parseEnvironmentValidationReport,
   type ToolSandboxCreateRequest,
-} from "../../../packages/protocol/src/index.ts";
+} from "../../protocol/src/index.ts";
 
-// Baseline characterizations, not desired-behavior regression tests. Use only
-// the owned PostgreSQL fixture; no model, VM, Kafka offset or production mutation.
-async function fixture() {
+// Shared compute lifetime regressions with actual PG admission/recovery methods.
+// Physical effects are controlled; no model, live VM or production mutation.
+async function fixture(afterRepositoryQuery?: (query: string) => Promise<void>) {
   if (!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)
     throw new Error("Run through scripts/run-with-test-postgres.mjs");
   const f = await nativeSubagentFixture();
@@ -29,8 +26,21 @@ async function fixture() {
     .select("sandbox_domain_id")
     .where("id", "=", f.project.workspaceId)
     .executeTakeFirstOrThrow();
+  const statements = new WeakMap<object, string>();
+  const database = afterRepositoryQuery
+    ? f.database.withPlugin({
+        transformQuery({ node, queryId }) {
+          statements.set(queryId, f.database.getExecutor().compileQuery(node, queryId).sql);
+          return node;
+        },
+        async transformResult({ queryId, result }) {
+          await afterRepositoryQuery(statements.get(queryId) ?? "");
+          return result;
+        },
+      })
+    : f.database;
   const repo = new PostgresWorkspaceRuntimeStateRepository({
-    database: f.database,
+    database,
     instanceId: randomUUID(),
     sandboxDomainId: domain.sandbox_domain_id,
     ownerBaseUrl: "http://workspace-review.invalid",
@@ -79,7 +89,7 @@ async function fixture() {
   };
 }
 
-it("characterizes cleanup selecting an active shared human terminal after Agent work settles", async () => {
+it("retains shared compute for an active human terminal after Agent work settles", async () => {
   const f = await fixture();
   try {
     const id = f.reservation.activationId;
@@ -118,7 +128,11 @@ it("characterizes cleanup selecting an active shared human terminal after Agent 
       .where("terminal_id", "=", terminalId)
       .executeTakeFirstOrThrow();
     expect(terminal.state).toBe("active");
-    expect(candidates.map((x) => x.activationId)).toEqual([id]);
+    expect(candidates).toEqual([]);
+    await f.repo.setTerminalState(terminalId, "released");
+    expect(await f.repo.claimUnboundWorkspaceRuntimes(16)).toEqual([
+      expect.objectContaining({ activationId: id }),
+    ]);
     process.stdout.write(
       JSON.stringify({
         case: "live_terminal_cleanup",
@@ -133,7 +147,7 @@ it("characterizes cleanup selecting an active shared human terminal after Agent 
   }
 }, 60_000);
 
-it("characterizes cleanup selecting native ephemeral child compute under a valid shared root lease", async () => {
+it("retains native ephemeral child compute under its shared root lease", async () => {
   const f = await fixture();
   try {
     const call = await f.command({
@@ -180,7 +194,11 @@ it("characterizes cleanup selecting native ephemeral child compute under a valid
     expect(authority).toHaveLength(1);
     expect(await f.database.selectFrom("runs").select("id").execute()).toHaveLength(1);
     const candidates = await f.repo.claimUnboundWorkspaceRuntimes(16);
-    expect(candidates.map((x) => x.activationId)).toEqual([reservation.activationId]);
+    expect(candidates).toEqual([]);
+    await f.settle(child.executionId);
+    expect(await f.repo.claimUnboundWorkspaceRuntimes(16)).toEqual([
+      expect.objectContaining({ activationId: reservation.activationId }),
+    ]);
     process.stdout.write(
       JSON.stringify({
         case: "native_child_cleanup",
@@ -192,6 +210,92 @@ it("characterizes cleanup selecting native ephemeral child compute under a valid
         vmEffects: 0,
       }) + "\n",
     );
+  } finally {
+    await f.close();
+  }
+}, 60_000);
+
+it("rechecks a retirement candidate after a terminal is admitted", async () => {
+  const candidateRead = Promise.withResolvers<void>();
+  const continueCleanup = Promise.withResolvers<void>();
+  let held = false;
+  const f = await fixture(async (query) => {
+    if (held && query.startsWith('select "activation"."workspace_id" from "workspace_runtimes"')) {
+      held = false;
+      candidateRead.resolve();
+      await continueCleanup.promise;
+    }
+  });
+  let cleanup: ReturnType<typeof f.repo.claimUnboundWorkspaceRuntimes> | undefined;
+  try {
+    const id = f.reservation.activationId;
+    await f.repo.reserve(f.reservation);
+    await f.repo.setWorkspaceRuntimeState(id, "active");
+    await f.age(id);
+    await f.database
+      .updateTable("runs")
+      .set({
+        state: "completed",
+        settled_at: new Date(),
+        stop_reason: "stop",
+        execution_released_at: new Date(),
+      })
+      .where("id", "=", f.scope.runId)
+      .execute();
+    held = true;
+    cleanup = f.repo.claimUnboundWorkspaceRuntimes(16);
+    void cleanup.catch(() => {});
+    await candidateRead.promise;
+    expect(
+      await f.repo.reserveTerminal({
+        terminalId: randomUUID(),
+        tenantId: f.tenant.tenantId,
+        userId: f.tenant.ownerUserId,
+        projectId: f.project.projectId,
+        workspaceId: f.project.workspaceId,
+        sessionId: f.scope.sessionId,
+      }),
+    ).toMatchObject({ status: "reserved", workspaceRuntimeId: id });
+    continueCleanup.resolve();
+    expect(await cleanup).toEqual([]);
+    expect(
+      await f.database
+        .selectFrom("workspace_runtimes")
+        .select("state")
+        .where("workspace_runtime_id", "=", id)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ state: "active" });
+  } finally {
+    continueCleanup.resolve();
+    await cleanup?.catch(() => {});
+    await f.close();
+  }
+}, 60_000);
+
+it("arbitrates warm retirement and terminal admission under the Workspace lock", async () => {
+  const f = await fixture();
+  try {
+    const id = f.reservation.activationId;
+    await f.repo.reserve(f.reservation);
+    await f.repo.setWorkspaceRuntimeState(id, "warm");
+    const terminalId = randomUUID();
+    const input = {
+      terminalId,
+      tenantId: f.tenant.tenantId,
+      userId: f.tenant.ownerUserId,
+      projectId: f.project.projectId,
+      workspaceId: f.project.workspaceId,
+      sessionId: f.scope.sessionId,
+    };
+    expect(await f.repo.reserveTerminal(input)).toMatchObject({ status: "reserved" });
+    // A reserved terminal is already a holder, even before its PTY is ready.
+    expect(await f.repo.claimWarmRuntimeRetirement(id)).toBe(false);
+    await f.repo.setTerminalState(terminalId, "released");
+    expect(await f.repo.claimWarmRuntimeRetirement(id)).toBe(true);
+    // The opposite ordering must not silently create a second VM for the terminal.
+    expect(await f.repo.reserveTerminal({ ...input, terminalId: randomUUID() })).toEqual({
+      status: "busy",
+    });
   } finally {
     await f.close();
   }
@@ -363,7 +467,7 @@ async function controllerFixture(f: Awaited<ReturnType<typeof fixture>>) {
   };
 }
 
-it("composes real PG cleanup with the Controller: terminal-owned runtime reaches provider destruction", async () => {
+it("keeps terminal-owned compute alive through actual Controller/PG cleanup", async () => {
   const f = await fixture();
   let c: Awaited<ReturnType<typeof controllerFixture>> | undefined;
   let terminal: Awaited<ReturnType<SandboxController["openTerminal"]>> | undefined;
@@ -402,7 +506,7 @@ it("composes real PG cleanup with the Controller: terminal-owned runtime reaches
     const id = [...c.physical.keys()][0]!;
     await f.age(id);
     await c.controller.reapWorkspaceRuntimes();
-    expect(c.closed).toEqual([id]);
+    expect(c.closed).toEqual([]);
     const t = await f.database
       .selectFrom("workspace_terminal_sessions")
       .select("state")
@@ -425,7 +529,7 @@ it("composes real PG cleanup with the Controller: terminal-owned runtime reaches
   }
 }, 60_000);
 
-it("composes periodic recovery with terminal ownership: the same live VM is adopted into the warm pool", async () => {
+it("does not adopt terminal-owned compute again or place it in the warm pool", async () => {
   const f = await fixture();
   let c: Awaited<ReturnType<typeof controllerFixture>> | undefined;
   let terminal: Awaited<ReturnType<SandboxController["openTerminal"]>> | undefined;
@@ -451,26 +555,31 @@ it("composes periodic recovery with terminal ownership: the same live VM is adop
       assignment: f.reservation.assignment,
       disposition: "keep_warm",
     });
-    const id = [...c.physical.keys()][0]!;
     expect(c.controller.warmCount).toBe(0);
-    expect(await c.controller.recoverPersistentDevelopmentEnvironments()).toBe(1);
-    expect(c.adopted).toEqual([id]);
-    expect(c.controller.warmCount).toBe(1);
+    expect(await c.controller.recoverPersistentDevelopmentEnvironments()).toBe(0);
+    expect(await c.controller.recoverPersistentDevelopmentEnvironments()).toBe(0);
+    expect(c.adopted).toEqual([]);
+    expect(c.controller.warmCount).toBe(0);
     c.advanceWarmClock();
     await c.controller.reapWarm();
-    expect(c.closed).toEqual([id]);
+    expect(c.closed).toEqual([]);
     const t = await f.database
       .selectFrom("workspace_terminal_sessions")
       .select("state")
       .where("terminal_id", "=", terminal.terminalId)
       .executeTakeFirstOrThrow();
     expect(t.state).toBe("active");
+    await terminal.close();
+    expect(c.controller.warmCount).toBe(1);
+    c.advanceWarmClock();
+    await c.controller.reapWarm();
+    expect(c.closed).toHaveLength(1);
     process.stdout.write(
       JSON.stringify({
         case: "terminal_duplicate_adoption",
-        terminalState: t.state,
+        terminalStateBeforeClose: t.state,
         duplicateAdoptions: c.adopted.length,
-        providerDestroyCalls: c.closed.length,
+        destroyCallsAfterLastTerminalClosed: c.closed.length,
         realPostgres: true,
         realVM: false,
         shortenedWarmTtlMs: 1000,
@@ -483,7 +592,7 @@ it("composes periodic recovery with terminal ownership: the same live VM is adop
   }
 }, 60_000);
 
-it("composes live native child cleanup with the Controller reaching provider destruction", async () => {
+it("keeps live native child compute alive through actual Controller/PG cleanup", async () => {
   const f = await fixture();
   let c: Awaited<ReturnType<typeof controllerFixture>> | undefined;
   try {
@@ -520,7 +629,7 @@ it("composes live native child cleanup with the Controller reaching provider des
     const id = [...c.physical.keys()][0]!;
     await f.age(id);
     await c.controller.reapWorkspaceRuntimes();
-    expect(c.closed).toEqual([id]);
+    expect(c.closed).toEqual([]);
     expect((await jobs.status(f.scope.tenantId, child.executionId)).state).toBe("running");
     expect(
       await f.database
@@ -547,7 +656,7 @@ it("composes live native child cleanup with the Controller reaching provider des
   }
 }, 60_000);
 
-it("characterizes the Session/Workspace lock inversion between new Run and terminal admission", async () => {
+it("serializes Run and terminal admission in Session/Workspace order", async () => {
   const f = await fixture();
   let repo: PostgresWorkspaceRuntimeStateRepository | undefined;
   let releaseSession!: () => void, releaseWorkspace!: () => void;
@@ -565,6 +674,7 @@ it("characterizes the Session/Workspace lock inversion between new Run and termi
     releaseWorkspace = r;
   });
   const statements = new WeakMap<object, string>();
+  const firstTerminalLock = Promise.withResolvers<"session" | "workspace">();
   let enabled = false;
   let admission: Promise<unknown> | undefined, terminal: Promise<unknown> | undefined;
   try {
@@ -576,7 +686,17 @@ it("characterizes the Session/Workspace lock inversion between new Run and termi
     );
     const measured = f.database.withPlugin({
       transformQuery({ node, queryId }) {
-        statements.set(queryId, f.database.getExecutor().compileQuery(node, queryId).sql);
+        const query = f.database.getExecutor().compileQuery(node, queryId).sql;
+        statements.set(queryId, query);
+        if (enabled && query.includes("for update")) {
+          if (query.includes('from "sessions" as "s"')) firstTerminalLock.resolve("session");
+          if (
+            query.startsWith(
+              'select "sandbox_domain_id", "project_id", "workspace_kind" from "workspaces"',
+            )
+          )
+            firstTerminalLock.resolve("workspace");
+        }
         return node;
       },
       async transformResult({ queryId, result }) {
@@ -635,6 +755,8 @@ it("characterizes the Session/Workspace lock inversion between new Run and termi
       sessionId: session.sessionId,
     });
     void terminal.catch(() => undefined);
+    expect(await firstTerminalLock.promise).toBe("session");
+    releaseSession();
     await Promise.race([
       workspaceHeld,
       new Promise((_, reject) =>
@@ -646,15 +768,12 @@ it("characterizes the Session/Workspace lock inversion between new Run and termi
     releaseWorkspace();
     const results = await Promise.allSettled([admission, terminal]);
     expect(results[0].status).toBe("fulfilled");
-    expect(results[1].status).toBe("rejected");
-    const error = (results[1] as PromiseRejectedResult).reason;
-    expect(error).toMatchObject({ code: "unavailable", cause: { code: "55P03" } });
+    expect(results[1].status).toBe("fulfilled");
     process.stdout.write(
       JSON.stringify({
         case: "terminal_admission_lock_inversion",
         agent: results[0].status,
         terminal: results[1].status,
-        pgCode: error.cause.code,
         elapsedMs: Math.round(performance.now() - started),
         realPostgres: true,
       }) + "\n",
@@ -691,7 +810,7 @@ it("measures the current empty Workspace deletion SQL without removing its admis
     const store = new ControlPlaneStore({ database: measured, ...f.tenant });
     const result = await store.deleteWorkspace(project.workspaceId, "review-delete-sql");
     expect(result.storageState).toBe("pending");
-    expect(queries.length).toBeGreaterThan(1);
+    expect(queries).toHaveLength(8);
     process.stdout.write(
       JSON.stringify({
         case: "workspace_delete_sql",

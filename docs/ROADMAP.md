@@ -22,11 +22,12 @@ the subsequent Pi examples and recovery discussion.
       are reproduced with owned loopback peers.
 - [x] Prepare a complete repair plan and proposed ADR-0264; distinguish planning
       from accepted implementation and deployed behavior.
-- [ ] Slice 1: WVL-01/02/04 and O1/O2 — live compute holders, local runtime identity,
+- [ ] Slice 1 (source implemented, verification/live acceptance tracked in the
+      [delivery record](reports/resource-interaction-repair-20261020.md)): WVL-01/02/04 and O1/O2 — live compute holders, local runtime identity,
       admission lock order and bounded SQL/obsolete-field cleanup.
 - [ ] Slice 2: SAR-01–04 and O1 — supervisor quiescence/question precedence,
       terminal-state handling and Tool-scoped workflow memory.
-- [ ] Slice 3: prove and adopt [ADR-0264](adr/0264-subagent-recovery-and-discovery.md)
+- [ ] Slice 3: prove and implement accepted [ADR-0264](adr/0264-subagent-recovery-and-discovery.md)
       for original-delegation continuation and target-free discovery; update
       the matched Tool catalog and SAR-N1 documentation.
 - [ ] Slice 4: WVL-03 — record the evidence protocol and implement converging

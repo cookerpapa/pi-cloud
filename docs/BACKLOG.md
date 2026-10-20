@@ -32,13 +32,14 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 The [combined October 20 review](reports/resource-interaction-review-20261020.md)
 completes Workspace/Volume, Subagent, upload and terminal/preview review.
-All 16 findings below remain unresolved by this review. Address WVL-01/02 shared
+The review itself resolved none of the 16 findings;
+[repair implementation](reports/resource-interaction-repair-20261020.md) is now in progress. Address WVL-01/02 shared
 VM retirement and SAR-01 self-wake first; retain existing PG/Session/Kafka authority
 and implement one vertical repair slice at a time.
 The [six-slice repair plan](reports/resource-interaction-repair-plan-20261020.md)
-is prepared. [ADR-0264](adr/0264-subagent-recovery-and-discovery.md) proposes
+is owner-approved. [ADR-0264](adr/0264-subagent-recovery-and-discovery.md) records
 original-delegation continuation plus scoped discovery using public Pi APIs;
-it is not yet an implemented or accepted change to the deployed replay policy.
+its prototype and implementation remain pending, and deployed replay policy is unchanged.
 
 ## Terminal and application-preview lifecycle review
 

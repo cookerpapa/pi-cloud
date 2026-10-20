@@ -113,7 +113,6 @@ export const CUBESANDBOX_TOOL_POLICY: SandboxPolicy = Object.freeze({
     workspaceBytes: 1 * 1_024 * 1_024 * 1_024,
     maximumOutputBytes: 1 * 1_024 * 1_024,
     maximumCommandTimeoutMs: MAX_TOOL_EXECUTION_TIMEOUT_MS,
-    turnWallClockTimeoutMs: 900_000,
   }),
   user: "1000:1000",
   readOnlyRootFilesystem: false,

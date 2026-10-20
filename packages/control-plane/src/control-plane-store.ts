@@ -821,108 +821,49 @@ export class ControlPlaneStore {
         let deletedAt = workspace.deleted_at;
         let detachedSessionCount = 0;
         if (deletedAt === null) {
-          const activeTurn = await transaction
-            .selectFrom("runs as run")
-            .innerJoin("sessions as session_row", (join) =>
-              join
-                .onRef("session_row.tenant_id", "=", "run.tenant_id")
-                .onRef("session_row.id", "=", "run.session_id"),
-            )
-            .select("run.id")
-            .where("run.tenant_id", "=", this.#tenantId)
-            .where("session_row.workspace_id", "=", workspaceId)
-            .where("run.state", "in", ["queued", "running", "settling", "cancel_requested"])
-            .limit(1)
-            .executeTakeFirst();
-          if (activeTurn !== undefined) {
-            throw new ControlPlaneStoreError(
-              "conflict",
-              "Wait for every conversation Run to settle before deleting the Workspace",
-            );
-          }
-
-          const activeTerminal = await transaction
-            .selectFrom("workspace_terminal_sessions")
-            .select("terminal_id")
-            .where("tenant_id", "=", this.#tenantId)
-            .where("workspace_id", "=", workspaceId)
-            .where("state", "in", ["reserved", "materializing", "active", "cleaning", "unknown"])
-            .limit(1)
-            .executeTakeFirst();
-          if (activeTerminal !== undefined) {
-            throw new ControlPlaneStoreError(
-              "conflict",
-              "Close the active Workspace terminal before deleting the Workspace",
-            );
-          }
-
-          const liveDevelopmentEnvironment = await transaction
-            .selectFrom("development_environments")
-            .select("id")
-            .where("tenant_id", "=", this.#tenantId)
-            .where("workspace_id", "=", workspaceId)
-            .where("state", "in", [
-              "requested",
-              "provisioning",
-              "running",
-              "paused",
-              "releasing",
-              "unknown",
-            ])
-            .limit(1)
-            .executeTakeFirst();
-          if (liveDevelopmentEnvironment !== undefined) {
-            throw new ControlPlaneStoreError(
-              "conflict",
-              "Release the exclusive development environment before deleting the Workspace",
-            );
-          }
-
-          const activeSubagent = await transaction
-            .selectFrom("subagent_executions as execution")
-            .innerJoin("sessions as root", (join) =>
-              join
-                .onRef("root.tenant_id", "=", "execution.tenant_id")
-                .onRef("root.id", "=", "execution.root_session_id"),
-            )
-            .select("execution.id")
-            .where("execution.tenant_id", "=", this.#tenantId)
-            .where("root.workspace_id", "=", workspaceId)
-            .where("execution.state", "in", ["preparing", "running"])
-            .limit(1)
-            .executeTakeFirst();
-          if (activeSubagent !== undefined) {
-            throw new ControlPlaneStoreError(
-              "conflict",
-              "Wait for delegated work to settle before deleting the Workspace",
-            );
-          }
-
-          const issueDelivery = await transaction
-            .selectFrom("source_control_issue_jobs")
-            .select("id")
-            .where("tenant_id", "=", this.#tenantId)
-            .where("workspace_id", "=", workspaceId)
-            .where("state", "not in", ["completed", "failed", "cancelled"])
-            .limit(1)
-            .executeTakeFirst();
-          if (issueDelivery !== undefined) {
-            throw new ControlPlaneStoreError(
-              "conflict",
-              "Wait for Issue delivery to finish before deleting the Workspace",
-            );
-          }
-
-          const detached = await transaction
-            .selectFrom("sessions")
-            .select(({ fn }) => fn.countAll<string>().as("count"))
-            .where("tenant_id", "=", this.#tenantId)
-            .where("workspace_id", "=", workspaceId)
-            .where("session_kind", "=", "conversation")
-            .where("pruned_at", "is", null)
-            .executeTakeFirstOrThrow();
+          const occupancy = (
+            await sql<{
+              run: boolean;
+              terminal: boolean;
+              development: boolean;
+              child: boolean;
+              issue: boolean;
+              detached: string;
+            }>`select
+            exists(select 1 from runs r join sessions s on s.tenant_id=r.tenant_id and s.id=r.session_id
+              where r.tenant_id=${this.#tenantId}::uuid and s.workspace_id=${workspaceId}::uuid
+                and r.state in ('queued','running','settling','cancel_requested')) as run,
+            exists(select 1 from workspace_terminal_sessions t
+              where t.tenant_id=${this.#tenantId}::uuid and t.workspace_id=${workspaceId}::uuid
+                and t.state in ('reserved','materializing','active','cleaning','unknown')) as terminal,
+            exists(select 1 from development_environments d
+              where d.tenant_id=${this.#tenantId}::uuid and d.workspace_id=${workspaceId}::uuid
+                and d.state in ('requested','provisioning','running','paused','releasing','unknown')) as development,
+            exists(select 1 from subagent_executions e join sessions s on s.tenant_id=e.tenant_id and s.id=e.root_session_id
+              where e.tenant_id=${this.#tenantId}::uuid and s.workspace_id=${workspaceId}::uuid
+                and e.state in ('preparing','running')) as child,
+            exists(select 1 from source_control_issue_jobs j
+              where j.tenant_id=${this.#tenantId}::uuid and j.workspace_id=${workspaceId}::uuid
+                and j.state not in ('completed','failed','cancelled')) as issue,
+            (select count(*)::text from sessions s
+              where s.tenant_id=${this.#tenantId}::uuid and s.workspace_id=${workspaceId}::uuid
+                and s.session_kind='conversation' and s.pruned_at is null) as detached
+          `.execute(transaction)
+          ).rows[0]!;
+          const refusal = occupancy.run
+            ? "Wait for every conversation Run to settle before deleting the Workspace"
+            : occupancy.terminal
+              ? "Close the active Workspace terminal before deleting the Workspace"
+              : occupancy.development
+                ? "Release the exclusive development environment before deleting the Workspace"
+                : occupancy.child
+                  ? "Wait for delegated work to settle before deleting the Workspace"
+                  : occupancy.issue
+                    ? "Wait for Issue delivery to finish before deleting the Workspace"
+                    : undefined;
+          if (refusal) throw new ControlPlaneStoreError("conflict", refusal);
           detachedSessionCount = nonNegativeSafeInteger(
-            detached.count,
+            occupancy.detached,
             "Detached conversation count",
           );
 

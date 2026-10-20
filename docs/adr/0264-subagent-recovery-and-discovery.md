@@ -1,6 +1,7 @@
 # ADR-0264: Recoverable delegation and scoped child discovery
 
-Status: proposed, 2026-10-20. No implementation or deployment is claimed.
+Status: accepted by the owner with the six-slice repair plan, 2026-10-20.
+Public-API prototype and implementation remain pending; no deployment is claimed.
 Context: [resource repair plan](../reports/resource-interaction-repair-plan-20261020.md),
 [SAR-D1 review](../reports/subagent-lifecycle-review-20261020.md).
 This proposal refines ADR-0229/0247 for explicitly replay-safe direct delegation;
@@ -38,7 +39,7 @@ supervisor blocking and later parent replies. Do not introduce independent
 background Agents, another scheduler or a second authoritative child registry.
 These are SDK example extensions, not claims about default CLI-installed tools.
 
-## Proposed decision
+## Decision
 
 1. A direct delegation has one durable logical identity tied to the original
    physical Session/native Tool task and its existing creation receipt.
@@ -120,5 +121,5 @@ List queries must obey family scope and bounded pagination without truncating
 structured results into invalid output.
 
 Only after that proof should the matched Tool/dispatch contract be implemented
-and released. This proposed ADR does not relabel the current runtime safe,
+and released. This accepted ADR does not relabel the current runtime safe,
 change old committed native checkpoints, or authorize a blanket replay mode.

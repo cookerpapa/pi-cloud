@@ -1,8 +1,9 @@
 # Architecture
 
 The [resource/interaction repair plan](reports/resource-interaction-repair-plan-20261020.md)
-and [proposed ADR-0264](adr/0264-subagent-recovery-and-discovery.md) are planning
-documents. Their safe-delegation/catalog changes are not implemented; the
+and [accepted ADR-0264](adr/0264-subagent-recovery-and-discovery.md) are being
+implemented in [separate slices](reports/resource-interaction-repair-20261020.md).
+Their safe-delegation/catalog changes are not implemented; the
 deployed ownership, Tool replay and boot-mailbox contracts below remain current.
 
 [ADR-0263](adr/0263-model-response-and-work-lifetimes.md) is deployed as

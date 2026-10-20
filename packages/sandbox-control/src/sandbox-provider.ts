@@ -57,7 +57,6 @@ export type SandboxResourceLimits = Readonly<{
   workspaceBytes: number;
   maximumOutputBytes: number;
   maximumCommandTimeoutMs: number;
-  turnWallClockTimeoutMs: number;
 }>;
 
 export type SandboxPolicy = Readonly<{

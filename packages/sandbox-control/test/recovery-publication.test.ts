@@ -122,6 +122,7 @@ it.each(
                   activationId: id,
                   runtimeCapsule: "review-capsule",
                   sandboxProfileKey: "starter",
+                  workspace: assignment,
                 },
               ],
       );

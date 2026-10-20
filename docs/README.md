@@ -5,9 +5,10 @@ organizes the 16 findings and follow-up discussion into six repair slices.
 It prioritizes live VM holders and supervisor quiescence, then proposes native
 delegation recovery/discovery, evidence-based Volume cleanup, attachment
 lifetimes and terminal/preview teardown. [ADR-0264](adr/0264-subagent-recovery-and-discovery.md)
-is proposed for the child contract, including separate safe/unsafe Tool
-registrations and current-owner reply delivery. No runtime implementation or
-deployment is included in these planning documents.
+is owner-approved for the child contract, including separate safe/unsafe Tool
+registrations and current-owner reply delivery. Implementation is in progress;
+the [delivery record](reports/resource-interaction-repair-20261020.md) separates
+source verification from pending matched release and live acceptance.
 
 The [October 20 combined resource/interaction review](reports/resource-interaction-review-20261020.md)
 completes all four agreed branches and prioritizes 16 findings. The final

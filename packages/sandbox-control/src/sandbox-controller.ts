@@ -400,8 +400,7 @@ export class SandboxController {
     this.#admission = new SandboxAdmission(this.#maximumActiveSandboxes, async () => {
       const oldest = [...this.#warm.entries()].sort((a, b) => a[1].lastUsedAt - b[1].lastUsedAt)[0];
       if (!oldest) return false;
-      await this.#discardWarm(oldest[0], oldest[1]);
-      return true;
+      return this.#discardWarm(oldest[0], oldest[1]);
     });
     this.#warmTtlMs = positiveInteger(
       options.warmTtlMs ?? DEFAULT_WARM_TTL_MS,
@@ -752,79 +751,100 @@ export class SandboxController {
 
   async #recoverElasticRuntimes(): Promise<number> {
     if (!this.#provider.adoptPersistentCapsule) return 0;
-    const known = new Set([...this.#warm.values()].map((runtime) => runtime.physicalActivationId));
-    for (const binding of this.#toolBindings.values())
-      if (binding.elasticRuntime) known.add(binding.elasticRuntime.physicalActivationId);
+    const known = this.#localElasticRuntimes();
     const candidates = await this.#stateRepository.claimRecoverableWorkspaceRuntimes(256, [
-      ...known,
+      ...known.keys(),
     ]);
     let recovered = 0;
     for (const candidate of candidates) {
-      let handle: SandboxHandle | undefined;
-      let physicalVerified = false;
-      try {
-        handle = await this.#recoverPhysical(candidate);
-        if (handle.activationId !== candidate.activationId)
-          throw new Error("Recovered runtime identity changed");
-        const capsule = await this.#persistentCapsule(handle);
-        if (!capsule) throw new Error("Recovered runtime capsule is unavailable");
-        physicalVerified = true;
-        const workspaceKey =
-          workspaceIdentityKey(handle.assignment) +
-          (candidate.computeSessionId ? `:compute:${candidate.computeSessionId}` : "");
-        const now = this.#now();
-        const runtime: ManagedElasticRuntime = {
-          capsuleStored: true,
-          physicalActivationId: candidate.activationId,
-          workspaceKey,
-          handle,
-          spec: {
-            activationId: candidate.activationId,
-            assignment: handle.assignment,
+      await this.#serializeWorkspaceRuntimeProvisioning(candidate.workspace, async () => {
+        // Admission may have installed a terminal/binding after the PG candidate
+        // snapshot. Join its local provisioning before deciding to adopt.
+        if (this.#localElasticRuntimes().has(candidate.activationId)) return;
+        let handle: SandboxHandle | undefined;
+        let physicalVerified = false;
+        try {
+          handle = await this.#recoverPhysical(candidate);
+          if (
+            handle.activationId !== candidate.activationId ||
+            workspaceIdentityKey(handle.assignment) !== workspaceIdentityKey(candidate.workspace)
+          )
+            throw new Error("Recovered runtime identity changed");
+          const capsule = await this.#persistentCapsule(handle);
+          if (!capsule) throw new Error("Recovered runtime capsule is unavailable");
+          physicalVerified = true;
+          const workspaceKey =
+            workspaceIdentityKey(handle.assignment) +
+            (candidate.computeSessionId ? `:compute:${candidate.computeSessionId}` : "");
+          const now = this.#now();
+          const runtime: ManagedElasticRuntime = {
+            capsuleStored: true,
+            physicalActivationId: candidate.activationId,
+            workspaceKey,
+            handle,
+            spec: {
+              activationId: candidate.activationId,
+              assignment: handle.assignment,
+              environment: handle.environment,
+              workspaceSeed: { kind: "sample_java" },
+              policy: this.#provider.defaultPolicy,
+              toolRoot: handle.workspaceRoot,
+              sandboxProfileKey: candidate.sandboxProfileKey,
+            },
+            bindingIds: new Set(),
+            activeOperations: 0,
             environment: handle.environment,
-            workspaceSeed: { kind: "sample_java" },
-            policy: this.#provider.defaultPolicy,
-            toolRoot: handle.workspaceRoot,
             sandboxProfileKey: candidate.sandboxProfileKey,
-          },
-          bindingIds: new Set(),
-          activeOperations: 0,
-          environment: handle.environment,
-          sandboxProfileKey: candidate.sandboxProfileKey,
-          expiresAt: now + this.#warmTtlMs,
-          lastUsedAt: now,
-        };
-        const restored = await this.#prepareRecoveredBindings(handle, runtime);
-        await this.#stateRepository.setWorkspaceRuntimeState(
-          candidate.activationId,
-          runtime.bindingIds.size ? "active" : "warm",
-          { handle, runtimeCapsule: capsule },
-        );
-        for (const binding of restored) this.#toolBindings.set(binding.activationId, binding);
-        if (!runtime.bindingIds.size) this.#warm.set(workspaceKey, runtime);
-        this.#admission.restore(candidate.activationId, handle.assignment);
-        recovered++;
-      } catch (error) {
-        if (handle) await this.#provider.detachPersistent?.(handle).catch(() => {});
-        if (error instanceof BindingClosurePending) continue;
-        if (physicalVerified) {
-          this.#onMaintenanceError?.(error);
-          continue;
+            expiresAt: now + this.#warmTtlMs,
+            lastUsedAt: now,
+          };
+          const restored = await this.#prepareRecoveredBindings(handle, runtime);
+          await this.#stateRepository.setWorkspaceRuntimeState(
+            candidate.activationId,
+            runtime.bindingIds.size ? "active" : "warm",
+            { handle, runtimeCapsule: capsule },
+          );
+          for (const binding of restored) this.#toolBindings.set(binding.activationId, binding);
+          if (!runtime.bindingIds.size) this.#warm.set(workspaceKey, runtime);
+          this.#admission.restore(candidate.activationId, handle.assignment);
+          recovered++;
+        } catch (error) {
+          if (handle) await this.#provider.detachPersistent?.(handle).catch(() => {});
+          if (error instanceof BindingClosurePending) return;
+          if (physicalVerified) {
+            this.#onMaintenanceError?.(error);
+            return;
+          }
+          if (error instanceof SandboxCreationError && error.absenceConfirmed) {
+            await this.#stateRepository.closeAllocation(candidate.activationId, "workspace");
+            await this.#stateRepository.setWorkspaceRuntimeState(
+              candidate.activationId,
+              "released",
+            );
+            this.#admission.release(candidate.activationId);
+            return;
+          }
+          await this.#stateRepository.setWorkspaceRuntimeState(candidate.activationId, "unknown", {
+            ...(candidate.runtimeCapsule ? { runtimeCapsule: candidate.runtimeCapsule } : {}),
+            failureCode: "runtime_recovery_unconfirmed",
+            ...(handle ? { handle } : {}),
+          });
         }
-        if (error instanceof SandboxCreationError && error.absenceConfirmed) {
-          await this.#stateRepository.closeAllocation(candidate.activationId, "workspace");
-          await this.#stateRepository.setWorkspaceRuntimeState(candidate.activationId, "released");
-          this.#admission.release(candidate.activationId);
-          continue;
-        }
-        await this.#stateRepository.setWorkspaceRuntimeState(candidate.activationId, "unknown", {
-          ...(candidate.runtimeCapsule ? { runtimeCapsule: candidate.runtimeCapsule } : {}),
-          failureCode: "runtime_recovery_unconfirmed",
-          ...(handle ? { handle } : {}),
-        });
-      }
+      });
     }
     return recovered;
+  }
+
+  /** These are holders of the same objects, not independent runtime owners. */
+  #localElasticRuntimes(): Map<string, ManagedElasticRuntime> {
+    const runtimes = new Map<string, ManagedElasticRuntime>();
+    const add = (runtime: ManagedElasticRuntime | undefined) => {
+      if (runtime) runtimes.set(runtime.physicalActivationId, runtime);
+    };
+    for (const runtime of this.#warm.values()) add(runtime);
+    for (const binding of this.#toolBindings.values()) add(binding.elasticRuntime);
+    for (const terminal of this.#terminals.values()) add(terminal.workspaceRuntime);
+    return runtimes;
   }
 
   get warmCount(): number {
@@ -1675,7 +1695,7 @@ export class SandboxController {
       (!sameEnvironment(runtime.environment, request.environment) ||
         runtime.sandboxProfileKey !== request.sandboxProfileKey)
     ) {
-      if (runtime.bindingIds.size > 0) {
+      if (runtime.bindingIds.size > 0 || runtime.workspaceTerminalId !== undefined) {
         throw new SandboxControlError(
           "workspace_runtime_profile_conflict",
           "Workspace already has an active Cube with a different environment profile",
@@ -3241,7 +3261,7 @@ export class SandboxController {
         (left, right) => left[1].lastUsedAt - right[1].lastUsedAt,
       )[0];
       if (oldest === undefined) return;
-      await this.#discardWarm(oldest[0], oldest[1]);
+      if (!(await this.#discardWarm(oldest[0], oldest[1]))) return;
     }
   }
 
@@ -3457,12 +3477,16 @@ export class SandboxController {
     return terminal.closing;
   }
 
-  async #discardWarm(key: string, warm: ManagedElasticRuntime): Promise<void> {
+  async #discardWarm(key: string, warm: ManagedElasticRuntime): Promise<boolean> {
     this.#stateRepository.assertLocalOwnership();
+    if (warm.bindingIds.size > 0 || warm.workspaceTerminalId !== undefined) {
+      if (this.#warm.get(key) === warm) this.#warm.delete(key);
+      return false;
+    }
+    if (!(await this.#stateRepository.claimWarmRuntimeRetirement(warm.physicalActivationId))) {
+      return false;
+    }
     this.#warm.delete(key);
-    await this.#stateRepository.setWorkspaceRuntimeState(warm.physicalActivationId, "cleaning", {
-      ...(warm.handle ? { handle: warm.handle } : {}),
-    });
     await this.#closePhysical(
       warm.physicalActivationId,
       warm.spec.assignment,
@@ -3474,6 +3498,7 @@ export class SandboxController {
     }
     this.#admission.release(warm.physicalActivationId);
     await this.#stateRepository.setWorkspaceRuntimeState(warm.physicalActivationId, "released");
+    return true;
   }
 
   async #serializeWorkspaceRuntimeProvisioning<T>(

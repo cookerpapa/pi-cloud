@@ -115,6 +115,7 @@ export type SandboxPreviewOwnerResult =
   | { status: "unavailable" };
 
 export type RecoverableWorkspaceRuntime = Readonly<{
+  workspace: Pick<ToolSandboxAssignment, "tenantId" | "projectId" | "workspaceId">;
   sandboxProfileKey: DevelopmentEnvironmentProfileKey;
   activationId: string;
   computeSessionId?: string;
@@ -218,6 +219,7 @@ export interface WorkspaceRuntimeStateRepository {
     state: SandboxControlWorkspaceRuntimeState,
     detail?: { handle?: SandboxHandle; failureCode?: string; runtimeCapsule?: string },
   ): Promise<void>;
+  claimWarmRuntimeRetirement(activationId: string): Promise<boolean>;
   claimOrphanedWorkspaceRuntimes(limit: number): Promise<readonly OrphanedWorkspaceRuntime[]>;
   claimUnboundWorkspaceRuntimes(
     limit: number,
@@ -779,24 +781,6 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   ): Promise<WorkspaceTerminalReservationResult> {
     const now = validDate(this.#clock);
     return this.#ownedTransaction(async (transaction) => {
-      const workspace = await transaction
-        .selectFrom("workspaces")
-        .select(["sandbox_domain_id", "project_id", "workspace_kind"])
-        .where("tenant_id", "=", input.tenantId)
-        .where("id", "=", input.workspaceId)
-        .where("deleted_at", "is", null)
-        .forUpdate()
-        .executeTakeFirst();
-      if (
-        workspace?.sandbox_domain_id !== this.#sandboxDomainId ||
-        workspace.project_id !== input.projectId ||
-        workspace.workspace_kind !== "user"
-      ) {
-        throw new WorkspaceRuntimeStateRepositoryError(
-          "state_conflict",
-          "Workspace terminal identity did not match this Sandbox Domain",
-        );
-      }
       const session = await transaction
         .selectFrom("sessions as s")
         .innerJoin("pi_sessions as p", (join) =>
@@ -813,6 +797,24 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         throw new WorkspaceRuntimeStateRepositoryError(
           "state_conflict",
           "Workspace terminal Session was unavailable",
+        );
+      }
+      const workspace = await transaction
+        .selectFrom("workspaces")
+        .select(["sandbox_domain_id", "project_id", "workspace_kind"])
+        .where("tenant_id", "=", input.tenantId)
+        .where("id", "=", input.workspaceId)
+        .where("deleted_at", "is", null)
+        .forUpdate()
+        .executeTakeFirst();
+      if (
+        workspace?.sandbox_domain_id !== this.#sandboxDomainId ||
+        workspace.project_id !== input.projectId ||
+        workspace.workspace_kind !== "user"
+      ) {
+        throw new WorkspaceRuntimeStateRepositoryError(
+          "state_conflict",
+          "Workspace terminal identity did not match this Sandbox Domain",
         );
       }
       const activation = await transaction
@@ -837,7 +839,14 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .where("tenant_id", "=", input.tenantId)
         .where("workspace_id", "=", input.workspaceId)
         .where("compute_session_id", "is", null)
-        .where("state", "in", ["reserved", "materializing", "active", "warm"])
+        .where("state", "in", [
+          "reserved",
+          "materializing",
+          "active",
+          "warm",
+          "cleaning",
+          "unknown",
+        ])
         .executeTakeFirst();
       const developmentEnvironment = await transaction
         .selectFrom("development_environments")
@@ -860,6 +869,8 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       ) {
         return { status: "redirect", ownerBaseUrl: activation.owner_base_url };
       }
+      if (activation && !["reserved", "materializing", "active", "warm"].includes(activation.state))
+        return { status: "busy" };
       const terminal = await transaction
         .selectFrom("workspace_terminal_sessions")
         .select("terminal_id")
@@ -1370,6 +1381,9 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         )
         .select([
           "runtime.workspace_runtime_id",
+          "runtime.tenant_id",
+          "runtime.project_id",
+          "runtime.workspace_id",
           "runtime.compute_session_id",
           "runtime.runtime_capsule",
           "runtime.sandbox_profile_key",
@@ -1424,6 +1438,11 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           )
           .execute();
       return rows.map((row) => ({
+        workspace: {
+          tenantId: row.tenant_id,
+          projectId: row.project_id,
+          workspaceId: row.workspace_id,
+        },
         activationId: row.workspace_runtime_id,
         ...(row.runtime_capsule ? { runtimeCapsule: row.runtime_capsule } : {}),
         ...(row.creation_spec && row.creation_not_after
@@ -1614,6 +1633,42 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         fencingToken: Number(row.fencing_token),
         sharedRuntime: row.shared_runtime,
       }));
+    });
+  }
+
+  async claimWarmRuntimeRetirement(activationId: string): Promise<boolean> {
+    return this.#ownedTransaction(async (transaction) => {
+      const workspace = await transaction
+        .selectFrom("workspaces as w")
+        .innerJoin("workspace_runtimes as r", (join) =>
+          join.onRef("r.tenant_id", "=", "w.tenant_id").onRef("r.workspace_id", "=", "w.id"),
+        )
+        .select("w.id")
+        .where("r.workspace_runtime_id", "=", activationId)
+        .where("r.owner_instance_id", "=", this.#instanceId)
+        .forUpdate("w")
+        .executeTakeFirst();
+      if (!workspace) return false;
+      const retired = await transaction
+        .updateTable("workspace_runtimes")
+        .set({ state: "cleaning", updated_at: validDate(this.#clock) })
+        .where("workspace_runtime_id", "=", activationId)
+        .where("owner_instance_id", "=", this.#instanceId)
+        .where("state", "=", "warm")
+        .where(
+          sql<boolean>`not exists (
+          select 1 from workspace_terminal_sessions terminal
+          join sandbox_control_instances owner on owner.instance_id=terminal.owner_instance_id
+          where workspace_runtimes.compute_session_id is null
+            and terminal.tenant_id=workspace_runtimes.tenant_id
+            and terminal.workspace_id=workspace_runtimes.workspace_id
+            and terminal.state in ('reserved','materializing','active','cleaning','unknown')
+            and owner.state='ready' and owner.lease_expires_at>clock_timestamp()
+        )`,
+        )
+        .returning("workspace_runtime_id")
+        .executeTakeFirst();
+      return retired !== undefined;
     });
   }
 
@@ -1812,11 +1867,11 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     }
     const now = validDate(this.#clock);
     // Binding release and lease expiry are separate network events. Wait at
-    // least two Broker lease windows before treating a runtime with no live
-    // Workspace lease as orphaned.
+    // least two controller lease windows before treating compute with no live
+    // native-family or terminal holder as orphaned.
     const orphanedBefore = new Date(now.valueOf() - minimumUnboundAgeMs);
     return this.#ownedTransaction(async (transaction) => {
-      const rows = await transaction
+      const eligible = transaction
         .selectFrom("workspace_runtimes as activation")
         .select([
           "activation.workspace_runtime_id",
@@ -1861,9 +1916,50 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
              where authority.tenant_id = ${sql.ref("activation.tenant_id")}
                and authority.project_id = ${sql.ref("activation.project_id")}
                and authority.workspace_id = ${sql.ref("activation.workspace_id")}
-               and task.compute_session_id is not distinct from ${sql.ref("activation.compute_session_id")}
                and authority.valid_until > clock_timestamp()
+               and (
+                 task.compute_session_id is not distinct from activation.compute_session_id
+                 or exists (
+                   select 1 from subagent_executions child
+                   join sessions s on s.tenant_id=child.tenant_id and s.id=child.child_session_id
+                   where child.tenant_id=authority.tenant_id and child.root_run_id=authority.run_id
+                     and child.state in ('preparing','running')
+                     and s.compute_session_id is not distinct from activation.compute_session_id
+                 )
+               )
           )`,
+        ).where(sql<boolean>`not exists (
+          select 1 from workspace_terminal_sessions terminal
+          join sandbox_control_instances owner on owner.instance_id=terminal.owner_instance_id
+          where activation.compute_session_id is null
+            and terminal.tenant_id=activation.tenant_id and terminal.workspace_id=activation.workspace_id
+            and terminal.state in ('reserved','materializing','active','cleaning','unknown')
+            and owner.state='ready' and owner.lease_expires_at>clock_timestamp()
+        )`);
+      // Reserve/terminal admission locks Workspace first. Select a bounded hint,
+      // take the same lock, then re-read eligibility in a fresh PG statement.
+      // A terminal admitted between these reads must prevent retirement.
+      const hints = await eligible
+        .clearSelect()
+        .select("activation.workspace_id")
+        .orderBy("activation.updated_at", "asc")
+        .limit(boundedLimit)
+        .execute();
+      if (!hints.length) return [];
+      const workspaces = await transaction
+        .selectFrom("workspaces")
+        .select("id")
+        .where("id", "in", [...new Set(hints.map((row) => row.workspace_id))])
+        .orderBy("id")
+        .forUpdate()
+        .skipLocked()
+        .execute();
+      if (!workspaces.length) return [];
+      const rows = await eligible
+        .where(
+          "activation.workspace_id",
+          "in",
+          workspaces.map((row) => row.id),
         )
         .orderBy("activation.updated_at", "asc")
         .limit(boundedLimit)

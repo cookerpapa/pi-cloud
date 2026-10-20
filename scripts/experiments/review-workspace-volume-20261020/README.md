@@ -1,15 +1,16 @@
 # Workspace/Volume review characterizations
 
 Baseline: PiCloud `f9ca385e`, deployed `model-runtime-058925bb`, schema 192.
-These are review probes, not fixes. Passing assertions reproduce the documented
-baseline defects and controls; replace them with desired-behavior regressions when
-the repairs land. No model calls, live VMs or production credentials are needed.
+The original PG characterizations are preserved in Git at `6a9f5c9a`. They have
+been replaced by maintained desired-behavior regressions under sandbox-control.
+The native reference probe below remains baseline evidence until the separate
+Volume-reference repair. No model calls, live VMs or production credentials are needed.
 
 From the repository root with installed dependencies and Docker:
 
 ```sh
-npx tsc -p scripts/experiments/review-workspace-volume-20261020/tsconfig.json
-node scripts/run-with-test-postgres.mjs -- node node_modules/vitest/vitest.mjs run scripts/experiments/review-workspace-volume-20261020/lifecycle.test.ts --maxWorkers=1 --testTimeout=60000
+npm run typecheck --workspace @pi-cloud/sandbox-control
+node scripts/run-with-test-postgres.mjs -- node node_modules/vitest/vitest.mjs run packages/sandbox-control/test/shared-compute-lifecycle.postgres.test.ts --maxWorkers=1 --testTimeout=60000
 node scripts/experiments/review-workspace-volume-20261020/native-check.mjs
 npm run cubesandbox:allocation-check
 ```
