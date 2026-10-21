@@ -20,6 +20,7 @@ import type {
 import type { Context as ModelContext, ImageContent, ProviderHeaders } from "@earendil-works/pi-ai";
 import {
   createPiCloudEventFactory,
+  resolveAgentProfile,
   inputWithUploads,
   assertUserInputBudget,
   parseUserUploads,
@@ -535,6 +536,7 @@ export class PiCloudTurnRunner {
         context: {
           sessionId: p.sessionId,
           turnId: p.turnId,
+          selectedThinkingLevel: p.model.thinkingLevel,
           ...(p.conversationWork ? { view: JSON.parse(JSON.stringify(p.conversationWork)) } : {}),
         },
         agent:
@@ -543,7 +545,7 @@ export class PiCloudTurnRunner {
             : {
                 instructions: await tools.systemPrompt(prompt),
                 cwd: p.workingDirectory,
-                thinkingLevel: p.model.thinkingLevel,
+                thinkingLevel: resolveAgentProfile(p.model.thinkingLevel).thinkingLevel,
               },
         remoteTools: tools.tools.filter((tool) => tool.prepareExecution).map((tool) => tool.name),
         tools: tools.tools.filter((tool) => !tool.prepareExecution),

@@ -7,6 +7,7 @@ import {
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { ModelIdSchema } from "./model-catalog.ts";
+import { AgentThinkingLevelSchema } from "./agent-profile.ts";
 import {
   NonNegativeSafeIntegerSchema,
   OpaqueIdSchema,
@@ -30,15 +31,7 @@ import { UserUploadIdsSchema, UserUploadsSchema } from "./user-upload.ts";
 // Pi's native Entry identity is opaque; product Session/Run IDs remain UUIDs.
 const PiEntryIdSchema = Type.String({ minLength: 1, maxLength: 512 });
 
-export const TurnThinkingLevelSchema = Type.Union([
-  Type.Literal("off"),
-  Type.Literal("minimal"),
-  Type.Literal("low"),
-  Type.Literal("medium"),
-  Type.Literal("high"),
-  Type.Literal("xhigh"),
-  Type.Literal("max"),
-]);
+export const TurnThinkingLevelSchema = AgentThinkingLevelSchema;
 
 export const IdempotencyKeySchema = Type.String({
   minLength: 1,
@@ -99,7 +92,7 @@ export const ModelCatalogEntryResourceSchema = Type.Union([
       default: Type.Boolean(),
       thinkingLevels: Type.Array(TurnThinkingLevelSchema, {
         minItems: 1,
-        maxItems: 7,
+        maxItems: 8,
         uniqueItems: true,
       }),
       defaultThinkingLevel: TurnThinkingLevelSchema,
@@ -115,7 +108,7 @@ export const ModelCatalogEntryResourceSchema = Type.Union([
       default: Type.Boolean(),
       thinkingLevels: Type.Array(TurnThinkingLevelSchema, {
         minItems: 1,
-        maxItems: 7,
+        maxItems: 8,
         uniqueItems: true,
       }),
       defaultThinkingLevel: TurnThinkingLevelSchema,

@@ -12,10 +12,12 @@ import {
 import { Type } from "@earendil-works/pi-ai";
 import {
   createExecutionReference,
+  resolveAgentProfile,
   type DurableSessionCommit,
   type CandidateToolCommand,
 } from "@pi-cloud/protocol";
 import { DurableAgentSession } from "../src/durable/agent-session.ts";
+import { CloudRunDocument } from "../src/durable/agent-session.ts";
 import type { RemoteInvocation } from "../src/durable/remote-tools.ts";
 import { fixedRemoteToolDefinitions } from "../src/fixed-remote-tool-definitions.ts";
 
@@ -26,6 +28,8 @@ async function fixture(
     duplicate?: boolean;
     parallelReads?: boolean;
     publicEgress?: () => import("@pi-cloud/protocol").GuestPublicEgress;
+    selectedThinkingLevel?: import("@pi-cloud/protocol").AgentThinkingLevel;
+    tools?: import("@earendil-works/pi-durable").ToolRegistration[];
   } = {},
 ) {
   const models = createModels(),
@@ -115,10 +119,18 @@ async function fixture(
     runId,
     conversationId: 1,
     model: faux.getModel(),
-    agent: {},
-    context: { sessionId: randomUUID(), turnId: randomUUID() },
+    agent: options.selectedThinkingLevel
+      ? { thinkingLevel: resolveAgentProfile(options.selectedThinkingLevel).thinkingLevel }
+      : {},
+    context: {
+      sessionId: randomUUID(),
+      turnId: randomUUID(),
+      ...(options.selectedThinkingLevel
+        ? { selectedThinkingLevel: options.selectedThinkingLevel }
+        : {}),
+    },
     remoteTools: [name],
-    tools: [],
+    tools: options.tools ?? [],
     assertCurrent: async () => {},
     openModel: async ({ options: request }) => ({
       model: faux.getModel(),
@@ -175,6 +187,52 @@ async function fixture(
     prepared: () => preparedCount,
   };
 }
+
+it.each(["max", "ultra"] as const)(
+  "persists %s and offers the same delegation tool with its native policy and provider Max",
+  async (selected) => {
+    const f = await fixture({
+      selectedThinkingLevel: selected,
+      tools: [
+        {
+          name: "subagent",
+          description: "Delegate",
+          parameters: Type.Object({}),
+          async execute() {
+            return { content: [{ type: "text", text: "child finished" }] };
+          },
+        },
+      ],
+    });
+    let request: { text: string; effort: unknown } | undefined;
+    f.faux.setResponses([
+      (context, options) => {
+        request = { text: JSON.stringify(context.messages), effort: options?.reasoning };
+        return fauxAssistantMessage("DONE");
+      },
+    ]);
+    try {
+      const input = await f.conversation.submit(
+        { type: "input", content: "work", requestId: "profile" },
+        BACKGROUND_CONTEXT,
+      );
+      expect((await input.wait(BACKGROUND_CONTEXT)).status).toBe("done");
+      expect(request?.effort).toBe("max");
+      expect(request?.text).toContain('"name":"subagent"');
+      expect(request?.text).toContain(
+        selected === "ultra" ? "may proactively delegate" : "only when the user",
+      );
+      expect(request?.text).not.toContain(
+        selected === "ultra" ? "Tool availability alone" : "may proactively delegate",
+      );
+      expect(
+        await f.runtime.harness.snapshot(CloudRunDocument, f.conversation.id, BACKGROUND_CONTEXT),
+      ).toMatchObject({ selectedThinkingLevel: selected });
+    } finally {
+      await f.runtime.close();
+    }
+  },
+);
 
 it("applies changed public-network policy at the next native request without repeating unchanged sections", async () => {
   let policy: import("@pi-cloud/protocol").GuestPublicEgress = { revision: 1, status: "disabled" };

@@ -680,7 +680,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       const trustedTools = trustedToolBindings
         .filter((binding) => binding.offered !== false)
         .map((binding) => binding.tool);
-      const hasDelegationTool = trustedTools.some((tool) => tool.name === "subagent");
       const hasSupervisorContact = trustedTools.some((tool) => tool.name === "contact_supervisor");
       let activeSession: PiCloudSessionHandle | undefined;
       const commonRunnerOptions = {
@@ -899,13 +898,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             async systemPrompt(base: string) {
               return [await remoteTools.systemPrompt(base)]
                 .concat(
-                  hasDelegationTool
-                    ? [
-                        "You may delegate substantial independent work through the subagent Tool. " +
-                          "Use stable workflow keys and inspect every returned result. " +
-                          "When a Child pauses for input, answer it through subagent_supervisor.",
-                      ]
-                    : [],
                   hasSupervisorContact
                     ? [
                         "A durable contact_supervisor Tool can reach the parent Agent on this Session's owning Worker.",

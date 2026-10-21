@@ -31,4 +31,24 @@ Private configuration evidence is in
 `deploy/production/runtime/review-evidence/runtime-capabilities-20261021/`.
 Acceptance must preserve the deliberately enabled setting, rather than restoring
 the old disabled state. Worker policy delivery remains source-only until the
-matched release. Ultra, child-card progress and dynamic tool catalogs remain to do.
+matched release.
+
+## Ultra profile slice
+
+Source adds Ultra to the existing effort picker/catalog and retains the selected
+value in Session/Run records and the existing native cloud-run document. One
+profile resolver maps Ultra to native/provider Max plus proactive instructions;
+other efforts use explicit-request-only instructions while retaining tools.
+Pi renders a named delegation section. The previous unconditional encouragement
+is removed. Migration 197 expands current thinking-profile constraints after
+writer draining; no queue, lease, task or compatibility layer is added.
+
+Native tests observe the same offered subagent tool with different Max/Ultra
+instructions and provider Max. Protocol/domain/native lifecycle checks pass
+29 tests; a real PostgreSQL test verifies accepted Ultra survives catalog changes
+and dispatch with its original Run snapshot. Web, Worker and Runner type checks
+and six Web settings/translation tests pass. Initial failures were duplicate
+Ultra values in fixtures that already read the updated catalog, plus an obsolete
+domain-test runtime field; they are corrected rather than adding runtime
+compatibility behavior. Child-card progress, dynamic catalogs and the matched/
+live acceptance remain to do.

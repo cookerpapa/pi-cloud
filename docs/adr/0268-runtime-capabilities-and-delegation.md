@@ -28,6 +28,10 @@ next prepared model request. Cache preservation is not a requirement.
    profile in the accepted Run snapshot. Other efforts retain delegation tools
    with explicit-request-only instructions. Children and recovery inherit the
    accepted profile. Pi owns instruction rendering and request preparation.
+   Migration 197 expands the existing Session/Run/model-profile constraints;
+   the native cloud-run document retains the selected effort for section rendering.
+   The native Agent stores the resolved inference effort. A catalog may offer
+   Ultra only alongside Max; default model/effort selections remain unchanged.
 4. Show compact child task/phase/navigation in the parent's Tool card. Reuse native
    parent Tool/child Session relationships and disposable HTTP/SSE observations.
    Details start collapsed; updates never force scrolling or expansion. Native

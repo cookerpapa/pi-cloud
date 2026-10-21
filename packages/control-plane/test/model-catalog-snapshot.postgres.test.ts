@@ -28,6 +28,7 @@ it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)(
     const config = structuredClone(fixtureModelCatalog);
     const model = config.models.find((m) => m.modelId === "gpt-6-luna")!;
     model.modelId = "future-model";
+    if (!model.thinkingLevels.includes("ultra")) model.thinkingLevels.push("ultra");
     writeFileSync(path, JSON.stringify(config));
     vi.stubEnv("PI_CLOUD_MODEL_CATALOG_FILE", path);
     try {
@@ -45,6 +46,12 @@ it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)(
         "model",
         "elastic",
       );
+      await store.updateSessionModel(session.sessionId, {
+        provider: "openai-codex",
+        modelId: "future-model",
+        thinkingLevel: "ultra",
+        fastMode: false,
+      });
       const first = await store.acceptTurn(session.sessionId, randomUUID(), {
         prompt: "old capability",
       });
@@ -54,20 +61,24 @@ it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)(
         .where("id", "=", first.runId)
         .executeTakeFirstOrThrow();
       expect(before.model_runtime_snapshot).toMatchObject({ maxTokens: 65536 });
+      expect(before.thinking_level).toBe("ultra");
       model.maxTokens = 32768;
       writeFileSync(path, JSON.stringify(config));
       await delay(1100);
       const worker = await createTestWorker(db);
       let received: unknown;
+      let selected: string | undefined;
       const executor = worker.executor({
         execute: async (request, lifecycle) => {
           received = request.model.runtime;
+          selected = request.model.thinkingLevel;
           lifecycle.executionExited();
           return { stopReason: "stop" };
         },
       });
       await executor.dispatchRun(first.runId);
       expect(received).toEqual(before.model_runtime_snapshot);
+      expect(selected).toBe("ultra");
       const secondSession = await store.createSession(
         project.projectId,
         project.workspaceId,

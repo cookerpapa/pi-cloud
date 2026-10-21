@@ -1,4 +1,3 @@
-import { fixtureModelRuntime } from "../../../scripts/lib/test-model-catalog.mjs";
 import { describe, expect, it } from "vitest";
 import { DomainModelValidationError, parseModelProfile, resolveTurnModel } from "../src/index.ts";
 
@@ -18,7 +17,6 @@ function modelProfile() {
 describe("model profiles", () => {
   it("resolves a server profile into the selected Turn model fields", () => {
     expect(resolveTurnModel(modelProfile())).toEqual({
-      runtime: fixtureModelRuntime("openai-codex", "gpt-5.4-mini"),
       profileId: "default-codex",
       provider: "openai-codex",
       modelId: "gpt-5.4-mini",

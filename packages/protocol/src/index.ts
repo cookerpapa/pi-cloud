@@ -567,6 +567,12 @@ export {
 } from "./worker-runtime-configuration.ts";
 
 export {
+  AgentThinkingLevelSchema,
+  resolveAgentProfile,
+  type AgentThinkingLevel,
+} from "./agent-profile.ts";
+
+export {
   CLOUD_TOOL_NAMES,
   CloudToolCapabilitySnapshotSchema,
   CloudToolNameSchema,

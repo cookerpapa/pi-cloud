@@ -1,16 +1,12 @@
-import { OpaqueIdSchema, PositiveSafeIntegerSchema } from "@pi-cloud/protocol";
+import {
+  AgentThinkingLevelSchema,
+  OpaqueIdSchema,
+  PositiveSafeIntegerSchema,
+} from "@pi-cloud/protocol";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 
-export const ModelThinkingLevelSchema = Type.Union([
-  Type.Literal("off"),
-  Type.Literal("minimal"),
-  Type.Literal("low"),
-  Type.Literal("medium"),
-  Type.Literal("high"),
-  Type.Literal("xhigh"),
-  Type.Literal("max"),
-]);
+export const ModelThinkingLevelSchema = AgentThinkingLevelSchema;
 
 export const ModelProfileSchema = Type.Object(
   {
@@ -20,7 +16,7 @@ export const ModelProfileSchema = Type.Object(
     defaultThinkingLevel: ModelThinkingLevelSchema,
     allowedThinkingLevels: Type.Array(ModelThinkingLevelSchema, {
       minItems: 1,
-      maxItems: 7,
+      maxItems: 8,
       uniqueItems: true,
     }),
     credentialBindingId: OpaqueIdSchema,

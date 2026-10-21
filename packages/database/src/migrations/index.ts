@@ -379,6 +379,7 @@ export const migrationProvider: MigrationProvider = {
       "194_upload_lifetimes": uploadLifetimes,
       "195_gpt61_sol_selection": gpt61SolSelection,
       "196_model_runtime_snapshot": modelRuntimeSnapshot,
+      "197_ultra_agent_profile": ultraAgentProfile,
     };
   },
 };
@@ -402,3 +403,4 @@ import * as uploadLifetimes from "./194_upload_lifetimes.ts";
 import * as gpt61SolSelection from "./195_gpt61_sol_selection.ts";
 
 import * as modelRuntimeSnapshot from "./196_model_runtime_snapshot.ts";
+import * as ultraAgentProfile from "./197_ultra_agent_profile.ts";

@@ -21,6 +21,7 @@ import { ExecutionReferenceSchema } from "./execution-reference.ts";
 import { AgentRevisionSnapshotSchema } from "./agent-runtime.ts";
 import { UserUploadsSchema } from "./user-upload.ts";
 import { WorkerRuntimeConfigurationSchema } from "./worker-runtime-configuration.ts";
+import { AgentThinkingLevelSchema } from "./agent-profile.ts";
 
 const WireEnvelopeProperties = {
   protocolVersion: Type.Literal(1),
@@ -70,15 +71,7 @@ const PromptInputSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const ModelThinkingLevelSchema = Type.Union([
-  Type.Literal("off"),
-  Type.Literal("minimal"),
-  Type.Literal("low"),
-  Type.Literal("medium"),
-  Type.Literal("high"),
-  Type.Literal("xhigh"),
-  Type.Literal("max"),
-]);
+const ModelThinkingLevelSchema = AgentThinkingLevelSchema;
 
 const TurnModelSnapshotSchema = Type.Object(
   {

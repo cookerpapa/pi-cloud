@@ -1,20 +1,13 @@
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
+import { AgentThinkingLevelSchema } from "./agent-profile.ts";
 
 export const ModelIdSchema = Type.String({
   minLength: 1,
   maxLength: 128,
   pattern: "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
 });
-const ThinkingSchema = Type.Union([
-  Type.Literal("off"),
-  Type.Literal("minimal"),
-  Type.Literal("low"),
-  Type.Literal("medium"),
-  Type.Literal("high"),
-  Type.Literal("xhigh"),
-  Type.Literal("max"),
-]);
+const ThinkingSchema = AgentThinkingLevelSchema;
 const ProviderSchema = Type.Union([Type.Literal("openai-codex"), Type.Literal("deepseek")]);
 const RuntimeProperties = {
   api: Type.Union([Type.Literal("openai-codex-responses"), Type.Literal("openai-responses")]),
@@ -65,6 +58,7 @@ export type ModelCatalogConfiguration = Static<typeof ModelCatalogConfigurationS
 function assertRuntime(value: Omit<ModelRuntimeSnapshot, "catalogRevision">): void {
   if (
     !value.thinkingLevels.includes(value.defaultThinkingLevel) ||
+    (value.thinkingLevels.includes("ultra") && !value.thinkingLevels.includes("max")) ||
     !value.inputModalities.includes("text") ||
     value.autoCompactTokenLimit + value.maxTokens > value.contextWindow
   ) {

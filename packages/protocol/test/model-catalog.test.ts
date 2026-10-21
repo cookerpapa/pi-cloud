@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { resolveAgentProfile } from "../src/agent-profile.ts";
 import {
   parseModelCatalogConfiguration,
   parseModelRuntimeSnapshot,
@@ -42,4 +43,29 @@ it("validates frozen snapshots independently of current model names", () => {
   expect(parseModelRuntimeSnapshot(snapshot)).toEqual(snapshot);
   expect(() => assertModelAdapter("deepseek", snapshot)).toThrow();
   expect(() => parseModelRuntimeSnapshot({ ...snapshot, catalogRevision: "" })).toThrow();
+});
+
+it("requires Max support for Ultra and keeps the selected profile distinct from provider effort", () => {
+  const snapshot = fixtureModelRuntime("openai-codex", "gpt-6-luna")!;
+  const ultra = {
+    ...snapshot,
+    thinkingLevels: [...new Set([...snapshot.thinkingLevels, "ultra"])],
+  };
+  expect(parseModelRuntimeSnapshot(ultra).thinkingLevels).toContain("ultra");
+  expect(() =>
+    parseModelRuntimeSnapshot({
+      ...ultra,
+      thinkingLevels: ultra.thinkingLevels.filter((level) => level !== "max"),
+    }),
+  ).toThrow();
+  expect(resolveAgentProfile("max")).toEqual({
+    selected: "max",
+    thinkingLevel: "max",
+    delegation: "explicit_request_only",
+  });
+  expect(resolveAgentProfile("ultra")).toEqual({
+    selected: "ultra",
+    thinkingLevel: "max",
+    delegation: "proactive",
+  });
 });

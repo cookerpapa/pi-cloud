@@ -1,7 +1,8 @@
 import { withToolInvocation } from "../tool-invocation.ts";
 import { PiTurnError } from "../pi-turn-runtime.ts";
 import { publicEgressSection } from "./runtime-capabilities.ts";
-import type { GuestPublicEgress } from "@pi-cloud/protocol";
+import { delegationInstructions } from "./delegation-policy.ts";
+import type { GuestPublicEgress, AgentThinkingLevel } from "@pi-cloud/protocol";
 import { isDeepStrictEqual } from "node:util";
 import {
   parseExecutionReference,
@@ -21,6 +22,7 @@ import {
   DEFAULT_COMPACTION_POLICY,
   createRegistry,
   defineExtension,
+  section,
   defineDoc,
   defineDocFamily,
   configure,
@@ -188,7 +190,21 @@ export class DurableAgentSession {
       defineExtension({
         name: "pi-cloud-runtime",
         tools: [...this.remote.definitions],
-        sections: options.publicEgress ? [publicEgressSection(options.publicEgress)] : [],
+        sections: [
+          ...(options.publicEgress ? [publicEgressSection(options.publicEgress)] : []),
+          section("delegation-policy", async (input, context) => {
+            if (
+              !input.agent.tools.some(
+                (tool) => tool.name === "subagent" || tool.name === "workflow",
+              )
+            )
+              return undefined;
+            const run = await input.read.snapshot(CloudRunDocument, input.conversationId, context);
+            return delegationInstructions(
+              (run?.selectedThinkingLevel ?? "off") as AgentThinkingLevel,
+            );
+          }),
+        ],
         hooks: [
           hook(GenerationTask, {
             beforeRequest: (_request, api) => {
@@ -358,6 +374,7 @@ export class DurableAgentSession {
         previous?.runId !== run.runId ||
         previous.sessionId !== run.context.sessionId ||
         previous.turnId !== run.context.turnId ||
+        previous.selectedThinkingLevel !== run.context.selectedThinkingLevel ||
         !isDeepStrictEqual(previous.view, run.context.view) ||
         !previous.model ||
         !agent?.model
