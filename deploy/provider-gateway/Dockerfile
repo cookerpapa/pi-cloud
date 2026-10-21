@@ -23,7 +23,7 @@ RUN git -c http.version=HTTP/1.1 clone --no-checkout --filter=blob:none https://
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' \
-      go get github.com/go-git/go-git/v6@v6.0.0-alpha.5 golang.org/x/crypto@v0.57.0 golang.org/x/net@v0.60.0 \
+      go get github.com/go-git/go-git/v6@v6.0.0-alpha.5 github.com/klauspost/compress@v1.18.7 golang.org/x/crypto@v0.57.0 golang.org/x/net@v0.60.0 \
     && GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' go mod download \
     && CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
       GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' \

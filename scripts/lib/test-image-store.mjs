@@ -49,7 +49,9 @@ export async function testImageStore() {
         "-ip.bind=0.0.0.0",
         "-s3",
         "-master.volumeSizeLimitMB=64",
-        "-volume.max=4",
+        // The pinned master can grow a new collection by seven volumes.
+        // Retain its native capacity instead of failing that first allocation.
+        "-volume.max=8",
       ],
       { timeout: 300_000 },
     );

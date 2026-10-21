@@ -52,6 +52,15 @@ Sources: [official model](https://developers.openai.com/api/docs/models/gpt-6.1-
 [Codex credit rates](https://learn.chatgpt.com/docs/pricing#token-rates), and
 [gateway catalog](https://github.com/router-for-me/models/blob/690c37fdbe62dc05f609f3a3e609d07ea4d16bf1/models.json).
 
+Release checks also require the existing Caddy/CLIProxyAPI/Cube Go dependency
+overrides to pin `github.com/klauspost/compress` v1.18.7. The
+[upstream release](https://github.com/klauspost/compress/releases/tag/v1.18.7)
+contains a security correction without other changes. Cube patch 0013 updates
+only module versions/checksums; execution and management protocols stay at 7.
+The disposable SeaweedFS test fixture retains its native eight-volume capacity:
+four slots were insufficient for its initial seven-volume growth batch. This
+changes neither production storage limits nor the asset recovery protocol.
+
 ### Original GPT-6 migration (2026-09-26)
 
 The owner requested migration to GPT-6 and GPT-6 Luna for paid acceptance tests.

@@ -51,6 +51,10 @@
     {
       "file": "0012-stale-volume-holder-recovery.patch",
       "sha256": "2b14edaced9af82cd01477eb4740fa29103e06a6a4edf7ede1d1c1cadc486bd3"
+    },
+    {
+      "file": "0013-compression-dependency.patch",
+      "sha256": "eb05c604653861fde8129a17d66cd56d95cd2fbbf201d489377d15cbcbb54978"
     }
   ],
   "buildImages": {

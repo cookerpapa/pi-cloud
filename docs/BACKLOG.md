@@ -36,6 +36,13 @@ for routine tests. Schema 195 maps unsupported old reasoning choices while
 retaining accepted model history. Source verification, matched deployment and
 actual Sol text/Tool/vision/search acceptance are in progress.
 
+The first candidate's image gate found the same fixable compression-library
+issue in Caddy, CLIProxyAPI and Cube. Their existing dependency overrides now
+pin v1.18.7 (Cube patch 0013); native checks and replacement artifact scans are
+in progress. The disposable image fixture also restores the pinned server's
+native eight-volume capacity after four slots prevented an initial seven-volume
+growth batch. All 81 acceptance-helper checks pass with that fixture correction.
+
 ## Resource/interaction release acceptance
 
 The [combined review](reports/resource-interaction-review-20261020.md) and all six
