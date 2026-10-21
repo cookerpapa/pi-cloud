@@ -3,6 +3,14 @@
 Status: approved for implementation, 2026-10-21. The owner requested both phases
 of the scoped-release proposal together. Delivery and live acceptance remain pending.
 
+Operator amendment: a prepared artifact retains its build revision when a later
+commit changes only explicitly listed operator code, its tests or documentation.
+Preflight verifies that restricted Git delta, unchanged runtime input fingerprints,
+the original scan revision and exact image ID. Runtime/schema/dependency/provider
+input changes invalidate the candidate. The applied operation records the newer
+operator revision separately; it never relabels an older artifact. This avoids
+rebuilding a verified binary merely to correct its deployment command.
+
 ## Decision
 
 Keep Helm/Kubernetes as deployment authority and PostgreSQL as Run authority.

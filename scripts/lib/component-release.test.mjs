@@ -2,6 +2,8 @@ import { expect, it } from "vitest";
 import { stringify } from "yaml";
 import {
   assertScopedSources,
+  assertOperatorRevisionChanges,
+  scopedHelmUpgradeArguments,
   assertScopedManifests,
   composeScopedDeployment,
   scopedApplyState,
@@ -151,4 +153,38 @@ it("rejects stale baselines and finishes recording a confirmed Helm apply after 
       live: { manifest: "new", status: { version: 5 } },
     }),
   ).toBe("verify");
+});
+
+it("retains prepared artifacts across operator-only fixes, excluding changed runtime inputs", () => {
+  expect(() =>
+    assertOperatorRevisionChanges([
+      "scripts/run-component-release.mjs",
+      "docs/README.md",
+      "scripts/lib/component-release.test.mjs",
+    ]),
+  ).not.toThrow();
+  for (const file of [
+    "deploy/provider-gateway/Dockerfile",
+    "package-lock.json",
+    "packages/control-plane/src/main.ts",
+    "deploy/helm/pi-cloud-platform/files/model-catalog.json",
+  ])
+    expect(() => assertOperatorRevisionChanges([file])).toThrow("runtime inputs changed");
+});
+it("passes two Helm positional arguments and preserves paths as individual argv values", () => {
+  const input = {
+    name: "pi-cloud",
+    chart: "/private/path with spaces/chart",
+    values: "/private/values file.yaml",
+    kubeconfig: "/private/kubeconfig",
+    namespace: "cube-system",
+  };
+  const args = scopedHelmUpgradeArguments(input);
+  expect(args.slice(0, 3)).toEqual(["upgrade", input.name, input.chart]);
+  expect(args[args.indexOf("--values") + 1]).toBe(input.values);
+  expect(args.slice(args.indexOf("--namespace"))).toEqual(["--namespace", "cube-system"]);
+  expect(args).toContain("--no-hooks");
+  expect(() =>
+    scopedHelmUpgradeArguments({ ...input, namespace: () => "accidental function" }),
+  ).toThrow("arguments");
 });

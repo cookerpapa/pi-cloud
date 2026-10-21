@@ -1,4 +1,4 @@
-import { catalogSeed, operatorSources } from "./release-impact.mjs";
+import { catalogSeed, operatorSources, modelTests } from "./release-impact.mjs";
 export { catalogSeed } from "./release-impact.mjs";
 import { isDeepStrictEqual } from "node:util";
 import assert from "node:assert/strict";
@@ -9,6 +9,40 @@ export const digest = (value) =>
   createHash("sha256")
     .update(typeof value === "string" ? value : JSON.stringify(value))
     .digest("hex");
+
+export function assertOperatorRevisionChanges(files) {
+  for (const file of files)
+    assert(
+      operatorSources.has(file) ||
+        modelTests.has(file) ||
+        file === "README.md" ||
+        file.startsWith("docs/"),
+      `Prepared runtime inputs changed: ${file}`,
+    );
+}
+
+export function scopedHelmUpgradeArguments({ name, chart, values, kubeconfig, namespace }) {
+  const args = [
+    "upgrade",
+    name,
+    chart,
+    "--values",
+    values,
+    "--no-hooks",
+    "--wait",
+    "--timeout",
+    "5m",
+    "--kubeconfig",
+    kubeconfig,
+    "--namespace",
+    namespace,
+  ];
+  assert(
+    args.every((value) => typeof value === "string" && value.length > 0),
+    "Helm arguments must be nonempty strings",
+  );
+  return args;
+}
 
 export function scopedApplyState({ baseline, next, current, helmRevision, before, desired, live }) {
   assert(

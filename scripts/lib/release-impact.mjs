@@ -11,7 +11,7 @@ export const operatorSources = new Set([
   "scripts/release-impact.mjs",
   "scripts/lib/release-impact.mjs",
 ]);
-const modelTests = new Set([
+export const modelTests = new Set([
   "scripts/lib/component-release.test.mjs",
   "scripts/lib/model-catalog-probe.test.mjs",
   "scripts/lib/release-impact.test.mjs",

@@ -16,6 +16,8 @@ import {
 } from "./lib/production-kubernetes.mjs";
 import {
   assertScopedSources,
+  assertOperatorRevisionChanges,
+  scopedHelmUpgradeArguments,
   assertScopedManifests,
   composeScopedDeployment,
   scopedApplyState,
@@ -226,7 +228,11 @@ if (action === "prepare") {
 
 const candidate = readJson(resolve(directory, "candidate.json"));
 assert.equal(candidate.formatVersion, 1);
-assert.equal(candidate.revision, revision, "Release source changed");
+assertOperatorRevisionChanges(
+  capture("git", ["diff", "--name-only", `${candidate.revision}..${revision}`])
+    .split("\n")
+    .filter(Boolean),
+);
 assertScopedSources(
   candidate.scope,
   capture("git", [
@@ -293,7 +299,7 @@ if (candidate.scope === "provider") {
   }
   assert(covered.has("manifest.json"));
   evidence = readJson(resolve(evidenceDirectory, "manifest.json"));
-  assert.equal(evidence.git.revision, revision);
+  assert.equal(evidence.git.revision, candidate.revision);
   assert.equal(evidence.git.dirty, false);
   assert.equal(evidence.scope, "provider");
   assert.equal(evidence.imageVersion, candidate.version);
@@ -363,22 +369,13 @@ save(resolve(directory, "apply-started.json"), {
 if (!alreadyApplied || live.status.info.status !== "deployed") {
   execFileSync(
     helm,
-    [
-      "upgrade",
-      candidate.name,
-      candidate.chart,
-      "--values",
-      resolve(directory, "values.yaml"),
-      "--no-hooks",
-      "--wait",
-      "--timeout",
-      "5m",
-      "--kubeconfig",
+    scopedHelmUpgradeArguments({
+      name: candidate.name,
+      chart: candidate.chart,
+      values: resolve(directory, "values.yaml"),
       kubeconfig,
-      "--namespace",
       namespace,
-      serviceAddress,
-    ],
+    }),
     { cwd: root, stdio: "inherit" },
   );
 }
@@ -434,6 +431,7 @@ save(resolve(directory, "applied.json"), {
   version: candidate.version,
   scope: candidate.scope,
   helmRevision: after.status.version,
+  operatorRevision: revision,
   deploymentDigest: digest(next),
   at: new Date().toISOString(),
 });

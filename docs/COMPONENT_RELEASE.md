@@ -104,3 +104,9 @@ Hosted CI uses the same change boundaries: provider-only edits build one image,
 catalog-only edits build none, and runtime/schema/dependency/workflow changes
 retain the full checks. Missing Git history selects the full path. The existing
 secret scan remains independent. No new CI action or deployment service is added.
+
+Prepared candidates may be applied by a later operator revision only when its Git
+delta contains explicitly listed operator code/tests or documentation. Runtime
+input fingerprints and original image/scan source identities must still match.
+The operation records `operatorRevision` separately. Changes to application code,
+dependencies, provider build inputs or catalog data require a fresh candidate.
