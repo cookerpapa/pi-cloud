@@ -15,6 +15,7 @@ import {
   ProductionHttpGateway,
 } from "../src/index.ts";
 import { emptyEventRuntime } from "./fixtures/event-runtime.ts";
+import { fixtureModelRuntime } from "../../../scripts/lib/test-model-catalog.mjs";
 
 let f: Awaited<ReturnType<typeof nativeSubagentFixture>>;
 let uploads: WorkspaceUploadService, images: PostgresImageAttachmentStore;
@@ -50,7 +51,12 @@ beforeAll(async () => {
   // Select a maintained multimodal Run descriptor; no provider is contacted.
   await f.database
     .updateTable("runs")
-    .set({ provider: "openai-codex", model_id: "gpt-6-luna" })
+    .set({
+      provider: "openai-codex",
+      model_id: "gpt-6-luna",
+      thinking_level: "low",
+      model_runtime_snapshot: sql`${JSON.stringify(fixtureModelRuntime("openai-codex", "gpt-6-luna"))}::jsonb`,
+    })
     .where("id", "=", f.scope.runId)
     .execute();
   await f.database

@@ -6,7 +6,10 @@ import { createDatabase } from "../src/index.ts";
 import { migrationProvider } from "../src/migrations/index.ts";
 import { createPrivateTenant } from "../../control-plane/src/tenant-administration.ts";
 import { ControlPlaneStore } from "../../control-plane/src/control-plane-store.ts";
-import { insertHistoricalDurableSession } from "./fixtures/historical-turn.ts";
+import {
+  insertHistoricalDurableSession,
+  insertHistoricalDurableRun,
+} from "./fixtures/historical-turn.ts";
 
 it("requires drained owners and preserves Worker identities, fences and credential references", async () => {
   const admin = createDatabase({
@@ -38,7 +41,11 @@ it("requires drained owners and preserves Worker identities, fences and credenti
       source: { kind: "empty" },
     });
     const session = await insertHistoricalDurableSession(db, { ...tenant, ...project });
-    const run = await store.acceptTurn(session.sessionId, randomUUID(), {
+    const run = await insertHistoricalDurableRun(db, {
+      ...tenant,
+      ...project,
+      ...session,
+      modelProfileId: tenant.defaultModelProfileId,
       prompt: "retained input",
     });
     const worker = randomUUID(),

@@ -172,8 +172,8 @@ describe.sequential("product web authentication", () => {
       url: "/v1/model-configuration",
       headers: { cookie },
       payload: {
-        provider: "deepseek",
-        modelId: "deepseek-v4-pro",
+        provider: "openai-codex",
+        modelId: "gpt-6.1-sol",
       },
     });
     expect(registration.identity.tenantId).not.toBe(platformTenantId);
@@ -190,14 +190,14 @@ describe.sequential("product web authentication", () => {
       url: "/v1/model-configuration",
       headers: { authorization: `Bearer ${platformApiToken}` },
       payload: {
-        provider: "deepseek",
-        modelId: "deepseek-v4-pro",
+        provider: "openai-codex",
+        modelId: "gpt-6.1-sol",
       },
     });
     expect(platformReplacement.statusCode).toBe(200);
     expect(platformReplacement.json()).toMatchObject({
-      provider: "deepseek",
-      modelId: "deepseek-v4-pro",
+      provider: "openai-codex",
+      modelId: "gpt-6.1-sol",
       routeVersion: 2,
     });
     const rotatedProfile = await database
@@ -214,7 +214,7 @@ describe.sequential("product web authentication", () => {
       ])
       .where("policy.tenant_id", "=", registration.identity.tenantId)
       .executeTakeFirstOrThrow();
-    expect(rotatedProfile).toMatchObject({ modelId: "deepseek-v4-pro", bindingVersion: "2" });
+    expect(rotatedProfile).toMatchObject({ modelId: "gpt-6.1-sol", bindingVersion: "2" });
     expect(rotatedProfile.bindingVersion).toBe("2");
   });
 
@@ -307,7 +307,7 @@ describe.sequential("product web authentication", () => {
       .select(["profile.model_id as modelId", "profile.credential_binding_version as version"])
       .where("policy.tenant_id", "=", bob.identity.tenantId)
       .executeTakeFirstOrThrow();
-    expect(profile).toEqual({ modelId: "deepseek-v4-pro", version: "1" });
+    expect(profile).toEqual({ modelId: "gpt-6.1-sol", version: "1" });
   });
 
   it("rejects duplicate usernames without exposing or replacing the existing account", async () => {

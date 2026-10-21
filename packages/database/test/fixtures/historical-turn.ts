@@ -55,6 +55,40 @@ export async function insertHistoricalPrompt(
   return { turnId, runId };
 }
 
+/** Schema 183 has consolidated Runs, before frozen model runtime snapshots existed. */
+export async function insertHistoricalDurableRun(
+  db: Kysely<Database>,
+  input: {
+    tenantId: string;
+    sessionId: string;
+    projectId: string;
+    workspaceId: string;
+    modelProfileId: string;
+    prompt: string;
+  },
+) {
+  const runId = randomUUID(),
+    turnId = randomUUID();
+  const environment = await db
+    .selectFrom("environment_versions")
+    .select("id")
+    .where("project_id", "=", input.projectId)
+    .executeTakeFirstOrThrow();
+  await sql`insert into runs(id,tenant_id,project_id,workspace_id,session_id,turn_id,environment_version_id,
+    idempotency_key,mailbox_position,request_sha256,available_at,state,input_text,
+    model_profile_id,provider,model_id,thinking_level,credential_binding_id,credential_binding_version)
+    select ${runId}::uuid,tenant_id,${input.projectId}::uuid,${input.workspaceId}::uuid,
+      ${input.sessionId}::uuid,${turnId}::uuid,${environment.id}::uuid,'historical',1,${"a".repeat(64)},now(),'queued',${input.prompt},
+      id,provider,model_id,default_thinking_level,credential_binding_id,credential_binding_version
+    from model_profiles where tenant_id=${input.tenantId}::uuid and id=${input.modelProfileId}::uuid`.execute(
+    db,
+  );
+  await sql`update sessions set next_mailbox_position=2 where id=${input.sessionId}::uuid`.execute(
+    db,
+  );
+  return { runId, turnId };
+}
+
 /** Stable pre-156 Session fixture; never route historical tests through current admission. */
 export async function insertHistoricalSession(
   db: Kysely<Database>,

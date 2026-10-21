@@ -55,6 +55,10 @@ stay open until their relevant live acceptance passes.
 - [ ] Verify actual request effort/tools/instructions, explicit delegation at
       non-Ultra, Ultra behavior, queue/recovery/Stop, catalog changes and live
       acceptance before the relevant matched releases.
+- [ ] Resolve the matched-release prerequisite for the existing development
+      machine: its release API also deletes Workspace bytes. Obtain explicit
+      disposition for current user projects or design a maintenance retirement
+      that preserves storage; do not silently delete them to satisfy the gate.
 
 ## Run status presentation
 

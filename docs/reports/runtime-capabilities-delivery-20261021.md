@@ -107,3 +107,30 @@ second handler execution. Its focused regression passes.
 The maintained live browser driver now has an explicit runtime-capability mode.
 Full release gates, matched artifacts/deployment and real provider/browser/Cube
 acceptance are the remaining work. No application rollout has occurred yet.
+
+## Full-check findings and rollout boundary
+
+The first full CI run completed build/type checks and all workspace suites, but
+reported dated fixture expectations: hidden DeepSeek Pro selections, a missing
+frozen vision snapshot, schema-195 assertions, historical admission using current
+code and missing child-summary identities. These are corrected in test data.
+The pre-184 migration fixture now inserts its historical Run directly instead of
+adding compatibility to production admission. The eight affected files pass
+70 checks after correction. One existing locked-relay test hit its 30-second
+limit in the full run and passed unchanged in both isolated and file repeats;
+no runtime timeout or assertion was relaxed.
+
+The acceptance-helper run initially used the operator log's private umask, which
+made a temporary Git fixture's file modes differ from checkout modes. Running
+the suite with the normal source-checkout umask passes all 94 checks. Kafka,
+fault and dependency gates are being completed separately; the original
+`npm run ci` exit was not a pass.
+
+All eleven candidate images for runtime implementation `533afe94` passed scanning
+and matched preflight. Final test/evidence changes require a new clean-source
+candidate before apply. KVM is available and there are no active Runs/leases.
+One existing development machine still owns current user project directories
+and several retained Sessions. The current matched procedure requires
+machine release, while that API also retires/deletes its Workspace storage. No
+machine or Workspace was released to pass the deployment gate. Data disposition
+or a separately reviewed maintenance path remains a rollout prerequisite.

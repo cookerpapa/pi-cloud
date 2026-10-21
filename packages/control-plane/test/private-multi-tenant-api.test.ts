@@ -355,7 +355,7 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
         headers: authorization(tenantB.credential.token),
         payload: {
           provider: "deepseek",
-          modelId: "deepseek-v4-pro",
+          modelId: "deepseek-v4-flash",
           thinkingLevel: "off",
           fastMode: false,
         },
@@ -467,7 +467,7 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
       headers: authorization(memberAToken),
       payload: {
         provider: "deepseek",
-        modelId: "deepseek-v4-pro",
+        modelId: "deepseek-v4-flash",
         thinkingLevel: "high",
         fastMode: false,
       },
@@ -476,7 +476,7 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
     expect(switched.json()).toMatchObject({
       sessionId: sessionA.sessionId,
       provider: "deepseek",
-      modelId: "deepseek-v4-pro",
+      modelId: "deepseek-v4-flash",
       thinkingLevel: "high",
       fastMode: false,
     });
@@ -504,7 +504,7 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
       .executeTakeFirstOrThrow();
     expect(persisted).toEqual({
       provider: "deepseek",
-      modelId: "deepseek-v4-pro",
+      modelId: "deepseek-v4-flash",
       thinkingLevel: "high",
       serviceTier: null,
     });

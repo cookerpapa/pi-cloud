@@ -669,6 +669,8 @@ describe("tenant-aware browser API", () => {
                     rootSessionId: "20000000-0000-4000-8000-000000000001",
                     depth: 1,
                     parentTurnId: "60000000-0000-4000-8000-000000000003",
+                    parentToolCallId: "task:31",
+                    turnId: "31000000-0000-4000-8000-000000000004",
                     title: "Subagent",
                     contextMode: "branch",
                     sandboxMode: "shared",
