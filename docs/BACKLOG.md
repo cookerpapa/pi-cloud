@@ -30,8 +30,9 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Ultra collaboration and child-task visibility
 
-The owner selected a separate Standard/Ultra collaboration mode after a live
-child-wait investigation. [Findings and proposal](reports/subagent-wait-review-20261021.md)
+The owner requested Ultra-gated delegation and clarified Codex's single effort
+picker. The corrected proposal maps Ultra to provider Max plus delegation, without
+a separate collaboration selector. [Findings and proposal](reports/subagent-wait-review-20261021.md)
 show a long-running child and successful final delivery, with additional model,
 review and environment-validation work; no lost reply was established.
 
@@ -39,7 +40,7 @@ review and environment-validation work; no lost reply was established.
       gating (including workflow entry), and the proposed child delegation default.
 - [ ] Improve parent-visible child progress and known environment-capability
       information; retain existing disposable observation and native recovery paths.
-- [ ] Verify Standard/Ultra selection, actual offered tools, queue/recovery/Stop,
+- [ ] Verify non-Ultra/Ultra selection, actual provider effort/offered tools, queue/recovery/Stop,
       parent/child behavior and live acceptance before matched release.
 
 ## Run status presentation

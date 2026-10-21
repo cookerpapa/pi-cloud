@@ -3,8 +3,10 @@
 Date: 2026-10-21. Source baseline: `d46c0543`; serving application base
 `component-release-ad5fc83c`, schema 196. This is investigation and a proposal,
 not an implemented runtime change. The owner authorized stopping the affected
-Run and explicitly selected a separate **Ultra collaboration mode**, independent
-of model reasoning effort.
+Run and requested Ultra-gated delegation. The later clarification points to
+Codex's single thinking-effort picker. The initial independent collaboration
+selector proposal is withdrawn after inspecting Codex's actual request mapping
+and proactive-delegation policy; the corrected proposal is below.
 
 ## Observed behavior
 
@@ -71,15 +73,20 @@ Relevant source: `supervisor-host/src/tools/worker-tool-runtime.ts`,
 
 ### One explicit collaboration policy
 
-Expose **Standard / Ultra collaboration** beside the existing model controls.
-Default new work to Standard. Ultra controls delegation, not provider
-`reasoning.effort`; existing supported reasoning values remain independent.
-Persist desired selection with Session settings, and freeze accepted selection
-with the existing Run configuration. Queued work and crash recovery use that
-snapshot. Changing the desired mode applies to the next new Run, not native
-follow-up messages inside an already accepted Run.
+Offer **Ultra in the existing thinking-effort picker** for explicitly supported
+model/profile combinations. Preserve existing defaults; do not introduce a second
+independent user-facing collaboration switch. Resolve one selected Agent profile
+into provider effort and tool policy: Ultra sends `max` to the model and enables
+delegation; other choices keep their existing provider effort. Do not send an
+unverified raw `ultra` value to CLIProxyAPI or Pi's model adapter. Max support alone
+does not establish official Codex Ultra availability for every model.
 
-Define one code-owned tool-exposure policy. Standard omits creation/delegation
+Persist desired selection with Session settings, and freeze the accepted selection
+and resolved policy with the existing Run configuration. Queued work and crash
+recovery use that snapshot. A later selection applies to the next new Run, not
+native follow-up messages inside already accepted work.
+
+Define one code-owned tool-exposure policy. Non-Ultra omits creation/delegation
 tools from native Agent configuration and omits delegation instructions. Ultra
 offers them. Cover both direct `subagent` and `workflow`/`runs.run` creation;
 hiding one tool name must not leave another equivalent entry available.
@@ -93,7 +100,8 @@ current registry/filtering boundary and does not require a dynamic plugin catalo
 **Recommended child default, pending owner agreement:** an Ultra parent may
 delegate, while children complete their assigned work without further delegation
 by default. Parent communication and supervisor answers remain available. This
-is an explicit capability policy, not a new duration/concurrency quota. If nested
+does not silently reduce the selected provider's reasoning effort. It is an
+explicit capability policy, not a new duration/concurrency quota. If nested
 delegation is wanted, make that a deliberate policy decision instead of silently
 inheriting unlimited proactive delegation.
 
@@ -118,31 +126,43 @@ this investigation does not enable the proxy or install packages in the user's V
 
 ### Acceptance and release
 
-- Standard's actual model request lacks every child-creation entry, including
+- Non-Ultra model requests lack every child-creation entry, including
   indirect workflow creation. Ordinary file/command/preview tools still work.
-- Ultra exposes delegation independently of reasoning level. Conversation
-  changes cannot leak a previous Run's offered tool set.
+- Ultra resolves to provider `max` and the delegation policy; Max resolves to
+  provider `max` without automatic delegation. Reject unsupported profile/model
+  combinations. Conversation changes cannot leak a previous Run's offered tools.
 - Exercise the chosen child default, parent questions, Stop, lost admission/reply
   and Worker recovery with the same accepted Run policy and native identities.
 - Queue acceptance, mode edits and resume use the original snapshot, rather than
   mutable Session defaults. Check existing admission-query counts.
-- Browser verifies mode selection, next-Run semantics, meaningful waiting status,
+- Browser verifies the single effort picker, next-Run semantics, meaningful waiting status,
   child navigation, completion and interrupted/reconnected observations.
-- Real Luna acceptance compares a simple Standard task with a deliberately
-  decomposed Ultra task; record outcomes rather than promising automatic speedup.
+- Keep routine Luna checks for ordinary regression. Real Ultra acceptance uses
+  an explicitly supported model/profile and verifies the effective request effort
+  and child policy; record outcomes rather than promising automatic speedup.
 - Record an ADR before changing persistence/public/internal contracts, then use
   the required matched release and owned-fixture cleanup. No total Run duration
   ceiling, new scheduler, Tool-result ledger or mailbox replay is proposed.
 
 ## Codex comparison
 
-The current official [Subagents documentation](https://learn.chatgpt.com/docs/agent-configuration/subagents)
-distinguishes proactive delegation at Ultra from explicit requests at other
-intelligence levels; it separately documents enabling subagent tools and model
-reasoning settings. This supports a separate collaboration policy, but does not
-establish that all non-Ultra Codex sessions lack subagent tools. The inspected
-local Codex checkout is dated August 4 and is not evidence of the latest desktop
-implementation. PiCloud's requested Standard policy is intentionally explicit.
+The official [Models documentation](https://learn.chatgpt.com/docs/models?surface=cli)
+places Max and Ultra under `/model`'s reasoning selection. The
+[Subagents documentation](https://learn.chatgpt.com/docs/agent-configuration/subagents)
+distinguishes proactive Ultra delegation from explicit requests at other levels.
+The clean relevant files in the local Codex checkout (`40e5de94e9`) confirm:
+
+- `codex-rs/core/src/client.rs:175`, `reasoning_effort_for_request`: Ultra maps to
+  Max before inference requests.
+- `codex-rs/core/src/session/multi_agents.rs:39`, `effective_multi_agent_mode`:
+  with Multi-agent V2 enabled and no custom hint policy, Ultra selects Proactive;
+  other efforts select ExplicitRequestOnly.
+- `codex-rs/tui/src/chatwidget/model_popups.rs:569` presents Max/Ultra effort choices.
+
+This is source evidence for the stated implementation, not a claim about private
+desktop internals. Non-Ultra Codex can still support explicitly requested subagents.
+PiCloud's requested hiding of creation tools outside Ultra is a stricter product
+policy. Child delegation inheritance remains a separate proposal to agree.
 
 Private investigation evidence is under
 `deploy/production/runtime/review-evidence/subagent-bicycle-20261021/`.
