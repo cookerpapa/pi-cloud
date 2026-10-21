@@ -1,3 +1,4 @@
+import { fixtureModelRuntime } from "../../../scripts/lib/test-model-catalog.mjs";
 import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
@@ -52,6 +53,7 @@ const command: ExecuteTurnCommandMessage = {
     workingDirectory: "/workspace",
     toolCapabilities: ["read", "write", "edit", "bash"],
     model: {
+      runtime: fixtureModelRuntime("pi-cloud-fake", "pi-cloud-fake"),
       profileId: "profile-step",
       provider: "pi-cloud-fake",
       modelId: "pi-cloud-fake",

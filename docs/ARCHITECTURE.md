@@ -1331,12 +1331,19 @@ configuration and cancellation outcomes remain distinct. Durable is the sole
 sampling retry owner. Semantic execution and HTTP transport have separate metrics.
 
 CLIProxyAPI owns upstream subscription/API credentials and account affinity.
-PiCloud owns the reviewed model/capability catalog used by public selection,
-admission and Worker grants. GPT-6.1 Sol replaces GPT-6 Sol for future selections
-under the [ADR-0191 amendment](adr/0191-gpt6-model-catalog.md), with medium reasoning
-by default and no disabled reasoning. GPT-6 Luna remains the routine acceptance
-model. Schema 195 migrates mutable Sol settings; historical Run/native model
-snapshots remain unchanged. Gateway discovery does not bypass this catalog.
+Under [ADR-0267](adr/0267-scoped-releases-and-model-catalog.md), the Control Plane
+loads one validated deployment model catalog. Chat/admin choices and defaults
+come from its API. Run admission freezes capabilities and the catalog digest in
+PG; Worker initialization/recovery and native children use that snapshot, with
+no second Worker model-name catalog or per-request SQL. Invalid reloads retain
+last valid configuration and expose failure. Model withdrawal affects new
+admission while old desired selections and history remain readable. The initial
+schema 196 / Worker contract requires a matched cutover; subsequent provider and
+catalog changes use [scoped Helm publication](COMPONENT_RELEASE.md), retaining
+unrelated component identities and original artifact provenance.
+GPT-6.1 Sol is the new-conversation default; Luna remains the routine test model.
+Schema 195 previously migrated mutable Sol selections without changing history.
+Gateway discovery does not automatically publish a selectable model.
 Workers see only scoped model-runtime access through their local Model Gateway.
 Revocation also aborts incomplete request uploads. After body validation, the
 Gateway atomically rechecks its local capability and reserves the request count

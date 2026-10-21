@@ -1,0 +1,84 @@
+{
+  "formatVersion": 1,
+  "defaultModel": {
+    "provider": "openai-codex",
+    "modelId": "gpt-6.1-sol"
+  },
+  "models": [
+    {
+      "visible": true,
+      "provider": "openai-codex",
+      "api": "openai-codex-responses",
+      "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
+      "fastModeAvailable": true,
+      "contextWindow": 1000000,
+      "autoCompactTokenLimit": 900000,
+      "maxTokens": 65536,
+      "inputModalities": ["text", "image"],
+      "hostedTools": ["web_search"],
+      "modelId": "gpt-6-astra",
+      "displayName": "GPT-6 Astra",
+      "defaultThinkingLevel": "medium"
+    },
+    {
+      "visible": true,
+      "provider": "openai-codex",
+      "api": "openai-codex-responses",
+      "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
+      "fastModeAvailable": true,
+      "contextWindow": 1000000,
+      "autoCompactTokenLimit": 900000,
+      "maxTokens": 65536,
+      "inputModalities": ["text", "image"],
+      "hostedTools": ["web_search"],
+      "modelId": "gpt-6.1-sol",
+      "displayName": "GPT-6.1 Sol",
+      "defaultThinkingLevel": "medium"
+    },
+    {
+      "visible": true,
+      "provider": "openai-codex",
+      "api": "openai-codex-responses",
+      "thinkingLevels": ["off", "low", "medium", "high", "xhigh", "max"],
+      "fastModeAvailable": true,
+      "contextWindow": 1000000,
+      "autoCompactTokenLimit": 900000,
+      "maxTokens": 65536,
+      "inputModalities": ["text", "image"],
+      "hostedTools": ["web_search"],
+      "modelId": "gpt-6-luna",
+      "displayName": "GPT-6 Luna",
+      "defaultThinkingLevel": "medium"
+    },
+    {
+      "visible": true,
+      "provider": "deepseek",
+      "api": "openai-responses",
+      "thinkingLevels": ["off", "low", "medium", "high", "max"],
+      "fastModeAvailable": false,
+      "contextWindow": 128000,
+      "autoCompactTokenLimit": 111616,
+      "maxTokens": 8192,
+      "inputModalities": ["text", "image"],
+      "hostedTools": ["web_search"],
+      "modelId": "deepseek-v4-flash",
+      "displayName": "DeepSeek V4.1 Flash",
+      "defaultThinkingLevel": "off"
+    },
+    {
+      "visible": false,
+      "provider": "deepseek",
+      "api": "openai-responses",
+      "thinkingLevels": ["off", "low", "medium", "high", "max"],
+      "fastModeAvailable": false,
+      "contextWindow": 128000,
+      "autoCompactTokenLimit": 111616,
+      "maxTokens": 8192,
+      "inputModalities": ["text"],
+      "hostedTools": ["web_search"],
+      "modelId": "deepseek-v4-pro",
+      "displayName": "DeepSeek V4 Pro",
+      "defaultThinkingLevel": "off"
+    }
+  ]
+}

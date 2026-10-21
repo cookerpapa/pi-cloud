@@ -1,3 +1,4 @@
+import { fixtureModelRuntime } from "../../../scripts/lib/test-model-catalog.mjs";
 import type {
   EventAckMessage,
   EventPublishMessage,
@@ -81,6 +82,7 @@ function command(
       workingDirectory: "/workspace",
       toolCapabilities: ["read", "write", "edit", "bash"],
       model: {
+        runtime: fixtureModelRuntime("pi-cloud-fake", "pi-cloud-fake"),
         profileId: "profile-1",
         provider: "pi-cloud-fake",
         modelId: "pi-cloud-fake",

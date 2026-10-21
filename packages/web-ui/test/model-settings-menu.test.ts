@@ -58,6 +58,9 @@ describe("model settings menu", () => {
   it("starts new conversations on GPT-6.1 Sol with medium reasoning and Fast disabled", () => {
     expect(
       defaultNewConversationSettings({
+        revision: "a".repeat(64),
+        reloadFailed: false,
+        defaultModel: { provider: "openai-codex", modelId: "gpt-6.1-sol" },
         models: [
           {
             provider: "deepseek",

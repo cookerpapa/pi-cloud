@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DEFAULT_NEW_CONVERSATION_MODEL } from "@pi-cloud/protocol";
 import type {
   ModelCatalogEntryResource,
   ModelCatalogResource,
@@ -44,14 +43,11 @@ export function defaultNewConversationSettings(
   const model =
     catalog.models.find(
       (candidate) =>
-        candidate.provider === DEFAULT_NEW_CONVERSATION_MODEL.provider &&
-        candidate.modelId === DEFAULT_NEW_CONVERSATION_MODEL.modelId,
-    ) ?? catalog.models.find((candidate) => candidate.provider === "openai-codex");
+        candidate.provider === catalog.defaultModel.provider &&
+        candidate.modelId === catalog.defaultModel.modelId,
+    ) ?? catalog.models.find((candidate) => candidate.default);
   if (model === undefined) return null;
-  return modelSelection(
-    model,
-    model.thinkingLevels.includes("medium") ? "medium" : model.defaultThinkingLevel,
-  );
+  return modelSelection(model, model.defaultThinkingLevel);
 }
 
 export function settingsFromSessionModel(model: SessionModelResource): SessionModelSelection {

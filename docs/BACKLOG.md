@@ -28,6 +28,15 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## Scoped release and runtime model catalog
+
+- [ ] Implement [ADR-0267](adr/0267-scoped-releases-and-model-catalog.md): validated
+      deployment catalog, frozen Run capabilities, data-driven chat/admin choices.
+- [ ] Record component provenance and provide guarded provider/catalog-only
+      release operations with checks selected by impact.
+- [ ] Complete the initial matched cutover and live narrow-release acceptance,
+      retaining Worker/VM identities and original configuration.
+
 ## GPT-6.1 Sol catalog refresh
 
 The [ADR-0191 amendment](adr/0191-gpt6-model-catalog.md) is deployed as

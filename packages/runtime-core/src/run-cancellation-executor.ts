@@ -1,3 +1,4 @@
+import { parseModelRuntimeSnapshot } from "@pi-cloud/protocol";
 import { databaseTime, type Database } from "@pi-cloud/database";
 import {
   transitionTurnControlRequest,
@@ -359,6 +360,7 @@ export class RunCancellationExecutor {
           "run.model_profile_id as modelProfileId",
           "run.provider as provider",
           "run.model_id as modelId",
+          "run.model_runtime_snapshot as modelRuntimeSnapshot",
           "run.thinking_level as thinkingLevel",
           "run.service_tier as serviceTier",
           "run.credential_binding_id as credentialBindingId",
@@ -477,6 +479,10 @@ export class RunCancellationExecutor {
               profileId: row.modelProfileId,
               provider: row.provider,
               modelId: row.modelId,
+              runtime:
+                row.modelRuntimeSnapshot === null
+                  ? null
+                  : parseModelRuntimeSnapshot(row.modelRuntimeSnapshot),
               thinkingLevel: row.thinkingLevel,
               serviceTier: row.serviceTier,
               credentialBindingId: row.credentialBindingId,

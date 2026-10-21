@@ -46,6 +46,7 @@ COPY tsconfig.base.json ./
 COPY packages/control-plane/package.json packages/control-plane/package.json
 COPY packages/control-plane/tsconfig.json packages/control-plane/tsconfig.json
 COPY packages/control-plane/src packages/control-plane/src
+COPY deploy/helm/pi-cloud-platform/files/model-catalog.json deploy/helm/pi-cloud-platform/files/model-catalog.json
 COPY packages/session-attachments/package.json packages/session-attachments/package.json
 COPY packages/database/package.json packages/database/package.json
 COPY packages/session-attachments/src packages/session-attachments/src

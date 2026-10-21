@@ -6,7 +6,7 @@ import {
 } from "./inherited-context.ts";
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
-import { DEEPSEEK_MODEL_IDS, GPT_MODEL_IDS } from "./model-catalog.ts";
+import { ModelIdSchema } from "./model-catalog.ts";
 import {
   NonNegativeSafeIntegerSchema,
   OpaqueIdSchema,
@@ -52,9 +52,9 @@ export const TenantApiRoleSchema = Type.Union([
   Type.Literal("viewer"),
 ]);
 
-export const DeepSeekModelIdSchema = Type.Enum(DEEPSEEK_MODEL_IDS);
+export const DeepSeekModelIdSchema = ModelIdSchema;
 
-export const OpenAICodexModelIdSchema = Type.Enum(GPT_MODEL_IDS);
+export const OpenAICodexModelIdSchema = ModelIdSchema;
 
 export const ProviderModelSelectionSchema = Type.Union([
   Type.Object(
@@ -119,7 +119,7 @@ export const ModelCatalogEntryResourceSchema = Type.Union([
         uniqueItems: true,
       }),
       defaultThinkingLevel: TurnThinkingLevelSchema,
-      fastModeAvailable: Type.Literal(true),
+      fastModeAvailable: Type.Boolean(),
     },
     { additionalProperties: false },
   ),
@@ -127,7 +127,10 @@ export const ModelCatalogEntryResourceSchema = Type.Union([
 
 export const ModelCatalogResourceSchema = Type.Object(
   {
-    models: Type.Array(ModelCatalogEntryResourceSchema, { minItems: 1, maxItems: 20 }),
+    revision: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+    defaultModel: ProviderModelSelectionSchema,
+    reloadFailed: Type.Boolean(),
+    models: Type.Array(ModelCatalogEntryResourceSchema, { minItems: 1 }),
   },
   { additionalProperties: false },
 );

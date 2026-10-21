@@ -1,5 +1,7 @@
 # Release evidence process
 
+[Component releases](COMPONENT_RELEASE.md) scan the changed provider image and retain original provenance for unchanged artifacts. Catalog-only publication builds no image. The eleven-image procedure below remains for full matched upgrades.
+
 PiCloud's matched runtime release binds a clean Git revision to seven
 application/provider images, three native Cube runtime images and one guest
 template, plus machine-readable dependency/security evidence. The unchanged
@@ -99,7 +101,7 @@ inheriting stale packages from an older prebuilt Caddy image while preserving
 the standard Caddy module set. The actual final image, not either build stage,
 is what the release gate scans.
 
-CI independently builds its nine-image matrix (six application services, the two
+Full CI builds its ten-image matrix (seven application/provider services, the two
 installer-managed gateways and the guest template), generates CycloneDX with
 Anchore SBOM Action, records all HIGH/CRITICAL findings with Trivy, runs the same
 fixable-finding gate, and uploads each evidence set for 14 days. Checkout,
@@ -107,7 +109,11 @@ Node, Anchore, Trivy, Gitleaks, and artifact Actions are pinned to immutable
 commits in `.github/workflows/ci.yml`. The release-host collection additionally
 covers the model provider and native Cube images described above.
 
-GitHub-hosted CI runs deterministic zero-token checks plus the nine-image SBOM
+GitHub-hosted CI classifies changed source inputs: provider-only edits build/scan
+only CLIProxyAPI, catalog-only edits build no images, and unknown/runtime/schema
+changes retain the full checks. Documentation-only edits run documentation and
+format validation. Classification failure or missing Git history selects full
+checks. Its full path runs deterministic zero-token checks plus the ten-image SBOM
 and vulnerability matrix. The matrix still builds the Cube Tool image, but the
 full `cubesandbox:template-check` is a release-host precondition: rebuilding the
 same large toolchain a second time on every push exceeded the hosted Runner's

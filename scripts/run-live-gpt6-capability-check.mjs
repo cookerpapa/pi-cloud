@@ -1,3 +1,4 @@
+import { parseModelCatalogConfiguration } from "../packages/protocol/src/model-catalog.ts";
 import { serviceAddress } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
@@ -13,7 +14,19 @@ const runtime = "deploy/production/runtime";
 const key = (await readFile(`${runtime}/secrets/cli-proxy-api-key`, "utf8")).trim();
 const ip = serviceAddress("cli-proxy-api");
 const model = process.env.PI_CLOUD_GPT_CAPABILITY_MODEL ?? "gpt-6-luna";
-assert(["gpt-6-luna", "gpt-6.1-sol"].includes(model), "Unreviewed acceptance model");
+const catalog = parseModelCatalogConfiguration(
+  JSON.parse(
+    await readFile(
+      process.env.PI_CLOUD_MODEL_CATALOG_FILE ??
+        new URL("../deploy/helm/pi-cloud-platform/files/model-catalog.json", import.meta.url),
+      "utf8",
+    ),
+  ),
+);
+const selected = catalog.models.find(
+  (m) => m.provider === "openai-codex" && m.modelId === model && m.visible,
+);
+assert(selected, "Unreviewed acceptance model");
 const output = process.argv[2] ?? `dist/gpt6-capabilities-${model}.json`;
 async function call(input, tools = [], extra = {}) {
   const response = await fetch(`http://${ip}:8317/v1/responses`, {
@@ -30,7 +43,9 @@ async function call(input, tools = [], extra = {}) {
       instructions: "Follow the request exactly and be concise.",
       input,
       tools,
-      reasoning: { effort: "low" },
+      reasoning: {
+        effort: selected.thinkingLevels.includes("low") ? "low" : selected.defaultThinkingLevel,
+      },
       ...extra,
     }),
     signal: AbortSignal.timeout(180000),
@@ -58,8 +73,9 @@ const tools = [
 ];
 const prompt = {
   role: "user",
-  content:
-    "Call read_test_image once. Then read the four large digits in the returned image. Answer only those four digits.",
+  content: selected.inputModalities.includes("image")
+    ? "Call read_test_image once. Then read the four large digits in the returned image. Answer only those four digits."
+    : "Call read_test_image once, then answer only the four digits in its result.",
 };
 const first = await call([prompt], tools, {
   tool_choice: { type: "function", name: "read_test_image" },
@@ -84,44 +100,49 @@ const second = await call(
     {
       type: "function_call_output",
       call_id: calls[0].call_id,
-      output: [
-        { type: "input_image", image_url: `data:image/png;base64,${image.toString("base64")}` },
-      ],
+      output: selected.inputModalities.includes("image")
+        ? [{ type: "input_image", image_url: `data:image/png;base64,${image.toString("base64")}` }]
+        : "7392",
     },
   ],
   tools,
   { tool_choice: "none" },
 );
 assert.equal(text(second).trim(), "7392");
-const search = await call(
-  [
-    {
-      role: "user",
-      content:
-        "Use web search to find the current latest stable Node.js release from nodejs.org. Cite its URL in one sentence. Do not answer from memory.",
-    },
-  ],
-  [{ type: "web_search" }],
-);
-const searchCalls = search.output.filter((x) => x.type === "web_search_call");
-assert(searchCalls.length > 0, "No actual hosted search call occurred");
-const fast = await call([{ role: "user", content: "Reply exactly FAST_MODE_OK." }], [], {
-  reasoning: { effort: "medium" },
-  service_tier: "fast",
-});
-assert.equal(text(fast).trim(), "FAST_MODE_OK");
+const search = selected.hostedTools.includes("web_search")
+  ? await call(
+      [
+        {
+          role: "user",
+          content:
+            "Use web search to find the current latest stable Node.js release from nodejs.org. Cite its URL in one sentence. Do not answer from memory.",
+        },
+      ],
+      [{ type: "web_search" }],
+    )
+  : null;
+const searchCalls = (search?.output ?? []).filter((x) => x.type === "web_search_call");
+assert(!search || searchCalls.length > 0, "No actual hosted search call occurred");
+const fast = selected.fastModeAvailable
+  ? await call([{ role: "user", content: "Reply exactly FAST_MODE_OK." }], [], {
+      reasoning: { effort: "medium" },
+      service_tier: "fast",
+    })
+  : null;
+if (fast) assert.equal(text(fast).trim(), "FAST_MODE_OK");
 const report = {
   checkedAt: new Date().toISOString(),
   model,
+  catalogRevision: createHash("sha256").update(JSON.stringify(catalog)).digest("hex"),
   functionCalling: true,
-  toolResultVision: true,
+  toolResultVision: selected.inputModalities.includes("image"),
   imageBytes: image.length,
   imageSha256: createHash("sha256").update(image).digest("hex"),
   visionAnswerCorrect: true,
   hostedSearchCalls: searchCalls.length,
-  fastRequestAccepted: true,
-  fastResponseServiceTier: fast.service_tier ?? null,
-  usage: [first, second, search, fast].map((r) => ({
+  fastRequestAccepted: fast !== null,
+  fastResponseServiceTier: fast?.service_tier ?? null,
+  usage: [first, second, search, fast].filter(Boolean).map((r) => ({
     input: r.usage?.input_tokens,
     output: r.usage?.output_tokens,
   })),

@@ -1,59 +1,26 @@
-import { REVIEWED_MODELS } from "@pi-cloud/protocol";
+import { catalogModel } from "./runtime-model-catalog.ts";
+import type { CatalogModel } from "@pi-cloud/protocol";
 import type { Database } from "@pi-cloud/database";
-import type {
-  ProviderModelSelection,
-  SessionModelSelection,
-  TurnThinkingLevel,
-} from "@pi-cloud/protocol";
+import type { ProviderModelSelection, SessionModelSelection } from "@pi-cloud/protocol";
 import type { Transaction } from "kysely";
 
-export const SUPPORTED_MODEL_CATALOG = Object.freeze(
-  REVIEWED_MODELS.map((model) => {
-    const common = {
-      displayName: model.displayName,
-      thinkingLevels: [...model.thinkingLevels] as TurnThinkingLevel[],
-      defaultThinkingLevel: model.defaultThinkingLevel,
-    };
-    return model.provider === "deepseek"
-      ? {
-          ...common,
-          provider: model.provider,
-          modelId: model.modelId,
-          fastModeAvailable: false as const,
-        }
-      : {
-          ...common,
-          provider: model.provider,
-          modelId: model.modelId,
-          fastModeAvailable: true as const,
-        };
-  }),
-);
-export function supportedModel(
-  selection: ProviderModelSelection,
-): (typeof SUPPORTED_MODEL_CATALOG)[number] | undefined {
-  return SUPPORTED_MODEL_CATALOG.find(
-    (model) => model.provider === selection.provider && model.modelId === selection.modelId,
-  );
+export function supportedModel(selection: ProviderModelSelection): CatalogModel | undefined {
+  const model = catalogModel(selection.provider, selection.modelId);
+  return model?.visible ? model : undefined;
 }
 
 export function supportedModelSelection(
   provider: string,
   modelId: string,
 ): ProviderModelSelection | undefined {
-  const model = SUPPORTED_MODEL_CATALOG.find(
-    (candidate) => candidate.provider === provider && candidate.modelId === modelId,
-  );
-  if (model === undefined) return undefined;
-  if (model.provider === "deepseek") {
-    return { provider: model.provider, modelId: model.modelId };
-  }
-  return { provider: model.provider, modelId: model.modelId };
+  // Reading an existing selection remains possible after catalog withdrawal.
+  if (provider !== "deepseek" && provider !== "openai-codex") return undefined;
+  return { provider, modelId };
 }
 
 export function supportedSessionModelSelection(
   selection: SessionModelSelection,
-): (typeof SUPPORTED_MODEL_CATALOG)[number] | undefined {
+): CatalogModel | undefined {
   const model = supportedModel(selection);
   if (
     model === undefined ||

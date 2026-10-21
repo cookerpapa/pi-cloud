@@ -1,3 +1,4 @@
+import { fixtureModelRuntime } from "../../../scripts/lib/test-model-catalog.mjs";
 import { describe, expect, it } from "vitest";
 import {
   PiCloudWireProtocolError,
@@ -54,6 +55,7 @@ function executionIdentity() {
 
 function modelSnapshot() {
   return {
+    runtime: fixtureModelRuntime("pi-cloud-fake", "pi-cloud-fake"),
     profileId: "profile-1",
     provider: "pi-cloud-fake",
     modelId: "pi-cloud-fake",

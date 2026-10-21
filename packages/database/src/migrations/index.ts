@@ -378,6 +378,7 @@ export const migrationProvider: MigrationProvider = {
       "193_supervisor_native_caller": supervisorNativeCaller,
       "194_upload_lifetimes": uploadLifetimes,
       "195_gpt61_sol_selection": gpt61SolSelection,
+      "196_model_runtime_snapshot": modelRuntimeSnapshot,
     };
   },
 };
@@ -399,3 +400,5 @@ import * as unboundedAgentWork from "./192_unbounded_agent_work.ts";
 import * as supervisorNativeCaller from "./193_supervisor_native_caller.ts";
 import * as uploadLifetimes from "./194_upload_lifetimes.ts";
 import * as gpt61SolSelection from "./195_gpt61_sol_selection.ts";
+
+import * as modelRuntimeSnapshot from "./196_model_runtime_snapshot.ts";

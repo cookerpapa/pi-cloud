@@ -1,5 +1,7 @@
 # Matched release procedure
 
+Compatible provider images and model catalogs use the [component release procedure](COMPONENT_RELEASE.md). The initial ADR-0267 schema 196 / frozen Worker model contract requires this matched procedure once. Later narrow releases retain unrelated images and running environments.
+
 This maintained procedure replaces the temporary sequencing and fixture wrappers
 used in the October 7 release. It upgrades an **already installed** self-hosted
 cluster. Fresh-machine installation is a separate acceptance item. It does not

@@ -1,5 +1,9 @@
 import { resourceLimit, minimumResourceLimit } from "@pi-cloud/domain";
-import { reviewedModel, type ReviewedModel } from "@pi-cloud/protocol";
+import {
+  assertModelAdapter,
+  parseModelRuntimeSnapshot,
+  type ModelRuntimeSnapshot,
+} from "@pi-cloud/protocol";
 import {
   MODEL_SAMPLING_ATTEMPT_HEADER,
   MODEL_STEP_SEQUENCE_HEADER,
@@ -30,12 +34,12 @@ const MAX_DECOMPRESSED_REQUEST_BYTES = 128 * 1_024 * 1_024;
 const MAX_RESPONSE_BYTES = 64 * 1_024 * 1_024;
 
 type SupportedModel =
-  | (Extract<ReviewedModel, { provider: "deepseek" }> & {
+  | (ModelRuntimeSnapshot & { provider: "deepseek"; modelId: string } & {
       requestPath: typeof PROVIDER_RESPONSES_PATH;
       providerPath: typeof PROVIDER_RESPONSES_PATH;
       baseUrlPath: "/v1";
     })
-  | (Extract<ReviewedModel, { provider: "openai-codex" }> & {
+  | (ModelRuntimeSnapshot & { provider: "openai-codex"; modelId: string } & {
       requestPath: typeof CODEX_RESPONSES_PATH;
       providerPath: typeof PROVIDER_RESPONSES_PATH;
       baseUrlPath: "";
@@ -282,18 +286,26 @@ async function writeChunk(
   if (!response.write(chunk)) await once(response, "drain", { signal });
 }
 
-function supportedModel(provider: string, modelId: string): SupportedModel | undefined {
-  const model = reviewedModel(provider, modelId);
-  if (!model) return undefined;
+function supportedModel(
+  provider: string,
+  modelId: string,
+  snapshot: unknown,
+): SupportedModel | undefined {
+  if (provider !== "deepseek" && provider !== "openai-codex") return undefined;
+  const runtime = parseModelRuntimeSnapshot(snapshot);
+  assertModelAdapter(provider, runtime);
+  const model = { ...runtime, provider, modelId };
   return model.provider === "deepseek"
     ? {
         ...model,
+        provider: "deepseek" as const,
         requestPath: PROVIDER_RESPONSES_PATH,
         providerPath: PROVIDER_RESPONSES_PATH,
         baseUrlPath: "/v1",
       }
     : {
         ...model,
+        provider: "openai-codex" as const,
         requestPath: CODEX_RESPONSES_PATH,
         providerPath: PROVIDER_RESPONSES_PATH,
         baseUrlPath: "",
@@ -487,16 +499,25 @@ export class TenantModelGateway {
     if (!this.#started) {
       throw new TenantModelGatewayError("gateway_not_started", "Model Gateway is not listening");
     }
-    const model = supportedModel(command.payload.model.provider, command.payload.model.modelId);
+    const model = supportedModel(
+      command.payload.model.provider,
+      command.payload.model.modelId,
+      command.payload.model.runtime,
+    );
     if (model === undefined) {
       throw new TenantModelGatewayError("unsupported_model", "Accepted model is unsupported");
     }
-    if (command.payload.model.serviceTier === "fast" && model.provider !== "openai-codex") {
+    if (command.payload.model.serviceTier === "fast" && !model.fastModeAvailable) {
       throw new TenantModelGatewayError(
         "unsupported_service_tier",
         "Accepted model does not support Fast mode",
       );
     }
+    if (!model.thinkingLevels.includes(command.payload.model.thinkingLevel))
+      throw new TenantModelGatewayError(
+        "unsupported_model",
+        "Thinking level is outside the accepted model snapshot",
+      );
     const random = this.#randomBytes(32);
     if (!Buffer.isBuffer(random) || random.length !== 32) {
       throw new TenantModelGatewayError(

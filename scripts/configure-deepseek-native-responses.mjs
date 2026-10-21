@@ -4,13 +4,18 @@ import { chmod, chown, lstat, open, readFile, rename, rm } from "node:fs/promise
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMap, isSeq, parseDocument } from "yaml";
-import { REVIEWED_MODELS } from "../packages/protocol/src/model-catalog.ts";
+import { parseModelCatalogConfiguration } from "../packages/protocol/src/model-catalog.ts";
+const { models } = parseModelCatalogConfiguration(
+  JSON.parse(
+    await readFile(
+      new URL("../deploy/helm/pi-cloud-platform/files/model-catalog.json", import.meta.url),
+      "utf8",
+    ),
+  ),
+);
 
 const deepSeekModels = new Map(
-  REVIEWED_MODELS.filter((model) => model.provider === "deepseek").map((model) => [
-    model.modelId,
-    model,
-  ]),
+  models.filter((model) => model.provider === "deepseek").map((model) => [model.modelId, model]),
 );
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));

@@ -450,7 +450,7 @@ describe("control-plane public API schemas", () => {
         modelId: "gpt-6.1-sol",
       }),
     ).toEqual({ provider: "openai-codex", modelId: "gpt-6.1-sol" });
-    for (const modelId of ["gpt-6-sol", "gpt-6.1-luna", "gpt-6.1-astra"]) {
+    for (const modelId of ["", "bad model", "bad\\model"]) {
       expect(() =>
         parseReplaceModelConfigurationRequest({ provider: "openai-codex", modelId }),
       ).toThrow(ControlPlaneApiValidationError);
@@ -474,6 +474,9 @@ describe("control-plane public API schemas", () => {
     ).toThrow(ControlPlaneApiValidationError);
     expect(
       parseModelCatalogResource({
+        revision: "a".repeat(64),
+        reloadFailed: false,
+        defaultModel: { provider: "openai-codex", modelId: "gpt-6.1-sol" },
         models: [
           {
             provider: "openai-codex",

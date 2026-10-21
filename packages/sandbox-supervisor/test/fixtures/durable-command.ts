@@ -1,3 +1,4 @@
+import { fixtureModelRuntime } from "../../../../scripts/lib/test-model-catalog.mjs";
 import {
   createExecutionReference,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
@@ -45,6 +46,7 @@ export const command: ExecuteTurnCommandMessage = {
     workingDirectory: "/workspace",
     toolCapabilities: ["read", "write", "edit", "bash"],
     model: {
+      runtime: fixtureModelRuntime("pi-cloud-fake", "pi-cloud-fake"),
       profileId: "profile-1",
       provider: "pi-cloud-fake",
       modelId: "pi-cloud-fake",

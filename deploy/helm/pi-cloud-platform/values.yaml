@@ -268,3 +268,6 @@ imageAttachments:
   region: us-east-1
   bucket: pi-cloud-session-images
   credentialsSecretKey: session-image-s3-credentials.json
+
+# Optional complete reviewed catalog JSON. Empty uses the chart-owned seed.
+modelCatalogJson: ""

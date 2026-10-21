@@ -1,3 +1,4 @@
+import { fixtureModelRuntime } from "../../../scripts/lib/test-model-catalog.mjs";
 import { expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -223,6 +224,10 @@ it.each([false, true])(
       piSession: { id: f.scope.piSessionId, conversationId: 1, writerId: f.scope.writerId },
     });
     Object.assign(command.payload.model, { provider: "openai-codex", modelId: "gpt-6-luna" });
+    command.payload.model.runtime = fixtureModelRuntime(
+      command.payload.model.provider,
+      command.payload.model.modelId,
+    );
     try {
       const work = runner.run(
         command,

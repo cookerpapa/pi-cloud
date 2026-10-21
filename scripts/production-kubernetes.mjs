@@ -56,6 +56,43 @@ async function values() {
     template,
     images: runtimeImages(),
   });
+  const existing = JSON.parse(
+    execFileSync(
+      helm,
+      [
+        "list",
+        "--kubeconfig",
+        kubeconfig,
+        "--namespace",
+        namespace,
+        "--filter",
+        "^pi-cloud$",
+        "--output",
+        "json",
+      ],
+      { encoding: "utf8" },
+    ),
+  );
+  if (existing.length) {
+    const installed = JSON.parse(
+      execFileSync(
+        helm,
+        [
+          "get",
+          "values",
+          "pi-cloud",
+          "--kubeconfig",
+          kubeconfig,
+          "--namespace",
+          namespace,
+          "--output",
+          "json",
+        ],
+        { encoding: "utf8" },
+      ),
+    );
+    if (installed?.modelCatalogJson) config.platform.modelCatalogJson = installed.modelCatalogJson;
+  }
   for (const key of ["infrastructure", "platform"]) {
     const path = resolve(directory, `${key}.yaml`);
     writeFileSync(path, stringify(config[key]), { mode: 0o600 });
@@ -97,8 +134,14 @@ async function build() {
     relay: ["provider-egress-relay", "packages/provider-egress-relay/Dockerfile"],
     provider: ["cli-proxy-api", "deploy/provider-gateway/Dockerfile"],
   };
-  const images = {};
+  const selected = args[0];
+  if (selected !== undefined && selected !== "provider")
+    throw new Error("Unsupported build component");
+  const images = selected
+    ? JSON.parse(readFileSync(resolve(runtimeDirectory, "k3s/images.json"), "utf8"))
+    : {};
   for (const [key, [name, file]] of Object.entries(definitions)) {
+    if (selected && key !== selected) continue;
     images[key] = `pi-cloud/${name}:${version}`;
     run(
       "docker",

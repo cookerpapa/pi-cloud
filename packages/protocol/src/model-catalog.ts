@@ -1,80 +1,113 @@
-/** Reviewed routes only. Transport adapters remain provider-specific. */
-const GPT = {
-  visible: true,
-  provider: "openai-codex",
-  api: "openai-codex-responses",
-  thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"],
-  fastModeAvailable: true,
-  contextWindow: 1_000_000,
-  autoCompactTokenLimit: 900_000,
-  maxTokens: 65_536,
-  inputModalities: ["text", "image"],
-  hostedTools: ["web_search"],
-} as const;
-const DEEPSEEK = {
-  visible: true,
-  provider: "deepseek",
-  api: "openai-responses",
-  thinkingLevels: ["off", "low", "medium", "high", "max"],
-  fastModeAvailable: false,
-  contextWindow: 128_000,
-  autoCompactTokenLimit: 111_616,
-  maxTokens: 8_192,
-  inputModalities: ["text"],
-  hostedTools: ["web_search"],
-} as const;
+import { Type, type Static } from "typebox";
+import { Value } from "typebox/value";
 
-export const REVIEWED_MODELS = [
+export const ModelIdSchema = Type.String({
+  minLength: 1,
+  maxLength: 128,
+  pattern: "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+});
+const ThinkingSchema = Type.Union([
+  Type.Literal("off"),
+  Type.Literal("minimal"),
+  Type.Literal("low"),
+  Type.Literal("medium"),
+  Type.Literal("high"),
+  Type.Literal("xhigh"),
+  Type.Literal("max"),
+]);
+const ProviderSchema = Type.Union([Type.Literal("openai-codex"), Type.Literal("deepseek")]);
+const RuntimeProperties = {
+  api: Type.Union([Type.Literal("openai-codex-responses"), Type.Literal("openai-responses")]),
+  thinkingLevels: Type.Array(ThinkingSchema, { minItems: 1, uniqueItems: true }),
+  defaultThinkingLevel: ThinkingSchema,
+  fastModeAvailable: Type.Boolean(),
+  contextWindow: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+  autoCompactTokenLimit: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+  maxTokens: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+  inputModalities: Type.Array(Type.Union([Type.Literal("text"), Type.Literal("image")]), {
+    minItems: 1,
+    uniqueItems: true,
+  }),
+  hostedTools: Type.Array(Type.Literal("web_search"), { uniqueItems: true }),
+};
+export const ModelRuntimeSnapshotSchema = Type.Object(
   {
-    ...GPT,
-    modelId: "gpt-6-astra",
-    displayName: "GPT-6 Astra",
-    thinkingLevels: ["low", "medium", "high", "xhigh", "max"],
-    defaultThinkingLevel: "medium",
+    catalogRevision: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+    ...RuntimeProperties,
   },
+  { additionalProperties: false },
+);
+export type ModelRuntimeSnapshot = Static<typeof ModelRuntimeSnapshotSchema>;
+export const CatalogModelSchema = Type.Object(
   {
-    ...GPT,
-    modelId: "gpt-6.1-sol",
-    displayName: "GPT-6.1 Sol",
-    thinkingLevels: ["low", "medium", "high", "xhigh", "max"],
-    defaultThinkingLevel: "medium",
+    provider: ProviderSchema,
+    modelId: ModelIdSchema,
+    displayName: Type.String({ minLength: 1, maxLength: 128 }),
+    visible: Type.Boolean(),
+    ...RuntimeProperties,
   },
-  { ...GPT, modelId: "gpt-6-luna", displayName: "GPT-6 Luna", defaultThinkingLevel: "medium" },
+  { additionalProperties: false },
+);
+export type CatalogModel = Static<typeof CatalogModelSchema>;
+export const ModelCatalogConfigurationSchema = Type.Object(
   {
-    ...DEEPSEEK,
-    modelId: "deepseek-v4-flash",
-    displayName: "DeepSeek V4.1 Flash",
-    inputModalities: ["text", "image"],
-    // Owner-approved declaration; Responses currently accepts but ignores search.
-    // Only actual upstream search events count as executed hosted Tools.
-    hostedTools: ["web_search"],
-    defaultThinkingLevel: "off",
+    formatVersion: Type.Literal(1),
+    defaultModel: Type.Object(
+      { provider: ProviderSchema, modelId: ModelIdSchema },
+      { additionalProperties: false },
+    ),
+    models: Type.Array(CatalogModelSchema, { minItems: 1 }),
   },
-  {
-    ...DEEPSEEK,
-    modelId: "deepseek-v4-pro",
-    displayName: "DeepSeek V4 Pro",
-    defaultThinkingLevel: "off",
-    visible: false,
-  },
-] as const;
-for (const model of REVIEWED_MODELS) {
-  Object.freeze(model.thinkingLevels);
-  Object.freeze(model.inputModalities);
-  Object.freeze(model.hostedTools);
-  Object.freeze(model);
+  { additionalProperties: false },
+);
+export type ModelCatalogConfiguration = Static<typeof ModelCatalogConfigurationSchema>;
+
+function assertRuntime(value: Omit<ModelRuntimeSnapshot, "catalogRevision">): void {
+  if (
+    !value.thinkingLevels.includes(value.defaultThinkingLevel) ||
+    !value.inputModalities.includes("text") ||
+    value.autoCompactTokenLimit + value.maxTokens > value.contextWindow
+  ) {
+    throw new TypeError("Invalid model reasoning, modalities or context budget");
+  }
 }
-Object.freeze(REVIEWED_MODELS);
-export type ReviewedModel = (typeof REVIEWED_MODELS)[number];
-export const DEFAULT_NEW_CONVERSATION_MODEL = {
-  provider: "openai-codex",
-  modelId: "gpt-6.1-sol",
-} as const;
-export const reviewedModel = (provider: string, modelId: string): ReviewedModel | undefined =>
-  REVIEWED_MODELS.find((model) => model.provider === provider && model.modelId === modelId);
-export const DEEPSEEK_MODEL_IDS = REVIEWED_MODELS.filter(
-  (m): m is Extract<ReviewedModel, { provider: "deepseek" }> => m.provider === "deepseek",
-).map((m) => m.modelId);
-export const GPT_MODEL_IDS = REVIEWED_MODELS.filter(
-  (m): m is Extract<ReviewedModel, { provider: "openai-codex" }> => m.provider === "openai-codex",
-).map((m) => m.modelId);
+export function assertModelAdapter(
+  provider: string,
+  value: Omit<ModelRuntimeSnapshot, "catalogRevision">,
+): void {
+  assertRuntime(value);
+  if (
+    !(provider === "openai-codex" && value.api === "openai-codex-responses") &&
+    !(provider === "deepseek" && value.api === "openai-responses" && !value.fastModeAvailable)
+  ) {
+    throw new TypeError("Unsupported model provider adapter");
+  }
+}
+export function parseModelRuntimeSnapshot(value: unknown): ModelRuntimeSnapshot {
+  if (!Value.Check(ModelRuntimeSnapshotSchema, value))
+    throw new TypeError("Invalid model runtime snapshot");
+  assertRuntime(value);
+  return structuredClone(value);
+}
+export function parseModelCatalogConfiguration(value: unknown): ModelCatalogConfiguration {
+  if (!Value.Check(ModelCatalogConfigurationSchema, value))
+    throw new TypeError("Invalid model catalog configuration");
+  const seen = new Set<string>();
+  for (const model of value.models) {
+    assertModelAdapter(model.provider, model);
+    const key = `${model.provider}:${model.modelId}`;
+    if (seen.has(key)) throw new TypeError("Duplicate model catalog identity");
+    seen.add(key);
+  }
+  if (
+    !value.models.some(
+      (m) =>
+        m.visible &&
+        m.provider === value.defaultModel.provider &&
+        m.modelId === value.defaultModel.modelId,
+    )
+  ) {
+    throw new TypeError("The default model must be visible in the catalog");
+  }
+  return structuredClone(value);
+}

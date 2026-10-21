@@ -1,3 +1,4 @@
+import { parseModelRuntimeSnapshot } from "@pi-cloud/protocol";
 import { recordEnvironmentFailure } from "./environment-failure.ts";
 import { readDurableRunUsage } from "@pi-cloud/pi-session-postgres/durable";
 import { resourceLimit } from "@pi-cloud/domain";
@@ -66,6 +67,7 @@ export type TurnExecutionRequest = {
     profileId: string;
     provider: string;
     modelId: string;
+    runtime: import("@pi-cloud/protocol").ModelRuntimeSnapshot | null;
     thinkingLevel: string;
     serviceTier: "fast" | null;
     credentialBindingId: string;
@@ -703,6 +705,7 @@ export class RunExecutor {
           "run.model_profile_id as modelProfileId",
           "run.provider as provider",
           "run.model_id as modelId",
+          "run.model_runtime_snapshot as modelRuntimeSnapshot",
           "run.thinking_level as thinkingLevel",
           "run.service_tier as serviceTier",
           "run.credential_binding_id as credentialBindingId",
@@ -864,6 +867,10 @@ export class RunExecutor {
           profileId: row.modelProfileId,
           provider: row.provider,
           modelId: row.modelId,
+          runtime:
+            row.modelRuntimeSnapshot === null
+              ? null
+              : parseModelRuntimeSnapshot(row.modelRuntimeSnapshot),
           thinkingLevel: row.thinkingLevel,
           serviceTier: row.serviceTier,
           credentialBindingId: row.credentialBindingId,

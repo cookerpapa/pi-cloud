@@ -1,3 +1,9 @@
+import {
+  catalogModel,
+  currentModelCatalog,
+  freezeModelRuntime,
+  runtimeModelCatalog,
+} from "./runtime-model-catalog.ts";
 import { requestInputReturn } from "./stopped-inputs.ts";
 import { resourceLimit } from "@pi-cloud/domain";
 import { createHash, randomUUID } from "node:crypto";
@@ -40,16 +46,13 @@ import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
   DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
   parseCloudToolCapabilitySnapshot,
-  reviewedModel,
   validMachineDirectory,
   assertUserInputBudget,
 } from "@pi-cloud/protocol";
 import { sql, type Kysely, type Transaction, type Selectable } from "kysely";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
 import {
-  SUPPORTED_MODEL_CATALOG,
   ensureSelectableModelProfile,
-  supportedModel,
   supportedModelSelection,
   supportedSessionModelSelection,
 } from "./model-profile-catalog.ts";
@@ -640,19 +643,26 @@ export class ControlPlaneStore {
         "Tenant model catalog is unavailable",
       );
     }
-    const visibleModels = SUPPORTED_MODEL_CATALOG.filter(
-      (model) => reviewedModel(model.provider, model.modelId)?.visible,
-    );
+    const catalog = currentModelCatalog();
+    const visibleModels = catalog.configuration.models.filter((model) => model.visible);
     const hasConfiguredDefault = visibleModels.some(
       (model) => model.provider === policy.provider && model.modelId === policy.modelId,
     );
     return {
+      revision: catalog.revision,
+      defaultModel: { ...catalog.configuration.defaultModel },
+      reloadFailed: runtimeModelCatalog().status().reloadFailed,
       models: visibleModels.map((model, index) => ({
-        ...model,
+        provider: model.provider,
+        modelId: model.modelId,
+        displayName: model.displayName,
+        thinkingLevels: [...model.thinkingLevels],
+        defaultThinkingLevel: model.defaultThinkingLevel,
+        fastModeAvailable: model.provider === "deepseek" ? false : model.fastModeAvailable,
         default:
           (model.provider === policy.provider && model.modelId === policy.modelId) ||
           (!hasConfiguredDefault && index === 0),
-      })),
+      })) as ModelCatalogResource["models"],
     };
   }
 
@@ -1619,13 +1629,7 @@ export class ControlPlaneStore {
       } catch (error) {
         throw new ControlPlaneStoreError("invalid_request", (error as Error).message);
       }
-      if (
-        uploads.some((file) => file.image) &&
-        !(
-          reviewedModel(model.provider, model.modelId)?.inputModalities as
-            readonly string[] | undefined
-        )?.includes("image")
-      )
+      if (uploads.some((file) => file.image) && !model.runtime?.inputModalities.includes("image"))
         throw new ControlPlaneStoreError(
           "invalid_request",
           "The selected model does not support image input",
@@ -1649,6 +1653,8 @@ export class ControlPlaneStore {
           model_profile_id: model.profileId,
           provider: model.provider,
           model_id: model.modelId,
+          model_runtime_snapshot:
+            model.runtime === null ? null : sql`${JSON.stringify(model.runtime)}::jsonb`,
           thinking_level: model.thinkingLevel,
           service_tier: model.serviceTier,
           credential_binding_id: model.credentialBindingId,
@@ -2054,9 +2060,14 @@ export class ControlPlaneStore {
     };
     try {
       const resolved = resolveTurnModel(profile, requestedThinkingLevel);
-      const catalogModel = supportedModelSelection(resolved.provider, resolved.modelId);
-      const supported = catalogModel === undefined ? undefined : supportedModel(catalogModel);
-      if (supported !== undefined && !supported.thinkingLevels.includes(resolved.thinkingLevel)) {
+      const catalog = currentModelCatalog();
+      const supported = catalogModel(resolved.provider, resolved.modelId, catalog);
+      if (resolved.provider !== "pi-cloud-fake" && (!supported || !supported.visible)) {
+        throw new DomainModelValidationError(
+          "The selected model is unavailable in the current catalog",
+        );
+      }
+      if (supported && !supported.thinkingLevels.includes(resolved.thinkingLevel)) {
         throw new DomainModelValidationError(
           `Thinking level ${resolved.thinkingLevel} is not supported by ${resolved.modelId}`,
         );
@@ -2064,7 +2075,11 @@ export class ControlPlaneStore {
       if (serviceTier === "fast" && supported?.fastModeAvailable !== true) {
         throw new DomainModelValidationError(`Fast mode is not supported by ${resolved.modelId}`);
       }
-      return { ...resolved, serviceTier };
+      return {
+        ...resolved,
+        serviceTier,
+        runtime: supported ? freezeModelRuntime(supported, catalog) : null,
+      };
     } catch (error) {
       if (error instanceof DomainModelValidationError) {
         throw new ControlPlaneStoreError(
@@ -2111,8 +2126,8 @@ export class ControlPlaneStore {
       throw new ControlPlaneStoreError("not_found", "Conversation was not found");
     }
     const selection = supportedModelSelection(row.provider, row.modelId);
-    const catalogModel = selection === undefined ? undefined : supportedModel(selection);
-    if (!row.enabled || row.bindingStatus !== "active" || catalogModel === undefined) {
+    const entry = catalogModel(row.provider, row.modelId);
+    if (!row.enabled || row.bindingStatus !== "active" || selection === undefined) {
       throw new ControlPlaneStoreError(
         "control_plane_misconfigured",
         "Conversation model is unavailable",
@@ -2121,9 +2136,9 @@ export class ControlPlaneStore {
     return {
       sessionId: row.sessionId,
       modelProfileId: row.modelProfileId,
-      provider: catalogModel.provider,
-      modelId: catalogModel.modelId,
-      displayName: catalogModel.displayName,
+      provider: selection.provider,
+      modelId: selection.modelId,
+      displayName: entry?.displayName ?? row.modelId,
       thinkingLevel: row.thinkingLevel,
       fastMode: row.serviceTier === "fast",
     } as SessionModelResource;

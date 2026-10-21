@@ -157,6 +157,9 @@ ADR-0247 Session ownership and execution-topic v16 / boot reply v3.
 
 Read the documents in this order:
 
+1. [ADR-0267](0267-scoped-releases-and-model-catalog.md) — component releases,
+   validated runtime model catalogs and frozen Run capabilities.
+
 1. [ADR-0247](0247-session-work-and-tool-dispatch.md) — one cloud root work item,
    native descendants, one Session writer and unified Tool dispatch/replies.
 

@@ -1,3 +1,4 @@
+import { runtimeModelCatalog } from "./runtime-model-catalog.ts";
 import { SessionPublicationService } from "./session-publication-service.ts";
 import { reconcileUploadPins } from "./upload-input-pins.ts";
 import { SubagentController } from "./subagent-controller.ts";
@@ -82,6 +83,7 @@ async function verifyBootstrap(database: ReturnType<typeof createDatabase>): Pro
 
 export async function startControlPlane(): Promise<void> {
   const config = await loadProductionControlPlaneConfig();
+  runtimeModelCatalog();
   let ownedObservability: Awaited<ReturnType<typeof startServiceObservability>> | undefined;
   let ownedDatabase: ReturnType<typeof createDatabase> | undefined;
   let ownedMaintenanceDatabase: ReturnType<typeof createDatabase> | undefined;

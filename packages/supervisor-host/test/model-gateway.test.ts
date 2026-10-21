@@ -1,3 +1,4 @@
+import { fixtureModelRuntime } from "../../../scripts/lib/test-model-catalog.mjs";
 import {
   createExecutionReference,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
@@ -75,6 +76,7 @@ function command(
       workingDirectory: "/workspace",
       toolCapabilities: ["read", "write", "edit", "bash"],
       model: {
+        runtime: fixtureModelRuntime(provider, modelId),
         profileId: "10000000-0000-4000-8000-000000000011",
         provider,
         modelId,
@@ -98,6 +100,28 @@ function command(
 }
 
 const gateways: TenantModelGateway[] = [];
+
+it("uses a frozen capability snapshot for a model unknown to the Worker build", async () => {
+  const upstream = vi.fn<typeof fetch>(async () => new Response("ok"));
+  const gateway = createGateway(upstream);
+  await gateway.start();
+  const accepted = command("openai-codex", "gpt-6-luna");
+  accepted.payload.model.modelId = "future-model";
+  accepted.payload.model.runtime!.maxTokens = 32768;
+  const lease = gateway.issue(accepted);
+  accepted.payload.model.runtime!.maxTokens = 16384;
+  expect(lease.runtime.modelId).toBe("future-model");
+  expect(lease.runtime.maxTokens).toBe(32768);
+  const response = await fetch(`http://127.0.0.1:${gateway.listeningPort}/codex/responses`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${lease.runtime.capability}`, ...samplingHeaders() },
+    body: JSON.stringify({ model: "future-model", stream: true, input: [] }),
+  });
+  expect(response.status).toBe(200);
+  await response.text();
+  expect(upstream).toHaveBeenCalledOnce();
+  lease.release();
+});
 
 afterEach(async () => {
   vi.restoreAllMocks();

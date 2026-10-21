@@ -1,3 +1,4 @@
+import { ModelRuntimeSnapshotSchema } from "./model-catalog.ts";
 import { ResourceLimitSchema } from "./protocol-primitives.ts";
 import { MAX_AGENT_INPUT_CHARACTERS, assertUserInputBudget } from "./agent-input-budget.ts";
 import { Type, type Static } from "typebox";
@@ -80,6 +81,7 @@ const ModelThinkingLevelSchema = Type.Union([
 
 const TurnModelSnapshotSchema = Type.Object(
   {
+    runtime: Type.Union([ModelRuntimeSnapshotSchema, Type.Null()]),
     profileId: OpaqueIdSchema,
     provider: OpaqueIdSchema,
     modelId: OpaqueIdSchema,

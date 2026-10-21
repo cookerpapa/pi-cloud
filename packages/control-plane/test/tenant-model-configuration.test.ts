@@ -113,8 +113,12 @@ describe.sequential("tenant model configuration", () => {
       service.replace(identity, { provider: "openai-codex", modelId: "gpt-6.1-sol" }),
     ).resolves.toMatchObject({ routeVersion: 2 });
     await expect(
-      service.replace(identity, { provider: "deepseek", modelId: "deepseek-v4-pro" }),
+      service.replace(identity, { provider: "deepseek", modelId: "deepseek-v4-flash" }),
     ).resolves.toMatchObject({ provider: "deepseek", routeVersion: 3 });
+
+    await expect(
+      service.replace(identity, { provider: "deepseek", modelId: "deepseek-v4-pro" }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
 
     const bindings = await database
       .selectFrom("credential_bindings")
@@ -131,7 +135,7 @@ describe.sequential("tenant model configuration", () => {
       {
         provider: "deepseek",
         kind: "brokered",
-        route: "provider-gateway://deepseek/deepseek-v4-pro",
+        route: "provider-gateway://deepseek/deepseek-v4-flash",
       },
     ]);
     expect(JSON.stringify(bindings)).not.toMatch(/access_token|refresh_token|api[_-]?key/i);

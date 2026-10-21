@@ -1,3 +1,4 @@
+import { fixtureModelRuntime } from "../../../../scripts/lib/test-model-catalog.mjs";
 import {
   createRegistry,
   Harness,
@@ -147,6 +148,10 @@ export async function modelHttpFixture(
   command.payload.piSession.id = command.payload.sessionId;
   command.payload.model.provider = provider;
   command.payload.model.modelId = provider === "deepseek" ? "deepseek-v4-flash" : "gpt-6-luna";
+  command.payload.model.runtime = fixtureModelRuntime(
+    command.payload.model.provider,
+    command.payload.model.modelId,
+  );
   const lease = gateway.issue(command, owner.signal);
   const registry = new CloudModelRegistry();
   const model = registry.configure({

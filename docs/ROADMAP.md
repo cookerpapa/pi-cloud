@@ -1,5 +1,7 @@
 # Implementation roadmap
 
+The approved [ADR-0267](adr/0267-scoped-releases-and-model-catalog.md) slice introduces runtime model configuration, immutable Run snapshots and independent provider/catalog publication. Source verification and initial matched delivery are in progress.
+
 ## GPT-6.1 Sol catalog refresh
 
 - [x] Verify official model, reasoning, Responses capabilities and cache pricing;

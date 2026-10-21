@@ -49,10 +49,11 @@ import { ConversationTreeNavigator } from "/src/ConversationTreeNavigator.tsx";
 import { PiCloudApi, PiCloudApiError } from "/src/api.ts";
 import { I18nProvider } from "/src/i18n.tsx";
 import { copyMessageText } from "/src/MessageCopyButton.tsx";
-import { DEVELOPMENT_ENVIRONMENT_PROFILES, DEFAULT_NEW_CONVERSATION_MODEL,
+import { DEVELOPMENT_ENVIRONMENT_PROFILES,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE, DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
   DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256, parseInputQueueResource } from "@pi-cloud/protocol";
 import "/src/product.css";
+const DEFAULT_NEW_CONVERSATION_MODEL = {provider:"openai-codex",modelId:"gpt-6.1-sol"};
 
 const nativeRaf = window.requestAnimationFrame, nativeCancelRaf = window.cancelAnimationFrame;
 let frames = new Map(), frameId = 0;
@@ -85,7 +86,7 @@ window.uploadReceipts = [];
 window.copyFixtureText=copyMessageText;
 window.renderAdmin=()=>root.render(React.createElement(I18nProvider,{initialLanguage:'en-US'},React.createElement(AdminPage,{
   managementUrls:configuration.managementUrls,
-  api:{getCubeProxyConfiguration:()=>new Promise(()=>{}),getModelConfiguration:()=>new Promise(()=>{})},
+  api:{getCubeProxyConfiguration:async()=>({enabled:false,configured:false,revision:1}),getModelConfiguration:async()=>({mode:"deterministic",provider:"pi-cloud-fake",modelId:"pi-cloud-fake",configured:false,routeVersion:1,updatedAt:"2026-10-21T00:00:00Z"}),getModelCatalog:async()=>({revision:"a".repeat(64),reloadFailed:false,defaultModel:{provider:"openai-codex",modelId:"fixture-future"},models:[{provider:"openai-codex",modelId:"fixture-future",displayName:"Future model",default:true,thinkingLevels:["medium"],defaultThinkingLevel:"medium",fastModeAvailable:false}]})},
   identity:{displayName:'Fixture administrator',platformAdministrator:true},onLogout:()=>{}
 })));
 window.renderMarkdownLanguage=()=>root.render(React.createElement(I18nProvider,{initialLanguage:'en-US'},
@@ -227,7 +228,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
       return {workspaces:[{...project,sessionCount:0,lastActiveAt:new Date().toISOString()}],truncated:false};
     },
     listDevelopmentEnvironments:async()=>({environments:[],profiles:DEVELOPMENT_ENVIRONMENT_PROFILES,truncated:false}),
-    getModelCatalog:async()=>({models}),
+    getModelCatalog:async()=>({models,revision:"a".repeat(64),reloadFailed:false,defaultModel:DEFAULT_NEW_CONVERSATION_MODEL}),
     getConversationTree:async(sessionId,view)=>window.deferTrees
       ?new Promise(resolve=>window.treeRequests.push({view,resolve:label=>resolve(tree(label,sessionId))}))
       :history?tree('Initial tree',sessionId):{branches:[],delegatedSessions:[]},
@@ -889,6 +890,9 @@ try {
     );
     await page.evaluate("renderAdmin()");
     await page.waitFor("document.querySelector('.product-admin-page')");
+    await page.waitFor(
+      "Array.from(document.querySelectorAll('.product-admin-page option')).some(o=>o.textContent==='Future model')",
+    );
     const adminScroll = await page.evaluate(
       "document.querySelector('.product-admin-page').clientHeight===innerHeight",
     );

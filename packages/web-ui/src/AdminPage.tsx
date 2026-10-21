@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { REVIEWED_MODELS } from "@pi-cloud/protocol";
 import type {
   CubeProxyConfigurationResource,
   ModelConfigurationResource,
@@ -11,13 +10,6 @@ import { errorMessage } from "./ui-errors.ts";
 import { useI18n } from "./i18n.tsx";
 import { AccountMenu } from "./AccountMenu.tsx";
 import type { WebConfiguration } from "./web-configuration.ts";
-
-const MODEL_OPTIONS: readonly (ProviderModelSelection & { label: string })[] =
-  REVIEWED_MODELS.filter((model) => model.visible).map((model) =>
-    model.provider === "deepseek"
-      ? { provider: model.provider, modelId: model.modelId, label: model.displayName }
-      : { provider: model.provider, modelId: model.modelId, label: model.displayName },
-  );
 
 function selectionKey(selection: ProviderModelSelection): string {
   return `${selection.provider}:${selection.modelId}`;
@@ -44,10 +36,10 @@ export function AdminPage({
   const [modelConfiguration, setModelConfiguration] = useState<ModelConfigurationResource | null>(
     null,
   );
-  const [selectedModel, setSelectedModel] = useState<ProviderModelSelection>({
-    provider: "openai-codex",
-    modelId: REVIEWED_MODELS[0].modelId,
-  });
+  const [selectedModel, setSelectedModel] = useState<ProviderModelSelection | null>(null);
+  const [modelOptions, setModelOptions] = useState<(ProviderModelSelection & { label: string })[]>(
+    [],
+  );
   const [cubeProxyConfiguration, setCubeProxyConfiguration] =
     useState<CubeProxyConfigurationResource | null>(null);
   const [cubeProxyEnabled, setCubeProxyEnabled] = useState(false);
@@ -76,13 +68,21 @@ export function AdminPage({
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([api.getCubeProxyConfiguration(), api.getModelConfiguration()])
-      .then(([proxyConfiguration, model]) => {
+    void Promise.all([
+      api.getCubeProxyConfiguration(),
+      api.getModelConfiguration(),
+      api.getModelCatalog(),
+    ])
+      .then(([proxyConfiguration, model, catalog]) => {
         if (cancelled) return;
         setCubeProxyConfiguration(proxyConfiguration);
         setCubeProxyEnabled(proxyConfiguration.enabled);
         setCubeProxyUrl(proxyConfiguration.proxyUrl ?? "");
         setModelConfiguration(model);
+        setModelOptions(
+          catalog.models.map((m) => ({ ...plainSelection(m), label: m.displayName })),
+        );
+        setSelectedModel(catalog.defaultModel);
         if (model.mode === "real") {
           setSelectedModel(plainSelection(model));
         }
@@ -102,7 +102,7 @@ export function AdminPage({
   }, [api, t]);
 
   async function saveModelConfiguration(): Promise<void> {
-    if (modelConfiguration === null || settingsSaving !== null) return;
+    if (modelConfiguration === null || selectedModel === null || settingsSaving !== null) return;
     setSettingsSaving("model");
     setError(null);
     try {
@@ -174,23 +174,28 @@ export function AdminPage({
               <select
                 disabled={settingsSaving !== null}
                 onChange={(event) => {
-                  const selected = MODEL_OPTIONS.find(
+                  const selected = modelOptions.find(
                     (candidate) => selectionKey(candidate) === event.target.value,
                   );
                   if (selected !== undefined) {
                     setSelectedModel(plainSelection(selected));
                   }
                 }}
-                value={selectionKey(selectedModel)}
+                value={selectedModel === null ? "" : selectionKey(selectedModel)}
               >
-                {!MODEL_OPTIONS.some(
-                  (option) => selectionKey(option) === selectionKey(selectedModel),
-                ) && (
-                  <option disabled hidden value={selectionKey(selectedModel)}>
-                    {selectedModel.modelId}
-                  </option>
-                )}
-                {MODEL_OPTIONS.map((option) => (
+                {selectedModel !== null &&
+                  !modelOptions.some(
+                    (option) => selectionKey(option) === selectionKey(selectedModel),
+                  ) && (
+                    <option
+                      disabled
+                      hidden
+                      value={selectedModel === null ? "" : selectionKey(selectedModel)}
+                    >
+                      {selectedModel.modelId}
+                    </option>
+                  )}
+                {modelOptions.map((option) => (
                   <option key={selectionKey(option)} value={selectionKey(option)}>
                     {option.label}
                   </option>
@@ -208,7 +213,9 @@ export function AdminPage({
               </small>
               <button
                 className="product-primary-button"
-                disabled={settingsSaving !== null || modelConfiguration === null}
+                disabled={
+                  settingsSaving !== null || modelConfiguration === null || selectedModel === null
+                }
                 onClick={() => void saveModelConfiguration()}
                 type="button"
               >

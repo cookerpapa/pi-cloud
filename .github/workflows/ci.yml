@@ -13,7 +13,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  impact:
+    name: Classify changed runtime inputs
+    runs-on: ubuntu-latest
+    outputs:
+      scope: ${{ steps.impact.outputs.scope }}
+      matrix: ${{ steps.impact.outputs.matrix }}
+      buildImages: ${{ steps.impact.outputs.buildImages }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: impact
+        run: node scripts/release-impact.mjs
+        env:
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CI_HEAD_SHA: ${{ github.sha }}
+
   quality:
+    needs: impact
     name: Format, types, tests, and deployment checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -50,10 +69,12 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Read pinned Cube source revision
+        if: needs.impact.outputs.scope == 'full'
         id: cube-source
         run: node -e 'console.log("commit=" + require("./deploy/cubesandbox/runtime-build.json").upstreamCommit)' >> "$GITHUB_OUTPUT"
 
       - name: Check out pinned Cube source for native contracts
+        if: needs.impact.outputs.scope == 'full'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: TencentCloud/CubeSandbox
@@ -62,13 +83,27 @@ jobs:
           persist-credentials: false
 
       - name: Run reproducible local CI checks
+        if: needs.impact.outputs.scope == 'full'
         run: npm run ci
         env:
           PI_CLOUD_CUBESANDBOX_REPOSITORY: ${{ github.workspace }}/.cache/cubesandbox-source
           PI_CLOUD_PI_SESSION_CONFORMANCE_DATABASE_URL: postgresql://pi_conformance:pi_conformance@127.0.0.1:5432/pi_conformance
           PI_CLOUD_POSTGRES_INTEGRATION_URL: postgresql://pi_conformance:pi_conformance@127.0.0.1:5432/pi_conformance
 
+      - name: Run provider or catalog contracts
+        if: needs.impact.outputs.scope == 'provider' || needs.impact.outputs.scope == 'catalog'
+        run: npm run dependencies:harden && npm run format:check && npm run docs:check && npm run release:check -- "$RELEASE_SCOPE"
+        env:
+          RELEASE_SCOPE: ${{ needs.impact.outputs.scope }}
+          PI_CLOUD_PI_SESSION_CONFORMANCE_DATABASE_URL: postgresql://pi_conformance:pi_conformance@127.0.0.1:5432/pi_conformance
+          PI_CLOUD_POSTGRES_INTEGRATION_URL: postgresql://pi_conformance:pi_conformance@127.0.0.1:5432/pi_conformance
+
+      - name: Validate documentation-only changes
+        if: needs.impact.outputs.scope == 'docs'
+        run: npm run format:check && npm run docs:check
+
       - name: Verify Cube template cleanup and artifact reference preservation
+        if: needs.impact.outputs.scope == 'full'
         run: node scripts/check-cube-template-cleanup.mjs
         env:
           PI_CLOUD_CUBESANDBOX_REPOSITORY: ${{ github.workspace }}/.cache/cubesandbox-source
@@ -80,9 +115,11 @@ jobs:
         run: mkdir -p dist/ci-evidence
 
       - name: Verify browser rendering effects without model tokens
+        if: needs.impact.outputs.scope == 'full' || needs.impact.outputs.scope == 'catalog'
         run: npm run browser:presentation:check
 
       - name: Generate root dependency SBOM
+        if: needs.impact.outputs.scope == 'full'
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
           path: .
@@ -93,6 +130,7 @@ jobs:
           upload-release-assets: false
 
       - name: Upload root SBOM
+        if: needs.impact.outputs.scope == 'full'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pi-cloud-root-sbom
@@ -101,31 +139,14 @@ jobs:
           retention-days: 14
 
   supply-chain:
+    needs: impact
+    if: needs.impact.outputs.buildImages == 'true'
     name: SBOM and vulnerability gate (${{ matrix.image }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - image: control-plane
-            dockerfile: packages/control-plane/Dockerfile
-          - image: supervisor-host
-            dockerfile: packages/supervisor-host/Dockerfile
-          - image: workspace-volume-gateway
-            dockerfile: packages/sandbox-control/Dockerfile.volume-gateway
-          - image: web-ui
-            dockerfile: packages/web-ui/Dockerfile
-          - image: provider-egress-relay
-            dockerfile: packages/provider-egress-relay/Dockerfile
-          - image: cube-api-authorizer
-            dockerfile: packages/cube-api-authorizer/Dockerfile
-          - image: cube-egress-gateway
-            dockerfile: packages/cube-egress-gateway/Dockerfile
-          - image: ssh-gateway
-            dockerfile: packages/ssh-gateway/Dockerfile
-          - image: cubesandbox-tool
-            dockerfile: deploy/cubesandbox/Dockerfile.tool
+      matrix: ${{ fromJSON(needs.impact.outputs.matrix) }}
 
     steps:
       - name: Check out repository

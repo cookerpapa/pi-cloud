@@ -1,3 +1,4 @@
+import { parseModelCatalogConfiguration } from "../packages/protocol/src/model-catalog.ts";
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
@@ -27,7 +28,21 @@ const report = {
   accepted: false,
   runs: [],
 };
-assert(["gpt-6-luna", "gpt-6.1-sol"].includes(report.model), "Unreviewed acceptance model");
+const reviewedCatalog = parseModelCatalogConfiguration(
+  JSON.parse(
+    await readFile(
+      process.env.PI_CLOUD_MODEL_CATALOG_FILE ??
+        new URL("../deploy/helm/pi-cloud-platform/files/model-catalog.json", import.meta.url),
+      "utf8",
+    ),
+  ),
+);
+assert(
+  reviewedCatalog.models.some(
+    (m) => m.provider === "openai-codex" && m.modelId === report.model && m.visible,
+  ),
+  "Unreviewed acceptance model",
+);
 // Keep the IO contract independent of model-authored exact-match snippets.
 // The native edit must replace this unique marker, and the final bytes are checked.
 const insertionSort = `def insertion_sort(values):

@@ -1,3 +1,6 @@
+import { serializeRelease } from "./lib/release-lock.mjs";
+import { deploymentFromEvidence, digest } from "./lib/component-release.mjs";
+import { parseModelCatalogConfiguration } from "../packages/protocol/src/model-catalog.ts";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile, rename, rm, statfs } from "node:fs/promises";
@@ -27,6 +30,7 @@ assert(
   ["prepare", "preflight", "apply"].includes(action) && path,
   "Invalid matched-release command",
 );
+serializeRelease(runtimeDirectory);
 const directory = resolve(path);
 const capture = (command, args) =>
   execFileSync(command, args, {
@@ -220,6 +224,34 @@ try {
     mode: 0o600,
   });
   await rename(installed + ".candidate", installed);
+  const modelConfig = parseModelCatalogConfiguration(
+    JSON.parse(
+      JSON.parse(kubectl(["get", "configmap", "pi-cloud-model-catalog", "-o", "json"])).data[
+        "model-catalog.json"
+      ],
+    ),
+  );
+  const schema = await sql`select name from kysely_migration order by name desc limit 1`.execute(
+    database,
+  );
+  const deployment = deploymentFromEvidence({
+    evidence: JSON.parse(await readFile(resolve(directory, "evidence/manifest.json"), "utf8")),
+    evidenceDirectory: resolve(directory, "evidence"),
+    revision: candidate.revision,
+    version: candidate.version,
+    catalogRevision: digest(modelConfig),
+    contracts: {
+      schema: schema.rows[0].name,
+      guestIdentity: candidate.guestIdentity,
+      completionIdentity: candidate.completionIdentity,
+      modelRuntimeSnapshot: 1,
+    },
+  });
+  const deploymentPath = resolve(runtimeDirectory, "k3s/deployment.json");
+  await writeFile(deploymentPath + ".next", JSON.stringify(deployment, null, 2) + "\n", {
+    mode: 0o600,
+  });
+  await rename(deploymentPath + ".next", deploymentPath);
   phase("deployed; run maintained acceptance before user traffic");
 } catch (error) {
   // Pre-cutover failures restore exactly the observed replica counts. A partial

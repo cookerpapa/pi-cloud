@@ -720,6 +720,7 @@ export interface RunTable {
   input_text: string;
   input_uploads: GeneratedJsonArray;
   model_profile_id: string;
+  model_runtime_snapshot: GeneratedNullable<unknown>;
   provider: string;
   model_id: string;
   thinking_level: ModelThinkingLevel;

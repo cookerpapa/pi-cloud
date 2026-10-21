@@ -3,7 +3,7 @@ import { sql, type Kysely, type Selectable } from "kysely";
 import type { Database } from "@pi-cloud/database";
 import {
   assertUserInputBudget,
-  reviewedModel,
+  parseModelRuntimeSnapshot,
   parseUserUploads,
   parseInputQueueResource,
   parseExecutionReference,
@@ -61,6 +61,7 @@ const columns = [
   "project_id",
   "provider",
   "model_id",
+  "model_runtime_snapshot",
   "thinking_level",
   "working_directory",
   "worker_id",
@@ -122,7 +123,7 @@ export class QueuedInputService {
   #validate(
     text: string,
     uploads: readonly UserUpload[],
-    model: { provider: string; model_id: string },
+    model: { provider: string; model_id: string; model_runtime_snapshot: unknown },
   ) {
     if (!text.trim() && !uploads.length)
       throw new ControlPlaneStoreError("invalid_request", "Input is empty");
@@ -137,9 +138,9 @@ export class QueuedInputService {
     if (
       uploads.some((u) => u.image) &&
       !(
-        reviewedModel(model.provider, model.model_id)?.inputModalities as
-          readonly string[] | undefined
-      )?.includes("image")
+        model.model_runtime_snapshot &&
+        parseModelRuntimeSnapshot(model.model_runtime_snapshot).inputModalities.includes("image")
+      )
     )
       throw new ControlPlaneStoreError(
         "invalid_request",

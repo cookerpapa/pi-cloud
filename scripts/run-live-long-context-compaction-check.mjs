@@ -9,7 +9,7 @@ import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { format, resolveConfig } from "prettier";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
-import { reviewedModel } from "../packages/protocol/src/model-catalog.ts";
+import { catalogModel } from "../packages/control-plane/src/runtime-model-catalog.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import { snapshotTurn } from "./lib/session-snapshot.mjs";
 import {
@@ -1220,7 +1220,7 @@ try {
     model: {
       provider: model.provider,
       modelId: model.modelId,
-      configuredContextWindow: reviewedModel(model.provider, model.modelId).contextWindow,
+      configuredContextWindow: catalogModel(model.provider, model.modelId).contextWindow,
       compactionReserveTokens: 16_384,
       compactionKeepRecentTokens: 20_000,
     },

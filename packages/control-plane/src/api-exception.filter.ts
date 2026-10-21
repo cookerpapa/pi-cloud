@@ -31,7 +31,8 @@ export function mappedError(error: unknown): ErrorResponse {
   }
   if (error instanceof TenantModelConfigurationError) {
     return {
-      status: error.code === "authorization_denied" ? 403 : 503,
+      status:
+        error.code === "authorization_denied" ? 403 : error.code === "invalid_request" ? 400 : 503,
       body: { error: { code: error.code, message: error.message } },
     };
   }

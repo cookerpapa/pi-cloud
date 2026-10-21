@@ -42,15 +42,20 @@ function parseArguments(argv) {
       resolve(repositoryRoot, ".cache/pi-cloud-trivy"),
     imageVersion: process.env.PI_CLOUD_IMAGE_VERSION ?? "production",
     allowDirty: false,
+    component: "all",
   };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (["--output-dir", "--cache-dir", "--image-version"].includes(argument)) {
+    if (["--output-dir", "--cache-dir", "--image-version", "--component"].includes(argument)) {
       const value = argv[index + 1];
       if (value === undefined) throw new Error(`${argument} requires a value`);
       if (argument === "--output-dir") result.outputDirectory = resolve(repositoryRoot, value);
       if (argument === "--cache-dir") result.cacheDirectory = resolve(repositoryRoot, value);
       if (argument === "--image-version") result.imageVersion = value;
+      if (argument === "--component") {
+        if (!["all", "provider"].includes(value)) throw new Error("Unsupported evidence scope");
+        result.component = value;
+      }
       index += 1;
       continue;
     }
@@ -60,7 +65,7 @@ function parseArguments(argv) {
     }
     if (argument === "--help") {
       process.stdout.write(
-        "Usage: npm run release:evidence -- [--output-dir EMPTY_PATH] [--cache-dir PATH] [--image-version VERSION] [--allow-dirty]\n",
+        "Usage: npm run release:evidence -- [--output-dir EMPTY_PATH] [--cache-dir PATH] [--image-version VERSION] [--component all|provider] [--allow-dirty]\n",
       );
       process.exit(0);
     }
@@ -268,25 +273,35 @@ try {
   ]);
 
   const images = [];
-  const guestIdentity = await guestBuildIdentity(repositoryRoot);
-  const imageDescriptors = [
-    ...PRODUCTION_IMAGE_NAMES.map((imageName) => ({
-      imageName,
-      reference: `pi-cloud/${imageName}:${options.imageVersion}`,
-      labelVersion: options.imageVersion,
-    })),
-    ...CUBE_PLATFORM_IMAGES.map((imageName) => ({
-      imageName,
-      reference: `pi-cloud/${imageName}:${options.imageVersion}`,
-      labelVersion: options.imageVersion,
-    })),
-    {
-      imageName: "cubesandbox-tool",
-      reference: `localhost:5000/pi-cloud/cubesandbox-tool:${guestIdentity}`,
-      labelVersion: "cube-primary",
-      guestIdentity,
-    },
-  ];
+  const guestIdentity =
+    options.component === "all" ? await guestBuildIdentity(repositoryRoot) : undefined;
+  const imageDescriptors =
+    options.component === "provider"
+      ? [
+          {
+            imageName: "cli-proxy-api",
+            reference: `pi-cloud/cli-proxy-api:${options.imageVersion}`,
+            labelVersion: options.imageVersion,
+          },
+        ]
+      : [
+          ...PRODUCTION_IMAGE_NAMES.map((imageName) => ({
+            imageName,
+            reference: `pi-cloud/${imageName}:${options.imageVersion}`,
+            labelVersion: options.imageVersion,
+          })),
+          ...CUBE_PLATFORM_IMAGES.map((imageName) => ({
+            imageName,
+            reference: `pi-cloud/${imageName}:${options.imageVersion}`,
+            labelVersion: options.imageVersion,
+          })),
+          {
+            imageName: "cubesandbox-tool",
+            reference: `localhost:5000/pi-cloud/cubesandbox-tool:${guestIdentity}`,
+            labelVersion: "cube-primary",
+            guestIdentity,
+          },
+        ];
   for (const { imageName, ...descriptor } of imageDescriptors) {
     const { reference } = descriptor;
     const evidence = await inspectReleaseImage(
@@ -374,6 +389,7 @@ try {
     generatedAt: new Date().toISOString(),
     git: { revision, dirty },
     imageVersion: options.imageVersion,
+    scope: options.component,
     policy: {
       scanner: TRIVY_IMAGE,
       severities: ["HIGH", "CRITICAL"],

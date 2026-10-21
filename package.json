@@ -125,7 +125,9 @@
     "production:config:observability": "PI_CLOUD_OBSERVABILITY_ENABLED=1 node scripts/production-kubernetes.mjs config",
     "cubesandbox:admission-check": "node scripts/check-cube-admission.mjs",
     "cubesandbox:allocation-check": "node scripts/check-cube-allocation.mjs",
-    "test:transport": "node scripts/run-transport-integration.mjs"
+    "test:transport": "node scripts/run-transport-integration.mjs",
+    "release:component": "node --import tsx scripts/run-component-release.mjs",
+    "release:check": "node scripts/run-release-scope-check.mjs"
   },
   "devDependencies": {
     "@earendil-works/chord": "1.0.0",

@@ -458,6 +458,9 @@ describe("tenant-aware browser API", () => {
       if (path === "/v1/models") {
         return new Response(
           JSON.stringify({
+            revision: "a".repeat(64),
+            reloadFailed: false,
+            defaultModel: { provider: "openai-codex", modelId: "gpt-6.1-sol" },
             models: [
               {
                 provider: "openai-codex",

@@ -9,7 +9,7 @@ import { supportedModel, supportedModelSelection } from "./model-profile-catalog
 import type { TenantRequestIdentity } from "./tenant-identity.ts";
 
 export class TenantModelConfigurationError extends Error {
-  readonly code: "authorization_denied" | "model_configuration_unavailable";
+  readonly code: "authorization_denied" | "model_configuration_unavailable" | "invalid_request";
 
   constructor(code: TenantModelConfigurationError["code"], safeMessage: string) {
     super(safeMessage);
@@ -192,7 +192,7 @@ export class TenantModelConfigurationService {
     const catalogModel = supportedModel(request);
     if (catalogModel === undefined) {
       throw new TenantModelConfigurationError(
-        "model_configuration_unavailable",
+        "invalid_request",
         "Tenant model configuration is unsupported",
       );
     }

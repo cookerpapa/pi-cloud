@@ -68,6 +68,7 @@ spec:
             - { name: PI_CLOUD_IMAGE_S3_CREDENTIALS_FILE, value: /run/pi-cloud-secrets/session-image-s3-credentials.json }
             {{- end }}
             - { name: NODE_ENV, value: production }
+            - { name: PI_CLOUD_MODEL_CATALOG_FILE, value: /run/pi-cloud-models/model-catalog.json }
             - { name: HOST, value: 0.0.0.0 }
             - name: POD_IP
               valueFrom: { fieldRef: { fieldPath: status.podIP } }
@@ -176,6 +177,7 @@ spec:
             capabilities: { drop: [ALL] }
           resources: {{- toYaml .Values.controlPlane.resources | nindent 12 }}
           volumeMounts:
+            - { name: model-catalog, mountPath: /run/pi-cloud-models, readOnly: true }
             {{- if .Values.imageAttachments.endpoint }}
             - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/session-image-s3-credentials.json, subPath: {{ .Values.imageAttachments.credentialsSecretKey }}, readOnly: true }
             {{- end }}
@@ -188,6 +190,8 @@ spec:
             {{- end }}
             - { name: tmp, mountPath: /tmp }
       volumes:
+        - name: model-catalog
+          configMap: { name: {{ $name }}-model-catalog }
         {{- if .Values.sandboxPlane.cube.executionEndpoints }}
         - name: cube-execution-endpoints
           configMap: { name: {{ $name }}-cube-execution-endpoints }
