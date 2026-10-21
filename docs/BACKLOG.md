@@ -30,22 +30,25 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## GPT-6.1 Sol catalog refresh
 
-The owner-requested [ADR-0191 amendment](adr/0191-gpt6-model-catalog.md) replaces
-the future Sol selection, refreshes pinned gateway metadata and preserves Luna
-for routine tests. Schema 195 maps unsupported old reasoning choices while
-retaining accepted model history. Source verification, matched deployment and
-actual Sol text/Tool/vision/search acceptance are in progress.
+The [ADR-0191 amendment](adr/0191-gpt6-model-catalog.md) is deployed as
+`gpt61-sol-8827da09`, schema 195. Standard-mode GPT-6.1 Sol text/function/vision/search,
+four native Tool Runs, Luna regression and physical cleanup pass. Routine tests
+still default to Luna; accepted model history and original accounts/configuration
+are preserved. [Delivery evidence](reports/gpt61-sol-20261021.md) separates source,
+artifact and real-model results, including corrected compression/Vite dependencies
+and the disposable image-store capacity failure.
 
-The first candidate's image gate found the same fixable compression-library
-issue in Caddy, CLIProxyAPI and Cube. Their existing dependency overrides now
-pin v1.18.7 (Cube patch 0013); native checks and replacement artifact scans are
-in progress. The disposable image fixture also restores the pinned server's
-native eight-volume capacity after four slots prevented an initial seven-volume
-growth batch. All 81 acceptance-helper checks pass with that fixture correction.
-The source dependency gate additionally required Vite 7.3.7. Frontend build,
-175 tests, type checking, the dependency audit and real-browser presentation
-checks pass with this single package version change. The final matched artifact
-set and live model acceptance remain in progress.
+## Effective Fast routing
+
+- [ ] Establish the actual tier on the subscription route before certifying Fast.
+      The current PiCloud payload uses `fast`, which the pinned CLIProxyAPI
+      Responses translator filters; Codex's inspected request spelling is
+      `priority`. Both a real `fast` request and a separate `priority` request
+      nevertheless reported `default`. Trace outbound transformation, raw provider
+      reply and account support; do not infer acceleration or premium billing
+      from HTTP 200 or latency. Then correct the existing adapter and require
+      effective-tier acceptance, keeping Standard requests unchanged. This does
+      not block the verified Standard-mode GPT-6.1 Sol rollout.
 
 ## Resource/interaction release acceptance
 

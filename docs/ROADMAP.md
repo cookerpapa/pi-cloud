@@ -5,14 +5,18 @@
 - [x] Verify official model, reasoning, Responses capabilities and cache pricing;
       record the [ADR-0191 amendment](adr/0191-gpt6-model-catalog.md).
 - [x] Replace future Sol selections and pin gateway catalog metadata; retain Luna.
-- [ ] Verify migration/selection contracts, deploy the matched set and validate
+- [x] Verify migration/selection contracts, deploy the matched set and validate
       real Sol text/Tool/vision/search plus routine Luna behavior.
+
+[Delivery evidence](reports/gpt61-sol-20261021.md) records serving release
+`gpt61-sol-8827da09`, schema 195, preserved configuration and confirmed cleanup.
+Effective Fast routing is a separate backlog finding, not a successful tier claim.
 
 ## Resource and interaction branch reviews
 
 The [combined review](reports/resource-interaction-review-20261020.md) and the
 owner-approved [repair plan](reports/resource-interaction-repair-plan-20261020.md)
-are implemented in the serving `resource-repair-1cdccb80` release. Schema 194 /
+were delivered in the `resource-repair-1cdccb80` release. Schema 194 /
 Session topic v18 retains existing PG, native Session and Kafka authority.
 [Delivery evidence](reports/resource-interaction-repair-20261020.md) separates
 source verification, passing live gates and retained failed samples.

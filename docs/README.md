@@ -1,8 +1,11 @@
 # Documentation map
 
 The [GPT-6.1 Sol amendment](adr/0191-gpt6-model-catalog.md) updates the reviewed
-model catalog and future Sol settings under schema 195. Verification and rollout
-are in progress; historical model evidence and other provider routes are retained.
+model catalog and future Sol settings under schema 195. It is deployed as
+`gpt61-sol-8827da09`; [delivery evidence](reports/gpt61-sol-20261021.md) records
+passing Standard-mode model/native-Tool acceptance and cleanup. Effective Fast
+routing remains an explicit follow-up. Historical model evidence and other
+provider routes are retained.
 
 The [October 20 resource/interaction repair plan](reports/resource-interaction-repair-plan-20261020.md)
 organizes the 16 findings and follow-up discussion into six repair slices.

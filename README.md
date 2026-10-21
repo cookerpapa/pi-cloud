@@ -26,13 +26,18 @@ and optional [conversation/image recovery procedure](docs/ASSET_RECOVERY.md).
 The [private pilot criteria](docs/PRIVATE_PILOT.md) distinguish readiness checks
 from actual-use and fleet-capacity evidence; the pilot has not started.
 
+The current [GPT-6.1 Sol release](docs/reports/gpt61-sol-20261021.md) is
+`gpt61-sol-8827da09`, schema 195. Standard-mode text, Tools, vision and hosted search
+pass real acceptance, alongside Luna regression and physical cleanup. The existing
+Fast setting's effective upstream tier remains unconfirmed and is recorded separately.
+
 Management reconnect preserves authorized idle and busy Worker processes across
 Control Plane outages. [Current recovery evidence](docs/reports/idle-worker-reconnect-20261014.md)
 covers 60/90-second outages and a Control Plane process crash. Full matched
 application/schema updates still use the drained release procedure above.
 
 The [resource and interaction repair](docs/reports/resource-interaction-repair-20261020.md)
-is deployed as `resource-repair-1cdccb80`, including recoverable direct Subagents,
+was delivered as `resource-repair-1cdccb80`, including recoverable direct Subagents,
 shared-VM holder protection, Volume evidence, attachment cleanup and connection
 lifetimes. Schema 194 / Session topic v18, source/artifact gates, native recovery,
 long work, browser, S3 cancellation and full Cube acceptance pass. Single-image

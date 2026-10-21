@@ -4,6 +4,13 @@
 
 Accepted on 2026-09-02.
 
+Verification note, 2026-10-21: the [GPT-6.1 acceptance](../reports/gpt61-sol-20261021.md)
+found that the pinned gateway filters the currently emitted `fast` value. Its
+Codex translator retains `priority`, but a separate real priority request still
+reported `default`. The behavior described below records the existing requested
+setting; effective upstream acceleration/billing is not established. The
+[backlog](../BACKLOG.md#effective-fast-routing) tracks this separately.
+
 ## Context
 
 PiCloud previously stored only `sessions.desired_model_profile_id`. The selected

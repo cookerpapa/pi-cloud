@@ -65,6 +65,13 @@ dependency to [7.3.7](https://github.com/vitejs/vite/releases/tag/v7.3.7).
 One root override keeps Vitest and the frontend on that same patch release;
 no major bundler upgrade or unrelated package refresh is included.
 
+[Delivery acceptance](../reports/gpt61-sol-20261021.md) passes Standard-mode
+GPT-6.1 Sol function/vision/search and native Tool execution. Fast request
+acceptance is not proof of effective priority: the deployed route reported
+`default` for both the existing `fast` spelling and a separate `priority` probe.
+The existing setting is retained with an explicit backlog finding; this amendment
+does not certify Fast activation or speed/billing behavior.
+
 ### Original GPT-6 migration (2026-09-26)
 
 The owner requested migration to GPT-6 and GPT-6 Luna for paid acceptance tests.
