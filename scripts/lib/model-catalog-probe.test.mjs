@@ -55,3 +55,55 @@ it("requires genuine function and text responses with the requested model identi
   ).rejects.toThrow("different model");
   expect(substituted).toHaveBeenCalledOnce();
 });
+
+it("keeps DeepSeek thinking enabled and accepts only its reviewed Flash response identity", async () => {
+  const fetchImplementation = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json({
+        model: "deepseek-flash",
+        status: "completed",
+        output: [{ type: "function_call", name: "catalog_probe", arguments: "{}", call_id: "id" }],
+      }),
+    )
+    .mockResolvedValueOnce(
+      Response.json({
+        model: "deepseek-flash",
+        status: "completed",
+        output: [{ content: [{ type: "output_text", text: "CATALOG_ROUTE_OK" }] }],
+      }),
+    );
+  await expect(
+    probeCatalogModel({
+      model: { ...model, provider: "deepseek", modelId: "deepseek-v4-flash" },
+      baseUrl: "http://fixture",
+      apiKey: "fixture-key",
+      fetchImplementation,
+    }),
+  ).resolves.toMatchObject({
+    text: true,
+    functionCalling: true,
+    responseModels: ["deepseek-flash", "deepseek-flash"],
+  });
+  const requests = fetchImplementation.mock.calls.map(([, init]) => JSON.parse(init.body));
+  expect(requests.map((request) => request.tool_choice)).toEqual(["auto", "auto"]);
+  expect(requests.map((request) => request.tools.length)).toEqual([1, 0]);
+  expect(requests.every((request) => request.reasoning.effort === "low")).toBe(true);
+  expect(requests[1].input.at(-1)).toMatchObject({
+    type: "function_call_output",
+    call_id: "id",
+    output: "CATALOG_ROUTE_OK",
+  });
+  await expect(
+    probeCatalogModel({
+      model: { ...model, provider: "deepseek", modelId: "deepseek-v4-flash" },
+      baseUrl: "http://fixture",
+      apiKey: "fixture-key",
+      fetchImplementation: vi
+        .fn()
+        .mockResolvedValue(
+          Response.json({ model: "deepseek-v4-pro", status: "completed", output: [] }),
+        ),
+    }),
+  ).rejects.toThrow("different model");
+});

@@ -15,6 +15,14 @@ export function changedVisibleModels(previous, next) {
 
 /** Two bounded fixture requests prove text/function routing, not every declared capability. */
 export async function probeCatalogModel({ model, baseUrl, apiKey, fetchImplementation = fetch }) {
+  // The reviewed Flash request ID and its upstream response ID differ (ADR-0191).
+  // Keep this bounded alias explicit; arbitrary provider/model substitution fails.
+  const responseModels = new Set([
+    model.modelId,
+    ...(model.provider === "deepseek" && model.modelId === "deepseek-v4-flash"
+      ? ["deepseek-flash"]
+      : []),
+  ]);
   const tool = {
     type: "function",
     name: "catalog_probe",
@@ -40,8 +48,11 @@ export async function probeCatalogModel({ model, baseUrl, apiKey, fetchImplement
         store: false,
         instructions: "Follow the fixture exactly and be concise.",
         input,
-        tools: [tool],
-        tool_choice: choice,
+        // DeepSeek thinking mode accepts automatic selection, not a forced
+        // function. On the final request remove offered tools instead of forcing
+        // `none`; still require the real call and exact result below.
+        tools: model.provider === "deepseek" && choice === "none" ? [] : [tool],
+        tool_choice: model.provider === "deepseek" ? "auto" : choice,
         max_output_tokens: Math.min(model.maxTokens, 512),
         ...(model.thinkingLevels.includes("low") ? { reasoning: { effort: "low" } } : {}),
       }),
@@ -50,7 +61,7 @@ export async function probeCatalogModel({ model, baseUrl, apiKey, fetchImplement
     assert.equal(response.status, 200, `Catalog model probe returned HTTP ${response.status}`);
     const result = await response.json();
     assert.equal(result.status, "completed", "Catalog probe did not complete");
-    assert.equal(result.model, model.modelId, "Catalog probe returned a different model");
+    assert(responseModels.has(result.model), "Catalog probe returned a different model");
     return result;
   };
   const first = await call([prompt], { type: "function", name: tool.name });
@@ -76,6 +87,7 @@ export async function probeCatalogModel({ model, baseUrl, apiKey, fetchImplement
   return {
     modelId: model.modelId,
     provider: model.provider,
+    responseModels: [first.model, second.model],
     checkedAt: new Date().toISOString(),
     text: true,
     functionCalling: true,
