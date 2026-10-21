@@ -41,6 +41,7 @@ const excluded = [
   "packages/sandbox-control/src/.env.local",
   "deploy/production/.env",
   "deploy/production/runtime/secrets/context-canary.txt",
+  "deploy/helm/pi-cloud-platform/files/context-canary.txt",
   "deploy/cubesandbox/runtime/context-canary.txt",
   "deploy/gitlab/runtime/context-canary.txt",
 ];

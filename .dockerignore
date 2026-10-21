@@ -12,6 +12,7 @@
 !packages/web-ui/Caddyfile
 !packages/web-ui/index.html
 !packages/web-ui/vite.config.ts
+!deploy/helm/pi-cloud-platform/files/model-catalog.json
 !packages/sandbox-supervisor/test/fixtures/sample-java-repair/**
 
 # Local files can exist inside an otherwise allowed source directory.

@@ -68,6 +68,8 @@ if (action === "prepare") {
   assert(disk.bavail / disk.blocks >= 0.15, "Reclaim build cache before preparing the release");
   await mkdir(directory, { mode: 0o700 });
   const env = environment(version);
+  phase("check declared Docker build inputs");
+  run("scripts/check-docker-build-context.mjs");
   phase("build guest (no registration)");
   run("scripts/build-cube-tool-image.mjs", [], env);
   phase("build native Cube");
