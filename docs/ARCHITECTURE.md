@@ -1331,6 +1331,12 @@ configuration and cancellation outcomes remain distinct. Durable is the sole
 sampling retry owner. Semantic execution and HTTP transport have separate metrics.
 
 CLIProxyAPI owns upstream subscription/API credentials and account affinity.
+PiCloud owns the reviewed model/capability catalog used by public selection,
+admission and Worker grants. GPT-6.1 Sol replaces GPT-6 Sol for future selections
+under the [ADR-0191 amendment](adr/0191-gpt6-model-catalog.md), with medium reasoning
+by default and no disabled reasoning. GPT-6 Luna remains the routine acceptance
+model. Schema 195 migrates mutable Sol settings; historical Run/native model
+snapshots remain unchanged. Gateway discovery does not bypass this catalog.
 Workers see only scoped model-runtime access through their local Model Gateway.
 Revocation also aborts incomplete request uploads. After body validation, the
 Gateway atomically rechecks its local capability and reserves the request count

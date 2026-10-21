@@ -95,7 +95,7 @@ try {
     .orderBy("name", "desc")
     .limit(1)
     .executeTakeFirstOrThrow();
-  assert.equal(schema.name, "194_upload_lifetimes");
+  assert.equal(schema.name, "195_gpt61_sol_selection");
   const other = await db
     .selectFrom("runs")
     .select("id")

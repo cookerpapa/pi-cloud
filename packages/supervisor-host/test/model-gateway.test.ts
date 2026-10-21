@@ -31,7 +31,7 @@ function command(
     | "deepseek-v4-pro"
     | "gpt-6-luna"
     | "gpt-6-astra"
-    | "gpt-6-sol" = "deepseek-v4-flash",
+    | "gpt-6.1-sol" = "deepseek-v4-flash",
   serviceTier: "fast" | null = null,
 ): ExecuteTurnCommandMessage {
   return {
@@ -382,7 +382,7 @@ describe("tenant model gateway", () => {
     });
     const gateway = createGateway(upstream);
     await gateway.start();
-    const lease = gateway.issue(command("openai-codex", "gpt-6-sol"));
+    const lease = gateway.issue(command("openai-codex", "gpt-6.1-sol"));
     expect(lease.runtime).toMatchObject({
       provider: "openai-codex",
       api: "openai-codex-responses",
@@ -391,7 +391,7 @@ describe("tenant model gateway", () => {
       hostedTools: ["web_search"],
     });
     const body = zstdCompressSync(
-      Buffer.from(JSON.stringify({ model: "gpt-6-sol", stream: true, input: [] })),
+      Buffer.from(JSON.stringify({ model: "gpt-6.1-sol", stream: true, input: [] })),
     );
     const response = await fetch(
       `http://127.0.0.1:${String(gateway.listeningPort)}/codex/responses`,
@@ -462,7 +462,7 @@ describe("tenant model gateway", () => {
     });
     const gateway = createGateway(upstream);
     await gateway.start();
-    const lease = gateway.issue(command("openai-codex", "gpt-6-sol", "fast"));
+    const lease = gateway.issue(command("openai-codex", "gpt-6.1-sol", "fast"));
     expect(lease.runtime.serviceTier).toBe("fast");
     expect(lease.runtime.contextWindow).toBe(1_000_000);
     expect(lease.runtime.autoCompactTokenLimit).toBe(900_000);
@@ -475,7 +475,7 @@ describe("tenant model gateway", () => {
         ...samplingHeaders(),
       },
       body: JSON.stringify({
-        model: "gpt-6-sol",
+        model: "gpt-6.1-sol",
         stream: true,
         service_tier: "fast",
         input: [],
@@ -490,7 +490,7 @@ describe("tenant model gateway", () => {
         "content-type": "application/json",
         ...samplingHeaders(),
       },
-      body: JSON.stringify({ model: "gpt-6-sol", stream: true, input: [] }),
+      body: JSON.stringify({ model: "gpt-6.1-sol", stream: true, input: [] }),
     });
     expect(rejected.status).toBe(403);
     expect(upstream).toHaveBeenCalledTimes(1);

@@ -447,9 +447,14 @@ describe("control-plane public API schemas", () => {
     expect(
       parseReplaceModelConfigurationRequest({
         provider: "openai-codex",
-        modelId: "gpt-6-sol",
+        modelId: "gpt-6.1-sol",
       }),
-    ).toEqual({ provider: "openai-codex", modelId: "gpt-6-sol" });
+    ).toEqual({ provider: "openai-codex", modelId: "gpt-6.1-sol" });
+    for (const modelId of ["gpt-6-sol", "gpt-6.1-luna", "gpt-6.1-astra"]) {
+      expect(() =>
+        parseReplaceModelConfigurationRequest({ provider: "openai-codex", modelId }),
+      ).toThrow(ControlPlaneApiValidationError);
+    }
     expect(
       parseModelConfigurationResource({
         mode: "real",
@@ -472,10 +477,10 @@ describe("control-plane public API schemas", () => {
         models: [
           {
             provider: "openai-codex",
-            modelId: "gpt-6-sol",
-            displayName: "GPT-6 Sol",
+            modelId: "gpt-6.1-sol",
+            displayName: "GPT-6.1 Sol",
             default: true,
-            thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"],
+            thinkingLevels: ["low", "medium", "high", "xhigh", "max"],
             defaultThinkingLevel: "medium",
             fastModeAvailable: true,
           },

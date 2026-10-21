@@ -1,18 +1,20 @@
 import { serviceAddress } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
-import { execFileSync } from "node:child_process";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { dirname } from "node:path";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
 import sharp from "sharp";
 
 if (process.env.PI_CLOUD_LIVE_GPT6_CHECK !== "1")
   throw new Error(
-    "Set PI_CLOUD_LIVE_GPT6_CHECK=1 to permit GPT-6 Luna vision/Tool/search token usage",
+    "Set PI_CLOUD_LIVE_GPT6_CHECK=1 to permit reviewed GPT vision/Tool/search token usage",
   );
 const runtime = "deploy/production/runtime";
 const key = (await readFile(`${runtime}/secrets/cli-proxy-api-key`, "utf8")).trim();
 const ip = serviceAddress("cli-proxy-api");
-const model = "gpt-6-luna";
+const model = process.env.PI_CLOUD_GPT_CAPABILITY_MODEL ?? "gpt-6-luna";
+assert(["gpt-6-luna", "gpt-6.1-sol"].includes(model), "Unreviewed acceptance model");
+const output = process.argv[2] ?? `dist/gpt6-capabilities-${model}.json`;
 async function call(input, tools = [], extra = {}) {
   const response = await fetch(`http://${ip}:8317/v1/responses`, {
     method: "POST",
@@ -103,6 +105,11 @@ const search = await call(
 );
 const searchCalls = search.output.filter((x) => x.type === "web_search_call");
 assert(searchCalls.length > 0, "No actual hosted search call occurred");
+const fast = await call([{ role: "user", content: "Reply exactly FAST_MODE_OK." }], [], {
+  reasoning: { effort: "medium" },
+  service_tier: "fast",
+});
+assert.equal(text(fast).trim(), "FAST_MODE_OK");
 const report = {
   checkedAt: new Date().toISOString(),
   model,
@@ -112,14 +119,14 @@ const report = {
   imageSha256: createHash("sha256").update(image).digest("hex"),
   visionAnswerCorrect: true,
   hostedSearchCalls: searchCalls.length,
-  usage: [first, second, search].map((r) => ({
+  fastRequestAccepted: true,
+  fastResponseServiceTier: fast.service_tier ?? null,
+  usage: [first, second, search, fast].map((r) => ({
     input: r.usage?.input_tokens,
     output: r.usage?.output_tokens,
   })),
   accepted: true,
 };
-await writeFile(
-  "docs/reports/gpt6-capabilities-20260926.json",
-  JSON.stringify(report, null, 2) + "\n",
-);
+await mkdir(dirname(output), { recursive: true, mode: 0o700 });
+await writeFile(output, JSON.stringify(report, null, 2) + "\n", { mode: 0o600 });
 console.log(JSON.stringify(report));

@@ -29,7 +29,9 @@ it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)(
         const tenant = await createPrivateTenant(db, {
           slug: randomUUID(),
           ownerDisplayName: "model migration",
-          initialModel: { provider: "openai-codex", modelId: newModel },
+          // The historical migration is exercised after the current schema;
+          // seed with a current route before restoring the historical fixture.
+          initialModel: { provider: "openai-codex", modelId: "gpt-6-luna" },
         });
         const control = new ControlPlaneStore({ database: db, ...tenant });
         const project = await control.createProject({ name: "models", source: { kind: "empty" } });

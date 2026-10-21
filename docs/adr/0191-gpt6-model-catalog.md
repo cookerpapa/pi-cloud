@@ -7,6 +7,53 @@ is also deployed and locally validated.
 
 ## Decision
 
+### GPT-6.1 Sol amendment (2026-10-21)
+
+The owner requests the GPT-6.1 family. The official catalog currently provides
+`gpt-6.1-sol`; Astra and Luna retain their GPT-6 identities. Replace the maintained
+Sol choice and new-conversation default with GPT-6.1 Sol, with medium reasoning
+by default and low/medium/high/xhigh/max available. Disabled/minimal reasoning
+is unsupported. Keep Luna for routine paid acceptance and Astra as an explicit
+choice. Keep the reviewed Responses transport, vision, web search and Fast
+capabilities, subject to live acceptance. Do not add Ultrafast or new hosted Tools.
+Retain the existing conservative context/output budgets.
+
+Pin the gateway's embedded upstream catalog to
+`690c37fdbe62dc05f609f3a3e609d07ea4d16bf1`, which introduces GPT-6.1 Sol;
+the CLIProxyAPI executable source and Pi dependencies remain pinned as before.
+The upstream gateway may refresh its own metadata, but PiCloud's reviewed catalog
+still governs its public choices and issued capabilities. There is no model alias
+or silent fallback to another model.
+
+Migration 195 updates only future Sol profiles, brokered route references and
+desired Session settings while writers are drained. Preserve supported reasoning
+choices and map off/minimal to medium, including restricted profile allowlists.
+Issued Run snapshots and native history keep the model actually used; accounts,
+credential material, other models and Fast settings remain unchanged. New
+deployments and upgraded deployments use the same model contract.
+
+At <=272K input, Standard API input/output remain $2/$10 per million tokens;
+cached input falls from $0.20 to $0.10. Codex Standard credit rates similarly
+retain 50/250 input/output and reduce cached input from 5 to 2.5 credits per
+million. This is a cache-price reduction versus GPT-6 Sol, not a blanket 50%
+discount or a promise about subscription-plan usage. PiCloud stores token usage,
+not a competing billing price table.
+
+Acceptance: current catalog/selection validation, native Responses payload
+contracts, real-PG migration preserving immutable history, routine Luna
+regression, and real GPT-6.1 Sol text/function/vision/search on the deployed route.
+Reject unsupported reasoning before model admission. Use the maintained matched
+release; no backward schema/model decoder is retained. If upstream availability
+fails, keep the failure visible and repair the route or roll forward while drained.
+
+Sources: [official model](https://developers.openai.com/api/docs/models/gpt-6.1-sol),
+[current models](https://developers.openai.com/api/docs/models),
+[API prices](https://developers.openai.com/api/docs/pricing),
+[Codex credit rates](https://learn.chatgpt.com/docs/pricing#token-rates), and
+[gateway catalog](https://github.com/router-for-me/models/blob/690c37fdbe62dc05f609f3a3e609d07ea4d16bf1/models.json).
+
+### Original GPT-6 migration (2026-09-26)
+
 The owner requested migration to GPT-6 and GPT-6 Luna for paid acceptance tests.
 Use GPT-6 Sol as the new-conversation default and GPT-6 Luna for routine probes.
 Offer Astra as an explicitly selected higher-cost model; never substitute it for

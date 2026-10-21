@@ -1,5 +1,13 @@
 # Implementation roadmap
 
+## GPT-6.1 Sol catalog refresh
+
+- [x] Verify official model, reasoning, Responses capabilities and cache pricing;
+      record the [ADR-0191 amendment](adr/0191-gpt6-model-catalog.md).
+- [x] Replace future Sol selections and pin gateway catalog metadata; retain Luna.
+- [ ] Verify migration/selection contracts, deploy the matched set and validate
+      real Sol text/Tool/vision/search plus routine Luna behavior.
+
 ## Resource and interaction branch reviews
 
 The [combined review](reports/resource-interaction-review-20261020.md) and the

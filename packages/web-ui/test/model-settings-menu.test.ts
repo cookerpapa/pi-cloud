@@ -29,17 +29,17 @@ describe("model settings menu", () => {
     expect(
       defaultModelSettings({
         provider: "openai-codex",
-        modelId: "gpt-6-sol",
-        displayName: "GPT-6 Sol",
+        modelId: "gpt-6.1-sol",
+        displayName: "GPT-6.1 Sol",
         default: false,
-        thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"],
-        defaultThinkingLevel: "low",
+        thinkingLevels: ["low", "medium", "high", "xhigh", "max"],
+        defaultThinkingLevel: "medium",
         fastModeAvailable: true,
       }),
     ).toEqual({
       provider: "openai-codex",
-      modelId: "gpt-6-sol",
-      thinkingLevel: "low",
+      modelId: "gpt-6.1-sol",
+      thinkingLevel: "medium",
       fastMode: false,
     });
     expect(
@@ -55,7 +55,7 @@ describe("model settings menu", () => {
     ).toMatchObject({ provider: "deepseek", thinkingLevel: "high", fastMode: false });
   });
 
-  it("starts new conversations on GPT-6 Sol with medium reasoning and Fast disabled", () => {
+  it("starts new conversations on GPT-6.1 Sol with medium reasoning and Fast disabled", () => {
     expect(
       defaultNewConversationSettings({
         models: [
@@ -70,18 +70,18 @@ describe("model settings menu", () => {
           },
           {
             provider: "openai-codex",
-            modelId: "gpt-6-sol",
-            displayName: "GPT-6 Sol",
+            modelId: "gpt-6.1-sol",
+            displayName: "GPT-6.1 Sol",
             default: false,
-            thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"],
-            defaultThinkingLevel: "low",
+            thinkingLevels: ["low", "medium", "high", "xhigh", "max"],
+            defaultThinkingLevel: "medium",
             fastModeAvailable: true,
           },
         ],
       }),
     ).toEqual({
       provider: "openai-codex",
-      modelId: "gpt-6-sol",
+      modelId: "gpt-6.1-sol",
       thinkingLevel: "medium",
       fastMode: false,
     });

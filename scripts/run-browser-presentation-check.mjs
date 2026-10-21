@@ -680,7 +680,7 @@ try {
     await high();
     assert.deepEqual(await page.evaluate("savedSelection"), {
       provider: "openai-codex",
-      modelId: "gpt-6-sol",
+      modelId: "gpt-6.1-sol",
       thinkingLevel: "high",
       fastMode: true,
     });

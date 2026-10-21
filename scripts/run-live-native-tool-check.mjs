@@ -5,23 +5,29 @@ import { readWorkerModelTimings } from "./lib/live-run-timing.mjs";
 
 if (process.env.PI_CLOUD_LIVE_NATIVE_TOOL_CHECK !== "1")
   throw new Error(
-    "Set PI_CLOUD_LIVE_NATIVE_TOOL_CHECK=1 to permit Luna tokens and a disposable Cube Workspace",
+    "Set PI_CLOUD_LIVE_NATIVE_TOOL_CHECK=1 to permit reviewed GPT tokens and a disposable Cube Workspace",
   );
 const port = (await readFile("deploy/production/runtime/.env", "utf8")).match(
   /^PI_CLOUD_HTTP_PORT=(\d+)$/m,
 )?.[1];
 assert(port, "Production HTTP port is missing");
-const token = (await readFile("deploy/production/runtime/secrets/api-token", "utf8")).trim();
+const token = (
+  await readFile(
+    process.env.PI_CLOUD_NATIVE_TOOL_TOKEN_FILE ?? "deploy/production/runtime/secrets/api-token",
+    "utf8",
+  )
+).trim();
 const api = new PiCloudApi(
   (input, init) => fetch(new URL(String(input), `http://127.0.0.1:${port}`), init),
   token,
 );
 const report = {
   checkedAt: new Date().toISOString(),
-  model: "gpt-6-luna",
+  model: process.env.PI_CLOUD_NATIVE_TOOL_MODEL ?? "gpt-6-luna",
   accepted: false,
   runs: [],
 };
+assert(["gpt-6-luna", "gpt-6.1-sol"].includes(report.model), "Unreviewed acceptance model");
 // Keep the IO contract independent of model-authored exact-match snippets.
 // The native edit must replace this unique marker, and the final bytes are checked.
 const insertionSort = `def insertion_sort(values):

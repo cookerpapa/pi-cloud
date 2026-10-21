@@ -219,7 +219,7 @@ try {
       );
       await page.waitFor('document.body.innerText.includes("新对话")');
       await page.waitFor(
-        'document.querySelector(".product-composer .product-model-menu-trigger")?.textContent.includes("GPT-6 Sol")===true',
+        'document.querySelector(".product-composer .product-model-menu-trigger")?.textContent.includes("GPT-6.1 Sol")===true',
       );
       record("composer.defaultModelVisible");
 
@@ -483,19 +483,19 @@ try {
       );
       await clickText(
         ".product-model-menu-subpanel button",
-        "GPT-6 Sol",
+        "GPT-6.1 Sol",
         "conversation.modelSolFast",
       );
       const solDefaultThinking = (await api.getModelCatalog()).models.find(
-        (model) => model.provider === "openai-codex" && model.modelId === "gpt-6-sol",
+        (model) => model.provider === "openai-codex" && model.modelId === "gpt-6.1-sol",
       )?.defaultThinkingLevel;
-      assert(solDefaultThinking, "GPT-6 Sol catalog default is missing");
+      assert(solDefaultThinking, "GPT-6.1 Sol catalog default is missing");
       await click(".product-model-menu-fast", "conversation.fastMode");
       await waitFor(async () => {
         const selected = await api.getSessionModel(elasticConversation.sessionId);
         return (
           selected.provider === "openai-codex" &&
-          selected.modelId === "gpt-6-sol" &&
+          selected.modelId === "gpt-6.1-sol" &&
           selected.thinkingLevel === solDefaultThinking &&
           selected.fastMode
         );

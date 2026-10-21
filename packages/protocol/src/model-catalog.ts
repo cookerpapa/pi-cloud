@@ -32,7 +32,13 @@ export const REVIEWED_MODELS = [
     thinkingLevels: ["low", "medium", "high", "xhigh", "max"],
     defaultThinkingLevel: "medium",
   },
-  { ...GPT, modelId: "gpt-6-sol", displayName: "GPT-6 Sol", defaultThinkingLevel: "low" },
+  {
+    ...GPT,
+    modelId: "gpt-6.1-sol",
+    displayName: "GPT-6.1 Sol",
+    thinkingLevels: ["low", "medium", "high", "xhigh", "max"],
+    defaultThinkingLevel: "medium",
+  },
   { ...GPT, modelId: "gpt-6-luna", displayName: "GPT-6 Luna", defaultThinkingLevel: "medium" },
   {
     ...DEEPSEEK,
@@ -62,7 +68,7 @@ Object.freeze(REVIEWED_MODELS);
 export type ReviewedModel = (typeof REVIEWED_MODELS)[number];
 export const DEFAULT_NEW_CONVERSATION_MODEL = {
   provider: "openai-codex",
-  modelId: "gpt-6-sol",
+  modelId: "gpt-6.1-sol",
 } as const;
 export const reviewedModel = (provider: string, modelId: string): ReviewedModel | undefined =>
   REVIEWED_MODELS.find((model) => model.provider === provider && model.modelId === modelId);

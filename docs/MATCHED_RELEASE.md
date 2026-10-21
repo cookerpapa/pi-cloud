@@ -109,6 +109,17 @@ configured web port. A Linux-only HTTP 200 does not establish Windows access.
 
 ## Acceptance and fixture restoration
 
+The ADR-0191 GPT-6.1 amendment adds schema 195 for mutable Sol settings and pinned
+gateway catalog metadata. Drain writers before migrating; issued Run/native
+model snapshots are preserved. Validate the new UI selection and unsupported
+reasoning rejection, then run real function/vision/hosted-search through the
+gateway and native Cube Tools through the Worker. The existing drivers accept
+`PI_CLOUD_GPT_CAPABILITY_MODEL=gpt-6.1-sol` and
+`PI_CLOUD_NATIVE_TOOL_MODEL=gpt-6.1-sol`; their defaults remain GPT-6 Luna. Store
+reports in the private release evidence directory and confirm fixture deletion
+and physical cleanup. Gateway/Pi source versions and execution protocols do not
+change in this slice.
+
 ADR-0266 adds schema 194 for provisional attachment pins and positive object-write
 completion. Verify uncertain input/edit receipts, old-writer closure, late PUT
 cleanup and cancelled/corrupt source previews. ADR-0265 also requires matching

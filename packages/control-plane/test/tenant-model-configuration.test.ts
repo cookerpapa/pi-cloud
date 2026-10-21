@@ -4,6 +4,7 @@ import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { supportedSessionModelSelection } from "../src/model-profile-catalog.ts";
 import {
   ControlPlaneStore,
   TenantModelConfigurationError,
@@ -51,6 +52,18 @@ function ownerIdentity(
 }
 
 describe.sequential("tenant model configuration", () => {
+  it("admits GPT-6.1 Sol supported reasoning without aliases or disabled reasoning", () => {
+    const selection = {
+      provider: "openai-codex",
+      modelId: "gpt-6.1-sol",
+      fastMode: false,
+    } as const;
+    for (const thinkingLevel of ["low", "medium", "high", "xhigh", "max"] as const) {
+      expect(supportedSessionModelSelection({ ...selection, thinkingLevel })).toBeDefined();
+    }
+    expect(supportedSessionModelSelection({ ...selection, thinkingLevel: "off" })).toBeUndefined();
+  });
+
   it("offers Flash and omits Pro while preserving the selected Flash route", async () => {
     const tenant = await createPrivateTenant(database, {
       slug: "hidden-model-route",
@@ -89,15 +102,15 @@ describe.sequential("tenant model configuration", () => {
       routeVersion: 1,
     });
     await expect(
-      service.replace(identity, { provider: "openai-codex", modelId: "gpt-6-sol" }),
+      service.replace(identity, { provider: "openai-codex", modelId: "gpt-6.1-sol" }),
     ).resolves.toMatchObject({
       mode: "real",
       provider: "openai-codex",
-      modelId: "gpt-6-sol",
+      modelId: "gpt-6.1-sol",
       routeVersion: 2,
     });
     await expect(
-      service.replace(identity, { provider: "openai-codex", modelId: "gpt-6-sol" }),
+      service.replace(identity, { provider: "openai-codex", modelId: "gpt-6.1-sol" }),
     ).resolves.toMatchObject({ routeVersion: 2 });
     await expect(
       service.replace(identity, { provider: "deepseek", modelId: "deepseek-v4-pro" }),
@@ -113,7 +126,7 @@ describe.sequential("tenant model configuration", () => {
       {
         provider: "openai-codex",
         kind: "brokered",
-        route: "provider-gateway://openai-codex/gpt-6-sol",
+        route: "provider-gateway://openai-codex/gpt-6.1-sol",
       },
       {
         provider: "deepseek",
@@ -156,11 +169,11 @@ describe.sequential("tenant model configuration", () => {
     });
     await service.replace(ownerIdentity(source), {
       provider: "openai-codex",
-      modelId: "gpt-6-sol",
+      modelId: "gpt-6.1-sol",
     });
     await expect(service.get(ownerIdentity(managed))).resolves.toMatchObject({
       provider: "openai-codex",
-      modelId: "gpt-6-sol",
+      modelId: "gpt-6.1-sol",
     });
   });
 
@@ -180,7 +193,7 @@ describe.sequential("tenant model configuration", () => {
       tenantSlug: "dynamic-route-first",
       displayName: "Dynamic Route First",
     });
-    initialModel = { provider: "openai-codex", modelId: "gpt-6-sol" };
+    initialModel = { provider: "openai-codex", modelId: "gpt-6.1-sol" };
     const second = await registration.register({
       tenantSlug: "dynamic-route-second",
       displayName: "Dynamic Route Second",
@@ -205,7 +218,7 @@ describe.sequential("tenant model configuration", () => {
       {
         tenantId: second.tenantId,
         provider: "openai-codex",
-        modelId: "gpt-6-sol",
+        modelId: "gpt-6.1-sol",
       },
     ]);
   });

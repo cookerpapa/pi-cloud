@@ -28,6 +28,14 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## GPT-6.1 Sol catalog refresh
+
+The owner-requested [ADR-0191 amendment](adr/0191-gpt6-model-catalog.md) replaces
+the future Sol selection, refreshes pinned gateway metadata and preserves Luna
+for routine tests. Schema 195 maps unsupported old reasoning choices while
+retaining accepted model history. Source verification, matched deployment and
+actual Sol text/Tool/vision/search acceptance are in progress.
+
 ## Resource/interaction release acceptance
 
 The [combined review](reports/resource-interaction-review-20261020.md) and all six

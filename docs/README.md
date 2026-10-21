@@ -1,5 +1,9 @@
 # Documentation map
 
+The [GPT-6.1 Sol amendment](adr/0191-gpt6-model-catalog.md) updates the reviewed
+model catalog and future Sol settings under schema 195. Verification and rollout
+are in progress; historical model evidence and other provider routes are retained.
+
 The [October 20 resource/interaction repair plan](reports/resource-interaction-repair-plan-20261020.md)
 organizes the 16 findings and follow-up discussion into six repair slices.
 It prioritizes live VM holders and supervisor quiescence, then proposes native

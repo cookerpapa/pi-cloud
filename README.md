@@ -4,6 +4,9 @@ A self-hosted, multi-tenant coding agent. Pi Durable 1.0.0 runs the native Harne
 Worker pool; file and shell tools execute in isolated CubeSandbox KVM guests.
 
 - Multi-round chat, model switching, hosted search and Subagents.
+  New conversations default to GPT-6.1 Sol; GPT-6 Luna, GPT-6 Astra and DeepSeek
+  V4.1 Flash remain selectable. The reviewed catalog and gateway metadata must
+  both support a new model; upstream discovery alone does not add a UI choice.
 - Native Pi follow-up/steer within one Run, with editable pending messages,
   ordering, individual removal and promotion to active steer.
   Stop withdraws pending messages and restores their text and attachments to the
