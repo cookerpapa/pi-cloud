@@ -123,8 +123,22 @@ no runtime timeout or assertion was relaxed.
 The acceptance-helper run initially used the operator log's private umask, which
 made a temporary Git fixture's file modes differ from checkout modes. Running
 the suite with the normal source-checkout umask passes all 94 checks. Kafka,
-fault and dependency gates are being completed separately; the original
+fault and dependency gates subsequently pass: 9 transport checks, all 361
+deterministic fault cases and the high-severity dependency audit with no
+remaining vulnerabilities. The fault report retains its tested runtime revision
+and dirty-fixture flag; it is not a live chaos experiment. The original
 `npm run ci` exit was not a pass.
+
+Final existing-account review reproduced an admission bug: a credential profile
+created before Ultra still carried the old effort list and rejected the new
+catalog selection. Real-provider admission now takes capabilities/defaults from
+the one current catalog, retaining PG identity/enablement and the accepted Run
+snapshot. A regression first fails on the old behavior, then passes for an old
+profile, Ultra selection, subsequent catalog withdrawal and frozen dispatch.
+The model/account repeat passes 16 tests; input/queue checks pass 20 tests,
+including the unchanged eight ordinary intake SQL statements. Control Plane
+type checking also passes. The runtime-image candidate is regenerated for this
+final admission correction.
 
 All eleven candidate images for runtime implementation `533afe94` passed scanning
 and matched preflight. Final test/evidence changes require a new clean-source

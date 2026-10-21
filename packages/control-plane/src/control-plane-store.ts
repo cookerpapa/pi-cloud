@@ -2059,19 +2059,25 @@ export class ControlPlaneStore {
       enabled: row.profileEnabled,
     };
     try {
-      const resolved = resolveTurnModel(profile, requestedThinkingLevel);
       const catalog = currentModelCatalog();
-      const supported = catalogModel(resolved.provider, resolved.modelId, catalog);
-      if (resolved.provider !== "pi-cloud-fake" && (!supported || !supported.visible)) {
+      const supported = catalogModel(profile.provider, profile.modelId, catalog);
+      if (profile.provider !== "pi-cloud-fake" && (!supported || !supported.visible)) {
         throw new DomainModelValidationError(
           "The selected model is unavailable in the current catalog",
         );
       }
-      if (supported && !supported.thinkingLevels.includes(resolved.thinkingLevel)) {
-        throw new DomainModelValidationError(
-          `Thinking level ${resolved.thinkingLevel} is not supported by ${resolved.modelId}`,
-        );
-      }
+      // Credential identity/enabled state belongs to PG; real provider capabilities
+      // belong to the one deployment catalog, not an older profile-row copy.
+      const resolved = resolveTurnModel(
+        supported
+          ? {
+              ...profile,
+              defaultThinkingLevel: supported.defaultThinkingLevel,
+              allowedThinkingLevels: [...supported.thinkingLevels],
+            }
+          : profile,
+        requestedThinkingLevel,
+      );
       if (serviceTier === "fast" && supported?.fastModeAvailable !== true) {
         throw new DomainModelValidationError(`Fast mode is not supported by ${resolved.modelId}`);
       }

@@ -32,6 +32,11 @@ next prepared model request. Cache preservation is not a requirement.
    the native cloud-run document retains the selected effort for section rendering.
    The native Agent stores the resolved inference effort. A catalog may offer
    Ultra only alongside Max; default model/effort selections remain unchanged.
+   New real-model admission uses the current catalog's defaults and supported
+   efforts, as required by ADR-0267. Persisted credential-profile capability
+   copies must not block a newly offered Ultra profile on an existing account.
+   Credential identity/status and explicit Session selections remain PG-owned;
+   accepted Runs continue using their frozen snapshot after catalog withdrawal.
 4. Show compact child task/phase/navigation in the parent's Tool card. Reuse native
    parent Tool/child Session relationships and disposable HTTP/SSE observations.
    Details start collapsed; updates never force scrolling or expansion. Native

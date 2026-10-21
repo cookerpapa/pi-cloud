@@ -39,6 +39,12 @@ it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)(
         initialModel: { provider: "openai-codex", modelId: "future-model" },
       });
       const store = new ControlPlaneStore({ database: db, ...tenant });
+      // Existing accounts retain their credential profiles when the deployment catalog changes.
+      await db
+        .updateTable("model_profiles")
+        .set({ allowed_thinking_levels: model.thinkingLevels.filter((level) => level !== "ultra") })
+        .where("id", "=", tenant.defaultModelProfileId)
+        .execute();
       const project = await store.createProject({ name: "catalog", source: { kind: "empty" } });
       const session = await store.createSession(
         project.projectId,
@@ -63,6 +69,7 @@ it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)(
       expect(before.model_runtime_snapshot).toMatchObject({ maxTokens: 65536 });
       expect(before.thinking_level).toBe("ultra");
       model.maxTokens = 32768;
+      model.thinkingLevels = model.thinkingLevels.filter((level) => level !== "ultra");
       writeFileSync(path, JSON.stringify(config));
       await delay(1100);
       const worker = await createTestWorker(db);
@@ -94,6 +101,9 @@ it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)(
         .where("id", "=", second.runId)
         .executeTakeFirstOrThrow();
       expect(after.model_runtime_snapshot).toMatchObject({ maxTokens: 32768 });
+      expect(
+        (after.model_runtime_snapshot as { thinkingLevels: string[] }).thinkingLevels,
+      ).not.toContain("ultra");
       expect(after.model_runtime_snapshot).not.toEqual(before.model_runtime_snapshot);
       model.visible = false;
       writeFileSync(path, JSON.stringify(config));
