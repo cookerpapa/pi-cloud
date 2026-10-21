@@ -49,9 +49,9 @@ export async function probeCatalogModel({ model, baseUrl, apiKey, fetchImplement
         instructions: "Follow the fixture exactly and be concise.",
         input,
         // DeepSeek thinking mode accepts automatic selection, not a forced
-        // function. On the final request remove offered tools instead of forcing
-        // `none`; still require the real call and exact result below.
-        tools: model.provider === "deepseek" && choice === "none" ? [] : [tool],
+        // function. Preserve offered tools when reading the result, as the
+        // ordinary Agent does; settlement below rejects another invocation.
+        tools: [tool],
         tool_choice: model.provider === "deepseek" ? "auto" : choice,
         max_output_tokens: Math.min(model.maxTokens, 512),
         ...(model.thinkingLevels.includes("low") ? { reasoning: { effort: "low" } } : {}),
@@ -75,7 +75,12 @@ export async function probeCatalogModel({ model, baseUrl, apiKey, fetchImplement
       ...first.output,
       { type: "function_call_output", call_id: calls[0].call_id, output: "CATALOG_ROUTE_OK" },
     ],
-    "none",
+    "auto",
+  );
+  assert.equal(
+    second.output.filter((item) => item.type === "function_call").length,
+    0,
+    "Catalog probe repeated its Tool invocation",
   );
   const text = second.output
     .flatMap((i) => i.content ?? [])

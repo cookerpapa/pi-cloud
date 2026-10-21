@@ -44,6 +44,9 @@ it("requires genuine function and text responses with the requested model identi
       fetchImplementation,
     }),
   ).resolves.toMatchObject({ modelId: "future", text: true, functionCalling: true });
+  const requests = fetchImplementation.mock.calls.map(([, init]) => JSON.parse(init.body));
+  expect(requests[1].tool_choice).toBe("auto");
+  expect(requests[1].tools).toEqual(requests[0].tools);
   const substituted = vi.fn().mockResolvedValue(Response.json({ ...first, model: "other" }));
   await expect(
     probeCatalogModel({
@@ -54,6 +57,19 @@ it("requires genuine function and text responses with the requested model identi
     }),
   ).rejects.toThrow("different model");
   expect(substituted).toHaveBeenCalledOnce();
+  await expect(
+    probeCatalogModel({
+      model,
+      baseUrl: "http://fixture",
+      apiKey: "fixture-key",
+      fetchImplementation: vi
+        .fn()
+        .mockResolvedValueOnce(Response.json(first))
+        .mockResolvedValueOnce(
+          Response.json({ ...second, output: [...second.output, ...first.output] }),
+        ),
+    }),
+  ).rejects.toThrow("repeated its Tool invocation");
 });
 
 it("keeps DeepSeek thinking enabled and accepts only its reviewed Flash response identity", async () => {
@@ -87,7 +103,7 @@ it("keeps DeepSeek thinking enabled and accepts only its reviewed Flash response
   });
   const requests = fetchImplementation.mock.calls.map(([, init]) => JSON.parse(init.body));
   expect(requests.map((request) => request.tool_choice)).toEqual(["auto", "auto"]);
-  expect(requests.map((request) => request.tools.length)).toEqual([1, 0]);
+  expect(requests.map((request) => request.tools.length)).toEqual([1, 1]);
   expect(requests.every((request) => request.reasoning.effort === "low")).toBe(true);
   expect(requests[1].input.at(-1)).toMatchObject({
     type: "function_call_output",
