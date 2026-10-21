@@ -1,8 +1,9 @@
 # Runtime capabilities and delegation delivery
 
-Implementation is in progress under ADR-0268. The owner approved all slices in
-the [consolidated plan](subagent-wait-review-20261021.md); this is not a completed
-matched release or acceptance claim.
+The owner approved all slices in the
+[consolidated plan](subagent-wait-review-20261021.md). Runtime implementation
+`2f7d1b3c` is deployed as `runtime-capabilities-2f7d1b3c`, schema 197, under
+ADR-0268/0269. Catalog publication and final live acceptance remain in progress.
 
 ## Guest network policy slice
 
@@ -29,9 +30,9 @@ API identity. Accounts and credentials were not changed.
 
 Private configuration evidence is in
 `deploy/production/runtime/review-evidence/runtime-capabilities-20261021/`.
-Acceptance must preserve the deliberately enabled setting, rather than restoring
-the old disabled state. Worker policy delivery remains source-only until the
-matched release.
+Acceptance preserves the deliberately enabled setting, rather than restoring
+the old disabled state. Real guest npm/PyPI GETs both returned HTTP 200 after the
+matched release; the effective native network-policy section is enabled.
 
 ## Ultra profile slice
 
@@ -104,9 +105,9 @@ Ordinary reply admission also preserves the existing 50 KiB/2,000-line control
 result budget; oversized completed output produces a bounded error without a
 second handler execution. Its focused regression passes.
 
-The maintained live browser driver now has an explicit runtime-capability mode.
-Full release gates, matched artifacts/deployment and real provider/browser/Cube
-acceptance are the remaining work. No application rollout has occurred yet.
+The maintained live browser driver has an explicit runtime-capability mode.
+The matched application is deployed; final provider/browser/recovery/Cube
+acceptance is still required before marking delivery complete.
 
 ## Full-check findings and rollout boundary
 
@@ -140,11 +141,56 @@ including the unchanged eight ordinary intake SQL statements. Control Plane
 type checking also passes. The runtime-image candidate is regenerated for this
 final admission correction.
 
-All eleven candidate images for runtime implementation `533afe94` passed scanning
-and matched preflight. Final test/evidence changes require a new clean-source
-candidate before apply. KVM is available and there are no active Runs/leases.
-One existing development machine still owns current user project directories
-and several retained Sessions. The current matched procedure requires
-machine release, while that API also retires/deletes its Workspace storage. No
-machine or Workspace was released to pass the deployment gate. Data disposition
-or a separately reviewed maintenance path remains a rollout prerequisite.
+All eleven final candidate images for `2f7d1b3c` passed scanning and matched
+preflight. The owner explicitly authorized releasing the existing development
+machine and deleting its entire Workspace. The maintained lifecycle confirmed
+machine release, Workspace physical purge and an all-node inventory with zero
+VMs before matched replacement. No active Run, lease, terminal or Tool binding
+remained. Account, credential and model-profile row hashes plus host/cluster
+secret hashes match their pre-release baseline.
+
+## Live findings and operator corrections
+
+Browser Stop, queued-image return/resend and direct vision pass, as do native
+Read aliases and UTF-8-safe 50 KiB truncation with canonical diagnostics. The
+first capability check incorrectly expected unchanged native sections to be
+repeated in the current Run. The acceptance reader now reconstructs the owned
+Conversation's effective state across Runs using Pi's transcript utilities,
+excluding child configuration. Its regression covers retained sections, child
+isolation and section/Tool withdrawal. Production history policy is unchanged.
+
+The matched operator correctly retained the installed catalog override, which
+did not yet offer Ultra. Publish the reviewed catalog separately after the
+schema/app upgrade; only reasoning selections change, with defaults, routes,
+budgets and credentials preserved. This prerequisite is now explicit in the
+matched-release procedure. Native-input acceptance also updates its obsolete
+schema-195 assertion to schema 197.
+
+Catalog probes exposed two fixture assumptions. DeepSeek thinking mode rejects
+forced function selection and returns the reviewed `deepseek-flash` response ID
+for the `deepseek-v4-flash` request ID. The bounded probe now uses automatic
+selection for this provider and accepts that explicit identity pair while still
+rejecting substitution. Luna twice answered that its Tool was unavailable when
+the probe disabled tools on the result-reading request. Keeping the same tool
+definition and automatic selection, as in ordinary native work, passes its
+targeted repeat. The probe still requires the exact Tool call and result marker
+and rejects a repeated invocation. Regression checks pass. A clean operator
+checkout also needed its local Helm chart dependency built before rendering;
+the failed preparation did not publish configuration. Catalog
+`catalog-3c696ce8510a-mvi4uj0y` is now published: all four affected model routes
+pass text/function probes and 80 scoped checks pass.
+
+All five native-input/live-progress cases pass: consumption, Stop return,
+Worker recovery, streaming Stop and simultaneous Worker/Control Plane crash.
+Recovery retains the logical Run, edited inputs and observed partial text;
+streaming bodies remain out of PG. Fixture physical cleanup is confirmed.
+
+The first live Ultra child completes and replies, but browser acceptance exposes
+a real presentation-data omission: the default human-focused tree returns no
+child summaries. The focused reader now includes relationship summaries while
+excluding child native bindings/entries from its history reads. A real-PG
+regression covers a child whose native Conversation is not yet attached; the
+tree/history and child UI repeat passes 17 checks. The test's initial attempt to
+clear the required physical Session binding was invalid; it now models only the
+nullable native Conversation binding. Full publication and browser repeat of
+this focused-tree correction remain pending.

@@ -373,12 +373,12 @@ export class ConversationTreeService {
     const delegated = await this.#delegatedFamily(
       database,
       tenantId,
-      view === "full"
-        ? humanSessions.map((session) => session.id)
-        : selected.sessionKind === "subagent"
-          ? [selected.id]
-          : [],
+      view === "full" ? humanSessions.map((session) => session.id) : [selected.id],
     );
+    // Focused human views need child relationship metadata for progress, but
+    // must not open child histories just to display that metadata.
+    const historyDelegates =
+      view === "focus" && selected.sessionKind === "conversation" ? [] : delegated;
     const delegatedBySession = new Map(
       delegated.map((summary) => [summary.sessionId, summary] as const),
     );
@@ -397,7 +397,7 @@ export class ConversationTreeService {
           );
     const sessionIds = [
       ...humanSessions.map((session) => session.id),
-      ...delegated.map((summary) => summary.sessionId),
+      ...historyDelegates.map((summary) => summary.sessionId),
       ...selectedDelegatedAncestorSessionIds,
       ...(selectedDelegated === undefined ? [] : [selectedDelegated.sessionId]),
     ];
@@ -457,7 +457,7 @@ export class ConversationTreeService {
     );
 
     const delegatedBranches: ConversationTreeBranchResource[] = [];
-    for (const summary of delegated) {
+    for (const summary of historyDelegates) {
       const binding = bindingBySession.get(summary.sessionId);
       if (binding === undefined) {
         throw new ControlPlaneStoreError(

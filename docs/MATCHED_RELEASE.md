@@ -111,9 +111,13 @@ configured web port. A Linux-only HTTP 200 does not establish Windows access.
 
 ## Acceptance and fixture restoration
 
-ADR-0268/0269 use schema 197 and matched management/SSE contracts. Run the
-ordinary native-input/recovery and full Cube gates, plus the runtime capability
-extension of the existing browser/Read acceptance:
+ADR-0268/0269 use schema 197 and matched management/SSE contracts. The matched
+upgrade preserves an installed model-catalog override. After upgrading the app,
+publish the reviewed catalog containing Ultra through the existing
+[catalog release](COMPONENT_RELEASE.md#catalog), preserving other model settings.
+Otherwise Ultra remains unavailable even though the new runtime supports it.
+Run the ordinary native-input/recovery and full Cube gates, plus the runtime
+capability extension of the existing browser/Read acceptance:
 
 ```sh
 PI_CLOUD_LIVE_RELEASE_CHECK=1 PI_CLOUD_LIVE_RUNTIME_CAPABILITIES=1 node --import tsx scripts/run-live-release-acceptance.mjs

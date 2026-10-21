@@ -349,7 +349,6 @@ try {
       baseUrl,
       directory: dirname(output),
       completed,
-      history: (runId) => nativeHistory(db, { runId }),
       progress,
       save: async (value) => {
         report.runtimeCapabilities = value;

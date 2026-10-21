@@ -46,6 +46,10 @@ next prepared model request. Cache preservation is not a requirement.
    both current scopes before routing `run.child_activity` to the parent's SSE.
    Reuse the existing child summary with parent Tool/child Turn identities. The
    browser coalesces discovery/lifecycle/reconnect reads, not phase-by-phase reads.
+   A human Conversation's focused tree includes child relationship summaries,
+   while its native entry reads remain limited to the focused human lineage.
+   Child progress must not depend on opening the full history tree or on sidebar
+   pagination; discovering a child must not load that child's transcript.
 
 The ordinary Tool catalog protocol is recorded separately before its vertical
 slice. All work retains PG authority, one physical Session writer, Kafka dispatch

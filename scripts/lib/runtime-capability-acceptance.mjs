@@ -4,11 +4,11 @@ import { execFileSync } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
+import { getCurrentSystemMessage, getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { controlToolCatalog } from "../../packages/control-plane/src/control-tool-registry.ts";
 import { previewToolDefinition } from "../../packages/control-plane/src/control-preview-tool.ts";
 import { newIdempotencyKey } from "../../packages/web-ui/src/api.ts";
-import { nativeMessages } from "./native-session-history.mjs";
+import { nativeHistory, nativeMessages } from "./native-session-history.mjs";
 import {
   kubectl,
   kubeconfig,
@@ -53,19 +53,20 @@ function workerPods() {
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
-function toolsIn(rows) {
-  return getCurrentTools(nativeMessages(rows)).map((tool) => tool.name);
+export function runtimeCapabilityState(rows, conversationId) {
+  const messages = nativeMessages(
+    rows.filter((row) => Number(row.entry.conversationId) === Number(conversationId)),
+  );
+  return {
+    tools: getCurrentTools(messages).map((tool) => tool.name),
+    sections: getCurrentSystemMessage(messages)?.sections ?? {},
+  };
 }
 function callsIn(rows) {
   return nativeMessages(rows)
     .filter((message) => message.role === "assistant")
     .flatMap((message) => message.content ?? [])
     .filter((part) => part.type === "toolCall");
-}
-function sectionsIn(rows, key) {
-  return nativeMessages(rows)
-    .filter((message) => message.role === "system" && message.sections?.[key])
-    .map((message) => message.sections[key]);
 }
 
 /** Owned live work only. The caller holds the release lock and cleans this Session/Workspace. */
@@ -77,11 +78,27 @@ export async function runtimeCapabilityAcceptance({
   baseUrl,
   directory,
   completed,
-  history,
   progress,
   save,
 }) {
   const result = { accepted: false, catalogConfigurationRestored: false, runs: [] };
+  const nativeSession = await db
+    .selectFrom("sessions")
+    .select(["pi_session_id", "pi_conversation_id"])
+    .where("tenant_id", "=", tenant.tenantId)
+    .where("id", "=", session.sessionId)
+    .executeTakeFirstOrThrow();
+  assert(nativeSession.pi_session_id && nativeSession.pi_conversation_id);
+  // Pi only records changed sections/tools. Reconstruct the owned Conversation's
+  // effective state across Runs, without mixing in a child's independent state.
+  const currentState = async () =>
+    runtimeCapabilityState(
+      await nativeHistory(db, {
+        tenantId: tenant.tenantId,
+        sessionId: nativeSession.pi_session_id,
+      }),
+      nativeSession.pi_conversation_id,
+    );
   const settings = async (thinkingLevel, provider = "openai-codex", modelId = "gpt-6-luna") =>
     api.updateSessionModel(session.sessionId, {
       provider,
@@ -151,17 +168,17 @@ export async function runtimeCapabilityAcceptance({
     ),
     "Guest registry requests were not confirmed",
   );
+  const networkState = await currentState();
   assert(
-    sectionsIn(networkHistory, "cloud-network").some((text) =>
-      text.includes("enabled through its configured proxy"),
-    ),
+    networkState.sections["cloud-network"]?.includes("enabled through its configured proxy"),
+    "The effective network section must retain the enabled policy across Runs",
   );
   assert(
-    sectionsIn(networkHistory, "delegation-policy").some((text) =>
-      text.includes("only when the user"),
-    ),
+    networkState.sections["delegation-policy"]?.includes("only when the user"),
+    "Max must use explicit-request-only delegation instructions",
   );
   result.guestEgress = true;
+  await save(result);
 
   progress("runtime capabilities: Ultra native child and compact browser progress");
   await settings("ultra");
@@ -203,9 +220,8 @@ export async function runtimeCapabilityAcceptance({
   const childHistory = await finish(delegated);
   assert(callsIn(childHistory).some((call) => call.name === "subagent"));
   assert(
-    sectionsIn(childHistory, "delegation-policy").some((text) =>
-      text.includes("may proactively delegate"),
-    ),
+    (await currentState()).sections["delegation-policy"]?.includes("may proactively delegate"),
+    "Ultra must use proactive delegation instructions",
   );
   assert(
     new Set(
@@ -228,6 +244,7 @@ export async function runtimeCapabilityAcceptance({
     "Child did not retain provider Max",
   );
   result.ultra = { selected: efforts.selected, childProviderMax: true };
+  await save(result);
 
   progress("runtime capabilities: explicit delegation remains available at Max");
   await settings("max");
@@ -238,11 +255,11 @@ export async function runtimeCapabilityAcceptance({
   const explicitHistory = await finish(explicit);
   assert(callsIn(explicitHistory).some((call) => call.name === "subagent"));
   assert(
-    sectionsIn(explicitHistory, "delegation-policy").some((text) =>
-      text.includes("only when the user"),
-    ),
+    (await currentState()).sections["delegation-policy"]?.includes("only when the user"),
+    "Returning to Max must replace the proactive instructions",
   );
   result.explicitDelegation = true;
+  await save(result);
 
   const other = await db
     .selectFrom("runs")
@@ -351,7 +368,7 @@ export async function runtimeCapabilityAcceptance({
       "max",
     );
     await runningBash(run);
-    assert(!toolsIn(await history(run.runId)).includes("preview"));
+    assert(!(await currentState()).tools.includes("preview"));
     const owner = await lease(run);
     progress("runtime capabilities: add preview during the same active loop");
     await swap(["preview"]);
@@ -362,7 +379,7 @@ export async function runtimeCapabilityAcceptance({
     );
     await releaseGate(name);
     const rows = await finish(run);
-    assert(toolsIn(rows).includes("preview"));
+    assert((await currentState()).tools.includes("preview"));
     assert(callsIn(rows).some((call) => call.name === "preview"));
     assert(
       nativeMessages(rows).some(
@@ -385,14 +402,14 @@ export async function runtimeCapabilityAcceptance({
       "max",
     );
     await runningBash(removed);
-    assert(toolsIn(await history(removed.runId)).includes("preview"));
+    assert((await currentState()).tools.includes("preview"));
     const previous = await lease(removed);
     progress("runtime capabilities: withdraw preview during an active loop");
     await swap([]);
     assert.deepEqual(await lease(removed), previous);
     await releaseGate(removedGate);
-    const removedHistory = await finish(removed);
-    assert(!toolsIn(removedHistory).includes("preview"));
+    await finish(removed);
+    assert(!(await currentState()).tools.includes("preview"));
     result.catalogWithdrawal = { sameRun: true, sameWriter: true, sameWorkers: true };
   } finally {
     const current = JSON.parse(helm("get", "values", "pi-cloud", "--output", "json"));
@@ -421,7 +438,7 @@ export async function runtimeCapabilityAcceptance({
   );
   const deepseekHistory = await finish(deepseek);
   assert(callsIn(deepseekHistory).some((call) => call.name === "bash"));
-  assert(toolsIn(deepseekHistory).includes("preview"));
+  assert((await currentState()).tools.includes("preview"));
   result.deepseek = {
     model: "deepseek-v4-flash",
     selectedUltra: true,

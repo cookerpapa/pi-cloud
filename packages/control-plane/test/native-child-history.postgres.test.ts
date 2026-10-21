@@ -7,6 +7,52 @@ import { ConversationTreeService } from "../src/conversation-tree-service.ts";
 import { ConversationDeletionService } from "../src/conversation-deletion-service.ts";
 import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
 
+it("shows child progress metadata in human focus without requiring a child history binding", async () => {
+  const f = await nativeSubagentFixture();
+  try {
+    const call = await f.command({ task: "Child is preparing" });
+    const child = await new PostgresSubagentConversations({
+      database: f.database,
+      native: f.native,
+    }).start({
+      id: call.operationId,
+      tenantId: f.scope.tenantId,
+      rootRunId: f.scope.runId,
+      parentSessionId: f.scope.sessionId,
+      parentTurnId: f.scope.turnId,
+      executionReference: f.reference,
+      parentToolCallId: `task:${call.taskId}`,
+      source: { sequence: call.nativeSequence, taskId: call.taskId },
+      prompt: "Child is preparing",
+      contextMode: "fresh",
+      contextAnchor: null,
+      sandboxMode: "none",
+    });
+    await f.database
+      .updateTable("sessions")
+      .set({ pi_conversation_id: null })
+      .where("id", "=", child.childSessionId)
+      .execute();
+    const tree = await new ConversationTreeService({ database: f.database }).tree(
+      f.scope.tenantId,
+      f.scope.sessionId,
+      "focus",
+    );
+    expect(tree.branches.map((branch) => branch.sessionId)).toEqual([f.scope.sessionId]);
+    expect(tree.delegatedSessions).toMatchObject([
+      {
+        sessionId: child.childSessionId,
+        parentSessionId: f.scope.sessionId,
+        parentTurnId: f.scope.turnId,
+        parentToolCallId: `task:${call.taskId}`,
+        turnId: child.childTurnId,
+      },
+    ]);
+  } finally {
+    await f.close();
+  }
+}, 60000);
+
 it("forks native child history and preserves parent-owned deletion boundaries without a child Run", async () => {
   const f = await nativeSubagentFixture();
   try {
