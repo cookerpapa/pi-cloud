@@ -42,6 +42,10 @@ pin v1.18.7 (Cube patch 0013); native checks and replacement artifact scans are
 in progress. The disposable image fixture also restores the pinned server's
 native eight-volume capacity after four slots prevented an initial seven-volume
 growth batch. All 81 acceptance-helper checks pass with that fixture correction.
+The source dependency gate additionally required Vite 7.3.7. Frontend build,
+175 tests, type checking, the dependency audit and real-browser presentation
+checks pass with this single package version change. The final matched artifact
+set and live model acceptance remain in progress.
 
 ## Resource/interaction release acceptance
 

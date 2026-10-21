@@ -60,6 +60,10 @@ only module versions/checksums; execution and management protocols stay at 7.
 The disposable SeaweedFS test fixture retains its native eight-volume capacity:
 four slots were insufficient for its initial seven-volume growth batch. This
 changes neither production storage limits nor the asset recovery protocol.
+The final source dependency check also pins the frontend/test-tooling Vite
+dependency to [7.3.7](https://github.com/vitejs/vite/releases/tag/v7.3.7).
+One root override keeps Vitest and the frontend on that same patch release;
+no major bundler upgrade or unrelated package refresh is included.
 
 ### Original GPT-6 migration (2026-09-26)
 
