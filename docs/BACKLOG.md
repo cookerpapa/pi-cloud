@@ -30,12 +30,15 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Run status presentation
 
-- [ ] Keep phase and connection/update-delay warnings visible; move activity and
+- [x] Keep phase and connection/update-delay warnings visible; move activity and
       path/guest confirmation ages into collapsed diagnostics. Verify browser
       disclosure, reconnect, stale observations and the deployed UI. Observation
       transport and runtime authority remain unchanged.
-- [ ] Publish the UI through the existing scoped release operator's Web image
+- [x] Publish the UI through the existing scoped release operator's Web image
       scope, preserving the current development machine and backend artifacts.
+
+[Delivery evidence](reports/run-status-presentation-20261021.md) records passing
+browser/Luna/Cube acceptance, one-image publication and confirmed fixture cleanup.
 
 ## Scoped release and runtime model catalog
 

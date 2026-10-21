@@ -1,5 +1,9 @@
 # Documentation map
 
+The [Run status presentation update](reports/run-status-presentation-20261021.md)
+keeps phases and warnings visible while collapsing diagnostic ages. It is deployed
+through the existing operator's Web scope, preserving backend/VM identities.
+
 [ADR-0267](adr/0267-scoped-releases-and-model-catalog.md) and the
 [component release procedure](COMPONENT_RELEASE.md) are deployed on schema 196.
 [Delivery evidence](reports/component-release-20261021.md) verifies independent

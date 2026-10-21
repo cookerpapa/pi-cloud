@@ -245,6 +245,9 @@ VMs directly and reuses confirmed execution-path evidence; missing probes do not
 authorize VM destruction or quota release. Recovery never automatically replays
 uncertain commands. Quarantine closes PG bindings before confirming propagation,
 so a publication outage cannot leave a failed VM eligible for new work.
+The [chat status display](docs/reports/run-status-presentation-20261021.md) shows
+the current phase and connection/update-delay warnings; diagnostic confirmation
+ages are collapsed by default.
 Fixed Tool reply waits use that invocation's execution budget plus the existing
 120-second transport allowance. An eligible lost reply remains UNKNOWN; a fresh,
 bounded path check can allow a separate inspection Tool. An unconfirmed path or
