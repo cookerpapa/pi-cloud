@@ -1,5 +1,11 @@
 # Architecture
 
+[ADR-0268](adr/0268-runtime-capabilities-and-delegation.md) is being implemented:
+credential-free capability snapshots reuse Worker management, native Pi sections
+describe network/delegation policy and child progress stays disposable.
+[Delivery status](reports/runtime-capabilities-delivery-20261021.md) distinguishes
+the enabled serving guest-egress setting from pending application deployment.
+
 [ADR-0267](adr/0267-scoped-releases-and-model-catalog.md) is deployed on schema 196.
 [Current delivery](reports/component-release-20261021.md) validates independent
 provider/catalog publication, frozen Run model capabilities, stable Worker/VM

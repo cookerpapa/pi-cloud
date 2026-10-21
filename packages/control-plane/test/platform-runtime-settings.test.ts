@@ -69,7 +69,9 @@ describe.sequential("hot platform runtime settings", () => {
       ownerDisplayName: "Runtime Settings Other",
     });
     const operatorIdentity = ownerIdentity(operator);
+    const observations: import("@pi-cloud/protocol").GuestPublicEgress[] = [];
     const service = new PlatformRuntimeSettingsService({
+      onPublicEgress: (value) => observations.push(value),
       database,
       platformOperatorTenantId: operator.tenantId,
       internalServiceToken: "t".repeat(48),
@@ -119,5 +121,18 @@ describe.sequential("hot platform runtime settings", () => {
       cube_proxy_enabled: true,
     });
     expect(changes[0]?.cube_proxy_url_sha256).toMatch(/^[0-9a-f]{64}$/);
+    await expect(service.publicEgress()).resolves.toEqual({ revision: 1, status: "enabled" });
+    expect(observations).toEqual([
+      { revision: 0, status: "disabled" },
+      { revision: 1, status: "enabled" },
+    ]);
+    // The existing gateway reader also observes changes made by another process.
+    await database
+      .updateTable("platform_runtime_settings")
+      .set({ cube_proxy_enabled: false, revision: 2 })
+      .where("settings_key", "=", "default")
+      .execute();
+    await service.internal("t".repeat(48));
+    expect(observations.at(-1)).toEqual({ revision: 2, status: "disabled" });
   });
 });

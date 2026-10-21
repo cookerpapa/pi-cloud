@@ -3,6 +3,7 @@ import type {
   CubeProxyConfigurationResource,
   InternalCubeProxyConfigurationResource,
   ReplaceCubeProxyConfigurationRequest,
+  GuestPublicEgress,
 } from "@pi-cloud/protocol";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import type { Kysely } from "kysely";
@@ -27,6 +28,7 @@ export type PlatformRuntimeSettingsServiceOptions = {
   internalServiceToken?: string;
   clock?: () => Date;
   idGenerator?: () => string;
+  onPublicEgress?: (configuration: GuestPublicEgress) => void;
 };
 
 function digest(value: string): Buffer {
@@ -86,6 +88,8 @@ export class PlatformRuntimeSettingsService {
   readonly #internalServiceTokenDigest: Buffer | undefined;
   readonly #clock: () => Date;
   readonly #idGenerator: () => string;
+  readonly #onPublicEgress: PlatformRuntimeSettingsServiceOptions["onPublicEgress"];
+  #publicEgress: GuestPublicEgress | undefined;
 
   constructor(options: PlatformRuntimeSettingsServiceOptions) {
     this.#database = options.database;
@@ -94,6 +98,7 @@ export class PlatformRuntimeSettingsService {
       options.internalServiceToken === undefined ? undefined : digest(options.internalServiceToken);
     this.#clock = options.clock ?? (() => new Date());
     this.#idGenerator = options.idGenerator ?? randomUUID;
+    this.#onPublicEgress = options.onPublicEgress;
   }
 
   isPlatformAdministrator(identity: TenantRequestIdentity): boolean {
@@ -115,7 +120,7 @@ export class PlatformRuntimeSettingsService {
   ): Promise<CubeProxyConfigurationResource> {
     this.#requirePlatformOperator(identity);
     const now = validClock(this.#clock);
-    return this.#database.transaction().execute(async (transaction) => {
+    const resource = await this.#database.transaction().execute(async (transaction) => {
       const current = await transaction
         .selectFrom("platform_runtime_settings")
         .selectAll()
@@ -180,6 +185,26 @@ export class PlatformRuntimeSettingsService {
         updatedAt: now.toISOString(),
       };
     });
+    this.#observe({
+      revision: resource.revision,
+      status: resource.enabled ? "enabled" : "disabled",
+    });
+    return resource;
+  }
+
+  /** Trusted runtime metadata; never includes the proxy origin. */
+  async publicEgress(): Promise<GuestPublicEgress> {
+    const row = await this.#read();
+    return {
+      revision: validRevision(row.revision),
+      status: row.cube_proxy_enabled ? "enabled" : "disabled",
+    };
+  }
+
+  #observe(configuration: GuestPublicEgress): void {
+    if (this.#publicEgress && configuration.revision <= this.#publicEgress.revision) return;
+    this.#publicEgress = configuration;
+    this.#onPublicEgress?.(configuration);
   }
 
   async internal(
@@ -227,6 +252,10 @@ export class PlatformRuntimeSettingsService {
         "Platform runtime settings are unavailable",
       );
     }
+    this.#observe({
+      revision: validRevision(row.revision),
+      status: row.cube_proxy_enabled ? "enabled" : "disabled",
+    });
     return row;
   }
 

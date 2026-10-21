@@ -14,6 +14,7 @@ import type { ProductionHttpGateway } from "./production-http-gateway.ts";
 import type { PublicTenantRegistrationConfiguration } from "./public-tenant-registration.ts";
 import type { TrustedWorkspaceBrowser } from "./workspace-browser-service.ts";
 import type { WebAuthenticationService } from "./web-authentication.ts";
+import type { PlatformRuntimeSettingsService } from "./platform-runtime-settings.ts";
 import type { WorkspaceTerminalGateway } from "./workspace-terminal-gateway.ts";
 import type { DevelopmentEnvironmentService } from "./development-environment-service.ts";
 import type { SandboxPreviewGateway } from "./sandbox-preview-gateway.ts";
@@ -48,6 +49,7 @@ export type ControlPlaneApplicationOptions = Omit<
   platformOperatorTenantId?: string;
   platformModelSourceTenantId?: string;
   cubeEgressConfigToken?: string;
+  platformRuntimeSettings?: PlatformRuntimeSettingsService;
   workspaceTerminalGateway?: WorkspaceTerminalGateway;
   developmentEnvironmentService?: DevelopmentEnvironmentService;
   sandboxPreviewGateway?: SandboxPreviewGateway;

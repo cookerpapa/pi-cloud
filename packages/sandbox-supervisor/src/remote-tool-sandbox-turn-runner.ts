@@ -76,6 +76,7 @@ export interface SandboxControlBoundary {
 }
 
 export type RemoteToolSandboxTurnRunnerOptions = {
+  publicEgress?: () => import("@pi-cloud/protocol").GuestPublicEgress;
   conversations?: {
     createChildConversation(input: {
       executionReference: string;
@@ -212,6 +213,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   readonly #createTrustedTools: RemoteToolSandboxTurnRunnerOptions["createTrustedTools"];
   readonly #acquireModelPermit: RemoteToolSandboxTurnRunnerOptions["acquireModelPermit"];
   readonly #onActivity: RemoteToolSandboxTurnRunnerOptions["onActivity"];
+  readonly #publicEgress: RemoteToolSandboxTurnRunnerOptions["publicEgress"];
   readonly #onRuntimeBinding: RemoteToolSandboxTurnRunnerOptions["onRuntimeBinding"];
   readonly #requestTimeoutMs: number | undefined;
   readonly #idGenerator: () => string;
@@ -230,6 +232,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     this.#conversationHost = options.conversations;
     this.#openConversationLog = options.openConversationLog;
     this.#onActivity = options.onActivity;
+    this.#publicEgress = options.publicEgress;
     this.#onRuntimeBinding = options.onRuntimeBinding;
     this.#broker = options.broker;
     this.#runtimeIdentity = validateSandboxRuntimeIdentity(options.runtimeIdentity);
@@ -681,6 +684,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       const hasSupervisorContact = trustedTools.some((tool) => tool.name === "contact_supervisor");
       let activeSession: PiCloudSessionHandle | undefined;
       const commonRunnerOptions = {
+        ...(this.#publicEgress ? { publicEgress: this.#publicEgress } : {}),
         trustedToolDefinitions: trustedToolBindings.map((binding) => binding.tool),
         onActivity: (update: import("@pi-cloud/protocol").RunActivityUpdate | undefined) =>
           this.#onActivity?.(command, update),

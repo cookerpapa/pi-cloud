@@ -1,5 +1,6 @@
 import fastifyWebsocket from "@fastify/websocket";
 import { parseSupervisorToControlMessage } from "@pi-cloud/protocol";
+import type { WorkerRuntimeConfiguration } from "@pi-cloud/protocol";
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { TLSSocket } from "node:tls";
 import type { FastifyInstance, FastifyRequest } from "fastify";
@@ -42,6 +43,7 @@ export type SupervisorWebSocketGatewayOptions = {
   maxPendingFrames?: number;
   maxBufferedSendBytes?: number;
   registrationTimeoutMs?: number;
+  runtimeConfiguration?: () => Promise<WorkerRuntimeConfiguration>;
 };
 
 export class SupervisorUpgradeAuthorizationError extends Error {
@@ -184,11 +186,14 @@ export class SupervisorWebSocketGateway {
   readonly #authorizedRequests = new WeakMap<FastifyRequest, SupervisorBootIdentity>();
   readonly #activeBySandbox = new Map<string, SocketContext>();
   readonly #contexts = new Set<SocketContext>();
+  readonly #configurationReady = new WeakSet<SocketContext>();
+  readonly #runtimeConfiguration: SupervisorWebSocketGatewayOptions["runtimeConfiguration"];
   #installed = false;
   #shuttingDown = false;
 
   constructor(options: SupervisorWebSocketGatewayOptions) {
     this.#manager = options.manager;
+    this.#runtimeConfiguration = options.runtimeConfiguration;
     this.#authorizer = options.authorizer;
     this.#path = validPath(options.path ?? SUPERVISOR_WEBSOCKET_PATH);
     this.#idGenerator = options.idGenerator ?? (() => globalThis.crypto.randomUUID());
@@ -212,6 +217,28 @@ export class SupervisorWebSocketGateway {
 
   get activeConnectionCount(): number {
     return this.#activeBySandbox.size;
+  }
+
+  publishRuntimeConfiguration(configuration: WorkerRuntimeConfiguration): void {
+    for (const context of this.#activeBySandbox.values()) {
+      if (context.closed || !this.#configurationReady.has(context)) continue;
+      void this.#sendRuntimeConfiguration(context, configuration).catch((error) =>
+        this.#handleFrameError(context, error),
+      );
+    }
+  }
+
+  async #sendRuntimeConfiguration(
+    context: SocketContext,
+    configuration: WorkerRuntimeConfiguration,
+  ): Promise<void> {
+    await this.#send(context, {
+      protocolVersion: 1,
+      messageId: this.#idGenerator(),
+      sentAt: new Date().toISOString(),
+      type: "supervisor.runtime_configuration",
+      payload: configuration,
+    });
   }
 
   get shuttingDown(): boolean {
@@ -362,6 +389,9 @@ export class SupervisorWebSocketGateway {
         this.#close(previous, SUPERVISOR_SOCKET_CLOSE.SUPERSEDED, "connection superseded");
       }
       await this.#send(context, acknowledgement);
+      this.#configurationReady.add(context);
+      if (this.#runtimeConfiguration)
+        await this.#sendRuntimeConfiguration(context, await this.#runtimeConfiguration());
       return;
     }
 

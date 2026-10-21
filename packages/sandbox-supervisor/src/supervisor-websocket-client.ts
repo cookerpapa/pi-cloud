@@ -5,6 +5,7 @@ import {
   type SupervisorHeartbeatAckMessage,
   type SupervisorHeartbeatMessage,
   type SupervisorRegisteredMessage,
+  type WorkerRuntimeConfiguration,
 } from "@pi-cloud/protocol";
 import WebSocket, { type RawData } from "ws";
 import { PINNED_PI_DURABLE_VERSION } from "@pi-cloud/protocol";
@@ -46,6 +47,7 @@ export type SupervisorWebSocketClientOptions = {
   authorizationHeader: string;
   registration: SupervisorWebSocketRegistration;
   runtime: SupervisorControlRuntime;
+  onRuntimeConfiguration?: (configuration: WorkerRuntimeConfiguration) => void;
   clock?: () => Date;
   idGenerator?: () => string;
   connectTimeoutMs?: number;
@@ -157,6 +159,7 @@ export class SupervisorWebSocketClient {
   readonly #maxPendingFrames: number;
   readonly #maxBufferedSendBytes: number;
   readonly #revokeRuntimeOnRetryableDisconnect: boolean;
+  readonly #onRuntimeConfiguration: SupervisorWebSocketClientOptions["onRuntimeConfiguration"];
   readonly #closedPromise: Promise<SupervisorWebSocketClientClose>;
   readonly #resolveClosed: (value: SupervisorWebSocketClientClose) => void;
   #state: ClientState = "idle";
@@ -178,6 +181,7 @@ export class SupervisorWebSocketClient {
   #runtimeRevoked = false;
 
   constructor(options: SupervisorWebSocketClientOptions) {
+    this.#onRuntimeConfiguration = options.onRuntimeConfiguration;
     this.#url = websocketUrl(options.url);
     if (
       options.authorizationHeader.trim().length === 0 ||
@@ -477,6 +481,10 @@ export class SupervisorWebSocketClient {
     }
 
     if (this.#state !== "registered") return;
+    if (message.type === "supervisor.runtime_configuration") {
+      this.#onRuntimeConfiguration?.(message.payload);
+      return;
+    }
     if (message.type === "supervisor.heartbeat.ack") {
       this.#acceptHeartbeatAcknowledgement(message);
       return;

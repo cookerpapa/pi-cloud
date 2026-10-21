@@ -20,7 +20,13 @@ import type { RemoteInvocation } from "../src/durable/remote-tools.ts";
 import { fixedRemoteToolDefinitions } from "../src/fixed-remote-tool-definitions.ts";
 
 async function fixture(
-  options: { hold?: boolean; invalid?: boolean; duplicate?: boolean; parallelReads?: boolean } = {},
+  options: {
+    hold?: boolean;
+    invalid?: boolean;
+    duplicate?: boolean;
+    parallelReads?: boolean;
+    publicEgress?: () => import("@pi-cloud/protocol").GuestPublicEgress;
+  } = {},
 ) {
   const models = createModels(),
     faux = fauxProvider({ tokensPerSecond: 1_000_000 });
@@ -99,6 +105,7 @@ async function fixture(
       };
   runtime = await DurableAgentSession.open(store, {
     models,
+    ...(options.publicEgress ? { publicEgress: options.publicEgress } : {}),
     remoteTools: [definition],
     settings: { compaction: { enabled: false }, retry: { maxRetries: 0 } },
   });
@@ -168,6 +175,45 @@ async function fixture(
     prepared: () => preparedCount,
   };
 }
+
+it("applies changed public-network policy at the next native request without repeating unchanged sections", async () => {
+  let policy: import("@pi-cloud/protocol").GuestPublicEgress = { revision: 1, status: "disabled" };
+  const f = await fixture({ hold: true, publicEgress: () => policy });
+  const seen: string[] = [];
+  f.faux.setResponses(
+    [0, 1, 2].map((index) => (context) => {
+      seen.push(JSON.stringify(context.messages));
+      return index < 2
+        ? fauxAssistantMessage(fauxToolCall("bash", { command: `step ${index}` }), {
+            stopReason: "toolUse",
+          })
+        : fauxAssistantMessage("DONE");
+    }),
+  );
+  try {
+    const input = await f.conversation.submit(
+      { type: "input", content: "go", requestId: "network-change" },
+      BACKGROUND_CONTEXT,
+    );
+    await f.started.promise;
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toContain("disabled by the platform");
+    policy = { revision: 2, status: "enabled" };
+    f.finishTools();
+    expect((await input.wait(BACKGROUND_CONTEXT)).status).toBe("done");
+    expect(seen).toHaveLength(3);
+    expect(seen[1]).toContain("enabled through its configured proxy");
+    const context = await f.conversation.context(BACKGROUND_CONTEXT);
+    expect(
+      context.messages.filter(
+        (message) => message.role === "system" && message.sections?.["cloud-network"],
+      ),
+    ).toHaveLength(2);
+    expect(JSON.stringify(context.messages)).not.toContain("upstreamProxyUrl");
+  } finally {
+    await f.runtime.close();
+  }
+});
 
 it("keeps concurrent native read execution intents in separate commits without serializing execution", async () => {
   const f = await fixture({ hold: true, parallelReads: true });

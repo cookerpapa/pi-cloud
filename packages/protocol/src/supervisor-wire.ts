@@ -20,6 +20,7 @@ import { CloudToolCapabilitySnapshotSchema } from "./tool-capabilities.ts";
 import { ExecutionReferenceSchema } from "./execution-reference.ts";
 import { AgentRevisionSnapshotSchema } from "./agent-runtime.ts";
 import { UserUploadsSchema } from "./user-upload.ts";
+import { WorkerRuntimeConfigurationSchema } from "./worker-runtime-configuration.ts";
 
 const WireEnvelopeProperties = {
   protocolVersion: Type.Literal(1),
@@ -378,6 +379,15 @@ export const SupervisorHeartbeatAckMessageSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const WorkerRuntimeConfigurationMessageSchema = Type.Object(
+  {
+    ...WireEnvelopeProperties,
+    type: Type.Literal("supervisor.runtime_configuration"),
+    payload: WorkerRuntimeConfigurationSchema,
+  },
+  { additionalProperties: false },
+);
+
 export const SupervisorToControlMessageSchema = Type.Union([
   SupervisorRegisterMessageSchema,
   CommandAckMessageSchema,
@@ -386,6 +396,7 @@ export const SupervisorToControlMessageSchema = Type.Union([
 ]);
 
 export const ControlToSupervisorMessageSchema = Type.Union([
+  WorkerRuntimeConfigurationMessageSchema,
   SupervisorRegisteredMessageSchema,
   ExecuteTurnCommandMessageSchema,
   CancelTurnCommandMessageSchema,
@@ -409,6 +420,7 @@ export type SupervisorToControlMessage =
   SupervisorRegisterMessage | CommandAckMessage | EventPublishMessage | SupervisorHeartbeatMessage;
 
 export type ControlToSupervisorMessage =
+  | Static<typeof WorkerRuntimeConfigurationMessageSchema>
   | SupervisorRegisteredMessage
   | ExecuteTurnCommandMessage
   | CancelTurnCommandMessage

@@ -528,6 +528,7 @@ export {
 
 export {
   PiCloudWireProtocolError,
+  WorkerRuntimeConfigurationMessageSchema,
   CancelTurnCommandMessageSchema,
   CommandAckMessageSchema,
   ControlToSupervisorMessageSchema,
@@ -557,6 +558,13 @@ export {
   type SupervisorToControlMessage,
   type TurnBudgetSnapshot,
 } from "./supervisor-wire.ts";
+
+export {
+  GuestPublicEgressSchema,
+  WorkerRuntimeConfigurationSchema,
+  type GuestPublicEgress,
+  type WorkerRuntimeConfiguration,
+} from "./worker-runtime-configuration.ts";
 
 export {
   CLOUD_TOOL_NAMES,

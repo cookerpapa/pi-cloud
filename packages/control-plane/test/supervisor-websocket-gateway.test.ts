@@ -78,6 +78,7 @@ async function startGateway(options: {
   maxPayloadBytes?: number;
   registrationTimeoutMs?: number;
   useNestApplication?: boolean;
+  runtimeConfiguration?: () => Promise<import("@pi-cloud/protocol").WorkerRuntimeConfiguration>;
 }): Promise<{
   server: { close(): Promise<unknown> };
   url: string;
@@ -118,6 +119,7 @@ async function startGateway(options: {
     maxPayloadBytes: options.maxPayloadBytes ?? 1024 * 1024,
     maxPendingFrames: 4,
     registrationTimeoutMs: options.registrationTimeoutMs ?? 500,
+    ...(options.runtimeConfiguration ? { runtimeConfiguration: options.runtimeConfiguration } : {}),
   });
   if (options.useNestApplication) {
     const tenantId = uuid();
@@ -181,7 +183,12 @@ async function startGateway(options: {
   };
 }
 
-function client(url: string, token: string, value: SupervisorBootIdentity) {
+function client(
+  url: string,
+  token: string,
+  value: SupervisorBootIdentity,
+  onRuntimeConfiguration?: (value: import("@pi-cloud/protocol").WorkerRuntimeConfiguration) => void,
+) {
   const runtime = new AgentRunSupervisor({
     runner: {
       async run() {
@@ -198,6 +205,7 @@ function client(url: string, token: string, value: SupervisorBootIdentity) {
       maxConcurrentSessions: 1,
     },
     runtime,
+    ...(onRuntimeConfiguration ? { onRuntimeConfiguration } : {}),
     connectTimeoutMs: 2_000,
     closeTimeoutMs: 200,
   });
@@ -254,6 +262,39 @@ afterAll(async () => {
 });
 
 describe.sequential("authenticated supervisor WebSocket transport", () => {
+  it("delivers current runtime metadata after registration, change and reconnect", async () => {
+    const supervisorIdentity = identity();
+    await provision(supervisorIdentity);
+    let snapshot: import("@pi-cloud/protocol").WorkerRuntimeConfiguration = {
+      publicEgress: { revision: 1, status: "disabled" },
+    };
+    const hosted = await startGateway({
+      identity: supervisorIdentity,
+      runtimeConfiguration: async () => snapshot,
+    });
+    const observed: import("@pi-cloud/protocol").WorkerRuntimeConfiguration[] = [];
+    const first = client(hosted.url, TOKEN, supervisorIdentity, (value) => observed.push(value));
+    let second: SupervisorWebSocketClient | undefined;
+    try {
+      await first.start();
+      await waitFor(() => observed.length === 1);
+      expect(observed[0]).toEqual(snapshot);
+      snapshot = { publicEgress: { revision: 2, status: "enabled" } };
+      hosted.gateway.publishRuntimeConfiguration(snapshot);
+      await waitFor(() => observed.length === 2);
+      expect(observed[1]).toEqual(snapshot);
+      await first.stop();
+      second = client(hosted.url, TOKEN, supervisorIdentity, (value) => observed.push(value));
+      await second.start();
+      await waitFor(() => observed.length === 3);
+      expect(observed[2]).toEqual(snapshot);
+    } finally {
+      await first.stop();
+      await second?.stop();
+      await hosted.server.close();
+    }
+  });
+
   it.each(["reconnect", "shutdown"] as const)(
     "does not revive a closed socket after a delayed registration reply (%s)",
     async (scenario) => {

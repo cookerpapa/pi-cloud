@@ -64,6 +64,7 @@ import type { ProviderHostedActivity } from "./agent-turn-runtime.ts";
 
 export type PiCloudSessionHandle = DurableSessionHandle;
 export type PiCloudTurnRunnerOptions = {
+  publicEgress?: () => import("@pi-cloud/protocol").GuestPublicEgress;
   prepareInputUploads?: (
     uploads: readonly UserUpload[],
     signal?: AbortSignal,
@@ -422,6 +423,7 @@ export class PiCloudTurnRunner {
               ),
             ],
             infrastructureTools: options.trustedToolDefinitions ?? [],
+            ...(options.publicEgress ? { publicEgress: options.publicEgress } : {}),
             settings: {
               stream: {
                 timeoutMs: options.requestTimeoutMs ?? 10000,

@@ -1,0 +1,66 @@
+# ADR-0268: Runtime capabilities, delegation profiles and child observations
+
+Status: accepted; implementation in progress, not deployed.
+Date: 2026-10-21.
+
+## Context and decision
+
+The owner approved the [consolidated proposal](../reports/subagent-wait-review-20261021.md).
+The observed child completed and delivered its result; missing parent visibility,
+unconditional delegation instructions and disabled guest egress made useful work
+look stalled. Tool changes must be visible within an existing Agent loop at the
+next prepared model request. Cache preservation is not a requirement.
+
+1. Send credential-free runtime capability snapshots over the existing Worker
+   management WebSocket on registration, change and reconnect. The initial
+   capability is the PG-owned guest public-egress setting: enabled, disabled or
+   unknown, with its configuration revision. It describes policy, not proof of
+   working internet connectivity. Keep proxy origins and credentials out of it.
+   Reuse reads already performed by the existing egress configuration endpoint to
+   observe cross-process changes; ordinary model/Tool calls add no PG reads.
+2. Use pinned Pi's public prompt sections to render current environment policy
+   before model preparation. Pi stores changed sections through the existing
+   Session writer; unchanged settings create no repeated section history. Do not
+   broaden the accepted Run's file/shell grants or overload CloudStepContext with
+   another complete Agent tool registry.
+3. Add Ultra to the existing effort selector only for validated catalog profiles.
+   Resolve Ultra to provider Max plus proactive delegation; retain the selected
+   profile in the accepted Run snapshot. Other efforts retain delegation tools
+   with explicit-request-only instructions. Children and recovery inherit the
+   accepted profile. Pi owns instruction rendering and request preparation.
+4. Show compact child task/phase/navigation in the parent's Tool card. Reuse native
+   parent Tool/child Session relationships and disposable HTTP/SSE observations.
+   Details start collapsed; updates never force scrolling or expansion. Native
+   outcomes outrank late observations. No copied child transcript, polling per
+   progress update, new progress table or model-generated summary is introduced.
+
+The ordinary Tool catalog protocol is recorded separately before its vertical
+slice. All work retains PG authority, one physical Session writer, Kafka dispatch
+ordering, independently admitted effects, boot-scoped replies and native abort/
+recovery settlement. The first protocol update is a matched deployment.
+
+## Reuse evidence
+
+Pinned `@earendil-works/pi-durable` 1.0.0 exposes `section`, Registry snapshots,
+install/uninstall and Conversation `configure()`. Its `GenerationTask.prepare`
+renders sections/tools and freezes the request; its README's System Prompt and
+Per-Conversation Agent contracts cover these operations. Reuse these APIs rather
+than adding another prompt/history manager or patching the Harness. Existing
+PiCloud management WebSockets already reconnect and preserve authorized Workers;
+existing activity HTTP/SSE already carries typed phases. Another broker, MCP
+server, workflow engine or event store would duplicate these bounded roles.
+
+## Acceptance
+
+- Configuration changes and reconnect refresh Worker policy; disabled, enabled
+  and unknown are distinguishable without exposing private proxy data.
+- The same native Conversation sees changed policy on its next model request;
+  unchanged sections do not accumulate. No guest activation is needed for chat.
+- Max/Ultra request effort, delegation instructions, frozen Run settings, child
+  inheritance and recovery are verified; Stop retains existing settlement.
+- Parent cards correlate simultaneous children, preserve disclosure state and
+  refresh after reconnect; stale phases never become invented task failures.
+- Real guest dependency access and the intended final global setting are checked.
+  Tests restore their temporary changes to the approved enabled setting.
+- Run applicable source and matched-release gates and preserve accounts,
+  credentials, unrelated configuration and confirmed physical cleanup.

@@ -98,6 +98,8 @@ function clientOptions(
     revokeRuntimeOnRetryableDisconnect: false,
   };
   if (options.clock !== undefined) result.clock = options.clock;
+  if (options.onRuntimeConfiguration !== undefined)
+    result.onRuntimeConfiguration = options.onRuntimeConfiguration;
   if (options.idGenerator !== undefined) result.idGenerator = options.idGenerator;
   if (options.connectTimeoutMs !== undefined) result.connectTimeoutMs = options.connectTimeoutMs;
   if (options.closeTimeoutMs !== undefined) result.closeTimeoutMs = options.closeTimeoutMs;

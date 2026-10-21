@@ -1,5 +1,9 @@
 # Current architecture decisions
 
+[ADR-0268](0268-runtime-capabilities-and-delegation.md) records the approved
+Worker capability snapshots, native delegation profiles and compact child
+observations. Implementation is in progress; the serving runtime is unchanged.
+
 [ADR-0266](0266-upload-reference-and-write-lifetimes.md) binds provisional upload
 pins to native receipts and preserves uncertain object-write cleanup identity.
 Original-image previews use the verified streaming source and caller cancellation.

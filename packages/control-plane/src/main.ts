@@ -2,6 +2,7 @@ import { runtimeModelCatalog } from "./runtime-model-catalog.ts";
 import { SessionPublicationService } from "./session-publication-service.ts";
 import { reconcileUploadPins } from "./upload-input-pins.ts";
 import { SubagentController } from "./subagent-controller.ts";
+import { PlatformRuntimeSettingsService } from "./platform-runtime-settings.ts";
 import { ControlToolDispatcher } from "./control-tool-dispatcher.ts";
 import { executePreviewTool } from "./control-preview-tool.ts";
 import { createDatabase } from "@pi-cloud/database";
@@ -505,7 +506,20 @@ export async function startControlPlane(): Promise<void> {
       ...(githubRuntime === undefined ? {} : { github: githubRuntime }),
       ...(gitlabRuntime === undefined ? {} : { gitlab: gitlabRuntime }),
     });
+    const platformRuntimeSettings = new PlatformRuntimeSettingsService({
+      database,
+      platformOperatorTenantId: config.platformOperatorTenantId,
+      internalServiceToken: config.cubeEgressConfigToken,
+      onPublicEgress: (publicEgress) =>
+        runtime?.gateway.publishRuntimeConfiguration({ publicEgress }),
+    });
     runtime = await createControlPlaneRuntime({
+      platformRuntimeSettings,
+      gateway: {
+        runtimeConfiguration: async () => ({
+          publicEgress: await platformRuntimeSettings.publicEgress(),
+        }),
+      },
       sessionPublicationService: new SessionPublicationService(
         config.supervisorManagementToken,
         activeAgentEvents,

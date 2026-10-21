@@ -1,5 +1,7 @@
 import { withToolInvocation } from "../tool-invocation.ts";
 import { PiTurnError } from "../pi-turn-runtime.ts";
+import { publicEgressSection } from "./runtime-capabilities.ts";
+import type { GuestPublicEgress } from "@pi-cloud/protocol";
 import { isDeepStrictEqual } from "node:util";
 import {
   parseExecutionReference,
@@ -152,6 +154,7 @@ export class DurableAgentSession {
       models: Models;
       remoteTools: readonly Omit<ToolRegistration, "execute">[];
       infrastructureTools?: readonly ToolRegistration[];
+      publicEgress?: () => GuestPublicEgress;
     },
   ) {
     this.#models = new ScopedDurableModels(options.models, async (request) => {
@@ -185,6 +188,7 @@ export class DurableAgentSession {
       defineExtension({
         name: "pi-cloud-runtime",
         tools: [...this.remote.definitions],
+        sections: options.publicEgress ? [publicEgressSection(options.publicEgress)] : [],
         hooks: [
           hook(GenerationTask, {
             beforeRequest: (_request, api) => {
@@ -261,6 +265,7 @@ export class DurableAgentSession {
       models: Models;
       remoteTools: readonly Omit<ToolRegistration, "execute">[];
       infrastructureTools?: readonly ToolRegistration[];
+      publicEgress?: () => GuestPublicEgress;
       settings?: HarnessSettings;
       report?: (error: unknown) => void;
     },

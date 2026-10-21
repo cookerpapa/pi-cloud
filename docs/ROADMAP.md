@@ -11,7 +11,10 @@ The [October 21 consolidated plan](reports/subagent-wait-review-20261021.md)
 retains current runtime authorities and separates model behavior from tool
 availability. The owner prioritizes simple full tool-list updates over cache
 preservation; no provider-specific tool-loading optimization is planned.
-Implementation is pending plan review.
+Implementation is authorized and in progress under
+[ADR-0268](adr/0268-runtime-capabilities-and-delegation.md).
+[Delivery evidence](reports/runtime-capabilities-delivery-20261021.md) separates
+source checks from serving configuration and pending matched deployment.
 
 - [ ] Correct this deployment's guest egress and communicate known capabilities.
 - [ ] Add Ultra to the effort picker, resolve provider Max plus proactive policy,

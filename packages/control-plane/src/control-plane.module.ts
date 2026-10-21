@@ -50,6 +50,7 @@ export type ControlPlaneModuleOptions = Omit<
   platformOperatorTenantId?: string;
   platformModelSourceTenantId?: string;
   cubeEgressConfigToken?: string;
+  platformRuntimeSettings?: PlatformRuntimeSettingsService;
   nativeInputBackendFactory?: NativeInputBackendFactory;
   developmentEnvironmentService?: DevelopmentEnvironmentService;
   sshAccessTicketService?: SshAccessTicketService;
@@ -153,16 +154,18 @@ export class ControlPlaneModule {
         },
         {
           provide: PlatformRuntimeSettingsService,
-          useValue: new PlatformRuntimeSettingsService({
-            database: options.database,
-            ...(options.platformOperatorTenantId === undefined
-              ? {}
-              : { platformOperatorTenantId: options.platformOperatorTenantId }),
-            ...(options.cubeEgressConfigToken === undefined
-              ? {}
-              : { internalServiceToken: options.cubeEgressConfigToken }),
-            ...(options.idGenerator === undefined ? {} : { idGenerator: options.idGenerator }),
-          }),
+          useValue:
+            options.platformRuntimeSettings ??
+            new PlatformRuntimeSettingsService({
+              database: options.database,
+              ...(options.platformOperatorTenantId === undefined
+                ? {}
+                : { platformOperatorTenantId: options.platformOperatorTenantId }),
+              ...(options.cubeEgressConfigToken === undefined
+                ? {}
+                : { internalServiceToken: options.cubeEgressConfigToken }),
+              ...(options.idGenerator === undefined ? {} : { idGenerator: options.idGenerator }),
+            }),
         },
         {
           provide: QueuedInputService,

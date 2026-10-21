@@ -170,6 +170,10 @@ export class PiWorkerRuntime {
   #modelGateway: TenantModelGateway | undefined;
   #modelPermits: FamilyModelPermits | undefined;
   #activity: RunActivityPublisher | undefined;
+  #publicEgress: import("@pi-cloud/protocol").GuestPublicEgress = {
+    revision: 0,
+    status: "unknown",
+  };
   #runWorker: SupervisorRunWorker | undefined;
   #runClaimReadiness: RunClaimReadinessMonitor | undefined;
   #closing: Promise<void> | undefined;
@@ -497,6 +501,7 @@ export class PiWorkerRuntime {
     toolReplies.onExecutionEvidence = (id, evidence) =>
       workerLog?.recordExecutionEvidence(id, evidence);
     const runner = new RemoteToolSandboxTurnRunner({
+      publicEgress: () => this.#publicEgress,
       onRuntimeBinding: (reference, bindingId, conversationId) =>
         workerLog?.bindRuntime(reference, bindingId, conversationId),
       confirmExecution: (command, bindingId, signal) =>
@@ -603,6 +608,13 @@ export class PiWorkerRuntime {
     });
     this.#runSupervisor = runSupervisor;
     client = new ReconnectingSupervisorWebSocketClient({
+      onRuntimeConfiguration: ({ publicEgress }) => {
+        if (
+          this.#publicEgress.status === "unknown" ||
+          publicEgress.revision > this.#publicEgress.revision
+        )
+          this.#publicEgress = Object.freeze({ ...publicEgress });
+      },
       url: this.#config.supervisorWebSocketUrl,
       authorizationHeader: `Bearer ${request.credentialId}.${secret}`,
       registration: {

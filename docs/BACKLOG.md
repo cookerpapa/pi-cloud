@@ -37,6 +37,9 @@ collaboration selector or effort-based execution prohibition is proposed.
 [Findings and proposal](reports/subagent-wait-review-20261021.md)
 show a long-running child and successful final delivery, with additional model,
 review and environment-validation work; no lost reply was established.
+Implementation is authorized. [Current delivery evidence](reports/runtime-capabilities-delivery-20261021.md)
+records the source work and intended enabled egress setting; remaining items
+stay open until their relevant live acceptance passes.
 
 - [ ] Restore the approved guest-egress configuration, validate the actual guest
       route, and expose known network capabilities through the existing context path.
