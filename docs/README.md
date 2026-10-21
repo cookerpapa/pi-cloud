@@ -3,7 +3,10 @@
 The [Subagent wait investigation and Ultra proposal](reports/subagent-wait-review-20261021.md)
 records the authorized Stop, successful delayed child result, model/environment
 costs and the corrected single-picker Ultra proposal (provider Max plus delegation).
-Runtime changes remain proposed, with the child delegation default still to be agreed.
+The consolidated plan uses native Pi instruction sections, retains explicitly
+requested delegation outside Ultra, and sequences egress/capability repair,
+child progress and execution-owned tool-catalog delivery. Runtime changes remain
+proposed.
 
 The [Run status presentation update](reports/run-status-presentation-20261021.md)
 keeps phases and warnings visible while collapsing diagnostic ages. It is deployed

@@ -5,6 +5,20 @@ catalog configuration, frozen Run snapshots, per-component provenance and scoped
 provider/catalog publication. [Initial and independent release acceptance](reports/component-release-20261021.md)
 passes with preserved ownership/configuration and confirmed physical cleanup.
 
+## Agent effort, delegation and tool-catalog proposal
+
+The [October 21 consolidated plan](reports/subagent-wait-review-20261021.md)
+retains current runtime authorities and separates model behavior from tool
+availability. Implementation is pending plan review.
+
+- [ ] Correct this deployment's guest egress and communicate known capabilities.
+- [ ] Add Ultra to the effort picker, resolve provider Max plus proactive policy,
+      and use native Pi instruction sections for all delegation modes.
+- [ ] Show meaningful child progress in the parent view through existing SSE.
+- [ ] Introduce execution-owned catalog delivery for ordinary remote tools,
+      preserving active invocation/recovery contracts and the one Session writer.
+- [ ] Verify each slice and publish through the applicable matched release path.
+
 ## GPT-6.1 Sol catalog refresh
 
 - [x] Verify official model, reasoning, Responses capabilities and cache pricing;

@@ -3,10 +3,11 @@
 Date: 2026-10-21. Source baseline: `d46c0543`; serving application base
 `component-release-ad5fc83c`, schema 196. This is investigation and a proposal,
 not an implemented runtime change. The owner authorized stopping the affected
-Run and requested Ultra-gated delegation. The later clarification points to
-Codex's single thinking-effort picker. The initial independent collaboration
-selector proposal is withdrawn after inspecting Codex's actual request mapping
-and proactive-delegation policy; the corrected proposal is below.
+Run and requested a consolidated proposal after comparing Codex's single effort
+picker, prompt-based delegation policy and Pi's native instruction interfaces.
+The plan below keeps tool availability separate from permission to delegate
+proactively; it does not add a separate collaboration selector or hide otherwise
+available tools merely because a non-Ultra effort was selected.
 
 ## Observed behavior
 
@@ -47,9 +48,10 @@ manual terminal-state rewrite or VM destruction was performed.
 
 ## Design findings
 
-1. Delegation currently has no user collaboration-mode gate. Worker offering uses
-   tool applicability and optional depth, while the runtime prompt permits
-   delegation. Children inherit the root's model/effort and can delegate again.
+1. Current delegation instructions do not distinguish explicit-request-only
+   behavior from proactive behavior by effort. Worker offering uses tool
+   applicability and optional depth, while the runtime prompt permits delegation.
+   Children inherit the root's model/effort and can delegate again.
 2. Direct `subagent` intentionally waits for a result or a supervisor decision.
    A single direct call does not keep the parent generating other work. The
    observed extra level adds review and coordination; it is not automatically
@@ -69,80 +71,168 @@ Relevant source: `supervisor-host/src/tools/worker-tool-runtime.ts`,
 `subagent-control/src/postgres-subagent-conversations.ts`, and the Web
 `ToolActivity`/`ConversationTreeNavigator` components.
 
-## Proposed implementation
+## Consolidated proposal
 
-### One explicit collaboration policy
+### 1. One effort picker and one profile resolver
 
-Offer **Ultra in the existing thinking-effort picker** for explicitly supported
-model/profile combinations. Preserve existing defaults; do not introduce a second
-independent user-facing collaboration switch. Resolve one selected Agent profile
-into provider effort and tool policy: Ultra sends `max` to the model and enables
-delegation; other choices keep their existing provider effort. Do not send an
-unverified raw `ultra` value to CLIProxyAPI or Pi's model adapter. Max support alone
-does not establish official Codex Ultra availability for every model.
+Offer **Ultra in the existing thinking-effort picker** for validated model/profile
+combinations, retaining existing defaults. Resolve the selected Agent profile in
+one place:
 
-Persist desired selection with Session settings, and freeze the accepted selection
-and resolved policy with the existing Run configuration. Queued work and crash
-recovery use that snapshot. A later selection applies to the next new Run, not
-native follow-up messages inside already accepted work.
+| Selected effort | Provider/Pi model effort | Delegation instruction |
+| --- | --- | --- |
+| Existing non-Ultra choice | Existing supported value | Explicit request only |
+| Ultra | `max` | Proactive when it materially helps the task |
 
-Define one code-owned tool-exposure policy. Non-Ultra omits creation/delegation
-tools from native Agent configuration and omits delegation instructions. Ultra
-offers them. Cover both direct `subagent` and `workflow`/`runs.run` creation;
-hiding one tool name must not leave another equivalent entry available.
-Reuse existing Control Plane child-admission checks to enforce the frozen policy,
-without adding a new per-Tool lease query or separate permission authority.
+Available tools remain available in both cases, subject to existing actual tool
+grants, role applicability and installed execution capabilities. Selecting a
+non-Ultra effort does not cause the backend to reject an explicitly requested
+delegation. Avoid keyword parsing to decide whether a user has authorized one.
+The instruction controls model behavior; it is not a hard execution prohibition.
+Apply it consistently to direct `subagent` and `workflow`/`runs.run` delegation.
 
-Keep native tool registrations needed to settle/recover already admitted work;
-model visibility and executor lifetime are separate. This slice can use the
-current registry/filtering boundary and does not require a dynamic plugin catalog.
+Keep the user's selected profile distinct from the provider effort: both Max and
+Ultra send `max`, so recovery and children must not infer the delegation policy
+from that wire value alone. Use Session desired settings and the existing Run
+configuration snapshot. Queued work and recovery keep their accepted profile;
+later selections apply to the next new Run. Follow-up/steer still belong to the
+current Run and do not silently change its model policy.
 
-**Recommended child default, pending owner agreement:** an Ultra parent may
-delegate, while children complete their assigned work without further delegation
-by default. Parent communication and supervisor answers remain available. This
-does not silently reduce the selected provider's reasoning effort. It is an
-explicit capability policy, not a new duration/concurrency quota. If nested
-delegation is wanted, make that a deliberate policy decision instead of silently
-inheriting unlimited proactive delegation.
+Ultra is a PiCloud runtime profile built from supported inference and local
+delegation. Its availability must be declared and validated in the existing
+catalog, not inferred from an unverified provider `ultra` parameter or from
+Codex's product availability alone. Keep native model adapters on supported values.
 
-### Bounded task scope and meaningful progress
+### 2. Native Pi instruction sections and task scope
 
-Clarify child instructions around the assigned deliverable, necessary validation
-and prompt return of findings/results. Additional delegation or construction of
-new validation infrastructure should follow a task requirement. Missing browser
-tools must be reported accurately, without treating drawing stubs as browser tests.
+Use Pi Durable 1.0's public instruction/section mechanism. Keep a single named
+delegation-policy section in the trusted Runner, selected from the accepted
+profile. Pi creates the positional `system` entries and the provider adapter
+translates them. Replace the current unconditional delegation encouragement;
+do not leave contradictory rules in different prompt fragments. Stable sections
+produce no repeated instruction bodies when unchanged.
 
-Show a pending child task's description, lifecycle/current phase and a link to its
-conversation in the parent Tool card. Reuse existing child relationships and
-disposable HTTP/SSE observations; do not copy progress into native context, add
-durable heartbeat samples, or poll PG for each display update. Keep diagnostic
-transport ages collapsed, as agreed in the preceding UI change.
+- Non-Ultra: delegate only when the user, or instructions already explicitly
+  adopted for the task, request Agent delegation/parallel Agent work.
+- Ultra: allow proactive delegation when concrete independent work benefits from
+  it; describe the scope, deliverable and completion conditions.
 
-Expose known environment capabilities, beginning with disabled public egress, via
-the existing context/World State boundary. Do not include proxy URLs or credentials.
-Browser availability remains a real environment fact, not an assumed capability.
-A maintained browser-capable guest profile can be a later independent slice;
-this investigation does not enable the proxy or install packages in the user's VM.
+Preserve the existing parent/child model and effective-policy inheritance.
+Do not silently downgrade children or add a root-only creation restriction.
+Further delegation must follow the same effective instruction and task scope.
+This does not introduce automatic loading of project extensions or skills.
 
-### Acceptance and release
+Clarify completion: do the assigned work and necessary validation, return useful
+results promptly, and disclose unavailable checks. Building a replacement test
+framework or adding another review stage should have a concrete task benefit.
+The observed reviewer found candidate issues; its existence alone does not prove
+that nesting is a defect. Keep the current direct `subagent` wait/result contract
+and native recovery behavior; asynchronous spawn/explicit wait would be a separate
+Tool-contract change, not an incident fix.
 
-- Non-Ultra model requests lack every child-creation entry, including
-  indirect workflow creation. Ordinary file/command/preview tools still work.
-- Ultra resolves to provider `max` and the delegation policy; Max resolves to
-  provider `max` without automatic delegation. Reject unsupported profile/model
-  combinations. Conversation changes cannot leak a previous Run's offered tools.
-- Exercise the chosen child default, parent questions, Stop, lost admission/reply
-  and Worker recovery with the same accepted Run policy and native identities.
-- Queue acceptance, mode edits and resume use the original snapshot, rather than
-  mutable Session defaults. Check existing admission-query counts.
-- Browser verifies the single effort picker, next-Run semantics, meaningful waiting status,
-  child navigation, completion and interrupted/reconnected observations.
-- Keep routine Luna checks for ordinary regression. Real Ultra acceptance uses
-  an explicitly supported model/profile and verifies the effective request effort
-  and child policy; record outcomes rather than promising automatic speedup.
-- Record an ADR before changing persistence/public/internal contracts, then use
-  the required matched release and owned-fixture cleanup. No total Run duration
-  ceiling, new scheduler, Tool-result ledger or mailbox replay is proposed.
+### 3. Restore this deployment's intended network access and explain capabilities
+
+The setting is global to Cube egress, not a child-only policy. The investigation
+observed it disabled at revision 6 since October 7. As an implementation step,
+check the configured upstream proxy and enable this development installation's
+public egress through the maintained administration path. Use small read-only
+npm/PyPI requests in an owned Sandbox to validate the actual guest route. Model
+gateway connectivity is a separate path and is not evidence of guest access.
+Keep the administrator's global switch and preserve unrelated credentials/settings.
+
+Make known public-egress state and relevant validation capabilities available
+through the existing context/World State boundary. Reuse configuration revisions
+and bounded cached delivery to Worker; no per-Tool PG read is needed. Distinguish
+known disabled state from unknown connectivity. Exclude proxy endpoints and
+credentials from model context. Failed package installation should not cause
+repeated equivalent attempts without new evidence.
+
+Capture the approved target setting before acceptance tests; restore temporary
+test changes to that value and verify it afterward. Do not restore the old
+disabled setting after intentionally enabling the environment.
+Browser availability must remain a real environment fact. A maintained browser
+guest profile can follow as its own measured image/capability slice; the first
+repair exposes current limitations rather than claiming browser checks happened.
+
+### 4. Parent-visible child progress
+
+Show each pending child task's description, lifecycle/current phase and an action
+to open its conversation in the parent Tool card. Reuse the existing parent Tool
+identity and child relationship so concurrent children cannot overwrite each
+other. Useful states include generating code, running a Tool, waiting for a
+reviewer/parent decision, completed and interrupted.
+
+Reuse disposable HTTP/SSE observations and existing child views. Coalesce updates
+in memory; no per-update PG polling, copied progress in native context or new
+heartbeat table. A stale observation becomes unconfirmed rather than an invented
+failure. Reconnect restores relationships and refreshes observations, while the
+native terminal state wins over late progress. Transport diagnostic ages stay
+collapsed as in the preceding UI change.
+
+### 5. Execution-owned tool catalog, as a separate vertical slice
+
+Complete the earlier tool-decoupling discussion after the behavior/visibility
+repairs. Control Plane exposes one versioned catalog of ready, code-owned tool
+definitions: name, description, parameter schema and supported execution/replay
+semantics. Implementation owners supply the metadata. Projector routes admitted
+commands; it does not become a plugin manager or a second Agent scheduler.
+
+Worker caches the catalog through the existing management/configuration boundary,
+combines it with the conversation's applicable tool grants, and registers generic
+remote proxies using Pi's public registry/configuration APIs. The active Session
+owner alone commits effective changes through native Storage. A changed catalog
+updates the actual model tool list at the next request boundary; it does not
+require a fabricated user message or a second writer. Warm Tool calls do not
+fetch the catalog or query PG each time.
+
+Add an implementation before advertising it. Withdraw a tool from future offers
+before removing its implementation, and finish already accepted operations through
+their existing lifetimes. A late unaccepted call gets an explicit refusal, not
+silent rerouting/replay. Retain known definitions for admitted work until it
+settles; do not create a permanent compatibility layer or independent operation
+ledger. Incompatible schema/recovery semantics continue to require matched,
+drained upgrades instead of a custom multiversion plugin runtime.
+
+Start with ordinary remote tools. Native lifecycle/child adapters and new transport
+forms can still require Worker changes. Provider-hosted search remains the model
+adapter's concern, separate from Projector-executed tools. Reuse Pi's existing
+registry, configure and positional system/tool changes before adding infrastructure.
+Record the protocol/ownership ADR and build-versus-adopt evidence before this slice.
+
+## Delivery order and acceptance
+
+Implement one complete slice at a time: network/capability correction, effort and
+native delegation instructions, parent-visible progress, then tool-catalog delivery.
+The child-scope instruction changes belong with the delegation slice. Check:
+
+1. **Profiles:** the actual non-Ultra request still offers applicable delegation
+   tools but includes explicit-request-only instructions; Ultra sends `max` with
+   proactive instructions. Unsupported combinations fail before model invocation.
+2. **Behavior:** real simple work, an explicit non-Ultra delegation and a divisible
+   Ultra task demonstrate the intended instructions. These samples are behavior
+   evidence, not a guarantee that a prompt can hard-disable a callable tool.
+3. **Persistence:** queued work, retry, child inheritance and Worker recovery keep
+   the original selected profile and effective instructions. Max/Ultra must not
+   collapse into indistinguishable recovery metadata. Unchanged sections stay stable.
+4. **Lifetimes:** Stop, supervisor questions, lost admission/reply and native safe/
+   unsafe recovery retain existing identity and settlement contracts. Do not add
+   an overall Run deadline to mask lengthy but active work.
+5. **Environment:** guest npm/PyPI access, disabled-state reporting, configuration
+   restoration and absence of proxy credentials in context are demonstrated.
+6. **Browser:** the single picker, next-Run semantics, simultaneous children,
+   readable progress, navigation, terminal precedence and reconnect are checked.
+7. **Catalog:** add an ordinary tool without rebuilding Worker, remove it from
+   future requests, handle an in-flight call, survive owner restart/reassignment,
+   and reject an unavailable/version-incompatible target without replaying effects.
+   Measure the warm lookup path and native update counts.
+
+Routine regression uses Luna. Validate any offered Ultra profile with provider
+Max plus the local policy, recording actual selected/effective values; do not claim
+that Codex exposes the same product profile for Luna. Keep real-model failure
+samples and physically clean owned fixtures. Record ADRs before changing storage,
+public/internal schemas or tool-catalog protocols, then run the applicable matched
+release/acceptance. Existing PG ownership, one physical-Session writer, Kafka
+dispatch ordering, Cube execution and canonical Worker Tool results remain.
 
 ## Codex comparison
 
@@ -158,11 +248,19 @@ The clean relevant files in the local Codex checkout (`40e5de94e9`) confirm:
   with Multi-agent V2 enabled and no custom hint policy, Ultra selects Proactive;
   other efforts select ExplicitRequestOnly.
 - `codex-rs/tui/src/chatwidget/model_popups.rs:569` presents Max/Ultra effort choices.
+- `codex-rs/core/src/tools/spec_plan.rs:478`/`:985` gates registration through
+  multi-agent availability, not an Ultra-only test.
+- `codex-rs/core/src/context/multi_agent_mode_instructions.rs` renders the explicit/
+  proactive policy as a developer message; its World State section emits changes.
 
 This is source evidence for the stated implementation, not a claim about private
 desktop internals. Non-Ultra Codex can still support explicitly requested subagents.
-PiCloud's requested hiding of creation tools outside Ultra is a stricter product
-policy. Child delegation inheritance remains a separate proposal to agree.
+The consolidated proposal follows that distinction instead of hiding tools solely
+by effort. Pi Durable 1.0 exposes `SystemMessage.sections`, Agent `instructions`
+and extension prompt sections. Its public `configure()` and provider adapters
+supply the equivalent application-instruction path without adding a native
+`developer` role or patching Pi core. The installed package README's System Prompt
+and Per-Conversation Agent sections define the request-boundary behavior.
 
 Private investigation evidence is under
 `deploy/production/runtime/review-evidence/subagent-bicycle-20261021/`.

@@ -30,18 +30,25 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Ultra collaboration and child-task visibility
 
-The owner requested Ultra-gated delegation and clarified Codex's single effort
-picker. The corrected proposal maps Ultra to provider Max plus delegation, without
-a separate collaboration selector. [Findings and proposal](reports/subagent-wait-review-20261021.md)
+The consolidated proposal follows Codex's single effort picker and native Pi
+instruction sections: Ultra maps to provider Max plus proactive delegation;
+non-Ultra retains tools with explicit-request-only instructions. No separate
+collaboration selector or effort-based execution prohibition is proposed.
+[Findings and proposal](reports/subagent-wait-review-20261021.md)
 show a long-running child and successful final delivery, with additional model,
 review and environment-validation work; no lost reply was established.
 
-- [ ] Review and implement the frozen Run collaboration policy, complete creation
-      gating (including workflow entry), and the proposed child delegation default.
-- [ ] Improve parent-visible child progress and known environment-capability
-      information; retain existing disposable observation and native recovery paths.
-- [ ] Verify non-Ultra/Ultra selection, actual provider effort/offered tools, queue/recovery/Stop,
-      parent/child behavior and live acceptance before matched release.
+- [ ] Restore the approved guest-egress configuration, validate the actual guest
+      route, and expose known network capabilities through the existing context path.
+- [ ] Implement one selected/effective profile resolver and native delegation
+      instruction section; preserve accepted-Run recovery and parent/child inheritance.
+- [ ] Improve parent-visible child progress using existing relationships and
+      disposable HTTP/SSE, with terminal precedence and reconnect handling.
+- [ ] Complete the separate execution-owned tool-catalog slice using public Pi
+      registry/configuration, ordinary remote proxies and orderly tool withdrawal.
+- [ ] Verify actual request effort/tools/instructions, explicit delegation at
+      non-Ultra, Ultra behavior, queue/recovery/Stop, catalog changes and live
+      acceptance before the relevant matched releases.
 
 ## Run status presentation
 
