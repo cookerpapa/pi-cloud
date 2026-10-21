@@ -139,7 +139,7 @@ try {
     "Exclude unrelated active Runs before provider replacement acceptance",
   );
   tenant = await createPrivateTenant(db, {
-    slug: `release-acceptance-components-${randomUUID()}`,
+    slug: `release-acceptance-${randomUUID()}`,
     ownerDisplayName: "Component release acceptance",
     initialModel: { provider: "openai-codex", modelId: "gpt-6-luna" },
   });
