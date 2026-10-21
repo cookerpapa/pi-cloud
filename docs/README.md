@@ -1,5 +1,10 @@
 # Documentation map
 
+The [Subagent wait investigation and Ultra proposal](reports/subagent-wait-review-20261021.md)
+records the authorized Stop, successful delayed child result, model/environment
+costs and the owner's selection of a separate collaboration mode. Runtime changes
+remain proposed, with the child delegation default still to be agreed.
+
 The [Run status presentation update](reports/run-status-presentation-20261021.md)
 keeps phases and warnings visible while collapsing diagnostic ages. It is deployed
 through the existing operator's Web scope, preserving backend/VM identities.

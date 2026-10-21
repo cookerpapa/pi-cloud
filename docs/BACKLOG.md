@@ -28,6 +28,20 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## Ultra collaboration and child-task visibility
+
+The owner selected a separate Standard/Ultra collaboration mode after a live
+child-wait investigation. [Findings and proposal](reports/subagent-wait-review-20261021.md)
+show a long-running child and successful final delivery, with additional model,
+review and environment-validation work; no lost reply was established.
+
+- [ ] Review and implement the frozen Run collaboration policy, complete creation
+      gating (including workflow entry), and the proposed child delegation default.
+- [ ] Improve parent-visible child progress and known environment-capability
+      information; retain existing disposable observation and native recovery paths.
+- [ ] Verify Standard/Ultra selection, actual offered tools, queue/recovery/Stop,
+      parent/child behavior and live acceptance before matched release.
+
 ## Run status presentation
 
 - [x] Keep phase and connection/update-delay warnings visible; move activity and
