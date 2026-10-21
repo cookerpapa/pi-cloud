@@ -53,7 +53,8 @@ function parseArguments(argv) {
       if (argument === "--cache-dir") result.cacheDirectory = resolve(repositoryRoot, value);
       if (argument === "--image-version") result.imageVersion = value;
       if (argument === "--component") {
-        if (!["all", "provider"].includes(value)) throw new Error("Unsupported evidence scope");
+        if (!["all", "provider", "web"].includes(value))
+          throw new Error("Unsupported evidence scope");
         result.component = value;
       }
       index += 1;
@@ -65,7 +66,7 @@ function parseArguments(argv) {
     }
     if (argument === "--help") {
       process.stdout.write(
-        "Usage: npm run release:evidence -- [--output-dir EMPTY_PATH] [--cache-dir PATH] [--image-version VERSION] [--component all|provider] [--allow-dirty]\n",
+        "Usage: npm run release:evidence -- [--output-dir EMPTY_PATH] [--cache-dir PATH] [--image-version VERSION] [--component all|provider|web] [--allow-dirty]\n",
       );
       process.exit(0);
     }
@@ -276,11 +277,11 @@ try {
   const guestIdentity =
     options.component === "all" ? await guestBuildIdentity(repositoryRoot) : undefined;
   const imageDescriptors =
-    options.component === "provider"
+    options.component !== "all"
       ? [
           {
-            imageName: "cli-proxy-api",
-            reference: `pi-cloud/cli-proxy-api:${options.imageVersion}`,
+            imageName: options.component === "provider" ? "cli-proxy-api" : "web-ui",
+            reference: `pi-cloud/${options.component === "provider" ? "cli-proxy-api" : "web-ui"}:${options.imageVersion}`,
             labelVersion: options.imageVersion,
           },
         ]

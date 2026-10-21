@@ -14,6 +14,17 @@ rebuilding a verified binary merely to correct its deployment command.
 
 ## Decision
 
+Presentation-only Web amendment (2026-10-21): use the same scoped release operator
+for Web TSX/CSS changes against the installed API. Build/scan one Web image and
+permit only its Deployment container image to differ. Keep protocol, API client,
+dependencies, Caddy configuration and Helm templates fixed; broader edits still
+require matched preparation. Preserve all other artifact provenance and current
+Worker/VM ownership. Browser connections may reconnect through existing SSE
+recovery; no Worker drain or VM release is needed. Verify collapsed diagnostics,
+visible connection/staleness warnings, browser recovery and actual Tool status.
+This bounded extension avoids shutting down a user's development machine for a
+display-only change; it adds no deployment authority or service.
+
 Keep Helm/Kubernetes as deployment authority and PostgreSQL as Run authority.
 Add bounded provider and catalog release operations to the maintained release
 tooling. Full application/schema/transport changes retain the drained matched

@@ -83,23 +83,27 @@ export function RunStatus({
         <span>{t(`run.phase.${status.phase}`)}</span>
       </div>
       {turn.status !== "queued" ? (
-        <small>
-          {!connected
-            ? t("run.disconnected")
-            : status.delayed
-              ? t("run.delayed")
-              : status.pathSeconds === undefined
+        <>
+          {!connected || status.delayed ? (
+            <small role="status">{t(!connected ? "run.disconnected" : "run.delayed")}</small>
+          ) : null}
+          <details className="product-run-diagnostics">
+            <summary>{t("run.diagnostics")}</summary>
+            <small>
+              {status.pathSeconds === undefined
                 ? t("run.awaitingPath")
                 : t("run.pathAge", { seconds: status.pathSeconds })}
-          {status.activitySeconds === undefined
-            ? null
-            : ` · ${t("run.activityAge", { seconds: status.activitySeconds })}`}
-          {status.executionState === "confirmed"
-            ? ` · ${t("run.executionAge", { seconds: status.executionSeconds ?? 0 })}`
-            : status.executionState === "unconfirmed"
-              ? ` · ${t("run.executionUnconfirmed")}`
-              : null}
-        </small>
+              {status.activitySeconds === undefined
+                ? null
+                : ` · ${t("run.activityAge", { seconds: status.activitySeconds })}`}
+              {status.executionState === "confirmed"
+                ? ` · ${t("run.executionAge", { seconds: status.executionSeconds ?? 0 })}`
+                : status.executionState === "unconfirmed"
+                  ? ` · ${t("run.executionUnconfirmed")}`
+                  : null}
+            </small>
+          </details>
+        </>
       ) : null}
     </div>
   );

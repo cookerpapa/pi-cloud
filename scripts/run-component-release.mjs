@@ -30,7 +30,7 @@ import { serializeRelease } from "./lib/release-lock.mjs";
 const [action, scopeOrPath, candidatePath, input] = process.argv.slice(2);
 if (action === "--help") {
   console.log(
-    "prepare provider DIRECTORY VERSION | prepare catalog DIRECTORY CATALOG_JSON | preflight DIRECTORY | apply DIRECTORY\nScoped releases preserve unrelated workloads. First install ADR-0267 with the matched release. See docs/COMPONENT_RELEASE.md.",
+    "prepare provider|web DIRECTORY VERSION | prepare catalog DIRECTORY CATALOG_JSON | preflight DIRECTORY | apply DIRECTORY\nScoped releases preserve unrelated workloads. First install ADR-0267 with the matched release. See docs/COMPONENT_RELEASE.md.",
   );
   process.exit(0);
 }
@@ -76,7 +76,7 @@ function installed(name) {
 function render(name, chart, path) {
   return helmCapture(["template", name, chart, "--no-hooks", "--values", path]);
 }
-function assertServingCombination(deployment, providerAlternative, catalogAlternative) {
+function assertServingCombination(deployment, imageAlternative, catalogAlternative) {
   const resources = JSON.parse(
     kubectl(["get", "deployment,statefulset,daemonset", "-o", "json"]),
   ).items;
@@ -87,7 +87,7 @@ function assertServingCombination(deployment, providerAlternative, catalogAltern
     if (name === "cubesandbox-tool") continue;
     assert(
       images.has(component.reference) ||
-        (name === "cli-proxy-api" && images.has(providerAlternative)),
+        (name === imageAlternative?.name && images.has(imageAlternative.reference)),
       `Serving component differs from its record: ${name}`,
     );
   }
@@ -104,12 +104,24 @@ function assertServingCombination(deployment, providerAlternative, catalogAltern
   );
 }
 function inputs(scope) {
+  if (scope === "web")
+    return capture("git", [
+      "ls-files",
+      "package.json",
+      "package-lock.json",
+      "tsconfig.base.json",
+      "scripts/retry-npm-command.sh",
+      "scripts/prepare-json-parser.mjs",
+      "packages/protocol/package.json",
+      "packages/protocol/src",
+      "packages/web-ui",
+    ]).split("\n");
   return scope === "provider" ? ["deploy/provider-gateway/Dockerfile"] : [catalogSeed];
 }
 
 if (action === "prepare") {
   const scope = scopeOrPath;
-  assert(["provider", "catalog"].includes(scope));
+  assert(["provider", "catalog", "web"].includes(scope));
   const baseline = readJson(deploymentPath);
   assertServingCombination(baseline);
   const changed = capture("git", ["diff", "--name-only", `${baseline.revision}..${revision}`])
@@ -117,7 +129,7 @@ if (action === "prepare") {
     .filter(Boolean);
   assertScopedSources(scope, changed);
   const version =
-    scope === "provider" ? input : `catalog-${revision.slice(0, 12)}-${Date.now().toString(36)}`;
+    scope !== "catalog" ? input : `catalog-${revision.slice(0, 12)}-${Date.now().toString(36)}`;
   assert(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(version ?? ""), "Invalid release version");
   assert(
     !Object.values(baseline.components).some((c) => c.reference.endsWith(`:${version}`)),
@@ -140,18 +152,19 @@ if (action === "prepare") {
   const values = structuredClone(live.values);
   let desired,
     catalogRevision = baseline.catalogRevision;
-  if (scope === "provider") {
+  if (scope !== "catalog") {
     const env = {
       ...process.env,
       PI_CLOUD_BUILD_TAG: version,
       PI_CLOUD_IMAGE_CATALOG: resolve(directory, "images.json"),
     };
-    run("scripts/production-kubernetes.mjs", ["build", "provider"], env);
+    run("scripts/check-docker-build-context.mjs");
+    run("scripts/production-kubernetes.mjs", ["build", scope], env);
     run(
       "scripts/generate-release-evidence.mjs",
       [
         "--component",
-        "provider",
+        scope,
         "--image-version",
         version,
         "--output-dir",
@@ -159,8 +172,9 @@ if (action === "prepare") {
       ],
       env,
     );
-    desired = readJson(resolve(directory, "images.json")).provider;
-    values.provider.image = desired;
+    desired = readJson(resolve(directory, "images.json"))[scope];
+    if (scope === "provider") values.provider.image = desired;
+    else values.images.web = { ...values.images.web, repository: "pi-cloud/web-ui", tag: version };
   } else {
     const config = parseModelCatalogConfiguration(readJson(resolve(input)));
     const previous = parseModelCatalogConfiguration(
@@ -283,7 +297,7 @@ if (candidate.scope === "catalog") {
   );
 }
 let evidence;
-if (candidate.scope === "provider") {
+if (candidate.scope !== "catalog") {
   const evidenceDirectory = resolve(directory, "evidence");
   const lines = readFileSync(resolve(evidenceDirectory, "SHA256SUMS"), "utf8").trim().split("\n");
   const covered = new Set();
@@ -301,7 +315,7 @@ if (candidate.scope === "provider") {
   evidence = readJson(resolve(evidenceDirectory, "manifest.json"));
   assert.equal(evidence.git.revision, candidate.revision);
   assert.equal(evidence.git.dirty, false);
-  assert.equal(evidence.scope, "provider");
+  assert.equal(evidence.scope, candidate.scope);
   assert.equal(evidence.imageVersion, candidate.version);
   assert.equal(evidence.images.length, 1);
   for (const file of [
@@ -326,7 +340,12 @@ const next = composeScopedDeployment(baseline, {
 const currentDeployment = readJson(deploymentPath);
 assertServingCombination(
   baseline,
-  candidate.scope === "provider" ? candidate.desired : undefined,
+  candidate.scope !== "catalog"
+    ? {
+        name: candidate.scope === "provider" ? "cli-proxy-api" : "web-ui",
+        reference: candidate.desired,
+      }
+    : undefined,
   candidate.scope === "catalog" ? candidate.catalogRevision : undefined,
 );
 const live = installed(candidate.name);
@@ -349,8 +368,8 @@ console.log(
   }),
 );
 if (action !== "apply") process.exit(0);
-if (candidate.scope === "provider" && !alreadyApplied) {
-  const archive = resolve(directory, "provider.tar");
+if (candidate.scope !== "catalog" && !alreadyApplied) {
+  const archive = resolve(directory, `${candidate.scope}.tar`);
   try {
     execFileSync("docker", ["save", "--output", archive, candidate.desired], { stdio: "inherit" });
     execFileSync(
@@ -379,8 +398,10 @@ if (!alreadyApplied || live.status.info.status !== "deployed") {
     { cwd: root, stdio: "inherit" },
   );
 }
-if (candidate.scope === "provider") {
-  kubectl(["rollout", "status", "statefulset/cli-proxy-api", "--timeout=180s"], {
+if (candidate.scope !== "catalog") {
+  const workload =
+    candidate.scope === "provider" ? "statefulset/cli-proxy-api" : "deployment/pi-cloud-web";
+  kubectl(["rollout", "status", workload, "--timeout=180s"], {
     timeout: 185_000,
   });
 } else {
@@ -418,10 +439,10 @@ assert.equal(
   manifestDigest(readFileSync(resolve(directory, "rendered.yaml"), "utf8")),
   "Applied Helm manifest differs from candidate",
 );
-if (candidate.scope === "provider") {
+if (candidate.scope !== "catalog") {
   const path = resolve(runtimeDirectory, "k3s/images.json"),
     images = readJson(path);
-  images.provider = candidate.desired;
+  images[candidate.scope] = candidate.desired;
   save(path + ".next", images);
   renameSync(path + ".next", path);
 }

@@ -73,8 +73,8 @@ const configuration={productUrl:location.origin,adminUrl:location.origin,
   managementUrls:{providerGateway:'https://models.example.test/management.html',grafana:'',prometheus:'',alertmanager:'',jaeger:''}};
 window.renderPanel = () => root.render(React.createElement(React.StrictMode, null, React.createElement(Panel)));
 window.runObservations = new RunObservationStore();
-window.renderTurn = (text, recoveredTextLength = 0, status = "running", stopReason = null, phase) => root.render(
-  React.createElement(React.StrictMode, null, React.createElement(ConversationTurn, {observationStore:runObservations,turn:{
+window.renderTurn = (text, recoveredTextLength = 0, status = "running", stopReason = null, phase, connected = true) => root.render(
+  React.createElement(React.StrictMode, null, React.createElement(ConversationTurn, {observationStore:runObservations,connected,turn:{
     runId:"run",turnId:"turn",mailboxPosition:null,prompt:"Question",acceptedAt:null,
     status,startedSequence:1,terminalSequence:null,stopReason,failure:null,cancellation:null,
     items:[{kind:"text",key:"text:"+(phase??'1'),text,firstSequence:1,lastSequence:2,recoveredTextLength,...(phase?{phase}:{})}]
@@ -531,15 +531,28 @@ try {
     await page.waitFor(
       "document.querySelector('.product-run-status').dataset.runPhase==='waiting_model'",
     );
+    assert.equal(
+      await page.evaluate("document.querySelector('.product-run-diagnostics').open"),
+      false,
+    );
+    assert.doesNotMatch(
+      await page.evaluate("document.querySelector('.product-run-status').innerText"),
+      /秒前|等待运行链路确认/u,
+    );
+    assert.equal(
+      await page.evaluate("document.querySelector('.product-run-status > small[role=status]')"),
+      null,
+    );
+    await page.evaluate("document.querySelector('.product-run-diagnostics > summary').click()");
     assert.match(
-      await page.evaluate("document.querySelector('.product-run-status').textContent"),
+      await page.evaluate("document.querySelector('.product-run-status').innerText"),
       /最近活动 (?:19|20|21) 秒前/u,
     );
     await page.evaluate(
       "runObservations.receive({type:'run.path',generation:1,sessionId:'s',turnId:'turn',runId:'run',sentAt:Date.now()+1,observedAt:Date.now()+1})",
     );
     assert.match(
-      await page.evaluate("document.querySelector('.product-run-status').textContent"),
+      await page.evaluate("document.querySelector('.product-run-status').innerText"),
       /最近活动 (?:19|20|21) 秒前/u,
     );
     await page.evaluate(
@@ -554,6 +567,41 @@ try {
     assert.equal(
       await page.evaluate("document.querySelector('.product-run-status').dataset.runPhase"),
       "executing_tool",
+    );
+    await page.evaluate(
+      "runObservations.receive({type:'run.execution',generation:2,sessionId:'s',turnId:'turn',runId:'run',revision:1,observedAt:Date.now(),execution:{status:'confirmed',stage:'worker',sentAt:Date.now(),confirmedAt:Date.now()}});runObservations.receive({type:'run.path',generation:2,sessionId:'s',turnId:'turn',runId:'run',sentAt:Date.now(),observedAt:Date.now()})",
+    );
+    await page.waitFor(
+      "document.querySelector('.product-run-diagnostics').innerText.includes('沙箱往返')",
+    );
+    await page.evaluate("document.querySelector('.product-run-diagnostics > summary').click()");
+    assert.doesNotMatch(
+      await page.evaluate("document.querySelector('.product-run-status').innerText"),
+      /秒前|沙箱往返/u,
+    );
+    // Stale/disconnected warnings remain visible without opening diagnostics.
+    await page.evaluate("window.statusClock=Date.now;Date.now=()=>statusClock()+46000");
+    await page.waitFor(
+      "document.querySelector('.product-run-status > small[role=status]')?.innerText==='运行状态更新延迟'",
+    );
+    await page.evaluate("Date.now=window.statusClock;delete window.statusClock");
+    await page.evaluate("renderTurn('Status',0,'running',null,undefined,false)");
+    await page.waitFor(
+      "document.querySelector('.product-run-status > small[role=status]')?.innerText.includes('连接中断')",
+    );
+    assert.equal(
+      await page.evaluate("document.querySelector('.product-run-diagnostics').open"),
+      false,
+    );
+    await page.evaluate("renderTurn('Status',0,'running')");
+    await page.waitFor("!document.querySelector('.product-run-status > small[role=status]')");
+    await page.evaluate("renderTurn('Status',0,'cancelling')");
+    await page.waitFor(
+      "document.querySelector('.product-run-status').dataset.runPhase==='cancelling'",
+    );
+    await page.evaluate("runObservations.reset();renderTurn('Status',0,'queued')");
+    await page.waitFor(
+      "document.querySelector('.product-run-status').dataset.runPhase==='queued' && !document.querySelector('.product-run-diagnostics')",
     );
     await page.evaluate(`renderTurn(${JSON.stringify(target)})`);
     await page.waitFor('document.querySelector(".product-agent-answer")');
@@ -1280,6 +1328,8 @@ try {
       machineWorkspaceRebind: true,
       rebindRetryUsesSameTargetAndKey: true,
       persistentRuntimeStatus: true,
+      collapsedRuntimeDiagnostics: true,
+      runtimeWarningsVisible: true,
       observationGenerationRecovery: true,
       separateActivityAndPath: true,
       firstImageOnlyMessage: true,

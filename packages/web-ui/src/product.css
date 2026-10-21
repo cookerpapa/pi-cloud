@@ -1336,6 +1336,19 @@ body.product-panel-resizing {
   padding-left: 19px;
   font-variant-numeric: tabular-nums;
 }
+.product-run-diagnostics {
+  margin-left: 19px;
+}
+.product-run-diagnostics > summary {
+  width: fit-content;
+  cursor: pointer;
+  font-size: 11px;
+}
+.product-run-diagnostics > small {
+  display: block;
+  margin-top: 4px;
+  padding-left: 0;
+}
 
 .product-tool-preparing {
   display: flex;

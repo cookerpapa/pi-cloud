@@ -776,7 +776,11 @@ recovered snapshot prefixes appear immediately, and reduced-motion/background
 views show received text directly. Presentation pacing does not change native
 persistence, Kafka publication or the history/display coverage boundary.
 
-Every active browser turn also has a persistent runtime status. The trusted
+Every active browser turn also has a persistent runtime status. The default view
+shows the current phase and any connection/update-delay warning. Activity age,
+message-path confirmation and sandbox round-trip confirmation are available in
+collapsed diagnostic details; these observations are not Tool progress or success.
+The trusted
 Runner maps native lifecycle/stream events into PiCloud phases and last-activity
 time. Worker sends bounded, coalesced HTTP observations to the existing Projector
 partition owner; its cached admitted scope checks tenant, Run, writer and fence.

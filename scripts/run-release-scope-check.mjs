@@ -4,9 +4,28 @@ import { fileURLToPath } from "node:url";
 
 const [scope] = process.argv.slice(2);
 assert(
-  ["provider", "catalog"].includes(scope),
-  "Use provider or catalog; protocol changes require full checks",
+  ["provider", "catalog", "web"].includes(scope),
+  "Use provider, catalog or web; protocol changes require full checks",
 );
+if (scope === "web") {
+  const options = { cwd: fileURLToPath(new URL("..", import.meta.url)), stdio: "inherit" };
+  execFileSync("npm", ["run", "typecheck", "--workspace", "@pi-cloud/web-ui"], options);
+  execFileSync(
+    process.execPath,
+    [
+      "node_modules/vitest/vitest.mjs",
+      "run",
+      "packages/web-ui/test",
+      "scripts/lib/component-release.test.mjs",
+      "scripts/lib/release-image-evidence.test.mjs",
+      "--maxWorkers=1",
+    ],
+    options,
+  );
+  execFileSync(process.execPath, ["scripts/run-browser-presentation-check.mjs"], options);
+  console.log(JSON.stringify({ scope, passed: true }));
+  process.exit(0);
+}
 const tests = [
   "scripts/lib/component-release.test.mjs",
   "scripts/lib/release-impact.test.mjs",

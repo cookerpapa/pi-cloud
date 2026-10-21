@@ -69,6 +69,53 @@ it("catalog publishing changes only its JSON, with unrelated resource changes re
     assertScopedManifests("catalog", yaml(before), yaml(next), '{"new":true}'),
   ).toThrow();
 });
+it("Web presentation releases cannot alter the API, proxy, dependencies or other images", () => {
+  expect(() =>
+    assertScopedSources("web", [
+      "packages/web-ui/src/RunStatus.tsx",
+      "packages/web-ui/src/product.css",
+      "scripts/production-kubernetes.mjs",
+      "scripts/run-browser-presentation-check.mjs",
+    ]),
+  ).not.toThrow();
+  for (const file of [
+    "packages/protocol/src/run-observation.ts",
+    "packages/web-ui/src/api.ts",
+    "packages/web-ui/Caddyfile",
+    "packages/web-ui/Dockerfile",
+    "package-lock.json",
+    "deploy/helm/pi-cloud-platform/templates/web.yaml",
+    "deploy/provider-gateway/Dockerfile",
+    "deploy/helm/pi-cloud-platform/files/model-catalog.json",
+  ])
+    expect(() => assertScopedSources("web", [file])).toThrow("matched release");
+  expect(() => assertScopedSources("provider", ["packages/web-ui/src/RunStatus.tsx"])).toThrow();
+  const web = structuredClone(provider);
+  web.kind = "Deployment";
+  web.metadata.name = "pi-cloud-web";
+  web.spec.template.spec.containers[0].name = "web";
+  const next = structuredClone(web);
+  next.spec.template.spec.containers[0].image = "new";
+  expect(() =>
+    assertScopedManifests("web", yaml(web, provider, other), yaml(next, provider, other), "new"),
+  ).not.toThrow();
+  for (const change of [
+    (v) => v.spec.replicas++,
+    (v) => (v.spec.template.spec.containers[0].env = [{ name: "UPSTREAM", value: "other" }]),
+    (v) => (v.spec.template.spec.volumes = []),
+  ]) {
+    const bad = structuredClone(next);
+    change(bad);
+    expect(() =>
+      assertScopedManifests("web", yaml(web, provider), yaml(bad, provider), "new"),
+    ).toThrow();
+  }
+  const changedWorker = structuredClone(other);
+  changedWorker.spec.replicas++;
+  expect(() =>
+    assertScopedManifests("web", yaml(web, other), yaml(next, changedWorker), "new"),
+  ).toThrow();
+});
 it("excludes source/protocol changes from a narrow release", () => {
   expect(() =>
     assertScopedSources("provider", [
@@ -121,6 +168,44 @@ it("retains old component provenance and enforces the new image gate", () => {
   expect(() => composeScopedDeployment(baseline, { scope: "provider", evidence })).toThrow(
     "scan failed",
   );
+});
+it("updates only Web provenance and rejects provider evidence for Web publication", () => {
+  const baseline = {
+    formatVersion: 1,
+    revision: "old",
+    catalogRevision: "catalog",
+    contracts: { schema: 196 },
+    components: {
+      "web-ui": { imageId: "old" },
+      "cli-proxy-api": { imageId: "provider" },
+      worker: { imageId: "worker" },
+    },
+  };
+  const evidence = {
+    images: [
+      {
+        reference: "pi-cloud/web-ui:new",
+        imageId: "new",
+        repoDigests: [],
+        provenance: { sourceRevision: "new" },
+        policyVulnerabilities: { HIGH: { fixable: 0 }, CRITICAL: { fixable: 0 } },
+      },
+    ],
+  };
+  const next = composeScopedDeployment(baseline, {
+    scope: "web",
+    version: "new",
+    revision: "new",
+    evidence,
+    evidenceDirectory: "evidence",
+  });
+  expect(next.components["web-ui"].sourceRevision).toBe("new");
+  expect(next.components.worker).toEqual(baseline.components.worker);
+  expect(next.components["cli-proxy-api"]).toEqual(baseline.components["cli-proxy-api"]);
+  expect(next.contracts).toEqual(baseline.contracts);
+  expect(next.catalogRevision).toBe("catalog");
+  evidence.images[0].reference = "pi-cloud/cli-proxy-api:new";
+  expect(() => composeScopedDeployment(baseline, { scope: "web", evidence })).toThrow();
 });
 
 it("rejects stale baselines and finishes recording a confirmed Helm apply after a lost local write", () => {

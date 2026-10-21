@@ -410,7 +410,20 @@ try {
           `(()=>{const status=document.querySelector('.product-run-status[data-run-phase="executing_tool"]');return status && /沙箱往返\\s*\\d+\\s*秒前确认/.test(status.textContent)})()`,
           180_000,
         );
-        record("probe.roundTripVisibleDuringBash");
+        assert.equal(
+          await page.evaluate("document.querySelector('.product-run-diagnostics').open"),
+          false,
+        );
+        assert.doesNotMatch(
+          await page.evaluate("document.querySelector('.product-run-status').innerText"),
+          /秒前确认|沙箱往返/u,
+        );
+        await page.screenshot("/tmp/pi-cloud-run-status-default.png");
+        await click(".product-run-diagnostics > summary", "probe.openDiagnostics");
+        await page.waitFor(
+          `document.querySelector('.product-run-status').innerText.includes('沙箱往返')`,
+        );
+        record("probe.roundTripVisibleInDiagnosticsDuringBash");
         await page.screenshot("/tmp/pi-cloud-probe-browser.png");
         await waitFor(
           async () => {

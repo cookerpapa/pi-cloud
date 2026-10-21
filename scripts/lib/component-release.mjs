@@ -57,12 +57,19 @@ export function scopedApplyState({ baseline, next, current, helmRevision, before
 
 /** Source classifications are deliberately small; protocol changes use matched release. */
 export function assertScopedSources(scope, files) {
-  assert(["provider", "catalog"].includes(scope), "Unknown release scope");
+  assert(["provider", "catalog", "web"].includes(scope), "Unknown release scope");
   for (const file of files) {
     assert(
       operatorSources.has(file) ||
-        file === catalogSeed ||
-        file === "deploy/provider-gateway/Dockerfile" ||
+        (scope === "web" &&
+          (/^packages\/web-ui\/src\/.*\.(tsx|css)$/.test(file) ||
+            [
+              "scripts/production-kubernetes.mjs",
+              "scripts/run-browser-presentation-check.mjs",
+              "scripts/run-live-browser-ui-check.mjs",
+            ].includes(file))) ||
+        (scope !== "web" &&
+          (file === catalogSeed || file === "deploy/provider-gateway/Dockerfile")) ||
         file === "README.md" ||
         file.startsWith("docs/") ||
         /(?:^|\/)test\/.*\.test\.[cm]?tsx?$/.test(file) ||
@@ -127,6 +134,15 @@ export function assertScopedManifests(scope, before, after, desired) {
       container.image = desired;
       targets++;
     } else if (
+      scope === "web" &&
+      old.kind === "Deployment" &&
+      old.metadata.name === "pi-cloud-web"
+    ) {
+      const container = expected.spec.template.spec.containers.find((c) => c.name === "web");
+      assert(container, "Missing Web container");
+      container.image = desired;
+      targets++;
+    } else if (
       scope === "catalog" &&
       old.kind === "ConfigMap" &&
       old.metadata.name === "pi-cloud-model-catalog"
@@ -183,20 +199,22 @@ export function composeScopedDeployment(
   result.version = version;
   if (scope === "catalog") result.catalogRevision = catalogRevision;
   else {
-    assert.equal(evidence.images.length, 1, "Provider evidence must cover one image");
+    assert(["provider", "web"].includes(scope), "Unknown image release scope");
+    const name = scope === "provider" ? "cli-proxy-api" : "web-ui";
+    assert.equal(evidence.images.length, 1, "Component evidence must cover one image");
     const image = evidence.images[0];
-    assert(image.reference.startsWith("pi-cloud/cli-proxy-api:"));
+    assert(image.reference.startsWith(`pi-cloud/${name}:`));
     assert.equal(
       image.policyVulnerabilities.HIGH.fixable + image.policyVulnerabilities.CRITICAL.fixable,
       0,
-      "Provider image scan failed",
+      "Component image scan failed",
     );
-    result.components["cli-proxy-api"] = deploymentFromEvidence({
+    result.components[name] = deploymentFromEvidence({
       evidence,
       evidenceDirectory,
       revision,
       version,
-    }).components["cli-proxy-api"];
+    }).components[name];
   }
   return result;
 }

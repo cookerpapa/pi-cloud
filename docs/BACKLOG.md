@@ -28,6 +28,15 @@ instead of current addresses for the same stable node. The
 and their artifacts, preserving all four current templates and historical UNKNOWN
 VM records. The bounded release-time cleanup budget remains for unavailable nodes.
 
+## Run status presentation
+
+- [ ] Keep phase and connection/update-delay warnings visible; move activity and
+      path/guest confirmation ages into collapsed diagnostics. Verify browser
+      disclosure, reconnect, stale observations and the deployed UI. Observation
+      transport and runtime authority remain unchanged.
+- [ ] Publish the UI through the existing scoped release operator's Web image
+      scope, preserving the current development machine and backend artifacts.
+
 ## Scoped release and runtime model catalog
 
 [ADR-0267](adr/0267-scoped-releases-and-model-catalog.md) is deployed on schema

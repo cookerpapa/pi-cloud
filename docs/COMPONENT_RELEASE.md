@@ -1,7 +1,7 @@
-# Provider and model catalog releases
+# Scoped component releases
 
-[ADR-0267](adr/0267-scoped-releases-and-model-catalog.md) introduces two narrow
-operations. Install its initial schema 196 / Worker contract with the
+[ADR-0267](adr/0267-scoped-releases-and-model-catalog.md) provides narrow provider,
+catalog and presentation-only Web operations. Install its initial schema 196 / Worker contract with the
 [matched procedure](MATCHED_RELEASE.md) first. Accounts and credentials survive.
 
 ## Provider image
@@ -24,6 +24,25 @@ The single provider replica can interrupt HTTP/SSE during replacement. Pi remain
 the sole sampling retry owner. Verify native execution and interrupted-request
 behavior; Pod readiness/model listing alone does not establish model usability.
 No Tool replay or model substitution is introduced.
+
+## Presentation-only Web
+
+TSX/CSS presentation changes can replace just the Web image when the installed
+API/protocol, dependencies, Caddy configuration and Helm templates are unchanged:
+
+```sh
+npm run release:component -- prepare web /private/releases/web-1 web-1
+npm run release:component -- preflight /private/releases/web-1
+npm run release:component -- apply /private/releases/web-1
+```
+
+The operator runs Web types/tests and browser presentation checks, builds/scans
+one image and allows only the Web Deployment image to differ. No migration hooks,
+Worker drain or VM release runs. Existing browser connections can reconnect through
+the usual SSE recovery; reload an open page to load new assets. Verify the relevant
+live browser flow and retain the original backend/VM identities in release evidence.
+API client, protocol, dependency, proxy or chart changes require matched release.
+Hosted CI remains conservative for Web changes and uses its full gate.
 
 ## Catalog
 
@@ -63,7 +82,8 @@ record a new combination and preserve an installed catalog override.
 
 Maintained operators share OS `flock`. Preflight checks source, artifact/scan
 identity, installed deployment/Helm baselines and complete rendered manifests.
-Application, chart, dependency or protocol edits require matched preparation.
+Application changes outside the presentation-only Web scope, chart, dependency
+or protocol edits require matched preparation.
 Explicitly listed operator-only tooling changes may use the narrow path after
 the same contract checks; they do not replace application images.
 Failed preflight never changes serving resources. Private values stay out of Git.
