@@ -37,28 +37,39 @@ collaboration selector or effort-based execution prohibition is proposed.
 [Findings and proposal](reports/subagent-wait-review-20261021.md)
 show a long-running child and successful final delivery, with additional model,
 review and environment-validation work; no lost reply was established.
-Implementation is authorized. [Current delivery evidence](reports/runtime-capabilities-delivery-20261021.md)
-records the source work and intended enabled egress setting; remaining items
-stay open until their relevant live acceptance passes.
+The features are deployed in `runtime-capabilities-5d39828d`, schema 197.
+[Delivery evidence](reports/runtime-capabilities-delivery-20261021.md) records
+source checks, real guest networking, native Max/Ultra policy and child/browser
+behavior, plus catalog-only acceptance with retained Worker/Run/lease identities.
 
-- [ ] Restore the approved guest-egress configuration, validate the actual guest
+- [x] Restore the approved guest-egress configuration, validate the actual guest
       route, and expose known network capabilities through the existing context path.
-- [ ] Implement one selected/effective profile resolver and native delegation
+- [x] Implement one selected/effective profile resolver and native delegation
       instruction section; preserve accepted-Run recovery and parent/child inheritance.
-- [ ] Improve parent-visible child progress using existing relationships and
+- [x] Improve parent-visible child progress using existing relationships and
       disposable HTTP/SSE: one compact line, opt-in details, no forced scrolling,
       with terminal precedence and reconnect handling.
-- [ ] Complete the separate execution-owned tool-catalog slice using public Pi
+- [x] Complete the separate execution-owned tool-catalog slice using public Pi
       registry/configuration, full catalog snapshots and full effective model
       tool lists. Preserve active calls during withdrawal; add no cache-specific
       tool-search/append protocol or per-request database lookup.
-- [ ] Verify actual request effort/tools/instructions, explicit delegation at
+- [x] Verify actual request effort/tools/instructions, explicit delegation at
       non-Ultra, Ultra behavior, queue/recovery/Stop, catalog changes and live
       acceptance before the relevant matched releases.
-- [ ] Resolve the matched-release prerequisite for the existing development
-      machine: its release API also deletes Workspace bytes. Obtain explicit
-      disposition for current user projects or design a maintenance retirement
-      that preserves storage; do not silently delete them to satisfy the gate.
+- [x] Release the existing development machine and its entire Workspace with
+      the owner's explicit authorization; confirm VM absence and storage purge
+      before matched deployment. Preserve accounts, configuration and credentials.
+
+## Compatible Control Plane replacement
+
+- [ ] Close the rolling Control Plane warm-Workspace admission gap found by
+      runtime-catalog acceptance: a new Pod can be Ready while a retained VM
+      still points to a removed old Pod whose PG owner lease has not expired.
+      A new Run can receive a pre-execution sandbox reservation error. Preserve
+      owner fencing and physical recovery evidence. For the supported single
+      Control Plane compatible update, stop the old Pod, wait for its PG lease
+      closure/expiry, then start/adopt before readiness (ADR-0269). General
+      overlapping-controller admission remains a separate handoff slice.
 
 ## Run status presentation
 

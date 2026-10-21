@@ -12,6 +12,9 @@ Worker pool; file and shell tools execute in isolated CubeSandbox KVM guests.
   Stop withdraws pending messages and restores their text and attachments to the
   composer for editing, alongside the existing draft.
 - Persistent conversations, context compaction and interruption recovery.
+- Ultra in the effort picker: provider Max plus proactive delegation. Other
+  efforts retain explicitly requested delegation. Parent Tool cards show compact
+  child progress and navigation, with invocation details closed by default.
 - Streaming chat file uploads into Workspace; attached images reach the model directly.
 - Elastic Workspaces or dedicated development machines, with file browsing,
   terminals and app previews. Dedicated machines also support SSH.
@@ -27,9 +30,16 @@ and optional [conversation/image recovery](docs/ASSET_RECOVERY.md).
 The [private pilot criteria](docs/PRIVATE_PILOT.md) distinguish readiness checks
 from actual-use and fleet-capacity evidence; the pilot has not started.
 
-The [component release delivery](docs/reports/component-release-20261021.md) is
-live: application base `component-release-ad5fc83c`, schema 196, with independently
-updated provider `provider-scope-60bd7ef7`. Model choices/capabilities are deployed
+The current [runtime-capability delivery](docs/reports/runtime-capabilities-delivery-20261021.md)
+is `runtime-capabilities-5d39828d`, schema 197. Execution-owned ordinary Control
+Tools synchronize to Workers over their existing management connection; the next
+prepared model request uses the updated full tool list. Fixed Pi guest Tools and
+native child/workflow adapters retain their SDK/lifecycle contracts. Compatible
+single-Control-Plane replacement stops the old Pod and waits for its owner lease
+before starting/adopting; Workers and Cube continue running.
+
+The preceding [component release delivery](docs/reports/component-release-20261021.md)
+introduced independent provider/catalog publication. Model choices/capabilities are deployed
 configuration; each accepted Run freezes its settings. Real Luna acceptance keeps
 an active Tool/Run, Worker boots and VM intact across provider/catalog updates,
 then verifies new-Run settings and physical cleanup. Text/Tools, vision and hosted
@@ -74,7 +84,7 @@ additional messages go to the running Pi native queue and are confirmed after
 its Kafka-backed Storage commit. An unavailable Worker leaves the browser draft
 unconfirmed. [ADR-0238](docs/adr/0238-native-input-queue-and-run-record.md) is deployed;
 the [Worker claim cleanup](docs/adr/0242-worker-claim-schema-cleanup.md) is retained
-in the current schema 194 runtime.
+in the current schema 197 runtime.
 
 The intake path shares its locked Session and request lookup between
 routing and Run creation: eight ordinary business SQL statements, two on an

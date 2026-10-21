@@ -2,11 +2,12 @@
 
 [ADR-0269](0269-execution-owned-control-tool-catalog.md) uses execution-owned
 ordinary tool definitions and Pi's Registry/selection mechanisms for changes
-inside a running Agent loop. Implementation is in progress.
+inside a running Agent loop. It is deployed in `runtime-capabilities-5d39828d`.
 
 [ADR-0268](0268-runtime-capabilities-and-delegation.md) records the approved
 Worker capability snapshots, native delegation profiles and compact child
-observations. Implementation is in progress; the serving runtime is unchanged.
+observations. It is deployed on schema 197; [delivery evidence](../reports/runtime-capabilities-delivery-20261021.md)
+records the verified behavior and the separate rolling-owner admission gap.
 
 [ADR-0266](0266-upload-reference-and-write-lifetimes.md) binds provisional upload
 pins to native receipts and preserves uncertain object-write cleanup identity.

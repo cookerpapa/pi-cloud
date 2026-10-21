@@ -127,9 +127,18 @@ This extension holds the existing release lock, uses only its owned tenant and
 checks real guest npm/PyPI access, Max/Ultra policy, explicit delegation, native
 child inheritance and compact browser navigation. During owned gated Bash calls
 it changes only `controlPlane.enabledControlTools` through the same Helm chart
-without hooks, verifies both Worker identities and the active lease remain, then
+without hooks. On the current single-controller deployment it uses the guarded
+stop-old/PG-owner-lease-closure/start-new sequence, verifies both Worker identities
+and the active lease remain, then
 checks preview addition/removal on later requests of the same native work. It
 restores the original catalog selection and saves the private restoration receipt.
+
+For an isolated catalog follow-up, add `PI_CLOUD_RUNTIME_CAPABILITY_SCOPE=catalog`.
+Its report explicitly identifies the smaller scope and creates a warm owned
+Workspace before replacement. It does not establish the skipped browser/input,
+guest-registry or Max/Ultra child checks; retain their separate evidence. A Ready
+Pod during rolling replacement does not prove retained VM ownership has moved;
+the observed new-binding gap remains in the backlog.
 No unrelated Run may be active for this check. DeepSeek is exercised with one
 ordinary Tool request, without hosted-search or large-image capability probing.
 Keep the deliberately enabled global guest-egress setting when cleaning fixtures.

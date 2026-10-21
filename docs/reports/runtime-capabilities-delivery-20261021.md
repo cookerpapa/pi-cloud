@@ -2,8 +2,11 @@
 
 The owner approved all slices in the
 [consolidated plan](subagent-wait-review-20261021.md). Runtime implementation
-`2f7d1b3c` is deployed as `runtime-capabilities-2f7d1b3c`, schema 197, under
-ADR-0268/0269. Catalog publication and final live acceptance remain in progress.
+`5d39828d` is deployed as `runtime-capabilities-5d39828d`, schema 197, under
+ADR-0268/0269, following the initial `2f7d1b3c` release. The reviewed Ultra
+catalog is installed. Profile/browser, native recovery, catalog-only and complete
+Cube checks pass as described below. Original account/configuration/credential
+hashes match the pre-release baseline, and all owned live resources are cleaned.
 
 ## Guest network policy slice
 
@@ -106,8 +109,8 @@ result budget; oversized completed output produces a bounded error without a
 second handler execution. Its focused regression passes.
 
 The maintained live browser driver has an explicit runtime-capability mode.
-The matched application is deployed; final provider/browser/recovery/Cube
-acceptance is still required before marking delivery complete.
+The matched application is deployed. Separate live scopes retain their own
+results; a failed combined invocation is never relabeled as an overall pass.
 
 ## Full-check findings and rollout boundary
 
@@ -192,5 +195,63 @@ excluding child native bindings/entries from its history reads. A real-PG
 regression covers a child whose native Conversation is not yet attached; the
 tree/history and child UI repeat passes 17 checks. The test's initial attempt to
 clear the required physical Session binding was invalid; it now models only the
-nullable native Conversation binding. Full publication and browser repeat of
-this focused-tree correction remain pending.
+nullable native Conversation binding. The correction is deployed in `5d39828d`;
+actual browser progress and closed details pass. The navigation fixture initially
+expected the address bar to change, whereas the existing UI navigates internally.
+It now verifies the selected child's actual Turn and read-only view; that repeat
+passes, as do parent/child Ultra instructions, native child Max and explicit
+delegation at Max.
+
+## Compatible replacement and final scope evidence
+
+The first rolling catalog replacements exposed a separate runtime handoff gap.
+Both Workers received the new catalog, and Bash remained offered, but a new Run's
+pre-execution reservation followed the old Sandbox owner's Pod address. Captured
+PG evidence shows that old owner's short lease still valid while only the new Pod
+remained. Startup recovery had therefore not acquired the retained VM. No Bash
+execution occurred for the blocked Tool. One later repetition also encountered a
+transient API 503; another combined invocation stopped earlier on unconfirmed
+external package-registry access. Their failed results and cleanup remain in
+private evidence.
+
+Use the owner's existing single-controller replacement preference: stop the old
+Pod, wait for its PG sandbox-owner lease to close/expire, then start the new
+configuration and let existing startup adoption finish before readiness. The
+fixture reuses the guarded outage/watchdog receipt; it never clears ownership or
+reissues shell work. The isolated catalog scope passes all four configuration
+changes (`[]`, `[preview]`, `[]`, original `null`). Adding/removing preview within
+active native work preserves both Worker identities and the original Run lease/
+fence. The newly offered preview executes successfully. DeepSeek Flash Ultra
+also completes its ordinary Bash call; hosted search is not tested. Original tool
+selection and all fixture resources are restored.
+
+General overlapping-controller admission remains an explicit backlog item;
+the planned replacement result does not establish gap-free rolling replacement.
+The scope switch makes catalog follow-ups independent of already-verified
+browser/child/network fixtures. It is labeled in every report, and never implies
+those skipped checks passed in that invocation.
+
+| Evidence | Result |
+| --- | --- |
+| Final `5d39828d` matched images/preflight | 11 images pass; deployed |
+| Focused child tree/history/UI regression | 17 checks and Control Plane type check pass |
+| Browser Stop, image return/resend and Read | Pass in retained combined runs |
+| Guest npm/PyPI, Max/Ultra, child progress/navigation | Pass in retained combined runs before the separate rolling-catalog failure |
+| Native input/Stop/Worker and dual-process recovery | 5 cases pass on initial `2f7d1b3c`; later runtime delta is the focused-tree read fix |
+| Final catalog-only / Luna / Flash | Accepted; original Worker/Run/lease identities and configuration restored |
+| Acceptance state reader and guarded outage helpers | 8 checks pass |
+| Complete Cube production gate on `5d39828d` | Accepted: real KVM, preview, cross-Run process/VM reuse, fresh-VM recovery of 1,025 Workspace files, retired-VM admission rejection and physical cleanup |
+| Final preservation | All original 32 tenants/users, 35 credential bindings/model profiles, passwords/API credentials and policies unchanged; all 27 host-secret and 9 cluster-secret hashes match |
+
+The full Cube driver leaves account/project fixture metadata for operator cleanup.
+After API deletion confirmed all three Workspace storage purges and no sessions
+remained, the maintained owned-tenant cleanup removed only its new fixture tenant.
+The identified foreign isolation project was also removed without touching its
+existing tenant/account. Final inventory has zero active Runs, writers, Tool
+bindings, VMs, development machines or terminals; native inventory scans the one
+current node and confirms zero VMs. Serving application/Cube workloads are Ready,
+and the approved public-egress setting remains enabled at revision 7.
+
+Private JSON, configuration receipts and the child-progress screenshot are under
+`deploy/production/runtime/review-evidence/runtime-capabilities-20261021/`.
+No session transcripts or credentials are committed.

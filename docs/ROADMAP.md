@@ -5,26 +5,27 @@ catalog configuration, frozen Run snapshots, per-component provenance and scoped
 provider/catalog publication. [Initial and independent release acceptance](reports/component-release-20261021.md)
 passes with preserved ownership/configuration and confirmed physical cleanup.
 
-## Agent effort, delegation and tool-catalog proposal
+## Agent effort, delegation and tool catalog
 
 The [October 21 consolidated plan](reports/subagent-wait-review-20261021.md)
 retains current runtime authorities and separates model behavior from tool
 availability. The owner prioritizes simple full tool-list updates over cache
 preservation; no provider-specific tool-loading optimization is planned.
-Implementation is authorized and in progress under
-[ADR-0268](adr/0268-runtime-capabilities-and-delegation.md).
+Implementation under [ADR-0268](adr/0268-runtime-capabilities-and-delegation.md)
+and [ADR-0269](adr/0269-execution-owned-control-tool-catalog.md) is deployed in
+`runtime-capabilities-5d39828d`, schema 197.
 [Delivery evidence](reports/runtime-capabilities-delivery-20261021.md) separates
-source checks from serving configuration and pending matched deployment.
+passed scope checks, retained failed samples and the rolling-owner handoff backlog.
 
-- [ ] Correct this deployment's guest egress and communicate known capabilities.
-- [ ] Add Ultra to the effort picker, resolve provider Max plus proactive policy,
+- [x] Correct this deployment's guest egress and communicate known capabilities.
+- [x] Add Ultra to the effort picker, resolve provider Max plus proactive policy,
       and use native Pi instruction sections for all delegation modes.
-- [ ] Show compact child progress through existing SSE, with details collapsed
+- [x] Show compact child progress through existing SSE, with details collapsed
       by default and no automatic expansion or scrolling.
-- [ ] Introduce execution-owned catalog delivery for ordinary remote tools,
+- [x] Introduce execution-owned catalog delivery for ordinary remote tools,
       sending full effective tools on subsequent model requests and preserving
       active invocation/recovery contracts and the one Session writer.
-- [ ] Verify each slice and publish through the applicable matched release path.
+- [x] Verify each slice and publish through the applicable matched release path.
 
 ## GPT-6.1 Sol catalog refresh
 

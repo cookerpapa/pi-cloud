@@ -7,9 +7,11 @@ The consolidated plan uses native Pi instruction sections, retains explicitly
 requested delegation outside Ultra, and sequences egress/capability repair,
 compact child progress and execution-owned tool-catalog delivery. Tool updates use
 complete effective lists rather than a cache-preserving loading protocol; parent
-details stay collapsed until opened. Implementation is authorized and
-[in progress](reports/runtime-capabilities-delivery-20261021.md); matched deployment
-is pending.
+details stay collapsed until opened. The [delivery](reports/runtime-capabilities-delivery-20261021.md)
+is deployed as `runtime-capabilities-5d39828d`, schema 197. It records the native,
+browser, model and catalog checks, authorized Workspace deletion and the separate
+rolling-owner admission gap. Single-controller compatible updates use the
+existing stop-old/lease-closure/start-new order.
 
 The [Run status presentation update](reports/run-status-presentation-20261021.md)
 keeps phases and warnings visible while collapsing diagnostic ages. It is deployed

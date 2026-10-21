@@ -1,6 +1,6 @@
 # ADR-0269: Execution-owned ordinary control Tool catalog
 
-Status: accepted; implementation in progress, not deployed.
+Status: implemented and deployed in `runtime-capabilities-5d39828d`, schema 197.
 Date: 2026-10-21.
 
 ## Scope
@@ -52,6 +52,15 @@ arbitrary guest plugin loading or replacement of native child recovery.
 - A deployment may restrict enabled ordinary control-tool names. This changes
   catalog availability, not code loading or the fixed SDK tools. It also permits
   a compatible Control Plane restart acceptance while keeping Worker identity.
+
+The supported single-Control-Plane compatible replacement uses the existing
+complete-outage path: stop the old Pod, wait for its PG sandbox-owner lease to
+close/expire, then start the new configuration. Startup adopts retained VMs before
+readiness. Worker/Pi/Cube stay running. A rolling Pod becoming Ready does not
+prove old-owner takeover: a retained VM can still point to the deleted Pod while
+its short PG lease is valid. That rolling new-binding gap remains a separate
+handoff issue; never clear the lease or ownership records to bypass it. The live
+catalog fixture uses the guarded outage/restore receipt and this replacement order.
 
 ## Adopt-before-build evidence
 

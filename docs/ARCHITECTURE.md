@@ -1,10 +1,16 @@
 # Architecture
 
-[ADR-0268](adr/0268-runtime-capabilities-and-delegation.md) is being implemented:
+[ADR-0268](adr/0268-runtime-capabilities-and-delegation.md) and
+[ADR-0269](adr/0269-execution-owned-control-tool-catalog.md) are deployed in
+`runtime-capabilities-5d39828d`, schema 197:
 credential-free capability snapshots reuse Worker management, native Pi sections
-describe network/delegation policy and child progress stays disposable.
-[Delivery status](reports/runtime-capabilities-delivery-20261021.md) distinguishes
-the enabled serving guest-egress setting from pending application deployment.
+describe network/delegation policy and child progress stays disposable. Ordinary
+Control Tool definitions and handlers have one execution-side registry; Workers
+update Pi's Registry for subsequent requests. Focused parent views load child
+summaries independently of child history. Compatible single-controller updates
+use the existing complete-outage replacement order and PG owner-lease boundary.
+[Delivery evidence](reports/runtime-capabilities-delivery-20261021.md) records
+source/live checks and the remaining overlapping-owner admission issue.
 
 [ADR-0267](adr/0267-scoped-releases-and-model-catalog.md) is deployed on schema 196.
 [Current delivery](reports/component-release-20261021.md) validates independent

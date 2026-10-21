@@ -1,6 +1,6 @@
 # ADR-0268: Runtime capabilities, delegation profiles and child observations
 
-Status: accepted; implementation in progress, not deployed.
+Status: implemented and deployed in `runtime-capabilities-5d39828d`, schema 197.
 Date: 2026-10-21.
 
 ## Context and decision
