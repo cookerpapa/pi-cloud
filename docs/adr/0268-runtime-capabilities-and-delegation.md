@@ -37,6 +37,10 @@ next prepared model request. Cache preservation is not a requirement.
    Details start collapsed; updates never force scrolling or expansion. Native
    outcomes outrank late observations. No copied child transcript, polling per
    progress update, new progress table or model-generated summary is introduced.
+   Worker derives the parent from its existing native family; Projector checks
+   both current scopes before routing `run.child_activity` to the parent's SSE.
+   Reuse the existing child summary with parent Tool/child Turn identities. The
+   browser coalesces discovery/lifecycle/reconnect reads, not phase-by-phase reads.
 
 The ordinary Tool catalog protocol is recorded separately before its vertical
 slice. All work retains PG authority, one physical Session writer, Kafka dispatch

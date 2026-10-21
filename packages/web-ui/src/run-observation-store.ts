@@ -6,6 +6,7 @@ export type Observations = {
   path?: Extract<RunObservation, { type: "run.path" }>;
   execution?: Extract<RunObservation, { type: "run.execution" }>;
   toolActivityAt?: number;
+  children?: ReadonlyMap<string, Extract<RunObservation, { type: "run.child_activity" }>>;
 };
 /** Health is disposable UI state, separate from transcript/history. */
 export class RunObservationStore {
@@ -38,7 +39,13 @@ export class RunObservationStore {
     // Replace the whole bundle: a new path must not retain an old VM or Tool age.
     const current: Observations | undefined =
       value.generation > generation ? { generation: value.generation } : previous;
-    if (value.type === "run.activity") {
+    if (value.type === "run.child_activity") {
+      const prior = current?.children?.get(value.childSessionId);
+      if (prior && prior.revision >= value.revision) return;
+      const children = new Map(current?.children);
+      children.set(value.childSessionId, value);
+      this.#values.set(value.turnId, { ...current, children });
+    } else if (value.type === "run.activity") {
       if (current?.activity && current.activity.revision >= value.revision) return;
       this.#values.set(value.turnId, { ...current, activity: value });
     } else if (value.type === "run.execution") {

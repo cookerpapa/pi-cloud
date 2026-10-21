@@ -23,11 +23,21 @@ it("coalesces activity and republishes quiet state without inventing actual prog
   const publisher = new RunActivityPublisher("http://control", "private-token", send);
   try {
     for (let i = 0; i < 1000; i++)
-      publisher.update(scope, 0, { phase: "receiving_model", lastActivityAt: 90_000 + i });
+      publisher.update(
+        scope,
+        0,
+        { phase: "receiving_model", lastActivityAt: 90_000 + i },
+        { sessionId: "parent", turnId: "parent-turn", toolCallId: "task:10" },
+      );
     await vi.advanceTimersByTimeAsync(1000);
     expect(send).toHaveBeenCalledOnce();
     const first = parseRunActivityDelivery(JSON.parse((send.mock.calls[0] as any)[1].body));
     expect(first).toMatchObject({ revision: 1, lastActivityAt: 90_999 });
+    expect(first.parent).toEqual({
+      sessionId: "parent",
+      turnId: "parent-turn",
+      toolCallId: "task:10",
+    });
     await vi.advanceTimersByTimeAsync(15_000);
     const second = parseRunActivityDelivery(JSON.parse((send.mock.calls[1] as any)[1].body));
     expect(second).toMatchObject({ revision: 2, lastActivityAt: 90_999 });

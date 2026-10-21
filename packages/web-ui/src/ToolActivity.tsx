@@ -3,6 +3,7 @@ import { HighlightedCode } from "./HighlightedCode.tsx";
 import { useI18n, type Translate } from "./i18n.tsx";
 import type { TranscriptItem } from "./session-view.ts";
 import { LiveToolProgress } from "./tool-progress.tsx";
+import { ChildAgentProgress } from "./ChildAgentProgress.tsx";
 
 export type ToolTranscriptItem = Extract<TranscriptItem, { kind: "tool" }>;
 
@@ -400,6 +401,16 @@ export function ToolActivity({ item }: { item: ToolTranscriptItem }) {
         : item.status === "failed"
           ? "!"
           : "✓";
+  const delegation = item.toolName === "subagent" || item.toolName === "workflow";
+  const body = (
+    <>
+      {renderer.body(context, t)}
+      {item.status === "running" ? <LiveToolProgress toolCallId={item.toolCallId} /> : null}
+      {duration === null ? null : (
+        <div className="product-tool-duration">{t("turn.took", { duration })}</div>
+      )}
+    </>
+  );
   return (
     <section
       aria-label={`${item.toolName} ${statusLabel}`}
@@ -413,11 +424,15 @@ export function ToolActivity({ item }: { item: ToolTranscriptItem }) {
         {renderer.heading(context, t)}
         <span className="product-tool-state">{statusLabel}</span>
       </div>
+      <ChildAgentProgress toolCallId={item.toolCallId} />
       <div className="product-tool-body">
-        {renderer.body(context, t)}
-        {item.status === "running" ? <LiveToolProgress toolCallId={item.toolCallId} /> : null}
-        {duration === null ? null : (
-          <div className="product-tool-duration">{t("turn.took", { duration })}</div>
+        {delegation ? (
+          <details>
+            <summary>{t("child.details")}</summary>
+            {body}
+          </details>
+        ) : (
+          body
         )}
       </div>
     </section>

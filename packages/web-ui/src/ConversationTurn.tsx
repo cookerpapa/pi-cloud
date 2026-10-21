@@ -11,6 +11,8 @@ import { ToolProgressContext } from "./tool-progress.tsx";
 import type { ToolProgressStore } from "./tool-progress-store.ts";
 import { RunStatus } from "./RunStatus.tsx";
 import type { RunObservationStore } from "./run-observation-store.ts";
+import { ChildAgentProgress, ChildAgentProgressContext } from "./ChildAgentProgress.tsx";
+import type { DelegatedSessionSummaryResource } from "@pi-cloud/protocol";
 
 const MAXIMUM_PROGRESSIVE_CHARACTERS_PER_FRAME = 32;
 const PROGRESSIVE_BOUNDARY_LOOKAHEAD = 4;
@@ -168,10 +170,7 @@ function ToolActivityGroup({ items }: { items: readonly ToolTranscriptItem[] }) 
   const { t } = useI18n();
   const running = items.some((item) => item.status === "running");
   const issue = items.some((item) => item.status === "failed" || item.status === "unknown");
-  const [expanded, setExpanded] = useState(running || issue);
-  useEffect(() => {
-    if (running || issue) setExpanded(true);
-  }, [issue, running]);
+  const [expanded, setExpanded] = useState(false);
   if (items.length === 1) return <ToolActivity item={items[0]!} />;
   const current =
     items.reduce<ToolTranscriptItem | undefined>(
@@ -205,6 +204,9 @@ function ToolActivityGroup({ items }: { items: readonly ToolTranscriptItem[] }) 
         <strong>{t("turn.activitySteps", { count: items.length })}</strong>
         <span title={summary}>{summary}</span>
       </button>
+      {!expanded
+        ? items.map((item) => <ChildAgentProgress toolCallId={item.toolCallId} key={item.key} />)
+        : null}
       {expanded ? (
         <div className="product-activity-group-items">
           {items.map((item) => (
@@ -379,6 +381,8 @@ export function ConversationTurn({
   canPrune = false,
   onPrune,
   onPresentationProgress,
+  delegatedChildren = [],
+  onOpenChild,
 }: {
   api?: PiCloudApi;
   turn: TurnView;
@@ -390,6 +394,8 @@ export function ConversationTurn({
   canPrune?: boolean;
   onPrune?: () => void;
   onPresentationProgress?: () => void;
+  delegatedChildren?: readonly DelegatedSessionSummaryResource[];
+  onOpenChild?: (child: DelegatedSessionSummaryResource) => void;
 }) {
   const { t } = useI18n();
   const working =
@@ -404,133 +410,142 @@ export function ConversationTurn({
     [rows],
   );
   return (
-    <ToolProgressContext.Provider
-      value={progressStore ? { store: progressStore, turnId: turn.turnId } : null}
+    <ChildAgentProgressContext.Provider
+      value={{
+        turnId: turn.turnId,
+        children: delegatedChildren,
+        ...(observationStore ? { store: observationStore } : {}),
+        ...(onOpenChild ? { onNavigate: onOpenChild } : {}),
+      }}
     >
-      <section
-        className="product-turn"
-        data-conversation-turn-id={turn.turnId}
-        id={`turn-${turn.turnId}`}
+      <ToolProgressContext.Provider
+        value={progressStore ? { store: progressStore, turnId: turn.turnId } : null}
       >
-        <div className="product-message product-user-message">
-          <div className="product-user-message-body">
-            <UploadCards
-              {...(api ? { api } : {})}
-              {...(turn.uploads ? { uploads: turn.uploads } : {})}
-            />
-            {turn.prompt ? <div className="product-user-bubble">{turn.prompt}</div> : null}
-            <div className="product-user-message-actions">
-              <MessageCopyButton
-                copiedLabel={t("turn.copied")}
-                label={t("turn.copyUserMessage")}
-                text={turn.prompt}
+        <section
+          className="product-turn"
+          data-conversation-turn-id={turn.turnId}
+          id={`turn-${turn.turnId}`}
+        >
+          <div className="product-message product-user-message">
+            <div className="product-user-message-body">
+              <UploadCards
+                {...(api ? { api } : {})}
+                {...(turn.uploads ? { uploads: turn.uploads } : {})}
               />
+              {turn.prompt ? <div className="product-user-bubble">{turn.prompt}</div> : null}
+              <div className="product-user-message-actions">
+                <MessageCopyButton
+                  copiedLabel={t("turn.copied")}
+                  label={t("turn.copyUserMessage")}
+                  text={turn.prompt}
+                />
+              </div>
             </div>
           </div>
-        </div>
-        <div className="product-message product-assistant-message">
-          <div className="product-assistant-content">
-            {rows.map((row, index) => {
-              if (row.kind === "user")
-                return (
-                  <div
-                    className="product-message product-user-message"
-                    data-human-input-id={row.item.inputId}
-                    key={row.key}
-                  >
-                    <div className="product-user-message-body">
-                      <UploadCards
-                        {...(api ? { api } : {})}
-                        {...(row.item.uploads ? { uploads: row.item.uploads } : {})}
-                      />
-                      {row.item.text ? (
-                        <div className="product-user-bubble">{row.item.text}</div>
-                      ) : null}
-                      <div className="product-user-message-actions">
-                        <MessageCopyButton
-                          copiedLabel={t("turn.copied")}
-                          label={t("turn.copyUserMessage")}
-                          text={row.item.text}
+          <div className="product-message product-assistant-message">
+            <div className="product-assistant-content">
+              {rows.map((row, index) => {
+                if (row.kind === "user")
+                  return (
+                    <div
+                      className="product-message product-user-message"
+                      data-human-input-id={row.item.inputId}
+                      key={row.key}
+                    >
+                      <div className="product-user-message-body">
+                        <UploadCards
+                          {...(api ? { api } : {})}
+                          {...(row.item.uploads ? { uploads: row.item.uploads } : {})}
                         />
+                        {row.item.text ? (
+                          <div className="product-user-bubble">{row.item.text}</div>
+                        ) : null}
+                        <div className="product-user-message-actions">
+                          <MessageCopyButton
+                            copiedLabel={t("turn.copied")}
+                            label={t("turn.copyUserMessage")}
+                            text={row.item.text}
+                          />
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              if (row.kind === "text") {
-                return (
-                  <AssistantTextItem
-                    item={row.item}
-                    key={row.key}
-                    onPresentationProgress={onPresentationProgress}
-                    processNarration={row.processNarration}
-                    streaming={
-                      working && !rows.slice(index + 1).some((next) => next.kind === "user")
-                    }
-                  />
-                );
-              }
-              if (row.kind === "activity") {
-                return <ToolActivityGroup items={row.items} key={row.key} />;
-              }
-              if (row.kind === "hosted_search") {
-                return <HostedSearchGroup items={row.items} key={row.key} />;
-              }
-              return <OtherItem item={row.item} key={row.key} />;
-            })}
-            {working ? (
-              <RunStatus turn={turn} store={observationStore} connected={connected} />
-            ) : null}
-            {turn.failure ? (
-              <div className="product-turn-error">
-                <strong>{t("turn.runFailed")}</strong>
-                <span>
-                  {turn.failure.code === "run_timed_out"
-                    ? t("error.runTimedOut")
-                    : turn.failure.message === "这次运行失败了，请重试。"
-                      ? t("error.runFailed")
-                      : turn.failure.message}
-                </span>
-              </div>
-            ) : null}
-            {turn.cancellation ? (
-              <div className="product-muted-line">{t("turn.stopped")}</div>
-            ) : null}
-            {turn.status === "completed" && turn.stopReason === "length" ? (
-              <div className="product-muted-line" role="status">
-                {t("turn.outputLimit")}
-              </div>
-            ) : null}
-            {turn.status === "completed" && (finalAnswerText.length > 0 || onFork || onPrune) ? (
-              <div className="product-answer-actions">
-                {finalAnswerText.length > 0 ? (
-                  <MessageCopyButton
-                    copiedLabel={t("turn.copied")}
-                    label={t("turn.copyAssistantMessage")}
-                    text={finalAnswerText}
-                  />
-                ) : null}
-                {onFork ? (
-                  <button disabled={!canFork} onClick={onFork} type="button">
-                    <span aria-hidden="true">↳</span>
-                    {t("turn.fork")}
-                  </button>
-                ) : null}
-                {onPrune ? (
-                  <button
-                    className="product-prune-action"
-                    disabled={!canPrune}
-                    onClick={onPrune}
-                    type="button"
-                  >
-                    <span aria-hidden="true">⌫</span>
-                    {t("turn.prune")}
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
+                  );
+                if (row.kind === "text") {
+                  return (
+                    <AssistantTextItem
+                      item={row.item}
+                      key={row.key}
+                      onPresentationProgress={onPresentationProgress}
+                      processNarration={row.processNarration}
+                      streaming={
+                        working && !rows.slice(index + 1).some((next) => next.kind === "user")
+                      }
+                    />
+                  );
+                }
+                if (row.kind === "activity") {
+                  return <ToolActivityGroup items={row.items} key={row.key} />;
+                }
+                if (row.kind === "hosted_search") {
+                  return <HostedSearchGroup items={row.items} key={row.key} />;
+                }
+                return <OtherItem item={row.item} key={row.key} />;
+              })}
+              {working ? (
+                <RunStatus turn={turn} store={observationStore} connected={connected} />
+              ) : null}
+              {turn.failure ? (
+                <div className="product-turn-error">
+                  <strong>{t("turn.runFailed")}</strong>
+                  <span>
+                    {turn.failure.code === "run_timed_out"
+                      ? t("error.runTimedOut")
+                      : turn.failure.message === "这次运行失败了，请重试。"
+                        ? t("error.runFailed")
+                        : turn.failure.message}
+                  </span>
+                </div>
+              ) : null}
+              {turn.cancellation ? (
+                <div className="product-muted-line">{t("turn.stopped")}</div>
+              ) : null}
+              {turn.status === "completed" && turn.stopReason === "length" ? (
+                <div className="product-muted-line" role="status">
+                  {t("turn.outputLimit")}
+                </div>
+              ) : null}
+              {turn.status === "completed" && (finalAnswerText.length > 0 || onFork || onPrune) ? (
+                <div className="product-answer-actions">
+                  {finalAnswerText.length > 0 ? (
+                    <MessageCopyButton
+                      copiedLabel={t("turn.copied")}
+                      label={t("turn.copyAssistantMessage")}
+                      text={finalAnswerText}
+                    />
+                  ) : null}
+                  {onFork ? (
+                    <button disabled={!canFork} onClick={onFork} type="button">
+                      <span aria-hidden="true">↳</span>
+                      {t("turn.fork")}
+                    </button>
+                  ) : null}
+                  {onPrune ? (
+                    <button
+                      className="product-prune-action"
+                      disabled={!canPrune}
+                      onClick={onPrune}
+                      type="button"
+                    >
+                      <span aria-hidden="true">⌫</span>
+                      {t("turn.prune")}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
           </div>
-        </div>
-      </section>
-    </ToolProgressContext.Provider>
+        </section>
+      </ToolProgressContext.Provider>
+    </ChildAgentProgressContext.Provider>
   );
 }

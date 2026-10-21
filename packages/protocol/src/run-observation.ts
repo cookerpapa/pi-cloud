@@ -21,6 +21,11 @@ export const RunPhaseSchema = Type.Union([
 ]);
 export type RunPhase = Static<typeof RunPhaseSchema>;
 export type RunActivityUpdate = { phase: RunPhase; lastActivityAt: number };
+export const RunActivityParentSchema = Type.Object(
+  { sessionId: id, turnId: id, toolCallId: id },
+  { additionalProperties: false },
+);
+export type RunActivityParent = Static<typeof RunActivityParentSchema>;
 export const RuntimeObservationScopeSchema = Type.Object(
   {
     tenantId: id,
@@ -70,6 +75,7 @@ export function parsePathProbe(value: unknown): PathProbe {
 export const RunActivityDeliverySchema = Type.Object(
   {
     scope: RuntimeObservationScopeSchema,
+    parent: Type.Optional(RunActivityParentSchema),
     partition: Type.Integer({ minimum: 0 }),
     revision: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
     observedAt: timestamp,
@@ -122,6 +128,26 @@ const identity = {
   generation: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
 };
 export const RunObservationSchema = Type.Union([
+  Type.Object(
+    {
+      ...identity,
+      type: Type.Literal("run.child_activity"),
+      state: Type.Union([
+        Type.Literal("running"),
+        Type.Literal("completed"),
+        Type.Literal("failed"),
+        Type.Literal("cancelled"),
+      ]),
+      childSessionId: id,
+      childTurnId: id,
+      parentToolCallId: id,
+      revision: Type.Integer({ minimum: 1 }),
+      observedAt: timestamp,
+      lastActivityAt: timestamp,
+      phase: RunPhaseSchema,
+    },
+    { additionalProperties: false },
+  ),
   Type.Object(
     {
       ...identity,

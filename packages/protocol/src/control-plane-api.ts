@@ -467,6 +467,8 @@ export const DelegatedSessionSummaryResourceSchema = Type.Object(
     parentExecutionId: Type.Optional(UuidSchema),
     depth: PositiveSafeIntegerSchema,
     parentTurnId: UuidSchema,
+    parentToolCallId: Type.String({ minLength: 1, maxLength: 128 }),
+    turnId: UuidSchema,
     title: Type.String({ minLength: 1, maxLength: 256 }),
     contextMode: DelegatedSessionContextModeSchema,
     sandboxMode: DelegatedSessionSandboxModeSchema,

@@ -1524,6 +1524,37 @@ body.product-panel-resizing {
   gap: 7px;
   min-height: 24px;
 }
+.product-child-progress-list {
+  min-width: 0;
+  margin: 5px 0 5px 25px;
+}
+.product-child-progress {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+  font-size: 12px;
+}
+.product-child-task {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.product-child-phase {
+  color: #aaa;
+}
+.product-child-progress button {
+  padding: 2px 5px;
+  color: #b6d8ff;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.product-tool-body > details > summary {
+  cursor: pointer;
+  color: #aaa;
+}
 .product-tool-command,
 .product-tool-operation {
   display: flex;

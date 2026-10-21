@@ -511,7 +511,7 @@ export class PiWorkerRuntime {
           command.payload.piSession.conversationId,
           signal,
         ) ?? Promise.resolve(false),
-      onActivity: (command, update) => {
+      onActivity: (command, update, parent) => {
         const p = command.payload;
         if (!update) {
           activity.forget(p.runId, p.sessionId);
@@ -529,6 +529,7 @@ export class PiWorkerRuntime {
           },
           kafkaProducerLane(p.piSession.id, this.#config.kafka.partitions),
           update,
+          parent,
         );
       },
       decodeInputImages: (references, scope, signal) =>

@@ -50,5 +50,26 @@ and dispatch with its original Run snapshot. Web, Worker and Runner type checks
 and six Web settings/translation tests pass. Initial failures were duplicate
 Ultra values in fixtures that already read the updated catalog, plus an obsolete
 domain-test runtime field; they are corrected rather than adding runtime
-compatibility behavior. Child-card progress, dynamic catalogs and the matched/
+compatibility behavior.
+
+## Parent child-progress slice
+
+Source derives parent identity from the Worker's existing native family and sends
+it with child activity. Projector validates both admitted scopes, forwards a
+disposable `run.child_activity` to the parent SSE and observes canonical child
+termination. Per-child revision keys prevent siblings from overwriting each other;
+writer replacement clears old phases. Existing child summary reads now include
+the parent Tool and child Turn IDs. The browser coalesces relationship refresh on
+discovery, lifecycle change and reconnect; phase updates add no SQL.
+
+Parent cards show task/phase/navigation with invocation details closed. Tool groups
+also start collapsed and no longer expand themselves on progress/failure. Native
+final state wins over late phase data; unknown freshness is not a task failure.
+Only cards with children subscribe to child observations. No child text is copied
+into the parent or native context.
+
+The existing Web/observation/recovery transport suite passes 55 tests; 19 real-PG
+child/tree checks pass. The focused 14-test transport/child UI repeat covers
+siblings, phase freshness, terminal priority and writer handoff. Control Plane,
+Worker, Web and runtime-core type checks pass. Dynamic catalogs and the matched/
 live acceptance remain to do.

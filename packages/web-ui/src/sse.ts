@@ -214,6 +214,7 @@ async function consumeResponse(
       }
       if (
         frame.event === "run.activity" ||
+        frame.event === "run.child_activity" ||
         frame.event === "run.path" ||
         frame.event === "run.execution"
       ) {

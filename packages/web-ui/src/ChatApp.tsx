@@ -688,6 +688,18 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     if (sessionId === null || authPhase !== "authenticated") return;
     const controller = new AbortController();
     let snapshotInputRevision = inputRevision.current;
+    const discoveredChildren = new Set<string>();
+    let childRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const refreshChildren = () => {
+      if (childRefreshTimer !== undefined) return;
+      childRefreshTimer = setTimeout(() => {
+        childRefreshTimer = undefined;
+        if (!controller.signal.aborted)
+          void refreshConversationTree(sessionId, streamPresentation.current.treeView).catch(() =>
+            discoveredChildren.clear(),
+          );
+      }, 100);
+    };
     void streamSessionEvents({
       sessionId,
       signal: controller.signal,
@@ -714,6 +726,22 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
       },
       onEvent(event) {
         if (controller.signal.aborted || currentStreamSession.current !== sessionId) return;
+        if (
+          event.type === "tool.completed" &&
+          renderedState.current.turns.some(
+            (turn) =>
+              turn.turnId === event.turnId &&
+              turn.items.some(
+                (item) =>
+                  item.kind === "tool" &&
+                  item.toolCallId === event.payload.toolCallId &&
+                  ["subagent", "subagent_control", "subagent_supervisor", "workflow"].includes(
+                    item.toolName,
+                  ),
+              ),
+          )
+        )
+          refreshChildren();
         update({ type: "stream.event", event });
         if (
           event.type === "turn.started" &&
@@ -753,8 +781,16 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
         }
       },
       onRunObservation(observation) {
-        if (!controller.signal.aborted && currentStreamSession.current === sessionId)
+        if (!controller.signal.aborted && currentStreamSession.current === sessionId) {
           runObservations.receive(observation);
+          if (observation.type === "run.child_activity") {
+            const key = `${observation.childSessionId}:${observation.state}`;
+            if (!discoveredChildren.has(key)) {
+              discoveredChildren.add(key);
+              refreshChildren();
+            }
+          }
+        }
       },
       onInputQueue(queue) {
         if (!controller.signal.aborted && currentStreamSession.current === sessionId)
@@ -769,7 +805,10 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
           snapshotInputRevision = inputRevision.current;
         // Read once after subscription is established, covering changes between
         // the initial HTTP snapshot and SSE opening. Later updates are pushed.
-        if (status.phase === "live") setQueueRefreshGeneration((value) => value + 1);
+        if (status.phase === "live") {
+          setQueueRefreshGeneration((value) => value + 1);
+          refreshChildren();
+        }
         update({ type: "stream.status", status });
       },
     }).catch(() => {
@@ -783,6 +822,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     });
     return () => {
       controller.abort();
+      if (childRefreshTimer !== undefined) clearTimeout(childRefreshTimer);
       toolProgress.reset();
       runObservations.reset();
     };
@@ -2164,6 +2204,14 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
                         api={api}
                         progressStore={toolProgress}
                         observationStore={runObservations}
+                        delegatedChildren={(conversationTree?.delegatedSessions ?? []).filter(
+                          (child) =>
+                            child.parentTurnId === turn.turnId &&
+                            child.parentSessionId === state.session?.sessionId,
+                        )}
+                        onOpenChild={(child) =>
+                          void openConversationSession(child.sessionId, undefined, false, child)
+                        }
                         connected={state.connection.phase === "live"}
                         canFork={
                           canMutate &&

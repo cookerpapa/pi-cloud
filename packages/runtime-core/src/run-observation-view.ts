@@ -15,6 +15,7 @@ export class RunObservationView {
       revision: number;
       pathAt: number;
       executionRevision: number;
+      children: Map<string, number>;
     }
   >();
   constructor(conversation: ConversationDetailResource) {
@@ -26,6 +27,7 @@ export class RunObservationView {
           revision: 0,
           pathAt: 0,
           executionRevision: 0,
+          children: new Map(),
         });
   }
   event(event: PiCloudEvent): void {
@@ -36,6 +38,7 @@ export class RunObservationView {
         revision: 0,
         pathAt: 0,
         executionRevision: 0,
+        children: new Map(),
       });
     if (["turn.completed", "turn.failed", "turn.cancelled"].includes(event.type))
       this.#running.delete(event.turnId);
@@ -57,8 +60,12 @@ export class RunObservationView {
       run.revision = 0;
       run.pathAt = 0;
       run.executionRevision = 0;
+      run.children.clear();
     }
-    if (value.type === "run.path") {
+    if (value.type === "run.child_activity") {
+      if (value.revision <= (run.children.get(value.childSessionId) ?? 0)) return false;
+      run.children.set(value.childSessionId, value.revision);
+    } else if (value.type === "run.path") {
       if (value.sentAt <= run.pathAt) return false;
       run.pathAt = value.sentAt;
     } else if (value.type === "run.execution") {

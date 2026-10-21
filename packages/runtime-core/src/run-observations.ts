@@ -5,6 +5,7 @@ import {
   type RuntimeObservationScope,
   type ProbeBinding,
   type ExecutionPathStatus,
+  type RunActivityParent,
 } from "@pi-cloud/protocol";
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
 import type { SessionEventHub } from "./session-event-hub.ts";
@@ -21,6 +22,7 @@ type Active = {
   touched: number;
   executionRevision: number;
   execution?: ExecutionPathStatus;
+  parent?: RunActivityParent;
 };
 
 /** Disposable, bounded admission from the Projector's already-checked scopes. */
@@ -50,6 +52,28 @@ export class RunObservations {
       (fact.kind === "agent_event" &&
         ["turn.completed", "turn.failed", "turn.cancelled"].includes(fact.event.type))
     ) {
+      if (fact.kind === "agent_event") {
+        const ended = this.#runs.get(observationKey(scope));
+        const state =
+          fact.event.type === "turn.completed"
+            ? "completed"
+            : fact.event.type === "turn.failed"
+              ? "failed"
+              : fact.event.type === "turn.cancelled"
+                ? "cancelled"
+                : undefined;
+        if (ended && state)
+          this.#childActivity(
+            ended,
+            {
+              revision: ended.revision + 1,
+              phase: "settling",
+              observedAt: this.clock(),
+              lastActivityAt: this.clock(),
+            },
+            state,
+          );
+      }
       this.#remove(observationKey(scope));
       return;
     }
@@ -126,6 +150,43 @@ export class RunObservations {
       observedAt: delivery.observedAt,
       lastActivityAt: delivery.lastActivityAt,
     });
+    if (delivery.parent) active.parent = delivery.parent;
+    this.#childActivity(active, delivery, "running");
+  }
+
+  #childActivity(
+    active: Active,
+    delivery: Pick<RunActivityDelivery, "revision" | "phase" | "observedAt" | "lastActivityAt">,
+    state: "running" | "completed" | "failed" | "cancelled",
+  ): void {
+    const parent = active.parent;
+    if (parent && parent.sessionId !== active.scope.sessionId) {
+      const target = this.#runs.get(
+        observationKey({ ...active.scope, sessionId: parent.sessionId }),
+      );
+      if (
+        !target ||
+        target.scope.tenantId !== active.scope.tenantId ||
+        target.scope.turnId !== parent.turnId ||
+        target.scope.piSessionId !== active.scope.piSessionId
+      )
+        return;
+      this.hub.publishObservation(active.scope.tenantId, {
+        type: "run.child_activity",
+        state,
+        sessionId: parent.sessionId,
+        turnId: parent.turnId,
+        runId: active.scope.runId,
+        generation: active.scope.fencingToken,
+        childSessionId: active.scope.sessionId,
+        childTurnId: active.scope.turnId,
+        parentToolCallId: parent.toolCallId,
+        revision: delivery.revision,
+        phase: delivery.phase,
+        observedAt: delivery.observedAt,
+        lastActivityAt: delivery.lastActivityAt,
+      });
+    }
   }
 
   isActive(scope: RuntimeObservationScope, partition?: number): boolean {

@@ -120,7 +120,7 @@ export class SessionEventSubscription {
       pending.resolve({ throughSequence: null, observation });
       return;
     }
-    const key = `${observation.turnId}\0${observation.type}`;
+    const key = `${observation.turnId}\0${observation.type}${observation.type === "run.child_activity" ? `\0${observation.childSessionId}` : ""}`;
     for (const pending of this.#observations.values())
       if (pending.turnId === observation.turnId && pending.generation > observation.generation)
         return;

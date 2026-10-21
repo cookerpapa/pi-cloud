@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import type {
   ConversationDetailResource,
   PiCloudEvent,
@@ -40,6 +40,72 @@ const record = (
   topic: "execution",
   partition: 0,
   offset,
+});
+
+it("forwards independent child phases only to their active parent and preserves native terminal outcomes", async () => {
+  const now = Date.now();
+  const hub = new SessionEventHub();
+  const publish = vi.spyOn(hub, "publishObservation");
+  const subscription = hub.subscribe(scope.tenantId, scope.sessionId);
+  const observations = new RunObservations(hub, () => now);
+  const child = { ...scope, sessionId: "child", turnId: "child-turn" };
+  const sibling = { ...scope, sessionId: "sibling", turnId: "sibling-turn" };
+  observations.record(record(now, 1n), true);
+  observations.record(record(now, 2n, child), true);
+  observations.record(record(now, 3n, sibling), true);
+  await subscription.next();
+  publish.mockClear();
+  const parent = { sessionId: scope.sessionId, turnId: scope.turnId, toolCallId: "task:10" };
+  const delivery: RunActivityDelivery = {
+    scope: child,
+    partition: 0,
+    revision: 1,
+    observedAt: now,
+    lastActivityAt: now,
+    phase: "executing_tool",
+    parent,
+  };
+  observations.activity(delivery);
+  observations.activity({ ...delivery, scope: sibling, phase: "waiting_model" });
+  const forwarded = publish.mock.calls
+    .map(([, value]) => value)
+    .filter((value) => value.type === "run.child_activity");
+  expect(forwarded).toMatchObject([
+    { sessionId: "session", childSessionId: "child", phase: "executing_tool", revision: 1 },
+    { sessionId: "session", childSessionId: "sibling", phase: "waiting_model", revision: 1 },
+  ]);
+  expect(await subscription.next()).toMatchObject({ observation: { childSessionId: "child" } });
+  expect(await subscription.next()).toMatchObject({ observation: { childSessionId: "sibling" } });
+  const next = record(now, 4n, child);
+  observations.record(
+    {
+      ...next,
+      fact: {
+        kind: "agent_event",
+        factId: "end",
+        scope: child,
+        occurredAt: new Date(now).toISOString(),
+        event: { type: "turn.completed", turnId: child.turnId } as PiCloudEvent,
+      },
+    } as KafkaAcceptedFactRecord,
+    false,
+  );
+  expect(publish.mock.calls.at(-1)?.[1]).toMatchObject({
+    type: "run.child_activity",
+    childSessionId: "child",
+    state: "completed",
+  });
+  publish.mockClear();
+  observations.activity({ ...delivery, revision: 9 });
+  expect(publish).not.toHaveBeenCalled();
+  observations.activity({
+    ...delivery,
+    scope: sibling,
+    revision: 2,
+    parent: { ...parent, sessionId: "unrelated" },
+  });
+  expect(publish.mock.calls.map(([, value]) => value.type)).toEqual(["run.activity"]);
+  hub.onApplicationShutdown();
 });
 
 it("records stage confirmations without replacing activity, preserves freshness and rejects old targets", async () => {

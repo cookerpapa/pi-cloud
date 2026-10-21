@@ -108,6 +108,7 @@ export type RemoteToolSandboxTurnRunnerOptions = {
   onActivity?: (
     command: ExecuteTurnCommandMessage,
     update: import("@pi-cloud/protocol").RunActivityUpdate | undefined,
+    parent?: import("@pi-cloud/protocol").RunActivityParent,
   ) => void;
   decodeInputImages?: (
     images: import("@pi-cloud/protocol").ImageAttachmentReference[],
@@ -682,11 +683,29 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         .map((binding) => binding.tool);
       const hasSupervisorContact = trustedTools.some((tool) => tool.name === "contact_supervisor");
       let activeSession: PiCloudSessionHandle | undefined;
+      const childView = command.payload.conversationWork;
+      const parentFamily = childView
+        ? this.#families.get(command.payload.executionReference)
+        : undefined;
+      const parentView =
+        childView?.parentConversationId === 1
+          ? parentFamily?.command.payload
+          : [...(parentFamily?.children.values() ?? [])].find(
+              (child) => child.conversationId === childView?.parentConversationId,
+            )?.view;
+      const activityParent =
+        childView && parentView
+          ? {
+              sessionId: parentView.sessionId,
+              turnId: parentView.turnId,
+              toolCallId: `task:${childView.ownerTaskId}`,
+            }
+          : undefined;
       const commonRunnerOptions = {
         ...(this.#publicEgress ? { publicEgress: this.#publicEgress } : {}),
         trustedToolDefinitions: trustedToolBindings.map((binding) => binding.tool),
         onActivity: (update: import("@pi-cloud/protocol").RunActivityUpdate | undefined) =>
-          this.#onActivity?.(command, update),
+          this.#onActivity?.(command, update, activityParent),
         resolveModelRuntime,
         openSession: async (command: ExecuteTurnCommandMessage, readSignal?: AbortSignal) => {
           activeSession = await this.#openAgentSession(command, readSignal);

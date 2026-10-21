@@ -2,6 +2,7 @@ import {
   RUN_ACTIVITY_PATH,
   RUN_PATH_PROBE_INTERVAL_MS,
   type RunActivityUpdate,
+  type RunActivityParent,
   type RuntimeObservationScope,
   EXECUTION_OBSERVATION_PATH,
   EXECUTION_READINESS_PATH,
@@ -15,6 +16,7 @@ type Active = {
   scope: RuntimeObservationScope;
   partition: number;
   update: RunActivityUpdate;
+  parent?: RunActivityParent;
   revision: number;
   due: number;
 };
@@ -37,7 +39,12 @@ export class RunActivityPublisher {
     this.#timer = setInterval(() => this.flush(), 1_000);
     this.#timer.unref();
   }
-  update(scope: RuntimeObservationScope, partition: number, update: RunActivityUpdate): void {
+  update(
+    scope: RuntimeObservationScope,
+    partition: number,
+    update: RunActivityUpdate,
+    parent?: RunActivityParent,
+  ): void {
     if (this.#closed) return;
     const previous = this.#runs.get(observationKey(scope));
     if (!previous && this.#runs.size >= 1024) return;
@@ -45,6 +52,7 @@ export class RunActivityPublisher {
       scope,
       partition,
       update,
+      ...(parent ? { parent } : {}),
       revision: previous?.revision ?? 0,
       due: 0,
     });
@@ -168,6 +176,7 @@ export class RunActivityPublisher {
       active.partition,
       {
         scope: active.scope,
+        ...(active.parent ? { parent: active.parent } : {}),
         partition: active.partition,
         revision: active.revision,
         observedAt: Date.now(),

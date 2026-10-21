@@ -40,6 +40,20 @@ preparation, model wait/response, Tool arguments/execution, Agent waits, retry,
 Compaction, cancellation and settlement. A fresh connection starts with unknown
 path evidence and gets a fresh 45-second observation window before warning.
 
+ADR-0268 adds `run.child_activity` in source for compact parent Tool cards. Its
+Session/Turn identity addresses the parent; `childSessionId`, `childTurnId` and
+`parentToolCallId` identify the child and originating Tool. Generation is the
+same existing physical Session epoch; revisions are independent per child.
+Worker forwards the existing in-memory family relationship with phase HTTP
+updates. Projector requires admitted child and parent scopes in that family,
+then fans out an ephemeral observation to the parent's existing SSE connection.
+Only canonical child terminal events produce a terminal `state`; missed activity
+never implies failure. The normal child-summary API now includes parent Tool and
+child Turn identities. Browser relationship reads coalesce on discovery, lifecycle
+changes and reconnect, never on every phase. Details stay collapsed, and final
+native state overrides late phases. See [delivery status](reports/runtime-capabilities-delivery-20261021.md)
+for source versus serving acceptance.
+
 ## Guest execution and physical runtime health
 
 ADR-0211 extends an activated Session probe through the fixed guest execution
