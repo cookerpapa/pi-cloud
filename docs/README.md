@@ -5,8 +5,9 @@ records the authorized Stop, successful delayed child result, model/environment
 costs and the corrected single-picker Ultra proposal (provider Max plus delegation).
 The consolidated plan uses native Pi instruction sections, retains explicitly
 requested delegation outside Ultra, and sequences egress/capability repair,
-child progress and execution-owned tool-catalog delivery. Runtime changes remain
-proposed.
+compact child progress and execution-owned tool-catalog delivery. Tool updates use
+complete effective lists rather than a cache-preserving loading protocol; parent
+details stay collapsed until opened. Runtime changes remain proposed.
 
 The [Run status presentation update](reports/run-status-presentation-20261021.md)
 keeps phases and warnings visible while collapsing diagnostic ages. It is deployed

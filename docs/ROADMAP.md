@@ -9,14 +9,18 @@ passes with preserved ownership/configuration and confirmed physical cleanup.
 
 The [October 21 consolidated plan](reports/subagent-wait-review-20261021.md)
 retains current runtime authorities and separates model behavior from tool
-availability. Implementation is pending plan review.
+availability. The owner prioritizes simple full tool-list updates over cache
+preservation; no provider-specific tool-loading optimization is planned.
+Implementation is pending plan review.
 
 - [ ] Correct this deployment's guest egress and communicate known capabilities.
 - [ ] Add Ultra to the effort picker, resolve provider Max plus proactive policy,
       and use native Pi instruction sections for all delegation modes.
-- [ ] Show meaningful child progress in the parent view through existing SSE.
+- [ ] Show compact child progress through existing SSE, with details collapsed
+      by default and no automatic expansion or scrolling.
 - [ ] Introduce execution-owned catalog delivery for ordinary remote tools,
-      preserving active invocation/recovery contracts and the one Session writer.
+      sending full effective tools on subsequent model requests and preserving
+      active invocation/recovery contracts and the one Session writer.
 - [ ] Verify each slice and publish through the applicable matched release path.
 
 ## GPT-6.1 Sol catalog refresh

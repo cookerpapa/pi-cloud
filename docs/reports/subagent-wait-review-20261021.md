@@ -8,6 +8,10 @@ picker, prompt-based delegation policy and Pi's native instruction interfaces.
 The plan below keeps tool availability separate from permission to delegate
 proactively; it does not add a separate collaboration selector or hide otherwise
 available tools merely because a non-Ultra effort was selected.
+The owner's later clarification prioritizes a simple, provider-independent tool
+catalog over prompt-cache reuse. The proposed model requests use the full effective
+tool list; cache-preserving additions, tool search and a separate callable subset
+are not delivery requirements. Parent progress stays compact and collapsed.
 
 ## Observed behavior
 
@@ -161,6 +165,11 @@ to open its conversation in the parent Tool card. Reuse the existing parent Tool
 identity and child relationship so concurrent children cannot overwrite each
 other. Useful states include generating code, running a Tool, waiting for a
 reviewer/parent decision, completed and interrupted.
+Keep the default display to one compact summary line and a View action. Details
+remain collapsed unless the user opens them; progress updates never expand the
+card or force scrolling. Do not mirror the child's streaming transcript into the
+parent. Multiple child summaries retain their own identities and user expansion
+state.
 
 Reuse disposable HTTP/SSE observations and existing child views. Coalesce updates
 in memory; no per-update PG polling, copied progress in native context or new
@@ -172,32 +181,69 @@ collapsed as in the preceding UI change.
 ### 5. Execution-owned tool catalog, as a separate vertical slice
 
 Complete the earlier tool-decoupling discussion after the behavior/visibility
-repairs. Control Plane exposes one versioned catalog of ready, code-owned tool
-definitions: name, description, parameter schema and supported execution/replay
-semantics. Implementation owners supply the metadata. Projector routes admitted
-commands; it does not become a plugin manager or a second Agent scheduler.
+repairs. The acceptance target is that a compatible ordinary tool becomes visible
+or disappears on a subsequent model request without rebuilding Worker. Cache-hit
+rates are not an acceptance target. GPT and DeepSeek use the same full effective
+tool-list policy through their existing native adapters.
 
-Worker caches the catalog through the existing management/configuration boundary,
-combines it with the conversation's applicable tool grants, and registers generic
-remote proxies using Pi's public registry/configuration APIs. The active Session
-owner alone commits effective changes through native Storage. A changed catalog
-updates the actual model tool list at the next request boundary; it does not
-require a fabricated user message or a second writer. Warm Tool calls do not
-fetch the catalog or query PG each time.
+Current source is not yet dynamic: `fixedRemoteToolDefinitions()` and
+`infrastructureToolDefinitions()` supply definitions to Worker startup;
+`DurableRemoteTools` captures a fixed name set, and `DurableAgentSession` tracks
+installed names. Adding only a Projector handler consequently does not change
+what the model sees. The first catalog slice must update these PiCloud adapters,
+not just add a catalog endpoint. The pinned native Registry already supports
+install/uninstall and immutable snapshots; native `configure()` selects a
+Conversation's tools. No Pi core patch is required for these primitives.
 
-Add an implementation before advertising it. Withdraw a tool from future offers
-before removing its implementation, and finish already accepted operations through
-their existing lifetimes. A late unaccepted call gets an explicit refusal, not
-silent rerouting/replay. Retain known definitions for admitted work until it
-settles; do not create a permanent compatibility layer or independent operation
-ledger. Incompatible schema/recovery semantics continue to require matched,
-drained upgrades instead of a custom multiversion plugin runtime.
+Control Plane exposes one versioned catalog of ready, code-owned tool definitions:
+name, description, parameter schema, applicability and the existing execution/
+recovery contract. Implementation owners supply declarative metadata. Projector
+routes admitted commands and keeps the implementation's admission check; it does
+not become a plugin manager or a second Agent scheduler. Do not serialize
+executable callbacks into the catalog or execute Pi core in Control Plane.
 
-Start with ordinary remote tools. Native lifecycle/child adapters and new transport
-forms can still require Worker changes. Provider-hosted search remains the model
-adapter's concern, separate from Projector-executed tools. Reuse Pi's existing
-registry, configure and positional system/tool changes before adding infrastructure.
-Record the protocol/ownership ADR and build-versus-adopt evidence before this slice.
+Worker receives the catalog through its existing management/configuration channel,
+including initial registration and reconnect. Deliver a complete snapshot on
+change; no delta protocol, per-Tool fetch or per-model-request SQL. Worker keeps
+one validated in-memory catalog and combines it with each Conversation's existing
+grants and role applicability. A globally added tool does not silently broaden
+accepted file/shell grants. Invalid updates retain the last valid catalog, and
+reconnect reconciles with the currently served snapshot.
+
+The active Session owner uses Pi's public registry/configuration APIs to apply
+changed effective selections. Only that writer commits native configuration;
+unchanged selections cause no new commits. Once an update is applied, the next
+prepared model request sends the complete effective `tools[]`. An already
+prepared request keeps its original list. No fabricated user message, new
+control-history table or second writer is needed. Native positional system/tool
+entries remain Pi's change record; full `tools[]` on the provider request does
+not mean storing a new full tool-list history on every request.
+
+For example, adding preview changes the next request from `[read, bash]` to
+`[read, bash, preview]`; withdrawing bash changes it to `[read, preview]`. Let
+ordinary provider caching operate without special tuning. This slice adds no
+`tool_search`, `additional_tools`, `allowed_tools` or custom request-history
+rewriting to preserve a prefix. Do not delete old native Tool calls or results
+when a tool is withdrawn.
+
+Add an implementation before advertising it. On withdrawal, stop new admission
+and remove the tool from future offers; finish already accepted operations through
+their existing lifetimes before deleting the implementation. A call generated
+from an older model request but not yet accepted gets an explicit unavailable
+Tool error through normal Pi settlement. Do not cancel accepted calls merely
+because the catalog changed, silently reroute them or replay effects. Keep only
+the definitions/adapters needed by existing admitted/recoverable work until it
+settles. After owner restart, use native task identity and existing recovery
+contracts, without inventing success or restoring withdrawn new-call admission.
+Incompatible schema/recovery changes still require matched, drained upgrades;
+there is no general multiversion plugin runtime or independent operation ledger.
+
+Start with ordinary remote tools that fit the existing transport and grants.
+Native lifecycle/child adapters, different guest protocols and new capability
+types can still require Worker or guest changes. Provider-hosted search remains
+the model adapter's concern, separate from Projector-executed tools. Record the
+protocol/ownership ADR and native SDK build-versus-adopt evidence before this
+slice. The goal is ordinary tool decoupling, not arbitrary executable plugins.
 
 ## Delivery order and acceptance
 
@@ -220,11 +266,15 @@ The child-scope instruction changes belong with the delegation slice. Check:
 5. **Environment:** guest npm/PyPI access, disabled-state reporting, configuration
    restoration and absence of proxy credentials in context are demonstrated.
 6. **Browser:** the single picker, next-Run semantics, simultaneous children,
-   readable progress, navigation, terminal precedence and reconnect are checked.
+   compact progress, opt-in details, navigation, terminal precedence and reconnect
+   are checked. Updates never auto-expand or force scrolling.
 7. **Catalog:** add an ordinary tool without rebuilding Worker, remove it from
-   future requests, handle an in-flight call, survive owner restart/reassignment,
-   and reject an unavailable/version-incompatible target without replaying effects.
-   Measure the warm lookup path and native update counts.
+   future requests, handle an in-flight call and a late unaccepted call, survive
+   owner restart/reassignment, and reject an unavailable/version-incompatible
+   target without replaying effects. Inspect full tool declarations on GPT and
+   DeepSeek requests; do not require prefix-cache preservation. Check unchanged
+   snapshots, retained grant boundaries, invalid updates and management reconnect.
+   Warm lookup adds no SQL/fetch, and only changed effective selections commit.
 
 Routine regression uses Luna. Validate any offered Ultra profile with provider
 Max plus the local policy, recording actual selected/effective values; do not claim
@@ -233,6 +283,10 @@ samples and physically clean owned fixtures. Record ADRs before changing storage
 public/internal schemas or tool-catalog protocols, then run the applicable matched
 release/acceptance. Existing PG ownership, one physical-Session writer, Kafka
 dispatch ordering, Cube execution and canonical Worker Tool results remain.
+Keep validation scoped to the delivered slice: the catalog comparison needs real
+text/Tool calls on Luna and the enabled DeepSeek route, not a new large-image or
+hosted-search campaign. The initial protocol cutover still follows the repository's
+applicable required release gates. This revision changes the proposal only.
 
 ## Codex comparison
 

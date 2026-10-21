@@ -43,9 +43,12 @@ review and environment-validation work; no lost reply was established.
 - [ ] Implement one selected/effective profile resolver and native delegation
       instruction section; preserve accepted-Run recovery and parent/child inheritance.
 - [ ] Improve parent-visible child progress using existing relationships and
-      disposable HTTP/SSE, with terminal precedence and reconnect handling.
+      disposable HTTP/SSE: one compact line, opt-in details, no forced scrolling,
+      with terminal precedence and reconnect handling.
 - [ ] Complete the separate execution-owned tool-catalog slice using public Pi
-      registry/configuration, ordinary remote proxies and orderly tool withdrawal.
+      registry/configuration, full catalog snapshots and full effective model
+      tool lists. Preserve active calls during withdrawal; add no cache-specific
+      tool-search/append protocol or per-request database lookup.
 - [ ] Verify actual request effort/tools/instructions, explicit delegation at
       non-Ultra, Ultra behavior, queue/recovery/Stop, catalog changes and live
       acceptance before the relevant matched releases.
