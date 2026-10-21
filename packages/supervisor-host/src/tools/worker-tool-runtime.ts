@@ -11,10 +11,14 @@ import {
   type ToolResultPayload,
   type ToolReplyWait,
   type SubagentTask,
+  type ControlToolCatalogSource,
+  type InfrastructureToolDefinition,
 } from "@pi-cloud/protocol";
 import {
   toolInvocationId,
   type TrustedAgentTool,
+  type TrustedAgentToolSet,
+  type PreparedAgentTool,
   type SubagentControlClient,
 } from "@pi-cloud/sandbox-supervisor";
 import type { WorkflowPreparer } from "@pi-cloud/sandbox-supervisor";
@@ -24,6 +28,7 @@ import type { WorkflowPreparer } from "@pi-cloud/sandbox-supervisor";
 export class WorkerToolRuntime {
   constructor(
     readonly options: {
+      catalog: ControlToolCatalogSource;
       nativeConversations: {
         childAnchor(
           reference: string,
@@ -54,7 +59,7 @@ export class WorkerToolRuntime {
     command: ExecuteTurnCommandMessage;
     prepareWorkflow: WorkflowPreparer;
     prepareEnvironment(): Promise<string>;
-  }): Promise<readonly TrustedAgentTool[]> {
+  }): Promise<TrustedAgentToolSet> {
     const scope = context.command.payload;
     const depth =
       scope.sessionKind === "subagent"
@@ -167,7 +172,8 @@ export class WorkerToolRuntime {
       }
     };
 
-    return infrastructureToolDefinitions().map((definition) => {
+    type Definition = Omit<InfrastructureToolDefinition, "name"> & { name: string };
+    const createBinding = (definition: Definition, ordinary: boolean): TrustedAgentTool => {
       const prepare = async (
         nativeCallId: string,
         raw: unknown,
@@ -181,7 +187,16 @@ export class WorkerToolRuntime {
           if (recovery) throw new Error("Workflow execution cannot be recovered");
           return prepareWorkflow(nativeCallId, invocationId, script, signal, definition.name);
         }
-        if (!isControlToolName(definition.name)) throw new Error("Invalid control Tool definition");
+        if (ordinary) {
+          const current = this.options.catalog
+            .read()
+            .tools.find((tool) => tool.name === definition.name);
+          if (!current || !isDeepStrictEqual(current.parameters, definition.parameters))
+            throw new Error(
+              `tool_unavailable: ${definition.name} was withdrawn or changed before admission`,
+            );
+        } else if (!isControlToolName(definition.name))
+          throw new Error("Invalid control Tool definition");
         const original = recovery
           ? await this.options.nativeConversations.originalControlIntent(
               scope.executionReference,
@@ -206,11 +221,13 @@ export class WorkerToolRuntime {
           : undefined;
         const anchor = original
           ? original.contextAnchor
-          : await this.options.nativeConversations.childAnchor(
-              scope.executionReference,
-              definition.inheritedContext?.(args) ?? false,
-              scope.piSession.conversationId,
-            );
+          : ordinary
+            ? null
+            : await this.options.nativeConversations.childAnchor(
+                scope.executionReference,
+                definition.inheritedContext?.(args) ?? false,
+                scope.piSession.conversationId,
+              );
         const waiting = new AbortController();
         const activeSignal = signal ? AbortSignal.any([signal, waiting.signal]) : waiting.signal;
         const pending = this.options.wait(
@@ -247,8 +264,7 @@ export class WorkerToolRuntime {
         };
       };
       return {
-        executionPlane:
-          definition.name === "preview" ? ("platform" as const) : ("orchestration" as const),
+        executionPlane: ordinary ? ("platform" as const) : ("orchestration" as const),
         offered:
           definition.availability === "child"
             ? scope.sessionKind === "subagent"
@@ -268,8 +284,38 @@ export class WorkerToolRuntime {
                   prepare(callId, args, signal, true),
               }
             : {}),
-        },
+        } as PreparedAgentTool,
       };
-    });
+    };
+    const native = infrastructureToolDefinitions().map((definition) =>
+      createBinding(definition, false),
+    );
+    let revision: string | undefined;
+    let current: readonly TrustedAgentTool[] = native;
+    return {
+      current: () => {
+        const catalog = this.options.catalog.read();
+        if (catalog.revision !== revision) {
+          current = [
+            ...native,
+            ...catalog.tools.map((definition) =>
+              createBinding(
+                {
+                  name: definition.name,
+                  description: definition.description,
+                  parameters: definition.parameters as import("typebox").TSchema,
+                  replay: "unsafe",
+                  ...(definition.requiresEnvironment ? { requiresEnvironment: true as const } : {}),
+                },
+                true,
+              ),
+            ),
+          ];
+          revision = catalog.revision;
+        }
+        return current;
+      },
+      subscribe: (listener) => this.options.catalog.subscribe(listener),
+    };
   }
 }

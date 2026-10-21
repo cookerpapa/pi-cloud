@@ -4,6 +4,7 @@ import { setImmediate as nextTurn } from "node:timers/promises";
 import { WorkerToolRuntime } from "../../src/tools/worker-tool-runtime.ts";
 import { withToolInvocation } from "../../../sandbox-supervisor/src/tool-invocation.ts";
 import { createExecutionReference } from "../../../protocol/src/execution-reference.ts";
+import { ControlToolRegistry } from "../../../control-plane/src/control-tool-registry.ts";
 
 assert.equal(typeof global.gc, "function", "Run node --expose-gc --import tsx");
 const refs = [];
@@ -12,6 +13,7 @@ let resultBytes = 0,
   callback;
 const runId = randomUUID();
 const runtime = new WorkerToolRuntime({
+  catalog: new ControlToolRegistry(),
   maximumDepth: null,
   nativeConversations: {
     originalControlIntent: async () => {
@@ -64,7 +66,7 @@ let bindings = await runtime.create({
     };
   },
 });
-let tool = bindings.find((x) => x.tool.name === "workflow").tool;
+let tool = bindings.current().find((x) => x.tool.name === "workflow").tool;
 async function executeAndDispose(index) {
   const callId = `call-${index}`;
   const prepared = await withToolInvocation(

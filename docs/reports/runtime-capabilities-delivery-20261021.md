@@ -71,5 +71,39 @@ into the parent or native context.
 The existing Web/observation/recovery transport suite passes 55 tests; 19 real-PG
 child/tree checks pass. The focused 14-test transport/child UI repeat covers
 siblings, phase freshness, terminal priority and writer handoff. Control Plane,
-Worker, Web and runtime-core type checks pass. Dynamic catalogs and the matched/
-live acceptance remain to do.
+Worker, Web and runtime-core type checks pass.
+
+## Ordinary control Tool catalog slice
+
+Source implements ADR-0269: execution modules own declarative definitions and
+handlers; the management WebSocket delivers full immutable catalog snapshots.
+Workers retain the last valid snapshot, wait for an initial catalog before
+ordinary Run admission and install generic callbacks into Pi's Registry. Native
+subtractive selection and explicit infrastructure extensions preserve existing
+file/role grants while admitting new ordinary names on the next prepared request.
+Pi itself records changed tool declarations. There is no cache-preserving loading
+protocol, extra history table or per-request catalog SQL.
+
+Preview's definition moved out of Worker-owned infrastructure metadata. Generic
+dispatch parsing no longer hardcodes ordinary names; current handler admission
+and schema checks produce explicit unavailable/invalid-argument results. Pending
+handlers keep their captured implementation. Remote hooks are replaced with the
+same native phase snapshot as their definitions, preserving intent-before-effect
+even when withdrawal races preparation. Native child/workflow adapters remain
+fixed; arbitrary guest tools and unsafe shell work are outside this catalog.
+
+A native submission test adds a previously unknown name while waiting for a Tool,
+uses it on the next request, withdraws it inside its accepted handler, retains its
+successful result and rejects a later call. Unchanged catalogs produce no extra
+system history. WebSocket tests cover registration/change/reconnect; Worker
+lifecycle, native child management and existing control reconciliation tests pass.
+The initial new fixture used a reply sequence across operations instead of the
+existing per-operation value; correcting the fixture preserves the production
+reply contract. Type checks and the Helm empty-list rendering contract pass.
+Ordinary reply admission also preserves the existing 50 KiB/2,000-line control
+result budget; oversized completed output produces a bounded error without a
+second handler execution. Its focused regression passes.
+
+The maintained live browser driver now has an explicit runtime-capability mode.
+Full release gates, matched artifacts/deployment and real provider/browser/Cube
+acceptance are the remaining work. No application rollout has occurred yet.

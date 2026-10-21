@@ -107,7 +107,7 @@ export function validateSubagentControl(
 }
 
 export type ControlToolName =
-  "subagent" | "subagent_control" | "contact_supervisor" | "subagent_supervisor" | "preview";
+  "subagent" | "subagent_control" | "contact_supervisor" | "subagent_supervisor";
 export type InfrastructureToolDefinition = {
   name: ControlToolName | "workflow";
   description: string;
@@ -186,15 +186,6 @@ const supervisorSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-const PreviewToolSchema = Type.Object(
-  {
-    port: Type.Integer({ minimum: 1_024, maximum: 65_535 }),
-    path: Type.Optional(
-      Type.String({ minLength: 1, maxLength: 2_048, pattern: "^/[^\\u0000-\\u001f\\u007f ]*$" }),
-    ),
-  },
-  { additionalProperties: false },
-);
 
 /** Frozen code-owned catalogue; handlers never import the Pi Runner. */
 export function infrastructureToolDefinitions(): readonly InfrastructureToolDefinition[] {
@@ -215,21 +206,10 @@ export function infrastructureToolDefinitions(): readonly InfrastructureToolDefi
         "Inspect pending Child requests, reply, and wait for the Child result. This does not start another Child.",
       parameters: supervisorSchema,
     },
-    {
-      name: "preview",
-      requiresEnvironment: true,
-      description:
-        "Publish a verified HTTP service already listening inside the current Sandbox as an authenticated PiCloud application link. This Tool does not start or restart the server.",
-      parameters: PreviewToolSchema,
-    },
   ];
 }
 export function isControlToolName(value: unknown): value is ControlToolName {
-  return [
-    "subagent",
-    "subagent_control",
-    "contact_supervisor",
-    "subagent_supervisor",
-    "preview",
-  ].includes(String(value));
+  return ["subagent", "subagent_control", "contact_supervisor", "subagent_supervisor"].includes(
+    String(value),
+  );
 }

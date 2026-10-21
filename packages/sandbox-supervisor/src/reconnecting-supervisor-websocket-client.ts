@@ -98,6 +98,7 @@ function clientOptions(
     revokeRuntimeOnRetryableDisconnect: false,
   };
   if (options.clock !== undefined) result.clock = options.clock;
+  if (options.onToolCatalog !== undefined) result.onToolCatalog = options.onToolCatalog;
   if (options.onRuntimeConfiguration !== undefined)
     result.onRuntimeConfiguration = options.onRuntimeConfiguration;
   if (options.idGenerator !== undefined) result.idGenerator = options.idGenerator;

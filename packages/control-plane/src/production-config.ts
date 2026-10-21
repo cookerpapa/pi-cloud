@@ -25,6 +25,7 @@ export type ProductionControlPlaneConfig = {
   supervisorEnrollmentToken: string;
   supervisorManagementToken: string;
   cubeEgressConfigToken: string;
+  enabledControlTools?: readonly string[];
   sandboxControlBaseUrls: readonly string[];
   workspaceServiceToken: string;
   workspaceTerminalToken: string;
@@ -411,7 +412,23 @@ export async function loadProductionControlPlaneConfig(
     true,
   );
   const gitlabEnabled = booleanValue(environment, "PI_CLOUD_GITLAB_ENABLED");
+  const enabledControlTools: unknown =
+    environment.PI_CLOUD_CONTROL_TOOLS_ENABLED === undefined
+      ? undefined
+      : JSON.parse(environment.PI_CLOUD_CONTROL_TOOLS_ENABLED);
+  if (
+    enabledControlTools !== undefined &&
+    (!Array.isArray(enabledControlTools) ||
+      enabledControlTools.some(
+        (name) => typeof name !== "string" || !/^[a-z][a-z0-9_-]{0,63}$/.test(name),
+      ) ||
+      new Set(enabledControlTools).size !== enabledControlTools.length)
+  )
+    throw new TypeError("PI_CLOUD_CONTROL_TOOLS_ENABLED must be an array of unique Tool names");
   return {
+    ...(enabledControlTools === undefined
+      ? {}
+      : { enabledControlTools: enabledControlTools as string[] }),
     databaseUrl,
     databaseNotificationUrl,
     projectorAdvertisedBaseUrl: managementUrl(

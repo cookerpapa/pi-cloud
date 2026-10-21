@@ -10,6 +10,7 @@ import {
 import type { ExecuteTurnCommandMessage } from "@pi-cloud/protocol";
 import { ImageAttachmentCodec } from "@pi-cloud/session-attachments";
 import { restoreToolReply } from "../src/tool-reply-result.ts";
+import { ControlToolRegistry, previewToolDefinition } from "@pi-cloud/control-plane";
 
 const command = {
   payload: {
@@ -31,6 +32,16 @@ function fixture(codec?: ImageAttachmentCodec) {
     }),
   };
   const runtime = new WorkerToolRuntime({
+    catalog: (() => {
+      const catalog = new ControlToolRegistry();
+      catalog.register({
+        definition: previewToolDefinition,
+        async execute() {
+          throw new Error("Worker cannot execute platform effects");
+        },
+      });
+      return catalog;
+    })(),
     maximumDepth: 3,
     control,
     nativeConversations: {
@@ -57,7 +68,8 @@ it("prepares a control invocation and returns its reply without executing its bu
       throw Error("Delegation must not activate Cube");
     },
   });
-  const tool = bindings.find((b) => b.tool.name === "subagent")!.tool as PreparedAgentTool;
+  const tool = bindings.current().find((b) => b.tool.name === "subagent")!
+    .tool as PreparedAgentTool;
   const prepared = await withToolInvocation({ id: "task:4", nativeToolCallId: "call" }, () =>
     tool.prepareExecution!("call", { task: "Check code", context: "branch" }),
   );
@@ -113,7 +125,8 @@ it("recovers a delegation with its original effect and a fresh callback identity
       throw new Error("No script replay");
     },
   });
-  const tool = bindings.find((b) => b.tool.name === "subagent")!.tool as PreparedAgentTool;
+  const tool = bindings.current().find((b) => b.tool.name === "subagent")!
+    .tool as PreparedAgentTool;
   expect(tool.replay).toBe("safe");
   const recover = (args: unknown) =>
     withToolInvocation({ id: "task:44", nativeToolCallId: "recover-call" }, () =>
@@ -175,7 +188,7 @@ it("retains a control Tool's receipt when restoring its image fails", async () =
       throw Error("No script");
     },
   });
-  const tool = bindings.find((b) => b.tool.name === "preview")!.tool as PreparedAgentTool;
+  const tool = bindings.current().find((b) => b.tool.name === "preview")!.tool as PreparedAgentTool;
   const prepared = await withToolInvocation(
     { id: "task:7", nativeToolCallId: "image-preview" },
     () => tool.prepareExecution!("image-preview", { port: 3000 }),
@@ -232,7 +245,8 @@ it("publishes one dynamic run request for a workflow key and isolates reused pro
       };
     },
   });
-  const tool = bindings.find((b) => b.tool.name === "workflow")!.tool as PreparedAgentTool;
+  const tool = bindings.current().find((b) => b.tool.name === "workflow")!
+    .tool as PreparedAgentTool;
   for (const id of ["task:4", "task:5"]) {
     await withToolInvocation({ id, nativeToolCallId: "same-provider-id" }, () =>
       tool.prepareExecution!("same-provider-id", { script: "return 1" }),
@@ -263,10 +277,11 @@ it("derives tool exposure from native ancestry and prepares environment only for
       throw Error("No script");
     },
   });
-  expect(bindings.find((b) => b.tool.name === "subagent")!.offered).toBe(false);
-  expect(bindings.find((b) => b.tool.name === "contact_supervisor")!.offered).toBe(true);
+  expect(bindings.current().find((b) => b.tool.name === "subagent")!.offered).toBe(false);
+  expect(bindings.current().find((b) => b.tool.name === "contact_supervisor")!.offered).toBe(true);
   expect(prepareEnvironment).not.toHaveBeenCalled();
-  const preview = bindings.find((b) => b.tool.name === "preview")!.tool as PreparedAgentTool;
+  const preview = bindings.current().find((b) => b.tool.name === "preview")!
+    .tool as PreparedAgentTool;
   const prepared = await withToolInvocation({ id: "task:6", nativeToolCallId: "preview" }, () =>
     preview.prepareExecution!("preview", { port: 3000 }),
   );
@@ -298,7 +313,8 @@ it("cancels outstanding workflow host calls and rejects late callbacks after dis
       };
     },
   });
-  const tool = bindings.find((b) => b.tool.name === "workflow")!.tool as PreparedAgentTool;
+  const tool = bindings.current().find((b) => b.tool.name === "workflow")!
+    .tool as PreparedAgentTool;
   const prepared = await withToolInvocation({ id: "task:13", nativeToolCallId: "workflow" }, () =>
     tool.prepareExecution!("workflow", { script: "return 1" }),
   );

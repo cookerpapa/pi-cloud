@@ -4,7 +4,9 @@ import { reconcileUploadPins } from "./upload-input-pins.ts";
 import { SubagentController } from "./subagent-controller.ts";
 import { PlatformRuntimeSettingsService } from "./platform-runtime-settings.ts";
 import { ControlToolDispatcher } from "./control-tool-dispatcher.ts";
-import { executePreviewTool } from "./control-preview-tool.ts";
+import { executePreviewTool, previewToolDefinition } from "./control-preview-tool.ts";
+import { ControlToolRegistry, type RegisteredControlTool } from "./control-tool-registry.ts";
+import { isControlToolName } from "@pi-cloud/protocol";
 import { createDatabase } from "@pi-cloud/database";
 import { operationalLog, startServiceObservability } from "@pi-cloud/observability";
 import { randomUUID } from "node:crypto";
@@ -237,6 +239,27 @@ export async function startControlPlane(): Promise<void> {
       },
     });
     unattachedSubagents = subagents;
+    const ordinaryTools = new ControlToolRegistry();
+    const definitions: RegisteredControlTool[] = [
+      {
+        definition: previewToolDefinition,
+        execute: (call, current) =>
+          executePreviewTool(database, call, async () => {
+            if (!call.bindingId) throw new Error("Preview requires an admitted Tool binding");
+            if (!current()) throw new Error("Control Tool owner changed");
+            await sandboxControl!.refreshToolServices(call.scope, call.bindingId);
+          }),
+      },
+    ];
+    if (
+      config.enabledControlTools?.some(
+        (name) => !definitions.some((tool) => tool.definition.name === name),
+      )
+    )
+      throw new TypeError("Configured ordinary Control Tool is not registered");
+    for (const tool of definitions)
+      if (!config.enabledControlTools || config.enabledControlTools.includes(tool.definition.name))
+        ordinaryTools.register(tool);
     const controlTools = new ControlToolDispatcher({
       database,
       partitions: config.kafkaPartitions,
@@ -244,13 +267,9 @@ export async function startControlPlane(): Promise<void> {
       ownsPartition: (partition) => agentEvents?.ownsPartition(partition) === true,
       publish: (topic, reply) => sandboxControl!.publishReply(topic, reply),
       execute: async (call, current) => {
-        if (call.toolName === "preview")
-          return executePreviewTool(database, call, async () => {
-            if (!call.bindingId) throw new Error("Preview requires an admitted Tool binding");
-            if (!current()) throw new Error("Control Tool owner changed");
-            await sandboxControl!.refreshToolServices(call.scope, call.bindingId);
-          });
-        return subagents.executeTool(call, current);
+        return isControlToolName(call.toolName)
+          ? subagents.executeTool(call, current)
+          : ordinaryTools.execute(call, current);
       },
       onError: () =>
         operationalLog({
@@ -516,6 +535,7 @@ export async function startControlPlane(): Promise<void> {
     runtime = await createControlPlaneRuntime({
       platformRuntimeSettings,
       gateway: {
+        toolCatalog: ordinaryTools,
         runtimeConfiguration: async () => ({
           publicEgress: await platformRuntimeSettings.publicEgress(),
         }),

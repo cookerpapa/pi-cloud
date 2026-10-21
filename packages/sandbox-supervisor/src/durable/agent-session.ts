@@ -111,12 +111,16 @@ export type NativeRequestContext = {
   conversationId: number;
   purpose: "agent" | "context_maintenance";
 };
+type RemoteToolDefinitionsSource = {
+  current(): readonly Omit<ToolRegistration, "execute">[];
+  subscribe(listener: () => void): () => void;
+};
 export type DurableRunConfiguration = {
   runId: string;
   conversationId: number;
   model: Model<Api>;
   autoCompactTokenLimit?: number;
-  agent: Omit<AgentChange, "model" | "tools">;
+  agent: Omit<AgentChange, "model" | "tools" | "extensions">;
   context: Record<string, JsonValue>;
   remoteTools: readonly string[];
   tools: readonly ToolRegistration[];
@@ -142,6 +146,7 @@ export class DurableAgentSession {
   readonly #abort = new AbortController();
   readonly #registry = createRegistry();
   readonly #installed = new Set<string>();
+  readonly #unsubscribeTools: (() => void) | undefined;
   readonly #controlPublications = new Map<
     string,
     { taskId: number; command: CandidateControlToolCommand }
@@ -157,6 +162,7 @@ export class DurableAgentSession {
       remoteTools: readonly Omit<ToolRegistration, "execute">[];
       infrastructureTools?: readonly ToolRegistration[];
       publicEgress?: () => GuestPublicEgress;
+      remoteToolUpdates?: RemoteToolDefinitionsSource;
     },
   ) {
     this.#models = new ScopedDurableModels(options.models, async (request) => {
@@ -189,7 +195,6 @@ export class DurableAgentSession {
     this.#registry.install(
       defineExtension({
         name: "pi-cloud-runtime",
-        tools: [...this.remote.definitions],
         sections: [
           ...(options.publicEgress ? [publicEgressSection(options.publicEgress)] : []),
           section("delegation-policy", async (input, context) => {
@@ -231,8 +236,23 @@ export class DurableAgentSession {
               return undefined;
             },
           }),
-          this.remote.hook,
         ],
+      }),
+    );
+    this.#replaceRemoteTools(options.remoteTools);
+    this.#unsubscribeTools = options.remoteToolUpdates?.subscribe(() =>
+      this.#replaceRemoteTools(options.remoteToolUpdates!.current()),
+    );
+  }
+  #replaceRemoteTools(definitions: readonly Omit<ToolRegistration, "execute">[]): void {
+    for (const tool of this.remote.definitions) this.#installed.delete(tool.name);
+    this.remote.replaceDefinitions(definitions);
+    for (const tool of this.remote.definitions) this.#installed.add(tool.name);
+    this.#registry.install(
+      defineExtension({
+        name: "pi-cloud-remote-tools",
+        tools: [...this.remote.definitions],
+        hooks: [this.remote.hook],
       }),
     );
   }
@@ -282,6 +302,7 @@ export class DurableAgentSession {
       remoteTools: readonly Omit<ToolRegistration, "execute">[];
       infrastructureTools?: readonly ToolRegistration[];
       publicEgress?: () => GuestPublicEgress;
+      remoteToolUpdates?: RemoteToolDefinitionsSource;
       settings?: HarnessSettings;
       report?: (error: unknown) => void;
     },
@@ -337,6 +358,7 @@ export class DurableAgentSession {
       }
       return session;
     } catch (error) {
+      session.#unsubscribeTools?.();
       session.#abort.abort(error);
       await session.#harness?.close(BACKGROUND_CONTEXT).catch(() => {});
       throw error;
@@ -428,10 +450,18 @@ export class DurableAgentSession {
       await configure(tx, conversation.id, {
         ...run.agent,
         model,
-        tools: [
-          ...this.remote.definitions.filter((tool) => run.remoteTools.includes(tool.name)),
-          ...run.tools,
-        ],
+        extensions: this.#registry
+          .snapshot()
+          .installed()
+          .filter(
+            (extension) =>
+              extension.name === "pi-cloud-runtime" ||
+              extension.name === "pi-cloud-remote-tools" ||
+              run.tools.some((tool) => extension.name === `pi-cloud-tool:${tool.name}`),
+          ),
+        tools: {
+          remove: this.remote.definitions.filter((tool) => !run.remoteTools.includes(tool.name)),
+        },
       });
     }, BACKGROUND_CONTEXT);
     for (const wake of this.#waiters.get(`${run.runId}:${run.conversationId}`) ?? []) wake();
@@ -691,6 +721,7 @@ export class DurableAgentSession {
     return this.#bindings.get(conversationId)!;
   }
   async close(): Promise<void> {
+    this.#unsubscribeTools?.();
     this.#abort.abort(new Error("Native Session owner closed"));
     try {
       await this.#harness.close(BACKGROUND_CONTEXT);

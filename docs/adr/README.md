@@ -1,5 +1,9 @@
 # Current architecture decisions
 
+[ADR-0269](0269-execution-owned-control-tool-catalog.md) uses execution-owned
+ordinary tool definitions and Pi's Registry/selection mechanisms for changes
+inside a running Agent loop. Implementation is in progress.
+
 [ADR-0268](0268-runtime-capabilities-and-delegation.md) records the approved
 Worker capability snapshots, native delegation profiles and compact child
 observations. Implementation is in progress; the serving runtime is unchanged.

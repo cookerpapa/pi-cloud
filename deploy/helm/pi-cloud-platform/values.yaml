@@ -62,6 +62,8 @@ bootstrap:
   maximumSessions: null
 
 controlPlane:
+  # null advertises every registered ordinary Tool; [] withdraws all ordinary Tools.
+  enabledControlTools: null
   replicas: 3
   autoscaling:
     enabled: true

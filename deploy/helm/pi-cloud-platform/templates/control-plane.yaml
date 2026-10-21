@@ -105,6 +105,9 @@ spec:
             - { name: PI_CLOUD_CUBE_EXECUTION_ENDPOINTS_FILE, value: /run/pi-cloud-config/cube-execution-endpoints.json }
             {{- end }}
             - { name: PORT, value: "3000" }
+            {{- if kindIs "slice" .Values.controlPlane.enabledControlTools }}
+            - { name: PI_CLOUD_CONTROL_TOOLS_ENABLED, value: {{ toJson .Values.controlPlane.enabledControlTools | quote }} }
+            {{- end }}
             - { name: DATABASE_URL_FILE, value: /run/pi-cloud-secrets/database-url }
             - { name: DATABASE_NOTIFICATION_URL_FILE, value: /run/pi-cloud-secrets/database-notification-url }
             - { name: PI_CLOUD_KAFKA_BROKERS, value: {{ join "," .Values.global.kafka.brokers | quote }} }

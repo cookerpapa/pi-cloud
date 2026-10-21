@@ -12,6 +12,7 @@ import { ToolReplyMailbox } from "@pi-cloud/event-log";
 import { PostgresDurableSessionHost } from "@pi-cloud/pi-session-postgres/durable";
 import { RemoteToolSandboxTurnRunner, SubagentControlClient } from "@pi-cloud/sandbox-supervisor";
 import { WorkerToolRuntime } from "../../supervisor-host/src/tools/worker-tool-runtime.ts";
+import { ControlToolRegistry } from "../src/control-tool-registry.ts";
 import { CloudModelRegistry } from "../../sandbox-supervisor/src/durable/model-registry.ts";
 import { WorkerExecutionLog } from "../../runtime-core/src/worker-execution-log.ts";
 import { DurableSessionPublisher } from "../../runtime-core/src/durable-session-publisher.ts";
@@ -133,6 +134,7 @@ it.each([false, true])(
         >,
     });
     const tools = new WorkerToolRuntime({
+      catalog: new ControlToolRegistry(),
       nativeConversations: native,
       control,
       maximumDepth: null,

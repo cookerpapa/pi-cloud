@@ -3,6 +3,7 @@ import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { AgentRunSupervisor } from "@pi-cloud/sandbox-supervisor";
 import { DirectSessionKafkaBus } from "@pi-cloud/runtime-core/direct-session-kafka";
+import { ControlToolRegistry } from "@pi-cloud/control-plane";
 import {
   PostgresSupervisorCredentialAuthorizer,
   SupervisorBootProvisioner,
@@ -148,6 +149,7 @@ describe("PiWorkerRuntime", () => {
       heartbeatTimeoutMs: 30000,
     });
     const gateway = new SupervisorWebSocketGateway({
+      toolCatalog: new ControlToolRegistry(),
       manager,
       authorizer: new PostgresSupervisorCredentialAuthorizer({ database }),
     });

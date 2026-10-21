@@ -1,5 +1,17 @@
 # Configuration
 
+ADR-0269 adds `controlPlane.enabledControlTools` to the platform Helm chart for
+ordinary trusted control tools. `null` (default) advertises every registered
+implementation; `[]` withdraws all ordinary tools; `["preview"]` selects preview.
+The rendered `PI_CLOUD_CONTROL_TOOLS_ENABLED` is a JSON name array. Unknown names
+fail startup. This selects installed handlers and never loads executable plugins
+or changes fixed Pi file/shell grants and native coordination adapters.
+Changes take effect after a compatible Control Plane restart and Worker catalog
+delivery; an existing Agent loop sees them on its next prepared model request.
+See [ADR-0269](adr/0269-execution-owned-control-tool-catalog.md) and the
+[delivery record](reports/runtime-capabilities-delivery-20261021.md) for current
+source/rollout status. The initial schema 197/protocol upgrade remains matched.
+
 Pending conversation inputs have no count quota. Their existing 100,000-character
 wire envelope remains bounded, along with encoded delegated startup records. The pending-input view uses
 `input.queue` SSE updates and current snapshots on initialization, reconnect and

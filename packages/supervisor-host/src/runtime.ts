@@ -25,6 +25,7 @@ import {
   type ReconnectingSupervisorWebSocketClientStop,
 } from "@pi-cloud/sandbox-supervisor";
 import { WorkerToolRuntime } from "./tools/worker-tool-runtime.ts";
+import { WorkerToolCatalog } from "./tools/worker-tool-catalog.ts";
 import { FamilyModelPermits } from "./family-model-permits.ts";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { sql, type Kysely } from "kysely";
@@ -170,6 +171,7 @@ export class PiWorkerRuntime {
   #modelGateway: TenantModelGateway | undefined;
   #modelPermits: FamilyModelPermits | undefined;
   #activity: RunActivityPublisher | undefined;
+  readonly #toolCatalog = new WorkerToolCatalog();
   #publicEgress: import("@pi-cloud/protocol").GuestPublicEgress = {
     revision: 0,
     status: "unknown",
@@ -332,6 +334,7 @@ export class PiWorkerRuntime {
       identity,
       bootLedger: ledger,
       readiness: () =>
+        this.#toolCatalog.ready &&
         this.#state === "ready" &&
         client?.state === "connected" &&
         this.#runWorker?.state === "running" &&
@@ -469,6 +472,7 @@ export class PiWorkerRuntime {
       },
     });
     const trustedTools = new WorkerToolRuntime({
+      catalog: this.#toolCatalog,
       nativeConversations: nativeSessions,
       control: this.#subagentControl,
       maximumDepth: this.#config.subagentMaximumDepth,
@@ -609,6 +613,26 @@ export class PiWorkerRuntime {
     });
     this.#runSupervisor = runSupervisor;
     client = new ReconnectingSupervisorWebSocketClient({
+      onToolCatalog: (catalog) => {
+        try {
+          const previous = this.#toolCatalog.ready ? this.#toolCatalog.read().revision : undefined;
+          this.#toolCatalog.update(catalog);
+          if (previous !== catalog.revision)
+            operationalLog({
+              service: "pi-cloud-pi-worker",
+              level: "info",
+              event: "runtime.tool_catalog_changed",
+              attributes: { revision: catalog.revision, tools: catalog.tools.length },
+            });
+        } catch {
+          operationalLog({
+            service: "pi-cloud-pi-worker",
+            level: "error",
+            event: "runtime.tool_catalog_rejected",
+            attributes: { revision: catalog.revision },
+          });
+        }
+      },
       onRuntimeConfiguration: ({ publicEgress }) => {
         if (
           this.#publicEgress.status === "unknown" ||
@@ -660,6 +684,7 @@ export class PiWorkerRuntime {
       maximumActiveFamilies: this.#config.maxConcurrentSessions,
       onCapacity: (sample) => this.#metrics?.activeSessionFamilies.set(sample.families),
       canClaimRuns: () =>
+        this.#toolCatalog.ready &&
         runBackend.healthy &&
         (this.#state === "ready" || this.#state === "draining") &&
         client?.state === "connected",

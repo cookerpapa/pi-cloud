@@ -1,4 +1,4 @@
-import { isControlToolName, type ControlToolName } from "./control-tools.ts";
+import { isControlDispatchToolName } from "./control-tool-catalog.ts";
 
 export type ControlToolRecoverySource = Readonly<{
   sequence: number;
@@ -9,7 +9,7 @@ export type OriginalControlToolIntent = ControlToolRecoverySource &
   Readonly<{
     taskId: number;
     conversationId: number;
-    toolName: ControlToolName;
+    toolName: string;
     nativeCallId: string;
     arguments: Record<string, unknown>;
     contextAnchor: number | null;
@@ -24,7 +24,7 @@ export type CandidateControlToolCommand = Readonly<{
   toolCallId: string;
   nativeCallId: string;
   conversationId: number;
-  toolName: ControlToolName;
+  toolName: string;
   arguments: Record<string, unknown>;
   contextAnchor: number | null;
   bindingId?: string;
@@ -40,7 +40,7 @@ export type ControlToolDispatch = Readonly<{
   operationId: string;
   taskId: number;
   conversationId: number;
-  toolName: ControlToolName;
+  toolName: string;
   contextAnchor: number | null;
   bindingId?: string;
   sourceDocumentId?: number;
@@ -61,7 +61,7 @@ export function parseControlToolDispatch(value: unknown): ControlToolDispatch {
     v.taskId < 1 ||
     !Number.isSafeInteger(v.conversationId) ||
     v.conversationId < 1 ||
-    !isControlToolName(v.toolName) ||
+    !isControlDispatchToolName(v.toolName) ||
     (v.contextAnchor !== null && (!Number.isSafeInteger(v.contextAnchor) || v.contextAnchor < 1)) ||
     (v.bindingId !== undefined && (typeof v.bindingId !== "string" || !v.bindingId)) ||
     (v.sourceDocumentId !== undefined &&

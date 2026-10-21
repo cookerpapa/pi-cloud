@@ -2,13 +2,35 @@ import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
 import type { AcceptedControlToolCommand } from "@pi-cloud/runtime-core/accepted-fact";
 import type { ControlToolOutcome } from "./control-tool-dispatcher.ts";
+import type { ControlToolCatalogDefinition } from "@pi-cloud/protocol";
+
+export const previewToolDefinition: ControlToolCatalogDefinition = {
+  name: "preview",
+  description:
+    "Publish a verified HTTP service already listening inside the current Sandbox as an authenticated PiCloud application link. This Tool does not start or restart the server.",
+  parameters: {
+    type: "object",
+    properties: {
+      port: { type: "integer", minimum: 1024, maximum: 65535 },
+      path: {
+        type: "string",
+        minLength: 1,
+        maxLength: 2048,
+        pattern: "^/[^\\u0000-\\u001f\\u007f ]*$",
+      },
+    },
+    required: ["port"],
+    additionalProperties: false,
+  },
+  requiresEnvironment: true,
+};
 
 /** Platform business logic; process/filesystem inspection stays in Cube. */
 export async function executePreviewTool(
   database: Kysely<Database>,
   command: AcceptedControlToolCommand,
   refresh: () => Promise<void>,
-): Promise<ControlToolOutcome> {
+): Promise<Extract<ControlToolOutcome, { result: unknown }>> {
   const input = command.arguments as { port: number; path?: string };
   await refresh();
   const session = await database

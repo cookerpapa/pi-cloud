@@ -42,6 +42,20 @@ const find = (kind, name) =>
   resources.find((resource) => resource.kind === kind && resource.metadata?.name === name);
 const controlPlane = find("Deployment", "pi-cloud-control-plane");
 assert(controlPlane);
+const withoutOrdinaryTools = parseAllDocuments(
+  run(["template", "pi-cloud", chart, "--set-json", "controlPlane.enabledControlTools=[]"]),
+)
+  .map((document) => document.toJSON())
+  .find(
+    (resource) =>
+      resource?.kind === "Deployment" && resource.metadata?.name === "pi-cloud-control-plane",
+  );
+assert.equal(
+  withoutOrdinaryTools.spec.template.spec.containers[0].env.find(
+    (entry) => entry.name === "PI_CLOUD_CONTROL_TOOLS_ENABLED",
+  )?.value,
+  "[]",
+);
 const environment = Object.fromEntries(
   controlPlane.spec.template.spec.containers[0].env
     .filter((entry) => entry.value !== undefined)

@@ -28,6 +28,11 @@ export type TrustedAgentTool = Readonly<{
   tool: ToolRegistration;
 }>;
 
+export type TrustedAgentToolSet = Readonly<{
+  current(): readonly TrustedAgentTool[];
+  subscribe(listener: () => void): () => void;
+}>;
+
 export type TrustedModelRuntimeLease = Readonly<{
   runtime: AgentModelRuntime;
   release(): Promise<void> | void;

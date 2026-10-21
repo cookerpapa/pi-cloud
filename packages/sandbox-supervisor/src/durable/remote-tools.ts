@@ -43,19 +43,25 @@ type Pending = {
  * this hook after code-owned argument/policy hooks; no user hooks are loaded. */
 export class DurableRemoteTools {
   readonly #pending = new Map<number, Pending>();
-  readonly definitions: readonly ToolRegistration[];
-  readonly hook;
-  constructor(options: {
-    definitions: readonly Omit<ToolRegistration, "execute">[];
-    prepare(invocation: RemoteInvocation): Promise<PreparedRemoteInvocation>;
-    recover?(invocation: RemoteInvocation): Promise<PreparedRemoteInvocation>;
-  }) {
-    if (options.definitions.some((tool) => tool.replay === "safe") && !options.recover)
-      throw new Error("Replay-safe remote Tools require a recovery port");
-    const names = new Set(options.definitions.map((tool) => tool.name));
-    this.hook = hook(ToolTask, {
+  definitions: readonly ToolRegistration[] = [];
+  readonly #names = new Set<string>();
+  hook = hook(ToolTask, {});
+  constructor(
+    readonly options: {
+      definitions: readonly Omit<ToolRegistration, "execute">[];
+      prepare(invocation: RemoteInvocation): Promise<PreparedRemoteInvocation>;
+      recover?(invocation: RemoteInvocation): Promise<PreparedRemoteInvocation>;
+    },
+  ) {
+    this.replaceDefinitions(options.definitions);
+  }
+  #hookFor(names: ReadonlySet<string>) {
+    const options = this.options;
+    return hook(ToolTask, {
       beforeTool: async (call, api, context) => {
         if (!names.has(call.name)) return;
+        if (!this.#names.has(call.name))
+          return { block: `tool_unavailable: ${call.name} was withdrawn before admission` };
         const prepared = await options.prepare({
           taskId: api.taskId,
           conversationId: api.conversationId,
@@ -86,11 +92,21 @@ export class DurableRemoteTools {
         return undefined;
       },
     });
-    this.definitions = options.definitions.map((definition) => ({
+  }
+  replaceDefinitions(definitions: readonly Omit<ToolRegistration, "execute">[]): void {
+    const options = this.options;
+    if (definitions.some((tool) => tool.replay === "safe") && !options.recover)
+      throw new Error("Replay-safe remote Tools require a recovery port");
+    this.#names.clear();
+    for (const definition of definitions) this.#names.add(definition.name);
+    this.hook = this.#hookFor(new Set(this.#names));
+    this.definitions = definitions.map((definition) => ({
       ...definition,
       replay: definition.replay ?? "unsafe",
       execute: async (args, api, context) => {
         let pending = this.#pending.get(api.taskId);
+        if (!pending && !this.#names.has(definition.name))
+          throw new Error(`tool_unavailable: ${definition.name} was withdrawn before admission`);
         if (!pending && definition.replay === "safe") {
           const prepared = await options.recover!({
             taskId: api.taskId,

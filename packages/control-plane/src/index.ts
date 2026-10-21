@@ -260,3 +260,9 @@ export {
   type GitHubAppRuntime,
 } from "./source-control-service.ts";
 export { SourceControlIssueCoordinator } from "./source-control-issue-coordinator.ts";
+export {
+  ControlToolRegistry,
+  controlToolCatalog,
+  type RegisteredControlTool,
+} from "./control-tool-registry.ts";
+export { previewToolDefinition } from "./control-preview-tool.ts";

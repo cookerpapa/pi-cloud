@@ -1,5 +1,7 @@
 import { emptyEventRuntime } from "./fixtures/event-runtime.ts";
 import { authorizeTestWorker } from "./fixtures/registered-worker.ts";
+import { ControlToolRegistry } from "../src/control-tool-registry.ts";
+import { WorkerToolCatalog } from "../../supervisor-host/src/tools/worker-tool-catalog.ts";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
@@ -79,6 +81,7 @@ async function startGateway(options: {
   registrationTimeoutMs?: number;
   useNestApplication?: boolean;
   runtimeConfiguration?: () => Promise<import("@pi-cloud/protocol").WorkerRuntimeConfiguration>;
+  toolCatalog?: import("@pi-cloud/protocol").ControlToolCatalogSource;
 }): Promise<{
   server: { close(): Promise<unknown> };
   url: string;
@@ -120,6 +123,7 @@ async function startGateway(options: {
     maxPendingFrames: 4,
     registrationTimeoutMs: options.registrationTimeoutMs ?? 500,
     ...(options.runtimeConfiguration ? { runtimeConfiguration: options.runtimeConfiguration } : {}),
+    ...(options.toolCatalog ? { toolCatalog: options.toolCatalog } : {}),
   });
   if (options.useNestApplication) {
     const tenantId = uuid();
@@ -188,6 +192,7 @@ function client(
   token: string,
   value: SupervisorBootIdentity,
   onRuntimeConfiguration?: (value: import("@pi-cloud/protocol").WorkerRuntimeConfiguration) => void,
+  onToolCatalog?: (value: import("@pi-cloud/protocol").ControlToolCatalog) => void,
 ) {
   const runtime = new AgentRunSupervisor({
     runner: {
@@ -206,6 +211,7 @@ function client(
     },
     runtime,
     ...(onRuntimeConfiguration ? { onRuntimeConfiguration } : {}),
+    ...(onToolCatalog ? { onToolCatalog } : {}),
     connectTimeoutMs: 2_000,
     closeTimeoutMs: 200,
   });
@@ -262,6 +268,49 @@ afterAll(async () => {
 });
 
 describe.sequential("authenticated supervisor WebSocket transport", () => {
+  it("sends complete execution-owned catalogs on registration, change and reconnect", async () => {
+    const supervisorIdentity = identity();
+    await provision(supervisorIdentity);
+    const registry = new ControlToolRegistry(),
+      worker = new WorkerToolCatalog();
+    const hosted = await startGateway({ identity: supervisorIdentity, toolCatalog: registry });
+    const first = client(hosted.url, TOKEN, supervisorIdentity, undefined, (catalog) =>
+      worker.update(catalog),
+    );
+    let second: SupervisorWebSocketClient | undefined;
+    try {
+      await first.start();
+      await waitFor(() => worker.ready);
+      expect(worker.read().tools).toEqual([]);
+      const withdraw = registry.register({
+        definition: {
+          name: "new_tool",
+          description: "New remote tool",
+          parameters: { type: "object", properties: {} },
+          requiresEnvironment: false,
+        },
+        async execute() {
+          return { result: { content: [] } };
+        },
+      });
+      await waitFor(() => worker.read().tools.length === 1);
+      expect(worker.read().tools[0]!.name).toBe("new_tool");
+      await first.stop();
+      withdraw();
+      expect(worker.read().tools).toHaveLength(1);
+      second = client(hosted.url, TOKEN, supervisorIdentity, undefined, (catalog) =>
+        worker.update(catalog),
+      );
+      await second.start();
+      await waitFor(() => worker.read().tools.length === 0);
+      expect(worker.read()).toEqual(registry.read());
+    } finally {
+      await first.stop();
+      await second?.stop();
+      await hosted.server.close();
+    }
+  });
+
   it("delivers current runtime metadata after registration, change and reconnect", async () => {
     const supervisorIdentity = identity();
     await provision(supervisorIdentity);

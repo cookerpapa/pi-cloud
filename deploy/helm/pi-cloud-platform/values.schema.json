@@ -819,6 +819,11 @@
       "additionalProperties": false,
       "required": ["replicas", "autoscaling", "resources"],
       "properties": {
+        "enabledControlTools": {
+          "type": ["array", "null"],
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$" },
+          "uniqueItems": true
+        },
         "replicas": {
           "type": "integer",
           "minimum": 1,

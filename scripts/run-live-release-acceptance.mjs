@@ -23,10 +23,13 @@ import {
   settleOwnedAcceptanceRuns,
 } from "./lib/owned-acceptance-cleanup.mjs";
 import { resolve, dirname } from "node:path";
+import { serializeRelease } from "./lib/release-lock.mjs";
+import { runtimeCapabilityAcceptance } from "./lib/runtime-capability-acceptance.mjs";
 if (process.env.PI_CLOUD_LIVE_RELEASE_CHECK !== "1")
   throw new Error(
     "Set PI_CLOUD_LIVE_RELEASE_CHECK=1 to authorize owned Cube/browser fixtures and GPT-6 Luna use",
   );
+if (process.env.PI_CLOUD_LIVE_RUNTIME_CAPABILITIES === "1") serializeRelease(runtimeDirectory);
 const output = resolve(
   process.env.PI_CLOUD_ACCEPTANCE_REPORT ?? "dist/release-targeted-acceptance.json",
 );
@@ -335,6 +338,23 @@ try {
       contentBytes: size,
       utf8Valid: true,
       canonicalDiagnostic: true,
+    });
+  }
+  if (process.env.PI_CLOUD_LIVE_RUNTIME_CAPABILITIES === "1") {
+    report.runtimeCapabilities = await runtimeCapabilityAcceptance({
+      db,
+      api,
+      tenant,
+      session,
+      baseUrl,
+      directory: dirname(output),
+      completed,
+      history: (runId) => nativeHistory(db, { runId }),
+      progress,
+      save: async (value) => {
+        report.runtimeCapabilities = value;
+        await writeFile(output, JSON.stringify(report, null, 2), { mode: 0o600 });
+      },
     });
   }
   report.accepted = true;

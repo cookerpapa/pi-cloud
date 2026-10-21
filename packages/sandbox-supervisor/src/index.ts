@@ -79,6 +79,7 @@ export {
   type AgentWorkspaceSeedResolver,
   type ProviderHostedActivity,
   type TrustedAgentTool,
+  type TrustedAgentToolSet,
   type TrustedToolExecutionPlane,
   type TrustedModelRuntimeLease,
   type TrustedModelRuntimeLeaseResolver,

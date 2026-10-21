@@ -625,6 +625,7 @@ export { isControlToolCommand, type CandidateToolEffect } from "./tool-command.t
 export * from "./tool-progress.ts";
 export * from "./tool-preview.ts";
 export * from "./run-observation.ts";
+export * from "./control-tool-catalog.ts";
 export * from "./queued-inputs.ts";
 export {
   MAX_AGENT_INPUT_CHARACTERS,

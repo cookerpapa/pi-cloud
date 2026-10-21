@@ -36,6 +36,7 @@ import { validateSandboxRuntimeIdentity, type SandboxRuntimeIdentity } from "@pi
 import type {
   AgentWorkspaceSeedResolver,
   TrustedAgentTool,
+  TrustedAgentToolSet,
   TrustedModelRuntimeLease,
   TrustedModelRuntimeLeaseResolver,
 } from "./agent-turn-runtime.ts";
@@ -136,7 +137,7 @@ export type RemoteToolSandboxTurnRunnerOptions = {
       prepareWorkflow: WorkflowPreparer;
       prepareEnvironment(): Promise<string>;
     }>,
-  ) => Promise<readonly TrustedAgentTool[]> | readonly TrustedAgentTool[];
+  ) => Promise<TrustedAgentToolSet> | TrustedAgentToolSet;
   acquireModelPermit?: (
     command: ExecuteTurnCommandMessage,
     signal?: AbortSignal,
@@ -670,18 +671,21 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       };
       const settlementPolicy = settlementGatePolicyFromCommand(command);
       let prepareWorkflow: WorkflowPreparer | undefined;
-      const trustedToolBindings =
-        (await this.#createTrustedTools?.(command, {
-          prepareWorkflow: (...args) => {
-            if (!prepareWorkflow) throw new Error("Remote workflow runtime is not ready");
-            return prepareWorkflow(...args);
-          },
-          prepareEnvironment: async () => (await ensureActivation()).activationId,
-        })) ?? ([] as readonly TrustedAgentTool[]);
-      const trustedTools = trustedToolBindings
-        .filter((binding) => binding.offered !== false)
-        .map((binding) => binding.tool);
-      const hasSupervisorContact = trustedTools.some((tool) => tool.name === "contact_supervisor");
+      const trustedToolBindings = (await this.#createTrustedTools?.(command, {
+        prepareWorkflow: (...args) => {
+          if (!prepareWorkflow) throw new Error("Remote workflow runtime is not ready");
+          return prepareWorkflow(...args);
+        },
+        prepareEnvironment: async () => (await ensureActivation()).activationId,
+      })) ?? { current: () => [] as readonly TrustedAgentTool[], subscribe: () => () => {} };
+      const trustedTools = () =>
+        trustedToolBindings
+          .current()
+          .filter((binding) => binding.offered !== false)
+          .map((binding) => binding.tool);
+      const hasSupervisorContact = trustedTools().some(
+        (tool) => tool.name === "contact_supervisor",
+      );
       let activeSession: PiCloudSessionHandle | undefined;
       const childView = command.payload.conversationWork;
       const parentFamily = childView
@@ -703,7 +707,10 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           : undefined;
       const commonRunnerOptions = {
         ...(this.#publicEgress ? { publicEgress: this.#publicEgress } : {}),
-        trustedToolDefinitions: trustedToolBindings.map((binding) => binding.tool),
+        trustedToolDefinitions: {
+          current: () => trustedToolBindings.current().map((binding) => binding.tool),
+          subscribe: trustedToolBindings.subscribe,
+        },
         onActivity: (update: import("@pi-cloud/protocol").RunActivityUpdate | undefined) =>
           this.#onActivity?.(command, update, activityParent),
         resolveModelRuntime,
@@ -910,10 +917,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                 }),
           });
           prepareWorkflow = remoteTools.prepareWorkflow;
-          if (trustedTools.length === 0) return remoteTools;
           return {
             ...remoteTools,
-            tools: [...remoteTools.tools, ...trustedTools],
+            get tools() {
+              return [...remoteTools.tools, ...trustedTools()];
+            },
             async systemPrompt(base: string) {
               return [await remoteTools.systemPrompt(base)]
                 .concat(

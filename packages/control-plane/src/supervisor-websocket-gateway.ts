@@ -1,6 +1,10 @@
 import fastifyWebsocket from "@fastify/websocket";
 import { parseSupervisorToControlMessage } from "@pi-cloud/protocol";
-import type { WorkerRuntimeConfiguration } from "@pi-cloud/protocol";
+import type {
+  WorkerRuntimeConfiguration,
+  ControlToolCatalogSource,
+  ControlToolCatalog,
+} from "@pi-cloud/protocol";
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { TLSSocket } from "node:tls";
 import type { FastifyInstance, FastifyRequest } from "fastify";
@@ -44,6 +48,7 @@ export type SupervisorWebSocketGatewayOptions = {
   maxBufferedSendBytes?: number;
   registrationTimeoutMs?: number;
   runtimeConfiguration?: () => Promise<WorkerRuntimeConfiguration>;
+  toolCatalog?: ControlToolCatalogSource;
 };
 
 export class SupervisorUpgradeAuthorizationError extends Error {
@@ -188,12 +193,22 @@ export class SupervisorWebSocketGateway {
   readonly #contexts = new Set<SocketContext>();
   readonly #configurationReady = new WeakSet<SocketContext>();
   readonly #runtimeConfiguration: SupervisorWebSocketGatewayOptions["runtimeConfiguration"];
+  readonly #toolCatalog: ControlToolCatalogSource | undefined;
+  readonly #unsubscribeCatalog: (() => void) | undefined;
   #installed = false;
   #shuttingDown = false;
 
   constructor(options: SupervisorWebSocketGatewayOptions) {
     this.#manager = options.manager;
     this.#runtimeConfiguration = options.runtimeConfiguration;
+    this.#toolCatalog = options.toolCatalog;
+    this.#unsubscribeCatalog = options.toolCatalog?.subscribe(() => {
+      for (const context of this.#activeBySandbox.values())
+        if (!context.closed && this.#configurationReady.has(context))
+          void this.#sendCatalog(context, options.toolCatalog!.read()).catch((error) =>
+            this.#handleFrameError(context, error),
+          );
+    });
     this.#authorizer = options.authorizer;
     this.#path = validPath(options.path ?? SUPERVISOR_WEBSOCKET_PATH);
     this.#idGenerator = options.idGenerator ?? (() => globalThis.crypto.randomUUID());
@@ -248,6 +263,7 @@ export class SupervisorWebSocketGateway {
   shutdown(): void {
     if (this.#shuttingDown) return;
     this.#shuttingDown = true;
+    this.#unsubscribeCatalog?.();
     for (const context of [...this.#contexts]) {
       this.#close(context, 1_012, "control plane shutting down");
     }
@@ -392,6 +408,7 @@ export class SupervisorWebSocketGateway {
       this.#configurationReady.add(context);
       if (this.#runtimeConfiguration)
         await this.#sendRuntimeConfiguration(context, await this.#runtimeConfiguration());
+      if (this.#toolCatalog) await this.#sendCatalog(context, this.#toolCatalog.read());
       return;
     }
 
@@ -409,6 +426,16 @@ export class SupervisorWebSocketGateway {
       return;
     }
     this.#close(context, 1_003, "message type unsupported");
+  }
+
+  async #sendCatalog(context: SocketContext, catalog: ControlToolCatalog): Promise<void> {
+    await this.#send(context, {
+      protocolVersion: 1,
+      messageId: this.#idGenerator(),
+      sentAt: new Date().toISOString(),
+      type: "supervisor.tool_catalog",
+      payload: catalog,
+    });
   }
 
   async #send(context: SocketContext, value: unknown): Promise<void> {

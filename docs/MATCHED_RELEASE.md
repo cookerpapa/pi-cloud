@@ -111,6 +111,25 @@ configured web port. A Linux-only HTTP 200 does not establish Windows access.
 
 ## Acceptance and fixture restoration
 
+ADR-0268/0269 use schema 197 and matched management/SSE contracts. Run the
+ordinary native-input/recovery and full Cube gates, plus the runtime capability
+extension of the existing browser/Read acceptance:
+
+```sh
+PI_CLOUD_LIVE_RELEASE_CHECK=1 PI_CLOUD_LIVE_RUNTIME_CAPABILITIES=1 node --import tsx scripts/run-live-release-acceptance.mjs
+```
+
+This extension holds the existing release lock, uses only its owned tenant and
+checks real guest npm/PyPI access, Max/Ultra policy, explicit delegation, native
+child inheritance and compact browser navigation. During owned gated Bash calls
+it changes only `controlPlane.enabledControlTools` through the same Helm chart
+without hooks, verifies both Worker identities and the active lease remain, then
+checks preview addition/removal on later requests of the same native work. It
+restores the original catalog selection and saves the private restoration receipt.
+No unrelated Run may be active for this check. DeepSeek is exercised with one
+ordinary Tool request, without hosted-search or large-image capability probing.
+Keep the deliberately enabled global guest-egress setting when cleaning fixtures.
+
 The ADR-0191 GPT-6.1 amendment adds schema 195 for mutable Sol settings and pinned
 gateway catalog metadata. Drain writers before migrating; issued Run/native
 model snapshots are preserved. Validate the new UI selection and unsupported
