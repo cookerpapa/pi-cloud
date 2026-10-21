@@ -33,13 +33,30 @@ CLIProxyAPI is the only model-supply authority. Its private Volume contains
 ChatGPT OAuth records and API keys; its native page manages quota, cooldown and
 account health. PiCloud stores only the selected provider/model route.
 
-New conversations use the reviewed default GPT model, medium reasoning and Fast
-off. Users change this through the cascading composer menu while no Run is active.
-Reviewed routes and capabilities have one code-owned source in
-`packages/protocol/src/model-catalog.ts`; a new Provider still needs its adapter
-and capability tests, not just a catalog entry.
-Every accepted Turn freezes its own provider/model snapshot; changing the
-platform default or Session default never changes historical or in-flight Runs.
+New conversations use the default model and reasoning declared by the reviewed
+catalog, with Fast off. Users change selections through the composer while no Run
+is active. The seed is `deploy/helm/pi-cloud-platform/files/model-catalog.json`;
+Helm's `modelCatalogJson` can supply a complete deployment override. The Control
+Plane reads `PI_CLOUD_MODEL_CATALOG_FILE` (mounted at
+`/run/pi-cloud-models/model-catalog.json`), validates the whole document and keeps
+one in-memory view. [Independent catalog publication](COMPONENT_RELEASE.md) waits
+for serving instances to acknowledge its digest. A new provider protocol still
+needs its adapter and tests. Existing tenant settings are not rewritten.
+
+`GET /v1/models` supplies `revision`, `defaultModel`, `reloadFailed` and `models`.
+`defaultModel` is the new-chat default; entry `default` flags retain the tenant's
+configured route. Client schemas validate model ID syntax; Control Plane checks
+actual availability and reasoning against the loaded catalog. There is no client
+or Worker model-name enumeration. An invalid reload retains the last good catalog;
+invalid startup fails. Refresh open pages to fetch new choices.
+
+Every accepted Run stores complete runtime capabilities and the catalog digest
+in `model_runtime_snapshot`. Worker claim/recovery and native children reuse it;
+active follow-up image validation does too. Default/catalog changes never rewrite
+accepted work or history, and add no per-model-request SQL. Withdrawn selections
+remain readable/editable but cannot admit new work. Existing profile restrictions
+and explicit desired settings remain in force; retain upstream routes needed by
+already accepted work.
 
 DeepSeek V4.1 Flash is selectable; V4 Pro is hidden from conversation/admin
 selection at the owner's request. Flash keeps `hostedTools: ["web_search"]` on

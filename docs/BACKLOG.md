@@ -30,12 +30,15 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Scoped release and runtime model catalog
 
-- [ ] Implement [ADR-0267](adr/0267-scoped-releases-and-model-catalog.md): validated
-      deployment catalog, frozen Run capabilities, data-driven chat/admin choices.
-- [ ] Record component provenance and provide guarded provider/catalog-only
-      release operations with checks selected by impact.
-- [ ] Complete the initial matched cutover and live narrow-release acceptance,
-      retaining Worker/VM identities and original configuration.
+[ADR-0267](adr/0267-scoped-releases-and-model-catalog.md) is deployed on schema
+196. [Delivery evidence](reports/component-release-20261021.md) confirms provider
+and catalog updates during native work, unchanged Worker/VM/lease identities,
+frozen old/new Run parameters, original configuration and physical cleanup.
+
+- [x] Validated deployment catalog, frozen Run capabilities and data-driven menus.
+- [x] Component provenance, guarded independent operations and CI checks by impact.
+- [x] Initial matched cutover, real independent updates, native continuation,
+      model capability checks and fixture cleanup.
 
 ## GPT-6.1 Sol catalog refresh
 

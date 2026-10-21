@@ -1,6 +1,10 @@
 # Documentation map
 
-[ADR-0267](adr/0267-scoped-releases-and-model-catalog.md) and the [component release procedure](COMPONENT_RELEASE.md) introduce provider/catalog-only updates and frozen Run capabilities. Initial schema 196 delivery and live release acceptance are in progress.
+[ADR-0267](adr/0267-scoped-releases-and-model-catalog.md) and the
+[component release procedure](COMPONENT_RELEASE.md) are deployed on schema 196.
+[Delivery evidence](reports/component-release-20261021.md) verifies independent
+provider/catalog updates during native work, immutable Run snapshots, unchanged
+Worker/VM identities, actual model capabilities and confirmed cleanup.
 
 The [GPT-6.1 Sol amendment](adr/0191-gpt6-model-catalog.md) updates the reviewed
 model catalog and future Sol settings under schema 195. It is deployed as

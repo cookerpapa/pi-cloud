@@ -1,7 +1,8 @@
 # ADR-0267: component releases and a runtime model catalog
 
-Status: approved for implementation, 2026-10-21. The owner requested both phases
-of the scoped-release proposal together. Delivery and live acceptance remain pending.
+Status: implemented, deployed and accepted, 2026-10-21. The owner requested both
+phases together. [Delivery evidence](../reports/component-release-20261021.md)
+records the initial matched cutover, independent updates and retained failed samples.
 
 Operator amendment: a prepared artifact retains its build revision when a later
 commit changes only explicitly listed operator code, its tests or documentation.

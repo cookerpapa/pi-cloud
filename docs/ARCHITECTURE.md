@@ -1,5 +1,11 @@
 # Architecture
 
+[ADR-0267](adr/0267-scoped-releases-and-model-catalog.md) is deployed on schema 196.
+[Current delivery](reports/component-release-20261021.md) validates independent
+provider/catalog publication, frozen Run model capabilities, stable Worker/VM
+identity during active work and preserved configuration. Native execution/storage
+protocols and authorities are unchanged.
+
 The [resource/interaction repair plan](reports/resource-interaction-repair-plan-20261020.md)
 and [accepted ADR-0264](adr/0264-subagent-recovery-and-discovery.md) are deployed as
 `resource-repair-1cdccb80`, schema 194 / Session topic v18.
@@ -51,9 +57,10 @@ and ADR-0257's browser observation/buffer repair, ADR-0258/0259's bounded lease/
 expiry maintenance, ADR-0260's publication/reader retirement repair and
 ADR-0261's bounded projection/writer-view cleanup, ADR-0262's native recovery reads
 and ADR-0263's model semantics/unbounded work, ADR-0264's recoverable delegation,
-ADR-0265's retained Volume evidence and ADR-0266's attachment lifetimes
-(schema 194 / topic v18 / boot reply v3 / guest protocol 7, adapter startup 3).
-The [current delivery record](reports/resource-interaction-repair-20261020.md)
+ADR-0265's retained Volume evidence, ADR-0266's attachment lifetimes and ADR-0267's
+runtime catalogs/scoped releases (schema 196 / topic v18 / boot reply v3 / guest
+protocol 7, adapter startup 3).
+The [preceding resource delivery record](reports/resource-interaction-repair-20261020.md)
 records the October 21 `resource-repair-1cdccb80` deployment, completed combined
 acceptance and retained failed upstream/model-answer samples. Physical
 cleanup and original configuration preservation are confirmed; these samples

@@ -21,15 +21,19 @@ Subagent trees or uploaded file sizes/counts. Resource requests, physical VM
 specifications, memory-pressure admission and transport/provider limits remain;
 see [configuration](docs/CONFIGURATION.md) and [uploads](docs/CHAT_ATTACHMENTS.md).
 
-Operators can follow the [matched release procedure](docs/MATCHED_RELEASE.md)
-and optional [conversation/image recovery procedure](docs/ASSET_RECOVERY.md).
+Operators can use [independent provider/catalog releases](docs/COMPONENT_RELEASE.md),
+the [matched procedure](docs/MATCHED_RELEASE.md) for application/protocol changes,
+and optional [conversation/image recovery](docs/ASSET_RECOVERY.md).
 The [private pilot criteria](docs/PRIVATE_PILOT.md) distinguish readiness checks
 from actual-use and fleet-capacity evidence; the pilot has not started.
 
-The current [GPT-6.1 Sol release](docs/reports/gpt61-sol-20261021.md) is
-`gpt61-sol-8827da09`, schema 195. Standard-mode text, Tools, vision and hosted search
-pass real acceptance, alongside Luna regression and physical cleanup. The existing
-Fast setting's effective upstream tier remains unconfirmed and is recorded separately.
+The [component release delivery](docs/reports/component-release-20261021.md) is
+live: application base `component-release-ad5fc83c`, schema 196, with independently
+updated provider `provider-scope-60bd7ef7`. Model choices/capabilities are deployed
+configuration; each accepted Run freezes its settings. Real Luna acceptance keeps
+an active Tool/Run, Worker boots and VM intact across provider/catalog updates,
+then verifies new-Run settings and physical cleanup. Text/Tools, vision and hosted
+search pass. GPT-6.1 Sol remains the default; effective Fast is still unconfirmed.
 
 Management reconnect preserves authorized idle and busy Worker processes across
 Control Plane outages. [Current recovery evidence](docs/reports/idle-worker-reconnect-20261014.md)
@@ -93,7 +97,7 @@ enter native persistence before validated Tool execution (ADR-0230).
 The [Session work migration](docs/adr/0247-session-work-and-tool-dispatch.md) is
 deployed as `session-work-6ac697f9`: one root Run with native child Conversations,
 unified Tool replies, one Session closure and Worker direct Kafka publication.
-The current matched release, `resource-repair-1cdccb80`, uses schema 194, execution-topic
+The preceding `resource-repair-1cdccb80` release used schema 194, execution-topic
 v18, boot reply v3, guest/Tool Worker protocol 7, completion startup protocol 3,
 preview schema 2 and Cube management protocol 7. Host KVM is available; templates
 and application workloads are ready. The preceding [model response/lifetime repair](docs/reports/model-runtime-repair-20261020.md)
