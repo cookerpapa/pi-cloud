@@ -163,10 +163,12 @@ try {
     path = `/workspace/${uploadRelativePath(uploadId, filename)}`;
   const active = await api.acceptTurn(
     session.sessionId,
-    `Use bash once with timeout 600 seconds to run exactly: while [ ! -f '${path}' ]; do sleep 1; done; cat '${path}'; printf '\\nRELEASE_TOOL_DONE\\n'. The test operator will upload that file. After bash finishes, reply RELEASE_CONTINUED.`,
+    `Use bash once with timeout 300 seconds to run exactly: while [ ! -f '${path}' ]; do sleep 1; done; cat '${path}'; echo RELEASE_TOOL_DONE. The test operator will upload that file. After bash finishes, reply RELEASE_CONTINUED.`,
     newIdempotencyKey("component-live"),
   );
   await until(async () => {
+    if (terminal(await api.getRun(active.runId)))
+      throw new Error("Fixture Run ended before starting its waiting Tool");
     const row = await db
       .selectFrom("workspace_runtimes")
       .select(["workspace_runtime_id", "sandbox_id", "runtime_id"])
