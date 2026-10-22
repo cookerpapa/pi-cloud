@@ -3,11 +3,11 @@
 A self-hosted, multi-tenant coding agent. Pi Durable 1.0.0 runs the native Harness in a shared
 Worker pool; file and shell tools execute in isolated CubeSandbox KVM guests.
 
-[Guest browser and preview delivery](docs/adr/0270-guest-browser-and-tool-result-actions.md)
-is being delivered: the standard image bundles pinned Playwright/Chromium and CJK
-fonts for Bash-driven UI checks and native screenshot Read. Successful preview
+[Guest browser and preview delivery](docs/reports/guest-browser-delivery-20261022.md)
+is deployed as `guest-browser-bd03f7a6`, schema 197: the standard image bundles pinned
+Playwright/Chromium and CJK fonts for Bash-driven UI checks and native screenshot Read. Successful preview
 actions retain their link metadata and remain visible outside collapsed Tool groups.
-The serving release below remains current until matched acceptance completes.
+Real Luna guest interaction, screenshot vision and live/cold preview navigation pass.
 
 - Multi-round chat, model switching, hosted search and Subagents.
   New conversations default to GPT-6.1 Sol; GPT-6 Luna, GPT-6 Astra and DeepSeek
@@ -34,12 +34,12 @@ Operators can use [independent provider/catalog releases](docs/COMPONENT_RELEASE
 the [matched procedure](docs/MATCHED_RELEASE.md) for application/protocol changes,
 and optional [conversation/image recovery](docs/ASSET_RECOVERY.md).
 For a shared local proxy, `npm run production:proxy -- http://127.0.0.1:12450`
-synchronizes host Docker, model and Cube egress settings; builds use the same address.
+synchronizes host Docker/K3s, model and Cube egress settings; builds use the same address.
 The [private pilot criteria](docs/PRIVATE_PILOT.md) distinguish readiness checks
 from actual-use and fleet-capacity evidence; the pilot has not started.
 
-The current [runtime-capability delivery](docs/reports/runtime-capabilities-delivery-20261021.md)
-is `runtime-capabilities-5d39828d`, schema 197. Execution-owned ordinary Control
+The preceding [runtime-capability delivery](docs/reports/runtime-capabilities-delivery-20261021.md)
+was `runtime-capabilities-5d39828d`, schema 197. Execution-owned ordinary Control
 Tools synchronize to Workers over their existing management connection; the next
 prepared model request uses the updated full tool list. Fixed Pi guest Tools and
 native child/workflow adapters retain their SDK/lifecycle contracts. Compatible

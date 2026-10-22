@@ -48,3 +48,8 @@ complete passing report. Docker's first restart outlasted the old 60-second
 operator wait while BuildKit initialized; the daemon finished normally and the
 operator now checks readiness within a bounded five-minute window. The initial
 failure and successful reapplication are retained in private release evidence.
+
+The [matched browser delivery](../reports/guest-browser-delivery-20261022.md)
+also verifies real Luna text/function calls, guest screenshot vision and native
+recovery through this route. Earlier TLS EOF/timeouts remain recorded as upstream
+availability failures; changing the configured port does not guarantee node uptime.

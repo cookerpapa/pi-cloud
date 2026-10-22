@@ -1,12 +1,17 @@
 # Architecture
 
-[ADR-0270](adr/0270-guest-browser-and-tool-result-actions.md), currently in
-verification, adds pinned guest Playwright/Chromium with CJK fonts. Bash starts
-the browser only when needed; Read uses existing screenshot attachment transport.
+[ADR-0270](adr/0270-guest-browser-and-tool-result-actions.md), deployed as
+`guest-browser-bd03f7a6` on schema 197, adds pinned guest Playwright/Chromium with
+CJK fonts. Bash starts the browser only when needed; Read uses existing screenshot attachment transport.
 No browser service or additional Tool executor is introduced. Native Tool display
 descriptions reference bounded `details` in the same commit and resolve structured
 `{content, details}` output, matching cold history. Successful preview actions
 remain visible outside collapsed Tool groups and return a real link to the model.
+[Delivery evidence](reports/guest-browser-delivery-20261022.md) records guest
+interaction, screenshot vision and live/cold preview navigation.
+[ADR-0271](adr/0271-local-upstream-proxy-configuration.md) synchronizes one local
+upstream address to existing host, provider and Cube configuration authorities;
+it adds no runtime proxy or configuration database.
 
 [ADR-0268](adr/0268-runtime-capabilities-and-delegation.md) and
 [ADR-0269](adr/0269-execution-owned-control-tool-catalog.md) are deployed in

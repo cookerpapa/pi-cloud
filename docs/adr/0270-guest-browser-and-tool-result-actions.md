@@ -1,6 +1,6 @@
 # ADR-0270: Guest browser capability and visible Tool-result actions
 
-Status: accepted; implementation and live delivery in progress.
+Status: implemented and deployed as `guest-browser-bd03f7a6`, schema 197.
 Date: 2026-10-22.
 
 Owner amendment: the owner explicitly authorized deleting the current development
@@ -43,11 +43,10 @@ Tool Sandbox and retain Pi's public Tools/Storage boundaries.
   answer; no guessed public URL or new preview state store is required.
 
 The display-description change and guest image require matched Worker/Projector/
-Web delivery. Preserve current user Workspace bytes, account/provider settings
-and credentials. Do not remove an active machine or bypass release fencing merely
-to satisfy a rollout gate; resolve the deployment's resource disposition explicitly
-after implementation/artifact preparation if the maintained procedure cannot
-preserve it.
+Web delivery. Under the owner amendment above, release the existing machine and
+delete its Workspace through the normal lifecycle, confirming physical cleanup
+before cutover. Preserve conversations, account/provider settings and credentials.
+Destructive development authorization does not bypass writer/Volume fencing.
 
 ## Adopt-before-build evidence
 
@@ -83,4 +82,9 @@ caches do not enter the guest image.
 - Published preview paths match text/metadata, render during live streaming and
   after refresh, and remain visible with multiple Tool steps collapsed.
 - Complete appropriate source/artifact/live gates and scoped fixture cleanup.
-  Existing user application files and account/configuration hashes are preserved.
+  Existing conversations and account/configuration hashes are preserved; old
+  application files are deleted under the explicit owner amendment.
+
+[Delivery evidence](../reports/guest-browser-delivery-20261022.md) records the
+matched release, source/artifact checks and real Luna guest browser, screenshot
+and live/cold preview results, including retained failed attempts.

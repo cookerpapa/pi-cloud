@@ -4,12 +4,15 @@
 [proxy command](CONFIGURATION.md#provider-egress) provide one local upstream
 address for host builds, Docker, the model Relay and Cube egress. The October 22
 switch to port 12450 is applied; repeated application preserves process/Pod
-identities and the PG revision. Browser delivery continues below.
+identities and the PG revision. The [delivery record](reports/guest-browser-delivery-20261022.md)
+distinguishes successful configuration checks from transient upstream TLS failures.
 
 [ADR-0270](adr/0270-guest-browser-and-tool-result-actions.md) adds a preinstalled
-guest Playwright/Chromium stack and consistent live/cold preview actions. Source
-and artifact verification are in progress; it introduces no browser service or
-new execution authority and does not yet replace the serving release below.
+guest Playwright/Chromium stack and consistent live/cold preview actions. It is
+deployed as `guest-browser-bd03f7a6`, schema 197. Real Luna guest interaction,
+screenshot vision and live/cold preview navigation pass; it introduces no browser
+service or new execution authority. The owner-authorized old Workspace deletion
+is complete and its conversation remains available.
 
 The [Subagent wait investigation and Ultra proposal](reports/subagent-wait-review-20261021.md)
 records the authorized Stop, successful delayed child result, model/environment

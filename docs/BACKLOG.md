@@ -34,23 +34,26 @@ The owner subsequently authorized releasing the current development machine and
 deleting its entire Workspace for this upgrade; preserve conversations, accounts,
 provider/model settings and credentials. After the upstream proxy software changed,
 [ADR-0271](adr/0271-local-upstream-proxy-configuration.md) adds a shared operator
-command before resuming the browser release.
+command for the shared local upstream address.
 
 - [x] Synchronize active host/model/Cube proxy settings to port 12450; verify
       repeat application, retained Worker/Relay identities and actual routes.
-      The browser matched release remains in progress below.
+      The browser matched release is `guest-browser-bd03f7a6`, schema 197.
 
 The owner approved [ADR-0270](adr/0270-guest-browser-and-tool-result-actions.md).
 Source implementation adds pinned Playwright/Chromium and CJK fonts in the guest,
 bounded same-commit Tool metadata, visible collapsed-group preview actions and
-model-visible authenticated paths. Focused live/cold rendering and native tests
-pass; image, real Cube/model acceptance and matched delivery remain in progress.
+model-visible authenticated paths. Image checks and real Luna guest interaction,
+screenshot vision, live/cold preview links and actual application navigation pass.
+The [delivery record](reports/guest-browser-delivery-20261022.md) separates source,
+artifact and live evidence, including the retained initial failures.
 
-The October 22 read-only investigation confirms that the guest image does not
-provision a browser/automation stack. A live Agent's executable/package checks
+The October 22 read-only investigation confirmed that the previous guest image did
+not provision a browser/automation stack. A live Agent's executable/package checks
 found none; its reported syntax, logic and HTTP checks therefore do not establish
-actual UI interaction. The published application still returns HTTP 200 through
-the maintained preview connection. No user Workspace or application was changed.
+actual UI interaction. The published application returned HTTP 200 through
+the maintained preview connection. The subsequent authorized machine release and
+Workspace deletion preserve its conversation, not the deleted application files.
 
 - [x] Decide the maintained guest browser/automation capability and its pinned
       image dependencies, so front-end work can obtain real interaction and
@@ -73,11 +76,11 @@ the maintained preview connection. No user Workspace or application was changed.
       as display metadata; do not tell the model that a link was already rendered
       when the executor can only confirm publication. Verify any resulting link
       against the existing authenticated preview route, without inventing URLs.
-- [ ] Complete browser image/real native-Tool interaction, screenshot/cancellation
-      checks and Luna live/cold preview navigation; deploy matched artifacts.
-      Preserve current user Workspace bytes. The current operator requires no VMs,
-      while releasing a dedicated machine also retires its Workspace; resolve
-      this disposition before destructive release rather than bypassing fencing.
+- [x] Complete browser image/real native-Tool interaction, screenshot/cancellation
+      checks and Luna live/cold preview navigation; deploy matched artifacts after
+      the owner's authorized machine/Workspace deletion and confirmed physical purge.
+- [x] Finish native input/streaming recovery regression and the final protected
+      account/configuration/credential comparison, retaining failed samples.
 
 ## Ultra collaboration and child-task visibility
 
