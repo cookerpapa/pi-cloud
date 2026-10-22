@@ -57,6 +57,14 @@ would add transport, routing and ownership without a demonstrated requirement.
 
 ## Acceptance
 
+The October 22 artifact gate also requires rebuilding existing Go binaries with
+the pinned [Go 1.26.10 patch release](https://go.dev/doc/devel/release#go1.26.10)
+and updating Cube's image-installed
+[certifi to 2026.10.19](https://pypi.org/project/certifi/2026.10.19/).
+These dependency updates retain Cube's runtime and guest protocols. Browser/OS
+image layers are kept independent of the source-pinned envd binary, and APT build
+caches do not enter the guest image.
+
 - The guest's actual unprivileged Tool user can launch Chromium, operate a local
   page, capture Chinese text/screenshots and close the browser. Test a failed
   interaction and cancellation/process cleanup; no image-build success alone

@@ -17,7 +17,7 @@ COPY packages/web-ui/tsconfig.json packages/web-ui/tsconfig.json
 COPY packages/web-ui/vite.config.ts packages/web-ui/vite.config.ts
 RUN npm run build --workspace @pi-cloud/web-ui
 
-FROM golang:1.26.9-alpine3.23@sha256:96123126ac58e910f4dd3619a8901e2fb6d1ad84b59b1232cac7c9ea65a8f888 AS caddy-builder
+FROM golang:1.26.10-alpine3.23@sha256:107301490755aa2ea1b0b43788b6e62cff2faae45a538028b193becc06aaffba AS caddy-builder
 
 ARG PI_CLOUD_GOPROXY=https://goproxy.cn|https://proxy.golang.org|direct
 ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOPROXY=https://proxy.golang.org|direct

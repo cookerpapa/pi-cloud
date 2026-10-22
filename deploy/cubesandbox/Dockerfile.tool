@@ -1,7 +1,7 @@
 ARG CUBE_BASE_IMAGE=ghcr.io/tencentcloud/cubesandbox-base:2026.16@sha256:34ea312a63a5534e66ab17005c23d7fbaf33c38bccd5411ee402d901e63a3193
 ARG PYTHON_BASE_IMAGE=python:3.11.13-slim-bookworm@sha256:86adf8dbadc3d6e82ee5dd2c74bec2e1c2467cdad47886280501df722372d2e1
 ARG NODE_BASE_IMAGE=node:24.18.0-bullseye-slim@sha256:aca89821b1f09df223227ff2abe075fc3161f05604d3b61309f46820a5938020
-ARG GO_BASE_IMAGE=golang:1.26.9-alpine3.23@sha256:96123126ac58e910f4dd3619a8901e2fb6d1ad84b59b1232cac7c9ea65a8f888
+ARG GO_BASE_IMAGE=golang:1.26.10-alpine3.23@sha256:107301490755aa2ea1b0b43788b6e62cff2faae45a538028b193becc06aaffba
 ARG ENVD_COMMIT=6392356aaab9ed07e2f7df0c84c8d9ad8bac1327
 
 FROM ${GO_BASE_IMAGE} AS envd-builder
@@ -85,11 +85,6 @@ ARG DEBIAN_FRONTEND=noninteractive
 # Self-hosters may select another signed repository mirror at build time.
 ARG PI_CLOUD_UBUNTU_MIRROR=https://mirrors.aliyun.com/ubuntu
 
-# Tencent's pinned 2026.16 base ships envd 0.5.13 built with an obsolete Go
-# toolchain. Preserve Cube's supported image/entrypoint contract while replacing
-# only that upstream binary with a fixed, source-pinned build.
-COPY --from=envd-builder /out/envd /usr/bin/envd
-
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     set -eu; \
@@ -130,6 +125,8 @@ RUN ln -sf /usr/local/bin/python3 /usr/bin/python3 \
 COPY deploy/cubesandbox/browser/package.json deploy/cubesandbox/browser/package-lock.json /opt/pi-cloud/browser/
 COPY deploy/cubesandbox/browser/index.mjs deploy/cubesandbox/browser/check.mjs /opt/pi-cloud/browser/
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     npm ci --prefix /opt/pi-cloud/browser --ignore-scripts --no-audit --no-fund \
     && PLAYWRIGHT_BROWSERS_PATH=/opt/pi-cloud/browser/browsers \
        node /opt/pi-cloud/browser/node_modules/playwright/cli.js install --with-deps chromium \
@@ -185,6 +182,9 @@ RUN sh scripts/retry-npm-command.sh install --global npm@12.0.2 \
     && node -e 'if (require("/usr/local/lib/node_modules/npm/node_modules/tar/package.json").version !== "7.5.21") process.exit(1)' \
     && npm cache clean --force
 
+# Keep Go-only rebuilds independent of the browser/OS dependency layers.
+# Retain Cube's entrypoint contract with the fixed source-pinned envd binary.
+COPY --from=envd-builder /out/envd /usr/bin/envd
 COPY --from=tool-worker-builder /out/envd-tool-exec.mjs /opt/pi-cloud/bin/envd-tool-exec.mjs
 COPY --from=tool-worker-builder /out/cube-tool-scope.mjs /opt/pi-cloud/bin/cube-tool-scope.mjs
 COPY --from=tool-worker-builder /out/envd-guest-control.mjs /opt/pi-cloud/bin/envd-guest-control.mjs
