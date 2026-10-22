@@ -50,6 +50,13 @@ export function configureBuildProxy() {
   Object.assign(process.env, proxyEnvironment(process.env, configuredUpstreamProxy()));
 }
 
+export function proxyDownloadNetwork(proxy, override) {
+  if (override !== undefined) return override;
+  if (proxy === undefined || proxy === "") return "bridge";
+  const host = new URL(proxy).hostname;
+  return ["127.0.0.1", "localhost", "[::1]"].includes(host) ? "host" : "bridge";
+}
+
 export function replaceEnvironmentValue(source, key, value) {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(key) || /[\r\n]/u.test(value))
     throw new Error("Invalid environment assignment");

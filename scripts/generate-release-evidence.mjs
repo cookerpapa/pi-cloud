@@ -1,4 +1,4 @@
-import { configureBuildProxy } from "./lib/upstream-proxy.mjs";
+import { configureBuildProxy, proxyDownloadNetwork } from "./lib/upstream-proxy.mjs";
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -257,7 +257,10 @@ try {
     cacheDirectory: options.cacheDirectory,
     inputDirectory: temporaryDirectory,
     outputDirectory: stageDirectory,
-    network: process.env.PI_CLOUD_TRIVY_DOWNLOAD_NETWORK ?? "bridge",
+    network: proxyDownloadNetwork(
+      process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY,
+      process.env.PI_CLOUD_TRIVY_DOWNLOAD_NETWORK,
+    ),
     // OCI download keeps temporary archive copies; the current compressed DB
     // exceeds 128 MiB. Image scans below retain their separate 256 MiB bound.
     temporaryMiB: 512,

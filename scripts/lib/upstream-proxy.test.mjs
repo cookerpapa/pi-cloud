@@ -10,7 +10,16 @@ import {
   dockerProxyDropIn,
   k3sProxyEnvironment,
   proxyVariables,
+  proxyDownloadNetwork,
 } from "./upstream-proxy.mjs";
+
+it("reaches host-local proxies from the database-download container and retains explicit network choices", () => {
+  expect(proxyDownloadNetwork("http://127.0.0.1:12450")).toBe("host");
+  expect(proxyDownloadNetwork("http://[::1]:12450")).toBe("host");
+  expect(proxyDownloadNetwork("http://proxy.example:12450")).toBe("bridge");
+  expect(proxyDownloadNetwork(undefined)).toBe("bridge");
+  expect(proxyDownloadNetwork("http://127.0.0.1:12450", "custom-network")).toBe("custom-network");
+});
 
 it("updates K3s and containerd proxy assignments while preserving tokens and bypasses", () => {
   const source =
