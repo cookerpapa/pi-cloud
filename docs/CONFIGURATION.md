@@ -181,12 +181,30 @@ addresses from Pod ports. Optional management links do not enable their services
 
 ### Provider egress
 
-`PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY` is the persisted HTTP(S) proxy for model
-egress in the one-host deployment; empty means direct egress. Set it in the
-private `.env` and recreate `provider-host-egress-relay`. The installer captures
-the explicit value (or the installer's `HTTPS_PROXY`) on a fresh installation.
-Later service launches do not inherit a different shell's generic proxy setting.
-This is distinct from Cube guest egress and from build-time HTTP(S) proxies.
+For a one-host deployment with a shared upstream proxy, set it once with:
+
+```sh
+npm run production:proxy -- http://127.0.0.1:12450
+```
+
+The private `deploy/production/runtime/upstream-proxy` file records the address.
+Omit the argument to reapply it. The command synchronizes Docker/K3s, the model host
+Relay through Helm, and Cube's existing PG settings. Cube's enabled/disabled
+choice is retained. Docker requires host administration and idle build/test
+containers. K3s uses a normal service restart when its environment changes;
+its workload containers keep running. On WSL it uses
+the distribution's normal root invocation; other Linux hosts use `sudo -n`.
+Partial failures identify the unfinished phase; rerun the same command to finish.
+
+Build/release entry points automatically load this address. For an existing host
+Bash session, use `source scripts/use-upstream-proxy.sh`; this helper can also be
+sourced from the user's shell profile. Proxy aliases are refreshed together.
+
+`PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY` in the private `.env` remains the provider
+deployment input; empty means direct egress. The installer captures it (or the
+installer's `HTTPS_PROXY`) on a fresh installation. Separate provider/Cube proxy
+configuration remains supported; the shared command is an explicit synchronization
+operation under [ADR-0271](adr/0271-local-upstream-proxy-configuration.md).
 Do not commit proxy credentials or expose a local proxy publicly.
 
 ### Worker, Subagent and Sandbox capacity

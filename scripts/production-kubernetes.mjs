@@ -1,3 +1,4 @@
+import { configureBuildProxy } from "./lib/upstream-proxy.mjs";
 import { createHash } from "node:crypto";
 import { waitForReadyCubelet } from "./lib/cube-execution-deployment.mjs";
 import {
@@ -28,6 +29,8 @@ import { selfHostedValues } from "./lib/self-hosted-values.mjs";
 import { ensureWslWebForwarder, removeWslWebForwarder } from "./lib/wsl-web-forwarder.mjs";
 import { validateProductionRuntimeEnvironment } from "./production-runtime-policy.mjs";
 import { guestBuildIdentity, completionBuildIdentity } from "./lib/guest-build-identity.mjs";
+
+configureBuildProxy();
 
 const [action, ...args] = process.argv.slice(2);
 const environment = { ...runtimeEnvironment(), ...process.env };

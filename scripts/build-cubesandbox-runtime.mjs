@@ -1,3 +1,4 @@
+import { configureBuildProxy } from "./lib/upstream-proxy.mjs";
 import { completionBuildIdentity } from "./lib/guest-build-identity.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -5,6 +6,8 @@ import { mkdtemp, readFile, writeFile, rm, copyFile, access } from "node:fs/prom
 import { tmpdir, homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+configureBuildProxy();
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const manifest = JSON.parse(

@@ -1,3 +1,4 @@
+import { configureBuildProxy } from "./lib/upstream-proxy.mjs";
 import { changedVisibleModels, probeCatalogModel } from "./lib/model-catalog-probe.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -26,6 +27,8 @@ import {
   catalogSeed,
 } from "./lib/component-release.mjs";
 import { serializeRelease } from "./lib/release-lock.mjs";
+
+configureBuildProxy();
 
 const [action, scopeOrPath, candidatePath, input] = process.argv.slice(2);
 if (action === "--help") {

@@ -135,4 +135,35 @@ describe.sequential("hot platform runtime settings", () => {
     await service.internal("t".repeat(48));
     expect(observations.at(-1)).toEqual({ revision: 2, status: "disabled" });
   });
+
+  it("synchronizes an operator address without changing the current egress toggle or repeating its revision", async () => {
+    const operator = await createPrivateTenant(database, {
+      slug: "shared-proxy-operator",
+      ownerDisplayName: "Proxy operator",
+    });
+    const identity = ownerIdentity(operator);
+    const service = new PlatformRuntimeSettingsService({
+      database,
+      platformOperatorTenantId: operator.tenantId,
+    });
+    // A different administrator has just disabled egress. The address operation
+    // must preserve the value it reads under the existing row lock.
+    await database
+      .updateTable("platform_runtime_settings")
+      .set({ cube_proxy_enabled: false })
+      .where("settings_key", "=", "default")
+      .execute();
+    const first = await service.replaceUpstreamProxy(identity, "http://127.0.0.1:12450");
+    expect(first.enabled).toBe(false);
+    expect(first.proxyUrl).toBe("http://127.0.0.1:12450");
+    expect(await service.replaceUpstreamProxy(identity, "http://127.0.0.1:12450/")).toEqual(first);
+    await database
+      .updateTable("platform_runtime_settings")
+      .set({ cube_proxy_enabled: true })
+      .where("settings_key", "=", "default")
+      .execute();
+    expect(
+      (await service.replaceUpstreamProxy(identity, "http://proxy.example:12450")).enabled,
+    ).toBe(true);
+  });
 });

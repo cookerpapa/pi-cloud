@@ -118,6 +118,22 @@ export class PlatformRuntimeSettingsService {
     identity: TenantRequestIdentity,
     request: ReplaceCubeProxyConfigurationRequest,
   ): Promise<CubeProxyConfigurationResource> {
+    return this.#replace(identity, request);
+  }
+
+  /** Operator synchronization changes the address while preserving the locked
+   * current enabled flag, including a concurrent administrator toggle. */
+  async replaceUpstreamProxy(
+    identity: TenantRequestIdentity,
+    proxyUrl: string,
+  ): Promise<CubeProxyConfigurationResource> {
+    return this.#replace(identity, { proxyUrl });
+  }
+
+  async #replace(
+    identity: TenantRequestIdentity,
+    request: { enabled?: boolean; proxyUrl?: string },
+  ): Promise<CubeProxyConfigurationResource> {
     this.#requirePlatformOperator(identity);
     const now = validClock(this.#clock);
     const resource = await this.#database.transaction().execute(async (transaction) => {
@@ -137,7 +153,10 @@ export class PlatformRuntimeSettingsService {
         request.proxyUrl === undefined
           ? current.cube_proxy_url
           : normalizeCubeUpstreamProxyUrl(request.proxyUrl);
-      if (request.enabled && proxyUrl === null) {
+      const enabled = request.enabled ?? current.cube_proxy_enabled;
+      if (request.enabled === undefined && proxyUrl === current.cube_proxy_url)
+        return this.#resource(current);
+      if (enabled && proxyUrl === null) {
         throw new PlatformRuntimeSettingsError(
           "cube_proxy_configuration_invalid",
           "Enable CubeSandbox egress only after configuring its upstream proxy",
@@ -154,7 +173,7 @@ export class PlatformRuntimeSettingsService {
       await transaction
         .updateTable("platform_runtime_settings")
         .set({
-          cube_proxy_enabled: request.enabled,
+          cube_proxy_enabled: enabled,
           cube_proxy_url: proxyUrl,
           revision: nextRevision,
           updated_by_tenant_id: identity.tenantId,
@@ -171,14 +190,14 @@ export class PlatformRuntimeSettingsService {
           revision: nextRevision,
           actor_tenant_id: identity.tenantId,
           actor_user_id: identity.userId,
-          cube_proxy_enabled: request.enabled,
+          cube_proxy_enabled: enabled,
           cube_proxy_url_sha256:
             proxyUrl === null ? null : createHash("sha256").update(proxyUrl).digest("hex"),
           created_at: now,
         })
         .executeTakeFirstOrThrow();
       return {
-        enabled: request.enabled,
+        enabled,
         configured: proxyUrl !== null,
         ...(proxyUrl === null ? {} : { proxyUrl }),
         revision: nextRevision,

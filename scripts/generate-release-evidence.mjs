@@ -1,3 +1,4 @@
+import { configureBuildProxy } from "./lib/upstream-proxy.mjs";
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -17,6 +18,8 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { guestBuildIdentity } from "./lib/guest-build-identity.mjs";
 import { inspectReleaseImage } from "./lib/release-image-evidence.mjs";
+
+configureBuildProxy();
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const TRIVY_IMAGE =

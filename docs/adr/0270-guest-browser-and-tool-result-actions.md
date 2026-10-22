@@ -3,6 +3,12 @@
 Status: accepted; implementation and live delivery in progress.
 Date: 2026-10-22.
 
+Owner amendment: the owner explicitly authorized deleting the current development
+machine and its entire Workspace before this release. This supersedes the initial
+Workspace preservation requirement below; retain conversations, accounts, provider
+and model configuration, and credentials. A later proxy-port change is handled
+under [ADR-0271](0271-local-upstream-proxy-configuration.md) before continuing delivery.
+
 ## Decision
 
 The owner approved a preinstalled browser for ordinary frontend work after a

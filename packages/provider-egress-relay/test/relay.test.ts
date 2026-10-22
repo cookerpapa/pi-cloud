@@ -196,7 +196,7 @@ describe("provider egress relay", () => {
         PI_CLOUD_PROVIDER_RELAY_MODE: "host",
         PI_CLOUD_PROVIDER_RELAY_SOCKET: "/tmp/relay.sock",
         PI_CLOUD_PROVIDER_RELAY_ALLOWED_HOSTS: "api.deepseek.com",
-        PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY: "http://127.0.0.1:10808",
+        PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY: "http://127.0.0.1:12450",
       }),
     ).toMatchObject({
       mode: "host",

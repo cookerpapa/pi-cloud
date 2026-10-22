@@ -1,3 +1,4 @@
+import { configureBuildProxy } from "./lib/upstream-proxy.mjs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { guestBuildIdentity } from "./lib/guest-build-identity.mjs";
@@ -7,6 +8,8 @@ import { runtimeDirectory } from "./lib/production-kubernetes.mjs";
 import { readFile, mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+
+configureBuildProxy();
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const capture = (args) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();

@@ -1,5 +1,11 @@
 # Documentation map
 
+[ADR-0271](adr/0271-local-upstream-proxy-configuration.md) and the
+[proxy command](CONFIGURATION.md#provider-egress) provide one local upstream
+address for host builds, Docker, the model Relay and Cube egress. The October 22
+switch to port 12450 is applied; repeated application preserves process/Pod
+identities and the PG revision. Browser delivery continues below.
+
 [ADR-0270](adr/0270-guest-browser-and-tool-result-actions.md) adds a preinstalled
 guest Playwright/Chromium stack and consistent live/cold preview actions. Source
 and artifact verification are in progress; it introduces no browser service or

@@ -33,6 +33,8 @@ see [configuration](docs/CONFIGURATION.md) and [uploads](docs/CHAT_ATTACHMENTS.m
 Operators can use [independent provider/catalog releases](docs/COMPONENT_RELEASE.md),
 the [matched procedure](docs/MATCHED_RELEASE.md) for application/protocol changes,
 and optional [conversation/image recovery](docs/ASSET_RECOVERY.md).
+For a shared local proxy, `npm run production:proxy -- http://127.0.0.1:12450`
+synchronizes host Docker, model and Cube egress settings; builds use the same address.
 The [private pilot criteria](docs/PRIVATE_PILOT.md) distinguish readiness checks
 from actual-use and fleet-capacity evidence; the pilot has not started.
 

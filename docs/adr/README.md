@@ -1,5 +1,8 @@
 # Current architecture decisions
 
+[ADR-0271](0271-local-upstream-proxy-configuration.md) synchronizes the local
+upstream address through one operator command while retaining PG and Helm ownership.
+
 [ADR-0270](0270-guest-browser-and-tool-result-actions.md) keeps browser automation
 inside Cube using Bash/Read, and carries bounded Tool-result metadata through
 same-commit display references. Preview links stay visible when invocation groups

@@ -60,6 +60,7 @@
     "eval:kafka:retention": "node --import tsx scripts/run-native-retention-check.mjs",
     "production:init": "node scripts/init-production.mjs",
     "production:config": "node scripts/production-kubernetes.mjs config",
+    "production:proxy": "node --import tsx scripts/set-upstream-proxy.mjs",
     "production:build": "node scripts/production-kubernetes.mjs build",
     "production:up": "node scripts/production-kubernetes.mjs deploy",
     "production:deploy": "node scripts/run-production-deploy.mjs",

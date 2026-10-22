@@ -1,3 +1,4 @@
+import { configureBuildProxy } from "./lib/upstream-proxy.mjs";
 import { serializeRelease } from "./lib/release-lock.mjs";
 import { deploymentFromEvidence, digest } from "./lib/component-release.mjs";
 import { parseModelCatalogConfiguration } from "../packages/protocol/src/model-catalog.ts";
@@ -18,6 +19,8 @@ import {
 } from "./lib/production-kubernetes.mjs";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { sql } from "kysely";
+
+configureBuildProxy();
 
 const [action, path, version] = process.argv.slice(2);
 if (action === "--help") {

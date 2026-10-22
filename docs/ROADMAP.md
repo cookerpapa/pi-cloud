@@ -11,8 +11,10 @@ Keep browser execution in Cube and reuse existing native Bash/Read tools.
       actions in live/cold collapsed turns and return the actual link to the model.
 - [ ] Verify image/native-Tool browser interaction, screenshots and cancellation,
       then real Luna vision plus live/cold application navigation.
-- [ ] Complete matched delivery with explicit preservation of the current user
-      Workspace, retained accounts/configuration and confirmed fixture cleanup.
+- [ ] Complete matched delivery with the owner's subsequently authorized deletion
+      of the current machine/Workspace, retained conversations/accounts/configuration
+      and confirmed fixture cleanup. Restore shared proxy connectivity under
+      [ADR-0271](adr/0271-local-upstream-proxy-configuration.md) first.
 
 [ADR-0267](adr/0267-scoped-releases-and-model-catalog.md) is deployed: runtime
 catalog configuration, frozen Run snapshots, per-component provenance and scoped

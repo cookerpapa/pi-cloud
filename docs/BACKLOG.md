@@ -30,6 +30,16 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Agent browser capability and application preview delivery
 
+The owner subsequently authorized releasing the current development machine and
+deleting its entire Workspace for this upgrade; preserve conversations, accounts,
+provider/model settings and credentials. After the upstream proxy software changed,
+[ADR-0271](adr/0271-local-upstream-proxy-configuration.md) adds a shared operator
+command before resuming the browser release.
+
+- [x] Synchronize active host/model/Cube proxy settings to port 12450; verify
+      repeat application, retained Worker/Relay identities and actual routes.
+      The browser matched release remains in progress below.
+
 The owner approved [ADR-0270](adr/0270-guest-browser-and-tool-result-actions.md).
 Source implementation adds pinned Playwright/Chromium and CJK fonts in the guest,
 bounded same-commit Tool metadata, visible collapsed-group preview actions and
