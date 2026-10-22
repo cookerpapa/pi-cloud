@@ -1,0 +1,9 @@
+{
+  "name": "pi-cloud-guest-browser",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "playwright": "1.64.1"
+  }
+}

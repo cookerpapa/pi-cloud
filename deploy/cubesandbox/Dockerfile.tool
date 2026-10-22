@@ -124,6 +124,19 @@ COPY --from=node-runtime /usr/local /usr/local
 RUN ln -sf /usr/local/bin/python3 /usr/bin/python3 \
     && ln -sf /usr/local/bin/node /usr/bin/node
 
+# One version-matched browser stack for existing Bash/Read tools. Project npm
+# dependencies stay separate; no browser process or remote browser service starts
+# with the VM. Playwright's pinned installer owns browser revisions and OS deps.
+COPY deploy/cubesandbox/browser/package.json deploy/cubesandbox/browser/package-lock.json /opt/pi-cloud/browser/
+COPY deploy/cubesandbox/browser/index.mjs deploy/cubesandbox/browser/check.mjs /opt/pi-cloud/browser/
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+    npm ci --prefix /opt/pi-cloud/browser --ignore-scripts --no-audit --no-fund \
+    && PLAYWRIGHT_BROWSERS_PATH=/opt/pi-cloud/browser/browsers \
+       node /opt/pi-cloud/browser/node_modules/playwright/cli.js install --with-deps chromium \
+    && apt-get install --yes --no-install-recommends fonts-noto-cjk \
+    && fc-cache -f \
+    && chmod -R a+rX /opt/pi-cloud/browser
+
 RUN if ! getent group 1000 >/dev/null; then groupadd --gid 1000 pi-cloud; fi \
     && if ! getent passwd 1000 >/dev/null; then \
          useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash pi-cloud; \
@@ -197,6 +210,8 @@ ENV NODE_ENV=production \
     HOME=/tmp/pi-cloud-tool-home
 
 WORKDIR /workspace
+RUN runuser -u "$(getent passwd 1000 | cut -d: -f1)" -- \
+      node /opt/pi-cloud/browser/check.mjs
 # Reuse Cube's standard guest contract. cube-agent reaches the inherited
 # entrypoint over vsock, which starts the credential-free envd data plane on
 # 49983 for lifecycle and interactive access. Cube's native executor launches

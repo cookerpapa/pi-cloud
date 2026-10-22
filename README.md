@@ -3,6 +3,12 @@
 A self-hosted, multi-tenant coding agent. Pi Durable 1.0.0 runs the native Harness in a shared
 Worker pool; file and shell tools execute in isolated CubeSandbox KVM guests.
 
+[Guest browser and preview delivery](docs/adr/0270-guest-browser-and-tool-result-actions.md)
+is being delivered: the standard image bundles pinned Playwright/Chromium and CJK
+fonts for Bash-driven UI checks and native screenshot Read. Successful preview
+actions retain their link metadata and remain visible outside collapsed Tool groups.
+The serving release below remains current until matched acceptance completes.
+
 - Multi-round chat, model switching, hosted search and Subagents.
   New conversations default to GPT-6.1 Sol; GPT-6 Luna, GPT-6 Astra and DeepSeek
   V4.1 Flash remain selectable. The reviewed catalog and gateway metadata must

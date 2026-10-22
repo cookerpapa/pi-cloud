@@ -1,6 +1,6 @@
 import { UploadCards } from "./UploadCards.tsx";
 import type { PiCloudApi } from "./api.ts";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { deriveConversationPresentationRows } from "./conversation-presentation.ts";
 import { Markdown } from "./Markdown.tsx";
 import type { TranscriptItem, TurnView } from "./session-view.ts";
@@ -12,6 +12,7 @@ import type { ToolProgressStore } from "./tool-progress-store.ts";
 import { RunStatus } from "./RunStatus.tsx";
 import type { RunObservationStore } from "./run-observation-store.ts";
 import { ChildAgentProgress, ChildAgentProgressContext } from "./ChildAgentProgress.tsx";
+import { ApplicationPreviewLink } from "./ApplicationPreviewLink.tsx";
 import type { DelegatedSessionSummaryResource } from "@pi-cloud/protocol";
 
 const MAXIMUM_PROGRESSIVE_CHARACTERS_PER_FRAME = 32;
@@ -204,9 +205,16 @@ function ToolActivityGroup({ items }: { items: readonly ToolTranscriptItem[] }) 
         <strong>{t("turn.activitySteps", { count: items.length })}</strong>
         <span title={summary}>{summary}</span>
       </button>
-      {!expanded
-        ? items.map((item) => <ChildAgentProgress toolCallId={item.toolCallId} key={item.key} />)
-        : null}
+      {!expanded ? (
+        <div className="product-activity-results">
+          {items.map((item) => (
+            <Fragment key={item.key}>
+              <ApplicationPreviewLink item={item} />
+              <ChildAgentProgress toolCallId={item.toolCallId} />
+            </Fragment>
+          ))}
+        </div>
+      ) : null}
       {expanded ? (
         <div className="product-activity-group-items">
           {items.map((item) => (

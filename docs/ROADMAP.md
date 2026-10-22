@@ -1,5 +1,19 @@
 # Implementation roadmap
 
+## Guest browser and application preview delivery
+
+The owner approved [ADR-0270](adr/0270-guest-browser-and-tool-result-actions.md).
+Keep browser execution in Cube and reuse existing native Bash/Read tools.
+
+- [x] Pin Playwright/Chromium, install browser libraries/CJK fonts and describe
+      the stable module path to the Agent without project dependency coupling.
+- [x] Retain bounded live Tool metadata by same-commit reference; render preview
+      actions in live/cold collapsed turns and return the actual link to the model.
+- [ ] Verify image/native-Tool browser interaction, screenshots and cancellation,
+      then real Luna vision plus live/cold application navigation.
+- [ ] Complete matched delivery with explicit preservation of the current user
+      Workspace, retained accounts/configuration and confirmed fixture cleanup.
+
 [ADR-0267](adr/0267-scoped-releases-and-model-catalog.md) is deployed: runtime
 catalog configuration, frozen Run snapshots, per-component provenance and scoped
 provider/catalog publication. [Initial and independent release acceptance](reports/component-release-20261021.md)

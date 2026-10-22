@@ -47,6 +47,14 @@ values or replace the serving catalog. There is no mixed-version fallback.
 
 ## Drain and apply
 
+For ADR-0270, preparation also verifies unprivileged guest Chromium interaction,
+native screenshot Read and browser timeout cleanup. After matched cutover, run
+`PI_CLOUD_LIVE_RELEASE_CHECK=1 PI_CLOUD_LIVE_GUEST_BROWSER=1 node --import tsx scripts/run-live-release-acceptance.mjs`.
+The owned fixture checks actual guest clicks/canvas, screenshot vision through
+the existing attachment path, a live preview link before reload, the collapsed
+cold-history link and navigation to the application. This does not authorize
+deleting a user's development Workspace to pass the no-VM release requirement.
+
 Announce maintenance and stop ordinary submissions. Finish/cancel Runs through
 their normal API, allow seals to project, close terminals and release development
 machines through their existing lifecycle controls. Let elastic warm VMs expire

@@ -110,7 +110,7 @@ it("refuses to display execution before a complete admitted native intent", () =
   ).toThrow("execution intent");
 });
 
-function resultFixture(text: string, isError = false) {
+function resultFixture(text: string, isError = false, details?: unknown) {
   const entry = {
     type: "entry",
     value: {
@@ -123,6 +123,7 @@ function resultFixture(text: string, isError = false) {
           role: "toolResult",
           toolCallId: "provider-reused",
           toolName: "bash",
+          ...(details === undefined ? {} : { details }),
           isError,
           timestamp: 1,
           content: [
@@ -151,7 +152,11 @@ it("uses the canonical after-hook result and image metadata without copying body
   expect(JSON.stringify(descriptions)).not.toContain("NOT_IN_DISPLAY");
   expect(resolveDurableDisplay(c, descriptions[0]!, () => undefined)).toMatchObject({
     type: "tool.completed",
-    payload: { toolCallId: "task:4", outcome: "failed", output: `${text}\n[Image: image/png]` },
+    payload: {
+      toolCallId: "task:4",
+      outcome: "failed",
+      output: { content: [{ type: "text", text: `${text}\n[Image: image/png]` }] },
+    },
   });
   const bounded = prepareToolPresentation(c, [doc], factory(), {
     ...options,
@@ -159,9 +164,16 @@ it("uses the canonical after-hook result and image metadata without copying body
   });
   expect(resolveDurableDisplay(c, bounded[0]!, () => undefined)).toMatchObject({
     payload: {
-      output:
-        Buffer.from(`${text}\n[Image: image/png]`).subarray(0, 7).toString("utf8") +
-        "\n[Display truncated]",
+      output: {
+        content: [
+          {
+            type: "text",
+            text:
+              Buffer.from(`${text}\n[Image: image/png]`).subarray(0, 7).toString("utf8") +
+              "\n[Display truncated]",
+          },
+        ],
+      },
     },
   });
 });
@@ -183,7 +195,7 @@ it("reports a vanished orphan as failed and gives unoffered results an Entry ide
     payload: {
       toolCallId: "task:4",
       outcome: "failed",
-      output: "Tool task ended without a result",
+      output: { content: [{ type: "text", text: "Tool task ended without a result" }] },
     },
   });
   const { c } = resultFixture("not offered", true);
@@ -194,6 +206,28 @@ it("reports a vanished orphan as failed and gives unoffered results an Entry ide
   Object.assign(c.writes[0]!.value as object, { byTaskId: 90 });
   const unoffered = prepareToolPresentation(c, [doc], factory(), options);
   expect(unoffered[0]?.event.payload.toolCallId).toBe("entry:5");
+});
+
+it("references canonical metadata for any Tool without embedding a second result body", () => {
+  const details = { port: 5173, previewPath: "/v1/conversations/fixture/preview/5173/" };
+  const { c, doc } = resultFixture("published", false, details);
+  const descriptions = prepareToolPresentation(c, [doc], factory(), options);
+  expect(JSON.stringify(descriptions)).not.toContain(details.previewPath);
+  expect(resolveDurableDisplay(c, descriptions[0]!, () => undefined)).toMatchObject({
+    payload: {
+      output: { details, content: [{ type: "text", text: "published\n[Image: image/png]" }] },
+    },
+  });
+  const oversized = prepareToolPresentation(c, [doc], factory(), {
+    ...options,
+    maximumOutputBytes: 32,
+  });
+  const event = resolveDurableDisplay(c, oversized[0]!, () => undefined);
+  expect(JSON.stringify(event)).not.toContain(details.previewPath);
+  expect(JSON.stringify(event)).toContain("display metadata omitted");
+  const entry = c.writes[0]!.value as { model: { details?: unknown }[] };
+  delete entry.model[0]!.details;
+  expect(() => resolveDurableDisplay(c, descriptions[0]!, () => undefined)).toThrow("source path");
 });
 
 it("covers a canonical Tool result before a new partial in the same native commit", () => {

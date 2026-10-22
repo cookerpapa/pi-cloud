@@ -4,6 +4,7 @@ import { useI18n, type Translate } from "./i18n.tsx";
 import type { TranscriptItem } from "./session-view.ts";
 import { LiveToolProgress } from "./tool-progress.tsx";
 import { ChildAgentProgress } from "./ChildAgentProgress.tsx";
+import { ApplicationPreviewLink, applicationPreview } from "./ApplicationPreviewLink.tsx";
 
 export type ToolTranscriptItem = Extract<TranscriptItem, { kind: "tool" }>;
 
@@ -301,12 +302,8 @@ const previewRenderer: ToolRenderer = {
       typeof port === "number" && Number.isInteger(port) ? `:${String(port)}` : null,
     );
   },
-  body(context, t) {
-    const output = objectValue(context.rawOutput);
-    const details = objectValue(output?.details);
-    const previewPath = stringValue(details?.previewPath);
-    const port = details?.port;
-    if (previewPath === null || typeof port !== "number" || !Number.isInteger(port)) {
+  body(context) {
+    if (applicationPreview(context.item) === undefined) {
       return context.output.length === 0 ? null : (
         <ExpandableToolText
           className="product-tool-output"
@@ -315,12 +312,7 @@ const previewRenderer: ToolRenderer = {
         />
       );
     }
-    return (
-      <a className="product-preview-tool-link" href={previewPath} rel="noreferrer" target="_blank">
-        <span aria-hidden="true">↗</span>
-        {t("turn.previewOpen", { port })}
-      </a>
-    );
+    return <ApplicationPreviewLink item={context.item} />;
   },
 };
 

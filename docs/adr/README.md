@@ -1,5 +1,10 @@
 # Current architecture decisions
 
+[ADR-0270](0270-guest-browser-and-tool-result-actions.md) keeps browser automation
+inside Cube using Bash/Read, and carries bounded Tool-result metadata through
+same-commit display references. Preview links stay visible when invocation groups
+are collapsed. Implementation and matched delivery are in progress.
+
 [ADR-0269](0269-execution-owned-control-tool-catalog.md) uses execution-owned
 ordinary tool definitions and Pi's Registry/selection mechanisms for changes
 inside a running Agent loop. It is deployed in `runtime-capabilities-5d39828d`.

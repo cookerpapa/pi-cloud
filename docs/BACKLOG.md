@@ -30,33 +30,44 @@ VM records. The bounded release-time cleanup budget remains for unavailable node
 
 ## Agent browser capability and application preview delivery
 
+The owner approved [ADR-0270](adr/0270-guest-browser-and-tool-result-actions.md).
+Source implementation adds pinned Playwright/Chromium and CJK fonts in the guest,
+bounded same-commit Tool metadata, visible collapsed-group preview actions and
+model-visible authenticated paths. Focused live/cold rendering and native tests
+pass; image, real Cube/model acceptance and matched delivery remain in progress.
+
 The October 22 read-only investigation confirms that the guest image does not
 provision a browser/automation stack. A live Agent's executable/package checks
 found none; its reported syntax, logic and HTTP checks therefore do not establish
 actual UI interaction. The published application still returns HTTP 200 through
 the maintained preview connection. No user Workspace or application was changed.
 
-- [ ] Decide the maintained guest browser/automation capability and its pinned
+- [x] Decide the maintained guest browser/automation capability and its pinned
       image dependencies, so front-end work can obtain real interaction and
       screenshot evidence inside the Tool Sandbox. Host-side browser acceptance
       does not mean a guest browser exists. Keep execution in Cube and use native
       file/image tools; no separate browser service is required by this finding.
-- [ ] Preserve structured native Tool-result display metadata on the live path.
-      `prepareToolPresentation`/`resolveDurableDisplay` currently emit only output
+- [x] Preserve structured native Tool-result display metadata on the live path.
+      The old `prepareToolPresentation`/`resolveDurableDisplay` emitted only output
       text, dropping `details.previewPath`. Canonical history retains the details,
       so refresh and live delivery disagree. Use the existing commit-reference
       mechanism and PiCloud-owned output shape; do not duplicate native history
       or add a preview-only decoder workaround. Cover live and cold render paths.
-- [ ] Keep successful application links visible independently of collapsed Tool
+- [x] Keep successful application links visible independently of collapsed Tool
       groups. Real conversation-data rendering produces no preview link in the
       default collapsed Turn, one from its expanded canonical Tool, and none
       from the live text-only Tool. Preserve compact invocation details while
       exposing the result action, and test this through the normal conversation
       view rather than only rendering an isolated Tool card.
-- [ ] Return the actual platform preview path in useful Tool-result text as well
+- [x] Return the actual platform preview path in useful Tool-result text as well
       as display metadata; do not tell the model that a link was already rendered
       when the executor can only confirm publication. Verify any resulting link
       against the existing authenticated preview route, without inventing URLs.
+- [ ] Complete browser image/real native-Tool interaction, screenshot/cancellation
+      checks and Luna live/cold preview navigation; deploy matched artifacts.
+      Preserve current user Workspace bytes. The current operator requires no VMs,
+      while releasing a dedicated machine also retires its Workspace; resolve
+      this disposition before destructive release rather than bypassing fencing.
 
 ## Ultra collaboration and child-task visibility
 

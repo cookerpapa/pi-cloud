@@ -1655,6 +1655,16 @@ body.product-panel-resizing {
   font-size: 12px;
   text-decoration: none;
 }
+.product-activity-results {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.product-activity-results:empty {
+  display: none;
+}
 
 .product-preview-tool-link:hover {
   border-color: rgba(95, 201, 154, 0.52);

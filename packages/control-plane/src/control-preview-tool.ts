@@ -7,7 +7,7 @@ import type { ControlToolCatalogDefinition } from "@pi-cloud/protocol";
 export const previewToolDefinition: ControlToolCatalogDefinition = {
   name: "preview",
   description:
-    "Publish a verified HTTP service already listening inside the current Sandbox as an authenticated PiCloud application link. This Tool does not start or restart the server.",
+    "Publish a verified HTTP service already listening inside the current Sandbox as an authenticated PiCloud application link. Include the returned application path as a Markdown link in your final answer. This Tool does not start or restart the server.",
   parameters: {
     type: "object",
     properties: {
@@ -70,6 +70,12 @@ export async function executePreviewTool(
         ],
       },
     };
+  const previewPath =
+    "/v1/conversations/" +
+    encodeURIComponent(command.scope.sessionId) +
+    "/preview/" +
+    input.port +
+    (input.path ?? "/");
   return {
     result: {
       content: [
@@ -78,19 +84,16 @@ export async function executePreviewTool(
           text:
             "PiCloud published the verified service on port " +
             input.port +
-            " as an authenticated Open application link. Refer to the rendered link instead of printing localhost or inventing a public URL.",
+            ".\nOpen application: " +
+            previewPath +
+            "\nUse this authenticated platform path as a Markdown link in your answer.",
         },
       ],
       details: {
         serviceId: service.id,
         port: input.port,
         protocol: "http",
-        previewPath:
-          "/v1/conversations/" +
-          encodeURIComponent(command.scope.sessionId) +
-          "/preview/" +
-          input.port +
-          (input.path ?? "/"),
+        previewPath,
       },
     },
   };

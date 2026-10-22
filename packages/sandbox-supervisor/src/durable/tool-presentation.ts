@@ -127,6 +127,15 @@ export function prepareToolPresentation(
         ? {
             kind: "parts",
             maximumBytes: options.maximumOutputBytes,
+            ...(result.details === undefined
+              ? {}
+              : {
+                  details: {
+                    kind: "write" as const,
+                    ordinal: source.ordinal,
+                    path: ["value", "model", modelIndex, "details"],
+                  },
+                }),
             parts: result.content.map((part, index) =>
               part.type === "text"
                 ? {

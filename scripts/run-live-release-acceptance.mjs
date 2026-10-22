@@ -25,6 +25,7 @@ import {
 import { resolve, dirname } from "node:path";
 import { serializeRelease } from "./lib/release-lock.mjs";
 import { runtimeCapabilityAcceptance } from "./lib/runtime-capability-acceptance.mjs";
+import { guestBrowserAcceptance } from "./lib/guest-browser-acceptance.mjs";
 if (process.env.PI_CLOUD_LIVE_RELEASE_CHECK !== "1")
   throw new Error(
     "Set PI_CLOUD_LIVE_RELEASE_CHECK=1 to authorize owned Cube/browser fixtures and GPT-6 Luna use",
@@ -368,6 +369,16 @@ try {
         report.runtimeCapabilities = value;
         await writeFile(output, JSON.stringify(report, null, 2), { mode: 0o600 });
       },
+    });
+  }
+  if (process.env.PI_CLOUD_LIVE_GUEST_BROWSER === "1") {
+    report.guestBrowser = await guestBrowserAcceptance({
+      api,
+      tenant,
+      session,
+      baseUrl,
+      completed,
+      progress,
     });
   }
   report.accepted = true;

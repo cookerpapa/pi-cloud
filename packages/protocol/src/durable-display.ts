@@ -51,6 +51,7 @@ export type DurableToolEndDescription = Readonly<{
           | { kind: "image"; mimeType: string }
         )[];
         maximumBytes: number;
+        details?: Readonly<{ kind: "write"; ordinal: number; path: readonly (string | number)[] }>;
       }>;
 }>;
 export type DurableDisplayDescription =
@@ -106,6 +107,7 @@ export function parseDurableDisplayDescription(value: unknown): DurableDisplayDe
           throw new Error("Invalid Tool image description");
       } else writeSource(part, true);
     }
+    if (output.details !== undefined) writeSource(output.details, false);
     return description;
   }
   throw new Error("Invalid native display description");
@@ -157,7 +159,25 @@ export function resolveDurableDisplay(
           bytes.subarray(0, tool.output.maximumBytes),
         ) + "\n[Display truncated]";
   }
-  return parsePiCloudEvent({ ...tool.event, payload: { ...tool.event.payload, output } });
+  let details: unknown;
+  if (tool.output.kind === "parts" && tool.output.details !== undefined) {
+    const selected = selectedValue(commit, tool.output.details);
+    const encoded = JSON.stringify(selected);
+    if (encoded === undefined) throw new Error("Tool display metadata is not JSON data");
+    if (new TextEncoder().encode(encoded).byteLength <= tool.output.maximumBytes)
+      details = selected;
+    else output += "\n[Tool display metadata omitted: size limit exceeded]";
+  }
+  return parsePiCloudEvent({
+    ...tool.event,
+    payload: {
+      ...tool.event.payload,
+      output: {
+        content: [{ type: "text", text: output }],
+        ...(details === undefined ? {} : { details }),
+      },
+    },
+  });
 }
 
 export function parseDurableTextDescription(value: unknown): DurableTextDescription {

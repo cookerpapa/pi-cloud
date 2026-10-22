@@ -1,0 +1,72 @@
+# ADR-0270: Guest browser capability and visible Tool-result actions
+
+Status: accepted; implementation and live delivery in progress.
+Date: 2026-10-22.
+
+## Decision
+
+The owner approved a preinstalled browser for ordinary frontend work after a
+live application had no guest browser and its successfully published preview
+was missing from the conversation. Keep browser execution in the existing Cube
+Tool Sandbox and retain Pi's public Tools/Storage boundaries.
+
+- Install pinned Playwright 1.64.1, its matching Chromium, required system
+  libraries and CJK fonts in the standard guest image. A separate locked package
+  under `/opt/pi-cloud/browser` keeps platform tooling independent of project
+  dependencies. Browser binaries are baked into the image; launch browsers only
+  for requested work and close them in `finally`. No resident browser service,
+  desktop stream, scheduler, Worker browser or additional broker is introduced.
+- Tell the Agent the stable module location and the existing Bash → Playwright
+  → screenshot file → native Read path. Files and browser processes stay in Cube;
+  the current image claim-check transport handles screenshot results. Pi core,
+  model tools and execution authority remain unchanged.
+- Extend the trusted native Tool display description with an optional reference
+  to the same committed result's `details`. Resolve a PiCloud-owned structured
+  `{content, details}` display output rather than throwing metadata away. Text
+  remains bounded and image pixels are not copied into display events. Bound
+  metadata too; oversized display metadata is omitted with an explicit notice.
+  Descriptions contain selectors, never another persisted result body. Canonical
+  history remains the native Tool result, already read in structured form.
+- Successful Preview actions remain visible outside collapsed invocation groups.
+  Expanded and standalone Tool cards reuse the same action renderer. Failure or
+  malformed result metadata does not create a successful action. Native child
+  progress and invocation disclosure remain independent.
+- The Preview Tool returns its real authenticated platform path both as text
+  and structured metadata. Its reply confirms publication, not that a particular
+  browser already rendered a button. The Agent can include that path in its final
+  answer; no guessed public URL or new preview state store is required.
+
+The display-description change and guest image require matched Worker/Projector/
+Web delivery. Preserve current user Workspace bytes, account/provider settings
+and credentials. Do not remove an active machine or bypass release fencing merely
+to satisfy a rollout gate; resolve the deployment's resource disposition explicitly
+after implementation/artifact preparation if the maintained procedure cannot
+preserve it.
+
+## Adopt-before-build evidence
+
+[Playwright browser installation](https://playwright.dev/docs/browsers) couples
+the library version to browser revisions and provides installation of system
+dependencies. Its [Docker guidance](https://playwright.dev/docs/docker) supplies
+the existing image-installation pattern. Pin the published
+[1.64.1 release](https://github.com/microsoft/playwright/releases/tag/v1.64.1)
+and npm lockfile, reusing its browser launcher/cleanup instead of implementing
+a browser runtime. Keep Cube's existing base/guest contract and install the
+required browser in that image; adopting an additional remote browser service
+would add transport, routing and ownership without a demonstrated requirement.
+
+## Acceptance
+
+- The guest's actual unprivileged Tool user can launch Chromium, operate a local
+  page, capture Chinese text/screenshots and close the browser. Test a failed
+  interaction and cancellation/process cleanup; no image-build success alone
+  establishes KVM/Tool usability.
+- A real Luna Run uses the preinstalled stack and reads a screenshot through
+  the existing attachment path. Native queue/Stop/recovery contracts remain.
+- Live Tool display retains bounded structured metadata without duplicating
+  committed bodies or image pixels. Missing/invalid references fail explicitly;
+  no preview-name special case reconstructs metadata that transport discarded.
+- Published preview paths match text/metadata, render during live streaming and
+  after refresh, and remain visible with multiple Tool steps collapsed.
+- Complete appropriate source/artifact/live gates and scoped fixture cleanup.
+  Existing user application files and account/configuration hashes are preserved.

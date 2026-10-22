@@ -249,7 +249,7 @@ try {
     activationId,
     toolRoot: "/workspace",
   };
-  const runTool = async (request) => {
+  const runTool = async (request, expectedError = false) => {
     const path = `/tmp/pi-cloud-envd-${randomUUID()}.json`;
     await writeEnvdFile(baseUrl, path, {
       toolWorkerProtocolVersion: 7,
@@ -287,8 +287,9 @@ try {
       "Tool result identity changed",
     );
     assert(
-      response.event?.type === "tool_execution_end" && !response.event.isError,
-      "Native Tool failed",
+      response.event?.type === "tool_execution_end" &&
+        Boolean(response.event.isError) === expectedError,
+      "Native Tool outcome did not match",
     );
     return response.event.result;
   };
@@ -307,6 +308,47 @@ try {
     "Native guest read did not resolve cwd-relative paths inside the isolated guest",
   );
 
+  const browser = await runTool(
+    operation("bash", {
+      command: "node /opt/pi-cloud/browser/check.mjs /workspace/browser-check.png",
+    }),
+  );
+  const browserEvidence = JSON.parse(browser.content.map((part) => part.text ?? "").join(""));
+  assert(browserEvidence.interaction && browserEvidence.canvas && browserEvidence.screenshot);
+  const screenshot = await runTool(operation("read", { path: "browser-check.png" }));
+  assert(
+    screenshot.content.some((part) => part.type === "image"),
+    "Read omitted the screenshot",
+  );
+
+  await runTool(
+    operation("write", {
+      path: "browser-timeout.mjs",
+      content: `import { chromium } from '/opt/pi-cloud/browser/index.mjs';
+const browser = await chromium.launch();
+await browser.newPage();
+console.log('BROWSER_RUNNING');
+setInterval(() => {}, 1000);
+`,
+    }),
+  );
+  const timedOut = await runTool(
+    {
+      ...operation("bash", { command: "node browser-timeout.mjs", timeout: 5 }),
+      timeoutMs: 5000,
+    },
+    true,
+  );
+  const timeoutText = timedOut.content.map((part) => part.text ?? "").join("");
+  assert(timeoutText.includes("BROWSER_RUNNING"), "Browser did not start before cancellation");
+  assert(timeoutText.includes("timed out"), "Native timeout did not settle the Tool");
+  await runTool(
+    operation("bash", {
+      command:
+        "if pgrep -af '^/opt/pi-cloud/browser/browsers/.*/(chrome|headless_shell|chrome-headless-shell)( |$)'; then exit 1; fi",
+    }),
+  );
+
   process.stdout.write(
     `${JSON.stringify({
       image,
@@ -322,6 +364,7 @@ try {
       nativeGuestPathSemanticsVerified: true,
       directoryControl: true,
       arbitraryPortPreview: true,
+      guestBrowser: { ...browserEvidence, nativeRead: true, timeoutCleanup: true },
     })}\n`,
   );
 } catch (error) {

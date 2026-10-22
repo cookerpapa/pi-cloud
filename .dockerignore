@@ -13,6 +13,10 @@
 !packages/web-ui/index.html
 !packages/web-ui/vite.config.ts
 !deploy/helm/pi-cloud-platform/files/model-catalog.json
+!deploy/cubesandbox/browser/package.json
+!deploy/cubesandbox/browser/package-lock.json
+!deploy/cubesandbox/browser/index.mjs
+!deploy/cubesandbox/browser/check.mjs
 !packages/sandbox-supervisor/test/fixtures/sample-java-repair/**
 
 # Local files can exist inside an otherwise allowed source directory.

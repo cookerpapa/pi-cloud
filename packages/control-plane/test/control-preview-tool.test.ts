@@ -163,6 +163,12 @@ describe("trusted Preview Tool", () => {
       );
     await expect(invoke({ port: 3000, path: "/game" })).resolves.toMatchObject({
       result: {
+        content: [
+          {
+            type: "text",
+            text: expect.stringContaining(`/v1/conversations/${sessionId}/preview/3000/game`),
+          },
+        ],
         details: { port: 3000, previewPath: `/v1/conversations/${sessionId}/preview/3000/game` },
       },
     });

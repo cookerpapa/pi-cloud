@@ -1,5 +1,10 @@
 # Documentation map
 
+[ADR-0270](adr/0270-guest-browser-and-tool-result-actions.md) adds a preinstalled
+guest Playwright/Chromium stack and consistent live/cold preview actions. Source
+and artifact verification are in progress; it introduces no browser service or
+new execution authority and does not yet replace the serving release below.
+
 The [Subagent wait investigation and Ultra proposal](reports/subagent-wait-review-20261021.md)
 records the authorized Stop, successful delayed child result, model/environment
 costs and the corrected single-picker Ultra proposal (provider Max plus delegation).

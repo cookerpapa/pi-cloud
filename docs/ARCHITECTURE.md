@@ -1,5 +1,13 @@
 # Architecture
 
+[ADR-0270](adr/0270-guest-browser-and-tool-result-actions.md), currently in
+verification, adds pinned guest Playwright/Chromium with CJK fonts. Bash starts
+the browser only when needed; Read uses existing screenshot attachment transport.
+No browser service or additional Tool executor is introduced. Native Tool display
+descriptions reference bounded `details` in the same commit and resolve structured
+`{content, details}` output, matching cold history. Successful preview actions
+remain visible outside collapsed Tool groups and return a real link to the model.
+
 [ADR-0268](adr/0268-runtime-capabilities-and-delegation.md) and
 [ADR-0269](adr/0269-execution-owned-control-tool-catalog.md) are deployed in
 `runtime-capabilities-5d39828d`, schema 197:
