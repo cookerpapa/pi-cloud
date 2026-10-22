@@ -1,6 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { parseGuestToolPreview } from "../packages/protocol/src/tool-preview.ts";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const image = process.env.PI_CLOUD_CUBESANDBOX_TOOL_IMAGE ?? "pi-cloud/cubesandbox-tool:experiment";
@@ -249,7 +250,7 @@ try {
     activationId,
     toolRoot: "/workspace",
   };
-  const runTool = async (request, expectedError = false) => {
+  const runTool = async (request, expectedError = false, cancelAfterSeconds) => {
     const path = `/tmp/pi-cloud-envd-${randomUUID()}.json`;
     await writeEnvdFile(baseUrl, path, {
       toolWorkerProtocolVersion: 7,
@@ -257,9 +258,18 @@ try {
       attachment,
       request,
     });
+    let cancelPipe = "";
+    if (cancelAfterSeconds !== undefined) {
+      const cancelPath = `/tmp/pi-cloud-envd-${randomUUID()}.json`;
+      await writeEnvdFile(baseUrl, cancelPath, {
+        type: "worker.cancel",
+        operationId: request.operationId,
+      });
+      cancelPipe = `(sleep ${cancelAfterSeconds}; cat ${cancelPath}; printf '\\n') | `;
+    }
     const result = await envdRun(
       baseUrl,
-      `/bin/chown 1000:1000 ${path} && /bin/chmod 0400 ${path} && /usr/bin/setpriv --reuid 1000 --regid 1000 --clear-groups --no-new-privs /usr/local/bin/node /opt/pi-cloud/bin/envd-tool-exec.mjs ${path}`,
+      `/bin/chown 1000:1000 ${path} && /bin/chmod 0400 ${path} && ${cancelPipe}/usr/bin/setpriv --reuid 1000 --regid 1000 --clear-groups --no-new-privs /usr/local/bin/node /opt/pi-cloud/bin/envd-tool-exec.mjs ${path}`,
       "root",
       request.timeoutMs + 5_000,
     );
@@ -271,14 +281,19 @@ try {
       .map((line) => JSON.parse(line));
     const final = frames.pop();
     assert(
-      frames.every(
-        (frame) =>
-          frame.operationId === request.operationId &&
-          frame.event?.type === "tool_execution_update",
-      ),
-      "Unexpected Tool progress frame",
+      frames
+        .map(parseGuestToolPreview)
+        .every(
+          (frame) =>
+            frame.operationId === request.operationId &&
+            frame.toolCallId === request.toolCallId &&
+            frame.toolName === request.toolName,
+        ),
+      "Unexpected Tool preview frame",
     );
     assert(final?.type === "worker.operation_result", "Guest omitted its final Tool result");
+    if (cancelAfterSeconds !== undefined)
+      assert(final.scopeStopRequired === false, "Agent Stop requested whole-scope cleanup");
     const response = final.response;
     assert(
       response.activationId === request.activationId &&
@@ -348,6 +363,22 @@ setInterval(() => {}, 1000);
         "if pgrep -af '^/opt/pi-cloud/browser/browsers/.*/(chrome|headless_shell|chrome-headless-shell)( |$)'; then exit 1; fi",
     }),
   );
+  const cancelled = await runTool(
+    operation("bash", { command: "node browser-timeout.mjs" }),
+    true,
+    5,
+  );
+  const cancelledText = cancelled.content.map((part) => part.text ?? "").join("");
+  assert(
+    cancelledText.includes("BROWSER_RUNNING") && cancelledText.includes("Command aborted"),
+    "Agent Stop did not settle the running browser Tool",
+  );
+  await runTool(
+    operation("bash", {
+      command:
+        "if pgrep -af '^/opt/pi-cloud/browser/browsers/.*/(chrome|headless_shell|chrome-headless-shell)( |$)'; then exit 1; fi",
+    }),
+  );
 
   process.stdout.write(
     `${JSON.stringify({
@@ -364,7 +395,12 @@ setInterval(() => {}, 1000);
       nativeGuestPathSemanticsVerified: true,
       directoryControl: true,
       arbitraryPortPreview: true,
-      guestBrowser: { ...browserEvidence, nativeRead: true, timeoutCleanup: true },
+      guestBrowser: {
+        ...browserEvidence,
+        nativeRead: true,
+        timeoutCleanup: true,
+        agentStopCleanup: true,
+      },
     })}\n`,
   );
 } catch (error) {
