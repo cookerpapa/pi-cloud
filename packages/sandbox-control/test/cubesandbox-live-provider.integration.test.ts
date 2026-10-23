@@ -464,7 +464,6 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         bindings,
         provider,
         imageRevision: config.imageRevision,
-        warmTtlMs: 60_000,
       });
       let first: Awaited<ReturnType<SandboxController["create"]>> | undefined;
       let second: Awaited<ReturnType<SandboxController["create"]>> | undefined;
@@ -738,7 +737,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           ),
         ).rejects.toMatchObject({ code: "stale_session_lease" });
         await new Promise((resolvePromise) => setTimeout(resolvePromise, WARM_IDLE_PROOF_MS));
-        await manager.reapWarm();
+        await manager.reapWorkspaceRuntimes();
         expect(manager.warmCount).toBe(1);
         const reboundAssignment: ToolSandboxAssignment = {
           ...secondAssignment,

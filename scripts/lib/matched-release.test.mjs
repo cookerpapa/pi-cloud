@@ -5,8 +5,30 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
-import { verifyMatchedRelease } from "./matched-release.mjs";
+import { verifyMatchedRelease, matchedMachineDrained } from "./matched-release.mjs";
 import { guestBuildIdentity, completionBuildIdentity } from "./guest-build-identity.mjs";
+
+it("retains a failed machine record only after closed compute and holder retirement", () => {
+  const absent = {
+    state: "failed",
+    allocation_closed: true,
+    runtime_id: null,
+    runtime_name: null,
+    agent_activation_id: null,
+    terminal_active: false,
+  };
+  expect(matchedMachineDrained(absent)).toBe(true);
+  for (const change of [
+    { state: "running" },
+    { state: "unknown" },
+    { allocation_closed: false },
+    { runtime_id: "old-physical-id" },
+    { runtime_name: "old-target" },
+    { agent_activation_id: "active-holder" },
+    { terminal_active: true },
+  ])
+    expect(matchedMachineDrained({ ...absent, ...change })).toBe(false);
+});
 
 it("checks scanned image identity before any mutation and rejects catalog substitution", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-cloud-candidate-test-"));

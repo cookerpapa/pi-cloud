@@ -326,6 +326,7 @@ export async function startControlPlane(): Promise<void> {
       toolCommands: sandboxControl.dispatcher,
       controlTools,
       executionProbes: sandboxControl.probes,
+      runtimeRetention: sandboxControl.retention,
       controlChanges: {
         load: async (partitions, current) => {
           await bindingView.load(partitions, current);

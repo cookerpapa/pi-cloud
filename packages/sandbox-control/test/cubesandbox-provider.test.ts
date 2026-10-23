@@ -145,6 +145,12 @@ function fakeWorkspaceVolumeGateway(): WorkspaceVolumeGateway {
 }
 
 class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
+  readonly retention = vi.fn(
+    async (_id: string, _createBefore: number, _boot: string, at: number) => at + 900000,
+  );
+  renewRetention(id: string, createBefore: number, boot: string, at: number) {
+    return this.retention(id, createBefore, boot, at);
+  }
   readonly allocationClosures = new Set<string>();
   async allocation(id: string, createBefore: number, action: "get" | "close") {
     const index = this.creates.findIndex((input) => input.allocation.id === id);
@@ -164,7 +170,13 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
       allocationId: id,
       createBefore,
       closed: this.allocationClosures.has(id),
-      phase: instance ? ("ready" as const) : ("missing" as const),
+      phase: this.allocationClosures.has(id)
+        ? instance
+          ? ("closing" as const)
+          : ("absent" as const)
+        : instance
+          ? ("ready" as const)
+          : ("missing" as const),
       ...(instance ? { instance } : {}),
     };
   }
@@ -818,6 +830,84 @@ describe("CubeSandbox Provider contract", () => {
     await provider.close();
   });
 
+  it("recognizes confirmed Cube expiry during cold controller recovery without deleting the Volume", async () => {
+    const runtime = new FakeCubeRuntimeClient();
+    const options = {
+      templateId: "pi-cloud-tool-v1",
+      imageRevision: "development",
+      webProxy: WEB_PROXY,
+      runtimeClient: runtime,
+      workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
+    };
+    const first = testCubeProvider(options);
+    const handle = await first.create(
+      {
+        activationId: ACTIVATION_ID,
+        assignment,
+        environment,
+        workspaceSeed: { kind: "bundle", bundle: encodeWorkspaceBlob(createWorkspaceSeed([])) },
+        policy: first.defaultPolicy,
+      },
+      creationAuthorization,
+    );
+    const { capsule } = await first.persistentCapsule(handle);
+    await first.close();
+    await runtime.allocation(handle.activationId, handle.allocation.createBefore, "close");
+    const next = testCubeProvider(options);
+    try {
+      await expect(next.adoptPersistentCapsule(capsule)).rejects.toMatchObject({
+        absenceConfirmed: true,
+        code: "elastic_runtime_expired",
+      });
+    } finally {
+      await next.close();
+    }
+  });
+
+  it("renews elastic interactive connections but never renews from health probes", async () => {
+    const runtime = new FakeCubeRuntimeClient();
+    const provider = testCubeProvider({
+      templateId: "pi-cloud-tool-v1",
+      imageRevision: "development",
+      webProxy: WEB_PROXY,
+      runtimeClient: runtime,
+      workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
+    });
+    const handle = await provider.create(
+      {
+        activationId: ACTIVATION_ID,
+        assignment,
+        environment,
+        workspaceSeed: { kind: "bundle", bundle: encodeWorkspaceBlob(createWorkspaceSeed([])) },
+        policy: provider.defaultPolicy,
+      },
+      creationAuthorization,
+    );
+    expect(runtime.creates[0]?.metadata["picloud.retention_window_ms"]).toBe("900000");
+    vi.useFakeTimers();
+    try {
+      await provider.probeExecution(handle);
+      expect(runtime.retention).not.toHaveBeenCalled();
+      const terminal = await provider.openTerminal(handle, { rows: 24, cols: 100 });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(runtime.retention).toHaveBeenCalledTimes(1);
+      const preview = await provider.openPreviewConnection(handle, 5173);
+      await vi.advanceTimersByTimeAsync(30000);
+      expect(runtime.retention).toHaveBeenCalledTimes(2);
+      await terminal.kill();
+      await vi.advanceTimersByTimeAsync(30000);
+      expect(runtime.retention).toHaveBeenCalledTimes(3);
+      preview.destroy();
+      await vi.advanceTimersByTimeAsync(0);
+      await provider.probeExecution(handle);
+      await vi.advanceTimersByTimeAsync(60000);
+      expect(runtime.retention).toHaveBeenCalledTimes(3);
+    } finally {
+      await provider.close();
+      vi.useRealTimers();
+    }
+  });
+
   it("uses Cube never-timeout lifecycle and preserves identity across development pause/resume", async () => {
     const runtime = new FakeCubeRuntimeClient();
     const persistentStateKey = Buffer.alloc(32, 9);
@@ -875,6 +965,7 @@ describe("CubeSandbox Provider contract", () => {
     const preview = await provider.openPreviewConnection(handle, 5173);
     expect(preview).toBeInstanceOf(PassThrough);
     preview.destroy();
+    expect(runtime.retention).not.toHaveBeenCalled();
     await expect(provider.discoverHttpServices(handle)).resolves.toEqual({
       listeningPorts: [3_000],
       httpServices: [{ port: 3_000, protocol: "http" }],

@@ -517,6 +517,16 @@ export class PiWorkerRuntime {
         ) ?? Promise.resolve(false),
       onActivity: (command, update, parent) => {
         const p = command.payload;
+        workerLog?.bindRetention(
+          p.executionReference,
+          p.piSession.conversationId,
+          update && (p.executionMode !== "development_environment" || p.computeSessionId)
+            ? {
+                workspaceId: p.workspaceId,
+                ...(p.computeSessionId ? { computeSessionId: p.computeSessionId } : {}),
+              }
+            : undefined,
+        );
         if (!update) {
           activity.forget(p.runId, p.sessionId);
           return;

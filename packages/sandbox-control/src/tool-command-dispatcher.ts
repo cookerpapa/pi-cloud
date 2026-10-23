@@ -68,6 +68,7 @@ function handoffFailure(error: unknown): {
         break;
       case "node_unavailable":
       case "execution_unavailable":
+      case "runtime_retention_unavailable":
       case "execution_endpoint_unconfigured":
       case "executor_capacity":
         code = "cubesandbox_tool_unavailable";

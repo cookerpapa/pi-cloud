@@ -10,7 +10,8 @@ acceptance evidence. Superseded plans and completed-task journals remain in Git.
 The October 23 owner-approved direction and
 [implementation plan](adr/0272-cube-owned-elastic-retention.md) use finite
 keepalives instead of infinite retention followed by a required release message.
-The current release has not changed.
+Source integration and focused contracts are complete. Full verification and
+matched delivery are in progress; the serving release has not changed.
 
 - [ ] E1: Cube authoritative renewal, monotonic original-time expiry, closure races
       and error propagation; reuse the existing lifecycle/allocation implementation.

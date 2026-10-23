@@ -26,11 +26,16 @@ import { resolve, dirname } from "node:path";
 import { serializeRelease } from "./lib/release-lock.mjs";
 import { runtimeCapabilityAcceptance } from "./lib/runtime-capability-acceptance.mjs";
 import { guestBrowserAcceptance } from "./lib/guest-browser-acceptance.mjs";
+import { elasticRetentionAcceptance } from "./lib/elastic-retention-acceptance.mjs";
 if (process.env.PI_CLOUD_LIVE_RELEASE_CHECK !== "1")
   throw new Error(
     "Set PI_CLOUD_LIVE_RELEASE_CHECK=1 to authorize owned Cube/browser fixtures and GPT-6 Luna use",
   );
-if (process.env.PI_CLOUD_LIVE_RUNTIME_CAPABILITIES === "1") serializeRelease(runtimeDirectory);
+if (
+  process.env.PI_CLOUD_LIVE_RUNTIME_CAPABILITIES === "1" ||
+  process.env.PI_CLOUD_LIVE_ELASTIC_RETENTION === "1"
+)
+  serializeRelease(runtimeDirectory);
 const capabilityScope = process.env.PI_CLOUD_RUNTIME_CAPABILITY_SCOPE ?? "all";
 assert(["all", "catalog"].includes(capabilityScope), "Unknown runtime capability acceptance scope");
 assert(capabilityScope === "all" || process.env.PI_CLOUD_LIVE_RUNTIME_CAPABILITIES === "1");
@@ -379,6 +384,20 @@ try {
       baseUrl,
       completed,
       progress,
+    });
+  }
+  if (process.env.PI_CLOUD_LIVE_ELASTIC_RETENTION === "1") {
+    report.elasticRetention = await elasticRetentionAcceptance({
+      database: db,
+      api,
+      tenant,
+      session,
+      completed,
+      progress,
+      save: async (value) => {
+        report.elasticRetention = value;
+        await writeFile(output, JSON.stringify(report, null, 2), { mode: 0o600 });
+      },
     });
   }
   report.accepted = true;

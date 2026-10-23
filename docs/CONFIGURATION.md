@@ -220,10 +220,18 @@ Do not commit proxy credentials or expose a local proxy publicly.
 | `PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES` | `unlimited` | optional active-Cube quota; physical Cube capacity still applies |
 | `PI_CLOUD_RUNTIME_PROBE_CONCURRENCY` | `4` | concurrent physical-runtime health checks per control plane, range 1–64; limits in-flight work, never the number of VMs covered |
 | `PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS` | `8` | simultaneous interactive workflows per control plane (Helm default 32); fixed Tools have a Cubelet-local limit of 32 |
-| `PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES` | `4` | idle warm Cube limit |
-| `PI_CLOUD_SANDBOX_WARM_TTL_MS` | `900000` | idle warm lifetime (15 minutes) |
+| `PI_CLOUD_ELASTIC_RETENTION_MS` | `900000` | finite elastic-VM retention window, captured in the allocation before creation; Cubelet owns expiry, range 1 second–24 hours |
 | `PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_LEASE_MS` | `15000` | control-plane sandbox-management ownership lease |
 | `PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_HEARTBEAT_MS` | `5000` | sandbox-management ownership heartbeat |
+
+[ADR-0272](adr/0272-cube-owned-elastic-retention.md) uses 15-second active-Session
+keepalives and 30-second per-VM coalescing. Initial renewal need not wait for the
+first interval. The window is immutable for an existing allocation; a deployment
+setting change applies to newly created VMs. There is no controller warm-count
+eviction or idle-deadline timer. Capacity admission still waits for confirmed
+physical release. Dedicated machines do not use the finite window; background
+health checks do not renew it. Conversation data and Workspace Volumes survive
+elastic compute expiry.
 
 The self-hosted K3s kubelet uses `pod-max-pids=-1` (node allocatable PID capacity).
 Helm workloads keep scheduling requests and omit CPU/memory hard limits; scratch

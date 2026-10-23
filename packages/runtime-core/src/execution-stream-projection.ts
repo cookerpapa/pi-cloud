@@ -185,7 +185,7 @@ export class ExecutionStreamProjector {
     current: () => boolean = () => true,
   ): Promise<ExecutionProjectionResult | undefined> {
     const { fact } = record;
-    if (fact.kind === "path_probe") return;
+    if (fact.kind === "path_probe" || fact.kind === "runtime_keepalive") return;
     if (fact.kind === "work_finished") return this.#finishWork(fact, record, current);
     if (fact.kind === "durable_commit") {
       const scopes = new Map(

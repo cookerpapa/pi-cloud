@@ -25,6 +25,7 @@ import { executionTargetId } from "./sandbox-execution.ts";
 import { RUNTIME_EXECUTION_EVIDENCE_PATH } from "@pi-cloud/protocol";
 import { fetch as internalFetch } from "undici";
 import { SandboxControlClient } from "./sandbox-control-client.ts";
+import { RuntimeRetention } from "./runtime-retention.ts";
 
 /** A control-plane module. It has no standalone process, database pool or Run lease. */
 export async function createSandboxControl(options: {
@@ -92,6 +93,7 @@ export async function createSandboxControl(options: {
     });
     cleanup.push(() => (providerOwns ? undefined : volume.close()));
     const provider = new CubeSandboxProvider({
+      retentionWindowMs: config.elasticRetentionMs,
       templateId: cube.templateId,
       developmentTemplateIds: cube.developmentTemplateIds,
       imageRevision: config.imageRevision,
@@ -124,6 +126,7 @@ export async function createSandboxControl(options: {
       partitionCount: options.partitionCount,
     });
     const controller = new SandboxController({
+      elasticRetentionMs: config.elasticRetentionMs,
       bindings,
       controlReady: () => started,
       workspaceCleanupWake: wake,
@@ -136,8 +139,6 @@ export async function createSandboxControl(options: {
       runtimeProbeConcurrency: config.runtimeProbeConcurrency,
       onProbeSample: (stage, ms, outcome) =>
         metrics.sandboxDuration.observe({ operation: `health_${stage}`, outcome }, ms / 1000),
-      warmTtlMs: config.warmTtlMs,
-      maximumWarmWorkspaceRuntimes: config.maximumWarmWorkspaceRuntimes,
       serviceRegistry: new PostgresSandboxHttpServiceRegistry({ database }),
       onMaintenanceError: () =>
         operationalLog({
@@ -243,6 +244,45 @@ export async function createSandboxControl(options: {
       },
     });
     cleanup.push(() => probes.close());
+    const retention = new RuntimeRetention({
+      resolve: async (scope, resource, observedAt) => {
+        // Bootstrap each admitted writer/resource reference once; pulses use
+        // the resolved physical identity until an ordered binding change.
+        let query = database
+          .selectFrom("workspace_runtimes")
+          .select(["workspace_runtime_id", "runtime_capsule"])
+          .where("tenant_id", "=", scope.tenantId)
+          .where("workspace_id", "=", resource.workspaceId)
+          .where("sandbox_domain_id", "=", config.sandboxDomainId)
+          .where("allocation_closed", "=", false)
+          .where("created_at", "<=", new Date(observedAt))
+          .where("state", "in", ["active", "warm"])
+          .where("runtime_capsule", "is not", null);
+        query = resource.computeSessionId
+          ? query.where("compute_session_id", "=", resource.computeSessionId)
+          : query.where("compute_session_id", "is", null);
+        const row = await query.executeTakeFirst();
+        return row?.runtime_capsule
+          ? { id: row.workspace_runtime_id, capsule: row.runtime_capsule }
+          : undefined;
+      },
+      renew: async (target, observedAt) => {
+        const start = performance.now();
+        let outcome = "confirmed";
+        try {
+          await provider.renewPersistentRetention(target.capsule, observedAt);
+        } catch (error) {
+          outcome = "unconfirmed";
+          throw error;
+        } finally {
+          metrics.sandboxDuration.observe(
+            { operation: "retention_renew", outcome },
+            (performance.now() - start) / 1000,
+          );
+        }
+      },
+    });
+    cleanup.push(() => retention.close());
     const dispatcher = new ToolCommandDispatcher({
       onDispatch: (command, route) => probes.rememberTool(command, route),
       routes: bindingView,
@@ -287,6 +327,7 @@ export async function createSandboxControl(options: {
     await server.listen();
     return {
       controller,
+      retention,
       dispatcher,
       publishReply: (topic: string, reply: import("@pi-cloud/event-log").ToolReply) =>
         replies.publish(topic, reply),
@@ -315,6 +356,8 @@ export async function createSandboxControl(options: {
         position: import("@pi-cloud/protocol").ExecutionLogPosition,
       ) => {
         await bindingView.consume(change, current);
+        if (change.entity === "sandbox_binding")
+          retention.invalidateSession(change.scope.tenantId, change.scope.piSessionId);
         if (change.entity !== "sandbox_binding" || !change.closed || !current()) return;
         await dispatcher.cancelRetiredBinding(change, position, current);
         const route = bindingView.closure(change, current);

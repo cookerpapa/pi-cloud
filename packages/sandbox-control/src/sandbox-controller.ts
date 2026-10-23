@@ -99,9 +99,8 @@ export type SandboxControllerOptions = {
   maximumActiveSandboxes?: number | null;
   runtimeProbeConcurrency?: number;
   onProbeSample?(stage: "probe" | "scheduling", durationMs: number, outcome: string): void;
-  warmTtlMs?: number;
-  maximumWarmWorkspaceRuntimes?: number;
   clock?: () => number;
+  elasticRetentionMs?: number;
   imageRevision: string;
   serviceRegistry?: SandboxHttpServiceRegistry;
   onMaintenanceError?: (error: unknown) => void;
@@ -154,8 +153,6 @@ type ManagedElasticRuntime = {
   activeOperations: number;
   environment: EnvironmentRuntimeSnapshot;
   sandboxProfileKey: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey;
-  expiresAt: number;
-  lastUsedAt: number;
   workspaceTerminalId?: string;
   failure?: SandboxControlError;
   failureRecorded?: boolean;
@@ -200,16 +197,6 @@ type ManagedDevelopmentEnvironment = {
   failureRecorded?: boolean;
   closureConfirmed?: boolean;
 };
-
-const DEFAULT_WARM_TTL_MS = 15 * 60_000;
-const DEFAULT_MAXIMUM_WARM_WORKSPACE_RUNTIMES = 4;
-
-function positiveInteger(value: number, name: string, maximum: number): number {
-  if (!Number.isSafeInteger(value) || value < 1 || value > maximum) {
-    throw new TypeError(`${name} must be a bounded positive integer`);
-  }
-  return value;
-}
 
 function workspaceIdentityKey(
   assignment: Pick<ToolSandboxAssignment, "tenantId" | "projectId" | "workspaceId">,
@@ -362,9 +349,8 @@ export class SandboxController {
   readonly #serviceRegistry: SandboxHttpServiceRegistry | undefined;
   readonly #idGenerator: () => string;
   readonly #maximumActiveSandboxes: number | null;
-  readonly #warmTtlMs: number;
-  readonly #maximumWarmWorkspaceRuntimes: number;
   readonly #clock: () => number;
+  readonly #elasticRetentionMs: number;
   readonly #imageRevision: string;
   readonly #onMaintenanceError: ((error: unknown) => void) | undefined;
   readonly #toolBindings = new Map<string, ManagedToolBinding>();
@@ -397,22 +383,15 @@ export class SandboxController {
       options.maximumActiveSandboxes,
       "maximumActiveSandboxes",
     );
-    this.#admission = new SandboxAdmission(this.#maximumActiveSandboxes, async () => {
-      const oldest = [...this.#warm.entries()].sort((a, b) => a[1].lastUsedAt - b[1].lastUsedAt)[0];
-      if (!oldest) return false;
-      return this.#discardWarm(oldest[0], oldest[1]);
-    });
-    this.#warmTtlMs = positiveInteger(
-      options.warmTtlMs ?? DEFAULT_WARM_TTL_MS,
-      "warmTtlMs",
-      24 * 60 * 60_000,
-    );
-    this.#maximumWarmWorkspaceRuntimes = positiveInteger(
-      options.maximumWarmWorkspaceRuntimes ?? DEFAULT_MAXIMUM_WARM_WORKSPACE_RUNTIMES,
-      "maximumWarmWorkspaceRuntimes",
-      1_000,
-    );
+    this.#admission = new SandboxAdmission(this.#maximumActiveSandboxes);
     this.#clock = options.clock ?? Date.now;
+    this.#elasticRetentionMs = options.elasticRetentionMs ?? 900000;
+    if (
+      !Number.isSafeInteger(this.#elasticRetentionMs) ||
+      this.#elasticRetentionMs < 1000 ||
+      this.#elasticRetentionMs > 86400000
+    )
+      throw new TypeError("Elastic retention policy is invalid");
     this.#imageRevision = options.imageRevision;
     this.#controlReady = options.controlReady ?? (() => true);
     this.#onMaintenanceError = options.onMaintenanceError;
@@ -483,6 +462,8 @@ export class SandboxController {
   }
 
   async #createPhysical(spec: SandboxCreateSpec, kind?: AllocationKind): Promise<SandboxHandle> {
+    if (spec.lifetime !== "development_environment")
+      spec = { ...spec, retentionWindowMs: spec.retentionWindowMs ?? this.#elasticRetentionMs };
     const authorization = await this.#stateRepository.beginCreation(spec, kind);
     try {
       return await this.#provider.create(spec, authorization);
@@ -776,7 +757,6 @@ export class SandboxController {
           const workspaceKey =
             workspaceIdentityKey(handle.assignment) +
             (candidate.computeSessionId ? `:compute:${candidate.computeSessionId}` : "");
-          const now = this.#now();
           const runtime: ManagedElasticRuntime = {
             capsuleStored: true,
             physicalActivationId: candidate.activationId,
@@ -795,8 +775,6 @@ export class SandboxController {
             activeOperations: 0,
             environment: handle.environment,
             sandboxProfileKey: candidate.sandboxProfileKey,
-            expiresAt: now + this.#warmTtlMs,
-            lastUsedAt: now,
           };
           const restored = await this.#prepareRecoveredBindings(handle, runtime);
           await this.#stateRepository.setWorkspaceRuntimeState(
@@ -817,6 +795,8 @@ export class SandboxController {
           }
           if (error instanceof SandboxCreationError && error.absenceConfirmed) {
             await this.#stateRepository.closeAllocation(candidate.activationId, "workspace");
+            await this.#bindings.releaseAfterPhysicalAbsence(candidate.activationId);
+            if (candidate.runtimeId) await this.#serviceRegistry?.endRuntime(candidate.runtimeId);
             await this.#stateRepository.setWorkspaceRuntimeState(
               candidate.activationId,
               "released",
@@ -1484,9 +1464,6 @@ export class SandboxController {
       if (workspaceRuntime !== undefined) {
         delete workspaceRuntime.workspaceTerminalId;
         if (workspaceRuntime.bindingIds.size === 0 && workspaceRuntime.handle !== undefined) {
-          const now = this.#now();
-          workspaceRuntime.lastUsedAt = now;
-          workspaceRuntime.expiresAt = now + this.#warmTtlMs;
           this.#warm.set(workspaceRuntime.workspaceKey, workspaceRuntime);
         }
       } else {
@@ -1730,8 +1707,6 @@ export class SandboxController {
         activeOperations: 0,
         environment: request.environment,
         sandboxProfileKey: request.sandboxProfileKey,
-        expiresAt: Number.POSITIVE_INFINITY,
-        lastUsedAt: this.#now(),
         ...(workspaceTerminal === undefined ? {} : { workspaceTerminalId: workspaceTerminal[0] }),
       };
       if (workspaceTerminal !== undefined) workspaceTerminal[1].workspaceRuntime = runtime;
@@ -2390,7 +2365,6 @@ export class SandboxController {
     }
     this.#revokeBinding(request.activationId);
     runtime.bindingIds.delete(request.activationId);
-    runtime.lastUsedAt = this.#now();
     if (runtime.bindingIds.size > 0) {
       return {
         toolBrokerProtocolVersion: 1,
@@ -2414,15 +2388,10 @@ export class SandboxController {
     }
 
     if (request.disposition !== "destroy" && runtime.handle !== undefined) {
-      const now = this.#now();
-      runtime.lastUsedAt = now;
-      runtime.expiresAt = now + this.#warmTtlMs;
       this.#warm.set(runtime.workspaceKey, runtime);
       await this.#stateRepository.setWorkspaceRuntimeState(runtime.physicalActivationId, "warm", {
         handle: runtime.handle,
       });
-      await this.#enforceWarmLimit();
-      await this.#admission.offerWarm();
       return {
         toolBrokerProtocolVersion: 1,
         type: "tool_sandbox.released",
@@ -2971,7 +2940,6 @@ export class SandboxController {
       for (const runtime of runtimes)
         if (runtime.failure && !runtime.failureRecorded)
           await this.#markElasticRuntimeLost(runtime, runtime.failure);
-      await this.reapWarm();
       await this.reapRetiredWarm();
       await this.#reapOrphanedWorkspaceRuntimes();
       await this.#reapUnboundWorkspaceRuntimes();
@@ -3041,15 +3009,6 @@ export class SandboxController {
         },
       ];
     });
-  }
-
-  async reapWarm(): Promise<void> {
-    const now = this.#now();
-    const expired = [...this.#warm.entries()].filter(([, warm]) => warm.expiresAt <= now);
-    for (const [key, warm] of expired) {
-      if (this.#warm.get(key) !== warm) continue;
-      await this.#discardWarm(key, warm);
-    }
   }
 
   async reapRetiredWarm(): Promise<void> {
@@ -3258,16 +3217,6 @@ export class SandboxController {
     await this.#bindings.confirmPhysicalClosure(runtime.physicalActivationId);
   }
 
-  async #enforceWarmLimit(): Promise<void> {
-    while (this.#warm.size > this.#maximumWarmWorkspaceRuntimes) {
-      const oldest = [...this.#warm.entries()].sort(
-        (left, right) => left[1].lastUsedAt - right[1].lastUsedAt,
-      )[0];
-      if (oldest === undefined) return;
-      if (!(await this.#discardWarm(oldest[0], oldest[1]))) return;
-    }
-  }
-
   async #reapOrphanedWorkspaceRuntimes(): Promise<void> {
     const orphaned = await this.#stateRepository.claimOrphanedWorkspaceRuntimes(16);
     for (const orphan of orphaned) await this.#retireWorkspaceRuntime(orphan);
@@ -3449,9 +3398,6 @@ export class SandboxController {
       if (workspaceRuntime !== undefined) {
         delete workspaceRuntime.workspaceTerminalId;
         if (workspaceRuntime.bindingIds.size === 0) {
-          const now = this.#now();
-          workspaceRuntime.lastUsedAt = now;
-          workspaceRuntime.expiresAt = now + this.#warmTtlMs;
           this.#warm.set(workspaceRuntime.workspaceKey, workspaceRuntime);
           await this.#stateRepository.setWorkspaceRuntimeState(
             workspaceRuntime.physicalActivationId,
@@ -3525,14 +3471,6 @@ export class SandboxController {
         this.#workspaceRuntimeProvisioningTails.delete(key);
       }
     }
-  }
-
-  #now(): number {
-    const value = this.#clock();
-    if (!Number.isSafeInteger(value) || value < 0) {
-      throw new TypeError("Sandbox control clock returned an invalid timestamp");
-    }
-    return value;
   }
 }
 import { RuntimeHealthMonitor, type RuntimeHealthTarget } from "./runtime-health-monitor.ts";

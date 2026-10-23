@@ -446,8 +446,7 @@
         "workspaceDeletionReaperIntervalMs",
         "workspaceDeletionReaperBatchSize",
         "volumeGatewayRequestTimeoutMs",
-        "maximumWarmWorkspaceRuntimesPerReplica",
-        "warmTtlMs",
+        "elasticRetentionMs",
         "workspace",
         "cube",
         "volumeGatewayResources",
@@ -500,16 +499,6 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 4096
-        },
-        "maximumWarmWorkspaceRuntimesPerReplica": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 2048
-        },
-        "warmTtlMs": {
-          "type": "integer",
-          "minimum": 60000,
-          "maximum": 86400000
         },
         "workspace": {
           "type": "object",
@@ -627,6 +616,11 @@
           "type": "string",
           "minLength": 8,
           "maxLength": 2048
+        },
+        "elasticRetentionMs": {
+          "type": "integer",
+          "minimum": 60000,
+          "maximum": 86400000
         }
       }
     },
@@ -821,7 +815,10 @@
       "properties": {
         "enabledControlTools": {
           "type": ["array", "null"],
-          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$" },
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+          },
           "uniqueItems": true
         },
         "replicas": {

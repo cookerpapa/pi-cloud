@@ -144,7 +144,7 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
         workspace: { existingClaim: "pi-cloud-workspaces" },
         maximumActivePerReplica: quota("PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES"),
         maximumActiveCommands: n("PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS", 8),
-        maximumWarmWorkspaceRuntimesPerReplica: n("PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES", 4),
+        elasticRetentionMs: n("PI_CLOUD_ELASTIC_RETENTION_MS", 900000),
         cube: {
           apiUrl: "http://cube-api:3000",
           proxyNodeIp: "cube-proxy",

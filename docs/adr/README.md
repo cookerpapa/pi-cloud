@@ -1,8 +1,8 @@
 # Current architecture decisions
 
 [ADR-0272](0272-cube-owned-elastic-retention.md) records the owner-approved
-direction and implementation plan for finite elastic-VM keepalives through the
-existing Session Kafka path, with Cube owning idle deadlines. It is not deployed;
+implementation of finite elastic-VM keepalives through the existing Session Kafka
+path, with Cube owning idle deadlines. Source verification is in progress; it is not deployed;
 diagnostic probes remain observations and dedicated-machine reboot recovery is
 tracked separately.
 

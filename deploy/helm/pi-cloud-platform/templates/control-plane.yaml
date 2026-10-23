@@ -77,10 +77,9 @@ spec:
               value: {{ printf "http://$(POD_IP):4300" | quote }}
             - { name: PI_CLOUD_SANDBOX_CONTROL_HOST, value: 0.0.0.0 }
             - { name: PI_CLOUD_SANDBOX_CONTROL_PORT, value: "4300" }
-            - { name: PI_CLOUD_SANDBOX_WARM_TTL_MS, value: {{ .Values.sandboxPlane.warmTtlMs | quote }} }
+            - { name: PI_CLOUD_ELASTIC_RETENTION_MS, value: {{ .Values.sandboxPlane.elasticRetentionMs | quote }} }
             - { name: PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES, value: {{ .Values.sandboxPlane.maximumActivePerReplica | default "unlimited" | quote }} }
             - { name: PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS, value: {{ .Values.sandboxPlane.maximumActiveCommands | quote }} }
-            - { name: PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES, value: {{ .Values.sandboxPlane.maximumWarmWorkspaceRuntimesPerReplica | quote }} }
             - { name: PI_CLOUD_SANDBOX_CONTROL_TOKEN_FILE, value: /run/pi-cloud-secrets/sandbox-control-token }
             - { name: PI_CLOUD_CONTROL_PLANE_URL, value: "http://control-plane:3000" }
             - { name: PI_CLOUD_CUBE_PERSISTENT_STATE_KEY_FILE, value: /run/pi-cloud-secrets/cube-persistent-state-key }

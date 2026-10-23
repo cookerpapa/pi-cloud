@@ -76,6 +76,11 @@ export class SessionProjector {
         consume(fact: import("@pi-cloud/protocol").PathProbe, current?: () => boolean): void;
         reset(): void;
       };
+      runtimeRetention?: {
+        consume(fact: import("@pi-cloud/protocol").RuntimeKeepalive, current: () => boolean): void;
+        reset(): void;
+        forget(writerId: string): void;
+      };
       toolCommands: {
         consume(record: KafkaToolDispatchRecord, current?: () => boolean): Promise<void>;
         close?(): Promise<void>;
@@ -166,6 +171,7 @@ export class SessionProjector {
         this.eventStore.reset();
         this.observations.reset();
         options.executionProbes?.reset();
+        options.runtimeRetention?.reset();
         options.controlChanges?.reset();
       },
       onRevoked: () => {
@@ -212,6 +218,14 @@ export class SessionProjector {
         try {
           if (current?.() === false) return;
           const { fact } = record;
+          if (fact.kind === "runtime_keepalive") {
+            if (this.#projection.observes(record))
+              // This finite intent was authorized before ordered Run closure.
+              // Its original deadline remains valid after normal settlement;
+              // destination allocation closure still rejects it irreversibly.
+              options.runtimeRetention?.consume(fact, current ?? (() => true));
+            return;
+          }
           if (fact.kind === "path_probe") {
             const open = this.#projection.observes(record);
             this.observations.record(record, open);
@@ -221,6 +235,8 @@ export class SessionProjector {
           // Normal work completion also retires this idle owner. Publish routing
           // revocation before opening the PG boundary to a successor writer.
           if (fact.kind === "work_finished") await options.toolCommands.consume(record, current);
+          if (fact.kind === "work_finished" || fact.kind === "execution_seal")
+            options.runtimeRetention?.forget(fact.scope.writerId);
           const projected = await timing.measure("projection", () =>
             this.#projection.project(record, current ?? (() => true)),
           );

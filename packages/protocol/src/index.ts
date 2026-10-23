@@ -687,3 +687,4 @@ export {
   type DurableToolEndDescription,
   type DurableDisplayPreparation,
 } from "./durable-display.ts";
+export * from "./runtime-keepalive.ts";

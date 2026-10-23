@@ -5,6 +5,18 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { guestBuildIdentity, completionBuildIdentity } from "./guest-build-identity.mjs";
 
+/** A failed control record can retain its Workspace after confirmed compute retirement. */
+export function matchedMachineDrained(machine) {
+  return (
+    machine.state === "failed" &&
+    machine.allocation_closed === true &&
+    machine.runtime_id === null &&
+    machine.runtime_name === null &&
+    machine.agent_activation_id === null &&
+    machine.terminal_active === false
+  );
+}
+
 /** Entirely read-only. No Kubernetes/Helm operation belongs in this preflight. */
 export async function verifyMatchedRelease({ directory, root, capture, currentGuestTemplate }) {
   const candidate = JSON.parse(await readFile(resolve(directory, "candidate.json"), "utf8"));

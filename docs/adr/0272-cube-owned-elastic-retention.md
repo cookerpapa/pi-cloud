@@ -1,7 +1,27 @@
 # ADR-0272: Cube-owned finite retention for elastic VMs
 
-Status: owner-approved direction; implementation plan, not deployed.
+Status: implementation in source; verification and matched delivery in progress.
 Date: 2026-10-23.
+
+### Implementation refinement: reuse the node allocation journal
+
+Source inspection found a smaller, stronger integration than relying on the
+generic Redis timeout refresh: Cubelet already has synchronous managed-allocation
+metadata, irreversible Close, an existing ten-second maintenance loop and the
+accepted Tool admission mutex. Store the finite deadline on that same node
+allocation record and expire it from that maintenance loop. Extend the existing
+managed-allocation API with renewal rather than creating a second VM scheduler.
+CubeMaster's existing reconciliation already adopts node-initiated closed/absent
+allocations and repairs its Volume references.
+
+For these managed allocations, Cubelet is the only deadline authority; generic
+Cube lifecycle auto-timeout stays disabled so two components cannot race to
+expire them. The effective PiCloud policy is finite even though the generic
+Cube timeout is `-1`. Dedicated allocations have no retention deadline. Renewal
+acknowledgement follows the synchronous node metadata commit, and expiration
+shares admission with fixed Tools. The generic refresh endpoint's false-success
+behavior therefore does not enter the new retention path. This refinement keeps
+the approved Worker/Kafka/Projector/Cube ownership, cadence and outage behavior.
 
 ## Decision and scope
 
@@ -22,13 +42,21 @@ Their host-reboot recovery gap is a separate backlog item: this change does not
 make a stopped dedicated VM resumable or fix the current affected conversation.
 No overall Agent runtime limit is introduced.
 
-This is a narrow planned amendment to ADR-0209/0223's controller-owned idle
+Matched delivery must preserve existing dedicated Workspace bytes. An already
+failed machine may remain as a failed control record after PG closes allocation
+admission and the original node confirms physical absence. The release drain
+gate permits that closed, holder-free failed record only with no runtime identity;
+the existing all-node empty inventory and writer-drain checks still apply. Do not
+invoke the public machine Release action to obtain this state: Release deletes
+the Workspace. This does not add automatic dedicated-machine recovery.
+
+This is a narrow amendment to ADR-0209/0223's controller-owned idle
 retirement and ADR-0201/0211's observation-only probes. The existing diagnostic
 probe does not acquire destruction authority. A separately typed retention
 intent uses the same transport and scheduling facilities. Other VM creation,
 binding, explicit release, uncertainty, quota and Volume-closure rules remain.
-Update the corresponding AGENTS.md rule at implementation cutover; until then,
-the deployed controller still owns idle reclamation.
+The corresponding AGENTS.md rule describes the new source contract. Until matched
+cutover, the deployed controller still owns idle reclamation.
 
 ## Adopt-before-build evidence
 
@@ -54,6 +82,10 @@ the deployed controller still owns idle reclamation.
 - Prefer an applicable upstream fix over a new patch after comparing the current
   upstream implementation. Keep any necessary integration bounded and pinned;
   do not add another timer service, event broker or storage authority.
+  The October 23 comparison at upstream
+  `c4340c2ebbf6a3cc9c41aee330f9aaf329bef2dd` still finds warning-only HSET/XADD
+  handling in `PublishUpdate`; the maintained implementation uses the existing
+  synchronous node journal instead of depending on that acknowledgement.
 
 ## Product behavior
 
@@ -103,9 +135,11 @@ it never justifies pretending that quota or storage references were released.
    bounded existing-resource references and the original activity time. No text,
    reasoning, arguments, image bytes, native/display sequence or PG history row.
    Split/rotate large reference sets without silently omitting active children.
-2. Establish existing-compute references once on admission and update them on
+2. Bootstrap each admitted writer/Workspace or compute-scope reference once from
+   the existing resource rows, caching both a physical capsule and absence. Ignore
+   resources created after the original activity timestamp. Update references on
    actual binding/resource changes using the current management/control-change
-   mechanisms. Bootstrap from existing PG resource records. Projector's renewal
+   mechanisms. This is one bootstrap read per reference, not one read per pulse. Projector's renewal
    hot path uses current memory views; it does not query PG for every pulse and
    does not invent a second resource queue or per-pulse receipt table.
 3. Projector verifies its partition ownership, current Session writer, open
@@ -119,7 +153,7 @@ it never justifies pretending that quota or storage references were released.
    outside the documented clock-skew/freshness envelope; do not silently clamp an
    old event to the current time. Start with the existing 45-second freshness /
    five-second future-skew bounds and verify them under delayed delivery.
-5. Cube owns one deadline in its existing lifecycle metadata. Updates are
+5. Cubelet owns one deadline in its existing synchronous allocation journal. Updates are
    monotonic for one immutable physical allocation: `max(current, requested)`.
    A delayed request cannot shorten newer retention, extend another VM generation,
    wake a paused dedicated machine, or reopen a closing allocation. No per-heartbeat
@@ -127,6 +161,9 @@ it never justifies pretending that quota or storage references were released.
    Sessions sharing a VM can occupy different Kafka partitions: their offsets are
    not globally comparable. Validate each source in its own scope, then combine
    its eligible absolute deadline at the physical VM.
+   A pulse accepted before normal Run settlement can still apply its original
+   finite deadline afterward. Settlement prevents new pulses, not delivery of an
+   already authorized retention intent; physical allocation closure still wins.
 6. Renewal acknowledgement must reflect successful authoritative state change,
    with publication failures recoverable through the existing lifecycle mechanism.
    Recheck the latest deadline under the same admission boundary that starts
@@ -168,16 +205,15 @@ request boundary following the first sandbox Tool, as in the current implementat
 | E2: Active-work references | Add the existing-VM retention reference and finite keepalive fact on the current Session publication path; cover silent model/child waits | Pure chat creates zero VMs; an existing VM is retained; family/child references remain correctly bounded and current |
 | E3: Projector delivery | Current-memory lookup, per-VM coalescing, freshness validation, bounded asynchronous Cube renewal | No per-pulse PG queries/writes or extra consumer group; blocked Cube does not stall canonical projection |
 | E4: Cube activity and reclamation | Integrate accepted fixed Tools, terminals and preview activity; exclude diagnostic traffic; reconcile expiry and cold activation | Worker loss eventually releases idle compute; a real long Tool is not mistaken for idle; Volume survives |
-| E5: Remove old authority | Replace elastic creation's current `-1` with finite retention; remove controller idle-deadline calculation/scanning and update configuration/ADRs/protocols | Cube is the sole idle-expiry decision maker; dedicated machines retain `-1`; no legacy decoder or dual idle reaper remains |
+| E5: Remove old authority | Declare finite managed retention at creation; disable generic Cube auto-timeout; remove controller idle deadlines and warm-count eviction | Cubelet is the sole managed idle-expiry owner; dedicated machines have no deadline; no legacy decoder or dual idle reaper remains |
 | E6: Matched release | Required source/fault/native contracts, scanned matched Cube/Worker/Control Plane/guest artifacts, owned live acceptance and cleanup | Recorded release evidence and preservation checks; no half-upgraded readers or native executors |
 
 E5 removes the idle-time authority, not the warm-runtime lookup map, resource
 ownership checks, capacity admission, explicit user release or failed-closure
-retry machinery. Review existing capacity-pressure warm eviction separately:
-either retain it as an explicit admission policy or remove it with evidence;
-do not disguise it as a second idle-deadline scanner. A VM referenced by current
-active work must not become an eviction candidate merely because that work has
-not issued a Tool. No new VM placement scheduler.
+retry machinery. The implementation removes warm-count/LRU eviction too: the
+old predicate only knew Tool/terminal binding occupancy, so it could evict a VM
+retained by pure-chat work. Configured capacity waits for confirmed release;
+the ordinary installation has no product count quota. No new VM placement scheduler.
 
 ## Required verification
 

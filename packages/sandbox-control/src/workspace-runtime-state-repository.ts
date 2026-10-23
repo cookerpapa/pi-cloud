@@ -115,6 +115,7 @@ export type SandboxPreviewOwnerResult =
   | { status: "unavailable" };
 
 export type RecoverableWorkspaceRuntime = Readonly<{
+  runtimeId?: string;
   workspace: Pick<ToolSandboxAssignment, "tenantId" | "projectId" | "workspaceId">;
   sandboxProfileKey: DevelopmentEnvironmentProfileKey;
   activationId: string;
@@ -1386,6 +1387,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           "runtime.workspace_id",
           "runtime.compute_session_id",
           "runtime.runtime_capsule",
+          "runtime.runtime_id",
           "runtime.sandbox_profile_key",
           "runtime.creation_spec",
           "runtime.creation_not_after",
@@ -1444,6 +1446,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           workspaceId: row.workspace_id,
         },
         activationId: row.workspace_runtime_id,
+        ...(row.runtime_id ? { runtimeId: row.runtime_id } : {}),
         ...(row.runtime_capsule ? { runtimeCapsule: row.runtime_capsule } : {}),
         ...(row.creation_spec && row.creation_not_after
           ? {

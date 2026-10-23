@@ -47,6 +47,20 @@ values or replace the serving catalog. There is no mixed-version fallback.
 
 ## Drain and apply
 
+ADR-0272 requires matched managed Cube protocol 8 and the new typed
+`runtime_keepalive` Session fact. Guest Tool protocol 7 and schema 197 remain.
+After cutover, run the existing acceptance driver with
+`PI_CLOUD_LIVE_RELEASE_CHECK=1 PI_CLOUD_LIVE_ELASTIC_RETENTION=1 PI_CLOUD_RETENTION_CONTROL_OUTAGE=1`.
+This uses real Luna and the actual default 15-minute idle window, verifies pure
+chat renews existing compute, temporarily stops the sole Control Plane only after
+checking for unfinished work, and verifies independent Cube reclamation, retained
+Workspace bytes and continuation on a new VM. It writes restoration state into
+the private acceptance report before stopping the service and restores it in
+`finally`. If the operator itself is killed during the outage, inspect that report
+and restore the recorded replica count through
+`node scripts/production-kubernetes.mjs start control-plane` before retrying.
+The fixture does not change the production retention duration.
+
 For ADR-0270, preparation also verifies unprivileged guest Chromium interaction,
 native screenshot Read and browser timeout cleanup. After matched cutover, run
 `PI_CLOUD_LIVE_RELEASE_CHECK=1 PI_CLOUD_LIVE_GUEST_BROWSER=1 node --import tsx scripts/run-live-release-acceptance.mjs`.
@@ -56,9 +70,12 @@ cold-history link and navigation to the application. This does not authorize
 deleting a user's development Workspace to pass the no-VM release requirement.
 
 Announce maintenance and stop ordinary submissions. Finish/cancel Runs through
-their normal API, allow seals to project, close terminals and release development
-machines through their existing lifecycle controls. Let elastic warm VMs expire
-through the Control Plane (default warm TTL: 15 minutes). Do not delete conversations
+their normal API, allow seals to project and close terminals. Dedicated compute
+must be retired with its original allocation identity and confirmed absent on the
+recorded node. A failed, allocation-closed, holder-free record with no runtime
+identity may remain so its Workspace is preserved. Do not use public machine
+Release without authorization to delete that Workspace. Let elastic warm VMs expire
+through Cube (default retention: 15 minutes). Do not delete conversations
 or Workspace files to pass a deployment gate. Resolve uncertain VM state through
 recorded-node evidence; there is no force-ignore option. At the owner's request,
 current disposable data does not require backup; [asset recovery](ASSET_RECOVERY.md)

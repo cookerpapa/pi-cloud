@@ -54,6 +54,12 @@ type RequestedProbe = Pick<PathProbe, "factId" | "occurredAt" | "execution">;
 
 /** Worker-local ordering over its physical Session producer; no second lease renewer. */
 export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionLogResolver {
+  readonly #retentionResources = new Map<
+    string,
+    Map<number, import("@pi-cloud/protocol").RuntimeKeepaliveResource>
+  >();
+  readonly #retentionPending = new Set<string>();
+  readonly #lastRetentionAt = new Map<string, number>();
   #probeTransport: WorkerExecutionProbeTransport | undefined;
   readonly #runtimeBindings = new Map<string, RuntimeBinding>();
   readonly #writers = new Map<string, ExecutionLogWriter>();
@@ -77,6 +83,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
           ready(): boolean;
           due(): boolean;
           send(probe?: RequestedProbe): Promise<void>;
+          retain(resources: import("@pi-cloud/protocol").RuntimeKeepaliveResource[]): Promise<void>;
         }
       >;
     }
@@ -93,6 +100,8 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       throw new TypeError("Invalid path probe interval");
     this.#probeTimer = setInterval(() => {
       for (const family of this.#families.values()) {
+        const source = [...family.writers.entries()].find(([, writer]) => writer.ready());
+        if (source) this.#requestRetention(source[0]);
         const executionDue = [...family.writers.values()].some(
           (writer) => writer.ready() && writer.due(),
         );
@@ -117,6 +126,44 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
   }
   configureExecutionProbes(transport: WorkerExecutionProbeTransport): void {
     this.#probeTransport = transport;
+  }
+  bindRetention(
+    reference: string,
+    conversationId: number,
+    resource?: import("@pi-cloud/protocol").RuntimeKeepaliveResource,
+  ): void {
+    let values = this.#retentionResources.get(reference);
+    if (!resource) {
+      values?.delete(conversationId);
+      if (!values?.size) this.#retentionResources.delete(reference);
+      return;
+    }
+    if (!values) this.#retentionResources.set(reference, (values = new Map()));
+    values.set(conversationId, resource);
+    this.#requestRetention(reference);
+  }
+  #requestRetention(reference: string): void {
+    const owner = this.#writers.get(reference)?.publication.scope.writerId;
+    const family = owner ? this.#families.get(owner) : undefined;
+    const source = family?.writers.get(reference);
+    if (!family || !source?.ready() || this.#retentionPending.has(reference)) return;
+    const now = performance.now(),
+      last = this.#lastRetentionAt.get(reference);
+    if (last !== undefined && now - last < this.probeIntervalMs) return;
+    const resources = [
+      ...new Map(
+        [...family.writers.keys()]
+          .flatMap((key) => [...(this.#retentionResources.get(key)?.values() ?? [])])
+          .map((value) => [JSON.stringify(value), value]),
+      ).values(),
+    ];
+    if (!resources.length) return;
+    this.#lastRetentionAt.set(reference, now);
+    this.#retentionPending.add(reference);
+    void source
+      .retain(resources)
+      .catch(() => undefined)
+      .finally(() => this.#retentionPending.delete(reference));
   }
   bindRuntime(
     executionReference: string,
@@ -403,15 +450,15 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       }
       this.#queuedBytes += bytes;
       this.#queuedFacts++;
-      activeFamily.touched = performance.now();
+      if (fact.kind !== "runtime_keepalive") activeFamily.touched = performance.now();
       const pending = tail
         .then(async () => {
-          if (fact.kind === "path_probe" && closing) return;
+          if ((fact.kind === "path_probe" || fact.kind === "runtime_keepalive") && closing) return;
           if (failure) throw failure;
           const receipt = await this.bus.append(fact);
           if (!receipt.durable || receipt.factId !== fact.factId)
             throw new Error("Kafka acknowledgement did not match the appended record");
-          if (fact.kind !== "path_probe") published = true;
+          if (fact.kind !== "path_probe" && fact.kind !== "runtime_keepalive") published = true;
         })
         .finally(() => {
           this.#queuedBytes -= bytes;
@@ -420,7 +467,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       // A probe follows the preceding publication tail, using the same ordered
       // Kafka producer, but its receipt is not another semantic commit barrier.
       // A lost probe ACK must not pin native writes or Run drain indefinitely.
-      if (fact.kind !== "path_probe")
+      if (fact.kind !== "path_probe" && fact.kind !== "runtime_keepalive")
         tail = pending.catch((error) => {
           if (!(error instanceof PublicationNotSentError)) failure = error;
         });
@@ -460,6 +507,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       commitNative: async (fact) => {
         await publish({ kind: "durable_commit", fact });
         nativeSequence = fact.commit.seq;
+        this.#requestRetention(request.executionReference);
         for (const display of fact.display) {
           const through = Math.max(
             display.coveredThrough ?? 0,
@@ -526,6 +574,8 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
         if (!activeFamily.writers.size) this.#families.delete(permit.scope.writerId);
         await tail;
         this.#writers.delete(request.executionReference);
+        this.#retentionResources.delete(request.executionReference);
+        this.#lastRetentionAt.delete(request.executionReference);
         this.#conversationFactories.delete(request.executionReference);
         this.#conversationWriters.delete(request.executionReference);
         await this.bus.forget?.(permit.scope);
@@ -585,6 +635,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
           closed = true;
           await tail;
           conversations.delete(address.conversationId);
+          this.#retentionResources.get(request.executionReference)?.delete(address.conversationId);
           conversationAcknowledgements.delete(address.sessionId);
           this.#runtimeBindings.get(bindingKey)?.pending?.abort();
           this.#runtimeBindings.get(bindingKey)?.check?.controller.abort();
@@ -603,6 +654,16 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       runId: permit.scope.runId,
       acknowledge: (seq) => {
         acknowledgedThroughSeq = Math.max(acknowledgedThroughSeq, seq);
+      },
+      retain: async (resources) => {
+        if (closing || failure || !published) return;
+        for (let offset = 0; offset < resources.length; offset += 64)
+          await publish({
+            kind: "runtime_keepalive",
+            factId: randomUUID(),
+            occurredAt: new Date().toISOString(),
+            resources: resources.slice(offset, offset + 64),
+          });
       },
       ready: () => !closing && !failure && published,
       due: () =>
@@ -634,6 +695,8 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
   async close() {
     clearInterval(this.#probeTimer);
     this.#families.clear();
+    this.#retentionResources.clear();
+    this.#lastRetentionAt.clear();
     await Promise.allSettled([...this.#writers.values()].map((w) => w.close()));
     this.#writers.clear();
     await this.bus.close?.();

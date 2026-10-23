@@ -78,6 +78,8 @@ export type CubeSandboxCreateInput = Readonly<{
 }>;
 
 export type CubeAllocationState = Readonly<{
+  retainUntil?: number;
+  retentionWindowMs?: number;
   allocationId: string;
   createBefore: number;
   phase: "missing" | "pending" | "creating" | "ready" | "failed" | "closing" | "absent";
@@ -123,6 +125,12 @@ export interface CubeSandboxRuntimeClient {
     createBefore: number,
     action: "get" | "close",
   ): Promise<CubeAllocationState>;
+  renewRetention?(
+    id: string,
+    createBefore: number,
+    executionBoot: string,
+    observedAt: number,
+  ): Promise<number>;
   read(sandboxId: string): Promise<CubeSandboxInstance | undefined>;
   observe(
     sandboxId: string,
@@ -612,6 +620,29 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     const response = await this.#control("/health");
     await response.body?.cancel().catch(() => undefined);
   }
+  async renewRetention(
+    id: string,
+    createBefore: number,
+    executionBoot: string,
+    observedAt: number,
+  ): Promise<number> {
+    const response = await this.#control(`/allocations/${encodeURIComponent(id)}/renew`, {
+      method: "POST",
+      timeoutMs: 5000,
+      body: JSON.stringify({ createBefore, executionBoot, observedAt }),
+    });
+    const value = record(
+      parseJson(await readBoundedResponse(response, 8192), "Cube retention"),
+      "Cube retention",
+    );
+    if (
+      value.allocationID !== id ||
+      !Number.isSafeInteger(value.retainUntil) ||
+      (value.retainUntil as number) <= observedAt
+    )
+      throw new CubeRuntimeClientError("Cube retention acknowledgement is invalid");
+    return value.retainUntil as number;
+  }
 
   async ensureVolume(volumeId: string, driver: string): Promise<CubeSandboxVolume> {
     const id = bounded(volumeId, "CubeSandbox volume ID", 128);
@@ -692,8 +723,8 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         allowOut: [...new Set([`${this.#egressProxyIp}/32`, ...this.#directPrivateCidrs])],
         denyOut: ["0.0.0.0/0"],
       },
-      // PiCloud owns the Session warm TTL and explicit allocation closure.
-      // Cube's timeout is the physical fail-safe; dedicated machines may pause.
+      // Managed allocations use the Cubelet retention journal, with the generic
+      // timeout disabled. Dedicated machines retain explicit pause/resume.
       lifecycle: {
         on_timeout: input.lifecycle?.onTimeout ?? "kill",
         auto_resume: input.lifecycle?.autoResume ?? false,
@@ -798,6 +829,12 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       ...(typeof value.sandboxID === "string" ? { sandboxId: value.sandboxID } : {}),
       ...(typeof value.nodeID === "string" && value.nodeID ? { nodeId: value.nodeID } : {}),
       ...(instance ? { instance } : {}),
+      ...(Number.isSafeInteger(value.retainUntil) && Number.isSafeInteger(value.retentionWindowMs)
+        ? {
+            retainUntil: value.retainUntil as number,
+            retentionWindowMs: value.retentionWindowMs as number,
+          }
+        : {}),
     };
   }
 
@@ -854,7 +891,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     if (value.runtimeBlocked === true) throw new CubeExecutionRejected("runtime_quarantined");
     if (
       value.enabled !== true ||
-      value.protocolVersion !== 7 ||
+      value.protocolVersion !== 8 ||
       typeof value.bootID !== "string" ||
       !/^[0-9a-f-]{36}$/.test(value.bootID)
     )

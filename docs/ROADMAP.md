@@ -2,9 +2,9 @@
 
 ## Cube-owned finite elastic retention
 
-The owner approved the finite-keepalive direction and requested an
-[implementation plan](adr/0272-cube-owned-elastic-retention.md). No runtime
-change or deployment is included in the plan.
+The owner approved implementation of the
+[finite-keepalive plan](adr/0272-cube-owned-elastic-retention.md). Source integration
+is complete; the verification and matched-delivery gates below remain in progress.
 
 - [ ] E1: verify and harden Cube renewal acknowledgement, expiry concurrency and managed Close.
 - [ ] E2: carry current existing-VM references and silent-work keepalives on the Session writer.

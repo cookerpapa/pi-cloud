@@ -7,7 +7,7 @@ const assignment = { sessionId: "session" } as ToolSandboxAssignment;
 
 describe("Broker physical Sandbox admission", () => {
   it("releases one FIFO waiter without reserving capacity for an aborted request", async () => {
-    const capacity = new SandboxAdmission(1, async () => false);
+    const capacity = new SandboxAdmission(1);
     await capacity.acquire("a", assignment);
     const aborted = new AbortController();
     const b = capacity.acquire("b", assignment, aborted.signal).catch((error) => error);
@@ -24,7 +24,7 @@ describe("Broker physical Sandbox admission", () => {
   });
 
   it("does not wake queued creates while shutting down and releasing running machines", async () => {
-    const capacity = new SandboxAdmission(1, async () => false);
+    const capacity = new SandboxAdmission(1);
     await capacity.acquire("a", assignment);
     const b = capacity.acquire("b", assignment).catch((error) => error);
     await vi.waitFor(() => expect(capacity.waitingCount).toBe(1));
@@ -38,25 +38,19 @@ describe("Broker physical Sandbox admission", () => {
     });
   });
 
-  it("rechecks closure after asynchronous warm eviction, without allocating another VM", async () => {
-    let evicted!: (value: boolean) => void;
-    const capacity = new SandboxAdmission(
-      1,
-      () =>
-        new Promise((resolve) => {
-          evicted = resolve;
-        }),
-    );
-    capacity.restore("warm", assignment);
+  it("retains occupied capacity until confirmed release or shutdown", async () => {
+    const capacity = new SandboxAdmission(1);
+    capacity.restore("retained", assignment);
     const pending = capacity.acquire("new", assignment).catch((error) => error);
+    await vi.waitFor(() => expect(capacity.waitingCount).toBe(1));
+    expect(capacity.has("retained")).toBe(true);
+    expect(capacity.has("new")).toBe(false);
     capacity.close();
-    evicted(true);
     expect(await pending).toMatchObject({ code: "tool_binding_admission_closed" });
-    expect(capacity.size).toBe(0);
   });
 
   it("accounts for adopted machines above a lowered limit before admitting new work", async () => {
-    const capacity = new SandboxAdmission(1, async () => false);
+    const capacity = new SandboxAdmission(1);
     capacity.restore("old-a", assignment);
     capacity.restore("old-b", assignment);
     const newWork = capacity.acquire("new", assignment);
@@ -71,7 +65,7 @@ describe("Broker physical Sandbox admission", () => {
   });
 
   it("accounts for an in-flight adoption finishing during shutdown without reopening admission", async () => {
-    const capacity = new SandboxAdmission(1, async () => false);
+    const capacity = new SandboxAdmission(1);
     capacity.close();
     capacity.restore("already-running", assignment);
     expect(capacity.size).toBe(1);
@@ -84,11 +78,9 @@ describe("Broker physical Sandbox admission", () => {
 });
 
 it("records every admitted VM without a count quota and preserves close rejection", async () => {
-  const evict = vi.fn(async () => false);
-  const admission = new SandboxAdmission(null, evict);
+  const admission = new SandboxAdmission(null);
   await Promise.all(Array.from({ length: 40 }, (_, n) => admission.acquire(String(n), assignment)));
   expect(admission.size).toBe(40);
-  expect(evict).not.toHaveBeenCalled();
   admission.close();
   await expect(admission.acquire("late", assignment)).rejects.toMatchObject({
     code: "tool_binding_admission_closed",

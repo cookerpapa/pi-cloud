@@ -51,6 +51,10 @@ protocol, record the decision under `docs/adr/` before implementation.
   Session path and boot-scoped Worker reply transport; they never become native
   history or a second execution authority. Physical VM evidence is disposable;
   missing probes never authorize destruction, replay or quota release.
+  ADR-0272 separately authorizes finite elastic retention: typed keepalive
+  intents renew Cubelet's existing allocation journal, and Cubelet owns idle
+  expiry. This does not make diagnostic probes a VM-death signal, renew a PG
+  execution lease, or permit quota release without confirmed physical absence.
 - Run the fixed Pi core only in the trusted Agent Runner, never in the API/control-plane
   process. Route every untrusted file or shell operation to a separate Tool Sandbox.
 - Load only code-owned trusted infrastructure tools in the Agent Runner.
@@ -115,7 +119,10 @@ protocol, record the decision under `docs/adr/` before implementation.
   and replaced node metadata never prove safe Volume deletion.
 - Do not claim exactly-once semantics for arbitrary shell commands or external side effects.
 - Do not run untrusted tools in the control-plane or trusted Agent Runner process.
-- Control Plane owns VM lifecycle, binding admission and recovery. Cubelet owns
+- Control Plane owns VM lifecycle policy, binding admission, explicit release
+  and recovery. Under ADR-0272 Cubelet owns finite elastic idle expiry; retain
+  no competing Control Plane deadline scanner or warm-cache eviction policy.
+  Dedicated machines remain non-expiring. Cubelet owns
   accepted fixed Tool lifetimes and boot/ordered-position fencing (ADR-0219/0221).
   Do not add per-Tool PG Run-lease checks. Chat Stop aborts the Worker Agent and
   sends operation cancellation through the same Session log. Pi Durable owns

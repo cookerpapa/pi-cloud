@@ -8,7 +8,7 @@ import { mkdir, readFile, writeFile, rename, rm, statfs } from "node:fs/promises
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { guestBuildIdentity, completionBuildIdentity } from "./lib/guest-build-identity.mjs";
-import { verifyMatchedRelease } from "./lib/matched-release.mjs";
+import { verifyMatchedRelease, matchedMachineDrained } from "./lib/matched-release.mjs";
 import { assertCubeKvmAvailable } from "./lib/cube-host-preflight.mjs";
 import {
   repositoryRoot as root,
@@ -160,13 +160,27 @@ async function assertDrained(includeWriters) {
   const { rows } = await sql`select
     (select count(*) from runs where state not in ('completed','failed','cancelled','timed_out') or recovery_requested_at is not null or (output_seal_id is not null and output_sealed_at is null))::int as runs,
     (select count(*) from workspace_runtimes where state<>'released')::int as vms,
-    (select count(*) from development_environments where state<>'released')::int as machines,
     (select count(*) from workspace_terminal_sessions where state<>'released')::int as terminals,
     (select count(*) from session_leases where released_at is null)::int as writers,
     (select count(*) from sandbox_tool_bindings)::int as bindings`.execute(database);
   const { writers, bindings, ...rest } = rows[0];
+  // Keep failed machine/Workspace records without confusing them with a live
+  // compute lifetime. Native inventory below still independently proves absence.
+  const machines = await database
+    .selectFrom("development_environments")
+    .select([
+      "state",
+      "allocation_closed",
+      "runtime_id",
+      "runtime_name",
+      "agent_activation_id",
+      "terminal_active",
+    ])
+    .where("state", "!=", "released")
+    .execute();
   assert(
     Object.values(rest).every((n) => n === 0) &&
+      machines.every(matchedMachineDrained) &&
       (!includeWriters || (writers === 0 && bindings === 0)),
     "Drain Runs/seals, Tool bindings and native VM/terminal/machine lifetimes before matched replacement",
   );

@@ -23,8 +23,7 @@ export type SandboxControlConfig = {
   imageRevision: string;
   maximumActiveSandboxes: number | null;
   runtimeProbeConcurrency: number;
-  warmTtlMs: number;
-  maximumWarmWorkspaceRuntimes: number;
+  elasticRetentionMs: number;
   workspaceDeletionReaperIntervalMs: number;
   workspaceDeletionReaperBatchSize: number;
   cubeSandbox: {
@@ -301,17 +300,11 @@ export async function loadSandboxControlConfig(
       "PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES",
     ),
     runtimeProbeConcurrency: integer(environment.PI_CLOUD_RUNTIME_PROBE_CONCURRENCY, 4, 1, 64),
-    warmTtlMs: integer(
-      environment.PI_CLOUD_SANDBOX_WARM_TTL_MS,
+    elasticRetentionMs: integer(
+      environment.PI_CLOUD_ELASTIC_RETENTION_MS,
       15 * 60_000,
       1_000,
       24 * 60 * 60_000,
-    ),
-    maximumWarmWorkspaceRuntimes: integer(
-      environment.PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES,
-      4,
-      1,
-      1_000,
     ),
     workspaceDeletionReaperIntervalMs: integer(
       environment.PI_CLOUD_WORKSPACE_DELETION_REAPER_INTERVAL_MS,

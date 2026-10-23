@@ -28,6 +28,38 @@ it("decodes only the bounded content-free probe protocol", () => {
 });
 
 afterEach(() => vi.useRealTimers());
+
+it("keeps silent native families alive without changing native sequence or suppressing diagnostics", async () => {
+  vi.useFakeTimers();
+  const facts: AcceptedFact[] = [];
+  const f = fixture(async (fact) => {
+    facts.push(fact);
+    return { factId: fact.factId, durable: true };
+  });
+  const root = await f.open(f.base);
+  try {
+    f.log.bindRetention(root.executionReference, 1, {
+      workspaceId: "10000000-0000-4000-8000-000000000001",
+    });
+    await root.publish();
+    await vi.advanceTimersByTimeAsync(15001);
+    const renewal = facts.find((fact) => fact.kind === "runtime_keepalive");
+    expect(renewal).toBeDefined();
+    expect(parseKafkaAcceptedFact(JSON.stringify(renewal))).toEqual(renewal);
+    expect(facts.some((fact) => fact.kind === "path_probe")).toBe(true);
+    // Model silence can outlast several retention windows. It needs no token
+    // delta or extra native commit to keep producing fresh bounded intents.
+    await vi.advanceTimersByTimeAsync(30 * 60_000);
+    expect(facts.filter((fact) => fact.kind === "durable_commit")).toHaveLength(1);
+    const delivered = facts.filter((fact) => fact.kind === "runtime_keepalive").length;
+    expect(delivered).toBeGreaterThanOrEqual(122);
+    f.log.bindRetention(root.executionReference, 1);
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(facts.filter((fact) => fact.kind === "runtime_keepalive")).toHaveLength(delivered);
+  } finally {
+    await f.log.close();
+  }
+});
 function fixture(append: (fact: AcceptedFact) => Promise<AcceptedFactReceipt>) {
   const log = new WorkerExecutionLog({ append, checkHealth: async () => {} }, undefined, 15_000);
   const base = toolInvocationFixture().scope;
@@ -67,6 +99,36 @@ function fixture(append: (fact: AcceptedFact) => Promise<AcceptedFactReceipt>) {
   }
   return { log, base, open };
 }
+
+it("splits all child retention references without per-child writers or truncation", async () => {
+  vi.useFakeTimers();
+  const facts: AcceptedFact[] = [];
+  const f = fixture(async (fact) => {
+    facts.push(fact);
+    return { factId: fact.factId, durable: true };
+  });
+  const root = await f.open(f.base);
+  try {
+    for (let n = 1; n <= 70; n++)
+      f.log.bindRetention(root.executionReference, n, {
+        workspaceId: "10000000-0000-4000-8000-000000000001",
+        computeSessionId: crypto.randomUUID(),
+      });
+    await root.publish();
+    await vi.advanceTimersByTimeAsync(0);
+    const messages = facts.filter((fact) => fact.kind === "runtime_keepalive");
+    expect(messages).toHaveLength(2);
+    expect(messages.flatMap((fact) => fact.resources)).toHaveLength(70);
+    expect(new Set(messages.map((fact) => fact.scope.writerId)).size).toBe(1);
+    for (const message of messages)
+      expect(parseKafkaAcceptedFact(JSON.stringify(message))).toEqual(message);
+    await root.writer.close();
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(facts.filter((fact) => fact.kind === "runtime_keepalive")).toHaveLength(2);
+  } finally {
+    await f.log.close();
+  }
+});
 
 it("coalesces fault probes, awaits owner validation and adds no native history or Tool callback", async () => {
   vi.useFakeTimers();

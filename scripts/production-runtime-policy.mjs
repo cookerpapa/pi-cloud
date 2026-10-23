@@ -163,8 +163,7 @@ export function validateProductionRuntimeEnvironment(environment) {
     throw new Error("Sandbox control heartbeat must leave lease failure margin");
   }
   optionalLimit(environment, "PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES");
-  integer(environment, "PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES", 4, 1, 1_000);
-  integer(environment, "PI_CLOUD_SANDBOX_WARM_TTL_MS", 900_000, 1_000, 24 * 60 * 60_000);
+  integer(environment, "PI_CLOUD_ELASTIC_RETENTION_MS", 900_000, 1_000, 24 * 60 * 60_000);
   integer(environment, "PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_MAXIMUM_CONCURRENT_OPERATIONS", 2, 1, 64);
   integer(environment, "PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_MAXIMUM_QUEUED_OPERATIONS", 32, 0, 4_096);
   integer(environment, "PI_CLOUD_WORKSPACE_DELETION_REAPER_INTERVAL_MS", 30_000, 1_000, 3_600_000);

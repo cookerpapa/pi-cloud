@@ -4,7 +4,7 @@ The [elastic retention implementation plan](adr/0272-cube-owned-elastic-retentio
 records the October 23 decision to let Cube own finite idle expiry. Silent active
 Sessions renew through the existing Kafka path; long Tools and human activity
 have explicit coverage. The owner accepts expiry after a prolonged renewal-path
-outage. This is planned, not deployed, and does not resolve the separate stopped
+outage. Source implementation is under verification, not deployed, and does not resolve the separate stopped
 dedicated-machine incident.
 
 [ADR-0271](adr/0271-local-upstream-proxy-configuration.md) and the

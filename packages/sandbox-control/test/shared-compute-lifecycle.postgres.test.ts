@@ -436,7 +436,6 @@ async function controllerFixture(f: Awaited<ReturnType<typeof fixture>>) {
     ownerBaseUrl: "http://workspace-review.invalid",
     imageRevision: row.image_revision,
     clock: () => now,
-    warmTtlMs: 1000,
   });
   const request: ToolSandboxCreateRequest = {
     toolBrokerProtocolVersion: 1 as const,
@@ -560,7 +559,7 @@ it("does not adopt terminal-owned compute again or place it in the warm pool", a
     expect(c.adopted).toEqual([]);
     expect(c.controller.warmCount).toBe(0);
     c.advanceWarmClock();
-    await c.controller.reapWarm();
+    await c.controller.reapWorkspaceRuntimes();
     expect(c.closed).toEqual([]);
     const t = await f.database
       .selectFrom("workspace_terminal_sessions")
@@ -571,8 +570,8 @@ it("does not adopt terminal-owned compute again or place it in the warm pool", a
     await terminal.close();
     expect(c.controller.warmCount).toBe(1);
     c.advanceWarmClock();
-    await c.controller.reapWarm();
-    expect(c.closed).toHaveLength(1);
+    await c.controller.reapWorkspaceRuntimes();
+    expect(c.closed).toHaveLength(0);
     process.stdout.write(
       JSON.stringify({
         case: "terminal_duplicate_adoption",
@@ -581,7 +580,7 @@ it("does not adopt terminal-owned compute again or place it in the warm pool", a
         destroyCallsAfterLastTerminalClosed: c.closed.length,
         realPostgres: true,
         realVM: false,
-        shortenedWarmTtlMs: 1000,
+        controllerDoesNotExpireCompute: true,
       }) + "\n",
     );
   } finally {

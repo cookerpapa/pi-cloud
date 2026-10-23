@@ -1,10 +1,10 @@
 # Architecture
 
-Planned change: [ADR-0272](adr/0272-cube-owned-elastic-retention.md) moves elastic
+[ADR-0272](adr/0272-cube-owned-elastic-retention.md) moves elastic
 VM idle deadlines to Cube, renewed by typed retention intents on the existing
-Session Kafka path. Its finite expiry/outage policy is owner-approved but not yet
-implemented. The current runtime still uses controller-owned warm expiry as
-described below; dedicated-machine reboot recovery remains separate.
+Session Kafka path. The implementation is in source and undergoing matched-release
+verification; the serving release still uses controller-owned warm expiry.
+Dedicated-machine reboot recovery remains separate.
 
 [ADR-0270](adr/0270-guest-browser-and-tool-result-actions.md), deployed as
 `guest-browser-bd03f7a6` on schema 197, adds pinned guest Playwright/Chromium with
@@ -1063,7 +1063,11 @@ Tools or workflow scripts; a late reply cannot replace the native outcome. Bindi
 process-stop receipt. Interactive workflow orchestration closes with its caller.
 A late reply is discarded when its original waiter no longer exists.
 
-The controller chooses, observes, adopts, quarantines and destroys physical VMs.
+The controller chooses, observes, adopts and quarantines physical VMs, and owns
+explicit release and recovery. ADR-0272 moves elastic idle expiry to Cubelet's
+existing synchronous allocation journal and maintenance loop. Finite retention
+intents share the Session writer and Projector; no per-pulse PG history or second
+idle timer is maintained. Diagnostic probes cannot renew this resource policy.
 A normal Tool error or user Stop does not destroy a VM. User cancellation acts
 on unfinished Tool process groups. Explicit native Tool
 execution timeouts still stop the main process and clean its cgroup; ordinary
@@ -1282,8 +1286,8 @@ is rejected before storage. Tasks are never silently truncated (ADR-0204).
 
 ## Workspaces and development machines
 
-An elastic Workspace owns one persistent Cube Volume and one default bounded-warm
-compute scope. Different ordinary Sessions receive independently fenced Tool bindings to
+An elastic Workspace owns one persistent Cube Volume and one default compute
+scope with finite retention. Different ordinary Sessions receive independently fenced Tool bindings to
 that same environment. Files, ports and processes are shared intentionally. Human
 terminals may use it concurrently. Pure chat does not reserve compute. Ordinary
 directory/file browsing reads current bytes, not a per-Run file index or archive.

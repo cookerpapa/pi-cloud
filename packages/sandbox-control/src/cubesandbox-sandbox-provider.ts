@@ -201,6 +201,7 @@ type CubeActivation = {
 };
 
 export type CubeSandboxProviderOptions = Readonly<{
+  retentionWindowMs?: number;
   templateId: string;
   developmentTemplateIds: Readonly<Record<DevelopmentEnvironmentProfileKey, string>>;
   imageRevision: string;
@@ -584,14 +585,20 @@ export class CubeSandboxProvider implements SandboxProvider {
   readonly #developmentTemplateIds: ReadonlyMap<DevelopmentEnvironmentProfileKey, string>;
   readonly #imageRevision: string;
   readonly #client: CubeSandboxRuntimeClient;
+  readonly #retentionWindowMs: number;
   readonly #readyTimeoutMs: number;
   readonly #webProxy: ToolWebProxyBootstrap;
   readonly #workspaceVolumeGateway: WorkspaceVolumeGateway;
   readonly #persistentCapsules: CubePersistentCapsuleCodec | undefined;
   readonly #activations = new Map<string, CubeActivation>();
+  readonly #interactiveRetention = new Map<
+    string,
+    { users: number; timer: NodeJS.Timeout; pending: boolean }
+  >();
   #runtimeProbe: Promise<void> | undefined;
 
   constructor(options: CubeSandboxProviderOptions) {
+    this.#retentionWindowMs = positiveInteger(options.retentionWindowMs, 900000, 86400000);
     this.#templateId = bounded(options.templateId, "CubeSandbox template ID", 256);
     this.#developmentTemplateIds = new Map(
       (["starter", "standard", "performance"] as const).map((key) => [
@@ -833,16 +840,25 @@ export class CubeSandboxProvider implements SandboxProvider {
           spec.sandboxProfileKey !== undefined
             ? this.#developmentTemplateIds.get(spec.sandboxProfileKey)!
             : this.#templateId,
-        // Sandbox control owns both elastic idle expiry and exclusive machine
-        // lifecycle. A second absolute Cube timer would kill a continuously
-        // active multi-Turn Session even though its Broker lease is healthy.
+        // Control Plane owns lifecycle policy and explicit closure.
+        // The managed allocation journal owns finite idle expiry;
+        // the generic Cube timer must not compete with its renewable deadline.
         timeoutSeconds: -1,
-        metadata: assignmentMetadata(
-          spec.activationId,
-          spec.assignment,
-          this.#imageRevision,
-          bindingSha256,
-        ),
+        metadata: {
+          ...assignmentMetadata(
+            spec.activationId,
+            spec.assignment,
+            this.#imageRevision,
+            bindingSha256,
+          ),
+          ...(!exclusiveMachine
+            ? {
+                "picloud.retention_window_ms": String(
+                  spec.retentionWindowMs ?? this.#retentionWindowMs,
+                ),
+              }
+            : {}),
+        },
         allowInternetAccess: true,
         allowPublicTraffic: false,
         volumeMounts: [{ name: volumeId, path: volumeMountPath }],
@@ -1068,15 +1084,30 @@ export class CubeSandboxProvider implements SandboxProvider {
       cols: size.cols,
       admin: activation.lifetime === "development_environment",
     });
+    const stopRetention = this.#retainInteractive(activation);
+    const output = (async function* () {
+      try {
+        yield* terminal.output;
+      } finally {
+        stopRetention();
+      }
+    })();
     return Object.freeze({
       pid: terminal.pid,
-      output: terminal.output,
+      output,
       sendInput: (data: Uint8Array) => terminal.sendInput(data),
       resize: (next: SandboxTerminalSize) => terminal.resize(next),
       kill: async () => {
-        await terminal.kill();
+        try {
+          await terminal.kill();
+        } finally {
+          stopRetention();
+        }
       },
-      disconnect: () => terminal.disconnect(),
+      disconnect: () => {
+        stopRetention();
+        terminal.disconnect();
+      },
     });
   }
 
@@ -1114,7 +1145,11 @@ export class CubeSandboxProvider implements SandboxProvider {
       );
     }
     try {
-      return await this.#client.openTcp(activation.instance, port, signal);
+      const connection = await this.#client.openTcp(activation.instance, port, signal);
+      const stopRetention = this.#retainInteractive(activation);
+      connection.once("close", stopRetention);
+      connection.once("error", stopRetention);
+      return connection;
     } catch (error) {
       throw new SandboxControlError(
         error instanceof CubeApplicationPortError
@@ -1415,6 +1450,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         raw.imageRevision,
       )
     ) {
+      await this.#throwIfExpiredElastic(handle, raw.lifetime);
       throw new SandboxControlError(
         "persistent_machine_identity_mismatch",
         "Exclusive machine physical identity did not match its recovery state",
@@ -1429,6 +1465,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     });
     const state = current.state.toLowerCase();
     if (state !== "paused" && state !== "running") {
+      await this.#throwIfExpiredElastic(handle, raw.lifetime);
       throw new SandboxControlError(
         "cubesandbox_tool_unavailable",
         "Development machine is not ready for execution",
@@ -1467,10 +1504,93 @@ export class CubeSandboxProvider implements SandboxProvider {
         await this.probeExecution(handle);
       } catch (error) {
         this.#activations.delete(handle.activationId);
+        await this.#throwIfExpiredElastic(handle, raw.lifetime);
         throw error;
       }
     }
     return handle;
+  }
+
+  async #throwIfExpiredElastic(handle: SandboxHandle, lifetime: unknown): Promise<void> {
+    if (lifetime !== "elastic") return;
+    const allocation = await this.#client.allocation(
+      handle.activationId,
+      handle.allocation.createBefore,
+      "get",
+    );
+    if (allocation.closed && allocation.phase === "absent") {
+      await this.#confirmInstanceAbsent(handle.runtimeName, handle.runtimeNodeId);
+      throw new SandboxCreationError(
+        new SandboxControlError(
+          "elastic_runtime_expired",
+          "Elastic compute was retired; the Workspace is preserved",
+          true,
+        ),
+        true,
+      );
+    }
+  }
+
+  async renewPersistentRetention(capsule: string, observedAt: number): Promise<void> {
+    if (!this.#persistentCapsules || !this.#client.renewRetention)
+      throw new Error("Cube retention transport unavailable");
+    const raw = record(this.#persistentCapsules.open(capsule), "Retention capsule");
+    if (raw.version !== 2 || raw.lifetime !== "elastic") throw new Error("Runtime is not elastic");
+    const handle = raw.handle as SandboxHandle;
+    this.#assertHandle(handle);
+    const target = raw.executionTarget as SandboxExecutionTarget;
+    if (!target || target.sandboxId !== handle.runtimeName || typeof target.bootId !== "string")
+      throw new Error("Retention target changed");
+    await this.#client.renewRetention(
+      handle.activationId,
+      handle.allocation.createBefore,
+      target.bootId,
+      observedAt,
+    );
+  }
+
+  #retainInteractive(activation: CubeActivation): () => void {
+    if (activation.lifetime !== "elastic") return () => {};
+    const id = activation.handle.activationId;
+    let entry = this.#interactiveRetention.get(id);
+    if (!entry) {
+      const refresh = () => {
+        const state = this.#interactiveRetention.get(id);
+        if (!state || state.pending || this.#activations.get(id) !== activation) return;
+        state.pending = true;
+        void Promise.resolve()
+          .then(() => {
+            if (!this.#client.renewRetention)
+              throw new Error("Cube retention transport unavailable");
+            return this.#client.renewRetention(
+              id,
+              activation.handle.allocation.createBefore,
+              activation.executionTarget.bootId,
+              Date.now(),
+            );
+          })
+          .catch(() => undefined)
+          .finally(() => {
+            state.pending = false;
+          });
+      };
+      const timer = setInterval(refresh, 30000);
+      timer.unref();
+      entry = { users: 0, timer, pending: false };
+      this.#interactiveRetention.set(id, entry);
+      refresh();
+    }
+    entry.users++;
+    const held = entry;
+    let ended = false;
+    return () => {
+      if (ended) return;
+      ended = true;
+      if (--held.users === 0) {
+        clearInterval(held.timer);
+        if (this.#interactiveRetention.get(id) === held) this.#interactiveRetention.delete(id);
+      }
+    };
   }
 
   async probeExecution(handle: SandboxHandle): Promise<{ continuityId: string }> {
@@ -2080,6 +2200,8 @@ export class CubeSandboxProvider implements SandboxProvider {
     if (this.#uploadCleanupTimer) clearInterval(this.#uploadCleanupTimer);
     this.#uploadCleanupTimer = undefined;
     await this.#uploadCleanup;
+    for (const entry of this.#interactiveRetention.values()) clearInterval(entry.timer);
+    this.#interactiveRetention.clear();
     this.#activations.clear();
     const results = await Promise.allSettled([
       this.#client.close(),

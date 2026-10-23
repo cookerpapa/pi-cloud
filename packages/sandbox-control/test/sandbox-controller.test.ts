@@ -603,7 +603,6 @@ describe("provider-backed Sandbox controller", () => {
       provider: fixture.provider,
       bindings,
       maximumActiveSandboxes: 4,
-      warmTtlMs: 1_000,
       clock: () => now,
     });
     const scope = crypto.randomUUID();
@@ -662,10 +661,9 @@ describe("provider-backed Sandbox controller", () => {
       });
       expect(manager.warmCount).toBe(1);
       now += 2_000;
-      await manager.reapWarm();
-      expect(manager.warmCount).toBe(0);
-      expect(stop).toHaveBeenCalledTimes(1);
-      expect(stop.mock.calls[0]?.[0].activationId).toBe(created[1]?.activationId);
+      await manager.reapWorkspaceRuntimes();
+      expect(manager.warmCount).toBe(1);
+      expect(stop).not.toHaveBeenCalled();
       expect(manager.ownsToolBinding(root.activationId)).toBe(true);
       expect(created).toHaveLength(2);
     } finally {
@@ -1692,7 +1690,7 @@ describe("provider-backed Sandbox controller", () => {
       requestId: crypto.randomUUID(),
       activationId: first.activationId,
       assignment: assignment,
-      disposition: "keep_warm",
+      disposition: "destroy",
     });
     const second = await waiting;
     expect(second.workspaceRoot).toBe(next.toolRoot);
@@ -1905,13 +1903,12 @@ describe("provider-backed Sandbox controller", () => {
     }
   });
 
-  it("expires every elastic warm runtime at the deployment TTL", async () => {
+  it("does not expire retained compute when only the controller clock advances", async () => {
     const fixture = providerFixture();
     let now = 1_000;
     const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
-      warmTtlMs: 1_000,
       clock: () => now,
     });
     const first = await manager.create(createRequest);
@@ -1925,9 +1922,10 @@ describe("provider-backed Sandbox controller", () => {
     });
 
     now += 60_000;
-    await manager.reapWarm();
-    expect(manager.warmCount).toBe(0);
-    expect(fixture.destroyed).toBe(true);
+    await manager.reapWorkspaceRuntimes();
+    expect(manager.warmCount).toBe(1);
+    expect(fixture.destroyed).toBe(false);
+    await manager.close();
   });
 
   it("releases local compute quota only after an unused runtime is confirmed destroyed", async () => {
@@ -2050,7 +2048,7 @@ describe("provider-backed Sandbox controller", () => {
     await manager.close();
   });
 
-  it("bounds every warm process world with one shared LRU limit", async () => {
+  it("retains independent warm VMs until Cube expires them", async () => {
     const fixture = providerFixture();
     const activationIds = [
       ACTIVATION_ID,
@@ -2062,7 +2060,6 @@ describe("provider-backed Sandbox controller", () => {
       provider: fixture.provider,
       idGenerator: () => activationIds.shift()!,
       maximumActiveSandboxes: 2,
-      maximumWarmWorkspaceRuntimes: 1,
     });
     const persistent = await manager.create(createRequest);
     await manager.release({
@@ -2099,59 +2096,10 @@ describe("provider-backed Sandbox controller", () => {
       assignment: ordinaryAssignment,
       disposition: "keep_warm",
     });
-    expect(manager.warmCount).toBe(1);
+    expect(manager.warmCount).toBe(2);
 
-    const demandAssignment: ToolSandboxAssignment = {
-      ...ordinaryAssignment,
-      workspaceId: "workspace-provider-test-new-demand",
-      sessionId: "session-provider-test-new-demand",
-      runId: "command-provider-test-new-demand",
-      turnId: "turn-provider-test-new-demand",
-      executionReference: createExecutionReference(
-        "74000000-0000-4000-8000-000000000007",
-        "74000000-0000-4000-8000-000000000007",
-        7,
-      ),
-    };
-    const demand = await manager.create({
-      ...createRequest,
-      requestId: "74000000-0000-4000-8000-000000000008",
-      assignment: demandAssignment,
-    });
-    expect(manager.warmCount).toBe(1);
-
-    const persistentNextAssignment: ToolSandboxAssignment = {
-      ...assignment,
-      runId: "command-provider-test-persistent-after-pressure",
-      turnId: "turn-provider-test-persistent-after-pressure",
-      executionReference: createExecutionReference(
-        "74000000-0000-4000-8000-000000000010",
-        "74000000-0000-4000-8000-000000000010",
-        8,
-      ),
-    };
-    const persistentAgain = await manager.create({
-      ...createRequest,
-      requestId: "74000000-0000-4000-8000-000000000011",
-      assignment: persistentNextAssignment,
-    });
-    expect(persistentAgain.continuity).toBe("cold_restore");
-    await manager.release({
-      toolBrokerProtocolVersion: 1,
-      type: "tool_sandbox.release",
-      requestId: crypto.randomUUID(),
-      activationId: persistentAgain.activationId,
-      assignment: persistentNextAssignment,
-      disposition: "keep_warm",
-    });
-    await manager.release({
-      toolBrokerProtocolVersion: 1,
-      type: "tool_sandbox.release",
-      requestId: crypto.randomUUID(),
-      activationId: demand.activationId,
-      assignment: demandAssignment,
-      disposition: "keep_warm",
-    });
+    expect(fixture.destroyed).toBe(false);
+    await manager.close();
   });
 
   it("runs two Session Tool bindings through one physical Workspace runtime", async () => {
@@ -2237,7 +2185,7 @@ describe("provider-backed Sandbox controller", () => {
     await manager.close();
   });
 
-  it("evicts the least-recently-used warm runtime when new demand reaches admission capacity", async () => {
+  it("does not override Cube retention when another Workspace requests capacity", async () => {
     const fixture = providerFixture();
     const manager = testBroker({ provider: fixture.provider, maximumActiveSandboxes: 1 });
     const first = await manager.create(createRequest);
@@ -2249,11 +2197,13 @@ describe("provider-backed Sandbox controller", () => {
       assignment,
       disposition: "keep_warm",
     });
-    await manager.create(nextBindingRequest("other"));
-    expect(fixture.destroyed).toBe(true);
-    expect(fixture.createCount).toBe(2);
+    const waiting = manager.create(nextBindingRequest("other")).catch((error) => error);
+    await vi.waitFor(() => expect(manager.admissionWaitingCount).toBe(1));
+    expect(fixture.destroyed).toBe(false);
+    expect(fixture.createCount).toBe(1);
     expect(manager.admittedCount).toBe(1);
     await manager.close();
+    expect(await waiting).toMatchObject({ code: "tool_binding_admission_closed" });
   });
 
   it("keeps a Broker-owned warm process world out of expired Supervisor inventory", async () => {
@@ -2382,7 +2332,6 @@ describe("provider-backed Sandbox controller", () => {
         sandboxDomainId: "sandbox-domain-0001",
         advertisedBaseUrl: "http://sandbox-control-0:4300/",
         maximumActiveSandboxes: null,
-        maximumWarmWorkspaceRuntimes: 4,
         cubeSandbox: {
           apiUrl: "https://cube-api.internal",
           apiKey: "k".repeat(48),

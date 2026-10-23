@@ -170,8 +170,7 @@ sandboxPlane:
   volumeGatewayRequestTimeoutMs: 660000
   maximumActivePerReplica: null
   maximumActiveCommands: 32
-  maximumWarmWorkspaceRuntimesPerReplica: 128
-  warmTtlMs: 900000
+  elasticRetentionMs: 900000
   workspace:
     existingClaim: pi-cloud-workspaces-rwx
   cube:

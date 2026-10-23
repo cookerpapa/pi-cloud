@@ -18,18 +18,13 @@ function cancelled() {
   );
 }
 
-/** Control Plane VM admission policy, separate from Session execution authority.
- * Warm-runtime eviction is supplied by the lifecycle owner; no PG or Cube API lives here. */
+/** Capacity accounting only. Cube owns idle expiration; a waiter cannot evict
+ * another task's retained VM merely because it has no current Tool binding. */
 export class SandboxAdmission {
   readonly #assigned = new Map<string, ToolSandboxAssignment>();
   readonly #waiting: Waiter[] = [];
   #closed = false;
-  #evicting: Promise<void> | undefined;
-
-  constructor(
-    readonly maximum: number | null,
-    readonly evictWarm: () => Promise<boolean>,
-  ) {}
+  constructor(readonly maximum: number | null) {}
 
   get size() {
     return this.#assigned.size;
@@ -65,10 +60,6 @@ export class SandboxAdmission {
   async acquire(activationId: string, assignment: ToolSandboxAssignment, signal?: AbortSignal) {
     this.#assertOpen(signal);
     if (this.#assigned.has(activationId)) return;
-    while (this.maximum !== null && this.#assigned.size >= this.maximum) {
-      if (!(await this.evictWarm())) break;
-      this.#assertOpen(signal);
-    }
     this.#assertOpen(signal);
     if (this.maximum === null || this.#assigned.size < this.maximum) {
       this.#assigned.set(activationId, assignment);
@@ -106,20 +97,6 @@ export class SandboxAdmission {
   cancel(id: string) {
     const waiter = this.#waiting.find((candidate) => candidate.activationId === id);
     if (waiter) this.#remove(waiter, cancelled());
-  }
-  /** A completed Run made a VM evictable while another binding was queued. */
-  offerWarm(): Promise<void> {
-    return (this.#evicting ??= (async () => {
-      while (
-        !this.#closed &&
-        this.#waiting.length &&
-        this.maximum !== null &&
-        this.#assigned.size >= this.maximum
-      )
-        if (!(await this.evictWarm())) break;
-    })().finally(() => {
-      this.#evicting = undefined;
-    }));
   }
   #detach(waiter: Waiter) {
     if (waiter.abort) waiter.signal?.removeEventListener("abort", waiter.abort);

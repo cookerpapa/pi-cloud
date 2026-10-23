@@ -80,6 +80,8 @@ export type SandboxCreateSpec = Readonly<{
   policy: SandboxPolicy;
   toolRoot?: string;
   lifetime?: "development_environment";
+  /** Immutable allocation policy, persisted before the first Cube Create. */
+  retentionWindowMs?: number;
   volumeMountPath?: "/workspace" | "/home/user";
   sandboxProfileKey?: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey;
 }>;
