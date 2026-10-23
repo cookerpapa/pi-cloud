@@ -10,22 +10,26 @@ is delivered as `elastic-retention-03ce2f23`, schema 197. The
 [delivery record](reports/elastic-retention-delivery-20261023.md) records source,
 361 fault cases, 12-image evidence, controller-offline default-window expiry,
 retained-file/native recovery and confirmed cleanup. Dedicated-machine recovery
-below remains separate.
+was subsequently delivered under ADR-0273 below.
 
 ## Resource intent and dedicated-machine recovery
 
-The owner approved [ADR-0273](adr/0273-resource-intent-and-machine-recovery.md).
-Source separates desired running/paused/released state, lifecycle progress and
-physical allocation identity. Actual VM observations remain disposable. An elastic
-allocated record no longer alternates active/warm on ordinary usage changes.
-Dedicated recovery uses direct Cube management and confirms old physical closure
-before replacement. Existing Pause/Resume keeps its original physical identity.
+[ADR-0273](adr/0273-resource-intent-and-machine-recovery.md) is deployed as
+`resource-intent-cad5487a`, schema 198. [Delivery evidence](reports/resource-intent-delivery-20261023.md)
+records preserved pause, recovered creation replies, confirmed physical
+replacement, inherited ephemeral-scope retention and native continuation. All
+original files/configuration/history checks and owned fixture cleanup pass.
+The maintained single-controller replacement procedure remains stop-old / owner
+closure / start-new; overlapping-owner rolling updates retain their separate
+backlog below. Cold replacement preserves Volume bytes, not process memory or
+arbitrary system-disk changes.
 
-- [ ] Complete verification, matched deployment and live recovery acceptance.
-- [ ] Verify the original failed dedicated machine automatically recovers with its
-      same logical identity, conversation and persistent Workspace. Do not use
-      public Release, which deletes that Workspace. Earlier matched delivery
-      confirmed old physical absence and retained all 25 file hashes.
+- [ ] Promote compute-only retirement for full matched upgrades into a maintained
+      operator command. The current release runner still requires empty native
+      inventory. Quiesce resource controllers before closing desired-running
+      allocations, confirm the recorded node's absence, and preserve user intent
+      and Workspace bytes. This delivery used a scoped cold administrative
+      sequence; public machine Release must not be used for this purpose.
 
 
 The [September 15–17 audit](reports/repository-audit-20260915.md) is complete:

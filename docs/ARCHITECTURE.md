@@ -1,11 +1,13 @@
 # Architecture
 
-[ADR-0273](adr/0273-resource-intent-and-machine-recovery.md) separates durable
-resource intent and operation progress from disposable Cube observations. Its
-implementation is undergoing verification; the serving release remains
-`elastic-retention-03ce2f23`. Dedicated machines retain a stable product ID while
-confirmed replacement receives a new physical allocation. Direct lifecycle calls
-reuse Cube management; Session binding changes retain their Kafka path.
+[ADR-0273](adr/0273-resource-intent-and-machine-recovery.md) is deployed as
+`resource-intent-cad5487a`, schema 198. PG retains resource intent and lifecycle
+completion; Cube supplies disposable physical observations. Dedicated machines
+keep their product identity across confirmed allocation replacement. Direct
+lifecycle calls use Cube management; Session bindings retain their Kafka path.
+[Delivery evidence](reports/resource-intent-delivery-20261023.md) records source,
+370 fault cases, matched artifacts, real pause/owner/VM recovery, retained child
+previews and original asset preservation.
 
 [ADR-0272](adr/0272-cube-owned-elastic-retention.md) moves elastic
 VM idle deadlines to Cube, renewed by typed retention intents on the existing
@@ -14,7 +16,7 @@ managed Cube protocol 8 / guest protocol 7. Cubelet's allocation journal and
 existing maintenance loop own expiry; the controller idle timer and warm-count
 eviction are removed. [Delivery evidence](reports/elastic-retention-delivery-20261023.md)
 covers default-window expiry with Control Plane offline, retained files and native
-continuation. Dedicated-machine reboot recovery remains separate.
+continuation. Dedicated-machine recovery follows ADR-0273 above.
 
 [ADR-0270](adr/0270-guest-browser-and-tool-result-actions.md), deployed as
 `guest-browser-bd03f7a6` on schema 197, adds pinned guest Playwright/Chromium with
@@ -99,7 +101,8 @@ expiry maintenance, ADR-0260's publication/reader retirement repair and
 ADR-0261's bounded projection/writer-view cleanup, ADR-0262's native recovery reads
 and ADR-0263's model semantics/unbounded work, ADR-0264's recoverable delegation,
 ADR-0265's retained Volume evidence, ADR-0266's attachment lifetimes and ADR-0267's
-runtime catalogs/scoped releases (schema 196 / topic v18 / boot reply v3 / guest
+runtime catalogs/scoped releases, ADR-0272's Cube-owned retention and ADR-0273's
+resource intent/recovery (schema 198 / topic v18 / boot reply v3 / guest
 protocol 7, adapter startup 3).
 The [preceding resource delivery record](reports/resource-interaction-repair-20261020.md)
 records the October 21 `resource-repair-1cdccb80` deployment, completed combined

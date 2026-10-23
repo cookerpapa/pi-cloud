@@ -4,7 +4,8 @@ import { execFile } from "node:child_process";
 import { readPrivateRuntimeFile as readPrivate } from "./lib/runtime-file-policy.mjs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { readPreviewDocument } from "./lib/preview-client.mjs";
-import { resolve } from "node:path";
+import { resolve, dirname } from "node:path";
+import { armControlPlaneRestore } from "./lib/owned-control-plane-outage.mjs";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
 import ssh2 from "ssh2";
@@ -132,30 +133,93 @@ async function waitForRun(runId) {
   throw new Error(`Run ${runId} did not settle`);
 }
 
+async function replaceControlPlane() {
+  assert.equal(
+    Number(
+      await psql(
+        "select count(*) from runs where state in ('queued','running','settling','cancel_requested')",
+      ),
+    ),
+    0,
+    "Refuse Control Plane replacement during unrelated work",
+  );
+  const owners = JSON.parse(
+    await psql(
+      "select coalesce(json_agg(instance_id::text),'[]')::text from sandbox_control_instances where state='ready' and lease_expires_at>clock_timestamp()",
+    ),
+  );
+  const path = resolve(
+    repositoryRoot,
+    (process.env.PI_CLOUD_DEVELOPMENT_REPORT ?? "dist/development-acceptance.json") +
+      `.${Date.now()}.restore.json`,
+  );
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  const stopped = await armControlPlaneRestore(path, Date.now() + 180_000);
+  try {
+    kubectl(["scale", "deployment/pi-cloud-control-plane", "--current-replicas=1", "--replicas=0"]);
+    kubectl(["wait", "--for=delete", "pod", "-l", stopped.selector, "--timeout=120s"], {
+      timeout: 125_000,
+    });
+    const deadline = Date.now() + 60_000;
+    for (;;) {
+      const count = owners.length
+        ? Number(
+            await psql(
+              `select count(*) from sandbox_control_instances where instance_id::text in (${owners.map(sqlLiteral).join(",")}) and state='ready' and lease_expires_at>clock_timestamp()`,
+            ),
+          )
+        : 0;
+      if (!count) break;
+      if (Date.now() >= deadline) throw new Error("Previous resource owner remains authorized");
+      await wait(250);
+    }
+  } finally {
+    await stopped.restore();
+  }
+  kubectl(["rollout", "status", "deployment/pi-cloud-control-plane", "--timeout=180s"], {
+    timeout: 185_000,
+  });
+}
+
+function transientControlFailure(error) {
+  return (
+    [502, 503, 504].includes(error?.status) ||
+    (error instanceof TypeError && /fetch|network|socket/i.test(error.message))
+  );
+}
+
 async function machineAction(environmentId, action, key) {
-  const end = Date.now() + 60_000;
+  const end = Date.now() + 120_000;
   for (;;) {
     try {
-      return await api.developmentEnvironmentAction(environmentId, action, key);
+      const result = await api.developmentEnvironmentAction(environmentId, action, key);
+      if (action !== "release" || result.state === "released") return result;
+      if (Date.now() >= end) throw new Error("Machine release remains unconfirmed");
     } catch (error) {
-      if (Date.now() >= end || ![502, 503, 504].includes(error.status)) throw error;
-      await wait(500);
+      if (Date.now() >= end || !transientControlFailure(error)) throw error;
     }
+    await wait(500);
   }
 }
 
 async function waitForEnvironment(environmentId, expectedState) {
   const deadline = Date.now() + 5 * 60_000;
   while (Date.now() < deadline) {
-    const current = (await api.listDevelopmentEnvironments()).environments.find(
-      (environment) => environment.environmentId === environmentId,
-    );
+    let current;
+    try {
+      current = (await api.listDevelopmentEnvironments()).environments.find(
+        (environment) => environment.environmentId === environmentId,
+      );
+    } catch (error) {
+      if (!transientControlFailure(error)) throw error;
+      await wait(500);
+      continue;
+    }
     if (current?.state === expectedState) return current;
-    if (current?.desiredState === "released" && expectedState !== "released") {
+    if (current?.desiredState === "released" && expectedState !== "released")
       throw new Error(
         `Development environment ${environmentId} ended as ${current.state}: ${current.failureCode ?? "unknown"}`,
       );
-    }
     await wait(250);
   }
   throw new Error(`Development environment ${environmentId} did not reach ${expectedState}`);
@@ -576,11 +640,7 @@ try {
     0,
     "Refuse Control Plane replacement while another Run remains active",
   );
-  await capture(
-    process.execPath,
-    ["scripts/production-kubernetes.mjs", "restart", "control-plane"],
-    5 * 60_000,
-  );
+  await replaceControlPlane();
   await waitForSandboxControlReady(development.environmentId);
   const recoveredAfterControlPlaneRestart = await waitForEnvironment(
     development.environmentId,
@@ -613,7 +673,9 @@ try {
 
   const pauseKey = newIdempotencyKey("environment");
   console.log(JSON.stringify({ event: "development_acceptance_stage", stage: "pause_resume" }));
-  const paused = await machineAction(development.environmentId, "pause", pauseKey);
+  const pauseAccepted = await machineAction(development.environmentId, "pause", pauseKey);
+  assert.equal(pauseAccepted.desiredState, "paused");
+  const paused = await waitForEnvironment(development.environmentId, "paused");
   assert.equal(paused.state, "paused");
   assert.equal((await cube.read(runtimeName))?.state, "paused");
   assert.equal(paused.desiredState, "paused");
@@ -626,19 +688,17 @@ try {
     0,
     "Refuse paused-machine restart check during unrelated work",
   );
-  await capture(
-    process.execPath,
-    ["scripts/production-kubernetes.mjs", "restart", "control-plane"],
-    5 * 60_000,
-  );
+  await replaceControlPlane();
   const pauseAfterRestart = await waitForEnvironment(development.environmentId, "paused");
   assert.equal(pauseAfterRestart.desiredState, "paused");
   assert.equal((await cube.read(runtimeName))?.state, "paused");
-  const resumed = await machineAction(
+  const resumeAccepted = await machineAction(
     development.environmentId,
     "resume",
     newIdempotencyKey("environment"),
   );
+  assert.equal(resumeAccepted.desiredState, "running");
+  const resumed = await waitForEnvironment(development.environmentId, "running");
   assert.equal(resumed.state, "running");
   assert.equal(
     (await machineAction(development.environmentId, "pause", pauseKey)).state,
@@ -658,6 +718,7 @@ try {
     "EXCLUSIVE_RESUME_OK",
   );
 
+  console.log(JSON.stringify({ event: "development_acceptance_stage", stage: "cold_replacement" }));
   const allocationBeforeLoss = JSON.parse(
     await psql(`select json_build_object('id',allocation_id,'generation',generation)::text
     from development_environments where id=${sqlLiteral(development.environmentId)}`),
@@ -800,6 +861,7 @@ try {
     nativeRunAfterReplacement: recoveredRun.runId,
     nativeSandboxResetAfterReplacement: true,
     dedicatedParentEphemeralScopeRetainedAfterCleanupSweep: true,
+    controlPlaneReplacementMode: "stop-old-owner-closure-start-new",
   };
   await mkdir(resolve(repositoryRoot, "docs/reports"), { recursive: true });
   await writeFile(

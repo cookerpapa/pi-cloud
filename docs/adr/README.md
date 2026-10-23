@@ -1,19 +1,20 @@
 # Current architecture decisions
 
-[ADR-0273](0273-resource-intent-and-machine-recovery.md) separates durable
-resource intent and operation progress from disposable Cube observations. Its
-implementation is undergoing verification; the serving release remains
-`elastic-retention-03ce2f23`. Dedicated machines retain a stable product ID while
-confirmed replacement receives a new physical allocation. Direct lifecycle calls
-reuse Cube management; Session binding changes retain their Kafka path.
+[ADR-0273](0273-resource-intent-and-machine-recovery.md) is deployed as
+`resource-intent-cad5487a`, schema 198. PG retains resource intent and lifecycle
+completion; Cube supplies disposable physical observations. Dedicated machines
+keep their product identity across confirmed allocation replacement. Direct
+lifecycle calls use Cube management; Session bindings retain their Kafka path.
+[Delivery evidence](../reports/resource-intent-delivery-20261023.md) records source,
+370 fault cases, matched artifacts, real pause/owner/VM recovery, retained child
+previews and original asset preservation.
 
 [ADR-0272](0272-cube-owned-elastic-retention.md) records the owner-approved
 implementation of finite elastic-VM keepalives through the existing Session Kafka
 path, with Cube owning idle deadlines. It is deployed as `elastic-retention-03ce2f23`,
 schema 197 / managed protocol 8. Diagnostic probes remain observations;
 [delivery evidence](../reports/elastic-retention-delivery-20261023.md) includes
-controller-offline expiry and retained Workspace bytes. Dedicated-machine reboot
-recovery is tracked separately.
+controller-offline expiry and retained Workspace bytes. Dedicated-machine recovery follows ADR-0273 above.
 
 [ADR-0271](0271-local-upstream-proxy-configuration.md) synchronizes the local
 upstream address through one operator command while retaining PG and Helm ownership.

@@ -53,6 +53,17 @@ values or replace the serving catalog. There is no mixed-version fallback.
 
 ## Drain and apply
 
+ADR-0273 uses schema 198 and separates logical machines from physical allocations.
+A desired-running machine will be recreated while its controller is active, so
+planned compute retirement must first quiesce writers and stop resource
+controllers. Retain desired state and Workspace identity, close the exact current
+allocation, confirm physical absence on its recorded node, and retain the closed
+completion before clearing its live handle. Do not use public machine Release:
+it deletes the Workspace. The matched runner still requires empty native
+inventory; compute-only retirement is currently an operator preparation step.
+The new controller recovers retained running intent after cutover. See the
+[delivery evidence](reports/resource-intent-delivery-20261023.md).
+
 ADR-0272 requires matched managed Cube protocol 8 and the new typed
 `runtime_keepalive` Session fact. Guest Tool protocol 7 and schema 197 remain.
 The existing Cube authorization callback is the twelfth scanned artifact and is

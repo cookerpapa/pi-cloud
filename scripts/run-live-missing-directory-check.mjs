@@ -110,7 +110,7 @@ try {
   await until(async () => {
     const current = await machineRow();
     if (current.state === "failed") throw new Error("Fixture machine failed to start");
-    return current.state === "running";
+    return current.state === "ready";
   }, "Fixture machine");
   const original = await machineRow();
   const name = "cwd-acceptance",

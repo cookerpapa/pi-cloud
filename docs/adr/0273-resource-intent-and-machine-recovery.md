@@ -1,6 +1,7 @@
 # ADR-0273: Resource intent and dedicated-machine recovery
 
-Status: implemented; source checks passed, matched delivery and live verification pending.
+Status: implemented and deployed as `resource-intent-cad5487a`, schema 198.
+See the [delivery record](../reports/resource-intent-delivery-20261023.md).
 Date: 2026-10-23.
 
 ## Decision
@@ -79,11 +80,11 @@ elastic expiry without automatic restart; unchanged Tool hot-path queries;
 resource UI observation after adoption; confirmed fixture cleanup. Relevant
 native/Cube, browser, migration, fault and matched-release gates remain required.
 
-Source verification covers all 22 workspace suites, 368 fault cases, isolated RF3,
+Source verification covers all 22 workspace suites, 370 fault cases, isolated RF3,
 native Cube contracts and the required static/audit gates. The initial protocol
 and Web fixtures were updated for required desiredState. An initial isolated
-Kafka topic-creation failure passed an unchanged repeat. Live acceptance remains
-a separate deployment gate.
+Kafka topic-creation failure passed an unchanged repeat. Final live acceptance and cleanup passed; the delivery record retains earlier
+failed samples separately.
 
 Live verification found that an ephemeral child of a dedicated machine inherits
 `execution_mode=development_environment`. That mode does not make its separate

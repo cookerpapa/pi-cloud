@@ -49,7 +49,7 @@ protocol, record the decision under `docs/adr/` before implementation.
   processing. Observation-only phase/Tool updates use lossy HTTP/SSE, never Kafka,
   PG or context. ADR-0201/0211 permit bounded transport probes on the same Kafka
   Session path and boot-scoped Worker reply transport; they never become native
-  history or a second execution authority. Physical VM evidence is disposable;
+  history or a second execution authority. Physical health observations are disposable;
   missing probes never authorize destruction, replay or quota release.
   ADR-0272 separately authorizes finite elastic retention: typed keepalive
   intents renew Cubelet's existing allocation journal, and Cubelet owns idle
@@ -120,7 +120,10 @@ protocol, record the decision under `docs/adr/` before implementation.
 - Do not claim exactly-once semantics for arbitrary shell commands or external side effects.
 - Do not run untrusted tools in the control-plane or trusted Agent Runner process.
 - Control Plane owns VM lifecycle policy, binding admission, explicit release
-  and recovery. Under ADR-0272 Cubelet owns finite elastic idle expiry; retain
+  and recovery. ADR-0273 separates durable user intent and verified allocation
+  closure from disposable physical observations. A stable development machine
+  receives a new allocation UUID only after confirmed old physical absence.
+  Under ADR-0272 Cubelet owns finite elastic idle expiry; retain
   no competing Control Plane deadline scanner or warm-cache eviction policy.
   Dedicated machines remain non-expiring. Cubelet owns
   accepted fixed Tool lifetimes and boot/ordered-position fencing (ADR-0219/0221).

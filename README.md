@@ -3,17 +3,19 @@
 A self-hosted, multi-tenant coding agent. Pi Durable 1.0.0 runs the native Harness in a shared
 Worker pool; file and shell tools execute in isolated CubeSandbox KVM guests.
 
-[Resource intent and machine recovery](docs/adr/0273-resource-intent-and-machine-recovery.md)
-is implemented in source and under verification. It preserves deliberate pause,
-separates stable machines from replaceable VM allocations and uses live Cube
-observations for resource display. Deployment status follows below.
+[Resource intent and machine recovery](docs/reports/resource-intent-delivery-20261023.md)
+is deployed as `resource-intent-cad5487a`, schema 198. Dedicated machines preserve
+running/paused intent across Control Plane replacement and recover lost compute
+with a new allocation against the same Workspace. Cube supplies live observations;
+PG retains control intent and verified lifecycle completion. Source, fault,
+artifact and real Luna/Cube/browser checks pass with original assets preserved.
 
 [Cube-owned elastic retention](docs/reports/elastic-retention-delivery-20261023.md)
-is deployed as `elastic-retention-03ce2f23`, schema 197. Active Sessions renew
+was first deployed as `elastic-retention-03ce2f23`, schema 197. Active Sessions renew
 existing compute through Kafka even during model silence; Cube owns the default
 15-minute idle deadline. Workspace files and conversations survive expiry.
 Real Luna acceptance verifies pure-chat renewal, expiry with Control Plane offline,
-and continuation on a new VM. Dedicated-machine host-reboot recovery remains separate.
+and continuation on a new VM. Dedicated-machine recovery follows ADR-0273 above.
 
 The preceding [guest browser and preview delivery](docs/reports/guest-browser-delivery-20261022.md)
 was `guest-browser-bd03f7a6`, schema 197: the standard image bundles pinned
@@ -104,7 +106,7 @@ additional messages go to the running Pi native queue and are confirmed after
 its Kafka-backed Storage commit. An unavailable Worker leaves the browser draft
 unconfirmed. [ADR-0238](docs/adr/0238-native-input-queue-and-run-record.md) is deployed;
 the [Worker claim cleanup](docs/adr/0242-worker-claim-schema-cleanup.md) is retained
-in the current schema 197 runtime.
+in the current schema 198 runtime.
 
 The intake path shares its locked Session and request lookup between
 routing and Run creation: eight ordinary business SQL statements, two on an

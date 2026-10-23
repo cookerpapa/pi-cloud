@@ -4,14 +4,16 @@
 
 The owner approved [ADR-0273](adr/0273-resource-intent-and-machine-recovery.md).
 Implementation uses existing PG resource records, Cube allocation APIs and
-controller loops; current serving artifacts have not yet changed.
+controller loops. It is deployed as `resource-intent-cad5487a`, schema 198;
+[delivery](reports/resource-intent-delivery-20261023.md) covers original assets,
+370 fault cases and real Luna/Cube/browser acceptance.
 
 - [x] Separate user intent, physical allocation identity and lifecycle progress.
 - [x] Remove persisted IP observations and elastic active/warm usage duplication.
 - [x] Reconcile pause, adoption, lost creation replies and confirmed replacement.
 - [x] Present current-owner observations and distinct recovery/unavailable states.
 - [x] Complete lifecycle, stale-result, loss, native Cube contract and UI verification.
-- [ ] Deliver matched artifacts; verify the retained user Workspace and owned fixture cleanup.
+- [x] Deliver matched artifacts; verify the retained user Workspace and owned fixture cleanup.
 
 ## Cube-owned finite elastic retention
 
@@ -30,7 +32,8 @@ and matched delivery are complete as `elastic-retention-03ce2f23`, schema 197.
 
 Dedicated-machine host-reboot recovery is a separate lifecycle item, not an
 application of elastic idle expiration. The failed machine record and Workspace
-were retained after confirmed retirement of its already-exited compute.
+were retained after confirmed retirement of its already-exited compute. Recovery
+was subsequently delivered under ADR-0273 above.
 
 ## Guest browser and application preview delivery
 
