@@ -5,6 +5,22 @@ architecture belongs here. Implemented contracts live in the
 [architecture](ARCHITECTURE.md), [current ADRs](adr/README.md) and versioned
 acceptance evidence. Superseded plans and completed-task journals remain in Git.
 
+## Dedicated development machine after host shutdown
+
+- [ ] Repair and verify recovery from host shutdown separately from ordinary VM
+      pause/resume. The October 23 read-only incident check found the bound Cube
+      runtime `stopped`, PG machine state `unknown` with
+      `cubesandbox_tool_unavailable`, and the persistent Volume/project files still
+      present. Current admission reports “Resume the development machine” for
+      every non-running state, while both PiCloud and Cube resume only paused
+      runtimes. Distinguish paused, unavailable and released UI states; provide a
+      recovery path that retains Workspace bytes and confirms old physical-target
+      closure before any replacement. The existing machine release action also
+      deletes its Workspace and must not be used as a data-preserving restart.
+      Startup verification must inspect bound user machines as well as healthy
+      platform Pods. No machine, file or ownership record was changed during the
+      incident investigation.
+
 The [September 15–17 audit](reports/repository-audit-20260915.md) is complete:
 maintained-file review, paid combination tests, process faults, browser paths,
 latency analysis, isolated load gates and scoped cleanup. Its bounded measurements
