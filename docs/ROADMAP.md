@@ -1,5 +1,12 @@
 # Implementation roadmap
 
+## Composer and native pending-input presentation
+
+- [x] Add account-scoped browser Enter preference, shared button semantics and IME-safe keys.
+- [x] Combine a compact pending queue with the composer, inline editing and per-row actions.
+- [x] Remove persistent explanatory/success copy; retain native Pi input boundaries and retry identity.
+- [ ] Complete scoped Web publication and real Luna/Cube queue acceptance with fixture cleanup.
+
 ## Resource intent and dedicated-machine recovery
 
 The owner approved [ADR-0273](adr/0273-resource-intent-and-machine-recovery.md).

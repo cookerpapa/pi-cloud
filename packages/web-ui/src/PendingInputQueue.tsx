@@ -1,7 +1,7 @@
 import { restoreReturnedInputs, type InputReturnRecovery } from "./returned-inputs.ts";
 import { UploadCards } from "./UploadCards.tsx";
 import type { UserUpload } from "@pi-cloud/protocol";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { InputQueueResource, QueuedInputAction } from "@pi-cloud/protocol";
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "./api.ts";
 import { useI18n } from "./i18n.tsx";
@@ -40,6 +40,10 @@ export function PendingInputQueue({
   const current = useRef<InputQueueResource | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const inFlight = useRef(false);
+  const listId = useId();
+  const root = useRef<HTMLElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [menuInputId, setMenuInputId] = useState<string | null>(null);
   const readAbort = useRef<AbortController | undefined>(undefined);
   const [error, setError] = useState<
     "queue.loadError" | "queue.actionError" | "queue.changed" | "queue.noActive" | null
@@ -53,6 +57,19 @@ export function PendingInputQueue({
   const sequence = useRef(0);
   const callbacks = useRef({ onSnapshot, onRestoreDraft, t });
   callbacks.current = { onSnapshot, onRestoreDraft, t };
+  useEffect(() => {
+    if (!menuInputId) return;
+    root.current?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus();
+    const close = (event: PointerEvent) => {
+      if (
+        !(event.target instanceof Element) ||
+        event.target.closest("[data-input-id]")?.getAttribute("data-input-id") !== menuInputId
+      )
+        setMenuInputId(null);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [menuInputId]);
   const apply = useCallback(
     (page: InputQueueResource) => {
       let next = page;
@@ -272,16 +289,110 @@ export function PendingInputQueue({
 
   const editingItem = editing && queue?.items.find((item) => item.inputId === editing.inputId);
   const editable = editingItem?.status === "queued";
+  const showAll = expanded || editing !== null;
+  const visibleItems = showAll ? queue?.items : queue?.items.slice(0, 3);
+  const editor = editing ? (
+    <form
+      className="pending-input-editor"
+      onKeyDown={(event) => {
+        if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          // Keep the local edit when an action is still awaiting confirmation.
+          if (busy === null) setEditing(null);
+        }
+      }}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (editable && (editing.text.trim() || editing.uploads.length))
+          void perform(editing.inputId, { action: "edit", text: editing.text }).then((ok) => {
+            if (ok) setEditing(null);
+          });
+      }}
+    >
+      {!editable ? <p role="status">{t("queue.draftKept")}</p> : null}
+      <textarea
+        aria-label={t("queue.editLabel")}
+        value={editing.text}
+        maxLength={100000}
+        rows={2}
+        autoFocus
+        disabled={busy !== null}
+        onChange={(event) => setEditing({ ...editing, text: event.target.value })}
+      />
+      <UploadCards api={api} uploads={editing.uploads} compact />
+      <div className="pending-input-editor-actions">
+        <button
+          type="submit"
+          disabled={
+            !editable ||
+            !canMutate ||
+            busy !== null ||
+            (!editing.text.trim() && !editing.uploads.length)
+          }
+        >
+          {t("queue.save")}
+        </button>
+        <button
+          type="button"
+          disabled={
+            !editable ||
+            !canMutate ||
+            busy !== null ||
+            !queue?.activeTurnId ||
+            (!editing.text.trim() && !editing.uploads.length)
+          }
+          onClick={() =>
+            void perform(editing.inputId, { action: "steer", text: editing.text }).then((ok) => {
+              if (ok) setEditing(null);
+            })
+          }
+        >
+          {t("queue.steer")}
+        </button>
+        {!editable ? (
+          <button
+            type="button"
+            onClick={() => {
+              if (callbacks.current.onRestoreDraft(editing.text, editing.uploads) !== false)
+                setEditing(null);
+            }}
+          >
+            {t("queue.restoreDraft")}
+          </button>
+        ) : null}
+        <button type="button" disabled={busy !== null} onClick={() => setEditing(null)}>
+          {t("queue.closeEdit")}
+        </button>
+      </div>
+    </form>
+  ) : null;
   if (!queue?.items.length && !editing && !error && returnStatus === "idle") return null;
   return (
-    <section className="pending-input-queue" aria-label={t("queue.title")}>
+    <section ref={root} className="pending-input-queue" aria-label={t("queue.title")}>
       <header>
         <strong>{t("queue.title")}</strong>
         <span>
           {queue?.items.length ?? 0}
           {queue?.hasMore ? "+" : ""}
         </span>
-        <small>{t("queue.hint")}</small>
+        {(queue?.items.length ?? 0) > 3 || queue?.hasMore ? (
+          <button
+            type="button"
+            aria-expanded={showAll}
+            aria-controls={listId}
+            aria-label={t(showAll ? "queue.collapse" : "queue.expand")}
+            title={t(showAll ? "queue.collapse" : "queue.expand")}
+            disabled={editing !== null}
+            onClick={() => {
+              setExpanded(!showAll);
+              setMenuInputId(null);
+            }}
+          >
+            <span aria-hidden="true">{showAll ? "⌃" : "⌄"}</span>
+          </button>
+        ) : null}
       </header>
       {returnStatus === "pending" ? <p role="status">{t("queue.returnPending")}</p> : null}
       {returnStatus === "failed" ? (
@@ -300,171 +411,163 @@ export function PendingInputQueue({
           </button>
         </p>
       ) : null}
-      <div className="pending-input-list">
-        {queue?.items.map((item, index) => (
+      <div id={listId} className="pending-input-list">
+        {visibleItems?.map((item, index) => (
           <div
             className={`pending-input-row${editing?.inputId === item.inputId ? " editing" : ""}`}
-            data-turn-id={item.inputId}
+            data-input-id={item.inputId}
             key={item.inputId}
+            onBlur={(event) => {
+              if (
+                !event.currentTarget.contains(event.relatedTarget) &&
+                menuInputId === item.inputId
+              )
+                setMenuInputId(null);
+            }}
+            onKeyDown={(event) => {
+              if (menuInputId !== item.inputId || event.nativeEvent.isComposing) return;
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                setMenuInputId(null);
+                event.currentTarget
+                  .querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')
+                  ?.focus();
+              }
+              if (["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
+                event.preventDefault();
+                const buttons = [
+                  ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                    '[role="menuitem"]:not(:disabled)',
+                  ),
+                ];
+                const position = buttons.indexOf(document.activeElement as HTMLButtonElement);
+                buttons[
+                  event.key === "Home"
+                    ? 0
+                    : event.key === "End"
+                      ? buttons.length - 1
+                      : (position + (event.key === "ArrowUp" ? -1 : 1) + buttons.length) %
+                        buttons.length
+                ]?.focus();
+              }
+            }}
           >
-            <span className="pending-input-number">{index + 1}</span>
-            <div className="pending-input-content">
-              <p>
-                {item.text.slice(0, 240)}
-                {item.text.length > 240 ? "…" : ""}
-              </p>
-              <UploadCards api={api} uploads={item.uploads ?? []} />
-              {item.status === "steering" ? (
-                <small className="pending-input-status">{t("queue.steering")}</small>
-              ) : null}
-            </div>
-            <div className="pending-input-actions">
-              <button
-                type="button"
-                title={t("queue.up")}
-                aria-label={t("queue.up")}
-                disabled={
-                  !canMutate ||
-                  busy !== null ||
-                  index === 0 ||
-                  item.status !== "queued" ||
-                  queue.items[index - 1]?.status !== "queued"
-                }
-                onClick={() => void perform(item.inputId, { action: "move", direction: "up" })}
-              >
-                ↑
-              </button>
-              <button
-                type="button"
-                title={t("queue.down")}
-                aria-label={t("queue.down")}
-                disabled={
-                  !canMutate ||
-                  busy !== null ||
-                  (index === queue.items.length - 1 && !queue.hasMore) ||
-                  item.status !== "queued" ||
-                  (index < queue.items.length - 1 && queue.items[index + 1]?.status !== "queued")
-                }
-                onClick={() => void perform(item.inputId, { action: "move", direction: "down" })}
-              >
-                ↓
-              </button>
-              <button
-                type="button"
-                disabled={!canMutate || busy !== null || item.status !== "queued"}
-                onClick={() => {
-                  setEditing({
-                    inputId: item.inputId,
-                    text: item.text,
-                    uploads: item.uploads ?? [],
-                  });
-                  setError(null);
-                }}
-              >
-                {t("queue.edit")}
-              </button>
-              <button
-                type="button"
-                disabled={
-                  !canMutate ||
-                  busy !== null ||
-                  item.status !== "queued" ||
-                  queue.activeTurnId === null
-                }
-                onClick={() => void perform(item.inputId, { action: "steer" })}
-              >
-                {t("queue.steer")}
-              </button>
-              <button
-                type="button"
-                disabled={!canMutate || busy !== null || item.status !== "queued"}
-                onClick={() => void perform(item.inputId, { action: "cancel" })}
-              >
-                {t("queue.remove")}
-              </button>
-            </div>
+            {editing?.inputId === item.inputId ? (
+              editor
+            ) : (
+              <>
+                <div className="pending-input-content">
+                  <p title={item.text}>
+                    {item.text.slice(0, 240)}
+                    {item.text.length > 240 ? "…" : ""}
+                  </p>
+                  <UploadCards api={api} uploads={item.uploads ?? []} compact />
+                </div>
+                <div className="pending-input-actions" aria-busy={busy === item.inputId}>
+                  {item.status === "steering" ? (
+                    <span className="pending-input-status">{t("queue.steering")}</span>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={!canMutate || busy !== null || !queue?.activeTurnId}
+                      onClick={() => void perform(item.inputId, { action: "steer" })}
+                    >
+                      {t("queue.steer")}
+                    </button>
+                  )}
+                  <button
+                    className="pending-input-more"
+                    type="button"
+                    aria-haspopup="menu"
+                    aria-expanded={menuInputId === item.inputId}
+                    aria-label={t("queue.actions")}
+                    title={t("queue.actions")}
+                    disabled={!canMutate || busy !== null || item.status !== "queued"}
+                    onClick={() =>
+                      setMenuInputId(menuInputId === item.inputId ? null : item.inputId)
+                    }
+                  >
+                    ⋯
+                  </button>
+                </div>
+                {menuInputId === item.inputId ? (
+                  <div className="pending-input-menu" role="menu" aria-label={t("queue.actions")}>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={!canMutate || busy !== null || item.status !== "queued"}
+                      onClick={() => {
+                        setMenuInputId(null);
+                        setEditing({
+                          inputId: item.inputId,
+                          text: item.text,
+                          uploads: item.uploads ?? [],
+                        });
+                        setError(null);
+                      }}
+                    >
+                      {t("queue.edit")}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={
+                        !canMutate ||
+                        busy !== null ||
+                        index === 0 ||
+                        item.status !== "queued" ||
+                        queue?.items[index - 1]?.status !== "queued"
+                      }
+                      onClick={() => {
+                        setMenuInputId(null);
+                        void perform(item.inputId, { action: "move", direction: "up" });
+                      }}
+                    >
+                      {t("queue.up")}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={
+                        !canMutate ||
+                        busy !== null ||
+                        (index === queue!.items.length - 1 && !queue!.hasMore) ||
+                        item.status !== "queued" ||
+                        (index < queue!.items.length - 1 &&
+                          queue!.items[index + 1]?.status !== "queued")
+                      }
+                      onClick={() => {
+                        setMenuInputId(null);
+                        void perform(item.inputId, { action: "move", direction: "down" });
+                      }}
+                    >
+                      {t("queue.down")}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={!canMutate || busy !== null || item.status !== "queued"}
+                      onClick={() => {
+                        setMenuInputId(null);
+                        void perform(item.inputId, { action: "cancel" });
+                      }}
+                    >
+                      {t("queue.remove")}
+                    </button>
+                  </div>
+                ) : null}
+              </>
+            )}
           </div>
         ))}
+        {/* A consumed input or a superseded pagination view must not discard an edit. */}
+        {editing && !editingItem ? editor : null}
       </div>
-      {queue?.hasMore ? (
+      {showAll && queue?.hasMore ? (
         <button type="button" disabled={busy !== null} onClick={() => void loadMore()}>
           {t("queue.more")}
         </button>
-      ) : null}
-      {editing ? (
-        <form
-          className="pending-input-editor"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (editable)
-              void perform(editing.inputId, { action: "edit", text: editing.text }).then((ok) => {
-                if (ok) setEditing(null);
-              });
-          }}
-        >
-          {!editable ? <p role="status">{t("queue.draftKept")}</p> : null}
-          <strong className="pending-input-edit-title">
-            {t("queue.editLabel")}
-            {editingItem
-              ? ` ${queue!.items.findIndex((item) => item.inputId === editing.inputId) + 1}`
-              : ""}
-          </strong>
-          <textarea
-            aria-label={t("queue.editLabel")}
-            value={editing.text}
-            maxLength={100000}
-            rows={3}
-            autoFocus
-            disabled={busy !== null}
-            onChange={(event) => setEditing({ ...editing, text: event.target.value })}
-          />
-          <div className="pending-input-editor-actions">
-            <button
-              type="submit"
-              disabled={
-                !editable ||
-                !canMutate ||
-                busy !== null ||
-                (!editing.text.trim() && !editing.uploads.length)
-              }
-            >
-              {t("queue.save")}
-            </button>
-            <button
-              type="button"
-              disabled={
-                !editable ||
-                !canMutate ||
-                busy !== null ||
-                !queue?.activeTurnId ||
-                (!editing.text.trim() && !editing.uploads.length)
-              }
-              onClick={() =>
-                void perform(editing.inputId, { action: "steer", text: editing.text }).then(
-                  (ok) => {
-                    if (ok) setEditing(null);
-                  },
-                )
-              }
-            >
-              {t("queue.steer")}
-            </button>
-            {!editable ? (
-              <button
-                type="button"
-                onClick={() => {
-                  if (callbacks.current.onRestoreDraft(editing.text, editing.uploads) !== false)
-                    setEditing(null);
-                }}
-              >
-                {t("queue.restoreDraft")}
-              </button>
-            ) : null}
-            <button type="button" disabled={busy !== null} onClick={() => setEditing(null)}>
-              {t("queue.closeEdit")}
-            </button>
-          </div>
-        </form>
       ) : null}
     </section>
   );

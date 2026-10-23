@@ -332,8 +332,13 @@ native log/indexes and Workspace ownership still have their own bounded roles
 ([ADR-0238](adr/0238-native-input-queue-and-run-record.md), schema 183).
 
 For an idle Session, the API atomically persists the initial input and Run before
-returning `kind:run`. For an active Run, Enter sends native follow-up; Steer sends
-native steer through the Worker's authenticated HTTP management endpoint.
+returning `kind:run`. For an active Run, Enter defaults to native follow-up. A browser-local,
+account/tenant-scoped preference in the personal menu can select native steer.
+The primary button follows that same choice when text or attachments exist;
+only an empty active composer shows Stop. Shift+Enter inserts a newline; IME
+confirmation and empty Enter never send or stop. Escape in the composer requests
+Stop without clearing its draft; menus and queue editors handle their own Escape.
+Both input modes use the Worker's authenticated HTTP management endpoint.
 `kind:input` success means that Pi Storage received its existing RF3 Kafka commit
 acknowledgement. It does not mean consumed or answered. No placeholder Run,
 PG input-payload queue or background redelivery reconciler is created. When the
@@ -771,6 +776,16 @@ Continuation requests require the same queue `revision`; changed order returns 4
 SSE publishes the first page; loading more is explicit and newer snapshots discard
 obsolete continuation pages while retaining editing drafts. This is a response
 bound, not a total input quota (ADR-0216).
+
+The pending queue shares the composer's visual surface. Three rows are shown by
+default; expansion and revision-checked pagination expose every accepted input.
+Each queued row has Steer and an action menu for edit, withdrawal and adjacent
+moves. Editing stays in the row; a consumed input or discarded continuation page
+leaves an editable draft, recoverable to the composer. Attachments use compact
+chips. Only native consumption removes an acknowledged steer; there is no
+persistent success banner or optimistic disappearance. Changing Enter preference
+does not mutate existing inputs. Native post-Tools/final consumption timing stays
+unchanged, including waiting for the current Tool round.
 
 There is no cloud Steer-delivery reconciler. Worker replacement recovers the
 native submissions through the existing ordered closure/new-lease path. Queue

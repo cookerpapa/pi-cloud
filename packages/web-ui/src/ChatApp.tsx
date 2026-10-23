@@ -3,6 +3,7 @@ import { InheritedContext } from "./InheritedContext.tsx";
 import { useComposerUploads } from "./useComposerUploads.ts";
 import { ComposerUploadCards } from "./UploadCards.tsx";
 import { ComposerSubmission } from "./composer-submission.ts";
+import { useComposerEnterMode } from "./useComposerEnterMode.tsx";
 import {
   useCallback,
   useEffect,
@@ -243,7 +244,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     | "switching-model"
     | null
   >(null);
-  const [steerNotice, setSteerNotice] = useState<string | null>(null);
+  const composerPreference = useComposerEnterMode(identity);
   const composerSubmission = useRef(new ComposerSubmission());
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
@@ -324,6 +325,22 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
       // A failed snapshot can outlive confirmed exit/seal recovery. The API,
       // not this cached view, decides whether the next message is admissible.
       state.sessionState === "failed");
+  const hasComposerDraft = Boolean(prompt.trim() || uploads.items.length);
+  const composerAction =
+    currentTurn?.status === "running"
+      ? hasComposerDraft
+        ? composerPreference.enterMode
+        : "stop"
+      : "send";
+  const composerActionLabel = t(
+    composerAction === "stop"
+      ? "chat.stop"
+      : composerAction === "steer"
+        ? "chat.steer"
+        : composerAction === "follow_up"
+          ? "composer.followUp"
+          : "chat.send",
+  );
   const conversationChildren = useMemo(() => {
     const children = new Map<string, ConversationSummaryResource[]>();
     for (const conversation of conversations) {
@@ -1322,7 +1339,14 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   }
 
   async function cancelTurn(): Promise<void> {
-    if (state.session === null || currentTurn?.status !== "running" || operation !== null) return;
+    if (
+      !canMutate ||
+      selectedDelegatedSession !== null ||
+      state.session === null ||
+      currentTurn?.status !== "running" ||
+      operation !== null
+    )
+      return;
     setOperation("cancelling");
     try {
       await api.cancelTurn(
@@ -1346,12 +1370,13 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
       state.session === null ||
       currentTurn?.status !== "running" ||
       (!text && !uploads.items.length) ||
+      !canMutate ||
+      !canQueue ||
       operation !== null
     ) {
       return;
     }
     setOperation("steering");
-    setSteerNotice(null);
     update({ type: "api.error.cleared" });
     try {
       const attached = await uploads.ready(state.session.sessionId);
@@ -1365,12 +1390,18 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
       setQueueRefreshGeneration((generation) => generation + 1);
       uploads.clear(attached.map((file) => file.id));
       setPrompt((current) => (draftRevision.current === submittedRevision ? "" : current));
-      setSteerNotice(t("chat.steerAccepted"));
     } catch (error: unknown) {
       update({ type: "api.error", message: errorMessage(error, t) });
     } finally {
       setOperation(null);
+      focusComposer();
     }
+  }
+
+  function sendComposer(): void {
+    if (!hasComposerDraft) return;
+    if (composerAction === "steer") void steerTurn();
+    else void submitTurn();
   }
 
   function renderDelegatedNode(
@@ -1604,6 +1635,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
               label={identity.username ?? identity.displayName}
               onLogout={logout}
               placement="up"
+              composer={composerPreference}
             />
           </footer>
         </div>
@@ -2276,149 +2308,143 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
         </div>
 
         <footer className="product-composer-area">
-          {authPhase === "authenticated" &&
-          state.session !== null &&
-          selectedDelegatedSession === null ? (
-            <PendingInputQueue
-              key={state.session.sessionId}
-              api={api}
-              sessionId={state.session.sessionId}
-              canMutate={canMutate}
-              returnRecovery={returnRecovery}
-              streamQueue={streamQueue}
-              refreshSignal={String(queueRefreshGeneration)}
-              onSnapshot={(queue) => update({ type: "queue.updated", queue })}
-              onRestoreDraft={(text, attached, returnedKeys = []) => {
-                if (currentStreamSession.current !== state.session?.sessionId) return false;
-                if (!uploads.restore(attached)) return false;
-                composerSubmission.current.retireReturned(state.session.sessionId, returnedKeys);
-                draftRevision.current++;
-                setPrompt((current) => (current.trim() ? `${current}\n\n${text}` : text));
-                focusComposer();
-                return true;
-              }}
-            />
-          ) : null}
-          {selectedDelegatedSession === null ? null : (
-            <div className="product-delegated-readonly">{t("chat.subagentReadOnly")}</div>
-          )}
-          <ComposerUploadCards
-            items={uploads.items}
-            disabled={operation !== null}
-            remove={uploads.remove}
-            retry={uploads.retry}
-          />
-          {uploads.error ? (
-            <p role="alert" className="pending-input-error">
-              {t("upload.limit")}
-            </p>
-          ) : null}
-          <div
-            className="product-composer"
-            onDragOver={(event) => {
-              if (event.dataTransfer.types.includes("Files")) event.preventDefault();
-            }}
-            onDrop={(event) => {
-              event.preventDefault();
-              if (canMutate && canQueue && operation === null)
-                uploads.add([...event.dataTransfer.files]);
-            }}
-          >
-            <input
-              type="file"
-              multiple
-              hidden
-              ref={filePickerRef}
-              aria-label={t("upload.add")}
-              onChange={(event) => {
-                uploads.add([...(event.target.files ?? [])]);
-                event.target.value = "";
-              }}
-            />
-            <button
-              type="button"
-              className="product-attach-button"
-              title={t("upload.limit")}
-              aria-label={t("upload.add")}
-              disabled={!canMutate || !canQueue || operation !== null}
-              onClick={() => filePickerRef.current?.click()}
-            >
-              ＋
-            </button>
-            <textarea
-              aria-label={t("chat.sendLabel")}
-              onPaste={(event) => {
-                const files = [...event.clipboardData.files];
-                if (files.length && operation === null) {
-                  event.preventDefault();
-                  uploads.add(files);
-                }
-              }}
-              disabled={!canMutate || !canQueue}
-              onChange={(event) => {
-                draftRevision.current++;
-                setPrompt(event.target.value);
-              }}
-              onKeyDown={(event) => {
-                if (event.nativeEvent.isComposing) return;
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  void submitTurn();
-                }
-              }}
-              placeholder={currentTurn ? t("chat.queuePlaceholder") : t("chat.promptPlaceholder")}
-              ref={composerRef}
-              rows={1}
-              value={prompt}
-            />
-            {selectedDelegatedSession === null &&
-            modelCatalog !== null &&
-            composerModelSelection !== null ? (
-              <ModelSettingsMenu
-                catalog={modelCatalog}
-                disabled={currentTurn !== undefined || operation !== null}
-                onApply={state.session === null ? setNewConversationModel : switchCurrentModel}
-                t={t}
-                value={composerModelSelection}
+          <div className="product-composer-shell">
+            {authPhase === "authenticated" &&
+            state.session !== null &&
+            selectedDelegatedSession === null ? (
+              <PendingInputQueue
+                key={state.session.sessionId}
+                api={api}
+                sessionId={state.session.sessionId}
+                canMutate={canMutate}
+                returnRecovery={returnRecovery}
+                streamQueue={streamQueue}
+                refreshSignal={String(queueRefreshGeneration)}
+                onSnapshot={(queue) => update({ type: "queue.updated", queue })}
+                onRestoreDraft={(text, attached, returnedKeys = []) => {
+                  if (currentStreamSession.current !== state.session?.sessionId) return false;
+                  if (!uploads.restore(attached)) return false;
+                  composerSubmission.current.retireReturned(state.session.sessionId, returnedKeys);
+                  draftRevision.current++;
+                  setPrompt((current) => (current.trim() ? `${current}\n\n${text}` : text));
+                  focusComposer();
+                  return true;
+                }}
               />
             ) : null}
-            {currentTurn?.status === "running" ? (
-              <>
-                <button
-                  className="product-steer-button"
-                  disabled={(!prompt.trim() && !uploads.items.length) || operation !== null}
-                  onClick={() => void steerTurn()}
-                  title={t("chat.steerTitle")}
-                  type="button"
-                >
-                  {t("chat.steer")}
-                </button>
-                <button
-                  className="product-stop-button"
-                  onClick={() => void cancelTurn()}
-                  title={t("chat.stop")}
-                  type="button"
-                >
-                  ■
-                </button>
-              </>
-            ) : (
+            {selectedDelegatedSession === null ? null : (
+              <div className="product-delegated-readonly">{t("chat.subagentReadOnly")}</div>
+            )}
+            <ComposerUploadCards
+              items={uploads.items}
+              disabled={operation !== null}
+              remove={uploads.remove}
+              retry={uploads.retry}
+            />
+            {uploads.error ? (
+              <p role="alert" className="pending-input-error">
+                {t("upload.limit")}
+              </p>
+            ) : null}
+            <div
+              className="product-composer"
+              onDragOver={(event) => {
+                if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                if (canMutate && canQueue && operation === null)
+                  uploads.add([...event.dataTransfer.files]);
+              }}
+            >
+              <input
+                type="file"
+                multiple
+                hidden
+                ref={filePickerRef}
+                aria-label={t("upload.add")}
+                onChange={(event) => {
+                  uploads.add([...(event.target.files ?? [])]);
+                  event.target.value = "";
+                }}
+              />
               <button
-                className="product-send-button"
-                disabled={
-                  (!prompt.trim() && !uploads.items.length) || !canQueue || operation !== null
+                type="button"
+                className="product-attach-button"
+                title={t("upload.limit")}
+                aria-label={t("upload.add")}
+                disabled={!canMutate || !canQueue || operation !== null}
+                onClick={() => filePickerRef.current?.click()}
+              >
+                ＋
+              </button>
+              <textarea
+                aria-label={t("chat.sendLabel")}
+                onPaste={(event) => {
+                  const files = [...event.clipboardData.files];
+                  if (files.length && operation === null) {
+                    event.preventDefault();
+                    uploads.add(files);
+                  }
+                }}
+                disabled={!canMutate || !canQueue}
+                onChange={(event) => {
+                  draftRevision.current++;
+                  setPrompt(event.target.value);
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    event.defaultPrevented ||
+                    event.nativeEvent.isComposing ||
+                    event.nativeEvent.keyCode === 229
+                  )
+                    return;
+                  if (event.key === "Escape") {
+                    // Scoped to the composer: menus, queue editors and dialogs own their Escape.
+                    event.preventDefault();
+                    if (!event.repeat) void cancelTurn();
+                    return;
+                  }
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    if (!event.repeat) sendComposer();
+                  }
+                }}
+                placeholder={t("chat.promptPlaceholder")}
+                ref={composerRef}
+                rows={1}
+                value={prompt}
+              />
+              {selectedDelegatedSession === null &&
+              modelCatalog !== null &&
+              composerModelSelection !== null ? (
+                <ModelSettingsMenu
+                  catalog={modelCatalog}
+                  disabled={currentTurn !== undefined || operation !== null}
+                  onApply={state.session === null ? setNewConversationModel : switchCurrentModel}
+                  t={t}
+                  value={composerModelSelection}
+                />
+              ) : null}
+              <button
+                className={
+                  composerAction === "stop" ? "product-stop-button" : "product-send-button"
                 }
-                onClick={() => void submitTurn()}
-                title={t("chat.send")}
+                disabled={
+                  !canMutate ||
+                  selectedDelegatedSession !== null ||
+                  operation !== null ||
+                  (composerAction !== "stop" && (!hasComposerDraft || !canQueue))
+                }
+                onClick={() => (composerAction === "stop" ? void cancelTurn() : sendComposer())}
+                title={composerActionLabel}
+                aria-label={composerActionLabel}
                 type="button"
               >
-                ↑
+                {composerAction === "stop" ? "■" : "↑"}
               </button>
-            )}
+            </div>
           </div>
-          {steerNotice === null ? null : (
-            <small className="product-steer-notice">{steerNotice}</small>
-          )}
         </footer>
       </main>
     </div>

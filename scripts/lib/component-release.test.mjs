@@ -76,6 +76,13 @@ it("Web presentation releases cannot alter the API, proxy, dependencies or other
       "packages/web-ui/src/product.css",
       "scripts/production-kubernetes.mjs",
       "scripts/run-browser-presentation-check.mjs",
+      "scripts/run-browser-queue-check.mjs",
+      "scripts/run-live-queue-input-check.mjs",
+      "scripts/run-live-release-acceptance.mjs",
+      "scripts/run-live-review-repair-check.mjs",
+      "scripts/run-live-development-environment-check.mjs",
+      "scripts/run-live-missing-directory-check.mjs",
+      "AGENTS.md",
     ]),
   ).not.toThrow();
   for (const file of [

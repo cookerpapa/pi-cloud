@@ -13,20 +13,22 @@ import {createRoot} from "react-dom/client";
 import {PendingInputQueue} from "/src/PendingInputQueue.tsx";
 import {inputReturnRecovery} from "/src/returned-inputs.ts";
 import {PiCloudApiError} from "/src/api.ts";
+import {parseInputQueueResource,parseReturnedInputsResource,parseQueuedInputAction} from "@pi-cloud/protocol";
 import {I18nProvider} from "/src/i18n.tsx";
 import "/src/product.css";
 const root = createRoot(document.getElementById("root"));
 const id = n => "10000000-0000-4000-8000-"+String(n).padStart(12,"0");
 window.queueId=id;
+const revision = () => window.queue.revision.toString(16).padStart(64,"0")+"."+"a".repeat(64);
 window.actions=[];window.snapshots=[];window.restored=[];
 let generation=0, receipts=new Map();
-const reset = (count=3) => ({sessionId:id(90),revision:1,viewVersion:"1",afterPosition:0,hasMore:false,hasReturnedInputs:false,activeTurnId:id(99),items:Array.from({length:count},(_,i)=>({text:["A","B","C"][i]??"Input "+(i+1),i})).map(({text,i})=>({turnId:id(i+1),runId:id(i+11),text,mailboxPosition:i+1,acceptedAt:"2026-09-26T00:00:00.000Z",status:"queued"}))});
+const reset = (count=3) => ({sessionId:id(90),revision:1,viewVersion:"1",afterPosition:0,hasMore:false,hasReturnedInputs:false,activeTurnId:id(99),items:Array.from({length:count},(_,i)=>({text:["A","B","C"][i]??"Input "+(i+1),i})).map(({text,i})=>({inputId:id(i+1),runId:id(i+11),text,mailboxPosition:i+1,acceptedAt:"2026-09-26T00:00:00.000Z",status:"queued"}))});
 window.queue=reset();window.queueReads=0;window.returned=[];window.returnPending=false;window.returnAcknowledged=true;
 const pageOf = (page) => {
   if(page && window.conflictPage){window.conflictPage=false;window.queue.revision++;window.queue.viewVersion=String(window.queue.revision);}
-  if(page && page.viewVersion!==window.queue.viewVersion)throw new PiCloudApiError(409,"conflict","page changed");
+  if(page && page.revision!==revision())throw new PiCloudApiError(409,"conflict","page changed");
   const afterPosition=page?.afterPosition??0, items=window.queue.items.filter(i=>i.mailboxPosition>afterPosition);
-  return {...structuredClone(window.queue),hasReturnedInputs:!window.returnAcknowledged,afterPosition,hasMore:items.length>20,items:structuredClone(items.slice(0,20))};
+  return parseInputQueueResource({...structuredClone(window.queue),revision:revision(),hasReturnedInputs:!window.returnAcknowledged,afterPosition,hasMore:items.length>20,items:structuredClone(items.slice(0,20))});
 };
 const api = {
   async getInputQueue(_session,_signal,page) {
@@ -36,12 +38,12 @@ const api = {
     if(window.delayRead){window.delayRead=false;return new Promise(resolve=>{window.releaseRead=()=>resolve(snapshot);});}
     return snapshot;
   },
-  async mutateQueuedInput(sessionId,turnId,action,key){
-    window.actions.push({sessionId,turnId,action:structuredClone(action),key});
+  async mutateQueuedInput(sessionId,inputId,action,key){
+    parseQueuedInputAction(action);window.actions.push({sessionId,inputId,action:structuredClone(action),key});
     if(receipts.has(key))return {...structuredClone(receipts.get(key)),replayed:true};
     if(window.conflict){window.conflict=false;window.queue.revision++;window.queue.viewVersion=String(window.queue.revision);throw new PiCloudApiError(409,"conflict","changed");}
-    if(action.revision!==window.queue.revision)throw new PiCloudApiError(409,"conflict","stale");
-    const items=window.queue.items,index=items.findIndex(i=>i.turnId===turnId),item=items[index];
+    if(action.revision!==revision())throw new PiCloudApiError(409,"conflict","stale");
+    const items=window.queue.items,index=items.findIndex(i=>i.inputId===inputId),item=items[index];
     if(!item)throw new PiCloudApiError(409,"conflict","started");
     if(action.action==="edit")item.text=action.text;
     if(action.action==="cancel")items.splice(index,1);
@@ -56,9 +58,9 @@ const api = {
   async getReturnedInputs(sessionId,_signal,page={}){
     const requestId=page.requestId??(!window.returnAcknowledged?id(88):null), afterPosition=page.afterPosition??0;
     const items=window.returned.filter(i=>i.mailboxPosition>afterPosition);
-    return {sessionId,requestId,afterPosition,pending:!!requestId&&window.returnPending,
+    return parseReturnedInputsResource({sessionId,requestId,afterPosition,pending:!!requestId&&window.returnPending,
       hasMore:!!requestId&&!window.returnPending&&items.length>20,
-      items:!requestId||window.returnPending?[]:structuredClone(items.slice(0,20))};
+      items:!requestId||window.returnPending?[]:structuredClone(items.slice(0,20))});
   },
   async acknowledgeReturnedInputs(sessionId,requestId){
     if(window.loseReturnAck){window.loseReturnAck=false;throw new TypeError("reply lost");}
@@ -120,12 +122,24 @@ try {
       initialReads,
       "Idle queue must not poll",
     );
-    const click = async (selector, text) =>
-      page.evaluate(
+    const click = async (selector, text) => {
+      if (
+        selector.startsWith(".pending-input-row") &&
+        ["编辑", "上移", "下移", "取消发送"].includes(text)
+      ) {
+        await page.evaluate(
+          `document.querySelector(${JSON.stringify(selector)}).querySelector('[aria-haspopup="menu"]').click()`,
+        );
+        await page.waitFor(
+          `document.querySelector(${JSON.stringify(selector)}).querySelector('[role="menu"]')`,
+        );
+      }
+      return page.evaluate(
         `(()=>{const root=document.querySelector(${JSON.stringify(selector)});const b=[...root.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(text)});if(!b||b.disabled)throw new Error('Button unavailable');b.click();})()`,
       );
+    };
     const row = (n) =>
-      `.pending-input-row[data-turn-id="10000000-0000-4000-8000-${String(n).padStart(12, "0")}"]`;
+      `.pending-input-row[data-input-id="10000000-0000-4000-8000-${String(n).padStart(12, "0")}"]`;
     const draft = async (text) => {
       await page.evaluate(
         "document.querySelector('.pending-input-editor textarea').focus();document.querySelector('.pending-input-editor textarea').select()",
@@ -134,14 +148,20 @@ try {
     };
     await click(row(2), "编辑");
     await page.waitFor("document.querySelector('.pending-input-editor textarea')");
+    assert.equal(
+      await page.evaluate(
+        "document.querySelector('.pending-input-editor').closest('[data-input-id]').dataset.inputId",
+      ),
+      "10000000-0000-4000-8000-000000000002",
+    );
     await draft("B revised");
     await click(".pending-input-editor", "保存");
     await page.waitFor(
       "!document.querySelector('.pending-input-editor') && window.queue.items[1].text==='B revised'",
     );
-    await click(row(3), "↑");
+    await click(row(3), "上移");
     await page.waitFor("window.queue.items[1].text==='C'");
-    await click(row(1), "↓");
+    await click(row(1), "下移");
     await page.waitFor("window.queue.items[0].text==='C'");
     await click(row(3), "取消发送");
     await page.waitFor("document.querySelectorAll('.pending-input-row').length===2");
@@ -150,7 +170,7 @@ try {
     await click(row(2), "编辑");
     await draft("B steer edited");
     await page.evaluate("window.loseReply=true");
-    await click(".pending-input-editor", "立即引导");
+    await click(".pending-input-editor", "引导");
     await page.waitFor(
       "!document.querySelector('.pending-input-editor') && window.queue.items[1].status==='steering'",
     );
@@ -189,7 +209,7 @@ try {
     await page.waitFor("document.querySelectorAll('.pending-input-row').length===3");
     await page.evaluate("window.delayRead=true;window.refreshQueue()");
     await page.waitFor("typeof window.releaseRead==='function'");
-    await click(row(3), "↑");
+    await click(row(3), "上移");
     await page.waitFor("window.queue.items[1].text==='C'");
     await page.evaluate("window.releaseRead()");
     await page.wait(100);
@@ -228,7 +248,7 @@ try {
     await click(row(2), "编辑");
     await draft("draft before Stop");
     await page.evaluate(
-      "window.returned=Array.from({length:45},(_,i)=>({turnId:window.queueId(i+1),text:'Returned '+i,mailboxPosition:i+1,uploads:[]}));window.queue.items=[];window.returnPending=true;window.returnAcknowledged=false;window.queue.revision++;window.queue.viewVersion=String(window.queue.revision);window.refreshQueue()",
+      "window.returned=Array.from({length:45},(_,i)=>({inputId:window.queueId(i+1),idempotencyKey:'returned-'+i,text:'Returned '+i,mailboxPosition:i+1,uploads:[]}));window.queue.items=[];window.returnPending=true;window.returnAcknowledged=false;window.queue.revision++;window.queue.viewVersion=String(window.queue.revision);window.refreshQueue()",
     );
     await page.waitFor("document.body.textContent.includes('确认哪些消息尚未执行')");
     assert.deepEqual(await page.evaluate("window.restored"), []);
@@ -246,6 +266,10 @@ try {
       Array.from({ length: 45 }, (_, i) => "Returned " + i),
     );
     await page.evaluate("window.renderQueue(true,45)");
+    await page.waitFor(
+      "document.querySelector('.pending-input-queue header button[aria-expanded=false]') && document.querySelectorAll('.pending-input-row').length===3",
+    );
+    await page.evaluate("document.querySelector('.pending-input-queue header button').click()");
     await page.waitFor("document.querySelectorAll('.pending-input-row').length===20");
     await click(".pending-input-queue", "显示更多");
     await page.waitFor("document.querySelectorAll('.pending-input-row').length===40");

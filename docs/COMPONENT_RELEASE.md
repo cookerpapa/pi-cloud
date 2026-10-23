@@ -36,7 +36,7 @@ npm run release:component -- preflight /private/releases/web-1
 npm run release:component -- apply /private/releases/web-1
 ```
 
-The operator runs Web types/tests and browser presentation checks, builds/scans
+The operator runs Web types/tests and browser presentation/queue checks, builds/scans
 one image and allows only the Web Deployment image to differ. No migration hooks,
 Worker drain or VM release runs. Existing browser connections can reconnect through
 the usual SSE recovery; reload an open page to load new assets. Verify the relevant

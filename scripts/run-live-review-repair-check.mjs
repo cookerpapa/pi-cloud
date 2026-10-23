@@ -87,7 +87,7 @@ try {
       "document.querySelector('.product-composer textarea').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))",
     );
     await page.waitFor(
-      "releaseTurnCalls.length===1 && (document.querySelector('.product-send-button')??document.querySelector('.product-steer-button'))?.disabled===false",
+      "releaseTurnCalls.length===1 && document.querySelector('.product-send-button')?.disabled===false",
     );
     await page.evaluate(
       "document.querySelector('.product-composer textarea').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))",

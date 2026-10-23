@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n, type UiLanguage } from "./i18n.tsx";
 import { errorMessage } from "./ui-errors.ts";
+import type { ComposerEnterMode } from "./useComposerEnterMode.tsx";
 
 export function AccountMenu({
   label,
   onLogout,
   placement = "down",
+  composer,
 }: {
   label: string;
   onLogout: () => void | Promise<void>;
   placement?: "up" | "down";
+  composer?: { enterMode: ComposerEnterMode; setEnterMode: (mode: ComposerEnterMode) => void };
 }) {
   const { language, setLanguage, t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -28,8 +31,10 @@ export function AccountMenu({
     };
     const escape = (event: KeyboardEvent): void => {
       if (event.key !== "Escape") return;
+      event.preventDefault();
       setOpen(false);
       setLanguageOpen(false);
+      root.current?.querySelector<HTMLButtonElement>(".product-account-menu-trigger")?.focus();
     };
     document.addEventListener("pointerdown", close);
     document.addEventListener("keydown", escape);
@@ -91,6 +96,30 @@ export function AccountMenu({
         {error ? (
           <div className="product-auth-error" role="alert">
             {error}
+          </div>
+        ) : null}
+        {composer ? (
+          <div
+            className="product-account-composer-setting"
+            role="group"
+            aria-label={t("composer.enterBehavior")}
+          >
+            <span>{t("composer.enterBehavior")}</span>
+            {(["follow_up", "steer"] as const).map((mode) => (
+              <button
+                key={mode}
+                role="menuitemradio"
+                aria-checked={composer.enterMode === mode}
+                type="button"
+                onClick={() => {
+                  composer.setEnterMode(mode);
+                  setOpen(false);
+                }}
+              >
+                <span>{t(mode === "follow_up" ? "composer.followUp" : "composer.steer")}</span>
+                <span aria-hidden="true">{composer.enterMode === mode ? "✓" : ""}</span>
+              </button>
+            ))}
           </div>
         ) : null}
         <div className="product-account-menu-language">

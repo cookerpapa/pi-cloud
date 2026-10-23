@@ -214,7 +214,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
   Object.assign(PiCloudApi.prototype, {
     getIdentity:async()=>{
       if(window.identityErrorStatus!==undefined)throw new PiCloudApiError(window.identityErrorStatus,'fixture-unavailable','Fixture identity service unavailable');
-      return {tenantId:"test-tenant",userId:"test-user",displayName:"Fixture",role:"owner",platformAdministrator:false};
+      return {tenantId:"test-tenant",userId:window.fixtureUserId??"test-user",displayName:"Fixture",role:"owner",platformAdministrator:false};
     },
     listConversations:async()=>{
       const listed={conversations:childViews&&!window.fixtureParentDeleted?[{...session,workspaceName:'fixture'}]:[],
@@ -307,7 +307,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
       const receipt=previous??{kind:'input',inputId:source,runId:'60000000-0000-4000-8000-000000000011',turnId:fixtureTurnId,
         delivery:'steer',sessionId:sid,state:'accepted',acceptedAt:new Date().toISOString(),replayed:false};
       if(!previous){window.steerReceipts.set(key,receipt);window.fixtureQueue.revision++;
-        window.fixtureQueue.items.push({inputId:source,runId:receipt.runId,text:body.text,mailboxPosition:2,acceptedAt:receipt.acceptedAt,status:'steering'});}
+        window.fixtureQueue.items.push({inputId:source,runId:receipt.runId,text:body.text,uploads:(body.uploadIds??[]).map(id=>window.uploadReceipts.find(upload=>upload.id===id)),mailboxPosition:window.fixtureQueue.items.length+1,acceptedAt:receipt.acceptedAt,status:'steering'});}
       if(window.loseSteerReply){window.loseSteerReply=false;throw Error('Fixture lost Steer response');}
       return Response.json({...receipt,replayed:!!previous},{status:202});
     }
@@ -328,7 +328,10 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
         const receipt=prior??(sessionState==='running'?{kind:'input',inputId:'input-'+crypto.randomUUID().replaceAll('-','').repeat(2),
           turnId:fixtureTurnId,runId:'60000000-0000-4000-8000-000000000011',sessionId:sid,delivery:'follow_up',state:'accepted',acceptedAt:new Date().toISOString()}:
           {kind:'run',turnId:crypto.randomUUID(),sessionId:sid,runId:crypto.randomUUID(),mailboxPosition:window.turnReceipts.size+1,state:'queued',acceptedAt:new Date().toISOString()});
-        if(!prior){window.turnReceipts.set(key,receipt);window.turnStates.set(receipt.inputId??receipt.runId,'queued');}
+        if(!prior){window.turnReceipts.set(key,receipt);window.turnStates.set(receipt.inputId??receipt.runId,'queued');
+          if(receipt.kind==='input'){window.fixtureQueue.revision++;window.fixtureQueue.items.push({inputId:receipt.inputId,runId:receipt.runId,text:submitted.prompt,
+            uploads:(submitted.uploadIds??[]).map(id=>window.uploadReceipts.find(upload=>upload.id===id)),mailboxPosition:window.fixtureQueue.items.length+1,acceptedAt:receipt.acceptedAt,status:'queued'});}}
+
         if(window.loseTurnReply){window.loseTurnReply=false;throw Error('Fixture lost Turn response after commit');}
         return Response.json({...receipt,replayed:!!prior},{status:202});
       }
@@ -392,7 +395,7 @@ const server = await createServer({
           if (req.url !== "/review.html") return next();
           res.setHeader("content-type", "text/html");
           res.end(
-            '<!doctype html><div id="root"></div><script type="module" src="/presentation-fixture.js"></script>',
+            '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/presentation-fixture.js"></script>',
           );
         });
       },
@@ -1110,20 +1113,25 @@ try {
     await page.waitFor("document.querySelector('.product-delete-conversation')");
     await page.evaluate(`document.querySelector(${JSON.stringify(parentButton)}).click()`);
     await page.waitFor("document.querySelector('.product-stop-button')");
+    await page.evaluate("document.querySelector('.product-account-menu-trigger').click()");
+    await page.waitFor("document.querySelector('.product-account-menu-panel:not([hidden])')");
+    await page.evaluate(
+      "document.querySelectorAll('.product-account-composer-setting button')[1].click()",
+    );
     await fill(".product-composer textarea", "recover my direct instruction");
     await page.evaluate(
-      "window.loseSteerReply=true;document.querySelector('.product-steer-button').click()",
+      "window.loseSteerReply=true;document.querySelector('.product-send-button').click()",
     );
     await page.waitFor(
-      "document.body.textContent.includes('Control plane is unreachable') && !document.querySelector('.product-steer-button').disabled",
+      "document.body.textContent.includes('Control plane is unreachable') && !document.querySelector('.product-send-button').disabled",
     );
     assert.equal(
       await page.evaluate("document.querySelector('.product-composer textarea').value"),
       "recover my direct instruction",
     );
-    await page.evaluate("document.querySelector('.product-steer-button').click()");
+    await page.evaluate("document.querySelector('.product-send-button').click()");
     await page.waitFor(
-      "/Instruction saved|引导消息已保存/.test(document.querySelector('.product-steer-notice')?.textContent) && document.querySelector('.product-composer textarea').value===''",
+      "document.querySelector('.product-stop-button') && document.querySelector('.product-composer textarea').value===''",
     );
     assert.deepEqual(
       await page.evaluate(
@@ -1133,6 +1141,14 @@ try {
     );
     await page.waitFor(
       "document.querySelector('.pending-input-queue')?.textContent.includes('recover my direct instruction')",
+    );
+    assert.equal(
+      await page.evaluate("document.querySelector('.product-steer-notice')===null"),
+      true,
+    );
+    await page.evaluate("document.querySelector('.product-account-menu-trigger').click()");
+    await page.evaluate(
+      "document.querySelectorAll('.product-account-composer-setting button')[0].click()",
     );
     await page.evaluate("window.holdNextConversationList=true;finishFixtureTurn()");
     await page.waitFor("typeof window.finishOldConversationList==='function'");
@@ -1201,13 +1217,13 @@ try {
         picker.dispatchEvent(new Event('change',{bubbles:true}));
       })()`);
       await page.waitFor(
-        "document.querySelector('.upload-card') && document.querySelector('.product-send-button, .product-steer-button')?.disabled===false",
+        "document.querySelector('.upload-card') && document.querySelector('.product-send-button')?.disabled===false",
       );
       await page.evaluate(
         "window.loseTurnReply=true;document.querySelector('.product-composer textarea').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))",
       );
       await page.waitFor(
-        "turnReceipts.size===1 && document.querySelector('.product-send-button, .product-steer-button')?.disabled===false",
+        "turnReceipts.size===1 && document.querySelector('.product-send-button')?.disabled===false",
       );
       const original = await page.evaluate("turnRequests.at(-1)");
       assert.equal(original.body.uploadIds.length, 1);
@@ -1224,14 +1240,12 @@ try {
       await page.evaluate("window.dispatchEvent(new Event('focus'))");
       if (newerSubmission) {
         await fill(".product-composer textarea", "newer instruction");
-        await page.waitFor(
-          "document.querySelector('.product-send-button, .product-steer-button')?.disabled===false",
-        );
+        await page.waitFor("document.querySelector('.product-send-button')?.disabled===false");
         await page.evaluate(
           "window.loseTurnReply=true;document.querySelector('.product-composer textarea').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))",
         );
         await page.waitFor(
-          "turnReceipts.size===2 && document.querySelector('.product-send-button, .product-steer-button')?.disabled===false",
+          "turnReceipts.size===2 && document.querySelector('.product-send-button')?.disabled===false",
         );
         await page.evaluate("window.returnInputsReady=true");
       }
@@ -1248,9 +1262,7 @@ try {
           "document.querySelector('.upload-card button[aria-label^=\"Remove attachment\"]').click()",
         );
       }
-      await page.waitFor(
-        "document.querySelector('.product-send-button, .product-steer-button')?.disabled===false",
-      );
+      await page.waitFor("document.querySelector('.product-send-button')?.disabled===false");
       await page.evaluate(
         "document.querySelector('.product-composer textarea').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))",
       );
@@ -1318,9 +1330,203 @@ try {
       "Successful logout must discard the entire previous account's document state",
     );
   });
+  // Composer keyboard/button choices use actual ChatApp effects and HTTP builders.
+  await withChromePage({ width: 1280, height: 900 }, async (page) => {
+    const parent = ".product-conversation-row:not(.product-delegated-session) > button";
+    const fill = async (text) => {
+      await page.evaluate(
+        "document.querySelector('.product-composer textarea').focus();document.querySelector('.product-composer textarea').select()",
+      );
+      await page.send("Input.insertText", { text });
+    };
+    const key = async (key, extra = {}) =>
+      page.evaluate(
+        `document.querySelector('.product-composer textarea').dispatchEvent(new KeyboardEvent('keydown',${JSON.stringify({ key, bubbles: true, cancelable: true, ...extra })}))`,
+      );
+    const open = async (userId = "test-user") => {
+      await page.navigate(`http://127.0.0.1:${port}/review.html`);
+      await page.waitFor("window.fixtureReady");
+      await page.evaluate(
+        `window.fixtureUserId=${JSON.stringify(userId)};renderChat('running',true,true);window.acceptTurns=true`,
+      );
+      await page.waitFor(`document.querySelector(${JSON.stringify(parent)})`);
+      await page.evaluate(`document.querySelector(${JSON.stringify(parent)}).click()`);
+      await page.waitFor("document.querySelector('.product-stop-button')");
+    };
+    const chooseMode = async (index) => {
+      await page.evaluate("document.querySelector('.product-account-menu-trigger').click()");
+      await page.waitFor("document.querySelector('.product-account-menu-panel:not([hidden])')");
+      await page.evaluate(
+        `document.querySelectorAll('.product-account-composer-setting button')[${index}].click()`,
+      );
+    };
+    await open();
+    await key("Enter");
+    assert.deepEqual(
+      await page.evaluate("[turnRequests.length,steerRequests.length,!!window.returnedInputs]"),
+      [0, 0, false],
+    );
+    await fill("第一条排队消息");
+    assert.equal(
+      await page.evaluate(
+        "document.querySelector('.product-send-button').getAttribute('aria-label')",
+      ),
+      "Queue message",
+    );
+    await key("Enter", { isComposing: true });
+    await key("Enter", { keyCode: 229 });
+    await key("Enter", { repeat: true });
+    await key("Enter", { shiftKey: true });
+    assert.equal(await page.evaluate("turnRequests.length"), 0);
+    // Real Shift+Enter produces a newline rather than submitting.
+    await page.send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: "Enter",
+      code: "Enter",
+      windowsVirtualKeyCode: 13,
+      modifiers: 8,
+      text: "\r",
+    });
+    await page.send("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key: "Enter",
+      code: "Enter",
+      windowsVirtualKeyCode: 13,
+      modifiers: 8,
+    });
+    assert.equal(
+      await page.evaluate(
+        "document.querySelector('.product-composer textarea').value.endsWith('\\n')",
+      ),
+      true,
+    );
+    await key("Enter");
+    await page.waitFor("turnRequests.length===1 && document.querySelector('.product-stop-button')");
+    assert.equal(await page.evaluate("steerRequests.length"), 0);
+    assert.equal(await page.evaluate("fixtureQueue.items[0].status"), "queued");
+    await fill("按钮也排队");
+    await page.evaluate("document.querySelector('.product-send-button').click()");
+    await page.waitFor("turnRequests.length===2 && document.querySelector('.product-stop-button')");
+    await chooseMode(1);
+    assert.equal(
+      await page.evaluate("fixtureQueue.items.length"),
+      2,
+      "A preference change does not rewrite queued inputs",
+    );
+    await fill("现在引导");
+    assert.equal(
+      await page.evaluate(
+        "document.querySelector('.product-send-button').getAttribute('aria-label')",
+      ),
+      "Steer",
+    );
+    await key("Enter");
+    await page.waitFor(
+      "steerRequests.length===1 && document.querySelector('.product-stop-button')",
+    );
+    await fill("按钮也引导");
+    await page.evaluate("document.querySelector('.product-send-button').click()");
+    await page.waitFor(
+      "steerRequests.length===2 && document.querySelector('.product-stop-button')",
+    );
+    assert.equal(await page.evaluate("document.querySelectorAll('.pending-input-row').length"), 3);
+    await page.evaluate("document.querySelector('.pending-input-queue header button').click()");
+    await page.waitFor("document.querySelectorAll('.pending-input-row').length===4");
+    await page.screenshot("/tmp/pi-cloud-composer-desktop.png");
+    // Persistence survives navigation, but never leaks to another account.
+    await open();
+    await fill("remember mode");
+    assert.equal(
+      await page.evaluate(
+        "document.querySelector('.product-send-button').getAttribute('aria-label')",
+      ),
+      "Steer",
+    );
+    await open("other-user");
+    await fill("different account");
+    assert.equal(
+      await page.evaluate(
+        "document.querySelector('.product-send-button').getAttribute('aria-label')",
+      ),
+      "Queue message",
+    );
+    await open();
+    // Attachment-only input uses the same preference; the queue uses compact chips.
+    await page.evaluate(`(() => {const files=new DataTransfer();files.items.add(new File(['image'],'photo.png',{type:'image/png'}));
+      const picker=document.querySelector('input[type=file]');picker.files=files.files;picker.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    await page.waitFor("document.querySelector('.product-send-button')?.disabled===false");
+    await key("Enter");
+    await page.waitFor(
+      "steerRequests.length===1 && document.querySelector('.product-stop-button')",
+    );
+    assert.equal(await page.evaluate("steerRequests[0].body.uploadIds.length"), 1);
+    await page.waitFor("document.querySelector('.pending-input-queue .upload-chip img')");
+    assert.equal(
+      await page.evaluate(
+        "document.querySelector('.pending-input-queue .upload-card')===null && document.querySelector('.upload-chip').getBoundingClientRect().height<35",
+      ),
+      true,
+    );
+    // Escape inside the account menu closes only the menu, even with a draft.
+    await fill("keep my draft");
+    await page.evaluate(
+      "document.querySelector('.product-account-menu-trigger').click();document.querySelector('.product-account-menu-trigger').focus()",
+    );
+    await page.send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: "Escape",
+      code: "Escape",
+      windowsVirtualKeyCode: 27,
+    });
+    await page.send("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key: "Escape",
+      code: "Escape",
+      windowsVirtualKeyCode: 27,
+    });
+    assert.equal(await page.evaluate("!!window.returnedInputs"), false);
+    await key("Escape", { isComposing: true });
+    assert.equal(await page.evaluate("!!window.returnedInputs"), false);
+    await key("Escape");
+    await page.waitFor("window.returnedInputs");
+    assert.equal(
+      await page.evaluate("document.querySelector('.product-composer textarea').value"),
+      "keep my draft",
+    );
+    // With disabled browser persistence, an in-document choice still works.
+    await open();
+    await page.evaluate("Storage.prototype.setItem=()=>{throw new Error('blocked')}");
+    await chooseMode(0);
+    await fill("storage blocked");
+    assert.equal(
+      await page.evaluate(
+        "document.querySelector('.product-send-button').getAttribute('aria-label')",
+      ),
+      "Queue message",
+    );
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+    });
+    assert.equal(await page.evaluate("document.documentElement.scrollWidth<=innerWidth"), true);
+    await page.waitFor(
+      "document.querySelector('.product-sidebar').getBoundingClientRect().right<=0 && document.querySelector('.product-main').getBoundingClientRect().width===390",
+    );
+    assert.equal(await page.evaluate("innerWidth"), 390);
+    await page.screenshot("/tmp/pi-cloud-composer-mobile.png");
+  });
   console.log(
     JSON.stringify({
       accepted: true,
+      composerEnterPreference: true,
+      composerButtonMatchesEnter: true,
+      composerEmptyEnterSafe: true,
+      composerImeAndShiftEnter: true,
+      composerScopedEscapePreservesDraft: true,
+      composerAccountIsolation: true,
+      composerPreferencePersistenceFallback: true,
       directSteerRetryIdentity: true,
       ordinarySendRetryIdentity: true,
       initialImageSendRetryIdentity: true,

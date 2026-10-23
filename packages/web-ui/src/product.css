@@ -660,6 +660,17 @@ body.product-panel-resizing {
   left: calc(100% + 7px);
 }
 
+.product-account-composer-setting {
+  padding-bottom: 5px;
+  border-bottom: 1px solid #383838;
+}
+.product-account-composer-setting > span {
+  display: block;
+  padding: 7px 10px 4px;
+  color: #999;
+  font-size: 11px;
+}
+
 .product-account-menu-logout {
   border-top: 1px solid #303030 !important;
   border-radius: 0 0 8px 8px !important;
@@ -1885,152 +1896,200 @@ body.product-panel-resizing {
   background: linear-gradient(to top, #212121 75%, rgba(33, 33, 33, 0));
 }
 
+.product-composer-shell {
+  border: 1px solid #4a4a4a;
+  border-radius: 18px;
+  background: #2f2f2f;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.16);
+}
+.product-composer-shell:focus-within {
+  border-color: #656565;
+}
+.product-composer-shell > .upload-cards:empty {
+  display: none;
+}
+.product-composer-shell > .upload-cards:not(:empty) {
+  padding: 10px 12px 0;
+}
 .pending-input-queue {
-  margin: 0 0 10px;
-  padding: 11px 12px;
-  border: 1px solid #444;
-  border-radius: 14px;
-  background: #282828;
-  color: #e4e4e4;
+  margin: 0 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid #444;
+  color: #ddd;
   font-size: 12px;
 }
 .pending-input-queue header {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-.pending-input-queue header span {
-  color: #bbb;
-}
-.pending-input-queue header small {
-  flex: 1 0 100%;
-  order: 1;
+  gap: 7px;
+  min-height: 28px;
   color: #aaa;
-  font-size: 11px;
 }
-.pending-input-queue header strong,
-.pending-input-queue header button {
-  white-space: nowrap;
+.pending-input-queue header strong {
+  font-weight: 500;
 }
 .pending-input-queue header button {
   margin-left: auto;
 }
 .pending-input-list {
-  max-height: min(32vh, 280px);
+  max-height: min(34vh, 300px);
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .pending-input-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
-  align-items: flex-start;
-  padding: 9px 0;
-  border-top: 1px solid #3c3c3c;
-}
-.pending-input-number {
-  color: #999;
-  min-width: 15px;
-  padding-top: 2px;
+  align-items: center;
+  column-gap: 8px;
+  min-height: 34px;
 }
 .pending-input-content {
-  flex: 1 1 190px;
+  flex: 1 1 0;
   min-width: 0;
 }
 .pending-input-content p {
   margin: 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
-.pending-input-status {
-  display: block;
-  margin-top: 5px;
-  color: #a6c9e6;
+.pending-input-content p:empty {
+  display: none;
 }
 .pending-input-actions,
-.pending-input-editor-actions {
+.pending-input-editor-actions,
+.pending-input-menu {
   display: flex;
-  gap: 5px;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.pending-input-actions {
+  flex: 0 0 auto;
+}
+.pending-input-status {
+  color: #a6c9e6;
+  font-size: 11px;
 }
 .pending-input-queue button {
-  border: 1px solid #535353;
-  background: #333;
-  color: #ddd;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #bbb;
   border-radius: 6px;
+  min-height: 30px;
   padding: 4px 7px;
+  font: inherit;
   font-size: 11px;
   cursor: pointer;
 }
-.pending-input-queue button:hover:not(:disabled) {
-  background: #444;
-  border-color: #777;
+.pending-input-queue button:hover:not(:disabled),
+.pending-input-queue button:focus-visible {
+  background: #414141;
+  color: #fff;
+}
+.pending-input-queue button:focus-visible {
+  outline: 1px solid #aaa;
+  outline-offset: -1px;
 }
 .pending-input-queue button:disabled {
   opacity: 0.4;
   cursor: default;
 }
+.pending-input-queue .pending-input-more {
+  min-width: 30px;
+  font-size: 18px;
+}
+.pending-input-menu {
+  flex: 1 0 100%;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  padding: 3px 0 5px;
+}
+.pending-input-menu button {
+  background: #363636;
+}
 .pending-input-editor {
-  border-top: 1px solid #555;
-  margin-top: 6px;
-  padding-top: 10px;
-}
-.pending-input-row.editing {
-  background: #303740;
-  border-radius: 7px;
-}
-.pending-input-edit-title {
-  display: block;
-  margin-bottom: 7px;
-  font-size: 12px;
-  font-weight: 500;
+  flex: 1 0 100%;
+  min-width: 0;
+  padding: 6px 0;
 }
 .pending-input-editor textarea {
   display: block;
   width: 100%;
   box-sizing: border-box;
-  background: #202020;
+  background: #262626;
   color: #eee;
   border: 1px solid #666;
   border-radius: 8px;
-  padding: 9px;
+  padding: 8px;
   font: inherit;
   line-height: 1.5;
   resize: vertical;
-  min-height: 80px;
+  min-height: 60px;
   max-height: 180px;
 }
 .pending-input-editor-actions {
-  margin-top: 7px;
+  margin-top: 5px;
+  flex-wrap: wrap;
+}
+.pending-input-editor-actions button:first-child {
+  color: #eee;
+  background: #454545;
 }
 .pending-input-error {
   color: #edbf95;
   margin: 5px 0 8px;
   line-height: 1.5;
 }
-
+.upload-chips {
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  padding: 2px 0;
+}
+.upload-chip {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  max-width: 150px;
+  height: 25px;
+  margin: 0;
+  padding: 2px 6px;
+  border: 1px solid #505050;
+  border-radius: 5px;
+  font-size: 11px;
+}
+.upload-chip a {
+  display: flex;
+  flex: 0 0 auto;
+}
+.upload-chip img {
+  width: 20px;
+  height: 20px;
+  object-fit: cover;
+  border-radius: 2px;
+}
+.upload-chip figcaption {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.upload-chip strong {
+  font-weight: 400;
+}
+.upload-chip > small {
+  font-size: 10px;
+}
 .product-composer {
   display: flex;
   align-items: flex-end;
   gap: 8px;
   padding: 9px 10px 9px 15px;
-  border: 1px solid #4a4a4a;
-  border-radius: 18px;
-  background: #2f2f2f;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.16);
-}
-
-.product-composer:focus-within {
-  border-color: #656565;
 }
 .product-composer textarea {
   max-height: 180px;
   min-height: 27px;
+  min-width: 0;
   flex: 1 1 auto;
   resize: none;
   overflow-y: auto;
@@ -2047,8 +2106,7 @@ body.product-panel-resizing {
   color: #888;
 }
 .product-send-button,
-.product-stop-button,
-.product-steer-button {
+.product-stop-button {
   display: grid;
   width: 34px;
   height: 34px;
@@ -2061,39 +2119,18 @@ body.product-panel-resizing {
   font-size: 18px;
   font-weight: 700;
 }
-.product-steer-button {
-  width: auto;
-  padding: 0 12px;
-  border-radius: 17px;
-  font-size: 12px;
-  font-weight: 600;
-}
 .product-send-button:hover:not(:disabled),
-.product-stop-button:hover:not(:disabled),
-.product-steer-button:hover:not(:disabled) {
+.product-stop-button:hover:not(:disabled) {
   border: 0;
   background: white;
 }
-.product-send-button:disabled {
-  background: #4b4b4b;
-  color: #777;
-}
-.product-steer-button:disabled {
+.product-send-button:disabled,
+.product-stop-button:disabled {
   background: #4b4b4b;
   color: #777;
 }
 .product-stop-button {
   font-size: 10px;
-}
-.product-composer-area > small {
-  display: block;
-  margin-top: 7px;
-  color: #6f6f6f;
-  font-size: 10px;
-  text-align: center;
-}
-.product-composer-area > .product-steer-notice {
-  color: #9fc9a9;
 }
 
 .product-modal-backdrop {

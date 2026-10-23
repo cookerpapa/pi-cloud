@@ -618,7 +618,13 @@ try {
         ".product-composer textarea",
         "Replace the final reply with exactly BROWSER-UI-STEER-OK.",
       );
-      await click(".product-steer-button", "composer.steer");
+      await click(".product-account-menu-trigger", "composer.openPreference");
+      await clickText(
+        ".product-account-composer-setting button",
+        "引导当前任务",
+        "composer.chooseSteer",
+      );
+      await click(".product-send-button", "composer.steer");
       await page.waitFor('!document.querySelector(".product-stop-button")', 180_000);
       const steerSettled = await page.evaluate(
         '[...document.querySelectorAll(".product-turn")].at(-1)?.innerText.includes("BROWSER-UI-STEER-OK")',

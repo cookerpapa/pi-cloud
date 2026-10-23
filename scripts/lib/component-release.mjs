@@ -16,6 +16,7 @@ export function assertOperatorRevisionChanges(files) {
       operatorSources.has(file) ||
         modelTests.has(file) ||
         file === "README.md" ||
+        file === "AGENTS.md" ||
         file.startsWith("docs/"),
       `Prepared runtime inputs changed: ${file}`,
     );
@@ -66,11 +67,18 @@ export function assertScopedSources(scope, files) {
             [
               "scripts/production-kubernetes.mjs",
               "scripts/run-browser-presentation-check.mjs",
+              "scripts/run-browser-queue-check.mjs",
               "scripts/run-live-browser-ui-check.mjs",
+              "scripts/run-live-queue-input-check.mjs",
+              "scripts/run-live-release-acceptance.mjs",
+              "scripts/run-live-review-repair-check.mjs",
+              "scripts/run-live-development-environment-check.mjs",
+              "scripts/run-live-missing-directory-check.mjs",
             ].includes(file))) ||
         (scope !== "web" &&
           (file === catalogSeed || file === "deploy/provider-gateway/Dockerfile")) ||
         file === "README.md" ||
+        file === "AGENTS.md" ||
         file.startsWith("docs/") ||
         /(?:^|\/)test\/.*\.test\.[cm]?tsx?$/.test(file) ||
         /^scripts\/lib\/.*\.test\.mjs$/.test(file),

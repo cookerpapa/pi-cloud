@@ -28,7 +28,9 @@ Real Luna guest interaction, screenshot vision and live/cold preview navigation 
   V4.1 Flash remain selectable. The reviewed catalog and gateway metadata must
   both support a new model; upstream discovery alone does not add a UI choice.
 - Native Pi follow-up/steer within one Run, with editable pending messages,
-  ordering, individual removal and promotion to active steer.
+  ordering, individual removal and promotion to active steer. Enter defaults to
+  follow-up and can be changed in the account menu; the composer sends while
+  a draft is present and shows Stop when empty.
   Stop withdraws pending messages and restores their text and attachments to the
   composer for editing, alongside the existing draft.
 - Persistent conversations, context compaction and interruption recovery.

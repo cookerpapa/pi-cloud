@@ -162,7 +162,7 @@ try {
     progress("browser lost reply, Stop, return, image resend");
     let calls;
     await withChromePage({}, async (page) => {
-      const composerUpload = ".product-composer-area > .upload-cards .upload-card";
+      const composerUpload = ".product-composer-shell > .upload-cards .upload-card";
       await page.send("Network.setExtraHTTPHeaders", {
         headers: { Authorization: "Bearer " + tenant.credential.token },
       });
@@ -183,7 +183,7 @@ try {
         `(()=>{const files=new DataTransfer();files.items.add(new File([Uint8Array.from(atob(${JSON.stringify(png.toString("base64"))}),c=>c.charCodeAt(0))],'return-image.png',{type:'image/png'}));const input=document.querySelector('input[type=file]');input.files=files.files;input.dispatchEvent(new Event('change',{bubbles:true}));})()`,
       );
       await page.waitFor(
-        `document.querySelector('${composerUpload}') && document.querySelector('.product-steer-button')?.disabled===false`,
+        `document.querySelector('${composerUpload}') && document.querySelector('.product-send-button')?.disabled===false`,
       );
       const send = () =>
         page.evaluate(
@@ -191,7 +191,7 @@ try {
         );
       await send();
       await page.waitFor(
-        "releaseCalls.length===1 && (document.querySelector('.product-steer-button')??document.querySelector('.product-send-button'))?.disabled===false",
+        "releaseCalls.length===1 && document.querySelector('.product-send-button')?.disabled===false",
       );
       const original = await page.evaluate("releaseCalls[0]");
       assert.equal(original.kind, "input");
@@ -200,7 +200,7 @@ try {
       assert.equal(original.body.uploadIds.length, 1);
       // Force the formerly racy layout: both the queued copy and the draft image
       // must be visible before removing just the draft attachment.
-      await page.waitFor("document.querySelector('.pending-input-queue .upload-card')");
+      await page.waitFor("document.querySelector('.pending-input-queue .upload-chip')");
       await page.waitFor(
         `document.querySelector('${composerUpload} button[aria-label]')?.disabled===false`,
       );
@@ -208,7 +208,7 @@ try {
       await page.evaluate(`document.querySelector('${composerUpload} button[aria-label]').click()`);
       await page.waitFor(`!document.querySelector('${composerUpload}')`);
       assert(
-        await page.evaluate("Boolean(document.querySelector('.pending-input-queue .upload-card'))"),
+        await page.evaluate("Boolean(document.querySelector('.pending-input-queue .upload-chip'))"),
       );
       report.draftRemovalPreservesQueuedImage = true;
       assert.equal((await api.getRun(active.runId)).state, "running");
@@ -225,9 +225,7 @@ try {
             i.uploads.some((u) => u.id === original.body.uploadIds[0]),
         ),
       );
-      await page.waitFor(
-        "(document.querySelector('.product-steer-button')??document.querySelector('.product-send-button'))?.disabled===false",
-      );
+      await page.waitFor("document.querySelector('.product-send-button')?.disabled===false");
       await send();
       await page.waitFor(
         "releaseCalls.length===2 && document.querySelector('.product-composer textarea').value===''",

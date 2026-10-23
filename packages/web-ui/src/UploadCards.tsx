@@ -46,20 +46,30 @@ function UploadImage({ api, upload }: { api: PiCloudApi; upload: UserUpload }) {
 export function UploadCards({
   api,
   uploads,
+  compact = false,
 }: {
   api?: PiCloudApi;
   uploads?: readonly UserUpload[];
+  compact?: boolean;
 }) {
   if (!uploads?.length) return null;
   return (
-    <div className="upload-cards">
+    <div className={compact ? "upload-chips" : "upload-cards"}>
       {uploads.map((upload) => (
-        <figure className="upload-card" key={upload.id}>
+        <figure
+          className={compact ? "upload-chip" : "upload-card"}
+          key={upload.id}
+          title={`${upload.name} · ${byteSize(upload.byteLength)} · ${upload.path}`}
+        >
           {api && upload.image ? <UploadImage api={api} upload={upload} /> : null}
           <figcaption>
             <strong>{upload.name}</strong>
-            <small>{byteSize(upload.byteLength)}</small>
-            <code title={upload.path}>{upload.path}</code>
+            {compact ? null : (
+              <>
+                <small>{byteSize(upload.byteLength)}</small>
+                <code title={upload.path}>{upload.path}</code>
+              </>
+            )}
           </figcaption>
         </figure>
       ))}
