@@ -44,8 +44,8 @@ export async function verifyMatchedRelease({ directory, root, capture, currentGu
   assert.equal(evidence.imageVersion, candidate.version);
   assert.equal(
     evidence.images.length,
-    11,
-    "Matched release requires seven apps, three native images and one guest",
+    12,
+    "Matched release requires seven apps, three native images, the Cube authorizer and one guest",
   );
   const checksums = (await readFile(resolve(directory, "evidence/SHA256SUMS"), "utf8"))
     .trim()
@@ -94,7 +94,7 @@ export async function verifyMatchedRelease({ directory, root, capture, currentGu
   );
   for (const reference of [
     ...Object.values(catalog),
-    ...["cube-api", "cube-master", "cubelet"].map(
+    ...["cube-api", "cube-master", "cubelet", "cube-api-authorizer"].map(
       (name) => `pi-cloud/${name}:${candidate.version}`,
     ),
     `localhost:5000/pi-cloud/cubesandbox-tool:${candidate.guestIdentity}`,

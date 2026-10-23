@@ -23,6 +23,10 @@ shares admission with fixed Tools. The generic refresh endpoint's false-success
 behavior therefore does not enter the new retention path. This refinement keeps
 the approved Worker/Kafka/Projector/Cube ownership, cadence and outage behavior.
 
+The existing Cube API authorization callback must admit the exact managed renewal
+route. Its image joins the matched artifact set, scan and deployment so a new
+Cube protocol cannot silently retain an older callback that rejects renewal.
+
 ## Decision and scope
 
 Elastic VMs have a finite retention deadline managed by Cube. Authorized active

@@ -137,7 +137,13 @@ export async function elasticRetentionAcceptance({
       const active = await database
         .selectFrom("runs")
         .select("id")
-        .where("state", "in", ["queued", "running", "settling", "cancel_requested"])
+        .where((eb) =>
+          eb.or([
+            eb("state", "not in", ["completed", "failed", "cancelled", "timed_out"]),
+            eb("recovery_requested_at", "is not", null),
+            eb.and([eb("output_seal_id", "is not", null), eb("output_sealed_at", "is", null)]),
+          ]),
+        )
         .limit(1)
         .execute();
       assert.equal(active.length, 0, "Unfinished work prevents the Control Plane outage fixture");
@@ -198,6 +204,11 @@ export async function elasticRetentionAcceptance({
       .map((part) => part.text)
       .join("\n");
     assert(answer.includes(marker), "Workspace file bytes did not survive expiry");
+    assert(
+      resumed.some((row) => row.entry.kind === "pi-cloud.sandbox_reset"),
+      "Continuation must inform Pi that the physical runtime changed",
+    );
+    result.modelSawRuntimeChange = true;
     const replacement = await wait(current, "replacement runtime", 30000);
     assert.notEqual(replacement.workspace_runtime_id, runtime.workspace_runtime_id);
     result.replacementRuntimeId = replacement.workspace_runtime_id;

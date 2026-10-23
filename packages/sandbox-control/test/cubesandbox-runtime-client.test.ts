@@ -59,6 +59,48 @@ beforeEach(() => {
   tcpResponse = undefined;
 });
 
+it("renews the original allocation time and rejects unconfirmed or changed acknowledgements", async () => {
+  const client = executionClient();
+  const observedAt = Date.now() - 10000;
+  try {
+    allocationReplyOverride = { allocationID: allocation.id, retainUntil: observedAt + 900000 };
+    await expect(
+      client.renewRetention(
+        allocation.id,
+        allocation.createBefore,
+        executionTarget.bootId,
+        observedAt,
+      ),
+    ).resolves.toBe(observedAt + 900000);
+    expect(observed.at(-1)).toMatchObject({
+      method: "POST",
+      path: `/allocations/${allocation.id}/renew`,
+      body: {
+        createBefore: allocation.createBefore,
+        executionBoot: executionTarget.bootId,
+        observedAt,
+      },
+    });
+    for (const receipt of [
+      { allocationID: "different", retainUntil: observedAt + 900000 },
+      { allocationID: allocation.id, retainUntil: observedAt },
+      { allocationID: allocation.id, closed: true },
+    ]) {
+      allocationReplyOverride = receipt;
+      await expect(
+        client.renewRetention(
+          allocation.id,
+          allocation.createBefore,
+          executionTarget.bootId,
+          observedAt,
+        ),
+      ).rejects.toThrow();
+    }
+  } finally {
+    await client.close();
+  }
+});
+
 it("uses the same native probe endpoint for direct guest evidence and asynchronous mailbox delivery", async () => {
   const client = executionClient();
   const probeId = "10000000-0000-4000-8000-000000000099",

@@ -19,6 +19,9 @@ const revision = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: root,
   encoding: "utf8",
 }).trim();
+const ubuntuMirror = process.env.PI_CLOUD_CUBE_APT_MIRROR;
+if (ubuntuMirror && !/^https:\/\/[a-z0-9.-]+(?::[0-9]+)?\/[a-zA-Z0-9/_-]+$/.test(ubuntuMirror))
+  throw new Error("Cube APT mirror must be an HTTPS archive URL without credentials or query");
 const imageLabels = [
   "--label",
   `org.opencontainers.image.revision=${revision}`,
@@ -70,6 +73,7 @@ try {
     const original = join(temporary, file),
       dockerfile = join(temporary, `${name}.Dockerfile`);
     let text = await readFile(original, "utf8");
+    if (ubuntuMirror) text = text.replaceAll("https://mirrors.aliyun.com/ubuntu", ubuntuMirror);
     const pins = new Map([
       ["golang:1.25-bookworm", manifest.buildImages.go],
       ["rust:1.85-alpine", manifest.buildImages.rust],
@@ -102,6 +106,8 @@ try {
       "--build-arg",
       "HTTPS_PROXY",
       "--build-arg",
+      "NO_PROXY",
+      "--build-arg",
       `CUBE_BUILDER_IMAGE=${manifest.buildImages.cubeletBuilder}`,
       "--build-arg",
       `CUBE_VERSION=0.6.0-picloud-${patchId}`,
@@ -125,6 +131,8 @@ try {
     "HTTP_PROXY",
     "--build-arg",
     "HTTPS_PROXY",
+    "--build-arg",
+    "NO_PROXY",
     "--build-arg",
     `CUBELET_BASE_IMAGE=pi-cloud/cubelet-base:${tag}`,
     "--build-arg",

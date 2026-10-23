@@ -19,7 +19,7 @@ node --import tsx scripts/run-matched-release.mjs preflight /private/releases/ca
 ```
 
 Preparation builds the guest without registering/pruning templates, builds the
-three pinned native Cube images and seven application images, then runs the
+three pinned native Cube images, its authorization callback and seven application images, then runs the
 existing provenance/SBOM/vulnerability gate. The application catalog goes into
 the candidate directory; `runtime/k3s/images.json`, Helm and serving Pods remain
 unchanged. The candidate manifest is written only after successful scans.
@@ -33,6 +33,12 @@ If Trivy database download needs the host's loopback proxy, set
 variables for preparation. Values are forwarded by environment name, not echoed
 on the command line. Only database download gets that network; image scans remain
 offline and the zero-fixable-HIGH/CRITICAL gate stays enforced.
+For a slow Ubuntu archive route, `PI_CLOUD_CUBE_APT_MIRROR` selects an HTTPS
+Ubuntu mirror for native Cube image builds (for example
+`https://mirrors.ustc.edu.cn/ubuntu`). APT still verifies Ubuntu signatures and
+the declared package versions. Build `NO_PROXY` is forwarded so an operator can
+select a direct route for that mirror while retaining the configured upstream
+proxy for other downloads. This setting does not change guest or provider egress.
 Database downloads use a separate 512 MiB temporary filesystem and a 15-minute
 budget; offline image scans retain their 256 MiB temporary bound. If the default
 mirror is unavailable, `PI_CLOUD_TRIVY_DB_REPOSITORY` can select an
@@ -49,6 +55,8 @@ values or replace the serving catalog. There is no mixed-version fallback.
 
 ADR-0272 requires matched managed Cube protocol 8 and the new typed
 `runtime_keepalive` Session fact. Guest Tool protocol 7 and schema 197 remain.
+The existing Cube authorization callback is the twelfth scanned artifact and is
+replaced with the matched version before the native Cube/app cutover.
 After cutover, run the existing acceptance driver with
 `PI_CLOUD_LIVE_RELEASE_CHECK=1 PI_CLOUD_LIVE_ELASTIC_RETENTION=1 PI_CLOUD_RETENTION_CONTROL_OUTAGE=1`.
 This uses real Luna and the actual default 15-minute idle window, verifies pure

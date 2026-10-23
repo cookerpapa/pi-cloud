@@ -77,6 +77,30 @@ if (action === "prepare") {
   run("scripts/build-cube-tool-image.mjs", [], env);
   phase("build native Cube");
   run("scripts/build-cubesandbox-runtime.mjs", [], env);
+  phase("build matched Cube API authorization callback");
+  execFileSync(
+    "docker",
+    [
+      "build",
+      "--file",
+      "packages/cube-api-authorizer/Dockerfile",
+      "--network=host",
+      "--build-arg",
+      "HTTP_PROXY",
+      "--build-arg",
+      "HTTPS_PROXY",
+      "--build-arg",
+      "NO_PROXY",
+      "--build-arg",
+      `PI_CLOUD_VERSION=${version}`,
+      "--build-arg",
+      `PI_CLOUD_REVISION=${capture("git", ["rev-parse", "HEAD"])}`,
+      "--tag",
+      `pi-cloud/cube-api-authorizer:${version}`,
+      ".",
+    ],
+    { cwd: root, stdio: "inherit", env },
+  );
   phase("build application candidate");
   run("scripts/production-kubernetes.mjs", ["build"], env);
   phase("scan matched artifacts");
@@ -121,7 +145,7 @@ try {
       "save",
       "--output",
       archive,
-      ...["cube-api", "cube-master", "cubelet"].map(
+      ...["cube-api", "cube-master", "cubelet", "cube-api-authorizer"].map(
         (name) => `pi-cloud/${name}:${candidate.version}`,
       ),
     ],
@@ -231,6 +255,15 @@ try {
   await assertDrained(true);
   phase("matched Cube, template and application cutover");
   cutover = true;
+  kubectl([
+    "set",
+    "image",
+    "deployment/pi-cloud-cube-api-authorizer",
+    `authorizer=pi-cloud/cube-api-authorizer:${candidate.version}`,
+  ]);
+  kubectl(["rollout", "status", "deployment/pi-cloud-cube-api-authorizer", "--timeout=120s"], {
+    timeout: 125000,
+  });
   run("scripts/configure-cube-completion.mjs", [], env);
   run(
     "scripts/register-cubesandbox-tool-template.mjs",

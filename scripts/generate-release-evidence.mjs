@@ -34,7 +34,7 @@ const PRODUCTION_IMAGE_NAMES = [
   "ssh-gateway",
   "cli-proxy-api",
 ];
-const CUBE_PLATFORM_IMAGES = ["cube-api", "cube-master", "cubelet"];
+const CUBE_PLATFORM_IMAGES = ["cube-api", "cube-master", "cubelet", "cube-api-authorizer"];
 const MAX_CAPTURE_BYTES = 64 * 1_024 * 1_024;
 
 function parseArguments(argv) {
