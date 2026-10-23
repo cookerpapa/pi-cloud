@@ -1,12 +1,18 @@
 # Current architecture decisions
 
+[ADR-0272](0272-cube-owned-elastic-retention.md) records the owner-approved
+direction and implementation plan for finite elastic-VM keepalives through the
+existing Session Kafka path, with Cube owning idle deadlines. It is not deployed;
+diagnostic probes remain observations and dedicated-machine reboot recovery is
+tracked separately.
+
 [ADR-0271](0271-local-upstream-proxy-configuration.md) synchronizes the local
 upstream address through one operator command while retaining PG and Helm ownership.
 
 [ADR-0270](0270-guest-browser-and-tool-result-actions.md) keeps browser automation
 inside Cube using Bash/Read, and carries bounded Tool-result metadata through
 same-commit display references. Preview links stay visible when invocation groups
-are collapsed. Implementation and matched delivery are in progress.
+are collapsed. It is deployed as `guest-browser-bd03f7a6`, schema 197.
 
 [ADR-0269](0269-execution-owned-control-tool-catalog.md) uses execution-owned
 ordinary tool definitions and Pi's Registry/selection mechanisms for changes

@@ -1,5 +1,22 @@
 # Implementation roadmap
 
+## Cube-owned finite elastic retention
+
+The owner approved the finite-keepalive direction and requested an
+[implementation plan](adr/0272-cube-owned-elastic-retention.md). No runtime
+change or deployment is included in the plan.
+
+- [ ] E1: verify and harden Cube renewal acknowledgement, expiry concurrency and managed Close.
+- [ ] E2: carry current existing-VM references and silent-work keepalives on the Session writer.
+- [ ] E3: add bounded Projector coalescing/delivery without per-pulse PG access.
+- [ ] E4: include fixed-Tool, terminal and preview activity; verify expiry and Volume-preserving recreation.
+- [ ] E5: remove the controller idle-deadline authority and superseded wire/configuration paths.
+- [ ] E6: complete the matched release and owned live/fault/cleanup acceptance while preserving user assets.
+
+Dedicated-machine host-reboot recovery is a separate lifecycle item, not an
+application of elastic idle expiration. Retain the affected Workspace during
+investigation and rollout planning.
+
 ## Guest browser and application preview delivery
 
 The owner approved [ADR-0270](adr/0270-guest-browser-and-tool-result-actions.md).

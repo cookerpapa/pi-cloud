@@ -1,5 +1,12 @@
 # Documentation map
 
+The [elastic retention implementation plan](adr/0272-cube-owned-elastic-retention.md)
+records the October 23 decision to let Cube own finite idle expiry. Silent active
+Sessions renew through the existing Kafka path; long Tools and human activity
+have explicit coverage. The owner accepts expiry after a prolonged renewal-path
+outage. This is planned, not deployed, and does not resolve the separate stopped
+dedicated-machine incident.
+
 [ADR-0271](adr/0271-local-upstream-proxy-configuration.md) and the
 [proxy command](CONFIGURATION.md#provider-egress) provide one local upstream
 address for host builds, Docker, the model Relay and Cube egress. The October 22

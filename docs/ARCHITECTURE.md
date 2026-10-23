@@ -1,5 +1,11 @@
 # Architecture
 
+Planned change: [ADR-0272](adr/0272-cube-owned-elastic-retention.md) moves elastic
+VM idle deadlines to Cube, renewed by typed retention intents on the existing
+Session Kafka path. Its finite expiry/outage policy is owner-approved but not yet
+implemented. The current runtime still uses controller-owned warm expiry as
+described below; dedicated-machine reboot recovery remains separate.
+
 [ADR-0270](adr/0270-guest-browser-and-tool-result-actions.md), deployed as
 `guest-browser-bd03f7a6` on schema 197, adds pinned guest Playwright/Chromium with
 CJK fonts. Bash starts the browser only when needed; Read uses existing screenshot attachment transport.

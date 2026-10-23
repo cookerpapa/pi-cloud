@@ -5,6 +5,22 @@ architecture belongs here. Implemented contracts live in the
 [architecture](ARCHITECTURE.md), [current ADRs](adr/README.md) and versioned
 acceptance evidence. Superseded plans and completed-task journals remain in Git.
 
+## Cube-owned finite elastic retention
+
+The October 23 owner-approved direction and
+[implementation plan](adr/0272-cube-owned-elastic-retention.md) use finite
+keepalives instead of infinite retention followed by a required release message.
+The current release has not changed.
+
+- [ ] E1: Cube authoritative renewal, monotonic original-time expiry, closure races
+      and error propagation; reuse the existing lifecycle/allocation implementation.
+- [ ] E2/E3: existing-VM references, silent physical-Session keepalives and bounded
+      Projector delivery, with no per-pulse PG row or new consumer group.
+- [ ] E4/E5: real Tool/terminal/preview activity, diagnostic exclusion, safe cold
+      activation, and removal of the competing controller idle timer.
+- [ ] E6: source/failure contracts and scanned matched delivery; live idle expiry,
+      continued file access, interruption semantics, scoped cleanup and preservation.
+
 ## Dedicated development machine after host shutdown
 
 - [ ] Repair and verify recovery from host shutdown separately from ordinary VM
