@@ -5,7 +5,11 @@
 - [x] Reproduce early SSE start before input acknowledgement/discovery.
 - [x] Keep unknown input distinct from real text and image-only submissions.
 - [x] Simplify background-service instructions without mandating another Bash call.
-- [ ] Publish matched artifacts and validate live input handoff, queue/Stop and retained assets.
+- [x] Publish matched artifacts and validate live input handoff, queue/Stop and retained assets.
+
+[Delivery](reports/input-handoff-delivery-20261024.md): `input-handoff-2a5a2ffd`,
+242 relevant source checks, delayed-acknowledgement browser/Luna acceptance and
+retained user assets; the original preview is restored.
 
 ## Composer and native pending-input presentation
 

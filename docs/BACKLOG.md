@@ -18,17 +18,12 @@ send/Stop, compact inline queue actions and stopped-input return pass browser an
 real Luna/Cube checks. Existing backend, machine, files and configuration remain
 intact; the temporary acceptance resources are physically cleaned up.
 
-## Initial message presentation and service-start instructions
-
-The owner approved simplifying service-start instructions: retain background
-execution, detached standard IO and readiness evidence, without requiring a
-second Bash invocation. No periodic progress-narration requirement is added.
-The browser's early SSE start/late POST race was reproduced: a temporary English
-placeholder was shown as user text. The fix represents missing input metadata
-explicitly and waits for the matching content while retaining execution updates.
-
-- [ ] Complete source/browser checks, matched publication and relevant live
-      acceptance; preserve existing conversations, Workspace bytes and settings.
+The [initial-input handoff repair](reports/input-handoff-delivery-20261024.md)
+is deployed as `input-handoff-2a5a2ffd`, schema 198. Early SSE execution no longer
+renders placeholder prose as user input. Background-service instructions retain
+readiness evidence without mandating a separate Bash call. Source/browser and
+real native queue/Stop acceptance pass, with retained machine/Workspace/history
+and completed fixture cleanup. No periodic progress-narration policy was added.
 
 ## Resource intent and dedicated-machine recovery
 

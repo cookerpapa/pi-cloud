@@ -1,5 +1,10 @@
 # Documentation map
 
+The [initial-message handoff repair](reports/input-handoff-delivery-20261024.md)
+is deployed as `input-handoff-2a5a2ffd`, retaining schema 198. Missing input metadata
+no longer renders as placeholder user text, and service-start instructions permit
+readiness checking within the same Bash invocation. Original assets are preserved.
+
 The [composer and pending-queue delivery](reports/composer-queue-delivery-20261023.md)
 publishes configurable Enter behavior and a compact native-input queue through the
 Web component path. Pi execution/input timing and backend contracts are unchanged.

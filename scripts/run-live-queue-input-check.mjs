@@ -128,7 +128,7 @@ try {
       await page.waitFor("document.querySelector('.product-delete-conversation')");
       await setValue(".product-composer textarea", firstPrompt);
       await page.evaluate(
-        "window.inputRaceArmed=true;window.promptFrames=[];window.promptObserver=new MutationObserver(()=>promptFrames.push([...document.querySelectorAll('.product-user-bubble')].map(e=>e.textContent)));promptObserver.observe(document.querySelector('.product-transcript'),{subtree:true,childList:true,characterData:true});document.querySelector('.product-send-button').click()",
+        "window.inputRaceArmed=true;window.promptFrames=[];window.promptObserver=new MutationObserver(()=>promptFrames.push([...document.querySelectorAll('.product-user-bubble')].map(e=>e.textContent)));promptObserver.observe(document.querySelector('.product-chat-scroll'),{subtree:true,childList:true,characterData:true});document.querySelector('.product-send-button').click()",
       );
       await page.waitFor(
         "window.releaseAcceptedPost && window.releaseInputMetadata.length && document.querySelector('.product-run-status')",
