@@ -248,7 +248,13 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
     removeDraftUpload:async()=>{},
     readInputImage:async()=>({bytes:Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2uV8AAAAASUVORK5CYII='),c=>c.charCodeAt(0)),contentType:'image/png'}),
     getSessionModel:async()=>modelResource(),
-    getConversation:async(sessionId)=>conversation(sessionId),
+    getConversation:async(sessionId)=>{
+      const view=conversation(sessionId);
+      if(!window.raceTurn)return view;
+      const next={...view,turns:[...view.turns,window.raceTurn]};
+      if(window.holdTurnMetadata)return new Promise(resolve=>{window.releaseTurnMetadata=()=>resolve(next);});
+      return next;
+    },
     getInputQueue:async(sessionId)=>parseInputQueueResource({...structuredClone(window.fixtureQueue),sessionId,
       viewVersion:String(window.fixtureQueue.revision),revision:window.fixtureQueue.revision.toString(16).padStart(64,"0")+"."+"a".repeat(64),afterPosition:0,hasMore:false,
       hasReturnedInputs:!!window.returnedInputs,
@@ -263,6 +269,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
       if(childViews) {
         const snapshot={schemaVersion:2,conversation:conversation(String(url).split('/').at(-2))};
         const frame=(event,data)=>'event: '+event+'\\n'+'data: '+JSON.stringify(data)+'\\n\\n';
+        window.emitFixtureEvent=event=>controller.enqueue(new TextEncoder().encode(frame(event.type,event)));
         window.finishFixtureTurn=()=>controller.enqueue(new TextEncoder().encode(frame('turn.completed',{
           schemaVersion:1,eventId:'90000000-0000-4000-8000-000000000001',sessionId:snapshot.conversation.session.sessionId,
           turnId:fixtureTurnId,agentId:'root',seq:3,occurredAt:new Date().toISOString(),type:'turn.completed',payload:{stopReason:'stop'}
@@ -315,6 +322,17 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
       const submitted=JSON.parse(init.body);window.turnBodies.push(submitted);
       const key=new Headers(init.headers).get('idempotency-key');
       window.turnRequests.push({key,body:submitted});
+      if(window.startBeforeAck){
+        const turnId='50000000-0000-4000-8000-000000000012',runId='60000000-0000-4000-8000-000000000012';
+        const acceptedAt=new Date().toISOString();
+        window.raceTurn={turnId,runId,mailboxPosition:2,prompt:submitted.prompt,uploads:(submitted.uploadIds??[]).map(id=>window.uploadReceipts.find(u=>u.id===id)),state:'running',acceptedAt,
+          transcript:{schemaVersion:1,throughSequence:5,startedSequence:4,terminalSequence:null,stopReason:null,failure:null,cancellation:null,
+            items:[{kind:'text',messageId:'race-text',text:'Working on the new request',phase:'commentary',firstSequence:5,lastSequence:5}]}};
+        const envelope={schemaVersion:1,eventId:'90000000-0000-4000-8000-000000000012',sessionId:sid,turnId,agentId:'root',occurredAt:acceptedAt};
+        window.emitFixtureEvent({...envelope,seq:4,type:'turn.started',payload:{inputKind:'prompt'}});
+        window.emitFixtureEvent({...envelope,eventId:'90000000-0000-4000-8000-000000000013',seq:5,type:'assistant.text.delta',payload:{messageId:'race-text',text:'Working on the new request',phase:'commentary'}});
+        return new Promise((resolve,reject)=>{window.releaseTurnAck=()=>window.failRaceAck?reject(new TypeError('Lost accepted response')):resolve(Response.json({kind:'run',turnId,runId,sessionId:sid,mailboxPosition:2,state:'queued',acceptedAt,replayed:false},{status:202}));});
+      }
       if(window.deferTurn) return new Promise(resolve=>{
         window.finishTurn=()=>{
           window.fixtureQueue.revision++;window.fixtureQueue.items=[{inputId:"50000000-0000-4000-8000-000000000001",runId:"60000000-0000-4000-8000-000000000001",text:submitted.prompt,mailboxPosition:1,acceptedAt:new Date().toISOString(),status:"queued"}];
@@ -1330,6 +1348,93 @@ try {
       "Successful logout must discard the entire previous account's document state",
     );
   });
+  // The SSE start may beat both the submit reply and the input metadata GET.
+  // Observe every DOM mutation so a brief invented/old user bubble cannot pass.
+  await withChromePage({}, async (page) => {
+    const currentTurn =
+      '.product-turn[data-conversation-turn-id="50000000-0000-4000-8000-000000000012"]';
+    for (const first of ["acceptance", "discovery", "lost-acceptance"]) {
+      await page.navigate(`http://127.0.0.1:${port}/review.html`);
+      await page.waitFor("window.fixtureReady");
+      await page.evaluate("renderChat('idle',true,true)");
+      await page.waitFor(
+        "document.querySelector('.product-conversation-row:not(.product-delegated-session)>button')",
+      );
+      await page.evaluate(
+        "document.querySelector('.product-conversation-row:not(.product-delegated-session)>button').click()",
+      );
+      await page.waitFor(
+        "document.querySelector('.product-turn .product-user-bubble')?.textContent==='Tree question' && window.emitFixtureEvent",
+      );
+      const fill = async (text) => {
+        await page.evaluate(
+          "document.querySelector('.product-composer textarea').focus();document.querySelector('.product-composer textarea').select()",
+        );
+        await page.send("Input.insertText", { text });
+      };
+      const input = "我的新消息：检查按钮闪动";
+      await fill(input);
+      await page.evaluate(
+        `window.bubbleFrames=[];window.bubbleObserver=new MutationObserver(()=>{window.bubbleFrames.push([...document.querySelectorAll(${JSON.stringify(currentTurn + " .product-user-bubble")})].map(e=>e.textContent));});window.bubbleObserver.observe(document.querySelector('.product-transcript'),{subtree:true,childList:true,characterData:true});window.startBeforeAck=true;window.holdTurnMetadata=true;window.failRaceAck=${first === "lost-acceptance"};document.querySelector('.product-send-button').click()`,
+      );
+      await page.waitFor(
+        `document.querySelector(${JSON.stringify(currentTurn + " .product-run-status")}) && window.releaseTurnMetadata && window.releaseTurnAck`,
+      );
+      // A new Run exists, but neither source has yet confirmed its input to the browser.
+      assert.equal(
+        await page.evaluate(
+          `document.querySelector(${JSON.stringify(currentTurn + " .product-user-message")})===null`,
+        ),
+        true,
+      );
+      assert.equal(
+        await page.evaluate(
+          `document.querySelector(${JSON.stringify(currentTurn)})?.textContent.includes('Input was accepted')`,
+        ),
+        false,
+      );
+      await fill("发送过程中继续写的新草稿");
+      if (first === "acceptance") await page.evaluate("releaseTurnAck()");
+      else {
+        if (first === "lost-acceptance") {
+          await page.evaluate("releaseTurnAck()");
+          await page.waitFor("document.body.textContent.includes('Control plane is unreachable')");
+        }
+        await page.evaluate("releaseTurnMetadata()");
+      }
+      await page.waitFor(
+        `document.querySelector(${JSON.stringify(currentTurn + " .product-user-bubble")})?.textContent===${JSON.stringify(input)}`,
+      );
+      await page.evaluate(
+        first === "acceptance"
+          ? "releaseTurnMetadata()"
+          : first === "discovery"
+            ? "releaseTurnAck()"
+            : "void 0",
+      );
+      await page.waitFor("document.querySelector('.product-send-button')?.disabled===false");
+      assert.equal(
+        await page.evaluate("document.querySelector('.product-composer textarea').value"),
+        "发送过程中继续写的新草稿",
+      );
+      assert.equal(
+        await page.evaluate(
+          `document.querySelectorAll(${JSON.stringify(currentTurn + " .product-user-bubble")}).length`,
+        ),
+        1,
+      );
+      assert.equal(
+        await page.evaluate(
+          "bubbleFrames.flat().every(text=>text===" + JSON.stringify(input) + ")",
+        ),
+        true,
+      );
+      await page.waitFor(
+        `document.querySelector(${JSON.stringify(currentTurn)})?.textContent.includes('Working on the new request')`,
+      );
+      await page.evaluate("bubbleObserver.disconnect()");
+    }
+  });
   // Composer keyboard/button choices use actual ChatApp effects and HTTP builders.
   await withChromePage({ width: 1280, height: 900 }, async (page) => {
     const parent = ".product-conversation-row:not(.product-delegated-session) > button";
@@ -1520,6 +1625,8 @@ try {
   console.log(
     JSON.stringify({
       accepted: true,
+      earlyRunNeverFabricatesUserInput: true,
+      acceptanceDiscoveryRaceKeepsDraftAndStream: true,
       composerEnterPreference: true,
       composerButtonMatchesEnter: true,
       composerEmptyEnterSafe: true,

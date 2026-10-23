@@ -121,6 +121,46 @@ function preparedState(): SessionViewState {
 }
 
 describe("session transcript reducer", () => {
+  it.each(["acceptance", "discovery"] as const)(
+    "keeps an early streamed Turn's input unknown until %s supplies its actual content",
+    (source) => {
+      let state = { ...preparedState(), turns: [] } as SessionViewState;
+      state = sessionViewReducer(state, {
+        type: "stream.event",
+        event: envelope(1, { type: "turn.started", payload: { inputKind: "prompt" } }),
+      });
+      expect(state.turns[0]?.prompt).toBeNull();
+      state = sessionViewReducer(state, {
+        type: "stream.event",
+        event: envelope(2, {
+          type: "assistant.text.delta",
+          payload: { text: "Checking the project" },
+        }),
+      });
+      state =
+        source === "acceptance"
+          ? sessionViewReducer(state, { type: "turn.accepted", accepted, prompt: "我的新消息" })
+          : sessionViewReducer(state, {
+              type: "turn.discovered",
+              sessionId: SESSION_ID,
+              turn: {
+                turnId: TURN_ID,
+                runId: accepted.runId,
+                mailboxPosition: 1,
+                prompt: "我的新消息",
+                state: "running",
+                acceptedAt: CREATED_AT,
+              },
+            });
+      expect(state.turns).toHaveLength(1);
+      expect(state.turns[0]).toMatchObject({
+        prompt: "我的新消息",
+        status: "running",
+        startedSequence: 1,
+        items: [expect.objectContaining({ kind: "text", text: "Checking the project" })],
+      });
+    },
+  );
   it("keeps complete commentary separate from streamed final text in live, compacted and snapshot views", () => {
     const events = [
       envelope(1, {

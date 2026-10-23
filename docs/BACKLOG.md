@@ -18,6 +18,18 @@ send/Stop, compact inline queue actions and stopped-input return pass browser an
 real Luna/Cube checks. Existing backend, machine, files and configuration remain
 intact; the temporary acceptance resources are physically cleaned up.
 
+## Initial message presentation and service-start instructions
+
+The owner approved simplifying service-start instructions: retain background
+execution, detached standard IO and readiness evidence, without requiring a
+second Bash invocation. No periodic progress-narration requirement is added.
+The browser's early SSE start/late POST race was reproduced: a temporary English
+placeholder was shown as user text. The fix represents missing input metadata
+explicitly and waits for the matching content while retaining execution updates.
+
+- [ ] Complete source/browser checks, matched publication and relevant live
+      acceptance; preserve existing conversations, Workspace bytes and settings.
+
 ## Resource intent and dedicated-machine recovery
 
 [ADR-0273](adr/0273-resource-intent-and-machine-recovery.md) is deployed as

@@ -434,22 +434,24 @@ export function ConversationTurn({
           data-conversation-turn-id={turn.turnId}
           id={`turn-${turn.turnId}`}
         >
-          <div className="product-message product-user-message">
-            <div className="product-user-message-body">
-              <UploadCards
-                {...(api ? { api } : {})}
-                {...(turn.uploads ? { uploads: turn.uploads } : {})}
-              />
-              {turn.prompt ? <div className="product-user-bubble">{turn.prompt}</div> : null}
-              <div className="product-user-message-actions">
-                <MessageCopyButton
-                  copiedLabel={t("turn.copied")}
-                  label={t("turn.copyUserMessage")}
-                  text={turn.prompt}
+          {turn.prompt === null ? null : (
+            <div className="product-message product-user-message">
+              <div className="product-user-message-body">
+                <UploadCards
+                  {...(api ? { api } : {})}
+                  {...(turn.uploads ? { uploads: turn.uploads } : {})}
                 />
+                {turn.prompt ? <div className="product-user-bubble">{turn.prompt}</div> : null}
+                <div className="product-user-message-actions">
+                  <MessageCopyButton
+                    copiedLabel={t("turn.copied")}
+                    label={t("turn.copyUserMessage")}
+                    text={turn.prompt}
+                  />
+                </div>
               </div>
             </div>
-          </div>
+          )}
           <div className="product-message product-assistant-message">
             <div className="product-assistant-content">
               {rows.map((row, index) => {

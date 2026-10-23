@@ -62,6 +62,17 @@ function turn(turnId: string, prompt: string): TurnView {
 }
 
 describe("product chat experience", () => {
+  it("shows execution without fabricating a user bubble or copy action before input metadata arrives", () => {
+    const pending = { ...turn("early-stream", ""), prompt: null, status: "running" as const };
+    const markup = renderToStaticMarkup(<ConversationTurn turn={pending} />);
+    expect(markup).toContain("product-run-status");
+    expect(markup).not.toContain("product-user-message");
+    const resolved = renderToStaticMarkup(
+      <ConversationTurn turn={{ ...pending, prompt: "我的新消息" }} />,
+    );
+    expect(resolved).toContain("我的新消息");
+    expect(resolved).toContain("product-user-message-actions");
+  });
   it("explains a thinking-only output limit instead of rendering an empty completed answer", () => {
     const value = { ...turn("length-limit", "Continue coding"), stopReason: "length" as const };
     const markup = renderToStaticMarkup(<ConversationTurn turn={value} />);

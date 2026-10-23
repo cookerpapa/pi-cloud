@@ -1,5 +1,12 @@
 # Implementation roadmap
 
+## Initial message handoff and service instructions
+
+- [x] Reproduce early SSE start before input acknowledgement/discovery.
+- [x] Keep unknown input distinct from real text and image-only submissions.
+- [x] Simplify background-service instructions without mandating another Bash call.
+- [ ] Publish matched artifacts and validate live input handoff, queue/Stop and retained assets.
+
 ## Composer and native pending-input presentation
 
 - [x] Add account-scoped browser Enter preference, shared button semantics and IME-safe keys.

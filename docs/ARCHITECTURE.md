@@ -721,7 +721,12 @@ parts and incremental JSON encoding/decoding. A disconnected partial value is
 discarded; only a complete replacement is applied. Small live events remain
 immediate. The browser does not submit Kafka offsets or Last-Event-ID. A local
 POST which raced with an older snapshot invalidates that UI request, not the Run.
-History opens on the latest 40 Turns; earlier pages use an owned Turn identity.
+History opens on the latest 40 Turns; earlier pages use an owned Turn identity. An
+SSE Turn start can precede its POST acknowledgement and metadata read. The Web
+view retains an unknown input as `null`, keeps execution visible and renders the
+user message only after matching input metadata arrives. It never inserts
+placeholder prose as user-authored content or borrows another draft. Empty text
+remains a valid known input for attachment-only messages.
 The composer shares one submission-identity implementation across ordinary,
 first-message and Steer paths. An uncertain response retains the key for the
 same Session/text/attachments/target; confirmation or a different submitted

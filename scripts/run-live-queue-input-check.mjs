@@ -95,12 +95,20 @@ try {
     try {
       await page.send("Page.addScriptToEvaluateOnNewDocument", {
         source: `
-        window.queueReads=0;window.queueAdmissions=[];
+        window.queueReads=0;window.queueAdmissions=[];window.inputRaceArmed=false;window.releaseInputMetadata=[];
         const originalFetch=window.fetch.bind(window);
         window.fetch=async(input,init)=>{
           const url=typeof input==='string'?input:input.url;
           if(new URL(url,location.href).pathname.endsWith('/queued-inputs') && (init?.method??'GET')==='GET')window.queueReads++;
-          const response=await originalFetch(input,init);if(new URL(url,location.href).pathname.endsWith('/turns')&&init?.method==='POST'&&response.ok)window.queueAdmissions.push(await response.clone().json());return response;
+          const response=await originalFetch(input,init);
+          const path=new URL(url,location.href).pathname;
+          if(path.endsWith('/turns')&&init?.method==='POST'&&response.ok){
+            const accepted=await response.clone().json();window.queueAdmissions.push(accepted);
+            if(window.inputRaceArmed&&accepted.kind==='run')await new Promise(resolve=>{window.releaseAcceptedPost=resolve;});
+          }
+          if(window.inputRaceArmed&&/^\\/v1\\/conversations\\/[^/]+$/.test(path)&&(init?.method??'GET')==='GET'&&response.ok)
+            await new Promise(resolve=>window.releaseInputMetadata.push(resolve));
+          return response;
         };
       `,
       });
@@ -116,11 +124,36 @@ try {
       };
       await page.navigate(`${base}/?session=${session.sessionId}`);
       await page.waitFor("document.querySelector('.product-composer textarea')");
-      first = await api.acceptTurn(
-        session.sessionId,
-        `Call bash exactly once with command: sleep 60; printf 'QUEUE_TOOL_OK\\n'. Keep Workspace files unchanged. After the Tool finishes reply ${markers.first}, following any later steering instruction.`,
-        newIdempotencyKey("turn"),
+      const firstPrompt = `Call bash exactly once with command: sleep 60; printf 'QUEUE_TOOL_OK\\n'. Keep Workspace files unchanged. After the Tool finishes reply ${markers.first}, following any later steering instruction.`;
+      await page.waitFor("document.querySelector('.product-delete-conversation')");
+      await setValue(".product-composer textarea", firstPrompt);
+      await page.evaluate(
+        "window.inputRaceArmed=true;window.promptFrames=[];window.promptObserver=new MutationObserver(()=>promptFrames.push([...document.querySelectorAll('.product-user-bubble')].map(e=>e.textContent)));promptObserver.observe(document.querySelector('.product-transcript'),{subtree:true,childList:true,characterData:true});document.querySelector('.product-send-button').click()",
       );
+      await page.waitFor(
+        "window.releaseAcceptedPost && window.releaseInputMetadata.length && document.querySelector('.product-run-status')",
+      );
+      first = await page.evaluate("queueAdmissions[0]");
+      assert.equal(first.kind, "run");
+      assert.equal(
+        await page.evaluate("document.querySelector('.product-user-bubble')===null"),
+        true,
+        "Early live execution must not fabricate user input",
+      );
+      await page.evaluate(
+        "window.inputRaceArmed=false;releaseAcceptedPost();releaseInputMetadata.forEach(resolve=>resolve())",
+      );
+      await page.waitFor(
+        `document.querySelector('.product-user-bubble')?.textContent===${JSON.stringify(firstPrompt)}`,
+      );
+      assert.equal(
+        await page.evaluate(
+          "promptFrames.flat().every(text=>text===" + JSON.stringify(firstPrompt) + ")",
+        ),
+        true,
+      );
+      await page.evaluate("promptObserver.disconnect()");
+      report.initialPromptNeverFabricated = true;
       await until(
         () => api.getConversation(session.sessionId),
         (view) =>
@@ -137,9 +170,9 @@ try {
         "document.querySelector('.product-composer textarea').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))",
       );
       await page.waitFor(
-        "queueAdmissions.length===1 && document.querySelector('.product-stop-button') && document.querySelectorAll('.pending-input-row').length===1",
+        "queueAdmissions.length===2 && document.querySelector('.product-stop-button') && document.querySelectorAll('.pending-input-row').length===1",
       );
-      a = await page.evaluate("queueAdmissions[0]");
+      a = await page.evaluate("queueAdmissions[1]");
       assert.equal(a.delivery, "follow_up");
       report.composerEnterFollowUp = true;
       const beforePush = await page.evaluate("window.queueReads");

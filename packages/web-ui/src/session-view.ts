@@ -98,7 +98,8 @@ export type TurnView = {
   runId: string | null;
   turnId: string;
   mailboxPosition: number | null;
-  prompt: string;
+  /** null until this Turn's accepted input metadata arrives; an empty string is an image-only input. */
+  prompt: string | null;
   uploads?: UserUpload[];
   acceptedAt: string | null;
   status: TurnViewStatus;
@@ -178,7 +179,7 @@ function unknownTurn(turnId: string): TurnView {
     runId: null,
     turnId,
     mailboxPosition: null,
-    prompt: "Input was accepted before this browser connected.",
+    prompt: null,
     acceptedAt: null,
     status: "running",
     items: [],
