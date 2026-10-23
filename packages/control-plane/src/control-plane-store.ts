@@ -1,3 +1,4 @@
+import { environmentForImage } from "@pi-cloud/database";
 import {
   catalogModel,
   currentModelCatalog,
@@ -495,7 +496,7 @@ export class ControlPlaneStore {
         }
         if (
           developmentEnvironment.owner_user_id !== execution.ownerUserId ||
-          !["running", "paused"].includes(developmentEnvironment.state)
+          !["ready"].includes(developmentEnvironment.state)
         ) {
           throw new ControlPlaneStoreError(
             "conflict",
@@ -848,7 +849,7 @@ export class ControlPlaneStore {
                 and t.state in ('reserved','materializing','active','cleaning','unknown')) as terminal,
             exists(select 1 from development_environments d
               where d.tenant_id=${this.#tenantId}::uuid and d.workspace_id=${workspaceId}::uuid
-                and d.state in ('requested','provisioning','running','paused','releasing','unknown')) as development,
+                and d.state <> 'released') as development,
             exists(select 1 from subagent_executions e join sessions s on s.tenant_id=e.tenant_id and s.id=e.root_session_id
               where e.tenant_id=${this.#tenantId}::uuid and s.workspace_id=${workspaceId}::uuid
                 and e.state in ('preparing','running')) as child,
@@ -1131,7 +1132,7 @@ export class ControlPlaneStore {
           session.createdByUserId !== execution.ownerUserId
         )
           throw new ControlPlaneStoreError("not_found", "Target development machine was not found");
-        if (!["running", "paused"].includes(machine.state))
+        if (!["ready"].includes(machine.state))
           throw new ControlPlaneStoreError("conflict", "Cloud development machine is not ready");
         const releasing = await transaction
           .selectFrom("development_environment_operations")
@@ -1542,16 +1543,20 @@ export class ControlPlaneStore {
         // Lock the machine before its Workspace, in lifecycle-admission order.
         const machine = await transaction
           .selectFrom("development_environments")
-          .select("state")
+          .select(["state", "desired_state"])
           .where("tenant_id", "=", this.#tenantId)
           .where("id", "=", session.development_environment_id)
           .where("workspace_id", "=", session.workspace_id)
           .forShare()
           .executeTakeFirst();
-        if (machine?.state !== "running") {
+        if (machine?.state !== "ready" || machine.desired_state !== "running") {
           throw new ControlPlaneStoreError(
             "conflict",
-            "Resume the development machine before sending a message",
+            machine?.desired_state === "paused"
+              ? "Resume the paused development machine before sending a message"
+              : machine?.desired_state === "released"
+                ? "The development machine has been released; select another Workspace"
+                : "The development machine is recovering or unavailable; try again after it is ready",
           );
         }
         // Use a fresh statement snapshot after acquiring the row lock: a release
@@ -1906,101 +1911,20 @@ export class ControlPlaneStore {
     transaction: Transaction<Database>,
     projectId: string,
   ): Promise<EnvironmentRuntimeSnapshot> {
-    const selection = transaction
-      .selectFrom("environment_versions as environment")
-      .select([
-        "environment.id as environmentVersionId",
-        "environment.version_number as environmentVersionNumber",
-        "environment.profile_key as environmentProfileKey",
-        "environment.profile_version as environmentProfileVersion",
-        "environment.image_revision as environmentImageRevision",
-        "environment.spec_sha256 as environmentSpecSha256",
-        "environment.recipe as environmentRecipe",
-        "environment.recipe_sha256 as environmentRecipeSha256",
-        "environment.state as environmentState",
-        "environment.active as environmentActive",
-        "environment.created_at as environmentCreatedAt",
-        "environment.validated_at as environmentValidatedAt",
-      ])
-      .where("environment.tenant_id", "=", this.#tenantId)
-      .where("environment.project_id", "=", projectId)
-      .where("environment.active", "=", true);
-    // Ordinary input shares a matching immutable version; it need not serialize
-    // every Session behind the Project's version-update lock.
-    let active = await selection
-      .where("environment.image_revision", "=", this.#environmentImageRevision)
-      .forShare()
-      .executeTakeFirst();
-    if (active === undefined) {
-      const project = await transaction
-        .selectFrom("projects")
-        .select("id")
-        .where("tenant_id", "=", this.#tenantId)
-        .where("id", "=", projectId)
-        // Serialize version writers without blocking a reader's Run FK check.
-        .forNoKeyUpdate()
-        .executeTakeFirst();
-      if (!project) throw new ControlPlaneStoreError("not_found", "Project was not found");
-      // A different claimant may have published the version during our wait.
-      // This separate statement deliberately takes a fresh READ COMMITTED snapshot.
-      active = await selection.forUpdate().executeTakeFirst();
-    }
-    if (active === undefined) {
+    const result = await environmentForImage(transaction, {
+      tenantId: this.#tenantId,
+      projectId,
+      imageRevision: this.#environmentImageRevision,
+      id: this.#idGenerator,
+    });
+    if (result.status !== "ready")
       throw new ControlPlaneStoreError(
-        "control_plane_misconfigured",
-        "Project has no active environment version",
+        result.status === "missing" ? "control_plane_misconfigured" : "conflict",
+        result.status === "missing"
+          ? "Project has no active environment version"
+          : "Active environment failed validation and must be rolled back",
       );
-    }
-    const current = environmentSnapshot(active);
-    if (active.environmentState === "failed") {
-      throw new ControlPlaneStoreError(
-        "conflict",
-        "Active environment failed validation and must be rolled back",
-      );
-    }
-    if (current.imageRevision === this.#environmentImageRevision) return current;
-
-    await transaction
-      .updateTable("environment_versions")
-      .set({ active: false, updated_at: sql<Date>`now()` })
-      .where("tenant_id", "=", this.#tenantId)
-      .where("project_id", "=", projectId)
-      .where("id", "=", current.environmentVersionId)
-      .where("active", "=", true)
-      .executeTakeFirstOrThrow();
-    const created = await transaction
-      .insertInto("environment_versions")
-      .values({
-        id: this.#idGenerator(),
-        tenant_id: this.#tenantId,
-        project_id: projectId,
-        version_number: current.versionNumber + 1,
-        profile_key: DEFAULT_PROJECT_ENVIRONMENT_PROFILE_KEY,
-        profile_version: DEFAULT_PROJECT_ENVIRONMENT_PROFILE_VERSION,
-        image_revision: this.#environmentImageRevision,
-        spec_sha256: DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
-        recipe: sql<Record<string, unknown>>`${JSON.stringify(current.recipe)}::jsonb`,
-        recipe_sha256: current.recipeSha256,
-        state: "pending",
-        active: true,
-        validated_at: null,
-      })
-      .returning([
-        "id as environmentVersionId",
-        "version_number as environmentVersionNumber",
-        "profile_key as environmentProfileKey",
-        "profile_version as environmentProfileVersion",
-        "image_revision as environmentImageRevision",
-        "spec_sha256 as environmentSpecSha256",
-        "recipe as environmentRecipe",
-        "recipe_sha256 as environmentRecipeSha256",
-        "state as environmentState",
-        "active as environmentActive",
-        "created_at as environmentCreatedAt",
-        "validated_at as environmentValidatedAt",
-      ])
-      .executeTakeFirstOrThrow();
-    return environmentSnapshot(created);
+    return environmentSnapshot(result.row);
   }
 
   async #resolveModelSnapshot(

@@ -41,6 +41,7 @@ let pglite: PGlite;
 let socket: PGLiteSocketServer;
 let database: Kysely<Database>;
 let server: SandboxControlServer;
+let controller: SandboxController;
 let service: DevelopmentEnvironmentService;
 let stateRepository: PostgresWorkspaceRuntimeStateRepository;
 let store: ControlPlaneStore;
@@ -53,6 +54,11 @@ let admin: Pool | undefined;
 let testDatabase: string | undefined;
 const pauses = vi.fn(async () => undefined);
 const resumes = vi.fn(async (handle: SandboxHandle) => handle);
+const machineStates = new Map<string, "running" | "paused" | "stopped" | "unknown">();
+const machineHandles = new Map<string, SandboxHandle>();
+const retiredAllocations = new Set<string>();
+let loseCreateReply = false;
+let physicalCreations = 0;
 const destroys = vi.fn(async (_handle: SandboxHandle) => undefined);
 
 function provider(): SandboxProvider {
@@ -89,7 +95,13 @@ function provider(): SandboxProvider {
       return { continuityId: handle.runtimeId };
     },
     async create(spec, authorization) {
-      return {
+      const prior = machineHandles.get(spec.activationId);
+      if (prior) return prior;
+      if (retiredAllocations.has(spec.activationId))
+        throw new Error("Allocation is permanently closed");
+      machineStates.set(spec.activationId, "running");
+      physicalCreations += 1;
+      const handle: SandboxHandle = {
         allocation: authorization,
         runtimeNodeId: "node-test",
         providerApiVersion: 1,
@@ -101,8 +113,14 @@ function provider(): SandboxProvider {
         workspaceRoot: spec.toolRoot ?? "/workspace",
         assignment: spec.assignment,
         environment: spec.environment,
-        environmentValidation: validation,
+        environmentValidation: { ...validation, imageRevision: spec.environment.imageRevision },
       };
+      machineHandles.set(spec.activationId, handle);
+      if (loseCreateReply) {
+        loseCreateReply = false;
+        throw new Error("Cube create reply lost");
+      }
+      return handle;
     },
     async describeExecution(handle, bindingId, toolRoot) {
       return {
@@ -123,11 +141,34 @@ function provider(): SandboxProvider {
       return {
         runtimeName: handle.runtimeName,
         nodeId: "node-test",
-        presence: "present",
-        state: "running",
+        presence:
+          machineStates.get(handle.activationId) === "unknown"
+            ? "unavailable"
+            : machineHandles.has(handle.activationId)
+              ? "present"
+              : "absent",
+        state: machineStates.get(handle.activationId) ?? "unknown",
       };
     },
-    async destroyPersistentCapsule() {},
+    async observeAllocation(id) {
+      const handle = machineHandles.get(id);
+      if (!handle)
+        return retiredAllocations.has(id)
+          ? { runtimeName: id, nodeId: "node-test", presence: "absent", state: "unknown" }
+          : undefined;
+      return {
+        runtimeName: handle.runtimeName,
+        nodeId: "node-test",
+        presence: machineStates.get(id) === "unknown" ? "unavailable" : "present",
+        state: machineStates.get(id) ?? "unknown",
+      };
+    },
+    async destroyPersistentCapsule(capsule) {
+      const handle = JSON.parse(capsule) as SandboxHandle;
+      await destroys(handle);
+      machineHandles.delete(handle.activationId);
+      retiredAllocations.add(handle.activationId);
+    },
     async openTerminal() {
       return {
         pid: 1,
@@ -162,22 +203,105 @@ function provider(): SandboxProvider {
         entries: [{ name, path: `${path === "/" ? "" : path}/${name}`, kind: "directory" }],
       };
     },
-    pause: pauses,
-    resume: resumes,
-    async persistentCapsule(handle) {
-      return { handle, capsule: "c".repeat(64) };
+    pause: async (handle) => {
+      await pauses();
+      machineStates.set(handle.activationId, "paused");
     },
-    async adoptPersistentCapsule() {
-      throw new Error("test provider has no detached development environment");
+    resume: async (handle) => {
+      await resumes(handle);
+      machineStates.set(handle.activationId, "running");
+      return handle;
+    },
+    async persistentCapsule(handle) {
+      return { handle, capsule: JSON.stringify(handle) };
+    },
+    async adoptPersistentCapsule(capsule) {
+      const handle = JSON.parse(capsule) as SandboxHandle;
+      if (
+        !machineHandles.has(handle.activationId) ||
+        !["running", "paused"].includes(machineStates.get(handle.activationId) ?? "")
+      )
+        throw new Error("Original machine is not available");
+      return handle;
     },
     async detachPersistent() {},
-    destroy: destroys,
-    async inspect(handle) {
-      return { providerApiVersion: 1, providerId: "cubesandbox", state: "absent", handle };
+    destroy: async (handle) => {
+      await destroys(handle);
+      machineHandles.delete(handle.activationId);
+      retiredAllocations.add(handle.activationId);
     },
-    async destroyRuntime() {},
+    async inspect(handle) {
+      return {
+        providerApiVersion: 1,
+        providerId: "cubesandbox",
+        state: machineStates.get(handle.activationId) ?? "running",
+        handle,
+        effectiveIsolation: {
+          isolationBoundary: "microvm",
+          runtime: "cubesandbox-kvm",
+          user: "1000:1000",
+          privileged: false,
+          readOnlyRootFilesystem: false,
+          networkMode: "public_web_proxy_private_denied",
+          mountCount: 0,
+          hasDockerSocket: false,
+          pidLimit: 128,
+          processLimit: 128,
+          memoryBytes: 768 * 1024 * 1024,
+          cpuNano: 1000000000,
+          droppedCapabilities: ["ALL"],
+          securityOptions: ["no-new-privileges"],
+          sandboxKernelRelease: "6.1",
+        },
+      };
+    },
+    async destroyRuntime(id) {
+      const handle = machineHandles.get(id);
+      if (handle) await destroys(handle);
+      machineHandles.delete(id);
+      retiredAllocations.add(id);
+    },
     async close() {},
   };
+}
+
+async function startController(imageRevision = IMAGE_REVISION) {
+  const instanceId = crypto.randomUUID();
+  const ownerBaseUrl = "http://127.0.0.1:4300";
+  stateRepository = new PostgresWorkspaceRuntimeStateRepository({
+    database,
+    sandboxDomainId: DOMAIN_ID,
+    instanceId: instanceId,
+    ownerBaseUrl,
+  });
+  await stateRepository.start();
+  server = new SandboxControlServer({
+    host: "127.0.0.1",
+    port: 0,
+    serviceToken: `service-${"s".repeat(48)}`,
+    terminalToken: TOKEN,
+    broker: (controller = new SandboxController({
+      provider: provider(),
+      bindings: new PostgresSandboxBindings(
+        database,
+        DOMAIN_ID,
+        instanceId,
+        ownerBaseUrl,
+        async () => {},
+      ),
+      stateRepository,
+      ownerBaseUrl,
+      maximumActiveSandboxes: 4,
+      imageRevision,
+    })),
+  });
+  const address = await server.listen();
+  await database
+    .updateTable("sandbox_domains")
+    .set({ sandbox_control_base_url: address })
+    .where("id", "=", DOMAIN_ID)
+    .executeTakeFirstOrThrow();
+  await controller.recoverPersistentDevelopmentEnvironments();
 }
 
 beforeAll(async () => {
@@ -243,51 +367,22 @@ beforeAll(async () => {
     defaultModelProfileId: tenant.defaultModelProfileId,
   };
   otherIdentity = { ...identity, userId: otherUserId, displayName: "Other User", role: "member" };
-  const ownerBaseUrl = "http://127.0.0.1:4300";
-  stateRepository = new PostgresWorkspaceRuntimeStateRepository({
-    database,
-    sandboxDomainId: DOMAIN_ID,
-    instanceId: "99999999-9999-4999-8999-999999999999",
-    ownerBaseUrl,
-  });
-  await stateRepository.start();
-  server = new SandboxControlServer({
-    host: "127.0.0.1",
-    port: 0,
-    serviceToken: `service-${"s".repeat(48)}`,
-    terminalToken: TOKEN,
-    broker: new SandboxController({
-      provider: provider(),
-      bindings: new PostgresSandboxBindings(
-        database,
-        DOMAIN_ID,
-        "99999999-9999-4999-8999-999999999999",
-        ownerBaseUrl,
-        async () => {},
-      ),
-      stateRepository,
-      ownerBaseUrl,
-      maximumActiveSandboxes: 4,
-      imageRevision: IMAGE_REVISION,
-    }),
-  });
-  const address = await server.listen();
-  await database
-    .updateTable("sandbox_domains")
-    .set({ sandbox_control_base_url: address })
-    .where("id", "=", DOMAIN_ID)
-    .executeTakeFirstOrThrow();
+  await startController();
   service = new DevelopmentEnvironmentService({
     database,
     terminalToken: TOKEN,
     allowInsecureInternalHttp: true,
     environmentImageRevision: IMAGE_REVISION,
+    observeMachine: (...args) => controller.developmentEnvironmentObservation(...args),
   });
 }, 30_000);
 
 afterAll(async () => {
-  await server?.close();
-  await database?.destroy();
+  try {
+    await server?.close();
+  } finally {
+    await database?.destroy();
+  }
   await socket?.stop();
   await pglite?.close();
   if (admin) {
@@ -731,7 +826,10 @@ describe("user-owned development environments", () => {
           service.action(identity, machine.environmentId, "lost-release", {
             action: "release",
           }),
-        ).rejects.toThrow("injected connection loss");
+        ).resolves.toMatchObject({
+          desiredState: "released",
+          state: failure === "response" ? "released" : "releasing",
+        });
       } finally {
         fetchRequest.mockReset().mockImplementation(originalFetch);
       }
@@ -745,11 +843,10 @@ describe("user-owned development environments", () => {
             terminalToken: TOKEN,
             allowInsecureInternalHttp: true,
             environmentImageRevision: IMAGE_REVISION,
+            observeMachine: (...args) => controller.developmentEnvironmentObservation(...args),
           });
           try {
-            await expect(
-              replacement.reconcileLifecycle(new Date(Date.now() + 1_000)),
-            ).resolves.toBe(1);
+            await expect(replacement.reconcileLifecycle()).resolves.toBe(1);
           } finally {
             await replacement.close();
           }
@@ -796,15 +893,15 @@ describe("user-owned development environments", () => {
       try {
         await expect(
           service.action(identity, machine.environmentId, "uncertain-pause", { action: "pause" }),
-        ).rejects.toThrow("lost pause transport");
+        ).resolves.toMatchObject({
+          desiredState: "paused",
+          state: failure === "response" ? "paused" : "unknown",
+        });
         vi.mocked(undici.fetch).mockImplementation(originalFetch);
         await expect(
           service.action(identity, machine.environmentId, "uncertain-pause", { action: "pause" }),
-        ).rejects.toMatchObject({
-          code: "conflict",
-          message: expect.stringContaining("not confirmed"),
-        });
-        expect(pauses.mock.calls.length - before).toBe(failure === "response" ? 1 : 0);
+        ).resolves.toMatchObject({ state: "paused", desiredState: "paused" });
+        expect(pauses.mock.calls.length - before).toBe(1);
       } finally {
         vi.mocked(undici.fetch).mockImplementation(originalFetch);
         await service.action(identity, machine.environmentId, "cleanup-pause-gap", {
@@ -871,75 +968,354 @@ describe("user-owned development environments", () => {
     }
   });
 
-  it("retires an abandoned pre-provision request without creating a Cube", async () => {
-    const projectId = "77777777-7777-4777-8777-777777777701";
-    const abandonedWorkspaceId = "77777777-7777-4777-8777-777777777702";
-    const environmentId = "77777777-7777-4777-8777-777777777703";
-    await database
-      .insertInto("projects")
-      .values({ id: projectId, tenant_id: identity.tenantId, name: "Abandoned machine" })
-      .executeTakeFirstOrThrow();
-    await database
-      .insertInto("workspaces")
-      .values({
-        id: abandonedWorkspaceId,
-        tenant_id: identity.tenantId,
-        project_id: projectId,
-        sandbox_domain_id: DOMAIN_ID,
-        seed_kind: "empty",
-        workspace_kind: "development_environment",
-      })
-      .executeTakeFirstOrThrow();
-    await database
-      .updateTable("sandbox_domains")
-      .set({ assigned_workspaces: sql<string>`${sql.ref("assigned_workspaces")} + 1` })
-      .where("id", "=", DOMAIN_ID)
-      .executeTakeFirstOrThrow();
-    await database
-      .insertInto("development_environments")
-      .values({
-        id: environmentId,
-        tenant_id: identity.tenantId,
-        owner_user_id: identity.userId,
-        project_id: projectId,
-        workspace_id: abandonedWorkspaceId,
-        sandbox_domain_id: DOMAIN_ID,
-        environment_version_id: null,
-        owner_instance_id: null,
-        owner_base_url: null,
-        runtime_id: null,
-        runtime_name: null,
-        state: "requested",
-        failure_code: null,
-        idempotency_key: "abandoned-machine",
-        request_sha256: "a".repeat(64),
-        profile_key: "starter",
-        cpu_count: 1,
-        memory_mib: 2_048,
-        system_disk_gib: 8,
-      })
-      .executeTakeFirstOrThrow();
-
-    await expect(service.reconcileLifecycle(new Date(Date.now() + 1_000))).resolves.toBe(1);
-    await expect(
-      database
-        .selectFrom("development_environments as environment")
-        .innerJoin("workspaces as workspace", (join) =>
-          join
-            .onRef("workspace.tenant_id", "=", "environment.tenant_id")
-            .onRef("workspace.id", "=", "environment.workspace_id"),
-        )
-        .select([
-          "environment.state",
-          "environment.failure_code as failureCode",
-          "workspace.deleted_at as deletedAt",
-        ])
-        .where("environment.id", "=", environmentId)
-        .executeTakeFirstOrThrow(),
-    ).resolves.toEqual({
-      state: "released",
-      failureCode: "provision_request_abandoned",
-      deletedAt: expect.any(Date),
+  it("retries a committed create intent after its first delivery was lost", async () => {
+    const originalFetch = (await vi.importActual<typeof import("undici")>("undici")).fetch;
+    vi.mocked(undici.fetch).mockRejectedValueOnce(new Error("create delivery lost"));
+    const requested = await service.create(identity, "recover-created-intent", {
+      name: "Recover machine",
+      profileKey: "starter",
     });
+    expect(requested.state).toBe("requested");
+    vi.mocked(undici.fetch).mockImplementation(originalFetch);
+    try {
+      await service.reconcileLifecycle();
+      const ready = await service.get(identity, requested.environmentId);
+      expect(ready).toMatchObject({
+        environmentId: requested.environmentId,
+        workspaceId: requested.workspaceId,
+        state: "running",
+      });
+      expect(
+        (
+          await database
+            .selectFrom("workspaces")
+            .select("deleted_at")
+            .where("id", "=", ready.workspaceId)
+            .executeTakeFirstOrThrow()
+        ).deleted_at,
+      ).toBeNull();
+    } finally {
+      await service.action(identity, requested.environmentId, "cleanup-recovered-intent", {
+        action: "release",
+      });
+    }
+  });
+  it("recovers a lost Cube create reply under the same physical allocation", async () => {
+    const before = physicalCreations;
+    loseCreateReply = true;
+    const machine = await service.create(identity, "lost-cube-create", {
+      name: "Lost create",
+      profileKey: "starter",
+    });
+    expect(machine.state).toBe("recovering");
+    const original = await database
+      .selectFrom("development_environments")
+      .select(["allocation_id", "creation_spec"])
+      .where("id", "=", machine.environmentId)
+      .executeTakeFirstOrThrow();
+    try {
+      await controller.recoverPersistentDevelopmentEnvironments();
+      expect(await service.get(identity, machine.environmentId)).toMatchObject({
+        state: "running",
+        workspaceId: machine.workspaceId,
+      });
+      const current = await database
+        .selectFrom("development_environments")
+        .select(["allocation_id", "creation_spec"])
+        .where("id", "=", machine.environmentId)
+        .executeTakeFirstOrThrow();
+      expect(current).toEqual(original);
+      expect(physicalCreations - before).toBe(1);
+    } finally {
+      await service.action(identity, machine.environmentId, "cleanup-lost-create", {
+        action: "release",
+      });
+    }
+  });
+
+  it("preserves deliberate pause through controller replacement", async () => {
+    const machine = await service.create(identity, "paused-recovery", {
+      name: "Paused recovery",
+      profileKey: "starter",
+    });
+    await service.action(identity, machine.environmentId, "pause-before-restart", {
+      action: "pause",
+    });
+    const before = resumes.mock.calls.length;
+    const original = await database
+      .selectFrom("development_environments")
+      .select("allocation_id")
+      .where("id", "=", machine.environmentId)
+      .executeTakeFirstOrThrow();
+    try {
+      await server.close();
+      await startController();
+      expect(await service.get(identity, machine.environmentId)).toMatchObject({
+        desiredState: "paused",
+        state: "paused",
+        generation: 1,
+      });
+      expect(resumes.mock.calls.length).toBe(before);
+      expect(
+        await database
+          .selectFrom("development_environments")
+          .select("allocation_id")
+          .where("id", "=", machine.environmentId)
+          .executeTakeFirstOrThrow(),
+      ).toEqual(original);
+    } finally {
+      await service.action(identity, machine.environmentId, "cleanup-paused-recovery", {
+        action: "release",
+      });
+    }
+  });
+
+  it("replaces a confirmed stopped instance while preserving the machine and Workspace", async () => {
+    const machine = await service.create(identity, "stopped-recovery", {
+      name: "Stopped recovery",
+      profileKey: "starter",
+    });
+    const original = await database
+      .selectFrom("development_environments")
+      .select(["allocation_id", "intent_revision"])
+      .where("id", "=", machine.environmentId)
+      .executeTakeFirstOrThrow();
+    machineStates.set(original.allocation_id, "stopped");
+    try {
+      await server.close();
+      await startController();
+      expect(await service.get(identity, machine.environmentId)).toMatchObject({
+        state: "running",
+        workspaceId: machine.workspaceId,
+        generation: 2,
+      });
+      const replacement = await database
+        .selectFrom("development_environments")
+        .selectAll()
+        .where("id", "=", machine.environmentId)
+        .executeTakeFirstOrThrow();
+      expect(replacement.allocation_id).not.toBe(original.allocation_id);
+      expect(retiredAllocations.has(original.allocation_id)).toBe(true);
+      expect(
+        await stateRepository.reserveDevelopmentEnvironmentTerminal(
+          machine.environmentId,
+          replacement.allocation_id,
+        ),
+      ).toBe(true);
+      await stateRepository.releaseDevelopmentEnvironmentTerminal(
+        machine.environmentId,
+        original.allocation_id,
+      );
+      expect(
+        (
+          await database
+            .selectFrom("development_environments")
+            .select("terminal_active")
+            .where("id", "=", machine.environmentId)
+            .executeTakeFirstOrThrow()
+        ).terminal_active,
+      ).toBe(true);
+      await stateRepository.releaseDevelopmentEnvironmentTerminal(
+        machine.environmentId,
+        replacement.allocation_id,
+      );
+      expect(machineHandles.has(original.allocation_id)).toBe(false);
+      expect(
+        (
+          await database
+            .selectFrom("workspaces")
+            .select("deleted_at")
+            .where("id", "=", machine.workspaceId)
+            .executeTakeFirstOrThrow()
+        ).deleted_at,
+      ).toBeNull();
+      await expect(
+        stateRepository.setDevelopmentEnvironmentState(
+          {
+            environmentId: machine.environmentId,
+            allocationId: original.allocation_id,
+            intentRevision: Number(original.intent_revision),
+          },
+          "reconciling",
+        ),
+      ).rejects.toMatchObject({ code: "ownership_lost" });
+      await expect(
+        stateRepository.closeAllocation(original.allocation_id, "development_environment"),
+      ).rejects.toMatchObject({ code: "ownership_lost" });
+      expect(await service.get(identity, machine.environmentId)).toMatchObject({
+        state: "running",
+      });
+    } finally {
+      await service.action(identity, machine.environmentId, "cleanup-stopped-recovery", {
+        action: "release",
+      });
+    }
+  });
+
+  it("retains an unreachable allocation without replacement or physical deletion", async () => {
+    const machine = await service.create(identity, "unreachable-recovery", {
+      name: "Unavailable recovery",
+      profileKey: "starter",
+    });
+    const original = await database
+      .selectFrom("development_environments")
+      .select("allocation_id")
+      .where("id", "=", machine.environmentId)
+      .executeTakeFirstOrThrow();
+    const creations = physicalCreations,
+      deletions = destroys.mock.calls.length;
+    machineStates.set(original.allocation_id, "unknown");
+    try {
+      await server.close();
+      await startController();
+      await controller.recoverPersistentDevelopmentEnvironments();
+      expect(physicalCreations).toBe(creations);
+      expect(destroys.mock.calls.length).toBe(deletions);
+      expect(
+        await database
+          .selectFrom("development_environments")
+          .select(["allocation_id", "allocation_closed"])
+          .where("id", "=", machine.environmentId)
+          .executeTakeFirstOrThrow(),
+      ).toEqual({ allocation_id: original.allocation_id, allocation_closed: false });
+      machineStates.set(original.allocation_id, "running");
+      await controller.recoverPersistentDevelopmentEnvironments();
+      expect(await service.get(identity, machine.environmentId)).toMatchObject({
+        state: "running",
+        generation: 1,
+      });
+    } finally {
+      machineStates.set(original.allocation_id, "running");
+      await service.action(identity, machine.environmentId, "cleanup-unreachable", {
+        action: "release",
+      });
+    }
+  });
+
+  it("rejects a late pause acknowledgement after a newer resume intent", async () => {
+    const machine = await service.create(identity, "intent-race", {
+      name: "Intent race",
+      profileKey: "starter",
+    });
+    let entered!: () => void, finish!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    pauses.mockImplementationOnce(async () => {
+      entered();
+      await gate;
+    });
+    const pause = service.action(identity, machine.environmentId, "slow-pause", {
+      action: "pause",
+    });
+    await started;
+    const resume = service.action(identity, machine.environmentId, "newer-resume", {
+      action: "resume",
+    });
+    try {
+      await vi.waitFor(async () =>
+        expect(
+          await database
+            .selectFrom("development_environments")
+            .select(["desired_state", "intent_revision"])
+            .where("id", "=", machine.environmentId)
+            .executeTakeFirstOrThrow(),
+        ).toEqual({ desired_state: "running", intent_revision: "3" }),
+      );
+      finish();
+      await Promise.all([pause, resume]);
+      expect(await service.get(identity, machine.environmentId)).toMatchObject({
+        desiredState: "running",
+        state: "running",
+        generation: 1,
+      });
+    } finally {
+      finish();
+      await Promise.allSettled([pause, resume]);
+      await service.action(identity, machine.environmentId, "cleanup-intent-race", {
+        action: "release",
+      });
+    }
+  });
+
+  it("waits for confirmed old cleanup before creating replacement compute", async () => {
+    const machine = await service.create(identity, "unconfirmed-cleanup", {
+      name: "Unconfirmed cleanup",
+      profileKey: "starter",
+    });
+    const original = await database
+      .selectFrom("development_environments")
+      .select("allocation_id")
+      .where("id", "=", machine.environmentId)
+      .executeTakeFirstOrThrow();
+    const before = physicalCreations;
+    machineStates.set(original.allocation_id, "stopped");
+    destroys.mockRejectedValueOnce(new Error("Original node cleanup is not confirmed"));
+    try {
+      await server.close();
+      await startController();
+      expect(physicalCreations).toBe(before);
+      expect(
+        await database
+          .selectFrom("development_environments")
+          .select(["allocation_id", "allocation_closed", "allocation_absent"])
+          .where("id", "=", machine.environmentId)
+          .executeTakeFirstOrThrow(),
+      ).toEqual({
+        allocation_id: original.allocation_id,
+        allocation_closed: true,
+        allocation_absent: false,
+      });
+      await controller.recoverPersistentDevelopmentEnvironments();
+      expect(physicalCreations).toBe(before + 1);
+      expect(await service.get(identity, machine.environmentId)).toMatchObject({
+        state: "running",
+        generation: 2,
+      });
+    } finally {
+      await service.action(identity, machine.environmentId, "cleanup-confirmed-cleanup", {
+        action: "release",
+      });
+    }
+  });
+
+  it("uses a newly published image version when replacing exited compute", async () => {
+    const machine = await service.create(identity, "image-recovery", {
+      name: "Image recovery",
+      profileKey: "starter",
+    });
+    const original = await database
+      .selectFrom("development_environments")
+      .select(["allocation_id", "environment_version_id", "creation_spec"])
+      .where("id", "=", machine.environmentId)
+      .executeTakeFirstOrThrow();
+    machineStates.set(original.allocation_id, "stopped");
+    try {
+      await server.close();
+      await startController(`${IMAGE_REVISION}-next`);
+      const replacement = await database
+        .selectFrom("development_environments")
+        .selectAll()
+        .where("id", "=", machine.environmentId)
+        .executeTakeFirstOrThrow();
+      expect(replacement.state).toBe("ready");
+      expect(replacement.environment_version_id).not.toBe(original.environment_version_id);
+      const handle = machineHandles.get(replacement.allocation_id)!;
+      expect(handle.environment.imageRevision).toBe(`${IMAGE_REVISION}-next`);
+      expect(handle.environment.environmentVersionId).toBe(replacement.environment_version_id);
+      const old = await database
+        .selectFrom("environment_versions")
+        .select(["image_revision", "active"])
+        .where("id", "=", original.environment_version_id!)
+        .executeTakeFirstOrThrow();
+      expect(old).toEqual({ image_revision: IMAGE_REVISION, active: false });
+    } finally {
+      await service.action(identity, machine.environmentId, "cleanup-image-recovery", {
+        action: "release",
+      });
+    }
   });
 });

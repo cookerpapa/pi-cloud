@@ -235,6 +235,12 @@ export interface SandboxProvider {
     toolRoot: string,
   ): Promise<import("./sandbox-execution.ts").SandboxExecutionDescriptor>;
   observeRuntime(handle: SandboxHandle): Promise<SandboxRuntimeObservation>;
+  /** Observe an existing creation on its recorded node without adopting or starting it. */
+  observeAllocation?(
+    id: string,
+    authorization: SandboxAllocationAuthorization,
+    capsule?: string,
+  ): Promise<SandboxRuntimeObservation | undefined>;
   discoverHttpServices?(
     handle: SandboxHandle,
     signal?: AbortSignal,

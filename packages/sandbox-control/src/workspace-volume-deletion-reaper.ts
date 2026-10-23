@@ -21,15 +21,6 @@ type PendingWorkspaceDeletion = Readonly<{
   workspaceId: string;
 }>;
 
-const LIVE_ACTIVATION_STATES = [
-  "reserved",
-  "materializing",
-  "active",
-  "warm",
-  "cleaning",
-  "unknown",
-] as const;
-
 /** Removes POSIX Workspace data only after every Cube activation has retired. */
 export class WorkspaceVolumeDeletionReaper {
   readonly #database: Kysely<Database>;
@@ -111,7 +102,7 @@ export class WorkspaceVolumeDeletionReaper {
           from workspace_runtimes as activation
           where activation.tenant_id = workspace.tenant_id
             and activation.workspace_id = workspace.id
-            and activation.state in (${sql.join(LIVE_ACTIVATION_STATES)})
+            and activation.state <> 'released'
         )
         and not exists (
           select 1
@@ -150,7 +141,7 @@ export class WorkspaceVolumeDeletionReaper {
               from workspace_runtimes as activation
               where activation.tenant_id = ${workspace.tenantId}
                 and activation.workspace_id = ${workspace.workspaceId}
-                and activation.state in (${sql.join(LIVE_ACTIVATION_STATES)})
+                and activation.state <> 'released'
             )`,
           )
           .where(

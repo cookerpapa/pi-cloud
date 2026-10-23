@@ -425,7 +425,8 @@ export class SandboxPreviewGateway {
             .where("id", "=", target.environmentId)
             .where("tenant_id", "=", tenantId)
             .where("owner_user_id", "=", userId)
-            .where("state", "=", "running")
+            .where("state", "=", "ready")
+            .where("desired_state", "=", "running")
             .executeTakeFirst()
         : await this.#database
             .selectFrom("sessions as s")
@@ -459,7 +460,8 @@ export class SandboxPreviewGateway {
       .where("session_row.execution_mode", "=", "development_environment")
       .where("session_row.compute_session_id", "is", null)
       .where("development.owner_user_id", "=", userId)
-      .where("development.state", "=", "running")
+      .where("development.state", "=", "ready")
+      .where("development.desired_state", "=", "running")
       .orderBy("development.updated_at", "desc")
       .executeTakeFirst();
     return environment === undefined
@@ -484,7 +486,8 @@ export class SandboxPreviewGateway {
         .where("development.tenant_id", "=", tenantId)
         .where("development.owner_user_id", "=", userId)
         .where("development.id", "=", target.environmentId)
-        .where("development.state", "=", "running")
+        .where("development.state", "=", "ready")
+        .where("development.desired_state", "=", "running")
         .executeTakeFirst();
       if (row === undefined) throw new Error("Development environment preview is unavailable");
       return { workspaceId: row.workspaceId, baseUrl: row.ownerBaseUrl ?? row.fallbackBaseUrl };
@@ -509,7 +512,7 @@ export class SandboxPreviewGateway {
           .onRef("runtime.tenant_id", "=", "service.tenant_id")
           .onRef("runtime.workspace_id", "=", "service.workspace_id")
           .onRef("runtime.runtime_id", "=", "service.runtime_id")
-          .on("runtime.state", "in", ["materializing", "active", "warm", "cleaning"]),
+          .on("runtime.state", "in", ["materializing", "allocated", "cleaning"]),
       )
       .select([
         "session_row.workspace_id as workspaceId",

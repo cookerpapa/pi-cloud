@@ -94,7 +94,7 @@ it("retains shared compute for an active human terminal after Agent work settles
   try {
     const id = f.reservation.activationId;
     expect(await f.repo.reserve(f.reservation)).toEqual({ status: "reserved" });
-    await f.repo.setWorkspaceRuntimeState(id, "active");
+    await f.repo.setWorkspaceRuntimeState(id, "allocated");
     await f.age(id);
     expect(await f.repo.claimUnboundWorkspaceRuntimes(16)).toEqual([]);
     await f.database
@@ -119,8 +119,14 @@ it("retains shared compute for an active human terminal after Agent work settles
       }),
     ).toMatchObject({ status: "reserved", workspaceRuntimeId: id });
     await f.repo.setTerminalState(terminalId, "active");
-    await f.repo.setWorkspaceRuntimeState(id, "active");
+    await f.repo.setWorkspaceRuntimeState(id, "allocated");
     await f.age(id);
+    // Explicitly retired storage is eligible, but a live terminal still owns it.
+    await f.database
+      .updateTable("sessions")
+      .set({ pruned_at: new Date() })
+      .where("id", "=", f.scope.sessionId)
+      .execute();
     const candidates = await f.repo.claimUnboundWorkspaceRuntimes(16);
     const terminal = await f.database
       .selectFrom("workspace_terminal_sessions")
@@ -179,8 +185,14 @@ it("retains native ephemeral child compute under its shared root lease", async (
       },
     };
     expect(await f.repo.reserve(reservation)).toEqual({ status: "reserved" });
-    await f.repo.setWorkspaceRuntimeState(reservation.activationId, "active");
+    await f.repo.setWorkspaceRuntimeState(reservation.activationId, "allocated");
     await f.age(reservation.activationId);
+    // Losing the product reference cannot bypass the active native family's lease.
+    await f.database
+      .updateTable("sessions")
+      .set({ pruned_at: new Date() })
+      .where("id", "=", child.childSessionId)
+      .execute();
     const current = await jobs.status(f.scope.tenantId, child.executionId);
     const authority = await f.database
       .selectFrom("active_execution_scopes")
@@ -229,7 +241,7 @@ it("rechecks a retirement candidate after a terminal is admitted", async () => {
   try {
     const id = f.reservation.activationId;
     await f.repo.reserve(f.reservation);
-    await f.repo.setWorkspaceRuntimeState(id, "active");
+    await f.repo.setWorkspaceRuntimeState(id, "materializing");
     await f.age(id);
     await f.database
       .updateTable("runs")
@@ -263,7 +275,7 @@ it("rechecks a retirement candidate after a terminal is admitted", async () => {
         .select("state")
         .where("workspace_runtime_id", "=", id)
         .executeTakeFirstOrThrow(),
-    ).toEqual({ state: "active" });
+    ).toEqual({ state: "materializing" });
   } finally {
     continueCleanup.resolve();
     await cleanup?.catch(() => {});
@@ -276,7 +288,7 @@ it("arbitrates warm retirement and terminal admission under the Workspace lock",
   try {
     const id = f.reservation.activationId;
     await f.repo.reserve(f.reservation);
-    await f.repo.setWorkspaceRuntimeState(id, "warm");
+    await f.repo.setWorkspaceRuntimeState(id, "allocated");
     const terminalId = randomUUID();
     const input = {
       terminalId,

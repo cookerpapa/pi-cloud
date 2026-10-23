@@ -464,6 +464,7 @@ export async function startControlPlane(): Promise<void> {
       terminalToken: config.workspaceTerminalToken,
       allowInsecureInternalHttp: config.allowInsecureInternalHttp,
       environmentImageRevision: config.environmentImageRevision,
+      observeMachine: sandboxControl.observeMachine,
     });
     developmentEnvironmentService.start();
     const sshAccessTicketService = new SshAccessTicketService({

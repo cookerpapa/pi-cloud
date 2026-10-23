@@ -1,5 +1,12 @@
 # Architecture
 
+[ADR-0273](adr/0273-resource-intent-and-machine-recovery.md) separates durable
+resource intent and operation progress from disposable Cube observations. Its
+implementation is undergoing verification; the serving release remains
+`elastic-retention-03ce2f23`. Dedicated machines retain a stable product ID while
+confirmed replacement receives a new physical allocation. Direct lifecycle calls
+reuse Cube management; Session binding changes retain their Kafka path.
+
 [ADR-0272](adr/0272-cube-owned-elastic-retention.md) moves elastic
 VM idle deadlines to Cube, renewed by typed retention intents on the existing
 Session Kafka path. It is deployed as `elastic-retention-03ce2f23`, schema 197,
@@ -1330,13 +1337,32 @@ maintenance applies only to already-owned, running development machines. Elastic
 Workspace staging is reclaimed by the Gateway. Paused/inactive VMs are not woken,
 and cleanup failure cannot authorize quarantine, destruction or quota release.
 
-A user-owned development machine is allocated independently, with a selected
-CPU/memory/disk template. It retains node-affine full-VM state and has its own home
-Volume. Sessions select directories in it. Pause/resume uses Cube state; host
-shutdown is not an automatic snapshot. Control-plane replacement preserves a running
-machine's state and uses its encrypted reconnect capsule for validated adoption.
-Completing a Run detaches its temporary binding, not the VM. Release deletes the
-machine and its Volume, not conversation history.
+Under ADR-0273, a user-owned development machine is a stable product resource
+with desired running/paused/released intent and an independent current allocation
+UUID. PG lifecycle phase records admission, provisioning, settled intent,
+reconciliation and confirmed release, not current VM health. Intent revisions
+reject stale acknowledgements. Cube supplies physical observations; the resource
+API combines them with intent and progress, and does not persist VM IP samples.
+Machine creation/recovery uses direct SandboxProvider → Cube API management.
+Session binding changes still use the existing Kafka control-reference path.
+
+The existing recovery loop adopts running instances, respects deliberate pause,
+and replaces positively stopped/unsafe/absent instances only after closure and
+confirmed absence. An unreachable node cannot authorize replacement. The same
+machine row retains the current creation authorization until safe rotation; no
+allocation-history queue or second scheduler is added. Image changes publish a
+new ordinary environment version through the same helper used by Run admission.
+The prior immutable version remains readable. Workspace Volumes survive cold
+replacement, but process memory and system-disk changes are not guaranteed.
+Pause/resume keeps Cube's node-affine snapshot contract. Release still deletes
+the machine's Workspace without deleting conversation history.
+
+Elastic allocation records use `allocated` independently of current holders.
+Borrowing/returning a ready VM no longer changes an active/warm PG field. Binding
+and terminal reservations still serialize admission and protect explicit cleanup;
+unreferenced resources and unfinished creation retain their cleanup rules.
+Retained idle allocations have only Cube's finite deadline, never a competing
+controller timeout. Observation-only health checks make no per-sample PG writes.
 
 Deleting an environment/Workspace makes dependent Sessions require rebinding.
 Existing messages remain readable. Rebinding is allowed after resource deletion

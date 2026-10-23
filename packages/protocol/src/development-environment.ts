@@ -52,6 +52,8 @@ export const DevelopmentEnvironmentProvisionRequestSchema = Type.Object(
     type: Type.Literal("development_environment.provision"),
     requestId: UuidSchema,
     environmentId: UuidSchema,
+    allocationId: UuidSchema,
+    intentRevision: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
     tenantId: UuidSchema,
     userId: UuidSchema,
     projectId: UuidSchema,
@@ -70,6 +72,7 @@ export const DevelopmentEnvironmentLifecycleRequestSchema = Type.Object(
     type: Type.Literal("development_environment.lifecycle"),
     requestId: UuidSchema,
     environmentId: UuidSchema,
+    intentRevision: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
     tenantId: UuidSchema,
     userId: UuidSchema,
     action: Type.Union([Type.Literal("pause"), Type.Literal("resume"), Type.Literal("release")]),
@@ -143,6 +146,18 @@ export const DevelopmentEnvironmentDirectoryResourceSchema = Type.Object(
 );
 
 export const DevelopmentEnvironmentBrokerRequestSchema = Type.Union([
+  Type.Object(
+    {
+      developmentEnvironmentProtocolVersion: Type.Literal(1),
+      type: Type.Literal("development_environment.observe"),
+      requestId: UuidSchema,
+      environmentId: UuidSchema,
+      allocationId: UuidSchema,
+      tenantId: UuidSchema,
+      userId: UuidSchema,
+    },
+    { additionalProperties: false },
+  ),
   DevelopmentEnvironmentProvisionRequestSchema,
   DevelopmentEnvironmentLifecycleRequestSchema,
   DevelopmentEnvironmentDirectoryRequestSchema,

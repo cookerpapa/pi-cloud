@@ -92,6 +92,7 @@ export type SandboxControlBackend = Pick<
       | "openTerminal"
       | "provisionDevelopmentEnvironment"
       | "developmentEnvironmentLifecycle"
+      | "observeDevelopmentEnvironment"
       | "browseDevelopmentEnvironment"
       | "openDevelopmentEnvironmentTerminal"
       | "openPreviewConnection"
@@ -620,7 +621,9 @@ export class SandboxControlServer {
                   ? await this.#broker.provisionDevelopmentEnvironment!(message)
                   : message.type === "development_environment.lifecycle"
                     ? await this.#broker.developmentEnvironmentLifecycle!(message)
-                    : await this.#broker.browseDevelopmentEnvironment!(message),
+                    : message.type === "development_environment.observe"
+                      ? await this.#broker.observeDevelopmentEnvironment!(message)
+                      : await this.#broker.browseDevelopmentEnvironment!(message),
               );
           } catch (error: unknown) {
             if (error instanceof SandboxOwnerRedirectError) {

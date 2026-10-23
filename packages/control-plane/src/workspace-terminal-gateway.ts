@@ -314,7 +314,8 @@ export class WorkspaceTerminalGateway {
         .where("development.tenant_id", "=", identity.tenantId)
         .where("development.owner_user_id", "=", identity.userId)
         .where("development.id", "=", identity.environmentId)
-        .where("development.state", "=", "running")
+        .where("development.state", "=", "ready")
+        .where("development.desired_state", "=", "running")
         .where("domain.state", "=", "active")
         .executeTakeFirst();
       if (environment === undefined) {
@@ -353,7 +354,8 @@ export class WorkspaceTerminalGateway {
       .where("session_row.id", "=", identity.sessionId)
       .where("session_row.pruned_at", "is", null)
       .where("development.owner_user_id", "=", identity.userId)
-      .where("development.state", "=", "running")
+      .where("development.state", "=", "ready")
+      .where("development.desired_state", "=", "running")
       .where("domain.state", "=", "active")
       .orderBy("development.updated_at", "desc")
       .executeTakeFirst();

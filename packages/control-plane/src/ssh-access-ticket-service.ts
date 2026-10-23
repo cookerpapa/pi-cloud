@@ -91,7 +91,8 @@ export class SshAccessTicketService {
       .where("session_row.execution_mode", "=", "development_environment")
       .where("workspace.deleted_at", "is", null)
       .where("development.owner_user_id", "=", identity.userId)
-      .where("development.state", "=", "running")
+      .where("development.state", "=", "ready")
+      .where("development.desired_state", "=", "running")
       .where("development.terminal_active", "=", false)
       .orderBy("development.updated_at", "desc")
       .executeTakeFirst();

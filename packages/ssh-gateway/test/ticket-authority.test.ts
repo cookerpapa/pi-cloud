@@ -16,7 +16,7 @@ it("uses PG time after the ticket lock and consumes each ticket once", async () 
   const db = createDatabase({ connectionString: u.toString(), maxConnections: 4 });
   try {
     await sql`create table sandbox_domains(id text primary key,sandbox_control_base_url text,state text);
-  create table development_environments(id uuid primary key,tenant_id uuid,owner_user_id uuid,sandbox_domain_id text,owner_base_url text,state text,terminal_active boolean);
+  create table development_environments(id uuid primary key,tenant_id uuid,owner_user_id uuid,sandbox_domain_id text,owner_base_url text,state text,terminal_active boolean,desired_state text);
   create table ssh_access_tickets(ticket_id uuid primary key,tenant_id uuid,user_id uuid,session_id uuid,environment_id uuid,secret_sha256 text,expires_at timestamptz,consumed_at timestamptz)`.execute(
       db,
     );
@@ -29,7 +29,7 @@ it("uses PG time after the ticket lock and consumes each ticket once", async () 
     await sql`insert into sandbox_domains values ('review','http://review.test','active')`.execute(
       db,
     );
-    await sql`insert into development_environments values(${environment}::uuid,${tenant}::uuid,${user}::uuid,'review','http://review.test','running',false)`.execute(
+    await sql`insert into development_environments values(${environment}::uuid,${tenant}::uuid,${user}::uuid,'review','http://review.test','ready',false,'running')`.execute(
       db,
     );
     await sql`insert into ssh_access_tickets values(${id}::uuid,${tenant}::uuid,${user}::uuid,${session}::uuid,${environment}::uuid,${createHash("sha256").update(password).digest("hex")},clock_timestamp()-interval '60 seconds',null)`.execute(

@@ -584,6 +584,7 @@ export const SshAccessTicketResourceSchema = Type.Object(
 );
 
 export const DevelopmentEnvironmentStateSchema = Type.Union([
+  Type.Literal("recovering"),
   Type.Literal("requested"),
   Type.Literal("provisioning"),
   Type.Literal("running"),
@@ -624,6 +625,11 @@ export const DevelopmentEnvironmentResourceSchema = Type.Object(
     workspaceId: UuidSchema,
     workspaceName: Type.String({ minLength: 1, maxLength: 256 }),
     state: DevelopmentEnvironmentStateSchema,
+    desiredState: Type.Union([
+      Type.Literal("running"),
+      Type.Literal("paused"),
+      Type.Literal("released"),
+    ]),
     generation: PositiveSafeIntegerSchema,
     profileKey: DevelopmentEnvironmentProfileKeySchema,
     cpuCount: PositiveSafeIntegerSchema,

@@ -1,5 +1,12 @@
 # Documentation map
 
+[ADR-0273](adr/0273-resource-intent-and-machine-recovery.md) separates durable
+resource intent and operation progress from disposable Cube observations. Its
+implementation is undergoing verification; the serving release remains
+`elastic-retention-03ce2f23`. Dedicated machines retain a stable product ID while
+confirmed replacement receives a new physical allocation. Direct lifecycle calls
+reuse Cube management; Session binding changes retain their Kafka path.
+
 The [elastic retention decision](adr/0272-cube-owned-elastic-retention.md)
 lets Cube own finite idle expiry. Silent active
 Sessions renew through the existing Kafka path; long Tools and human activity

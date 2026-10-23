@@ -28,6 +28,11 @@ type TestSandboxControlDefaults = "stateRepository" | "ownerBaseUrl" | "imageRev
 type TestSandboxControllerOptions = Omit<SandboxControllerOptions, TestSandboxControlDefaults> &
   Partial<Pick<SandboxControllerOptions, TestSandboxControlDefaults>>;
 
+const machineRepositories = new WeakMap<
+  SandboxController,
+  InMemoryWorkspaceRuntimeStateRepository
+>();
+
 function testBroker(options: TestSandboxControllerOptions): SandboxController {
   const bindings = options.bindings ?? new InMemorySandboxBindings();
   const stateRepository = options.stateRepository ?? new InMemoryWorkspaceRuntimeStateRepository();
@@ -36,13 +41,31 @@ function testBroker(options: TestSandboxControllerOptions): SandboxController {
     bindings instanceof InMemorySandboxBindings
   )
     stateRepository.onQuarantine = (id) => bindings.commitPhysicalClosure(id);
-  return new SandboxController({
+  const controller = new SandboxController({
     bindings,
     stateRepository,
     ownerBaseUrl: "http://sandbox-control.test",
     imageRevision: "development",
     ...options,
   });
+  if (stateRepository instanceof InMemoryWorkspaceRuntimeStateRepository)
+    machineRepositories.set(controller, stateRepository);
+  return controller;
+}
+
+async function machineAction(
+  controller: SandboxController,
+  request: Omit<
+    Parameters<SandboxController["developmentEnvironmentLifecycle"]>[0],
+    "intentRevision"
+  >,
+) {
+  const desired =
+    request.action === "pause" ? "paused" : request.action === "resume" ? "running" : "released";
+  const intentRevision = machineRepositories
+    .get(controller)!
+    .setMachineIntent(request.environmentId, desired);
+  return controller.developmentEnvironmentLifecycle({ ...request, intentRevision });
 }
 
 const ACTIVATION_ID = "10000000-0000-4000-8000-000000000010";
@@ -432,6 +455,8 @@ describe("provider-backed Sandbox controller", () => {
       type: "development_environment.provision",
       requestId: crypto.randomUUID(),
       environmentId: ACTIVATION_ID,
+      allocationId: ACTIVATION_ID,
+      intentRevision: 1,
       tenantId: assignment.tenantId,
       userId: "fixture-user",
       projectId: assignment.projectId,
@@ -450,7 +475,7 @@ describe("provider-backed Sandbox controller", () => {
     expect(closeRepository).toHaveBeenCalledOnce();
     await expect(
       repository.developmentEnvironmentOwner(assignment.tenantId, "fixture-user", ACTIVATION_ID),
-    ).resolves.toMatchObject({ status: "owned", state: "unknown" });
+    ).resolves.toMatchObject({ status: "owned", state: "reconciling" });
   });
 
   it("does not overwrite the first shutdown error when ownership cleanup also fails", async () => {
@@ -555,7 +580,7 @@ describe("provider-backed Sandbox controller", () => {
     expect(await replacement.recoverPersistentDevelopmentEnvironments()).toBe(1);
     expect(replacement.ownsToolBinding(active.activationId)).toBe(true);
     expect(replacement.ownsToolBinding(closing.activationId)).toBe(false);
-    expect(update).toHaveBeenCalledWith(handle.activationId, "active", expect.anything());
+    expect(update).toHaveBeenCalledWith(handle.activationId, "allocated", expect.anything());
     await replacement.close();
   });
 
@@ -684,6 +709,8 @@ describe("provider-backed Sandbox controller", () => {
           type: "development_environment.provision",
           requestId: crypto.randomUUID(),
           environmentId: ACTIVATION_ID,
+          allocationId: ACTIVATION_ID,
+          intentRevision: 1,
           tenantId: assignment.tenantId,
           userId: "fixture-user",
           projectId: assignment.projectId,
@@ -719,6 +746,8 @@ describe("provider-backed Sandbox controller", () => {
             type: "development_environment.provision",
             requestId: crypto.randomUUID(),
             environmentId: ACTIVATION_ID,
+            allocationId: ACTIVATION_ID,
+            intentRevision: 1,
             tenantId: assignment.tenantId,
             userId: "fixture-user",
             projectId: assignment.projectId,
@@ -731,8 +760,8 @@ describe("provider-backed Sandbox controller", () => {
         ).rejects.toThrow();
         expect(manager.admittedCount).toBe(absenceConfirmed ? 0 : 1);
         expect(state).toHaveBeenLastCalledWith(
-          ACTIVATION_ID,
-          absenceConfirmed ? "failed" : "unknown",
+          expect.objectContaining({ environmentId: ACTIVATION_ID, allocationId: ACTIVATION_ID }),
+          absenceConfirmed ? "failed" : "reconciling",
           expect.any(Object),
         );
       } finally {
@@ -756,6 +785,8 @@ describe("provider-backed Sandbox controller", () => {
           type: "development_environment.provision",
           requestId: crypto.randomUUID(),
           environmentId: ACTIVATION_ID,
+          allocationId: ACTIVATION_ID,
+          intentRevision: 1,
           tenantId: assignment.tenantId,
           userId: "fixture-user",
           projectId: assignment.projectId,
@@ -768,8 +799,8 @@ describe("provider-backed Sandbox controller", () => {
       ).rejects.toThrow("PG failed");
       expect(manager.admittedCount).toBe(1);
       expect(state).toHaveBeenLastCalledWith(
-        ACTIVATION_ID,
-        "unknown",
+        expect.objectContaining({ environmentId: ACTIVATION_ID, allocationId: ACTIVATION_ID }),
+        "reconciling",
         expect.objectContaining({
           handle: expect.objectContaining({ activationId: ACTIVATION_ID }),
           runtimeCapsule: expect.any(String),
@@ -798,6 +829,8 @@ describe("provider-backed Sandbox controller", () => {
           type: "development_environment.provision",
           requestId: randomUUID(),
           environmentId: ACTIVATION_ID,
+          allocationId: ACTIVATION_ID,
+          intentRevision: 1,
           tenantId: assignment.tenantId,
           userId: "fixture-user",
           projectId: assignment.projectId,
@@ -810,7 +843,11 @@ describe("provider-backed Sandbox controller", () => {
       ).rejects.toThrow();
       expect(repository.closedAllocations.has(ACTIVATION_ID)).toBe(true);
       expect(manager.admittedCount).toBe(1);
-      expect(state).toHaveBeenLastCalledWith(ACTIVATION_ID, "unknown", expect.any(Object));
+      expect(state).toHaveBeenLastCalledWith(
+        expect.objectContaining({ environmentId: ACTIVATION_ID }),
+        "reconciling",
+        expect.any(Object),
+      );
     } finally {
       await manager.close();
     }
@@ -824,6 +861,8 @@ describe("provider-backed Sandbox controller", () => {
       type: "development_environment.provision",
       requestId: crypto.randomUUID(),
       environmentId: ACTIVATION_ID,
+      allocationId: ACTIVATION_ID,
+      intentRevision: 1,
       tenantId: assignment.tenantId,
       userId: "fixture-user",
       projectId: assignment.projectId,
@@ -949,6 +988,8 @@ describe("provider-backed Sandbox controller", () => {
         type: "development_environment.provision",
         requestId: "11111111-1111-4111-8111-111111111111",
         environmentId: ACTIVATION_ID,
+        allocationId: ACTIVATION_ID,
+        intentRevision: 1,
         tenantId: assignment.tenantId,
         userId: "77777777-7777-4777-8777-777777777777",
         projectId: assignment.projectId,
@@ -1057,7 +1098,7 @@ describe("provider-backed Sandbox controller", () => {
     expect(fixture.destroyed).toBe(false);
     await concurrentTerminal.close();
     expect(fixture.destroyed).toBe(false);
-    await manager.developmentEnvironmentLifecycle({
+    await machineAction(manager, {
       developmentEnvironmentProtocolVersion: 1,
       type: "development_environment.lifecycle",
       requestId: "33333333-3333-4333-8333-333333333333",
@@ -1067,7 +1108,7 @@ describe("provider-backed Sandbox controller", () => {
       action: "pause",
     });
     expect(fixture.pause).toHaveBeenCalledOnce();
-    await manager.developmentEnvironmentLifecycle({
+    await machineAction(manager, {
       developmentEnvironmentProtocolVersion: 1,
       type: "development_environment.lifecycle",
       requestId: "44444444-4444-4444-8444-444444444444",
@@ -1077,7 +1118,7 @@ describe("provider-backed Sandbox controller", () => {
       action: "resume",
     });
     expect(fixture.resume).toHaveBeenCalledOnce();
-    await manager.developmentEnvironmentLifecycle({
+    await machineAction(manager, {
       developmentEnvironmentProtocolVersion: 1,
       type: "development_environment.lifecycle",
       requestId: "55555555-5555-4555-8555-555555555555",
@@ -1101,6 +1142,8 @@ describe("provider-backed Sandbox controller", () => {
       type: "development_environment.provision",
       requestId: "21600000-0000-4000-8000-000000000001",
       environmentId: ACTIVATION_ID,
+      allocationId: ACTIVATION_ID,
+      intentRevision: 1,
       tenantId: assignment.tenantId,
       userId: "77777777-7777-4777-8777-777777777777",
       projectId: assignment.projectId,
@@ -1164,6 +1207,9 @@ describe("provider-backed Sandbox controller", () => {
     });
     await stateRepository.reserveDevelopmentEnvironment({
       environmentId,
+      allocationId: environmentId,
+      intentRevision: 1,
+      desiredState: "running",
       tenantId: assignment.tenantId,
       userId: "user-provider-test",
       projectId: assignment.projectId,
@@ -1179,7 +1225,7 @@ describe("provider-backed Sandbox controller", () => {
     });
 
     await expect(
-      manager.developmentEnvironmentLifecycle({
+      machineAction(manager, {
         developmentEnvironmentProtocolVersion: 1,
         type: "development_environment.lifecycle",
         requestId: "21111111-1111-4111-8111-111111111122",
@@ -1206,6 +1252,8 @@ describe("provider-backed Sandbox controller", () => {
       type: "development_environment.provision",
       requestId: "61111111-1111-4111-8111-111111111111",
       environmentId: ACTIVATION_ID,
+      allocationId: ACTIVATION_ID,
+      intentRevision: 1,
       tenantId: assignment.tenantId,
       userId: "77777777-7777-4777-8777-777777777777",
       projectId: assignment.projectId,
@@ -1227,7 +1275,7 @@ describe("provider-backed Sandbox controller", () => {
         "77777777-7777-4777-8777-777777777777",
         ACTIVATION_ID,
       ),
-    ).resolves.toMatchObject({ status: "owned", state: "running" });
+    ).resolves.toMatchObject({ status: "owned", state: "ready" });
   });
 
   it("quarantines a broken development binding without deleting its VM, capsule or first error", async () => {
@@ -1245,6 +1293,8 @@ describe("provider-backed Sandbox controller", () => {
       type: "development_environment.provision",
       requestId: "63111111-1111-4111-8111-111111111111",
       environmentId: ACTIVATION_ID,
+      allocationId: ACTIVATION_ID,
+      intentRevision: 1,
       tenantId: assignment.tenantId,
       userId: "77777777-7777-4777-8777-777777777777",
       projectId: assignment.projectId,
@@ -1283,11 +1333,9 @@ describe("provider-backed Sandbox controller", () => {
     expect(returnMachine).toHaveBeenCalledWith(
       ACTIVATION_ID,
       ACTIVATION_ID,
-      "unknown",
       expect.objectContaining({
         handle: expect.objectContaining({ runtimeId: "66666666-6666-4666-8666-666666666666" }),
         runtimeCapsule: "test-exclusive-machine-capsule",
-        failureCode: "cubesandbox_tool_unavailable",
       }),
     );
     expect(destroyRuntime).not.toHaveBeenCalled();
@@ -1314,6 +1362,8 @@ describe("provider-backed Sandbox controller", () => {
       type: "development_environment.provision",
       requestId: "62111111-1111-4111-8111-111111111111",
       environmentId: ACTIVATION_ID,
+      allocationId: ACTIVATION_ID,
+      intentRevision: 1,
       tenantId: assignment.tenantId,
       userId: "77777777-7777-4777-8777-777777777777",
       projectId: assignment.projectId,
@@ -1340,7 +1390,7 @@ describe("provider-backed Sandbox controller", () => {
         "77777777-7777-4777-8777-777777777777",
         ACTIVATION_ID,
       ),
-    ).resolves.toMatchObject({ status: "owned", state: "running", agentActive: false });
+    ).resolves.toMatchObject({ status: "owned", state: "ready", agentActive: false });
   });
 
   it("does not add a redundant directory probe to development-machine binding admission", async () => {
@@ -1354,6 +1404,8 @@ describe("provider-backed Sandbox controller", () => {
       type: "development_environment.provision",
       requestId: "51111111-1111-4111-8111-111111111111",
       environmentId: ACTIVATION_ID,
+      allocationId: ACTIVATION_ID,
+      intentRevision: 1,
       tenantId: assignment.tenantId,
       userId: "77777777-7777-4777-8777-777777777777",
       projectId: assignment.projectId,

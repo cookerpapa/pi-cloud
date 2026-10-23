@@ -60,7 +60,7 @@ const database=createDatabase({connectionString:config.databaseUrl,maxConnection
 const client=new OfficialCubeSandboxRuntimeClient({...cube,egressProxyIp:cube.egressProxyHost});
 let paused=false,target;
 try{
- const row=await database.selectFrom('workspace_runtimes').select('runtime_capsule').where('workspace_id','=',process.argv[2]).where('state','in',['warm','active']).executeTakeFirstOrThrow();
+ const row=await database.selectFrom('workspace_runtimes').select('runtime_capsule').where('workspace_id','=',process.argv[2]).where('state','in',['allocated']).executeTakeFirstOrThrow();
  target=new CubePersistentCapsuleCodec(config.persistentStateKey).open(row.runtime_capsule).executionTarget;
  const start=performance.now();const initial=await client.probeExecution(target,randomUUID());
  assert.equal(initial.type,'worker.probe_result');

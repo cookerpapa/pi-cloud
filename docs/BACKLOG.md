@@ -12,26 +12,21 @@ is delivered as `elastic-retention-03ce2f23`, schema 197. The
 retained-file/native recovery and confirmed cleanup. Dedicated-machine recovery
 below remains separate.
 
-## Dedicated development machine after host shutdown
+## Resource intent and dedicated-machine recovery
 
-- [ ] Repair and verify recovery from host shutdown separately from ordinary VM
-      pause/resume. The October 23 read-only incident check found the bound Cube
-      runtime `stopped`, PG machine state `unknown` with
-      `cubesandbox_tool_unavailable`, and the persistent Volume/project files still
-      present. Current admission reports “Resume the development machine” for
-      every non-running state, while both PiCloud and Cube resume only paused
-      runtimes. Distinguish paused, unavailable and released UI states; provide a
-      recovery path that retains Workspace bytes and confirms old physical-target
-      closure before any replacement. The existing machine release action also
-      deletes its Workspace and must not be used as a data-preserving restart.
-      Startup verification must inspect bound user machines as well as healthy
-      platform Pods. No machine, file or ownership record was changed during the
-      incident investigation.
-      The subsequent matched delivery closed the old allocation and confirmed
-      physical absence on its recorded node, retaining the failed machine's
-      ownership record and Workspace. All 25 file hashes and original native
-      conversation records still match. Automatic recreation and corrected UI
-      admission wording remain unimplemented; the machine is now `failed`.
+The owner approved [ADR-0273](adr/0273-resource-intent-and-machine-recovery.md).
+Source separates desired running/paused/released state, lifecycle progress and
+physical allocation identity. Actual VM observations remain disposable. An elastic
+allocated record no longer alternates active/warm on ordinary usage changes.
+Dedicated recovery uses direct Cube management and confirms old physical closure
+before replacement. Existing Pause/Resume keeps its original physical identity.
+
+- [ ] Complete verification, matched deployment and live recovery acceptance.
+- [ ] Verify the original failed dedicated machine automatically recovers with its
+      same logical identity, conversation and persistent Workspace. Do not use
+      public Release, which deletes that Workspace. Earlier matched delivery
+      confirmed old physical absence and retained all 25 file hashes.
+
 
 The [September 15–17 audit](reports/repository-audit-20260915.md) is complete:
 maintained-file review, paid combination tests, process faults, browser paths,

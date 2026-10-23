@@ -227,18 +227,11 @@ export interface SandboxDomainTable {
 
 export type SandboxControlInstanceState = "ready" | "stopped" | "lost";
 export type SandboxControlWorkspaceRuntimeState =
-  "reserved" | "materializing" | "active" | "warm" | "cleaning" | "released" | "unknown";
+  "reserved" | "materializing" | "allocated" | "cleaning" | "released" | "unknown";
 export type WorkspaceTerminalState =
   "reserved" | "materializing" | "active" | "cleaning" | "released" | "unknown";
 export type DevelopmentEnvironmentState =
-  | "requested"
-  | "provisioning"
-  | "running"
-  | "paused"
-  | "releasing"
-  | "released"
-  | "failed"
-  | "unknown";
+  "requested" | "provisioning" | "ready" | "reconciling" | "releasing" | "released" | "failed";
 export type DevelopmentEnvironmentAction = "pause" | "resume" | "release";
 
 export interface SandboxControlInstanceTable {
@@ -349,6 +342,10 @@ export interface WorkspaceTerminalSessionTable {
 }
 
 export interface DevelopmentEnvironmentTable {
+  desired_state: Generated<"running" | "paused" | "released">;
+  intent_revision: GeneratedInt8;
+  allocation_id: Generated<string>;
+  allocation_absent: GeneratedBoolean;
   allocation_protocol: GeneratedNullable<1>;
   creation_not_after: NullableTimestamp;
   creation_spec: GeneratedNullable<Record<string, unknown>>;
@@ -370,7 +367,6 @@ export interface DevelopmentEnvironmentTable {
   runtime_id: string | null;
   runtime_name: string | null;
   runtime_capsule: string | null;
-  ip_address: string | null;
   agent_activation_id: string | null;
   terminal_active: GeneratedBoolean;
   state: DevelopmentEnvironmentState;
@@ -383,6 +379,7 @@ export interface DevelopmentEnvironmentTable {
 }
 
 export interface DevelopmentEnvironmentOperationTable {
+  intent_revision: GeneratedInt8;
   id: string;
   tenant_id: string;
   environment_id: string;
@@ -390,7 +387,15 @@ export interface DevelopmentEnvironmentOperationTable {
   idempotency_key: string;
   action: DevelopmentEnvironmentAction;
   request_sha256: string;
-  result_state: DevelopmentEnvironmentState;
+  result_state:
+    | "running"
+    | "paused"
+    | "released"
+    | "requested"
+    | "provisioning"
+    | "releasing"
+    | "failed"
+    | "unknown";
   created_at: GeneratedTimestamp;
 }
 

@@ -3,6 +3,11 @@
 A self-hosted, multi-tenant coding agent. Pi Durable 1.0.0 runs the native Harness in a shared
 Worker pool; file and shell tools execute in isolated CubeSandbox KVM guests.
 
+[Resource intent and machine recovery](docs/adr/0273-resource-intent-and-machine-recovery.md)
+is implemented in source and under verification. It preserves deliberate pause,
+separates stable machines from replaceable VM allocations and uses live Cube
+observations for resource display. Deployment status follows below.
+
 [Cube-owned elastic retention](docs/reports/elastic-retention-delivery-20261023.md)
 is deployed as `elastic-retention-03ce2f23`, schema 197. Active Sessions renew
 existing compute through Kafka even during model silence; Cube owns the default

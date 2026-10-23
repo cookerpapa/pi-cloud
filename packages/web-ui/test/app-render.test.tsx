@@ -82,6 +82,7 @@ describe("product chat experience", () => {
       environmentId: "10000000-0000-4000-8000-000000000001",
       projectId: "10000000-0000-4000-8000-000000000002",
       workspaceId: "10000000-0000-4000-8000-000000000003",
+      desiredState: "running" as const,
       workspaceName: "acceptance",
       generation: 1,
       profileKey: "standard" as const,
@@ -92,6 +93,7 @@ describe("product chat experience", () => {
       updatedAt: "2026-08-24T00:00:00.000Z",
     };
     expect(resourceRefreshPending([{ ...environment, state: "provisioning" }])).toBe(true);
+    expect(resourceRefreshPending([{ ...environment, state: "recovering" }])).toBe(true);
     expect(resourceRefreshPending([{ ...environment, state: "running" }])).toBe(false);
   });
 

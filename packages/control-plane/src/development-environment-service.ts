@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { Database } from "@pi-cloud/database";
+import type { Database, DevelopmentEnvironmentState } from "@pi-cloud/database";
+import { environmentForImage } from "@pi-cloud/database";
 import {
   SANDBOX_CONTROL_DEVELOPMENT_ENVIRONMENT_PATH,
   DEVELOPMENT_ENVIRONMENT_PROFILES,
@@ -14,6 +15,7 @@ import {
   type CreateDevelopmentEnvironmentRequest,
   type DevelopmentEnvironmentActionRequest,
   type DevelopmentEnvironmentBrokerRequest,
+  type DevelopmentEnvironmentProvisionRequest,
   type DevelopmentEnvironmentListResource,
   type DevelopmentEnvironmentDirectoryResource,
   type DevelopmentEnvironmentResource,
@@ -30,7 +32,6 @@ type MachineOwner = Pick<TenantRequestIdentity, "tenantId" | "userId">;
 
 const MAXIMUM_ENVIRONMENTS = 100;
 const MAXIMUM_REDIRECTS = 3;
-const ABANDONED_REQUEST_AGE_MS = 5 * 60_000;
 const REQUEST_RECONCILE_INTERVAL_MS = 30_000;
 
 export type DevelopmentEnvironmentServiceOptions = Readonly<{
@@ -39,6 +40,12 @@ export type DevelopmentEnvironmentServiceOptions = Readonly<{
   allowInsecureInternalHttp: boolean;
   idGenerator?: () => string;
   environmentImageRevision?: string;
+  observeMachine?(
+    tenantId: string,
+    userId: string,
+    environmentId: string,
+    allocationId: string,
+  ): { state: "running" | "paused" | "unknown"; ipAddress?: string } | undefined;
 }>;
 
 function requestHash(value: unknown): string {
@@ -67,23 +74,26 @@ function profile(key: string) {
   return selected;
 }
 
-function resource(row: {
-  id: string;
-  projectId: string;
-  workspaceId: string;
-  workspaceName: string;
-  state: DevelopmentEnvironmentResource["state"];
-  generation: string;
-  profileKey: string;
-  cpuCount: number;
-  memoryMiB: number;
-  systemDiskGiB: number;
-  failureCode: string | null;
-  createdAt: Date | string;
-  updatedAt: Date | string;
-  releasedAt: Date | string | null;
-  ipAddress: string | null;
-}): DevelopmentEnvironmentResource {
+function resource(
+  row: {
+    id: string;
+    projectId: string;
+    workspaceId: string;
+    workspaceName: string;
+    state: DevelopmentEnvironmentState;
+    desiredState: "running" | "paused" | "released";
+    generation: string;
+    profileKey: string;
+    cpuCount: number;
+    memoryMiB: number;
+    systemDiskGiB: number;
+    failureCode: string | null;
+    createdAt: Date | string;
+    updatedAt: Date | string;
+    releasedAt: Date | string | null;
+  },
+  observation?: { state: "running" | "paused" | "unknown"; ipAddress?: string },
+): DevelopmentEnvironmentResource {
   const generation = Number(row.generation);
   const selectedProfile = profile(row.profileKey);
   if (!Number.isSafeInteger(generation) || generation < 1) {
@@ -97,13 +107,21 @@ function resource(row: {
     projectId: row.projectId,
     workspaceId: row.workspaceId,
     workspaceName: row.workspaceName,
-    state: row.state,
+    desiredState: row.desiredState,
+    state:
+      row.state === "ready"
+        ? (observation?.state ?? "unknown")
+        : row.state === "reconciling"
+          ? row.desiredState === "running"
+            ? "recovering"
+            : "unknown"
+          : row.state,
     generation,
     profileKey: selectedProfile.key,
     cpuCount: row.cpuCount,
     memoryMiB: row.memoryMiB,
     systemDiskGiB: row.systemDiskGiB,
-    ...(row.ipAddress === null ? {} : { ipAddress: row.ipAddress }),
+    ...(observation?.ipAddress ? { ipAddress: observation.ipAddress } : {}),
     ...(row.failureCode === null ? {} : { failureCode: row.failureCode }),
     createdAt: new Date(row.createdAt).toISOString(),
     updatedAt: new Date(row.updatedAt).toISOString(),
@@ -117,6 +135,7 @@ export class DevelopmentEnvironmentService {
   readonly #allowInsecureInternalHttp: boolean;
   readonly #id: () => string;
   readonly #environmentImageRevision: string;
+  readonly #observeMachine: DevelopmentEnvironmentServiceOptions["observeMachine"];
   #reconcileTimer: NodeJS.Timeout | undefined;
   #reconciling: Promise<number> | undefined;
 
@@ -124,6 +143,7 @@ export class DevelopmentEnvironmentService {
     if (!/^[A-Za-z0-9._~+/=-]{32,4096}$/.test(options.terminalToken)) {
       throw new TypeError("Development environment service token is invalid");
     }
+    this.#observeMachine = options.observeMachine;
     this.#database = options.database;
     this.#terminalToken = options.terminalToken;
     this.#allowInsecureInternalHttp = options.allowInsecureInternalHttp;
@@ -154,109 +174,75 @@ export class DevelopmentEnvironmentService {
     await this.#reconciling;
   }
 
-  async reconcileLifecycle(
-    cutoff = new Date(Date.now() - ABANDONED_REQUEST_AGE_MS),
-    limit = 16,
-  ): Promise<number> {
-    if (!(cutoff instanceof Date) || Number.isNaN(cutoff.valueOf())) {
-      throw new TypeError("Development environment reconciliation cutoff is invalid");
-    }
-    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 256) {
-      throw new TypeError("Development environment reconciliation limit is invalid");
-    }
-    if (this.#reconciling !== undefined) return this.#reconciling;
-    const running = this.#reconcileLifecycle(cutoff, limit).finally(() => {
-      if (this.#reconciling === running) this.#reconciling = undefined;
+  async reconcileLifecycle(limit = 16): Promise<number> {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 256)
+      throw new TypeError("Invalid machine reconciliation batch");
+    if (this.#reconciling) return this.#reconciling;
+    const pending = this.#reconcileLifecycle(limit).finally(() => {
+      if (this.#reconciling === pending) this.#reconciling = undefined;
     });
-    this.#reconciling = running;
-    return running;
+    this.#reconciling = pending;
+    return pending;
   }
 
-  async #reconcileLifecycle(cutoff: Date, limit: number): Promise<number> {
-    const abandoned = await this.#database
+  async #reconcileLifecycle(limit: number): Promise<number> {
+    const requested = await this.#database
       .selectFrom("development_environments")
       .select(["id", "tenant_id as tenantId", "owner_user_id as userId"])
       .where("state", "=", "requested")
-      .where("updated_at", "<", cutoff)
+      .where("desired_state", "=", "running")
       .orderBy("updated_at", "asc")
-      .orderBy("id", "asc")
       .limit(limit)
       .execute();
-    let retired = 0;
-    for (const environment of abandoned) {
-      const retiredAt = new Date();
-      const update = await this.#database
-        .updateTable("development_environments")
-        .set({
-          state: "released",
-          failure_code: "provision_request_abandoned",
-          released_at: retiredAt,
-          updated_at: retiredAt,
-        })
-        .where("tenant_id", "=", environment.tenantId)
-        .where("owner_user_id", "=", environment.userId)
-        .where("id", "=", environment.id)
-        .where("state", "=", "requested")
-        .where("updated_at", "<", cutoff)
-        .executeTakeFirst();
-      if (update.numUpdatedRows !== 1n) continue;
-      await this.#retireReleasedMachineWorkspace(environment, environment.id);
-      retired += 1;
-    }
-    const incompleteReleases = await this.#database
-      .selectFrom("development_environments as environment")
-      .innerJoin("workspaces as workspace", (join) =>
-        join
-          .onRef("workspace.tenant_id", "=", "environment.tenant_id")
-          .onRef("workspace.id", "=", "environment.workspace_id"),
-      )
-      .select([
-        "environment.id",
-        "environment.tenant_id as tenantId",
-        "environment.owner_user_id as userId",
-      ])
-      .where("environment.state", "=", "released")
-      .where("workspace.workspace_kind", "=", "development_environment")
-      .where("workspace.deleted_at", "is", null)
-      .orderBy("environment.released_at", "asc")
-      .orderBy("environment.id", "asc")
-      .limit(limit)
-      .execute();
-    for (const environment of incompleteReleases) {
-      await this.#retireReleasedMachineWorkspace(environment, environment.id);
-      retired += 1;
-    }
-    const pendingReleases = await this.#database
-      .selectFrom("development_environment_operations as operation")
-      .innerJoin("development_environments as environment", (join) =>
-        join
-          .onRef("environment.tenant_id", "=", "operation.tenant_id")
-          .onRef("environment.id", "=", "operation.environment_id"),
-      )
-      .select([
-        "environment.id",
-        "environment.tenant_id as tenantId",
-        "environment.owner_user_id as userId",
-        "operation.idempotency_key as idempotencyKey",
-      ])
-      .where("operation.action", "=", "release")
-      .where("operation.result_state", "!=", "released")
-      .where("operation.created_at", "<", cutoff)
-      .orderBy("operation.created_at", "asc")
-      .orderBy("operation.id", "asc")
-      .limit(limit)
-      .execute();
-    for (const release of pendingReleases) {
+    let completed = 0;
+    for (const machine of requested) {
       try {
-        await this.action(release, release.id, release.idempotencyKey, { action: "release" });
-        retired += 1;
-      } catch (error: unknown) {
-        // One unreachable machine must not starve cleanup of other resources.
-        const code = error instanceof ControlPlaneStoreError ? error.code : "broker_unreachable";
-        process.stderr.write(`Development machine release retry failed: ${code}\n`);
+        await this.#provision(machine, machine.id);
+        completed += 1;
+      } catch {
+        /* Durable intent remains pending. */
       }
     }
-    return retired;
+    const releasing = await this.#database
+      .selectFrom("development_environments as machine")
+      .innerJoin("workspaces as workspace", "workspace.id", "machine.workspace_id")
+      .select([
+        "machine.id",
+        "machine.tenant_id as tenantId",
+        "machine.owner_user_id as userId",
+        "machine.state",
+        "machine.intent_revision as revision",
+      ])
+      .where("machine.desired_state", "=", "released")
+      .where((eb) =>
+        eb.or([eb("machine.state", "!=", "released"), eb("workspace.deleted_at", "is", null)]),
+      )
+      .orderBy("machine.updated_at", "asc")
+      .limit(limit)
+      .execute();
+    for (const machine of releasing) {
+      try {
+        const state =
+          machine.state === "released"
+            ? "released"
+            : await this.#lifecycle(machine, machine.id, "release", Number(machine.revision));
+        if (state !== "released") continue;
+        await this.#retireReleasedMachineWorkspace(machine, machine.id);
+        await this.#database
+          .updateTable("development_environment_operations")
+          .set({ result_state: "released" })
+          .where("tenant_id", "=", machine.tenantId)
+          .where("environment_id", "=", machine.id)
+          .where("action", "=", "release")
+          .where("intent_revision", "<=", machine.revision)
+          .where("result_state", "!=", "released")
+          .execute();
+        completed += 1;
+      } catch {
+        /* Closing intent and physical target survive the failed call. */
+      }
+    }
+    return completed;
   }
 
   async list(identity: TenantRequestIdentity): Promise<DevelopmentEnvironmentListResource> {
@@ -267,7 +253,9 @@ export class DevelopmentEnvironmentService {
       .limit(MAXIMUM_ENVIRONMENTS + 1)
       .execute();
     return {
-      environments: rows.slice(0, MAXIMUM_ENVIRONMENTS).map(resource),
+      environments: await Promise.all(
+        rows.slice(0, MAXIMUM_ENVIRONMENTS).map((row) => this.#resource(identity, row)),
+      ),
       profiles: DEVELOPMENT_ENVIRONMENT_PROFILES.map((candidate) => ({
         ...candidate,
         recommended: candidate.key === "standard",
@@ -286,7 +274,7 @@ export class DevelopmentEnvironmentService {
     if (row === undefined) {
       throw new ControlPlaneStoreError("not_found", "Development environment was not found");
     }
-    return resource(row);
+    return this.#resource(identity, row);
   }
 
   async directory(
@@ -491,12 +479,11 @@ export class DevelopmentEnvironmentService {
           project_id: projectId,
           workspace_id: workspaceId,
           sandbox_domain_id: domain.id,
-          environment_version_id: null,
+          environment_version_id: environmentVersionId,
           owner_instance_id: null,
           owner_base_url: null,
           runtime_id: null,
           runtime_name: null,
-          ip_address: null,
           profile_key: selectedProfile.key,
           cpu_count: selectedProfile.cpuCount,
           memory_mib: selectedProfile.memoryMiB,
@@ -512,11 +499,33 @@ export class DevelopmentEnvironmentService {
     });
     try {
       await this.#provision(identity, environmentId);
-    } catch (error: unknown) {
-      await this.#rejectUnprovisionedEnvironment(identity, environmentId, error).catch(
-        () => undefined,
-      );
-      throw error;
+    } catch (error) {
+      if (error instanceof ControlPlaneStoreError && error.code === "capacity_exhausted") {
+        // A refused reservation has issued no Cube request. Keep uncertain
+        // creations retryable; only this proved pre-effect refusal is retired.
+        const rejected = await this.#database
+          .updateTable("development_environments")
+          .set({
+            desired_state: "released",
+            intent_revision: sql<string>`intent_revision+1`,
+            state: "released",
+            allocation_closed: true,
+            allocation_absent: true,
+            failure_code: error.code,
+            released_at: new Date(),
+            updated_at: new Date(),
+          })
+          .where("id", "=", environmentId)
+          .where("tenant_id", "=", identity.tenantId)
+          .where("state", "=", "requested")
+          .where("owner_instance_id", "is", null)
+          .where("creation_spec", "is", null)
+          .executeTakeFirst();
+        if (rejected.numUpdatedRows === 1n)
+          await this.#retireReleasedMachineWorkspace(identity, environmentId);
+        throw error;
+      }
+      // Accepted intent is retried by reconciliation.
     }
     return this.get(identity, environmentId);
   }
@@ -528,150 +537,122 @@ export class DevelopmentEnvironmentService {
     request: DevelopmentEnvironmentActionRequest,
   ): Promise<DevelopmentEnvironmentResource> {
     const fingerprint = requestHash(request);
-    const replayed = await this.#database.transaction().execute(async (transaction) => {
-      const environment = await transaction
+    const accepted = await this.#database.transaction().execute(async (tx) => {
+      const machine = await tx
         .selectFrom("development_environments")
-        .select([
-          "state",
-          "workspace_id as workspaceId",
-          "agent_activation_id as agentActivationId",
-          "terminal_active as terminalActive",
-        ])
+        .selectAll()
         .where("tenant_id", "=", identity.tenantId)
         .where("owner_user_id", "=", identity.userId)
         .where("id", "=", environmentId)
         .forUpdate()
         .executeTakeFirst();
-      if (environment === undefined) {
+      if (!machine)
         throw new ControlPlaneStoreError("not_found", "Development environment was not found");
-      }
-      const replay = await transaction
+      const prior = await tx
         .selectFrom("development_environment_operations")
-        .select(["request_sha256", "result_state"])
+        .select(["request_sha256", "intent_revision"])
         .where("tenant_id", "=", identity.tenantId)
         .where("environment_id", "=", environmentId)
         .where("idempotency_key", "=", idempotencyKey)
         .executeTakeFirst();
-      if (replay !== undefined) {
-        if (replay.request_sha256 !== fingerprint) {
+      if (prior) {
+        if (prior.request_sha256 !== fingerprint)
           throw new ControlPlaneStoreError(
             "idempotency_conflict",
-            "Idempotency key was reused for another environment action",
+            "Idempotency key was reused for another machine action",
           );
-        }
-        // A persisted request is not proof that its external effect completed.
-        // Release is irreversible and can be retried against the same machine.
-        if (request.action !== "release") {
-          const expected = request.action === "pause" ? "paused" : "running";
-          if (replay.result_state !== expected)
-            throw new ControlPlaneStoreError(
-              "conflict",
-              "Previous environment action was not confirmed; refresh its state before requesting another action",
-            );
-          return true;
-        }
-        if (replay.result_state === "released") return true;
+        return {
+          revision: Number(prior.intent_revision),
+          pending:
+            prior.intent_revision === machine.intent_revision && machine.state !== "released",
+        };
       }
-      const alreadyReleased = request.action === "release" && environment.state === "released";
-      const allowed =
-        (request.action === "pause" && environment.state === "running") ||
-        (request.action === "resume" && environment.state === "paused") ||
-        alreadyReleased ||
-        (request.action === "release" &&
-          ["requested", "running", "paused", "releasing", "failed", "unknown"].includes(
-            environment.state,
-          ));
-      if (!allowed) {
+      if (machine.desired_state === "released" && request.action !== "release")
         throw new ControlPlaneStoreError(
           "conflict",
-          `Development environment cannot ${request.action} from ${environment.state}`,
+          "Development machine release has been requested",
         );
-      }
-      if (request.action === "release" && !alreadyReleased) {
-        const activeRun = await transaction
-          .selectFrom("runs")
-          .select("id")
-          .where("tenant_id", "=", identity.tenantId)
-          .where("workspace_id", "=", environment.workspaceId)
-          .where("state", "not in", ["completed", "failed", "cancelled", "timed_out"])
-          .limit(1)
-          .executeTakeFirst();
-        if (
-          activeRun !== undefined ||
-          environment.agentActivationId !== null ||
-          environment.terminalActive
-        ) {
-          throw new ControlPlaneStoreError(
-            "conflict",
-            "Wait for the active Agent Run or terminal before releasing the environment",
-          );
-        }
-      }
-      if (replay === undefined) {
-        await transaction
-          .insertInto("development_environment_operations")
-          .values({
-            id: this.#id(),
-            tenant_id: identity.tenantId,
-            environment_id: environmentId,
-            actor_user_id: identity.userId,
-            idempotency_key: idempotencyKey,
-            action: request.action,
-            request_sha256: fingerprint,
-            result_state: environment.state,
-          })
-          .executeTakeFirstOrThrow();
-      }
-      return alreadyReleased;
-    });
-    if (!replayed) {
-      let resultState: DevelopmentEnvironmentResource["state"];
-      if (request.action === "release") {
-        const current = await this.get(identity, environmentId);
-        if (current.state === "requested" || current.state === "failed") {
-          await this.#database
-            .updateTable("development_environments")
-            .set({
-              state: "released",
-              owner_instance_id: null,
-              owner_base_url: null,
-              runtime_id: null,
-              runtime_name: null,
-              runtime_capsule: null,
-              released_at: new Date(),
-              updated_at: new Date(),
-            })
-            .where("tenant_id", "=", identity.tenantId)
-            .where("owner_user_id", "=", identity.userId)
-            .where("id", "=", environmentId)
-            .executeTakeFirstOrThrow();
-          resultState = "released";
-        } else {
-          resultState = await this.#lifecycle(identity, environmentId, request.action);
-        }
-      } else {
-        resultState = await this.#lifecycle(identity, environmentId, request.action);
-      }
-      await this.#database
-        .updateTable("development_environment_operations")
-        .set({ result_state: resultState })
+      const active = await tx
+        .selectFrom("runs")
+        .select("id")
         .where("tenant_id", "=", identity.tenantId)
-        .where("environment_id", "=", environmentId)
-        .where("idempotency_key", "=", idempotencyKey)
+        .where("workspace_id", "=", machine.workspace_id)
+        .where("state", "in", ["queued", "running", "settling", "cancel_requested"])
+        .limit(1)
+        .executeTakeFirst();
+      if (active || machine.agent_activation_id || machine.terminal_active)
+        throw new ControlPlaneStoreError(
+          "conflict",
+          "Wait for the active Agent Run or terminal before changing the machine",
+        );
+      const desired =
+        request.action === "pause"
+          ? "paused"
+          : request.action === "resume"
+            ? "running"
+            : "released";
+      const revision = Number(machine.intent_revision) + 1;
+      const neverIssued = machine.creation_spec === null && machine.owner_instance_id === null;
+      const released = desired === "released" && (machine.state === "released" || neverIssued);
+      await tx
+        .updateTable("development_environments")
+        .set({
+          desired_state: desired,
+          intent_revision: String(revision),
+          state: released
+            ? "released"
+            : machine.state === "requested"
+              ? "requested"
+              : desired === "released"
+                ? "releasing"
+                : "reconciling",
+          ...(released
+            ? { allocation_closed: true, allocation_absent: true, released_at: new Date() }
+            : {}),
+          updated_at: new Date(),
+        })
+        .where("id", "=", environmentId)
         .executeTakeFirstOrThrow();
+      await tx
+        .insertInto("development_environment_operations")
+        .values({
+          id: this.#id(),
+          tenant_id: identity.tenantId,
+          environment_id: environmentId,
+          actor_user_id: identity.userId,
+          idempotency_key: idempotencyKey,
+          action: request.action,
+          request_sha256: fingerprint,
+          intent_revision: String(revision),
+          result_state: released ? "released" : "requested",
+        })
+        .executeTakeFirstOrThrow();
+      return { revision, pending: !released && machine.state !== "requested" };
+    });
+    if (accepted.pending) {
+      try {
+        const result = await this.#lifecycle(
+          identity,
+          environmentId,
+          request.action,
+          accepted.revision,
+        );
+        await this.#database
+          .updateTable("development_environment_operations")
+          .set({ result_state: result })
+          .where("tenant_id", "=", identity.tenantId)
+          .where("environment_id", "=", environmentId)
+          .where("idempotency_key", "=", idempotencyKey)
+          .where("intent_revision", "=", String(accepted.revision))
+          .execute();
+      } catch {
+        /* The committed current intent is completed by the controller, never forgotten. */
+      }
     }
-    if (request.action === "release") {
+    const current = await this.get(identity, environmentId);
+    if (current.state === "released")
       await this.#retireReleasedMachineWorkspace(identity, environmentId);
-      await this.#database
-        .updateTable("development_environment_operations")
-        .set({ result_state: "released" })
-        .where("tenant_id", "=", identity.tenantId)
-        .where("environment_id", "=", environmentId)
-        .where("action", "=", "release")
-        .where("result_state", "!=", "released")
-        .execute();
-    }
-    return this.get(identity, environmentId);
+    return current;
   }
 
   async #retireReleasedMachineWorkspace(
@@ -794,40 +775,44 @@ export class DevelopmentEnvironmentService {
     });
   }
 
-  async #rejectUnprovisionedEnvironment(
-    identity: TenantRequestIdentity,
-    environmentId: string,
-    error: unknown,
-  ): Promise<void> {
-    const rejectedAt = new Date();
-    const failureCode =
-      error instanceof ControlPlaneStoreError ? error.code : "provision_request_failed";
-    const released = await this.#database
-      .updateTable("development_environments")
-      .set({
-        state: "released",
-        owner_instance_id: null,
-        owner_base_url: null,
-        environment_version_id: null,
-        runtime_id: null,
-        runtime_name: null,
-        runtime_capsule: null,
-        failure_code: failureCode,
-        released_at: rejectedAt,
-        updated_at: rejectedAt,
-      })
-      .where("tenant_id", "=", identity.tenantId)
-      .where("owner_user_id", "=", identity.userId)
-      .where("id", "=", environmentId)
-      .where("state", "in", ["requested", "failed"])
-      .where("runtime_id", "is", null)
-      .where("runtime_name", "is", null)
-      .where("agent_activation_id", "is", null)
-      .where("terminal_active", "=", false)
-      .executeTakeFirst();
-    if (released.numUpdatedRows === 1n) {
-      await this.#retireReleasedMachineWorkspace(identity, environmentId);
+  async #resource(
+    identity: MachineOwner,
+    row: Parameters<typeof resource>[0] & {
+      allocationId: string;
+      ownerBaseUrl: string | null;
+      domainId: string;
+    },
+  ): Promise<DevelopmentEnvironmentResource> {
+    let observation = this.#observeMachine?.(
+      identity.tenantId,
+      identity.userId,
+      row.id,
+      row.allocationId,
+    );
+    if (!observation && row.ownerBaseUrl && row.state === "ready") {
+      try {
+        const result = await this.#send(row.domainId, row.ownerBaseUrl, {
+          developmentEnvironmentProtocolVersion: 1,
+          type: "development_environment.observe",
+          requestId: this.#id(),
+          tenantId: identity.tenantId,
+          userId: identity.userId,
+          environmentId: row.id,
+          allocationId: row.allocationId,
+        });
+        if (
+          result.type === "development_environment.state" &&
+          ["running", "paused", "unknown"].includes(result.state)
+        )
+          observation = {
+            state: result.state as "running" | "paused" | "unknown",
+            ...(result.ipAddress ? { ipAddress: result.ipAddress } : {}),
+          };
+      } catch {
+        /* The product remains readable while Cube or its owner is unavailable. */
+      }
     }
+    return resource(row, observation);
   }
 
   #baseQuery(identity: MachineOwner) {
@@ -844,12 +829,17 @@ export class DevelopmentEnvironmentService {
         "development.workspace_id as workspaceId",
         "project.name as workspaceName",
         "development.state",
+        "development.desired_state as desiredState",
+        "development.allocation_id as allocationId",
+        "development.owner_base_url as ownerBaseUrl",
+        "development.sandbox_domain_id as domainId",
         "development.generation",
+        "development.allocation_id as allocationId",
+        "development.intent_revision as intentRevision",
         "development.profile_key as profileKey",
         "development.cpu_count as cpuCount",
         "development.memory_mib as memoryMiB",
         "development.system_disk_gib as systemDiskGiB",
-        "development.ip_address as ipAddress",
         "development.failure_code as failureCode",
         "development.created_at as createdAt",
         "development.updated_at as updatedAt",
@@ -859,13 +849,15 @@ export class DevelopmentEnvironmentService {
       .where("development.owner_user_id", "=", identity.userId);
   }
 
-  async #provision(identity: TenantRequestIdentity, environmentId: string): Promise<void> {
+  async #provision(identity: MachineOwner, environmentId: string): Promise<void> {
     const descriptor = await this.#provisionDescriptor(identity, environmentId);
-    const result = await this.#send(descriptor.domainId, descriptor.sandboxControlBaseUrl, {
+    await this.#send(descriptor.domainId, descriptor.sandboxControlBaseUrl, {
       developmentEnvironmentProtocolVersion: 1,
       type: "development_environment.provision",
       requestId: this.#id(),
       environmentId,
+      allocationId: descriptor.allocationId,
+      intentRevision: descriptor.intentRevision,
       tenantId: identity.tenantId,
       userId: identity.userId,
       projectId: descriptor.projectId,
@@ -875,37 +867,28 @@ export class DevelopmentEnvironmentService {
       environment: descriptor.environment,
       workspaceSeed: descriptor.workspaceSeed,
     });
-    if (result.type === "development_environment.state" && result.ipAddress !== undefined) {
-      await this.#database
-        .updateTable("development_environments")
-        .set({ ip_address: result.ipAddress, updated_at: new Date() })
-        .where("tenant_id", "=", identity.tenantId)
-        .where("owner_user_id", "=", identity.userId)
-        .where("id", "=", environmentId)
-        .executeTakeFirstOrThrow();
-    }
   }
 
   async #lifecycle(
     identity: MachineOwner,
     environmentId: string,
     action: "pause" | "resume" | "release",
+    intentRevision: number,
   ) {
     const descriptor = await this.#machineRoute(identity, environmentId);
     const response = await this.#send(descriptor.domainId, descriptor.sandboxControlBaseUrl, {
       developmentEnvironmentProtocolVersion: 1,
       type: "development_environment.lifecycle",
+      intentRevision,
       requestId: this.#id(),
       environmentId,
       tenantId: identity.tenantId,
       userId: identity.userId,
       action,
     });
-    const expected = action === "pause" ? "paused" : action === "resume" ? "running" : "released";
     if (
       response.type !== "development_environment.state" ||
-      response.environmentId !== environmentId ||
-      response.state !== expected
+      response.environmentId !== environmentId
     )
       throw new ControlPlaneStoreError(
         "conflict",
@@ -930,7 +913,20 @@ export class DevelopmentEnvironmentService {
     return route;
   }
 
-  async #provisionDescriptor(identity: MachineOwner, environmentId: string) {
+  async #provisionDescriptor(
+    identity: MachineOwner,
+    environmentId: string,
+  ): Promise<
+    Omit<
+      DevelopmentEnvironmentProvisionRequest,
+      | "developmentEnvironmentProtocolVersion"
+      | "type"
+      | "requestId"
+      | "environmentId"
+      | "tenantId"
+      | "userId"
+    > & { domainId: string; sandboxControlBaseUrl: string }
+  > {
     const row = await this.#database
       .selectFrom("development_environments as development")
       .innerJoin("workspaces as workspace", (join) =>
@@ -951,6 +947,8 @@ export class DevelopmentEnvironmentService {
         "domain.id as domainId",
         "domain.sandbox_control_base_url as sandboxControlBaseUrl",
         "development.generation",
+        "development.allocation_id as allocationId",
+        "development.intent_revision as intentRevision",
         "development.profile_key as profileKey",
         "environment.id as environmentVersionId",
         "environment.version_number as environmentVersionNumber",
@@ -975,6 +973,22 @@ export class DevelopmentEnvironmentService {
         "Development environment runtime profile is unavailable",
       );
     }
+    if (row.environmentImageRevision !== this.#environmentImageRevision) {
+      await this.#database.transaction().execute(async (tx) => {
+        const result = await environmentForImage(tx, {
+          tenantId: identity.tenantId,
+          projectId: row.projectId,
+          imageRevision: this.#environmentImageRevision,
+          id: this.#id,
+        });
+        if (result.status !== "ready")
+          throw new ControlPlaneStoreError(
+            "conflict",
+            "Machine environment configuration is unavailable",
+          );
+      });
+      return this.#provisionDescriptor(identity, environmentId);
+    }
     const generation = Number(row.generation);
     const selectedProfile = profile(row.profileKey);
     return {
@@ -983,6 +997,8 @@ export class DevelopmentEnvironmentService {
       domainId: row.domainId,
       sandboxControlBaseUrl: row.sandboxControlBaseUrl,
       generation,
+      allocationId: row.allocationId,
+      intentRevision: Number(row.intentRevision),
       profileKey: selectedProfile.key,
       environment: parseEnvironmentRuntimeSnapshot({
         environmentVersionId: row.environmentVersionId,
@@ -1021,7 +1037,9 @@ export class DevelopmentEnvironmentService {
           "content-type": "application/json",
         },
         body: JSON.stringify(message),
-        signal: AbortSignal.timeout(120_000),
+        signal: AbortSignal.timeout(
+          message.type === "development_environment.observe" ? 1500 : 120_000,
+        ),
       });
       const body = (await response.json()) as unknown;
       if (!response.ok) {

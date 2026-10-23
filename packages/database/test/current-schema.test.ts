@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(197);
+      expect(firstMigrationPass.rows).toHaveLength(198);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("197_ultra_agent_profile");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("198_resource_intent");
       const terminalColumns = await sql<{ column_name: string }>`select column_name
         from information_schema.columns where table_name='workspace_terminal_sessions'`.execute(
         database,
@@ -217,14 +217,14 @@ describe("current PiCloud schema", () => {
           from pg_indexes
          where schemaname = 'public'
            and indexname in (
-             'tool_broker_compute_live_unique',
+             'workspace_compute_live_unique',
              'tool_broker_workspace_live_unique',
              'tool_broker_workspace_live_idx'
            )
       `.execute(database);
       expect(activationIndexes.rows).toEqual([
         expect.objectContaining({
-          indexname: "tool_broker_compute_live_unique",
+          indexname: "workspace_compute_live_unique",
           indexdef: expect.stringContaining("UNIQUE"),
         }),
       ]);

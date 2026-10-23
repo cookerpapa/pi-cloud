@@ -518,7 +518,7 @@ async function workspaceRuntimeEvidence(workspaceId) {
     `select workspace_runtime_id::text || '|' || coalesce(runtime_id, '') || '|' || state || '|' || coalesce(runtime_name, '')
        from workspace_runtimes
       where workspace_id = ${sqlLiteral(workspaceId)}
-        and state in ('reserved', 'materializing', 'active', 'warm', 'cleaning', 'unknown')
+        and state in ('reserved', 'materializing', 'allocated', 'cleaning', 'unknown')
       order by updated_at desc
       limit 1`,
   );
@@ -952,7 +952,7 @@ try {
   );
   progress("first persistent Workspace Volume files was verified in place");
   const firstWorkspaceRuntime = await workspaceRuntimeEvidence(session.workspaceId);
-  assert.equal(firstWorkspaceRuntime.state, "warm");
+  assert.equal(firstWorkspaceRuntime.state, "allocated");
   assert.deepEqual(
     await listLogicalSandboxAssignments(await logicalSandboxIdForRun(firstCoding.accepted.runId)),
     [],

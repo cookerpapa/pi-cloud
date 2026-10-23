@@ -7,6 +7,7 @@ export {
 } from "./client.ts";
 export { retryTransaction } from "./retry-transaction.ts";
 export { databaseTime } from "./authority-time.ts";
+export { environmentForImage } from "./environment-image.ts";
 export { PostgresQueueWake, PostgresNotificationWake } from "./postgres-queue-wake.ts";
 
 export {

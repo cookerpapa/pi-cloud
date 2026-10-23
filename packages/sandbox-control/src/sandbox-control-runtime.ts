@@ -256,7 +256,7 @@ export async function createSandboxControl(options: {
           .where("sandbox_domain_id", "=", config.sandboxDomainId)
           .where("allocation_closed", "=", false)
           .where("created_at", "<=", new Date(observedAt))
-          .where("state", "in", ["active", "warm"])
+          .where("state", "in", ["allocated"])
           .where("runtime_capsule", "is not", null);
         query = resource.computeSessionId
           ? query.where("compute_session_id", "=", resource.computeSessionId)
@@ -365,13 +365,19 @@ export async function createSandboxControl(options: {
         await dispatcher.closeWorkflowBinding(change, route, position, current);
       },
       close,
+      observeMachine: (
+        tenantId: string,
+        userId: string,
+        environmentId: string,
+        allocationId: string,
+      ) =>
+        controller.developmentEnvironmentObservation(tenantId, userId, environmentId, allocationId),
       get ready() {
         return started && closing === undefined;
       },
       start: async () => {
         if (starting) throw new Error("Sandbox control already started");
         starting = true;
-        await controller.recoverPersistentDevelopmentEnvironments();
         provider.startUploadMaintenance(() =>
           operationalLog({
             service: "pi-cloud-sandbox-control",
@@ -380,6 +386,13 @@ export async function createSandboxControl(options: {
           }),
         );
         started = true;
+        void controller.recoverPersistentDevelopmentEnvironments().catch(() =>
+          operationalLog({
+            service: "pi-cloud-control-plane",
+            level: "warn",
+            event: "sandbox.recovery_deferred",
+          }),
+        );
         reaper.start();
       },
     };

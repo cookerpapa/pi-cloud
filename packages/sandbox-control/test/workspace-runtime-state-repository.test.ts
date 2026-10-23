@@ -357,7 +357,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
     });
     await expect(next.beginCreation(f.spec)).rejects.toMatchObject({ code: "state_conflict" });
     await expect(
-      next.setWorkspaceRuntimeState(f.spec.activationId, "active"),
+      next.setWorkspaceRuntimeState(f.spec.activationId, "allocated"),
     ).rejects.toMatchObject({ code: "ownership_lost" });
     await expect(
       f.database
@@ -533,7 +533,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
         environment_sha256: "c".repeat(64),
         runtime_id: runtimeId,
         runtime_name: target.sandboxId,
-        state: "active",
+        state: "allocated",
         failure_code: null,
         updated_at: new Date(),
       })
@@ -585,7 +585,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
       replacementBinding = randomUUID();
     await database
       .updateTable("workspace_runtimes")
-      .set({ state: "active", runtime_id: replacementId, runtime_name: replacementName })
+      .set({ state: "allocated", runtime_id: replacementId, runtime_name: replacementName })
       .where("workspace_runtime_id", "=", physicalId)
       .execute();
     await register(replacementBinding, replacementName);
@@ -600,7 +600,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
       .select(["state", "runtime_id"])
       .where("workspace_runtime_id", "=", physicalId)
       .executeTakeFirstOrThrow();
-    expect(resource).toEqual({ state: "active", runtime_id: replacementId });
+    expect(resource).toEqual({ state: "allocated", runtime_id: replacementId });
     expect(
       (
         await database
@@ -669,7 +669,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
         environment_sha256: "c".repeat(64),
         runtime_id: randomUUID(),
         runtime_name: "test-cube",
-        state: "warm",
+        state: "allocated",
         failure_code: null,
         updated_at: now,
       })
@@ -1190,8 +1190,8 @@ describe("PostgreSQL Sandbox control ownership", () => {
       environment,
       environmentValidation: report,
     };
-    await repository.setWorkspaceRuntimeState(activation.activationId, "active", { handle });
-    await repository.setWorkspaceRuntimeState(activation.activationId, "active", { handle });
+    await repository.setWorkspaceRuntimeState(activation.activationId, "allocated", { handle });
+    await repository.setWorkspaceRuntimeState(activation.activationId, "allocated", { handle });
     const reports = await database
       .selectFrom("environment_validations")
       .selectAll()
@@ -1280,7 +1280,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
     ).resolves.toEqual({
       workspace_runtime_id: activation.activationId,
       session_id: rootSessionId,
-      state: "active",
+      state: "allocated",
     });
     capture = true;
     try {
@@ -1337,7 +1337,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
     await routes.confirmPhysicalClosure(activation.activationId);
     // Continue the ownership fixture after a separately confirmed recovery;
     // the old binding identities remain closed.
-    await repository.setWorkspaceRuntimeState(activation.activationId, "active");
+    await repository.setWorkspaceRuntimeState(activation.activationId, "allocated");
     await database
       .updateTable("sandbox_control_instances")
       .set({ lease_expires_at: new Date(0) })
@@ -1351,7 +1351,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
       .set({ lease_expires_at: sql<Date>`clock_timestamp() + interval '1 minute'` })
       .where("instance_id", "=", "20000000-0000-4000-8000-000000000004")
       .execute();
-    await repository.setWorkspaceRuntimeState(activation.activationId, "active");
+    await repository.setWorkspaceRuntimeState(activation.activationId, "allocated");
     await expect(repository.reserve(activation)).resolves.toEqual({ status: "reserved" });
     await expect(
       database
@@ -1361,7 +1361,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
         .executeTakeFirstOrThrow(),
     ).resolves.toEqual({
       session_id: rootSessionId,
-      state: "active",
+      state: "allocated",
     });
     expect(await readRoutes()).toHaveLength(2);
     await database
@@ -1384,7 +1384,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
         .selectFrom("workspace_runtimes")
         .select("workspace_runtime_id")
         .where("workspace_id", "=", workspaceId)
-        .where("state", "in", ["active", "reserved"])
+        .where("state", "in", ["allocated", "reserved"])
         .execute(),
     ).toHaveLength(2);
     await repository.setWorkspaceRuntimeState(childCompute.activationId, "released");
@@ -1421,9 +1421,21 @@ describe("PostgreSQL Sandbox control ownership", () => {
       .where("id", "=", parentRunId)
       .executeTakeFirstOrThrow();
     await expect(repository.claimUnboundWorkspaceRuntimes(16)).resolves.toEqual([]);
+    // Retained idle compute belongs to Cube's deadline, even with zero orphan grace.
+    await expect(repository.claimUnboundWorkspaceRuntimes(16, 0)).resolves.toEqual([]);
+    await database
+      .updateTable("workspaces")
+      .set({ deleted_at: new Date() })
+      .where("id", "=", workspaceId)
+      .execute();
     await expect(repository.claimUnboundWorkspaceRuntimes(16, 0)).resolves.toEqual([
       expect.objectContaining({ activationId: activation.activationId }),
     ]);
+    await database
+      .updateTable("workspaces")
+      .set({ deleted_at: null })
+      .where("id", "=", workspaceId)
+      .execute();
     await expect(
       database
         .selectFrom("workspace_runtimes")
@@ -1443,6 +1455,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
       .insertInto("development_environments")
       .values({
         id: machineId,
+        allocation_id: activation.activationId,
         tenant_id: tenantId,
         owner_user_id: userId,
         project_id: projectId,
@@ -1456,27 +1469,28 @@ describe("PostgreSQL Sandbox control ownership", () => {
         memory_mib: 4096,
         system_disk_gib: 20,
         ...identity,
-        ip_address: null,
         agent_activation_id: activation.activationId,
-        state: "running",
+        state: "ready",
         failure_code: null,
         idempotency_key: "test-machine-retention",
         request_sha256: "d".repeat(64),
       })
       .execute();
-    await repository.returnDevelopmentEnvironment(machineId, activation.activationId, "unknown", {
-      failureCode: "test_transport_failure",
-    });
+    await repository.returnDevelopmentEnvironment(machineId, activation.activationId);
     expect(
       await database
         .selectFrom("development_environments")
         .select(["runtime_id", "runtime_name", "runtime_capsule", "agent_activation_id", "state"])
         .where("id", "=", machineId)
         .executeTakeFirstOrThrow(),
-    ).toEqual({ ...identity, agent_activation_id: null, state: "unknown" });
-    await repository.setDevelopmentEnvironmentState(machineId, "unknown", {
-      failureCode: "persistent_machine_recovery_required",
-    });
+    ).toEqual({ ...identity, agent_activation_id: null, state: "ready" });
+    await repository.setDevelopmentEnvironmentState(
+      { environmentId: machineId, allocationId: activation.activationId, intentRevision: 1 },
+      "reconciling",
+      {
+        failureCode: "persistent_machine_recovery_required",
+      },
+    );
     expect(
       await database
         .selectFrom("development_environments")
@@ -1493,8 +1507,10 @@ describe("PostgreSQL Sandbox control ownership", () => {
       })
       .where("id", "=", machineId)
       .execute();
-    expect(await repository.claimOrphanedDevelopmentEnvironments(16)).toEqual([
-      expect.objectContaining({ environmentId: machineId }),
+    expect(await repository.claimRecoverableDevelopmentEnvironments(16)).toEqual([
+      expect.objectContaining({
+        reservation: expect.objectContaining({ environmentId: machineId }),
+      }),
     ]);
     expect(
       await database
@@ -1505,9 +1521,9 @@ describe("PostgreSQL Sandbox control ownership", () => {
     ).toEqual({
       runtime_id: identity.runtime_id,
       runtime_name: identity.runtime_name,
-      state: "unknown",
+      state: "reconciling",
     });
-    expect(await repository.claimOrphanedDevelopmentEnvironments(16)).toEqual([]);
+    expect(await repository.claimRecoverableDevelopmentEnvironments(16)).toHaveLength(1);
     await database
       .updateTable("workspace_terminal_sessions")
       .set({ state: "cleaning" })
@@ -1820,7 +1836,7 @@ it.each(["shutdown", "expiry"] as const)(
         runtime_id: randomUUID(),
         runtime_name: "a".repeat(32),
         runtime_capsule: capsule,
-        state: "active",
+        state: "allocated",
         failure_code: null,
         updated_at: new Date(),
       })
@@ -1845,9 +1861,9 @@ it.each(["shutdown", "expiry"] as const)(
         runtime_id: randomUUID(),
         runtime_name: "b".repeat(32),
         runtime_capsule: capsule,
-        ip_address: null,
         agent_activation_id: null,
-        state: "paused",
+        state: "ready",
+        desired_state: "paused",
         failure_code: null,
         idempotency_key: randomUUID(),
         request_sha256: "d".repeat(64),
@@ -1877,16 +1893,14 @@ it.each(["shutdown", "expiry"] as const)(
         .select(["state", "runtime_capsule"])
         .where("workspace_runtime_id", "=", f.physicalId)
         .executeTakeFirstOrThrow(),
-    ).toEqual({ state: "active", runtime_capsule: capsule });
+    ).toEqual({ state: "allocated", runtime_capsule: capsule });
     expect(
-      (
-        await f.database
-          .selectFrom("development_environments")
-          .select("state")
-          .where("id", "=", machine)
-          .executeTakeFirstOrThrow()
-      ).state,
-    ).toBe("paused");
+      await f.database
+        .selectFrom("development_environments")
+        .select(["state", "desired_state"])
+        .where("id", "=", machine)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ state: "ready", desired_state: "paused" });
     expect(await replacement.claimRecoverableWorkspaceRuntimes(16, [])).toEqual([
       expect.objectContaining({ activationId: f.physicalId, runtimeCapsule: capsule }),
     ]);

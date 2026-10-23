@@ -650,7 +650,7 @@ try {
        join sandbox_tool_bindings route on route.run_id=run.id and route.tenant_id=run.tenant_id
        join workspace_runtimes runtime on runtime.workspace_id=run.workspace_id and runtime.tenant_id=run.tenant_id
       where run.id in ('${concurrentRuns[0].accepted.runId}', '${concurrentRuns[1].accepted.runId}')
-        and runtime.state in ('reserved','materializing','active','warm')`,
+        and runtime.state in ('reserved','materializing','allocated')`,
   );
   assert.equal(concurrentRuntimeEvidence, "1|2");
   progress("two Sessions sharing one Workspace ran concurrently");

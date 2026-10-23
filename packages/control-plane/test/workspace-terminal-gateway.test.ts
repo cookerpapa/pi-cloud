@@ -307,7 +307,7 @@ describe("WorkspaceTerminalGateway", () => {
         system_disk_gib: 16,
         runtime_id: IDS.development,
         runtime_name: "development-test",
-        state: "running",
+        state: "ready",
         failure_code: null,
         idempotency_key: "development-terminal",
         request_sha256: "a".repeat(64),

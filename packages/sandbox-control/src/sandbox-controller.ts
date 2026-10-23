@@ -1,4 +1,5 @@
 import { resourceLimit } from "@pi-cloud/domain";
+import { createWorkspaceSeed, encodeWorkspaceBlob } from "@pi-cloud/workspace-runtime";
 import type { SandboxExecutionTarget } from "./sandbox-execution.ts";
 import { BindingClosurePending, type SandboxBindings } from "./sandbox-bindings.ts";
 import { PostgresQueueWake } from "@pi-cloud/database";
@@ -81,6 +82,7 @@ import {
   type OrphanedWorkspaceRuntime,
   type AllocationKind,
   type AllocationRecovery,
+  type RecoverableDevelopmentEnvironment,
 } from "./workspace-runtime-state-repository.ts";
 import type {
   SandboxHttpServiceRegistry,
@@ -189,6 +191,8 @@ type ManagedWorkspaceTerminal = {
 
 type ManagedDevelopmentEnvironment = {
   reservation: DevelopmentEnvironmentReservation;
+  observedState: "running" | "paused";
+  observedAt: number;
   assignment: ToolSandboxAssignment;
   handle: SandboxHandle;
   terminal?: SandboxTerminalSession;
@@ -317,7 +321,7 @@ function terminalAssignment(
 function developmentEnvironmentAssignment(
   input: Pick<
     DevelopmentEnvironmentProvisionRequest,
-    "environmentId" | "tenantId" | "projectId" | "workspaceId" | "generation"
+    "environmentId" | "allocationId" | "tenantId" | "projectId" | "workspaceId" | "generation"
   >,
 ): ToolSandboxAssignment {
   return {
@@ -325,14 +329,14 @@ function developmentEnvironmentAssignment(
     projectId: input.projectId,
     workspaceId: input.workspaceId,
     supervisorId: "development-environment",
-    bootId: input.environmentId,
-    sandboxId: input.environmentId,
-    runId: input.environmentId,
-    sessionId: input.environmentId,
-    turnId: input.environmentId,
+    bootId: input.allocationId,
+    sandboxId: input.allocationId,
+    runId: input.allocationId,
+    sessionId: input.allocationId,
+    turnId: input.allocationId,
     executionReference: createExecutionReference(
-      input.environmentId,
-      input.environmentId,
+      input.allocationId,
+      input.allocationId,
       input.generation,
     ),
   };
@@ -403,7 +407,6 @@ export class SandboxController {
       void Promise.all([
         this.recoverPersistentDevelopmentEnvironments(),
         this.#stateRepository.reconcileOwnership().then(() => this.#reapOrphanedTerminals()),
-        this.#markUnrecoverableDevelopmentEnvironments(),
       ]).catch((error: unknown) => this.#onMaintenanceError?.(error));
     }, 30_000);
     this.#reaper.unref();
@@ -552,121 +555,383 @@ export class SandboxController {
   }
 
   async #recoverPersistentDevelopmentEnvironments(): Promise<number> {
-    if (this.#provider.adoptPersistentCapsule === undefined) return 0;
-    for (const environment of this.#developmentEnvironments.values()) {
-      if (environment.failure && !environment.closureConfirmed) {
-        try {
-          await this.#quarantineDevelopmentEnvironment(environment, environment.failure);
-        } catch (error) {
-          this.#onMaintenanceError?.(error);
-          continue;
-        }
-      }
-      if (
-        environment.failure === undefined ||
-        environment.bindingIds.size > 0 ||
-        environment.terminal !== undefined
-      )
-        continue;
-      try {
-        await this.#verifyDevelopmentEnvironment(environment);
-      } catch {
-        /* Keep the same physical identity/capsule for the next reconcile. */
-      }
-    }
-    const recoverable = await this.#stateRepository.claimRecoverableDevelopmentEnvironments(256, [
+    if (!this.#provider.adoptPersistentCapsule) return 0;
+    const candidates = await this.#stateRepository.claimRecoverableDevelopmentEnvironments(256, [
       ...this.#developmentEnvironments.keys(),
     ]);
     let recovered = 0;
-    for (const candidate of recoverable) {
-      let handle: SandboxHandle | undefined;
-      let physicalVerified = false;
-      try {
-        handle = await this.#recoverPhysical(candidate);
-        const expected = developmentEnvironmentAssignment({
-          environmentId: candidate.reservation.environmentId,
-          tenantId: candidate.reservation.tenantId,
-          projectId: candidate.reservation.projectId,
-          workspaceId: candidate.reservation.workspaceId,
-          generation: candidate.reservation.generation,
-        });
-        if (
-          handle.activationId !== candidate.reservation.environmentId ||
-          !sameAssignment(handle.assignment, expected)
-        ) {
-          throw new SandboxControlError(
-            "persistent_machine_recovery_identity_mismatch",
-            "Recovered exclusive machine identity did not match PostgreSQL",
-            false,
-          );
+    const pending = [...candidates];
+    await Promise.all(
+      Array.from({ length: Math.min(4, pending.length) }, async () => {
+        for (let candidate = pending.shift(); candidate; candidate = pending.shift()) {
+          try {
+            recovered += await this.#serializeWorkspaceRuntimeProvisioning(
+              developmentEnvironmentAssignment(candidate.reservation),
+              () => this.#reconcileDevelopmentEnvironment(candidate!),
+            );
+          } catch (error) {
+            this.#onMaintenanceError?.(error);
+          }
         }
-        const capsule = await this.#persistentCapsule(handle);
-        if (capsule === undefined) {
-          throw new SandboxControlError(
-            "persistent_machine_state_unsupported",
-            "Recovered exclusive machine could not refresh its encrypted state",
-            false,
-          );
-        }
-        const inspection = await this.#provider.inspect(handle);
-        if (inspection.state !== "paused" && inspection.state !== "running") {
-          throw new SandboxControlError(
-            "cubesandbox_tool_unavailable",
-            "Recovered development machine is not ready",
-            false,
-          );
-        }
-        physicalVerified = true;
-        const recoveredState = inspection.state;
-        const environment: ManagedDevelopmentEnvironment = {
-          reservation: candidate.reservation,
-          assignment: expected,
-          handle,
-          bindingIds: new Set(),
-        };
-        const restored = await this.#prepareRecoveredBindings(handle, undefined, environment);
-        await this.#stateRepository.setDevelopmentEnvironmentState(
-          candidate.reservation.environmentId,
-          recoveredState,
-          { handle, runtimeCapsule: capsule, agentActive: environment.bindingIds.size > 0 },
-        );
-        // No await after publishing local availability: all fallible preparation
-        // and required durable updates precede this synchronous installation.
-        this.#developmentEnvironments.set(candidate.reservation.environmentId, environment);
-        for (const binding of restored) this.#toolBindings.set(binding.activationId, binding);
-        this.#admission.restore(candidate.reservation.environmentId, expected);
-        recovered += 1;
-      } catch (error: unknown) {
-        if (handle !== undefined) {
-          await this.#provider.detachPersistent?.(handle).catch(() => undefined);
-        }
-        if (error instanceof BindingClosurePending) continue;
-        if (physicalVerified) {
-          this.#onMaintenanceError?.(error);
-          continue;
-        }
-        if (error instanceof SandboxCreationError && error.absenceConfirmed) {
-          await this.#stateRepository.closeAllocation(
-            candidate.reservation.environmentId,
-            "development_environment",
-          );
-          await this.#stateRepository.setDevelopmentEnvironmentState(
-            candidate.reservation.environmentId,
-            "failed",
-            { failureCode: error.code },
-          );
-          this.#admission.release(candidate.reservation.environmentId);
-          continue;
-        }
-        await this.#stateRepository
-          .setDevelopmentEnvironmentState(candidate.reservation.environmentId, "unknown", {
-            failureCode: operationFailureCode(error),
-            ...(candidate.runtimeCapsule ? { runtimeCapsule: candidate.runtimeCapsule } : {}),
-          })
-          .catch(() => undefined);
-      }
-    }
+      }),
+    );
     return recovered;
+  }
+
+  async #reconcileDevelopmentEnvironment(
+    candidate: RecoverableDevelopmentEnvironment,
+  ): Promise<number> {
+    let identity = candidate.reservation;
+    let environment = this.#developmentEnvironments.get(identity.environmentId);
+    let handle = environment?.handle;
+    let adopted = false;
+    let physicalVerified = false;
+    let bootstrap =
+      candidate.creation?.spec ??
+      (candidate.environment
+        ? {
+            activationId: identity.allocationId,
+            assignment: developmentEnvironmentAssignment(identity),
+            environment: candidate.environment,
+            workspaceSeed: {
+              kind: "bundle" as const,
+              bundle: encodeWorkspaceBlob(createWorkspaceSeed([])),
+            },
+            policy: this.#provider.defaultPolicy,
+            toolRoot: DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
+            lifetime: "development_environment" as const,
+            sandboxProfileKey: identity.profileKey,
+          }
+        : undefined);
+    try {
+      const ownership = await this.#stateRepository.developmentEnvironmentOwner(
+        identity.tenantId,
+        identity.userId,
+        identity.environmentId,
+      );
+      if (
+        ownership.status !== "owned" ||
+        ownership.reservation.allocationId !== identity.allocationId ||
+        ownership.reservation.intentRevision !== identity.intentRevision
+      )
+        return 0;
+      identity = ownership.reservation;
+      if (environment && environment.reservation.allocationId !== identity.allocationId) return 0;
+      if (identity.desiredState === "released") {
+        if (ownership.agentActive || ownership.terminalActive) return 0;
+        await this.#retireDevelopmentAllocation(identity, handle, candidate.runtimeCapsule);
+        await this.#stateRepository.setDevelopmentEnvironmentState(identity, "released");
+        return 1;
+      }
+      const observation = identity.allocationClosed
+        ? undefined
+        : handle
+          ? await this.#provider.observeRuntime(handle)
+          : candidate.creation
+            ? await this.#provider.observeAllocation?.(
+                identity.allocationId,
+                candidate.creation.authorization,
+                candidate.runtimeCapsule,
+              )
+            : undefined;
+      const physicalLost =
+        observation?.presence === "absent" ||
+        observation?.execution === "unsafe" ||
+        (observation?.presence === "present" && ["stopped", "error"].includes(observation.state));
+      const unstartedExpired =
+        !candidate.runtimeCapsule &&
+        !handle &&
+        !observation &&
+        candidate.creation &&
+        Date.now() >= candidate.creation.authorization.createBefore;
+      if (
+        identity.allocationClosed ||
+        candidate.allocationAbsent ||
+        physicalLost ||
+        unstartedExpired
+      ) {
+        await this.#stateRepository.setDevelopmentEnvironmentState(identity, "reconciling");
+        await this.#retireDevelopmentAllocation(identity, handle, candidate.runtimeCapsule);
+        if (identity.desiredState !== "running") {
+          await this.#stateRepository.setDevelopmentEnvironmentState(identity, "failed", {
+            failureCode: "development_machine_stopped",
+          });
+          return 0;
+        }
+        if (!bootstrap) return 0;
+        if (bootstrap.environment.imageRevision !== this.#imageRevision) {
+          const environment = await this.#stateRepository.prepareDevelopmentEnvironmentImage(
+            identity,
+            this.#imageRevision,
+          );
+          identity = { ...identity, environmentVersionId: environment.environmentVersionId };
+          bootstrap = { ...bootstrap, environment };
+        }
+        const allocationId = validActivationId(this.#idGenerator());
+        const nextIdentity = { ...identity, allocationId, generation: identity.generation + 1 };
+        const spec = {
+          ...bootstrap,
+          activationId: allocationId,
+          assignment: developmentEnvironmentAssignment(nextIdentity),
+        };
+        identity = await this.#stateRepository.replaceDevelopmentEnvironmentAllocation(
+          identity,
+          spec,
+        );
+        environment = undefined;
+        handle = undefined;
+        await this.#admission.acquire(identity.allocationId, spec.assignment);
+        handle = await this.#createPhysical(spec, "development_environment");
+        adopted = true;
+      } else {
+        if (observation?.presence === "unavailable") return 0;
+        if (!handle) {
+          if (
+            !candidate.runtimeCapsule &&
+            !candidate.creation &&
+            identity.desiredState === "paused"
+          )
+            return 0;
+          if (
+            !candidate.runtimeCapsule &&
+            !candidate.creation &&
+            bootstrap &&
+            bootstrap.environment.imageRevision !== this.#imageRevision
+          ) {
+            const environment = await this.#stateRepository.prepareDevelopmentEnvironmentImage(
+              identity,
+              this.#imageRevision,
+            );
+            identity = { ...identity, environmentVersionId: environment.environmentVersionId };
+            bootstrap = { ...bootstrap, environment };
+          }
+          handle =
+            !candidate.runtimeCapsule && !candidate.creation && bootstrap
+              ? await this.#createPhysical(bootstrap)
+              : await this.#recoverPhysical(candidate);
+          adopted = true;
+        }
+      }
+      const expected = developmentEnvironmentAssignment(identity);
+      if (
+        handle.activationId !== identity.allocationId ||
+        !sameAssignment(handle.assignment, expected)
+      )
+        throw new SandboxControlError(
+          "persistent_machine_recovery_identity_mismatch",
+          "Recovered machine allocation did not match PostgreSQL",
+          false,
+        );
+      const inspection = await this.#provider.inspect(handle);
+      if (inspection.state !== "running" && inspection.state !== "paused")
+        throw new SandboxControlError(
+          "cubesandbox_tool_unavailable",
+          "Machine observation remains unavailable",
+          true,
+        );
+      physicalVerified = true;
+      const managed: ManagedDevelopmentEnvironment = environment ?? {
+        reservation: identity,
+        assignment: expected,
+        handle,
+        observedState: inspection.state,
+        observedAt: this.#clock(),
+        bindingIds: new Set(),
+      };
+      managed.reservation = identity;
+      managed.observedState = inspection.state;
+      managed.observedAt = this.#clock();
+      await this.#applyDevelopmentIntent(managed);
+      const restored = environment
+        ? []
+        : await this.#prepareRecoveredBindings(managed.handle, undefined, managed);
+      await this.#stateRepository.setDevelopmentEnvironmentState(identity, "ready", {
+        handle: managed.handle,
+        runtimeCapsule: await this.#requiredMachineCapsule(managed.handle),
+        agentActive: managed.bindingIds.size > 0,
+      });
+      delete managed.failure;
+      delete managed.failureRecorded;
+      delete managed.closureConfirmed;
+      this.#developmentEnvironments.set(identity.environmentId, managed);
+      for (const binding of restored) this.#toolBindings.set(binding.activationId, binding);
+      this.#admission.restore(identity.allocationId, expected);
+      return 1;
+    } catch (error) {
+      if (adopted && handle) await this.#provider.detachPersistent?.(handle).catch(() => undefined);
+      if (error instanceof BindingClosurePending) return 0;
+      if (physicalVerified) throw error;
+      await this.#stateRepository
+        .setDevelopmentEnvironmentState(identity, "reconciling", {
+          failureCode: operationFailureCode(error),
+        })
+        .catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async #requiredMachineCapsule(handle: SandboxHandle): Promise<string> {
+    const capsule = await this.#persistentCapsule(handle);
+    if (!capsule)
+      throw new SandboxControlError(
+        "persistent_machine_state_unsupported",
+        "Machine reconnect state is unavailable",
+        true,
+      );
+    return capsule;
+  }
+
+  async #applyDevelopmentIntent(environment: ManagedDevelopmentEnvironment): Promise<void> {
+    const identity = environment.reservation;
+    const inspection = await this.#provider.inspect(environment.handle);
+    if (inspection.state !== "running" && inspection.state !== "paused")
+      throw new SandboxControlError(
+        "cubesandbox_tool_unavailable",
+        "Machine state cannot yet be confirmed",
+        true,
+      );
+    const current = await this.#stateRepository.developmentEnvironmentOwner(
+      identity.tenantId,
+      identity.userId,
+      identity.environmentId,
+    );
+    if (
+      current.status !== "owned" ||
+      current.reservation.allocationId !== identity.allocationId ||
+      current.reservation.intentRevision !== identity.intentRevision ||
+      current.reservation.desiredState !== identity.desiredState
+    )
+      throw new SandboxControlError(
+        "development_environment_intent_changed",
+        "Machine intent changed while reconciling",
+        true,
+      );
+    environment.observedState = inspection.state;
+    environment.observedAt = this.#clock();
+    if (identity.desiredState === "paused" && environment.observedState === "running") {
+      if (
+        current.agentActive ||
+        current.terminalActive ||
+        environment.bindingIds.size ||
+        environment.terminal
+      )
+        throw new SandboxControlError(
+          "development_environment_agent_active",
+          "Wait for active machine users before pausing",
+          true,
+        );
+      await this.#provider.pause!(environment.handle);
+      environment.observedState = "paused";
+      environment.observedAt = this.#clock();
+    } else if (identity.desiredState === "running" && environment.observedState === "paused") {
+      environment.handle = await this.#provider.resume!(environment.handle);
+      environment.observedState = "running";
+      environment.observedAt = this.#clock();
+    }
+  }
+
+  async #retireDevelopmentAllocation(
+    identity: DevelopmentEnvironmentReservation,
+    handle?: SandboxHandle,
+    capsule?: string,
+  ): Promise<void> {
+    // Close admission first. The PG trigger revokes every old physical binding.
+    await this.#stateRepository.closeAllocation(identity.allocationId, "development_environment");
+    await this.#bindings.confirmPhysicalClosure(identity.allocationId);
+    if (!identity.allocationAbsent)
+      await this.#closePhysical(
+        identity.allocationId,
+        developmentEnvironmentAssignment(identity),
+        "development_environment",
+        handle,
+        capsule,
+      );
+    await this.#bindings.releaseAfterPhysicalAbsence(identity.allocationId);
+    if (handle) await this.#serviceRegistry?.endRuntime(handle.runtimeId);
+    if (!identity.allocationAbsent)
+      await this.#stateRepository.confirmDevelopmentEnvironmentAbsent(identity);
+    const old = this.#developmentEnvironments.get(identity.environmentId);
+    if (old?.reservation.allocationId === identity.allocationId) {
+      old.terminal?.disconnect();
+      for (const id of old.bindingIds) this.#revokeBinding(id);
+      this.#developmentEnvironments.delete(identity.environmentId);
+    }
+    this.#admission.release(identity.allocationId);
+  }
+
+  developmentEnvironmentObservation(
+    tenantId: string,
+    userId: string,
+    environmentId: string,
+    allocationId: string,
+  ) {
+    try {
+      this.#stateRepository.assertLocalOwnership();
+    } catch {
+      return undefined;
+    }
+    const environment = this.#developmentEnvironments.get(environmentId);
+    if (
+      !environment ||
+      environment.reservation.tenantId !== tenantId ||
+      environment.reservation.userId !== userId ||
+      environment.reservation.allocationId !== allocationId ||
+      environment.failure
+    )
+      return undefined;
+    let state: "running" | "paused" | "unknown" = "unknown";
+    try {
+      const observed = this.#runtimeHealth.observation(
+        this.#provider.executionIdentity(environment.handle),
+      );
+      if (observed && observed.at >= environment.observedAt) {
+        if (
+          observed.value.presence === "present" &&
+          ["running", "paused"].includes(observed.value.state)
+        )
+          state = observed.value.state as "running" | "paused";
+      } else if (this.#clock() - environment.observedAt <= 45_000)
+        state = environment.observedState;
+    } catch {
+      /* A missing local observation cannot claim availability. */
+    }
+    return {
+      state,
+      ...(state !== "unknown" && environment.handle.ipAddress
+        ? { ipAddress: environment.handle.ipAddress }
+        : {}),
+    };
+  }
+
+  async observeDevelopmentEnvironment(
+    request: Extract<
+      DevelopmentEnvironmentBrokerRequest,
+      { type: "development_environment.observe" }
+    >,
+  ): Promise<DevelopmentEnvironmentBrokerResponse> {
+    const owner = await this.#stateRepository.developmentEnvironmentOwner(
+      request.tenantId,
+      request.userId,
+      request.environmentId,
+    );
+    if (owner.status === "redirect") throw new SandboxOwnerRedirectError(owner.ownerBaseUrl);
+    const observation =
+      owner.status === "owned"
+        ? this.developmentEnvironmentObservation(
+            request.tenantId,
+            request.userId,
+            request.environmentId,
+            request.allocationId,
+          )
+        : undefined;
+    return {
+      developmentEnvironmentProtocolVersion: 1,
+      type: "development_environment.state",
+      requestId: request.requestId,
+      environmentId: request.environmentId,
+      state: observation?.state ?? "unknown",
+      ...(observation?.ipAddress ? { ipAddress: observation.ipAddress } : {}),
+    };
   }
 
   async #prepareRecoveredBindings(
@@ -779,7 +1044,7 @@ export class SandboxController {
           const restored = await this.#prepareRecoveredBindings(handle, runtime);
           await this.#stateRepository.setWorkspaceRuntimeState(
             candidate.activationId,
-            runtime.bindingIds.size ? "active" : "warm",
+            "allocated",
             { handle, runtimeCapsule: capsule },
           );
           for (const binding of restored) this.#toolBindings.set(binding.activationId, binding);
@@ -887,7 +1152,7 @@ export class SandboxController {
         type: "development_environment.state",
         requestId: request.requestId,
         environmentId: request.environmentId,
-        state: "running",
+        state: existing.observedState,
         ...(existing.handle.ipAddress === undefined
           ? {}
           : { ipAddress: existing.handle.ipAddress }),
@@ -895,6 +1160,9 @@ export class SandboxController {
     }
     const reservation: DevelopmentEnvironmentReservation = {
       environmentId: request.environmentId,
+      allocationId: request.allocationId,
+      intentRevision: request.intentRevision,
+      desiredState: "running",
       tenantId: request.tenantId,
       userId: request.userId,
       projectId: request.projectId,
@@ -925,10 +1193,10 @@ export class SandboxController {
     let handle: SandboxHandle | undefined;
     let admitted = false;
     try {
-      await this.#admission.acquire(request.environmentId, assignment);
+      await this.#admission.acquire(request.allocationId, assignment);
       admitted = true;
       handle = await this.#createPhysical({
-        activationId: request.environmentId,
+        activationId: request.allocationId,
         assignment,
         environment: request.environment,
         workspaceSeed: request.workspaceSeed,
@@ -941,7 +1209,7 @@ export class SandboxController {
         !handleMatches(
           handle,
           this.#provider,
-          request.environmentId,
+          request.allocationId,
           assignment,
           request.environment,
           DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
@@ -954,12 +1222,14 @@ export class SandboxController {
         );
       }
       const runtimeCapsule = await this.#persistentCapsule(handle);
-      await this.#stateRepository.setDevelopmentEnvironmentState(request.environmentId, "running", {
+      await this.#stateRepository.setDevelopmentEnvironmentState(reservation, "ready", {
         handle,
         ...(runtimeCapsule === undefined ? {} : { runtimeCapsule }),
       });
       this.#developmentEnvironments.set(request.environmentId, {
         reservation,
+        observedState: "running",
+        observedAt: this.#clock(),
         assignment,
         handle,
         bindingIds: new Set(),
@@ -977,7 +1247,7 @@ export class SandboxController {
       if (handle !== undefined) {
         try {
           await this.#closePhysical(
-            request.environmentId,
+            request.allocationId,
             assignment,
             "development_environment",
             handle,
@@ -987,13 +1257,13 @@ export class SandboxController {
           absent = false;
         }
       }
-      if (admitted && absent) this.#admission.release(request.environmentId);
+      if (admitted && absent) this.#admission.release(request.allocationId);
       const capsule =
         !absent && handle
           ? await this.#persistentCapsule(handle).catch(() => undefined)
           : undefined;
       await this.#stateRepository
-        .setDevelopmentEnvironmentState(request.environmentId, absent ? "failed" : "unknown", {
+        .setDevelopmentEnvironmentState(reservation, absent ? "failed" : "reconciling", {
           failureCode: operationFailureCode(error),
           ...(!absent && handle ? { handle } : {}),
           ...(capsule ? { runtimeCapsule: capsule } : {}),
@@ -1011,164 +1281,78 @@ export class SandboxController {
       request.userId,
       request.environmentId,
     );
-    if (ownership.status === "redirect") {
+    if (ownership.status === "redirect")
       throw new SandboxOwnerRedirectError(ownership.ownerBaseUrl);
-    }
-    const environment = this.#developmentEnvironments.get(request.environmentId);
-    if (ownership.status === "owned" && environment === undefined && request.action === "release") {
-      if (ownership.agentActive || ownership.terminalActive) {
-        throw new SandboxControlError(
-          "development_environment_agent_active",
-          "Wait for the active Agent Run or terminal before releasing the development environment",
-          true,
-        );
-      }
-      await this.#stateRepository.setDevelopmentEnvironmentState(
-        request.environmentId,
-        "releasing",
-      );
-      const assignment = developmentEnvironmentAssignment({
-        environmentId: ownership.reservation.environmentId,
-        tenantId: ownership.reservation.tenantId,
-        projectId: ownership.reservation.projectId,
-        workspaceId: ownership.reservation.workspaceId,
-        generation: ownership.reservation.generation,
-      });
-      try {
-        await this.#closePhysical(request.environmentId, assignment, "development_environment");
-      } catch (error: unknown) {
-        await this.#stateRepository
-          .setDevelopmentEnvironmentState(request.environmentId, "unknown", {
-            failureCode: operationFailureCode(error),
-          })
-          .catch(() => undefined);
-        throw error;
-      }
-      this.#admission.release(request.environmentId);
-      await this.#stateRepository.setDevelopmentEnvironmentState(request.environmentId, "released");
-      return {
-        developmentEnvironmentProtocolVersion: 1,
-        type: "development_environment.state",
-        requestId: request.requestId,
-        environmentId: request.environmentId,
-        state: "released",
-      };
-    }
-    if (ownership.status !== "owned" || environment === undefined) {
+    if (ownership.status !== "owned")
       throw new SandboxControlError(
         "development_environment_unavailable",
-        "Development environment is unavailable on its owning Sandbox control",
+        "Machine ownership is unavailable",
         true,
       );
-    }
-    if (
-      environment.reservation.tenantId !== request.tenantId ||
-      environment.reservation.userId !== request.userId
-    ) {
-      throw new SandboxControlError(
-        "development_environment_unauthorized",
-        "Development environment ownership did not match",
-        false,
-      );
-    }
-    if (environment.bindingIds.size > 0) {
-      throw new SandboxControlError(
-        "development_environment_agent_active",
-        "Wait for the active Agent Run before changing the development environment",
-        true,
-      );
-    }
-    if (request.action === "pause") {
-      if (ownership.state !== "running" || environment.terminal !== undefined) {
-        throw new SandboxControlError(
-          "development_environment_pause_conflict",
-          "Close the active terminal before pausing the development environment",
-          true,
+    return this.#serializeWorkspaceRuntimeProvisioning(
+      developmentEnvironmentAssignment(ownership.reservation),
+      async () => {
+        const current = await this.#stateRepository.developmentEnvironmentOwner(
+          request.tenantId,
+          request.userId,
+          request.environmentId,
         );
-      }
-      try {
-        await this.#provider.pause!(environment.handle);
-      } catch (error: unknown) {
-        await this.#stateRepository
-          .setDevelopmentEnvironmentState(request.environmentId, "unknown", {
-            failureCode: operationFailureCode(error),
-          })
-          .catch(() => undefined);
-        throw error;
-      }
-      const runtimeCapsule = await this.#persistentCapsule(environment.handle);
-      await this.#stateRepository.setDevelopmentEnvironmentState(request.environmentId, "paused", {
-        handle: environment.handle,
-        ...(runtimeCapsule === undefined ? {} : { runtimeCapsule }),
-      });
-      return {
-        developmentEnvironmentProtocolVersion: 1,
-        type: "development_environment.state",
-        requestId: request.requestId,
-        environmentId: request.environmentId,
-        state: "paused",
-      };
-    }
-    if (request.action === "resume") {
-      if (ownership.state !== "paused") {
-        throw new SandboxControlError(
-          "development_environment_resume_conflict",
-          "Development environment is not paused",
-          false,
-        );
-      }
-      try {
-        environment.handle = await this.#provider.resume!(environment.handle);
-      } catch (error: unknown) {
-        await this.#stateRepository
-          .setDevelopmentEnvironmentState(request.environmentId, "unknown", {
-            failureCode: operationFailureCode(error),
-          })
-          .catch(() => undefined);
-        throw error;
-      }
-      const runtimeCapsule = await this.#persistentCapsule(environment.handle);
-      await this.#stateRepository.setDevelopmentEnvironmentState(request.environmentId, "running", {
-        handle: environment.handle,
-        ...(runtimeCapsule === undefined ? {} : { runtimeCapsule }),
-      });
-      return {
-        developmentEnvironmentProtocolVersion: 1,
-        type: "development_environment.state",
-        requestId: request.requestId,
-        environmentId: request.environmentId,
-        state: "running",
-      };
-    }
-    await this.#stateRepository.setDevelopmentEnvironmentState(request.environmentId, "releasing");
-    environment.terminal?.disconnect();
-    await environment.terminal?.kill().catch(() => undefined);
-    try {
-      await this.#closePhysical(
-        request.environmentId,
-        environment.assignment,
-        "development_environment",
-        environment.handle,
-      );
-      await this.#serviceRegistry?.endRuntime(environment.handle.runtimeId).catch(() => undefined);
-    } catch (error: unknown) {
-      await this.#stateRepository
-        .setDevelopmentEnvironmentState(request.environmentId, "unknown", {
-          failureCode: operationFailureCode(error),
-        })
-        .catch(() => undefined);
-      throw error;
-    }
-    this.#developmentEnvironments.delete(request.environmentId);
-    this.#admission.release(request.environmentId);
-    await this.#stateRepository.setDevelopmentEnvironmentState(request.environmentId, "released");
-    return {
-      developmentEnvironmentProtocolVersion: 1,
-      type: "development_environment.state",
-      requestId: request.requestId,
-      environmentId: request.environmentId,
-      state: "released",
-    };
+        const desired =
+          request.action === "pause"
+            ? "paused"
+            : request.action === "resume"
+              ? "running"
+              : "released";
+        if (
+          current.status !== "owned" ||
+          current.reservation.intentRevision !== request.intentRevision ||
+          current.reservation.desiredState !== desired
+        )
+          throw new SandboxControlError(
+            "development_environment_intent_changed",
+            "Machine request has been superseded",
+            true,
+          );
+        const identity = current.reservation;
+        const environment = this.#developmentEnvironments.get(request.environmentId);
+        if (
+          current.agentActive ||
+          current.terminalActive ||
+          environment?.bindingIds.size ||
+          environment?.terminal
+        )
+          throw new SandboxControlError(
+            "development_environment_agent_active",
+            "Wait for active machine users before changing its lifecycle",
+            true,
+          );
+        let state: "running" | "paused" | "released" | "unknown" = "unknown";
+        if (desired === "released") {
+          await this.#retireDevelopmentAllocation(identity, environment?.handle);
+          await this.#stateRepository.setDevelopmentEnvironmentState(identity, "released");
+          state = "released";
+        } else if (
+          environment &&
+          !environment.failure &&
+          environment.reservation.allocationId === identity.allocationId
+        ) {
+          environment.reservation = identity;
+          await this.#applyDevelopmentIntent(environment);
+          await this.#stateRepository.setDevelopmentEnvironmentState(identity, "ready", {
+            handle: environment.handle,
+            runtimeCapsule: await this.#requiredMachineCapsule(environment.handle),
+          });
+          state = environment.observedState;
+        }
+        return {
+          developmentEnvironmentProtocolVersion: 1,
+          type: "development_environment.state",
+          requestId: request.requestId,
+          environmentId: request.environmentId,
+          state,
+        };
+      },
+    );
   }
 
   async browseDevelopmentEnvironment(
@@ -1202,7 +1386,8 @@ export class SandboxController {
     const environment = this.#developmentEnvironments.get(request.environmentId);
     if (
       ownership.status !== "owned" ||
-      ownership.state !== "running" ||
+      ownership.state !== "ready" ||
+      ownership.reservation.desiredState !== "running" ||
       environment === undefined
     ) {
       throw new SandboxControlError(
@@ -1256,7 +1441,8 @@ export class SandboxController {
     const environment = this.#developmentEnvironments.get(input.environmentId);
     if (
       ownership.status !== "owned" ||
-      ownership.state !== "running" ||
+      ownership.state !== "ready" ||
+      ownership.reservation.desiredState !== "running" ||
       environment === undefined
     ) {
       throw new SandboxControlError(
@@ -1282,7 +1468,13 @@ export class SandboxController {
         true,
       );
     }
-    if (!(await this.#stateRepository.reserveDevelopmentEnvironmentTerminal(input.environmentId))) {
+    const allocationId = environment.reservation.allocationId;
+    if (
+      !(await this.#stateRepository.reserveDevelopmentEnvironmentTerminal(
+        input.environmentId,
+        allocationId,
+      ))
+    ) {
       throw new SandboxControlError(
         "development_environment_terminal_busy",
         "Development environment already has an active terminal",
@@ -1298,7 +1490,7 @@ export class SandboxController {
       });
     } catch (error: unknown) {
       await this.#stateRepository
-        .releaseDevelopmentEnvironmentTerminal(input.environmentId)
+        .releaseDevelopmentEnvironmentTerminal(input.environmentId, allocationId)
         .catch(() => undefined);
       throw error;
     }
@@ -1318,7 +1510,7 @@ export class SandboxController {
         await terminal.kill().catch(() => undefined);
         if (environment.terminal === terminal) delete environment.terminal;
         await this.#stateRepository
-          .releaseDevelopmentEnvironmentTerminal(input.environmentId)
+          .releaseDevelopmentEnvironmentTerminal(input.environmentId, allocationId)
           .catch(() => undefined);
       },
     });
@@ -1419,11 +1611,6 @@ export class SandboxController {
         this.#warm.delete(workspaceRuntime.workspaceKey);
         handle = await this.#materializeElasticRuntime(workspaceRuntime);
         workspaceRuntime.workspaceTerminalId = terminalId;
-        await this.#stateRepository.setWorkspaceRuntimeState(
-          workspaceRuntime.physicalActivationId,
-          "active",
-          { handle },
-        );
       }
       if (handle === undefined) {
         throw new SandboxControlError(
@@ -1786,10 +1973,15 @@ export class SandboxController {
         : await this.#persistentCapsule(runtime.handle);
       if (!runtime.capsuleStored && !capsule)
         throw new Error("Runtime recovery capsule is unavailable");
-      await this.#stateRepository.setWorkspaceRuntimeState(runtime.physicalActivationId, "active", {
-        handle: runtime.handle,
-        ...(capsule ? { runtimeCapsule: capsule } : {}),
-      });
+      if (capsule)
+        await this.#stateRepository.setWorkspaceRuntimeState(
+          runtime.physicalActivationId,
+          "allocated",
+          {
+            handle: runtime.handle,
+            runtimeCapsule: capsule,
+          },
+        );
       runtime.capsuleStored = true;
     }
     return {
@@ -1838,7 +2030,7 @@ export class SandboxController {
       await this.#quarantineDevelopmentEnvironment(environment, error);
       throw error;
     }
-    const physicalActivationId = validActivationId(environment.reservation.environmentId);
+    const physicalActivationId = validActivationId(environment.reservation.allocationId);
     const activationId = validActivationId(request.requestId);
     if (this.#toolBindings.has(activationId) || environment.bindingIds.has(activationId)) {
       throw new SandboxControlError(
@@ -2389,9 +2581,6 @@ export class SandboxController {
 
     if (request.disposition !== "destroy" && runtime.handle !== undefined) {
       this.#warm.set(runtime.workspaceKey, runtime);
-      await this.#stateRepository.setWorkspaceRuntimeState(runtime.physicalActivationId, "warm", {
-        handle: runtime.handle,
-      });
       return {
         toolBrokerProtocolVersion: 1,
         type: "tool_sandbox.released",
@@ -2478,11 +2667,9 @@ export class SandboxController {
       await this.#stateRepository.returnDevelopmentEnvironment(
         environment.reservation.environmentId,
         activation.reservation.activationId,
-        environment.failure === undefined ? "running" : "unknown",
         {
           handle: environment.handle,
           runtimeCapsule,
-          ...(environment.failure === undefined ? {} : { failureCode: environment.failure.code }),
         },
       );
     } catch (error: unknown) {
@@ -2490,8 +2677,7 @@ export class SandboxController {
         .returnDevelopmentEnvironment(
           environment.reservation.environmentId,
           activation.reservation.activationId,
-          "unknown",
-          { handle: environment.handle, failureCode: operationFailureCode(error) },
+          { handle: environment.handle },
         )
         .catch(() => undefined);
       throw error;
@@ -2683,7 +2869,8 @@ export class SandboxController {
     if (owner.status === "redirect") throw new SandboxOwnerRedirectError(owner.ownerBaseUrl);
     if (
       owner.status !== "owned" ||
-      owner.state !== "running" ||
+      owner.state !== "ready" ||
+      owner.reservation.desiredState !== "running" ||
       owner.reservation.workspaceId !== request.workspaceId
     ) {
       throw new SandboxControlError(
@@ -2781,7 +2968,7 @@ export class SandboxController {
         }),
       ),
     );
-    for (const [environmentId, environment] of this.#developmentEnvironments) {
+    for (const environment of this.#developmentEnvironments.values()) {
       environment.terminal?.disconnect();
       await environment.terminal?.kill().catch((error) => {
         errors.push(error);
@@ -2808,8 +2995,8 @@ export class SandboxController {
             );
           }
           await this.#stateRepository.setDevelopmentEnvironmentState(
-            environmentId,
-            environment.failure === undefined ? "running" : "unknown",
+            environment.reservation,
+            environment.failure === undefined ? "ready" : "reconciling",
             {
               handle: detachableHandle,
               agentActive: true,
@@ -2837,14 +3024,11 @@ export class SandboxController {
             );
           }
           await this.#stateRepository.setDevelopmentEnvironmentState(
-            environmentId,
-            environment.failure !== undefined
-              ? "unknown"
-              : inspection.state === "running"
-                ? "running"
-                : inspection.state === "paused"
-                  ? "paused"
-                  : "unknown",
+            environment.reservation,
+            environment.failure === undefined &&
+              (inspection.state === "running" || inspection.state === "paused")
+              ? "ready"
+              : "reconciling",
             {
               handle: detachableHandle,
               runtimeCapsule: capsule,
@@ -2858,7 +3042,7 @@ export class SandboxController {
       } catch (error: unknown) {
         errors.push(error);
         await this.#stateRepository
-          .setDevelopmentEnvironmentState(environmentId, "unknown", {
+          .setDevelopmentEnvironmentState(environment.reservation, "reconciling", {
             handle: detachableHandle,
             failureCode: operationFailureCode(error),
             ...(capsule === undefined ? {} : { runtimeCapsule: capsule }),
@@ -2870,7 +3054,7 @@ export class SandboxController {
           errors.push(failure);
         });
       }
-      this.#admission.release(environmentId);
+      this.#admission.release(environment.reservation.allocationId);
     }
     this.#developmentEnvironments.clear();
     const runtimes = new Set([
@@ -2886,7 +3070,7 @@ export class SandboxController {
         if (!capsule) throw new Error("Runtime recovery capsule unavailable during shutdown");
         await this.#stateRepository.setWorkspaceRuntimeState(
           runtime.physicalActivationId,
-          runtime.failure ? "unknown" : runtime.bindingIds.size ? "active" : "warm",
+          runtime.failure ? "unknown" : "allocated",
           {
             handle: runtime.handle,
             runtimeCapsule: capsule,
@@ -3151,7 +3335,7 @@ export class SandboxController {
         if (!runtimeCapsule) throw new Error("Runtime recovery capsule is unavailable");
         await this.#stateRepository.setWorkspaceRuntimeState(
           runtime.physicalActivationId,
-          "active",
+          "allocated",
           {
             handle,
             runtimeCapsule,
@@ -3296,44 +3480,6 @@ export class SandboxController {
     }
   }
 
-  async #markUnrecoverableDevelopmentEnvironments(): Promise<void> {
-    const orphaned = await this.#stateRepository.claimOrphanedDevelopmentEnvironments(16);
-    for (const environment of orphaned) {
-      const local = this.#developmentEnvironments.get(environment.environmentId);
-      local?.terminal?.disconnect();
-      if (local?.terminal !== undefined) await local.terminal.kill().catch(() => undefined);
-      this.#developmentEnvironments.delete(environment.environmentId);
-      try {
-        if (environment.allocationClosed) {
-          const assignment = developmentEnvironmentAssignment(environment);
-          await this.#closePhysical(
-            environment.environmentId,
-            assignment,
-            "development_environment",
-            local?.handle,
-          );
-          await this.#stateRepository.setDevelopmentEnvironmentState(
-            environment.environmentId,
-            "released",
-          );
-          this.#admission.release(environment.environmentId);
-          continue;
-        }
-        await this.#stateRepository.setDevelopmentEnvironmentState(
-          environment.environmentId,
-          "unknown",
-          { failureCode: "persistent_machine_recovery_required" },
-        );
-      } catch (error: unknown) {
-        await this.#stateRepository
-          .setDevelopmentEnvironmentState(environment.environmentId, "unknown", {
-            failureCode: operationFailureCode(error),
-          })
-          .catch(() => undefined);
-      }
-    }
-  }
-
   async #verifyDevelopmentEnvironment(
     environment: ManagedDevelopmentEnvironment,
   ): Promise<{ continuityId: string }> {
@@ -3346,14 +3492,10 @@ export class SandboxController {
         false,
       );
     }
-    await this.#stateRepository.setDevelopmentEnvironmentState(
-      environment.reservation.environmentId,
-      "running",
-      {
-        handle: environment.handle,
-        runtimeCapsule,
-      },
-    );
+    await this.#stateRepository.setDevelopmentEnvironmentState(environment.reservation, "ready", {
+      handle: environment.handle,
+      runtimeCapsule,
+    });
     delete environment.failure;
     delete environment.failureRecorded;
     delete environment.closureConfirmed;
@@ -3375,8 +3517,8 @@ export class SandboxController {
           );
     if (!environment.failureRecorded) {
       await this.#stateRepository.setDevelopmentEnvironmentState(
-        environment.reservation.environmentId,
-        "unknown",
+        environment.reservation,
+        "reconciling",
         {
           handle: environment.handle,
           failureCode: environment.failure.code,
@@ -3384,7 +3526,7 @@ export class SandboxController {
       );
       environment.failureRecorded = true;
     }
-    await this.#bindings.confirmPhysicalClosure(environment.reservation.environmentId);
+    await this.#bindings.confirmPhysicalClosure(environment.reservation.allocationId);
     environment.closureConfirmed = true;
   }
 
@@ -3399,13 +3541,6 @@ export class SandboxController {
         delete workspaceRuntime.workspaceTerminalId;
         if (workspaceRuntime.bindingIds.size === 0) {
           this.#warm.set(workspaceRuntime.workspaceKey, workspaceRuntime);
-          await this.#stateRepository.setWorkspaceRuntimeState(
-            workspaceRuntime.physicalActivationId,
-            "warm",
-            {
-              ...(workspaceRuntime.handle === undefined ? {} : { handle: workspaceRuntime.handle }),
-            },
-          );
         }
         await this.#stateRepository.setTerminalState(terminalId, "released");
         return;

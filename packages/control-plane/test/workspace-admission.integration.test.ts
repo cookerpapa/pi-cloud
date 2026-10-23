@@ -106,7 +106,7 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
         owner_base_url: baseUrl,
         runtime_id: `runtime-${environmentId}`,
         runtime_name: `runtime-${environmentId}`,
-        state: "running",
+        state: "ready",
         idempotency_key: environmentId,
         request_sha256: "a".repeat(64),
         profile_key: "starter",
@@ -246,7 +246,7 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
     ).rejects.toMatchObject({ code: "not_found" });
     await database
       .updateTable("development_environments")
-      .set({ owner_user_id: scope.ownerUserId, state: "unknown" })
+      .set({ owner_user_id: scope.ownerUserId, state: "reconciling" })
       .where("id", "=", machine.environmentId)
       .execute();
     await expect(rebind()).rejects.toMatchObject({ code: "conflict" });
@@ -320,7 +320,7 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
     const machine = await machineFixture();
     await database
       .updateTable("development_environments")
-      .set({ state: "paused" })
+      .set({ state: "ready", desired_state: "paused", intent_revision: "2" })
       .where("id", "=", machine.environmentId)
       .execute();
     await store.rebindConversationWorkspace(session.sessionId, machine.workspaceId, "bind-paused", {

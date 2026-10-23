@@ -247,7 +247,7 @@ async function runEvidence(runId) {
        left join workspace_runtimes activation
         on activation.tenant_id = run.tenant_id
         and activation.workspace_id = run.workspace_id
-        and activation.state in ('reserved', 'materializing', 'active', 'warm', 'cleaning')
+        and activation.state in ('reserved', 'materializing', 'allocated', 'cleaning')
        left join lateral (
          select coalesce(sum(octet_length(log.body)),0)::bigint total_bytes, count(*)::bigint total_entries,
            coalesce(sum(octet_length(log.body)) filter(where entry.id>=coalesce(head.first_kept,0)),0)::bigint active_bytes,

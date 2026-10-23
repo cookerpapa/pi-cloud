@@ -369,7 +369,7 @@ describe.sequential("source-control App boundary", () => {
         project_id: machineWorkspace.projectId,
         workspace_id: machineWorkspace.workspaceId,
         sandbox_domain_id: "sandbox-domain-gitlab-workspace",
-        state: "running",
+        state: "ready",
         owner_instance_id: brokerId,
         owner_base_url: "http://broker.invalid:4301",
         runtime_id: "fixture-runtime",

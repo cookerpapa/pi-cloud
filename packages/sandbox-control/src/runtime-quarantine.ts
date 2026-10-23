@@ -43,18 +43,18 @@ export async function quarantineExecutionTarget(
     const machines = await tx
       .updateTable("development_environments")
       .set({
-        state: "unknown",
+        state: "reconciling",
         failure_code: "execution_stop_unconfirmed",
         updated_at: sql<Date>`clock_timestamp()`,
       })
-      .where("id", "in", ids)
+      .where("allocation_id", "in", ids)
       .where("runtime_name", "=", target.sandboxId)
       .where("state", "not in", ["released", "releasing", "failed"])
-      .returning("id")
+      .returning("allocation_id")
       .execute();
     const quarantined = [
       ...workspaces.map((row) => row.workspace_runtime_id),
-      ...machines.map((row) => row.id),
+      ...machines.map((row) => row.allocation_id),
     ];
     const closed = await tx
       .updateTable("sandbox_tool_bindings")

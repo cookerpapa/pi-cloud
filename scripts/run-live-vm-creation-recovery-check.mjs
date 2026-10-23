@@ -130,10 +130,7 @@ try {
       where workspace_runtime_id=${allocation.workspace_runtime_id}::uuid`.execute(database);
     const row = rows[0];
     return (
-      row?.runtime_capsule &&
-      !row.allocation_closed &&
-      ["active", "warm"].includes(row.state) &&
-      row
+      row?.runtime_capsule && !row.allocation_closed && ["allocated"].includes(row.state) && row
     );
   }, "original VM creation adoption");
   assert.equal(

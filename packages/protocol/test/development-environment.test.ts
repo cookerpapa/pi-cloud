@@ -19,6 +19,8 @@ describe("development environment Broker protocol", () => {
       type: "development_environment.provision",
       requestId: "10000000-0000-4000-8000-000000000001",
       environmentId: "10000000-0000-4000-8000-000000000002",
+      allocationId: "10000000-0000-4000-8000-000000000002",
+      intentRevision: 1,
       tenantId: "10000000-0000-4000-8000-000000000003",
       userId: "10000000-0000-4000-8000-000000000004",
       projectId: "10000000-0000-4000-8000-000000000005",

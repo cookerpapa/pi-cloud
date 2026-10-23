@@ -28,6 +28,9 @@ it.each(
       userId = randomUUID();
     const reservation = {
       environmentId: id,
+      allocationId: id,
+      intentRevision: 1,
+      desiredState: "running" as const,
       tenantId,
       projectId,
       workspaceId,
@@ -106,11 +109,25 @@ it.each(
     const state = new InMemoryWorkspaceRuntimeStateRepository() as WorkspaceRuntimeStateRepository;
     const bindings = new InMemorySandboxBindings();
     if (kind === "development") {
+      vi.spyOn(state, "developmentEnvironmentOwner").mockResolvedValue({
+        status: "owned",
+        state: "ready",
+        reservation,
+        agentActive: false,
+        terminalActive: false,
+      });
       vi.spyOn(state, "claimRecoverableDevelopmentEnvironments").mockImplementation(
         async (_limit, excluded = []) =>
           excluded.includes(id)
             ? []
-            : [{ reservation, state: "running", runtimeCapsule: "review-capsule" }],
+            : [
+                {
+                  reservation,
+                  state: "ready",
+                  allocationAbsent: false,
+                  runtimeCapsule: "review-capsule",
+                },
+              ],
       );
     } else {
       vi.spyOn(state, "claimRecoverableWorkspaceRuntimes").mockImplementation(

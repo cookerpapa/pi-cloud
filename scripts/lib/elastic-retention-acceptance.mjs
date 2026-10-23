@@ -57,7 +57,7 @@ export async function elasticRetentionAcceptance({
       .where("workspace_id", "=", session.workspaceId)
       .where("compute_session_id", "is", null)
       .where("allocation_closed", "=", false)
-      .where("state", "in", ["active", "warm"])
+      .where("state", "in", ["allocated"])
       .where("runtime_name", "is not", null)
       .executeTakeFirst();
   const restore = async () => {

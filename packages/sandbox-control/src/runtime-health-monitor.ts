@@ -7,7 +7,13 @@ export type RuntimeHealthTarget = {
   probe(): Promise<unknown>;
   fail(): Promise<void>;
 };
-type Target = { target: RuntimeHealthTarget; due: number; successAt: number; pending: boolean };
+type Target = {
+  target: RuntimeHealthTarget;
+  due: number;
+  successAt: number;
+  pending: boolean;
+  observed?: { value: SandboxRuntimeObservation; at: number };
+};
 
 /** Disposable physical-VM evidence. Cleanup and Session observations do not wait
  * for this bounded, due-time pump. Inventory never proves disappearance. */
@@ -93,6 +99,24 @@ export class RuntimeHealthMonitor {
     target.due = Math.max(target.due, Math.min(now, observedAt) + RUN_PATH_PROBE_INTERVAL_MS);
     return true;
   }
+  observation(id: string) {
+    const target = this.#targets.get(id);
+    const observed = target?.observed;
+    if (
+      target &&
+      target.successAt > (observed?.at ?? 0) &&
+      this.#now() - target.successAt <= RUN_OBSERVATION_STALE_MS
+    )
+      return {
+        value: {
+          presence: "present" as const,
+          state: "running" as const,
+          execution: "ready" as const,
+        },
+        at: target.successAt,
+      };
+    return observed && this.#now() - observed.at <= RUN_OBSERVATION_STALE_MS ? observed : undefined;
+  }
   #pump(): void {
     if (this.#closed) return;
     const now = this.#now();
@@ -120,6 +144,7 @@ export class RuntimeHealthMonitor {
   }
   async #classify(entry: Target, observation: SandboxRuntimeObservation): Promise<boolean> {
     if (!this.#current(entry)) return false;
+    entry.observed = { value: observation, at: this.#now() };
     if (
       observation.presence === "absent" ||
       observation.execution === "unsafe" ||

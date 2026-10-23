@@ -1,5 +1,18 @@
 # Implementation roadmap
 
+## Resource intent and dedicated-machine recovery
+
+The owner approved [ADR-0273](adr/0273-resource-intent-and-machine-recovery.md).
+Implementation uses existing PG resource records, Cube allocation APIs and
+controller loops; current serving artifacts have not yet changed.
+
+- [x] Separate user intent, physical allocation identity and lifecycle progress.
+- [x] Remove persisted IP observations and elastic active/warm usage duplication.
+- [x] Reconcile pause, adoption, lost creation replies and confirmed replacement.
+- [x] Present current-owner observations and distinct recovery/unavailable states.
+- [x] Complete lifecycle, stale-result, loss, native Cube contract and UI verification.
+- [ ] Deliver matched artifacts; verify the retained user Workspace and owned fixture cleanup.
+
 ## Cube-owned finite elastic retention
 
 The owner approved implementation of the

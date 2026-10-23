@@ -152,3 +152,26 @@ it("confirmed physical loss quarantines, while a removed target's late reply is 
     await monitor.close();
   }
 });
+
+it("expires disposable presentation observations while accepting fresh guest evidence", async () => {
+  let now = 100_000;
+  const vm = target("presentation");
+  const monitor = new RuntimeHealthMonitor({
+    targets: () => [vm],
+    inventory: async () => new Map([[vm.id, running]]),
+    onError: vi.fn(),
+    clock: () => now,
+  });
+  try {
+    monitor.refresh();
+    await monitor.settle();
+    expect(monitor.observation(vm.id)?.value.state).toBe("running");
+    now += 120_000;
+    expect(monitor.observation(vm.id)).toBeUndefined();
+    expect(vm.fail).not.toHaveBeenCalled();
+    expect(monitor.evidence(vm.id, now)).toBe(true);
+    expect(monitor.observation(vm.id)?.value.state).toBe("running");
+  } finally {
+    await monitor.close();
+  }
+});

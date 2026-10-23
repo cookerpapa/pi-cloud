@@ -999,6 +999,48 @@ export class CubeSandboxProvider implements SandboxProvider {
     handle: SandboxHandle,
   ): Promise<import("./sandbox-provider.ts").SandboxRuntimeObservation> {
     const target = this.#localOwned(handle).executionTarget;
+    return this.#observeTarget(target);
+  }
+
+  async observeAllocation(
+    id: string,
+    authorization: SandboxAllocationAuthorization,
+    capsule?: string,
+  ) {
+    const allocation = await this.#client.allocation(id, authorization.createBefore, "get");
+    if (allocation.closed && allocation.phase === "absent") {
+      return {
+        runtimeName: allocation.sandboxId ?? id.replaceAll("-", ""),
+        nodeId: allocation.nodeId ?? "",
+        presence: "absent" as const,
+        state: "unknown" as const,
+      };
+    }
+    if (!allocation.sandboxId || !allocation.nodeId) return undefined;
+    if (capsule && this.#persistentCapsules) {
+      const raw = record(this.#persistentCapsules.open(capsule), "Cube recovery capsule");
+      const handle = raw.handle as SandboxHandle;
+      this.#assertHandle(handle);
+      const target = raw.executionTarget as SandboxExecutionTarget;
+      if (
+        handle.activationId !== id ||
+        handle.allocation.createBefore !== authorization.createBefore ||
+        target.sandboxId !== allocation.sandboxId ||
+        target.nodeId !== allocation.nodeId
+      )
+        throw new SandboxControlError(
+          "persistent_capsule_invalid",
+          "Allocation observation identity changed",
+          false,
+        );
+      return this.#observeTarget(target);
+    }
+    return this.#client.observe(allocation.sandboxId, allocation.nodeId);
+  }
+
+  async #observeTarget(
+    target: SandboxExecutionTarget,
+  ): Promise<import("./sandbox-provider.ts").SandboxRuntimeObservation> {
     const observed = await this.#client.observe(target.sandboxId, target.nodeId);
     if (observed.presence !== "present" || observed.state !== "running") return observed;
     try {

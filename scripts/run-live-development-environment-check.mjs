@@ -139,7 +139,7 @@ async function waitForEnvironment(environmentId, expectedState) {
       (environment) => environment.environmentId === environmentId,
     );
     if (current?.state === expectedState) return current;
-    if (current?.state === "failed" || current?.state === "unknown") {
+    if (current?.desiredState === "released" && expectedState !== "released") {
       throw new Error(
         `Development environment ${environmentId} ended as ${current.state}: ${current.failureCode ?? "unknown"}`,
       );
@@ -507,7 +507,7 @@ try {
     await psql(
       `select state || ':' || coalesce(agent_activation_id::text, 'idle') from development_environments where id = ${sqlLiteral(development.environmentId)}`,
     ),
-    "running:idle",
+    "ready:idle",
   );
   await terminalCommand(
     `/v1/conversations/${session.sessionId}/terminal`,
@@ -575,6 +575,24 @@ try {
   );
   assert.equal(paused.state, "paused");
   assert.equal((await cube.read(runtimeName))?.state, "paused");
+  assert.equal(paused.desiredState, "paused");
+  assert.equal(
+    Number(
+      await psql(
+        "select count(*) from runs where state in ('queued','running','settling','cancel_requested')",
+      ),
+    ),
+    0,
+    "Refuse paused-machine restart check during unrelated work",
+  );
+  await capture(
+    process.execPath,
+    ["scripts/production-kubernetes.mjs", "restart", "control-plane"],
+    5 * 60_000,
+  );
+  const pauseAfterRestart = await waitForEnvironment(development.environmentId, "paused");
+  assert.equal(pauseAfterRestart.desiredState, "paused");
+  assert.equal((await cube.read(runtimeName))?.state, "paused");
   const resumed = await api.developmentEnvironmentAction(
     development.environmentId,
     "resume",
@@ -599,6 +617,63 @@ try {
     "EXCLUSIVE_RESUME_OK",
   );
 
+  const allocationBeforeLoss = JSON.parse(
+    await psql(`select json_build_object('id',allocation_id,'generation',generation)::text
+    from development_environments where id=${sqlLiteral(development.environmentId)}`),
+  );
+  await cube.destroy(runtimeName);
+  const recoveryEnd = Date.now() + 5 * 60_000;
+  let replacementRuntime;
+  while (Date.now() < recoveryEnd) {
+    const value = JSON.parse(
+      await psql(`select json_build_object('id',allocation_id,'runtimeName',runtime_name,'generation',generation,'phase',state)::text
+      from development_environments where id=${sqlLiteral(development.environmentId)}`),
+    );
+    if (value.id !== allocationBeforeLoss.id && value.phase === "ready" && value.runtimeName) {
+      replacementRuntime = value;
+      break;
+    }
+    await wait(500);
+  }
+  assert(replacementRuntime, "Dedicated machine did not replace its lost physical instance");
+  assert.equal(replacementRuntime.generation, allocationBeforeLoss.generation + 1);
+  assert.notEqual(replacementRuntime.runtimeName, runtimeName);
+  await waitForEnvironment(development.environmentId, "running");
+  await terminalCommand(
+    `/v1/development-environments/${development.environmentId}/terminal`,
+    'test "$(cat /home/user/exclusive.txt)" = EXCLUSIVE_FILE_OK && cd /home/user/empty-project && ./test.sh && test ! -e /etc/pi-cloud-exclusive-marker && echo EXCLUSIVE_COLD_RECOVERY_OK',
+    "EXCLUSIVE_COLD_RECOVERY_OK",
+  );
+  const recoveredRun = await api.acceptTurn(
+    session.sessionId,
+    "只用 bash 运行 pwd 和 ./test.sh，确认原项目文件仍然可用，然后简短回复。不要重新写入文件。",
+    newIdempotencyKey("machine-recovery"),
+    "low",
+  );
+  await waitForRun(recoveredRun.runId);
+  const afterRecovery = await api.getConversation(session.sessionId);
+  const recoveredTurn = afterRecovery.turns.find((turn) => turn.runId === recoveredRun.runId);
+  assert(
+    recoveredTurn?.transcript.items.some(
+      (item) => item.kind === "tool" && item.status === "completed",
+    ),
+    "Cold recovery requires an actual completed native Tool, not only a model answer",
+  );
+  assert(
+    Number(
+      await psql(`select count(*) from pi_durable_records where kind='entry'
+    and tenant_id=${sqlLiteral(bootstrapTenantId)}
+    and session_id=(select pi_session_id from sessions where id=${sqlLiteral(session.sessionId)})
+    and fields->>'turn'=${sqlLiteral(recoveredRun.turnId)}
+    and fields->>'nativeKind'='"pi-cloud.sandbox_reset"'`),
+    ) > 0,
+    "New physical compute must reach native environment continuity",
+  );
+  assert.equal(
+    (await api.getConversation(session.sessionId)).session.workspaceId,
+    development.workspaceId,
+  );
+
   await api.deleteConversation(session.sessionId);
   replacementSession = await api.createSession(
     development.projectId,
@@ -620,6 +695,7 @@ try {
   );
   assert.equal(released.state, "released");
   assert.equal(await cube.read(runtimeName), undefined);
+  assert.equal(await cube.read(replacementRuntime.runtimeName), undefined);
   assert(
     !(await api.listWorkspaces()).workspaces.some(
       (workspace) => workspace.workspaceId === development.workspaceId,
@@ -666,7 +742,7 @@ try {
     authenticatedHttpPreviewPassed: true,
     conversationPreviewRoutePassed: true,
     previewPort,
-    rootFilesystemPreserved: true,
+    rootFilesystemPreservedAcrossPauseAndControllerReplacement: true,
     elasticWorkspaceRootAbsent: true,
     brokerRestartKeptMachineRunning: recoveredAfterControlPlaneRestart.state === "running",
     emptyDirectoryBrowsePassed: true,
@@ -675,6 +751,13 @@ try {
     selectedProfile: development.profileKey,
     defaultMachineDirectoryAndProfilePassed: true,
     oldPauseReplayDidNotUndoResume: true,
+    deliberatePauseSurvivedControlPlaneReplacement: true,
+    lostVmReplacedWithNewAllocation: true,
+    logicalMachineAndWorkspacePreserved: true,
+    volumeFilesVerifiedAfterColdReplacement: true,
+    coldReplacementDidNotClaimSystemDiskContinuity: true,
+    nativeRunAfterReplacement: recoveredRun.runId,
+    nativeSandboxResetAfterReplacement: true,
   };
   await mkdir(resolve(repositoryRoot, "docs/reports"), { recursive: true });
   await writeFile(

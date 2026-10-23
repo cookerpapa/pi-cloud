@@ -57,6 +57,7 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   }
   async closeAllocation(id: string, _kind: AllocationKind): Promise<AllocationClosure> {
     this.closedAllocations.add(id);
+    this.onQuarantine?.(id);
     const prior = this.creations.get(id);
     return prior
       ? { status: "authorized", authorization: prior.authorization }
@@ -93,31 +94,38 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         ({ reservation: environment, state }) =>
           environment.tenantId === input.assignment.tenantId &&
           environment.workspaceId === input.assignment.workspaceId &&
-          (environment.environmentId !== input.activationId || state !== "running"),
+          (environment.allocationId !== input.activationId ||
+            state !== "ready" ||
+            environment.desiredState !== "running"),
       )
     ) {
       return { status: "busy" };
     }
     this.#activations.set(input.activationId, input);
     this.#runtimeStates.set(input.activationId, "reserved");
-    const development = this.#developmentEnvironments.get(input.activationId);
+    const development = [...this.#developmentEnvironments.values()].find(
+      (e) => e.reservation.allocationId === input.activationId,
+    );
     return development === undefined
       ? { status: "reserved" }
-      : { status: "development_environment", environmentId: input.activationId };
+      : { status: "development_environment", environmentId: development.reservation.environmentId };
   }
-  async returnDevelopmentEnvironment(
-    environmentId: string,
-    activationId: string,
-    outcome: "running" | "unknown",
-  ): Promise<void> {
-    if (environmentId !== activationId) return;
+  async returnDevelopmentEnvironment(environmentId: string, activationId: string): Promise<void> {
     const environment = this.#developmentEnvironments.get(environmentId);
-    if (environment !== undefined) environment.state = outcome;
+    if (environment?.reservation.allocationId !== activationId) return;
     this.#activations.delete(activationId);
   }
-  async reserveDevelopmentEnvironmentTerminal(environmentId: string): Promise<boolean> {
+  async reserveDevelopmentEnvironmentTerminal(
+    environmentId: string,
+    allocationId: string,
+  ): Promise<boolean> {
     const environment = this.#developmentEnvironments.get(environmentId);
-    return environment !== undefined && environment.state === "running";
+    return (
+      environment !== undefined &&
+      environment.reservation.allocationId === allocationId &&
+      environment.state === "ready" &&
+      environment.reservation.desiredState === "running"
+    );
   }
   async releaseDevelopmentEnvironmentTerminal(_environmentId: string): Promise<void> {}
   async reserveTerminal(
@@ -194,7 +202,7 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     }
     this.#developmentEnvironments.set(input.environmentId, {
       reservation: input,
-      state: "running",
+      state: "ready",
     });
     return { status: "reserved" };
   }
@@ -231,12 +239,16 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       : { status: "unavailable" };
   }
   async setDevelopmentEnvironmentState(
-    environmentId: string,
+    identity: Pick<
+      DevelopmentEnvironmentReservation,
+      "environmentId" | "allocationId" | "intentRevision"
+    >,
     state: Exclude<DevelopmentEnvironmentState, "requested">,
   ): Promise<void> {
-    if (state === "unknown") this.onQuarantine?.(environmentId);
+    const environmentId = identity.environmentId;
+    if (state === "reconciling") this.onQuarantine?.(identity.allocationId);
     const environment = this.#developmentEnvironments.get(environmentId);
-    if (state === "released" || state === "failed") {
+    if (state === "released") {
       this.#developmentEnvironments.delete(environmentId);
     } else if (environment !== undefined) {
       environment.state = state;
@@ -244,14 +256,58 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   }
   async claimRecoverableDevelopmentEnvironments(
     _limit: number,
-    _excluded: readonly string[] = [],
+    excluded: readonly string[] = [],
   ): Promise<readonly RecoverableDevelopmentEnvironment[]> {
-    return [];
+    return [...this.#developmentEnvironments.values()]
+      .filter((e) => !excluded.includes(e.reservation.environmentId) || e.state !== "ready")
+      .map((e) => ({
+        ...e,
+        allocationAbsent: false,
+        ...(this.creations.has(e.reservation.allocationId)
+          ? { creation: this.creations.get(e.reservation.allocationId)! }
+          : {}),
+      }));
   }
-  async claimOrphanedDevelopmentEnvironments(): Promise<
-    readonly DevelopmentEnvironmentReservation[]
-  > {
-    return [];
+  async confirmDevelopmentEnvironmentAbsent(
+    identity: DevelopmentEnvironmentReservation,
+  ): Promise<void> {
+    this.closedAllocations.add(identity.allocationId);
+  }
+  async prepareDevelopmentEnvironmentImage(
+    identity: DevelopmentEnvironmentReservation,
+    imageRevision: string,
+  ) {
+    const spec = this.creations.get(identity.allocationId)!.spec;
+    return { ...spec.environment, imageRevision };
+  }
+  async replaceDevelopmentEnvironmentAllocation(
+    identity: DevelopmentEnvironmentReservation,
+    spec: SandboxCreateSpec,
+  ): Promise<DevelopmentEnvironmentReservation> {
+    if (!this.closedAllocations.has(identity.allocationId))
+      throw new Error("Old allocation must be closed");
+    const next = {
+      ...identity,
+      allocationId: spec.activationId,
+      generation: identity.generation + 1,
+      allocationClosed: false,
+    };
+    this.#developmentEnvironments.set(identity.environmentId, {
+      reservation: next,
+      state: "provisioning",
+    });
+    await this.beginCreation(spec);
+    return next;
+  }
+  setMachineIntent(id: string, desiredState: "running" | "paused" | "released"): number {
+    const machine = this.#developmentEnvironments.get(id)!;
+    machine.reservation = {
+      ...machine.reservation,
+      desiredState,
+      intentRevision: machine.reservation.intentRevision + 1,
+    };
+    machine.state = "reconciling";
+    return machine.reservation.intentRevision;
   }
   async setTerminalState(terminalId: string, state: WorkspaceTerminalState): Promise<void> {
     if (state === "released") this.#terminals.delete(terminalId);
@@ -270,7 +326,7 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   }
   async claimWarmRuntimeRetirement(activationId: string): Promise<boolean> {
     const runtime = this.#activations.get(activationId);
-    if (!runtime || this.#runtimeStates.get(activationId) !== "warm") return false;
+    if (!runtime || this.#runtimeStates.get(activationId) !== "allocated") return false;
     if (
       runtime.computeSessionId === undefined &&
       [...this.#terminals.values()].some(

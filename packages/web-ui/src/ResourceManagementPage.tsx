@@ -34,7 +34,7 @@ export function resourceRefreshPending(
   environments: readonly DevelopmentEnvironmentResource[],
 ): boolean {
   return environments.some((environment) =>
-    ["requested", "provisioning", "releasing"].includes(environment.state),
+    ["requested", "provisioning", "recovering", "releasing"].includes(environment.state),
   );
 }
 
@@ -89,14 +89,15 @@ export function ResourceManagementPage({
   }
 
   useEffect(() => {
-    if (!resourceRefreshPending(environments)) return;
+    if (!environments.length) return;
+    const interval = resourceRefreshPending(environments) ? 750 : 15_000;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const refresh = async (): Promise<void> => {
-      await onRefresh().catch(() => undefined);
-      if (!cancelled) timer = setTimeout(() => void refresh(), 750);
+      if (!document.hidden) await onRefresh().catch(() => undefined);
+      if (!cancelled) timer = setTimeout(() => void refresh(), interval);
     };
-    timer = setTimeout(() => void refresh(), 750);
+    timer = setTimeout(() => void refresh(), interval);
     return () => {
       cancelled = true;
       if (timer !== undefined) clearTimeout(timer);
@@ -531,7 +532,8 @@ export function ResourceManagementPage({
                         </div>
                       )}
                       <div className="product-resource-actions">
-                        {environment.state === "running" ? (
+                        {environment.desiredState === "running" &&
+                        environment.state !== "releasing" ? (
                           <button
                             disabled={busy || active}
                             onClick={() =>
@@ -548,7 +550,7 @@ export function ResourceManagementPage({
                             {t("resource.pause")}
                           </button>
                         ) : null}
-                        {environment.state === "paused" ? (
+                        {environment.desiredState === "paused" ? (
                           <button
                             disabled={busy}
                             onClick={() =>

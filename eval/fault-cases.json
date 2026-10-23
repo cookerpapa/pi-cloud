@@ -514,11 +514,11 @@
       "invariant": "A stale Worker Control Channel cannot reclaim current ownership."
     },
     {
-      "id": "abandoned-development-environment",
+      "id": "machine-create-intent-recovery",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/development-environment-service.test.ts",
-      "test": "retires an abandoned pre-provision request without creating a Cube",
-      "invariant": "A Control Plane failure before provisioning cannot leak a requested development machine."
+      "test": "retries a committed create intent after its first delivery was lost",
+      "invariant": "A committed machine request survives Control Plane delivery loss and is reconciled without deleting its Workspace."
     },
     {
       "id": "sandbox-control-owner-fence",
@@ -2528,6 +2528,55 @@
       "file": "test/model-response-harness.test.ts",
       "test": "a spent cloud request budget stays terminal on deepseek",
       "invariant": "An explicitly finite request budget is a terminal admission refusal, not a transient provider failure or hidden resend."
+    },
+    {
+      "id": "machine-create-reply-loss",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/development-environment-service.test.ts",
+      "test": "recovers a lost Cube create reply under the same physical allocation",
+      "invariant": "A lost Cube creation response is recovered by the original allocation identity without creating a second VM."
+    },
+    {
+      "id": "machine-pause-takeover",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/development-environment-service.test.ts",
+      "test": "preserves deliberate pause through controller replacement",
+      "invariant": "Controller replacement preserves desired pause and never resumes that VM automatically."
+    },
+    {
+      "id": "machine-stopped-replacement",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/development-environment-service.test.ts",
+      "test": "replaces a confirmed stopped instance while preserving the machine and Workspace",
+      "invariant": "Confirmed retirement precedes physical identity replacement; late old results cannot affect the new instance."
+    },
+    {
+      "id": "machine-unreachable-retained",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/development-environment-service.test.ts",
+      "test": "retains an unreachable allocation without replacement or physical deletion",
+      "invariant": "An unavailable node is not physical absence and cannot authorize recreation."
+    },
+    {
+      "id": "machine-new-intent-wins",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/development-environment-service.test.ts",
+      "test": "rejects a late pause acknowledgement after a newer resume intent",
+      "invariant": "Late completion cannot overwrite a newer machine intent or mark it settled."
+    },
+    {
+      "id": "machine-image-replacement",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/development-environment-service.test.ts",
+      "test": "uses a newly published image version when replacing exited compute",
+      "invariant": "New physical compute uses the current immutable environment version while preserving the earlier version."
+    },
+    {
+      "id": "machine-unconfirmed-closure",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/development-environment-service.test.ts",
+      "test": "waits for confirmed old cleanup before creating replacement compute",
+      "invariant": "Failed physical cleanup retains its closed identity and does not start another VM."
     }
   ]
 }

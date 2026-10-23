@@ -694,7 +694,8 @@ export class SourceControlService {
               .where("tenant_id", "=", identity.tenantId)
               .where("id", "=", request.developmentEnvironmentId)
               .where("owner_user_id", "=", identity.userId)
-              .where("state", "=", "running")
+              .where("state", "=", "ready")
+              .where("desired_state", "=", "running")
               .executeTakeFirst()
           )?.workspace_id;
     if (credentialWorkspaceId === undefined) {
@@ -774,13 +775,17 @@ export class SourceControlService {
         }
         const environment = await transaction
           .selectFrom("development_environments")
-          .select(["id", "project_id", "workspace_id", "profile_key", "state"])
+          .select(["id", "project_id", "workspace_id", "profile_key", "state", "desired_state"])
           .where("tenant_id", "=", identity.tenantId)
           .where("id", "=", request.developmentEnvironmentId)
           .where("owner_user_id", "=", identity.userId)
           .forUpdate()
           .executeTakeFirst();
-        if (environment === undefined || environment.state !== "running") {
+        if (
+          environment === undefined ||
+          environment.state !== "ready" ||
+          environment.desired_state !== "running"
+        ) {
           throw new SourceControlServiceError(
             "source_control_conflict",
             "Selected cloud development machine is not running or is not owned by this user",
@@ -1547,7 +1552,7 @@ export class SourceControlService {
       .select("owner_base_url as sandboxControlBaseUrl")
       .where("tenant_id", "=", tenantId)
       .where("workspace_id", "=", workspaceId)
-      .where("state", "in", ["reserved", "materializing", "active", "warm", "cleaning", "unknown"])
+      .where("state", "in", ["reserved", "materializing", "allocated", "cleaning", "unknown"])
       .orderBy("updated_at", "desc")
       .limit(1)
       .executeTakeFirst();
