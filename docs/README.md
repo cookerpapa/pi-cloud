@@ -1,5 +1,9 @@
 # Documentation map
 
+The [composer and pending-queue delivery](reports/composer-queue-delivery-20261023.md)
+publishes configurable Enter behavior and a compact native-input queue through the
+Web component path. Pi execution/input timing and backend contracts are unchanged.
+
 [ADR-0273](adr/0273-resource-intent-and-machine-recovery.md) is deployed as
 `resource-intent-cad5487a`, schema 198. PG retains resource intent and lifecycle
 completion; Cube supplies disposable physical observations. Dedicated machines

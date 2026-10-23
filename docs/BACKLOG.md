@@ -12,15 +12,11 @@ is delivered as `elastic-retention-03ce2f23`, schema 197. The
 retained-file/native recovery and confirmed cleanup. Dedicated-machine recovery
 was subsequently delivered under ADR-0273 below.
 
-## Composer and pending-input presentation
-
-The approved Web slice preserves native Pi Durable input timing and storage.
-Source/browser checks cover Enter preference, a draft-aware primary button,
-compact queue actions, conflict/lost-reply retention, pagination and stopped-input
-return. No Worker, protocol or database change is needed.
-
-- [ ] Publish the Web component and verify real native queue edit/order/withdrawal/
-      steer consumption, retained backend/VM identities and owned fixture cleanup.
+The [composer and native pending-queue delivery](reports/composer-queue-delivery-20261023.md)
+is deployed as the Web-only `composer-4c31ccfc`. Configurable Enter, draft-aware
+send/Stop, compact inline queue actions and stopped-input return pass browser and
+real Luna/Cube checks. Existing backend, machine, files and configuration remain
+intact; the temporary acceptance resources are physically cleaned up.
 
 ## Resource intent and dedicated-machine recovery
 

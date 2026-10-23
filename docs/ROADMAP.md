@@ -5,7 +5,10 @@
 - [x] Add account-scoped browser Enter preference, shared button semantics and IME-safe keys.
 - [x] Combine a compact pending queue with the composer, inline editing and per-row actions.
 - [x] Remove persistent explanatory/success copy; retain native Pi input boundaries and retry identity.
-- [ ] Complete scoped Web publication and real Luna/Cube queue acceptance with fixture cleanup.
+- [x] Complete scoped Web publication and real Luna/Cube queue acceptance with fixture cleanup.
+
+[Delivery](reports/composer-queue-delivery-20261023.md): `composer-4c31ccfc`,
+196 automatic checks, real native queue/Stop return, unchanged backend/VM identities.
 
 ## Resource intent and dedicated-machine recovery
 
