@@ -4,18 +4,20 @@
 
 The owner approved implementation of the
 [finite-keepalive plan](adr/0272-cube-owned-elastic-retention.md). Source integration
-is complete; the verification and matched-delivery gates below remain in progress.
+and matched delivery are complete as `elastic-retention-03ce2f23`, schema 197.
+[Evidence](reports/elastic-retention-delivery-20261023.md) includes the real
+15-minute default window with Control Plane offline and retained-file continuation.
 
-- [ ] E1: verify and harden Cube renewal acknowledgement, expiry concurrency and managed Close.
-- [ ] E2: carry current existing-VM references and silent-work keepalives on the Session writer.
-- [ ] E3: add bounded Projector coalescing/delivery without per-pulse PG access.
-- [ ] E4: include fixed-Tool, terminal and preview activity; verify expiry and Volume-preserving recreation.
-- [ ] E5: remove the controller idle-deadline authority and superseded wire/configuration paths.
-- [ ] E6: complete the matched release and owned live/fault/cleanup acceptance while preserving user assets.
+- [x] E1: verify and harden Cube renewal acknowledgement, expiry concurrency and managed Close.
+- [x] E2: carry current existing-VM references and silent-work keepalives on the Session writer.
+- [x] E3: add bounded Projector coalescing/delivery without per-pulse PG access.
+- [x] E4: include fixed-Tool, terminal and preview activity; verify expiry and Volume-preserving recreation.
+- [x] E5: remove the controller idle-deadline authority and superseded wire/configuration paths.
+- [x] E6: complete the matched release and owned live/fault/cleanup acceptance while preserving user assets.
 
 Dedicated-machine host-reboot recovery is a separate lifecycle item, not an
-application of elastic idle expiration. Retain the affected Workspace during
-investigation and rollout planning.
+application of elastic idle expiration. The failed machine record and Workspace
+were retained after confirmed retirement of its already-exited compute.
 
 ## Guest browser and application preview delivery
 

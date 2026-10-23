@@ -2,9 +2,12 @@
 
 [ADR-0272](adr/0272-cube-owned-elastic-retention.md) moves elastic
 VM idle deadlines to Cube, renewed by typed retention intents on the existing
-Session Kafka path. The implementation is in source and undergoing matched-release
-verification; the serving release still uses controller-owned warm expiry.
-Dedicated-machine reboot recovery remains separate.
+Session Kafka path. It is deployed as `elastic-retention-03ce2f23`, schema 197,
+managed Cube protocol 8 / guest protocol 7. Cubelet's allocation journal and
+existing maintenance loop own expiry; the controller idle timer and warm-count
+eviction are removed. [Delivery evidence](reports/elastic-retention-delivery-20261023.md)
+covers default-window expiry with Control Plane offline, retained files and native
+continuation. Dedicated-machine reboot recovery remains separate.
 
 [ADR-0270](adr/0270-guest-browser-and-tool-result-actions.md), deployed as
 `guest-browser-bd03f7a6` on schema 197, adds pinned guest Playwright/Chromium with

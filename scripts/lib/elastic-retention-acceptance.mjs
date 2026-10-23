@@ -160,19 +160,23 @@ export async function elasticRetentionAcceptance({
       progress("retention: Control Plane offline; Cube must expire compute independently");
       kubectl(["scale", "deployment/pi-cloud-control-plane", "--replicas=0"], { timeout: 15000 });
       result.controlPlaneOutage = true;
+      await save(result);
     }
     progress("retention: waiting for the real 15-minute idle expiry");
     const idleStart = Date.now();
     await wait(
       async () => {
         const state = await inspect();
-        return state.closed && state.phase === "absent";
+        if (!state.closed || state.phase !== "absent") return false;
+        assert(Date.now() >= renewed.retainUntil, "Compute expired before its accepted deadline");
+        return true;
       },
       "Cube-owned idle expiry",
       1080000,
       5000,
     );
     result.idleWaitMs = Date.now() - idleStart;
+    result.expiredAt = new Date().toISOString();
     result.cubeClosedAndConfirmedAbsent = true;
     await save(result);
     await restore();
@@ -197,6 +201,17 @@ export async function elasticRetentionAcceptance({
       "low",
     );
     const resumed = await completed(next.runId);
+    assert(
+      nativeMessages(resumed).some(
+        (message) =>
+          message.role === "toolResult" &&
+          message.toolName === "read" &&
+          !message.isError &&
+          message.content?.some((part) => part.type === "text" && part.text.includes(marker)),
+      ),
+      "A successful native Read must confirm the retained file bytes",
+    );
+    result.toolReadConfirmed = true;
     const answer = nativeMessages(resumed)
       .filter((message) => message.role === "assistant")
       .flatMap((message) => message.content ?? [])

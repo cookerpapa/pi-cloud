@@ -5,22 +5,12 @@ architecture belongs here. Implemented contracts live in the
 [architecture](ARCHITECTURE.md), [current ADRs](adr/README.md) and versioned
 acceptance evidence. Superseded plans and completed-task journals remain in Git.
 
-## Cube-owned finite elastic retention
-
-The October 23 owner-approved direction and
-[implementation plan](adr/0272-cube-owned-elastic-retention.md) use finite
-keepalives instead of infinite retention followed by a required release message.
-Source integration and focused contracts are complete. Full verification and
-matched delivery are in progress; the serving release has not changed.
-
-- [ ] E1: Cube authoritative renewal, monotonic original-time expiry, closure races
-      and error propagation; reuse the existing lifecycle/allocation implementation.
-- [ ] E2/E3: existing-VM references, silent physical-Session keepalives and bounded
-      Projector delivery, with no per-pulse PG row or new consumer group.
-- [ ] E4/E5: real Tool/terminal/preview activity, diagnostic exclusion, safe cold
-      activation, and removal of the competing controller idle timer.
-- [ ] E6: source/failure contracts and scanned matched delivery; live idle expiry,
-      continued file access, interruption semantics, scoped cleanup and preservation.
+[Cube-owned finite elastic retention](adr/0272-cube-owned-elastic-retention.md)
+is delivered as `elastic-retention-03ce2f23`, schema 197. The
+[delivery record](reports/elastic-retention-delivery-20261023.md) records source,
+361 fault cases, 12-image evidence, controller-offline default-window expiry,
+retained-file/native recovery and confirmed cleanup. Dedicated-machine recovery
+below remains separate.
 
 ## Dedicated development machine after host shutdown
 
@@ -37,6 +27,11 @@ matched delivery are in progress; the serving release has not changed.
       Startup verification must inspect bound user machines as well as healthy
       platform Pods. No machine, file or ownership record was changed during the
       incident investigation.
+      The subsequent matched delivery closed the old allocation and confirmed
+      physical absence on its recorded node, retaining the failed machine's
+      ownership record and Workspace. All 25 file hashes and original native
+      conversation records still match. Automatic recreation and corrected UI
+      admission wording remain unimplemented; the machine is now `failed`.
 
 The [September 15–17 audit](reports/repository-audit-20260915.md) is complete:
 maintained-file review, paid combination tests, process faults, browser paths,

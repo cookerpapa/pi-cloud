@@ -3,8 +3,15 @@
 A self-hosted, multi-tenant coding agent. Pi Durable 1.0.0 runs the native Harness in a shared
 Worker pool; file and shell tools execute in isolated CubeSandbox KVM guests.
 
-[Guest browser and preview delivery](docs/reports/guest-browser-delivery-20261022.md)
-is deployed as `guest-browser-bd03f7a6`, schema 197: the standard image bundles pinned
+[Cube-owned elastic retention](docs/reports/elastic-retention-delivery-20261023.md)
+is deployed as `elastic-retention-03ce2f23`, schema 197. Active Sessions renew
+existing compute through Kafka even during model silence; Cube owns the default
+15-minute idle deadline. Workspace files and conversations survive expiry.
+Real Luna acceptance verifies pure-chat renewal, expiry with Control Plane offline,
+and continuation on a new VM. Dedicated-machine host-reboot recovery remains separate.
+
+The preceding [guest browser and preview delivery](docs/reports/guest-browser-delivery-20261022.md)
+was `guest-browser-bd03f7a6`, schema 197: the standard image bundles pinned
 Playwright/Chromium and CJK fonts for Bash-driven UI checks and native screenshot Read. Successful preview
 actions retain their link metadata and remain visible outside collapsed Tool groups.
 Real Luna guest interaction, screenshot vision and live/cold preview navigation pass.

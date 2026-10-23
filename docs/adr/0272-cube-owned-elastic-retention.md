@@ -1,6 +1,8 @@
 # ADR-0272: Cube-owned finite retention for elastic VMs
 
-Status: implementation in source; verification and matched delivery in progress.
+Status: implemented and deployed as `elastic-retention-03ce2f23`; source, matched
+artifact and owned live acceptance passed. See the
+[delivery record](../reports/elastic-retention-delivery-20261023.md).
 Date: 2026-10-23.
 
 ### Implementation refinement: reuse the node allocation journal
@@ -59,8 +61,8 @@ retirement and ADR-0201/0211's observation-only probes. The existing diagnostic
 probe does not acquire destruction authority. A separately typed retention
 intent uses the same transport and scheduling facilities. Other VM creation,
 binding, explicit release, uncertainty, quota and Volume-closure rules remain.
-The corresponding AGENTS.md rule describes the new source contract. Until matched
-cutover, the deployed controller still owns idle reclamation.
+The corresponding AGENTS.md rule describes the deployed contract; the controller
+no longer owns elastic idle reclamation deadlines.
 
 ## Adopt-before-build evidence
 

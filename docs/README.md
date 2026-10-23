@@ -1,11 +1,13 @@
 # Documentation map
 
-The [elastic retention implementation plan](adr/0272-cube-owned-elastic-retention.md)
-records the October 23 decision to let Cube own finite idle expiry. Silent active
+The [elastic retention decision](adr/0272-cube-owned-elastic-retention.md)
+lets Cube own finite idle expiry. Silent active
 Sessions renew through the existing Kafka path; long Tools and human activity
 have explicit coverage. The owner accepts expiry after a prolonged renewal-path
-outage. Source implementation is under verification, not deployed, and does not resolve the separate stopped
-dedicated-machine incident.
+outage. It is deployed as `elastic-retention-03ce2f23`, schema 197. The
+[delivery record](reports/elastic-retention-delivery-20261023.md) covers source,
+12-image evidence, real default-window expiry, native recovery and asset preservation.
+Dedicated-machine host-reboot recovery remains a separate item.
 
 [ADR-0271](adr/0271-local-upstream-proxy-configuration.md) and the
 [proxy command](CONFIGURATION.md#provider-egress) provide one local upstream
