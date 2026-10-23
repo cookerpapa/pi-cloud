@@ -2577,6 +2577,20 @@
       "file": "test/development-environment-service.test.ts",
       "test": "waits for confirmed old cleanup before creating replacement compute",
       "invariant": "Failed physical cleanup retains its closed identity and does not start another VM."
+    },
+    {
+      "id": "completed-ephemeral-reference-elastic",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/shared-compute-lifecycle.postgres.test.ts",
+      "test": "retains a completed ephemeral scope from an elastic parent until Cube expiry or reference removal",
+      "invariant": "A visible child Conversation retains its separate elastic compute scope regardless of the parent product mode; Cube alone owns ordinary idle expiry."
+    },
+    {
+      "id": "completed-ephemeral-reference-development_environment",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/shared-compute-lifecycle.postgres.test.ts",
+      "test": "retains a completed ephemeral scope from an development_environment parent until Cube expiry or reference removal",
+      "invariant": "A visible child Conversation retains its separate elastic compute scope regardless of the parent product mode; Cube alone owns ordinary idle expiry."
     }
   ]
 }

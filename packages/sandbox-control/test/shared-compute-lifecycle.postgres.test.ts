@@ -226,6 +226,64 @@ it("retains native ephemeral child compute under its shared root lease", async (
   }
 }, 60_000);
 
+it.each(["elastic", "development_environment"] as const)(
+  "retains a completed ephemeral scope from an %s parent until Cube expiry or reference removal",
+  async (mode) => {
+    const f = await fixture();
+    try {
+      const call = await f.command({ task: "Retained child fixture", sandbox: "ephemeral" });
+      const jobs = new PostgresSubagentConversations({ database: f.database, native: f.native });
+      const child = await jobs.start({
+        id: call.operationId,
+        tenantId: f.scope.tenantId,
+        rootRunId: f.scope.runId,
+        parentSessionId: f.scope.sessionId,
+        parentTurnId: f.scope.turnId,
+        executionReference: f.reference,
+        parentToolCallId: `task:${call.taskId}`,
+        source: { sequence: call.nativeSequence, taskId: call.taskId },
+        prompt: "Retained child fixture",
+        contextMode: "fresh",
+        contextAnchor: null,
+        sandboxMode: "ephemeral",
+      });
+      const reservation = {
+        ...f.reservation,
+        computeSessionId: child.childSessionId,
+        assignment: {
+          ...f.reservation.assignment,
+          sessionId: child.childSessionId,
+          turnId: child.childTurnId,
+        },
+      };
+      await f.repo.reserve(reservation);
+      await f.repo.setWorkspaceRuntimeState(reservation.activationId, "allocated");
+      // Native child views inherit the parent's product mode. Their separate
+      // compute scope still identifies an elastic allocation in either mode.
+      await f.database
+        .updateTable("sessions")
+        .set({ execution_mode: mode })
+        .where("id", "=", child.childSessionId)
+        .execute();
+      await f.settle(child.executionId);
+      expect((await jobs.status(f.scope.tenantId, child.executionId)).state).toBe("completed");
+      await f.age(reservation.activationId);
+      expect(await f.repo.claimUnboundWorkspaceRuntimes(16, 0)).toEqual([]);
+      await f.database
+        .updateTable("sessions")
+        .set({ pruned_at: new Date() })
+        .where("id", "=", child.childSessionId)
+        .execute();
+      expect(await f.repo.claimUnboundWorkspaceRuntimes(16, 0)).toMatchObject([
+        { activationId: reservation.activationId },
+      ]);
+    } finally {
+      await f.close();
+    }
+  },
+  60_000,
+);
+
 it("rechecks a retirement candidate after a terminal is admitted", async () => {
   const candidateRead = Promise.withResolvers<void>();
   const continueCleanup = Promise.withResolvers<void>();

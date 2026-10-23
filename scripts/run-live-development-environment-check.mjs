@@ -132,6 +132,18 @@ async function waitForRun(runId) {
   throw new Error(`Run ${runId} did not settle`);
 }
 
+async function machineAction(environmentId, action, key) {
+  const end = Date.now() + 60_000;
+  for (;;) {
+    try {
+      return await api.developmentEnvironmentAction(environmentId, action, key);
+    } catch (error) {
+      if (Date.now() >= end || ![502, 503, 504].includes(error.status)) throw error;
+      await wait(500);
+    }
+  }
+}
+
 async function waitForEnvironment(environmentId, expectedState) {
   const deadline = Date.now() + 5 * 60_000;
   while (Date.now() < deadline) {
@@ -472,8 +484,41 @@ try {
       headers: { authorization: `Bearer ${token}`, accept: "text/html" },
     },
   );
+  if (childPreview.status !== 200) {
+    const services =
+      await psql(`select coalesce(json_agg(json_build_object('target',target_kind,'sessionId',session_id,'runtimeId',runtime_id,'port',port,'state',state)), '[]')::text
+      from sandbox_http_services where workspace_id=${sqlLiteral(development.workspaceId)}`);
+    const runtimes =
+      await psql(`select coalesce(json_agg(json_build_object('id',workspace_runtime_id,'scope',compute_session_id,'state',state,'failure',failure_code,'runtime',runtime_name)), '[]')::text
+      from workspace_runtimes where workspace_id=${sqlLiteral(development.workspaceId)}`);
+    console.log(
+      JSON.stringify({
+        event: "child_preview_unavailable",
+        status: childPreview.status,
+        body: (await childPreview.clone().text()).slice(0, 1000),
+        child: temporarySubagentEvidence,
+        services: JSON.parse(services),
+        runtimes: JSON.parse(runtimes),
+      }),
+    );
+  }
   assert.equal(childPreview.status, 200);
   assert.match(await childPreview.text(), /HOME-COMPUTE-OK/);
+  // Cross at least one ordinary controller cleanup interval. The completed
+  // ephemeral child still has a Session reference, even with a dedicated parent.
+  await wait(35_000);
+  assert.equal(
+    await psql(
+      `select state from workspace_runtimes where runtime_name=${sqlLiteral(temporarySubagentEvidence.runtimeName)}`,
+    ),
+    "allocated",
+  );
+  const retainedChildPreview = await fetchFromProduction(
+    `/v1/conversations/${temporarySubagentEvidence.childSessionId}/preview/${previewPort}/child-home-index.html`,
+    { headers: { authorization: `Bearer ${token}`, accept: "text/html" } },
+  );
+  assert.equal(retainedChildPreview.status, 200);
+  assert.match(await retainedChildPreview.text(), /HOME-COMPUTE-OK/);
   await terminalCommand(
     `/v1/development-environments/${development.environmentId}/terminal`,
     'grep -F HOME-COMPUTE-OK /home/user/empty-project/child-home-index.html && kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo HOME_VOLUME_SHARED_OK',
@@ -568,11 +613,7 @@ try {
 
   const pauseKey = newIdempotencyKey("environment");
   console.log(JSON.stringify({ event: "development_acceptance_stage", stage: "pause_resume" }));
-  const paused = await api.developmentEnvironmentAction(
-    development.environmentId,
-    "pause",
-    pauseKey,
-  );
+  const paused = await machineAction(development.environmentId, "pause", pauseKey);
   assert.equal(paused.state, "paused");
   assert.equal((await cube.read(runtimeName))?.state, "paused");
   assert.equal(paused.desiredState, "paused");
@@ -593,14 +634,14 @@ try {
   const pauseAfterRestart = await waitForEnvironment(development.environmentId, "paused");
   assert.equal(pauseAfterRestart.desiredState, "paused");
   assert.equal((await cube.read(runtimeName))?.state, "paused");
-  const resumed = await api.developmentEnvironmentAction(
+  const resumed = await machineAction(
     development.environmentId,
     "resume",
     newIdempotencyKey("environment"),
   );
   assert.equal(resumed.state, "running");
   assert.equal(
-    (await api.developmentEnvironmentAction(development.environmentId, "pause", pauseKey)).state,
+    (await machineAction(development.environmentId, "pause", pauseKey)).state,
     "running",
     "Replaying a completed pause must not undo the later resume",
   );
@@ -688,7 +729,7 @@ try {
     replacementSession.sessionId,
   );
 
-  const released = await api.developmentEnvironmentAction(
+  const released = await machineAction(
     development.environmentId,
     "release",
     newIdempotencyKey("environment"),
@@ -758,6 +799,7 @@ try {
     coldReplacementDidNotClaimSystemDiskContinuity: true,
     nativeRunAfterReplacement: recoveredRun.runId,
     nativeSandboxResetAfterReplacement: true,
+    dedicatedParentEphemeralScopeRetainedAfterCleanupSweep: true,
   };
   await mkdir(resolve(repositoryRoot, "docs/reports"), { recursive: true });
   await writeFile(
@@ -775,12 +817,10 @@ try {
     if (created) await api.deleteConversation(created.sessionId).catch(() => undefined);
   }
   if (development)
-    await api
-      .developmentEnvironmentAction(
-        development.environmentId,
-        "release",
-        newIdempotencyKey("release-acceptance-machine"),
-      )
-      .catch(() => undefined);
+    await machineAction(
+      development.environmentId,
+      "release",
+      newIdempotencyKey("release-acceptance-machine"),
+    ).catch(() => undefined);
   await cube.close();
 }

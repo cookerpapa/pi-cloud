@@ -84,3 +84,10 @@ native Cube contracts and the required static/audit gates. The initial protocol
 and Web fixtures were updated for required desiredState. An initial isolated
 Kafka topic-creation failure passed an unchanged repeat. Live acceptance remains
 a separate deployment gate.
+
+Live verification found that an ephemeral child of a dedicated machine inherits
+`execution_mode=development_environment`. That mode does not make its separate
+compute scope unreferenced: a visible Session with non-null compute_session_id
+retains its elastic allocation until Cube expiry or explicit reference removal.
+The cleanup predicate now covers both parent modes. The real acceptance crosses
+a controller sweep before checking the child's retained preview.

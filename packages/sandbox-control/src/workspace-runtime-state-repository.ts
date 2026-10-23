@@ -2041,7 +2041,8 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
             select 1 from sessions s join workspaces w
               on w.tenant_id=s.tenant_id and w.id=s.workspace_id
             where s.tenant_id=activation.tenant_id and s.workspace_id=activation.workspace_id
-              and s.execution_mode='elastic' and s.pruned_at is null and w.deleted_at is null
+              and (s.execution_mode='elastic' or s.compute_session_id is not null)
+              and s.pruned_at is null and w.deleted_at is null
               and s.compute_session_id is not distinct from activation.compute_session_id
           )`,
             eb.and([
