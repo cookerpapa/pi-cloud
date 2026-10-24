@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { applyModelRetryPolicy, updateModelRetryPolicyFile } from "./model-retry-policy.mjs";
+import {
+  applyProviderRuntimePolicy,
+  updateProviderRuntimePolicyFile,
+} from "./provider-runtime-policy.mjs";
 import { mkdtemp, writeFile, readFile, stat, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-describe("deployment-owned model retry policy", () => {
+describe("deployment-owned provider runtime policy", () => {
   it("updates an existing private configuration atomically and is repeatable", async () => {
     const directory = await mkdtemp(join(tmpdir(), "pi-cloud-retry-policy-"));
     try {
@@ -13,8 +16,8 @@ describe("deployment-owned model retry policy", () => {
       await writeFile(path, "port: 8317\nrequest-retry: 3\napi-keys: [fixture-key]\n", {
         mode: 0o600,
       });
-      expect(await updateModelRetryPolicyFile(path)).toBe(true);
-      expect(await updateModelRetryPolicyFile(path)).toBe(false);
+      expect(await updateProviderRuntimePolicyFile(path)).toBe(true);
+      expect(await updateProviderRuntimePolicyFile(path)).toBe(false);
       expect(parse(await readFile(path, "utf8"))).toMatchObject({
         "request-retry": 0,
         "api-keys": ["fixture-key"],
@@ -28,13 +31,17 @@ describe("deployment-owned model retry policy", () => {
   it("removes additional rounds without changing credentials, account routing or comments", () => {
     const source =
       "# operator configuration\nport: 8317\nrequest-retry: 3\napi-keys: [fixture-key]\nrouting:\n  session-affinity: true\n";
-    const changed = applyModelRetryPolicy(source);
-    expect(parse(changed)).toEqual({ ...parse(source), "request-retry": 0 });
+    const changed = applyProviderRuntimePolicy(source);
+    expect(parse(changed)).toEqual({
+      ...parse(source),
+      "request-retry": 0,
+      "disable-image-generation": "passthrough",
+    });
     expect(changed).toContain("# operator configuration");
-    expect(applyModelRetryPolicy(changed)).toBe(changed);
+    expect(applyProviderRuntimePolicy(changed)).toBe(changed);
   });
   it("fails safely on malformed configuration", () => {
-    expect(() => applyModelRetryPolicy("private: [")).toThrow(
+    expect(() => applyProviderRuntimePolicy("private: [")).toThrow(
       "Provider Gateway configuration is invalid",
     );
   });

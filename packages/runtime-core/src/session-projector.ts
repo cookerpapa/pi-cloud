@@ -90,7 +90,11 @@ export class SessionProjector {
         close?(): Promise<void>;
       };
       controlTools?: {
-        consume(record: KafkaAcceptedFactRecord, current?: () => boolean): Promise<void>;
+        consume(
+          record: KafkaAcceptedFactRecord,
+          current?: () => boolean,
+          commitBeforeEffect?: () => Promise<boolean>,
+        ): Promise<void>;
         close?(): Promise<void>;
       };
     },
@@ -263,13 +267,13 @@ export class SessionProjector {
               );
             // Repeatable control references are already durable in the native
             // projection. Admit them before committing any non-replayable effect.
-            await options.controlTools?.consume(record, current);
+            let dispatchAdmission: Promise<boolean> | undefined;
+            const admitEffects = () =>
+              (dispatchAdmission ??= timing.measure("dispatch_commit", commitBeforeEffect!));
+            await options.controlTools?.consume(record, current, admitEffects);
             const commands = prepared.tools;
             if (commands.length) {
-              if (
-                (await timing.measure("dispatch_commit", commitBeforeEffect!)) &&
-                current?.() !== false
-              )
+              if ((await admitEffects()) && current?.() !== false)
                 for (const command of commands)
                   await timing.measure("tool_route", () =>
                     options.toolCommands.consume({ ...record, fact: command }, current),

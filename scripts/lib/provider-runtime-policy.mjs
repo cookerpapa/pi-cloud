@@ -4,19 +4,24 @@ import { dirname } from "node:path";
 import { chown, lstat, open, rename, unlink } from "node:fs/promises";
 import { readPrivateRuntimeFile } from "./runtime-file-policy.mjs";
 
-/** Only the deployment-owned root retry policy; leave credential routing intact. */
-export function applyModelRetryPolicy(source) {
+/** Pi owns sampling retries and tool declarations; leave credential routing intact. */
+export function applyProviderRuntimePolicy(source) {
   const document = parseDocument(source);
   if (document.errors.length || !document.contents || !document.has("port"))
     throw new Error("Provider Gateway configuration is invalid");
-  if (document.get("request-retry") === 0) return source;
+  if (
+    document.get("request-retry") === 0 &&
+    document.get("disable-image-generation") === "passthrough"
+  )
+    return source;
   document.set("request-retry", 0);
+  document.set("disable-image-generation", "passthrough");
   return document.toString();
 }
 
-export async function updateModelRetryPolicyFile(path) {
+export async function updateProviderRuntimePolicyFile(path) {
   const source = await readPrivateRuntimeFile(path, 64 * 1024, "Provider Gateway configuration");
-  const changed = applyModelRetryPolicy(source);
+  const changed = applyProviderRuntimePolicy(source);
   if (source === changed) return false;
   const original = await lstat(path);
   const temporary = `${path}.update-${randomUUID()}`;

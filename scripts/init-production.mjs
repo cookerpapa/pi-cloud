@@ -6,7 +6,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { validateProviderRelayProxy } from "./production-runtime-policy.mjs";
-import { updateModelRetryPolicyFile } from "./lib/model-retry-policy.mjs";
+import { updateProviderRuntimePolicyFile } from "./lib/provider-runtime-policy.mjs";
 import { ensureSessionImageConfig } from "./lib/session-image-config.mjs";
 import {
   readPrivateRuntimeFile,
@@ -343,7 +343,7 @@ async function ensureCliProxyRuntime(runtimeDirectory) {
     configCreated = true;
   }
 
-  await updateModelRetryPolicyFile(configPath);
+  await updateProviderRuntimePolicyFile(configPath);
 
   const managementAssetPath = resolve(staticDirectory, "management.html");
   let managementAssetCreated = false;

@@ -1,5 +1,10 @@
 # Documentation map
 
+[ADR-0274](adr/0274-explicit-image-generation-tool.md) implements the approved
+explicit image-generation Tool and non-replayable ordinary-effect admission.
+Implementation and matched acceptance are in progress; the serving release below
+is unchanged until publication completes.
+
 The [Preview answer-link delivery](reports/preview-answer-delivery-20261024.md)
 is deployed as `preview-answer-16f8f8b5`, schema 198. It removes separate application
 cards, retains expandable Tool details and verifies actual live/cold named-link

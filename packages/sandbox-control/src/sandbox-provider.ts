@@ -111,6 +111,18 @@ export type PreparedInputImage = Readonly<{
   hints: readonly string[];
 }>;
 
+export type ToolImageIo = {
+  cwd: string;
+  operationId: string;
+} & (
+  | { kind: "read"; path: string }
+  | {
+      kind: "save";
+      chunks: AsyncIterable<Uint8Array>;
+      byteLength: number;
+    }
+);
+
 export type SandboxHttpServiceDiscovery = Readonly<{
   listeningPorts: readonly number[];
   httpServices: readonly Readonly<{ port: number; protocol: "http" }>[];
@@ -202,6 +214,11 @@ export type SandboxTerminalSession = Readonly<{
  * handle or require the Agent Runner to know provider-specific arguments.
  */
 export interface SandboxProvider {
+  imageIo?(
+    handle: SandboxHandle,
+    input: ToolImageIo,
+    signal?: AbortSignal,
+  ): Promise<PreparedInputImage & { path?: string; placementError?: string }>;
   openWorkflow?(
     handle: SandboxHandle,
     input: { script: string; operationId: string; cwd: string },

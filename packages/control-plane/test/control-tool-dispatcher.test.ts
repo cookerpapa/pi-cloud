@@ -14,7 +14,7 @@ afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) await close();
 }, 60_000);
 
-async function fixture() {
+async function fixture(replayable = true) {
   const pg = await PGlite.create();
   cleanups.push(() => pg.close());
   const socket = new PGLiteSocketServer({ db: pg, host: "127.0.0.1", port: 0 });
@@ -87,6 +87,7 @@ async function fixture() {
     ownsPartition: (p) => p === 1,
     execute,
     publish,
+    replayable: () => replayable,
   });
   cleanups.push(() => dispatcher.close());
   return { database, dispatch, dispatcher, execute, publish, task };
@@ -137,6 +138,7 @@ describe("native control Tool reconciliation", () => {
         nativeCallId: "provider-call",
       }),
       expect.any(Function),
+      expect.any(AbortSignal),
     );
     expect(f.publish).toHaveBeenCalledWith("worker-boot", {
       kind: "tool_result",
@@ -201,3 +203,82 @@ describe("native control Tool reconciliation", () => {
     expect(f.execute).toHaveBeenCalledTimes(1);
   }, 20_000);
 });
+
+function intent(f: Awaited<ReturnType<typeof fixture>>) {
+  return {
+    topic: "native-controls",
+    partition: 1,
+    offset: 9n,
+    fact: {
+      kind: "durable_commit" as const,
+      factId: "intent",
+      scope: f.dispatch.scope,
+      occurredAt: new Date().toISOString(),
+      commit: { seq: 8, nextId: 5, writes: [{ type: "task" as const, value: f.task }] },
+      origins: [],
+      display: [],
+      cancellations: [],
+      tools: [f.dispatch],
+    },
+  };
+}
+
+it("commits dispatch before a non-replayable effect and never repeats it after reply loss", async () => {
+  const f = await fixture(false);
+  const committed = Promise.withResolvers<boolean>();
+  f.publish.mockRejectedValueOnce(new Error("lost Kafka reply"));
+  const delivery = f.dispatcher.consume(
+    intent(f),
+    () => true,
+    () => committed.promise,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(f.execute).not.toHaveBeenCalled();
+  committed.resolve(true);
+  await delivery;
+  await vi.waitFor(() => expect(f.publish).toHaveBeenCalledTimes(1));
+  f.dispatcher.wake(tenant, "physical");
+  await vi.waitFor(() => expect(f.publish).toHaveBeenCalledTimes(2));
+  await f.dispatcher.consume(
+    intent(f),
+    () => true,
+    async () => false,
+  );
+  expect(f.execute).toHaveBeenCalledTimes(1);
+}, 20_000);
+
+it("recovers an uncertain effect as UNKNOWN and cannot start it on a later rewind", async () => {
+  const f = await fixture(false);
+  await f.dispatcher.recover([1], () => true);
+  await vi.waitFor(() => expect(f.publish).toHaveBeenCalledTimes(1));
+  expect(JSON.stringify(f.publish.mock.calls)).toContain("tool_result_unknown");
+  await f.dispatcher.consume(
+    intent(f),
+    () => true,
+    async () => true,
+  );
+  f.dispatcher.wake(tenant, "physical");
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(f.execute).not.toHaveBeenCalled();
+  expect(f.publish).toHaveBeenCalledTimes(1);
+}, 20_000);
+
+it("aborts the external request on owner loss and discards its late success", async () => {
+  const f = await fixture(false);
+  const completion = Promise.withResolvers<ControlToolOutcome>();
+  f.execute.mockImplementationOnce(() => completion.promise);
+  await f.dispatcher.consume(
+    intent(f),
+    () => true,
+    async () => true,
+  );
+  await vi.waitFor(() => expect(f.execute).toHaveBeenCalledTimes(1));
+  const signal = (f.execute.mock.calls[0] as unknown as [unknown, unknown, AbortSignal])[2];
+  f.dispatcher.reset();
+  expect(signal.aborted).toBe(true);
+  completion.resolve({ result: { content: [{ type: "text", text: "late picture" }] } });
+  await f.dispatcher.recover([1], () => true);
+  await vi.waitFor(() => expect(f.publish).toHaveBeenCalledTimes(1));
+  expect(f.execute).toHaveBeenCalledTimes(1);
+  expect(JSON.stringify(f.publish.mock.calls)).not.toContain("late picture");
+}, 20_000);

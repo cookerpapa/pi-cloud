@@ -68,6 +68,11 @@ spec:
             - { name: PI_CLOUD_IMAGE_S3_CREDENTIALS_FILE, value: /run/pi-cloud-secrets/session-image-s3-credentials.json }
             {{- end }}
             - { name: NODE_ENV, value: production }
+            {{- if .Values.controlPlane.imageGeneration.model }}
+            - { name: PI_CLOUD_IMAGE_GENERATION_MODEL, value: {{ .Values.controlPlane.imageGeneration.model | quote }} }
+            - { name: PI_CLOUD_IMAGE_GENERATION_URL, value: {{ index .Values "pi-workers" "services" "providerGatewayUrl" | quote }} }
+            - { name: PI_CLOUD_IMAGE_GENERATION_API_KEY_FILE, value: /run/pi-cloud-secrets/image-generation-api-key }
+            {{- end }}
             - { name: PI_CLOUD_MODEL_CATALOG_FILE, value: /run/pi-cloud-models/model-catalog.json }
             - { name: HOST, value: 0.0.0.0 }
             - name: POD_IP
@@ -189,6 +194,9 @@ spec:
             {{- range .Values.sandboxPlane.cube.executionEndpoints }}
             - { name: platform-secrets, mountPath: {{ printf "/run/pi-cloud-secrets/%s" .apiKeySecretKey | quote }}, subPath: {{ .apiKeySecretKey }}, readOnly: true }
             {{- end }}
+            {{- end }}
+            {{- if .Values.controlPlane.imageGeneration.model }}
+            - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/image-generation-api-key, subPath: {{ index .Values "pi-workers" "credentials" "providerGatewayApiKeyKey" }}, readOnly: true }
             {{- end }}
             - { name: tmp, mountPath: /tmp }
       volumes:

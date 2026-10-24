@@ -1,5 +1,17 @@
 # Maintained backlog
 
+## Explicit image generation
+
+The owner approved [ADR-0274](adr/0274-explicit-image-generation-tool.md), including
+path/recent-Conversation references and transparent backgrounds. The subscription
+gateway's generation and reference-edit requests have returned real PNGs; the
+edit contains transparent pixels. These probes do not yet establish a deployed
+end-to-end Tool. Existing directory and new local failure/context/image tests pass.
+
+- [ ] Finish the matched source/artifact checks and image I/O cancellation coverage.
+- [ ] Publish while retaining existing Workspaces and verify actual image display,
+      cold restore and the requested galgame message against its existing reference.
+
 Only unfinished work for the PostgreSQL + Kafka + Pi SDK + Cube Volume
 architecture belongs here. Implemented contracts live in the
 [architecture](ARCHITECTURE.md), [current ADRs](adr/README.md) and versioned

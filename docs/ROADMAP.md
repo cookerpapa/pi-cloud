@@ -1,5 +1,15 @@
 # Implementation roadmap
 
+## Explicit image-generation Tool
+
+- [x] Verify subscription-backed Images generation, reference editing and alpha.
+- [x] Record ADR-0274 and implement the Codex-shaped catalog Tool, guest image I/O
+      and canonical image display without an additional queue or result ledger.
+- [ ] Complete context-bound reference, cancellation, uncertain-effect/reply and
+      live catalog verification.
+- [ ] Publish matched artifacts while preserving existing Sessions/Workspaces;
+      perform the owner's requested reference-image test in the galgame conversation.
+
 ## Preview answer links
 
 - [x] Amend ADR-0270 for named answer links and ordinary expandable Tool details.

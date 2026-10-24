@@ -91,6 +91,7 @@ import { TenantModelConfigurationService } from "./tenant-model-configuration.ts
 import { ConversationDeletionService } from "./conversation-deletion-service.ts";
 import { WorkspaceBrowserService } from "./workspace-browser-service.ts";
 import { WorkspaceUploadService } from "./workspace-upload-service.ts";
+import { SessionImageReader } from "./session-image-reader.ts";
 import { readWebSessionCookie, WebAuthenticationService } from "./web-authentication.ts";
 import { PlatformRuntimeSettingsService } from "./platform-runtime-settings.ts";
 import { QueuedInputService } from "./queued-input-service.ts";
@@ -131,6 +132,7 @@ export class ControlPlaneController {
     @Inject(SshAccessTicketService)
     private readonly sshAccessTickets: SshAccessTicketService,
     @Inject(SourceControlService) private readonly sourceControl: SourceControlService,
+    @Inject(SessionImageReader) private readonly sessionImages: SessionImageReader,
   ) {}
 
   @Get("auth/providers")
@@ -759,6 +761,47 @@ export class ControlPlaneController {
         identity.tenantId,
         parseUuidPathParameter(sessionValue, "sessionId"),
         parseUuidPathParameter(uploadValue, "uploadId"),
+        async (image, chunks, signal) => {
+          signal.throwIfAborted();
+          reply.hijack();
+          reply.raw.writeHead(200, {
+            "cache-control": "private, no-store",
+            "x-content-type-options": "nosniff",
+            "content-type": image.mimeType,
+            "content-length": image.byteLength,
+          });
+          await pipeline(
+            Readable.from(chunks, { objectMode: false, highWaterMark: 65536 }),
+            reply.raw,
+            { signal },
+          );
+        },
+        abort.signal,
+      );
+    } finally {
+      abort.abort();
+      reply.raw.removeListener("close", closed);
+    }
+  }
+
+  @Get("sessions/:sessionId/images/:imageId")
+  async readSessionImage(
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Param("sessionId") sessionValue: unknown,
+    @Param("imageId") imageValue: unknown,
+  ) {
+    const identity = this.tenantRequestContext.resolve(request);
+    const abort = new AbortController();
+    const closed = () => {
+      if (!reply.raw.writableEnded) abort.abort(new Error("Image caller disconnected"));
+    };
+    reply.raw.on("close", closed);
+    try {
+      await this.sessionImages.withImage(
+        identity.tenantId,
+        parseUuidPathParameter(sessionValue, "sessionId"),
+        parseUuidPathParameter(imageValue, "imageId"),
         async (image, chunks, signal) => {
           signal.throwIfAborted();
           reply.hijack();

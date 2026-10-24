@@ -259,6 +259,26 @@ describe("Unified Projector handoff boundaries (transport/PG simulated)", () => 
     expect(route).toHaveBeenCalledOnce();
   });
 
+  it("shares one dispatch commit between an ordinary external effect and Cube commands in the same record", async () => {
+    const seen: string[] = [];
+    projector.options.controlTools = {
+      consume: async (_record, _current, admit) => {
+        expect(await admit!()).toBe(true);
+        seen.push("image");
+      },
+    };
+    route.mockImplementation(async () => {
+      seen.push("cube");
+    });
+    const commit = vi.fn(async () => {
+      seen.push("commit");
+      return true;
+    });
+    await f.handler!({ ...record(), fact: toolInvocationFixture().fact }, () => true, commit);
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual(["commit", "image", "cube"]);
+  });
+
   it("does not route a Tool when its dispatch commit fails", async () => {
     await expect(
       f.handler!(

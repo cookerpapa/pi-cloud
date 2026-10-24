@@ -1,5 +1,34 @@
 # Configuration
 
+## Image generation
+
+ADR-0274 adds the ordinary `generate_image` Tool. Set
+`controlPlane.imageGeneration.model` to an available Images model; an empty
+string disables it. The self-hosted profile defaults to `gpt-image-2`, overridable
+with `PI_CLOUD_IMAGE_GENERATION_MODEL`. Chat-model selection remains independent.
+The Control Plane uses the configured Worker provider-gateway URL and existing
+gateway API-key Secret; upstream subscription credentials stay in CLIProxyAPI.
+Direct process configuration uses `PI_CLOUD_IMAGE_GENERATION_MODEL`,
+`PI_CLOUD_IMAGE_GENERATION_URL`, and `PI_CLOUD_IMAGE_GENERATION_API_KEY_FILE`.
+
+The managed gateway policy retains `request-retry: 0` and sets
+`disable-image-generation: passthrough`: normal chat requests do not acquire an
+undeclared hosted image tool, while explicit Images generation/edit requests stay
+available. There is no automatic switch to a separately billed credential route.
+
+The Tool accepts `prompt`, optional `referenced_image_paths`, optional
+`num_last_images_to_include` (1–5), and `transparent_background` (default false).
+Reference selectors are mutually exclusive. It saves new, non-overwriting PNGs
+under the current working directory's `generated_images/`. The returned native
+image uses the existing S3 claim-check representation. Authenticated
+`GET /v1/sessions/:sessionId/images/:imageId` serves only a retained Session image;
+it does not expose temporary provider images or create a Tool-result lookup API.
+Reference processing uses existing guest image bounds. Local transfer admission
+and provider transport bounds do not impose a Session or Run duration quota.
+
+New image-I/O handling and its guest helper require matched publication; enabling
+a Tool directory entry alone does not upgrade old binaries.
+
 ADR-0269 adds `controlPlane.enabledControlTools` to the platform Helm chart for
 ordinary trusted control tools. `null` (default) advertises every registered
 implementation; `[]` withdraws all ordinary tools; `["preview"]` selects preview.

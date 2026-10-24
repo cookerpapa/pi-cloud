@@ -15,8 +15,13 @@ import type { ControlToolOutcome } from "./control-tool-dispatcher.ts";
 type Result = Extract<ControlToolOutcome, { result: unknown }>;
 export type RegisteredControlTool = {
   definition: ControlToolCatalogDefinition;
-  /** Must reconcile repeated admission using the existing operation identity. */
-  execute(command: AcceptedControlToolCommand, current: () => boolean): Promise<Result>;
+  /** Non-replayable external effects require ordered dispatch admission. */
+  replay?: "never";
+  execute(
+    command: AcceptedControlToolCommand,
+    current: () => boolean,
+    signal?: AbortSignal,
+  ): Promise<Result>;
 };
 
 export function controlToolCatalog(
@@ -53,6 +58,7 @@ export class ControlToolRegistry implements ControlToolCatalogSource {
     const registered = {
       definition: snapshot.tools.find((definition) => definition.name === name)!,
       execute: tool.execute,
+      ...(tool.replay ? { replay: tool.replay } : {}),
     };
     this.#tools.set(name, registered);
     this.#publish(snapshot);
@@ -66,7 +72,14 @@ export class ControlToolRegistry implements ControlToolCatalogSource {
     this.#snapshot = snapshot;
     for (const listener of this.#listeners) listener();
   }
-  async execute(command: AcceptedControlToolCommand, current: () => boolean): Promise<Result> {
+  replayable(name: string): boolean {
+    return this.#tools.get(name)?.replay !== "never";
+  }
+  async execute(
+    command: AcceptedControlToolCommand,
+    current: () => boolean,
+    signal?: AbortSignal,
+  ): Promise<Result> {
     const tool = this.#tools.get(command.toolName);
     if (!tool || !current())
       return {
@@ -92,7 +105,7 @@ export class ControlToolRegistry implements ControlToolCatalogSource {
           ],
         },
       };
-    const outcome = await tool.execute(command, current);
+    const outcome = await tool.execute(command, current, signal);
     try {
       const { result } = parseToolResultPayload({
         toolName: command.toolName,

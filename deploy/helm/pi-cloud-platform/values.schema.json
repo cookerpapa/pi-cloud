@@ -821,6 +821,12 @@
           },
           "uniqueItems": true
         },
+        "imageGeneration": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["model"],
+          "properties": { "model": { "type": "string", "maxLength": 200 } }
+        },
         "replicas": {
           "type": "integer",
           "minimum": 1,

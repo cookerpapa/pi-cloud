@@ -3,6 +3,41 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "image-tool-ordered-admission",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/control-tool-dispatcher.test.ts",
+      "test": "commits dispatch before a non-replayable effect and never repeats it after reply loss",
+      "invariant": "A non-replayable ordinary effect starts only after Kafka dispatch commit; reply retries do not regenerate its output."
+    },
+    {
+      "id": "image-tool-owner-recovery",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/control-tool-dispatcher.test.ts",
+      "test": "recovers an uncertain effect as UNKNOWN and cannot start it on a later rewind",
+      "invariant": "Recovered unfinished image intents are conservatively settled without another upstream generation, even across log rewind."
+    },
+    {
+      "id": "image-tool-owner-loss",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/control-tool-dispatcher.test.ts",
+      "test": "aborts the external request on owner loss and discards its late success",
+      "invariant": "Owner loss aborts local request lifetime; a late successful reply cannot replace native cancellation or restart the effect."
+    },
+    {
+      "id": "image-tool-placement-failure",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/control-image-tool.test.ts",
+      "test": "retains the generated pixels when Workspace placement fails without regenerating",
+      "invariant": "Failed mutable-file placement does not discard a retained image or trigger another billed generation."
+    },
+    {
+      "id": "image-tool-reference-cutoff",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/image-reference-context.postgres.test.ts",
+      "test": "selects images at the issuing context boundary, excludes other lanes/new input, and authorizes retained assets",
+      "invariant": "References respect the original Conversation context and Compaction cutoff; only its retained assets can be served."
+    },
+    {
       "id": "guest-deleted-working-directory",
       "workspace": "@pi-cloud/tool-sandbox",
       "file": "test/envd-tool-exec.test.ts",

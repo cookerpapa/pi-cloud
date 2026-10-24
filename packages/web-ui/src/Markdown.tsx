@@ -5,6 +5,7 @@ import remarkParse from "remark-parse";
 import { unified } from "unified";
 import { HighlightedCode } from "./HighlightedCode.tsx";
 import { useI18n } from "./i18n.tsx";
+import { SessionImage, isSessionImagePath } from "./SessionImage.tsx";
 
 function MarkdownCode({ className, children }: { className?: string; children?: ReactNode }) {
   const text = String(children ?? "").replace(/\n$/u, "");
@@ -35,9 +36,12 @@ const StableMarkdownBody = memo(function StableMarkdownBody({ text }: { text: st
             {children}
           </MarkdownCode>
         ),
-        img: ({ alt }) => (
-          <span className="product-image-placeholder">{t("turn.image", { alt: alt ?? "" })}</span>
-        ),
+        img: ({ alt, src }) =>
+          isSessionImagePath(src) ? (
+            <SessionImage src={src} alt={alt ?? ""} />
+          ) : (
+            <span className="product-image-placeholder">{t("turn.image", { alt: alt ?? "" })}</span>
+          ),
         table: ({ children }) => (
           <div className="product-markdown-table-scroll">
             <table>{children}</table>

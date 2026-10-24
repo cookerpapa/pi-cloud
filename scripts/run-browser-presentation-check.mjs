@@ -375,6 +375,8 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
   };
   root.render(React.createElement(I18nProvider,{initialLanguage:"en-US"},React.createElement(ChatApp,{key:sessionState+String(history)+String(childViews)+String(window.identityErrorStatus),configuration})));
 };
+window.renderGeneratedImage=()=>root.render(React.createElement(Markdown,null,
+  '![Character design](/v1/sessions/10000000-0000-4000-8000-000000000001/images/10000000-0000-4000-8000-000000000002)'));
 window.fixtureReady = true;
 `;
 const server = await createServer({
@@ -395,6 +397,18 @@ const server = await createServer({
       },
       configureServer(server) {
         server.middlewares.use((req, res, next) => {
+          if (
+            req.url ===
+            "/v1/sessions/10000000-0000-4000-8000-000000000001/images/10000000-0000-4000-8000-000000000002"
+          ) {
+            res.setHeader("content-type", "image/png");
+            return res.end(
+              Buffer.from(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aA3UAAAAASUVORK5CYII=",
+                "base64",
+              ),
+            );
+          }
           if (req.url === "/ui-config.json") {
             const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
             res.setHeader("content-type", "application/json");
@@ -1692,9 +1706,20 @@ try {
     );
     await page.screenshot("/tmp/pi-cloud-preview-tool-details.png");
   });
+  await withChromePage({}, async (page) => {
+    await page.navigate(`http://127.0.0.1:${port}/review.html`);
+    await page.waitFor("window.fixtureReady");
+    await page.evaluate("renderGeneratedImage()");
+    await page.waitFor("document.querySelector('.product-session-image img')?.naturalWidth > 0");
+    assert.equal(
+      await page.evaluate("document.querySelector('.product-session-image img').alt"),
+      "Character design",
+    );
+  });
   console.log(
     JSON.stringify({
       accepted: true,
+      retainedSessionImageLoads: true,
       previewUsesNamedAnswerLink: true,
       previewDetailsKeepPortAndResult: true,
       previewHasNoFallbackOrDuplicateCard: true,

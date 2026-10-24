@@ -6,6 +6,8 @@ import { PlatformRuntimeSettingsService } from "./platform-runtime-settings.ts";
 import { ControlToolDispatcher } from "./control-tool-dispatcher.ts";
 import { executePreviewTool, previewToolDefinition } from "./control-preview-tool.ts";
 import { ControlToolRegistry, type RegisteredControlTool } from "./control-tool-registry.ts";
+import { createImageTool } from "./control-image-tool.ts";
+import { ImageGenerationClient } from "./image-generation-client.ts";
 import { isControlToolName } from "@pi-cloud/protocol";
 import { createDatabase } from "@pi-cloud/database";
 import { operationalLog, startServiceObservability } from "@pi-cloud/observability";
@@ -103,6 +105,7 @@ export async function startControlPlane(): Promise<void> {
   let issueCoordinator: SourceControlIssueCoordinator | undefined;
   let issueNoteReconciler: GitLabIssueNoteReconciler | undefined;
   let images: ConfiguredImageAttachments | undefined;
+  let imageGeneration: ImageGenerationClient | undefined;
   let imageReaper: ImageAttachmentReaper | undefined;
   let queueDatabase: ReturnType<typeof createDatabase> | undefined;
   let queueViews: InputQueueView | undefined;
@@ -124,6 +127,7 @@ export async function startControlPlane(): Promise<void> {
       () => sandboxControl?.close(),
       () => unattachedSubagents?.close(),
       () => unattachedControlTools?.close(),
+      () => imageGeneration?.close(),
       () => sourceControlDispatcher?.close(),
       () => internalSourceControlDispatcher?.close(),
       () => images?.blobs.close(),
@@ -251,6 +255,25 @@ export async function startControlPlane(): Promise<void> {
           }),
       },
     ];
+    if (config.imageGeneration) {
+      if (!images) throw new Error("Image generation requires Session attachment storage");
+      imageGeneration = new ImageGenerationClient(config.imageGeneration);
+      definitions.push(
+        createImageTool({
+          database,
+          images,
+          client: imageGeneration,
+          imageIo: (call, action, signal) =>
+            sandboxControl!.toolImageIo(
+              call.scope,
+              call.bindingId!,
+              call.operationId,
+              action,
+              signal,
+            ),
+        }),
+      );
+    }
     if (
       config.enabledControlTools?.some(
         (name) => !definitions.some((tool) => tool.definition.name === name),
@@ -266,10 +289,11 @@ export async function startControlPlane(): Promise<void> {
       ...(images ? { images: images.codec } : {}),
       ownsPartition: (partition) => agentEvents?.ownsPartition(partition) === true,
       publish: (topic, reply) => sandboxControl!.publishReply(topic, reply),
-      execute: async (call, current) => {
+      replayable: (name) => isControlToolName(name) || ordinaryTools.replayable(name),
+      execute: async (call, current, signal) => {
         return isControlToolName(call.toolName)
           ? subagents.executeTool(call, current)
-          : ordinaryTools.execute(call, current);
+          : ordinaryTools.execute(call, current, signal);
       },
       onError: () =>
         operationalLog({

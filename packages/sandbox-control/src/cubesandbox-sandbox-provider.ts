@@ -55,6 +55,7 @@ import {
   type SandboxInspection,
   type SandboxPolicy,
   type SandboxProvider,
+  type ToolImageIo,
   type SandboxTerminalSession,
   type SandboxTerminalSize,
 } from "./sandbox-provider.ts";
@@ -1808,6 +1809,70 @@ export class CubeSandboxProvider implements SandboxProvider {
         throw cleanupError;
       }
     }
+  }
+
+  async imageIo(handle: SandboxHandle, input: ToolImageIo, signal?: AbortSignal) {
+    const activation = this.#dataOwned(handle);
+    const run = (sourcePath?: string) =>
+      this.#guestJson(
+        activation.instance,
+        {
+          mode: input.kind === "read" ? "read_reference_image" : "save_generated_image",
+          directory: input.cwd,
+          ...(input.kind === "read"
+            ? { path: input.path }
+            : {
+                sourcePath,
+                byteLength: input.byteLength,
+                id: input.operationId,
+              }),
+        },
+        {
+          program: "input",
+          runAsToolUser: true,
+          timeoutMs: 60_000,
+          maximumOutputBytes: MAX_IMAGE_GUEST_RESPONSE_BYTES,
+          ...(sourcePath ? { sourcePath } : {}),
+          ...(signal ? { signal } : {}),
+        },
+      );
+    const envelope = record(
+      input.kind === "read"
+        ? await run()
+        : await this.#withGuestUpload(
+            activation.instance,
+            input.chunks,
+            input.byteLength,
+            signal,
+            run,
+          ),
+      "Tool image result",
+    );
+    if (envelope.ok !== true)
+      throw new SandboxControlError(
+        "tool_image_io_failed",
+        "Sandbox image preparation failed",
+        false,
+      );
+    const result = record(envelope.result, "Tool image content");
+    if (
+      typeof result.data !== "string" ||
+      result.mimeType !== "image/png" ||
+      !Array.isArray(result.hints) ||
+      result.hints.some((hint) => typeof hint !== "string") ||
+      (result.path !== undefined && typeof result.path !== "string") ||
+      (result.placementError !== undefined && typeof result.placementError !== "string")
+    )
+      throw new Error("Invalid Tool image result");
+    return {
+      data: bounded(result.data, "Tool image bytes", MAX_IMAGE_GUEST_RESPONSE_BYTES),
+      mimeType: "image/png" as const,
+      hints: result.hints as string[],
+      ...(typeof result.path === "string" ? { path: result.path } : {}),
+      ...(typeof result.placementError === "string"
+        ? { placementError: result.placementError }
+        : {}),
+    };
   }
 
   async prepareInputImage(

@@ -106,6 +106,8 @@ export type AcceptedControlToolCommand = DurableControlToolDispatch & {
   nativeCallId: string;
   arguments: Record<string, unknown>;
   nativeSequence: number;
+  /** Immutable native assistant entry which selected this invocation. */
+  invocationEntryId?: number;
 };
 
 export type ExecutionPublication = Readonly<{

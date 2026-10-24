@@ -64,6 +64,8 @@ bootstrap:
 controlPlane:
   # null advertises every registered ordinary Tool; [] withdraws all ordinary Tools.
   enabledControlTools: null
+  imageGeneration:
+    model: ""
   replicas: 3
   autoscaling:
     enabled: true

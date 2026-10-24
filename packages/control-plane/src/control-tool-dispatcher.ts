@@ -26,6 +26,10 @@ type Pending = {
   due: number;
   reply?: ImagePacked<ToolResultPayload>;
   replyBytes: number;
+  execution: "repeatable" | "once" | "unknown";
+  controller: AbortController;
+  outcome?: Extract<ControlToolOutcome, { result: unknown }>;
+  done?: boolean;
 };
 export type ControlToolOutcome =
   { waiting: true; until?: number } | { result: ToolResultData; isError?: boolean };
@@ -49,7 +53,9 @@ export class ControlToolDispatcher {
       execute(
         command: AcceptedControlToolCommand,
         current: () => boolean,
+        signal?: AbortSignal,
       ): Promise<ControlToolOutcome>;
+      replayable?(toolName: string): boolean;
       publish(topic: string, reply: ToolReply): Promise<void>;
       onError?(): void;
     },
@@ -66,12 +72,15 @@ export class ControlToolDispatcher {
   }
   reset(): void {
     this.#generation++;
+    for (const pending of this.#pending.values())
+      pending.controller.abort(new Error("Control Tool owner changed"));
     this.#pending.clear();
     this.#replyBytes = 0;
   }
   async consume(
     record: KafkaAcceptedFactRecord,
     current: () => boolean = () => true,
+    commitBeforeEffect?: () => Promise<boolean>,
   ): Promise<void> {
     if (this.#closed || !current()) return;
     const fact = record.fact;
@@ -91,9 +100,19 @@ export class ControlToolDispatcher {
     // the transport reference, not another expanded argument copy.
     // Recovery reads this exact descriptor from cloud_metadata; storing its
     // expanded arguments here would turn an ordinary replay into a conflict.
-    for (const reference of fact.tools)
-      if (reference.target === "control")
-        this.#remember(reference, fact.commit.seq, record.partition);
+    let admitted: boolean | undefined;
+    for (const reference of fact.tools) {
+      if (reference.target !== "control") continue;
+      const repeatable = this.options.replayable?.(reference.toolName) !== false;
+      if (!repeatable && admitted === undefined) admitted = (await commitBeforeEffect?.()) ?? false;
+      if (!current()) return;
+      this.#remember(
+        reference,
+        fact.commit.seq,
+        record.partition,
+        repeatable ? "repeatable" : admitted ? "once" : "unknown",
+      );
+    }
     let changed = false;
     for (const write of fact.commit.writes) {
       if (write.type === "task") {
@@ -143,7 +162,12 @@ export class ControlToolDispatcher {
         pending.dirty = true;
     this.#drain();
   }
-  #remember(dispatch: DurableControlToolDispatch, sequence: number, partition: number): void {
+  #remember(
+    dispatch: DurableControlToolDispatch,
+    sequence: number,
+    partition: number,
+    execution: Pending["execution"] = "repeatable",
+  ): void {
     const key = this.#key(dispatch.scope, dispatch.operationId);
     const prior = this.#pending.get(key);
     if (prior) {
@@ -158,11 +182,16 @@ export class ControlToolDispatcher {
       dirty: true,
       due: Infinity,
       replyBytes: 0,
+      execution,
+      controller: new AbortController(),
     });
   }
   #remove(key: string): void {
     const pending = this.#pending.get(key);
-    if (pending) this.#replyBytes -= pending.replyBytes;
+    if (pending) {
+      this.#replyBytes -= pending.replyBytes;
+      pending.controller.abort(new Error("Control Tool invocation closed"));
+    }
     this.#pending.delete(key);
   }
   /** Indexed current tasks only. Historical completed calls cannot be relaunched. */
@@ -212,7 +241,12 @@ export class ControlToolDispatcher {
           row.dispatch.scope.piSessionId !== row.session
         )
           throw new Error("Stored control dispatch scope changed");
-        this.#remember(row.dispatch, Number(row.seq), row.partition);
+        this.#remember(
+          row.dispatch,
+          Number(row.seq),
+          row.partition,
+          this.options.replayable?.(row.dispatch.toolName) === false ? "unknown" : "repeatable",
+        );
       }
       this.#drain();
       if (rows.rows.length < 128) return;
@@ -312,13 +346,22 @@ export class ControlToolDispatcher {
       arguments: intent.arguments,
       nativeCallId: intent.callId,
       nativeSequence: sourceSequence,
+      ...(write.type === "task" &&
+      Number.isSafeInteger((write.value as { input?: { assistant?: number } }).input?.assistant)
+        ? { invocationEntryId: (write.value as { input: { assistant: number } }).input.assistant }
+        : {}),
     };
   }
   #drain(): void {
     if (this.#closed) return;
     for (const [key, pending] of this.#pending) {
       if (this.#active.size >= 128) break;
-      if (!pending.dirty || this.#active.has(key) || !this.options.ownsPartition(pending.partition))
+      if (
+        pending.done ||
+        !pending.dirty ||
+        this.#active.has(key) ||
+        !this.options.ownsPartition(pending.partition)
+      )
         continue;
       if (!pending.reply && this.#replyBytes >= 32 * 1024 * 1024) continue;
       pending.dirty = false;
@@ -351,12 +394,32 @@ export class ControlToolDispatcher {
       return;
     }
     if (!pending.reply) {
-      const outcome = await this.options.execute(command, current);
+      let outcome: ControlToolOutcome;
+      if (pending.outcome) outcome = pending.outcome;
+      else if (pending.execution === "unknown")
+        outcome = {
+          isError: true,
+          result: {
+            content: [
+              {
+                type: "text",
+                text: "tool_result_unknown: This external Tool may already have run. It will not be sent again automatically; inspect its artifacts before requesting another operation.",
+              },
+            ],
+          },
+        };
+      else {
+        // Mark before awaiting: any uncertain handler/encoding failure must not
+        // submit this external effect for a second time.
+        if (pending.execution === "once") pending.execution = "unknown";
+        outcome = await this.options.execute(command, current, pending.controller.signal);
+      }
       if (!current()) return;
       if ("waiting" in outcome) {
         pending.due = outcome.until ?? Infinity;
         return;
       }
+      pending.outcome = outcome;
       const result = parseToolResultPayload({
         toolName: command.replyMode === "hostcall" ? "subagent-control" : command.toolName,
         toolCallId: command.nativeCallId,
@@ -373,6 +436,7 @@ export class ControlToolDispatcher {
       );
       if (!current()) return;
       pending.reply = encoded;
+      delete pending.outcome;
       pending.replyBytes = Buffer.byteLength(JSON.stringify(pending.reply));
       this.#replyBytes += pending.replyBytes;
     }
@@ -382,7 +446,17 @@ export class ControlToolDispatcher {
       sequence: 1,
       result: pending.reply,
     });
-    if (current()) this.#remove(key);
+    if (current()) {
+      if (pending.execution === "repeatable") this.#remove(key);
+      else {
+        // Keep only the intent reference until native settlement/seal. Recovery
+        // may have conservatively abandoned an intent before its Kafka replay.
+        pending.done = true;
+        this.#replyBytes -= pending.replyBytes;
+        pending.replyBytes = 0;
+        delete pending.reply;
+      }
+    }
   }
   async close(): Promise<void> {
     this.#closed = true;

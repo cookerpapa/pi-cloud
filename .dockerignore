@@ -13,6 +13,9 @@
 !packages/web-ui/index.html
 !packages/web-ui/vite.config.ts
 !deploy/helm/pi-cloud-platform/files/model-catalog.json
+!deploy/provider-gateway/image_request_policy.go
+!deploy/provider-gateway/image_request_policy_test.go
+!deploy/provider-gateway/image_request_policy.patch
 !deploy/cubesandbox/browser/package.json
 !deploy/cubesandbox/browser/package-lock.json
 !deploy/cubesandbox/browser/index.mjs

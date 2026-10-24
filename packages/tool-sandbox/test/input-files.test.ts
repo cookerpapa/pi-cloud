@@ -22,6 +22,53 @@ async function source(bytes: Buffer) {
   return { sourcePath, byteLength: bytes.length };
 }
 
+it("saves generated PNGs with alpha and reads references without overwriting an existing artifact", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "generated-images-"));
+  const options = { registryDirectory: join(directory, "registry") };
+  try {
+    const bytes = await sharp({
+      create: {
+        width: 32,
+        height: 24,
+        channels: 4,
+        background: { r: 70, g: 20, b: 90, alpha: 0.3 },
+      },
+    })
+      .png()
+      .toBuffer();
+    const id = randomUUID();
+    const request = { mode: "save_generated_image", directory, id, ...(await source(bytes)) };
+    const saved = await prepareInputFile(request, options);
+    expect(saved).toHaveProperty("path", join(directory, "generated_images", `${id}.png`));
+    if (!("data" in saved) || !("path" in saved) || !saved.path) throw new Error("Image not saved");
+    const onDisk = await readFile(saved.path);
+    expect(onDisk).toEqual(Buffer.from(saved.data, "base64"));
+    expect((await sharp(onDisk).metadata()).hasAlpha).toBe(true);
+    expect((await sharp(onDisk).stats()).isOpaque).toBe(false);
+    const reference = await prepareInputFile(
+      { mode: "read_reference_image", directory, path: `generated_images/${id}.png` },
+      options,
+    );
+    expect(reference).toHaveProperty("data", saved.data);
+    const replacement = await sharp({
+      create: { width: 2, height: 2, channels: 3, background: "red" },
+    })
+      .png()
+      .toBuffer();
+    const conflict = await prepareInputFile(
+      { ...request, ...(await source(replacement)) },
+      options,
+    );
+    expect(conflict).toHaveProperty("placementError");
+    expect(await readFile(saved.path)).toEqual(onDisk);
+    await expect(
+      prepareInputFile({ mode: "read_reference_image", directory, path: "missing.png" }, options),
+    ).rejects.toThrow();
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 it("normalizes uploaded images inside the fixed guest with the existing image policy", async () => {
   const input = await sharp({
     create: { width: 4000, height: 2000, channels: 3, background: "#5988f7" },

@@ -52,6 +52,8 @@ type InputImageResponse = Extract<
   SandboxControlResponse,
   { type: "tool_sandbox.input_images_prepared" }
 >;
+type ToolImageRequest = Extract<SandboxControlRequest, { type: "tool_sandbox.image_io" }>;
+type ToolImageResponse = Extract<SandboxControlResponse, { type: "tool_sandbox.image_io_result" }>;
 import {
   createExecutionReference,
   parseCloudToolCapabilitySnapshot,
@@ -135,7 +137,7 @@ type ManagedToolBinding = {
     string,
     Readonly<{
       requestSha256: string;
-      result: Promise<ToolSandboxOperationResponse | InputImageResponse>;
+      result: Promise<ToolSandboxOperationResponse | InputImageResponse | ToolImageResponse>;
       controller: AbortController;
     }>
   >;
@@ -2248,6 +2250,90 @@ export class SandboxController {
     const forget = () => activation.operations.delete(request.operationId);
     void durable.then(forget, forget);
     return durable;
+  }
+
+  async imageIo(request: ToolImageRequest, signal?: AbortSignal): Promise<ToolImageResponse> {
+    if (!this.#inputImages || !this.#provider.imageIo)
+      throw new SandboxControlError(
+        "tool_image_io_unavailable",
+        "Tool image I/O is unavailable",
+        false,
+      );
+    const activation = this.#ownedBinding(request.activationId, request.assignment);
+    if (activation.inputClosed)
+      throw new SandboxControlError("tool_binding_closed", "Tool binding is closing", false);
+    const key = `image:${request.requestId}`;
+    const controller = new AbortController();
+    const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+    const result = (async (): Promise<ToolImageResponse> => {
+      activation.activeOperations++;
+      if (activation.elasticRuntime) activation.elasticRuntime.activeOperations++;
+      try {
+        combined.throwIfAborted();
+        const handle = await this.#materialize(activation, combined);
+        const base = {
+          cwd: activation.spec.toolRoot ?? handle.workspaceRoot,
+          operationId: request.operationId,
+        };
+        this.#stateRepository.assertLocalOwnership();
+        const prepared =
+          request.action.kind === "read"
+            ? await this.#provider.imageIo!(
+                handle,
+                { ...base, kind: "read", path: request.action.path },
+                combined,
+              )
+            : await this.#inputImages!.withStream(
+                request.assignment.tenantId,
+                request.action.source,
+                (chunks, sourceSignal) =>
+                  this.#provider.imageIo!(
+                    handle,
+                    {
+                      ...base,
+                      kind: "save",
+                      chunks,
+                      byteLength:
+                        request.action.kind === "save" ? request.action.source.byteLength : 0,
+                    },
+                    sourceSignal,
+                  ),
+                combined,
+              );
+        combined.throwIfAborted();
+        const bytes = Buffer.from(prepared.data, "base64");
+        if (!bytes.length || bytes.toString("base64") !== prepared.data)
+          throw new Error("Invalid prepared Tool image");
+        const image = await this.#inputImages!.put(
+          { tenantId: request.assignment.tenantId, runId: request.assignment.runId },
+          bytes,
+          "image/png",
+          combined,
+        );
+        return {
+          toolBrokerProtocolVersion: 1,
+          type: "tool_sandbox.image_io_result",
+          requestId: request.requestId,
+          activationId: request.activationId,
+          image,
+          ...(prepared.path ? { path: prepared.path } : {}),
+          ...(prepared.placementError ? { placementError: prepared.placementError } : {}),
+        };
+      } finally {
+        activation.activeOperations--;
+        if (activation.elasticRuntime) activation.elasticRuntime.activeOperations--;
+      }
+    })();
+    activation.operations.set(key, {
+      requestSha256: createHash("sha256").update(JSON.stringify(request)).digest("hex"),
+      result,
+      controller,
+    });
+    void result.then(
+      () => activation.operations.delete(key),
+      () => activation.operations.delete(key),
+    );
+    return result;
   }
 
   async prepareInputImages(

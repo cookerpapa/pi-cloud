@@ -26,6 +26,7 @@ export type ProductionControlPlaneConfig = {
   supervisorManagementToken: string;
   cubeEgressConfigToken: string;
   enabledControlTools?: readonly string[];
+  imageGeneration?: { baseUrl: string; apiKey: string; model: string };
   sandboxControlBaseUrls: readonly string[];
   workspaceServiceToken: string;
   workspaceTerminalToken: string;
@@ -429,6 +430,23 @@ export async function loadProductionControlPlaneConfig(
     ...(enabledControlTools === undefined
       ? {}
       : { enabledControlTools: enabledControlTools as string[] }),
+    ...(environment.PI_CLOUD_IMAGE_GENERATION_MODEL
+      ? {
+          imageGeneration: {
+            model: bounded(
+              environment.PI_CLOUD_IMAGE_GENERATION_MODEL,
+              "PI_CLOUD_IMAGE_GENERATION_MODEL",
+              200,
+            ),
+            baseUrl: managementUrl(required(environment, "PI_CLOUD_IMAGE_GENERATION_URL"), true),
+            apiKey: await secret(
+              environment,
+              "PI_CLOUD_IMAGE_GENERATION_API_KEY",
+              allowInlineSecrets,
+            ),
+          },
+        }
+      : {}),
     databaseUrl,
     databaseNotificationUrl,
     projectorAdvertisedBaseUrl: managementUrl(

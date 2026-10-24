@@ -103,6 +103,7 @@ export type SandboxControlBackend = Pick<
       | "uploadWorkspaceFile"
       | "prepareWorkspaceUpload"
       | "prepareInputImages"
+      | "imageIo"
       | "recordRuntimeEvidence"
     >
   >;
@@ -696,6 +697,25 @@ export class SandboxControlServer {
             this.#broker.cleanPrewarmCount,
           );
           await reply.code(200).send(reserved);
+          return;
+        }
+        if (message.type === "tool_sandbox.image_io") {
+          if (!this.#broker.imageIo)
+            throw new SandboxControlError(
+              "tool_image_io_unavailable",
+              "Tool image I/O is unavailable",
+              false,
+            );
+          const abort = new AbortController();
+          const closed = () => {
+            if (!reply.raw.writableEnded) abort.abort(new Error("Tool image caller disconnected"));
+          };
+          reply.raw.on("close", closed);
+          try {
+            await reply.code(200).send(await this.#broker.imageIo(message, abort.signal));
+          } finally {
+            reply.raw.removeListener("close", closed);
+          }
           return;
         }
         if (message.type === "tool_sandbox.prepare_input_images") {

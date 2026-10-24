@@ -4,6 +4,7 @@ import { useI18n, type Translate } from "./i18n.tsx";
 import type { TranscriptItem } from "./session-view.ts";
 import { LiveToolProgress } from "./tool-progress.tsx";
 import { ChildAgentProgress } from "./ChildAgentProgress.tsx";
+import { SessionImage, isSessionImagePath } from "./SessionImage.tsx";
 
 export type ToolTranscriptItem = Extract<TranscriptItem, { kind: "tool" }>;
 
@@ -385,6 +386,13 @@ export function ToolActivity({ item }: { item: ToolTranscriptItem }) {
   const body = (
     <>
       {renderer.body(context, t)}
+      {(() => {
+        const details = objectValue(objectValue(context.rawOutput)?.details);
+        const generated = objectValue(details?.generatedImage);
+        return isSessionImagePath(generated?.previewPath) ? (
+          <SessionImage src={generated.previewPath} alt={t("turn.image", { alt: "" })} />
+        ) : null;
+      })()}
       {item.status === "running" ? <LiveToolProgress toolCallId={item.toolCallId} /> : null}
       {duration === null ? null : (
         <div className="product-tool-duration">{t("turn.took", { duration })}</div>

@@ -1,6 +1,7 @@
 import { Module, type DynamicModule } from "@nestjs/common";
 import { ControlPlaneController } from "./control-plane.controller.ts";
 import { WorkspaceUploadService, type WorkspaceUploader } from "./workspace-upload-service.ts";
+import { SessionImageReader } from "./session-image-reader.ts";
 import type {
   ImageAttachmentStore,
   ImageUploadStore,
@@ -102,6 +103,10 @@ export class ControlPlaneModule {
       module: ControlPlaneModule,
       controllers: [ControlPlaneController],
       providers: [
+        {
+          provide: SessionImageReader,
+          useValue: new SessionImageReader(options.database, options.imageAttachmentStore),
+        },
         {
           provide: WorkspaceUploadService,
           useValue: new WorkspaceUploadService({

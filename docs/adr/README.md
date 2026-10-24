@@ -1,5 +1,10 @@
 # Current architecture decisions
 
+[ADR-0274](0274-explicit-image-generation-tool.md) is in implementation: explicit
+Codex-shaped image Tool, context-bound references, guest image I/O and existing
+Kafka dispatch admission for non-replayable ordinary effects. Publication and
+real existing-conversation acceptance are pending.
+
 [ADR-0273](0273-resource-intent-and-machine-recovery.md) is deployed as
 `resource-intent-cad5487a`, schema 198. PG retains resource intent and lifecycle
 completion; Cube supplies disposable physical observations. Dedicated machines

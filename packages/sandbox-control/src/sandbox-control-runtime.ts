@@ -331,6 +331,36 @@ export async function createSandboxControl(options: {
       dispatcher,
       publishReply: (topic: string, reply: import("@pi-cloud/event-log").ToolReply) =>
         replies.publish(topic, reply),
+      toolImageIo: async (
+        scope: import("@pi-cloud/protocol").AcceptedToolCommand["scope"],
+        bindingId: string,
+        operationId: string,
+        action: Extract<
+          import("@pi-cloud/protocol").SandboxControlRequest,
+          { type: "tool_sandbox.image_io" }
+        >["action"],
+        signal?: AbortSignal,
+      ) => {
+        const route = await bindingView.get(scope, bindingId);
+        if (!route || route.dispatchClosed) throw new Error("Image Tool binding is unavailable");
+        const request = {
+          toolBrokerProtocolVersion: 1 as const,
+          type: "tool_sandbox.image_io" as const,
+          requestId: crypto.randomUUID(),
+          activationId: bindingId,
+          assignment: route.snapshot.assignment,
+          operationId,
+          action,
+        };
+        if (route.instanceId === instanceId) return controller.imageIo(request, signal);
+        const remote = new SandboxControlClient({
+          baseUrl: route.baseUrl,
+          serviceToken: config.serviceToken,
+          allowInsecureHttp: true,
+          requestTimeoutMs: 120_000,
+        });
+        return remote.imageIo(request, signal);
+      },
       refreshToolServices: async (
         scope: import("@pi-cloud/protocol").AcceptedToolCommand["scope"],
         bindingId: string,

@@ -212,6 +212,27 @@ export class SandboxControlClient {
     return response;
   }
 
+  async imageIo(
+    request: Extract<
+      import("@pi-cloud/protocol").SandboxControlRequest,
+      { type: "tool_sandbox.image_io" }
+    >,
+    signal?: AbortSignal,
+  ) {
+    const response = await this.#service(request, signal);
+    if (
+      response.type !== "tool_sandbox.image_io_result" ||
+      response.requestId !== request.requestId ||
+      response.activationId !== request.activationId
+    )
+      throw new SandboxControlClientError(
+        "tool_image_io_invalid",
+        "Tool image response identity changed",
+        false,
+      );
+    return response;
+  }
+
   async prepareInputImages(
     activationId: string,
     assignment: ToolSandboxAssignment,

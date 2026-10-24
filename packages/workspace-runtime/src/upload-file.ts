@@ -5,19 +5,51 @@ import { uploadFileName, uploadRelativePath } from "@pi-cloud/protocol/uploads";
 
 /** Linux fd-relative placement. Caller owns and has authorized the root fd.
  * Exclusive link publishes a complete file without replacing user changes. */
+type FileInput = {
+  id: string;
+  name: string;
+  chunks: AsyncIterable<Uint8Array>;
+  byteLength: number;
+  sha256: string;
+  signal?: AbortSignal;
+};
 export async function writeWorkspaceUpload(
   root: FileHandle,
-  input: {
-    id: string;
-    name: string;
-    chunks: AsyncIterable<Uint8Array>;
-    byteLength: number;
-    sha256: string;
-    signal?: AbortSignal;
-  },
+  input: FileInput,
   staging: FileHandle,
+) {
+  return writeAsset(
+    root,
+    input,
+    staging,
+    ["uploads", input.id],
+    uploadRelativePath(input.id, input.name),
+  );
+}
+export async function writeGeneratedImage(
+  root: FileHandle,
+  input: Omit<FileInput, "name">,
+  staging: FileHandle,
+) {
+  // Reuse UUID/name validation and exclusive publication without giving callers
+  // arbitrary directory creation or overwrite semantics.
+  uploadRelativePath(input.id, "image.png");
+  const name = `${input.id}.png`;
+  return writeAsset(
+    root,
+    { ...input, name },
+    staging,
+    ["generated_images"],
+    `generated_images/${name}`,
+  );
+}
+async function writeAsset(
+  root: FileHandle,
+  input: FileInput,
+  staging: FileHandle,
+  pathParts: string[],
+  relativePath: string,
 ): Promise<{ relativePath: string; byteLength: number; sha256: string }> {
-  const relativePath = uploadRelativePath(input.id, input.name);
   if (
     !Number.isSafeInteger(input.byteLength) ||
     input.byteLength < 1 ||
@@ -29,7 +61,7 @@ export async function writeWorkspaceUpload(
   let current = root;
   let temporary: string | undefined;
   try {
-    for (const part of ["uploads", input.id]) {
+    for (const part of pathParts) {
       const path = `/proc/self/fd/${current.fd}/${part}`;
       await mkdir(path, { mode: 0o700 }).catch((error: NodeJS.ErrnoException) => {
         if (error.code !== "EEXIST") throw error;

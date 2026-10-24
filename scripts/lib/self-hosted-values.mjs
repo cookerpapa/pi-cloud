@@ -63,6 +63,7 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
       },
       controlPlane: {
         replicas: 1,
+        imageGeneration: { model: e.PI_CLOUD_IMAGE_GENERATION_MODEL ?? "gpt-image-2" },
         autoscaling: { enabled: false },
         supervisorIdPrefix: "pi-cloud-pi-worker-",
         platformModelSourceTenantId: e.PI_CLOUD_PLATFORM_MODEL_SOURCE_TENANT_ID,

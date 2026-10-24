@@ -241,6 +241,27 @@ export const SandboxControlRequestSchema = Type.Union([
   Type.Object(
     {
       ...ToolSandboxEnvelope,
+      type: Type.Literal("tool_sandbox.image_io"),
+      requestId: UuidSchema,
+      activationId: UuidSchema,
+      assignment: ToolSandboxAssignmentSchema,
+      operationId: UuidSchema,
+      action: Type.Union([
+        Type.Object(
+          { kind: Type.Literal("read"), path: Type.String({ minLength: 1, maxLength: 4096 }) },
+          { additionalProperties: false },
+        ),
+        Type.Object(
+          { kind: Type.Literal("save"), source: ImageAttachmentReferenceSchema },
+          { additionalProperties: false },
+        ),
+      ]),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      ...ToolSandboxEnvelope,
       type: Type.Literal("tool_sandbox.prepare_input_images"),
       requestId: UuidSchema,
       activationId: UuidSchema,
@@ -264,6 +285,18 @@ export const SandboxControlRequestSchema = Type.Union([
 ]);
 
 export const SandboxControlResponseSchema = Type.Union([
+  Type.Object(
+    {
+      ...ToolSandboxEnvelope,
+      type: Type.Literal("tool_sandbox.image_io_result"),
+      requestId: UuidSchema,
+      activationId: UuidSchema,
+      image: ImageAttachmentReferenceSchema,
+      path: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+      placementError: Type.Optional(Type.String({ maxLength: 1024 })),
+    },
+    { additionalProperties: false },
+  ),
   Type.Object(
     {
       ...ToolSandboxEnvelope,
