@@ -2263,69 +2263,100 @@ export class SandboxController {
     if (activation.inputClosed)
       throw new SandboxControlError("tool_binding_closed", "Tool binding is closing", false);
     const key = `image:${request.requestId}`;
+    const requestSha256 = createHash("sha256").update(JSON.stringify(request)).digest("hex");
+    const existing = activation.operations.get(key);
+    if (existing) {
+      if (existing.requestSha256 !== requestSha256) throw new Error("Tool image identity conflict");
+      return existing.result as Promise<ToolImageResponse>;
+    }
     const controller = new AbortController();
     const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
-    const result = (async (): Promise<ToolImageResponse> => {
-      activation.activeOperations++;
-      if (activation.elasticRuntime) activation.elasticRuntime.activeOperations++;
-      try {
-        combined.throwIfAborted();
-        const handle = await this.#materialize(activation, combined);
-        const base = {
-          cwd: activation.spec.toolRoot ?? handle.workspaceRoot,
-          operationId: request.operationId,
-        };
-        this.#stateRepository.assertLocalOwnership();
-        const prepared =
-          request.action.kind === "read"
-            ? await this.#provider.imageIo!(
-                handle,
-                { ...base, kind: "read", path: request.action.path },
-                combined,
-              )
-            : await this.#inputImages!.withStream(
-                request.assignment.tenantId,
-                request.action.source,
-                (chunks, sourceSignal) =>
-                  this.#provider.imageIo!(
+    const queued = new AbortController();
+    const abortQueued = () => queued.abort(combined.reason);
+    combined.addEventListener("abort", abortQueued, { once: true });
+    if (combined.aborted) abortQueued();
+    const waiting = setTimeout(
+      () => controller.abort(new Error("Tool image preparation queue timed out")),
+      30_000,
+    );
+    waiting.unref();
+    const result = this.#inputPreparation
+      .add(
+        async (): Promise<ToolImageResponse> => {
+          clearTimeout(waiting);
+          combined.removeEventListener("abort", abortQueued);
+          // Running I/O remains tracked until the guest actually returns, even when
+          // its caller cancels. Reuse the existing image decode admission slot.
+          activation.activeOperations++;
+          if (activation.elasticRuntime) activation.elasticRuntime.activeOperations++;
+          try {
+            combined.throwIfAborted();
+            const handle = await this.#materialize(activation, combined);
+            const base = {
+              cwd: activation.spec.toolRoot ?? handle.workspaceRoot,
+              operationId: request.operationId,
+            };
+            this.#stateRepository.assertLocalOwnership();
+            const prepared =
+              request.action.kind === "read"
+                ? await this.#provider.imageIo!(
                     handle,
-                    {
-                      ...base,
-                      kind: "save",
-                      chunks,
-                      byteLength:
-                        request.action.kind === "save" ? request.action.source.byteLength : 0,
-                    },
-                    sourceSignal,
-                  ),
-                combined,
-              );
-        combined.throwIfAborted();
-        const bytes = Buffer.from(prepared.data, "base64");
-        if (!bytes.length || bytes.toString("base64") !== prepared.data)
-          throw new Error("Invalid prepared Tool image");
-        const image = await this.#inputImages!.put(
-          { tenantId: request.assignment.tenantId, runId: request.assignment.runId },
-          bytes,
-          "image/png",
-          combined,
-        );
-        return {
-          toolBrokerProtocolVersion: 1,
-          type: "tool_sandbox.image_io_result",
-          requestId: request.requestId,
-          activationId: request.activationId,
-          image,
-          ...(prepared.path ? { path: prepared.path } : {}),
-          ...(prepared.placementError ? { placementError: prepared.placementError } : {}),
-        };
-      } finally {
-        activation.activeOperations--;
-        if (activation.elasticRuntime) activation.elasticRuntime.activeOperations--;
-      }
-    })();
+                    { ...base, kind: "read", path: request.action.path },
+                    combined,
+                  )
+                : await this.#inputImages!.withStream(
+                    request.assignment.tenantId,
+                    request.action.source,
+                    (chunks, sourceSignal) =>
+                      this.#provider.imageIo!(
+                        handle,
+                        {
+                          ...base,
+                          kind: "save",
+                          chunks,
+                          byteLength:
+                            request.action.kind === "save" ? request.action.source.byteLength : 0,
+                        },
+                        sourceSignal,
+                      ),
+                    combined,
+                  );
+            combined.throwIfAborted();
+            const bytes = Buffer.from(prepared.data, "base64");
+            if (!bytes.length || bytes.toString("base64") !== prepared.data)
+              throw new Error("Invalid prepared Tool image");
+            const image = await this.#inputImages!.put(
+              { tenantId: request.assignment.tenantId, runId: request.assignment.runId },
+              bytes,
+              "image/png",
+              combined,
+            );
+            return {
+              toolBrokerProtocolVersion: 1,
+              type: "tool_sandbox.image_io_result",
+              requestId: request.requestId,
+              activationId: request.activationId,
+              image,
+              ...(prepared.path ? { path: prepared.path } : {}),
+              ...(prepared.placementError ? { placementError: prepared.placementError } : {}),
+            };
+          } finally {
+            activation.activeOperations--;
+            if (activation.elasticRuntime) activation.elasticRuntime.activeOperations--;
+          }
+        },
+        { signal: queued.signal },
+      )
+      .then((value) => {
+        if (!value) throw new Error("Tool image preparation did not complete");
+        return value;
+      })
+      .finally(() => {
+        clearTimeout(waiting);
+        combined.removeEventListener("abort", abortQueued);
+      });
     activation.operations.set(key, {
-      requestSha256: createHash("sha256").update(JSON.stringify(request)).digest("hex"),
+      requestSha256,
       result,
       controller,
     });

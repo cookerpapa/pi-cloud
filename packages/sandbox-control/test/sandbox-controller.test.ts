@@ -341,6 +341,70 @@ function providerFixture() {
 }
 
 describe("provider-backed Sandbox controller", () => {
+  it("serializes Tool image decoding with existing image admission and waits for running cancellation", async () => {
+    const fixture = providerFixture();
+    const entered = Promise.withResolvers<void>(),
+      finish = Promise.withResolvers<void>();
+    const imageIo = vi.fn<NonNullable<SandboxProvider["imageIo"]>>(async () => {
+      entered.resolve();
+      await finish.promise;
+      return { data: Buffer.from("pixels").toString("base64"), mimeType: "image/png", hints: [] };
+    });
+    fixture.provider.imageIo = imageIo;
+    const put = vi.fn(async () => ({
+      id: crypto.randomUUID(),
+      sha256: "a".repeat(64),
+      byteLength: 6,
+      mimeType: "image/png" as const,
+    }));
+    const broker = testBroker({
+      provider: fixture.provider,
+      inputImages: {
+        put,
+        async withStream() {
+          throw new Error("Read path must stay in the guest");
+        },
+      },
+    });
+    const reserved = await broker.create(createRequest);
+    const request = {
+      toolBrokerProtocolVersion: 1 as const,
+      type: "tool_sandbox.image_io" as const,
+      requestId: crypto.randomUUID(),
+      operationId: crypto.randomUUID(),
+      activationId: reserved.activationId,
+      assignment,
+      action: { kind: "read" as const, path: "reference.png" },
+    };
+    const active = new AbortController(),
+      queued = new AbortController();
+    let settled = false;
+    const first = broker
+      .imageIo(request, active.signal)
+      .catch((error) => error)
+      .finally(() => {
+        settled = true;
+      });
+    try {
+      await entered.promise;
+      const second = broker
+        .imageIo({ ...request, requestId: crypto.randomUUID() }, queued.signal)
+        .catch((error) => error);
+      queued.abort(new Error("queued cancellation"));
+      expect(await second).toBeInstanceOf(Error);
+      active.abort(new Error("running cancellation"));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(settled).toBe(false);
+      expect(imageIo).toHaveBeenCalledOnce();
+      finish.resolve();
+      expect(await first).toBeInstanceOf(Error);
+      expect(put).not.toHaveBeenCalled();
+    } finally {
+      finish.resolve();
+      await first;
+      await broker.close();
+    }
+  });
   it.each([false, true])(
     "prepares immutable input images without an Agent Tool and waits for guest cancellation (cancel=%s)",
     async (cancel) => {
