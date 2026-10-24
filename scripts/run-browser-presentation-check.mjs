@@ -79,6 +79,21 @@ window.renderTurn = (text, recoveredTextLength = 0, status = "running", stopReas
     status,startedSequence:1,terminalSequence:null,stopReason,failure:null,cancellation:null,
     items:[{kind:"text",key:"text:"+(phase??'1'),text,firstSequence:1,lastSequence:2,recoveredTextLength,...(phase?{phase}:{})}]
   }})));
+window.renderPreviewPresentation=(status='completed',withLink=true,single=false)=>{
+  window.requestAnimationFrame=nativeRaf;window.cancelAnimationFrame=nativeCancelRaf;
+  const path='/v1/conversations/10000000-0000-4000-8000-000000000001/preview/5173/';
+  window.previewFixturePath=path;
+  const tool={kind:'tool',key:'preview',toolCallId:'task:2',toolName:'preview',input:{port:5173,path:'/'},
+    output:{content:[{type:'text',text:'Verified HTTP service on port 5173. Application path: '+path}],details:{port:5173,previewPath:path}},
+    status:'completed',firstSequence:2,lastSequence:3,startedAt:'2026-10-24T00:00:00.000Z',completedAt:'2026-10-24T00:00:00.200Z'};
+  root.render(React.createElement(I18nProvider,{initialLanguage:'zh-CN'},React.createElement(ConversationTurn,{
+    key:status+String(withLink)+String(single),turn:{runId:'preview-run',turnId:'preview-turn',prompt:'制作一个应用',acceptedAt:null,mailboxPosition:1,
+      status,startedSequence:1,terminalSequence:status==='completed'?5:null,stopReason:status==='completed'?'stop':null,failure:null,cancellation:null,
+      items:[...(single?[]:[{...tool,key:'bash',toolCallId:'task:1',toolName:'bash',input:{command:'start app'},output:'Ready'}]),tool,
+        {kind:'text',key:'answer',messageId:'answer',phase:'final_answer',text:withLink?'已完成：[进入示例应用]('+path+')':'应用已完成。',firstSequence:4,lastSequence:4}]
+    }
+  })));
+};
 window.turnBodies = [];
 window.turnRequests = [];
 window.uploadCalls = [];
@@ -1622,9 +1637,67 @@ try {
     assert.equal(await page.evaluate("innerWidth"), 390);
     await page.screenshot("/tmp/pi-cloud-composer-mobile.png");
   });
+  await withChromePage({}, async (page) => {
+    await page.navigate(`http://127.0.0.1:${port}/review.html`);
+    await page.waitFor("window.fixtureReady");
+    for (const status of ["running", "completed"]) {
+      await page.evaluate(`renderPreviewPresentation(${JSON.stringify(status)})`);
+      await page.waitFor(
+        "document.querySelector('.product-markdown a')?.getAttribute('href')===previewFixturePath",
+      );
+      assert.equal(await page.evaluate("document.querySelectorAll('a').length"), 1);
+      assert.equal(
+        await page.evaluate("document.querySelector('.product-activity-group').dataset.expanded"),
+        "false",
+      );
+      assert.equal(await page.evaluate("document.body.innerText.includes('5173')"), false);
+      await page.evaluate("document.querySelector('.product-activity-group-toggle').click()");
+      await page.waitFor("document.querySelector('[data-tool-name=preview] details')");
+      assert.equal(
+        await page.evaluate("document.querySelector('[data-tool-name=preview] details').open"),
+        false,
+      );
+      assert.equal(
+        await page.evaluate(
+          "document.querySelector('[data-tool-name=preview]').innerText.includes('5173')",
+        ),
+        false,
+      );
+      await page.evaluate("document.querySelector('[data-tool-name=preview] summary').click()");
+      await page.waitFor(
+        "document.querySelector('[data-tool-name=preview]').innerText.includes('5173')",
+      );
+      assert.equal(await page.evaluate("document.querySelectorAll('a').length"), 1);
+      assert.equal(
+        await page.evaluate("document.querySelector('.product-preview-tool-link')===null"),
+        true,
+      );
+    }
+    await page.evaluate("renderPreviewPresentation('completed',true,true)");
+    await page.waitFor(
+      "!document.querySelector('.product-activity-group') && document.querySelector('[data-tool-name=preview] details')",
+    );
+    assert.equal(
+      await page.evaluate("document.querySelector('[data-tool-name=preview] details').open"),
+      false,
+    );
+    assert.equal(await page.evaluate("document.body.innerText.includes('5173')"), false);
+    assert.equal(await page.evaluate("document.querySelectorAll('a').length"), 1);
+    await page.evaluate("renderPreviewPresentation('completed',false,true)");
+    await page.waitFor("document.querySelector('.product-markdown')?.textContent==='应用已完成。'");
+    assert.equal(
+      await page.evaluate("document.querySelectorAll('a').length"),
+      0,
+      "Missing answer links must not generate a fallback action",
+    );
+    await page.screenshot("/tmp/pi-cloud-preview-tool-details.png");
+  });
   console.log(
     JSON.stringify({
       accepted: true,
+      previewUsesNamedAnswerLink: true,
+      previewDetailsKeepPortAndResult: true,
+      previewHasNoFallbackOrDuplicateCard: true,
       earlyRunNeverFabricatesUserInput: true,
       acceptanceDiscoveryRaceKeepsDraftAndStream: true,
       composerEnterPreference: true,

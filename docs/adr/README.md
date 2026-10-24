@@ -21,8 +21,10 @@ upstream address through one operator command while retaining PG and Helm owners
 
 [ADR-0270](0270-guest-browser-and-tool-result-actions.md) keeps browser automation
 inside Cube using Bash/Read, and carries bounded Tool-result metadata through
-same-commit display references. Preview links stay visible when invocation groups
-are collapsed. It is deployed as `guest-browser-bd03f7a6`, schema 197.
+same-commit display references. The owner-approved October 24 amendment moves
+application navigation to named answer links and removes separate Preview cards;
+Tool details retain technical information. The guest capability was deployed as
+`guest-browser-bd03f7a6`, schema 197.
 
 [ADR-0269](0269-execution-owned-control-tool-catalog.md) uses execution-owned
 ordinary tool definitions and Pi's Registry/selection mechanisms for changes

@@ -1,7 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
 import { createPiCloudEventFactory, resolveDurableDisplay } from "@pi-cloud/protocol";
-import { ApplicationPreviewLink, applicationPreview } from "../src/ApplicationPreviewLink.tsx";
 import { ConversationTurn } from "../src/ConversationTurn.tsx";
 import type { ToolTranscriptItem } from "../src/ToolActivity.tsx";
 import type { TurnView } from "../src/session-view.ts";
@@ -19,7 +18,7 @@ const preview: ToolTranscriptItem = {
   firstSequence: 2,
   lastSequence: 3,
 };
-function rendered(output: unknown) {
+function rendered(output: unknown, answer = `已完成：[进入示例应用](${path})`) {
   const turn: TurnView = {
     runId: "run",
     turnId: "turn",
@@ -35,13 +34,13 @@ function rendered(output: unknown) {
     items: [
       { ...preview, key: "bash", toolCallId: "task:1", toolName: "bash", output: "ready" },
       { ...preview, output },
-      { kind: "text", key: "final", text: "Application ready", firstSequence: 4, lastSequence: 4 },
+      { kind: "text", key: "final", text: answer, firstSequence: 4, lastSequence: 4 },
     ],
   };
   return renderToStaticMarkup(<ConversationTurn turn={turn} />);
 }
 
-it("keeps the application action visible with invocation steps collapsed for live and cold output", () => {
+it("renders the answer link once with Tool steps collapsed for live and cold results", () => {
   const event = createPiCloudEventFactory({
     sessionId: "session",
     turnId: "turn",
@@ -74,22 +73,30 @@ it("keeps the application action visible with invocation steps collapsed for liv
     const markup = rendered(output);
     expect(markup).toContain('data-expanded="false"');
     expect(markup).toContain(path);
-    expect(markup).toContain("打开应用（端口 5173）");
-    expect(markup.match(/product-preview-tool-link/g)).toHaveLength(1);
+    expect(markup).toContain("进入示例应用");
+    expect(markup.match(/<a /g)).toHaveLength(1);
+    expect(markup).not.toContain("打开应用（端口");
+    expect(markup).not.toContain("product-preview-tool-link");
     expect(markup).not.toContain("product-activity-group-items");
   }
 });
 
-it("does not promote failed, pending or malformed Tool results into application actions", () => {
-  for (const item of [
-    { ...preview, status: "failed" as const, output: { details } },
-    { ...preview, status: "running" as const, output: { details } },
-    { ...preview, toolName: "bash", output: { details } },
-    { ...preview, output: "Published" },
-    { ...preview, output: { details: { ...details, port: 3000 } } },
-    { ...preview, output: { details: { ...details, previewPath: "javascript:alert(1)" } } },
+it("does not synthesize a fallback link when the answer omits it", () => {
+  const markup = rendered(
+    { content: [{ type: "text", text: `Preview: ${path}` }], details },
+    "应用已完成",
+  );
+  expect(markup).not.toContain("<a ");
+  expect(markup).not.toContain("product-preview-tool-link");
+  expect(markup).not.toContain(path);
+});
+
+it("does not turn result metadata or diagnostic text into application actions", () => {
+  for (const output of [
+    { details },
+    { content: [{ type: "text", text: "preview_service_not_found: no service on port 5173" }] },
+    { details: { ...details, previewPath: "javascript:alert(1)" } },
   ]) {
-    expect(applicationPreview(item)).toBeUndefined();
-    expect(renderToStaticMarkup(<ApplicationPreviewLink item={item} />)).toBe("");
+    expect(rendered(output, "查看工具结果")).not.toContain("<a ");
   }
 });

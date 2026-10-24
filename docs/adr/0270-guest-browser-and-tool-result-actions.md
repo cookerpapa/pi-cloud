@@ -3,6 +3,16 @@
 Status: implemented and deployed as `guest-browser-bd03f7a6`, schema 197.
 Date: 2026-10-22.
 
+Presentation amendment, 2026-10-24 (owner approved): remove the separate
+application-action card and collapsed-group preview link. Preview keeps returning
+the verified authenticated path to Pi; the Agent provides a named Markdown link
+in its answer. The Web treats Preview as an ordinary Tool with expandable
+parameters/result, without parsing answers to detect missing links or adding a
+fallback action. Internal ports remain Tool arguments/diagnostics; ordinary
+answer links use the application name. This supersedes the always-visible-action
+decision and acceptance below. Native result metadata, storage, service probing,
+proxy routing and guest browser capability are unchanged.
+
 Owner amendment: the owner explicitly authorized deleting the current development
 machine and its entire Workspace before this release. This supersedes the initial
 Workspace preservation requirement below; retain conversations, accounts, provider
@@ -33,10 +43,10 @@ Tool Sandbox and retain Pi's public Tools/Storage boundaries.
   metadata too; oversized display metadata is omitted with an explicit notice.
   Descriptions contain selectors, never another persisted result body. Canonical
   history remains the native Tool result, already read in structured form.
-- Successful Preview actions remain visible outside collapsed invocation groups.
-  Expanded and standalone Tool cards reuse the same action renderer. Failure or
-  malformed result metadata does not create a successful action. Native child
-  progress and invocation disclosure remain independent.
+- Preview parameters and results use expandable Tool details. Application
+  navigation uses the Agent's answer link; no separate action is synthesized
+  from Tool metadata. Native child progress remains independent and visible
+  outside collapsed invocation groups.
 - The Preview Tool returns its real authenticated platform path both as text
   and structured metadata. Its reply confirms publication, not that a particular
   browser already rendered a button. The Agent can include that path in its final
@@ -79,8 +89,11 @@ caches do not enter the guest image.
 - Live Tool display retains bounded structured metadata without duplicating
   committed bodies or image pixels. Missing/invalid references fail explicitly;
   no preview-name special case reconstructs metadata that transport discarded.
-- Published preview paths match text/metadata, render during live streaming and
-  after refresh, and remain visible with multiple Tool steps collapsed.
+- Published preview paths match text/metadata. The Agent's named answer link
+  renders during live streaming and after refresh, including when Tool steps
+  are collapsed. Expanding Tool details exposes the arguments and result without
+  creating another application-action card. Omitted answer links do not trigger
+  a fallback or an additional model request.
 - Complete appropriate source/artifact/live gates and scoped fixture cleanup.
   Existing conversations and account/configuration hashes are preserved; old
   application files are deleted under the explicit owner amendment.

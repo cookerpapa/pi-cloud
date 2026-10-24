@@ -80,6 +80,17 @@ and restore the recorded replica count through
 `node scripts/production-kubernetes.mjs start control-plane` before retrying.
 The fixture does not change the production retention duration.
 
+For the October 24 Preview presentation amendment, the existing acceptance driver
+can isolate guest interaction, screenshot Read, named answer links and actual
+application navigation without repeating unrelated large-output/input fixtures:
+
+```sh
+PI_CLOUD_LIVE_RELEASE_CHECK=1 PI_CLOUD_LIVE_GUEST_BROWSER=1 PI_CLOUD_RUNTIME_CAPABILITY_SCOPE=browser node --import tsx scripts/run-live-release-acceptance.mjs
+```
+
+This scope still confirms owned physical cleanup and never skips matched artifact
+checks. The default `all` scope remains the full maintained acceptance suite.
+
 For ADR-0270, preparation also verifies unprivileged guest Chromium interaction,
 native screenshot Read and browser timeout cleanup. After matched cutover, run
 `PI_CLOUD_LIVE_RELEASE_CHECK=1 PI_CLOUD_LIVE_GUEST_BROWSER=1 node --import tsx scripts/run-live-release-acceptance.mjs`.

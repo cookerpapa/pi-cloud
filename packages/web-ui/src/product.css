@@ -1654,18 +1654,6 @@ body.product-panel-resizing {
   text-align: left;
 }
 
-.product-preview-tool-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 8px 12px;
-  border: 1px solid rgba(95, 201, 154, 0.3);
-  border-radius: 9px;
-  background: rgba(95, 201, 154, 0.1);
-  color: #b8e7d2;
-  font-size: 12px;
-  text-decoration: none;
-}
 .product-activity-results {
   display: flex;
   flex-direction: column;
@@ -1677,10 +1665,6 @@ body.product-panel-resizing {
   display: none;
 }
 
-.product-preview-tool-link:hover {
-  border-color: rgba(95, 201, 154, 0.52);
-  background: rgba(95, 201, 154, 0.16);
-}
 .product-tool-text button:hover {
   color: #aaa;
 }

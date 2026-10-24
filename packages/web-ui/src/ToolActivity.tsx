@@ -4,7 +4,6 @@ import { useI18n, type Translate } from "./i18n.tsx";
 import type { TranscriptItem } from "./session-view.ts";
 import { LiveToolProgress } from "./tool-progress.tsx";
 import { ChildAgentProgress } from "./ChildAgentProgress.tsx";
-import { ApplicationPreviewLink, applicationPreview } from "./ApplicationPreviewLink.tsx";
 
 export type ToolTranscriptItem = Extract<TranscriptItem, { kind: "tool" }>;
 
@@ -294,28 +293,6 @@ const editRenderer: ToolRenderer = {
   },
 };
 
-const previewRenderer: ToolRenderer = {
-  heading(context) {
-    const port = context.input?.port;
-    return pathHeading(
-      "preview",
-      typeof port === "number" && Number.isInteger(port) ? `:${String(port)}` : null,
-    );
-  },
-  body(context) {
-    if (applicationPreview(context.item) === undefined) {
-      return context.output.length === 0 ? null : (
-        <ExpandableToolText
-          className="product-tool-output"
-          direction="head"
-          text={context.output}
-        />
-      );
-    }
-    return <ApplicationPreviewLink item={context.item} />;
-  },
-};
-
 const defaultRenderer: ToolRenderer = {
   heading(context) {
     return pathHeading(context.item.toolName, context.path);
@@ -339,6 +316,17 @@ const defaultRenderer: ToolRenderer = {
         ) : null}
       </>
     );
+  },
+};
+
+const previewRenderer: ToolRenderer = {
+  heading() {
+    return pathHeading("preview", null);
+  },
+  body(context, t) {
+    // An HTTP path is a Tool argument, not a file heading. Keep the complete
+    // arguments/result in details; the Agent's answer owns application links.
+    return defaultRenderer.body({ ...context, path: null }, t);
   },
 };
 
@@ -393,7 +381,7 @@ export function ToolActivity({ item }: { item: ToolTranscriptItem }) {
         : item.status === "failed"
           ? "!"
           : "✓";
-  const delegation = item.toolName === "subagent" || item.toolName === "workflow";
+  const details = ["subagent", "workflow", "preview"].includes(item.toolName);
   const body = (
     <>
       {renderer.body(context, t)}
@@ -418,9 +406,9 @@ export function ToolActivity({ item }: { item: ToolTranscriptItem }) {
       </div>
       <ChildAgentProgress toolCallId={item.toolCallId} />
       <div className="product-tool-body">
-        {delegation ? (
+        {details ? (
           <details>
-            <summary>{t("child.details")}</summary>
+            <summary>{t("turn.toolDetails")}</summary>
             {body}
           </details>
         ) : (

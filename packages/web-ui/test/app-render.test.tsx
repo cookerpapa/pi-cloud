@@ -518,7 +518,7 @@ describe("product chat experience", () => {
     expect(markup).toContain("curl -sL");
   });
 
-  it("renders a Preview Tool result as the application link instead of a top-bar hint", () => {
+  it("keeps Preview arguments and output in closed Tool details without an application card", () => {
     const markup = renderToStaticMarkup(
       <ToolActivity
         item={{
@@ -528,7 +528,12 @@ describe("product chat experience", () => {
           toolName: "preview",
           input: { port: 3_000 },
           output: {
-            content: [{ type: "text", text: "PiCloud published the verified service." }],
+            content: [
+              {
+                type: "text",
+                text: "Preview: /v1/conversations/10000000-0000-4000-8000-000000000099/preview/3000/",
+              },
+            ],
             details: {
               port: 3_000,
               previewPath: "/v1/conversations/10000000-0000-4000-8000-000000000099/preview/3000/",
@@ -542,7 +547,12 @@ describe("product chat experience", () => {
         }}
       />,
     );
-    expect(markup).toContain("打开应用（端口 3000）");
+    expect(markup).toContain("<details>");
+    expect(markup).not.toContain("<details open");
+    expect(markup).toContain("调用详情");
+    expect(markup).toContain("3000");
+    expect(markup).not.toContain("打开应用");
+    expect(markup).not.toContain("<a ");
     expect(markup).toContain(
       "/v1/conversations/10000000-0000-4000-8000-000000000099/preview/3000/",
     );

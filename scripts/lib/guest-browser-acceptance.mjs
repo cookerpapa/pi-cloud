@@ -53,8 +53,11 @@ console.log('GUEST_BROWSER_INTERACTION_OK');
   const quote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
   const command = `setsid python3 -m http.server 5173 --bind 0.0.0.0 --directory ${quote(dirname(application.path))} </dev/null >/tmp/guest-browser-server.log 2>&1 &\nnode ${quote(script.path)}`;
   let history;
-  progress("guest Chromium interaction, screenshot Read and live preview action");
+  progress("guest Chromium interaction, screenshot Read and live named answer link");
   await withChromePage({}, async (page) => {
+    await page.send("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+    });
     await page.send("Network.setExtraHTTPHeaders", {
       headers: { Authorization: "Bearer " + tenant.credential.token },
     });
@@ -63,17 +66,41 @@ console.log('GUEST_BROWSER_INTERACTION_OK');
     await page.waitFor("document.querySelector('.product-composer textarea')");
     const accepted = await api.acceptTurn(
       session.sessionId,
-      `按顺序执行这三步，不要搜索或委派。1. 调用一次 bash，command 精确为以下 JSON 字符串：${JSON.stringify(command)}。2. 调用 read 查看 ${screenshotPath}。3. 调用 preview 发布端口 5173。最终回答图片顶部的六位数字，并用 Markdown 链接提供 preview 返回的地址。不要读取测试源码或其他文件，不要安装任何软件。`,
+      `按顺序执行这三步，不要搜索或委派。1. 调用一次 bash，command 精确为以下 JSON 字符串：${JSON.stringify(command)}。2. 调用 read 查看 ${screenshotPath}。3. 调用 preview 发布端口 5173。应用名为「骑行示例」。最终回答图片顶部的六位数字，并用具名 Markdown 链接提供 preview 返回的地址。不要读取测试源码或其他文件，不要安装任何软件。`,
       newIdempotencyKey("guest-browser"),
       "low",
     );
     const path = `/v1/conversations/${session.sessionId}/preview/5173/`;
-    const link = `.product-preview-tool-link[href="${path}"]`;
+    const link = `.product-agent-answer .product-markdown a[href="${path}"]`;
     const visible = `(()=>{const e=document.querySelector(${JSON.stringify(link)});return e&&e.getBoundingClientRect().height>0})()`;
     // The page is already mounted before the Run. This must arrive through SSE,
     // independently of a later cold-history read or manual expansion.
     await page.waitFor(visible, 240000);
     history = await completed(accepted.runId);
+    await page.waitFor("!document.querySelector('.product-run-status')");
+    const assertSingleAnswerLink = async () => {
+      assert.equal(
+        await page.evaluate(`document.querySelectorAll(${JSON.stringify(link)}).length`),
+        1,
+      );
+      assert(
+        (
+          await page.evaluate(`document.querySelector(${JSON.stringify(link)}).textContent`)
+        ).includes("骑行示例"),
+      );
+      assert.equal(
+        await page.evaluate("document.querySelector('.product-preview-tool-link')===null"),
+        true,
+      );
+      const visibleAnswer = await page.evaluate(
+        "[...document.querySelectorAll('.product-agent-answer .product-markdown')].map(e=>e.innerText).join('\\n')",
+      );
+      assert(
+        !/端口\s*[:：]?\s*5173|port\s*[:：]?\s*5173/i.test(visibleAnswer),
+        "Ordinary answer must not advertise the internal port",
+      );
+    };
+    await assertSingleAnswerLink();
     const turn = (await api.getConversation(session.sessionId)).turns.find(
       (t) => t.runId === accepted.runId,
     );
@@ -107,6 +134,7 @@ console.log('GUEST_BROWSER_INTERACTION_OK');
     assert(answer.includes(path), "Model omitted the returned application link");
     await page.navigate(conversationUrl);
     await page.waitFor(visible);
+    await assertSingleAnswerLink();
     assert(await page.evaluate("Boolean(document.querySelector('[data-expanded=\"false\"]'))"));
     await page.navigate(baseUrl + path);
     await page.waitFor("document.querySelector('#ride')");
@@ -120,5 +148,7 @@ console.log('GUEST_BROWSER_INTERACTION_OK');
     liveLink: true,
     coldCollapsedLink: true,
     actualApplicationNavigation: true,
+    noDuplicatePreviewAction: true,
+    namedLinkWithoutPortLabel: true,
   };
 }

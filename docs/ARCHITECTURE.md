@@ -23,8 +23,11 @@ continuation. Dedicated-machine recovery follows ADR-0273 above.
 CJK fonts. Bash starts the browser only when needed; Read uses existing screenshot attachment transport.
 No browser service or additional Tool executor is introduced. Native Tool display
 descriptions reference bounded `details` in the same commit and resolve structured
-`{content, details}` output, matching cold history. Successful preview actions
-remain visible outside collapsed Tool groups and return a real link to the model.
+`{content, details}` output, matching cold history. The October 24 presentation
+amendment uses the Agent's named answer link for application navigation. Preview
+parameters/results remain in expandable Tool details; no separate action card,
+answer-link detection or fallback is added. The Tool still returns the verified
+platform path as text and structured metadata.
 [Delivery evidence](reports/guest-browser-delivery-20261022.md) records guest
 interaction, screenshot vision and live/cold preview navigation.
 [ADR-0271](adr/0271-local-upstream-proxy-configuration.md) synchronizes one local
@@ -1401,6 +1404,9 @@ root-owned files, before committing purge completion. There is no Kopia/S3
 Workspace authority or platform-managed Git tree.
 
 Preview is published by a trusted tool after an actual listening-service probe.
+The Agent includes the returned platform path as a named answer link. Internal
+port numbers stay in Tool details unless requested; the Web does not synthesize
+another application action or inspect answers for missing links.
 Authenticated isolated origins proxy HTTP/WebSocket traffic through the control plane's
 credential-free guest relay. Each content request resolves current authorization,
 Workspace and owner in one PG query; permission and cross-resource tunnel caches

@@ -23,8 +23,9 @@ and continuation on a new VM. Dedicated-machine recovery follows ADR-0273 above.
 
 The preceding [guest browser and preview delivery](docs/reports/guest-browser-delivery-20261022.md)
 was `guest-browser-bd03f7a6`, schema 197: the standard image bundles pinned
-Playwright/Chromium and CJK fonts for Bash-driven UI checks and native screenshot Read. Successful preview
-actions retain their link metadata and remain visible outside collapsed Tool groups.
+Playwright/Chromium and CJK fonts for Bash-driven UI checks and native screenshot Read. Preview retains its link metadata; the October 24
+[ADR-0270 amendment](docs/adr/0270-guest-browser-and-tool-result-actions.md) uses
+named answer links and keeps technical details inside the Tool disclosure.
 Real Luna guest interaction, screenshot vision and live/cold preview navigation pass.
 
 - Multi-round chat, model switching, hosted search and Subagents.

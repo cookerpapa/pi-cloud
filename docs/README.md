@@ -35,7 +35,9 @@ identities and the PG revision. The [delivery record](reports/guest-browser-deli
 distinguishes successful configuration checks from transient upstream TLS failures.
 
 [ADR-0270](adr/0270-guest-browser-and-tool-result-actions.md) adds a preinstalled
-guest Playwright/Chromium stack and consistent live/cold preview actions. It is
+guest Playwright/Chromium stack and consistent live/cold Tool-result metadata.
+Its October 24 presentation amendment removes separate Preview cards in favor
+of named answer links, without answer inspection or fallback actions. The guest capability is
 deployed as `guest-browser-bd03f7a6`, schema 197. Real Luna guest interaction,
 screenshot vision and live/cold preview navigation pass; it introduces no browser
 service or new execution authority. The owner-authorized old Workspace deletion

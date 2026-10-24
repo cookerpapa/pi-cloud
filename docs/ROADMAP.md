@@ -1,5 +1,11 @@
 # Implementation roadmap
 
+## Preview answer links
+
+- [x] Amend ADR-0270 for named answer links and ordinary expandable Tool details.
+- [x] Remove the duplicate Preview component/styles and mandatory port label.
+- [ ] Complete source/browser checks, matched publication and real application navigation.
+
 ## Initial message handoff and service instructions
 
 - [x] Reproduce early SSE start before input acknowledgement/discovery.

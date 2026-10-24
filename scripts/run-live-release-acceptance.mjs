@@ -37,8 +37,22 @@ if (
 )
   serializeRelease(runtimeDirectory);
 const capabilityScope = process.env.PI_CLOUD_RUNTIME_CAPABILITY_SCOPE ?? "all";
-assert(["all", "catalog"].includes(capabilityScope), "Unknown runtime capability acceptance scope");
-assert(capabilityScope === "all" || process.env.PI_CLOUD_LIVE_RUNTIME_CAPABILITIES === "1");
+assert(
+  ["all", "catalog", "browser"].includes(capabilityScope),
+  "Unknown runtime capability acceptance scope",
+);
+assert(capabilityScope !== "catalog" || process.env.PI_CLOUD_LIVE_RUNTIME_CAPABILITIES === "1");
+if (capabilityScope === "browser") {
+  assert(
+    process.env.PI_CLOUD_LIVE_GUEST_BROWSER === "1",
+    "Browser scope requires guest browser acceptance",
+  );
+  assert(
+    process.env.PI_CLOUD_LIVE_RUNTIME_CAPABILITIES !== "1" &&
+      process.env.PI_CLOUD_LIVE_ELASTIC_RETENTION !== "1",
+    "Select one acceptance scope",
+  );
+}
 const output = resolve(
   process.env.PI_CLOUD_ACCEPTANCE_REPORT ?? "dist/release-targeted-acceptance.json",
 );
