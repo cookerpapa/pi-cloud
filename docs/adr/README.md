@@ -23,7 +23,9 @@ upstream address through one operator command while retaining PG and Helm owners
 inside Cube using Bash/Read, and carries bounded Tool-result metadata through
 same-commit display references. The owner-approved October 24 amendment moves
 application navigation to named answer links and removes separate Preview cards;
-Tool details retain technical information. The guest capability was deployed as
+Tool details retain technical information. This amendment is deployed as
+`preview-answer-16f8f8b5`, schema 198; [delivery](../reports/preview-answer-delivery-20261024.md)
+records real navigation and preserved applications. The guest capability was deployed as
 `guest-browser-bd03f7a6`, schema 197.
 
 [ADR-0269](0269-execution-owned-control-tool-catalog.md) uses execution-owned

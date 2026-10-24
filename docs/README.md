@@ -1,5 +1,10 @@
 # Documentation map
 
+The [Preview answer-link delivery](reports/preview-answer-delivery-20261024.md)
+is deployed as `preview-answer-16f8f8b5`, schema 198. It removes separate application
+cards, retains expandable Tool details and verifies actual live/cold named-link
+navigation. The matched dependency updates and both restored applications are recorded.
+
 The [initial-message handoff repair](reports/input-handoff-delivery-20261024.md)
 is deployed as `input-handoff-2a5a2ffd`, retaining schema 198. Missing input metadata
 no longer renders as placeholder user text, and service-start instructions permit

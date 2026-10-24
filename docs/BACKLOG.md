@@ -25,15 +25,12 @@ readiness evidence without mandating a separate Bash call. Source/browser and
 real native queue/Stop acceptance pass, with retained machine/Workspace/history
 and completed fixture cleanup. No periodic progress-narration policy was added.
 
-## Preview answer links
-
-The owner approved the [ADR-0270 amendment](adr/0270-guest-browser-and-tool-result-actions.md):
-use the Agent's named answer link, retain Preview parameters/results in Tool
-details, and remove separate application cards. No answer parsing/deduplication
-or fallback action is required. Ordinary replies no longer require a port label.
-
-- [ ] Complete source/browser verification, matched publication, live/cold answer
-      navigation and preservation/owned-fixture cleanup.
+The [Preview presentation delivery](reports/preview-answer-delivery-20261024.md)
+is deployed as `preview-answer-16f8f8b5`, schema 198. Named answer links replace
+separate application cards; technical data stays in Tool details. Source/browser,
+HTTP dependency, artifact and real Luna navigation checks pass. Both existing
+applications and all original assets/configuration are preserved; the owned
+acceptance resources are physically cleaned up.
 
 ## Resource intent and dedicated-machine recovery
 

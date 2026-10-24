@@ -3,7 +3,10 @@
 Status: implemented and deployed as `guest-browser-bd03f7a6`, schema 197.
 Date: 2026-10-22.
 
-Presentation amendment, 2026-10-24 (owner approved): remove the separate
+Presentation amendment, 2026-10-24: deployed as `preview-answer-16f8f8b5`, schema 198.
+[Delivery evidence](../reports/preview-answer-delivery-20261024.md) covers the
+matched artifacts, actual named-link navigation and preserved applications.
+The owner approved removing the separate
 application-action card and collapsed-group preview link. Preview keeps returning
 the verified authenticated path to Pi; the Agent provides a named Markdown link
 in its answer. The Web treats Preview as an ordinary Tool with expandable

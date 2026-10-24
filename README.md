@@ -3,7 +3,11 @@
 A self-hosted, multi-tenant coding agent. Pi Durable 1.0.0 runs the native Harness in a shared
 Worker pool; file and shell tools execute in isolated CubeSandbox KVM guests.
 
-The latest [input-handoff repair](docs/reports/input-handoff-delivery-20261024.md),
+The latest [Preview presentation update](docs/reports/preview-answer-delivery-20261024.md),
+`preview-answer-16f8f8b5`, uses named answer links with technical data in Tool
+details. Existing applications and conversations are retained; schema 198 remains.
+
+The preceding [input-handoff repair](docs/reports/input-handoff-delivery-20261024.md),
 `input-handoff-2a5a2ffd`, removes transient placeholder user messages and simplifies
 background-service instructions. Schema 198 and native Pi execution remain unchanged.
 

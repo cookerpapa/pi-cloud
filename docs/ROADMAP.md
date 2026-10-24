@@ -4,7 +4,11 @@
 
 - [x] Amend ADR-0270 for named answer links and ordinary expandable Tool details.
 - [x] Remove the duplicate Preview component/styles and mandatory port label.
-- [ ] Complete source/browser checks, matched publication and real application navigation.
+- [x] Complete source/browser checks, matched publication and real application navigation.
+
+[Delivery](reports/preview-answer-delivery-20261024.md): `preview-answer-16f8f8b5`,
+retained source/HTTP/browser checks, repaired dependency pins, live/cold named
+answer navigation and preserved existing applications.
 
 ## Initial message handoff and service instructions
 
