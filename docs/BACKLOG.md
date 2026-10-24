@@ -2,15 +2,17 @@
 
 ## Explicit image generation
 
-The owner approved [ADR-0274](adr/0274-explicit-image-generation-tool.md), including
-path/recent-Conversation references and transparent backgrounds. The subscription
-gateway's generation and reference-edit requests have returned real PNGs; the
-edit contains transparent pixels. These probes do not yet establish a deployed
-end-to-end Tool. Existing directory and new local failure/context/image tests pass.
+[ADR-0274](adr/0274-explicit-image-generation-tool.md) is deployed as
+`image-tool-0bac4e97`. [Delivery](reports/image-tool-delivery-20261025.md) records
+real path/recent-context image calls, alpha, saved files, live/cold display,
+375 fault cases, shared image admission and physical test cleanup. Existing
+Sessions, Workspaces and applications are retained. The provider's implicit
+image injection was disabled, and future matched upgrades reconcile that policy.
 
-- [ ] Finish the matched source/artifact checks and image I/O cancellation coverage.
-- [ ] Publish while retaining existing Workspaces and verify actual image display,
-      cold restore and the requested galgame message against its existing reference.
+- [ ] Obtain positive acceptance for the owner's original character-reference
+      scenario when a provider-accepted reference is available. The requested
+      existing-conversation attempt reported service refusal and produced no
+      image; the successful neutral-image fixture does not turn that into a pass.
 
 Only unfinished work for the PostgreSQL + Kafka + Pi SDK + Cube Volume
 architecture belongs here. Implemented contracts live in the

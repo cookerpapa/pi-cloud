@@ -1,6 +1,7 @@
 # ADR-0274: Explicit image generation through the ordinary Tool catalog
 
-Status: accepted; implementation in progress.
+Status: implemented and deployed in `image-tool-0bac4e97`; see
+[delivery evidence](../reports/image-tool-delivery-20261025.md).
 Date: 2026-10-24.
 
 ## Decision
@@ -25,13 +26,17 @@ Provider credentials remain in CLIProxyAPI. Its pinned image adapter can use the
 existing Codex subscription; access is validated before feature publication and
 never silently falls back to a separately billed API key. Normal chat requests
 must no longer acquire undeclared image-generation tools from proxy injection.
-Image-service requests make one attempt; uncertain completion is not retried.
+PiCloud makes one Images request; uncertain completion is not retried.
 The pinned gateway's zero `request-retry` setting does not disable its inner
 account/model failover loop. A small, pinned Images-only interceptor guard blocks
-a second executor admission for the same non-streaming request, preserving the
+another account/model admission for the same non-streaming request, preserving the
 existing interceptor and ordinary chat policy. Its patch must apply cleanly and
 its upstream-package test passes during image build. This is an explicit
 maintained overlay, not a claim about upstream's default failure semantics.
+The upstream's known-401 credential refresh remains distinct from replay after
+an uncertain generation outcome.
+Fresh initialization and matched upgrades reconcile the same runtime policy;
+upgrades do so only after draining writers and before replacing the provider Pod.
 
 ## Effect admission and recovery
 

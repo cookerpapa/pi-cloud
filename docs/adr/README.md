@@ -1,9 +1,10 @@
 # Current architecture decisions
 
-[ADR-0274](0274-explicit-image-generation-tool.md) is in implementation: explicit
+[ADR-0274](0274-explicit-image-generation-tool.md) is deployed as `image-tool-0bac4e97`: explicit
 Codex-shaped image Tool, context-bound references, guest image I/O and existing
-Kafka dispatch admission for non-replayable ordinary effects. Publication and
-real existing-conversation acceptance are pending.
+Kafka dispatch admission for non-replayable ordinary effects. [Delivery](../reports/image-tool-delivery-20261025.md)
+distinguishes successful neutral-image acceptance, the provider configuration
+correction and the original-reference refusal.
 
 [ADR-0273](0273-resource-intent-and-machine-recovery.md) is deployed as
 `resource-intent-cad5487a`, schema 198. PG retains resource intent and lifecycle

@@ -1,4 +1,5 @@
 import { configureBuildProxy } from "./lib/upstream-proxy.mjs";
+import { updateProviderRuntimePolicyFile } from "./lib/provider-runtime-policy.mjs";
 import { serializeRelease } from "./lib/release-lock.mjs";
 import { deploymentFromEvidence, digest } from "./lib/component-release.mjs";
 import { parseModelCatalogConfiguration } from "../packages/protocol/src/model-catalog.ts";
@@ -254,6 +255,9 @@ try {
   // Close the admission race after all writers have actually exited.
   await assertDrained(true);
   phase("matched Cube, template and application cutover");
+  // Existing installations do not rerun init-production. Reconcile the same
+  // deployment-owned provider policy before the matched provider Pod starts.
+  await updateProviderRuntimePolicyFile(resolve(runtimeDirectory, "secrets/cli-proxy-config.yaml"));
   cutover = true;
   kubectl([
     "set",

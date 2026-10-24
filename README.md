@@ -3,7 +3,13 @@
 A self-hosted, multi-tenant coding agent. Pi Durable 1.0.0 runs the native Harness in a shared
 Worker pool; file and shell tools execute in isolated CubeSandbox KVM guests.
 
-The latest [Preview presentation update](docs/reports/preview-answer-delivery-20261024.md),
+The [explicit image Tool delivery](docs/reports/image-tool-delivery-20261025.md),
+`image-tool-0bac4e97`, adds reference-image generation, transparent PNGs, Workspace
+placement and retained conversation previews. Path and recent-context references
+pass real Luna/browser acceptance. The report separately records the owner's
+reference-image refusal and the corrected provider configuration. Schema 198 remains.
+
+The preceding [Preview presentation update](docs/reports/preview-answer-delivery-20261024.md),
 `preview-answer-16f8f8b5`, uses named answer links with technical data in Tool
 details. Existing applications and conversations are retained; schema 198 remains.
 
@@ -47,6 +53,8 @@ Real Luna guest interaction, screenshot vision and live/cold preview navigation 
   efforts retain explicitly requested delegation. Parent Tool cards show compact
   child progress and navigation, with invocation details closed by default.
 - Streaming chat file uploads into Workspace; attached images reach the model directly.
+- An execution-owned `generate_image` Tool, independent of the chat model, with
+  file or recent-conversation references and authenticated image previews.
 - Elastic Workspaces or dedicated development machines, with file browsing,
   terminals and app previews. Dedicated machines also support SSH.
 

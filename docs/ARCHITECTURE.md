@@ -1468,7 +1468,7 @@ Cube normalizes them before model admission. Pi receives ordinary user text and
 ImageContent without an Agent read Tool call. Queue edits, steer and native replay
 retain images independently of mutable Workspace files. See
 [chat attachment contracts](CHAT_ATTACHMENTS.md) and ADR-0200. Generated-image
-results are being integrated under ADR-0274 as an explicit ordinary Tool.
+results are delivered under ADR-0274 as an explicit ordinary Tool.
 `generate_image` uses Codex-shaped arguments and a separately configured Images
 service through CLIProxyAPI. Recent-image references are bounded by the invoking
 assistant entry in the current Conversation. File reads, normalization and
@@ -1479,8 +1479,10 @@ Non-replayable ordinary effects confirm the existing Kafka dispatch commit befor
 execution. A recovered unfinished intent returns UNKNOWN without another remote
 request, including when prior admission cannot be proved. Reply retries keep the
 completed in-memory outcome and never regenerate an image. No operation ledger,
-separate image scheduler or Skill loader is added. The matched release and live
-acceptance remain pending in BACKLOG until explicitly recorded.
+separate image scheduler or Skill loader is added. The matched release
+`image-tool-0bac4e97` and real path/recent-image/browser acceptance are recorded in
+[delivery evidence](reports/image-tool-delivery-20261025.md), separately from the
+owner's unsuccessful original-reference attempt.
 
 The native Durable Harness owns bounded sampling retries; Model Gateway forwards one
 send per admitted request. Generated CLIProxyAPI settings disable extra retry

@@ -5,10 +5,15 @@
 - [x] Verify subscription-backed Images generation, reference editing and alpha.
 - [x] Record ADR-0274 and implement the Codex-shaped catalog Tool, guest image I/O
       and canonical image display without an additional queue or result ledger.
-- [ ] Complete context-bound reference, cancellation, uncertain-effect/reply and
-      live catalog verification.
-- [ ] Publish matched artifacts while preserving existing Sessions/Workspaces;
+- [x] Complete context-bound reference, cancellation, uncertain-effect/reply and
+      native running-submission catalog verification.
+- [x] Publish matched artifacts while preserving existing Sessions/Workspaces;
       perform the owner's requested reference-image test in the galgame conversation.
+
+[Delivery](reports/image-tool-delivery-20261025.md): two real explicit reference
+calls and live/cold image display pass. The exact existing-conversation request
+was sent, but reported provider refusal and produced no image; it is not a passed
+character-generation acceptance. The provider runtime-policy upgrade path is corrected.
 
 ## Preview answer links
 

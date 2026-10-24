@@ -1,9 +1,10 @@
 # Documentation map
 
-[ADR-0274](adr/0274-explicit-image-generation-tool.md) implements the approved
-explicit image-generation Tool and non-replayable ordinary-effect admission.
-Implementation and matched acceptance are in progress; the serving release below
-is unchanged until publication completes.
+[ADR-0274](adr/0274-explicit-image-generation-tool.md) is deployed as
+`image-tool-0bac4e97`: explicit image generation, context-bound references, guest
+image I/O and non-replayable ordinary-effect admission. [Delivery evidence](reports/image-tool-delivery-20261025.md)
+records real path/recent-image/alpha/browser acceptance, preserved assets, the
+provider configuration correction and the unsuccessful original-reference attempt.
 
 The [Preview answer-link delivery](reports/preview-answer-delivery-20261024.md)
 is deployed as `preview-answer-16f8f8b5`, schema 198. It removes separate application
