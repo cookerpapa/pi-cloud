@@ -127,9 +127,12 @@ COPY deploy/cubesandbox/browser/index.mjs deploy/cubesandbox/browser/check.mjs /
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    --mount=type=cache,id=pi-cloud-playwright-linux-amd64,target=/var/cache/pi-cloud-playwright,sharing=locked \
     npm ci --prefix /opt/pi-cloud/browser --ignore-scripts --no-audit --no-fund \
-    && PLAYWRIGHT_BROWSERS_PATH=/opt/pi-cloud/browser/browsers \
+    && PLAYWRIGHT_BROWSERS_PATH=/var/cache/pi-cloud-playwright \
        node /opt/pi-cloud/browser/node_modules/playwright/cli.js install --with-deps chromium \
+    && mkdir -p /opt/pi-cloud/browser/browsers \
+    && cp -a /var/cache/pi-cloud-playwright/. /opt/pi-cloud/browser/browsers/ \
     && apt-get install --yes --no-install-recommends fonts-noto-cjk \
     && fc-cache -f \
     && chmod -R a+rX /opt/pi-cloud/browser

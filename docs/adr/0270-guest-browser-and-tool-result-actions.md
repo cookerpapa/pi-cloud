@@ -87,6 +87,14 @@ completion dependencies on that Ubuntu ABI. Verify binary/codec compatibility,
 normal transport behavior and the existing guest/browser/native-Tool gates
 before the matched replacement.
 
+Guest builds retain Playwright's installer-selected browser revisions in an
+ordinary BuildKit cache and copy them into the final image. A missing revision
+still downloads through the pinned installer. The October 24 rebuild seeds that
+cache from the previously verified guest artifact after repeated CDN TLS
+interruptions, retaining the exact Playwright/Chromium versions and package-lock
+identity. This cache is not a runtime fallback or an additional guest service;
+browser interaction, native Read and cancellation checks still run on the new image.
+
 ## Acceptance
 
 The October 22 artifact gate also requires rebuilding existing Go binaries with
