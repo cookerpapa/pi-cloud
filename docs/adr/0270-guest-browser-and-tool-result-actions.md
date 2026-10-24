@@ -70,6 +70,23 @@ a browser runtime. Keep Cube's existing base/guest contract and install the
 required browser in that image; adopting an additional remote browser service
 would add transport, routing and ownership without a demonstrated requirement.
 
+## October 24 release dependencies
+
+The matched artifact gate blocked the presentation release on
+[Undici's maintained advisory](https://github.com/nodejs/undici/security/advisories/GHSA-xjj6-f33q-929c)
+and [Alpine's Brotli update](https://pkgs.alpinelinux.org/package/v3.21/main/x86_64/brotli-libs).
+Pin Undici 6.29.1 within the existing major and Brotli 1.1.1-r0 in the existing
+CubeAPI dependency patch. Node also embeds the affected Brotli implementation;
+its official [24.22.1 security release](https://nodejs.org/en/blog/release/v24.22.1)
+provides that repair and its bundled Undici update. Pin that Node image by digest
+and use it for CI. No scanner exception or gate relaxation is added.
+
+The official 24.22.1 Bullseye image is unavailable. The Bookworm image donates
+Node/npm, while Cubelet and the guest retain their Ubuntu base and build native
+completion dependencies on that Ubuntu ABI. Verify binary/codec compatibility,
+normal transport behavior and the existing guest/browser/native-Tool gates
+before the matched replacement.
+
 ## Acceptance
 
 The October 22 artifact gate also requires rebuilding existing Go binaries with

@@ -47,7 +47,7 @@
     "kysely": "0.29.4",
     "ws": "8.21.1",
     "@pi-cloud/session-attachments": "0.1.0",
-    "undici": "6.28.1"
+    "undici": "6.29.1"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.4",

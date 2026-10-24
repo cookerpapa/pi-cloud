@@ -7,7 +7,7 @@ index 328a8c3..382e517 100644
  
  # curl is required by the HEALTHCHECK below; tzdata for Asia/Shanghai local time.
 -RUN apk add --no-cache ca-certificates curl tzdata \
-+RUN apk add --no-cache ca-certificates curl tzdata libssl3=3.3.7-r2 libcrypto3=3.3.7-r2 \
++RUN apk add --no-cache ca-certificates curl tzdata libssl3=3.3.7-r2 libcrypto3=3.3.7-r2 brotli-libs=1.1.1-r0 \
      && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
      && echo "Asia/Shanghai" > /etc/timezone
  

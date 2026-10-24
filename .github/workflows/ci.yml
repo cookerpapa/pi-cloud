@@ -61,7 +61,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24.18.0
+          node-version: 24.22.1
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -173,7 +173,7 @@ jobs:
         if: matrix.image == 'workspace-volume-gateway'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24.18.0
+          node-version: 24.22.1
 
       - name: Verify native Volume initialization and process-loss recovery
         if: matrix.image == 'workspace-volume-gateway'
