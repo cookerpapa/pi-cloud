@@ -1,5 +1,13 @@
 # Maintained backlog
 
+## Request failure wording — in progress
+
+Replace technical retry/native-task prose with localized user-facing copy.
+Generic native failure does not prove a network connection failure; keep specific
+Tool/timeout explanations and the original diagnostic data. This is a Web-only
+presentation change; native retry/execution behavior and public schemas stay the same.
+Validate the rendered live/cold wording and use the scoped Web release path.
+
 ## Long conversation presentation — completed
 
 The owner approved [ADR-0278](adr/0278-windowed-conversation-presentation.md).

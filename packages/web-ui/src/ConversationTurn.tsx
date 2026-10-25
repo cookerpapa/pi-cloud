@@ -563,9 +563,11 @@ export function ConversationTurn({
                   <span>
                     {turn.failure.code === "run_timed_out"
                       ? t("error.runTimedOut")
-                      : turn.failure.message === "这次运行失败了，请重试。"
-                        ? t("error.runFailed")
-                        : turn.failure.message}
+                      : ["native_task_failed", "model_request_failed"].includes(turn.failure.code)
+                        ? t("error.responseUnavailable")
+                        : turn.failure.code === "run_failed"
+                          ? t("error.runFailed")
+                          : turn.failure.message}
                   </span>
                 </div>
               ) : null}

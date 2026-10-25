@@ -14,6 +14,7 @@ import type { TurnView } from "../src/session-view.ts";
 import { WorkspaceDirectoryPicker } from "../src/WorkspaceDirectoryPicker.tsx";
 import { WorkspaceInspector } from "../src/WorkspaceInspector.tsx";
 import type { WebConfiguration } from "../src/web-configuration.ts";
+import { I18nProvider } from "../src/i18n.tsx";
 
 const configuration: WebConfiguration = {
   productUrl: "https://chat.example.test/",
@@ -62,6 +63,60 @@ function turn(turnId: string, prompt: string): TurnView {
 }
 
 describe("product chat experience", () => {
+  it.each(["native_task_failed", "model_request_failed"])(
+    "presents %s without exposing an internal task error or inventing a connection cause",
+    (code) => {
+      const failure = {
+        code,
+        message: "The native task did not complete its accepted input",
+        retryable: false,
+      };
+      const failed = { ...turn("failed-request", "继续"), status: "failed" as const, failure };
+      const chinese = renderToStaticMarkup(<ConversationTurn turn={failed} />);
+      expect(chinese).toContain("请求未完成");
+      expect(chinese).toContain("暂时无法完成回复，请稍后重试。");
+      expect(chinese).not.toContain(failure.message);
+      expect(chinese).not.toContain("连接失败");
+      const english = renderToStaticMarkup(
+        <I18nProvider initialLanguage="en-US">
+          <ConversationTurn turn={failed} />
+        </I18nProvider>,
+      );
+      expect(english).toContain("Unable to complete the response right now");
+      expect(english).not.toContain(failure.message);
+      expect(failed.failure.message).toBe(failure.message);
+    },
+  );
+  it("retains a specific tool failure and the timeout explanation", () => {
+    const failed = {
+      ...turn("tool-failed", "继续"),
+      status: "failed" as const,
+      failure: {
+        code: "tool_reply_unavailable",
+        message: "Sandbox did not return a tool result.",
+        retryable: false,
+      },
+    };
+    expect(renderToStaticMarkup(<ConversationTurn turn={failed} />)).toContain(
+      failed.failure.message,
+    );
+    expect(
+      renderToStaticMarkup(
+        <ConversationTurn
+          turn={{ ...failed, failure: { ...failed.failure, code: "run_timed_out" } }}
+        />,
+      ),
+    ).toContain("运行超时，请重试。");
+  });
+  it("explains a historical retry without calling attempt two the second retry", () => {
+    const value = {
+      ...turn("retry-copy", "继续"),
+      items: [{ kind: "retry" as const, key: "retry:1", sequence: 1, nextSamplingAttempt: 2 }],
+    };
+    expect(renderToStaticMarkup(<ConversationTurn turn={value} />)).toContain(
+      "模型请求失败，正在重试（第 2 次尝试）",
+    );
+  });
   it("shows execution without fabricating a user bubble or copy action before input metadata arrives", () => {
     const pending = { ...turn("early-stream", ""), prompt: null, status: "running" as const };
     const markup = renderToStaticMarkup(<ConversationTurn turn={pending} />);
@@ -77,7 +132,7 @@ describe("product chat experience", () => {
     const value = { ...turn("length-limit", "Continue coding"), stopReason: "length" as const };
     const markup = renderToStaticMarkup(<ConversationTurn turn={value} />);
     expect(markup).toContain("已达到模型输出上限");
-    expect(markup).not.toContain("这次运行失败了");
+    expect(markup).not.toContain("product-turn-error");
     expect(
       renderToStaticMarkup(<ConversationTurn turn={{ ...value, stopReason: "stop" }} />),
     ).not.toContain("已达到模型输出上限");
