@@ -1,6 +1,6 @@
 # ADR-0276: Scoped Control Plane releases
 
-Status: accepted; implementation in progress.
+Status: implemented and deployed; final scoped release `control-final-35d715ae`.
 Date: 2026-10-25.
 
 ## Scope and reuse
@@ -50,6 +50,13 @@ non-replayable replies are outstanding. Successful reply publication alone is
 insufficient: wait until native Task settlement/closure has been projected.
 Repeatable child waits do not require the child or root Run to finish.
 
+The existing management credential protects
+`/internal/v1/session-publication/replacement`. `GET` reads version/instance,
+phase, request identity, expiry and counts. `POST` accepts JSON
+`{"action":"prepare","id":"<uuid>"}` or `{"action":"cancel","id":"<uuid>"}`.
+Preparing the same identity renews its 30-second hold; another identity is refused.
+Cancellation affects only the matching request. No new user-facing API is exposed.
+
 At a boundary with no active projection, no executing Control Tool and no
 unsettled non-replayable effect, atomically hold admission before the next record
 can materialize PG state or commit dispatch progress. Assignment recovery uses
@@ -84,3 +91,9 @@ acceptance replaces only the Control Plane during a real Luna/Cube Run and check
 unchanged Worker boots, Session lease/writer and VM allocation, continued native
 execution and ordinary catalog visibility at the next model request. Confirm
 physical fixture cleanup and preservation of existing user assets.
+
+[Delivery evidence](../reports/control-plane-release-delivery-20261025.md) records
+the initial matched installation, final one-image release, positive old-owner
+closure and unchanged active Run/Worker/VM identities. Effective owner-domain
+lookup uses Helm's computed values, while rendering retains the original value
+overrides. Missing or non-unique live ownership refuses replacement before stop.

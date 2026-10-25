@@ -65,11 +65,14 @@ Subagent trees or uploaded file sizes/counts. Resource requests, physical VM
 specifications, memory-pressure admission and transport/provider limits remain;
 see [configuration](docs/CONFIGURATION.md) and [uploads](docs/CHAT_ATTACHMENTS.md).
 
-Operators can use [independent provider/catalog releases](docs/COMPONENT_RELEASE.md),
+Operators can use [scoped component releases](docs/COMPONENT_RELEASE.md),
 the [matched procedure](docs/MATCHED_RELEASE.md) for application/protocol changes,
 and optional [conversation/image recovery](docs/ASSET_RECOVERY.md).
 The scoped Control Plane Tool release under [ADR-0276](docs/adr/0276-scoped-control-plane-releases.md)
-is being implemented; it retains Workers and running VMs for ordinary Tool updates.
+is deployed as `control-final-35d715ae`; ordinary Tool updates build and replace one
+Control Plane image while retaining Workers and running VMs. The
+[delivery record](docs/reports/control-plane-release-delivery-20261025.md) verifies
+the same Run/Bash continuing and its next request observing the new tool definition.
 For a shared local proxy, `npm run production:proxy -- http://127.0.0.1:12450`
 synchronizes host Docker/K3s, model and Cube egress settings; builds use the same address.
 The [private pilot criteria](docs/PRIVATE_PILOT.md) distinguish readiness checks

@@ -3,9 +3,13 @@
 ## Scoped Control Plane publication
 
 - [x] Record ADR-0276 and keep browser update notifications out of scope.
-- [ ] Add bounded projection/Control Tool quiescence with cancel/expiry recovery.
-- [ ] Extend one-image preparation, evidence, preflight and stop-old/start-new apply.
-- [ ] Verify active Run/catalog continuity, original assets and owned cleanup; deploy.
+- [x] Add bounded projection/Control Tool quiescence with cancel/expiry recovery.
+- [x] Extend one-image preparation, evidence, preflight and stop-old/start-new apply.
+- [x] Verify active Run/catalog continuity, original assets and owned cleanup; deploy.
+
+[Delivery](reports/control-plane-release-delivery-20261025.md): the final
+`control-final-35d715ae` update replaces one image; real Luna/Cube work, Worker
+boots, the Session lease, existing development machines and other Pods survive.
 
 ## Show existing images to the user
 

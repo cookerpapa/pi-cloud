@@ -6,7 +6,11 @@ The owner approved [ADR-0276](adr/0276-scoped-control-plane-releases.md).
 Ordinary Tool changes should publish only the Control Plane, retaining Workers,
 Cube and running VMs. Browser update prompts are explicitly out of scope.
 
-- [ ] Complete quiescence/failure coverage, one-image release and live active-Run acceptance.
+Deployed as `control-final-35d715ae`. [Delivery evidence](reports/control-plane-release-delivery-20261025.md)
+records quiescence/failure coverage, positive old-owner closure and real active-Run
+continuation. The original applications and all user assets are preserved; owned
+fixtures are cleaned up. This first scope is one Control Plane without an HPA and
+ordinary Tool code; broader runtime/ownership changes still require matched release.
 
 ## User-facing image presentation
 

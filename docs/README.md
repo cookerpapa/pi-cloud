@@ -1,7 +1,9 @@
 # Documentation map
 
-[ADR-0276](adr/0276-scoped-control-plane-releases.md) records the approved scoped
-Control Plane release and bounded quiescence work. Implementation is in progress.
+[ADR-0276](adr/0276-scoped-control-plane-releases.md) is deployed as
+`control-final-35d715ae`: scoped Control Plane publication and bounded quiescence.
+[Delivery](reports/control-plane-release-delivery-20261025.md) records active-Run
+continuity, the final old-owner proof, unchanged Worker/VM identities and cleanup.
 
 [ADR-0275](adr/0275-user-image-presentation.md) is deployed: `show_image`
 and shared canonical image presentation outside collapsed Tool activity.
