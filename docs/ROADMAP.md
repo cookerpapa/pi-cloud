@@ -1,6 +1,6 @@
 # Implementation roadmap
 
-## Model-event waiting and input commands — in implementation
+## Model-event waiting and input commands — completed
 
 The [revised plan](reports/slash-commands-plan-20261025.md) retains current-Run
 manual compaction and distinguishes cold Worker admission. The owner requested a
@@ -11,7 +11,10 @@ new plan after discussing the original idle-only approach and approved
 - [x] Record the protocol/ownership decision and implement model-event inactivity with native retry.
 - [x] Add committed usage reads and the input command menu without model prompts or a new queue.
 - [x] Add current-owner manual compaction, then the explicit cold admission path.
-- [ ] Complete source/fault/browser/Luna acceptance and matched publication with existing assets retained.
+- [x] Complete source/fault/browser/Luna acceptance and matched publication with existing assets retained.
+
+Deployed as `commands-514e2b0f`; [delivery evidence](reports/conversation-commands-delivery-20261026.md)
+includes the full Worker composition and actual command/continuation/recovery flows.
 
 ## Scoped Control Plane publication
 

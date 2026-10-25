@@ -1,6 +1,7 @@
 # Architecture
 
-Conversation commands follow [ADR-0277](adr/0277-model-event-waiting-and-conversation-commands.md).
+Conversation commands follow [ADR-0277](adr/0277-model-event-waiting-and-conversation-commands.md),
+deployed as `commands-514e2b0f`, schema 199.
 `/usage` reads native committed usage and the active context head/suffix, without
 acquiring a Worker or starting a VM. `/compact` routes to the current owner and
 creates Pi's exported CompactionTask and an idempotent receipt in one native

@@ -52,6 +52,8 @@ Real Luna guest interaction, screenshot vision and live/cold preview navigation 
 - Composer commands: `/usage` reads committed usage and estimated context;
   `/compact [instructions]` invokes native Pi compaction in the current Run, or
   admits explicit compact work when idle. It does not activate Workspace compute.
+  [Delivery and validation](docs/reports/conversation-commands-delivery-20261026.md)
+  describe native placement, recovery and the model-event waiting policy.
 - Ultra in the effort picker: provider Max plus proactive delegation. Other
   efforts retain explicitly requested delegation. Parent Tool cards show compact
   child progress and navigation, with invocation details closed by default.

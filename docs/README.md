@@ -1,19 +1,23 @@
 # Documentation map
 
+[Conversation commands and model waiting](reports/conversation-commands-delivery-20261026.md)
+is deployed as `commands-514e2b0f`, schema 199: input `/usage`, native active/cold
+`/compact`, 300-second model-event inactivity and native retries. Real Luna,
+browser, same-Run placement and Worker-crash recovery are recorded in the delivery.
+
 [Model first-response investigation](reports/model-first-response-investigation-20261025.md)
 confirms the local 120-second header timeout and CLIProxyAPI's first-data gating.
 The [coupled header-wait adjustment](reports/model-header-budget-delivery-20261025.md)
-is deployed as `header-budget-b8e009fa`: 240-second Gateway / 270-second Pi wait,
+was deployed as `header-budget-b8e009fa`: 240-second Gateway / 270-second Pi wait,
 with unchanged images and passing Luna acceptance. Upstream phase instrumentation
-remains proposed; the historical upstream delay remains unproven.
+remains proposed; the historical upstream delay remains unproven. ADR-0277 now
+supersedes that temporary header policy.
 
 [Revised input-command and waiting proposal](reports/slash-commands-plan-20261025.md)
 describes model-event inactivity, `/usage`, and manual `/compact` within an active
 Run through native Pi Tasks. Cold Worker admission is a separate explicit choice;
-the earlier idle-only compaction restriction is withdrawn. Source implementation
-and native/PG/browser checks are complete under
-[ADR-0277](adr/0277-model-event-waiting-and-conversation-commands.md); matched
-publication and owned live acceptance are in progress.
+the earlier idle-only compaction restriction is withdrawn. It is implemented under
+[ADR-0277](adr/0277-model-event-waiting-and-conversation-commands.md).
 
 [ADR-0276](adr/0276-scoped-control-plane-releases.md) is deployed as
 `control-final-35d715ae`: scoped Control Plane publication and bounded quiescence.

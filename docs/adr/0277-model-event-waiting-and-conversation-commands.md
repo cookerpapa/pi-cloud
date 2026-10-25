@@ -1,9 +1,10 @@
 # ADR-0277: Model-event waiting and conversation commands
 
-Status: accepted for implementation, 2026-10-25. The owner approved the
+Status: implemented and deployed, 2026-10-26, as `commands-514e2b0f` (schema 199).
+See [delivery evidence](../reports/conversation-commands-delivery-20261026.md).
+The owner approved the
 [revised plan](../reports/slash-commands-plan-20261025.md), then confirmed that a
 Run represents user-requested cloud work, including a cold manual compaction.
-Not yet deployed.
 
 ## Model requests
 

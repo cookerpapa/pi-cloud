@@ -1,6 +1,6 @@
 # Maintained backlog
 
-## Model waiting and input commands — in implementation
+## Model waiting and input commands — completed
 
 [Revised proposal](reports/slash-commands-plan-20261025.md) covers provider-event
 waiting, read-only `/usage` and input-driven manual `/compact`. Running compaction
@@ -8,11 +8,11 @@ must reuse the current Run and Pi's native Task/summary placement; the earlier
 idle-only restriction is withdrawn. Per-task request binding, atomic command
 identity and recovery are covered by public-SDK contract verification. Cold admission
 uses a typed initial operation in the existing Run queue. The owner approved
-[ADR-0277](adr/0277-model-event-waiting-and-conversation-commands.md). The deployed
-240/270-second header policy remains until its replacement is published. Source
-checks cover both provider adapters, native concurrent compaction/recovery,
-PG command admission/usage and the actual composer. Remaining work is the matched
-release and owned Luna/Cube/restart acceptance; existing user assets are retained.
+[ADR-0277](adr/0277-model-event-waiting-and-conversation-commands.md) is deployed as
+`commands-514e2b0f`, schema 199. [Delivery](reports/conversation-commands-delivery-20261026.md)
+records composed Worker tests, real browser/Luna compaction, native input/Stop,
+Worker and dual-process recovery, physical fixture cleanup and preserved assets.
+The old header policy has been replaced by connection and model-event budgets.
 
 ## Scoped Control Plane publication
 
