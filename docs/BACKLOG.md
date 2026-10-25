@@ -1135,10 +1135,11 @@ separate design questions, not an implicit part of the completed query merge.
       labelled as internal relay time.
       The [October 25 first-response investigation](reports/model-first-response-investigation-20261025.md)
       confirms four consecutive local header timeouts and CLIProxyAPI's initial
-      data-frame gating. Add payload-free upstream phase timings, evaluate the
-      header-wait budget and preserve specific native failure presentation as a
-      separate repair slice. The underlying upstream delay is not established;
-      local characterization is not live recovery acceptance.
+      data-frame gating. The [240/270-second header-wait policy](reports/model-header-budget-delivery-20261025.md)
+      is deployed with unchanged binaries and real Luna acceptance. Add payload-free
+      upstream phase timings and preserve specific native failure presentation as
+      a separate repair slice. The underlying upstream delay is not established;
+      successful ordinary acceptance does not prove the old slow requests recover.
 
 - [ ] Audit historical untracked Cube Volume references independently. ADR-0226
       repairs managed cleanup-reply loss using durable node state; it cannot

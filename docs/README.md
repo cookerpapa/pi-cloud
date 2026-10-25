@@ -2,7 +2,10 @@
 
 [Model first-response investigation](reports/model-first-response-investigation-20261025.md)
 confirms the local 120-second header timeout and CLIProxyAPI's first-data gating.
-The upstream delay remains unproven; no runtime repair has been deployed.
+The [coupled header-wait adjustment](reports/model-header-budget-delivery-20261025.md)
+is deployed as `header-budget-b8e009fa`: 240-second Gateway / 270-second Pi wait,
+with unchanged images and passing Luna acceptance. Upstream phase instrumentation
+remains proposed; the historical upstream delay remains unproven.
 
 [Slash-command proposal](reports/slash-commands-plan-20261025.md) describes
 `/usage` statistics and idle-Session manual `/compact`. It is proposed, not deployed.
