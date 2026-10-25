@@ -1,11 +1,15 @@
 # Maintained backlog
 
-## Slash commands — proposed
+## Model waiting and input commands — revised proposal
 
-[Proposal](reports/slash-commands-plan-20261025.md) covers read-only `/usage` and
-idle-Session manual `/compact`, using native usage and compaction with existing
-PG work admission/Session ownership. Scope and first-version idle restriction are
-pending owner review; no runtime changes are implemented.
+[Revised proposal](reports/slash-commands-plan-20261025.md) covers provider-event
+waiting, read-only `/usage` and input-driven manual `/compact`. Running compaction
+must reuse the current Run and Pi's native Task/summary placement; the earlier
+idle-only restriction is withdrawn. Per-task request binding, atomic command
+identity and recovery need public-SDK contract verification first. Cold admission
+separately proposes a typed maintenance record in the existing Run queue. This
+revised scope is under discussion; no feature code has been changed. The deployed
+240/270-second header policy remains until its replacement is verified.
 
 ## Scoped Control Plane publication
 

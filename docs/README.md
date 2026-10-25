@@ -7,8 +7,10 @@ is deployed as `header-budget-b8e009fa`: 240-second Gateway / 270-second Pi wait
 with unchanged images and passing Luna acceptance. Upstream phase instrumentation
 remains proposed; the historical upstream delay remains unproven.
 
-[Slash-command proposal](reports/slash-commands-plan-20261025.md) describes
-`/usage` statistics and idle-Session manual `/compact`. It is proposed, not deployed.
+[Revised input-command and waiting proposal](reports/slash-commands-plan-20261025.md)
+describes model-event inactivity, `/usage`, and manual `/compact` within an active
+Run through native Pi Tasks. Cold Worker admission is a separate explicit choice;
+the earlier idle-only compaction restriction is withdrawn. It is not deployed.
 
 [ADR-0276](adr/0276-scoped-control-plane-releases.md) is deployed as
 `control-final-35d715ae`: scoped Control Plane publication and bounded quiescence.
