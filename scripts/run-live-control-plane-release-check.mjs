@@ -170,8 +170,30 @@ cat '${path}'; echo CONTROL_RELEASE_TOOL_DONE`;
   report.runId = run.runId;
   await save();
   await until(async () => {
-    if (terminal((await api.getRun(run.runId)).state))
+    const state = await api.getRun(run.runId);
+    if (terminal(state.state)) {
+      const messages = nativeMessages(await nativeHistory(db, { runId: run.runId }));
+      report.runFailure = {
+        state: state.state,
+        failure: state.failure,
+        modelErrors: messages
+          .filter((m) => m.role === "assistant" && m.stopReason === "error")
+          .map((m) => String(m.errorMessage ?? "Model request failed").slice(0, 1000)),
+        tools: messages
+          .filter((m) => m.role === "toolResult")
+          .map((m) => ({
+            name: m.toolName,
+            error: m.isError,
+            text: m.content
+              .filter((p) => p.type === "text")
+              .map((p) => p.text)
+              .join("\n")
+              .slice(0, 1000),
+          })),
+      };
+      await save();
       throw new Error("Fixture ended before its gated Tool started");
+    }
     try {
       const file = await api.readWorkspaceFile(session.sessionId, "control-release-count.txt");
       return Buffer.from(file.bytes).toString() === "ONCE\n";
