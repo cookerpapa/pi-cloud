@@ -67,8 +67,10 @@ export function deriveConversationPresentationRows(
       index += 1;
       while (
         !inlineToolImages(tools.at(-1)!).length &&
+        tools.length < 12 &&
         index < items.length &&
-        items[index]?.kind === "tool"
+        items[index]?.kind === "tool" &&
+        items[index]?.pageKey === item.pageKey
       ) {
         tools.push(items[index] as ToolTranscriptItem);
         index += 1;
@@ -86,7 +88,12 @@ export function deriveConversationPresentationRows(
     if (item.kind === "hosted_search") {
       const searches: Extract<TranscriptItem, { kind: "hosted_search" }>[] = [item];
       index += 1;
-      while (index < items.length && items[index]?.kind === "hosted_search") {
+      while (
+        searches.length < 12 &&
+        index < items.length &&
+        items[index]?.kind === "hosted_search" &&
+        items[index]?.pageKey === item.pageKey
+      ) {
         searches.push(items[index] as Extract<TranscriptItem, { kind: "hosted_search" }>);
         index += 1;
       }

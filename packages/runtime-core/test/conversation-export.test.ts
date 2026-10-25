@@ -7,11 +7,19 @@ import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
 } from "@pi-cloud/protocol";
 import { describe, expect, it } from "vitest";
-import {
-  conversationExportFilename,
-  conversationExportMarkdown,
-} from "../src/conversation-export.ts";
+import { conversationExportFilename, conversationMarkdown } from "../src/conversation-markdown.ts";
 
+async function renderExport(view: ConversationDetailResource, at: Date): Promise<string> {
+  let result = "";
+  for await (const part of conversationMarkdown(
+    (async function* () {
+      yield view;
+    })(),
+    at,
+  ))
+    result += part;
+  return result;
+}
 const conversation: ConversationDetailResource = {
   project: {
     projectId: "10000000-0000-4000-8000-000000000001",
@@ -94,12 +102,12 @@ const conversation: ConversationDetailResource = {
       acceptedAt: "2026-08-26T00:02:00.000Z",
     },
   ],
-  historyTruncated: false,
+  history: { before: null, after: null, hasBefore: false, hasAfter: false },
 };
 
 describe("canonical conversation Markdown export", () => {
-  it("labels inherited summaries and clipped context without pretending it is full history", () => {
-    const markdown = conversationExportMarkdown(
+  it("labels inherited summaries and clipped context without pretending it is full history", async () => {
+    const markdown = await renderExport(
       {
         ...conversation,
         turns: [],
@@ -116,7 +124,7 @@ describe("canonical conversation Markdown export", () => {
     expect(markdown).toContain("Only part of the inherited context is included");
     expect(markdown).not.toContain("### Assistant");
   });
-  it("exports a large code payload without spreading every backtick run into function arguments", () => {
+  it("exports a large code payload without spreading every backtick run into function arguments", async () => {
     const value = "`a` ".repeat(70_000);
     const withCode: ConversationDetailResource = {
       ...conversation,
@@ -142,13 +150,11 @@ describe("canonical conversation Markdown export", () => {
         },
       ],
     };
-    expect(conversationExportMarkdown(withCode, new Date("2026-08-26T00:00:00.000Z"))).toContain(
-      value,
-    );
+    expect(await renderExport(withCode, new Date("2026-08-26T00:00:00.000Z"))).toContain(value);
   });
-  it("exports terminal canonical messages and Tool details without live deltas", () => {
-    const markdown = conversationExportMarkdown(conversation, new Date("2026-08-26T01:02:03.000Z"));
-    expect(markdown).toContain('schema: "pi-cloud.session-export.v1"');
+  it("exports terminal canonical messages and Tool details without live deltas", async () => {
+    const markdown = await renderExport(conversation, new Date("2026-08-26T01:02:03.000Z"));
+    expect(markdown).toContain('schema: "pi-cloud.session-export.v2"');
     expect(markdown).toContain("### User\n\n写一个服务");
     expect(markdown).toContain("完成。");
     expect(markdown).toContain("Tool · preview · completed");

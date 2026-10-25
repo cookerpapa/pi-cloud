@@ -219,7 +219,7 @@ export class SessionEventStream {
       return new OpenSessionEventStream({
         subscription,
         snapshot: {
-          schemaVersion: 2,
+          schemaVersion: 3,
           conversation: {
             ...canonical.conversation,
             turns: canonical.conversation.turns.map((turn) => {

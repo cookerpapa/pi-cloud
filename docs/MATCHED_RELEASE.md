@@ -1,5 +1,11 @@
 # Matched release procedure
 
+ADR-0278 requires schema 200 and paired API/Web snapshot version 3. Drain native
+writers before index/caption backfill; preserve all native bodies/checksums and
+current human-input state. Run `npm run browser:history:check` against an isolated
+PG database for the 1 GiB browser/API/search/export acceptance, in addition to
+ordinary presentation and live Luna/Cube checks. It is not an execution benchmark.
+
 ADR-0277 requires a drained matched upgrade to schema 199 and the paired
 Control Plane, Worker and Web command contracts. Old model header/byte-idle
 environment values must not survive this release. Preserve native history,

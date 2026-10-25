@@ -110,13 +110,28 @@ export function indexNative(
         (message) => message.role === "user" || message.role === "assistant",
       );
       fields.navigation =
-        visible?.role === "user"
-          ? "user"
-          : visible?.role === "assistant" &&
-              typeof visible.stopReason === "string" &&
-              !["toolUse", "error", "aborted", "pending", "deferred"].includes(visible.stopReason)
-            ? "assistant"
-            : "none";
+        entry.kind === "pi.compaction"
+          ? "none"
+          : visible?.role === "user"
+            ? "user"
+            : visible?.role === "assistant" &&
+                typeof visible.stopReason === "string" &&
+                !["toolUse", "error", "aborted", "pending", "deferred"].includes(visible.stopReason)
+              ? "assistant"
+              : "none";
+      if (fields.navigation !== "none" && visible) {
+        const text =
+          typeof visible.content === "string"
+            ? visible.content
+            : visible.content
+                .filter(
+                  (part): part is Extract<typeof part, { type: "text" }> => part.type === "text",
+                )
+                .map((part) => part.text)
+                .join("\n");
+        // Disposable navigation captions, never model content or a transcript copy.
+        fields.preview = text.slice(0, 256).replace(/[\u0000\uD800-\uDFFF]/gu, "\uFFFD");
+      }
       if (entry.head !== undefined) fields.head = String(entry.head);
     } else if (kind === "submission") {
       const submission = record as SubmissionRecord;
@@ -127,9 +142,24 @@ export function indexNative(
     } else {
       const task = record as TaskRecord<JsonValue, JsonValue, JsonValue>;
       fields.nativeKind = JSON.stringify(task.kind);
+      if (
+        task.kind === "pi.tool" &&
+        typeof task.input === "object" &&
+        task.input !== null &&
+        typeof (task.input as { assistant?: unknown }).assistant === "number"
+      )
+        fields.assistant = String((task.input as { assistant: number }).assistant);
       fields.status = task.state.status;
       fields.background = String(task.background);
       fields.abortRequested = String(task.abortRequested);
+      if (task.state.status === "terminal" && ["pi.tool", "pi.compaction"].includes(task.kind)) {
+        const result = (
+          task.state.outcome as { result?: { entryId?: unknown; submissionId?: unknown } }
+        ).result;
+        if (typeof result?.entryId === "number") fields.resultEntry = String(result.entryId);
+        if (typeof result?.submissionId === "number")
+          fields.resultSubmission = String(result.submissionId);
+      }
       if (task.state.status === "terminal") fields.outcome = task.state.outcome.status;
     }
   }

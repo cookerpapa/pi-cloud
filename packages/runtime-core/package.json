@@ -6,6 +6,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./canonical-pi-conversation": "./src/canonical-pi-conversation.ts",
+    "./canonical-history-window": "./src/canonical-history-window.ts",
+    "./history-position": "./src/history-position.ts",
+    "./conversation-markdown": "./src/conversation-markdown.ts",
     "./conversation-turn-projection": "./src/conversation-turn-projection.ts",
     "./execution-log": "./src/execution-log.ts",
     "./accepted-fact": "./src/accepted-fact.ts",

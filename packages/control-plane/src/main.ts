@@ -112,6 +112,7 @@ export async function startControlPlane(): Promise<void> {
   let imageGeneration: ImageGenerationClient | undefined;
   let imageReaper: ImageAttachmentReaper | undefined;
   let queueDatabase: ReturnType<typeof createDatabase> | undefined;
+  let conversationDatabase: ReturnType<typeof createDatabase> | undefined;
   let queueViews: InputQueueView | undefined;
   let sourceControlDispatcher: EnvHttpProxyAgent | undefined;
   let internalSourceControlDispatcher: Agent | undefined;
@@ -127,6 +128,7 @@ export async function startControlPlane(): Promise<void> {
       () => queueViews?.close(),
       () => queueDatabase?.destroy(),
       () => runtime?.close(),
+      () => conversationDatabase?.destroy(),
       () => developmentEnvironmentService?.close(),
       () => operationalMetrics?.close(),
       () => sandboxControl?.close(),
@@ -539,7 +541,13 @@ export async function startControlPlane(): Promise<void> {
       onPublicEgress: (publicEgress) =>
         runtime?.gateway.publishRuntimeConfiguration({ publicEgress }),
     });
+    conversationDatabase = createDatabase({
+      connectionString: config.databaseUrl,
+      maxConnections: 4,
+      readTimeoutMs: 5000,
+    });
     runtime = await createControlPlaneRuntime({
+      conversationReadDatabase: conversationDatabase,
       platformRuntimeSettings,
       gateway: {
         toolCatalog: ordinaryTools,

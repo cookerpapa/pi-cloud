@@ -824,8 +824,34 @@ There is no cloud Steer-delivery reconciler. Worker replacement recovers the
 native submissions through the existing ordered closure/new-lease path. Queue
 observations refresh only on relevant commits, control changes or reconnect;
 an unavailable presentation view cannot schedule or replay input.
-Tree jumps load missing pages, and export traverses them. These history anchors
-are not stream recovery cursors.
+[ADR-0278](adr/0278-windowed-conversation-presentation.md) pages within a Run by
+native sequence/ordinal, and across Turns/visible branch lineage. PG selects at
+most 64 positions and a 4 MiB combined body/dependency/input-metadata budget
+before fetching bodies. Tool arguments resolve through native Task identity,
+including off-page assistants and reused provider IDs. Derived captions/positions
+live in existing record indexes, not a second transcript table. Original native
+JSON bodies/checksums stay unchanged. Sidebar captions are bounded and paged.
+
+The browser owns a separate four-page historical view and a bounded live tail;
+TanStack Virtual renders measured blocks within Turns, not an entire long Run.
+Eviction and prepend retain stable keys/viewport anchors. Background output does
+not move a historical reader. Search results and tree entries seek directly to
+their neighborhood; bookmarks store only positions and disclosure preferences.
+Large code blocks use bounded line rendering, without whole-block highlighting.
+
+GET `/v1/conversations/:id` accepts `before`, `after`, `at`, or `turnId` with an
+optional `entryId`/`toolCallId` and direction. Opaque history positions are scoped
+to the visible Session/branch. SSE snapshot payload version 3 carries the same
+window and coverage proof; these positions never become stream recovery cursors.
+GET `/search?q=...&before=...` under the conversation returns one bounded search
+page and a continuation. It searches visible canonical content, not hidden model
+reasoning. Without a separate full-text index, distant matches can require many
+short reads; search is cancellable. GET `/export` streams completed canonical
+history as Markdown, with a terminal-Run cutoff and one short transaction per
+page. Slow clients hold no database transaction and no full browser Blob.
+Dedicated disposable read connections and the existing cancellation adapter keep
+abandoned reads out of authority/queue pools. No new storage or execution
+scheduler is introduced.
 
 Conversation discovery returns pages of 100 Sessions with an optional opaque
 `nextCursor`. It preserves PostgreSQL timestamp precision for the descending

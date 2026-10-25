@@ -1,3 +1,5 @@
+import { searchConversationPage } from "./conversation-history-service.ts";
+import type { ConversationHistoryQuery } from "@pi-cloud/protocol";
 import { compactFingerprint } from "./conversation-command-identity.ts";
 import { environmentForImage } from "@pi-cloud/database";
 import {
@@ -75,6 +77,7 @@ export {
 
 export type ControlPlaneStoreOptions = {
   database: Kysely<Database>;
+  conversationReadDatabase?: Kysely<Database>;
   tenantId: string;
   defaultModelProfileId: string;
   idGenerator?: () => string;
@@ -272,7 +275,10 @@ export class ControlPlaneStore {
   readonly #metrics: PiCloudMetrics | undefined;
 
   constructor(options: ControlPlaneStoreOptions) {
-    this.#conversations = new ConversationReader(options.database, options.tenantId);
+    this.#conversations = new ConversationReader(
+      options.conversationReadDatabase ?? options.database,
+      options.tenantId,
+    );
     this.#database = options.database;
     this.#tenantId = options.tenantId;
     this.#defaultModelProfileId = options.defaultModelProfileId;
@@ -1243,14 +1249,23 @@ export class ControlPlaneStore {
   listConversations(cursor?: string): Promise<ConversationListResource> {
     return this.#conversations.listConversations(cursor);
   }
-  getConversation(sessionId: string, beforeTurnId?: string): Promise<ConversationDetailResource> {
-    return this.#conversations.getConversation(sessionId, beforeTurnId);
+  getConversation(
+    sessionId: string,
+    query?: ConversationHistoryQuery,
+  ): Promise<ConversationDetailResource> {
+    return this.#conversations.getConversation(sessionId, query);
   }
   getConversationUsage(sessionId: string) {
     return readConversationUsage(this.#database, this.#tenantId, sessionId);
   }
-  getConversationView(sessionId: string, beforeTurnId?: string) {
-    return this.#conversations.getConversationView(sessionId, beforeTurnId);
+  searchConversation(sessionId: string, text: string, before?: string) {
+    return searchConversationPage(this.#conversations, sessionId, text, before);
+  }
+  completedHistoryPages(sessionId: string) {
+    return this.#conversations.completedHistoryPages(sessionId);
+  }
+  getConversationView(sessionId: string, query?: ConversationHistoryQuery) {
+    return this.#conversations.getConversationView(sessionId, query);
   }
 
   async getRun(runId: string): Promise<RunResource> {

@@ -382,6 +382,7 @@ export const migrationProvider: MigrationProvider = {
       "197_ultra_agent_profile": ultraAgentProfile,
       "198_resource_intent": resourceIntent,
       "199_conversation_commands": conversationCommands,
+      "200_conversation_history_windows": conversationHistoryWindows,
     };
   },
 };
@@ -408,3 +409,5 @@ import * as modelRuntimeSnapshot from "./196_model_runtime_snapshot.ts";
 import * as ultraAgentProfile from "./197_ultra_agent_profile.ts";
 import * as resourceIntent from "./198_resource_intent.ts";
 import * as conversationCommands from "./199_conversation_commands.ts";
+
+import * as conversationHistoryWindows from "./200_conversation_history_windows.ts";

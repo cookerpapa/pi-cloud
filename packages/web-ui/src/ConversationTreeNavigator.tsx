@@ -35,10 +35,10 @@ function entryElements(scroller: HTMLElement): ReadonlyMap<string, HTMLElement> 
 
 export function selectConversationNavigationTarget<T>(
   entries: ReadonlyMap<string, T>,
-  turns: ReadonlyMap<string, T>,
+  _turns: ReadonlyMap<string, T>,
   target: { turnId: string; entryId: string },
 ): T | undefined {
-  return entries.get(target.entryId) ?? turns.get(target.turnId);
+  return entries.get(target.entryId);
 }
 
 function branchChildren(tree: ConversationTreeResource) {
@@ -75,7 +75,9 @@ function TreeBranch({
   depth,
   activeTurnId,
   navigate,
+  page,
 }: {
+  page?: ((sessionId: string, before?: string) => void) | undefined;
   branch: ConversationTreeBranchResource;
   children: ReadonlyMap<string, readonly ConversationTreeBranchResource[]>;
   depth: number;
@@ -107,6 +109,19 @@ function TreeBranch({
           </span>
         </button>
       )}
+      {branch.earlierEntryId && page ? (
+        <button
+          className="product-tree-page"
+          onClick={() => page(branch.sessionId, branch.earlierEntryId)}
+        >
+          {t("tree.earlier")}
+        </button>
+      ) : null}
+      {branch.hasLaterEntries && page ? (
+        <button className="product-tree-page" onClick={() => page(branch.sessionId)}>
+          {t("tree.recent")}
+        </button>
+      ) : null}
       {unanchoredChildren.map((child) => (
         <TreeBranch
           activeTurnId={activeTurnId}
@@ -115,6 +130,7 @@ function TreeBranch({
           depth={depth + 1}
           key={child.sessionId}
           navigate={navigate}
+          page={page}
         />
       ))}
       {branch.entries.map((entry) => {
@@ -145,6 +161,7 @@ function TreeBranch({
                 depth={depth + 1}
                 key={child.sessionId}
                 navigate={navigate}
+                page={page}
               />
             ))}
           </div>
@@ -161,6 +178,7 @@ export function ConversationTreeNavigator({
   scrollerRef,
   onViewChange,
   onNavigate,
+  onPage,
   onJump,
 }: {
   tree: ConversationTreeResource | null;
@@ -168,6 +186,7 @@ export function ConversationTreeNavigator({
   loading: boolean;
   scrollerRef: RefObject<HTMLElement | null>;
   onViewChange: (view: ConversationTreeView) => void;
+  onPage?: ((sessionId: string, before?: string) => void) | undefined;
   onNavigate: (sessionId: string, target?: { turnId: string; entryId: string }) => void;
   onJump?: () => void;
 }) {
@@ -324,6 +343,7 @@ export function ConversationTreeNavigator({
               children={children}
               depth={0}
               navigate={navigate}
+              page={onPage}
             />
           )}
         </nav>

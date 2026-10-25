@@ -1,3 +1,9 @@
+import { withDatabaseReadSignal } from "@pi-cloud/database";
+import {
+  conversationMarkdown,
+  conversationExportFilename,
+} from "@pi-cloud/runtime-core/conversation-markdown";
+import { parseConversationHistoryQuery } from "@pi-cloud/protocol";
 import { parseCompactRequest, type ConversationCompactResource } from "@pi-cloud/protocol";
 import { ConversationCompactService } from "./conversation-compact-service.ts";
 import { RouteConfig } from "@nestjs/platform-fastify";
@@ -603,18 +609,92 @@ export class ControlPlaneController {
   async getConversation(
     @Req() request: FastifyRequest,
     @Param("sessionId") sessionIdValue: unknown,
-    @Query("beforeTurnId") beforeTurnIdValue: unknown,
+    @Query() historyQuery: unknown,
   ): Promise<ConversationDetailResource> {
     const sessionId = parseUuidPathParameter(sessionIdValue, "sessionId");
     const identity = this.tenantRequestContext.resolve(request);
-    return this.controlPlaneStores
-      .forIdentity(identity)
-      .getConversation(
-        sessionId,
-        beforeTurnIdValue === undefined
-          ? undefined
-          : parseUuidPathParameter(beforeTurnIdValue, "beforeTurnId"),
+    const query = validateHistoryQuery(historyQuery);
+    return abortableHistoryRead(request, (signal) =>
+      withDatabaseReadSignal(signal, () =>
+        this.controlPlaneStores.forIdentity(identity).getConversation(sessionId, query),
+      ),
+    );
+  }
+
+  @Get("conversations/:sessionId/search")
+  async searchConversation(
+    @Req() request: FastifyRequest,
+    @Param("sessionId") value: unknown,
+    @Query("q") text: unknown,
+    @Query("before") before: unknown,
+  ) {
+    const identity = this.tenantRequestContext.resolve(request),
+      id = parseUuidPathParameter(value, "sessionId");
+    if (typeof text !== "string" || (before !== undefined && typeof before !== "string"))
+      throw new ControlPlaneApiValidationError("Invalid history search");
+    return abortableHistoryRead(request, (signal) =>
+      withDatabaseReadSignal(signal, () =>
+        this.controlPlaneStores.forIdentity(identity).searchConversation(id, text, before),
+      ),
+    );
+  }
+
+  @Get("conversations/:sessionId/export")
+  async exportConversation(
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Param("sessionId") value: unknown,
+  ): Promise<void> {
+    const identity = this.tenantRequestContext.resolve(request),
+      id = parseUuidPathParameter(value, "sessionId");
+    const store = this.controlPlaneStores.forIdentity(identity),
+      abort = new AbortController();
+    const closed = () => {
+      if (!reply.raw.writableEnded) abort.abort(new Error("History download closed"));
+    };
+    request.raw.once("aborted", closed);
+    reply.raw.once("close", closed);
+    const pages = store.completedHistoryPages(id);
+    try {
+      const first = await withDatabaseReadSignal(abort.signal, () => pages.next());
+      if (first.done) throw new Error("History export metadata is missing");
+      const at = new Date();
+      const source = async function* () {
+        try {
+          yield first.value;
+          for (;;) {
+            abort.signal.throwIfAborted();
+            const next = await withDatabaseReadSignal(abort.signal, () => pages.next());
+            if (next.done) break;
+            yield next.value;
+          }
+        } finally {
+          await pages.return(undefined);
+          request.raw.off("aborted", closed);
+          reply.raw.off("close", closed);
+        }
+      };
+      const filename = encodeURIComponent(
+        conversationExportFilename(first.value.session.title, at),
+      ).replace(/['()*]/g, (c) => "%" + c.charCodeAt(0).toString(16));
+      reply.header("content-type", "text/markdown; charset=utf-8");
+      reply.header(
+        "content-disposition",
+        `attachment; filename="conversation.md"; filename*=UTF-8''${filename}`,
       );
+      reply.header("cache-control", "no-store");
+      await reply.send(
+        Readable.from(conversationMarkdown(source(), at), {
+          objectMode: false,
+          highWaterMark: 65536,
+        }),
+      );
+    } catch (error) {
+      request.raw.off("aborted", closed);
+      reply.raw.off("close", closed);
+      await pages.return(undefined);
+      throw error;
+    }
   }
 
   @Post("conversations/:sessionId/compact")
@@ -676,13 +756,27 @@ export class ControlPlaneController {
     @Req() request: FastifyRequest,
     @Param("sessionId") sessionIdValue: unknown,
     @Query("view") viewValue: unknown,
+    @Query("branchSessionId") branchValue: unknown,
+    @Query("beforeEntryId") beforeValue: unknown,
   ): Promise<ConversationTreeResource> {
     const sessionId = parseUuidPathParameter(sessionIdValue, "sessionId");
     const identity = this.tenantRequestContext.resolve(request);
-    return this.conversationTrees.tree(
-      identity.tenantId,
-      sessionId,
-      parseConversationTreeView(viewValue),
+    return abortableHistoryRead(request, (signal) =>
+      withDatabaseReadSignal(signal, () =>
+        this.conversationTrees.tree(
+          identity.tenantId,
+          sessionId,
+          parseConversationTreeView(viewValue),
+          {
+            ...(branchValue === undefined
+              ? {}
+              : { branchSessionId: parseUuidPathParameter(branchValue, "branchSessionId") }),
+            ...(beforeValue === undefined
+              ? {}
+              : { beforeEntryId: parseNativeEntryPosition(beforeValue) }),
+          },
+        ),
+      ),
     );
   }
 
@@ -1147,11 +1241,15 @@ export class ControlPlaneController {
       }
       return;
     }
-    const stream = await this.sessionEventStream.open({
-      tenantId: identity.tenantId,
-      sessionId,
-      loadCanonical: () => store.getConversationView(sessionId),
-    });
+    const stream = await abortableHistoryRead(request, (signal) =>
+      withDatabaseReadSignal(signal, () =>
+        this.sessionEventStream.open({
+          tenantId: identity.tenantId,
+          sessionId,
+          loadCanonical: () => store.getConversationView(sessionId),
+        }),
+      ),
+    );
 
     reply.hijack();
     reply.raw.writeHead(200, {
@@ -1173,3 +1271,36 @@ export class ControlPlaneController {
   }
 }
 import type { ConversationUsageResource } from "@pi-cloud/protocol";
+
+function parseNativeEntryPosition(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    !/^[1-9][0-9]{0,15}$/.test(value) ||
+    !Number.isSafeInteger(Number(value))
+  )
+    throw new ControlPlaneApiValidationError("Invalid history entry position");
+  return value;
+}
+
+function validateHistoryQuery(value: unknown) {
+  try {
+    return parseConversationHistoryQuery(value ?? {});
+  } catch {
+    throw new ControlPlaneApiValidationError("Invalid history position");
+  }
+}
+async function abortableHistoryRead<T>(
+  request: FastifyRequest,
+  read: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const abort = new AbortController();
+  const closed = () => abort.abort(new Error("History reader disconnected"));
+  request.raw.once("aborted", closed);
+  request.raw.socket.once("close", closed);
+  try {
+    return await read(abort.signal);
+  } finally {
+    request.raw.off("aborted", closed);
+    request.raw.socket.off("close", closed);
+  }
+}

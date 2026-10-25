@@ -1,4 +1,9 @@
 import {
+  type ConversationHistoryQuery,
+  parseConversationSearchResult,
+  type ConversationSearchResult,
+} from "@pi-cloud/protocol";
+import {
   parseConversationUsageResource,
   parseConversationCompactResource,
   type ConversationUsageResource,
@@ -658,40 +663,48 @@ export class PiCloudApi {
 
   async getConversation(
     sessionId: string,
-    beforeTurnId?: string,
+    query: ConversationHistoryQuery = {},
+    signal?: AbortSignal,
   ): Promise<ConversationDetailResource> {
     return parseConversationDetailResource(
       await request(
         this.#fetch,
-        `/v1/conversations/${encodeURIComponent(sessionId)}${beforeTurnId === undefined ? "" : `?beforeTurnId=${encodeURIComponent(beforeTurnId)}`}`,
-        { method: "GET" },
+        `/v1/conversations/${encodeURIComponent(sessionId)}?${new URLSearchParams(Object.entries(query).filter((pair): pair is [string, string] => typeof pair[1] === "string"))}`,
+        { method: "GET", ...(signal ? { signal } : {}) },
         this.#authorizationToken,
       ),
     );
   }
 
-  async getCompleteConversation(sessionId: string): Promise<ConversationDetailResource> {
-    const latest = await this.getConversation(sessionId);
-    let page = latest;
-    const pages = [latest.turns];
-    while (page.historyTruncated) {
-      const before = page.turns[0]?.turnId;
-      if (!before) throw new Error("Conversation history did not provide an anchor");
-      page = await this.getConversation(sessionId, before);
-      if (page.turns[0]?.turnId === before) throw new Error("Conversation history did not advance");
-      pages.unshift(page.turns);
-    }
-    return { ...latest, turns: pages.flat(), historyTruncated: false };
+  async searchConversation(
+    sessionId: string,
+    text: string,
+    before?: string,
+    signal?: AbortSignal,
+  ): Promise<ConversationSearchResult> {
+    const params = new URLSearchParams({ q: text, ...(before ? { before } : {}) });
+    return parseConversationSearchResult(
+      await request(
+        this.#fetch,
+        `/v1/conversations/${encodeURIComponent(sessionId)}/search?${params}`,
+        { method: "GET", ...(signal ? { signal } : {}) },
+        this.#authorizationToken,
+      ),
+    );
+  }
+  conversationExportUrl(sessionId: string): string {
+    return `/v1/conversations/${encodeURIComponent(sessionId)}/export`;
   }
 
   async getConversationTree(
     sessionId: string,
     view: ConversationTreeView,
+    navigation: { branchSessionId?: string; beforeEntryId?: string } = {},
   ): Promise<ConversationTreeResource> {
     return parseConversationTreeResource(
       await request(
         this.#fetch,
-        `/v1/conversations/${encodeURIComponent(sessionId)}/tree?view=${encodeURIComponent(view)}`,
+        `/v1/conversations/${encodeURIComponent(sessionId)}/tree?${new URLSearchParams({ view, ...navigation })}`,
         { method: "GET" },
         this.#authorizationToken,
       ),

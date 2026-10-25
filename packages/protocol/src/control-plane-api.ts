@@ -670,6 +670,7 @@ export const DevelopmentEnvironmentListResourceSchema = Type.Object(
 export const ConversationTranscriptItemResourceSchema = Type.Union([
   Type.Object(
     {
+      historyCursor: Type.Optional(HistoryCursorSchema),
       kind: Type.Literal("user"),
       messageId: OpaqueIdSchema,
       inputId: Type.String({ minLength: 1, maxLength: 128 }),
@@ -682,6 +683,7 @@ export const ConversationTranscriptItemResourceSchema = Type.Union([
   ),
   Type.Object(
     {
+      historyCursor: Type.Optional(HistoryCursorSchema),
       kind: Type.Literal("tool_preparing"),
       toolCallId: Type.String({ minLength: 1, maxLength: 1024 }),
       toolName: Type.String({ minLength: 1, maxLength: 1024 }),
@@ -692,6 +694,7 @@ export const ConversationTranscriptItemResourceSchema = Type.Union([
   ),
   Type.Object(
     {
+      historyCursor: Type.Optional(HistoryCursorSchema),
       kind: Type.Literal("hosted_search"),
       activityId: Type.String({ minLength: 1, maxLength: 256 }),
       status: Type.Union([
@@ -707,6 +710,7 @@ export const ConversationTranscriptItemResourceSchema = Type.Union([
   ),
   Type.Object(
     {
+      historyCursor: Type.Optional(HistoryCursorSchema),
       kind: Type.Literal("text"),
       messageId: Type.Optional(OpaqueIdSchema),
       text: Type.String(),
@@ -718,6 +722,7 @@ export const ConversationTranscriptItemResourceSchema = Type.Union([
   ),
   Type.Object(
     {
+      historyCursor: Type.Optional(HistoryCursorSchema),
       kind: Type.Literal("tool"),
       toolCallId: Type.String({ minLength: 1, maxLength: 1_024 }),
       toolName: Type.String({ minLength: 1, maxLength: 1_024 }),
@@ -738,6 +743,7 @@ export const ConversationTranscriptItemResourceSchema = Type.Union([
   ),
   Type.Object(
     {
+      historyCursor: Type.Optional(HistoryCursorSchema),
       kind: Type.Literal("notification"),
       level: Type.Union([Type.Literal("info"), Type.Literal("warning"), Type.Literal("error")]),
       message: Type.String({ maxLength: 16_384 }),
@@ -747,6 +753,7 @@ export const ConversationTranscriptItemResourceSchema = Type.Union([
   ),
   Type.Object(
     {
+      historyCursor: Type.Optional(HistoryCursorSchema),
       kind: Type.Literal("compaction"),
       reason: Type.Union([
         Type.Literal("manual"),
@@ -769,6 +776,7 @@ export const ConversationTranscriptItemResourceSchema = Type.Union([
   ),
   Type.Object(
     {
+      historyCursor: Type.Optional(HistoryCursorSchema),
       kind: Type.Literal("retry"),
       nextSamplingAttempt: PositiveSafeIntegerSchema,
       maximumSamplingAttempts: Type.Optional(PositiveSafeIntegerSchema),
@@ -824,6 +832,9 @@ export const ConversationTurnResourceSchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
+    continuesBefore: Type.Optional(Type.Literal(true)),
+    continuesAfter: Type.Optional(Type.Literal(true)),
+    historyCursor: Type.Optional(HistoryCursorSchema),
     runId: UuidSchema,
     turnId: UuidSchema,
     mailboxPosition: PositiveSafeIntegerSchema,
@@ -867,14 +878,14 @@ export const ConversationDetailResourceSchema = Type.Object(
     ),
     inheritedMessagesTruncated: Type.Optional(Type.Literal(true)),
     turns: Type.Array(ConversationTurnResourceSchema, { maxItems: 200 }),
-    historyTruncated: Type.Boolean(),
+    history: ConversationHistoryBoundarySchema,
   },
   { additionalProperties: false },
 );
 
 export const SessionViewSnapshotResourceSchema = Type.Object(
   {
-    schemaVersion: Type.Literal(2),
+    schemaVersion: Type.Literal(3),
     conversation: ConversationDetailResourceSchema,
   },
   { additionalProperties: false },
@@ -907,6 +918,8 @@ export const ConversationTreeBranchResourceSchema = Type.Object(
     contextMode: Type.Optional(DelegatedSessionContextModeSchema),
     sandboxMode: Type.Optional(DelegatedSessionSandboxModeSchema),
     delegatedState: Type.Optional(DelegatedSessionStateSchema),
+    earlierEntryId: Type.Optional(PiEntryIdSchema),
+    hasLaterEntries: Type.Optional(Type.Literal(true)),
     entries: Type.Array(ConversationTreeEntryResourceSchema, { maxItems: 10_000 }),
   },
   { additionalProperties: false },
@@ -1624,3 +1637,4 @@ export function parseIdempotencyKey(value: unknown): string {
 export function parseUuidPathParameter(value: unknown, name: string): string {
   return parseSchema(UuidSchema, value, `${name} path parameter`);
 }
+import { ConversationHistoryBoundarySchema, HistoryCursorSchema } from "./conversation-history.ts";

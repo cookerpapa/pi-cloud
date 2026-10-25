@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 
 type SourceHighlightModule = typeof import("./source-highlight.ts");
 type SourceHighlightResult = ReturnType<SourceHighlightModule["highlightSource"]>;
@@ -35,12 +35,15 @@ export function HighlightedCode({
   className?: string;
 }) {
   const highlighter = useSourceHighlighter();
-  const highlighted: SourceHighlightResult =
-    highlighter === null
-      ? null
-      : language === null
-        ? highlighter.highlightSource(text, path)
-        : highlighter.highlightLanguage(text, language);
+  const highlighted: SourceHighlightResult = useMemo(
+    () =>
+      highlighter === null
+        ? null
+        : language === null
+          ? highlighter.highlightSource(text, path)
+          : highlighter.highlightLanguage(text, language),
+    [highlighter, text, path, language],
+  );
   return (
     <code
       className={

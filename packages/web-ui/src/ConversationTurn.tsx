@@ -1,9 +1,13 @@
+import { useHistoryDisclosure } from "./history-disclosure.tsx";
 import { CompactStatus } from "./ConversationUsage.tsx";
 import type { ConversationCompactResource } from "@pi-cloud/protocol";
 import { UploadCards } from "./UploadCards.tsx";
 import type { PiCloudApi } from "./api.ts";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { deriveConversationPresentationRows } from "./conversation-presentation.ts";
+import { useEffect, useMemo, useRef, useState, useContext } from "react";
+import {
+  deriveConversationPresentationRows,
+  type ConversationPresentationRow,
+} from "./conversation-presentation.ts";
 import { ToolImages } from "./ToolImages.tsx";
 import { Markdown } from "./Markdown.tsx";
 import type { TranscriptItem, TurnView } from "./session-view.ts";
@@ -140,23 +144,31 @@ function AssistantTextItem({
   onPresentationProgress,
   processNarration,
   streaming,
+  windowed = false,
+  copyText,
 }: {
+  windowed?: boolean;
+  copyText?: string;
   item: Extract<TranscriptItem, { kind: "text" }>;
   onPresentationProgress: (() => void) | undefined;
   processNarration: boolean;
   streaming: boolean;
 }) {
+  const mountedLength = useRef(windowed ? item.text.length : 0);
   const visibleText = useProgressiveText(
     item.text,
     streaming,
     onPresentationProgress,
-    item.recoveredTextLength,
+    Math.max(mountedLength.current, item.recoveredTextLength ?? 0),
   );
   return (
     <div className={processNarration ? "product-agent-stage" : "product-agent-answer"}>
       <Markdown streaming={streaming || visibleText.length < item.text.length}>
         {visibleText}
       </Markdown>
+      {copyText !== undefined && !streaming ? (
+        <MessageCopyButton text={copyText} label="复制消息" copiedLabel="已复制" />
+      ) : null}
     </div>
   );
 }
@@ -173,7 +185,10 @@ function ToolActivityGroup({ items }: { items: readonly ToolTranscriptItem[] }) 
   const { t } = useI18n();
   const running = items.some((item) => item.status === "running");
   const issue = items.some((item) => item.status === "failed" || item.status === "unknown");
-  const [expanded, setExpanded] = useState(false);
+  const turnId = useContext(ChildAgentProgressContext)?.turnId ?? "";
+  const [expanded, setExpanded] = useHistoryDisclosure(
+    items.map((item) => `${turnId}\0${item.toolCallId}\0activity`),
+  );
   if (items.length === 1) return <ToolActivity item={items[0]!} />;
   const current =
     items.reduce<ToolTranscriptItem | undefined>(
@@ -189,7 +204,7 @@ function ToolActivityGroup({ items }: { items: readonly ToolTranscriptItem[] }) 
       <button
         aria-expanded={expanded}
         className="product-activity-group-toggle"
-        onClick={() => setExpanded((value) => !value)}
+        onClick={() => setExpanded(!expanded)}
         type="button"
       >
         <span
@@ -390,9 +405,16 @@ export function ConversationTurn({
   onPresentationProgress,
   compaction,
   delegatedChildren = [],
+  fragment,
   onOpenChild,
 }: {
   api?: PiCloudApi;
+  fragment?: {
+    header: boolean;
+    footer: boolean;
+    rows: readonly ConversationPresentationRow[];
+    copyText?: string;
+  };
   turn: TurnView;
   progressStore?: ToolProgressStore;
   observationStore?: RunObservationStore;
@@ -407,14 +429,17 @@ export function ConversationTurn({
   onOpenChild?: (child: DelegatedSessionSummaryResource) => void;
 }) {
   const { t } = useI18n();
+  const showHeader = fragment?.header ?? true;
+  const showFooter = (fragment?.footer ?? true) && !turn.continuesAfter;
   const working =
     turn.status === "queued" || turn.status === "running" || turn.status === "cancelling";
   const rows = useMemo(
     () =>
+      fragment?.rows ??
       deriveConversationPresentationRows(
         turn.items.filter((item) => item.kind !== "compaction" || item.reason !== "manual"),
       ),
-    [turn.items],
+    [turn.items, fragment?.rows],
   );
   const finalAnswerText = useMemo(
     () =>
@@ -450,11 +475,11 @@ export function ConversationTurn({
         value={progressStore ? { store: progressStore, turnId: turn.turnId } : null}
       >
         <section
-          className="product-turn"
+          className={`product-turn ${fragment ? "product-turn-fragment" : ""}`}
           data-conversation-turn-id={turn.turnId}
-          id={`turn-${turn.turnId}`}
+          id={fragment ? undefined : `turn-${turn.turnId}`}
         >
-          {turn.prompt === null ? null : (
+          {!showHeader || turn.continuesBefore || turn.prompt === null ? null : (
             <div className="product-message product-user-message">
               <div className="product-user-message-body">
                 <UploadCards
@@ -511,8 +536,12 @@ export function ConversationTurn({
                       key={row.key}
                       onPresentationProgress={onPresentationProgress}
                       processNarration={row.processNarration}
+                      windowed={fragment !== undefined}
+                      {...(fragment?.copyText !== undefined ? { copyText: fragment.copyText } : {})}
                       streaming={
-                        working && !rows.slice(index + 1).some((next) => next.kind === "user")
+                        working &&
+                        !row.item.messageId?.startsWith("entry:") &&
+                        !rows.slice(index + 1).some((next) => next.kind === "user")
                       }
                     />
                   );
@@ -525,10 +554,10 @@ export function ConversationTurn({
                 }
                 return <OtherItem item={row.item} key={row.key} />;
               })}
-              {working ? (
+              {showFooter && working ? (
                 <RunStatus turn={turn} store={observationStore} connected={connected} />
               ) : null}
-              {turn.failure ? (
+              {showFooter && turn.failure ? (
                 <div className="product-turn-error">
                   <strong>{t("turn.runFailed")}</strong>
                   <span>
@@ -540,17 +569,19 @@ export function ConversationTurn({
                   </span>
                 </div>
               ) : null}
-              {turn.cancellation ? (
+              {showFooter && turn.cancellation ? (
                 <div className="product-muted-line">{t("turn.stopped")}</div>
               ) : null}
-              {turn.status === "completed" && turn.stopReason === "length" ? (
+              {showFooter && turn.status === "completed" && turn.stopReason === "length" ? (
                 <div className="product-muted-line" role="status">
                   {t("turn.outputLimit")}
                 </div>
               ) : null}
-              {turn.status === "completed" && (finalAnswerText.length > 0 || onFork || onPrune) ? (
+              {showFooter &&
+              turn.status === "completed" &&
+              ((!fragment && finalAnswerText.length > 0) || onFork || onPrune) ? (
                 <div className="product-answer-actions">
-                  {finalAnswerText.length > 0 ? (
+                  {!fragment && finalAnswerText.length > 0 ? (
                     <MessageCopyButton
                       copiedLabel={t("turn.copied")}
                       label={t("turn.copyAssistantMessage")}
@@ -578,7 +609,7 @@ export function ConversationTurn({
               ) : null}
             </div>
           </div>
-          {compaction ? <CompactStatus state={compaction.state} /> : null}
+          {showFooter && compaction ? <CompactStatus state={compaction.state} /> : null}
         </section>
       </ToolProgressContext.Provider>
     </ChildAgentProgressContext.Provider>

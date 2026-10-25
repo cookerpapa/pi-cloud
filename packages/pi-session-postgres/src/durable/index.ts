@@ -48,3 +48,8 @@ export {
   type NativeCompactReceipt,
   type CompactState,
 } from "./compaction-commands.ts";
+export {
+  readHumanInputPresentation,
+  humanPresentationSliceCharacters,
+} from "./human-input-presentation.ts";
+export { readNavigationEntries, type NavigationEntry } from "./navigation.ts";

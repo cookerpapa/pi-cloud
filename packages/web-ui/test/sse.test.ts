@@ -191,7 +191,7 @@ function event(
 
 function snapshot(liveEvents: PiCloudEvent[] = []): SessionViewSnapshotResource {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     conversation: {
       project: {
         projectId: "40000000-0000-4000-8000-000000000001",
@@ -242,7 +242,7 @@ function snapshot(liveEvents: PiCloudEvent[] = []): SessionViewSnapshotResource 
             },
           ]
         : [],
-      historyTruncated: false,
+      history: { before: null, after: null, hasBefore: false, hasAfter: false },
     },
   };
 }

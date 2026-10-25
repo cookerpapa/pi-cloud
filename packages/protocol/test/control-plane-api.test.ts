@@ -348,7 +348,7 @@ describe("control-plane public API schemas", () => {
             acceptedAt: createdAt,
           },
         ],
-        historyTruncated: false,
+        history: { before: null, after: null, hasBefore: false, hasAfter: false },
       }),
     ).toMatchObject({
       turns: [

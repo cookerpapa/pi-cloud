@@ -707,3 +707,4 @@ export {
   type NativeCompactCommand,
   type NativeCompactResult,
 } from "./conversation-commands.ts";
+export * from "./conversation-history.ts";

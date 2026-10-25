@@ -319,7 +319,7 @@ describe("session transcript reducer", () => {
           acceptedAt: CREATED_AT,
         },
       ],
-      historyTruncated: true,
+      history: { before: null, after: null, hasBefore: true, hasAfter: false },
     };
     let state = sessionViewReducer(createInitialSessionView(), {
       type: "conversation.loaded",
@@ -327,7 +327,7 @@ describe("session transcript reducer", () => {
     });
     expect(state).toMatchObject({
       sessionState: "running",
-      historyTruncated: true,
+      history: { before: null, after: null, hasBefore: true, hasAfter: false },
       inheritedContextSummary: { text: "Inherited summary" },
       inheritedMessagesTruncated: true,
       turns: [{ prompt: "Historical private prompt", mailboxPosition: 8, status: "running" }],
@@ -346,7 +346,7 @@ describe("session transcript reducer", () => {
         session: conversation.session,
         turns: conversation.turns,
         inheritedMessages: [],
-        historyTruncated: false,
+        history: { before: null, after: null, hasBefore: false, hasAfter: false },
       },
     });
     expect(state.inheritedContextSummary).toBeUndefined();
@@ -373,7 +373,7 @@ describe("session transcript reducer", () => {
           acceptedAt: CREATED_AT,
         },
       ],
-      historyTruncated: false,
+      history: { before: null, after: null, hasBefore: false, hasAfter: false },
     };
     let state = sessionViewReducer(createInitialSessionView(), {
       type: "conversation.loaded",
@@ -426,7 +426,7 @@ describe("session transcript reducer", () => {
               acceptedAt: CREATED_AT,
             },
           ],
-          historyTruncated: false,
+          history: { before: null, after: null, hasBefore: false, hasAfter: false },
         },
         [
           {
@@ -494,7 +494,7 @@ describe("session transcript reducer", () => {
           acceptedAt: CREATED_AT,
         },
       ],
-      historyTruncated: false,
+      history: { before: null, after: null, hasBefore: false, hasAfter: false },
     };
     const state = sessionViewReducer(createInitialSessionView(), {
       type: "conversation.loaded",
@@ -791,7 +791,7 @@ describe("session transcript reducer", () => {
           acceptedAt: CREATED_AT,
         },
       ],
-      historyTruncated: false,
+      history: { before: null, after: null, hasBefore: false, hasAfter: false },
     };
     const state = sessionViewReducer(createInitialSessionView(), {
       type: "conversation.loaded",
@@ -811,8 +811,7 @@ describe("session transcript reducer", () => {
     ]);
   });
 
-  it("keeps loaded older history on reconnect without duplicating live text", () => {
-    const olderId = "20000000-0000-4000-8000-000000000002";
+  it("replaces the live tail on reconnect without duplicating text", () => {
     const current: ConversationDetailResource = {
       project,
       inheritedMessages: [],
@@ -827,27 +826,11 @@ describe("session transcript reducer", () => {
           acceptedAt: CREATED_AT,
         },
       ],
-      historyTruncated: true,
+      history: { before: null, after: null, hasBefore: true, hasAfter: false },
     };
     let state = sessionViewReducer(createInitialSessionView(), {
       type: "conversation.loaded",
       conversation: current,
-    });
-    state = sessionViewReducer(state, {
-      type: "history.prepended",
-      conversation: {
-        ...current,
-        turns: [
-          {
-            ...current.turns[0]!,
-            turnId: olderId,
-            mailboxPosition: 1,
-            prompt: "older",
-            state: "completed",
-          },
-        ],
-        historyTruncated: false,
-      },
     });
     const recovered = materialize(current, [
       envelope(8, { type: "assistant.text.delta", payload: { text: "saved" } }),
@@ -855,15 +838,14 @@ describe("session transcript reducer", () => {
     state = sessionViewReducer(state, {
       type: "conversation.loaded",
       conversation: recovered,
-      preserveOlderHistory: true,
     });
-    expect(state.turns.map((t) => t.prompt)).toEqual(["older", "current"]);
-    expect(state.historyTruncated).toBe(false);
+    expect(state.turns.map((t) => t.prompt)).toEqual(["current"]);
+    expect(state.history.hasBefore).toBe(true);
     state = sessionViewReducer(state, {
       type: "stream.event",
       event: envelope(9, { type: "assistant.text.delta", payload: { text: " new" } }),
     });
-    expect(state.turns[1]!.items[0]).toMatchObject({ text: "saved new", recoveredTextLength: 5 });
+    expect(state.turns[0]!.items[0]).toMatchObject({ text: "saved new", recoveredTextLength: 5 });
     state = sessionViewReducer(state, {
       type: "conversation.loaded",
       conversation: { ...recovered, turns: [] },

@@ -14,13 +14,13 @@ describe("conversation tree navigation targets", () => {
     ).toBe(inherited);
   });
 
-  it("falls back to the Turn anchor for ordinary conversation entries", () => {
+  it("does not jump to another visible fragment of a long Run", () => {
     const childTurn = { kind: "turn" };
     expect(
       selectConversationNavigationTarget(new Map(), new Map([["turn-1", childTurn]]), {
         entryId: "entry-missing",
         turnId: "turn-1",
       }),
-    ).toBe(childTurn);
+    ).toBeUndefined();
   });
 });

@@ -1267,6 +1267,9 @@ body.product-panel-resizing {
 .product-markdown > :first-child {
   margin-top: 0;
 }
+.product-markdown {
+  overflow-wrap: anywhere;
+}
 .product-markdown > :last-child {
   margin-bottom: 0;
 }
@@ -4191,4 +4194,118 @@ body.product-panel-resizing {
 }
 .product-usage-grid dd {
   overflow-wrap: anywhere;
+}
+.product-virtual-transcript {
+  position: relative;
+  padding: 0 24px;
+  overflow-anchor: none;
+}
+.product-turn-fragment {
+  margin: 0;
+  padding: 4px 0;
+}
+.product-turn-fragment .product-assistant-message {
+  margin-top: 0;
+}
+.product-history-controls {
+  position: absolute;
+  top: 5px;
+  left: 24px;
+  z-index: 2;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.product-history-controls button,
+.product-history-newer {
+  border: 0;
+  background: none;
+  color: #aaa;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px;
+}
+.product-history-controls [role="alert"] {
+  color: #e9a18b;
+  font-size: 12px;
+}
+.product-history-newer {
+  display: block;
+  margin: -60px auto 24px;
+  position: relative;
+}
+.product-large-code {
+  height: 320px;
+  overflow: auto;
+  white-space: pre;
+  font-family: monospace;
+  font-size: 12px;
+  line-height: 22px;
+  background: #171717;
+  padding: 8px;
+  border-radius: 8px;
+}
+.product-large-code code {
+  white-space: pre;
+  padding: 0;
+  background: transparent;
+}
+.product-history-search {
+  position: absolute;
+  z-index: 15;
+  right: 12px;
+  top: 0;
+  width: min(520px, calc(100% - 24px));
+  max-height: 65vh;
+  overflow: auto;
+  padding: 12px;
+  background: #282828;
+  border: 1px solid #555;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px #0005;
+}
+.product-history-search form {
+  display: flex;
+  gap: 8px;
+}
+.product-history-search input {
+  min-width: 0;
+  flex: 1;
+  padding: 8px;
+  background: #181818;
+  color: #eee;
+  border: 1px solid #555;
+  border-radius: 5px;
+}
+.product-history-search button {
+  color: #ddd;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  padding: 8px;
+}
+.product-history-search .product-history-hit {
+  display: block;
+  width: 100%;
+  text-align: left;
+  white-space: pre-wrap;
+  border-top: 1px solid #444;
+  font-size: 12px;
+}
+.product-history-search-toggle {
+  color: #aaa;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-size: 24px;
+}
+.product-tree-page {
+  border: 0;
+  background: none;
+  color: #999;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  padding: 6px 12px;
 }

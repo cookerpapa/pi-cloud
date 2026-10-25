@@ -1,3 +1,4 @@
+import { readNavigationEntries } from "@pi-cloud/pi-session-postgres/durable";
 import { createHash, randomUUID } from "node:crypto";
 import type { Database } from "@pi-cloud/database";
 import {
@@ -5,7 +6,6 @@ import {
   iterateDurableHistoryPrefix,
   forkIdleConversation,
   copyDurableHistory,
-  type StoredHistoryEntry,
 } from "@pi-cloud/pi-session-postgres/durable";
 import type {
   ConversationForkResource,
@@ -43,7 +43,6 @@ type PiEntryRow = {
   seq: string;
   parentId: string | null;
   type: string;
-  native: StoredHistoryEntry;
   timestampMs: string;
   payload: Record<string, unknown>;
 };
@@ -157,10 +156,12 @@ function ownBranch(branch: readonly PiEntryRow[], forkEntryId: string | null): P
 function mappedConversationEntries(
   branch: readonly PiEntryRow[],
   turns: readonly CompletedTurnRow[],
+  allMessages = false,
 ): MappedEntry[] {
   const completed = new Set(turns.map((turn) => turn.turnId));
   const users = new Map<string, MappedEntry>();
   const finals = new Map<string, MappedEntry>();
+  const all: MappedEntry[] = [];
   for (const [index, entry] of branch.entries()) {
     if (entry.turnId === null || !completed.has(entry.turnId)) continue;
     const message = messageFromPayload(entry.payload);
@@ -177,9 +178,11 @@ function mappedConversationEntries(
       createdAt: isoFromMilliseconds(entry.timestampMs),
       index,
     };
+    all.push(mapped);
     if (finalAssistant) finals.set(entry.turnId, mapped);
     else if (!users.has(entry.turnId)) users.set(entry.turnId, mapped);
   }
+  if (allMessages) return all;
   const result: MappedEntry[] = [];
   for (const final of [...finals.values()].sort((a, b) => a.index - b.index)) {
     const user = users.get(final.turnId);
@@ -233,7 +236,6 @@ async function sessionEntries(
         type: row.entry.kind,
         timestampMs: String(Date.parse(row.createdAt)),
         payload: row.entry as unknown as Record<string, unknown>,
-        native: row,
       })),
     );
   }
@@ -307,10 +309,16 @@ function conversationLeaves(
 
 export class ConversationTreeService {
   readonly #database: Kysely<Database>;
+  readonly #readDatabase: Kysely<Database>;
   readonly #idGenerator: () => string;
 
-  constructor(options: { database: Kysely<Database>; idGenerator?: () => string }) {
+  constructor(options: {
+    database: Kysely<Database>;
+    readDatabase?: Kysely<Database>;
+    idGenerator?: () => string;
+  }) {
     this.#database = options.database;
+    this.#readDatabase = options.readDatabase ?? options.database;
     this.#idGenerator = options.idGenerator ?? randomUUID;
   }
 
@@ -318,11 +326,14 @@ export class ConversationTreeService {
     tenantId: string,
     currentSessionId: string,
     view: ConversationTreeView,
+    navigation: { branchSessionId?: string; beforeEntryId?: string } = {},
   ): Promise<ConversationTreeResource> {
-    return this.#database
+    return this.#readDatabase
       .transaction()
       .setIsolationLevel("repeatable read")
-      .execute((database) => this.#readTree(database, tenantId, currentSessionId, view));
+      .execute((database) =>
+        this.#readTree(database, tenantId, currentSessionId, view, navigation),
+      );
   }
 
   async #readTree(
@@ -330,6 +341,7 @@ export class ConversationTreeService {
     tenantId: string,
     currentSessionId: string,
     view: ConversationTreeView,
+    navigation: { branchSessionId?: string; beforeEntryId?: string } = {},
   ): Promise<ConversationTreeResource> {
     const selected = await database
       .selectFrom("sessions")
@@ -406,15 +418,104 @@ export class ConversationTreeService {
     const bindingBySession = new Map(
       bindings.map((binding) => [binding.productSessionId, binding] as const),
     );
-    const [entriesBySession, turnsBySession] = await Promise.all([
-      sessionEntries(
-        database,
+    const navigationSession = navigation.branchSessionId ?? currentSessionId;
+    if (!uniqueSessionIds.includes(navigationSession))
+      throw new ControlPlaneStoreError("not_found", "Navigation branch is outside this view");
+    const entriesBySession = new Map<string, PiEntryRow[]>();
+    const navigationPages = new Map<string, { earlierEntryId?: string; hasLaterEntries?: true }>();
+    for (const binding of bindings) {
+      if (binding.piConversationId === null) {
+        entriesBySession.set(binding.productSessionId, []);
+        continue;
+      }
+      const child = humanSessions.find((s) => s.parentSessionId === binding.productSessionId);
+      const prefix = view === "focus" ? child?.forkEntryId : undefined;
+      const wanted =
+        binding.productSessionId === currentSessionId ||
+        binding.productSessionId === navigationSession ||
+        (view === "focus" && humanSessions.some((s) => s.id === binding.productSessionId));
+      const before =
+        binding.productSessionId === navigationSession ? navigation.beforeEntryId : undefined;
+      const forced = [
+        binding.contextBaseEntryId,
+        binding.forkEntryId,
+        ...humanSessions
+          .filter((s) => s.parentSessionId === binding.productSessionId)
+          .map((s) => s.forkEntryId),
+      ]
+        .filter((id): id is string => id !== null && id !== undefined)
+        .map(Number);
+      const page = await readNavigationEntries(database, {
         tenantId,
-        bindings,
-        view === "focus" ? selectedDelegated?.sessionId : undefined,
+        sessionId: binding.piSessionId,
+        conversationId: Number(binding.piConversationId),
+        limit: wanted ? 80 : 8,
+        ...(binding.productSessionId === selectedDelegated?.sessionId
+          ? {}
+          : {
+              from: Math.max(
+                Number(binding.contextBaseEntryId ?? 0),
+                Number(binding.forkEntryId ?? 0),
+              ),
+            }),
+        through: Math.min(
+          prefix ? Number(prefix) : Number.MAX_SAFE_INTEGER,
+          before ? Number(before) - 1 : Number.MAX_SAFE_INTEGER,
+        ),
+        includeIds: forced,
+      });
+      entriesBySession.set(
+        binding.productSessionId,
+        page.entries.map((e, index) => ({
+          id: String(e.id),
+          seq: String(e.seq),
+          turnId: e.turnId,
+          parentId: index ? String(page.entries[index - 1]!.id) : null,
+          type: e.kind,
+          timestampMs: String(Date.parse(e.createdAt)),
+          payload: {
+            model: [
+              {
+                role: e.role,
+                content: e.text,
+                ...(e.finalAssistant ? { stopReason: "stop" } : {}),
+              },
+            ],
+          },
+        })),
+      );
+      navigationPages.set(binding.productSessionId, {
+        ...(page.hasMore && page.beforeId ? { earlierEntryId: page.beforeId } : {}),
+        ...(before ? { hasLaterEntries: true as const } : {}),
+      });
+    }
+    const visibleTurnIds = [
+      ...new Set(
+        [...entriesBySession.values()].flatMap((rows) =>
+          rows.flatMap((r) => (r.turnId ? [r.turnId] : [])),
+        ),
       ),
-      completedTurns(database, tenantId, uniqueSessionIds),
-    ]);
+    ];
+    const turnRows = visibleTurnIds.length
+      ? await database
+          .selectFrom("conversation_turns")
+          .select([
+            "session_id as sessionId",
+            "turn_id as turnId",
+            "mailbox_position as mailboxPosition",
+          ])
+          .where("tenant_id", "=", tenantId)
+          .where("turn_id", "in", visibleTurnIds)
+          .where("pruned_at", "is", null)
+          .where("state", "=", "completed")
+          .execute()
+      : [];
+    const turnsBySession = new Map<string, CompletedTurnRow[]>();
+    for (const row of turnRows) {
+      const rows = turnsBySession.get(row.sessionId) ?? [];
+      rows.push(row);
+      turnsBySession.set(row.sessionId, rows);
+    }
     const leaves = conversationLeaves(entriesBySession);
     let entryCount = 0;
     const humanBranches: ConversationTreeBranchResource[] = humanSessions.map((session, index) => {
@@ -423,7 +524,7 @@ export class ConversationTreeService {
         activeBranch(allEntries, leaves.get(session.id) ?? null),
         session.forkEntryId,
       );
-      let mapped = mappedConversationEntries(branch, turnsBySession.get(session.id) ?? []);
+      let mapped = mappedConversationEntries(branch, turnsBySession.get(session.id) ?? [], true);
       if (view === "focus") {
         const child = humanSessions[index + 1];
         if (child?.parentSessionId === session.id && child.forkEntryId !== null) {
@@ -449,6 +550,7 @@ export class ConversationTreeService {
         forkedFromTurnId: session.forkTurnId,
         forkedFromEntryId: session.forkEntryId,
         current: session.id === currentSessionId,
+        ...navigationPages.get(session.id),
         entries: mapped.map(({ index: _index, ...entry }) => entry),
       };
     });
@@ -475,6 +577,7 @@ export class ConversationTreeService {
       const mapped = mappedConversationEntries(
         ownEntries,
         turnsBySession.get(summary.sessionId) ?? [],
+        true,
       );
       entryCount += mapped.length;
       if (entryCount > MAX_TREE_ENTRIES) {
@@ -497,6 +600,7 @@ export class ConversationTreeService {
         contextMode: summary.contextMode,
         sandboxMode: summary.sandboxMode,
         delegatedState: summary.state,
+        ...navigationPages.get(summary.sessionId),
         entries: mapped.map(({ index: _index, ...entry }) => entry),
       });
     }
@@ -532,7 +636,7 @@ export class ConversationTreeService {
       ]
         .flatMap((sessionId) => turnsBySession.get(sessionId) ?? [])
         .filter((turn) => turn.turnId !== selectedDelegated.parentTurnId);
-      const inherited = mappedConversationEntries(inheritedBranch, inheritedTurns);
+      const inherited = mappedConversationEntries(inheritedBranch, inheritedTurns, true);
       const pendingParentUser = inheritedBranch.find((entry) => {
         if (entry.turnId !== selectedDelegated.parentTurnId || entry.type !== "message")
           return false;
@@ -553,6 +657,7 @@ export class ConversationTreeService {
       const own = mappedConversationEntries(
         active.slice(contextBaseIndex + 1),
         turnsBySession.get(selectedDelegated.sessionId) ?? [],
+        true,
       );
       const mapped = [...inherited, ...own];
       if (mapped.length > MAX_TREE_ENTRIES) {
@@ -569,6 +674,7 @@ export class ConversationTreeService {
         contextMode: selectedDelegated.contextMode,
         sandboxMode: selectedDelegated.sandboxMode,
         delegatedState: selectedDelegated.state,
+        ...navigationPages.get(selectedDelegated.sessionId),
         entries: mapped.map(({ index: _index, ...entry }) => entry),
       };
       const focusedDescendants = delegatedBranches.map((branch) => {

@@ -1,5 +1,12 @@
 # Documentation map
 
+[Windowed conversation presentation](adr/0278-windowed-conversation-presentation.md)
+passes source and 1 GiB composed checks for long conversations, including one long Run.
+[Delivery evidence](reports/conversation-history-delivery-20261026.md) records the measurements.
+It retains existing native storage and adds bounded reads/browser residency,
+direct navigation, cancellable search and server-streamed export. Matched schema
+200 publication is still pending.
+
 [Conversation commands and model waiting](reports/conversation-commands-delivery-20261026.md)
 is deployed as `commands-514e2b0f`, schema 199: input `/usage`, native active/cold
 `/compact`, 300-second model-event inactivity and native retries. Real Luna,

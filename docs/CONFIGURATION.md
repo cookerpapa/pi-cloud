@@ -381,8 +381,14 @@ services should detach their standard streams and be checked in a later Tool cal
 The code-owned SSE v2 transport limits each frame to 128 KiB; JSON parts contain
 at most 16,384 UTF-16 code units so escaping also fits. This is not a 128 KiB
 conversation limit. A blocked socket write times out after 30 seconds and closes
-only that viewer. Snapshots initially include 40 Turns, with older history loaded
-by Turn identity. No extra timer is added before normal text delivery.
+only that viewer. Snapshot payload version 3 and history pages select at most 64 native positions
+within at most 40 Turns, with a 4 MiB native/dependency/metadata read budget.
+History cursors support both directions and direct Entry/Tool positions. The
+browser retains at most four history pages plus a recent live tail (256 settled
+items / 2 Mi UTF-16 characters); active Tools and a single growing message retain
+their native boundaries. These are working-set limits, not conversation quotas.
+Four disposable history-read connections use a five-second statement budget and
+client cancellation; authority writes and queue-observation pools are separate. No extra timer is added before normal text delivery.
 
 The installer owns `PI_CLOUD_CUBESANDBOX_TEMPLATE_ID` and the mandatory
 `PI_CLOUD_CUBESANDBOX_DEVELOPMENT_TEMPLATE_IDS` JSON map. The latter contains

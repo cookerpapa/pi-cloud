@@ -128,7 +128,8 @@
     "cubesandbox:allocation-check": "node scripts/check-cube-allocation.mjs",
     "test:transport": "node scripts/run-transport-integration.mjs",
     "release:component": "node --import tsx scripts/run-component-release.mjs",
-    "release:check": "node scripts/run-release-scope-check.mjs"
+    "release:check": "node scripts/run-release-scope-check.mjs",
+    "browser:history:check": "node scripts/run-with-test-postgres.mjs -- node node_modules/tsx/dist/cli.mjs --tsconfig packages/control-plane/tsconfig.json scripts/run-history-window-check.mjs"
   },
   "devDependencies": {
     "@earendil-works/chord": "1.0.0",

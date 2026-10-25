@@ -248,7 +248,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
     turnId:fixtureTurnId,runId:'60000000-0000-4000-8000-000000000011',mailboxPosition:1,prompt:'Tree question',state:sessionState==='running'?'running':'completed',acceptedAt:createdAt,
     transcript:{schemaVersion:1,throughSequence:sessionState==='running'?2:3,startedSequence:1,terminalSequence:sessionState==='running'?null:3,stopReason:sessionState==='running'?null:'stop',failure:null,cancellation:null,
       items:[{kind:'text',text:'Tree answer',firstSequence:2,lastSequence:2}]}
-  }]:[],historyTruncated:false});
+  }]:[],history:{before:null,after:null,hasBefore:false,hasAfter:false}});
   const modelResource = () => ({sessionId:sid,modelProfileId:profileId,...selection,
     displayName:models.find(m=>m.provider===selection.provider).displayName});
   Object.assign(PiCloudApi.prototype, {
@@ -326,7 +326,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
       : Response.json({loggedOut:true});
     if(String(url).endsWith("/events")) return new Response(new ReadableStream({start(controller){
       if(childViews) {
-        const snapshot={schemaVersion:2,conversation:conversation(String(url).split('/').at(-2))};
+        const snapshot={schemaVersion:3,conversation:conversation(String(url).split('/').at(-2))};
         const frame=(event,data)=>'event: '+event+'\\n'+'data: '+JSON.stringify(data)+'\\n\\n';
         window.emitFixtureEvent=event=>controller.enqueue(new TextEncoder().encode(frame(event.type,event)));
         window.finishFixtureTurn=()=>controller.enqueue(new TextEncoder().encode(frame('turn.completed',{
@@ -1519,7 +1519,7 @@ try {
         true,
       );
       await page.waitFor(
-        `document.querySelector(${JSON.stringify(currentTurn)})?.textContent.includes('Working on the new request')`,
+        `[...document.querySelectorAll(${JSON.stringify(currentTurn)})].some(node=>node.textContent.includes('Working on the new request'))`,
       );
       await page.evaluate("bubbleObserver.disconnect()");
     }

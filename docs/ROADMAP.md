@@ -1,5 +1,14 @@
 # Implementation roadmap
 
+## Long conversation presentation
+
+- [x] Record ADR-0278 and evaluate pinned TanStack Virtual against existing React/PG interfaces.
+- [x] Add within-Run position/byte pagination, bounded Tool dependency reads and navigation captions.
+- [x] Separate bounded live and historical browser views, with virtual rows and direct jumps.
+- [x] Add cancellable scoped search and server-streamed completed-history downloads.
+- [x] Prove at least 1 GiB of native history, eviction/anchors/reconnect and cancellation end to end.
+- [ ] Publish matched schema 200, run owned real acceptance and reconcile original assets.
+
 ## Model-event waiting and input commands — completed
 
 The [revised plan](reports/slash-commands-plan-20261025.md) retains current-Run

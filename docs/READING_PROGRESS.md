@@ -1,6 +1,10 @@
 # Architecture reading checkpoint
 
-Updated: 2026-10-21; runtime is `resource-repair-1cdccb80`, schema 194 / topic v18.
+Updated: 2026-10-26. The main-message walkthrough remains complete; current
+serving release is `commands-514e2b0f`, schema 199. The owner approved ADR-0278
+for long-conversation presentation. This follow-up changes indexed history reads,
+browser windows, search and export; it does not restart the execution walkthrough.
+Matched publication is pending while composed acceptance runs.
 
 The owner has now authorized the separate resource/interaction branch reviews.
 The first, [Workspace/Volume lifecycle](reports/workspace-volume-lifecycle-review-20261020.md),

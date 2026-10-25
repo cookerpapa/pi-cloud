@@ -1,3 +1,10 @@
+import {
+  emptyConversationHistory,
+  HISTORY_LIVE_ITEMS,
+  HISTORY_LIVE_CHARACTERS,
+  type ConversationHistoryBoundary,
+  type ConversationHistoryQuery,
+} from "@pi-cloud/protocol";
 import type { UserUpload } from "@pi-cloud/protocol";
 import type {
   AcceptedTurnResource,
@@ -15,7 +22,7 @@ import type { SessionStreamStatus } from "./sse.ts";
 export type TurnViewStatus =
   "queued" | "running" | "cancelling" | "completed" | "failed" | "cancelled";
 
-export type TranscriptItem =
+export type TranscriptItem = { historyCursor?: string; pageKey?: string } & (
   | {
       kind: "user";
       key: string;
@@ -92,9 +99,13 @@ export type TranscriptItem =
       maximumSamplingAttempts?: number;
       delayMs?: number;
       sequence: number;
-    };
+    }
+);
 
 export type TurnView = {
+  continuesBefore?: true;
+  continuesAfter?: true;
+  historyCursor?: string;
   operation?: ConversationDetailResource["turns"][number]["operation"];
   runId: string | null;
   turnId: string;
@@ -131,7 +142,8 @@ export type SessionViewState = {
   inheritedContextSummary?: ConversationDetailResource["inheritedContextSummary"];
   inheritedMessagesTruncated?: ConversationDetailResource["inheritedMessagesTruncated"];
   turns: readonly TurnView[];
-  historyTruncated: boolean;
+  history: ConversationHistoryBoundary;
+  historyAnchor?: ConversationHistoryQuery;
   connection: ConnectionView;
   apiError: string | null;
 };
@@ -142,9 +154,8 @@ export type SessionViewAction =
   | {
       type: "conversation.loaded";
       conversation: ConversationDetailResource;
-      preserveOlderHistory?: boolean;
+      preserveInputRevision?: boolean;
     }
-  | { type: "history.prepended"; conversation: ConversationDetailResource }
   | {
       type: "turn.discovered";
       sessionId: string;
@@ -170,7 +181,7 @@ export function createInitialSessionView(): SessionViewState {
     sessionState: "none",
     inheritedMessages: [],
     turns: [],
-    historyTruncated: false,
+    history: emptyConversationHistory(),
     connection: { phase: "offline", attempt: 0, message: null },
     apiError: null,
   };
@@ -263,7 +274,7 @@ function transcriptItem(
   if (item.kind === "text") {
     return {
       ...item,
-      key: `text:${String(item.firstSequence)}`,
+      key: `text:${item.messageId ?? item.historyCursor ?? String(item.firstSequence)}`,
     };
   }
   if (item.kind === "hosted_search") {
@@ -273,12 +284,12 @@ function transcriptItem(
     return { ...item, key: `tool:${item.toolCallId}` };
   }
   if (item.kind === "notification") {
-    return { ...item, key: `notification:${String(item.sequence)}` };
+    return { ...item, key: `notification:${item.historyCursor ?? String(item.sequence)}` };
   }
   if (item.kind === "compaction") {
-    return { ...item, key: `compaction:${String(item.firstSequence)}` };
+    return { ...item, key: `compaction:${item.historyCursor ?? String(item.firstSequence)}` };
   }
-  return { ...item, key: `retry:${String(item.sequence)}` };
+  return { ...item, key: `retry:${item.historyCursor ?? String(item.sequence)}` };
 }
 
 function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewState {
@@ -687,23 +698,7 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
   };
 }
 
-export function sessionViewReducer(
-  state: SessionViewState,
-  action: SessionViewAction,
-): SessionViewState {
-  if (action.type === "history.prepended") {
-    if (state.session?.sessionId !== action.conversation.session.sessionId) return state;
-    const loaded = sessionViewReducer(createInitialSessionView(), {
-      type: "conversation.loaded",
-      conversation: action.conversation,
-    });
-    const known = new Set(state.turns.map((t) => t.turnId));
-    return {
-      ...state,
-      turns: [...loaded.turns.filter((t) => !known.has(t.turnId)), ...state.turns],
-      historyTruncated: action.conversation.historyTruncated,
-    };
-  }
+function reduceSessionView(state: SessionViewState, action: SessionViewAction): SessionViewState {
   if (action.type === "turn.discovered") {
     if (state.session?.sessionId !== action.sessionId) return state;
     return {
@@ -756,7 +751,11 @@ export function sessionViewReducer(
                 turn.state === "cancelled" ? { reason: "cancelled", forced: false } : null,
             }
           : {
-              items: turn.transcript.items.map((item) => transcriptItem(item)),
+              items: turn.transcript.items.map((item) => ({
+                ...transcriptItem(item),
+                pageKey:
+                  action.conversation.history.before ?? action.conversation.session.sessionId,
+              })),
               startedSequence: turn.transcript.startedSequence,
               terminalSequence: turn.transcript.terminalSequence,
               stopReason: turn.transcript.stopReason,
@@ -768,24 +767,19 @@ export function sessionViewReducer(
         mailboxPosition: turn.mailboxPosition,
         prompt: turn.prompt,
         ...(turn.operation ? { operation: turn.operation } : {}),
+        ...(turn.continuesBefore ? { continuesBefore: true as const } : {}),
+        ...(turn.continuesAfter ? { continuesAfter: true as const } : {}),
+        ...(turn.historyCursor ? { historyCursor: turn.historyCursor } : {}),
         ...(turn.uploads ? { uploads: turn.uploads } : {}),
         acceptedAt: turn.acceptedAt,
         status: turn.state,
       })),
-      historyTruncated: action.conversation.historyTruncated,
+      history: action.conversation.history,
       connection: { phase: "offline", attempt: 0, message: "Opening durable event stream" },
     };
-    const anchor = loaded.turns[0]?.turnId;
-    const at =
-      action.preserveOlderHistory && state.session?.sessionId === loaded.session?.sessionId
-        ? state.turns.findIndex((turn) => turn.turnId === anchor)
-        : -1;
-    const older = at > 0 ? state.turns.slice(0, at) : [];
     return {
       ...loaded,
-      historyTruncated: older.length ? state.historyTruncated : loaded.historyTruncated,
       turns: [
-        ...older,
         ...loaded.turns.map((turn) => ({
           ...turn,
           items: turn.items.map((item) =>
@@ -812,7 +806,9 @@ export function sessionViewReducer(
   }
   if (action.type === "queue.updated") {
     if (state.session?.sessionId !== action.queue.sessionId) return state;
-    const history = state.turns.filter((turn) => turn.status !== "queued");
+    const history = state.turns.filter(
+      (turn) => turn.status !== "queued" || turn.operation !== undefined,
+    );
     const started = new Set(history.map((turn) => turn.turnId));
     const pending = action.queue.items
       .filter((item) => !item.inputId.startsWith("input-") && !started.has(item.inputId))
@@ -825,7 +821,9 @@ export function sessionViewReducer(
         acceptedAt: item.acceptedAt,
         status: "queued" as const,
       }));
-    const previous = state.turns.filter((turn) => turn.status === "queued");
+    const previous = state.turns.filter(
+      (turn) => turn.status === "queued" && turn.operation === undefined,
+    );
     if (
       previous.length === pending.length &&
       previous.every((turn, index) => {
@@ -897,4 +895,115 @@ export function activeTurn(state: SessionViewState): TurnView | undefined {
   return state.turns.find(
     (turn) => turn.status === "queued" || turn.status === "running" || turn.status === "cancelling",
   );
+}
+
+/** A historical page is already bounded by the API and must not be truncated a
+ * second time. It cannot advance the separately maintained live view. */
+export function conversationPageView(conversation: ConversationDetailResource): SessionViewState {
+  return reduceSessionView(createInitialSessionView(), {
+    type: "conversation.loaded",
+    conversation,
+  });
+}
+const itemSizes = new WeakMap<object, number>();
+export function presentationItemCharacters(item: TranscriptItem): number {
+  const cached = itemSizes.get(item);
+  if (cached !== undefined) return cached;
+  const size =
+    item.kind === "text" || item.kind === "user"
+      ? item.text.length + 256
+      : JSON.stringify(item).length;
+  itemSizes.set(item, size);
+  return size;
+}
+export function itemHistoryQuery(
+  turn: TurnView,
+  item: TranscriptItem,
+): ConversationHistoryQuery | undefined {
+  if (item.historyCursor) return { at: item.historyCursor };
+  if ((item.kind === "text" || item.kind === "user") && item.messageId) {
+    const id = /^entry:([1-9][0-9]*)(?::|$)/.exec(item.messageId)?.[1];
+    if (id) return { turnId: turn.turnId, entryId: id };
+  }
+  if (item.kind === "tool") {
+    const id = /^entry:([1-9][0-9]*)$/.exec(item.toolCallId)?.[1];
+    if (id) return { turnId: turn.turnId, entryId: id };
+    if (/^task:[1-9][0-9]*$/.test(item.toolCallId))
+      return { turnId: turn.turnId, toolCallId: item.toolCallId };
+  }
+  return undefined;
+}
+export function retainLiveWindow(state: SessionViewState): SessionViewState {
+  let count = 0,
+    characters = 0,
+    removed = false;
+  const turns: TurnView[] = [];
+  let lastRemoved: ConversationHistoryQuery | undefined;
+  for (let t = state.turns.length - 1; t >= 0; t--) {
+    const turn = state.turns[t]!;
+    const items: TranscriptItem[] = [];
+    let clipped = false;
+    for (let i = turn.items.length - 1; i >= 0; i--) {
+      const item = turn.items[i]!,
+        size = presentationItemCharacters(item);
+      const pending = item.kind === "tool" && item.status === "running";
+      if (
+        pending ||
+        count === 0 ||
+        (count < HISTORY_LIVE_ITEMS && characters + size <= HISTORY_LIVE_CHARACTERS)
+      ) {
+        items.unshift(item);
+        count++;
+        characters += size;
+      } else {
+        clipped = true;
+        removed = true;
+        lastRemoved ??= itemHistoryQuery(turn, item);
+      }
+    }
+    if (!items.length && t !== state.turns.length - 1 && count >= HISTORY_LIVE_ITEMS) {
+      removed = true;
+      continue;
+    }
+    const header = turn.prompt?.length ?? 0;
+    const includeHeader = !clipped && characters + header <= HISTORY_LIVE_CHARACTERS;
+    if (!includeHeader && header) removed = true;
+    if (includeHeader) characters += header;
+    if (!items.length && t !== state.turns.length - 1 && characters >= HISTORY_LIVE_CHARACTERS) {
+      removed = true;
+      continue;
+    }
+    const { uploads: _uploads, ...withoutUploads } = turn;
+    turns.unshift(
+      clipped || !includeHeader
+        ? { ...withoutUploads, prompt: null, continuesBefore: true, items }
+        : turn,
+    );
+    count++;
+    characters += 256;
+  }
+  if (!removed) return state;
+  const oldest = turns[0];
+  const firstQuery = oldest?.items.map((item) => itemHistoryQuery(oldest, item)).find(Boolean);
+  return {
+    ...state,
+    turns,
+    history: { ...state.history, hasBefore: true },
+    ...((firstQuery ??
+    lastRemoved ??
+    state.historyAnchor ??
+    (oldest ? { turnId: oldest.turnId } : undefined))
+      ? {
+          historyAnchor: firstQuery ??
+            lastRemoved ??
+            state.historyAnchor ?? { turnId: oldest!.turnId },
+        }
+      : {}),
+  };
+}
+export function sessionViewReducer(
+  state: SessionViewState,
+  action: SessionViewAction,
+): SessionViewState {
+  return retainLiveWindow(reduceSessionView(state, action));
 }

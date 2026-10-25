@@ -83,6 +83,9 @@ export class ControlPlaneModule {
     });
     const controlPlaneStores = new ControlPlaneStoreFactory({
       database: options.database,
+      ...(options.conversationReadDatabase
+        ? { conversationReadDatabase: options.conversationReadDatabase }
+        : {}),
       ...(options.metrics === undefined ? {} : { metrics: options.metrics }),
       ...(options.environmentImageRevision === undefined
         ? {}
@@ -195,6 +198,9 @@ export class ControlPlaneModule {
           provide: ConversationTreeService,
           useValue: new ConversationTreeService({
             database: options.database,
+            ...(options.conversationReadDatabase
+              ? { readDatabase: options.conversationReadDatabase }
+              : {}),
             ...(options.idGenerator === undefined ? {} : { idGenerator: options.idGenerator }),
           }),
         },

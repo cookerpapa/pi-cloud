@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, type ReactNode } from "react";
+import { memo, useMemo, useRef, isValidElement, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
@@ -6,6 +6,7 @@ import { unified } from "unified";
 import { HighlightedCode } from "./HighlightedCode.tsx";
 import { useI18n } from "./i18n.tsx";
 import { SessionImage, isSessionImagePath } from "./SessionImage.tsx";
+import { LargeCode } from "./LargeCode.tsx";
 
 function MarkdownCode({ className, children }: { className?: string; children?: ReactNode }) {
   const text = String(children ?? "").replace(/\n$/u, "");
@@ -31,6 +32,17 @@ const StableMarkdownBody = memo(function StableMarkdownBody({ text }: { text: st
             {children}
           </a>
         ),
+        pre: ({ children }) => {
+          const node = Array.isArray(children) ? children[0] : children;
+          const text = isValidElement<{ children?: ReactNode }>(node)
+            ? String(node.props.children ?? "")
+            : "";
+          return text.length > 32000 ? (
+            <LargeCode text={text.replace(/\n$/, "")} />
+          ) : (
+            <pre>{children}</pre>
+          );
+        },
         code: ({ className, children }) => (
           <MarkdownCode {...(className === undefined ? {} : { className })}>
             {children}

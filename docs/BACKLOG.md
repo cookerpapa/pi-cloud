@@ -1,5 +1,18 @@
 # Maintained backlog
 
+## Long conversation presentation — in progress
+
+The owner approved [ADR-0278](adr/0278-windowed-conversation-presentation.md).
+Read messages within a Run using indexed native positions and byte budgets;
+retain only a bounded browser working set. Tree/search jumps must seek directly,
+and export must stream without a whole-history browser Blob. This changes only
+presentation reads, not model context, execution or history ownership.
+
+Source and composed API/browser checks pass, including 1 GiB of native test
+history and bounded browser residency. [Delivery evidence](reports/conversation-history-delivery-20261026.md)
+records measurements and corrected failures. Matched schema 200 publication and
+owned Luna/Cube/browser acceptance remain required before this item is complete.
+
 ## Model waiting and input commands — completed
 
 [Revised proposal](reports/slash-commands-plan-20261025.md) covers provider-event

@@ -518,7 +518,7 @@ describe("product chat experience", () => {
     expect(markup).toContain("curl -sL");
   });
 
-  it("keeps Preview arguments and output in closed Tool details without an application card", () => {
+  it("defers Preview arguments and output while Tool details are closed", () => {
     const markup = renderToStaticMarkup(
       <ToolActivity
         item={{
@@ -550,10 +550,10 @@ describe("product chat experience", () => {
     expect(markup).toContain("<details>");
     expect(markup).not.toContain("<details open");
     expect(markup).toContain("调用详情");
-    expect(markup).toContain("3000");
+    expect(markup).not.toContain("3000");
     expect(markup).not.toContain("打开应用");
     expect(markup).not.toContain("<a ");
-    expect(markup).toContain(
+    expect(markup).not.toContain(
       "/v1/conversations/10000000-0000-4000-8000-000000000099/preview/3000/",
     );
     expect(markup).not.toContain("127.0.0.1");

@@ -1,3 +1,4 @@
+import { ConversationTimeline, type TimelineControl } from "./ConversationTimeline.tsx";
 import { useConversationCommands } from "./useConversationCommands.ts";
 import {
   parseComposerCommand,
@@ -49,17 +50,12 @@ import { copyMessageText } from "./MessageCopyButton.tsx";
 import { ConversationTurn } from "./ConversationTurn.tsx";
 import { PendingInputQueue } from "./PendingInputQueue.tsx";
 import { WorkspaceRebindDialog } from "./WorkspaceRebindDialog.tsx";
-import {
-  conversationExportFilename,
-  conversationExportMarkdown,
-  downloadConversationMarkdown,
-} from "./conversation-export.ts";
+
 import {
   ModelSettingsMenu,
   defaultNewConversationSettings,
   settingsFromSessionModel,
 } from "./ModelSettingsMenu.tsx";
-import { isConversationTailVisible } from "./conversation-scroll.ts";
 import { activeTurn, createInitialSessionView, sessionViewReducer } from "./session-view.ts";
 import { streamSessionEvents } from "./sse.ts";
 import { ToolProgressStore } from "./tool-progress-store.ts";
@@ -191,11 +187,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const [streamQueue, setStreamQueue] = useState<
     import("@pi-cloud/protocol").InputQueueResource | null
   >(null);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const historyRequest = useRef(false);
-  const historyScroll = useRef<{ sessionId: string; anchor: HTMLElement; top: number } | null>(
-    null,
-  );
+  const timelineControl = useRef<TimelineControl | null>(null);
   const [streamSessionId, setStreamSessionId] = useState<string | null>(null);
   const currentStreamSession = useRef(streamSessionId);
   currentStreamSession.current = streamSessionId;
@@ -215,6 +207,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const currentTreeView = useRef(treeView);
   currentTreeView.current = treeView;
   const treeRequest = useRef(0);
+  const treeNavigation = useRef<{ branchSessionId?: string; beforeEntryId?: string }>({});
   const [treeLoading, setTreeLoading] = useState(false);
   const [workspaces, setWorkspaces] = useState<readonly WorkspaceSummaryResource[]>([]);
   const [developmentEnvironments, setDevelopmentEnvironments] = useState<
@@ -279,7 +272,6 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const [directoryPickerOpen, setDirectoryPickerOpen] = useState(false);
   const [workspaceRebindOpen, setWorkspaceRebindOpen] = useState(false);
   const [sshTicket, setSshTicket] = useState<SshAccessTicketResource | null>(null);
-  const [followingConversationTail, setFollowingConversationTail] = useState(true);
   const [newConversationTitle, setNewConversationTitle] = useState("");
   const [workspaceChoice, setWorkspaceChoice] = useState<"existing" | "new">("new");
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
@@ -302,9 +294,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   } | null>(null);
   const [forkTitle, setForkTitle] = useState("");
   const chatScrollerRef = useRef<HTMLElement | null>(null);
-  const transcriptEndRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
-  const followingConversationTailRef = useRef(true);
   const deepLinkHandledRef = useRef(false);
   const currentTurn = activeTurn(state);
   const composerModelSelection =
@@ -423,51 +413,13 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     if (
       action.type === "turn.accepted" ||
       action.type === "session.created" ||
-      (action.type === "conversation.loaded" && !action.preserveOlderHistory)
+      (action.type === "conversation.loaded" && !action.preserveInputRevision)
     )
       inputRevision.current++;
     if (action.type === "conversation.loaded")
       setStreamSessionId(action.conversation.session.sessionId);
     setState((current) => sessionViewReducer(current, action));
   }, []);
-
-  const loadEarlierHistory = useCallback(async () => {
-    const current = renderedState.current,
-      sessionId = current.session?.sessionId,
-      before = current.turns[0]?.turnId;
-    if (!sessionId || !before || !current.historyTruncated || historyRequest.current) return;
-    historyRequest.current = true;
-    setHistoryLoading(true);
-    try {
-      const page = await api.getConversation(sessionId, before);
-      if (currentStreamSession.current !== sessionId) return;
-      const anchor = chatScrollerRef.current?.querySelector<HTMLElement>(
-        `[data-conversation-turn-id="${before}"]`,
-      );
-      if (anchor)
-        historyScroll.current = { sessionId, anchor, top: anchor.getBoundingClientRect().top };
-      update({ type: "history.prepended", conversation: page });
-    } catch (error) {
-      update({ type: "api.error", message: errorMessage(error, t) });
-    } finally {
-      historyRequest.current = false;
-      setHistoryLoading(false);
-    }
-  }, [api, t, update]);
-
-  useLayoutEffect(() => {
-    const pending = historyScroll.current,
-      scroll = chatScrollerRef.current;
-    if (
-      pending &&
-      scroll &&
-      state.session?.sessionId === pending.sessionId &&
-      pending.anchor.isConnected
-    ) {
-      scroll.scrollTop += pending.anchor.getBoundingClientRect().top - pending.top;
-    }
-    historyScroll.current = null;
-  }, [state.turns, state.session?.sessionId]);
 
   const focusComposer = useCallback((): void => {
     requestAnimationFrame(() => {
@@ -572,7 +524,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
         currentTreeView.current === view;
       setTreeLoading(true);
       try {
-        const tree = await api.getConversationTree(sessionId, view);
+        const tree = await api.getConversationTree(sessionId, view, treeNavigation.current);
         if (current()) setConversationTree(tree);
       } catch (error) {
         if (current()) throw error;
@@ -722,6 +674,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
       return;
     }
     let cancelled = false;
+    treeNavigation.current = {};
     void refreshConversationTree(sessionId, treeView).catch((error: unknown) => {
       if (!cancelled) update({ type: "api.error", message: errorMessage(error, t) });
     });
@@ -770,7 +723,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
         update({
           type: "conversation.loaded",
           conversation: snapshot.conversation,
-          preserveOlderHistory: true,
+          preserveInputRevision: true,
         });
         setConversationLoading(null);
         if (
@@ -802,6 +755,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
           )
         )
           refreshChildren();
+        timelineControl.current?.event(event);
         update({ type: "stream.event", event });
         commandEvents.current(event.type);
         if (
@@ -898,53 +852,6 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     update,
   ]);
 
-  const followConversationTail = useCallback((follow: boolean): void => {
-    followingConversationTailRef.current = follow;
-    setFollowingConversationTail(follow);
-  }, []);
-
-  const followProgressiveText = useCallback((): void => {
-    if (!followingConversationTailRef.current) return;
-    const scroller = chatScrollerRef.current;
-    if (scroller !== null) scroller.scrollTo({ top: scroller.scrollHeight, behavior: "auto" });
-  }, []);
-
-  useEffect(() => {
-    followConversationTail(true);
-  }, [followConversationTail, state.session?.sessionId]);
-
-  useEffect(() => {
-    if (!followingConversationTailRef.current) return;
-    const frame = requestAnimationFrame(() => {
-      const scroller = chatScrollerRef.current;
-      if (scroller === null) return;
-      scroller.scrollTo({ top: scroller.scrollHeight, behavior: "auto" });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [state.turns]);
-
-  useEffect(() => {
-    if (pendingTreeJump === null) return;
-    followConversationTail(false);
-    const target = chatScrollerRef.current?.querySelector<HTMLElement>(
-      `[data-conversation-entry-id="${pendingTreeJump.entryId}"], [data-conversation-turn-id="${pendingTreeJump.turnId}"]`,
-    );
-    if (target === undefined || target === null) {
-      if (state.historyTruncated && !historyLoading) void loadEarlierHistory();
-      return;
-    }
-    target.scrollIntoView({ behavior: "smooth", block: "start" });
-    setPendingTreeJump(null);
-  }, [
-    pendingTreeJump,
-    state.session?.sessionId,
-    state.turns.length,
-    state.historyTruncated,
-    historyLoading,
-    loadEarlierHistory,
-    followConversationTail,
-  ]);
-
   function resetConversation(preserveDraft = false): void {
     if (!preserveDraft) {
       uploads.clear();
@@ -960,7 +867,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     setConversationTree(null);
     setSelectedDelegatedSession(null);
     setPendingTreeJump(null);
-    followConversationTail(true);
+    timelineControl.current?.latest();
   }
 
   async function logout(): Promise<void> {
@@ -1312,12 +1219,13 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     setOperation("downloading");
     update({ type: "api.error.cleared" });
     try {
-      const conversation = await api.getCompleteConversation(sessionId);
-      const exportedAt = new Date();
-      downloadConversationMarkdown(
-        conversationExportFilename(conversation.session.title, exportedAt),
-        conversationExportMarkdown(conversation, exportedAt),
-      );
+      const link = document.createElement("a");
+      link.href = api.conversationExportUrl(sessionId);
+      link.download = "";
+      link.hidden = true;
+      document.body.append(link);
+      link.click();
+      link.remove();
     } catch (error: unknown) {
       update({ type: "api.error", message: errorMessage(error, t) });
     } finally {
@@ -1372,7 +1280,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
         update({ type: "turn.accepted", accepted, prompt: text, uploads: attached });
       else setQueueRefreshGeneration((generation) => generation + 1);
       uploads.clear(attached.map((file) => file.id));
-      followConversationTail(true);
+      timelineControl.current?.latest();
       setPrompt((current) => (draftRevision.current === submittedRevision ? "" : current));
       void refreshConversations().catch(() => undefined);
     } catch (error: unknown) {
@@ -1409,7 +1317,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
         ]);
         if (renderedState.current.session?.sessionId === sessionId) {
           if (compact) commands.acceptedCompact(compact);
-          update({ type: "conversation.loaded", conversation, preserveOlderHistory: true });
+          update({ type: "conversation.loaded", conversation, preserveInputRevision: true });
         }
       }
     } catch (error: unknown) {
@@ -1765,8 +1673,15 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
       </aside>
 
       <ConversationTreeNavigator
+        onPage={(branchSessionId, beforeEntryId) => {
+          const sessionId = state.session?.sessionId;
+          if (!sessionId) return;
+          treeNavigation.current = { branchSessionId, ...(beforeEntryId ? { beforeEntryId } : {}) };
+          void refreshConversationTree(sessionId, treeView).catch((error) =>
+            update({ type: "api.error", message: errorMessage(error, t) }),
+          );
+        }}
         loading={treeLoading}
-        onJump={() => followConversationTail(false)}
         onNavigate={(sessionId, target) => {
           const delegated = conversationTree?.delegatedSessions.find(
             (candidate) => candidate.sessionId === sessionId,
@@ -1872,6 +1787,16 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
                   ? t("chat.downloadingConversation")
                   : t("chat.downloadConversation")}
               </span>
+            </button>
+            <button
+              className="product-history-search-toggle"
+              type="button"
+              disabled={state.session === null}
+              aria-label={t("chat.searchHistory")}
+              title={t("chat.searchHistory")}
+              onClick={() => timelineControl.current?.search()}
+            >
+              ⌕
             </button>
             <button
               className="product-workspace-button"
@@ -2303,106 +2228,74 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
         ) : null}
 
         <div className={`product-content ${inspectorOpen ? "with-inspector" : ""}`}>
-          <section
-            className="product-chat-scroll"
-            onScroll={(event) => {
-              const follows = isConversationTailVisible(event.currentTarget);
-              if (follows !== followingConversationTailRef.current) {
-                followConversationTail(follows);
-              }
-            }}
-            ref={chatScrollerRef}
-          >
-            {state.turns.length === 0 &&
-            state.inheritedMessages.length === 0 &&
-            !state.inheritedContextSummary &&
-            !state.inheritedMessagesTruncated ? (
-              <div className="product-chat-empty" aria-hidden="true" />
-            ) : (
-              <div className="product-transcript">
-                {state.historyTruncated ? (
-                  <button
-                    type="button"
-                    className="product-history-more"
-                    disabled={historyLoading}
-                    onClick={() => void loadEarlierHistory()}
-                  >
-                    {historyLoading ? t("common.loading") : t("chat.loadEarlier")}
-                  </button>
-                ) : null}
+          <ConversationTimeline
+            api={api}
+            live={state}
+            scrollerRef={chatScrollerRef}
+            controlRef={timelineControl}
+            jump={pendingTreeJump}
+            onJumpSettled={() => setPendingTreeJump(null)}
+            inherited={
+              state.inheritedMessages.length ||
+              state.inheritedContextSummary ||
+              state.inheritedMessagesTruncated ? (
                 <InheritedContext
                   messages={state.inheritedMessages}
                   summary={state.inheritedContextSummary}
                   truncated={state.inheritedMessagesTruncated === true}
                 />
-                {state.turns
-                  .filter((turn) => turn.status !== "queued" || turn.operation?.kind === "compact")
-                  .map((turn) => {
-                    const target = forkTargets.get(turn.turnId);
-                    return (
-                      <ConversationTurn
-                        api={api}
-                        {...(commands.compact?.runId === turn.runId
-                          ? { compaction: commands.compact }
-                          : {})}
-                        progressStore={toolProgress}
-                        observationStore={runObservations}
-                        delegatedChildren={(conversationTree?.delegatedSessions ?? []).filter(
-                          (child) =>
-                            child.parentTurnId === turn.turnId &&
-                            child.parentSessionId === state.session?.sessionId,
-                        )}
-                        onOpenChild={(child) =>
-                          void openConversationSession(child.sessionId, undefined, false, child)
-                        }
-                        connected={state.connection.phase === "live"}
-                        canFork={
-                          canMutate &&
-                          selectedDelegatedSession === null &&
-                          operation === null &&
-                          currentTurn === undefined &&
-                          target !== undefined
-                        }
-                        canPrune={
-                          canMutate &&
-                          selectedDelegatedSession === null &&
-                          operation === null &&
-                          currentTurn === undefined &&
-                          target !== undefined &&
-                          target.sourceSessionId === state.session?.sessionId
-                        }
-                        key={turn.turnId}
-                        onPresentationProgress={followProgressiveText}
-                        {...(target === undefined
-                          ? {}
-                          : {
-                              onFork: () => {
-                                setForkTitle("");
-                                setForkTarget(target);
-                              },
-                              onPrune: () => void pruneConversationTail(target),
-                            })}
-                        turn={turn}
-                      />
-                    );
-                  })}
-                <div ref={transcriptEndRef} />
-              </div>
-            )}
-          </section>
-          {followingConversationTail || state.turns.length === 0 ? null : (
-            <button
-              className="product-return-to-latest"
-              onClick={() => {
-                followConversationTail(true);
-                const scroller = chatScrollerRef.current;
-                scroller?.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
-              }}
-              type="button"
-            >
-              {t("chat.latest")}
-            </button>
-          )}
+              ) : undefined
+            }
+            renderRow={(row) => {
+              const turn = row.turn;
+              const target = forkTargets.get(turn.turnId);
+              return (
+                <ConversationTurn
+                  api={api}
+                  {...(commands.compact?.runId === turn.runId
+                    ? { compaction: commands.compact }
+                    : {})}
+                  progressStore={toolProgress}
+                  observationStore={runObservations}
+                  delegatedChildren={(conversationTree?.delegatedSessions ?? []).filter(
+                    (child) =>
+                      child.parentTurnId === turn.turnId &&
+                      child.parentSessionId === state.session?.sessionId,
+                  )}
+                  onOpenChild={(child) =>
+                    void openConversationSession(child.sessionId, undefined, false, child)
+                  }
+                  connected={state.connection.phase === "live"}
+                  canFork={
+                    canMutate &&
+                    selectedDelegatedSession === null &&
+                    operation === null &&
+                    currentTurn === undefined &&
+                    target !== undefined
+                  }
+                  canPrune={
+                    canMutate &&
+                    selectedDelegatedSession === null &&
+                    operation === null &&
+                    currentTurn === undefined &&
+                    target !== undefined &&
+                    target.sourceSessionId === state.session?.sessionId
+                  }
+                  {...(target === undefined
+                    ? {}
+                    : {
+                        onFork: () => {
+                          setForkTitle("");
+                          setForkTarget(target);
+                        },
+                        onPrune: () => void pruneConversationTail(target),
+                      })}
+                  turn={turn}
+                  fragment={row.fragment}
+                />
+              );
+            }}
+          />
           {inspectorOpen ? (
             <WorkspaceInspector
               api={api}

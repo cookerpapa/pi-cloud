@@ -1,5 +1,10 @@
 # Current architecture decisions
 
+[ADR-0278](0278-windowed-conversation-presentation.md) records bounded history
+reads within Runs, a virtual browser window, direct navigation, cancellable search
+and streamed export. Implementation and composed acceptance are in progress;
+it preserves native history and the existing SSE coverage boundary.
+
 [ADR-0277](0277-model-event-waiting-and-conversation-commands.md) is accepted for
 implementation: model-event inactivity and input-driven usage/manual compaction,
 reusing current Runs when active and existing root-work admission when cold.

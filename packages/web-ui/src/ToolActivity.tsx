@@ -1,4 +1,7 @@
-import { useState, type ReactNode } from "react";
+import { useContext, type ReactNode } from "react";
+import { useHistoryDisclosure, ToolDisclosureContext } from "./history-disclosure.tsx";
+import { LargeCode } from "./LargeCode.tsx";
+import { ChildAgentProgressContext } from "./ChildAgentProgress.tsx";
 import { HighlightedCode } from "./HighlightedCode.tsx";
 import { useI18n, type Translate } from "./i18n.tsx";
 import type { TranscriptItem } from "./session-view.ts";
@@ -77,7 +80,10 @@ function ExpandableToolText({
   sourcePath?: string | null;
 }) {
   const { t } = useI18n();
-  const [expanded, setExpanded] = useState(false);
+  const disclosure = useContext(ToolDisclosureContext);
+  const [expanded, setExpanded] = useHistoryDisclosure([
+    `${disclosure}\0text:${direction}:${sourcePath ?? ""}`,
+  ]);
   const normalized = text.replace(/\n+$/u, "");
   const lines = normalized.split("\n");
   const maximumLines = direction === "head" ? 16 : 20;
@@ -96,9 +102,13 @@ function ExpandableToolText({
           {t("turn.earlierLines", { count: omitted })}
         </button>
       ) : null}
-      <pre className={className}>
-        <HighlightedCode path={sourcePath} text={visible} />
-      </pre>
+      {visible.length > 32000 ? (
+        <LargeCode text={visible} />
+      ) : (
+        <pre className={className}>
+          <HighlightedCode path={sourcePath} text={visible} />
+        </pre>
+      )}
       {omitted > 0 && !expanded && direction === "head" ? (
         <button type="button" onClick={() => setExpanded(true)}>
           {t("turn.moreLines", { count: omitted })}
@@ -392,7 +402,10 @@ export function ToolActivity({ item }: { item: ToolTranscriptItem }) {
   const details = ["subagent", "workflow", "preview", "show_image", "generate_image"].includes(
     item.toolName,
   );
-  const body = (
+  const turnId = useContext(ChildAgentProgressContext)?.turnId ?? "";
+  const disclosure = `${turnId}\0${item.toolCallId}`;
+  const [detailsOpen, setDetailsOpen] = useHistoryDisclosure([`${disclosure}\0details`]);
+  const body = () => (
     <>
       {renderer.body(context, t)}
       {item.status === "running" ? <LiveToolProgress toolCallId={item.toolCallId} /> : null}
@@ -402,29 +415,34 @@ export function ToolActivity({ item }: { item: ToolTranscriptItem }) {
     </>
   );
   return (
-    <section
-      aria-label={`${item.toolName} ${statusLabel}`}
-      className={`product-tool product-tool-${item.status}`}
-      data-tool-name={item.toolName}
-    >
-      <div className="product-tool-line">
-        <span className="product-tool-icon" aria-hidden="true">
-          {icon}
-        </span>
-        {renderer.heading(context, t)}
-        <span className="product-tool-state">{statusLabel}</span>
-      </div>
-      <ChildAgentProgress toolCallId={item.toolCallId} />
-      <div className="product-tool-body">
-        {details ? (
-          <details>
-            <summary>{t("turn.toolDetails")}</summary>
-            {body}
-          </details>
-        ) : (
-          body
-        )}
-      </div>
-    </section>
+    <ToolDisclosureContext.Provider value={disclosure}>
+      <section
+        aria-label={`${item.toolName} ${statusLabel}`}
+        className={`product-tool product-tool-${item.status}`}
+        data-tool-name={item.toolName}
+      >
+        <div className="product-tool-line">
+          <span className="product-tool-icon" aria-hidden="true">
+            {icon}
+          </span>
+          {renderer.heading(context, t)}
+          <span className="product-tool-state">{statusLabel}</span>
+        </div>
+        <ChildAgentProgress toolCallId={item.toolCallId} />
+        <div className="product-tool-body">
+          {details ? (
+            <details
+              open={detailsOpen}
+              onToggle={(event) => setDetailsOpen(event.currentTarget.open)}
+            >
+              <summary>{t("turn.toolDetails")}</summary>
+              {detailsOpen ? body() : null}
+            </details>
+          ) : (
+            body()
+          )}
+        </div>
+      </section>
+    </ToolDisclosureContext.Provider>
   );
 }

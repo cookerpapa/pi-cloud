@@ -182,8 +182,12 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
       f.session.sessionId,
       "focus",
     );
-    expect(tree.branches[0]!.entries.map((entry) => entry.text)).toEqual(["heavy", "finished"]);
-    expect(rows).toBe(3);
+    expect(tree.branches[0]!.entries.map((entry) => entry.text)).toEqual([
+      "heavy",
+      "heavy answer",
+      "finished",
+    ]);
+    expect(rows).toBe(0);
     expect(bytes).toBeLessThan(5000);
     const fork = await f.service.fork(f.tenantId, f.session.sessionId, randomUUID(), {
       turnId: first.turnId,
@@ -293,7 +297,7 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
     ]);
   });
 
-  it("uses the final answer of each Turn without dropping earlier completed Turns", async () => {
+  it("keeps completed response anchors within one Run as well as earlier Runs", async () => {
     const f = await fixture();
     const first = await f.turn("first", "completed");
     const second = await f.turn("second", "completed");
@@ -302,6 +306,7 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
       [first.user.id, first.turnId],
       [first.answer!.id, first.turnId],
       [second.user.id, second.turnId],
+      [second.answer!.id, second.turnId],
       [latest.id, second.turnId],
     ]);
   });

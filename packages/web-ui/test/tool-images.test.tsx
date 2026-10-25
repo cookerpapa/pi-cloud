@@ -82,10 +82,10 @@ it("keeps separate intentional display invocations even when they reference the 
   expect(html.match(/<img /g)).toHaveLength(2);
 });
 
-it("retains path and caption arguments inside technical details without repeating the image", () => {
+it("defers closed technical details without repeating the image", () => {
   const html = renderToStaticMarkup(<ToolActivity item={tool("shown")} />);
-  expect(html).toContain("private-path.png");
-  expect(html).toContain("caption");
+  expect(html).not.toContain("private-path.png");
+  expect(html).not.toContain("caption");
   expect(html).toContain("<details>");
   expect(html).not.toContain("<img");
 });

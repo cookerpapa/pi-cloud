@@ -1,3 +1,13 @@
+import {
+  readCanonicalHistoryWindow,
+  type HistoryTurnSource,
+} from "@pi-cloud/runtime-core/canonical-history-window";
+import {
+  decodeHistoryPosition,
+  encodeHistoryPosition,
+  type HistoryPosition,
+} from "@pi-cloud/runtime-core/history-position";
+import type { ConversationHistoryQuery } from "@pi-cloud/protocol";
 import { compactRunState } from "./conversation-command-identity.ts";
 import { turnStateForRun, type RunState } from "@pi-cloud/domain";
 import { readDurableEntries } from "@pi-cloud/pi-session-postgres/durable";
@@ -15,10 +25,7 @@ import {
 import { sql, type Kysely } from "kysely";
 import { jsonObjectFrom } from "kysely/helpers/postgres";
 import { parseUserUploads } from "@pi-cloud/protocol";
-import {
-  readCanonicalPiTurnTranscripts,
-  conversationPrompt,
-} from "@pi-cloud/runtime-core/canonical-pi-conversation";
+import { conversationPrompt } from "@pi-cloud/runtime-core/canonical-pi-conversation";
 import { loadDelegatedSessionTreeSummaries } from "./delegated-session-projection.ts";
 import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
 import {
@@ -36,9 +43,13 @@ type ConversationLineageNode = {
   sessionId: string;
   parentSessionId: string | null;
   forkTurnId: string | null;
+  forkEntryId: string | null;
 };
 
 type ConversationHistoryRow = {
+  piSessionId: string;
+  coverage: string;
+  through?: { sequence: number; ordinal: number };
   operationKind: "chat" | "compact";
   stopReason: string | null;
   originSessionId: string;
@@ -204,14 +215,15 @@ export class ConversationReader {
 
   async getConversation(
     sessionId: string,
-    beforeTurnId?: string,
+    query: ConversationHistoryQuery = {},
   ): Promise<ConversationDetailResource> {
-    return (await this.getConversationView(sessionId, beforeTurnId)).conversation;
+    return (await this.getConversationView(sessionId, query)).conversation;
   }
 
   async getConversationView(
     sessionId: string,
-    beforeTurnId?: string,
+    query: ConversationHistoryQuery = {},
+    filters: { completedOnly?: boolean; stopAtTurnId?: string } = {},
   ): Promise<{
     conversation: ConversationDetailResource;
     canonicalThroughSequence: number;
@@ -221,13 +233,40 @@ export class ConversationReader {
       .setIsolationLevel("repeatable read")
       .execute((transaction) => {
         const reader = new ConversationReader(transaction, this.#tenantId);
-        return reader.#readConversation(sessionId, beforeTurnId);
+        return reader.#readConversation(sessionId, query, filters);
       });
+  }
+
+  async *completedHistoryPages(sessionId: string): AsyncGenerator<ConversationDetailResource> {
+    const latest = (await this.getConversationView(sessionId, {}, { completedOnly: true }))
+      .conversation;
+    const last = latest.turns.at(-1)?.turnId;
+    if (!last) {
+      yield latest;
+      return;
+    }
+    let query: ConversationHistoryQuery = { direction: "after" },
+      previous: string | null = null;
+    for (;;) {
+      const page = (
+        await this.getConversationView(sessionId, query, {
+          completedOnly: true,
+          stopAtTurnId: last,
+        })
+      ).conversation;
+      yield page;
+      if (!page.history.hasAfter) return;
+      const after = page.history.after;
+      if (!after || after === previous) throw new Error("History export did not advance");
+      previous = after;
+      query = { after };
+    }
   }
 
   async #readConversation(
     sessionId: string,
-    beforeTurnId?: string,
+    query: ConversationHistoryQuery = {},
+    filters: { completedOnly?: boolean; stopAtTurnId?: string } = {},
   ): Promise<{
     conversation: ConversationDetailResource;
     canonicalThroughSequence: number;
@@ -266,6 +305,7 @@ export class ConversationReader {
         "session_row.conversation_parent_session_id as parentSessionId",
         "project.name as projectName",
         "session_row.conversation_fork_turn_id as forkTurnId",
+        "session_row.conversation_fork_entry_id as forkEntryId",
         "project.created_at as projectCreatedAt",
         "workspace.deleted_at as workspaceDeletedAt",
         "workspace.seed_kind as workspaceSeedKind",
@@ -285,82 +325,186 @@ export class ConversationReader {
             sessionId,
             parentSessionId: conversation.parentSessionId,
             forkTurnId: conversation.forkTurnId,
+            forkEntryId: conversation.forkEntryId,
           })
-        : [{ sessionId, parentSessionId: null, forkTurnId: null }];
-    const lineageTurnRows: ConversationHistoryRow[] = [];
-    const anchor =
-      beforeTurnId === undefined
-        ? undefined
-        : await this.#database
-            .selectFrom("conversation_turns as anchor")
-            .select(["anchor.session_id", "anchor.mailbox_position"])
-            .where("anchor.tenant_id", "=", this.#tenantId)
-            .where("anchor.turn_id", "=", beforeTurnId)
-            .where("anchor.pruned_at", "is", null)
-            .executeTakeFirst();
+        : [{ sessionId, parentSessionId: null, forkTurnId: null, forkEntryId: null }];
+    const cutoff = filters.stopAtTurnId
+      ? await this.#database
+          .selectFrom("conversation_turns")
+          .select(["session_id", "mailbox_position"])
+          .where("tenant_id", "=", this.#tenantId)
+          .where("turn_id", "=", filters.stopAtTurnId)
+          .where("pruned_at", "is", null)
+          .executeTakeFirst()
+      : undefined;
     if (
-      beforeTurnId !== undefined &&
-      (!anchor || !lineage.some((node) => node.sessionId === anchor.session_id))
+      filters.stopAtTurnId &&
+      (!cutoff || !lineage.some((n) => n.sessionId === cutoff.session_id))
+    )
+      throw new ControlPlaneStoreError("not_found", "Export boundary is no longer available");
+    let position: HistoryPosition | undefined;
+    try {
+      const cursor = query.before ?? query.after ?? query.at;
+      if (cursor) position = decodeHistoryPosition(cursor, sessionId);
+    } catch {
+      throw new ControlPlaneStoreError("invalid_request", "Invalid conversation history cursor");
+    }
+    let direction: "before" | "after" = query.direction ?? (query.after ? "after" : "before");
+    let inclusive = Boolean(query.at || query.turnId) && query.direction === undefined;
+    const anchorTurn = position?.turnId ?? query.turnId;
+    const anchor = anchorTurn
+      ? await this.#database
+          .selectFrom("conversation_turns as a")
+          .innerJoin("sessions as s", (join) =>
+            join.onRef("s.tenant_id", "=", "a.tenant_id").onRef("s.id", "=", "a.session_id"),
+          )
+          .select(["a.session_id", "a.mailbox_position", "s.pi_session_id"])
+          .where("a.tenant_id", "=", this.#tenantId)
+          .where("a.turn_id", "=", anchorTurn)
+          .where("a.pruned_at", "is", null)
+          .executeTakeFirst()
+      : undefined;
+    if (
+      anchorTurn &&
+      (!anchor ||
+        !lineage.some((n) => n.sessionId === anchor.session_id) ||
+        (position && position.originSessionId !== anchor.session_id))
     )
       throw new ControlPlaneStoreError("not_found", "History anchor is not in this conversation");
-    let reachedAnchor = anchor === undefined;
-    for (let index = lineage.length - 1; index >= 0; index -= 1) {
-      const node = lineage[index]!;
-      if (!reachedAnchor) {
-        if (node.sessionId !== anchor!.session_id) continue;
-        reachedAnchor = true;
-      }
-      const child = lineage[index + 1];
-      const forkMailboxPosition =
-        child?.forkTurnId === null || child?.forkTurnId === undefined
-          ? null
-          : await this.#database
-              .selectFrom("conversation_turns")
-              .select("mailbox_position")
-              .where("tenant_id", "=", this.#tenantId)
-              .where("session_id", "=", node.sessionId)
-              .where("turn_id", "=", child.forkTurnId)
-              .executeTakeFirst();
+    if (query.turnId && anchor) {
+      position = {
+        version: 1,
+        sessionId,
+        originSessionId: anchor.session_id,
+        turnId: query.turnId,
+        sequence: 0,
+        ordinal: 0,
+      };
+      if (query.entryId || query.toolCallId) {
+        const lookup = query.entryId ?? query.toolCallId!.split(":")[1]!;
+        const kind = query.toolCallId?.startsWith("task:") ? "task" : "entry";
+        const found = await sql<{
+          id: string;
+          seq: string;
+          ordinal: number;
+          fields: Record<string, string>;
+        }>`select r.id::text,r.seq::text,r.ordinal,r.fields from pi_durable_records r
+          where r.tenant_id=${this.#tenantId}::uuid and r.session_id=${anchor.pi_session_id} and r.id=${lookup}::bigint
+            and r.fields->>'turn'=${query.turnId} and r.kind=${kind}`.execute(this.#database);
+        let record = found.rows[0];
+        if (!record || (kind === "task" && record.fields.nativeKind !== '"pi.tool"'))
+          throw new ControlPlaneStoreError("not_found", "History record is not in this Turn");
+        if (kind === "task" && record.fields.resultEntry) {
+          const result = await sql<
+            typeof record
+          >`select r.id::text,r.seq::text,r.ordinal,r.fields from pi_durable_records r
+            where r.tenant_id=${this.#tenantId}::uuid and r.session_id=${anchor.pi_session_id} and r.id=${record.fields.resultEntry}::bigint
+              and r.kind='entry' and r.fields->>'task'=${lookup} and r.fields->>'turn'=${query.turnId}`.execute(
+            this.#database,
+          );
+          if (!result.rows[0]) throw new Error("Tool result index is incomplete");
+          record = result.rows[0];
+        }
+        position.sequence = Number(record.seq);
+        position.ordinal = record.ordinal;
+      } else direction = "after";
+    }
+    const lineageTurnRows: ConversationHistoryRow[] = [];
+    let reached = !anchor;
+    const traversal = direction === "before" ? [...lineage].reverse() : lineage;
+    for (const node of traversal) {
       if (
-        child?.forkTurnId !== null &&
-        child?.forkTurnId !== undefined &&
-        forkMailboxPosition === undefined
-      ) {
-        throw new ControlPlaneStoreError(
-          "control_plane_misconfigured",
-          "Conversation fork Turn is missing from its parent Session",
-        );
+        cutoff &&
+        lineage.findIndex((n) => n.sessionId === node.sessionId) >
+          lineage.findIndex((n) => n.sessionId === cutoff.session_id)
+      )
+        continue;
+      if (!reached) {
+        if (node.sessionId !== anchor!.session_id) continue;
+        reached = true;
       }
+      const child = lineage[lineage.findIndex((n) => n.sessionId === node.sessionId) + 1];
+      const fork = child?.forkTurnId
+        ? await this.#database
+            .selectFrom("conversation_turns as t")
+            .innerJoin("sessions as s", (join) =>
+              join.onRef("s.tenant_id", "=", "t.tenant_id").onRef("s.id", "=", "t.session_id"),
+            )
+            .select(["t.mailbox_position", "s.pi_session_id"])
+            .where("t.tenant_id", "=", this.#tenantId)
+            .where("t.session_id", "=", node.sessionId)
+            .where("t.turn_id", "=", child.forkTurnId)
+            .executeTakeFirst()
+        : undefined;
+      if (child?.forkTurnId && !fork)
+        throw new ControlPlaneStoreError("not_found", "Conversation fork anchor is missing");
       if (
         anchor?.session_id === node.sessionId &&
-        forkMailboxPosition &&
-        BigInt(anchor.mailbox_position) > BigInt(forkMailboxPosition.mailbox_position)
+        fork &&
+        BigInt(anchor.mailbox_position) > BigInt(fork.mailbox_position)
       )
         throw new ControlPlaneStoreError(
           "not_found",
-          "History anchor is beyond the conversation fork",
+          "History anchor is beyond this conversation fork",
         );
-      const newestRows = await this.#database
+      let through: { sequence: number; ordinal: number } | undefined;
+      if (fork && child?.forkEntryId) {
+        const p = await sql<{
+          seq: string;
+          ordinal: number;
+        }>`select r.seq::text,r.ordinal from pi_durable_records r
+          where r.tenant_id=${this.#tenantId}::uuid and r.session_id=${fork.pi_session_id} and r.id=${child.forkEntryId}::bigint and r.kind='entry'`.execute(
+          this.#database,
+        );
+        if (!p.rows[0])
+          throw new ControlPlaneStoreError("not_found", "Native fork anchor is missing");
+        through = { sequence: Number(p.rows[0].seq), ordinal: p.rows[0].ordinal };
+        if (
+          position?.turnId === child.forkTurnId &&
+          (position.sequence > through.sequence ||
+            (position.sequence === through.sequence && position.ordinal > through.ordinal))
+        )
+          throw new ControlPlaneStoreError("not_found", "History position is beyond this fork");
+      }
+      const rows = await this.#database
         .selectFrom("conversation_turns as run")
+        .innerJoin("sessions as scope", (join) =>
+          join
+            .onRef("scope.tenant_id", "=", "run.tenant_id")
+            .onRef("scope.id", "=", "run.session_id"),
+        )
         .select([
           "run.session_id as originSessionId",
+          "scope.pi_session_id as piSessionId",
           "run.id as runId",
           "run.turn_id as turnId",
-          "run.input_text as prompt",
           "run.operation_kind as operationKind",
           "run.stop_reason as stopReason",
-          "run.input_source as promptSource",
-          "run.input_uploads as uploads",
           "run.state as runState",
+          "run.output_display_seq as coverage",
+          "run.mailbox_position as mailboxPosition",
+          "run.created_at as acceptedAt",
           sql<boolean>`(run.output_seal_id is not null and run.output_sealed_at is null)`.as(
             "waitingForSeal",
           ),
-          "run.mailbox_position as mailboxPosition",
-          "run.created_at as acceptedAt",
         ])
         .where("run.tenant_id", "=", this.#tenantId)
         .where("run.session_id", "=", node.sessionId)
         .where("run.pruned_at", "is", null)
+        .$if(filters.completedOnly === true, (q) =>
+          q.where("run.state", "in", ["completed", "failed", "cancelled", "timed_out"]),
+        )
+        .$if(filters.completedOnly === true, (q) =>
+          q.where((eb) =>
+            eb.or([
+              eb("run.output_seal_id", "is", null),
+              eb("run.output_sealed_at", "is not", null),
+            ]),
+          ),
+        )
+        .$if(cutoff?.session_id === node.sessionId, (q) =>
+          q.where("run.mailbox_position", "<=", cutoff!.mailbox_position),
+        )
         .where((eb) =>
           eb.or([eb("run.state", "!=", "queued"), eb("run.operation_kind", "=", "compact")]),
         )
@@ -370,82 +514,118 @@ export class ConversationReader {
             eb.not(eb.and([eb("run.state", "=", "cancelled"), eb("run.started_at", "is", null)])),
           ]),
         )
-        .where("run.mailbox_position", "is not", null)
-        .$if(anchor?.session_id === node.sessionId, (query) =>
-          query.where("run.mailbox_position", "<", anchor!.mailbox_position),
+        .$if(anchor?.session_id === node.sessionId, (q) =>
+          q.where(
+            "run.mailbox_position",
+            direction === "before" ? "<=" : ">=",
+            anchor!.mailbox_position,
+          ),
         )
-        .$if(forkMailboxPosition !== null && forkMailboxPosition !== undefined, (query) =>
-          query.where("run.mailbox_position", "<=", forkMailboxPosition!.mailbox_position!),
+        .$if(fork !== undefined, (q) =>
+          q.where("run.mailbox_position", "<=", fork!.mailbox_position),
         )
-        .orderBy("run.mailbox_position", "desc")
-        .orderBy("run.id", "desc")
+        .orderBy("run.mailbox_position", direction === "before" ? "desc" : "asc")
+        .orderBy("run.id", direction === "before" ? "desc" : "asc")
         .limit(MAX_CONVERSATION_TURNS + 1 - lineageTurnRows.length)
         .execute();
       lineageTurnRows.push(
-        ...newestRows.map(({ promptSource, ...row }) => ({
-          ...row,
-          prompt: conversationPrompt(row.prompt, promptSource),
+        ...rows.map((r) => ({
+          ...r,
+          prompt: null,
+          uploads: [],
+          ...(r.turnId === child?.forkTurnId && through ? { through } : {}),
         })),
       );
       if (lineageTurnRows.length > MAX_CONVERSATION_TURNS) break;
     }
-    const historyTruncated = lineageTurnRows.length > MAX_CONVERSATION_TURNS;
-    const includedRows = lineageTurnRows.slice(0, MAX_CONVERSATION_TURNS).reverse();
-    const turnIds = includedRows
-      .filter((row) => row.operationKind !== "compact")
-      .map((row) => row.turnId);
-    const transcriptByTurnId = await readCanonicalPiTurnTranscripts(this.#database, {
+    const sources = lineageTurnRows.slice(0, MAX_CONVERSATION_TURNS);
+    const window = await readCanonicalHistoryWindow(this.#database, {
       tenantId: this.#tenantId,
-      turnIds,
-      imageSessionId: sessionId,
+      sessionId,
+      turns: sources as HistoryTurnSource[],
+      direction,
+      ...(position ? { position } : {}),
+      inclusive,
     });
-    const turns = includedRows.map((row) => {
-      const turnState = turnStateForRun(row.runState);
-      if (row.prompt === null || row.mailboxPosition === null) {
+    const sourceByTurn = new Map(sources.map((r) => [r.turnId, r]));
+    const headers = window.headers.size
+      ? await this.#database
+          .selectFrom("conversation_turns")
+          .select(["turn_id", "input_text", "input_source", "input_uploads"])
+          .where("tenant_id", "=", this.#tenantId)
+          .where("turn_id", "in", [...window.headers])
+          .execute()
+      : [];
+    const headerByTurn = new Map(headers.map((r) => [r.turn_id, r]));
+    const selectedTurns = [...new Set(window.positions.map((p) => p.turnId))];
+    const turns = selectedTurns.map((id) => {
+      const row = sourceByTurn.get(id)!;
+      const header = headerByTurn.get(id);
+      const transcript = window.transcripts.get(id);
+      const prompt = header ? conversationPrompt(header.input_text, header.input_source) : "";
+      if (prompt === null || row.mailboxPosition === null)
         throw new ControlPlaneStoreError(
           "control_plane_misconfigured",
-          "Conversation contains an invalid prompt turn",
+          "Conversation input metadata is invalid",
         );
-      }
+      const before = !window.headers.has(id);
+      const after =
+        direction === "before"
+          ? position?.turnId === id
+          : window.lastContinues && window.positions.at(-1)?.turnId === id;
+      const status = turnStateForRun(row.runState);
+      const first = window.positions.find((p) => p.turnId === id)!;
       return {
         runId: row.runId,
-        turnId: row.turnId,
+        turnId: id,
         mailboxPosition: positiveSafeInteger(row.mailboxPosition, "Conversation mailbox position"),
-        prompt: row.operationKind === "compact" ? "" : row.prompt,
+        prompt: row.operationKind === "compact" ? "" : prompt,
+        historyCursor: encodeHistoryPosition(first),
+        ...(before ? { continuesBefore: true as const } : {}),
+        ...(after ? { continuesAfter: true as const } : {}),
         ...(row.operationKind === "compact"
           ? {
               operation: {
                 kind: "compact" as const,
                 state: compactRunState(row.runState, row.stopReason),
-                ...(row.prompt ? { instructions: row.prompt } : {}),
+                ...(prompt ? { instructions: prompt } : {}),
               },
             }
           : {}),
-        ...(row.uploads.length ? { uploads: parseUserUploads(row.uploads) } : {}),
+        ...(header?.input_uploads.length
+          ? { uploads: parseUserUploads(header.input_uploads) }
+          : {}),
         state:
           row.waitingForSeal &&
-          (turnState === "completed" || turnState === "failed" || turnState === "cancelled") &&
-          transcriptByTurnId.get(row.turnId)?.terminalSequence == null
+          ["completed", "failed", "cancelled"].includes(status) &&
+          transcript?.terminalSequence == null
             ? ("running" as const)
-            : turnState,
-        ...(transcriptByTurnId.has(row.turnId)
-          ? { transcript: transcriptByTurnId.get(row.turnId)! }
-          : {}),
+            : status,
+        ...(transcript ? { transcript } : {}),
         acceptedAt: isoTimestamp(row.acceptedAt),
         originSessionId: row.originSessionId,
       };
     });
-
+    const cursor =
+      query.before ??
+      query.after ??
+      query.at ??
+      (position ? encodeHistoryPosition(position) : null);
+    const more = window.more || lineageTurnRows.length > MAX_CONVERSATION_TURNS;
+    const history = {
+      before: window.positions[0] ? encodeHistoryPosition(window.positions[0]) : cursor,
+      after: window.positions.at(-1) ? encodeHistoryPosition(window.positions.at(-1)!) : cursor,
+      hasBefore: direction === "before" ? more : Boolean(position),
+      hasAfter: direction === "after" ? more : Boolean(position),
+    };
     const canonicalThroughSequence = Math.max(
       nonNegativeSafeInteger(conversation.nextEventSequence, "Conversation next event sequence") -
         1,
-      ...includedRows
-        .filter((row) => row.originSessionId === sessionId)
-        .map((row) => transcriptByTurnId.get(row.turnId)?.throughSequence ?? 0),
+      ...sources.filter((r) => r.originSessionId === sessionId).map((r) => Number(r.coverage)),
     );
     const environment = await this.#loadActiveProjectEnvironment(conversation.projectId);
     const inheritedContext =
-      conversation.sessionKind === "subagent" && beforeTurnId === undefined
+      conversation.sessionKind === "subagent" && position === undefined
         ? await this.#delegatedInheritedMessages(sessionId)
         : { inheritedMessages: [] };
     return {
@@ -482,7 +662,7 @@ export class ConversationReader {
         },
         ...inheritedContext,
         turns,
-        historyTruncated,
+        history,
       },
     };
   }
@@ -549,6 +729,7 @@ export class ConversationReader {
           "id as sessionId",
           "conversation_parent_session_id as parentSessionId",
           "conversation_fork_turn_id as forkTurnId",
+          "conversation_fork_entry_id as forkEntryId",
         ])
         .where("tenant_id", "=", this.#tenantId)
         .where("id", "=", cursor)

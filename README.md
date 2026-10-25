@@ -49,6 +49,9 @@ Real Luna guest interaction, screenshot vision and live/cold preview navigation 
   Stop withdraws pending messages and restores their text and attachments to the
   composer for editing, alongside the existing draft.
 - Persistent conversations, context compaction and interruption recovery.
+  [Long-conversation presentation](docs/adr/0278-windowed-conversation-presentation.md)
+  adds bounded history pages, virtual scrolling, direct search/navigation and
+  streamed Markdown export; matched publication is being verified.
 - Composer commands: `/usage` reads committed usage and estimated context;
   `/compact [instructions]` invokes native Pi compaction in the current Run, or
   admits explicit compact work when idle. It does not activate Workspace compute.
