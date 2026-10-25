@@ -28,7 +28,7 @@ import {
   imageReleaseTargets,
   dockerSourceInputs,
 } from "./lib/component-release.mjs";
-import { replaceControlPlane } from "./lib/control-plane-release.mjs";
+import { replaceControlPlane, createReplacementDatabase } from "./lib/control-plane-release.mjs";
 import { serializeRelease } from "./lib/release-lock.mjs";
 
 configureBuildProxy();
@@ -439,17 +439,11 @@ const applyHelm = async () => {
   );
 };
 if (candidate.scope === "control-plane" && !alreadyApplied) {
-  const { createDatabase } = await import("../packages/database/src/index.ts");
   const url = new URL(
     readFileSync(resolve(runtimeDirectory, "secrets/database-url"), "utf8").trim(),
   );
   url.hostname = serviceAddress("postgres");
-  const database = createDatabase({
-    connectionString: url.toString(),
-    maxConnections: 1,
-    checkoutTimeoutMs: 5_000,
-    readTimeoutMs: 5_000,
-  });
+  const database = await createReplacementDatabase(url.toString());
   const target = imageReleaseTargets["control-plane"].workload;
   const receiptPath = resolve(directory, "control-plane-replacement.json");
   const token = readFileSync(

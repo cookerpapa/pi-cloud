@@ -3,6 +3,13 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { digest } from "./component-release.mjs";
 
+export async function createReplacementDatabase(connectionString) {
+  const { createDatabase } = await import("../../packages/database/src/index.ts");
+  // The operator only reads owner metadata. The database client deliberately
+  // treats read and transaction-checkout budgets as mutually exclusive modes.
+  return createDatabase({ connectionString, maxConnections: 1, readTimeoutMs: 5_000 });
+}
+
 export function controlPlaneSnapshot(deployment, autoscalers, pods) {
   assert.equal(deployment.metadata.name, "pi-cloud-control-plane");
   assert.equal(

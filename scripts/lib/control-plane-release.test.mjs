@@ -1,5 +1,15 @@
 import { expect, it, vi } from "vitest";
-import { controlPlaneSnapshot, replaceControlPlane } from "./control-plane-release.mjs";
+import {
+  controlPlaneSnapshot,
+  replaceControlPlane,
+  createReplacementDatabase,
+} from "./control-plane-release.mjs";
+
+it("constructs the actual bounded metadata client without incompatible budget modes", async () => {
+  const database = await createReplacementDatabase("postgresql://unused:unused@127.0.0.1:9/unused");
+  // Construction and disposal require no connection or runtime mutation.
+  await database.destroy();
+});
 
 function fixture() {
   const deployment = {
