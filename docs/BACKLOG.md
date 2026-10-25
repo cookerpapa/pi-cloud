@@ -7,8 +7,9 @@ The owner approved [ADR-0275](adr/0275-user-image-presentation.md): an explicit
 execution details. Generation and display share canonical image content and one
 browser component; old executor-supplied preview metadata no longer controls it.
 
-- [ ] Complete live/cold presentation and screenshot acceptance, publish the matched set,
-      and confirm original Workspace/application preservation.
+Delivered as `show-image-1f7a950e`. [Evidence](reports/show-image-delivery-20261025.md)
+records real Luna/Cube/browser acceptance, retained display after source deletion,
+physical fixture cleanup and preservation of original Sessions and applications.
 
 ## Explicit image generation
 

@@ -1481,7 +1481,9 @@ attachment parts after Worker Harness processing. Live display selectors referen
 the same native commit; cold reconstruction uses the current public Session view.
 The browser places image results after their producing Tool, outside collapsed
 activity groups. Read remains model inspection. No Markdown scanning, extra event
-store or new image-generation service is involved. Publication is in progress.
+store or new image-generation service is involved.
+[Delivery](reports/show-image-delivery-20261025.md) verifies live/cold presentation,
+retained display after source deletion and the matched publication.
 Non-replayable ordinary effects confirm the existing Kafka dispatch commit before
 execution. A recovered unfinished intent returns UNKNOWN without another remote
 request, including when prior admission cannot be proved. Reply retries keep the

@@ -4,8 +4,11 @@
 
 - [x] Record ADR-0275 and add the execution-owned path/caption Tool.
 - [x] Derive public image addresses from final native image references on live and cold paths.
-- [ ] Verify collapsed activity, chronological placement, captions, cancellation and retained snapshots.
-- [ ] Publish matched artifacts and run real screenshot/browser acceptance with existing assets preserved.
+- [x] Verify collapsed activity, chronological placement, captions, cancellation and retained snapshots.
+- [x] Publish matched artifacts and run real screenshot/browser acceptance with existing assets preserved.
+
+[Delivery](reports/show-image-delivery-20261025.md): `show-image-1f7a950e` is deployed;
+the live/cold screenshot check survives source deletion and owned fixtures are purged.
 
 ## Explicit image-generation Tool
 

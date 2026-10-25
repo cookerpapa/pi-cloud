@@ -1,6 +1,6 @@
 # ADR-0275: User-facing image presentation
 
-Status: accepted; implementation in progress.
+Status: implemented and deployed as `show-image-1f7a950e`.
 Date: 2026-10-25.
 
 ## Decision
@@ -54,3 +54,6 @@ early image before a successful canonical result; and immutable display after
 source replacement. Use a real Luna/Cube screenshot and a real browser, keeping
 Tool details collapsed and reloading the conversation. Publish matched artifacts
 and preserve existing user conversations, images, Workspaces and applications.
+
+[Delivery evidence](../reports/show-image-delivery-20261025.md) records the matched
+publication and successful real screenshot, source-removal and browser checks.

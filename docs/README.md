@@ -1,6 +1,6 @@
 # Documentation map
 
-[ADR-0275](adr/0275-user-image-presentation.md) is in implementation: `show_image`
+[ADR-0275](adr/0275-user-image-presentation.md) is deployed: `show_image`
 and shared canonical image presentation outside collapsed Tool activity.
 
 [ADR-0274](adr/0274-explicit-image-generation-tool.md) is deployed as

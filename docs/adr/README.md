@@ -1,7 +1,9 @@
 # Current architecture decisions
 
 [ADR-0275](0275-user-image-presentation.md) records the approved existing-image
-display Tool and canonical live/cold image presentation. Implementation is in progress.
+display Tool and canonical live/cold image presentation. It is deployed as
+`show-image-1f7a950e`; [delivery evidence](../reports/show-image-delivery-20261025.md)
+includes source removal, collapsed activity and live/cold screenshot checks.
 
 [ADR-0274](0274-explicit-image-generation-tool.md) is deployed as `image-tool-0bac4e97`: explicit
 Codex-shaped image Tool, context-bound references, guest image I/O and existing
