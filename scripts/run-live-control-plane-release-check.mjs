@@ -156,14 +156,14 @@ try {
   const uploadId = randomUUID(),
     filename = "control-release-unblock.txt",
     path = `/workspace/${uploadRelativePath(uploadId, filename)}`;
-  const command = `printf 'ONCE\\n' >> /workspace/control-release-count.txt
+  const command = `echo ONCE >> /workspace/control-release-count.txt
 printf '<h1>Control release preview</h1>' > /workspace/index.html
 nohup python3 -m http.server 5173 --bind 0.0.0.0 --directory /workspace >/tmp/control-release-server.log 2>&1 </dev/null &
 while [ ! -f '${path}' ]; do sleep 0.2; done
 cat '${path}'; echo CONTROL_RELEASE_TOOL_DONE`;
   run = await api.acceptTurn(
     session.sessionId,
-    `Do exactly these steps without delegation or search. First call bash with timeout 600 seconds and command exactly this JSON string: ${JSON.stringify(command)}. The operator will upload the gate file; wait for this same Bash to finish. Then call preview for port 5173 and reply CONTROL_RELEASE_CONTINUED plus its application link.`,
+    `Do exactly these steps without delegation or search. First call bash with timeout 300 seconds and command exactly this JSON string: ${JSON.stringify(command)}. The operator will upload the gate file; wait for this same Bash to finish. Then call preview for port 5173 and reply CONTROL_RELEASE_CONTINUED plus its application link.`,
     newIdempotencyKey("control-release"),
     "low",
   );
