@@ -32,6 +32,7 @@ import {
   replaceControlPlane,
   createReplacementDatabase,
   controlPlaneSnapshot,
+  readControlPlaneDomain,
 } from "./lib/control-plane-release.mjs";
 import { serializeRelease } from "./lib/release-lock.mjs";
 
@@ -396,6 +397,10 @@ const alreadyApplied =
     desired: readFileSync(resolve(directory, "rendered.yaml"), "utf8"),
     live,
   }) === "verify";
+const replacementDomain =
+  candidate.scope === "control-plane"
+    ? readControlPlaneDomain(helmCapture, candidate.name)
+    : undefined;
 if (candidate.scope === "control-plane") {
   const deployment = JSON.parse(
     kubectl(["get", imageReleaseTargets["control-plane"].workload, "-o", "json"]),
@@ -506,14 +511,18 @@ if (candidate.scope === "control-plane" && !alreadyApplied) {
     assert(response.ok, `Control Plane replacement admission failed (HTTP ${response.status})`);
     return response.json();
   };
-  const owners = () =>
-    database
+  const { sql } = await import("kysely");
+  const owners = async () => {
+    const rows = await database
       .selectFrom("sandbox_control_instances")
       .select("instance_id")
-      .where("sandbox_domain_id", "=", live.values.sandboxPlane.domainId)
+      .where("sandbox_domain_id", "=", replacementDomain)
       .where("state", "=", "ready")
-      .execute()
-      .then((rows) => rows.map((r) => r.instance_id));
+      .where("lease_expires_at", ">", sql`clock_timestamp()`)
+      .execute();
+    assert.equal(rows.length, 1, "Expected exactly one live Sandbox owner before replacement");
+    return rows.map((row) => row.instance_id);
+  };
   try {
     await replaceControlPlane(
       {
@@ -537,7 +546,6 @@ if (candidate.scope === "control-plane" && !alreadyApplied) {
         },
         waitOwners: async (ids) => {
           const end = Date.now() + 30_000;
-          const { sql } = await import("kysely");
           while (
             ids.length &&
             (

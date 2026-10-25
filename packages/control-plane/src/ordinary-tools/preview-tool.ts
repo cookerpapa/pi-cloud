@@ -7,7 +7,7 @@ import type { ControlToolCatalogDefinition } from "@pi-cloud/protocol";
 export const previewToolDefinition: ControlToolCatalogDefinition = {
   name: "preview",
   description:
-    "Publish a verified HTTP service already listening inside the current Sandbox as an authenticated PiCloud application link. Include the returned application path as a Markdown link in your final answer. The returned path is relative to the PiCloud web origin. This Tool does not start or restart the server.",
+    "Publish a verified HTTP service already listening inside the current Sandbox as an authenticated PiCloud application link. The port is the application's listening port inside the Sandbox. Include the returned application path as a Markdown link in your final answer. The returned path is relative to the PiCloud web origin. This Tool does not start or restart the server.",
   parameters: {
     type: "object",
     properties: {

@@ -10,6 +10,18 @@ export async function createReplacementDatabase(connectionString) {
   return createDatabase({ connectionString, maxConnections: 1, readTimeoutMs: 5_000 });
 }
 
+export function readControlPlaneDomain(readHelm, releaseName) {
+  // Overrides alone omit chart defaults. Keep overrides for rendering, but
+  // resolve the owner's domain from the installed chart's computed values.
+  const values = JSON.parse(readHelm(["get", "values", releaseName, "--all", "--output", "json"]));
+  const domain = values.sandboxPlane?.domainId;
+  assert(
+    typeof domain === "string" && domain.trim().length > 0,
+    "The effective sandbox domain is missing",
+  );
+  return domain;
+}
+
 export function controlPlaneSnapshot(deployment, autoscalers, pods) {
   assert.equal(deployment.metadata.name, "pi-cloud-control-plane");
   assert.equal(

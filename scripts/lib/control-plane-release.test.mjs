@@ -3,7 +3,21 @@ import {
   controlPlaneSnapshot,
   replaceControlPlane,
   createReplacementDatabase,
+  readControlPlaneDomain,
 } from "./control-plane-release.mjs";
+
+it("uses computed Helm values for an inherited sandbox domain and refuses a missing domain", () => {
+  const helm = vi.fn((args) =>
+    JSON.stringify({
+      sandboxPlane: args.includes("--all") ? { domainId: "inherited-domain" } : {},
+    }),
+  );
+  expect(readControlPlaneDomain(helm, "pi-cloud")).toBe("inherited-domain");
+  expect(helm.mock.calls[0][0]).toContain("--all");
+  expect(() => readControlPlaneDomain(() => '{"sandboxPlane":{}}', "pi-cloud")).toThrow(
+    "domain is missing",
+  );
+});
 
 it("constructs the actual bounded metadata client without incompatible budget modes", async () => {
   const database = await createReplacementDatabase("postgresql://unused:unused@127.0.0.1:9/unused");
