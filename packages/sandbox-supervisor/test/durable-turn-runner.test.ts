@@ -14,6 +14,8 @@ import {
 import { FakeModelServer, FAKE_MODEL_API_KEY } from "@pi-cloud/fake-model-server";
 import { type EventPublishMessage, parseControlToSupervisorMessage } from "@pi-cloud/protocol";
 import { PiCloudTurnRunner } from "../src/pi-cloud-turn-runner.ts";
+import { AgentRunSupervisor } from "../src/agent-run-supervisor.ts";
+import type { TrustedModelRuntimeLease } from "../src/agent-turn-runtime.ts";
 import { RemoteToolSandboxTurnRunner } from "../src/remote-tool-sandbox-turn-runner.ts";
 import { resolveWorkspaceSeed } from "../../supervisor-host/src/workspace-seed.ts";
 import {
@@ -34,6 +36,7 @@ it.each([
   "long_work",
   "cold_compact",
   "cold_compact_history",
+  "cold_compact_stop",
 ] as const)(
   "runs native input and admission gates (%s)",
   async (mode) => {
@@ -72,7 +75,7 @@ it.each([
       }
     })();
     let initialConversationId = 1;
-    if (mode === "cold_compact_history") {
+    if (mode === "cold_compact_history" || mode === "cold_compact_stop") {
       const seed = await Harness.open(
         storage,
         { models: createModels(), registry: createRegistry() },
@@ -217,6 +220,7 @@ it.each([
       throw new Error("Cancelled bootstrap must not activate Cube");
     });
     const leaseReleased = vi.fn();
+    const seedResolver = vi.fn(resolveWorkspaceSeed);
     const selectedCommand =
       mode === "stop_before_setup"
         ? {
@@ -238,6 +242,8 @@ it.each([
           reason: "user_request",
           gracePeriodMs: 1000,
         });
+      }
+      if (mode === "stop_before_setup" || mode.startsWith("cold_compact")) {
         runner = new RemoteToolSandboxTurnRunner({
           broker: {
             create: activate,
@@ -249,14 +255,14 @@ it.each([
           },
           runtimeIdentity: { supervisorId: "s", bootId: crypto.randomUUID(), sandboxId: "worker" },
           trustedWorkspaceDirectory: directory,
-          workspaceSeedResolver: resolveWorkspaceSeed,
+          workspaceSeedResolver: seedResolver,
           openAgentSession: async () => handle,
           modelRuntimeLeaseResolver: () => ({
             runtime: {
               kind: "openai_compatible_gateway",
-              provider: "openai-codex",
-              modelId: "gpt-6-luna",
-              api: "openai-codex-responses",
+              provider: selectedCommand.payload.model.provider,
+              modelId: selectedCommand.payload.model.modelId,
+              api: mode === "stop_before_setup" ? "openai-codex-responses" : "openai-completions",
               baseUrl: fake.baseUrl,
               capability: FAKE_MODEL_API_KEY,
               reasoning: false,
@@ -267,11 +273,18 @@ it.each([
               maxTokens: 1024,
               serviceTier: null,
               eventIdleTimeoutMs: 1000,
-            },
+            } as unknown as TrustedModelRuntimeLease["runtime"],
             release: leaseReleased,
           }),
-          acquireModelPermit: async () => {
+          acquireModelPermit: async (_command, signal) => {
             acquired++;
+            if (mode === "cold_compact_history" || mode === "cold_compact_stop") {
+              enteredPermit.resolve();
+              await awaitWithContext(
+                releasePermit.promise,
+                withAbortSignal(signal!, BACKGROUND_CONTEXT),
+              );
+            }
             return () => {
               released++;
             };
@@ -302,13 +315,83 @@ it.each([
         },
       });
       if (wire.type !== "command.turn.execute") throw new Error("Unexpected fixture command");
-      const executing = runner.run(
-        wire,
-        (event) => {
-          events.push(event);
-        },
-        userStop.signal,
-      );
+      const publish = (event: EventPublishMessage) => {
+        events.push(event);
+        return {
+          protocolVersion: 1 as const,
+          type: "event.ack" as const,
+          messageId: crypto.randomUUID(),
+          sentAt: new Date().toISOString(),
+          payload: {
+            sessionId: event.payload.event.sessionId,
+            executionReference: event.payload.executionReference,
+            acknowledgedThroughSeq: event.payload.event.seq,
+          },
+        };
+      };
+      const supervisor = new AgentRunSupervisor({ runner });
+      const prepared = mode.startsWith("cold_compact")
+        ? supervisor.prepare(wire, publish)
+        : undefined;
+      if (prepared) expect(prepared.ack.payload.status).toBe("accepted");
+      const executing = prepared
+        ? prepared.run()
+        : runner.run(
+            wire,
+            (event) => {
+              events.push(event);
+            },
+            userStop.signal,
+          );
+      void executing.catch(() => {});
+      if (mode === "cold_compact_history" || mode === "cold_compact_stop") {
+        await enteredPermit.promise;
+        if (mode === "cold_compact_stop") {
+          const p = wire.payload;
+          const stop = supervisor.prepareCancellation({
+            protocolVersion: 1,
+            messageId: crypto.randomUUID(),
+            sentAt: new Date().toISOString(),
+            type: "command.turn.cancel",
+            payload: {
+              controlRequestId: crypto.randomUUID(),
+              targetRunId: p.runId,
+              idempotencyKey: "stop-compact",
+              tenantId: p.tenantId,
+              projectId: p.projectId,
+              workspaceId: p.workspaceId,
+              sessionId: p.sessionId,
+              runId: p.runId,
+              turnId: p.turnId,
+              agentId: p.agentId,
+              executionReference: p.executionReference,
+              reason: "user_request",
+              gracePeriodMs: 1000,
+            },
+          });
+          expect(stop.ack.payload.status).toBe("accepted");
+          await stop.run();
+          await expect(executing).rejects.toMatchObject({
+            code: "turn_cancelled",
+            reason: "user_request",
+          });
+          expect(activate).not.toHaveBeenCalled();
+          expect(seedResolver).not.toHaveBeenCalled();
+          expect(fake.observations).toEqual([]);
+          return;
+        }
+        if (wire.payload.input.kind !== "compact") throw new Error("Expected compact");
+        const { kind: _kind, ...input } = wire.payload.input;
+        const duplicate = await (runner as RemoteToolSandboxTurnRunner).compact({
+          ...input,
+          tenantId: wire.payload.tenantId,
+          sessionId: wire.payload.sessionId,
+          runId: wire.payload.runId,
+          executionReference: wire.payload.executionReference,
+        });
+        expect(duplicate.replayed).toBe(true);
+        releasePermit.resolve();
+      }
       if (mode === "long_work") {
         await enteredPermit.promise;
         await vi.advanceTimersByTimeAsync(60 * 60_000);
@@ -335,6 +418,9 @@ it.each([
         );
         expect(acquired).toBe(mode === "cold_compact" ? 0 : 1);
         expect(released).toBe(acquired);
+        expect(activate).not.toHaveBeenCalled();
+        expect(seedResolver).not.toHaveBeenCalled();
+        expect(leaseReleased).toHaveBeenCalledOnce();
         expect(
           (await storage.scanSubmissions({}, 100, undefined, BACKGROUND_CONTEXT)).items.some(
             (s) => s.type === "input",

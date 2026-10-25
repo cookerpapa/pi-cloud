@@ -382,8 +382,13 @@ export class AgentRunSupervisor {
       return this.#prepared(duplicate, "duplicate");
     }
 
-    if (command.payload.input.kind !== "prompt") {
-      return this.#rejected(command, "unsupported", "Only prompt input is supported", false);
+    if (command.payload.input.kind === "resume") {
+      return this.#rejected(
+        command,
+        "unsupported",
+        "Child continuation belongs to its active family",
+        false,
+      );
     }
 
     const reference = parseExecutionReference(command.payload.executionReference);
