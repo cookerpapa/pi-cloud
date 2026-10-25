@@ -1,5 +1,13 @@
 # Architecture
 
+[ADR-0276](adr/0276-scoped-control-plane-releases.md) adds a scoped Control Plane
+release for ordinary Tool implementation/registration changes. The initial
+replacement contract is in implementation. A local expiring projection hold
+waits for control handlers and non-replayable native settlement, then parks new
+records before projection/dispatch. Planned replacement retains Worker and Cube
+identities and uses existing PG owner leases; no second scheduler, execution lease
+or browser update mechanism is introduced.
+
 [ADR-0273](adr/0273-resource-intent-and-machine-recovery.md) is deployed as
 `resource-intent-cad5487a`, schema 198. PG retains resource intent and lifecycle
 completion; Cube supplies disposable physical observations. Dedicated machines

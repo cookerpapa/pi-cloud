@@ -265,4 +265,4 @@ export {
   controlToolCatalog,
   type RegisteredControlTool,
 } from "./control-tool-registry.ts";
-export { previewToolDefinition } from "./control-preview-tool.ts";
+export { previewToolDefinition } from "./ordinary-tools/preview-tool.ts";

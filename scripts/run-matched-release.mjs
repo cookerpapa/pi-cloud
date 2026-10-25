@@ -301,6 +301,7 @@ try {
       guestIdentity: candidate.guestIdentity,
       completionIdentity: candidate.completionIdentity,
       modelRuntimeSnapshot: 1,
+      controlPlaneReplacement: 1,
     },
   });
   const deploymentPath = resolve(runtimeDirectory, "k3s/deployment.json");

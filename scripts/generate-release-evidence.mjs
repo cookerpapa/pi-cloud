@@ -1,3 +1,4 @@
+import { imageReleaseTargets } from "./lib/release-impact.mjs";
 import { configureBuildProxy, proxyDownloadNetwork } from "./lib/upstream-proxy.mjs";
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -56,7 +57,7 @@ function parseArguments(argv) {
       if (argument === "--cache-dir") result.cacheDirectory = resolve(repositoryRoot, value);
       if (argument === "--image-version") result.imageVersion = value;
       if (argument === "--component") {
-        if (!["all", "provider", "web"].includes(value))
+        if (!["all", "provider", "web", "control-plane"].includes(value))
           throw new Error("Unsupported evidence scope");
         result.component = value;
       }
@@ -69,7 +70,7 @@ function parseArguments(argv) {
     }
     if (argument === "--help") {
       process.stdout.write(
-        "Usage: npm run release:evidence -- [--output-dir EMPTY_PATH] [--cache-dir PATH] [--image-version VERSION] [--component all|provider|web] [--allow-dirty]\n",
+        "Usage: npm run release:evidence -- [--output-dir EMPTY_PATH] [--cache-dir PATH] [--image-version VERSION] [--component all|provider|web|control-plane] [--allow-dirty]\n",
       );
       process.exit(0);
     }
@@ -286,8 +287,8 @@ try {
     options.component !== "all"
       ? [
           {
-            imageName: options.component === "provider" ? "cli-proxy-api" : "web-ui",
-            reference: `pi-cloud/${options.component === "provider" ? "cli-proxy-api" : "web-ui"}:${options.imageVersion}`,
+            imageName: imageReleaseTargets[options.component].imageName,
+            reference: `pi-cloud/${imageReleaseTargets[options.component].imageName}:${options.imageVersion}`,
             labelVersion: options.imageVersion,
           },
         ]

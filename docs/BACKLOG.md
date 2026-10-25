@@ -1,5 +1,13 @@
 # Maintained backlog
 
+## Scoped Control Plane publication
+
+The owner approved [ADR-0276](adr/0276-scoped-control-plane-releases.md).
+Ordinary Tool changes should publish only the Control Plane, retaining Workers,
+Cube and running VMs. Browser update prompts are explicitly out of scope.
+
+- [ ] Complete quiescence/failure coverage, one-image release and live active-Run acceptance.
+
 ## User-facing image presentation
 
 The owner approved [ADR-0275](adr/0275-user-image-presentation.md): an explicit

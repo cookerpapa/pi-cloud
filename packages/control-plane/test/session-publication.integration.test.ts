@@ -15,6 +15,7 @@ import type {
 } from "../../runtime-core/src/accepted-fact.ts";
 import { nativeSubagentFixture } from "./native-subagent-fixture.ts";
 import { createTestWorker } from "./admit-test-execution.ts";
+import { ControlPlaneQuiescence } from "../src/control-plane-quiescence.ts";
 const brokers = process.env.PI_CLOUD_KAFKA_INTEGRATION_BROKERS?.split(",");
 const postgres = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 
@@ -71,6 +72,7 @@ it.skipIf(!brokers || !postgres)(
     const third = new DirectSessionKafkaBus(options);
     let lateOpening: Promise<void> | undefined, thirdExecution: Promise<unknown> | undefined;
     let projector: SessionProjector | undefined;
+    let quiescence = new ControlPlaneQuiescence("old", () => ({ active: 0, unsettled: 0 }));
     const create = () =>
       new SessionProjector({
         ...options,
@@ -81,6 +83,7 @@ it.skipIf(!brokers || !postgres)(
         publicationToken: "fixture-".repeat(8),
         advertisedBaseUrl: "http://127.0.0.1:9",
         toolCommands: { consume: async () => {} },
+        projectionGate: quiescence,
       });
     const permit = { scope: { ...f.scope, leaseId: f.scope.writerId, piConversationId: 1 } };
     const fact = (seq: number, scope: AcceptedFactScope = f.scope): AcceptedDurableCommitFact => ({
@@ -135,12 +138,17 @@ it.skipIf(!brokers || !postgres)(
       await vi.waitFor(async () => expect((await f.projection.head()).seq).toBe(2), {
         timeout: 10000,
       });
-      await projector.close();
-      projector = undefined;
-      // No control-plane owner or HTTP server exists here. The active producer still commits.
+      quiescence.prepare("replacement");
+      // A parked record must remain unprojected and unacknowledged across exit.
+      // Worker publication still goes directly to Kafka while projection is held.
       await measured.run(true, () => bus.append(fact(3)));
       expect(queries).toEqual([]);
+      await vi.waitFor(() => expect(quiescence.status().parkedProjections).toBeGreaterThan(0));
       expect((await f.projection.head()).seq).toBe(2);
+      quiescence.close();
+      await projector.close();
+      projector = undefined;
+      quiescence = new ControlPlaneQuiescence("new", () => ({ active: 0, unsettled: 0 }));
       projector = create();
       await projector.start();
       await vi.waitFor(async () => expect((await f.projection.head()).seq).toBe(3), {
@@ -262,6 +270,7 @@ it.skipIf(!brokers || !postgres)(
       finished.resolve();
       await Promise.allSettled([execution, thirdExecution]);
       await Promise.allSettled([bus.close(), successor.close(), late.close(), third.close()]);
+      quiescence.close();
       await projector?.close();
       await admin.deleteTopics({ topics: [topic] }).catch(() => {});
       await admin.close();

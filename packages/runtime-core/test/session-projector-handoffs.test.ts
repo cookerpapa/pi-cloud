@@ -152,6 +152,23 @@ function deferred<T>() {
 }
 
 describe("Unified Projector handoff boundaries (transport/PG simulated)", () => {
+  it("holds a replacement record before PG projection or dispatch acknowledgement", async () => {
+    const resume = deferred<void>();
+    projector.options.projectionGate = {
+      async run(operation) {
+        await resume.promise;
+        return operation();
+      },
+    };
+    const commit = vi.fn(async () => true);
+    const work = f.handler!(record(), () => true, commit);
+    await Promise.resolve();
+    expect(f.project).not.toHaveBeenCalled();
+    expect(commit).not.toHaveBeenCalled();
+    resume.resolve();
+    await work;
+    expect(f.project).toHaveBeenCalledTimes(1);
+  });
   it("handles probes on the same consumer without native projection, dispatch or public sequence", async () => {
     const { fact } = toolInvocationFixture();
     const original = { fact, topic: "test", partition: 0, offset: 12n };

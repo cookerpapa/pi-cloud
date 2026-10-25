@@ -3,7 +3,7 @@ import { expect, it, vi } from "vitest";
 import { ImageAttachmentCodec } from "@pi-cloud/session-attachments";
 import type { ImageAttachmentReference } from "@pi-cloud/protocol";
 import type { AcceptedControlToolCommand } from "@pi-cloud/runtime-core/accepted-fact";
-import { createShowImageTool } from "../src/control-image-tool.ts";
+import { createShowImageTool } from "../src/ordinary-tools/image-tool.ts";
 import { ControlToolRegistry } from "../src/control-tool-registry.ts";
 
 function fixture() {

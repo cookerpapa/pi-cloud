@@ -4,9 +4,44 @@ import { fileURLToPath } from "node:url";
 
 const [scope] = process.argv.slice(2);
 assert(
-  ["provider", "catalog", "web"].includes(scope),
-  "Use provider, catalog or web; protocol changes require full checks",
+  ["provider", "catalog", "web", "control-plane"].includes(scope),
+  "Use provider, catalog, web or control-plane; protocol changes require full checks",
 );
+if (scope === "control-plane") {
+  const options = { cwd: fileURLToPath(new URL("..", import.meta.url)), stdio: "inherit" };
+  execFileSync("npm", ["run", "typecheck", "--workspace", "@pi-cloud/control-plane"], options);
+  execFileSync(
+    process.execPath,
+    [
+      "scripts/run-with-test-postgres.mjs",
+      "--",
+      "node",
+      "node_modules/vitest/vitest.mjs",
+      "run",
+      "packages/control-plane/test/ordinary-tools",
+      "packages/control-plane/test/control-image-tool.test.ts",
+      "packages/control-plane/test/control-preview-tool.test.ts",
+      "packages/control-plane/test/image-generation-client.test.ts",
+      "packages/control-plane/test/image-reference-context.postgres.test.ts",
+      "packages/control-plane/test/show-image-tool.test.ts",
+      "packages/control-plane/test/control-tool-catalog.test.ts",
+      "packages/control-plane/test/control-tool-results.test.ts",
+      "packages/control-plane/test/control-tool-dispatcher.test.ts",
+      "packages/control-plane/test/control-plane-quiescence.test.ts",
+      "packages/runtime-core/test/session-projector-handoffs.test.ts",
+      "packages/supervisor-host/test/worker-tool-runtime.test.ts",
+      "packages/sandbox-supervisor/test/trusted-remote-tools.test.ts",
+      "scripts/lib/component-release.test.mjs",
+      "scripts/lib/control-plane-release.test.mjs",
+      "scripts/lib/release-impact.test.mjs",
+      "scripts/lib/release-image-evidence.test.mjs",
+      "--maxWorkers=1",
+    ],
+    options,
+  );
+  console.log(JSON.stringify({ scope, passed: true }));
+  process.exit(0);
+}
 if (scope === "web") {
   const options = { cwd: fileURLToPath(new URL("..", import.meta.url)), stdio: "inherit" };
   execFileSync("npm", ["run", "typecheck", "--workspace", "@pi-cloud/web-ui"], options);

@@ -1,5 +1,8 @@
 # Current architecture decisions
 
+[ADR-0276](0276-scoped-control-plane-releases.md) records scoped Control Plane
+publication, existing-runtime preservation and bounded quiescence.
+
 [ADR-0275](0275-user-image-presentation.md) records the approved existing-image
 display Tool and canonical live/cold image presentation. It is deployed as
 `show-image-1f7a950e`; [delivery evidence](../reports/show-image-delivery-20261025.md)

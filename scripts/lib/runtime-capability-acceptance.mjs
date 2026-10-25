@@ -7,7 +7,7 @@ import { isDeepStrictEqual } from "node:util";
 import { sql } from "kysely";
 import { getCurrentSystemMessage, getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { controlToolCatalog } from "../../packages/control-plane/src/control-tool-registry.ts";
-import { previewToolDefinition } from "../../packages/control-plane/src/control-preview-tool.ts";
+import { previewToolDefinition } from "../../packages/control-plane/src/ordinary-tools/preview-tool.ts";
 import { newIdempotencyKey } from "../../packages/web-ui/src/api.ts";
 import { nativeHistory, nativeMessages } from "./native-session-history.mjs";
 import {

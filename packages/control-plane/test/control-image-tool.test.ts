@@ -3,10 +3,10 @@ import { expect, it, vi } from "vitest";
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
 import { ImageAttachmentCodec } from "@pi-cloud/session-attachments";
-import type { ImageGenerationClient } from "../src/image-generation-client.ts";
+import type { ImageGenerationClient } from "../src/ordinary-tools/image-generation-client.ts";
 import type { ImageAttachmentReference } from "@pi-cloud/protocol";
 import type { AcceptedControlToolCommand } from "@pi-cloud/runtime-core/accepted-fact";
-import { createImageTool } from "../src/control-image-tool.ts";
+import { createImageTool } from "../src/ordinary-tools/image-tool.ts";
 import { ControlToolRegistry } from "../src/control-tool-registry.ts";
 
 function fixture() {

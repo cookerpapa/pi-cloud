@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { sql } from "kysely";
 import { nativeSubagentFixture } from "./native-subagent-fixture.ts";
-import { recentConversationImages } from "../src/control-image-tool.ts";
+import { recentConversationImages } from "../src/ordinary-tools/image-tool.ts";
 import { SessionImageReader } from "../src/session-image-reader.ts";
 
 it("selects images at the issuing context boundary, excludes other lanes/new input, and authorizes retained assets", async () => {

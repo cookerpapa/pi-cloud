@@ -6,6 +6,7 @@ import { parseAcceptedFact } from "@pi-cloud/runtime-core/kafka-accepted-fact";
 import { PUBLICATION_PATH } from "@pi-cloud/runtime-core/http-publication-client";
 import { PublicationIngressRejected } from "@pi-cloud/runtime-core/session-publication-ingress";
 import { PublicationNotSentError } from "@pi-cloud/protocol";
+import type { ControlPlaneQuiescence } from "./control-plane-quiescence.ts";
 
 /** Private transport of the existing control-plane publication module. */
 export class SessionPublicationService {
@@ -20,6 +21,7 @@ export class SessionPublicationService {
       | "acceptSeal"
       | "acceptControl"
     >,
+    readonly quiescence?: ControlPlaneQuiescence,
   ) {}
 
   install(server: FastifyInstance): void {
@@ -49,6 +51,38 @@ export class SessionPublicationService {
     server.get(`${PUBLICATION_PATH}/health/local`, async () =>
       this.projector.localPublicationAvailability(),
     );
+    if (this.quiescence) {
+      const quiescence = this.quiescence;
+      server.get(`${PUBLICATION_PATH}/replacement`, async () => quiescence.status());
+      server.post(
+        `${PUBLICATION_PATH}/replacement`,
+        { bodyLimit: 1024 },
+        async (request, reply) => {
+          let body: { id: string; action: "prepare" | "cancel" };
+          try {
+            body = request.body as typeof body;
+            if (
+              !body ||
+              typeof body.id !== "string" ||
+              !/^[0-9a-f-]{36}$/.test(body.id) ||
+              !["prepare", "cancel"].includes(body.action)
+            )
+              throw new Error("Invalid replacement request");
+          } catch {
+            return reply.code(400).send({ error: { code: "invalid_replacement_request" } });
+          }
+          if (body.action === "cancel") {
+            quiescence.cancel(body.id);
+            return quiescence.status();
+          }
+          try {
+            return quiescence.prepare(body.id);
+          } catch {
+            return reply.code(409).send({ error: { code: "replacement_unavailable" } });
+          }
+        },
+      );
+    }
     for (const action of ["seal", "control"] as const) {
       server.post(
         `${PUBLICATION_PATH}/${action}`,

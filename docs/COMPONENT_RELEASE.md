@@ -4,6 +4,64 @@
 catalog and presentation-only Web operations. Install its initial schema 196 / Worker contract with the
 [matched procedure](MATCHED_RELEASE.md) first. Accounts and credentials survive.
 
+## Ordinary Control Plane tools
+
+[ADR-0276](adr/0276-scoped-control-plane-releases.md) adds the `control-plane`
+scope after its initial matched installation. The current slice accepts ordinary
+Tool code under `packages/control-plane/src/ordinary-tools/`, including its
+registration module. A new tool on the existing transport needs no Worker edit.
+Changes to shared protocols, dependencies, ownership, lifecycle, schema, startup
+or public API contracts still require a matched release. Source classification
+does not replace reviewing semantic compatibility. No browser update notification
+is added.
+
+```sh
+npm run release:component -- prepare control-plane /private/releases/control-1 control-1
+npm run release:component -- preflight /private/releases/control-1
+npm run release:component -- apply /private/releases/control-1
+```
+
+Preparation runs Control Plane types and the ordinary Tool/catalog/dispatch/
+replacement contracts, including new tests under
+`packages/control-plane/test/ordinary-tools/`, then builds/scans one image. The
+full rendered-manifest comparison permits only that container image to change;
+the operator retains all other artifact provenance. Apply imports the image,
+then uses the existing private publication listener to request quiescence. It
+waits for executing control handlers and native settlement of non-replayable
+effects while projection continues. Repeatable child waits and Cube commands do
+not require their parent Run to finish. At a safe record boundary, subsequent
+projection/recovery admission is held before PG writes and dispatch commits.
+
+The first supported topology is one Control Plane without an HPA. The operator
+stops its old Pod, waits for its existing PG sandbox-owner lease, then installs
+the new image with Helm hooks disabled. Workers, provider, Cube and VM allocations
+remain running. Workers reconnect; Kafka replay and Pi's next request pick up
+the current catalog. New requests/Tool dispatch and SSE can pause during the
+outage; keeping the existing lease requires recovery within its normal budget.
+
+The local hold expires after 30 seconds without renewal. A busy-drain timeout
+leaves the old release serving. SIGTERM repeats the quiescence check at actual
+termination, protecting against a delayed scale request after hold expiry. The
+existing 720-second Pod termination grace remains the outer crash boundary.
+`control-plane-replacement.json` records phases before replica changes. Failure
+before Helm restores the observed old template when its identity still matches.
+After Helm starts, rerun the same candidate to reconcile actual state and finish
+the deployment record. An unresolved Helm `pending-upgrade` still needs inspection;
+there is no blind rollback or old-protocol fallback.
+
+The live driver requires a prepared candidate containing a reviewed ordinary
+Preview description change. It holds a real Luna Bash in Cube, replaces the
+Control Plane, verifies unchanged unrelated Pods/Worker boots/Session lease/VM,
+then unblocks the same command and checks the updated catalog within that Run:
+
+```sh
+PI_CLOUD_LIVE_CONTROL_RELEASE_CHECK=1 node --import tsx scripts/run-live-control-plane-release-check.mjs /private/releases/control-1 /private/evidence/control-1
+```
+
+It uses an owned fixture, confirms the command executed once and performs physical
+VM/Volume cleanup before removing its tenant. User conversations are not used as
+release probes.
+
 ## Provider image
 
 Change the pinned provider source/catalog in `deploy/provider-gateway/Dockerfile`,

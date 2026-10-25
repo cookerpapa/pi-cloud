@@ -8,9 +8,33 @@ export const operatorSources = new Set([
   "scripts/lib/model-catalog-probe.mjs",
   "scripts/generate-release-evidence.mjs",
   "scripts/lib/release-image-evidence.mjs",
+  "scripts/lib/control-plane-release.mjs",
+  "scripts/run-live-control-plane-release-check.mjs",
   "scripts/release-impact.mjs",
   "scripts/lib/release-impact.mjs",
 ]);
+export const ordinaryControlToolSource = (file) =>
+  /^packages\/control-plane\/src\/ordinary-tools\/.*\.ts$/.test(file);
+export const imageReleaseTargets = {
+  provider: {
+    imageName: "cli-proxy-api",
+    catalogKey: "provider",
+    workload: "statefulset/cli-proxy-api",
+    container: "cli-proxy-api",
+  },
+  web: {
+    imageName: "web-ui",
+    catalogKey: "web",
+    workload: "deployment/pi-cloud-web",
+    container: "web",
+  },
+  "control-plane": {
+    imageName: "control-plane",
+    catalogKey: "controlPlane",
+    workload: "deployment/pi-cloud-control-plane",
+    container: "control-plane",
+  },
+};
 export const modelTests = new Set([
   "scripts/lib/component-release.test.mjs",
   "scripts/lib/model-catalog-probe.test.mjs",
@@ -44,6 +68,18 @@ export function releaseImpact(files) {
   if (!files?.length) return full();
   if (files.every(documentation))
     return { scope: "docs", matrix: { include: [] }, buildImages: false };
+  if (
+    files.some(ordinaryControlToolSource) &&
+    files.every(
+      (file) =>
+        ordinaryControlToolSource(file) ||
+        documentation(file) ||
+        operatorSources.has(file) ||
+        /(?:^|\/)test\/.*\.test\.[cm]?tsx?$/.test(file) ||
+        /^scripts\/lib\/.*\.test\.mjs$/.test(file),
+    )
+  )
+    return { scope: "control-plane", matrix: { include: [fullImages[0]] }, buildImages: true };
   if (
     files.some(
       (file) =>

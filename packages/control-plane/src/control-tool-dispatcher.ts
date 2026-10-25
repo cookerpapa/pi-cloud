@@ -56,6 +56,7 @@ export class ControlToolDispatcher {
         signal?: AbortSignal,
       ): Promise<ControlToolOutcome>;
       replayable?(toolName: string): boolean;
+      canStart?(): boolean;
       publish(topic: string, reply: ToolReply): Promise<void>;
       onError?(): void;
     },
@@ -353,7 +354,7 @@ export class ControlToolDispatcher {
     };
   }
   #drain(): void {
-    if (this.#closed) return;
+    if (this.#closed || this.options.canStart?.() === false) return;
     for (const [key, pending] of this.#pending) {
       if (this.#active.size >= 128) break;
       if (
@@ -463,5 +464,14 @@ export class ControlToolDispatcher {
     clearInterval(this.#timer);
     this.reset();
     await Promise.allSettled(this.#active.values());
+  }
+
+  quiescence(): { active: number; unsettled: number } {
+    return {
+      active: this.#active.size,
+      // Keep successful replies until native settlement, including `done`.
+      // Repeatable waits can be reconstructed by the next partition owner.
+      unsettled: [...this.#pending.values()].filter((p) => p.execution !== "repeatable").length,
+    };
   }
 }

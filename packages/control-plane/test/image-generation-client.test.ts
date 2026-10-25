@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { ImageGenerationClient } from "../src/image-generation-client.ts";
+import { ImageGenerationClient } from "../src/ordinary-tools/image-generation-client.ts";
 const clients: ImageGenerationClient[] = [];
 afterEach(async () => {
   await Promise.all(clients.splice(0).map((client) => client.close()));

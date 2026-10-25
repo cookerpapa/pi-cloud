@@ -1,7 +1,7 @@
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
 import type { AcceptedControlToolCommand } from "@pi-cloud/runtime-core/accepted-fact";
-import type { ControlToolOutcome } from "./control-tool-dispatcher.ts";
+import type { ControlToolOutcome } from "../control-tool-dispatcher.ts";
 import type { ControlToolCatalogDefinition } from "@pi-cloud/protocol";
 
 export const previewToolDefinition: ControlToolCatalogDefinition = {

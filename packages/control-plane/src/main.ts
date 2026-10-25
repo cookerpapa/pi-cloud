@@ -4,10 +4,8 @@ import { reconcileUploadPins } from "./upload-input-pins.ts";
 import { SubagentController } from "./subagent-controller.ts";
 import { PlatformRuntimeSettingsService } from "./platform-runtime-settings.ts";
 import { ControlToolDispatcher } from "./control-tool-dispatcher.ts";
-import { executePreviewTool, previewToolDefinition } from "./control-preview-tool.ts";
-import { ControlToolRegistry, type RegisteredControlTool } from "./control-tool-registry.ts";
-import { createImageTool, createShowImageTool } from "./control-image-tool.ts";
-import { ImageGenerationClient } from "./image-generation-client.ts";
+import { createOrdinaryToolRegistry } from "./ordinary-tools/registry.ts";
+import { ImageGenerationClient } from "./ordinary-tools/image-generation-client.ts";
 import { isControlToolName } from "@pi-cloud/protocol";
 import { createDatabase } from "@pi-cloud/database";
 import { operationalLog, startServiceObservability } from "@pi-cloud/observability";
@@ -53,6 +51,7 @@ import {
 } from "@pi-cloud/session-attachments";
 import { SourceControlCredentialVault } from "./source-control-credential-vault.ts";
 import { Agent, EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
+import { ControlPlaneQuiescence } from "./control-plane-quiescence.ts";
 
 export async function closeControlPlaneResources(
   resources: readonly (() => unknown | Promise<unknown>)[],
@@ -96,7 +95,12 @@ export async function startControlPlane(): Promise<void> {
   let ownedProjectionDatabase: ReturnType<typeof createDatabase> | undefined;
   let unattachedSubagents: SubagentController | undefined;
   let unattachedControlTools: ControlToolDispatcher | undefined;
+  let controlToolsForQuiescence: ControlToolDispatcher | undefined;
   const controlPlaneInstanceId = randomUUID();
+  const quiescence = new ControlPlaneQuiescence(
+    controlPlaneInstanceId,
+    () => controlToolsForQuiescence?.quiescence() ?? { active: 0, unsettled: 0 },
+  );
   let agentEvents: SessionProjector | undefined;
   let sandboxControl: Awaited<ReturnType<typeof createSandboxControl>> | undefined;
   let runtime: ControlPlaneRuntime | undefined;
@@ -114,6 +118,7 @@ export async function startControlPlane(): Promise<void> {
   let closePromise: Promise<void> | undefined;
   const close = (): Promise<void> => {
     return (closePromise ??= closeControlPlaneResources([
+      () => quiescence.close(),
       () => imageReaper?.close(),
       () => issueNoteReconciler?.close(),
       () => issueCoordinator?.close(),
@@ -243,60 +248,19 @@ export async function startControlPlane(): Promise<void> {
       },
     });
     unattachedSubagents = subagents;
-    const ordinaryTools = new ControlToolRegistry();
-    const definitions: RegisteredControlTool[] = [
-      {
-        definition: previewToolDefinition,
-        execute: (call, current) =>
-          executePreviewTool(database, call, async () => {
-            if (!call.bindingId) throw new Error("Preview requires an admitted Tool binding");
-            if (!current()) throw new Error("Control Tool owner changed");
-            await sandboxControl!.refreshToolServices(call.scope, call.bindingId);
-          }),
-      },
-    ];
-    if (images)
-      definitions.push(
-        createShowImageTool({
-          images,
-          imageIo: (call, action, signal) =>
-            sandboxControl!.toolImageIo(
-              call.scope,
-              call.bindingId!,
-              call.operationId,
-              action,
-              signal,
-            ),
-        }),
-      );
     if (config.imageGeneration) {
       if (!images) throw new Error("Image generation requires Session attachment storage");
       imageGeneration = new ImageGenerationClient(config.imageGeneration);
-      definitions.push(
-        createImageTool({
-          database,
-          images,
-          client: imageGeneration,
-          imageIo: (call, action, signal) =>
-            sandboxControl!.toolImageIo(
-              call.scope,
-              call.bindingId!,
-              call.operationId,
-              action,
-              signal,
-            ),
-        }),
-      );
     }
-    if (
-      config.enabledControlTools?.some(
-        (name) => !definitions.some((tool) => tool.definition.name === name),
-      )
-    )
-      throw new TypeError("Configured ordinary Control Tool is not registered");
-    for (const tool of definitions)
-      if (!config.enabledControlTools || config.enabledControlTools.includes(tool.definition.name))
-        ordinaryTools.register(tool);
+    const ordinaryTools = createOrdinaryToolRegistry({
+      database,
+      ...(config.enabledControlTools ? { enabled: config.enabledControlTools } : {}),
+      ...(images ? { images } : {}),
+      ...(imageGeneration ? { imageGeneration } : {}),
+      imageIo: (call, action, signal) =>
+        sandboxControl!.toolImageIo(call.scope, call.bindingId!, call.operationId, action, signal),
+      refreshServices: (call) => sandboxControl!.refreshToolServices(call.scope, call.bindingId!),
+    });
     const controlTools = new ControlToolDispatcher({
       database,
       partitions: config.kafkaPartitions,
@@ -304,6 +268,7 @@ export async function startControlPlane(): Promise<void> {
       ownsPartition: (partition) => agentEvents?.ownsPartition(partition) === true,
       publish: (topic, reply) => sandboxControl!.publishReply(topic, reply),
       replayable: (name) => isControlToolName(name) || ordinaryTools.replayable(name),
+      canStart: () => !quiescence.held,
       execute: async (call, current, signal) => {
         return isControlToolName(call.toolName)
           ? subagents.executeTool(call, current)
@@ -317,6 +282,7 @@ export async function startControlPlane(): Promise<void> {
         }),
     });
     unattachedControlTools = controlTools;
+    controlToolsForQuiescence = controlTools;
     const queueReads = createDatabase({
       connectionString: config.databaseUrl,
       maxConnections: 2,
@@ -339,6 +305,7 @@ export async function startControlPlane(): Promise<void> {
     const { bindingView, consumeBindingChange } = sandboxControl;
     agentEvents = new SessionProjector({
       publicationToken: config.supervisorManagementToken,
+      projectionGate: quiescence,
       database: projectionDatabase,
       publicationDatabase,
       notificationConnectionString: config.databaseNotificationUrl,
@@ -583,6 +550,7 @@ export async function startControlPlane(): Promise<void> {
       sessionPublicationService: new SessionPublicationService(
         config.supervisorManagementToken,
         activeAgentEvents,
+        quiescence,
       ),
       runActivityIngress: new RunActivityIngress(
         config.supervisorManagementToken,
@@ -693,9 +661,12 @@ export async function startControlPlane(): Promise<void> {
     );
 
     const closeAfterSignal = (): void => {
-      void close().catch(() => {
-        process.exitCode = 1;
-      });
+      void quiescence
+        .beforeShutdown()
+        .then(close)
+        .catch(() => {
+          process.exitCode = 1;
+        });
     };
     process.once("SIGINT", closeAfterSignal);
     process.once("SIGTERM", closeAfterSignal);

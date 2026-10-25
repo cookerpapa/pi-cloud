@@ -7,6 +7,7 @@ import {
   assertScopedManifests,
   composeScopedDeployment,
   scopedApplyState,
+  dockerSourceInputs,
 } from "./component-release.mjs";
 
 const provider = {
@@ -30,6 +31,93 @@ const other = {
   spec: { replicas: 2 },
 };
 const yaml = (...objects) => objects.map(stringify).join("\n---\n");
+
+it("limits Control Plane scope to ordinary tool implementations and one unchanged deployment template", () => {
+  expect(() =>
+    assertScopedSources("control-plane", [
+      "packages/control-plane/src/ordinary-tools/new-tool.ts",
+      "packages/control-plane/src/ordinary-tools/registry.ts",
+    ]),
+  ).not.toThrow();
+  for (const file of [
+    "packages/control-plane/src/main.ts",
+    "packages/control-plane/src/control-tool-dispatcher.ts",
+    "packages/control-plane/src/control-plane.controller.ts",
+    "packages/runtime-core/src/session-projector.ts",
+    "packages/database/src/schema.ts",
+    "package-lock.json",
+    "deploy/provider-gateway/Dockerfile",
+    "deploy/helm/pi-cloud-platform/files/model-catalog.json",
+  ])
+    expect(() => assertScopedSources("control-plane", [file])).toThrow("matched release");
+  const before = structuredClone(provider);
+  before.kind = "Deployment";
+  before.metadata.name = "pi-cloud-control-plane";
+  before.spec.template.spec.containers[0].name = "control-plane";
+  const next = structuredClone(before);
+  next.spec.template.spec.containers[0].image = "new";
+  expect(() =>
+    assertScopedManifests("control-plane", yaml(before, other), yaml(next, other), "new"),
+  ).not.toThrow();
+  next.spec.replicas = 0;
+  expect(() =>
+    assertScopedManifests("control-plane", yaml(before, other), yaml(next, other), "new"),
+  ).toThrow();
+});
+
+it("fingerprints actual image COPY inputs including shared dependencies", () => {
+  const files = [
+    "package.json",
+    "packages/control-plane/src/main.ts",
+    "packages/protocol/src/index.ts",
+    "packages/web-ui/src/App.tsx",
+  ];
+  expect(
+    dockerSourceInputs(
+      "Dockerfile",
+      files,
+      "COPY package.json ./\nCOPY packages/control-plane/src packages/control-plane/src\nCOPY packages/protocol/src packages/protocol/src\nCOPY --from=builder /app /app",
+    ),
+  ).toEqual([".dockerignore", "Dockerfile", ...files.slice(0, 3).sort()].sort());
+  expect(() =>
+    dockerSourceInputs("Dockerfile", files, "COPY private/secrets /run/secrets"),
+  ).toThrow("Untracked");
+});
+
+it("records one new Control Plane artifact and retains Worker/Cube provenance", () => {
+  const baseline = {
+    formatVersion: 1,
+    revision: "old",
+    contracts: { controlPlaneReplacement: 1 },
+    components: {
+      "control-plane": { imageId: "old" },
+      "supervisor-host": { sourceRevision: "worker", imageId: "worker" },
+      cubelet: { sourceRevision: "cube", imageId: "cube" },
+    },
+  };
+  const evidence = {
+    images: [
+      {
+        reference: "pi-cloud/control-plane:new",
+        imageId: "new",
+        repoDigests: [],
+        provenance: { sourceRevision: "new" },
+        policyVulnerabilities: { HIGH: { fixable: 0 }, CRITICAL: { fixable: 0 } },
+      },
+    ],
+  };
+  const next = composeScopedDeployment(baseline, {
+    scope: "control-plane",
+    revision: "new",
+    version: "new",
+    evidence,
+    evidenceDirectory: "evidence",
+  });
+  expect(next.components["supervisor-host"]).toEqual(baseline.components["supervisor-host"]);
+  expect(next.components.cubelet).toEqual(baseline.components.cubelet);
+  expect(next.components["control-plane"].imageId).toBe("new");
+  expect(next.contracts).toEqual(baseline.contracts);
+});
 
 it("accepts only the provider image difference and rejects side effects on data or other workloads", () => {
   const next = structuredClone(provider);

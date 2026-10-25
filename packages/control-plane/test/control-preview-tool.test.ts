@@ -2,7 +2,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
 import { afterEach, describe, expect, it } from "vitest";
-import { executePreviewTool } from "../src/control-preview-tool.ts";
+import { executePreviewTool } from "../src/ordinary-tools/preview-tool.ts";
 import type { AcceptedControlToolCommand } from "@pi-cloud/runtime-core/accepted-fact";
 
 const resources: Array<() => Promise<void>> = [];

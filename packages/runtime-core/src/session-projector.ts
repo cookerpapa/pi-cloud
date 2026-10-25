@@ -62,6 +62,7 @@ export class SessionProjector {
       notificationConnectionString: string;
       advertisedBaseUrl: string;
       publicationToken: string;
+      projectionGate?: { run<T>(operation: () => Promise<T>): Promise<T> };
       controlChanges?: {
         load(partitions: readonly number[], current: () => boolean): Promise<void>;
         reset(): void;
@@ -164,10 +165,13 @@ export class SessionProjector {
         const current = currentControlAssignment;
         const offsets = await loadFactReplayOffsets(options.database, topic, bounds);
         if (current())
-          await options.controlChanges?.load(
-            bounds.map((b) => b.partition),
-            current,
-          );
+          await this.#throughGate(async () => {
+            if (current())
+              await options.controlChanges?.load(
+                bounds.map((b) => b.partition),
+                current,
+              );
+          });
         return offsets;
       },
       onReset: () => {
@@ -200,99 +204,101 @@ export class SessionProjector {
           this.publication.installPartition(partition, writer);
         }
       },
-      handler: async (decoded, current, commitBeforeEffect) => {
-        const prepared = decoded.fact;
-        const raw = { ...decoded, fact: prepared.fact };
-        if (raw.fact.kind === "control_change") {
-          if (current?.() === false) return;
-          if (!options.controlChanges && raw.fact.entity === "sandbox_binding")
-            throw new Error("Sandbox control view is not installed");
-          await options.controlChanges?.consume(raw.fact, current ?? (() => true), {
-            topic: raw.topic,
-            partition: raw.partition,
-            offset: raw.offset.toString(),
-          });
-          if (current?.() !== false)
-            await options.database.transaction().execute((tx) => recordFactProjection(tx, raw));
-          return;
-        }
-        const record = raw as KafkaAcceptedFactRecord;
-        const timing = new ProjectionTiming(options.metrics);
-        let failure: unknown;
-        try {
-          if (current?.() === false) return;
-          const { fact } = record;
-          if (fact.kind === "runtime_keepalive") {
-            if (this.#projection.observes(record))
-              // This finite intent was authorized before ordered Run closure.
-              // Its original deadline remains valid after normal settlement;
-              // destination allocation closure still rejects it irreversibly.
-              options.runtimeRetention?.consume(fact, current ?? (() => true));
+      handler: (decoded, current, commitBeforeEffect) =>
+        this.#throughGate(async () => {
+          const prepared = decoded.fact;
+          const raw = { ...decoded, fact: prepared.fact };
+          if (raw.fact.kind === "control_change") {
+            if (current?.() === false) return;
+            if (!options.controlChanges && raw.fact.entity === "sandbox_binding")
+              throw new Error("Sandbox control view is not installed");
+            await options.controlChanges?.consume(raw.fact, current ?? (() => true), {
+              topic: raw.topic,
+              partition: raw.partition,
+              offset: raw.offset.toString(),
+            });
+            if (current?.() !== false)
+              await options.database.transaction().execute((tx) => recordFactProjection(tx, raw));
             return;
           }
-          if (fact.kind === "path_probe") {
-            const open = this.#projection.observes(record);
-            this.observations.record(record, open);
-            if (open) options.executionProbes?.consume(fact, current);
-            return;
-          }
-          // Normal work completion also retires this idle owner. Publish routing
-          // revocation before opening the PG boundary to a successor writer.
-          if (fact.kind === "work_finished") await options.toolCommands.consume(record, current);
-          if (fact.kind === "work_finished" || fact.kind === "execution_seal")
-            options.runtimeRetention?.forget(fact.scope.writerId);
-          const projected = await timing.measure("projection", () =>
-            this.#projection.project(record, current ?? (() => true)),
-          );
-          if (current?.() === false) return;
-          if (fact.kind === "durable_commit")
-            for (const cancellation of fact.cancellations)
-              await options.toolCommands.consume({ ...record, fact: cancellation }, current);
-          const applicable =
-            fact.kind === "execution_seal" ||
-            fact.kind === "work_finished" ||
-            (await timing.measure("boundary", () => this.#projection.accepts(record)));
-          if (current?.() === false) return;
-          if (projected?.terminal) this.eventStore.accept(fact.scope.tenantId, projected.terminal);
-          if (applicable) {
-            for (const event of projected?.events ?? factEvents(fact))
-              this.eventStore.accept(fact.scope.tenantId, event);
-            for (const cover of projected?.covers ?? [])
-              this.eventStore.cover(fact.scope.tenantId, cover.sessionId, cover.through);
-            if (projected?.canonicalThroughSequence !== undefined)
-              this.eventStore.cover(
-                fact.scope.tenantId,
-                fact.scope.sessionId,
-                projected.canonicalThroughSequence,
-              );
-            // Repeatable control references are already durable in the native
-            // projection. Admit them before committing any non-replayable effect.
-            let dispatchAdmission: Promise<boolean> | undefined;
-            const admitEffects = () =>
-              (dispatchAdmission ??= timing.measure("dispatch_commit", commitBeforeEffect!));
-            await options.controlTools?.consume(record, current, admitEffects);
-            const commands = prepared.tools;
-            if (commands.length) {
-              if ((await admitEffects()) && current?.() !== false)
-                for (const command of commands)
-                  await timing.measure("tool_route", () =>
-                    options.toolCommands.consume({ ...record, fact: command }, current),
-                  );
+          const record = raw as KafkaAcceptedFactRecord;
+          const timing = new ProjectionTiming(options.metrics);
+          let failure: unknown;
+          try {
+            if (current?.() === false) return;
+            const { fact } = record;
+            if (fact.kind === "runtime_keepalive") {
+              if (this.#projection.observes(record))
+                // This finite intent was authorized before ordered Run closure.
+                // Its original deadline remains valid after normal settlement;
+                // destination allocation closure still rejects it irreversibly.
+                options.runtimeRetention?.consume(fact, current ?? (() => true));
+              return;
             }
-            if (options.nativeChanges)
-              await timing.measure("view_notify", () =>
-                options.nativeChanges!.consume(record, current),
-              );
+            if (fact.kind === "path_probe") {
+              const open = this.#projection.observes(record);
+              this.observations.record(record, open);
+              if (open) options.executionProbes?.consume(fact, current);
+              return;
+            }
+            // Normal work completion also retires this idle owner. Publish routing
+            // revocation before opening the PG boundary to a successor writer.
+            if (fact.kind === "work_finished") await options.toolCommands.consume(record, current);
+            if (fact.kind === "work_finished" || fact.kind === "execution_seal")
+              options.runtimeRetention?.forget(fact.scope.writerId);
+            const projected = await timing.measure("projection", () =>
+              this.#projection.project(record, current ?? (() => true)),
+            );
+            if (current?.() === false) return;
+            if (fact.kind === "durable_commit")
+              for (const cancellation of fact.cancellations)
+                await options.toolCommands.consume({ ...record, fact: cancellation }, current);
+            const applicable =
+              fact.kind === "execution_seal" ||
+              fact.kind === "work_finished" ||
+              (await timing.measure("boundary", () => this.#projection.accepts(record)));
+            if (current?.() === false) return;
+            if (projected?.terminal)
+              this.eventStore.accept(fact.scope.tenantId, projected.terminal);
+            if (applicable) {
+              for (const event of projected?.events ?? factEvents(fact))
+                this.eventStore.accept(fact.scope.tenantId, event);
+              for (const cover of projected?.covers ?? [])
+                this.eventStore.cover(fact.scope.tenantId, cover.sessionId, cover.through);
+              if (projected?.canonicalThroughSequence !== undefined)
+                this.eventStore.cover(
+                  fact.scope.tenantId,
+                  fact.scope.sessionId,
+                  projected.canonicalThroughSequence,
+                );
+              // Repeatable control references are already durable in the native
+              // projection. Admit them before committing any non-replayable effect.
+              let dispatchAdmission: Promise<boolean> | undefined;
+              const admitEffects = () =>
+                (dispatchAdmission ??= timing.measure("dispatch_commit", commitBeforeEffect!));
+              await options.controlTools?.consume(record, current, admitEffects);
+              const commands = prepared.tools;
+              if (commands.length) {
+                if ((await admitEffects()) && current?.() !== false)
+                  for (const command of commands)
+                    await timing.measure("tool_route", () =>
+                      options.toolCommands.consume({ ...record, fact: command }, current),
+                    );
+              }
+              if (options.nativeChanges)
+                await timing.measure("view_notify", () =>
+                  options.nativeChanges!.consume(record, current),
+                );
+            }
+            if (current?.() !== false)
+              this.observations.record(record, this.#projection.observes(record));
+          } catch (error) {
+            failure = error;
+            throw error;
+          } finally {
+            timing.finish(record, failure);
           }
-          if (current?.() !== false)
-            this.observations.record(record, this.#projection.observes(record));
-        } catch (error) {
-          failure = error;
-          throw error;
-        } finally {
-          timing.finish(record, failure);
-        }
-      },
+        }),
     });
     this.#relay = new SessionOutboxRelay({
       database: options.publicationDatabase,
@@ -308,6 +314,9 @@ export class SessionProjector {
     });
     this.#retention = new KafkaSafeRetention({ ...options, topic, graceMs: options.retentionMs });
     this.eventStore.owner = (tenant, session) => this.owner(tenant, session);
+  }
+  #throughGate<T>(operation: () => Promise<T>): Promise<T> {
+    return this.options.projectionGate ? this.options.projectionGate.run(operation) : operation();
   }
   async #partition(tenant: string, sessionId: string): Promise<number> {
     const session = await this.options.database

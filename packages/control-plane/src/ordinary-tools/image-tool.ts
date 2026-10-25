@@ -8,7 +8,7 @@ import {
   type SandboxControlResponse,
 } from "@pi-cloud/protocol";
 import type { ImageAttachmentCodec, ImageAttachmentStore } from "@pi-cloud/session-attachments";
-import type { RegisteredControlTool } from "./control-tool-registry.ts";
+import type { RegisteredControlTool } from "../control-tool-registry.ts";
 import type { AcceptedControlToolCommand } from "@pi-cloud/runtime-core/accepted-fact";
 import {
   ImageGenerationError,

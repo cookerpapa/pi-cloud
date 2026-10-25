@@ -25,7 +25,10 @@ import {
   manifestDigest,
   digest,
   catalogSeed,
+  imageReleaseTargets,
+  dockerSourceInputs,
 } from "./lib/component-release.mjs";
+import { replaceControlPlane } from "./lib/control-plane-release.mjs";
 import { serializeRelease } from "./lib/release-lock.mjs";
 
 configureBuildProxy();
@@ -33,7 +36,7 @@ configureBuildProxy();
 const [action, scopeOrPath, candidatePath, input] = process.argv.slice(2);
 if (action === "--help") {
   console.log(
-    "prepare provider|web DIRECTORY VERSION | prepare catalog DIRECTORY CATALOG_JSON | preflight DIRECTORY | apply DIRECTORY\nScoped releases preserve unrelated workloads. First install ADR-0267 with the matched release. See docs/COMPONENT_RELEASE.md.",
+    "prepare provider|web|control-plane DIRECTORY VERSION | prepare catalog DIRECTORY CATALOG_JSON | preflight DIRECTORY | apply DIRECTORY\nScoped releases preserve unrelated workloads. See docs/COMPONENT_RELEASE.md.",
   );
   process.exit(0);
 }
@@ -107,6 +110,14 @@ function assertServingCombination(deployment, imageAlternative, catalogAlternati
   );
 }
 function inputs(scope) {
+  if (scope === "control-plane") {
+    const file = "packages/control-plane/Dockerfile";
+    return dockerSourceInputs(
+      file,
+      capture("git", ["ls-files"]).split("\n"),
+      readFileSync(resolve(root, file), "utf8"),
+    );
+  }
   if (scope === "web")
     return capture("git", [
       "ls-files",
@@ -124,8 +135,14 @@ function inputs(scope) {
 
 if (action === "prepare") {
   const scope = scopeOrPath;
-  assert(["provider", "catalog", "web"].includes(scope));
+  assert(["provider", "catalog", "web", "control-plane"].includes(scope));
   const baseline = readJson(deploymentPath);
+  if (scope === "control-plane")
+    assert.equal(
+      baseline.contracts.controlPlaneReplacement,
+      1,
+      "Install ADR-0276's matched replacement contract before a Control Plane component release",
+    );
   assertServingCombination(baseline);
   const changed = capture("git", ["diff", "--name-only", `${baseline.revision}..${revision}`])
     .split("\n")
@@ -175,9 +192,16 @@ if (action === "prepare") {
       ],
       env,
     );
-    desired = readJson(resolve(directory, "images.json"))[scope];
+    desired = readJson(resolve(directory, "images.json"))[imageReleaseTargets[scope].catalogKey];
     if (scope === "provider") values.provider.image = desired;
-    else values.images.web = { ...values.images.web, repository: "pi-cloud/web-ui", tag: version };
+    else {
+      const target = imageReleaseTargets[scope];
+      values.images[target.catalogKey] = {
+        ...values.images[target.catalogKey],
+        repository: `pi-cloud/${target.imageName}`,
+        tag: version,
+      };
+    }
   } else {
     const config = parseModelCatalogConfiguration(readJson(resolve(input)));
     const previous = parseModelCatalogConfiguration(
@@ -285,6 +309,12 @@ assertScopedManifests(
 );
 const baseline = readJson(resolve(directory, "baseline.json"));
 assert.equal(digest(baseline), candidate.baselineDigest);
+if (candidate.scope === "control-plane")
+  assert.equal(
+    baseline.contracts.controlPlaneReplacement,
+    1,
+    "The installed release lacks the Control Plane replacement contract",
+  );
 if (candidate.scope === "catalog") {
   assert.equal(
     digest(readFileSync(resolve(directory, "model-probes.json"), "utf8")),
@@ -345,7 +375,7 @@ assertServingCombination(
   baseline,
   candidate.scope !== "catalog"
     ? {
-        name: candidate.scope === "provider" ? "cli-proxy-api" : "web-ui",
+        name: imageReleaseTargets[candidate.scope].imageName,
         reference: candidate.desired,
       }
     : undefined,
@@ -388,7 +418,14 @@ save(resolve(directory, "apply-started.json"), {
   version: candidate.version,
   at: new Date().toISOString(),
 });
-if (!alreadyApplied || live.status.info.status !== "deployed") {
+const applyHelm = async () => {
+  const latest = installed(candidate.name);
+  if (
+    manifestDigest(latest.manifest) ===
+      manifestDigest(readFileSync(resolve(directory, "rendered.yaml"), "utf8")) &&
+    latest.status.info.status === "deployed"
+  )
+    return;
   execFileSync(
     helm,
     scopedHelmUpgradeArguments({
@@ -400,10 +437,102 @@ if (!alreadyApplied || live.status.info.status !== "deployed") {
     }),
     { cwd: root, stdio: "inherit" },
   );
-}
+};
+if (candidate.scope === "control-plane" && !alreadyApplied) {
+  const { createDatabase } = await import("../packages/database/src/index.ts");
+  const url = new URL(
+    readFileSync(resolve(runtimeDirectory, "secrets/database-url"), "utf8").trim(),
+  );
+  url.hostname = serviceAddress("postgres");
+  const database = createDatabase({
+    connectionString: url.toString(),
+    maxConnections: 1,
+    checkoutTimeoutMs: 5_000,
+    readTimeoutMs: 5_000,
+  });
+  const target = imageReleaseTargets["control-plane"].workload;
+  const receiptPath = resolve(directory, "control-plane-replacement.json");
+  const token = readFileSync(
+    resolve(runtimeDirectory, "secrets/supervisor-management-token"),
+    "utf8",
+  ).trim();
+  const selector = "app.kubernetes.io/component=control-plane,app.kubernetes.io/instance=pi-cloud";
+  const request = async (receipt, action) => {
+    const response = await fetch(
+      `http://${receipt.podIp}:3000/internal/v1/session-publication/replacement`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ id: receipt.id, action }),
+        signal: AbortSignal.timeout(5_000),
+      },
+    );
+    assert(response.ok, `Control Plane replacement admission failed (HTTP ${response.status})`);
+    return response.json();
+  };
+  const owners = () =>
+    database
+      .selectFrom("sandbox_control_instances")
+      .select("instance_id")
+      .where("sandbox_domain_id", "=", live.values.sandboxPlane.domainId)
+      .where("state", "=", "ready")
+      .execute()
+      .then((rows) => rows.map((r) => r.instance_id));
+  try {
+    await replaceControlPlane(
+      {
+        observe: async () => ({
+          deployment: JSON.parse(kubectl(["get", target, "-o", "json"])),
+          autoscalers: JSON.parse(kubectl(["get", "hpa", "-o", "json"])).items,
+          pods: JSON.parse(kubectl(["get", "pods", "-l", selector, "-o", "json"])).items,
+        }),
+        owners,
+        request,
+        save: async (receipt) => {
+          save(receiptPath + ".next", receipt);
+          renameSync(receiptPath + ".next", receiptPath);
+        },
+        stop: async () => kubectl(["scale", target, "--current-replicas=1", "--replicas=0"]),
+        waitAbsent: async () => {
+          if (JSON.parse(kubectl(["get", "pods", "-l", selector, "-o", "json"])).items.length)
+            kubectl(["wait", "--for=delete", "pod", "-l", selector, "--timeout=740s"], {
+              timeout: 745_000,
+            });
+        },
+        waitOwners: async (ids) => {
+          const end = Date.now() + 30_000;
+          const { sql } = await import("kysely");
+          while (
+            ids.length &&
+            (
+              await database
+                .selectFrom("sandbox_control_instances")
+                .select("instance_id")
+                .where("instance_id", "in", ids)
+                .where("state", "=", "ready")
+                .where("lease_expires_at", ">", sql`clock_timestamp()`)
+                .execute()
+            ).length
+          ) {
+            assert(Date.now() < end, "Old sandbox-owner lease has not closed");
+            await delay(250);
+          }
+        },
+        restore: async () => {
+          kubectl(["scale", target, "--current-replicas=0", "--replicas=1"]);
+          kubectl(["rollout", "status", target, "--timeout=180s"], { timeout: 185_000 });
+        },
+        apply: applyHelm,
+      },
+      existsSync(receiptPath) ? readJson(receiptPath) : undefined,
+      candidate.version,
+    );
+  } finally {
+    await database.destroy();
+  }
+} else if (!alreadyApplied || live.status.info.status !== "deployed") await applyHelm();
 if (candidate.scope !== "catalog") {
-  const workload =
-    candidate.scope === "provider" ? "statefulset/cli-proxy-api" : "deployment/pi-cloud-web";
+  const workload = imageReleaseTargets[candidate.scope].workload;
   kubectl(["rollout", "status", workload, "--timeout=180s"], {
     timeout: 185_000,
   });
@@ -445,7 +574,7 @@ assert.equal(
 if (candidate.scope !== "catalog") {
   const path = resolve(runtimeDirectory, "k3s/images.json"),
     images = readJson(path);
-  images[candidate.scope] = candidate.desired;
+  images[imageReleaseTargets[candidate.scope].catalogKey] = candidate.desired;
   save(path + ".next", images);
   renameSync(path + ".next", path);
 }

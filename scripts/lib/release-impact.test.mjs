@@ -1,5 +1,21 @@
 import { expect, it } from "vitest";
 import { releaseImpact, catalogSeed } from "./release-impact.mjs";
+it("builds only the Control Plane for ordinary tools and rejects mixed runtime changes", () => {
+  const tool = "packages/control-plane/src/ordinary-tools/registry.ts";
+  expect(
+    releaseImpact([tool, "packages/control-plane/test/new-tool.test.ts"]).matrix.include.map(
+      (i) => i.image,
+    ),
+  ).toEqual(["control-plane"]);
+  expect(releaseImpact([tool]).scope).toBe("control-plane");
+  for (const changed of [
+    "packages/control-plane/src/main.ts",
+    "packages/control-plane/src/control-tool-dispatcher.ts",
+    "packages/protocol/src/index.ts",
+    "package-lock.json",
+  ])
+    expect(releaseImpact([tool, changed]).scope).toBe("full");
+});
 it("uses narrow model gates and no unrelated images", () => {
   expect(releaseImpact([catalogSeed])).toEqual({
     scope: "catalog",

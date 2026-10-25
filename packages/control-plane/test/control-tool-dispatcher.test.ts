@@ -282,3 +282,39 @@ it("aborts the external request on owner loss and discards its late success", as
   expect(f.execute).toHaveBeenCalledTimes(1);
   expect(JSON.stringify(f.publish.mock.calls)).not.toContain("late picture");
 }, 20_000);
+
+it("retains a quiescence barrier after reply ACK until native settlement is projected", async () => {
+  const f = await fixture(false);
+  await f.dispatcher.consume(
+    intent(f),
+    () => true,
+    async () => true,
+  );
+  await vi.waitFor(() => expect(f.publish).toHaveBeenCalledTimes(1));
+  await vi.waitFor(() => expect(f.dispatcher.quiescence().active).toBe(0));
+  expect(f.dispatcher.quiescence().unsettled).toBe(1);
+  const ended = intent(f);
+  ended.fact.tools = [];
+  ended.fact.commit.writes = [
+    { type: "task", value: { ...f.task, state: { status: "terminal" } } },
+  ] as never;
+  await f.dispatcher.consume(ended);
+  expect(f.dispatcher.quiescence()).toEqual({ active: 0, unsettled: 0 });
+}, 20_000);
+
+it("does not wait for a repeatable child wait or start its timer while publication is held", async () => {
+  const f = await fixture();
+  f.execute.mockResolvedValue({ waiting: true });
+  let held = false;
+  f.dispatcher.options.canStart = () => !held;
+  await f.dispatcher.recover([1], () => true);
+  await vi.waitFor(() => expect(f.execute).toHaveBeenCalledTimes(1));
+  await vi.waitFor(() => expect(f.dispatcher.quiescence()).toEqual({ active: 0, unsettled: 0 }));
+  held = true;
+  f.dispatcher.wake(tenant, "physical");
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(f.execute).toHaveBeenCalledTimes(1);
+  held = false;
+  f.dispatcher.wake(tenant, "physical");
+  await vi.waitFor(() => expect(f.execute).toHaveBeenCalledTimes(2));
+}, 20_000);

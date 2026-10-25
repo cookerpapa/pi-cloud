@@ -1,5 +1,12 @@
-import { catalogSeed, operatorSources, modelTests } from "./release-impact.mjs";
+import {
+  catalogSeed,
+  operatorSources,
+  modelTests,
+  ordinaryControlToolSource,
+  imageReleaseTargets,
+} from "./release-impact.mjs";
 export { catalogSeed } from "./release-impact.mjs";
+export { imageReleaseTargets } from "./release-impact.mjs";
 import { isDeepStrictEqual } from "node:util";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -9,6 +16,23 @@ export const digest = (value) =>
   createHash("sha256")
     .update(typeof value === "string" ? value : JSON.stringify(value))
     .digest("hex");
+
+export function dockerSourceInputs(dockerfile, tracked, content) {
+  const inputs = new Set([dockerfile, ".dockerignore"]);
+  for (const line of content.replace(/\\\r?\n\s*/gu, " ").split("\n")) {
+    if (!line.startsWith("COPY ") || /--from=/u.test(line)) continue;
+    const tokens = line
+      .slice(5)
+      .split(/\s+/u)
+      .filter((token) => !token.startsWith("--"));
+    for (const source of tokens.slice(0, -1)) {
+      const files = tracked.filter((file) => file === source || file.startsWith(`${source}/`));
+      assert(files.length, `Untracked COPY input: ${source}`);
+      for (const file of files) inputs.add(file);
+    }
+  }
+  return [...inputs].sort();
+}
 
 export function assertOperatorRevisionChanges(files) {
   for (const file of files)
@@ -58,10 +82,11 @@ export function scopedApplyState({ baseline, next, current, helmRevision, before
 
 /** Source classifications are deliberately small; protocol changes use matched release. */
 export function assertScopedSources(scope, files) {
-  assert(["provider", "catalog", "web"].includes(scope), "Unknown release scope");
+  assert(["provider", "catalog", "web", "control-plane"].includes(scope), "Unknown release scope");
   for (const file of files) {
     assert(
       operatorSources.has(file) ||
+        (scope === "control-plane" && ordinaryControlToolSource(file)) ||
         (scope === "web" &&
           (/^packages\/web-ui\/src\/.*\.(tsx|css)$/.test(file) ||
             [
@@ -75,7 +100,7 @@ export function assertScopedSources(scope, files) {
               "scripts/run-live-development-environment-check.mjs",
               "scripts/run-live-missing-directory-check.mjs",
             ].includes(file))) ||
-        (scope !== "web" &&
+        (["provider", "catalog"].includes(scope) &&
           (file === catalogSeed || file === "deploy/provider-gateway/Dockerfile")) ||
         file === "README.md" ||
         file === "AGENTS.md" ||
@@ -142,12 +167,14 @@ export function assertScopedManifests(scope, before, after, desired) {
       container.image = desired;
       targets++;
     } else if (
-      scope === "web" &&
+      ["web", "control-plane"].includes(scope) &&
       old.kind === "Deployment" &&
-      old.metadata.name === "pi-cloud-web"
+      old.metadata.name === imageReleaseTargets[scope].workload.split("/")[1]
     ) {
-      const container = expected.spec.template.spec.containers.find((c) => c.name === "web");
-      assert(container, "Missing Web container");
+      const container = expected.spec.template.spec.containers.find(
+        (c) => c.name === imageReleaseTargets[scope].container,
+      );
+      assert(container, "Missing component container");
       container.image = desired;
       targets++;
     } else if (
@@ -207,8 +234,8 @@ export function composeScopedDeployment(
   result.version = version;
   if (scope === "catalog") result.catalogRevision = catalogRevision;
   else {
-    assert(["provider", "web"].includes(scope), "Unknown image release scope");
-    const name = scope === "provider" ? "cli-proxy-api" : "web-ui";
+    assert(imageReleaseTargets[scope], "Unknown image release scope");
+    const name = imageReleaseTargets[scope].imageName;
     assert.equal(evidence.images.length, 1, "Component evidence must cover one image");
     const image = evidence.images[0];
     assert(image.reference.startsWith(`pi-cloud/${name}:`));

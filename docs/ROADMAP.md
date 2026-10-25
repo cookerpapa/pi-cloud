@@ -1,5 +1,12 @@
 # Implementation roadmap
 
+## Scoped Control Plane publication
+
+- [x] Record ADR-0276 and keep browser update notifications out of scope.
+- [ ] Add bounded projection/Control Tool quiescence with cancel/expiry recovery.
+- [ ] Extend one-image preparation, evidence, preflight and stop-old/start-new apply.
+- [ ] Verify active Run/catalog continuity, original assets and owned cleanup; deploy.
+
 ## Show existing images to the user
 
 - [x] Record ADR-0275 and add the execution-owned path/caption Tool.

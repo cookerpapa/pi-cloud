@@ -1,5 +1,8 @@
 # Documentation map
 
+[ADR-0276](adr/0276-scoped-control-plane-releases.md) records the approved scoped
+Control Plane release and bounded quiescence work. Implementation is in progress.
+
 [ADR-0275](adr/0275-user-image-presentation.md) is deployed: `show_image`
 and shared canonical image presentation outside collapsed Tool activity.
 
