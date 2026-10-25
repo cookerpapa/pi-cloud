@@ -1,5 +1,8 @@
 # Documentation map
 
+[Slash-command proposal](reports/slash-commands-plan-20261025.md) describes
+`/usage` statistics and idle-Session manual `/compact`. It is proposed, not deployed.
+
 [ADR-0276](adr/0276-scoped-control-plane-releases.md) is deployed as
 `control-final-35d715ae`: scoped Control Plane publication and bounded quiescence.
 [Delivery](reports/control-plane-release-delivery-20261025.md) records active-Run

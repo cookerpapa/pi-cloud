@@ -1,5 +1,12 @@
 # Maintained backlog
 
+## Slash commands — proposed
+
+[Proposal](reports/slash-commands-plan-20261025.md) covers read-only `/usage` and
+idle-Session manual `/compact`, using native usage and compaction with existing
+PG work admission/Session ownership. Scope and first-version idle restriction are
+pending owner review; no runtime changes are implemented.
+
 ## Scoped Control Plane publication
 
 The owner approved [ADR-0276](adr/0276-scoped-control-plane-releases.md).
