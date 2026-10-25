@@ -1,12 +1,18 @@
 # Maintained backlog
 
-## Request failure wording — in progress
+## Request failure wording — completed
 
 Replace technical retry/native-task prose with localized user-facing copy.
 Generic native failure does not prove a network connection failure; keep specific
 Tool/timeout explanations and the original diagnostic data. This is a Web-only
 presentation change; native retry/execution behavior and public schemas stay the same.
-Validate the rendered live/cold wording and use the scoped Web release path.
+Deployed through the scoped Web path as `retry-copy-93c4d47b` (Helm 108).
+All 222 scoped tests, browser presentation/queue checks and the single-image scan
+pass. The deployed Web artifact renders the exact retry/failure payload correctly
+in an isolated browser with synthetic API/SSE responses; no failing model request
+or business mutation was manufactured. All non-Web Pod/container identities are
+unchanged and 28/28 Pods are ready. Original diagnostics remain available through
+the existing data; the Web maps known generic failure codes into localized copy.
 
 ## Long conversation presentation — completed
 
