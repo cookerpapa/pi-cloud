@@ -32,6 +32,19 @@ const other = {
 };
 const yaml = (...objects) => objects.map(stringify).join("\n---\n");
 
+it("accepts operator-only replacement repairs without relabeling the prepared runtime", () => {
+  expect(() =>
+    assertOperatorRevisionChanges([
+      "scripts/lib/control-plane-release.mjs",
+      "scripts/lib/control-plane-release.test.mjs",
+      "scripts/run-live-control-plane-release-check.mjs",
+    ]),
+  ).not.toThrow();
+  expect(() =>
+    assertOperatorRevisionChanges(["packages/control-plane/src/control-plane-quiescence.ts"]),
+  ).toThrow();
+});
+
 it("limits Control Plane scope to ordinary tool implementations and one unchanged deployment template", () => {
   expect(() =>
     assertScopedSources("control-plane", [

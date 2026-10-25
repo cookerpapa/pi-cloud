@@ -36,6 +36,7 @@ export const imageReleaseTargets = {
   },
 };
 export const modelTests = new Set([
+  "scripts/lib/control-plane-release.test.mjs",
   "scripts/lib/component-release.test.mjs",
   "scripts/lib/model-catalog-probe.test.mjs",
   "scripts/lib/release-impact.test.mjs",

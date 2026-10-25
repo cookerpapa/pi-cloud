@@ -36,6 +36,12 @@ assert.equal(
   JSON.parse(await readFile(resolve(candidate, "candidate.json"), "utf8")).scope,
   "control-plane",
 );
+// Reject stale source/artifacts/topology before creating a paid model fixture.
+execFileSync(
+  process.execPath,
+  ["--import", "tsx", "scripts/run-component-release.mjs", "preflight", candidate],
+  { stdio: "inherit", timeout: 60_000 },
+);
 await mkdir(directory, { recursive: true, mode: 0o700 });
 const report = { at: new Date().toISOString(), accepted: false, cleanupConfirmed: false };
 const save = () =>

@@ -28,7 +28,11 @@ import {
   imageReleaseTargets,
   dockerSourceInputs,
 } from "./lib/component-release.mjs";
-import { replaceControlPlane, createReplacementDatabase } from "./lib/control-plane-release.mjs";
+import {
+  replaceControlPlane,
+  createReplacementDatabase,
+  controlPlaneSnapshot,
+} from "./lib/control-plane-release.mjs";
 import { serializeRelease } from "./lib/release-lock.mjs";
 
 configureBuildProxy();
@@ -392,6 +396,44 @@ const alreadyApplied =
     desired: readFileSync(resolve(directory, "rendered.yaml"), "utf8"),
     live,
   }) === "verify";
+if (candidate.scope === "control-plane") {
+  const deployment = JSON.parse(
+    kubectl(["get", imageReleaseTargets["control-plane"].workload, "-o", "json"]),
+  );
+  const receiptPath = resolve(directory, "control-plane-replacement.json");
+  if (deployment.spec.replicas === 0) {
+    assert(existsSync(receiptPath), "Stopped Control Plane has no candidate replacement receipt");
+    const receipt = readJson(receiptPath);
+    assert.equal(receipt.uid, deployment.metadata.uid);
+    assert.equal(receipt.version, candidate.version);
+    assert(["stopping", "stopped", "applying"].includes(receipt.phase));
+  } else {
+    const snapshot = controlPlaneSnapshot(
+      deployment,
+      JSON.parse(kubectl(["get", "hpa", "-o", "json"])).items,
+      JSON.parse(
+        kubectl([
+          "get",
+          "pods",
+          "-l",
+          "app.kubernetes.io/component=control-plane,app.kubernetes.io/instance=pi-cloud",
+          "-o",
+          "json",
+        ]),
+      ).items,
+    );
+    const token = readFileSync(
+      resolve(runtimeDirectory, "secrets/supervisor-management-token"),
+      "utf8",
+    ).trim();
+    const response = await fetch(
+      `http://${snapshot.podIp}:3000/internal/v1/session-publication/replacement`,
+      { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5000) },
+    );
+    assert(response.ok, `Control Plane replacement contract unavailable (HTTP ${response.status})`);
+    assert.equal((await response.json()).version, 1);
+  }
+}
 console.log(
   JSON.stringify({
     phase: "preflight passed",
