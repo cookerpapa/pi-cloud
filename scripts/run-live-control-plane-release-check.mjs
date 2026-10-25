@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
+import { sql } from "kysely";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
 import { previewToolDefinition } from "../packages/control-plane/src/ordinary-tools/preview-tool.ts";
@@ -240,6 +241,25 @@ cat '${path}'; echo CONTROL_RELEASE_TOOL_DONE`;
     { stdio: "inherit", timeout: 1_200_000 },
   );
   report.replacementMs = Date.now() - started;
+  const receipt = JSON.parse(
+    await readFile(resolve(candidate, "control-plane-replacement.json"), "utf8"),
+  );
+  assert.equal(receipt.phase, "applied");
+  assert.equal(receipt.owners.length, 1, "Replacement must observe a positive old-owner identity");
+  assert.equal(
+    (
+      await db
+        .selectFrom("sandbox_control_instances")
+        .select("instance_id")
+        .where("instance_id", "in", receipt.owners)
+        .where("state", "=", "ready")
+        .where("lease_expires_at", ">", sql`clock_timestamp()`)
+        .execute()
+    ).length,
+    0,
+    "Old Sandbox owner is still authorized after replacement",
+  );
+  report.oldOwnerClosureVerified = true;
   assert.deepEqual(await runIdentity(run.runId), beforeRun, "Original Run ownership changed");
   assert.deepEqual(await workers(), beforeWorkers, "A Worker boot changed");
   assert.deepEqual(await vms(), beforeVms, "The active VM allocation changed");
