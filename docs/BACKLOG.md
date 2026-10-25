@@ -1133,6 +1133,12 @@ separate design questions, not an implicit part of the completed query merge.
       in future timing comparisons. Native partial-commit coalescing, transport
       and browser animation contribute separate delays; they must not all be
       labelled as internal relay time.
+      The [October 25 first-response investigation](reports/model-first-response-investigation-20261025.md)
+      confirms four consecutive local header timeouts and CLIProxyAPI's initial
+      data-frame gating. Add payload-free upstream phase timings, evaluate the
+      header-wait budget and preserve specific native failure presentation as a
+      separate repair slice. The underlying upstream delay is not established;
+      local characterization is not live recovery acceptance.
 
 - [ ] Audit historical untracked Cube Volume references independently. ADR-0226
       repairs managed cleanup-reply loss using durable node state; it cannot

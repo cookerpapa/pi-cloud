@@ -547,10 +547,10 @@ unused lifetime is 24 hours.
 The maintained source fixes Tool, model-request and shutdown budgets as a
 validated set. They are not ordinary `.env` knobs because increasing one may
 make another service kill a still-valid operation. Under ADR-0263 there is no
-overall Agent/Run duration limit or independent model-capability TTL. Source defaults are:
+overall Agent/Run duration limit or independent model-capability TTL. Deployment defaults are:
 
 ```text
-model upstream connect 120 s <= Pi response-header wait 150 s
+model upstream response-header wait 240 s <= Pi response-header wait 270 s
 model upstream stream idle 300 s
 Sandbox management/workflow request 360 s; fixed Tool handoff 5 s
 Worker natural-drain grace 30 s; retirement/settlement bound 660 s
@@ -561,6 +561,13 @@ Workspace Volume request 660 s < Volume gateway termination grace 720 s
 
 Changing these requires editing the deployment policy and running
 `npm run runtime-policy:check`; do not change only one container variable.
+The Gateway's `modelUpstreamConnectMs` includes waiting for response headers,
+not only TCP establishment. The October 25 [ADR-0263 amendment](adr/0263-model-response-and-work-lifetimes.md#october-25-header-wait-policy-adjustment)
+permits the coupled 240/270-second policy adjustment with unchanged binaries:
+compare complete Helm manifests, allow only the two Worker environment values,
+retain images and disable migration hooks. Worker Pods must restart to load them,
+using their existing graceful drain and ordered recovery. Keep the paired values
+in Helm configuration so subsequent scoped releases retain the policy.
 `PI_CLOUD_PI_TURN_TIMEOUT_MS` and `PI_CLOUD_MODEL_GATEWAY_CAPABILITY_TTL_MS` are
 removed and rejected. Model grants are revoked on work closure, Stop, ownership
 loss or boot retirement. Worker shutdown closes claims and uses existing ordered

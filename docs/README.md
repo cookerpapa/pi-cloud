@@ -1,5 +1,9 @@
 # Documentation map
 
+[Model first-response investigation](reports/model-first-response-investigation-20261025.md)
+confirms the local 120-second header timeout and CLIProxyAPI's first-data gating.
+The upstream delay remains unproven; no runtime repair has been deployed.
+
 [Slash-command proposal](reports/slash-commands-plan-20261025.md) describes
 `/usage` statistics and idle-Session manual `/compact`. It is proposed, not deployed.
 

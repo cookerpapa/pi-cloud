@@ -63,6 +63,28 @@ Native signatures at item completion override early phase observations. Model
 success/error/abort is measured at the Models boundary, separately from transport
 EOF/disconnection. Observability failures cannot change native execution.
 
+## October 25 header-wait policy adjustment
+
+The owner authorized a longer first-response wait after the
+[timeout investigation](../reports/model-first-response-investigation-20261025.md).
+Deployment policy sets Gateway response-header acquisition to 240 seconds and
+Pi's enclosing response-header wait to 270 seconds. Established-stream inactivity
+remains 300 seconds. These are transport waits, not Agent lifetime limits.
+The existing `modelUpstreamConnectMs` setting includes upstream header acquisition;
+it is not a TCP-only connection deadline.
+
+This configuration-only adjustment uses existing binary fields and validation
+ranges. Publish the coupled values together through Helm after policy checks and
+an exact rendered-manifest comparison that permits only those two Worker
+environment values. Retain all image identities, schema, provider configuration
+and native Cube resources; run no migration hooks. Serialize with the existing
+release lock and retain ordinary graceful Worker draining/fencing. Broader source,
+protocol or shutdown-policy changes still require their maintained release path.
+
+Increasing the wait does not establish why an upstream request is slow. Upstream
+connection/header/first-data timing remains a separate observability proposal;
+do not add retry ownership or treat heartbeat bytes as model progress.
+
 ## Adopt versus build
 
 Reuse pinned Pi 1.0 Models callbacks, public stream events, Harness transactions
