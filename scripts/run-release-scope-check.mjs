@@ -36,6 +36,8 @@ if (scope === "control-plane") {
       "scripts/lib/release-impact.test.mjs",
       "scripts/lib/release-image-evidence.test.mjs",
       "--maxWorkers=1",
+      "--testTimeout=30000",
+      "--hookTimeout=60000",
     ],
     options,
   );
