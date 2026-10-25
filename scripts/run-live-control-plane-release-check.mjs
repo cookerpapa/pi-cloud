@@ -86,6 +86,22 @@ const vms = () =>
     .where("state", "!=", "released")
     .orderBy("workspace_runtime_id")
     .execute();
+const machines = () =>
+  db
+    .selectFrom("development_environments")
+    .select([
+      "id",
+      "workspace_id",
+      "allocation_id",
+      "runtime_id",
+      "runtime_name",
+      "generation",
+      "desired_state",
+      "state",
+    ])
+    .where("state", "!=", "released")
+    .orderBy("id")
+    .execute();
 function pods() {
   return JSON.parse(kubectl(["get", "pods", "-o", "json"]))
     .items.filter(
@@ -166,7 +182,8 @@ cat '${path}'; echo CONTROL_RELEASE_TOOL_DONE`;
   const beforeRun = await runIdentity(run.runId),
     beforeWorkers = await workers(),
     beforeVms = await vms(),
-    beforePods = pods();
+    beforePods = pods(),
+    beforeMachines = await machines();
   assert(beforeVms.length === 1 && beforeVms[0].runtime_id);
   assert.equal(beforeRun.state, "running");
   const beforeTools = getCurrentTools(
@@ -179,7 +196,13 @@ cat '${path}'; echo CONTROL_RELEASE_TOOL_DONE`;
     previewToolDefinition.description,
     "Candidate must include the intended ordinary preview description change",
   );
-  report.before = { run: beforeRun, workers: beforeWorkers, vms: beforeVms, pods: beforePods };
+  report.before = {
+    run: beforeRun,
+    workers: beforeWorkers,
+    vms: beforeVms,
+    pods: beforePods,
+    machines: beforeMachines,
+  };
   await save();
   phase("replace only Control Plane while original Bash waits in the same VM");
   const started = Date.now();
@@ -192,6 +215,7 @@ cat '${path}'; echo CONTROL_RELEASE_TOOL_DONE`;
   assert.deepEqual(await runIdentity(run.runId), beforeRun, "Original Run ownership changed");
   assert.deepEqual(await workers(), beforeWorkers, "A Worker boot changed");
   assert.deepEqual(await vms(), beforeVms, "The active VM allocation changed");
+  assert.deepEqual(await machines(), beforeMachines, "An existing development machine changed");
   const afterPods = pods();
   assert.deepEqual(
     afterPods.filter((p) => !p.control),
@@ -208,6 +232,7 @@ cat '${path}'; echo CONTROL_RELEASE_TOOL_DONE`;
     fencingToken: true,
     cube: true,
     otherPods: true,
+    existingDevelopmentMachines: true,
   };
   await save();
   phase("continue the same Run and observe the new tool directory on its next request");
