@@ -1802,6 +1802,9 @@ export class ControlPlaneStore {
           "run.state as runState",
           "run.id as runId",
           "run.recovery_requested_at as recoveryRequestedAt",
+          "run.operation_kind as operationKind",
+          "run.lease_id as leaseId",
+          "run.started_at as startedAt",
           "session_row.id as sessionId",
           "session_row.state as sessionState",
         ])
@@ -1840,9 +1843,17 @@ export class ControlPlaneStore {
       const activePair =
         ["running", "settling"].includes(lifecycle.runState) &&
         lifecycle.sessionState === "running";
+      const unclaimedCompact =
+        lifecycle.operationKind === "compact" &&
+        lifecycle.runState === "queued" &&
+        lifecycle.leaseId === null &&
+        lifecycle.startedAt === null &&
+        lifecycle.recoveryRequestedAt === null;
       if (
         !target ||
-        (!recovering && (!activePair || !["running", "settling"].includes(target.state)))
+        (!unclaimedCompact &&
+          !recovering &&
+          (!activePair || !["running", "settling"].includes(target.state)))
       )
         throw new ControlPlaneStoreError(
           "conflict",
@@ -1872,7 +1883,7 @@ export class ControlPlaneStore {
           target_run_id: target.id,
           idempotency_key: idempotencyKey,
           kind: "cancel",
-          state: "pending",
+          state: unclaimedCompact ? "completed" : "pending",
           request_sha256: fingerprint,
           payload: {
             schemaVersion: 1,
@@ -1883,14 +1894,44 @@ export class ControlPlaneStore {
           available_at: sql<Date>`now()`,
           dispatched_at: null,
           acknowledged_at: null,
-          completed_at: null,
+          completed_at: unclaimedCompact ? sql<Date>`clock_timestamp()` : null,
           failure_code: null,
         })
         .returning(["id", "target_run_id", "created_at", "request_sha256"])
         .executeTakeFirstOrThrow();
 
-      // Replayed requests return above, so they never withdraw later inputs.
-      await requestInputReturn(transaction, this.#tenantId, sessionId, controlRequest.id);
+      if (unclaimedCompact) {
+        // The locked Run has never owned a writer. Settle its existing queue row
+        // atomically with the Stop receipt; no native task or VM needs starting.
+        await transaction
+          .updateTable("runs")
+          .set({
+            state: "cancelled",
+            ready_at: null,
+            settled_at: sql`clock_timestamp()`,
+            stop_reason: "compact_cancelled_before_start",
+            row_version: sql`row_version+1`,
+            updated_at: sql`clock_timestamp()`,
+          })
+          .where("tenant_id", "=", this.#tenantId)
+          .where("id", "=", target.id)
+          .execute();
+        await transaction
+          .insertInto("run_transitions")
+          .values({
+            id: this.#idGenerator(),
+            tenant_id: this.#tenantId,
+            run_id: target.id,
+            from_state: "queued",
+            to_state: "cancelled",
+            reason: "compact_cancelled_before_start",
+            occurred_at: sql`clock_timestamp()`,
+          })
+          .execute();
+      } else {
+        // Replayed requests return above, so they never withdraw later inputs.
+        await requestInputReturn(transaction, this.#tenantId, sessionId, controlRequest.id);
+      }
       await transaction
         .updateTable("sessions")
         .set({ row_version: sql`row_version + 1`, updated_at: sql`clock_timestamp()` })

@@ -1400,6 +1400,18 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     try {
       await api.cancelTurn(state.session.sessionId, targetTurnId, newIdempotencyKey("cancel"));
       update({ type: "turn.cancellation.requested", turnId: targetTurnId });
+      if (coldCompactActive) {
+        // An unclaimed command settles directly in PG and has no native SSE tail.
+        const sessionId = state.session.sessionId;
+        const [conversation, compact] = await Promise.all([
+          api.getConversation(sessionId),
+          api.getCompaction(sessionId, targetTurnId),
+        ]);
+        if (renderedState.current.session?.sessionId === sessionId) {
+          if (compact) commands.acceptedCompact(compact);
+          update({ type: "conversation.loaded", conversation, preserveOlderHistory: true });
+        }
+      }
     } catch (error: unknown) {
       update({ type: "api.error", message: errorMessage(error, t) });
     } finally {

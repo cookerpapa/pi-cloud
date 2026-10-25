@@ -364,8 +364,11 @@ export class ConversationReader {
         .where((eb) =>
           eb.or([eb("run.state", "!=", "queued"), eb("run.operation_kind", "=", "compact")]),
         )
-        .where(
-          sql<boolean>`run.operation_kind='compact' or not (run.state='cancelled' and run.started_at is null)`,
+        .where((eb) =>
+          eb.or([
+            eb("run.operation_kind", "=", "compact"),
+            eb.not(eb.and([eb("run.state", "=", "cancelled"), eb("run.started_at", "is", null)])),
+          ]),
         )
         .where("run.mailbox_position", "is not", null)
         .$if(anchor?.session_id === node.sessionId, (query) =>

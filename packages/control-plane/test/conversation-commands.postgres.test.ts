@@ -58,6 +58,69 @@ async function fixture() {
   return { tenant, store, project, session };
 }
 
+it("compact history stays scoped while including queued and pre-start-cancelled commands", async () => {
+  const own = await fixture(),
+    foreign = await fixture();
+  const sibling = await own.store.createSession(
+    own.project.projectId,
+    own.project.workspaceId,
+    "sibling",
+    "elastic",
+  );
+  for (const [store, id] of [
+    [foreign.store, foreign.session.sessionId],
+    [own.store, sibling.sessionId],
+  ] as const) {
+    const run = await store.acceptTurn(id, randomUUID(), { prompt: "unrelated accepted work" });
+    // Only read-model metadata is needed; do not admit an execution writer.
+    await db
+      .updateTable("runs")
+      .set({ state: "completed", started_at: new Date(), settled_at: new Date() })
+      .where("id", "=", run.runId)
+      .execute();
+  }
+  expect((await own.store.getConversation(own.session.sessionId)).turns).toEqual([]);
+  const service = new ConversationCompactService({ database: db });
+  const command = await service.accept(
+    own.store,
+    own.tenant.tenantId,
+    own.session.sessionId,
+    randomUUID(),
+    {},
+  );
+  expect(
+    (await own.store.getConversation(own.session.sessionId)).turns.map((t) => t.runId),
+  ).toEqual([command.runId]);
+  const stopKey = randomUUID();
+  const stopped = await own.store.acceptTurnCancellation(
+    own.session.sessionId,
+    command.turnId,
+    stopKey,
+    {},
+  );
+  expect(
+    (await own.store.acceptTurnCancellation(own.session.sessionId, command.turnId, stopKey, {}))
+      .replayed,
+  ).toBe(true);
+  expect(
+    await db
+      .selectFrom("turn_control_requests")
+      .select(["state", "attempts"])
+      .where("id", "=", stopped.controlRequestId)
+      .executeTakeFirst(),
+  ).toEqual({ state: "completed", attempts: 0 });
+  expect(
+    await db
+      .selectFrom("runs")
+      .select(["lease_id", "worker_id"])
+      .where("id", "=", command.runId)
+      .executeTakeFirst(),
+  ).toEqual({ lease_id: null, worker_id: null });
+  const history = await own.store.getConversation(own.session.sessionId);
+  expect(history.turns).toHaveLength(1);
+  expect(history.turns[0]?.operation).toMatchObject({ kind: "compact", state: "cancelled" });
+});
+
 it("reads native current usage and context without admitting work or hydrating images", async () => {
   const f = await fixture();
   const empty = await f.store.getConversationUsage(f.session.sessionId);

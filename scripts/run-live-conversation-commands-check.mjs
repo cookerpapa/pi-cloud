@@ -19,10 +19,11 @@ import {
   runtimeDirectory,
   runtimeEnvironment,
   serviceAddress,
-  kubectl,
 } from "./lib/production-kubernetes.mjs";
 import { nativeHistory, nativeMessages } from "./lib/native-session-history.mjs";
 import { purgeOwnedAcceptanceTenant } from "./lib/owned-acceptance-cleanup.mjs";
+import { crashOwnedWorker } from "./lib/owned-worker-crash.mjs";
+import { withChromePage } from "./lib/chrome-cdp.mjs";
 
 assert.equal(process.env.PI_CLOUD_LIVE_COMMANDS_CHECK, "1", "Authorize owned Luna/Cube fixtures");
 const directory = resolve(
@@ -85,7 +86,7 @@ const scopeOf = async (session) => {
   return {
     tenantId: tenant.tenantId,
     sessionId: row.pi_session_id,
-    conversationId: row.pi_conversation_id,
+    conversationId: Number(row.pi_conversation_id ?? 1),
   };
 };
 
@@ -185,12 +186,78 @@ try {
   await seed(session);
   phase("cold usage and manual compaction without Cube");
   const before = await api.getConversationUsage(session.sessionId);
+  assert.deepEqual(
+    (await api.getConversation(session.sessionId)).turns,
+    [],
+    "No unrelated conversation may enter this new fixture",
+  );
   assert.equal((await runs(session.sessionId)).length, 0);
-  const key = newIdempotencyKey("cold-compact");
-  const cold = await api.compactConversation(
-    session.sessionId,
-    "Keep project codename and architecture decisions.",
-    key,
+  let cold, key;
+  await withChromePage(
+    { profilePrefix: "pi-cloud-commands-", width: 1280, height: 900 },
+    async (page) => {
+      // Only authentication is supplied by the fixture. All responses and SSE are live.
+      await page.send("Page.addScriptToEvaluateOnNewDocument", {
+        source: `
+      localStorage.setItem("pi-cloud:ui-language", "zh-CN");
+      const originalFetch=window.fetch.bind(window);
+      window.fetch=async (input,init={})=>{
+        const url=new URL(input instanceof Request?input.url:String(input),location.href);
+        const headers=new Headers(init.headers??(input instanceof Request?input.headers:undefined));
+        const owned=url.origin===location.origin && url.pathname.startsWith('/v1/');
+        if(owned)headers.set('authorization',${JSON.stringify("Bearer " + tenant.credential.token)});
+        const compact=owned&&url.pathname.endsWith('/compact')&&init.method==='POST';
+        if(compact)window.commandKey=headers.get('idempotency-key');
+        const response=await originalFetch(input,{...init,headers});
+        if(compact&&response.ok)window.commandAccepted=await response.clone().json();
+        return response;
+      };`,
+      });
+      await page.navigate(
+        `http://127.0.0.1:${runtimeEnvironment().PI_CLOUD_HTTP_PORT}/?session=${session.sessionId}`,
+      );
+      await page.waitFor("document.querySelector('.product-composer textarea')");
+      await page.waitFor(
+        "document.querySelector('.product-topbar-title strong')?.textContent==='Synthetic command context'",
+      );
+      const enter = async (text) => {
+        await page.evaluate(
+          `(()=>{const input=document.querySelector('.product-composer textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,${JSON.stringify(text)});input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();})()`,
+        );
+        await page.evaluate(
+          "new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))",
+        );
+        await page.send("Input.dispatchKeyEvent", {
+          type: "keyDown",
+          key: "Enter",
+          code: "Enter",
+          windowsVirtualKeyCode: 13,
+        });
+        await page.send("Input.dispatchKeyEvent", {
+          type: "keyUp",
+          key: "Enter",
+          code: "Enter",
+          windowsVirtualKeyCode: 13,
+        });
+      };
+      try {
+        await enter("/usage");
+        await page.waitFor("document.querySelector('.product-usage-panel .product-usage-grid')");
+        assert.equal((await runs(session.sessionId)).length, 0);
+        await page.screenshot(resolve(directory, "usage.png"));
+        await enter("/compact Keep project codename and architecture decisions.");
+        await page.waitFor("window.commandAccepted");
+        cold = await page.evaluate("window.commandAccepted");
+        key = await page.evaluate("window.commandKey");
+        assert.equal((await compactSettled(session, cold.commandId)).state, "applied");
+        await page.waitFor("document.querySelector('.product-compact-status.applied')", 30000);
+        await page.screenshot(resolve(directory, "compact-applied.png"));
+        report.checks.browser = { liveUsage: true, inputCompact: true, appliedVisible: true };
+      } catch (error) {
+        await page.screenshot(resolve(directory, "browser-failure.png"));
+        throw error;
+      }
+    },
   );
   assert.equal(cold.initialOperation, true);
   assert.equal(
@@ -323,31 +390,7 @@ try {
       return r?.state === "summarizing" ? r : false;
     }, "native compaction admission");
     const own = (await runs(session.sessionId)).find((r) => r.id === accepted.runId);
-    const others = await db
-      .selectFrom("runs")
-      .select("id")
-      .where("worker_id", "=", own.worker_id)
-      .where("id", "!=", own.id)
-      .where("state", "in", ["queued", "running", "settling", "cancel_requested"])
-      .execute();
-    assert.equal(others.length, 0, "Do not disturb unrelated active work");
-    const pods = JSON.parse(
-      kubectl(["get", "pods", "-l", "app.kubernetes.io/component=trusted-pi-worker", "-o", "json"]),
-    ).items;
-    const worker = await db
-      .selectFrom("workers")
-      .select("supervisor_id")
-      .where("id", "=", own.worker_id)
-      .executeTakeFirstOrThrow();
-    const pod = pods.find(
-      (p) => p.metadata.name === worker.supervisor_id && !p.metadata.deletionTimestamp,
-    );
-    assert(pod, "Worker ownership must map exactly to the target Pod");
-    // Kill the Node runner, not PID 1 (tsx); Kubernetes restarts its container.
-    const killScript = `const fs=require('node:fs');const pids=fs.readdirSync('/proc').filter(p=>/^[0-9]+$/.test(p)&&p!=='1').filter(p=>{try{return fs.readFileSync('/proc/'+p+'/cmdline','utf8').split('\\0').includes('/app/packages/supervisor-host/src/main.ts')}catch(e){if(e.code==='ENOENT')return false;throw e}});if(pids.length!==1)throw Error('Expected one Agent Runner');process.kill(Number(pids[0]),'SIGKILL')`;
-    try {
-      kubectl(["exec", pod.metadata.name, "-c", "pi-worker", "--", "node", "-e", killScript]);
-    } catch {}
+    const crash = await crashOwnedWorker(db, tenant.tenantId, accepted.runId);
     assert.equal((await compactSettled(session, accepted.commandId)).state, "applied");
     assert.equal((await settled(accepted.runId)).state, "completed");
     const recovered = await readNativeCompaction(db, scope, accepted.commandId);
@@ -356,7 +399,7 @@ try {
       (await runs(session.sessionId)).find((r) => r.id === accepted.runId).lease_id,
       own.lease_id,
     );
-    report.checks.recovery = { sameRun: true, sameTask: true, successorLease: true };
+    report.checks.recovery = { sameRun: true, sameTask: true, successorLease: true, crash };
   }
   report.accepted = true;
 } catch (error) {
