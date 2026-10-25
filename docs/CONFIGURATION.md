@@ -1,6 +1,17 @@
 # Configuration
 
-## Image generation
+## Image generation and display
+
+ADR-0275 adds `show_image({path, caption?})` whenever Session image storage is
+configured. It reads an existing Sandbox file through the bound guest image I/O;
+no image-provider configuration or generation request is needed. Paths may be
+absolute or relative to the current working directory. Each successful call
+retains an immutable image in the conversation, even if the Workspace source is
+later replaced or removed. Both `show_image` and `generate_image` appear inline
+outside collapsed Tool activity. Details retain paths and arguments; clicking
+the image opens it. Captions are plain text. Ordinary `read` remains model-facing.
+Live projection and cold history derive scoped image addresses from the canonical
+Tool Result's attachment references; native history and Kafka contain no pixels.
 
 ADR-0274 adds the ordinary `generate_image` Tool. Set
 `controlPlane.imageGeneration.model` to an available Images model; an empty

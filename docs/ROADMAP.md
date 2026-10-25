@@ -1,5 +1,12 @@
 # Implementation roadmap
 
+## Show existing images to the user
+
+- [x] Record ADR-0275 and add the execution-owned path/caption Tool.
+- [x] Derive public image addresses from final native image references on live and cold paths.
+- [ ] Verify collapsed activity, chronological placement, captions, cancellation and retained snapshots.
+- [ ] Publish matched artifacts and run real screenshot/browser acceptance with existing assets preserved.
+
 ## Explicit image-generation Tool
 
 - [x] Verify subscription-backed Images generation, reference editing and alpha.
@@ -14,6 +21,7 @@
 calls and live/cold image display pass. The exact existing-conversation request
 was sent, but reported provider refusal and produced no image; it is not a passed
 character-generation acceptance. The provider runtime-policy upgrade path is corrected.
+The owner subsequently reported successful generation in the same conversation.
 
 ## Preview answer links
 

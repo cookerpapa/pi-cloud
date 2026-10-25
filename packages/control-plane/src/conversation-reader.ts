@@ -382,6 +382,7 @@ export class ConversationReader {
     const transcriptByTurnId = await readCanonicalPiTurnTranscripts(this.#database, {
       tenantId: this.#tenantId,
       turnIds,
+      imageSessionId: sessionId,
     });
     const turns = includedRows.map((row) => {
       const turnState = turnStateForRun(row.runState);

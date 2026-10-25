@@ -377,6 +377,22 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
 };
 window.renderGeneratedImage=()=>root.render(React.createElement(Markdown,null,
   '![Character design](/v1/sessions/10000000-0000-4000-8000-000000000001/images/10000000-0000-4000-8000-000000000002)'));
+window.renderShownImage=(toolName='show_image',status='running')=>{
+  window.requestAnimationFrame=nativeRaf;window.cancelAnimationFrame=nativeCancelRaf;
+  const tool={kind:'tool',key:'shown',toolCallId:'task:2',toolName,input:{path:'/workspace/screenshot.png',caption:'页面效果 <script>'},
+    output:{content:[{type:'text',text:'Image prepared from /workspace/screenshot.png'},
+      {type:'image',imageId:'10000000-0000-4000-8000-000000000002',mimeType:'image/png',
+        previewPath:'/v1/sessions/10000000-0000-4000-8000-000000000001/images/10000000-0000-4000-8000-000000000002'}],
+      details:{imageCaption:'页面效果 <script>'}},status:'completed',firstSequence:2,lastSequence:3,
+    startedAt:'2026-10-25T00:00:00.000Z',completedAt:'2026-10-25T00:00:01.000Z'};
+  root.render(React.createElement(I18nProvider,{initialLanguage:'zh-CN'},React.createElement(ConversationTurn,{
+    key:toolName+status,turn:{runId:'shown-run',turnId:'shown-turn',prompt:'给我看看页面效果',acceptedAt:null,mailboxPosition:1,
+      status,startedSequence:1,terminalSequence:status==='completed'?6:null,stopReason:status==='completed'?'stop':null,failure:null,cancellation:null,
+      items:[{...tool,key:'before',toolCallId:'task:1',toolName:'bash',input:{command:'take screenshot'},output:'Ready'},tool,
+        {...tool,key:'after',toolCallId:'task:3',toolName:'bash',input:{command:'continue work'},output:'Done',firstSequence:4,lastSequence:5}]
+    }
+  })));
+};
 window.fixtureReady = true;
 `;
 const server = await createServer({
@@ -1715,11 +1731,63 @@ try {
       await page.evaluate("document.querySelector('.product-session-image img').alt"),
       "Character design",
     );
+    for (const toolName of ["show_image", "generate_image"]) {
+      for (const status of ["running", "completed"]) {
+        await page.evaluate(
+          `renderShownImage(${JSON.stringify(toolName)},${JSON.stringify(status)})`,
+        );
+        await page.waitFor("document.querySelector('.product-tool-images img')?.naturalWidth > 0");
+        assert.equal(await page.evaluate("document.querySelectorAll('img').length"), 1);
+        assert.equal(
+          await page.evaluate(
+            "document.querySelector('.product-tool-images').closest('.product-activity-group')",
+          ),
+          null,
+        );
+        assert.equal(
+          await page.evaluate(
+            "document.querySelector('.product-activity-group-toggle').getAttribute('aria-expanded')",
+          ),
+          "false",
+        );
+        assert.equal(
+          await page.evaluate("document.body.innerText.includes('/workspace/screenshot.png')"),
+          false,
+        );
+        assert.equal(
+          await page.evaluate("document.querySelector('figcaption').textContent"),
+          "页面效果 <script>",
+        );
+        assert.equal(await page.evaluate("document.querySelector('figcaption script')"), null);
+        assert.equal(
+          await page.evaluate(
+            "document.querySelector('.product-tool-images a').getAttribute('target')",
+          ),
+          "_blank",
+        );
+        await page.evaluate("document.querySelector('.product-activity-group-toggle').click()");
+        await page.waitFor(`document.querySelector('[data-tool-name=${toolName}] details')`);
+        assert.equal(
+          await page.evaluate(
+            `document.querySelector('[data-tool-name=${toolName}] details').open`,
+          ),
+          false,
+        );
+        await page.evaluate(
+          `document.querySelector('[data-tool-name=${toolName}] summary').click()`,
+        );
+        await page.waitFor("document.body.innerText.includes('/workspace/screenshot.png')");
+        assert.equal(await page.evaluate("document.querySelectorAll('img').length"), 1);
+      }
+    }
+    await page.screenshot("/tmp/pi-cloud-show-image-presentation.png");
   });
   console.log(
     JSON.stringify({
       accepted: true,
       retainedSessionImageLoads: true,
+      canonicalToolImagesOutsideCollapsedActivity: true,
+      imageCaptionPlainTextAndDetailsNoDuplicate: true,
       previewUsesNamedAnswerLink: true,
       previewDetailsKeepPortAndResult: true,
       previewHasNoFallbackOrDuplicateCard: true,

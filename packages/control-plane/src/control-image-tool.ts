@@ -24,12 +24,99 @@ type Args = {
 };
 type ImageIoRequest = Extract<SandboxControlRequest, { type: "tool_sandbox.image_io" }>;
 type ImageIoResult = Extract<SandboxControlResponse, { type: "tool_sandbox.image_io_result" }>;
+type ImageToolsRuntime = {
+  images: { codec: ImageAttachmentCodec; store: ImageAttachmentStore };
+  imageIo(
+    command: AcceptedControlToolCommand,
+    action: ImageIoRequest["action"],
+    signal: AbortSignal,
+  ): Promise<ImageIoResult>;
+};
+
+export const showImageToolDefinition = {
+  name: "show_image",
+  description:
+    "Display an existing image from the current Sandbox to the user in the conversation. Use this for screenshots, diagrams, artwork or an existing generated file when the user wants to see it, or when showing a visual result helps explain your work. This Tool does not generate or modify images. The application presents the returned image inline even when Tool details are collapsed; describe it without embedding a duplicate Markdown image. Use read for model-only visual inspection.",
+  requiresEnvironment: true,
+  parameters: {
+    type: "object",
+    properties: {
+      path: {
+        type: "string",
+        minLength: 1,
+        maxLength: 4096,
+        description: "Image file path, absolute or relative to the current working directory.",
+      },
+      caption: {
+        type: "string",
+        maxLength: 2000,
+        description: "Optional short caption shown with the image.",
+      },
+    },
+    required: ["path"],
+    additionalProperties: false,
+  },
+};
+
+export function createShowImageTool(options: ImageToolsRuntime): RegisteredControlTool {
+  return {
+    definition: showImageToolDefinition,
+    replay: "never",
+    async execute(command, current, outerSignal) {
+      const signal = outerSignal ?? new AbortController().signal;
+      const args = command.arguments as { path: string; caption?: string };
+      const failure = () => ({
+        isError: true,
+        result: {
+          content: [
+            {
+              type: "text" as const,
+              text: "image_display_unavailable: The image could not be read or prepared for display.",
+            },
+          ],
+        },
+      });
+      if (!command.bindingId || !current()) return failure();
+      try {
+        signal.throwIfAborted();
+        const prepared = await options.imageIo(command, { kind: "read", path: args.path }, signal);
+        const image = await options.images.codec.unpack<{
+          type: "image";
+          data: string;
+          mimeType: string;
+        }>(
+          { tenantId: command.scope.tenantId, runId: command.scope.runId },
+          { type: "pi_cloud_image_v1", attachment: prepared.image },
+          signal,
+        );
+        signal.throwIfAborted();
+        if (!current()) return failure();
+        const caption = args.caption?.trim();
+        return {
+          result: {
+            content: [
+              {
+                type: "text" as const,
+                text: `Image prepared for inline display from ${args.path}. Describe it without embedding a duplicate Markdown image.`,
+              },
+              image,
+            ],
+            ...(caption ? { details: { imageCaption: caption } } : {}),
+          },
+        };
+      } catch {
+        signal.throwIfAborted();
+        return failure();
+      }
+    },
+  };
+}
 
 /** The model sees only the same four arguments as Codex's image-generation Tool. */
 export const imageToolDefinition = {
   name: "generate_image",
   description:
-    "Generate or edit one image using the configured image service. Provide prompt and optionally reference images: use referenced_image_paths for files accessible in the current Sandbox, or num_last_images_to_include for the last 1–5 images visible in this Conversation. Never use both. Omit both for a new image from text. Inspect local references with read before editing. Set transparent_background for transparent assets. The Tool saves a new file under generated_images in the current working directory and returns the image and actual path. Do not call again merely because a previous result is UNKNOWN. Use the returned preview path to show the image, and copy the saved file into the project when needed.",
+    "Generate or edit one image using the configured image service. Provide prompt and optionally reference images: use referenced_image_paths for files accessible in the current Sandbox, or num_last_images_to_include for the last 1–5 images visible in this Conversation. Never use both. Omit both for a new image from text. Inspect local references with read before editing. Set transparent_background for transparent assets. The Tool saves a new file under generated_images in the current working directory and returns the image and actual path. The application presents the returned image inline; do not embed another copy or call show_image merely to repeat it. Copy the saved file into the project when needed. Do not call again merely because a previous result is UNKNOWN.",
   requiresEnvironment: true,
   parameters: {
     type: "object",
@@ -99,17 +186,13 @@ export async function recentConversationImages(
   );
 }
 
-export function createImageTool(options: {
-  database: Kysely<Database>;
-  images: { codec: ImageAttachmentCodec; store: ImageAttachmentStore };
-  client: Pick<ImageGenerationClient, "generate">;
-  imageIo(
-    command: AcceptedControlToolCommand,
-    action: ImageIoRequest["action"],
-    signal: AbortSignal,
-  ): Promise<ImageIoResult>;
-  recentImages?: typeof recentConversationImages;
-}): RegisteredControlTool {
+export function createImageTool(
+  options: ImageToolsRuntime & {
+    database: Kysely<Database>;
+    client: Pick<ImageGenerationClient, "generate">;
+    recentImages?: typeof recentConversationImages;
+  },
+): RegisteredControlTool {
   let active = 0;
   return {
     definition: imageToolDefinition,
@@ -205,17 +288,14 @@ export function createImageTool(options: {
           data: string;
           mimeType: string;
         }>(scope, { type: "pi_cloud_image_v1", attachment: image }, signal);
-        const previewPath = `/v1/sessions/${command.scope.sessionId}/images/${image.id}`;
         const text = result?.path
-          ? `Image generated and saved to ${result.path}.\nImage preview: ${previewPath}\nUse this preview path when showing the image; use the saved file in your project.`
-          : `Image generated and retained in this conversation, but its Workspace file was not saved.\nImage preview: ${previewPath}\nDo not regenerate merely to retry saving the image.`;
+          ? `Image generated and saved to ${result.path}. The application presents the returned image inline; do not embed a duplicate. Use the saved file in your project.`
+          : `Image generated and retained for inline display in this conversation, but its Workspace file was not saved. Do not regenerate merely to retry saving the image.`;
         return {
           result: {
             content: [{ type: "text" as const, text }, content],
             details: {
               generatedImage: {
-                previewPath,
-                imageId: image.id,
                 ...(result?.path ? { path: result.path } : {}),
                 fileSaved: Boolean(result?.path),
                 referenceCount: refs.length,

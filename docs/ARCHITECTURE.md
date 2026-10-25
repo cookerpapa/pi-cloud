@@ -1475,6 +1475,13 @@ assistant entry in the current Conversation. File reads, normalization and
 exclusive generated-file placement execute in Cube through bound image I/O.
 Canonical image content retains the existing S3/Worker codec boundary; an
 authenticated Session image route serves only objects retained by native history.
+ADR-0275 adds `show_image` for explicit presentation of existing Workspace images.
+Both image tools use one public image-content shape, derived from canonical
+attachment parts after Worker Harness processing. Live display selectors reference
+the same native commit; cold reconstruction uses the current public Session view.
+The browser places image results after their producing Tool, outside collapsed
+activity groups. Read remains model inspection. No Markdown scanning, extra event
+store or new image-generation service is involved. Publication is in progress.
 Non-replayable ordinary effects confirm the existing Kafka dispatch commit before
 execution. A recovered unfinished intent returns UNKNOWN without another remote
 request, including when prior admission cannot be proved. Reply retries keep the

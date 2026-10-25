@@ -40,6 +40,57 @@ const result = (callId: string, text: string, details?: unknown) => ({
   ],
 });
 
+it("reconstructs image addresses from canonical pixels in the requested Session view", () => {
+  const imageId = "10000000-0000-4000-8000-000000000001";
+  const value = result("call", "Shown", {
+    generatedImage: { previewPath: "/wrong-executor-path" },
+    imageCaption: "Screenshot",
+  });
+  const message = value.model[0]!;
+  const imageResult = {
+    ...value,
+    model: [
+      {
+        ...message,
+        toolName: "generate_image",
+        content: [
+          ...message.content,
+          {
+            type: "pi_cloud_image_v1",
+            attachment: {
+              id: imageId,
+              sha256: "a".repeat(64),
+              byteLength: 4,
+              mimeType: "image/png",
+            },
+          },
+        ],
+      },
+    ],
+  };
+  const view = projectDurableTranscript(
+    [row(8, imageResult, "pi.tool")],
+    terminal,
+    new Set(),
+    new Map(),
+    "fork-view",
+  );
+  expect(view.items[0]).toMatchObject({
+    kind: "tool",
+    output: {
+      content: [
+        { type: "text", text: "Shown" },
+        {
+          type: "image",
+          imageId,
+          previewPath: `/v1/sessions/fork-view/images/${imageId}`,
+          mimeType: "image/png",
+        },
+      ],
+    },
+  });
+});
+
 it("reconstructs native text phases, hosted search, compaction, retry and Tool details without a second transcript", () => {
   const entries = [
     row(

@@ -4041,3 +4041,16 @@ body.product-panel-resizing {
   font-size: 22px;
   cursor: pointer;
 }
+.product-image-result {
+  margin: 12px 0;
+  max-width: 100%;
+}
+.product-image-result img {
+  display: block;
+  border-radius: 8px;
+}
+.product-image-result figcaption {
+  margin-top: 6px;
+  font-size: 0.9rem;
+  opacity: 0.8;
+}

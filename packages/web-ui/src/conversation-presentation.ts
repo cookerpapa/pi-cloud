@@ -1,7 +1,9 @@
 import type { TranscriptItem } from "./session-view.ts";
 import type { ToolTranscriptItem } from "./ToolActivity.tsx";
+import { inlineToolImages } from "./ToolImages.tsx";
 
 export type ConversationPresentationRow =
+  | { kind: "images"; key: string; item: ToolTranscriptItem }
   | { kind: "user"; key: string; item: Extract<TranscriptItem, { kind: "user" }> }
   | {
       kind: "text";
@@ -63,7 +65,11 @@ export function deriveConversationPresentationRows(
     if (item.kind === "tool") {
       const tools: ToolTranscriptItem[] = [item];
       index += 1;
-      while (index < items.length && items[index]?.kind === "tool") {
+      while (
+        !inlineToolImages(tools.at(-1)!).length &&
+        index < items.length &&
+        items[index]?.kind === "tool"
+      ) {
         tools.push(items[index] as ToolTranscriptItem);
         index += 1;
       }
@@ -72,6 +78,9 @@ export function deriveConversationPresentationRows(
         key: `activity:${tools[0]!.key}`,
         items: tools,
       });
+      const last = tools.at(-1)!;
+      if (inlineToolImages(last).length)
+        rows.push({ kind: "images", key: `images:${last.key}`, item: last });
       continue;
     }
     if (item.kind === "hosted_search") {

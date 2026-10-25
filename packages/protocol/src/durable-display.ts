@@ -1,5 +1,6 @@
 import { parsePiCloudEvent, type PiCloudEvent } from "./event-envelope.ts";
 import type { DurableSessionCommit } from "./durable-session.ts";
+import { toolImageView, type ToolImageView } from "./tool-image-view.ts";
 
 type TextEvent = Extract<PiCloudEvent, { type: "assistant.text.delta" }>;
 export type DurableTextDescription = Readonly<{
@@ -48,7 +49,15 @@ export type DurableToolEndDescription = Readonly<{
         kind: "parts";
         parts: readonly (
           | Extract<DurableTextDescription["source"], { kind: "write" }>
-          | { kind: "image"; mimeType: string }
+          | {
+              kind: "image";
+              mimeType: string;
+              source?: Readonly<{
+                kind: "write";
+                ordinal: number;
+                path: readonly (string | number)[];
+              }>;
+            }
         )[];
         maximumBytes: number;
         details?: Readonly<{ kind: "write"; ordinal: number; path: readonly (string | number)[] }>;
@@ -105,6 +114,7 @@ export function parseDurableDisplayDescription(value: unknown): DurableDisplayDe
       if (part.kind === "image") {
         if (typeof part.mimeType !== "string" || !part.mimeType || part.mimeType.length > 256)
           throw new Error("Invalid Tool image description");
+        if (part.source !== undefined) writeSource(part.source, false);
       } else writeSource(part, true);
     }
     if (output.details !== undefined) writeSource(output.details, false);
@@ -142,10 +152,15 @@ export function resolveDurableDisplay(
     return parsePiCloudEvent({ ...tool.event, payload: { ...tool.event.payload, input } });
   }
   let output = "Tool task ended without a result";
+  const images: ToolImageView[] = [];
   if (tool.output.kind === "parts") {
     output = tool.output.parts
       .map((part) => {
-        if (part.kind === "image") return `[Image: ${part.mimeType}]`;
+        if (part.kind === "image") {
+          if (part.source)
+            images.push(toolImageView(tool.event.sessionId, selectedValue(commit, part.source)));
+          return `[Image: ${part.mimeType}]`;
+        }
         const value = selectedValue(commit, part);
         if (typeof value !== "string" || part.end > value.length)
           throw new Error("Tool display output range is invalid");
@@ -173,7 +188,7 @@ export function resolveDurableDisplay(
     payload: {
       ...tool.event.payload,
       output: {
-        content: [{ type: "text", text: output }],
+        content: [{ type: "text", text: output }, ...images],
         ...(details === undefined ? {} : { details }),
       },
     },

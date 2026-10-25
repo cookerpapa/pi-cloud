@@ -2,6 +2,7 @@ import { UploadCards } from "./UploadCards.tsx";
 import type { PiCloudApi } from "./api.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { deriveConversationPresentationRows } from "./conversation-presentation.ts";
+import { ToolImages } from "./ToolImages.tsx";
 import { Markdown } from "./Markdown.tsx";
 import type { TranscriptItem, TurnView } from "./session-view.ts";
 import { compactToolSummary, ToolActivity, type ToolTranscriptItem } from "./ToolActivity.tsx";
@@ -451,6 +452,10 @@ export function ConversationTurn({
           <div className="product-message product-assistant-message">
             <div className="product-assistant-content">
               {rows.map((row, index) => {
+                if (row.kind === "images")
+                  return (
+                    <ToolImages key={row.key} item={row.item} onLoad={onPresentationProgress} />
+                  );
                 if (row.kind === "user")
                   return (
                     <div

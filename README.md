@@ -54,7 +54,9 @@ Real Luna guest interaction, screenshot vision and live/cold preview navigation 
   child progress and navigation, with invocation details closed by default.
 - Streaming chat file uploads into Workspace; attached images reach the model directly.
 - An execution-owned `generate_image` Tool, independent of the chat model, with
-  file or recent-conversation references and authenticated image previews.
+  file or recent-conversation references. `show_image` presents existing Sandbox
+  images to the user; both display retained images inline with clickable previews,
+  independently of collapsed Tool details.
 - Elastic Workspaces or dedicated development machines, with file browsing,
   terminals and app previews. Dedicated machines also support SSH.
 

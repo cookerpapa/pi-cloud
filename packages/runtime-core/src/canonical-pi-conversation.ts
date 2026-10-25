@@ -12,6 +12,7 @@ import {
   type ConversationTranscriptItemResource,
   type AssistantMessagePhase,
   parseUserUploads,
+  toolContentView,
   type UserUpload,
 } from "@pi-cloud/protocol";
 type JsonRecord = Record<string, unknown>;
@@ -100,6 +101,7 @@ export function projectDurableTranscript(
   terminal: TerminalProjectionMetadata,
   proposalOnly: ReadonlySet<string> = new Set(),
   humanEntries: ReadonlyMap<string, HumanEntry> = new Map(),
+  imageSessionId?: string,
 ): ConversationTurnTranscriptResource {
   const items: ConversationTranscriptItemResource[] = [],
     proposals = new Map<string, { name: string; input: unknown }>();
@@ -262,7 +264,7 @@ export function projectDurableTranscript(
           toolName: message.toolName,
           input: proposals.get(message.toolCallId)?.input ?? null,
           output: {
-            content,
+            content: imageSessionId ? toolContentView(imageSessionId, content) : content,
             ...(message.details === undefined ? {} : { details: message.details }),
           },
           status: message.isError
@@ -291,7 +293,7 @@ export function projectDurableTranscript(
  * messages and no SDK execution is needed to reconstruct the public transcript. */
 export async function readCanonicalPiTurnTranscripts(
   database: Kysely<Database>,
-  input: { tenantId: string; turnIds: readonly string[] },
+  input: { tenantId: string; turnIds: readonly string[]; imageSessionId?: string },
 ): Promise<ReadonlyMap<string, ConversationTurnTranscriptResource>> {
   if (!input.turnIds.length) return new Map();
   if (!database.isTransaction)
@@ -411,6 +413,7 @@ export async function readCanonicalPiTurnTranscripts(
           terminalMetadata(terminal),
           new Set(),
           humanEntries.get(turn),
+          input.imageSessionId,
         ),
       );
     else if (current && (Number(current.output_display_seq) > 0 || humanEntries.get(turn)?.size)) {
@@ -455,6 +458,7 @@ export async function readCanonicalPiTurnTranscripts(
           },
           proposalOnly,
           humanEntries.get(turn),
+          input.imageSessionId,
         ),
       );
     }

@@ -145,7 +145,15 @@ export function prepareToolPresentation(
                     start: 0,
                     end: part.text.length,
                   }
-                : { kind: "image" as const, mimeType: part.mimeType },
+                : {
+                    kind: "image" as const,
+                    mimeType: part.mimeType,
+                    source: {
+                      kind: "write" as const,
+                      ordinal: source.ordinal,
+                      path: ["value", "model", modelIndex, "content", index],
+                    },
+                  },
             ),
           }
         : { kind: "missing" };

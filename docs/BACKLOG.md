@@ -1,5 +1,15 @@
 # Maintained backlog
 
+## User-facing image presentation
+
+The owner approved [ADR-0275](adr/0275-user-image-presentation.md): an explicit
+`show_image` Tool for existing files, with images visible outside collapsed
+execution details. Generation and display share canonical image content and one
+browser component; old executor-supplied preview metadata no longer controls it.
+
+- [ ] Complete live/cold presentation and screenshot acceptance, publish the matched set,
+      and confirm original Workspace/application preservation.
+
 ## Explicit image generation
 
 [ADR-0274](adr/0274-explicit-image-generation-tool.md) is deployed as
@@ -9,10 +19,9 @@ real path/recent-context image calls, alpha, saved files, live/cold display,
 Sessions, Workspaces and applications are retained. The provider's implicit
 image injection was disabled, and future matched upgrades reconcile that policy.
 
-- [ ] Obtain positive acceptance for the owner's original character-reference
-      scenario when a provider-accepted reference is available. The requested
-      existing-conversation attempt reported service refusal and produced no
-      image; the successful neutral-image fixture does not turn that into a pass.
+The owner subsequently confirmed successful image generation in the existing
+conversation. This is user-reported acceptance; the earlier delivery report
+retains the actual results of its own attempts.
 
 Only unfinished work for the PostgreSQL + Kafka + Pi SDK + Cube Volume
 architecture belongs here. Implemented contracts live in the

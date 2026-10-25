@@ -6,7 +6,7 @@ import { PlatformRuntimeSettingsService } from "./platform-runtime-settings.ts";
 import { ControlToolDispatcher } from "./control-tool-dispatcher.ts";
 import { executePreviewTool, previewToolDefinition } from "./control-preview-tool.ts";
 import { ControlToolRegistry, type RegisteredControlTool } from "./control-tool-registry.ts";
-import { createImageTool } from "./control-image-tool.ts";
+import { createImageTool, createShowImageTool } from "./control-image-tool.ts";
 import { ImageGenerationClient } from "./image-generation-client.ts";
 import { isControlToolName } from "@pi-cloud/protocol";
 import { createDatabase } from "@pi-cloud/database";
@@ -255,6 +255,20 @@ export async function startControlPlane(): Promise<void> {
           }),
       },
     ];
+    if (images)
+      definitions.push(
+        createShowImageTool({
+          images,
+          imageIo: (call, action, signal) =>
+            sandboxControl!.toolImageIo(
+              call.scope,
+              call.bindingId!,
+              call.operationId,
+              action,
+              signal,
+            ),
+        }),
+      );
     if (config.imageGeneration) {
       if (!images) throw new Error("Image generation requires Session attachment storage");
       imageGeneration = new ImageGenerationClient(config.imageGeneration);

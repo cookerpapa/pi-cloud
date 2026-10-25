@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { randomInt, randomUUID } from "node:crypto";
-import { dirname } from "node:path/posix";
+import { createHash, randomInt, randomUUID } from "node:crypto";
+import { dirname, join } from "node:path/posix";
 import { newIdempotencyKey } from "../../packages/web-ui/src/api.ts";
 import { withChromePage } from "./chrome-cdp.mjs";
 import { imageReferences, nativeMessages } from "./native-session-history.mjs";
@@ -11,6 +11,7 @@ export async function guestBrowserAcceptance({
   tenant,
   session,
   baseUrl,
+  directory,
   completed,
   progress,
 }) {
@@ -53,7 +54,7 @@ console.log('GUEST_BROWSER_INTERACTION_OK');
   const quote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
   const command = `setsid python3 -m http.server 5173 --bind 0.0.0.0 --directory ${quote(dirname(application.path))} </dev/null >/tmp/guest-browser-server.log 2>&1 &\nnode ${quote(script.path)}`;
   let history;
-  progress("guest Chromium interaction, screenshot Read and live named answer link");
+  progress("guest Chromium screenshot, show_image snapshot and live named answer link");
   await withChromePage({}, async (page) => {
     await page.send("Emulation.setEmulatedMedia", {
       features: [{ name: "prefers-reduced-motion", value: "reduce" }],
@@ -66,10 +67,53 @@ console.log('GUEST_BROWSER_INTERACTION_OK');
     await page.waitFor("document.querySelector('.product-composer textarea')");
     const accepted = await api.acceptTurn(
       session.sessionId,
-      `按顺序执行这三步，不要搜索或委派。1. 调用一次 bash，command 精确为以下 JSON 字符串：${JSON.stringify(command)}。2. 调用 read 查看 ${screenshotPath}。3. 调用 preview 发布端口 5173。应用名为「骑行示例」。最终回答图片顶部的六位数字，并用具名 Markdown 链接提供 preview 返回的地址。不要读取测试源码或其他文件，不要安装任何软件。`,
+      `按顺序执行以下步骤，不要搜索、委派或生图。1. 调用一次 bash，command 精确为以下 JSON 字符串：${JSON.stringify(command)}。2. 调用 read 查看 ${screenshotPath}。3. 调用 show_image 展示这张截图，caption 为「骑行示例页面」。4. 调用 bash，精确执行 ${JSON.stringify(`rm -- ${screenshotPath}; sleep 3; test ! -e ${screenshotPath} && echo SCREENSHOT_SOURCE_REMOVED`)}，这是验证历史图片不会依赖原文件。5. 调用 preview 发布端口 5173。应用名为「骑行示例」。最终回答图片顶部的六位数字，并用具名 Markdown 链接提供 preview 返回的地址，不要再嵌入图片。不要读取测试源码或其他文件，不要安装任何软件。`,
       newIdempotencyKey("guest-browser"),
       "low",
     );
+    const shown = `.product-tool-images img`;
+    await page.waitFor(`document.querySelector(${JSON.stringify(shown)})?.naturalWidth>0`, 240000);
+    const liveImagePath = await page.evaluate(
+      `document.querySelector(${JSON.stringify(shown)}).getAttribute('src')`,
+    );
+    const assertInlineImage = async () => {
+      assert.equal(
+        await page.evaluate(`document.querySelectorAll(${JSON.stringify(shown)}).length`),
+        1,
+      );
+      assert.equal(
+        await page.evaluate("document.querySelectorAll('.product-session-image img').length"),
+        1,
+        "Read must not display a second model-only image",
+      );
+      assert.equal(
+        await page.evaluate(
+          "document.querySelector('.product-tool-images').closest('.product-activity-group')===null",
+        ),
+        true,
+      );
+      assert.equal(
+        await page.evaluate(
+          "document.querySelector('.product-tool-images figcaption').textContent",
+        ),
+        "骑行示例页面",
+      );
+      assert.equal(
+        await page.evaluate("document.querySelector('.product-tool-images a').target"),
+        "_blank",
+      );
+      assert.equal(
+        await page.evaluate(
+          "document.querySelector('.product-activity-group-toggle').getAttribute('aria-expanded')",
+        ),
+        "false",
+      );
+    };
+    await assertInlineImage();
+    await page.evaluate(
+      "document.querySelector('.product-tool-images').scrollIntoView({block:'center'})",
+    );
+    if (directory) await page.screenshot(join(directory, "guest-image-live.png"));
     const path = `/v1/conversations/${session.sessionId}/preview/5173/`;
     const link = `.product-agent-answer .product-markdown a[href="${path}"]`;
     const visible = `(()=>{const e=document.querySelector(${JSON.stringify(link)});return e&&e.getBoundingClientRect().height>0})()`;
@@ -105,6 +149,40 @@ console.log('GUEST_BROWSER_INTERACTION_OK');
       (t) => t.runId === accepted.runId,
     );
     const tools = turn.transcript.items.filter((item) => item.kind === "tool");
+    const shownTools = tools.filter((item) => item.toolName === "show_image");
+    assert.equal(shownTools.length, 1);
+    assert.equal(shownTools[0].status, "completed");
+    assert.equal(
+      tools.some((item) => item.toolName === "generate_image"),
+      false,
+    );
+    const publicImage = shownTools[0].output.content.find((part) => part.type === "image");
+    assert.equal(
+      publicImage?.previewPath,
+      liveImagePath,
+      "Live and cold image identity must match",
+    );
+    const reference = imageReferences(history).find((ref) => ref.id === publicImage.imageId);
+    assert(reference);
+    assert(
+      nativeMessages(history).some(
+        (m) =>
+          m.role === "toolResult" &&
+          m.toolName === "bash" &&
+          !m.isError &&
+          m.content.some((p) => p.type === "text" && p.text.includes("SCREENSHOT_SOURCE_REMOVED")),
+      ),
+    );
+    const retained = await fetch(new URL(liveImagePath, baseUrl), {
+      headers: { Authorization: "Bearer " + tenant.credential.token },
+    });
+    assert.equal(retained.status, 200, "Retained display must survive source deletion");
+    assert.equal(
+      createHash("sha256")
+        .update(Buffer.from(await retained.arrayBuffer()))
+        .digest("hex"),
+      reference.sha256,
+    );
     const preview = tools.find((item) => item.toolName === "preview");
     assert.equal(preview?.status, "completed");
     assert.equal(preview.output.details.previewPath, path);
@@ -134,6 +212,16 @@ console.log('GUEST_BROWSER_INTERACTION_OK');
     assert(answer.includes(path), "Model omitted the returned application link");
     await page.navigate(conversationUrl);
     await page.waitFor(visible);
+    await page.waitFor(`document.querySelector(${JSON.stringify(shown)})?.naturalWidth>0`);
+    await assertInlineImage();
+    assert.equal(
+      await page.evaluate(`document.querySelector(${JSON.stringify(shown)}).getAttribute('src')`),
+      liveImagePath,
+    );
+    await page.evaluate(
+      "document.querySelector('.product-tool-images').scrollIntoView({block:'center'})",
+    );
+    if (directory) await page.screenshot(join(directory, "guest-image-cold.png"));
     await assertSingleAnswerLink();
     assert(await page.evaluate("Boolean(document.querySelector('[data-expanded=\"false\"]'))"));
     await page.navigate(baseUrl + path);
@@ -145,6 +233,10 @@ console.log('GUEST_BROWSER_INTERACTION_OK');
     guestInteraction: true,
     canvas: true,
     screenshotVision: true,
+    showImageLiveAndCold: true,
+    collapsedActivityStillShowsImage: true,
+    modelOnlyReadDoesNotDuplicate: true,
+    retainedImageAfterSourceDeletion: true,
     liveLink: true,
     coldCollapsedLink: true,
     actualApplicationNavigation: true,

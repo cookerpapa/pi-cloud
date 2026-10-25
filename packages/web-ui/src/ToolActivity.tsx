@@ -4,7 +4,6 @@ import { useI18n, type Translate } from "./i18n.tsx";
 import type { TranscriptItem } from "./session-view.ts";
 import { LiveToolProgress } from "./tool-progress.tsx";
 import { ChildAgentProgress } from "./ChildAgentProgress.tsx";
-import { SessionImage, isSessionImagePath } from "./SessionImage.tsx";
 
 export type ToolTranscriptItem = Extract<TranscriptItem, { kind: "tool" }>;
 
@@ -331,12 +330,19 @@ const previewRenderer: ToolRenderer = {
   },
 };
 
+const imageRenderer: ToolRenderer = {
+  heading: (context) => pathHeading(context.item.toolName, null),
+  body: (context, t) => defaultRenderer.body({ ...context, path: null }, t),
+};
+
 const TOOL_RENDERERS: Readonly<Record<string, ToolRenderer>> = {
   bash: bashRenderer,
   edit: editRenderer,
   read: readRenderer,
   preview: previewRenderer,
   write: writeRenderer,
+  show_image: imageRenderer,
+  generate_image: imageRenderer,
 };
 
 function renderContext(item: ToolTranscriptItem, t: Translate): ToolRenderContext {
@@ -353,6 +359,7 @@ function renderContext(item: ToolTranscriptItem, t: Translate): ToolRenderContex
 }
 
 export function compactToolSummary(item: ToolTranscriptItem): string {
+  if (item.toolName === "show_image" || item.toolName === "generate_image") return item.toolName;
   const input = objectValue(item.input);
   const path = stringValue(input?.path);
   const command = stringValue(input?.command);
@@ -382,17 +389,12 @@ export function ToolActivity({ item }: { item: ToolTranscriptItem }) {
         : item.status === "failed"
           ? "!"
           : "✓";
-  const details = ["subagent", "workflow", "preview"].includes(item.toolName);
+  const details = ["subagent", "workflow", "preview", "show_image", "generate_image"].includes(
+    item.toolName,
+  );
   const body = (
     <>
       {renderer.body(context, t)}
-      {(() => {
-        const details = objectValue(objectValue(context.rawOutput)?.details);
-        const generated = objectValue(details?.generatedImage);
-        return isSessionImagePath(generated?.previewPath) ? (
-          <SessionImage src={generated.previewPath} alt={t("turn.image", { alt: "" })} />
-        ) : null;
-      })()}
       {item.status === "running" ? <LiveToolProgress toolCallId={item.toolCallId} /> : null}
       {duration === null ? null : (
         <div className="product-tool-duration">{t("turn.took", { duration })}</div>

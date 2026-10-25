@@ -688,3 +688,4 @@ export {
   type DurableDisplayPreparation,
 } from "./durable-display.ts";
 export * from "./runtime-keepalive.ts";
+export { toolImageView, toolContentView, type ToolImageView } from "./tool-image-view.ts";

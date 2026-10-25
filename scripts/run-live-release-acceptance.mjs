@@ -394,6 +394,7 @@ try {
       tenant,
       session,
       baseUrl,
+      directory: dirname(output),
       completed,
       progress,
     });

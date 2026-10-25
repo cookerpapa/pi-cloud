@@ -143,6 +143,29 @@ function resultFixture(text: string, isError = false, details?: unknown) {
   return { c, doc };
 }
 
+const finalImage = {
+  type: "pi_cloud_image_v1",
+  attachment: {
+    id: "10000000-0000-4000-8000-000000000001",
+    sha256: "a".repeat(64),
+    byteLength: 4,
+    mimeType: "image/png",
+  },
+};
+const visibleImage = {
+  type: "image",
+  imageId: finalImage.attachment.id,
+  mimeType: "image/png",
+  previewPath: `/v1/sessions/view/images/${finalImage.attachment.id}`,
+};
+/** The real publisher packs images after preparing same-commit selectors. */
+function packed(c: DurableSessionCommit): DurableSessionCommit {
+  const copy = structuredClone(c);
+  const value = copy.writes[0]!.value as { model: { content: unknown[] }[] };
+  value.model[0]!.content[1] = finalImage;
+  return copy;
+}
+
 it("uses the canonical after-hook result and image metadata without copying body or pixels", () => {
   const text = "after hook ✓\u0000\ud800";
   const { c, doc } = resultFixture(text, true);
@@ -150,19 +173,19 @@ it("uses the canonical after-hook result and image metadata without copying body
   expect(descriptions).toHaveLength(1);
   expect(JSON.stringify(descriptions)).not.toContain("after hook");
   expect(JSON.stringify(descriptions)).not.toContain("NOT_IN_DISPLAY");
-  expect(resolveDurableDisplay(c, descriptions[0]!, () => undefined)).toMatchObject({
+  expect(resolveDurableDisplay(packed(c), descriptions[0]!, () => undefined)).toMatchObject({
     type: "tool.completed",
     payload: {
       toolCallId: "task:4",
       outcome: "failed",
-      output: { content: [{ type: "text", text: `${text}\n[Image: image/png]` }] },
+      output: { content: [{ type: "text", text: `${text}\n[Image: image/png]` }, visibleImage] },
     },
   });
   const bounded = prepareToolPresentation(c, [doc], factory(), {
     ...options,
     maximumOutputBytes: 7,
   });
-  expect(resolveDurableDisplay(c, bounded[0]!, () => undefined)).toMatchObject({
+  expect(resolveDurableDisplay(packed(c), bounded[0]!, () => undefined)).toMatchObject({
     payload: {
       output: {
         content: [
@@ -172,6 +195,7 @@ it("uses the canonical after-hook result and image metadata without copying body
               Buffer.from(`${text}\n[Image: image/png]`).subarray(0, 7).toString("utf8") +
               "\n[Display truncated]",
           },
+          visibleImage,
         ],
       },
     },
@@ -213,21 +237,26 @@ it("references canonical metadata for any Tool without embedding a second result
   const { c, doc } = resultFixture("published", false, details);
   const descriptions = prepareToolPresentation(c, [doc], factory(), options);
   expect(JSON.stringify(descriptions)).not.toContain(details.previewPath);
-  expect(resolveDurableDisplay(c, descriptions[0]!, () => undefined)).toMatchObject({
+  expect(resolveDurableDisplay(packed(c), descriptions[0]!, () => undefined)).toMatchObject({
     payload: {
-      output: { details, content: [{ type: "text", text: "published\n[Image: image/png]" }] },
+      output: {
+        details,
+        content: [{ type: "text", text: "published\n[Image: image/png]" }, visibleImage],
+      },
     },
   });
   const oversized = prepareToolPresentation(c, [doc], factory(), {
     ...options,
     maximumOutputBytes: 32,
   });
-  const event = resolveDurableDisplay(c, oversized[0]!, () => undefined);
+  const event = resolveDurableDisplay(packed(c), oversized[0]!, () => undefined);
   expect(JSON.stringify(event)).not.toContain(details.previewPath);
   expect(JSON.stringify(event)).toContain("display metadata omitted");
   const entry = c.writes[0]!.value as { model: { details?: unknown }[] };
   delete entry.model[0]!.details;
-  expect(() => resolveDurableDisplay(c, descriptions[0]!, () => undefined)).toThrow("source path");
+  expect(() => resolveDurableDisplay(packed(c), descriptions[0]!, () => undefined)).toThrow(
+    "source path",
+  );
 });
 
 it("covers a canonical Tool result before a new partial in the same native commit", () => {

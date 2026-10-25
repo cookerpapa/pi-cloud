@@ -90,6 +90,11 @@ PI_CLOUD_LIVE_RELEASE_CHECK=1 PI_CLOUD_LIVE_GUEST_BROWSER=1 PI_CLOUD_RUNTIME_CAP
 
 This scope still confirms owned physical cleanup and never skips matched artifact
 checks. The default `all` scope remains the full maintained acceptance suite.
+ADR-0275 extends this browser scope with `show_image`: the guest screenshot is
+shown inline while activity remains collapsed, then its source file is removed.
+Live/cold image identity, authenticated retained bytes and reload are checked;
+ordinary model-facing Read must not display a duplicate. No generation request
+is needed for this display acceptance.
 
 For ADR-0270, preparation also verifies unprivileged guest Chromium interaction,
 native screenshot Read and browser timeout cleanup. After matched cutover, run
