@@ -524,7 +524,11 @@ export function parseControlToSupervisorMessage(value: unknown): ControlToSuperv
     try {
       if (message.payload.input.kind === "prompt")
         assertUserInputBudget(message.payload.input.text, message.payload.input.uploads);
-      else if (
+      else if (message.payload.input.kind === "compact") {
+        assertUserInputBudget(message.payload.input.instructions);
+        if (message.payload.sessionKind !== "conversation")
+          throw new Error("Cold compaction requires root conversation work");
+      } else if (
         !message.payload.conversationWork ||
         message.payload.piSession.conversationId === 1 ||
         message.payload.sessionKind !== "subagent"

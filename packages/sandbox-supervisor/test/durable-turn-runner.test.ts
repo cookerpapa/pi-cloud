@@ -3,14 +3,16 @@ import { expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MemoryStorage } from "@earendil-works/pi-durable";
+import { MemoryStorage, Harness, createRegistry } from "@earendil-works/pi-durable";
+import { createModels } from "@earendil-works/pi-ai/models";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import {
   BACKGROUND_CONTEXT,
   awaitWithContext,
   withAbortSignal,
 } from "@earendil-works/chord/context";
 import { FakeModelServer, FAKE_MODEL_API_KEY } from "@pi-cloud/fake-model-server";
-import { type EventPublishMessage } from "@pi-cloud/protocol";
+import { type EventPublishMessage, parseControlToSupervisorMessage } from "@pi-cloud/protocol";
 import { PiCloudTurnRunner } from "../src/pi-cloud-turn-runner.ts";
 import { RemoteToolSandboxTurnRunner } from "../src/remote-tool-sandbox-turn-runner.ts";
 import { resolveWorkspaceSeed } from "../../supervisor-host/src/workspace-seed.ts";
@@ -25,7 +27,14 @@ import type {
 } from "@pi-cloud/pi-session-postgres/durable";
 import { command } from "./fixtures/durable-command.ts";
 
-it.each(["complete", "stop_on_resume", "stop_before_setup", "long_work", "cold_compact"] as const)(
+it.each([
+  "complete",
+  "stop_on_resume",
+  "stop_before_setup",
+  "long_work",
+  "cold_compact",
+  "cold_compact_history",
+] as const)(
   "runs native input and admission gates (%s)",
   async (mode) => {
     const fake = new FakeModelServer({ defaultScenario: "text" });
@@ -42,6 +51,8 @@ it.each(["complete", "stop_on_resume", "stop_before_setup", "long_work", "cold_c
     );
     const recordSequences = new Map<number, number>();
     const storage = new (class extends MemoryStorage {
+      // The fixture storage spans the seed handle and the independently opened Runner.
+      override async close() {}
       override async commit(
         writes: readonly import("@earendil-works/pi-durable").StorageWrite[],
         _context: import("@earendil-works/chord").Context,
@@ -60,6 +71,43 @@ it.each(["complete", "stop_on_resume", "stop_before_setup", "long_work", "cold_c
         });
       }
     })();
+    let initialConversationId = 1;
+    if (mode === "cold_compact_history") {
+      const seed = await Harness.open(
+        storage,
+        { models: createModels(), registry: createRegistry() },
+        BACKGROUND_CONTEXT,
+      );
+      try {
+        const created = await seed.commit(
+          (tx) => tx.createConversation({ ownership: { kind: "ownerless" } }),
+          BACKGROUND_CONTEXT,
+        );
+        initialConversationId = created.id;
+        const root = await seed.conversation(created.id, BACKGROUND_CONTEXT);
+        if (!root) throw new Error("Seed conversation is missing");
+        await root.commit(async (tx) => {
+          for (let i = 0; i < 4; i++) {
+            await tx.appendEntry(root.id, {
+              kind: "pi.user",
+              model: [
+                {
+                  role: "user",
+                  content: "Retain the project decision. ".repeat(2000),
+                  timestamp: i,
+                },
+              ],
+            });
+            await tx.appendEntry(root.id, {
+              kind: "pi.assistant",
+              model: [fauxAssistantMessage("Recorded.")],
+            });
+          }
+        }, BACKGROUND_CONTEXT);
+      } finally {
+        await seed.close(BACKGROUND_CONTEXT);
+      }
+    }
     const userStop = new AbortController();
     const enteredPermit = Promise.withResolvers<void>(),
       releasePermit = Promise.withResolvers<void>();
@@ -80,7 +128,7 @@ it.each(["complete", "stop_on_resume", "stop_before_setup", "long_work", "cold_c
       binding: {
         tenantId: command.payload.tenantId,
         piSessionId: command.payload.piSession.id,
-        conversationId: 1,
+        conversationId: initialConversationId,
         sessionId: command.payload.sessionId,
         turnId: command.payload.turnId,
         runId: command.payload.runId,
@@ -231,25 +279,31 @@ it.each(["complete", "stop_on_resume", "stop_before_setup", "long_work", "cold_c
         });
       }
       if (mode === "long_work") vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-      const executing = runner.run(
-        {
-          ...selectedCommand,
-          payload: {
-            ...selectedCommand.payload,
-            ...(stopping ? { stopOnResume: true as const } : {}),
-            ...(mode === "cold_compact"
-              ? {
-                  input: {
-                    kind: "compact" as const,
-                    commandId: crypto.randomUUID(),
-                    fingerprint: "a".repeat(64),
-                    requestedAt: new Date().toISOString(),
-                    instructions: "",
-                  },
-                }
-              : {}),
+      const wire = parseControlToSupervisorMessage({
+        ...selectedCommand,
+        payload: {
+          ...selectedCommand.payload,
+          piSession: {
+            ...selectedCommand.payload.piSession,
+            conversationId: initialConversationId,
           },
+          ...(stopping ? { stopOnResume: true as const } : {}),
+          ...(mode.startsWith("cold_compact")
+            ? {
+                input: {
+                  kind: "compact" as const,
+                  commandId: crypto.randomUUID(),
+                  fingerprint: "a".repeat(64),
+                  requestedAt: new Date().toISOString(),
+                  instructions: "",
+                },
+              }
+            : {}),
         },
+      });
+      if (wire.type !== "command.turn.execute") throw new Error("Unexpected fixture command");
+      const executing = runner.run(
+        wire,
         (event) => {
           events.push(event);
         },
@@ -275,12 +329,17 @@ it.each(["complete", "stop_on_resume", "stop_before_setup", "long_work", "cold_c
         );
         return;
       }
-      if (mode === "cold_compact") {
-        expect((await executing).stopReason).toBe("compact_no_op");
-        expect(acquired).toBe(0);
+      if (mode.startsWith("cold_compact")) {
+        expect((await executing).stopReason).toBe(
+          mode === "cold_compact" ? "compact_no_op" : "compact_applied",
+        );
+        expect(acquired).toBe(mode === "cold_compact" ? 0 : 1);
+        expect(released).toBe(acquired);
         expect(
-          (await storage.scanSubmissions({}, 100, undefined, BACKGROUND_CONTEXT)).items,
-        ).toEqual([]);
+          (await storage.scanSubmissions({}, 100, undefined, BACKGROUND_CONTEXT)).items.some(
+            (s) => s.type === "input",
+          ),
+        ).toBe(false);
         expect(events.some((e) => e.payload.event.type === "assistant.text.delta")).toBe(false);
         return;
       }

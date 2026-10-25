@@ -212,6 +212,26 @@ describe("supervisor/control-plane wire protocol", () => {
     expect(
       [execute, cancel].map((message) => parseControlToSupervisorMessage(message).type),
     ).toEqual(["command.turn.execute", "command.turn.cancel"]);
+    const compact = {
+      ...execute,
+      payload: {
+        ...execute.payload,
+        input: {
+          kind: "compact",
+          commandId: IDS.command,
+          fingerprint: "a".repeat(64),
+          requestedAt: SENT_AT,
+          instructions: "Keep the accepted decisions.",
+        },
+      },
+    };
+    expect(parseControlToSupervisorMessage(compact)).toEqual(compact);
+    expect(() =>
+      parseControlToSupervisorMessage({
+        ...compact,
+        payload: { ...compact.payload, sessionKind: "subagent" },
+      }),
+    ).toThrow("Cold compaction requires root conversation work");
     expect(() => parseControlToSupervisorMessage(steer)).toThrow();
     const resume = {
       ...execute,

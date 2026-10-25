@@ -75,6 +75,23 @@ const settled = (id) =>
 const compactSettled = (session, id) =>
   until(async () => {
     const r = await api.getCompaction(session.sessionId, id);
+    if (r?.state === "failed") {
+      const run = await api.getRun(r.runId);
+      const scope = await scopeOf(session);
+      const tasks = await new DurablePostgresProjection(db, scope).scan({ kind: "task" }, 64);
+      report.failedCommand = {
+        command: r,
+        state: run.state,
+        failure: run.failure,
+        tasks: tasks.map((t) => ({
+          id: t.value.id,
+          kind: t.value.kind,
+          state: t.value.state.status,
+          ...(t.value.state.status === "terminal" ? { outcome: t.value.state.outcome } : {}),
+        })),
+      };
+      await save();
+    }
     return compactTerminal(r) ? r : false;
   }, "Native summary placement");
 const scopeOf = async (session) => {
