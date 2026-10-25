@@ -1,3 +1,4 @@
+import { CompactStateSchema } from "./conversation-commands.ts";
 import { MAX_AGENT_INPUT_CHARACTERS, assertUserInputBudget } from "./agent-input-budget.ts";
 import { NativeInputAcceptedSchema } from "./native-inputs.ts";
 import {
@@ -813,6 +814,16 @@ export const ConversationTurnTranscriptResourceSchema = Type.Object(
 
 export const ConversationTurnResourceSchema = Type.Object(
   {
+    operation: Type.Optional(
+      Type.Object(
+        {
+          kind: Type.Literal("compact"),
+          state: CompactStateSchema,
+          instructions: Type.Optional(Type.String({ maxLength: MAX_AGENT_INPUT_CHARACTERS })),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     runId: UuidSchema,
     turnId: UuidSchema,
     mailboxPosition: PositiveSafeIntegerSchema,

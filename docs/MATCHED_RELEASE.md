@@ -1,5 +1,23 @@
 # Matched release procedure
 
+ADR-0277 requires a drained matched upgrade to schema 199 and the paired
+Control Plane, Worker and Web command contracts. Old model header/byte-idle
+environment values must not survive this release. Preserve native history,
+images and Workspace Volumes; cold compact needs no VM. Source acceptance covers
+native concurrent summary placement, idempotency, Stop, recovery, both provider
+wait policies and the real composer. After deployment run the owned fixture:
+
+```sh
+PI_CLOUD_LIVE_COMMANDS_CHECK=1 PI_CLOUD_COMMANDS_RESTART_CHECK=1 node --import tsx scripts/run-live-conversation-commands-check.mjs /private/commands
+```
+
+It seeds synthetic context only under a quiescent Session lock, uses Luna to
+compact cold and during a gated Cube Tool, verifies placement/continuation, and
+optionally restarts the exact Worker carrying only its owned work. It never
+modifies an existing user conversation. Physical Workspace cleanup precedes
+fixture-account deletion. Run the maintained native-input and ordinary Cube
+acceptance alongside this command fixture.
+
 Compatible provider images, model catalogs and presentation-only Web changes use the [component release procedure](COMPONENT_RELEASE.md). The initial ADR-0267 schema 196 / frozen Worker model contract requires this matched procedure once. Later narrow releases retain unrelated images and running environments.
 
 This maintained procedure replaces the temporary sequencing and fixture wrappers

@@ -142,7 +142,7 @@ export type RemoteToolSandboxTurnRunnerOptions = {
     command: ExecuteTurnCommandMessage,
     signal?: AbortSignal,
   ) => Promise<() => void>;
-  requestTimeoutMs?: number;
+  modelEventIdleTimeoutMs?: number;
   idGenerator?: () => string;
   metrics?: PiCloudMetrics;
 };
@@ -217,7 +217,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   readonly #onActivity: RemoteToolSandboxTurnRunnerOptions["onActivity"];
   readonly #publicEgress: RemoteToolSandboxTurnRunnerOptions["publicEgress"];
   readonly #onRuntimeBinding: RemoteToolSandboxTurnRunnerOptions["onRuntimeBinding"];
-  readonly #requestTimeoutMs: number | undefined;
+  readonly #modelEventIdleTimeoutMs: number | undefined;
   readonly #idGenerator: () => string;
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #activePiRunners = new Map<
@@ -247,7 +247,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     this.#decodeInputImages = options.decodeInputImages;
     this.#createTrustedTools = options.createTrustedTools;
     this.#acquireModelPermit = options.acquireModelPermit;
-    this.#requestTimeoutMs = options.requestTimeoutMs;
+    this.#modelEventIdleTimeoutMs = options.modelEventIdleTimeoutMs;
     this.#idGenerator = options.idGenerator ?? (() => globalThis.crypto.randomUUID());
     this.#metrics = options.metrics;
   }
@@ -492,8 +492,23 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     }
     return { accepted: true };
   }
-  async humanInput(command: NativeInputCommand): Promise<NativeInputResult> {
-    const key = `${command.runId}:1`;
+  async #rootRunner(
+    command: Pick<NativeInputCommand, "tenantId" | "sessionId" | "runId" | "executionReference">,
+  ): Promise<PiCloudTurnRunner> {
+    const root = this.#families.get(command.executionReference)?.command.payload;
+    if (
+      !root ||
+      root.tenantId !== command.tenantId ||
+      root.sessionId !== command.sessionId ||
+      root.runId !== command.runId
+    )
+      throw new PiTurnError(
+        "input_target_unavailable",
+        "Input target has no current Worker execution",
+        true,
+      );
+    // A writable conversation can move to a native fork; its ID is not always 1.
+    const key = `${command.runId}:${root.piSession.conversationId}`;
     const slot = this.#activePiRunners.get(key);
     if (!slot || slot.executionReference !== command.executionReference)
       throw new PiTurnError(
@@ -504,7 +519,13 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     const runner = await slot.ready;
     if (this.#activePiRunners.get(key) !== slot)
       throw new PiTurnError("input_target_unavailable", "Input target ended during delivery", true);
-    return runner.humanInput(command);
+    return runner;
+  }
+  async compact(command: NativeCompactCommand): Promise<NativeCompactResult> {
+    return (await this.#rootRunner(command)).compact(command);
+  }
+  async humanInput(command: NativeInputCommand): Promise<NativeInputResult> {
+    return (await this.#rootRunner(command)).humanInput(command);
   }
 
   async #run(
@@ -534,7 +555,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     }
 
     let workspaceSeed: Uint8Array | undefined;
-    if (this.#workspaceSeedResolver !== undefined) {
+    if (command.payload.input.kind !== "compact" && this.#workspaceSeedResolver !== undefined) {
       try {
         workspaceSeed = await this.#workspaceSeedResolver(command);
       } catch (error: unknown) {
@@ -734,11 +755,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           toolPolicySha256: cloudTurn.toolPolicySha256,
         },
         onSettled,
-        ...(this.#requestTimeoutMs === undefined
+        ...(this.#modelEventIdleTimeoutMs === undefined
           ? {
-              requestTimeoutMs: modelRuntimeLease.runtime.requestTimeoutMs,
+              modelEventIdleTimeoutMs: modelRuntimeLease.runtime.eventIdleTimeoutMs,
             }
-          : { requestTimeoutMs: this.#requestTimeoutMs }),
+          : { modelEventIdleTimeoutMs: this.#modelEventIdleTimeoutMs }),
       };
       let recordPreparedInput: (() => Promise<void>) | undefined;
       const runner = new PiCloudTurnRunner({
@@ -1013,3 +1034,4 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   }
 }
 import type { NativeInputCommand, NativeInputResult } from "@pi-cloud/protocol";
+import type { NativeCompactCommand, NativeCompactResult } from "@pi-cloud/protocol";

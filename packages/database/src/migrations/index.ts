@@ -381,6 +381,7 @@ export const migrationProvider: MigrationProvider = {
       "196_model_runtime_snapshot": modelRuntimeSnapshot,
       "197_ultra_agent_profile": ultraAgentProfile,
       "198_resource_intent": resourceIntent,
+      "199_conversation_commands": conversationCommands,
     };
   },
 };
@@ -406,3 +407,4 @@ import * as gpt61SolSelection from "./195_gpt61_sol_selection.ts";
 import * as modelRuntimeSnapshot from "./196_model_runtime_snapshot.ts";
 import * as ultraAgentProfile from "./197_ultra_agent_profile.ts";
 import * as resourceIntent from "./198_resource_intent.ts";
+import * as conversationCommands from "./199_conversation_commands.ts";

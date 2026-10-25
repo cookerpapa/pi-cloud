@@ -655,6 +655,8 @@ export type ConversationTurnView = Pick<
   | "session_id"
   | "turn_id"
   | "input_text"
+  | "operation_kind"
+  | "stop_reason"
   | "input_uploads"
   | "state"
   | "mailbox_position"
@@ -708,6 +710,7 @@ export interface ConversationPruneOperationTable {
 }
 
 export interface RunTable {
+  operation_kind: Generated<"chat" | "compact">;
   recovery_requested_at: NullableTimestamp;
   compute_session_id: GeneratedNullable<string>;
   id: string;

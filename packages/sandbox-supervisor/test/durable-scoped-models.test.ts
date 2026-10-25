@@ -81,3 +81,43 @@ describe("Durable model calls under cloud authority", () => {
     expect(faux.state.callCount).toBe(0);
   });
 });
+
+it("a late successful reply cannot overwrite the event inactivity timeout", async () => {
+  vi.useFakeTimers();
+  try {
+    const { createAssistantMessageEventStream } = await import("@earendil-works/pi-ai");
+    const base = createModels(),
+      faux = fauxProvider();
+    base.setProvider(faux.provider);
+    const release = vi.fn();
+    vi.spyOn(base, "streamSimple").mockImplementation(() => {
+      const stream = createAssistantMessageEventStream();
+      const message = fauxAssistantMessage("late reply");
+      setTimeout(() => {
+        stream.push({ type: "done", reason: "stop", message });
+        stream.end(message);
+      }, 50);
+      return stream;
+    });
+    const scoped = new ScopedDurableModels(base, async (request) => ({
+      model: faux.getModel(),
+      options: request.options,
+      eventIdleTimeoutMs: 20,
+      release,
+    }));
+    const route = scoped.register(randomUUID(), 1, faux.getModel());
+    const result = scoped.models.completeSimple(
+      scoped.models.getModel(route.provider, route.modelId)!,
+      { messages: [] },
+    );
+    await vi.advanceTimersByTimeAsync(100);
+    expect(await result).toMatchObject({
+      stopReason: "error",
+      errorMessage: "Model response event idle timeout after 20ms",
+    });
+    expect(release).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});

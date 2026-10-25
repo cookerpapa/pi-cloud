@@ -1,5 +1,18 @@
 # Architecture
 
+Conversation commands follow [ADR-0277](adr/0277-model-event-waiting-and-conversation-commands.md).
+`/usage` reads native committed usage and the active context head/suffix, without
+acquiring a Worker or starting a VM. `/compact` routes to the current owner and
+creates Pi's exported CompactionTask and an idempotent receipt in one native
+transaction. When idle, `runs.operation_kind=compact` uses the existing claim,
+lease, writer and recovery path. The receipt points to native Task/Submission
+state; summary generation and summary placement remain distinct. No fabricated
+user prompt, independent task queue or compaction scheduler is introduced.
+Task-scoped public registry instrumentation keeps overlapping normal generation
+and compaction model requests separate, including resumed phases. The Models
+adapter measures 300 seconds of valid-event inactivity and uses Pi's five native
+retries; the Gateway retains only a 15-second connection-establishment bound.
+
 [ADR-0276](adr/0276-scoped-control-plane-releases.md) adds a scoped Control Plane
 release for ordinary Tool implementation/registration changes, deployed as
 `control-final-35d715ae`. A local expiring projection hold

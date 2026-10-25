@@ -57,7 +57,7 @@ it.each([
     },
   });
   try {
-    await runtime.transformContext([]);
+    await runtime.prepareModelRequest([]);
     const tool = runtime.tools.find((t) => t.name === "bash")!;
     await withToolInvocation({ id: randomUUID(), nativeToolCallId: "review" }, async () => {
       const prepared = await tool.prepareExecution!("review", {

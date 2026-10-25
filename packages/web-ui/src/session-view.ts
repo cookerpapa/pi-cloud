@@ -95,6 +95,7 @@ export type TranscriptItem =
     };
 
 export type TurnView = {
+  operation?: ConversationDetailResource["turns"][number]["operation"];
   runId: string | null;
   turnId: string;
   mailboxPosition: number | null;
@@ -155,6 +156,7 @@ export type SessionViewAction =
       prompt: string;
       uploads?: UserUpload[];
     }
+  | { type: "compact.accepted"; compact: import("@pi-cloud/protocol").ConversationCompactResource }
   | { type: "turn.cancellation.requested"; turnId: string }
   | { type: "stream.status"; status: SessionStreamStatus }
   | { type: "stream.event"; event: PiCloudEvent }
@@ -292,6 +294,9 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
         ...turn,
         status: "running",
         startedSequence: event.seq,
+        ...(event.payload.inputKind === "compact"
+          ? { operation: { kind: "compact" as const, state: "summarizing" as const }, prompt: "" }
+          : {}),
         failure: null,
         cancellation: null,
       };
@@ -590,6 +595,19 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
         status: "completed",
         terminalSequence: event.seq,
         stopReason: event.payload.stopReason,
+        ...(turn.operation
+          ? {
+              operation: {
+                ...turn.operation,
+                state:
+                  event.payload.stopReason === "compact_no_op"
+                    ? ("no_op" as const)
+                    : event.payload.stopReason === "compact_stale"
+                      ? ("stale" as const)
+                      : ("applied" as const),
+              },
+            }
+          : {}),
       };
     }
     if (event.type === "turn.failed") {
@@ -614,6 +632,7 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
             }
             return item;
           }),
+        ...(turn.operation ? { operation: { ...turn.operation, state: "failed" as const } } : {}),
         status: "failed",
         terminalSequence: event.seq,
         failure: event.payload,
@@ -641,6 +660,9 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
             }
             return item;
           }),
+        ...(turn.operation
+          ? { operation: { ...turn.operation, state: "cancelled" as const } }
+          : {}),
         status: "cancelled",
         terminalSequence: event.seq,
         stopReason: "cancelled",
@@ -689,6 +711,7 @@ export function sessionViewReducer(
       turns: updateTurn(state.turns, action.turn.turnId, (current) => ({
         ...current,
         prompt: action.turn.prompt,
+        ...(action.turn.operation ? { operation: action.turn.operation } : {}),
         ...(action.turn.uploads ? { uploads: action.turn.uploads } : {}),
         runId: action.turn.runId,
         mailboxPosition: action.turn.mailboxPosition,
@@ -744,6 +767,7 @@ export function sessionViewReducer(
         turnId: turn.turnId,
         mailboxPosition: turn.mailboxPosition,
         prompt: turn.prompt,
+        ...(turn.operation ? { operation: turn.operation } : {}),
         ...(turn.uploads ? { uploads: turn.uploads } : {}),
         acceptedAt: turn.acceptedAt,
         status: turn.state,
@@ -817,6 +841,31 @@ export function sessionViewReducer(
     )
       return state;
     return { ...state, turns: [...history, ...pending] };
+  }
+  if (action.type === "compact.accepted") {
+    const value = action.compact;
+    if (!value.initialOperation || state.session?.sessionId !== value.sessionId) return state;
+    return {
+      ...state,
+      turns: updateTurn(state.turns, value.turnId, (turn) => ({
+        ...turn,
+        runId: value.runId,
+        prompt: "",
+        acceptedAt: value.acceptedAt,
+        operation: { kind: "compact", state: value.state },
+        status:
+          value.state === "queued"
+            ? "queued"
+            : value.state === "cancelled"
+              ? "cancelled"
+              : value.state === "failed"
+                ? "failed"
+                : ["applied", "no_op", "stale"].includes(value.state)
+                  ? "completed"
+                  : "running",
+      })),
+      apiError: null,
+    };
   }
   if (action.type === "turn.cancellation.requested") {
     return {

@@ -77,6 +77,7 @@ export async function readInputQueue(
     .where("tenant_id", "=", tenantId)
     .where("session_id", "=", sessionId)
     .where("state", "=", "queued")
+    .where("operation_kind", "=", "chat")
     .where("lease_id", "is", null)
     .where("started_at", "is", null)
     .where("pruned_at", "is", null)

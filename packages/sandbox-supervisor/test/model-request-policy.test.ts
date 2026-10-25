@@ -87,7 +87,7 @@ it.each(["fast", null] as const)(
       expect((await submitted.wait(BACKGROUND_CONTEXT)).status).toBe("done");
       expect(requests.map((request) => request.purpose)).toEqual(["context_maintenance", "agent"]);
       expect(
-        requests.every((request) => request.timeout === 4321 && request.transport === "sse"),
+        requests.every((request) => request.timeout === 0 && request.transport === "sse"),
       ).toBe(true);
       expect(await Promise.all(requests.map((request) => Promise.resolve(request.tier)))).toEqual(
         requests.map(() => (tier ? { service_tier: "fast" } : {})),

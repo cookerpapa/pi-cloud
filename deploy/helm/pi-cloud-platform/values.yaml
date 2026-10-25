@@ -245,9 +245,8 @@ pi-workers:
       sandboxControlRequestMs: 360000
       workerDrainMs: 30000
       workerRetirementMs: 660000
-      modelUpstreamConnectMs: 240000
-      modelUpstreamIdleMs: 300000
-      modelRequestMs: 270000
+      modelConnectMs: 15000
+      modelEventIdleMs: 300000
   state:
     storageClassName: ""
     accessModes: [ReadWriteOncePod]

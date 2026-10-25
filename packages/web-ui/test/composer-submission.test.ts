@@ -8,7 +8,7 @@ const input = {
   uploadIds: ["image"],
 };
 
-it.each(["turn", "steer"] as const)(
+it.each(["turn", "steer", "compact"] as const)(
   "%s retries a lost ACK but permits an intentional repeat after confirmation",
   async (kind) => {
     const submission = new ComposerSubmission(),
@@ -71,7 +71,7 @@ it("does not let an older acknowledgement discard an unresolved newer submission
   expect(keys[0]).toBe(keys[1]);
 });
 
-it.each(["turn", "steer"] as const)(
+it.each(["turn", "steer", "compact"] as const)(
   "ends uncertain %s identity after the other action succeeds",
   async (kind) => {
     const submission = new ComposerSubmission();
@@ -117,7 +117,7 @@ it("explicit abandonment ends an uncertain intent without letting its late ACK c
   expect(await submission.send(input, async (key) => key)).toBe(newKey);
 });
 
-it.each(["turn", "steer"] as const)(
+it.each(["turn", "steer", "compact"] as const)(
   "retires only the returned %s identity, preserving an unrelated Session or newer intent",
   async (kind) => {
     const submission = new ComposerSubmission(),

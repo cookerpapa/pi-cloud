@@ -1,7 +1,7 @@
 import { newIdempotencyKey } from "./api.ts";
 
 type ComposerInput = Readonly<{
-  kind: "turn" | "steer";
+  kind: "turn" | "steer" | "compact";
   sessionId: string;
   text: string;
   uploadIds: readonly string[];

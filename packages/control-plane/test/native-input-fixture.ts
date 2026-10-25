@@ -151,6 +151,7 @@ export async function startNativeInputAgent(
       },
       execute: async (request, listener, admission) => {
         reference = admission.executionReference;
+        if (request.input.kind !== "prompt") throw new Error("Input fixture requires chat work");
         await conversation.submit(
           { type: "input", content: request.input.prompt, requestId: accepted.runId },
           BACKGROUND_CONTEXT,

@@ -689,3 +689,21 @@ export {
 } from "./durable-display.ts";
 export * from "./runtime-keepalive.ts";
 export { toolImageView, toolContentView, type ToolImageView } from "./tool-image-view.ts";
+export {
+  UsageTokensSchema,
+  ConversationUsageResourceSchema,
+  parseConversationUsageResource,
+  CompactRequestSchema,
+  parseCompactRequest,
+  CompactStateSchema,
+  ConversationCompactResourceSchema,
+  parseConversationCompactResource,
+  NativeCompactCommandSchema,
+  NativeCompactResultSchema,
+  type UsageTokens,
+  type ConversationUsageResource,
+  type CompactRequest,
+  type ConversationCompactResource,
+  type NativeCompactCommand,
+  type NativeCompactResult,
+} from "./conversation-commands.ts";

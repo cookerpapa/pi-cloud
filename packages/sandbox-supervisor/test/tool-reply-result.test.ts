@@ -86,7 +86,11 @@ async function fixture(mode: Mode) {
       return mode === "integrity_error" ? Buffer.from("bad bytes") : pixels;
     },
   });
-  const display = nativeTestDisplay(() => {}),
+  const display = nativeTestDisplay(
+      () => {},
+      (value) =>
+        codec.pack({ tenantId: command.payload.tenantId, runId: command.payload.runId }, value),
+    ),
     recordSeq = new Map<number, number>();
   let prepare: Parameters<DurableSessionHandle["preparePublication"]>[0] | undefined;
   let runtime: Promise<ManagedNativeRuntime> | undefined;
@@ -227,7 +231,7 @@ async function fixture(mode: Mode) {
         autoCompactTokenLimit: 100000,
         maxTokens: 1024,
         serviceTier: null,
-        requestTimeoutMs: 10000,
+        eventIdleTimeoutMs: 10000,
         // This isolated HTTP model implements the SDK's completions port. Production
         // provider configuration still admits only its pinned Responses routes.
       } as unknown as TrustedModelRuntimeLease["runtime"],

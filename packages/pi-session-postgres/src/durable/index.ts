@@ -35,3 +35,16 @@ export {
   type StoredHumanInputs,
   type StoredHumanInput,
 } from "./human-inputs.ts";
+export {
+  readNativeUsageBatch,
+  readNativeContextEstimate,
+  nativeUsageTotals,
+  emptyUsageTokens,
+  addUsageTokens,
+} from "./conversation-usage.ts";
+export {
+  readNativeCompaction,
+  nativeCompactionState,
+  type NativeCompactReceipt,
+  type CompactState,
+} from "./compaction-commands.ts";

@@ -49,6 +49,9 @@ Real Luna guest interaction, screenshot vision and live/cold preview navigation 
   Stop withdraws pending messages and restores their text and attachments to the
   composer for editing, alongside the existing draft.
 - Persistent conversations, context compaction and interruption recovery.
+- Composer commands: `/usage` reads committed usage and estimated context;
+  `/compact [instructions]` invokes native Pi compaction in the current Run, or
+  admits explicit compact work when idle. It does not activate Workspace compute.
 - Ultra in the effort picker: provider Max plus proactive delegation. Other
   efforts retain explicitly requested delegation. Parent Tool cards show compact
   child progress and navigation, with invocation details closed by default.

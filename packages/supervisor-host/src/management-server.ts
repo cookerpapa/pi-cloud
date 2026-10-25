@@ -33,6 +33,7 @@ export type SupervisorManagementServerOptions = {
   readiness: () => boolean;
   assignmentInventory: SupervisorAssignmentInventory;
   humanInput?: (command: NativeInputCommand) => Promise<NativeInputResult>;
+  compact?: (command: NativeCompactCommand) => Promise<NativeCompactResult>;
   subagentCommand?: (command: SubagentHostRequest) => Promise<unknown>;
   bodyLimit?: number;
 };
@@ -127,6 +128,7 @@ export class SupervisorManagementServer {
   readonly #readiness: () => boolean;
   readonly #assignmentInventory: SupervisorAssignmentInventory;
   readonly #humanInput: ((command: NativeInputCommand) => Promise<NativeInputResult>) | undefined;
+  readonly #compact: ((command: NativeCompactCommand) => Promise<NativeCompactResult>) | undefined;
   readonly #subagentCommand: ((command: SubagentHostRequest) => Promise<unknown>) | undefined;
   #stopOperation: Promise<void> | undefined;
   #address: string | undefined;
@@ -145,6 +147,7 @@ export class SupervisorManagementServer {
     this.#readiness = options.readiness;
     this.#assignmentInventory = options.assignmentInventory;
     this.#humanInput = options.humanInput;
+    this.#compact = options.compact;
     this.#subagentCommand = options.subagentCommand;
     this.#server = Fastify({
       logger: false,
@@ -262,6 +265,20 @@ export class SupervisorManagementServer {
       };
     }
 
+    if (message.type === "native.compact") {
+      if (!this.#compact)
+        throw new SupervisorManagementServerError(
+          "input_target_unavailable",
+          "Native compact endpoint is unavailable",
+          true,
+        );
+      return {
+        protocolVersion: 1,
+        type: "native.compact.applied",
+        requestId: message.requestId,
+        result: await this.#compact(message.command),
+      };
+    }
     if (message.type === "native.input") {
       if (this.#humanInput === undefined) {
         throw new SupervisorManagementServerError(
@@ -328,3 +345,4 @@ export class SupervisorManagementServer {
     };
   }
 }
+import type { NativeCompactCommand, NativeCompactResult } from "@pi-cloud/protocol";

@@ -1,3 +1,5 @@
+import { CompactStatus } from "./ConversationUsage.tsx";
+import type { ConversationCompactResource } from "@pi-cloud/protocol";
 import { UploadCards } from "./UploadCards.tsx";
 import type { PiCloudApi } from "./api.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -386,6 +388,7 @@ export function ConversationTurn({
   canPrune = false,
   onPrune,
   onPresentationProgress,
+  compaction,
   delegatedChildren = [],
   onOpenChild,
 }: {
@@ -399,13 +402,20 @@ export function ConversationTurn({
   canPrune?: boolean;
   onPrune?: () => void;
   onPresentationProgress?: () => void;
+  compaction?: ConversationCompactResource;
   delegatedChildren?: readonly DelegatedSessionSummaryResource[];
   onOpenChild?: (child: DelegatedSessionSummaryResource) => void;
 }) {
   const { t } = useI18n();
   const working =
     turn.status === "queued" || turn.status === "running" || turn.status === "cancelling";
-  const rows = useMemo(() => deriveConversationPresentationRows(turn.items), [turn.items]);
+  const rows = useMemo(
+    () =>
+      deriveConversationPresentationRows(
+        turn.items.filter((item) => item.kind !== "compaction" || item.reason !== "manual"),
+      ),
+    [turn.items],
+  );
   const finalAnswerText = useMemo(
     () =>
       rows
@@ -414,6 +424,19 @@ export function ConversationTurn({
         .join("\n\n"),
     [rows],
   );
+  if (turn.operation?.kind === "compact")
+    return (
+      <section
+        className="product-turn product-turn-command"
+        data-conversation-turn-id={turn.turnId}
+        id={`turn-${turn.turnId}`}
+      >
+        <CompactStatus
+          state={compaction?.state ?? turn.operation.state}
+          {...(turn.operation.instructions ? { instructions: turn.operation.instructions } : {})}
+        />
+      </section>
+    );
   return (
     <ChildAgentProgressContext.Provider
       value={{
@@ -555,6 +578,7 @@ export function ConversationTurn({
               ) : null}
             </div>
           </div>
+          {compaction ? <CompactStatus state={compaction.state} /> : null}
         </section>
       </ToolProgressContext.Provider>
     </ChildAgentProgressContext.Provider>

@@ -1,4 +1,10 @@
 import { withToolInvocation } from "../tool-invocation.ts";
+import {
+  modelTaskRegistry,
+  nativeModelTask,
+  type NativeRequestContext,
+} from "./model-task-context.ts";
+export type { NativeRequestContext } from "./model-task-context.ts";
 import { PiTurnError } from "../pi-turn-runtime.ts";
 import { publicEgressSection } from "./runtime-capabilities.ts";
 import { delegationInstructions } from "./delegation-policy.ts";
@@ -27,7 +33,6 @@ import {
   defineDocFamily,
   configure,
   GenerationTask,
-  CompactionTask,
   hook,
   watchEvents,
   type AgentEvent,
@@ -106,11 +111,6 @@ const ControlRecoveryDocument = defineDocFamily<
   initial: (value) => value,
 });
 
-export type NativeRequestContext = {
-  taskId: number;
-  conversationId: number;
-  purpose: "agent" | "context_maintenance";
-};
 type RemoteToolDefinitionsSource = {
   current(): readonly Omit<ToolRegistration, "execute">[];
   subscribe(listener: () => void): () => void;
@@ -141,7 +141,6 @@ export type DurableRunConfiguration = {
 export class DurableAgentSession {
   readonly #bindings = new Map<number, DurableRunConfiguration>();
   readonly #conversations = new Map<number, string>();
-  readonly #requests = new Map<number, NativeRequestContext>();
   readonly #waiters = new Map<string, Set<() => void>>();
   readonly #abort = new AbortController();
   readonly #registry = createRegistry();
@@ -173,7 +172,10 @@ export class DurableAgentSession {
       );
       await run.assertCurrent();
       await run.beforeEffect?.(request.options.signal);
-      return run.openModel(request, this.#requests.get(run.conversationId));
+      const native = nativeModelTask();
+      if (native?.conversationId !== run.conversationId)
+        throw new Error("Model request has no matching native task invocation");
+      return run.openModel(request, native);
     });
     this.remote = new DurableRemoteTools({
       definitions: options.remoteTools,
@@ -212,28 +214,10 @@ export class DurableAgentSession {
         ],
         hooks: [
           hook(GenerationTask, {
-            beforeRequest: (_request, api) => {
-              this.#requests.set(api.conversationId, {
-                taskId: api.taskId,
-                conversationId: api.conversationId,
-                purpose: "agent",
-              });
-              return undefined;
-            },
             onYield: async (answer, api) => {
               const run = this.#bindings.get(api.conversationId);
               const next = await run?.beforeYield?.(answer);
               return next === undefined ? undefined : { continue: next };
-            },
-          }),
-          hook(CompactionTask, {
-            beforeCompact: (_range, api) => {
-              this.#requests.set(api.conversationId, {
-                taskId: api.taskId,
-                conversationId: api.conversationId,
-                purpose: "context_maintenance",
-              });
-              return undefined;
             },
           }),
         ],
@@ -317,7 +301,7 @@ export class DurableAgentSession {
         storage,
         {
           models: session.#models.models,
-          registry: session.#registry,
+          registry: modelTaskRegistry(session.#registry),
           // Existing product Runs finish when their foreground work finishes. Keep
           // automatic Compaction blocking until independent background admission is exposed.
           settings: {
@@ -331,23 +315,6 @@ export class DurableAgentSession {
       // Only live task conversations need restored routes. Historical child
       // documents never turn into a lifetime Session bootstrap scan.
       const inspection = await session.#harness.inspect(context);
-      // Compaction resumes summarize/retry without rerunning beforeCompact. The
-      // request identity is derived from that committed task, never a new grant.
-      // Generation's request phase refreshes this through beforeRequest.
-      // Background compaction is disabled,
-      // so only one model-producing task can own a Conversation at this boundary.
-      for (const { record } of inspection.tasks) {
-        if (!("checkpoint" in record.state)) continue;
-        const phase = (record.state.checkpoint as { phase?: string }).phase;
-        const compaction =
-          record.kind === "pi.compaction" && ["summarize", "retry"].includes(phase ?? "");
-        if (!compaction) continue;
-        session.#requests.set(record.conversationId, {
-          taskId: record.id,
-          conversationId: record.conversationId,
-          purpose: "context_maintenance",
-        });
-      }
       for (const conversationId of new Set(
         inspection.tasks.map((task) => task.record.conversationId),
       )) {
@@ -472,8 +439,6 @@ export class DurableAgentSession {
     if (run?.runId === runId) {
       this.#bindings.delete(conversationId);
       this.#conversations.delete(conversationId);
-      for (const [taskId, request] of this.#requests)
-        if (request.conversationId === conversationId) this.#requests.delete(taskId);
     }
     this.#models.forget(runId, conversationId);
   }
@@ -729,7 +694,6 @@ export class DurableAgentSession {
       this.remote.close();
       this.#bindings.clear();
       this.#conversations.clear();
-      this.#requests.clear();
     }
   }
 }

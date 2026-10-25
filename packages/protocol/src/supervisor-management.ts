@@ -4,6 +4,7 @@ import { Value } from "typebox/value";
 import { OpaqueIdSchema, UtcTimestampSchema, UuidSchema } from "./protocol-primitives.ts";
 import { ExecutionReferenceSchema } from "./execution-reference.ts";
 import { NativeInputCommandSchema, NativeInputResultSchema } from "./native-inputs.ts";
+import { NativeCompactCommandSchema, NativeCompactResultSchema } from "./conversation-commands.ts";
 
 const Sha256Schema = Type.String({ pattern: "^[0-9a-f]{64}$" });
 
@@ -112,6 +113,15 @@ export const SupervisorManagementRequestSchema = Type.Union([
     },
     { additionalProperties: false },
   ),
+  Type.Object(
+    {
+      protocolVersion: Type.Literal(1),
+      type: Type.Literal("native.compact"),
+      requestId: UuidSchema,
+      command: NativeCompactCommandSchema,
+    },
+    { additionalProperties: false },
+  ),
 ]);
 
 export const SupervisorManagementResponseSchema = Type.Union([
@@ -150,6 +160,15 @@ export const SupervisorManagementResponseSchema = Type.Union([
       type: Type.Literal("native.input.applied"),
       requestId: UuidSchema,
       result: NativeInputResultSchema,
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      protocolVersion: Type.Literal(1),
+      type: Type.Literal("native.compact.applied"),
+      requestId: UuidSchema,
+      result: NativeCompactResultSchema,
     },
     { additionalProperties: false },
   ),

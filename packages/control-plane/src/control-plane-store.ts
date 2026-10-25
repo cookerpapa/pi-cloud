@@ -1,3 +1,4 @@
+import { compactFingerprint } from "./conversation-command-identity.ts";
 import { environmentForImage } from "@pi-cloud/database";
 import {
   catalogModel,
@@ -113,6 +114,8 @@ const inputSessionColumns = [
   "tool_capabilities",
   "pruned_at",
 ] as const;
+export type InitialRunRequest =
+  AcceptTurnRequest | { kind: "compact"; commandId: string; instructions: string };
 type InputSession = Pick<Selectable<Database["sessions"]>, (typeof inputSessionColumns)[number]>;
 type InputAdmissionSession = InputSession & {
   replayRunId: string | null;
@@ -174,7 +177,8 @@ const TURN_ACCEPTING_SESSION_STATES = new Set<SessionState>([
   "cancelling",
 ]);
 
-function turnRequestFingerprint(request: AcceptTurnRequest): string {
+function turnRequestFingerprint(request: InitialRunRequest): string {
+  if ("kind" in request) return compactFingerprint(request.instructions);
   return createHash("sha256")
     .update(
       JSON.stringify({
@@ -1242,6 +1246,9 @@ export class ControlPlaneStore {
   getConversation(sessionId: string, beforeTurnId?: string): Promise<ConversationDetailResource> {
     return this.#conversations.getConversation(sessionId, beforeTurnId);
   }
+  getConversationUsage(sessionId: string) {
+    return readConversationUsage(this.#database, this.#tenantId, sessionId);
+  }
   getConversationView(sessionId: string, beforeTurnId?: string) {
     return this.#conversations.getConversationView(sessionId, beforeTurnId);
   }
@@ -1252,10 +1259,10 @@ export class ControlPlaneStore {
 
   /** The router and initial writer share one locked Session and fresh replay
    * lookup. This snapshot/action belongs only to the enclosing transaction. */
-  async withInputAdmission<T>(
+  async withWorkAdmission<T>(
     sessionId: string,
     key: string,
-    request: AcceptTurnRequest,
+    request: InitialRunRequest,
     decide: (admission: {
       transaction: Transaction<Database>;
       tenantId: string;
@@ -1321,7 +1328,7 @@ export class ControlPlaneStore {
   async #acceptInput(
     sessionId: string,
     idempotencyKey: string,
-    request: AcceptTurnRequest,
+    request: InitialRunRequest,
     fingerprint: string,
     existingTransaction?: Transaction<Database>,
     knownSession?: InputAdmissionSession,
@@ -1474,12 +1481,15 @@ export class ControlPlaneStore {
   async #acceptNewTurn(
     sessionId: string,
     idempotencyKey: string,
-    request: AcceptTurnRequest,
+    request: InitialRunRequest,
     fingerprint: string,
     existingTransaction?: Transaction<Database>,
     knownSession?: InputAdmissionSession,
   ): Promise<AcceptedInput> {
-    const turnId = this.#idGenerator();
+    const compact = "kind" in request ? request : undefined;
+    const chat = "kind" in request ? undefined : request;
+    const inputText = compact?.instructions ?? chat!.prompt;
+    const turnId = compact?.commandId ?? this.#idGenerator();
     const runId = this.#idGenerator();
     const accept = async (transaction: Transaction<Database>): Promise<AcceptedInput> => {
       const session =
@@ -1533,7 +1543,7 @@ export class ControlPlaneStore {
           true,
         );
       }
-      if (session.execution_mode === "development_environment") {
+      if (!compact && session.execution_mode === "development_environment") {
         if (session.development_environment_id === null) {
           throw new ControlPlaneStoreError(
             "control_plane_misconfigured",
@@ -1577,24 +1587,39 @@ export class ControlPlaneStore {
           );
         }
       }
-      const workspace = await transaction
-        .selectFrom("workspaces as workspace")
-        .select("workspace.id")
-        .where("workspace.tenant_id", "=", this.#tenantId)
-        .where("workspace.id", "=", session.workspace_id)
-        .where("workspace.deleted_at", "is", null)
-        // Keep this admission check valid until its queued Run commits. Shared
-        // readers may coexist; resource deletion must wait and see the new Run.
-        .forShare("workspace")
-        .executeTakeFirst();
-      if (workspace === undefined) {
-        throw new ControlPlaneStoreError(
-          "conflict",
-          "Conversation Workspace is no longer available; choose a new Workspace to continue",
-        );
+      if (!compact) {
+        const workspace = await transaction
+          .selectFrom("workspaces as workspace")
+          .select("workspace.id")
+          .where("workspace.tenant_id", "=", this.#tenantId)
+          .where("workspace.id", "=", session.workspace_id)
+          .where("workspace.deleted_at", "is", null)
+          // Keep this admission check valid until its queued Run commits. Shared
+          // readers may coexist; resource deletion must wait and see the new Run.
+          .forShare("workspace")
+          .executeTakeFirst();
+        if (workspace === undefined) {
+          throw new ControlPlaneStoreError(
+            "conflict",
+            "Conversation Workspace is no longer available; choose a new Workspace to continue",
+          );
+        }
       }
       if (session.pruned_at !== null) {
         throw new ControlPlaneStoreError("conflict", "Archived Session cannot accept turns");
+      }
+      if (compact) {
+        const pending = await sql`select 1 from pi_durable_records r
+          where r.tenant_id=${this.#tenantId}::uuid and r.session_id=${session.pi_session_id}
+            and ((r.kind='task' and r.fields->>'status'<>'terminal' and r.fields->>'background'<>'true')
+              or (r.kind='submission' and r.fields->>'status' in ('queued','placed'))) limit 1`.execute(
+          transaction,
+        );
+        if (pending.rows.length)
+          throw new ControlPlaneStoreError(
+            "conflict",
+            "Wait for previous conversation work to finish before compacting",
+          );
       }
       if (!TURN_ACCEPTING_SESSION_STATES.has(session.state)) {
         throw new ControlPlaneStoreError(
@@ -1609,7 +1634,7 @@ export class ControlPlaneStore {
       const model = await this.#resolveModelSnapshot(
         transaction,
         session.desired_model_profile_id,
-        request.thinkingLevel ?? (session.desired_thinking_level as ModelThinkingLevel),
+        chat?.thinkingLevel ?? (session.desired_thinking_level as ModelThinkingLevel),
         session.desired_service_tier,
       );
       let toolCapabilities;
@@ -1622,15 +1647,17 @@ export class ControlPlaneStore {
         );
       }
       const environment = await this.#activeEnvironmentForRun(transaction, session.project_id);
-      const uploads = await bindInputUploads(transaction, {
-        tenantId: this.#tenantId,
-        sessionId,
-        workspaceId: session.workspace_id,
-        workingDirectory: session.working_directory,
-        ids: request.uploadIds ?? [],
-      });
+      const uploads = compact
+        ? []
+        : await bindInputUploads(transaction, {
+            tenantId: this.#tenantId,
+            sessionId,
+            workspaceId: session.workspace_id,
+            workingDirectory: session.working_directory,
+            ids: chat?.uploadIds ?? [],
+          });
       try {
-        assertUserInputBudget(request.prompt, uploads);
+        assertUserInputBudget(inputText, uploads);
       } catch (error) {
         throw new ControlPlaneStoreError("invalid_request", (error as Error).message);
       }
@@ -1653,7 +1680,8 @@ export class ControlPlaneStore {
           workspace_id: session.workspace_id,
           session_id: session.id,
           turn_id: turnId,
-          input_text: request.prompt,
+          input_text: inputText,
+          operation_kind: compact ? "compact" : "chat",
           input_uploads: sql<unknown[]>`${JSON.stringify(uploads)}::jsonb`,
           model_profile_id: model.profileId,
           provider: model.provider,
@@ -2110,3 +2138,4 @@ export class ControlPlaneStore {
   }
 }
 import { TOOL_CANCELLATION_TIMEOUT_MS } from "@pi-cloud/protocol";
+import { readConversationUsage } from "./conversation-usage.ts";

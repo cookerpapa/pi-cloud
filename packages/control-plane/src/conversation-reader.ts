@@ -1,3 +1,4 @@
+import { compactRunState } from "./conversation-command-identity.ts";
 import { turnStateForRun, type RunState } from "@pi-cloud/domain";
 import { readDurableEntries } from "@pi-cloud/pi-session-postgres/durable";
 import type { Database } from "@pi-cloud/database";
@@ -38,6 +39,8 @@ type ConversationLineageNode = {
 };
 
 type ConversationHistoryRow = {
+  operationKind: "chat" | "compact";
+  stopReason: string | null;
   originSessionId: string;
   runId: string;
   turnId: string;
@@ -124,6 +127,7 @@ export class ConversationReader {
             .whereRef("counted_run.session_id", "=", "session_row.id")
             .where("counted_run.pruned_at", "is", null)
             .where("counted_run.state", "!=", "queued")
+            .where("counted_run.operation_kind", "=", "chat")
             .where(
               sql<boolean>`not (counted_run.state='cancelled' and counted_run.started_at is null)`,
             )
@@ -343,6 +347,8 @@ export class ConversationReader {
           "run.id as runId",
           "run.turn_id as turnId",
           "run.input_text as prompt",
+          "run.operation_kind as operationKind",
+          "run.stop_reason as stopReason",
           "run.input_source as promptSource",
           "run.input_uploads as uploads",
           "run.state as runState",
@@ -355,8 +361,12 @@ export class ConversationReader {
         .where("run.tenant_id", "=", this.#tenantId)
         .where("run.session_id", "=", node.sessionId)
         .where("run.pruned_at", "is", null)
-        .where("run.state", "!=", "queued")
-        .where(sql<boolean>`not (run.state='cancelled' and run.started_at is null)`)
+        .where((eb) =>
+          eb.or([eb("run.state", "!=", "queued"), eb("run.operation_kind", "=", "compact")]),
+        )
+        .where(
+          sql<boolean>`run.operation_kind='compact' or not (run.state='cancelled' and run.started_at is null)`,
+        )
         .where("run.mailbox_position", "is not", null)
         .$if(anchor?.session_id === node.sessionId, (query) =>
           query.where("run.mailbox_position", "<", anchor!.mailbox_position),
@@ -378,7 +388,9 @@ export class ConversationReader {
     }
     const historyTruncated = lineageTurnRows.length > MAX_CONVERSATION_TURNS;
     const includedRows = lineageTurnRows.slice(0, MAX_CONVERSATION_TURNS).reverse();
-    const turnIds = includedRows.map((row) => row.turnId);
+    const turnIds = includedRows
+      .filter((row) => row.operationKind !== "compact")
+      .map((row) => row.turnId);
     const transcriptByTurnId = await readCanonicalPiTurnTranscripts(this.#database, {
       tenantId: this.#tenantId,
       turnIds,
@@ -396,7 +408,16 @@ export class ConversationReader {
         runId: row.runId,
         turnId: row.turnId,
         mailboxPosition: positiveSafeInteger(row.mailboxPosition, "Conversation mailbox position"),
-        prompt: row.prompt,
+        prompt: row.operationKind === "compact" ? "" : row.prompt,
+        ...(row.operationKind === "compact"
+          ? {
+              operation: {
+                kind: "compact" as const,
+                state: compactRunState(row.runState, row.stopReason),
+                ...(row.prompt ? { instructions: row.prompt } : {}),
+              },
+            }
+          : {}),
         ...(row.uploads.length ? { uploads: parseUserUploads(row.uploads) } : {}),
         state:
           row.waitingForSeal &&

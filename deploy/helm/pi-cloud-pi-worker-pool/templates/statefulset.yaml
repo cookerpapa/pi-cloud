@@ -10,8 +10,8 @@
 {{- if lt (int $timeouts.sandboxControlRequestMs) 360000 -}}
 {{- fail "runtime.timeouts.sandboxControlRequestMs must outlive the maximum Tool execution" -}}
 {{- end -}}
-{{- if gt (int $timeouts.modelUpstreamConnectMs) (int $timeouts.modelRequestMs) -}}
-{{- fail "runtime.timeouts.modelUpstreamConnectMs cannot exceed modelRequestMs" -}}
+{{- if ge (int $timeouts.modelConnectMs) (int $timeouts.modelEventIdleMs) -}}
+{{- fail "runtime.timeouts.modelConnectMs must be below modelEventIdleMs" -}}
 {{- end -}}
 {{- if lt (int $timeouts.workerRetirementMs) (add (int $timeouts.sandboxControlRequestMs) 300000) -}}
 {{- fail "runtime.timeouts.workerRetirementMs must cover operation cleanup and ownership settlement" -}}
@@ -199,12 +199,10 @@ spec:
               value: {{ .Values.runtime.timeouts.workerDrainMs | quote }}
             - name: PI_CLOUD_WORKER_RETIREMENT_TIMEOUT_MS
               value: {{ .Values.runtime.timeouts.workerRetirementMs | quote }}
-            - name: PI_CLOUD_MODEL_GATEWAY_UPSTREAM_CONNECT_TIMEOUT_MS
-              value: {{ .Values.runtime.timeouts.modelUpstreamConnectMs | quote }}
-            - name: PI_CLOUD_MODEL_GATEWAY_UPSTREAM_IDLE_TIMEOUT_MS
-              value: {{ .Values.runtime.timeouts.modelUpstreamIdleMs | quote }}
-            - name: PI_CLOUD_PI_MODEL_REQUEST_TIMEOUT_MS
-              value: {{ .Values.runtime.timeouts.modelRequestMs | quote }}
+            - name: PI_CLOUD_MODEL_CONNECT_TIMEOUT_MS
+              value: {{ .Values.runtime.timeouts.modelConnectMs | quote }}
+            - name: PI_CLOUD_MODEL_EVENT_IDLE_TIMEOUT_MS
+              value: {{ .Values.runtime.timeouts.modelEventIdleMs | quote }}
             - name: PI_CLOUD_METRICS_HOST
               value: 0.0.0.0
             - name: PI_CLOUD_METRICS_PORT

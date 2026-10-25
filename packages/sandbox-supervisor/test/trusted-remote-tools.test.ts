@@ -87,7 +87,7 @@ async function runNativeRemote(
   ]);
   const scoped = new ScopedDurableModels(source, async (request) => {
     const context = request.input as { messages: import("@earendil-works/pi-ai").Message[] };
-    const messages = await runtime.transformContext(context.messages);
+    const { messages } = await runtime.prepareModelRequest(context.messages);
     return {
       model: provider.getModel(),
       input: { ...context, messages },
@@ -541,7 +541,7 @@ describe("whole-tool Worker adapter", () => {
       },
     });
     const runtime = createTrustedRemoteAgentTools(value);
-    await runtime.transformContext([]);
+    await runtime.prepareModelRequest([]);
     await expect(
       runtime.tools
         .find((t) => t.name === "read")!
@@ -564,7 +564,7 @@ describe("whole-tool Worker adapter", () => {
       reply: async () => reply.promise,
     });
     const runtime = createTrustedRemoteAgentTools(value);
-    await runtime.transformContext([]);
+    await runtime.prepareModelRequest([]);
     const pending = runtime.tools
       .find((t) => t.name === "read")!
       .execute({ path: "a" }, nativeToolApi("early"), BACKGROUND_CONTEXT);
@@ -595,7 +595,7 @@ describe("whole-tool Worker adapter", () => {
         }),
       });
       const runtime = createTrustedRemoteAgentTools(value);
-      await runtime.transformContext([]);
+      await runtime.prepareModelRequest([]);
       const tool = runtime.tools.find((t) => t.name === "read")!;
       const result = tool.execute(
         { path: "shot.png", detail: "original" },
@@ -625,7 +625,7 @@ describe("whole-tool Worker adapter", () => {
     async (name) => {
       const { value, publishToolCommand } = configuration();
       const runtime = createTrustedRemoteAgentTools(value);
-      await runtime.transformContext([]);
+      await runtime.prepareModelRequest([]);
       const tool = runtime.tools.find((tool) => tool.name === name)!;
       const update = vi.fn();
       const args =
@@ -659,7 +659,7 @@ describe("whole-tool Worker adapter", () => {
   ])("retains Bash timeout semantics: %j", async ({ timeout, ms }) => {
     const { value, publishToolCommand } = configuration();
     const runtime = createTrustedRemoteAgentTools(value);
-    await runtime.transformContext([]);
+    await runtime.prepareModelRequest([]);
     await runtime.tools
       .find((tool) => tool.name === "bash")!
       .execute({ command: "pwd", timeout }, nativeToolApi("call"), BACKGROUND_CONTEXT);
@@ -671,7 +671,7 @@ describe("whole-tool Worker adapter", () => {
     async (timeout) => {
       const { value, publishToolCommand } = configuration();
       const runtime = createTrustedRemoteAgentTools(value);
-      await runtime.transformContext([]);
+      await runtime.prepareModelRequest([]);
       const bash = runtime.tools.find((tool) => tool.name === "bash")!;
       expect(() =>
         validateToolArguments(bash, {
@@ -721,7 +721,7 @@ describe("whole-tool Worker adapter", () => {
     await expect(runtime.systemPrompt("Current working directory: /trusted")).resolves.toContain(
       "Current working directory: /workspace",
     );
-    await runtime.transformContext([]);
+    await runtime.prepareModelRequest([]);
     expect(resolveOperationTarget).not.toHaveBeenCalled();
     await runtime.tools
       .find((tool) => tool.name === "read")!
@@ -755,15 +755,19 @@ describe("whole-tool Worker adapter", () => {
       },
     });
     const runtime = createTrustedRemoteAgentTools(value);
-    await runtime.transformContext([]);
-    expect(await runtime.transformHeaders({ "x-test": "yes" })).toMatchObject({
+    expect(
+      (await runtime.prepareModelRequest([], "agent", { "x-test": "yes" })).headers,
+    ).toMatchObject({
       "x-test": "yes",
       "x-pi-cloud-step-sequence": "1",
       traceparent: value.traceparent,
     });
-    expect(await runtime.transformHeaders()).toMatchObject({ "x-pi-cloud-step-sequence": "2" });
-    await runtime.transformContext([]);
-    expect(await runtime.transformHeaders()).toMatchObject({ "x-pi-cloud-step-sequence": "3" });
+    expect((await runtime.prepareModelRequest([], "context_maintenance")).headers).toMatchObject({
+      "x-pi-cloud-step-sequence": "2",
+    });
+    expect((await runtime.prepareModelRequest([])).headers).toMatchObject({
+      "x-pi-cloud-step-sequence": "3",
+    });
     expect(purposes).toEqual(["agent", "context_maintenance", "agent"]);
   });
 
@@ -784,9 +788,9 @@ describe("whole-tool Worker adapter", () => {
         }),
       }).value,
     );
-    const first = await runtime.transformContext([]);
+    const { messages: first } = await runtime.prepareModelRequest([]);
     expect(first).toHaveLength(1);
-    expect(await runtime.transformContext(first)).toHaveLength(1);
+    expect((await runtime.prepareModelRequest(first)).messages).toHaveLength(1);
   });
 
   it("preserves UNKNOWN as an error and marks unavailable execution state", async () => {
@@ -806,7 +810,7 @@ describe("whole-tool Worker adapter", () => {
       }),
     });
     const runtime = createTrustedRemoteAgentTools(value);
-    await runtime.transformContext([]);
+    await runtime.prepareModelRequest([]);
     await expect(
       runtime.tools
         .find((tool) => tool.name === "bash")!

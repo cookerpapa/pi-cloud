@@ -18,7 +18,10 @@ import {
 } from "@pi-cloud/protocol";
 
 /** Test counterpart of the physical-Session publication line, using real Pi writes. */
-export function nativeTestDisplay(onText: (event: PiCloudEvent) => void) {
+export function nativeTestDisplay(
+  onText: (event: PiCloudEvent) => void,
+  pack?: (commit: DurableSessionCommit) => Promise<DurableSessionCommit>,
+) {
   let prepare: Parameters<DurableSessionHandle["prepareDisplay"]>[0] | undefined;
   let tail: Promise<unknown> = Promise.resolve();
   return {
@@ -56,12 +59,14 @@ export function nativeTestDisplay(onText: (event: PiCloudEvent) => void) {
       }
       const commit = { seq, nextId: 10000, writes } as unknown as DurableSessionCommit;
       const prepared = prepare?.(commit, documents);
+      // Production resolves public image displays after native bytes become attachment references.
+      const transport = pack ? await pack(commit) : commit;
       return () => {
         prepared?.confirmed();
         for (const text of prepared?.events ?? [])
           onText(
             resolveDurableDisplay(
-              commit,
+              transport,
               text,
               (id) => documents.find((d) => d.record.id === id)?.after?.value,
             ),

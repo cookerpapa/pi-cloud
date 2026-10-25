@@ -30,8 +30,6 @@ export type SamplingContextOptions = Readonly<{
 /** Sampling/World State boundary, independent of guest activation and Tool IO. */
 export class SamplingContext {
   step: FrozenCloudStep | undefined;
-  #attempt: number | undefined;
-  #headersIssued = false;
   constructor(readonly options: SamplingContextOptions) {}
 
   async #capture(purpose: "agent" | "context_maintenance") {
@@ -42,9 +40,7 @@ export class SamplingContext {
       !/^[0-9a-f]{64}$/.test(captured.step.sha256)
     )
       throw new Error("Captured Cloud Step did not match the accepted Turn and execution contexts");
-    this.step = captured.step;
-    this.#attempt = captured.samplingAttempt;
-    this.#headersIssued = false;
+    if (purpose === "agent") this.step = captured.step;
     return captured;
   }
 
@@ -52,12 +48,11 @@ export class SamplingContext {
     if (!this.step) await this.#capture("agent");
   }
 
-  transformContext = async (
+  prepareModelRequest = async (
     input: readonly Message[],
     purpose: "agent" | "context_maintenance" = "agent",
-  ): Promise<Message[]> => {
-    this.step = undefined;
-    this.#attempt = undefined;
+    headers: ProviderHeaders = {},
+  ): Promise<{ messages: Message[]; headers: ProviderHeaders }> => {
     const captured = await this.#capture(purpose);
     const messages = [...input];
     for (const message of captured.modelMessages) {
@@ -68,24 +63,20 @@ export class SamplingContext {
       );
       if (!present) messages.push(worldStateMessage(message));
     }
-    return messages;
-  };
-
-  transformHeaders = async (headers: ProviderHeaders = {}): Promise<ProviderHeaders> => {
-    // Compaction can make more than one request without an Agent context hook.
-    if (this.#headersIssued) await this.#capture("context_maintenance");
-    if (!this.step || this.#attempt === undefined)
-      throw new Error("Model request preceded its Cloud Step capture");
-    this.#headersIssued = true;
     return {
-      ...headers,
-      ...(this.options.traceparent === undefined ? {} : { traceparent: this.options.traceparent }),
-      ...(this.options.tracestate === undefined ? {} : { tracestate: this.options.tracestate }),
-      ...modelSamplingHeaders({
-        stepSequence: this.step.context.sequence,
-        stepSha256: this.step.sha256,
-        samplingAttempt: this.#attempt,
-      }),
+      messages,
+      headers: {
+        ...headers,
+        ...(this.options.traceparent === undefined
+          ? {}
+          : { traceparent: this.options.traceparent }),
+        ...(this.options.tracestate === undefined ? {} : { tracestate: this.options.tracestate }),
+        ...modelSamplingHeaders({
+          stepSequence: captured.step.context.sequence,
+          stepSha256: captured.step.sha256,
+          samplingAttempt: captured.samplingAttempt,
+        }),
+      },
     };
   };
 }

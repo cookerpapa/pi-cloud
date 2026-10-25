@@ -1,3 +1,10 @@
+import { useConversationCommands } from "./useConversationCommands.ts";
+import {
+  parseComposerCommand,
+  composerCommandSuggestions,
+  compactionPending,
+} from "./composer-commands.ts";
+import { ConversationUsage, CompactStatus } from "./ConversationUsage.tsx";
 import { inputReturnRecovery, type InputReturnRecovery } from "./returned-inputs.ts";
 import { InheritedContext } from "./InheritedContext.tsx";
 import { useComposerUploads } from "./useComposerUploads.ts";
@@ -173,6 +180,12 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const [state, setState] = useState(createInitialSessionView);
   const renderedState = useRef(state);
   renderedState.current = state;
+  const commands = useConversationCommands(
+    api,
+    authPhase === "authenticated" ? state.session?.sessionId : undefined,
+  );
+  const commandEvents = useRef(commands.notify);
+  commandEvents.current = commands.notify;
   const inputRevision = useRef(0);
   const [queueRefreshGeneration, setQueueRefreshGeneration] = useState(0);
   const [streamQueue, setStreamQueue] = useState<
@@ -217,6 +230,12 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const [sessionModel, setSessionModel] = useState<SessionModelResource | null>(null);
   const [conversationLoading, setConversationLoading] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
+  const [commandMenuDismissed, setCommandMenuDismissed] = useState(false),
+    [commandIndex, setCommandIndex] = useState(0);
+  const commandSuggestions = commandMenuDismissed ? [] : composerCommandSuggestions(prompt);
+  const commandMenuOpen = commandSuggestions.length > 0;
+  const selectedCommand = commandSuggestions[Math.min(commandIndex, commandSuggestions.length - 1)];
+  const composerCommand = parseComposerCommand(selectedCommand ? "/" + selectedCommand : prompt);
   const draftRevision = useRef(0);
   const restoredInputs = useRef(new Map<string, InputReturnRecovery>());
   const returnRecovery = state.session
@@ -326,20 +345,36 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
       // not this cached view, decides whether the next message is admissible.
       state.sessionState === "failed");
   const hasComposerDraft = Boolean(prompt.trim() || uploads.items.length);
+  const activeCompact =
+    commands.compact && compactionPending(commands.compact.state) ? commands.compact : null;
+  const coldCompactActive =
+    activeCompact?.initialOperation === true ||
+    (currentTurn?.operation?.kind === "compact" &&
+      ["queued", "running", "cancelling"].includes(currentTurn.status));
+  const commandAllowed =
+    composerCommand !== undefined &&
+    state.session !== null &&
+    (composerCommand.kind !== "compact" || (canMutate && selectedDelegatedSession === null));
+  const canSendComposer = composerCommand
+    ? commandAllowed
+    : canMutate && canQueue && !coldCompactActive;
+
   const composerAction =
-    currentTurn?.status === "running"
+    currentTurn?.status === "running" || activeCompact !== null || coldCompactActive
       ? hasComposerDraft
         ? composerPreference.enterMode
         : "stop"
       : "send";
   const composerActionLabel = t(
-    composerAction === "stop"
-      ? "chat.stop"
-      : composerAction === "steer"
-        ? "chat.steer"
-        : composerAction === "follow_up"
-          ? "composer.followUp"
-          : "chat.send",
+    composerCommand
+      ? "commands.execute"
+      : composerAction === "stop"
+        ? "chat.stop"
+        : composerAction === "steer"
+          ? "chat.steer"
+          : composerAction === "follow_up"
+            ? "composer.followUp"
+            : "chat.send",
   );
   const conversationChildren = useMemo(() => {
     const children = new Map<string, ConversationSummaryResource[]>();
@@ -722,6 +757,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
       signal: controller.signal,
       onSnapshot(snapshot) {
         if (controller.signal.aborted || currentStreamSession.current !== sessionId) return;
+        commandEvents.current("snapshot");
         toolProgress.reset();
         runObservations.reset();
         // Reject a snapshot which raced with an accepted local input. This is
@@ -737,7 +773,14 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
           preserveOlderHistory: true,
         });
         setConversationLoading(null);
-        if (snapshot.conversation.session.workspaceState === "missing") {
+        if (
+          snapshot.conversation.session.workspaceState === "missing" &&
+          !snapshot.conversation.turns.some(
+            (turn) =>
+              turn.operation?.kind === "compact" &&
+              ["queued", "running", "cancelling"].includes(turn.state),
+          )
+        ) {
           setWorkspaceRebindOpen(true);
         }
       },
@@ -760,6 +803,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
         )
           refreshChildren();
         update({ type: "stream.event", event });
+        commandEvents.current(event.type);
         if (
           event.type === "turn.started" &&
           !renderedState.current.turns.some((turn) => turn.turnId === event.turnId && turn.runId)
@@ -1253,6 +1297,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     update({ type: "api.error.cleared" });
     try {
       setSessionModel(await api.updateSessionModel(sessionId, selection));
+      commandEvents.current("snapshot");
     } catch (error: unknown) {
       update({ type: "api.error", message: errorMessage(error, t) });
     } finally {
@@ -1343,18 +1388,18 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
       !canMutate ||
       selectedDelegatedSession !== null ||
       state.session === null ||
-      currentTurn?.status !== "running" ||
+      (currentTurn?.status !== "running" && !activeCompact && !coldCompactActive) ||
       operation !== null
     )
       return;
+    const targetTurnId = activeCompact?.initialOperation
+      ? activeCompact.turnId
+      : currentTurn?.turnId;
+    if (!targetTurnId) return;
     setOperation("cancelling");
     try {
-      await api.cancelTurn(
-        state.session.sessionId,
-        currentTurn.turnId,
-        newIdempotencyKey("cancel"),
-      );
-      update({ type: "turn.cancellation.requested", turnId: currentTurn.turnId });
+      await api.cancelTurn(state.session.sessionId, targetTurnId, newIdempotencyKey("cancel"));
+      update({ type: "turn.cancellation.requested", turnId: targetTurnId });
     } catch (error: unknown) {
       update({ type: "api.error", message: errorMessage(error, t) });
     } finally {
@@ -1398,8 +1443,59 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     }
   }
 
+  async function submitComposerCommand(text: string): Promise<void> {
+    const command = parseComposerCommand(text);
+    if (!command || operation !== null) return;
+    const sessionId = state.session?.sessionId,
+      submittedRevision = draftRevision.current;
+    if (!sessionId) {
+      update({ type: "api.error", message: t("commands.needSession") });
+      return;
+    }
+    if (command.kind === "invalid") {
+      update({ type: "api.error", message: t("commands.usageArguments") });
+      return;
+    }
+    if (command.kind === "compact" && (!canMutate || selectedDelegatedSession !== null)) {
+      update({ type: "api.error", message: t("commands.readOnly") });
+      return;
+    }
+    setCommandMenuDismissed(true);
+    update({ type: "api.error.cleared" });
+    try {
+      if (command.kind === "usage") {
+        if (!(await commands.openUsage())) return;
+      } else {
+        setOperation("submitting");
+        const accepted = await composerSubmission.current.send(
+          { kind: "compact", sessionId, text: command.instructions, uploadIds: [] },
+          (key) => api.compactConversation(sessionId, command.instructions, key),
+        );
+        if (renderedState.current.session?.sessionId !== sessionId) return;
+        commands.acceptedCompact(accepted);
+        update({ type: "compact.accepted", compact: accepted });
+      }
+      if (renderedState.current.session?.sessionId === sessionId)
+        setPrompt((current) => (draftRevision.current === submittedRevision ? "" : current));
+    } catch (error) {
+      if (renderedState.current.session?.sessionId === sessionId)
+        update({ type: "api.error", message: errorMessage(error, t) });
+    } finally {
+      if (command.kind === "compact") setOperation(null);
+      focusComposer();
+    }
+  }
+
   function sendComposer(): void {
     if (!hasComposerDraft) return;
+    if (composerCommand) {
+      void submitComposerCommand(selectedCommand ? "/" + selectedCommand : prompt);
+      return;
+    }
+    if (coldCompactActive) {
+      update({ type: "api.error", message: t("commands.compactBusy") });
+      return;
+    }
     if (composerAction === "steer") void steerTurn();
     else void submitTurn();
   }
@@ -1719,7 +1815,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
             currentDevelopmentEnvironment?.state !== "running" ? null : (
               <div className="product-environment-controls">
                 <button
-                  disabled={currentTurn !== undefined || operation !== null}
+                  disabled={currentTurn !== undefined || coldCompactActive || operation !== null}
                   onClick={() => void createSshTicket()}
                   title={t("chat.sshExclusiveOnly")}
                   type="button"
@@ -2228,12 +2324,15 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
                   truncated={state.inheritedMessagesTruncated === true}
                 />
                 {state.turns
-                  .filter((turn) => turn.status !== "queued")
+                  .filter((turn) => turn.status !== "queued" || turn.operation?.kind === "compact")
                   .map((turn) => {
                     const target = forkTargets.get(turn.turnId);
                     return (
                       <ConversationTurn
                         api={api}
+                        {...(commands.compact?.runId === turn.runId
+                          ? { compaction: commands.compact }
+                          : {})}
                         progressStore={toolProgress}
                         observationStore={runObservations}
                         delegatedChildren={(conversationTree?.delegatedSessions ?? []).filter(
@@ -2308,6 +2407,23 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
         </div>
 
         <footer className="product-composer-area">
+          {commands.usageOpen ? (
+            <ConversationUsage
+              value={commands.usage}
+              loading={commands.usageLoading}
+              error={commands.usageError}
+              onRefresh={() => void commands.refreshUsage()}
+              onClose={() => commands.closeUsage()}
+            />
+          ) : null}
+          {activeCompact &&
+          !state.turns.some(
+            (turn) =>
+              turn.runId === activeCompact.runId &&
+              (turn.status !== "queued" || turn.operation?.kind === "compact"),
+          ) ? (
+            <CompactStatus state={activeCompact.state} />
+          ) : null}
           <div className="product-composer-shell">
             {authPhase === "authenticated" &&
             state.session !== null &&
@@ -2378,7 +2494,36 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
               >
                 ＋
               </button>
+              {commandMenuOpen ? (
+                <div
+                  className="product-command-menu"
+                  id="composer-command-menu"
+                  role="listbox"
+                  aria-label={t("commands.menu")}
+                >
+                  {commandSuggestions.map((command, index) => (
+                    <button
+                      type="button"
+                      role="option"
+                      id={`composer-command-${command}`}
+                      key={command}
+                      aria-selected={command === selectedCommand}
+                      onMouseEnter={() => setCommandIndex(index)}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => void submitComposerCommand("/" + command)}
+                    >
+                      <code>/{command}</code>
+                      <span>{t(command === "usage" ? "usage.title" : "commands.compact")}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               <textarea
+                aria-expanded={commandMenuOpen}
+                aria-controls={commandMenuOpen ? "composer-command-menu" : undefined}
+                aria-activedescendant={
+                  commandMenuOpen ? `composer-command-${selectedCommand}` : undefined
+                }
                 aria-label={t("chat.sendLabel")}
                 onPaste={(event) => {
                   const files = [...event.clipboardData.files];
@@ -2387,10 +2532,12 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
                     uploads.add(files);
                   }
                 }}
-                disabled={!canMutate || !canQueue}
+                disabled={state.session === null && (!canMutate || !canQueue)}
                 onChange={(event) => {
                   draftRevision.current++;
                   setPrompt(event.target.value);
+                  setCommandMenuDismissed(false);
+                  setCommandIndex(0);
                 }}
                 onKeyDown={(event) => {
                   if (
@@ -2399,6 +2546,32 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
                     event.nativeEvent.keyCode === 229
                   )
                     return;
+                  if (commandMenuOpen && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+                    event.preventDefault();
+                    setCommandIndex(
+                      (index) =>
+                        (index + (event.key === "ArrowDown" ? 1 : -1) + commandSuggestions.length) %
+                        commandSuggestions.length,
+                    );
+                    return;
+                  }
+                  if (commandMenuOpen && event.key === "Tab" && selectedCommand) {
+                    event.preventDefault();
+                    draftRevision.current++;
+                    setPrompt("/" + selectedCommand + (selectedCommand === "compact" ? " " : ""));
+                    setCommandMenuDismissed(true);
+                    return;
+                  }
+                  if (event.key === "Escape" && commandMenuOpen) {
+                    event.preventDefault();
+                    setCommandMenuDismissed(true);
+                    return;
+                  }
+                  if (event.key === "Escape" && commands.usageOpen) {
+                    event.preventDefault();
+                    commands.closeUsage();
+                    return;
+                  }
                   if (event.key === "Escape") {
                     // Scoped to the composer: menus, queue editors and dialogs own their Escape.
                     event.preventDefault();
@@ -2431,10 +2604,10 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
                   composerAction === "stop" ? "product-stop-button" : "product-send-button"
                 }
                 disabled={
-                  !canMutate ||
-                  selectedDelegatedSession !== null ||
                   operation !== null ||
-                  (composerAction !== "stop" && (!hasComposerDraft || !canQueue))
+                  (composerAction === "stop"
+                    ? !canMutate || selectedDelegatedSession !== null
+                    : !hasComposerDraft || !canSendComposer)
                 }
                 onClick={() => (composerAction === "stop" ? void cancelTurn() : sendComposer())}
                 title={composerActionLabel}

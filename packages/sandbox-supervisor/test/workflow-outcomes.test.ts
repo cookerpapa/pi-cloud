@@ -140,7 +140,7 @@ it.each([
     ]);
     const scoped = new ScopedDurableModels(models, async (request) => {
       const input = request.input as import("@earendil-works/pi-ai").Context;
-      const messages = await remote.transformContext(input.messages);
+      const { messages } = await remote.prepareModelRequest(input.messages);
       return {
         model: provider.getModel(),
         options: request.options,

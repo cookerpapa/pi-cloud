@@ -218,6 +218,23 @@ export class HttpSupervisorManagementClient {
     }
   }
 
+  async compact(command: NativeCompactCommand): Promise<NativeCompactResult> {
+    const request = {
+      protocolVersion: 1 as const,
+      type: "native.compact" as const,
+      requestId: this.requestId(),
+      command,
+    };
+    const response = await this.request(request);
+    if (response.type !== "native.compact.applied" || response.requestId !== request.requestId)
+      throw new HttpSupervisorManagementError(
+        "supervisor_management_invalid_response",
+        "Worker compact reply did not match its request",
+        false,
+      );
+    return response.result;
+  }
+
   async humanInput(command: NativeInputCommand): Promise<NativeInputResult> {
     const requestId = this.requestId();
     const request = {
@@ -385,3 +402,4 @@ const managementFetch: typeof fetch = async (url, init) =>
   (await internalFetch(String(url), { ...init, dispatcher: managementDispatcher } as Parameters<
     typeof internalFetch
   >[1])) as unknown as Response;
+import type { NativeCompactCommand, NativeCompactResult } from "@pi-cloud/protocol";

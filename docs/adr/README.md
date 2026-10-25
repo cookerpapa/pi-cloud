@@ -1,5 +1,9 @@
 # Current architecture decisions
 
+[ADR-0277](0277-model-event-waiting-and-conversation-commands.md) is accepted for
+implementation: model-event inactivity and input-driven usage/manual compaction,
+reusing current Runs when active and existing root-work admission when cold.
+
 [ADR-0276](0276-scoped-control-plane-releases.md) records scoped Control Plane
 publication, existing-runtime preservation and bounded quiescence. It is deployed
 as `control-final-35d715ae`; [delivery](../reports/control-plane-release-delivery-20261025.md)

@@ -1,3 +1,4 @@
+import { Agent, fetch as upstreamFetch } from "undici";
 import { resourceLimit, minimumResourceLimit } from "@pi-cloud/domain";
 import {
   assertModelAdapter,
@@ -71,9 +72,8 @@ export type TenantModelGatewayOptions = {
   providerGatewayBaseUrl: string;
   providerGatewayApiKey: string;
   maximumRequestsPerTurn?: number | null;
-  upstreamConnectTimeoutMs?: number;
-  upstreamIdleTimeoutMs?: number;
-  piRequestTimeoutMs?: number;
+  connectTimeoutMs?: number;
+  eventIdleTimeoutMs?: number;
   fetchImplementation?: typeof fetch;
   randomBytes?: (size: number) => Buffer;
   metrics?: PiCloudMetrics;
@@ -353,9 +353,8 @@ export class TenantModelGateway {
   readonly #providerGatewayBaseUrl: string;
   readonly #providerGatewayApiKey: string;
   readonly #maximumRequestsPerTurn: number | null;
-  readonly #upstreamConnectTimeoutMs: number;
-  readonly #upstreamIdleTimeoutMs: number;
-  readonly #piRequestTimeoutMs: number;
+  readonly #eventIdleTimeoutMs: number;
+  readonly #dispatcher: Agent | undefined;
   readonly #fetch: typeof fetch;
   readonly #randomBytes: (size: number) => Buffer;
   readonly #metrics: PiCloudMetrics | undefined;
@@ -387,22 +386,31 @@ export class TenantModelGateway {
       options.maximumRequestsPerTurn,
       "maximumRequestsPerTurn",
     );
-    this.#upstreamConnectTimeoutMs = positiveInteger(
-      options.upstreamConnectTimeoutMs ?? 120_000,
-      "upstreamConnectTimeoutMs",
+    const connectTimeoutMs = positiveInteger(
+      options.connectTimeoutMs ?? 15_000,
+      "connectTimeoutMs",
       300_000,
     );
-    this.#upstreamIdleTimeoutMs = positiveInteger(
-      options.upstreamIdleTimeoutMs ?? 300_000,
-      "upstreamIdleTimeoutMs",
-      15 * 60_000,
+    this.#eventIdleTimeoutMs = positiveInteger(
+      options.eventIdleTimeoutMs ?? 300_000,
+      "eventIdleTimeoutMs",
+      900_000,
     );
-    this.#piRequestTimeoutMs = positiveInteger(
-      options.piRequestTimeoutMs ?? 150_000,
-      "piRequestTimeoutMs",
-      300_000,
-    );
-    this.#fetch = options.fetchImplementation ?? globalThis.fetch.bind(globalThis);
+    this.#dispatcher = options.fetchImplementation
+      ? undefined
+      : new Agent({ connect: { timeout: connectTimeoutMs }, headersTimeout: 0, bodyTimeout: 0 });
+    this.#fetch =
+      options.fetchImplementation ??
+      (async (input, init) => {
+        const result = await upstreamFetch(String(input), {
+          method: init!.method!,
+          headers: init!.headers as Record<string, string>,
+          body: init!.body as Uint8Array,
+          signal: init?.signal ?? null,
+          dispatcher: this.#dispatcher!,
+        });
+        return result as unknown as Response;
+      });
     this.#randomBytes = options.randomBytes ?? randomBytes;
     this.#metrics = options.metrics;
     this.#server = createServer((request, response) => {
@@ -589,7 +597,7 @@ export class TenantModelGateway {
             inputModalities: [...active.inputModalities],
             hostedTools: [...active.hostedTools],
             serviceTier: null,
-            requestTimeoutMs: this.#piRequestTimeoutMs,
+            eventIdleTimeoutMs: this.#eventIdleTimeoutMs,
           }
         : {
             kind: "openai_compatible_gateway",
@@ -605,7 +613,7 @@ export class TenantModelGateway {
             inputModalities: [...active.inputModalities],
             hostedTools: [...active.hostedTools],
             serviceTier: active.serviceTier,
-            requestTimeoutMs: this.#piRequestTimeoutMs,
+            eventIdleTimeoutMs: this.#eventIdleTimeoutMs,
           };
     return {
       runtime,
@@ -646,21 +654,7 @@ export class TenantModelGateway {
     }
     const requestSamplingIdentity = samplingIdentity(request);
     const controller = new AbortController();
-    let timeoutPhase: "connect" | "idle" | undefined;
     let disconnected = false;
-    let timeout: NodeJS.Timeout | undefined;
-    const clearUpstreamTimeout = (): void => {
-      if (timeout !== undefined) clearTimeout(timeout);
-      timeout = undefined;
-    };
-    const armUpstreamTimeout = (phase: "connect" | "idle", timeoutMs: number): void => {
-      clearUpstreamTimeout();
-      timeout = setTimeout(() => {
-        timeoutPhase = phase;
-        controller.abort();
-      }, timeoutMs);
-      timeout.unref();
-    };
     const abortOnRequest = (): void => {
       disconnected = true;
       controller.abort();
@@ -735,14 +729,12 @@ export class TenantModelGateway {
       active.budget.started++;
       timing.upstreamStartMs = elapsed();
       upstreamAttempts = 1;
-      armUpstreamTimeout("connect", this.#upstreamConnectTimeoutMs);
       const upstream = await this.#fetch(`${this.#providerGatewayBaseUrl}${active.providerPath}`, {
         method: "POST",
         headers: upstreamHeaders(request, active, this.#providerGatewayApiKey),
         body: new Uint8Array(requestBytes),
         signal: controller.signal,
       });
-      clearUpstreamTimeout();
       timing.upstreamHeadersMs = elapsed();
       upstreamStatus = upstream.status;
       response.writeHead(upstream.status, {
@@ -760,10 +752,8 @@ export class TenantModelGateway {
         response.end();
         return;
       }
-      armUpstreamTimeout("idle", this.#upstreamIdleTimeoutMs);
       for await (const rawChunk of upstream.body) {
         timing.firstByteMs ??= elapsed();
-        armUpstreamTimeout("idle", this.#upstreamIdleTimeoutMs);
         const chunk = rawChunk instanceof Uint8Array ? rawChunk : new Uint8Array(rawChunk);
         responseBytes += chunk.byteLength;
         if (responseBytes > MAX_RESPONSE_BYTES) {
@@ -776,28 +766,16 @@ export class TenantModelGateway {
         }
         await writeChunk(response, chunk, controller.signal);
       }
-      clearUpstreamTimeout();
       transportCompleted = true;
       response.end();
     } catch (error: unknown) {
       if (error instanceof SafeGatewayHttpError) throw error;
       throw new SafeGatewayHttpError(
-        timeoutPhase === undefined ? 502 : 504,
-        disconnected
-          ? "downstream_disconnected"
-          : timeoutPhase === "connect"
-            ? "provider_gateway_connect_timeout"
-            : timeoutPhase === "idle"
-              ? "provider_gateway_idle_timeout"
-              : "provider_gateway_unavailable",
-        timeoutPhase === "connect"
-          ? "Provider Gateway response headers timed out"
-          : timeoutPhase === "idle"
-            ? "Provider Gateway response stream idle timeout"
-            : "Model provider connection error",
+        502,
+        disconnected ? "downstream_disconnected" : "provider_gateway_unavailable",
+        "Model provider connection error",
       );
     } finally {
-      clearUpstreamTimeout();
       this.#requestBytes -= reservedBytes;
       request.off("aborted", abortOnRequest);
       response.off("close", abortOnResponse);
@@ -863,9 +841,11 @@ export class TenantModelGateway {
 
   async #close(): Promise<void> {
     for (const active of [...this.#capabilities.values()]) this.#revoke(active);
-    if (!this.#started) return;
-    this.#started = false;
-    this.#server.close();
-    await once(this.#server, "close");
+    if (this.#started) {
+      this.#started = false;
+      this.#server.close();
+      await once(this.#server, "close");
+    }
+    await this.#dispatcher?.close();
   }
 }

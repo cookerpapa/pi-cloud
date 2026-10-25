@@ -220,9 +220,8 @@ describe("PiWorkerRuntime", () => {
       modelGatewayPort: 0,
       modelGatewayAdvertisedBaseUrl: "http://model-gateway.test:4200",
       modelGatewayMaximumRequestsPerTurn: 8,
-      modelGatewayUpstreamConnectTimeoutMs: 10_000,
-      modelGatewayUpstreamIdleTimeoutMs: 30_000,
-      piModelRequestTimeoutMs: 15_000,
+      modelConnectTimeoutMs: 10_000,
+      modelEventIdleTimeoutMs: 30_000,
       workerDrainGraceMs: 100,
       workerRetirementTimeoutMs: 10_000,
     };

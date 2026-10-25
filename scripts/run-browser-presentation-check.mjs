@@ -4,7 +4,31 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { createServer } from "vite";
-import { withChromePage } from "./lib/chrome-cdp.mjs";
+import { withChromePage as openChromePage } from "./lib/chrome-cdp.mjs";
+async function withChromePage(options, operation) {
+  if (process.env.PI_CLOUD_BROWSER_SCOPE === "commands" && !options.commands) return;
+  return openChromePage(options, async (page) => {
+    await page.send("Page.addScriptToEvaluateOnNewDocument", {
+      source:
+        "window.fixtureErrors=[];window.addEventListener('error',e=>fixtureErrors.push(String(e.message).slice(0,300)));window.addEventListener('unhandledrejection',e=>fixtureErrors.push(String(e.reason).slice(0,300)));",
+    });
+    try {
+      return await operation(page);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          browserFailure: await page
+            .evaluate(
+              "({url:location.href,ready:document.readyState,errors:window.fixtureErrors??[],text:document.body?.innerText?.slice(0,500)})",
+            )
+            .catch(() => ({ disconnected: true })),
+        }),
+      );
+      await page.screenshot("/tmp/pi-cloud-presentation-failure.png").catch(() => {});
+      throw error;
+    }
+  });
+}
 
 // A dead debugger must fail the acceptance run, never leave a pending RPC
 // hanging forever. Exercise both an in-flight call and a call after disconnect.
@@ -204,6 +228,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
   const fixtureTurnId='50000000-0000-4000-8000-000000000011';
   window.fixtureQueue={sessionId:sid,revision:0,activeTurnId:sessionState==='running'?fixtureTurnId:null,items:[]};
   window.steerRequests=[];window.steerReceipts=new Map();
+  window.usageReads=0;window.compactRequests=[];window.compactReceipts=new Map();window.compactValue=null;window.loseCompactReply=false;window.deferCompactReply=false;
   window.turnReceipts=new Map();
   window.turnStates=new Map();window.returnedInputs=null;window.returnInputsReady=true;
   const delegates=['branch','fresh'].map((contextMode,index)=>({sessionId:'10000000-0000-4000-8000-00000000000'+(index+2),
@@ -277,6 +302,25 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
   });
   const nativeFetch=window.fetch;
   window.fetch=async (url,init={})=>{
+    if(String(url).endsWith('/usage')){
+      window.usageReads++;
+      const tokens={input:7000,output:1000,cacheRead:6000,cacheWrite:0,total:8000};
+      return Response.json({sessionId:String(url).split('/').at(-2),nativeSequence:7,observedAt:new Date().toISOString(),source:'postgres',inFlight:sessionState==='running',
+        model:{provider:'openai-codex',modelId:'gpt-6.1-sol'},tokens,models:[],children:[],includingChildren:tokens,context:{estimatedTokens:9000,window:1000000,compactThreshold:900000,method:'latest_usage'}});
+    }
+    if(String(url).endsWith('/compact')){
+      if((init.method??'GET')==='GET')return Response.json(window.compactValue);
+      const key=new Headers(init.headers).get('idempotency-key'),body=JSON.parse(init.body);
+      window.compactRequests.push({key,body});
+      let value=window.compactReceipts.get(key);
+      if(!value){const id=crypto.randomUUID(),initialOperation=sessionState!=='running';value={commandId:id,sessionId:sid,runId:initialOperation?crypto.randomUUID():'60000000-0000-4000-8000-000000000011',
+        turnId:initialOperation?id:fixtureTurnId,initialOperation,state:'summarizing',acceptedAt:new Date().toISOString(),nativeSequence:7,replayed:false};window.compactReceipts.set(key,value);}
+      window.compactValue=value;
+      if(window.loseCompactReply){window.loseCompactReply=false;throw new Error('Fixture lost compact reply');}
+      if(window.deferCompactReply)return new Promise(resolve=>{window.releaseCompactReply=()=>resolve(Response.json(value));});
+      return Response.json(value);
+    }
+
     if(String(url)==="/v1/auth/logout") return window.rejectLogout
       ? Response.json({error:{code:"conflict",message:"Fixture rejects logout"}},{status:503})
       : Response.json({loggedOut:true});
@@ -1782,61 +1826,194 @@ try {
     }
     await page.screenshot("/tmp/pi-cloud-show-image-presentation.png");
   });
+  // Input commands use the real composer and HTTP client, not model prompts.
+  await withChromePage({ width: 1280, height: 900, commands: true }, async (page) => {
+    const parent = ".product-conversation-row:not(.product-delegated-session) > button";
+    await page.navigate(`http://127.0.0.1:${port}/review.html`);
+    await page.waitFor("window.fixtureReady");
+    await page.evaluate(
+      "window.fixtureUserId='command-contract-owner';renderChat('running',true,true);window.acceptTurns=true",
+    );
+    await page.waitFor(`document.querySelector(${JSON.stringify(parent)})`);
+    await page.evaluate(`document.querySelector(${JSON.stringify(parent)}).click()`);
+    await page.waitFor("document.querySelector('.product-stop-button')");
+    const fill = async (text) => {
+      await page.evaluate(
+        "document.querySelector('.product-composer textarea').focus();document.querySelector('.product-composer textarea').select()",
+      );
+      await page.send("Input.insertText", { text });
+    };
+    const key = async (key, extra = {}) =>
+      page.evaluate(
+        `document.querySelector('.product-composer textarea').dispatchEvent(new KeyboardEvent('keydown',${JSON.stringify({ key, bubbles: true, cancelable: true, ...extra })}))`,
+      );
+    assert.equal(await page.evaluate("usageReads"), 0, "hidden usage must not load");
+    await fill("/");
+    await page.waitFor(
+      "document.querySelectorAll('.product-command-menu [role=option]').length===2",
+    );
+    await key("Escape");
+    await page.waitFor("!document.querySelector('.product-command-menu')");
+    assert.equal(
+      await page.evaluate("!!window.returnedInputs"),
+      false,
+      "menu Escape must not stop",
+    );
+    await fill("/usage");
+    await key("Enter", { isComposing: true });
+    assert.equal(await page.evaluate("usageReads"), 0);
+    await key("Enter");
+    await page.waitFor(
+      "document.querySelector('.product-usage-panel')?.textContent.includes('7,000')",
+    );
+    assert.deepEqual(
+      await page.evaluate("[turnRequests.length,steerRequests.length,compactRequests.length]"),
+      [0, 0, 0],
+    );
+    assert.equal(
+      await page.evaluate("document.querySelector('.product-composer textarea').value"),
+      "",
+    );
+    await page.screenshot("/tmp/pi-cloud-usage-panel.png");
+    await key("Escape");
+    await page.waitFor("!document.querySelector('.product-usage-panel')");
+    assert.equal(await page.evaluate("!!window.returnedInputs"), false);
+    await fill("/compact 保留 API 和待办");
+    await page.evaluate("window.loseCompactReply=true");
+    await key("Enter");
+    await page.waitFor(
+      "compactRequests.length===1 && document.querySelector('.product-error-banner')",
+    );
+    assert.equal(
+      await page.evaluate("document.querySelector('.product-composer textarea').value"),
+      "/compact 保留 API 和待办",
+    );
+    await key("Enter");
+    await page.waitFor(
+      "compactRequests.length===2 && document.querySelector('.product-composer textarea').value===''",
+    );
+    assert.equal(await page.evaluate("compactReceipts.size"), 1);
+    assert.deepEqual(await page.evaluate("compactRequests.map(r=>r.body)"), [
+      { instructions: "保留 API 和待办" },
+      { instructions: "保留 API 和待办" },
+    ]);
+    assert.equal(await page.evaluate("compactRequests[0].key===compactRequests[1].key"), true);
+    assert.deepEqual(await page.evaluate("[turnRequests.length,steerRequests.length]"), [0, 0]);
+    await page.waitFor("document.querySelector('.product-compact-status.summarizing')");
+    await page.evaluate(
+      "window.compactValue={...window.compactValue,state:'awaiting_placement',nativeSequence:8};emitFixtureEvent({schemaVersion:1,eventId:crypto.randomUUID(),sessionId:compactValue.sessionId,turnId:compactValue.turnId,agentId:'root',occurredAt:new Date().toISOString(),seq:3,type:'model.sampling.started',payload:{stepSequence:1,stepSha256:'a'.repeat(64),samplingAttempt:1}})",
+    );
+    await page.waitFor("document.querySelector('.product-compact-status.awaiting_placement')");
+    assert.equal(
+      await page.evaluate("!!document.querySelector('.product-compact-status.applied')"),
+      false,
+    );
+    await page.evaluate(
+      "window.compactValue={...window.compactValue,state:'applied',nativeSequence:9};emitFixtureEvent({schemaVersion:1,eventId:crypto.randomUUID(),sessionId:compactValue.sessionId,turnId:compactValue.turnId,agentId:'root',occurredAt:new Date().toISOString(),seq:4,type:'model.sampling.completed',payload:{stepSequence:1,stepSha256:'a'.repeat(64),samplingAttempt:1,outcome:'completed',stopReason:'stop'}})",
+    );
+    await page.waitFor("document.querySelector('.product-compact-status.applied')");
+    await fill("/compact keep decisions");
+    await page.evaluate("window.deferCompactReply=true");
+    await key("Enter");
+    await page.waitFor('typeof window.releaseCompactReply==="function"');
+    await fill("new unsent draft");
+    await page.evaluate("releaseCompactReply()");
+    await page.waitFor("!document.querySelector('.product-send-button').disabled");
+    assert.equal(
+      await page.evaluate("document.querySelector('.product-composer textarea').value"),
+      "new unsent draft",
+    );
+    await fill("/workspace/file.ts");
+    await key("Enter");
+    await page.waitFor("turnRequests.length===1");
+    assert.equal(await page.evaluate("turnRequests[0].body.prompt"), "/workspace/file.ts");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+    });
+    await fill("/usage");
+    await key("Enter");
+    await page.waitFor("document.querySelector('.product-usage-panel')");
+    assert(await page.evaluate("document.documentElement.scrollWidth<=innerWidth"));
+    await page.waitFor(
+      "document.querySelector('.product-sidebar').getBoundingClientRect().right<=0 && document.querySelector('.product-main').getBoundingClientRect().width===390",
+    );
+    await page.waitFor(
+      "document.querySelector('.product-usage-panel').getBoundingClientRect().left >= 0 && document.querySelector('.product-usage-panel').getBoundingClientRect().right <= innerWidth",
+    );
+    await page.screenshot("/tmp/pi-cloud-usage-mobile.png");
+  });
   console.log(
-    JSON.stringify({
-      accepted: true,
-      retainedSessionImageLoads: true,
-      canonicalToolImagesOutsideCollapsedActivity: true,
-      imageCaptionPlainTextAndDetailsNoDuplicate: true,
-      previewUsesNamedAnswerLink: true,
-      previewDetailsKeepPortAndResult: true,
-      previewHasNoFallbackOrDuplicateCard: true,
-      earlyRunNeverFabricatesUserInput: true,
-      acceptanceDiscoveryRaceKeepsDraftAndStream: true,
-      composerEnterPreference: true,
-      composerButtonMatchesEnter: true,
-      composerEmptyEnterSafe: true,
-      composerImeAndShiftEnter: true,
-      composerScopedEscapePreservesDraft: true,
-      composerAccountIsolation: true,
-      composerPreferencePersistenceFallback: true,
-      directSteerRetryIdentity: true,
-      ordinarySendRetryIdentity: true,
-      initialImageSendRetryIdentity: true,
-      directSteerPendingPresentation: true,
-      machineWorkspaceRebind: true,
-      rebindRetryUsesSameTargetAndKey: true,
-      persistentRuntimeStatus: true,
-      collapsedRuntimeDiagnostics: true,
-      runtimeWarningsVisible: true,
-      observationGenerationRecovery: true,
-      separateActivityAndPath: true,
-      firstImageOnlyMessage: true,
-      uploadIdentityOnRetry: true,
-      debuggerDisconnect: true,
-      strictModeAnimation: true,
-      commentaryAnimation: true,
-      commentaryReconnectAndReducedMotion: true,
-      outputLimitVisible: true,
-      reconnectSnapshotImmediate: true,
-      initialPanelWidth: true,
-      resizeUnmountCleanup: true,
-      pointerCancellation: true,
-      composerSessionSettings: true,
-      providerSwitchClearsFast: true,
-      compositionAndPendingDraft: true,
-      inspectorSelectionAndTerminalLifetime: true,
-      logoutLifecycle: true,
-      branchSelectionAndManualJump: true,
-      childHistoryReadOnlyAndParentActions: true,
-      pendingInputNavigation: true,
-      childWorkspaceReadOnly: true,
-      unavailableIdentityRetry: true,
-      staleConversationListAfterDelete: true,
-      terminalSocketIsolation: true,
-      directoryPickerLifecycle: true,
-      responsivePageScrolling: true,
-    }),
+    JSON.stringify(
+      process.env.PI_CLOUD_BROWSER_SCOPE === "commands"
+        ? {
+            accepted: true,
+            scope: "commands",
+            slashUsageAndCompact: true,
+            compactLostReplyAndDraftRetention: true,
+            compactWaitsForPlacement: true,
+          }
+        : {
+            accepted: true,
+            scope: "all",
+            slashUsageAndCompact: true,
+            compactLostReplyAndDraftRetention: true,
+            compactWaitsForPlacement: true,
+            retainedSessionImageLoads: true,
+            canonicalToolImagesOutsideCollapsedActivity: true,
+            imageCaptionPlainTextAndDetailsNoDuplicate: true,
+            previewUsesNamedAnswerLink: true,
+            previewDetailsKeepPortAndResult: true,
+            previewHasNoFallbackOrDuplicateCard: true,
+            earlyRunNeverFabricatesUserInput: true,
+            acceptanceDiscoveryRaceKeepsDraftAndStream: true,
+            composerEnterPreference: true,
+            composerButtonMatchesEnter: true,
+            composerEmptyEnterSafe: true,
+            composerImeAndShiftEnter: true,
+            composerScopedEscapePreservesDraft: true,
+            composerAccountIsolation: true,
+            composerPreferencePersistenceFallback: true,
+            directSteerRetryIdentity: true,
+            ordinarySendRetryIdentity: true,
+            initialImageSendRetryIdentity: true,
+            directSteerPendingPresentation: true,
+            machineWorkspaceRebind: true,
+            rebindRetryUsesSameTargetAndKey: true,
+            persistentRuntimeStatus: true,
+            collapsedRuntimeDiagnostics: true,
+            runtimeWarningsVisible: true,
+            observationGenerationRecovery: true,
+            separateActivityAndPath: true,
+            firstImageOnlyMessage: true,
+            uploadIdentityOnRetry: true,
+            debuggerDisconnect: true,
+            strictModeAnimation: true,
+            commentaryAnimation: true,
+            commentaryReconnectAndReducedMotion: true,
+            outputLimitVisible: true,
+            reconnectSnapshotImmediate: true,
+            initialPanelWidth: true,
+            resizeUnmountCleanup: true,
+            pointerCancellation: true,
+            composerSessionSettings: true,
+            providerSwitchClearsFast: true,
+            compositionAndPendingDraft: true,
+            inspectorSelectionAndTerminalLifetime: true,
+            logoutLifecycle: true,
+            branchSelectionAndManualJump: true,
+            childHistoryReadOnlyAndParentActions: true,
+            pendingInputNavigation: true,
+            childWorkspaceReadOnly: true,
+            unavailableIdentityRetry: true,
+            staleConversationListAfterDelete: true,
+            terminalSocketIsolation: true,
+            directoryPickerLifecycle: true,
+            responsivePageScrolling: true,
+          },
+    ),
   );
 } finally {
   await server.close();

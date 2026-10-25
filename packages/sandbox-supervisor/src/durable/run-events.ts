@@ -106,12 +106,15 @@ export class DurableRunEvents {
           this.#messageOpen = false;
         }
       } else if (event.type === "compaction_start") {
+        // Manual commands report their native write placement, not merely summary completion.
+        if (event.reason === "manual") continue;
         this.#compactions.set(event.taskId, event.reason);
         await this.options.emit({
           type: "context.compaction.started",
           payload: { reason: event.reason },
         });
       } else if (event.type === "compaction_end") {
+        if (event.reason === "manual") continue;
         this.#compactions.delete(event.taskId);
         const task = await this.options.task(event.taskId);
         const outcome = task?.state.status === "terminal" ? task.state.outcome : undefined;

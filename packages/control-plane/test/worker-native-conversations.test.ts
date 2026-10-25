@@ -209,7 +209,7 @@ it.each([false, true])(
           inputModalities: ["text"],
           hostedTools: [],
           serviceTier: null,
-          requestTimeoutMs: 5000,
+          eventIdleTimeoutMs: 5000,
         },
         release,
       }),

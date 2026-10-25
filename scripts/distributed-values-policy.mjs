@@ -54,14 +54,13 @@ export function validateDistributedDeploymentValues(values) {
     runtime?.timeouts?.sandboxControlRequestMs,
     "Pi Worker Sandbox control timeout",
   );
-  const modelRequestMs = integer(runtime?.timeouts?.modelRequestMs, "Pi Worker model timeout");
+  const modelRequestMs = integer(runtime?.timeouts?.modelEventIdleMs, "Pi Worker model timeout");
   const upstreamConnectMs = integer(
-    runtime?.timeouts?.modelUpstreamConnectMs,
+    runtime?.timeouts?.modelConnectMs,
     "Pi Worker model upstream connect timeout",
   );
-  integer(runtime?.timeouts?.modelUpstreamIdleMs, "Pi Worker model upstream idle timeout");
-  if (upstreamConnectMs > modelRequestMs) {
-    throw new Error("Model response-header waits are not ordered");
+  if (upstreamConnectMs >= modelRequestMs) {
+    throw new Error("Model event timeout must outlive connection establishment");
   }
   if (retirementMs < sandboxControlRequestMs + 5 * 60_000) {
     throw new Error("Pi Worker retirement cannot cover operation cleanup and settlement");

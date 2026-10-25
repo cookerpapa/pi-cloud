@@ -172,6 +172,16 @@ export const ExecuteTurnCommandMessageSchema = Type.Object(
         agent: AgentRevisionSnapshotSchema,
         input: Type.Union([
           PromptInputSchema,
+          Type.Object(
+            {
+              kind: Type.Literal("compact"),
+              commandId: UuidSchema,
+              fingerprint: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+              requestedAt: UtcTimestampSchema,
+              instructions: Type.String({ maxLength: MAX_AGENT_INPUT_CHARACTERS }),
+            },
+            { additionalProperties: false },
+          ),
           Type.Object({ kind: Type.Literal("resume") }, { additionalProperties: false }),
         ]),
         sessionKind: Type.Union([Type.Literal("conversation"), Type.Literal("subagent")]),

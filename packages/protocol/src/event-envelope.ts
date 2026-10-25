@@ -56,7 +56,7 @@ const TurnStartedEventSchema = Type.Object(
     type: Type.Literal("turn.started"),
     payload: Type.Object(
       {
-        inputKind: Type.Literal("prompt"),
+        inputKind: Type.Union([Type.Literal("prompt"), Type.Literal("compact")]),
       },
       { additionalProperties: false },
     ),

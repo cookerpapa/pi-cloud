@@ -29,12 +29,8 @@ function validateWorkerPolicy(policy, description) {
   const manager = integer(policy.sandboxControlRequestMs, `${description} Sandbox control timeout`);
   const drain = integer(policy.workerDrainMs, `${description} Worker drain`);
   const retirement = integer(policy.workerRetirementMs, `${description} Worker retirement`);
-  const upstreamConnect = integer(
-    policy.modelUpstreamConnectMs,
-    `${description} upstream connect timeout`,
-  );
-  integer(policy.modelUpstreamIdleMs, `${description} upstream idle timeout`);
-  const model = integer(policy.modelRequestMs, `${description} Pi model timeout`);
+  const upstreamConnect = integer(policy.modelConnectMs, `${description} upstream connect timeout`);
+  const model = integer(policy.modelEventIdleMs, `${description} model event idle timeout`);
   const termination = integer(policy.terminationGraceMs, `${description} termination grace`);
 
   assert.ok(
@@ -42,8 +38,8 @@ function validateWorkerPolicy(policy, description) {
     `${description} can time out before a maximum Tool result is returned`,
   );
   assert.ok(
-    upstreamConnect <= model,
-    `${description} Pi may time out before its model gateway returns response headers`,
+    upstreamConnect < model,
+    `${description} model event timeout must outlive connection establishment`,
   );
   assert.ok(
     retirement >= manager + WORKER_SETTLEMENT_GRACE_MS,

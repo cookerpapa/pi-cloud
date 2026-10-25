@@ -1,16 +1,16 @@
 # Implementation roadmap
 
-## Model-event waiting and input commands — proposed
+## Model-event waiting and input commands — in implementation
 
 The [revised plan](reports/slash-commands-plan-20261025.md) retains current-Run
 manual compaction and distinguishes cold Worker admission. The owner requested a
-new plan after discussing the original idle-only approach; feature implementation
-has not started.
+new plan after discussing the original idle-only approach and approved
+[ADR-0277](adr/0277-model-event-waiting-and-conversation-commands.md) for implementation.
 
-- [ ] Prove native concurrent request identity, compact admission and placement/recovery seams.
-- [ ] Record the protocol/ownership decision and implement model-event inactivity with native retry.
-- [ ] Add committed usage reads and the input command menu without model prompts or a new queue.
-- [ ] Add current-owner manual compaction, then the explicit cold admission path.
+- [x] Prove native concurrent request identity, compact admission and placement/recovery seams.
+- [x] Record the protocol/ownership decision and implement model-event inactivity with native retry.
+- [x] Add committed usage reads and the input command menu without model prompts or a new queue.
+- [x] Add current-owner manual compaction, then the explicit cold admission path.
 - [ ] Complete source/fault/browser/Luna acceptance and matched publication with existing assets retained.
 
 ## Scoped Control Plane publication

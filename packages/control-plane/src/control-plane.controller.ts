@@ -1,3 +1,5 @@
+import { parseCompactRequest, type ConversationCompactResource } from "@pi-cloud/protocol";
+import { ConversationCompactService } from "./conversation-compact-service.ts";
 import { RouteConfig } from "@nestjs/platform-fastify";
 import { parseUploadIdentity } from "@pi-cloud/protocol";
 import { Readable } from "node:stream";
@@ -125,6 +127,7 @@ export class ControlPlaneController {
     @Inject(PlatformRuntimeSettingsService)
     private readonly platformRuntimeSettings: PlatformRuntimeSettingsService,
     @Inject(QueuedInputService) private readonly queuedInputs: QueuedInputService,
+    @Inject(ConversationCompactService) private readonly compactions: ConversationCompactService,
     @Inject(ConversationTreeService)
     private readonly conversationTrees: ConversationTreeService,
     @Inject(DevelopmentEnvironmentService)
@@ -612,6 +615,60 @@ export class ControlPlaneController {
           ? undefined
           : parseUuidPathParameter(beforeTurnIdValue, "beforeTurnId"),
       );
+  }
+
+  @Post("conversations/:sessionId/compact")
+  async compactConversation(
+    @Req() request: FastifyRequest,
+    @Param("sessionId") value: unknown,
+    @Body() body: unknown,
+  ): Promise<ConversationCompactResource> {
+    const identity = this.tenantRequestContext.requireMutation(request);
+    let input;
+    try {
+      input = parseCompactRequest(body);
+    } catch {
+      throw new ControlPlaneApiValidationError("Invalid compaction instructions");
+    }
+    return this.compactions.accept(
+      this.controlPlaneStores.forIdentity(identity),
+      identity.tenantId,
+      parseUuidPathParameter(value, "sessionId"),
+      parseIdempotencyKey(request.headers["idempotency-key"]),
+      input,
+    );
+  }
+  @Get("conversations/:sessionId/compact")
+  async latestCompaction(
+    @Req() request: FastifyRequest,
+    @Param("sessionId") value: unknown,
+  ): Promise<ConversationCompactResource | null> {
+    const identity = this.tenantRequestContext.resolve(request);
+    return this.compactions.get(identity.tenantId, parseUuidPathParameter(value, "sessionId"));
+  }
+  @Get("conversations/:sessionId/compact/:commandId")
+  async getCompaction(
+    @Req() request: FastifyRequest,
+    @Param("sessionId") value: unknown,
+    @Param("commandId") command: unknown,
+  ): Promise<ConversationCompactResource | null> {
+    const identity = this.tenantRequestContext.resolve(request);
+    return this.compactions.get(
+      identity.tenantId,
+      parseUuidPathParameter(value, "sessionId"),
+      parseUuidPathParameter(command, "commandId"),
+    );
+  }
+
+  @Get("conversations/:sessionId/usage")
+  async getConversationUsage(
+    @Req() request: FastifyRequest,
+    @Param("sessionId") value: unknown,
+  ): Promise<ConversationUsageResource> {
+    const identity = this.tenantRequestContext.resolve(request);
+    return this.controlPlaneStores
+      .forIdentity(identity)
+      .getConversationUsage(parseUuidPathParameter(value, "sessionId"));
   }
 
   @Get("conversations/:sessionId/tree")
@@ -1115,3 +1172,4 @@ export class ControlPlaneController {
     }
   }
 }
+import type { ConversationUsageResource } from "@pi-cloud/protocol";

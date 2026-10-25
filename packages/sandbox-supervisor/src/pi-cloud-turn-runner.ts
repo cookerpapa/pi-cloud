@@ -1,3 +1,4 @@
+import { MODEL_EVENT_IDLE_MS, MODEL_RETRY_COUNT } from "./durable/model-wait-policy.ts";
 import { DurableTextPresentation } from "./durable/text-presentation.ts";
 import {
   prepareNativeSettlementFollowUp,
@@ -99,7 +100,7 @@ export type PiCloudTurnRunnerOptions = {
   beforeEffect?: (signal?: AbortSignal) => Promise<void>;
   onActivity?: (update: RunActivityUpdate | undefined) => void;
   settlementPolicy?: PiSettlementGatePolicy;
-  requestTimeoutMs?: number;
+  modelEventIdleTimeoutMs?: number;
   clock?: () => Date;
   idGenerator?: () => string;
 };
@@ -204,6 +205,7 @@ export class PiCloudTurnRunner {
   #inputVersion = 0;
   #inputLine: Promise<unknown> = Promise.resolve();
   #humanInputs: DurableHumanInputs | undefined;
+  #compact: ((command: NativeCompactCommand) => Promise<NativeCompactResult>) | undefined;
   #identity: { tenantId: string; sessionId: string; runId: string } | undefined;
   constructor(options: PiCloudTurnRunnerOptions) {
     this.#options = options;
@@ -211,6 +213,23 @@ export class PiCloudTurnRunner {
   }
   async waitUntilReady(): Promise<void> {
     await this.#ready.promise;
+  }
+  async compact(command: NativeCompactCommand): Promise<NativeCompactResult> {
+    await this.#ready.promise;
+    if (
+      !this.#identity ||
+      command.tenantId !== this.#identity.tenantId ||
+      command.sessionId !== this.#identity.sessionId ||
+      command.runId !== this.#identity.runId
+    )
+      throw new PiTurnError("input_target_unavailable", "Compact target changed", false);
+    return this.#onInputLine(async () => {
+      if (this.#ended || !this.#compact)
+        throw new PiTurnError("input_target_unavailable", "Compact target is closing", true);
+      const result = await this.#compact(command);
+      this.#inputVersion++;
+      return result;
+    });
   }
   #onInputLine<T>(action: () => Promise<T>): Promise<T> {
     const next = this.#inputLine.then(action);
@@ -444,9 +463,11 @@ export class PiCloudTurnRunner {
             ...(options.publicEgress ? { publicEgress: options.publicEgress } : {}),
             settings: {
               stream: {
-                timeoutMs: options.requestTimeoutMs ?? 10000,
+                timeoutMs: 0,
+                maxRetries: 0,
                 ...(config.transport ? { transport: config.transport } : {}),
               },
+              retry: { maxRetries: MODEL_RETRY_COUNT },
               compaction: {
                 reserveTokens: p.budgets?.compactionReserveTokens ?? 16384,
                 keepRecentTokens: p.budgets?.compactionKeepRecentTokens ?? 20000,
@@ -470,7 +491,11 @@ export class PiCloudTurnRunner {
         options.sandboxContinuity,
       );
       await world.capture();
-      const sampling = new DurableSampling();
+      let sampling = new DurableSampling();
+      const samplingScope = new AsyncLocalStorage<{
+        sampling: DurableSampling;
+        identity: ModelSamplingIdentity | undefined;
+      }>();
       let observedEntry = 0,
         wakeObserved: (() => void) | undefined;
       const humanEntries = new Map<number, string>();
@@ -503,20 +528,24 @@ export class PiCloudTurnRunner {
             ? { inputId, text: input.text, uploads: parseUserUploads(input.uploads) }
             : undefined;
         },
-        retryAttempts: 4,
+        retryAttempts: MODEL_RETRY_COUNT + 1,
         task: (taskId) => runtime.harness.getTask(taskId as TaskId, BACKGROUND_CONTEXT),
       });
       const tools = options.createAgentTools({
         stepWorldState: world,
         captureSamplingStep: async (fresh, capture) => {
-          const step = await sampling.capture(fresh);
-          toolSampling = {
+          const scope = samplingScope.getStore();
+          const current = scope?.sampling ?? sampling;
+          const step = await current.capture(fresh);
+          const identity = {
             stepSequence: step.step.context.sequence,
             stepSha256: step.step.sha256,
             samplingAttempt: step.samplingAttempt,
           };
-          if (capture?.publishEvent !== false && sampling.publish) {
-            await events.samplingStarted(toolSampling);
+          if (scope) scope.identity = identity;
+          if (!scope || current.publish) toolSampling = identity;
+          if (capture?.publishEvent !== false && current.publish) {
+            await events.samplingStarted(identity);
           }
           return step;
         },
@@ -557,7 +586,7 @@ export class PiCloudTurnRunner {
           ...(p.conversationWork ? { view: JSON.parse(JSON.stringify(p.conversationWork)) } : {}),
         },
         agent:
-          p.input.kind === "resume"
+          p.input.kind === "resume" || p.input.kind === "compact"
             ? {}
             : {
                 instructions: await tools.systemPrompt(prompt),
@@ -648,72 +677,86 @@ export class PiCloudTurnRunner {
                 : undefined;
             if (sequence === undefined || !checkpoint)
               throw new Error("Model task has no committed checkpoint");
-            sampling.select({
+            const scoped = {
+              sampling: new DurableSampling(),
+              identity: undefined as ModelSamplingIdentity | undefined,
+            };
+            scoped.sampling.select({
               sequence,
               attempt: checkpoint.attempt ?? 1,
               publish: native.purpose === "agent",
             });
-            const source = request.input as ModelContext;
-            const messages = await tools.transformContext(
-              source.messages,
-              native?.purpose ?? "agent",
-            );
-            const context = { ...source, messages };
-            const headers = await tools.transformHeaders(
-              request.options.headers as ProviderHeaders,
-            );
-            const requestSampling = toolSampling;
-            activity.phase(
-              native?.purpose === "context_maintenance" ? "compacting" : "waiting_model",
-            );
-            return {
-              model,
-              input: nativeProviderContext(context, model),
-              release,
-              ...(native.purpose === "agent"
-                ? { onToolCallProgress: () => activity.phase("preparing_tool") }
-                : {}),
-              options: {
-                ...request.options,
-                apiKey: config.apiKey,
-                signal: requestSignal,
-                headers,
-                onPayload: (payload: unknown) =>
-                  mergeProviderServiceTier(
-                    mergeProviderHostedTools(
-                      replayProviderHostedTranscripts(payload, context, model),
-                      native.purpose === "agent" ? (config.hostedTools ?? []) : [],
-                    ),
-                    config.serviceTier,
-                  ),
-              },
-              onHostedActivity,
-              onOutcome: (sample) => {
-                options.metrics?.modelDuration.observe(
-                  { provider: model.provider, model: model.id, outcome: sample.outcome },
-                  sample.durationMs / 1000,
+            if (native.purpose === "agent") sampling = scoped.sampling;
+            return await samplingScope.run(scoped, async () => {
+              const source = request.input as ModelContext;
+              const prepared = await tools.prepareModelRequest(
+                source.messages,
+                native.purpose,
+                request.options.headers as ProviderHeaders,
+              );
+              const context = { ...source, messages: prepared.messages };
+              const headers = prepared.headers;
+              const requestSampling = scoped.identity;
+              if (
+                native.purpose === "agent" ||
+                p.input.kind === "compact" ||
+                task?.owner !== undefined
+              )
+                activity.phase(
+                  native.purpose === "context_maintenance" ? "compacting" : "waiting_model",
                 );
-                operationalLog({
-                  service: "pi-cloud-trusted-runner",
-                  level: "info",
-                  event: "model.response.timing",
-                  attributes: {
-                    runId: p.runId,
-                    conversationId: p.piSession.conversationId,
-                    ...(requestSampling
-                      ? {
-                          stepSequence: requestSampling.stepSequence,
-                          stepSha256: requestSampling.stepSha256,
-                          samplingAttempt: requestSampling.samplingAttempt,
-                        }
-                      : {}),
-                    provider: model.provider,
-                    model: model.id,
-                    ...sample,
-                  },
-                });
-              },
-            };
+              return {
+                model,
+                eventIdleTimeoutMs: options.modelEventIdleTimeoutMs ?? MODEL_EVENT_IDLE_MS,
+                input: nativeProviderContext(context, model),
+                release,
+                ...(native.purpose === "agent"
+                  ? { onToolCallProgress: () => activity.phase("preparing_tool") }
+                  : {}),
+                options: {
+                  ...request.options,
+                  apiKey: config.apiKey,
+                  signal: requestSignal,
+                  headers,
+                  onPayload: (payload: unknown) =>
+                    mergeProviderServiceTier(
+                      mergeProviderHostedTools(
+                        replayProviderHostedTranscripts(payload, context, model),
+                        native.purpose === "agent" ? (config.hostedTools ?? []) : [],
+                      ),
+                      config.serviceTier,
+                    ),
+                },
+                onHostedActivity,
+                onOutcome: (sample) => {
+                  options.metrics?.modelDuration.observe(
+                    { provider: model.provider, model: model.id, outcome: sample.outcome },
+                    sample.durationMs / 1000,
+                  );
+                  operationalLog({
+                    service: "pi-cloud-trusted-runner",
+                    level: "info",
+                    event: "model.response.timing",
+                    attributes: {
+                      runId: p.runId,
+                      taskId: native.taskId,
+                      purpose: native.purpose,
+                      conversationId: p.piSession.conversationId,
+                      ...(requestSampling
+                        ? {
+                            stepSequence: requestSampling.stepSequence,
+                            stepSha256: requestSampling.stepSha256,
+                            samplingAttempt: requestSampling.samplingAttempt,
+                          }
+                        : {}),
+                      provider: model.provider,
+                      model: model.id,
+                      ...sample,
+                    },
+                  });
+                },
+              };
+            });
           } catch (error) {
             release();
             throw error;
@@ -736,10 +779,41 @@ export class PiCloudTurnRunner {
         binding,
         p.input.kind === "resume" ? "reattach" : "initialize",
       );
+      this.#compact = async (request) => {
+        combined.throwIfAborted();
+        await owner.authority.assertCurrent();
+        const receipt = await admitManualCompaction(runtime.harness, owner.storage, conversation, {
+          requestId: request.commandId,
+          fingerprint: request.fingerprint,
+          runId: p.runId,
+          requestedAt: request.requestedAt,
+          ...(request.instructions ? { instructions: request.instructions } : {}),
+        });
+        const status = await manualCompactionState(
+          runtime.harness,
+          conversation.id,
+          receipt.requestId,
+        );
+        if (!status) throw new Error("Committed compact receipt is unavailable");
+        return {
+          commandId: receipt.requestId,
+          replayed: receipt.replayed,
+          taskId: receipt.taskId,
+          requestedAt: receipt.requestedAt,
+          nativeSequence: owner.committedSequence(),
+          state: status.state,
+        };
+      };
       await options.onNativeBound?.();
       stream = await runtime.watch(conversation.id, async (batch) => {
         try {
           for (const event of batch) {
+            if (
+              p.input.kind !== "compact" &&
+              (event.type === "compaction_start" || event.type === "compaction_end") &&
+              event.reason === "manual"
+            )
+              continue;
             activity.event(event);
           }
           for (const event of batch) {
@@ -815,7 +889,16 @@ export class PiCloudTurnRunner {
         });
       }
       if (combined.aborted) abort();
-      else {
+      else if (p.input.kind === "compact") {
+        await emit({ type: "turn.started", payload: { inputKind: "compact" } });
+        await this.#compact({
+          ...p.input,
+          tenantId: p.tenantId,
+          sessionId: p.sessionId,
+          runId: p.runId,
+          executionReference: p.executionReference,
+        });
+      } else {
         const existing = await owner.storage.submissionByRequest(
           conversation.id,
           p.runId,
@@ -832,15 +915,18 @@ export class PiCloudTurnRunner {
           );
         } else runtime.harness.resume();
       }
-      this.#humanInputs = new DurableHumanInputs({
-        conversation,
-        runId: p.runId,
-        storage: owner.storage,
-        sequence: () => owner.committedSequence(),
-        assertCurrent: () => owner.authority.assertCurrent(),
-        accepting: () => !this.#ended && !combined.aborted,
-        prepare: (text, uploads) => this.#prepareInput(text, uploads, combined),
-      });
+      this.#humanInputs =
+        p.input.kind === "compact"
+          ? undefined
+          : new DurableHumanInputs({
+              conversation,
+              runId: p.runId,
+              storage: owner.storage,
+              sequence: () => owner.committedSequence(),
+              assertCurrent: () => owner.authority.assertCurrent(),
+              accepting: () => !this.#ended && !combined.aborted,
+              prepare: (text, uploads) => this.#prepareInput(text, uploads, combined),
+            });
       this.#ready.resolve(conversation);
       const waitContext = withAbortSignal(owner.authority.signal, BACKGROUND_CONTEXT);
       for (;;) {
@@ -866,6 +952,22 @@ export class PiCloudTurnRunner {
       await delivery;
       if (deliveryFailure) throw deliveryFailure;
       if (combined.aborted) throw new PiTurnCancelledError(cancellationReason(combined), false);
+      if (p.input.kind === "compact") {
+        const status = await manualCompactionState(
+          runtime.harness,
+          conversation.id,
+          p.input.commandId,
+        );
+        if (!status || !["applied", "no_op", "stale"].includes(status.state))
+          throw new PiTurnError(
+            "compaction_failed",
+            "Native compaction did not apply its summary",
+            false,
+          );
+        await owner.authority.assertCurrent();
+        await options.onSettled?.();
+        return { stopReason: `compact_${status.state}` };
+      }
       const rootInput = await owner.storage.submissionByRequest(
         conversation.id,
         p.runId,
@@ -1007,3 +1109,5 @@ export class PiCloudTurnRunner {
 }
 import type { NativeInputCommand, NativeInputResult } from "@pi-cloud/protocol";
 import { DurableHumanInputs, HumanInputDocument } from "./durable/human-inputs.ts";
+import type { NativeCompactCommand, NativeCompactResult } from "@pi-cloud/protocol";
+import { admitManualCompaction, manualCompactionState } from "./durable/manual-compaction.ts";

@@ -111,7 +111,7 @@ export function controlled(signal: AbortSignal) {
 export async function modelHttpFixture(
   provider: "openai-codex" | "deepseek",
   upstream: (attempt: number, signal: AbortSignal) => Response | Promise<Response>,
-  options: { maximumRequests?: number } = {},
+  options: { maximumRequests?: number; eventIdleTimeoutMs?: number } = {},
 ) {
   const owner = new AbortController(),
     metrics = new PiCloudMetrics("model-contract");
@@ -125,8 +125,7 @@ export async function modelHttpFixture(
     advertisedBaseUrl: "http://127.0.0.1",
     providerGatewayBaseUrl: "http://unused.invalid",
     providerGatewayApiKey: "fixture-".padEnd(48, "x"),
-    upstreamConnectTimeoutMs: 1000,
-    upstreamIdleTimeoutMs: 3000,
+    connectTimeoutMs: 1000,
     metrics,
     ...(options.maximumRequests === undefined
       ? {}
@@ -167,6 +166,7 @@ export async function modelHttpFixture(
     signal.throwIfAborted();
     return {
       model,
+      eventIdleTimeoutMs: options.eventIdleTimeoutMs ?? 3000,
       input: nativeProviderContext(input, model),
       options: {
         ...request.options,

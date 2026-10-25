@@ -25,7 +25,7 @@ import type {
 } from "@pi-cloud/pi-session-postgres/durable";
 import { command } from "./fixtures/durable-command.ts";
 
-it.each(["complete", "stop_on_resume", "stop_before_setup", "long_work"] as const)(
+it.each(["complete", "stop_on_resume", "stop_before_setup", "long_work", "cold_compact"] as const)(
   "runs native input and admission gates (%s)",
   async (mode) => {
     const fake = new FakeModelServer({ defaultScenario: "text" });
@@ -145,8 +145,7 @@ it.each(["complete", "stop_on_resume", "stop_before_setup", "long_work"] as cons
         prepareWorkflow: async () => {
           throw new Error("No workflow expected");
         },
-        transformHeaders: async (headers) => headers ?? {},
-        transformContext: async (messages) => {
+        prepareModelRequest: async (messages, _purpose, headers) => {
           await captureSamplingStep(async () => {
             const capture = await stepWorldState.capture();
             return {
@@ -161,7 +160,7 @@ it.each(["complete", "stop_on_resume", "stop_before_setup", "long_work"] as cons
               modelMessages: capture.modelMessages,
             };
           });
-          return messages;
+          return { messages: [...messages], headers: headers ?? {} };
         },
       }),
     });
@@ -219,7 +218,7 @@ it.each(["complete", "stop_on_resume", "stop_before_setup", "long_work"] as cons
               autoCompactTokenLimit: 100000,
               maxTokens: 1024,
               serviceTier: null,
-              requestTimeoutMs: 1000,
+              eventIdleTimeoutMs: 1000,
             },
             release: leaseReleased,
           }),
@@ -238,6 +237,17 @@ it.each(["complete", "stop_on_resume", "stop_before_setup", "long_work"] as cons
           payload: {
             ...selectedCommand.payload,
             ...(stopping ? { stopOnResume: true as const } : {}),
+            ...(mode === "cold_compact"
+              ? {
+                  input: {
+                    kind: "compact" as const,
+                    commandId: crypto.randomUUID(),
+                    fingerprint: "a".repeat(64),
+                    requestedAt: new Date().toISOString(),
+                    instructions: "",
+                  },
+                }
+              : {}),
           },
         },
         (event) => {
@@ -263,6 +273,15 @@ it.each(["complete", "stop_on_resume", "stop_before_setup", "long_work"] as cons
         expect(events.some((event) => event.payload.event.type === "model.sampling.started")).toBe(
           false,
         );
+        return;
+      }
+      if (mode === "cold_compact") {
+        expect((await executing).stopReason).toBe("compact_no_op");
+        expect(acquired).toBe(0);
+        expect(
+          (await storage.scanSubmissions({}, 100, undefined, BACKGROUND_CONTEXT)).items,
+        ).toEqual([]);
+        expect(events.some((e) => e.payload.event.type === "assistant.text.delta")).toBe(false);
         return;
       }
       expect((await executing).stopReason).toBe("stop");

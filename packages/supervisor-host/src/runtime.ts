@@ -365,6 +365,15 @@ export class PiWorkerRuntime {
           return this.#agentRunner.stopConversation(command.executionReference, command.requestId);
         }
       },
+      compact: async (command) => {
+        if (!this.#nativeSessions?.hasExecution(command.executionReference) || !this.#agentRunner)
+          throw new SupervisorManagementServerError(
+            "input_target_unavailable",
+            "Native execution is not ready",
+            true,
+          );
+        return this.#agentRunner.compact(command);
+      },
       humanInput: async (command) => {
         if (!this.#nativeSessions?.hasExecution(command.executionReference) || !this.#agentRunner)
           throw new SupervisorManagementServerError(
@@ -404,9 +413,8 @@ export class PiWorkerRuntime {
       providerGatewayBaseUrl: this.#config.providerGatewayBaseUrl,
       providerGatewayApiKey: this.#config.providerGatewayApiKey,
       maximumRequestsPerTurn: this.#config.modelGatewayMaximumRequestsPerTurn,
-      upstreamConnectTimeoutMs: this.#config.modelGatewayUpstreamConnectTimeoutMs,
-      upstreamIdleTimeoutMs: this.#config.modelGatewayUpstreamIdleTimeoutMs,
-      piRequestTimeoutMs: this.#config.piModelRequestTimeoutMs,
+      connectTimeoutMs: this.#config.modelConnectTimeoutMs,
+      eventIdleTimeoutMs: this.#config.modelEventIdleTimeoutMs,
       ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
     });
     this.#modelGateway = modelGateway;

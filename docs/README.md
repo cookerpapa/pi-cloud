@@ -10,7 +10,10 @@ remains proposed; the historical upstream delay remains unproven.
 [Revised input-command and waiting proposal](reports/slash-commands-plan-20261025.md)
 describes model-event inactivity, `/usage`, and manual `/compact` within an active
 Run through native Pi Tasks. Cold Worker admission is a separate explicit choice;
-the earlier idle-only compaction restriction is withdrawn. It is not deployed.
+the earlier idle-only compaction restriction is withdrawn. Source implementation
+and native/PG/browser checks are complete under
+[ADR-0277](adr/0277-model-event-waiting-and-conversation-commands.md); matched
+publication and owned live acceptance are in progress.
 
 [ADR-0276](adr/0276-scoped-control-plane-releases.md) is deployed as
 `control-final-35d715ae`: scoped Control Plane publication and bounded quiescence.

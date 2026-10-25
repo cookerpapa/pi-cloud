@@ -133,8 +133,8 @@ describe("Supervisor host production configuration", () => {
       managementAdvertisedBaseUrl: "http://supervisor-production-1:4100/",
       sandboxControlBaseUrls: ["http://sandbox-control:4300/"],
       trustedWorkspaceDirectory: "/workspace",
-      modelGatewayUpstreamConnectTimeoutMs: 120_000,
-      modelGatewayUpstreamIdleTimeoutMs: 300_000,
+      modelConnectTimeoutMs: 15_000,
+      modelEventIdleTimeoutMs: 300_000,
     });
   });
 
@@ -152,14 +152,13 @@ describe("Supervisor host production configuration", () => {
     await expect(
       loadSupervisorHostConfig({
         ...environment,
-        PI_CLOUD_MODEL_GATEWAY_UPSTREAM_CONNECT_TIMEOUT_MS: "151000",
-        PI_CLOUD_PI_MODEL_REQUEST_TIMEOUT_MS: "150000",
+        PI_CLOUD_MODEL_CONNECT_TIMEOUT_MS: "151000",
+        PI_CLOUD_MODEL_EVENT_IDLE_TIMEOUT_MS: "150000",
       }),
-    ).rejects.toThrow("upstream connect timeout");
+    ).rejects.toThrow("outlive connection establishment");
     await expect(
       loadSupervisorHostConfig({
         ...environment,
-        PI_CLOUD_MODEL_GATEWAY_UPSTREAM_IDLE_TIMEOUT_MS: "601000",
         PI_CLOUD_PI_TURN_TIMEOUT_MS: "600000",
       }),
     ).rejects.toThrow("was removed");

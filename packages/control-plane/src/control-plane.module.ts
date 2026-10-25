@@ -1,3 +1,4 @@
+import { ConversationCompactService } from "./conversation-compact-service.ts";
 import { Module, type DynamicModule } from "@nestjs/common";
 import { ControlPlaneController } from "./control-plane.controller.ts";
 import { WorkspaceUploadService, type WorkspaceUploader } from "./workspace-upload-service.ts";
@@ -175,6 +176,15 @@ export class ControlPlaneModule {
         {
           provide: QueuedInputService,
           useValue: new QueuedInputService({
+            database: options.database,
+            ...(options.nativeInputBackendFactory
+              ? { backendFactory: options.nativeInputBackendFactory }
+              : {}),
+          }),
+        },
+        {
+          provide: ConversationCompactService,
+          useValue: new ConversationCompactService({
             database: options.database,
             ...(options.nativeInputBackendFactory
               ? { backendFactory: options.nativeInputBackendFactory }

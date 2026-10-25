@@ -35,6 +35,9 @@ import { settleUploadPins } from "./upload-input-pins.ts";
 
 export interface NativeInputBackend {
   humanInput(command: NativeInputCommand): Promise<NativeInputResult>;
+  compact?(
+    command: import("@pi-cloud/protocol").NativeCompactCommand,
+  ): Promise<import("@pi-cloud/protocol").NativeCompactResult>;
 }
 export type NativeInputBackendFactory = (workerId: string) => Promise<NativeInputBackend>;
 const hash = (value: unknown): string =>
@@ -54,6 +57,7 @@ function unavailable(): never {
 }
 const columns = [
   "id",
+  "operation_kind",
   "turn_id",
   "tenant_id",
   "session_id",
@@ -107,8 +111,10 @@ export class QueuedInputService {
   }
   async #assertReceiving(
     db: Kysely<Database>,
-    target: { id: string; state: string; worker_id: string | null },
+    target: { id: string; state: string; worker_id: string | null; operation_kind: string },
   ) {
+    if (target.operation_kind === "compact")
+      conflict("Wait for compaction to finish; your message remains a draft");
     if (target.state !== "running" || !target.worker_id) unavailable();
     const stop = await db
       .selectFrom("turn_control_requests")
@@ -219,7 +225,7 @@ export class QueuedInputService {
       uploadIds: request.uploadIds ?? [],
       thinkingLevel: request.thinkingLevel ?? null,
     });
-    const decision = await store.withInputAdmission(
+    const decision = await store.withWorkAdmission(
       sessionId,
       key,
       request,
@@ -374,6 +380,7 @@ export class QueuedInputService {
           .where("tenant_id", "=", tenantId)
           .where("session_id", "=", sessionId)
           .where("state", "=", "queued")
+          .where("operation_kind", "=", "chat")
           .where("lease_id", "is", null)
           .where("started_at", "is", null)
           .where("pruned_at", "is", null)
@@ -564,7 +571,13 @@ export class QueuedInputService {
           .forNoKeyUpdate()
           .noWait()
           .executeTakeFirst();
-        if (!run || run.state !== "queued" || run.lease_id !== null || run.started_at !== null)
+        if (
+          !run ||
+          run.operation_kind !== "chat" ||
+          run.state !== "queued" ||
+          run.lease_id !== null ||
+          run.started_at !== null
+        )
           conflict("The input has already started");
         const rows = await tx
           .selectFrom("runs")
@@ -572,6 +585,7 @@ export class QueuedInputService {
           .where("tenant_id", "=", tenantId)
           .where("session_id", "=", sessionId)
           .where("state", "=", "queued")
+          .where("operation_kind", "=", "chat")
           .where("lease_id", "is", null)
           .where("started_at", "is", null)
           .where("pruned_at", "is", null)
@@ -638,6 +652,7 @@ export class QueuedInputService {
             .where("tenant_id", "=", tenantId)
             .where("turn_id", "=", other.turn_id)
             .where("state", "=", "queued")
+            .where("operation_kind", "=", "chat")
             .where("lease_id", "is", null)
             .forNoKeyUpdate()
             .noWait()

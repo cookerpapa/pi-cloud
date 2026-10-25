@@ -1,7 +1,7 @@
 # Revised plan: model waits and input commands — 2026-10-25
 
-Status: revised for owner review after the implementation request and subsequent
-architecture discussion. No feature code has been changed. The deployed
+Status: approved and implemented in source under ADR-0277 after the owner's
+Run-semantics clarification. Matched deployment/live acceptance is in progress. The deployed
 [240/270-second header budget](model-header-budget-delivery-20261025.md) remains
 in effect. This document replaces the earlier idle-only compaction proposal;
 that proposal remains in Git history.

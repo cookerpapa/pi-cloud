@@ -284,23 +284,13 @@
           "additionalProperties": false,
           "required": [
             "sandboxControlRequestMs",
-            "modelUpstreamConnectMs",
-            "modelUpstreamIdleMs",
-            "modelRequestMs",
             "workerDrainMs",
-            "workerRetirementMs"
+            "workerRetirementMs",
+            "modelConnectMs",
+            "modelEventIdleMs"
           ],
           "properties": {
             "sandboxControlRequestMs": {
-              "$ref": "#/$defs/positiveMs"
-            },
-            "modelUpstreamConnectMs": {
-              "$ref": "#/$defs/positiveMs"
-            },
-            "modelUpstreamIdleMs": {
-              "$ref": "#/$defs/positiveMs"
-            },
-            "modelRequestMs": {
               "$ref": "#/$defs/positiveMs"
             },
             "workerDrainMs": {
@@ -308,6 +298,16 @@
             },
             "workerRetirementMs": {
               "$ref": "#/$defs/positiveMs"
+            },
+            "modelConnectMs": {
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 300000
+            },
+            "modelEventIdleMs": {
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 900000
             }
           }
         }

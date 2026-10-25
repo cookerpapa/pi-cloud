@@ -243,7 +243,7 @@ describe.sequential("native human inputs and cloud execution records", () => {
     const f = await fixture();
     let escaped!: () => Promise<AcceptedTurnResource>;
     await expect(
-      f.store.withInputAdmission(
+      f.store.withWorkAdmission(
         f.session.sessionId,
         "rollback",
         { prompt: "retry" },
@@ -273,7 +273,7 @@ describe.sequential("native human inputs and cloud execution records", () => {
     ).toBe("1");
     const accepted = await f.accept("retry", "rollback");
     expect(accepted).toMatchObject({ kind: "run", replayed: false });
-    const replay = await f.store.withInputAdmission(
+    const replay = await f.store.withWorkAdmission(
       f.session.sessionId,
       "rollback",
       { prompt: "retry" },
@@ -289,7 +289,7 @@ describe.sequential("native human inputs and cloud execution records", () => {
   it("checks Workspace availability after acquiring the reusable Session snapshot", async () => {
     const f = await fixture();
     await expect(
-      f.store.withInputAdmission(
+      f.store.withWorkAdmission(
         f.session.sessionId,
         "deleted-workspace",
         { prompt: "reject" },

@@ -160,8 +160,8 @@ function createGateway(
   fetchImplementation: typeof fetch,
   maximumRequestsPerTurn = 8,
   timeouts: {
-    upstreamConnectTimeoutMs?: number;
-    upstreamIdleTimeoutMs?: number;
+    connectTimeoutMs?: number;
+    eventIdleTimeoutMs?: number;
     metrics?: PiCloudMetrics;
   } = {},
 ) {
@@ -549,7 +549,7 @@ describe("tenant model gateway", () => {
     expect(upstream).toHaveBeenCalledTimes(1);
   });
 
-  it("applies the upstream timeout to connection and stream idleness instead of total duration", async () => {
+  it("does not mistake a progressive response for a connection timeout", async () => {
     const encoder = new TextEncoder();
     const upstream = vi.fn<typeof fetch>(async (_input, init) => {
       const signal = init?.signal;
@@ -596,8 +596,7 @@ describe("tenant model gateway", () => {
       );
     });
     const gateway = createGateway(upstream, 8, {
-      upstreamConnectTimeoutMs: 20,
-      upstreamIdleTimeoutMs: 40,
+      connectTimeoutMs: 20,
     });
     await gateway.start();
     const lease = gateway.issue(command());
@@ -617,7 +616,7 @@ describe("tenant model gateway", () => {
     expect(body).not.toContain("provider_gateway_idle_timeout");
   });
 
-  it("returns a protocol-visible failure when an established Provider stream becomes idle", async () => {
+  it("cancels an idle upstream when its owning execution is revoked", async () => {
     const encoder = new TextEncoder();
     const upstream = vi.fn<typeof fetch>(async (_input, init) => {
       const signal = init?.signal;
@@ -638,11 +637,11 @@ describe("tenant model gateway", () => {
       );
     });
     const gateway = createGateway(upstream, 8, {
-      upstreamConnectTimeoutMs: 100,
-      upstreamIdleTimeoutMs: 20,
+      connectTimeoutMs: 100,
     });
     await gateway.start();
-    const lease = gateway.issue(command());
+    const owner = new AbortController();
+    const lease = gateway.issue(command(), owner.signal);
     const response = await fetch(`http://127.0.0.1:${String(gateway.listeningPort)}/v1/responses`, {
       method: "POST",
       headers: {
@@ -652,7 +651,8 @@ describe("tenant model gateway", () => {
       },
       body: JSON.stringify({ model: "deepseek-v4-flash", stream: true, input: [] }),
     });
-    expect(await response.text()).toContain("provider_gateway_idle_timeout");
+    owner.abort();
+    expect(await response.text()).toContain("provider_gateway_unavailable");
   });
 
   it("releases a backpressured Provider response when the Pi client disconnects", async () => {

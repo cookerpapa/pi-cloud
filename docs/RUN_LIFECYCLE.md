@@ -8,6 +8,39 @@ and continuation. PG owns cloud admission and lease decisions. See
 
 ## Intake and native input
 
+### Composer commands (ADR-0277, schema 199)
+
+`GET /v1/conversations/:sessionId/usage` is read-only. It returns committed
+Conversation totals, per-model totals, separately attributed descendants and
+an estimate of current context/window/compaction threshold. Cache input is a
+subset of input, not added a second time. A switched model or compaction head
+invalidates older response usage as a context estimate. In-flight output may
+not yet be included. No model request, queue row or Workspace activation occurs.
+
+`POST /v1/conversations/:sessionId/compact` accepts `{instructions?: string}`
+with the usual idempotency key. During active work it routes through the
+management connection to the current Worker; native Task and command receipt
+must be committed before acceptance. An unreachable or ambiguous owner leaves
+the command editable and retryable under the same identity. When idle it admits
+one `operation_kind=compact` Run with the instructions, no upload payload and
+no prompt Submission. Ordinary queued chat and compact share Session admission.
+
+`GET /v1/conversations/:sessionId/compact` returns the latest command or null;
+append `/:commandId` for a specific receipt. The PiCloud resource includes the
+command ID, Run/Turn IDs, whether it was initial work, native sequence and state:
+`queued`, `summarizing`, `awaiting_placement`, `applied`, `no_op`, `stale`,
+`cancelled` or `failed`. It never reports success merely because the summary
+request ended. Pi's write Submission must apply at its native boundary.
+Native Task/Submission state remains authoritative; the lookup document is
+only a pointer. Completed commands render as control actions, not user prompts.
+
+Cold compact blocks ordinary sending while allowing draft editing; active
+compaction keeps ordinary Pi follow-up/steer semantics. Stop uses the existing
+Run cancellation path and Pi settlement. A summary already committed for native
+placement follows Pi's rules rather than being retroactively discarded.
+Worker loss closes the old writer and resumes the same native Task with a new
+Session lease. The fixed Pi core is not patched.
+
 For an idle Session, `POST /v1/sessions/{id}/turns` authenticates ownership and
 atomically persists initial input, frozen configuration and a Run in PG before
 returning `kind:run`. Session/idempotency uniqueness prevents duplicate requests.

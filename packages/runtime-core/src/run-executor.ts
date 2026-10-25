@@ -50,11 +50,19 @@ export type TurnExecutionRequest = {
   agent: AgentRevisionSnapshot;
   idempotencyKey: string;
   nextEventSeq: string;
-  input: {
-    kind: "prompt";
-    prompt: string;
-    uploads?: import("@pi-cloud/protocol").UserUpload[];
-  };
+  input:
+    | {
+        kind: "prompt";
+        prompt: string;
+        uploads?: import("@pi-cloud/protocol").UserUpload[];
+      }
+    | {
+        kind: "compact";
+        commandId: string;
+        fingerprint: string;
+        requestedAt: string;
+        instructions: string;
+      };
   executionMode: import("@pi-cloud/protocol").ExecutionMode;
   sessionKind: import("@pi-cloud/database").SessionKind;
   workspaceSeedKind: import("@pi-cloud/database").WorkspaceSeedKind;
@@ -699,6 +707,8 @@ export class RunExecutor {
           "run.environment_version_id as environmentVersionId",
           "run.project_id as environmentProjectId",
           "run.idempotency_key as idempotencyKey",
+          "run.operation_kind as operationKind",
+          "run.request_sha256 as requestFingerprint",
           "run.mailbox_position as mailboxPosition",
           "run.turn_id as turnId",
           sql<string | null>`null`.as("inputText"),
@@ -737,7 +747,12 @@ export class RunExecutor {
           "run.recovery_requested_at as recoveryRequestedAt",
           "run.row_version as runVersion",
         ])
-        .where("workspace_row.deleted_at", "is", null)
+        .where((eb) =>
+          eb.or([
+            eb("workspace_row.deleted_at", "is", null),
+            eb("run.operation_kind", "=", "compact"),
+          ]),
+        )
         .whereRef("session_row.workspace_id", "=", "run.workspace_id")
         .whereRef("session_row.project_id", "=", "run.project_id")
         .whereRef("workspace_row.project_id", "=", "run.project_id")
@@ -850,11 +865,22 @@ export class RunExecutor {
         },
         idempotencyKey: row.idempotencyKey,
         nextEventSeq: row.nextEventSeq,
-        input: {
-          kind: "prompt" as const,
-          prompt: row.inputText,
-          ...(input.input_uploads.length ? { uploads: parseUserUploads(input.input_uploads) } : {}),
-        },
+        input:
+          row.operationKind === "compact"
+            ? {
+                kind: "compact" as const,
+                commandId: row.turnId,
+                fingerprint: row.requestFingerprint,
+                requestedAt: new Date(row.runQueuedAt).toISOString(),
+                instructions: row.inputText,
+              }
+            : {
+                kind: "prompt" as const,
+                prompt: row.inputText,
+                ...(input.input_uploads.length
+                  ? { uploads: parseUserUploads(input.input_uploads) }
+                  : {}),
+              },
         executionMode: row.executionMode,
         sessionKind: row.sessionKind,
         workspaceSeedKind: row.workspaceSeedKind,

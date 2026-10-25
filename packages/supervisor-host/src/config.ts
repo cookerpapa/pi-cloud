@@ -44,9 +44,8 @@ export type SupervisorHostConfig = {
   modelGatewayPort: number;
   modelGatewayAdvertisedBaseUrl: string;
   modelGatewayMaximumRequestsPerTurn: number | null;
-  modelGatewayUpstreamConnectTimeoutMs: number;
-  modelGatewayUpstreamIdleTimeoutMs: number;
-  piModelRequestTimeoutMs: number;
+  modelConnectTimeoutMs: number;
+  modelEventIdleTimeoutMs: number;
   workerDrainGraceMs: number;
   workerRetirementTimeoutMs: number;
 };
@@ -264,38 +263,37 @@ export async function loadSupervisorHostConfig(
     1_000,
     1_200_000,
   );
-  const modelGatewayUpstreamConnectTimeoutMs = integerValue(
+  const modelConnectTimeoutMs = integerValue(
     environment,
+    "PI_CLOUD_MODEL_CONNECT_TIMEOUT_MS",
+    15_000,
+    1_000,
+    300_000,
+  );
+  const modelEventIdleTimeoutMs = integerValue(
+    environment,
+    "PI_CLOUD_MODEL_EVENT_IDLE_TIMEOUT_MS",
+    300_000,
+    1_000,
+    900_000,
+  );
+  if (modelConnectTimeoutMs >= modelEventIdleTimeoutMs)
+    throw new TypeError("Model event timeout must outlive connection establishment");
+  for (const name of [
     "PI_CLOUD_MODEL_GATEWAY_UPSTREAM_CONNECT_TIMEOUT_MS",
-    120_000,
-    1_000,
-    300_000,
-  );
-  const modelGatewayUpstreamIdleTimeoutMs = integerValue(
-    environment,
     "PI_CLOUD_MODEL_GATEWAY_UPSTREAM_IDLE_TIMEOUT_MS",
-    300_000,
-    1_000,
-    15 * 60_000,
-  );
-  const piModelRequestTimeoutMs = integerValue(
-    environment,
     "PI_CLOUD_PI_MODEL_REQUEST_TIMEOUT_MS",
-    150_000,
-    1_000,
-    300_000,
-  );
+  ])
+    if (environment[name] !== undefined)
+      throw new TypeError(
+        `${name} was removed; configure model connection and event inactivity budgets`,
+      );
   if (
     sandboxControlRequestTimeoutMs <
     MAX_TOOL_EXECUTION_TIMEOUT_MS + REMOTE_TOOL_TRANSPORT_MARGIN_MS
   ) {
     throw new TypeError(
       "Sandbox control timeout must outlive the maximum Tool execution and transport margin",
-    );
-  }
-  if (modelGatewayUpstreamConnectTimeoutMs > piModelRequestTimeoutMs) {
-    throw new TypeError(
-      "Model upstream connect timeout cannot exceed the Pi response-header timeout",
     );
   }
   if (workerRetirementTimeoutMs < sandboxControlRequestTimeoutMs + 300_000)
@@ -425,9 +423,8 @@ export async function loadSupervisorHostConfig(
       environment.PI_CLOUD_MODEL_GATEWAY_MAXIMUM_REQUESTS_PER_TURN,
       "PI_CLOUD_MODEL_GATEWAY_MAXIMUM_REQUESTS_PER_TURN",
     ),
-    modelGatewayUpstreamConnectTimeoutMs,
-    modelGatewayUpstreamIdleTimeoutMs,
-    piModelRequestTimeoutMs,
+    modelConnectTimeoutMs,
+    modelEventIdleTimeoutMs,
     workerDrainGraceMs,
     workerRetirementTimeoutMs,
   };

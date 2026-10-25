@@ -1,3 +1,9 @@
+import {
+  parseConversationUsageResource,
+  parseConversationCompactResource,
+  type ConversationUsageResource,
+  type ConversationCompactResource,
+} from "@pi-cloud/protocol";
 import { blobContentDigest } from "./upload-digest.ts";
 import {
   parseUserUpload,
@@ -609,6 +615,47 @@ export class PiCloudApi {
     );
   }
 
+  async getConversationUsage(
+    sessionId: string,
+    signal?: AbortSignal,
+  ): Promise<ConversationUsageResource> {
+    return parseConversationUsageResource(
+      await request(
+        this.#fetch,
+        `/v1/conversations/${encodeURIComponent(sessionId)}/usage`,
+        { method: "GET", ...(signal ? { signal } : {}) },
+        this.#authorizationToken,
+      ),
+    );
+  }
+  async compactConversation(
+    sessionId: string,
+    instructions: string,
+    key: string,
+  ): Promise<ConversationCompactResource> {
+    return parseConversationCompactResource(
+      await request(
+        this.#fetch,
+        `/v1/conversations/${encodeURIComponent(sessionId)}/compact`,
+        jsonRequest(instructions ? { instructions } : {}, key),
+        this.#authorizationToken,
+      ),
+    );
+  }
+  async getCompaction(
+    sessionId: string,
+    commandId?: string,
+    signal?: AbortSignal,
+  ): Promise<ConversationCompactResource | null> {
+    const value = await request(
+      this.#fetch,
+      `/v1/conversations/${encodeURIComponent(sessionId)}/compact${commandId ? "/" + encodeURIComponent(commandId) : ""}`,
+      { method: "GET", ...(signal ? { signal } : {}) },
+      this.#authorizationToken,
+    );
+    return value === null ? null : parseConversationCompactResource(value);
+  }
+
   async getConversation(
     sessionId: string,
     beforeTurnId?: string,
@@ -938,6 +985,7 @@ export class PiCloudApi {
 export function newIdempotencyKey(
   prefix:
     | "turn"
+    | "compact"
     | "cancel"
     | "steer"
     | "delete"

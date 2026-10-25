@@ -10,6 +10,7 @@ import type { Models } from "@earendil-works/pi-ai/models";
 import { isRetryableAssistantError } from "@earendil-works/pi-ai/utils/retry";
 import { completeModelResponse } from "./model-stream-policy.ts";
 import { ProviderResponse } from "./provider-response.ts";
+import { MODEL_EVENT_IDLE_MS, ModelEventWait, isModelStreamEvent } from "./model-wait-policy.ts";
 import type { ProviderHostedActivity } from "../agent-turn-runtime.ts";
 
 type ModelOperation = "stream" | "streamSimple" | "streamDeferred" | "cancelDeferred";
@@ -18,6 +19,7 @@ export type CloudModelPermit = {
   model: Model<Api>;
   options: RequestOptions;
   input?: unknown;
+  eventIdleTimeoutMs?: number;
   /** Lossy activity only. Tool names, IDs and arguments never leave this port. */
   onToolCallProgress?(): void;
   onHostedActivity?(activity: ProviderHostedActivity): void;
@@ -31,6 +33,8 @@ export type CloudModelPermit = {
     firstTextMs?: number;
     firstToolMs?: number;
     firstSearchMs?: number;
+    failureCause?:
+      "event_idle_timeout" | "cancelled" | "provider_error" | "response_processing_error";
   }): void;
   release(): void;
 };
@@ -160,9 +164,13 @@ export class ScopedDurableModels {
       let response: ProviderResponse | undefined;
       let sourceStream: AssistantMessageEventStream | undefined;
       const requestLifetime = new AbortController();
+      let eventWait: ModelEventWait | undefined;
+      let ownerSignal: AbortSignal | undefined;
+      let providerResult = false;
       let report: ((outcome: "completed" | "error" | "aborted" | "deferred") => void) | undefined;
       try {
         permit = await this.#permit(operation, model, input, options);
+        ownerSignal = permit.options.signal;
         const startedAt = performance.now();
         const startedAtMs = Date.now();
         const observe = permit.onOutcome;
@@ -178,6 +186,17 @@ export class ScopedDurableModels {
               processStartedAtMs: performance.timeOrigin,
               durationMs: performance.now() - startedAt,
               ...response?.timing,
+              ...(outcome === "aborted"
+                ? { failureCause: "cancelled" as const }
+                : outcome === "error"
+                  ? {
+                      failureCause: eventWait?.expired
+                        ? ("event_idle_timeout" as const)
+                        : providerResult
+                          ? ("provider_error" as const)
+                          : ("response_processing_error" as const),
+                    }
+                  : {}),
             });
           } catch {
             /* Telemetry is not an execution authority. */
@@ -197,11 +216,22 @@ export class ScopedDurableModels {
           | undefined;
         const previous = permit.options.onProviderStreamEvent as
           ((event: unknown, model: Model<Api>) => void | Promise<void>) | undefined;
+        eventWait = new ModelEventWait(permit.eventIdleTimeoutMs ?? MODEL_EVENT_IDLE_MS, () =>
+          requestLifetime.abort(new Error("Model response event inactivity deadline")),
+        );
         const stream = (sourceStream = Reflect.apply(this.source[operation], this.source, [
           permit.model,
           permit.input ?? input,
           {
             ...permit.options,
+            // Codex SSE accepts zero as disabled. The OpenAI SDK used by the
+            // Responses adapter treats zero as immediate expiry; its header-only
+            // fallback must outlive our initial-event deadline instead.
+            timeoutMs:
+              permit.model.api === "openai-responses" || permit.model.api === "openai-completions"
+                ? (permit.eventIdleTimeoutMs ?? MODEL_EVENT_IDLE_MS) + 30_000
+                : 0,
+            maxRetries: 0,
             signal: permit.options.signal
               ? AbortSignal.any([permit.options.signal, requestLifetime.signal])
               : requestLifetime.signal,
@@ -213,6 +243,7 @@ export class ScopedDurableModels {
               await previousResponse?.(value, real);
             },
             onProviderStreamEvent: async (event: unknown, real: Model<Api>) => {
+              if (isModelStreamEvent(event)) eventWait?.touch();
               response!.observe(event);
               await previous?.(event, real);
             },
@@ -220,6 +251,8 @@ export class ScopedDurableModels {
         ]) as AssistantMessageEventStream);
         let terminal: Extract<AssistantMessageEvent, { type: "done" | "error" }> | undefined;
         for await (const event of stream) {
+          if (["text_delta", "thinking_delta", "toolcall_delta"].includes(event.type))
+            eventWait.touch();
           if (event.type === "done" || event.type === "error") terminal = event;
           else {
             response.progress(event);
@@ -236,7 +269,23 @@ export class ScopedDurableModels {
             }
           }
         }
-        const result = completeModelResponse(response.result(await stream.result()));
+        const nativeResult = await stream.result();
+        providerResult = true;
+        eventWait.close();
+        const cancelled = options.signal?.aborted || ownerSignal?.aborted;
+        const result = completeModelResponse(
+          response.result(
+            eventWait.expired
+              ? {
+                  ...nativeResult,
+                  stopReason: cancelled ? "aborted" : "error",
+                  errorMessage: cancelled ? "Model request was cancelled" : eventWait.message,
+                }
+              : nativeResult,
+          ),
+        );
+        if (eventWait.expired)
+          terminal = { type: "error", reason: cancelled ? "aborted" : "error", error: result };
         if (
           result.stopReason === "error" &&
           ((status !== undefined && status >= 500 && status <= 599) || response.transientFailure)
@@ -289,16 +338,21 @@ export class ScopedDurableModels {
         // releasing its concurrency slot, including local interpretation errors.
         await sourceStream?.result().catch(() => undefined);
         const real = this.#descriptors.get(model.id)?.model ?? model;
+        const cancelled = options.signal?.aborted || ownerSignal?.aborted;
+        const failureMessage =
+          eventWait?.expired && !cancelled
+            ? eventWait.message
+            : "Cloud model response processing is unavailable";
         const message: AssistantMessage = response?.failure(
-          options.signal?.aborted ? "aborted" : "error",
-          "Cloud model response processing is unavailable",
+          cancelled ? "aborted" : "error",
+          failureMessage,
         ) ?? {
           role: "assistant",
           api: real.api,
           provider: real.provider,
           model: real.id,
           content: [],
-          stopReason: options.signal?.aborted ? "aborted" : "error",
+          stopReason: cancelled ? "aborted" : "error",
           errorMessage: "Cloud model execution permission or transport is unavailable",
           usage: {
             input: 0,
@@ -318,6 +372,7 @@ export class ScopedDurableModels {
         report?.(message.stopReason === "aborted" ? "aborted" : "error");
         output.end(message);
       } finally {
+        eventWait?.close();
         response?.close("failed");
         permit?.release();
       }

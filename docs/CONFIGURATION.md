@@ -550,8 +550,9 @@ make another service kill a still-valid operation. Under ADR-0263 there is no
 overall Agent/Run duration limit or independent model-capability TTL. Deployment defaults are:
 
 ```text
-model upstream response-header wait 240 s <= Pi response-header wait 270 s
-model upstream stream idle 300 s
+model connection establishment 15 s
+model valid-event inactivity 300 s (including first response after admission)
+native Pi retries 5; SDK retries 0; no overall Agent duration limit
 Sandbox management/workflow request 360 s; fixed Tool handoff 5 s
 Worker natural-drain grace 30 s; retirement/settlement bound 660 s
 process cleanup hard bound: 30 + 660 + 60 = 750 s
@@ -561,13 +562,17 @@ Workspace Volume request 660 s < Volume gateway termination grace 720 s
 
 Changing these requires editing the deployment policy and running
 `npm run runtime-policy:check`; do not change only one container variable.
-The Gateway's `modelUpstreamConnectMs` includes waiting for response headers,
-not only TCP establishment. The October 25 [ADR-0263 amendment](adr/0263-model-response-and-work-lifetimes.md#october-25-header-wait-policy-adjustment)
-permits the coupled 240/270-second policy adjustment with unchanged binaries:
-compare complete Helm manifests, allow only the two Worker environment values,
-retain images and disable migration hooks. Worker Pods must restart to load them,
-using their existing graceful drain and ordered recovery. Keep the paired values
-in Helm configuration so subsequent scoped releases retain the policy.
+[ADR-0277](adr/0277-model-event-waiting-and-conversation-commands.md) replaces
+the earlier 240/270-second header policy. Worker values `modelConnectMs` and
+`modelEventIdleMs` map to `PI_CLOUD_MODEL_CONNECT_TIMEOUT_MS` and
+`PI_CLOUD_MODEL_EVENT_IDLE_TIMEOUT_MS`. The Gateway's pinned HTTP dispatcher
+limits connection establishment only; the public Models adapter measures valid
+model events, including non-text events. SSE comments do not renew the timer.
+The old `modelUpstreamConnectMs`, `modelUpstreamIdleMs` and `modelRequestMs`
+values/environment names are removed. Codex SSE disables its header timer;
+the OpenAI SDK treats zero as immediate expiry, so its header-only fallback is
+30 seconds later than the initial event deadline. Native retries retain one
+authority. Stop and lease loss cancel outstanding I/O immediately.
 `PI_CLOUD_PI_TURN_TIMEOUT_MS` and `PI_CLOUD_MODEL_GATEWAY_CAPABILITY_TTL_MS` are
 removed and rejected. Model grants are revoked on work closure, Stop, ownership
 loss or boot retirement. Worker shutdown closes claims and uses existing ordered

@@ -219,11 +219,11 @@ export type TrustedRemoteAgentTools = Readonly<{
   prepareWorkflow: WorkflowPreparer;
   tools: readonly PreparedAgentTool[];
   systemPrompt(base: string): Promise<string>;
-  transformContext(
-    messages: Message[],
+  prepareModelRequest(
+    messages: readonly Message[],
     purpose?: "agent" | "context_maintenance",
-  ): Promise<Message[]>;
-  transformHeaders(headers?: ProviderHeaders): Promise<ProviderHeaders>;
+    headers?: ProviderHeaders,
+  ): Promise<{ messages: Message[]; headers: ProviderHeaders }>;
 }>;
 
 /** Pi-native Tool operations and model hooks; no Extension API emulation. */
@@ -547,7 +547,6 @@ export function createTrustedRemoteAgentTools(
     tools,
     prepareWorkflow,
     systemPrompt,
-    transformHeaders: sampling.transformHeaders,
-    transformContext: sampling.transformContext,
+    prepareModelRequest: sampling.prepareModelRequest,
   };
 }
