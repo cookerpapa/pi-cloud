@@ -3,6 +3,12 @@
 A self-hosted, multi-tenant coding agent. Pi Durable 1.0.0 runs the native Harness in a shared
 Worker pool; file and shell tools execute in isolated CubeSandbox KVM guests.
 
+[Long-conversation presentation](docs/reports/conversation-history-delivery-20261026.md)
+is deployed as `history-window-19c24570`, schema 200: paging within a Run, bounded
+virtual scrolling, history search/direct navigation and streamed Markdown export.
+The 1 GiB composition and real Luna/Cube/recovery checks pass; original
+conversations, images, Workspace files and applications are retained.
+
 The [explicit image Tool delivery](docs/reports/image-tool-delivery-20261025.md),
 `image-tool-0bac4e97`, adds reference-image generation, transparent PNGs, Workspace
 placement and retained conversation previews. Path and recent-context references
@@ -51,7 +57,7 @@ Real Luna guest interaction, screenshot vision and live/cold preview navigation 
 - Persistent conversations, context compaction and interruption recovery.
   [Long-conversation presentation](docs/adr/0278-windowed-conversation-presentation.md)
   adds bounded history pages, virtual scrolling, direct search/navigation and
-  streamed Markdown export; matched publication is being verified.
+  streamed Markdown export without loading the entire conversation into the browser.
 - Composer commands: `/usage` reads committed usage and estimated context;
   `/compact [instructions]` invokes native Pi compaction in the current Run, or
   admits explicit compact work when idle. It does not activate Workspace compute.

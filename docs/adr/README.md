@@ -2,11 +2,13 @@
 
 [ADR-0278](0278-windowed-conversation-presentation.md) records bounded history
 reads within Runs, a virtual browser window, direct navigation, cancellable search
-and streamed export. Implementation and composed acceptance are in progress;
-it preserves native history and the existing SSE coverage boundary.
+and streamed export. It is deployed as `history-window-19c24570`, schema 200;
+[delivery](../reports/conversation-history-delivery-20261026.md) records source,
+1 GiB composition, real recovery and preserved assets. Native history and the
+existing SSE coverage boundary remain authoritative.
 
-[ADR-0277](0277-model-event-waiting-and-conversation-commands.md) is accepted for
-implementation: model-event inactivity and input-driven usage/manual compaction,
+[ADR-0277](0277-model-event-waiting-and-conversation-commands.md) was deployed as
+`commands-514e2b0f`: model-event inactivity and input-driven usage/manual compaction,
 reusing current Runs when active and existing root-work admission when cold.
 
 [ADR-0276](0276-scoped-control-plane-releases.md) records scoped Control Plane

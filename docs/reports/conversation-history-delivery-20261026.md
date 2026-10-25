@@ -1,6 +1,7 @@
 # Long conversation presentation delivery
 
-Status: implementation and source verification; matched publication is pending.
+Status: deployed as `history-window-19c24570`, application revision
+`19c24570afe93048dff777ee0b6df59c7076b36a`, schema 200 / Helm revision 107.
 The owner approved [ADR-0278](../adr/0278-windowed-conversation-presentation.md).
 
 ## Behavior
@@ -28,11 +29,13 @@ read pool; authority writes and queue observations retain their own connections.
 The obsolete Turn-only pagination/whole-browser export paths are removed. Snapshot
 payload version 3 carries the new history boundary, not a client SSE resume cursor.
 
-## Verification so far
+## Verification
 
 - All workspace tests: 2,170 passed. Separately, the real PG/Kafka transport suite
   passes all nine cases; gated skips in the ordinary suite are not counted as
   transport coverage.
+- All 375 fault cases pass. Install/runtime policy, Cube admission/allocation,
+  Helm, observability, image closure, acceptance-helper and dependency checks pass.
 - All workspace types, the Web build and the complete existing browser
   presentation suite pass. The latter includes commands, drafts, Stop/queue
   behavior, images, preview links, child navigation and reconnect rendering.
@@ -72,18 +75,45 @@ passed. No failed sample is counted as accepted evidence.
 
 ## Publication and preservation
 
-This changes a shared public schema, dependency and PG indexes, so it uses the
-matched release procedure. The current old release remains serving while source
-and artifact checks run. Native writers must drain before migration; existing
-accounts, configuration, conversation bodies, images and Workspace bytes remain.
+This changed a shared public schema, dependency and PG indexes, so it used the
+maintained matched release procedure. All 12 matched artifacts passed the current
+scan/provenance gate. The first preparation verification correctly rejected a
+dirty checkout when the concurrent fault runner wrote its generated reports.
+Those reports were retained privately, the committed source restored, and
+unchanged artifact preflight passed. No gate was bypassed or image rebuilt after
+scanning. The fault reports are restored in this documentation follow-up.
 
-The fresh pre-publication inventory records the original dedicated allocation,
-three application listeners, 15 account/configuration/native tables, 5,700
-Workspace files, 27 configuration files, the game's five-table logical snapshot
-and all 37 referenced image hashes. Migration-owned derived index fields are
-compared separately from immutable native data. Runtime logs/PIDs and SQLite
-WAL/SHM are explicitly mutable. Compute-only retirement will use recorded-node
-absence, preserve the Volume, and restore the three original applications.
+Native writers drained before migration. The original allocation was closed and
+confirmed absent on its recorded node before clearing its live handle; public
+machine Release was not used. The same logical development machine and Workspace
+recovered on allocation generation 13. All three original applications on ports
+3000, 4188 and 8080 were restarted and served identical HTML bodies.
+
+Real GPT-6 Luna/Cube/browser acceptance passes: guest browser interaction/canvas,
+screenshot vision, `show_image` visible outside collapsed activity, identical
+live/cold image identity after source deletion, and named Preview links that open
+the actual application. Native-input acceptance also passes consumption/editing,
+Stop and returned inputs, Worker SIGKILL recovery, streaming Stop, and simultaneous
+Worker/Control Plane SIGKILL with same-Run recovery and retained native partial
+output. Stream text still does not create PG streaming bodies. Both owned test
+tenants and their physical Workspace resources are cleaned up.
+
+Final preservation checks pass across 15 account/configuration/native tables
+with no leftover fixture rows, the 5,700-file Workspace inventory (excluding the
+stated mutable runtime files), all 27
+configuration hashes, the game's five-table logical snapshot and all 37
+referenced image hashes. Migration-owned derived index fields are excluded from
+immutable-row comparison and separately covered by backfill tests/preflight.
+Runtime logs/PIDs and SQLite WAL/SHM are explicitly mutable. Final reconciliation
+finds 28/28 Pods ready, no active Runs, Session writers, Tool bindings or elastic
+VMs, and the retained dedicated machine and its three original applications ready.
+
+The server history-search scan is intentionally bounded and cancellable, without
+a separate full-text index. Explicit Fork/prune mutations retain their existing
+native verification/copy semantics; this read optimization does not claim
+constant-time branch creation. Reload an existing browser tab to load the paired
+snapshot-version-3 client. No browser update notification or old-protocol fallback
+was introduced.
 
 Private evidence is under
 `deploy/production/runtime/release-evidence/history-window-20261026/`; generated

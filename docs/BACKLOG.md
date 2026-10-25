@@ -1,6 +1,6 @@
 # Maintained backlog
 
-## Long conversation presentation — in progress
+## Long conversation presentation — completed
 
 The owner approved [ADR-0278](adr/0278-windowed-conversation-presentation.md).
 Read messages within a Run using indexed native positions and byte budgets;
@@ -10,8 +10,9 @@ presentation reads, not model context, execution or history ownership.
 
 Source and composed API/browser checks pass, including 1 GiB of native test
 history and bounded browser residency. [Delivery evidence](reports/conversation-history-delivery-20261026.md)
-records measurements and corrected failures. Matched schema 200 publication and
-owned Luna/Cube/browser acceptance remain required before this item is complete.
+records measurements and corrected failures. Deployed as `history-window-19c24570`,
+schema 200; real Luna/Cube/browser/Stop/recovery acceptance and original-asset
+reconciliation pass. Owned test resources are physically cleaned up.
 
 ## Model waiting and input commands — completed
 

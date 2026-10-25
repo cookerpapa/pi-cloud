@@ -1,13 +1,16 @@
 # Implementation roadmap
 
-## Long conversation presentation
+## Long conversation presentation — completed
 
 - [x] Record ADR-0278 and evaluate pinned TanStack Virtual against existing React/PG interfaces.
 - [x] Add within-Run position/byte pagination, bounded Tool dependency reads and navigation captions.
 - [x] Separate bounded live and historical browser views, with virtual rows and direct jumps.
 - [x] Add cancellable scoped search and server-streamed completed-history downloads.
 - [x] Prove at least 1 GiB of native history, eviction/anchors/reconnect and cancellation end to end.
-- [ ] Publish matched schema 200, run owned real acceptance and reconcile original assets.
+- [x] Publish matched schema 200, run owned real acceptance and reconcile original assets.
+
+Deployed as `history-window-19c24570`, schema 200. [Delivery](reports/conversation-history-delivery-20261026.md)
+records 1 GiB measurements, real execution/recovery and retained original assets.
 
 ## Model-event waiting and input commands — completed
 

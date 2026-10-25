@@ -1,6 +1,6 @@
 # ADR-0278: Windowed conversation presentation
 
-Status: accepted for implementation, 2026-10-26. The owner approved bounded
+Status: deployed as `history-window-19c24570`, schema 200, 2026-10-26. The owner approved bounded
 history reads, a bounded browser working set, virtual rendering and direct
 navigation for very long conversations, including one long-running Run.
 
