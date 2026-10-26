@@ -57,6 +57,13 @@ try {
   assert(
     pod.containers.find((c) => c.name === "automation").args[0].includes("--address 127.0.0.1"),
   );
+  for (const name of ["executor", "egress"]) {
+    for (const mount of pod.containers.find((c) => c.name === name).volumeMounts) {
+      assert(mount.subPath, "Credential readers require direct file mounts");
+      assert.equal(mount.mountPath, "/run/pi-cloud-secrets/" + mount.subPath);
+      assert.equal(mount.readOnly, true);
+    }
+  }
   const start = readFileSync("deploy/helm/pi-cloud-android/files/start.sh", "utf8");
   assert(start.includes("Partial Android initialization requires operator reconciliation"));
   assert(start.includes("PI_ANDROID_INPUT"));

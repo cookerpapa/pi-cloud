@@ -73,7 +73,10 @@ spec:
           livenessProbe: { httpGet: { path: /health/live, port: executor }, initialDelaySeconds: 200, periodSeconds: 10 }
           resources:
             requests: { cpu: 100m, memory: 128Mi }
-          volumeMounts: [{ name: executor-secrets, mountPath: /run/pi-cloud-secrets, readOnly: true }]
+          volumeMounts:
+            - { name: executor-secrets, mountPath: /run/pi-cloud-secrets/database-url, subPath: database-url, readOnly: true }
+            - { name: executor-secrets, mountPath: /run/pi-cloud-secrets/supervisor-management-token, subPath: supervisor-management-token, readOnly: true }
+            - { name: executor-secrets, mountPath: /run/pi-cloud-secrets/session-image-s3-credentials.json, subPath: session-image-s3-credentials.json, readOnly: true }
         - name: egress
           image: {{ required "Pinned egress image is required" .Values.images.egress | quote }}
           imagePullPolicy: IfNotPresent
@@ -84,7 +87,7 @@ spec:
           securityContext: { runAsUser: 1000, runAsGroup: 1000, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           resources:
             requests: { cpu: 50m, memory: 64Mi }
-          volumeMounts: [{ name: egress-secrets, mountPath: /run/pi-cloud-secrets, readOnly: true }]
+          volumeMounts: [{ name: egress-secrets, mountPath: /run/pi-cloud-secrets/cube-egress-config-token, subPath: cube-egress-config-token, readOnly: true }]
       volumes:
         - name: runtime
           configMap: { name: {{ .Release.Name }}-runtime, defaultMode: 365 }

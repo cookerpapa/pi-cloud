@@ -162,9 +162,11 @@ if (action === "prepare") {
     kubeconfig,
     "-n",
     namespace,
-    "rollout",
-    "status",
-    "statefulset/" + name,
+    "wait",
+    "--for=condition=Ready",
+    "pod",
+    "-l",
+    "app.kubernetes.io/instance=" + name,
     "--timeout=600s",
   ]);
   execIn("control-plane", [
