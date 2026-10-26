@@ -1,6 +1,6 @@
 # Maintained backlog
 
-## Subagent workspace/resource contract — researched, implementation pending
+## Subagent workspace/resource contract — direction approved, implementation pending
 
 The owner requested upstream research before changing the model-facing subagent
 parameters. [The comparison](research/subagent-resource-contracts-20261026.md)
@@ -12,6 +12,19 @@ workspace, and make null suppress every workspace-dependent tool. Parameter
 validation, resource binding, native tool visibility and child environment text
 must agree. The deployed schema is unchanged; real-model semantic evaluation is
 part of any subsequent implementation.
+The owner subsequently approved the workspace-parameter direction and explicitly
+kept device-use coordination with Agents. Do not add platform device occupancy
+registration, reservation Tools or a device-use scheduler.
+
+## Scheduled Agent inputs — proposal
+
+The owner asked how time-triggered Agent work should fit the current architecture.
+[The design comparison](research/scheduled-agent-inputs-20261026.md) covers K3s
+CronJob, pg_cron, pg-boss and a bounded existing-PG adapter with an adopted calendar
+parser. Prefer converting a due occurrence into normal Run admission in the same
+transaction that advances its schedule; retain one Run/Worker execution authority.
+Timing, overlap, catch-up, origin rendering and edit/delete semantics remain
+proposed defaults. No scheduler implementation or runtime publication has begun.
 
 ## Cloud Android execution target — completed
 

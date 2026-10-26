@@ -5,6 +5,15 @@ The owner requested source-backed comparisons before implementing the proposed
 `task / context / workspace` contract. This note evaluates that contract rather
 than introducing another harness, scheduler or resource authority.
 
+## Owner clarification after the comparison
+
+The workspace-parameter direction is approved for subsequent implementation.
+Device usage/reentrancy is coordinated by Agents themselves. The owner rejected
+adding platform occupancy registration, reservation Tools or a device-use
+scheduler. Existing target binding and execution transport remain the deployed
+boundary; this note's discussion of device access is not a request to add a new
+reservation system.
+
 ## Conclusion
 
 Keep the proposal: task/context describe collaboration, `workspace` describes

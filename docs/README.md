@@ -1,5 +1,9 @@
 # Documentation map
 
+[Scheduled Agent input proposal](research/scheduled-agent-inputs-20261026.md)
+evaluates time-triggered admission into the existing Run queue. It is research
+and proposed product semantics; no timer runtime is deployed.
+
 [Subagent resource-contract research](research/subagent-resource-contracts-20261026.md)
 compares upstream context, workspace and device-access designs. It records the
 proposed parameter boundary and validation criteria; implementation is pending.
