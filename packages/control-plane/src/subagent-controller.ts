@@ -198,9 +198,9 @@ export class SubagentController {
           prompt: args.task,
           contextMode: args.context ?? "fresh",
           contextAnchor: call.contextAnchor,
-          sandboxMode: args.tools?.length === 0 ? "none" : (args.sandbox ?? "shared"),
-          ...(args.cwd ? { cwd: args.cwd } : {}),
-          ...(args.tools ? { requestedToolCapabilities: args.tools } : {}),
+          sandboxMode: args.workspace === null ? "none" : (args.workspace?.compute ?? "shared"),
+          ...(args.workspace?.cwd ? { cwd: args.workspace.cwd } : {}),
+          ...(args.workspace?.tools ? { requestedToolCapabilities: args.workspace.tools } : {}),
         });
         if (!current()) return { waiting: true };
         const result = await this.#nativeWait(scope.tenantId, child.executionId, child, true);

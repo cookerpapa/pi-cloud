@@ -1,4 +1,4 @@
-import type { CloudToolCapabilitySnapshot } from "./tool-capabilities.ts";
+import type { SubagentWorkspace } from "./control-tools.ts";
 
 /** Subagent control originates at a committed native Tool task, not a provider call ID. */
 export function parseSubagentTaskId(value: string): number {
@@ -16,10 +16,8 @@ export type SubagentControlRequest =
       key: string;
       task: string;
       context: "fresh" | "branch";
-      sandbox: "none" | "shared" | "ephemeral";
-      cwd?: string;
+      workspace?: SubagentWorkspace | null;
       anchor: string | null;
-      tools?: CloudToolCapabilitySnapshot;
     }>
   | Readonly<{ action: "status" | "wait" | "cancel"; target: string }>
   | Readonly<{

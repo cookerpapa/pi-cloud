@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import { randomUUID } from "node:crypto";
 import {
   infrastructureToolDefinitions,
+  hasConversationWorkspace,
   isControlToolName,
   parseSubagentTaskId,
   type OriginalControlToolIntent,
@@ -72,6 +73,7 @@ export class WorkerToolRuntime {
     onExecutionUnavailable?(failure: { code: string; message: string }): void;
   }): Promise<TrustedAgentToolSet> {
     const scope = context.command.payload;
+    const workspaceAvailable = hasConversationWorkspace(scope);
     const targetBindings = new Map<string, Promise<string>>();
     const prepareTarget = (target: ExecutionTargetGrant, signal?: AbortSignal) => {
       let pending = targetBindings.get(target.targetId);
@@ -101,6 +103,8 @@ export class WorkerToolRuntime {
       signal: AbortSignal | undefined,
       toolName: string,
     ) => {
+      if (!workspaceAvailable)
+        throw new Error("workspace_unavailable: this child has no Linux workspace");
       const lifetime = new AbortController();
       const activeSignal = signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal;
       const hostcalls = new Map<
@@ -143,14 +147,12 @@ export class WorkerToolRuntime {
                 key: task.key,
                 task: task.task,
                 context: task.context ?? "fresh",
-                sandbox: task.tools?.length === 0 ? "none" : (task.sandbox ?? "shared"),
+                ...(task.workspace === undefined ? {} : { workspace: task.workspace }),
                 anchor: await this.options.nativeConversations.childAnchor(
                   scope.executionReference,
                   task.context === "branch",
                   scope.piSession.conversationId,
                 ),
-                ...(task.cwd ? { cwd: task.cwd } : {}),
-                ...(task.tools ? { tools: task.tools } : {}),
               },
               onPublished: () => publication.resolve(),
               ...(signal ? { signal } : {}),
@@ -218,6 +220,8 @@ export class WorkerToolRuntime {
         signal?: AbortSignal,
         recovery = false,
       ) => {
+        if (!workspaceAvailable && (environment.kind === "workspace" || definition.workflowScript))
+          throw new Error("workspace_unavailable: this child has no Linux workspace");
         const args = raw as Record<string, unknown>,
           invocationId = toolInvocationId(nativeCallId);
         const script = definition.workflowScript?.(args);
@@ -357,13 +361,15 @@ export class WorkerToolRuntime {
       return {
         executionPlane: ordinary ? ("platform" as const) : ("orchestration" as const),
         offered:
-          environment.kind === "target"
-            ? Boolean(target)
-            : definition.availability === "child"
-              ? scope.sessionKind === "subagent"
-              : definition.availability !== "delegation" ||
-                this.options.maximumDepth === null ||
-                depth < this.options.maximumDepth,
+          !workspaceAvailable && (environment.kind === "workspace" || definition.workflowScript)
+            ? false
+            : environment.kind === "target"
+              ? Boolean(target)
+              : definition.availability === "child"
+                ? scope.sessionKind === "subagent"
+                : definition.availability !== "delegation" ||
+                  this.options.maximumDepth === null ||
+                  depth < this.options.maximumDepth,
         tool: {
           ...definition,
           async execute() {

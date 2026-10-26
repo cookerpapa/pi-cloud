@@ -163,6 +163,42 @@ describe("native Subagent resource and query views", () => {
     expect(validate).toHaveBeenCalledOnce();
   });
 
+  it("keeps workspace-null descendants without compute and refuses inherited grant expansion", async () => {
+    const call = await f.command({ task: "Analyze a phone screenshot", workspace: null });
+    const validate = vi.fn(async () => {});
+    const jobs = new PostgresSubagentConversations({
+      database: f.database,
+      native: f.native,
+      validateDirectory: validate,
+    });
+    const child = await jobs.start({ ...input(call), sandboxMode: "none" });
+    const view = f.children.get(child.executionId)!.request.view;
+    expect(view.toolCapabilities).toEqual([]);
+    expect(view.computeSessionId).toBeNull();
+    expect(view.agentSystemPrompt).toContain("Linux workspace access: none");
+    expect(view.agentSystemPrompt).toContain("External device control: none");
+    const nestedCall = await f.command(
+      { task: "Continue analysis" },
+      {
+        sessionId: child.childSessionId,
+        turnId: child.childTurnId,
+        conversationId: child.conversationId!,
+      },
+    );
+    await expect(
+      jobs.start({ ...input(nestedCall), requestedToolCapabilities: ["read"] }),
+    ).rejects.toThrow("subset");
+    await expect(jobs.start({ ...input(nestedCall), sandboxMode: "ephemeral" })).rejects.toThrow(
+      "has not granted",
+    );
+    const nested = await jobs.start(input(nestedCall));
+    expect(f.children.get(nested.executionId)!.request.view).toMatchObject({
+      toolCapabilities: [],
+      computeSessionId: null,
+    });
+    expect(validate).not.toHaveBeenCalled();
+  });
+
   it("rejects stale root authority and an out-of-volume compute directory", async () => {
     const call = await f.command({ task: "Validate admission" });
     await expect(

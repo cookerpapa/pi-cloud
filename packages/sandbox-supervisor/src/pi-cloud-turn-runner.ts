@@ -21,6 +21,7 @@ import type {
 import type { Context as ModelContext, ImageContent, ProviderHeaders } from "@earendil-works/pi-ai";
 import {
   createPiCloudEventFactory,
+  hasConversationWorkspace,
   resolveAgentProfile,
   inputWithUploads,
   assertUserInputBudget,
@@ -106,15 +107,18 @@ export type PiCloudTurnRunnerOptions = {
 };
 
 const BASE_SYSTEM_PROMPT = [
-  "You are a coding agent working in a remote, isolated project workspace.",
-  "Use the provided read, write, edit, and bash tools to inspect and change the project.",
   "Do not claim that a command, test, or file change succeeded unless its Tool result confirms it.",
   "Use the user's language for every assistant-visible sentence, including progress narration before or between Tool calls and the final answer, unless the user explicitly requests another language.",
+  "Keep the final answer concise and report the files changed and verification performed.",
+].join("\n");
+
+const WORKSPACE_SYSTEM_PROMPT = [
+  "You are a coding agent working in a remote, isolated project workspace.",
+  "Use only the offered workspace tools to inspect and change the project.",
   "For browser applications, distinguish syntax/HTTP checks from real UI interaction tests; do not claim clicks or gameplay were verified without browser-equivalent evidence.",
   "The standard Tool Sandbox includes a version-matched Chromium and Playwright stack with CJK fonts. In a Bash Node.js module script, import { chromium, devices } from '/opt/pi-cloud/browser/index.mjs'. Launch headlessly when browser verification is needed, interact with the running local application, inspect console/request failures, and close the browser in finally. Save screenshots in the Workspace and use read to inspect them. Keep project dependencies separate from this platform package and verify actual browser outcomes before claiming success.",
   "When the user asks to run a Web application, bind it to 0.0.0.0 on any unprivileged port and leave the service running after validation. After the server is reachable, if the preview Tool is available, call it with its verified port and include the returned application path as a Markdown link in your answer. Use the application name as the link label; omit an internal port label unless requested. Never tell the user to open localhost, 127.0.0.1, a private Sandbox IP, or a guessed public URL. Do not terminate the service unless the user asks you to stop it.",
   "Start services intended to outlive the Bash Tool in the background, redirect stdin from /dev/null and stdout/stderr to a log file, and verify readiness before presenting a preview.",
-  "Keep the final answer concise and report the files changed and verification performed.",
 ].join("\n");
 
 function languageAlignmentInstruction(prompt: string): string | undefined {
@@ -568,6 +572,9 @@ export class PiCloudTurnRunner {
       const prompt = [
         p.input.kind === "prompt" ? languageAlignmentInstruction(p.input.text) : undefined,
         BASE_SYSTEM_PROMPT,
+        hasConversationWorkspace(p)
+          ? WORKSPACE_SYSTEM_PROMPT
+          : "You are a PiCloud Agent without Linux workspace access.",
         p.agentSystemPrompt,
       ]
         .filter(Boolean)

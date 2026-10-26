@@ -436,3 +436,41 @@ it("offers phone capabilities only to the granted root and lazily prepares its o
   ).rejects.toThrow("withdrawn");
   mailbox.close();
 });
+
+it("withholds every workspace Tool from a workspace-null child and rejects stale invocation", async () => {
+  const f = fixture();
+  f.runtime.options.maximumDepth = null;
+  const prepareEnvironment = vi.fn(async () => "must-not-be-created");
+  const prepareWorkflow = vi.fn(async () => {
+    throw Error("must-not-run");
+  });
+  const bindings = await f.runtime.create({
+    command: {
+      ...command,
+      payload: { ...command.payload, sessionKind: "subagent", toolCapabilities: [] },
+    },
+    prepareEnvironment,
+    prepareWorkflow,
+  });
+  expect(bindings.current().find((b) => b.tool.name === "preview")?.offered).toBe(false);
+  expect(bindings.current().find((b) => b.tool.name === "workflow")?.offered).toBe(false);
+  expect(bindings.current().find((b) => b.tool.name === "subagent")?.offered).toBe(true);
+  const preview = bindings.current().find((b) => b.tool.name === "preview")!
+    .tool as PreparedAgentTool;
+  await expect(
+    withToolInvocation({ id: "task:4", nativeToolCallId: "stale" }, () =>
+      preview.prepareExecution!("stale", { port: 8080 }),
+    ),
+  ).rejects.toThrow("workspace_unavailable");
+  const catalog = f.runtime.options.catalog as ControlToolRegistry;
+  catalog.register({
+    definition: { ...previewToolDefinition, name: "late_workspace_tool" },
+    execute: async () => ({ result: { content: [] } }),
+  });
+  expect(bindings.current().find((b) => b.tool.name === "late_workspace_tool")?.offered).toBe(
+    false,
+  );
+  expect(prepareEnvironment).not.toHaveBeenCalled();
+  expect(prepareWorkflow).not.toHaveBeenCalled();
+  f.mailbox.close();
+});

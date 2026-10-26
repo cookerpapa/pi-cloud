@@ -50,8 +50,14 @@ inputLines.on('close', () => {
 const runs = Object.freeze({
   run(key, task) {
     if (typeof key !== 'string' || !key || !task || typeof task.task !== 'string')
-      return Promise.reject(new Error('runs.run requires a key and {task,context?,sandbox?,cwd?,tools?}'));
-    const spec = JSON.stringify({task:task.task,context:task.context||'fresh',sandbox:task.sandbox||'shared',cwd:task.cwd ?? null,tools:task.tools ? [...task.tools].sort() : null});
+      return Promise.reject(new Error('runs.run requires a key and {task,context?,workspace?}'));
+    if (Object.keys(task).some(key => !['task','context','workspace'].includes(key)))
+      return Promise.reject(new Error('Unknown delegation argument; use workspace for Linux resources'));
+    const w = task.workspace;
+    if (w != null && (typeof w !== 'object' || Array.isArray(w) || Object.keys(w).some(key => !['compute','cwd','tools'].includes(key))))
+      return Promise.reject(new Error('Invalid workspace argument'));
+    const workspace = w === null ? null : {compute:w?.compute ?? 'shared',cwd:w?.cwd ?? null,tools:w?.tools ? [...w.tools].sort() : null};
+    const spec = JSON.stringify({task:task.task,context:task.context ?? 'fresh',workspace});
     const previous = children.get(key);
     if (previous) {
       if (previous.spec !== spec) return Promise.reject(new Error('Workflow key reused with different arguments'));

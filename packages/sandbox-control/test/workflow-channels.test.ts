@@ -113,12 +113,12 @@ describe("workflow guest request/response contract", () => {
   });
   it.each([
     [
-      '{task:"x",sandbox:"shared",cwd:"/workspace/a"}',
-      '{task:"x",sandbox:"ephemeral",cwd:"/workspace/a"}',
+      '{task:"x",workspace:{compute:"shared",cwd:"/workspace/a"}}',
+      '{task:"x",workspace:{compute:"ephemeral",cwd:"/workspace/a"}}',
     ],
     [
-      '{task:"x",sandbox:"ephemeral",cwd:"/workspace/a"}',
-      '{task:"x",sandbox:"ephemeral",cwd:"/workspace/b"}',
+      '{task:"x",workspace:{compute:"ephemeral",cwd:"/workspace/a"}}',
+      '{task:"x",workspace:{compute:"ephemeral",cwd:"/workspace/b"}}',
     ],
   ])("rejects key reuse when compute or cwd changes: %s", async (first, second) => {
     const f = await start(`await runs.run("a",${first}); return runs.run("a",${second});`);

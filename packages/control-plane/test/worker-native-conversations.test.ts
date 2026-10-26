@@ -39,7 +39,7 @@ it.each([false, true])(
       tokensPerSecond: 1_000_000,
     });
     provider.setResponses([
-      fauxAssistantMessage(fauxToolCall("subagent", { task: "Child task", tools: [] }), {
+      fauxAssistantMessage(fauxToolCall("subagent", { task: "Child task", workspace: null }), {
         stopReason: "toolUse",
       }),
       async () => {

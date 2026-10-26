@@ -479,7 +479,7 @@ try {
     session.sessionId,
     [
       "Call the subagent Tool exactly once and do not call any file or bash Tool.",
-      'Use subagent with context:"fresh", tools:[], task:"Reply exactly SUBAGENT-NONE-OK". Do not use workflow.',
+      'Use subagent with context:"fresh", workspace:null, task:"Reply exactly SUBAGENT-NONE-OK". Do not use workflow.',
       "After it finishes, reply with SUBAGENT-NONE-OK.",
     ].join(" "),
   );
@@ -493,7 +493,7 @@ try {
     session.sessionId,
     [
       "Call the subagent Tool exactly once and do not call any file or bash Tool yourself.",
-      'Use subagent with context:"fresh", sandbox:"ephemeral", tools:["bash"], task:"Do not call any local Tool. Reply exactly SUBAGENT-LAZY-OK". Keep the bash capability enabled but unused; do not pass tools:[].',
+      'Use subagent with context:"fresh", workspace:{compute:"ephemeral",tools:["bash"]},task:"Do not call any local Tool. Reply exactly SUBAGENT-LAZY-OK". Keep the bash capability enabled but unused; do not use workspace:null.',
       "After it finishes, reply with SUBAGENT-LAZY-OK.",
     ].join(" "),
   );
@@ -519,7 +519,7 @@ try {
     session.sessionId,
     [
       "Call the workflow Tool exactly once and run exactly two independent children in parallel.",
-      'Use workflow with script: return runs.all([{key:"left", context:"fresh", tools:[], task:"Reply exactly SUBAGENT-PARALLEL-LEFT"}, {key:"right", context:"fresh", tools:[], task:"Reply exactly SUBAGENT-PARALLEL-RIGHT"}]);',
+      'Use workflow with script: return runs.all([{key:"left", context:"fresh", workspace:null, task:"Reply exactly SUBAGENT-PARALLEL-LEFT"}, {key:"right", context:"fresh", workspace:null, task:"Reply exactly SUBAGENT-PARALLEL-RIGHT"}]);',
       "After both finish, reply exactly SUBAGENT-PARALLEL-OK.",
     ].join(" "),
   );
@@ -536,8 +536,8 @@ try {
     session.sessionId,
     [
       "First use bash to write exactly SHARED-PARENT-OK into /workspace/shared-parent-marker.txt.",
-      "Then call the subagent Tool exactly once with sandbox:shared.",
-      'Use subagent with context:"fresh", sandbox:"shared", task:"Use bash to read /workspace/shared-parent-marker.txt and reply exactly SHARED-CHILD-OK if it contains SHARED-PARENT-OK".',
+      "Then call the subagent Tool exactly once with workspace.compute=shared.",
+      'Use subagent with context:"fresh", workspace:{compute:"shared"},task:"Use bash to read /workspace/shared-parent-marker.txt and reply exactly SHARED-CHILD-OK if it contains SHARED-PARENT-OK".',
       "After it finishes, reply with SHARED-CHILD-OK.",
     ].join(" "),
   );
@@ -555,7 +555,7 @@ try {
     [
       "Use bash to create /workspace/project, git init -b main there, configure repository-local user.name Audit and user.email audit@example.invalid, create README.md, git add and commit the baseline.",
       "Use git -C /workspace/project worktree add -b feature-a /workspace/worktrees/feature-a. Do not copy files or clone another repository.",
-      'Then call workflow exactly once with script: return runs.run("feature-a", {context:"branch", sandbox:"ephemeral", cwd:"/workspace/worktrees/feature-a", task:"Use bash to verify pwd is /workspace/worktrees/feature-a. Create feature.py implementing add(a,b), with executable assertions for zero, negative and positive integers. Run python3 feature.py. Write feature-marker.txt containing WORKTREE-CHILD-OK. git add feature.py feature-marker.txt and git commit locally. Reply WORKTREE-CHILD-OK. Do not create more subagents."});',
+      'Then call workflow exactly once with script: return runs.run("feature-a", {context:"branch", workspace:{compute:"ephemeral",cwd:"/workspace/worktrees/feature-a"},task:"Use bash to verify pwd is /workspace/worktrees/feature-a. Create feature.py implementing add(a,b), with executable assertions for zero, negative and positive integers. Run python3 feature.py. Write feature-marker.txt containing WORKTREE-CHILD-OK. git add feature.py feature-marker.txt and git commit locally. Reply WORKTREE-CHILD-OK. Do not create more subagents."});',
       "After the child finishes, YOU must git -C /workspace/project merge --ff-only feature-a, run python3 /workspace/project/feature.py and read /workspace/project/feature-marker.txt. Do not create or edit the child files yourself. Only after the tests pass, reply WORKTREE-MERGED-OK.",
     ].join(" "),
   );
@@ -576,7 +576,7 @@ try {
     session.sessionId,
     [
       "In /workspace/project use git worktree add to create branches parallel-left and parallel-right at /workspace/worktrees/left and /workspace/worktrees/right from current main.",
-      'Call workflow exactly once with script: return runs.all([ {key:"left",context:"fresh",sandbox:"ephemeral",cwd:"/workspace/worktrees/left",task:"Use bash to check pwd. Write left.py defining double(x)=x*2 with executable assertions; run python3 left.py, then git add left.py and git commit. Do not create subagents. Reply LEFT-OK."}, {key:"right",context:"branch",sandbox:"ephemeral",cwd:"/workspace/worktrees/right",task:"Use bash to check pwd. Write right.py defining square(x)=x*x with executable assertions; run python3 right.py, then git add right.py and git commit. Do not create subagents. Reply RIGHT-OK."} ]);',
+      'Call workflow exactly once with script: return runs.all([ {key:"left",context:"fresh",workspace:{compute:"ephemeral",cwd:"/workspace/worktrees/left"},task:"Use bash to check pwd. Write left.py defining double(x)=x*2 with executable assertions; run python3 left.py, then git add left.py and git commit. Do not create subagents. Reply LEFT-OK."}, {key:"right",context:"branch",workspace:{compute:"ephemeral",cwd:"/workspace/worktrees/right"},task:"Use bash to check pwd. Write right.py defining square(x)=x*x with executable assertions; run python3 right.py, then git add right.py and git commit. Do not create subagents. Reply RIGHT-OK."} ]);',
       "Wait for BOTH children. Then merge both branches locally into /workspace/project (use --no-edit), run python3 left.py and python3 right.py there. Do not create the files yourself. Reply PARALLEL-WORKTREES-MERGED only after both tests pass.",
     ].join(" "),
   );
@@ -603,13 +603,13 @@ try {
 
   const nestedComputeTask = [
     "Use bash to verify pwd is /workspace/worktrees/feature-a.",
-    'Call subagent once with context:"fresh", sandbox:"shared", task:"Use bash to verify pwd is /workspace/worktrees/feature-a. Write nested-shared.txt containing NESTED-COMPUTE-OK and read it back. Do not create subagents. Reply NESTED-COMPUTE-OK.".',
+    'Call subagent once with context:"fresh", workspace:{compute:"shared"},task:"Use bash to verify pwd is /workspace/worktrees/feature-a. Write nested-shared.txt containing NESTED-COMPUTE-OK and read it back. Do not create subagents. Reply NESTED-COMPUTE-OK.".',
     "Wait for the actual result, then read nested-shared.txt yourself and reply NESTED-COMPUTE-OK.",
   ].join(" ");
   const nestedCompute = await runTurn(
     session.sessionId,
     [
-      `Call subagent exactly once with context:"fresh", sandbox:"ephemeral", cwd:"/workspace/worktrees/feature-a", task:${JSON.stringify(nestedComputeTask)}.`,
+      `Call subagent exactly once with context:"fresh", workspace:{compute:"ephemeral",cwd:"/workspace/worktrees/feature-a"},task:${JSON.stringify(nestedComputeTask)}.`,
       "After it returns, read /workspace/worktrees/feature-a/nested-shared.txt using bash and reply NESTED-COMPUTE-OK.",
     ].join(" "),
   );
@@ -630,14 +630,14 @@ try {
 
   const nestedTask = [
     "Call the subagent Tool exactly once and do not call file or bash Tools.",
-    'Use subagent with context:"fresh", tools:[], task:"Reply exactly SUBAGENT-NESTED-LEAF-OK".',
+    'Use subagent with context:"fresh", workspace:null, task:"Reply exactly SUBAGENT-NESTED-LEAF-OK".',
     "After it finishes, reply exactly SUBAGENT-NESTED-PARENT-OK.",
   ].join(" ");
   const recursive = await runTurn(
     session.sessionId,
     [
       "Create exactly ONE direct child. That child creates exactly ONE grandchild, so there are two descendants total. Do not create the grandchild yourself or make a second delegation.",
-      "Use action:run, context:fresh, tools:[] and give your direct child this task verbatim:",
+      "Use action:run, context:fresh, workspace:null and give your direct child this task verbatim:",
       `<child_task>\n${nestedTask}\n</child_task>`,
       "After your direct child returns SUBAGENT-NESTED-PARENT-OK, make no more tool calls and reply exactly SUBAGENT-RECURSIVE-OK.",
     ].join(" "),
@@ -684,7 +684,7 @@ try {
   }
 
   const messageMarker = `MAILBOX-${suffix}`;
-  const messageScript = `const child = runs.run("receiver", {context:"fresh",sandbox:"shared",task:"First use bash to sleep 3 seconds. Then reply with the secret code received in an Agent message. The code is not in this initial task. Do not read files to look for the code. If no message arrives, say MISSING and finish."}); const receipt = await runs.send("receiver", ${JSON.stringify(messageMarker)}, "steer"); return {receipt, child:await child};`;
+  const messageScript = `const child = runs.run("receiver", {context:"fresh",workspace:{compute:"shared"},task:"First use bash to sleep 3 seconds. Then reply with the secret code received in an Agent message. The code is not in this initial task. Do not read files to look for the code. If no message arrives, say MISSING and finish."}); const receipt = await runs.send("receiver", ${JSON.stringify(messageMarker)}, "steer"); return {receipt, child:await child};`;
   const messaging = await runTurn(
     session.sessionId,
     `Call workflow exactly once with this script: ${messageScript} Then briefly report the child result.`,
@@ -703,7 +703,7 @@ try {
   const supervisor = await runTurn(
     session.sessionId,
     [
-      "Delegate one fresh child with tools:[] using action:run.",
+      "Delegate one fresh child with workspace:null using action:run.",
       "Its task is: Call contact_supervisor with reason need_decision and ask for the approved colour; wait for the reply and answer with that colour.",
       'When the child returns blocked, use subagent_supervisor action:reply with its replyTo request ID and message "APPROVED-TEAL".',
       "Do not launch another child. Wait for the actual child response, then answer SUPERVISOR-TEAL-OK.",
@@ -721,7 +721,7 @@ try {
     session.sessionId,
     [
       "Call workflow exactly once with this script:",
-      'const child=runs.run("cancel-me", {context:"fresh",tools:[],task:"Write a detailed 6000-word comparison of sorting algorithms. Do not use tools."}).catch(error => error.result || {state:"failed",error:error.message}); await new Promise(resolve=>setTimeout(resolve,2000)); const cancellation=await runs.cancel("cancel-me"); return {cancellation,child:await child};',
+      'const child=runs.run("cancel-me", {context:"fresh",workspace:null,task:"Write a detailed 6000-word comparison of sorting algorithms. Do not use tools."}).catch(error => error.result || {state:"failed",error:error.message}); await new Promise(resolve=>setTimeout(resolve,2000)); const cancellation=await runs.cancel("cancel-me"); return {cancellation,child:await child};',
       "After cancellation is confirmed, reply SUBAGENT-CANCEL-OK. Do not start replacement work.",
     ].join(" "),
   );

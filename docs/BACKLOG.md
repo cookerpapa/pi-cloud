@@ -1,6 +1,6 @@
 # Maintained backlog
 
-## Subagent workspace/resource contract — direction approved, implementation pending
+## Subagent workspace/resource contract — implementation in progress
 
 The owner requested upstream research before changing the model-facing subagent
 parameters. [The comparison](research/subagent-resource-contracts-20261026.md)
@@ -16,8 +16,11 @@ The owner subsequently approved the workspace-parameter direction and explicitly
 kept device-use coordination with Agents. Do not add platform device occupancy
 registration, reservation Tools or a device-use scheduler.
 [ADR-0280](adr/0280-workspace-scoped-subagent-contract.md) records the accepted
-parameter contract; implement it as the first complete slice of the
-[combined plan](reports/subagent-and-schedules-implementation-plan-20261026.md).
+parameter contract. The first source slice now uses workspace-scoped direct and
+workflow arguments, rejects grant expansion, suppresses workspace-dependent tools
+and activation for null-workspace children, and renders their actual environment.
+Focused protocol/Worker/native/PG checks pass; integrated and live publication
+remain pending under the [combined plan](reports/subagent-and-schedules-implementation-plan-20261026.md).
 
 ## Scheduled Agent inputs — plan accepted, implementation pending
 

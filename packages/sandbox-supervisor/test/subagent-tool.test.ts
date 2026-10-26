@@ -30,9 +30,35 @@ it("keeps the role-free public tool schema and rejects retired invocation forms"
     { task: "inspect", sandbox: "isolated" },
     { task: "inspect", cwd: "relative/path" },
     { task: "inspect", context: "fork" },
+    { task: "inspect", sandbox: "shared" },
+    { task: "inspect", cwd: "/workspace" },
+    { task: "inspect", tools: [] },
+    { task: "inspect", workspace: { tools: [] } },
+    { task: "inspect", workspace: { tools: ["read", "read"] } },
+    { task: "inspect", workspace: { tools: ["android_tap"] } },
+    { task: "inspect", workspace: { cwd: "relative" } },
+    { task: "inspect", workspace: { compute: "phone" } },
   ])
     expect(Value.Check(schema, args)).toBe(false);
-  expect(Value.Check(schema, { task: "inspect", context: "fresh", sandbox: "shared" })).toBe(true);
+  expect(
+    Value.Check(schema, { task: "inspect", context: "fresh", workspace: { compute: "shared" } }),
+  ).toBe(true);
+});
+
+it("separates context inheritance from optional Linux workspace access", () => {
+  for (const workspace of [
+    undefined,
+    null,
+    {},
+    { compute: "ephemeral", cwd: "/workspace/code", tools: ["read"] },
+  ]) {
+    const args = {
+      task: "Analyze phone screenshots without operating the phone",
+      context: "branch",
+      ...(workspace === undefined ? {} : { workspace }),
+    };
+    expect(prepareSubagentArguments(args)).toEqual(args);
+  }
 });
 
 function mailboxFixture() {
@@ -60,6 +86,43 @@ function mailboxFixture() {
     });
   return { mailbox, transport, reply };
 }
+
+it("preserves workspace:null in a workflow's committed delegation", async () => {
+  const f = mailboxFixture();
+  let command!: CandidateControlToolCommand;
+  const client = new SubagentControlClient(
+    {
+      publishControl: async (_task, value) => {
+        command = value;
+        f.reply(value, { state: "completed" });
+      },
+      retireHostCall: async () => {},
+    },
+    f.transport,
+  );
+  try {
+    await expect(
+      client.request({
+        executionReference: "lease",
+        conversationId: 1,
+        toolCallId: "task:4",
+        request: {
+          action: "run",
+          key: "analysis",
+          task: "Analyze",
+          context: "branch",
+          anchor: "3",
+          workspace: null,
+        },
+      }),
+    ).resolves.toEqual({ state: "completed" });
+    expect(command.arguments).toEqual({ task: "Analyze", context: "branch", workspace: null });
+    expect(command.contextAnchor).toBe(3);
+  } finally {
+    client.close();
+    f.mailbox.close();
+  }
+});
 
 describe("Subagent control result correlation through the shared Kafka mailbox", () => {
   it("waits for publication ACK even if the Kafka reply arrives first", async () => {

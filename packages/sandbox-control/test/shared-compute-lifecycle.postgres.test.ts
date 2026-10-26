@@ -158,7 +158,7 @@ it("retains native ephemeral child compute under its shared root lease", async (
   try {
     const call = await f.command({
       task: "Owned child fixture",
-      sandbox: "ephemeral",
+      workspace: { compute: "ephemeral" },
     });
     const jobs = new PostgresSubagentConversations({ database: f.database, native: f.native });
     const child = await jobs.start({
@@ -231,7 +231,10 @@ it.each(["elastic", "development_environment"] as const)(
   async (mode) => {
     const f = await fixture();
     try {
-      const call = await f.command({ task: "Retained child fixture", sandbox: "ephemeral" });
+      const call = await f.command({
+        task: "Retained child fixture",
+        workspace: { compute: "ephemeral" },
+      });
       const jobs = new PostgresSubagentConversations({ database: f.database, native: f.native });
       const child = await jobs.start({
         id: call.operationId,
@@ -666,7 +669,7 @@ it("keeps live native child compute alive through actual Controller/PG cleanup",
   try {
     const call = await f.command({
       task: "Owned child fixture",
-      sandbox: "ephemeral",
+      workspace: { compute: "ephemeral" },
     });
     const jobs = new PostgresSubagentConversations({ database: f.database, native: f.native });
     const child = await jobs.start({

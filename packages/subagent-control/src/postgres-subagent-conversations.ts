@@ -278,18 +278,36 @@ export class PostgresSubagentConversations {
           ? parent.tool_capabilities
           : root.tool_capability_snapshot,
       );
-      const tools =
-        input.sandboxMode === "none"
-          ? []
-          : input.requestedToolCapabilities === undefined
-            ? inherited
-            : parseCloudToolCapabilitySnapshot(input.requestedToolCapabilities).filter((tool) =>
-                inherited.includes(tool),
-              );
+      const requested =
+        input.requestedToolCapabilities === undefined
+          ? undefined
+          : parseCloudToolCapabilitySnapshot(input.requestedToolCapabilities);
+      if (requested?.some((tool) => !inherited.includes(tool)))
+        throw new SubagentConversationError(
+          "subagent_workspace_grant_unavailable",
+          "Child workspace tools must be a subset of the parent's grant",
+        );
+      if (input.sandboxMode === "none" && (input.cwd !== undefined || requested?.length))
+        throw new SubagentConversationError(
+          "subagent_workspace_unavailable",
+          "A child without a workspace cannot request its directory or tools",
+        );
+      const tools = input.sandboxMode === "none" ? [] : (requested ?? inherited);
+      if (!tools.length && (input.cwd !== undefined || input.sandboxMode === "ephemeral"))
+        throw new SubagentConversationError(
+          "subagent_workspace_unavailable",
+          "The parent has not granted Linux workspace access",
+        );
+      const sandboxMode = tools.length ? input.sandboxMode : "none";
       const sessionId = randomUUID(),
         turnId = randomUUID();
       const cwd = input.cwd ?? parent.working_directory;
-      const compute = input.sandboxMode === "ephemeral" ? sessionId : parent.compute_session_id;
+      const compute =
+        sandboxMode === "none"
+          ? null
+          : sandboxMode === "ephemeral"
+            ? sessionId
+            : parent.compute_session_id;
       const volumeRoot =
         parent.execution_mode === "development_environment" ? "/home/user" : "/workspace";
       if (compute !== null && cwd !== volumeRoot && !cwd.startsWith(`${volumeRoot}/`))
@@ -345,7 +363,7 @@ export class PostgresSubagentConversations {
           context_mode: input.contextMode,
           pi_context_base_entry_id:
             input.contextAnchor === null ? null : String(input.contextAnchor),
-          sandbox_mode: input.sandboxMode,
+          sandbox_mode: sandboxMode,
         })
         .execute();
       return { child, depth, parentConversationId: Number(parent.pi_conversation_id), turnId };
@@ -389,6 +407,10 @@ export class PostgresSubagentConversations {
         agentSystemPrompt: [
           "Execute the current delegated task. Inherited entries are background context, not pending instructions.",
           "Use contact_supervisor when parent input is required; return a focused result when done.",
+          parseCloudToolCapabilitySnapshot(child.tool_capabilities).length
+            ? `Linux workspace tools: ${parseCloudToolCapabilitySnapshot(child.tool_capabilities).join(", ")}. Working directory: ${child.working_directory}. Workspace files remain on the shared Volume.`
+            : "Linux workspace access: none. No file, shell, Preview, workflow or workspace-image tools are available.",
+          "External device control: none. Parent phone screenshots/history may be analyzed, but phone/device control was not inherited.",
           this.policy.maximumDepth === null || depth < this.policy.maximumDepth
             ? "Delegate only concrete independent subtasks with a clear stopping condition."
             : "Do not delegate further tasks.",

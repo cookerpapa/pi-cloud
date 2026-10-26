@@ -72,6 +72,7 @@ export type TrustedRemoteToolsRuntimeConfiguration = {
   turnContextSha256: string;
   executionContextSha256: string;
   allowedTools?: CloudToolCapabilitySnapshot;
+  workspaceAvailable?: boolean;
   captureStepContext: (
     activeTools: readonly string[],
     purpose?: "agent" | "context_maintenance",
@@ -199,6 +200,7 @@ function validateRuntimeConfiguration(
     turnContextSha256,
     executionContextSha256,
     allowedTools,
+    workspaceAvailable: candidate.workspaceAvailable !== false,
     captureStepContext: candidate.captureStepContext,
     ...(candidate.onToolOperationStarted === undefined
       ? {}
@@ -411,6 +413,8 @@ export function createTrustedRemoteAgentTools(
   };
 
   const systemPrompt = async (base: string): Promise<string> => {
+    if (!runtime.workspaceAvailable)
+      return `${base}\n\nLinux workspace access: none. Only the tools explicitly offered to this Conversation are available.`;
     const cwdLine = /^Current working directory:.*$/m;
     const sandboxLine = `Current working directory: ${runtime.workingDirectory} (isolated Tool Sandbox)`;
     const basePrompt = cwdLine.test(base)

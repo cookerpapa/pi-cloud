@@ -50,9 +50,7 @@ export class SubagentControlClient {
         ? prepareSubagentArguments({
             task: request.task,
             context: request.context,
-            sandbox: request.sandbox === "none" ? "shared" : request.sandbox,
-            ...(request.cwd ? { cwd: request.cwd } : {}),
-            ...(request.tools ? { tools: request.tools } : {}),
+            ...(request.workspace === undefined ? {} : { workspace: request.workspace }),
           })
         : prepareSubagentControlArguments(request);
     const requestId = randomUUID();

@@ -1,3 +1,4 @@
+import { hasConversationWorkspace } from "@pi-cloud/protocol";
 import type { WorkflowPreparer } from "./workflow-transport.ts";
 import {
   awaitWithContext,
@@ -556,8 +557,13 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       );
     }
 
+    const workspaceAvailable = hasConversationWorkspace(command.payload);
     let workspaceSeed: Uint8Array | undefined;
-    if (command.payload.input.kind !== "compact" && this.#workspaceSeedResolver !== undefined) {
+    if (
+      workspaceAvailable &&
+      command.payload.input.kind !== "compact" &&
+      this.#workspaceSeedResolver !== undefined
+    ) {
       try {
         workspaceSeed = await this.#workspaceSeedResolver(command);
       } catch (error: unknown) {
@@ -621,6 +627,12 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     let toolRuntimeFailure: PiTurnError | undefined;
     let cancelOutstanding = false;
     const ensureActivation = async (): Promise<ToolSandboxCreateResponse> => {
+      if (!workspaceAvailable)
+        throw new PiTurnError(
+          "workspace_unavailable",
+          "This child has no Linux workspace access",
+          false,
+        );
       if (signal.aborted) throw signal.reason;
       if (toolRuntimeFailure !== undefined) throw toolRuntimeFailure;
       if (activation !== undefined) return activation;
@@ -905,6 +917,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
               };
             },
             executionReference: toolAssignment.executionReference,
+            workspaceAvailable,
             turnContextSha256: cloudTurn.sha256,
             executionContextSha256: cloudExecution.sha256,
             allowedTools: cloudTurn.context.tools.names,

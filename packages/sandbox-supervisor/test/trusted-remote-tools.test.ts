@@ -917,3 +917,13 @@ describe("whole-tool Worker adapter", () => {
     });
   });
 });
+
+it("does not describe a Linux Sandbox when workspace access is disabled", async () => {
+  const { value } = configuration({ allowedTools: [], workspaceAvailable: false });
+  const runtime = createTrustedRemoteAgentTools(value);
+  expect(runtime.tools).toEqual([]);
+  const prompt = await runtime.systemPrompt("Analyze the supplied phone screenshot.");
+  expect(prompt).toContain("Linux workspace access: none");
+  expect(prompt).not.toContain("Current working directory");
+  expect(prompt).not.toContain("credential helper");
+});
