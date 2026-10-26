@@ -1,5 +1,9 @@
 # Documentation map
 
+[Subagent resource-contract research](research/subagent-resource-contracts-20261026.md)
+compares upstream context, workspace and device-access designs. It records the
+proposed parameter boundary and validation criteria; implementation is pending.
+
 [Android execution targets](ANDROID_EXECUTION.md) are deployed under ADR-0279:
 core `android-a37491f4` (schema 201, tool catalog v2), device `android-7aa30c34`.
 An idle coding Session can bind a cloud phone; its root Agent receives six device

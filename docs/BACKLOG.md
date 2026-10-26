@@ -1,5 +1,18 @@
 # Maintained backlog
 
+## Subagent workspace/resource contract — researched, implementation pending
+
+The owner requested upstream research before changing the model-facing subagent
+parameters. [The comparison](research/subagent-resource-contracts-20261026.md)
+pins OpenClaw, OpenHands and Deep Agents source, plus Cua's separately licensed
+computer-access module. The proposed task/context/workspace separation is a good
+fit for the current coding-workspace-plus-device model; it is not a universal
+resource scheduler. Keep device grants explicit, define omitted versus null
+workspace, and make null suppress every workspace-dependent tool. Parameter
+validation, resource binding, native tool visibility and child environment text
+must agree. The deployed schema is unchanged; real-model semantic evaluation is
+part of any subsequent implementation.
+
 ## Cloud Android execution target — completed
 
 [ADR-0279](adr/0279-android-execution-targets.md) is deployed as core
