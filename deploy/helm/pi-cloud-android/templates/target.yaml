@@ -111,3 +111,20 @@ spec:
             defaultMode: 288
             items: [{ key: cube-egress-config-token, path: cube-egress-config-token }]
       securityContext: { fsGroup: 1000 }
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-control-access
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Values.controlPlaneRelease | quote }}
+      app.kubernetes.io/component: control-plane
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }} }
+      ports: [{ protocol: TCP, port: 8090 }]

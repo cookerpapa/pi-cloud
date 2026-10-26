@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { setTimeout as delay } from "node:timers/promises";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -154,21 +155,27 @@ if (action === "prepare") {
     resolve(directory, "values.json"),
   ]);
   // OnDelete preserves a running device until admission has been checked above.
-  if (previous.length && previous[0].status?.phase === "Running")
+  if (previous.length)
     kubectl(["delete", "pod", previous[0].metadata.name, "--wait=true", "--timeout=120s"]);
-  run("/usr/local/bin/k3s", [
-    "kubectl",
-    "--kubeconfig",
-    kubeconfig,
-    "-n",
-    namespace,
-    "wait",
-    "--for=condition=Ready",
-    "pod",
-    "-l",
-    "app.kubernetes.io/instance=" + name,
-    "--timeout=600s",
-  ]);
+  // StatefulSet OnDelete has no rollout-status watch. Wait for the controller
+  // to create the replacement before waiting for that Pod's readiness.
+  const readyDeadline = Date.now() + 600000;
+  let pod;
+  while (!pod && Date.now() < readyDeadline) {
+    pod = JSON.parse(
+      kubectl(["get", "pods", "-l", "app.kubernetes.io/instance=" + name, "-o", "json"]),
+    ).items.find(
+      (item) =>
+        !item.metadata.deletionTimestamp &&
+        !previous.some((old) => old.metadata.uid === item.metadata.uid),
+    );
+    if (!pod) await delay(1000);
+  }
+  assert(pod, "Android replacement Pod was not created");
+  kubectl(["wait", "--for=condition=Ready", "pod/" + pod.metadata.name, "--timeout=600s"], {
+    timeout: 605000,
+  });
+
   execIn("control-plane", [
     ...adminArgs,
     "register",

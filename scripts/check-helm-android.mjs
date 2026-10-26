@@ -64,6 +64,14 @@ try {
       assert.equal(mount.readOnly, true);
     }
   }
+  const access = objects.find((o) => o.kind === "NetworkPolicy");
+  assert.equal(access.spec.podSelector.matchLabels["app.kubernetes.io/instance"], "pi-cloud");
+  assert.deepEqual(access.spec.policyTypes, ["Egress"]);
+  assert.equal(access.spec.egress[0].ports[0].port, 8090);
+  assert.equal(
+    access.spec.egress[0].to[0].podSelector.matchLabels["app.kubernetes.io/instance"],
+    "android-fixture",
+  );
   const start = readFileSync("deploy/helm/pi-cloud-android/files/start.sh", "utf8");
   assert(start.includes("Partial Android initialization requires operator reconciliation"));
   assert(start.includes("PI_ANDROID_INPUT"));
