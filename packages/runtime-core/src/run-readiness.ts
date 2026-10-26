@@ -11,7 +11,7 @@ export function laneDependenciesReady(
       and s.id=${sessionId}::uuid and s.state in ('cold','idle') and s.pruned_at is null)
     and not exists(select 1 from runs prior where prior.tenant_id=${tenantId}::uuid
       and prior.session_id=${sessionId}::uuid and prior.mailbox_position<${mailbox}
-      and prior.state not in ('completed','failed','cancelled','timed_out'))
+      and (prior.state not in ('completed','failed','cancelled','timed_out') or prior.recovery_requested_at is not null))
     and not exists(select 1 from runs prior
       where prior.tenant_id=${tenantId}::uuid and prior.session_id=${sessionId}::uuid
         and prior.output_seal_id is not null and prior.output_sealed_at is null)`;
@@ -31,4 +31,19 @@ export async function advanceLaneReadiness(
       and ${laneDependenciesReady(tenantId, sessionId, sql.ref("candidate.mailbox_position"))}`.execute(
     tx,
   );
+}
+
+/** Native Inbox/compaction targets the current work, even when later scheduled
+ * Runs have already entered the cloud queue. Three indexed candidates suffice. */
+export function receivingConversationRunId(
+  tenantId: string,
+  sessionId: string,
+): RawBuilder<string | null> {
+  return sql<string | null>`coalesce(
+    (select id from runs where tenant_id=${tenantId}::uuid and session_id=${sessionId}::uuid and pruned_at is null
+      and (state not in ('queued','completed','failed','cancelled','timed_out') or recovery_requested_at is not null or (output_seal_id is not null and output_sealed_at is null))
+      order by mailbox_position limit 1),
+    (select id from runs where tenant_id=${tenantId}::uuid and session_id=${sessionId}::uuid and pruned_at is null and state='queued' order by mailbox_position limit 1),
+    (select id from runs where tenant_id=${tenantId}::uuid and session_id=${sessionId}::uuid and pruned_at is null order by mailbox_position desc limit 1)
+  )`;
 }

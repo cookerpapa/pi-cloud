@@ -1,3 +1,4 @@
+import { ScheduledOriginSchema } from "./scheduled-origin.ts";
 import { ModelRuntimeSnapshotSchema } from "./model-catalog.ts";
 import { ExecutionTargetGrantsSchema } from "./execution-target.ts";
 import { ResourceLimitSchema } from "./protocol-primitives.ts";
@@ -197,6 +198,7 @@ export const ExecuteTurnCommandMessageSchema = Type.Object(
         }),
         toolCapabilities: CloudToolCapabilitySnapshotSchema,
         executionTargets: Type.Optional(ExecutionTargetGrantsSchema),
+        scheduledOrigin: Type.Optional(ScheduledOriginSchema),
         agentSystemPrompt: Type.Optional(
           Type.String({ minLength: 1, maxLength: MAX_AGENT_INPUT_CHARACTERS }),
         ),

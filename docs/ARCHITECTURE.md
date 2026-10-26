@@ -1,5 +1,15 @@
 # Architecture
 
+Scheduled inputs under [ADR-0281](adr/0281-scheduled-session-inputs.md) are
+implemented in source for schema 202/catalog v3; matched publication is pending.
+PG current plans feed the existing Run queue transactionally. A timer occurrence
+is a new Run in the same Session, separate from native steer/follow-up. One
+nearest-deadline timer plus PG notification hints and a 60-second fallback replace
+per-plan timers or a second job engine. [Details](SCHEDULES.md).
+The paired [ADR-0280](adr/0280-workspace-scoped-subagent-contract.md) uses explicit
+workspace-scoped subagent parameters, with null disabling workspace access and
+ephemeral meaning separate Linux compute on the same Volume, never a phone clone.
+
 [ADR-0279](adr/0279-android-execution-targets.md) extends the execution boundary with an
 operator-provisioned Android device beside the existing Cube Workspace. PG owns
 registration and idle Session binding; the Run freezes capability grants. One

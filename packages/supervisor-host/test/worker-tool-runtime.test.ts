@@ -474,3 +474,53 @@ it("withholds every workspace Tool from a workspace-null child and rejects stale
   expect(prepareWorkflow).not.toHaveBeenCalled();
   f.mailbox.close();
 });
+
+it("refreshes root-only catalog tools without treating native Conversation 1 as an authority", async () => {
+  const f = fixture();
+  const prepare = {
+    prepareEnvironment: async () => {
+      throw Error("No Workspace is needed");
+    },
+    prepareWorkflow: async () => {
+      throw Error("No workflow is needed");
+    },
+  };
+  const root = await f.runtime.create({
+    ...prepare,
+    command: {
+      ...command,
+      payload: {
+        ...command.payload,
+        piSession: { ...command.payload.piSession, conversationId: 17 },
+      },
+    },
+  });
+  const child = await f.runtime.create({
+    ...prepare,
+    command: {
+      ...command,
+      payload: { ...command.payload, sessionKind: "subagent", toolCapabilities: [] },
+    },
+  });
+  const withdraw = (f.runtime.options.catalog as ControlToolRegistry).register({
+    definition: {
+      name: "root_management",
+      description: "Test root-only management",
+      environment: { kind: "none" },
+      availability: "root",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+    },
+    execute: async () => ({ result: { content: [] } }),
+  });
+  expect(root.current().find((b) => b.tool.name === "root_management")?.offered).toBe(true);
+  const binding = child.current().find((b) => b.tool.name === "root_management")!;
+  expect(binding.offered).toBe(false);
+  await expect(
+    withToolInvocation({ id: "task:9", nativeToolCallId: "stale-root-tool" }, () =>
+      (binding.tool as PreparedAgentTool).prepareExecution!("stale-root-tool", {}),
+    ),
+  ).rejects.toThrow("root conversation");
+  withdraw();
+  expect(root.current().some((b) => b.tool.name === "root_management")).toBe(false);
+  f.mailbox.close();
+});

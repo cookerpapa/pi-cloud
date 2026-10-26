@@ -650,6 +650,7 @@ export interface SubagentExecutionTable extends SubagentConversationTable {
 }
 export type ConversationTurnView = Pick<
   RunTable,
+  | "scheduled_origin"
   | "id"
   | "tenant_id"
   | "session_id"
@@ -710,6 +711,7 @@ export interface ConversationPruneOperationTable {
 }
 
 export interface RunTable {
+  scheduled_origin: GeneratedNullable<unknown>;
   operation_kind: Generated<"chat" | "compact">;
   recovery_requested_at: NullableTimestamp;
   compute_session_id: GeneratedNullable<string>;
@@ -1004,7 +1006,30 @@ export interface SessionUploadTable {
   expires_at: Timestamp;
 }
 
+export interface SessionScheduleTable {
+  id: string;
+  tenant_id: string;
+  session_id: string;
+  name: string;
+  prompt: string;
+  timing: JSONColumnType<Record<string, unknown>, Record<string, unknown>, Record<string, unknown>>;
+  missed: "latest" | "skip";
+  enabled: GeneratedBoolean;
+  revision: GeneratedInt8;
+  next_fire_at: NullableTimestamp;
+  available_at: NullableTimestamp;
+  last_run_id: GeneratedNullable<string>;
+  last_skipped_at: NullableTimestamp;
+  error_code: GeneratedNullable<string>;
+  error_message: GeneratedNullable<string>;
+  retry_count: GeneratedInteger;
+  create_request_sha256: string;
+  created_at: GeneratedTimestamp;
+  updated_at: GeneratedTimestamp;
+}
+
 export interface Database {
+  session_schedules: SessionScheduleTable;
   session_uploads: SessionUploadTable;
   accepted_fact_projection_offsets: { topic: string; partition: number; next_offset: Int8 };
   agent_definitions: AgentDefinitionTable;

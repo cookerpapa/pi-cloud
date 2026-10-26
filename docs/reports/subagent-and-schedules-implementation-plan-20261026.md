@@ -1,7 +1,8 @@
 # Subagent workspace and scheduled-input implementation plan
 
 Status: implementation plan requested and approved in direction, 2026-10-26.
-No runtime implementation or rollout has occurred. Follow
+Source implementation and composed checks now exist; matched rollout remains
+pending. Follow
 [ADR-0280](../adr/0280-workspace-scoped-subagent-contract.md) and
 [ADR-0281](../adr/0281-scheduled-session-inputs.md) in the order below.
 

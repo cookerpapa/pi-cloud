@@ -4326,3 +4326,77 @@ body.product-panel-resizing {
   margin: 16px auto 0;
   object-fit: contain;
 }
+
+.product-schedules-modal {
+  width: min(42rem, calc(100vw - 2rem));
+  overflow: auto;
+}
+.product-schedule-toolbar,
+.product-schedule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+.product-schedules-modal button:not(.product-modal-heading button) {
+  border: 1px solid #444;
+  background: transparent;
+  color: inherit;
+  border-radius: 0.45rem;
+  padding: 0.35rem 0.65rem;
+  cursor: pointer;
+}
+.product-schedules-modal button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.product-schedule-card {
+  padding: 0.9rem 0;
+  border-bottom: 1px solid #444;
+}
+.product-schedule-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.product-schedule-heading span,
+.product-schedule-card p,
+.product-scheduled-origin {
+  font-size: 0.82rem;
+  opacity: 0.75;
+}
+.product-schedule-card p {
+  margin: 0.45rem 0;
+}
+.product-schedule-card p button {
+  margin-left: 0.5rem;
+}
+.product-schedule-editor {
+  display: grid;
+  gap: 0.8rem;
+}
+.product-schedule-editor textarea {
+  min-height: 8rem;
+  resize: vertical;
+}
+.product-scheduled-origin {
+  margin-bottom: 0.4rem;
+}
+.product-schedule-notice {
+  margin: 0.75rem 0;
+  font-size: 0.85rem;
+}
+.product-schedule-notice button {
+  margin-left: 0.5rem;
+}
+
+.product-schedules-modal .product-modal-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.product-schedules-modal .product-schedule-card p {
+  color: #b0b0b0;
+  opacity: 1;
+  line-height: 1.5;
+}

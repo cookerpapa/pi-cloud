@@ -22,7 +22,7 @@ and activation for null-workspace children, and renders their actual environment
 Focused protocol/Worker/native/PG checks pass; integrated and live publication
 remain pending under the [combined plan](reports/subagent-and-schedules-implementation-plan-20261026.md).
 
-## Scheduled Agent inputs — plan accepted, implementation pending
+## Scheduled Agent inputs — source implemented, publication pending
 
 The owner asked how time-triggered Agent work should fit the current architecture.
 [The design comparison](research/scheduled-agent-inputs-20261026.md) covers K3s
@@ -33,7 +33,13 @@ The owner approved the direction, including direct Web deletion through PG and
 native Tool/history semantics. [ADR-0281](adr/0281-scheduled-session-inputs.md) and
 the [implementation plan](reports/subagent-and-schedules-implementation-plan-20261026.md)
 record transaction, timing, overlap, catch-up and accepted-Run boundaries.
-No scheduler implementation or runtime publication has begun.
+The source now connects current PG plans, atomic normal Run admission, nearest
+deadline/NOTIFY wakeups, root-scoped management Tool and direct Web management.
+Scheduled source metadata is retained in live/cold views; queued timer work does
+not intercept native human input. Transaction/controller/calendar/browser tests
+and 10,000-plan actual-admission samples pass. The load fixture is not an Agent
+execution or production Projector capacity test. Integrated checks and matched
+live publication remain pending. [Behavior and API](SCHEDULES.md).
 
 ## Cloud Android execution target — completed
 

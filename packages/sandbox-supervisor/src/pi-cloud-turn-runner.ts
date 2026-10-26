@@ -915,7 +915,13 @@ export class PiCloudTurnRunner {
         if (!existing) {
           if (p.input.kind === "resume")
             throw new Error("Native child initial Submission is missing");
-          await emit({ type: "turn.started", payload: { inputKind: "prompt" } });
+          await emit({
+            type: "turn.started",
+            payload: {
+              inputKind: "prompt",
+              ...(p.scheduledOrigin ? { scheduledOrigin: p.scheduledOrigin } : {}),
+            },
+          });
           const content = await this.#prepareInput(p.input.text, p.input.uploads, combined);
           await conversation.submit(
             { type: "input", content, requestId: p.runId, whenBusy: "followUp" },

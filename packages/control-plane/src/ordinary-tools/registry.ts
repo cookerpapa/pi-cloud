@@ -1,3 +1,5 @@
+import { createScheduleTool } from "./schedule-tool.ts";
+import { SessionScheduleService } from "../session-schedule-service.ts";
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
 import type { ConfiguredImageAttachments } from "@pi-cloud/session-attachments";
@@ -10,6 +12,7 @@ import type { ImageGenerationClient } from "./image-generation-client.ts";
 /** Execution-owned definitions and handlers; adding an ordinary Tool needs no Worker edit. */
 export function createOrdinaryToolRegistry(options: {
   database: Kysely<Database>;
+  schedules?: SessionScheduleService;
   enabled?: readonly string[];
   images?: ConfiguredImageAttachments;
   imageGeneration?: ImageGenerationClient;
@@ -17,6 +20,9 @@ export function createOrdinaryToolRegistry(options: {
   refreshServices(command: AcceptedControlToolCommand): Promise<void>;
 }): ControlToolRegistry {
   const definitions: RegisteredControlTool[] = [
+    createScheduleTool(
+      options.schedules ?? new SessionScheduleService({ database: options.database }),
+    ),
     {
       definition: previewToolDefinition,
       execute: (call, current) =>

@@ -1,6 +1,6 @@
 # ADR-0280: Workspace-scoped subagent parameters
 
-Status: accepted for implementation on 2026-10-26; not deployed.
+Status: implemented in source on 2026-10-26; matched publication pending.
 
 ## Decision
 

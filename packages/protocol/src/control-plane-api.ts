@@ -1,3 +1,4 @@
+import { ScheduledOriginSchema } from "./scheduled-origin.ts";
 import { CompactStateSchema } from "./conversation-commands.ts";
 import { MAX_AGENT_INPUT_CHARACTERS, assertUserInputBudget } from "./agent-input-budget.ts";
 import { NativeInputAcceptedSchema } from "./native-inputs.ts";
@@ -836,6 +837,7 @@ export const ConversationTurnResourceSchema = Type.Object(
     continuesAfter: Type.Optional(Type.Literal(true)),
     historyCursor: Type.Optional(HistoryCursorSchema),
     runId: UuidSchema,
+    scheduledOrigin: Type.Optional(ScheduledOriginSchema),
     turnId: UuidSchema,
     mailboxPosition: PositiveSafeIntegerSchema,
     prompt: Type.String({ maxLength: MAX_AGENT_INPUT_CHARACTERS }),
@@ -1038,6 +1040,7 @@ export const RunTransitionResourceSchema = Type.Object(
 export const RunResourceSchema = Type.Object(
   {
     runId: UuidSchema,
+    scheduledOrigin: Type.Optional(ScheduledOriginSchema),
     traceId: Type.String({ pattern: "^[0-9a-f]{32}$" }),
     projectId: UuidSchema,
     workspaceId: UuidSchema,

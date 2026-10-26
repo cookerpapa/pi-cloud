@@ -25,6 +25,7 @@ import {
   PostgresImageAttachmentStore,
 } from "../packages/session-attachments/src/index.ts";
 import { withChromePage } from "./lib/chrome-cdp.mjs";
+import { checkSubagentWorkspace } from "./lib/live-subagent-workspace.mjs";
 if (process.env.PI_CLOUD_LIVE_ANDROID_CHECK !== "1")
   throw Error("Set PI_CLOUD_LIVE_ANDROID_CHECK=1 for the owned Android device and Luna acceptance");
 const [targetId, outputPath] = process.argv.slice(2);
@@ -262,6 +263,20 @@ try {
     await writeFile(output + ".png", Buffer.from(capture.data, "base64"), { mode: 0o600 });
     report.devicePicker = true;
   });
+  if (process.env.PI_CLOUD_LIVE_SUBAGENT_WORKSPACE === "1") {
+    report.subagentWorkspace = await checkSubagentWorkspace({
+      db,
+      api,
+      tenantId: target.tenant_id,
+      session,
+      project,
+      until,
+      onRun: (run) => {
+        active = run;
+        report.runs.push(run);
+      },
+    });
+  }
   report.accepted = true;
 } catch (error) {
   failure = error;

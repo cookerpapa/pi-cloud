@@ -482,6 +482,15 @@ export function ConversationTurn({
           {!showHeader || turn.continuesBefore || turn.prompt === null ? null : (
             <div className="product-message product-user-message">
               <div className="product-user-message-body">
+                {turn.scheduledOrigin ? (
+                  <div
+                    className="product-scheduled-origin"
+                    data-scheduled-origin={turn.scheduledOrigin.scheduleId}
+                    title={new Date(turn.scheduledOrigin.scheduledAt).toLocaleString()}
+                  >
+                    {t("schedule.origin")} · {turn.scheduledOrigin.name}
+                  </div>
+                ) : null}
                 <UploadCards
                   {...(api ? { api } : {})}
                   {...(turn.uploads ? { uploads: turn.uploads } : {})}

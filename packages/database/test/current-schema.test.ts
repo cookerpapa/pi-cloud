@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(201);
+      expect(firstMigrationPass.rows).toHaveLength(202);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("201_execution_targets");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("202_session_schedules");
       const terminalColumns = await sql<{ column_name: string }>`select column_name
         from information_schema.columns where table_name='workspace_terminal_sessions'`.execute(
         database,
@@ -84,6 +84,7 @@ describe("current PiCloud schema", () => {
         "workers",
         "worker_retirements",
         "runs",
+        "session_schedules",
         "run_transitions",
         "subagent_conversations",
         "turn_control_requests",
@@ -173,6 +174,7 @@ describe("current PiCloud schema", () => {
       expect(keys.has("workspaces.parent_workspace_id")).toBe(false);
       expect(keys.has("runs.source_set_snapshot")).toBe(false);
       expect(keys.has("runs.mailbox_position")).toBe(true);
+      expect(keys.has("runs.scheduled_origin")).toBe(true);
       expect(keys.has("runs.request_sha256")).toBe(true);
       expect(keys.has("runs.available_at")).toBe(true);
       expect(keys.has("runs.ready_at")).toBe(true);

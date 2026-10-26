@@ -1,6 +1,6 @@
 # ADR-0281: Scheduled inputs reuse normal Run admission
 
-Status: accepted for implementation on 2026-10-26; not deployed.
+Status: implemented in source on 2026-10-26; matched publication pending.
 
 ## Decision and authorities
 
@@ -19,14 +19,16 @@ or workflow engine. Reassess that choice before expanding the requirement.
 ## Product semantics
 
 Support one-time instants and recurring minute-level cron with an explicit IANA
-timezone. A due occurrence may be admitted while its target root Session is busy;
+timezone. Relative `after` requests normalize once to a one-time instant using PG
+time. Pin `cron-parser` 5.10.2 behind the calendar adapter. A due occurrence may be admitted while its target root Session is busy;
 its Run stays queued until existing readiness and writer-closure rules allow
 execution. This satisfies time eligibility plus idle-session execution. It is a
 new logical task, not an implicit steer/follow-up into an active native Run.
 
 Do not overlap occurrences of the same plan: skip a new occurrence while its
 previous Run is queued, running, recovering or settling. Default outage handling
-admits the most recent missed occurrence once; support explicit skip. Resume of
+admits the most recent missed occurrence once; explicit skip allows a 60-second
+ordinary delivery grace and suppresses older occurrences. Resume of
 a paused plan computes its next future occurrence and does not replay the paused
 interval. These policies do not impose an Agent runtime limit.
 
@@ -81,6 +83,13 @@ missed; normal known deadlines wake at their own time. Validate and tune that
 interval against acceptable lateness. Notifications/timers carry no execution
 authority and do not replace the firing transaction. Avoid zero-delay spinning
 when another controller holds a due row or admission needs backoff.
+
+The implemented controller admits batches of 32 with two concurrent Session
+groups, coalesces hints and yields between progress batches. Current-input lookup
+prioritizes the active/recovering/unsealed Run before queued Runs, so an admitted
+timer does not redirect human steer or active compaction. Scheduled queued Runs
+are managed separately from editable human drafts; the existing Stop endpoint
+can settle an unclaimed scheduled Run and release the next queue entry.
 
 ## Acceptance and publication
 

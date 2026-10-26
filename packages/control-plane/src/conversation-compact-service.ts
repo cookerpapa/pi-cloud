@@ -1,3 +1,4 @@
+import { receivingConversationRunId } from "@pi-cloud/runtime-core/run-readiness";
 import type { Database } from "@pi-cloud/database";
 import type { Kysely, Selectable } from "kysely";
 import { readNativeCompaction } from "@pi-cloud/pi-session-postgres/durable";
@@ -160,7 +161,7 @@ export class ConversationCompactService {
           .select(runFields)
           .where("tenant_id", "=", tenantId)
           .where("session_id", "=", sessionId)
-          .orderBy("mailbox_position", "desc")
+          .where("id", "=", receivingConversationRunId(tenantId, sessionId))
           .limit(1)
           .executeTakeFirst();
         if (

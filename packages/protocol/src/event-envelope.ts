@@ -1,3 +1,4 @@
+import { ScheduledOriginSchema } from "./scheduled-origin.ts";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { createSchemaCheck } from "#schema-check";
@@ -57,6 +58,7 @@ const TurnStartedEventSchema = Type.Object(
     payload: Type.Object(
       {
         inputKind: Type.Union([Type.Literal("prompt"), Type.Literal("compact")]),
+        scheduledOrigin: Type.Optional(ScheduledOriginSchema),
       },
       { additionalProperties: false },
     ),

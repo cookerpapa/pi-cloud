@@ -1,3 +1,5 @@
+import { SessionScheduleService } from "./session-schedule-service.ts";
+import { parseScheduleChange, parseDeleteSchedule } from "@pi-cloud/protocol";
 import { withDatabaseReadSignal } from "@pi-cloud/database";
 import { ExecutionTargetService } from "./execution-target-service.ts";
 import { parseBindExecutionTargetRequest } from "@pi-cloud/protocol";
@@ -22,6 +24,7 @@ import {
   HttpCode,
   Inject,
   Param,
+  Patch,
   Post,
   Put,
   Query,
@@ -118,6 +121,7 @@ export class ControlPlaneController {
     await this.#projectorHttp.destroy();
   }
   constructor(
+    @Inject(SessionScheduleService) private readonly schedules: SessionScheduleService,
     @Inject(ControlPlaneStoreFactory) private readonly controlPlaneStores: ControlPlaneStoreFactory,
     @Inject(PublicTenantRegistrationService)
     private readonly publicTenantRegistration: PublicTenantRegistrationService,
@@ -146,6 +150,75 @@ export class ControlPlaneController {
     @Inject(SessionImageReader) private readonly sessionImages: SessionImageReader,
     @Inject(ExecutionTargetService) private readonly executionTargets: ExecutionTargetService,
   ) {}
+
+  @Get("conversations/:sessionId/schedules")
+  listSchedules(
+    @Req() request: FastifyRequest,
+    @Param("sessionId") sessionId: unknown,
+    @Query("cursor") cursor?: unknown,
+  ) {
+    return this.schedules.list(
+      {
+        tenantId: this.tenantRequestContext.resolve(request).tenantId,
+        sessionId: parseUuidPathParameter(sessionId, "sessionId"),
+      },
+      cursor === undefined ? undefined : parseUuidPathParameter(cursor, "cursor"),
+    );
+  }
+  @Get("conversations/:sessionId/schedules/:scheduleId")
+  getSchedule(
+    @Req() request: FastifyRequest,
+    @Param("sessionId") sessionId: unknown,
+    @Param("scheduleId") id: unknown,
+  ) {
+    return this.schedules.get(
+      {
+        tenantId: this.tenantRequestContext.resolve(request).tenantId,
+        sessionId: parseUuidPathParameter(sessionId, "sessionId"),
+      },
+      parseUuidPathParameter(id, "scheduleId"),
+    );
+  }
+  @Patch("conversations/:sessionId/schedules/:scheduleId")
+  changeSchedule(
+    @Req() request: FastifyRequest,
+    @Param("sessionId") sessionId: unknown,
+    @Param("scheduleId") id: unknown,
+    @Body() body: unknown,
+  ) {
+    const identity = this.tenantRequestContext.requireMutation(request);
+    let input;
+    try {
+      input = parseScheduleChange(body);
+    } catch {
+      throw new ControlPlaneApiValidationError("Invalid schedule change");
+    }
+    return this.schedules.change(
+      { tenantId: identity.tenantId, sessionId: parseUuidPathParameter(sessionId, "sessionId") },
+      parseUuidPathParameter(id, "scheduleId"),
+      input,
+    );
+  }
+  @Delete("conversations/:sessionId/schedules/:scheduleId")
+  deleteSchedule(
+    @Req() request: FastifyRequest,
+    @Param("sessionId") sessionId: unknown,
+    @Param("scheduleId") id: unknown,
+    @Body() body: unknown,
+  ) {
+    const identity = this.tenantRequestContext.requireMutation(request);
+    let input;
+    try {
+      input = parseDeleteSchedule(body);
+    } catch {
+      throw new ControlPlaneApiValidationError("Invalid schedule deletion");
+    }
+    return this.schedules.delete(
+      { tenantId: identity.tenantId, sessionId: parseUuidPathParameter(sessionId, "sessionId") },
+      parseUuidPathParameter(id, "scheduleId"),
+      input.revision,
+    );
+  }
 
   @Get("execution-targets")
   executionTargetList(@Req() request: FastifyRequest) {

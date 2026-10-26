@@ -1,3 +1,5 @@
+import { SessionScheduleService } from "./session-schedule-service.ts";
+import { SessionScheduleController } from "./session-schedule-controller.ts";
 import { runtimeModelCatalog } from "./runtime-model-catalog.ts";
 import { SessionPublicationService } from "./session-publication-service.ts";
 import { reconcileUploadPins } from "./upload-input-pins.ts";
@@ -112,6 +114,7 @@ export async function startControlPlane(): Promise<void> {
   let developmentEnvironmentService: DevelopmentEnvironmentService | undefined;
   let operationalMetrics: OperationalMetricsSampler | undefined;
   let issueCoordinator: SourceControlIssueCoordinator | undefined;
+  let scheduleController: SessionScheduleController | undefined;
   let issueNoteReconciler: GitLabIssueNoteReconciler | undefined;
   let images: ConfiguredImageAttachments | undefined;
   let imageGeneration: ImageGenerationClient | undefined;
@@ -128,6 +131,7 @@ export async function startControlPlane(): Promise<void> {
   const close = (): Promise<void> => {
     return (closePromise ??= closeControlPlaneResources([
       () => quiescence.close(),
+      () => scheduleController?.close(),
       () => imageReaper?.close(),
       () => issueNoteReconciler?.close(),
       () => issueCoordinator?.close(),
@@ -267,8 +271,14 @@ export async function startControlPlane(): Promise<void> {
       if (!images) throw new Error("Image generation requires Session attachment storage");
       imageGeneration = new ImageGenerationClient(config.imageGeneration);
     }
+    const schedules = new SessionScheduleService({
+      database,
+      admissionDatabase: maintenanceDatabase,
+      environmentImageRevision: config.environmentImageRevision,
+    });
     const ordinaryTools = createOrdinaryToolRegistry({
       database,
+      schedules,
       ...(config.enabledControlTools ? { enabled: config.enabledControlTools } : {}),
       ...(images ? { images } : {}),
       ...(imageGeneration ? { imageGeneration } : {}),
@@ -648,6 +658,7 @@ export async function startControlPlane(): Promise<void> {
       workspaceTerminalGateway,
       sandboxPreviewGateway,
       sourceControlService,
+      schedules,
       environmentImageRevision: config.environmentImageRevision,
       metrics: observability.metrics,
       workspaceBrowser: {
@@ -673,6 +684,27 @@ export async function startControlPlane(): Promise<void> {
     });
     await runtime.listen(config.port, config.host);
     await sandboxControl.start();
+    scheduleController = new SessionScheduleController({
+      service: schedules,
+      notificationConnectionString: config.databaseNotificationUrl,
+      canDispatch: () => !quiescence.held,
+      guard: (work) => quiescence.run(work),
+      onBatch: (value) =>
+        operationalLog({
+          service: "pi-cloud-control-plane",
+          level: "info",
+          event: "schedule.admission.batch",
+          attributes: value,
+        }),
+      onError: () =>
+        operationalLog({
+          service: "pi-cloud-control-plane",
+          level: "warn",
+          event: "schedule.admission.unavailable",
+        }),
+    });
+    scheduleController.start();
+
     const sourceControlFailure = (source: string, error: unknown): void =>
       operationalLog({
         service: "pi-cloud-control-plane",

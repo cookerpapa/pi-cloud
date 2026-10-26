@@ -220,6 +220,8 @@ export class WorkerToolRuntime {
         signal?: AbortSignal,
         recovery = false,
       ) => {
+        if (definition.availability === "root" && scope.sessionKind === "subagent")
+          throw new Error("tool_unavailable: This Tool belongs to the root conversation");
         if (!workspaceAvailable && (environment.kind === "workspace" || definition.workflowScript))
           throw new Error("workspace_unavailable: this child has no Linux workspace");
         const args = raw as Record<string, unknown>,
@@ -236,7 +238,8 @@ export class WorkerToolRuntime {
           if (
             !current ||
             !isDeepStrictEqual(current.parameters, definition.parameters) ||
-            !isDeepStrictEqual(current.environment, environment)
+            !isDeepStrictEqual(current.environment, environment) ||
+            current.availability !== definition.availability
           )
             throw new Error(
               `tool_unavailable: ${definition.name} was withdrawn or changed before admission`,
@@ -361,15 +364,17 @@ export class WorkerToolRuntime {
       return {
         executionPlane: ordinary ? ("platform" as const) : ("orchestration" as const),
         offered:
-          !workspaceAvailable && (environment.kind === "workspace" || definition.workflowScript)
+          definition.availability === "root" && scope.sessionKind === "subagent"
             ? false
-            : environment.kind === "target"
-              ? Boolean(target)
-              : definition.availability === "child"
-                ? scope.sessionKind === "subagent"
-                : definition.availability !== "delegation" ||
-                  this.options.maximumDepth === null ||
-                  depth < this.options.maximumDepth,
+            : !workspaceAvailable && (environment.kind === "workspace" || definition.workflowScript)
+              ? false
+              : environment.kind === "target"
+                ? Boolean(target)
+                : definition.availability === "child"
+                  ? scope.sessionKind === "subagent"
+                  : definition.availability !== "delegation" ||
+                    this.options.maximumDepth === null ||
+                    depth < this.options.maximumDepth,
         tool: {
           ...definition,
           async execute() {
@@ -405,6 +410,7 @@ export class WorkerToolRuntime {
                   parameters: definition.parameters as import("typebox").TSchema,
                   replay: "unsafe",
                   environment: definition.environment,
+                  ...(definition.availability ? { availability: definition.availability } : {}),
                 },
                 true,
               ),

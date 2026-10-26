@@ -1,3 +1,4 @@
+import { parseScheduledOrigin } from "@pi-cloud/protocol";
 import {
   readCanonicalHistoryWindow,
   type HistoryTurnSource,
@@ -56,6 +57,7 @@ type ConversationHistoryRow = {
   runId: string;
   turnId: string;
   prompt: string | null;
+  scheduledOrigin?: unknown;
   uploads: unknown[];
   runState: RunState;
   waitingForSeal: boolean;
@@ -479,6 +481,7 @@ export class ConversationReader {
           "run.id as runId",
           "run.turn_id as turnId",
           "run.operation_kind as operationKind",
+          "run.scheduled_origin as scheduledOrigin",
           "run.stop_reason as stopReason",
           "run.state as runState",
           "run.output_display_seq as coverage",
@@ -577,6 +580,9 @@ export class ConversationReader {
       const first = window.positions.find((p) => p.turnId === id)!;
       return {
         runId: row.runId,
+        ...(row.scheduledOrigin
+          ? { scheduledOrigin: parseScheduledOrigin(row.scheduledOrigin) }
+          : {}),
         turnId: id,
         mailboxPosition: positiveSafeInteger(row.mailboxPosition, "Conversation mailbox position"),
         prompt: row.operationKind === "compact" ? "" : prompt,

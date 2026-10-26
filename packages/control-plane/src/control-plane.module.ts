@@ -1,3 +1,4 @@
+import { SessionScheduleService } from "./session-schedule-service.ts";
 import { ConversationCompactService } from "./conversation-compact-service.ts";
 import { Module, type DynamicModule } from "@nestjs/common";
 import { ControlPlaneController } from "./control-plane.controller.ts";
@@ -43,6 +44,7 @@ export type ControlPlaneModuleOptions = Omit<
   "tenantId" | "defaultModelProfileId"
 > & {
   executionTargets?: ExecutionTargetService;
+  schedules?: SessionScheduleService;
   sessionEventStreamOptions?: SessionEventStreamOptions;
   eventRuntime: ControlPlaneEventRuntime;
   staticRequestIdentity?: TenantRequestIdentity;
@@ -109,6 +111,17 @@ export class ControlPlaneModule {
       module: ControlPlaneModule,
       controllers: [ControlPlaneController],
       providers: [
+        {
+          provide: SessionScheduleService,
+          useValue:
+            options.schedules ??
+            new SessionScheduleService({
+              database: options.database,
+              ...(options.environmentImageRevision
+                ? { environmentImageRevision: options.environmentImageRevision }
+                : {}),
+            }),
+        },
         {
           provide: ExecutionTargetService,
           useValue:

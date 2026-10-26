@@ -413,7 +413,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           at: view.contextAnchor === null ? null : String(view.contextAnchor),
           view,
         }));
-      const { computeSessionId: _compute, ...rootPayload } = family.command.payload;
+      const {
+        computeSessionId: _compute,
+        scheduledOrigin: _scheduled,
+        ...rootPayload
+      } = family.command.payload;
       const command: ExecuteTurnCommandMessage = {
         ...family.command,
         messageId: this.#idGenerator(),

@@ -1,3 +1,4 @@
+import { receivingConversationRunId } from "@pi-cloud/runtime-core/run-readiness";
 import { sql, type Kysely } from "kysely";
 import type { Database } from "@pi-cloud/database";
 import { type ConversationUsageResource, parseModelRuntimeSnapshot } from "@pi-cloud/protocol";
@@ -51,6 +52,9 @@ export async function readConversationUsage(
     .where("c.tenant_id", "=", tenantId)
     .where("c.session_id", "=", sessionId)
     .where("c.state", "in", ["queued", "running", "settling", "cancel_requested"])
+    .$if(session.pi_conversation_id === null || Number(session.pi_conversation_id) === 1, (q) =>
+      q.where("r.id", "=", receivingConversationRunId(tenantId, sessionId)),
+    )
     .orderBy("c.mailbox_position", "desc")
     .limit(1)
     .executeTakeFirst();

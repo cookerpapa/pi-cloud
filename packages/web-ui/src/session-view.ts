@@ -103,6 +103,7 @@ export type TranscriptItem = { historyCursor?: string; pageKey?: string } & (
 );
 
 export type TurnView = {
+  scheduledOrigin?: import("@pi-cloud/protocol").ScheduledOrigin;
   continuesBefore?: true;
   continuesAfter?: true;
   historyCursor?: string;
@@ -305,6 +306,9 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
         ...turn,
         status: "running",
         startedSequence: event.seq,
+        ...(event.payload.scheduledOrigin
+          ? { scheduledOrigin: event.payload.scheduledOrigin }
+          : {}),
         ...(event.payload.inputKind === "compact"
           ? { operation: { kind: "compact" as const, state: "summarizing" as const }, prompt: "" }
           : {}),
@@ -706,6 +710,7 @@ function reduceSessionView(state: SessionViewState, action: SessionViewAction): 
       turns: updateTurn(state.turns, action.turn.turnId, (current) => ({
         ...current,
         prompt: action.turn.prompt,
+        ...(action.turn.scheduledOrigin ? { scheduledOrigin: action.turn.scheduledOrigin } : {}),
         ...(action.turn.operation ? { operation: action.turn.operation } : {}),
         ...(action.turn.uploads ? { uploads: action.turn.uploads } : {}),
         runId: action.turn.runId,
@@ -766,6 +771,7 @@ function reduceSessionView(state: SessionViewState, action: SessionViewAction): 
         turnId: turn.turnId,
         mailboxPosition: turn.mailboxPosition,
         prompt: turn.prompt,
+        ...(turn.scheduledOrigin ? { scheduledOrigin: turn.scheduledOrigin } : {}),
         ...(turn.operation ? { operation: turn.operation } : {}),
         ...(turn.continuesBefore ? { continuesBefore: true as const } : {}),
         ...(turn.continuesAfter ? { continuesAfter: true as const } : {}),

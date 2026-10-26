@@ -31,7 +31,7 @@ export function controlToolCatalog(
     JSON.stringify([...tools].sort((a, b) => a.name.localeCompare(b.name))),
   ) as ControlToolCatalogDefinition[];
   return parseControlToolCatalog({
-    version: 2,
+    version: 3,
     revision: createHash("sha256").update(JSON.stringify(definitions)).digest("hex"),
     tools: definitions,
   });

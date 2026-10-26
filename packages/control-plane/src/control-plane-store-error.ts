@@ -11,7 +11,11 @@ export type ControlPlaneStoreErrorCode =
 export class ControlPlaneStoreError extends Error {
   readonly code: ControlPlaneStoreErrorCode;
 
-  constructor(code: ControlPlaneStoreErrorCode, message: string) {
+  constructor(
+    code: ControlPlaneStoreErrorCode,
+    message: string,
+    readonly retryable = false,
+  ) {
     super(message);
     this.name = "ControlPlaneStoreError";
     this.code = code;

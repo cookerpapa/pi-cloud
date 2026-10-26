@@ -1,3 +1,4 @@
+import { receivingConversationRunId } from "@pi-cloud/runtime-core/run-readiness";
 import { createHash } from "node:crypto";
 import type { Database } from "@pi-cloud/database";
 import { sql, type Kysely } from "kysely";
@@ -68,7 +69,7 @@ export async function readInputQueue(
     .where("tenant_id", "=", tenantId)
     .where("session_id", "=", sessionId)
     .where("pruned_at", "is", null)
-    .orderBy("mailbox_position", "desc")
+    .where("id", "=", receivingConversationRunId(tenantId, sessionId))
     .limit(1)
     .executeTakeFirst();
   const pending = await database
@@ -78,6 +79,7 @@ export async function readInputQueue(
     .where("session_id", "=", sessionId)
     .where("state", "=", "queued")
     .where("operation_kind", "=", "chat")
+    .where("scheduled_origin", "is", null)
     .where("lease_id", "is", null)
     .where("started_at", "is", null)
     .where("pruned_at", "is", null)

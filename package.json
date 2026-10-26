@@ -130,7 +130,9 @@
     "release:component": "node --import tsx scripts/run-component-release.mjs",
     "release:check": "node scripts/run-release-scope-check.mjs",
     "browser:history:check": "node scripts/run-with-test-postgres.mjs -- node node_modules/tsx/dist/cli.mjs --tsconfig packages/control-plane/tsconfig.json scripts/run-history-window-check.mjs",
-    "android:prepare": "node scripts/prepare-android-target.mjs"
+    "android:prepare": "node scripts/prepare-android-target.mjs",
+    "eval:schedules": "PI_CLOUD_SCHEDULE_LOAD_CHECK=1 node scripts/run-with-test-postgres.mjs -- node node_modules/tsx/dist/cli.mjs --tsconfig packages/control-plane/tsconfig.json scripts/run-schedule-load-check.mjs",
+    "browser:schedules:check": "node scripts/run-schedule-browser-check.mjs"
   },
   "devDependencies": {
     "@earendil-works/chord": "1.0.0",

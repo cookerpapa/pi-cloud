@@ -25,7 +25,10 @@ import {
   readHumanInputMetadataBatch,
 } from "@pi-cloud/pi-session-postgres/durable";
 import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
-import { advanceLaneReadiness } from "@pi-cloud/runtime-core/run-readiness";
+import {
+  advanceLaneReadiness,
+  receivingConversationRunId,
+} from "@pi-cloud/runtime-core/run-readiness";
 import { readInputQueue, pgInputRevision, queueViewVersion } from "./input-queue-snapshot.ts";
 import { readReturnedInputs } from "./stopped-inputs.ts";
 import { bindInputUploads } from "./workspace-upload-service.ts";
@@ -104,7 +107,7 @@ export class QueuedInputService {
       .select(columns)
       .where("tenant_id", "=", tenantId)
       .where("session_id", "=", sessionId)
-      .$if(runId !== undefined, (q) => q.where("id", "=", runId!))
+      .where("id", "=", runId ?? receivingConversationRunId(tenantId, sessionId))
       .orderBy("mailbox_position", "desc")
       .limit(1)
       .executeTakeFirst();
@@ -381,6 +384,7 @@ export class QueuedInputService {
           .where("session_id", "=", sessionId)
           .where("state", "=", "queued")
           .where("operation_kind", "=", "chat")
+          .where("scheduled_origin", "is", null)
           .where("lease_id", "is", null)
           .where("started_at", "is", null)
           .where("pruned_at", "is", null)
@@ -574,6 +578,7 @@ export class QueuedInputService {
         if (
           !run ||
           run.operation_kind !== "chat" ||
+          run.scheduled_origin !== null ||
           run.state !== "queued" ||
           run.lease_id !== null ||
           run.started_at !== null
@@ -586,6 +591,7 @@ export class QueuedInputService {
           .where("session_id", "=", sessionId)
           .where("state", "=", "queued")
           .where("operation_kind", "=", "chat")
+          .where("scheduled_origin", "is", null)
           .where("lease_id", "is", null)
           .where("started_at", "is", null)
           .where("pruned_at", "is", null)
@@ -653,6 +659,7 @@ export class QueuedInputService {
             .where("turn_id", "=", other.turn_id)
             .where("state", "=", "queued")
             .where("operation_kind", "=", "chat")
+            .where("scheduled_origin", "is", null)
             .where("lease_id", "is", null)
             .forNoKeyUpdate()
             .noWait()

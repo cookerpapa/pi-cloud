@@ -1,3 +1,4 @@
+import { parseScheduledOrigin } from "@pi-cloud/protocol";
 import { parseModelRuntimeSnapshot, parseExecutionTargetGrants } from "@pi-cloud/protocol";
 import { recordEnvironmentFailure } from "./environment-failure.ts";
 import { readDurableRunUsage } from "@pi-cloud/pi-session-postgres/durable";
@@ -71,6 +72,7 @@ export type TurnExecutionRequest = {
   workingDirectory: string;
   toolCapabilities: CloudToolCapabilitySnapshot;
   executionTargets?: import("@pi-cloud/protocol").ExecutionTargetGrant[];
+  scheduledOrigin?: import("@pi-cloud/protocol").ScheduledOrigin;
   agentSystemPrompt?: string;
   model: {
     profileId: string;
@@ -740,6 +742,7 @@ export class RunExecutor {
           "run.tool_capability_snapshot as toolCapabilitySnapshot",
           "run.execution_target_snapshot as executionTargetSnapshot",
           "run.agent_system_prompt as agentSystemPrompt",
+          "run.scheduled_origin as scheduledOrigin",
           "run.working_directory as workingDirectory",
           "run.compute_session_id as computeSessionId",
           "run.sandbox_profile_key as sandboxProfileKey",
@@ -894,6 +897,9 @@ export class RunExecutor {
           ? { executionTargets: parseExecutionTargetGrants(row.executionTargetSnapshot) }
           : {}),
         ...(row.agentSystemPrompt === null ? {} : { agentSystemPrompt: row.agentSystemPrompt }),
+        ...(row.scheduledOrigin === null
+          ? {}
+          : { scheduledOrigin: parseScheduledOrigin(row.scheduledOrigin) }),
         model: {
           profileId: row.modelProfileId,
           provider: row.provider,

@@ -406,6 +406,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           ...(request.executionTargets?.length
             ? { executionTargets: request.executionTargets }
             : {}),
+          ...(request.scheduledOrigin ? { scheduledOrigin: request.scheduledOrigin } : {}),
           ...(request.agentSystemPrompt === undefined
             ? {}
             : { agentSystemPrompt: request.agentSystemPrompt }),

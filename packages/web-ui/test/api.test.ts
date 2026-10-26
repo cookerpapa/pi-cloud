@@ -942,3 +942,40 @@ it("uploads binary files with authentication and treats draft deletion as an emp
   );
   await expect(api.removeDraftUpload(upload)).resolves.toBeUndefined();
 });
+
+it("uses JSON for schedule PATCH and DELETE and preserves revision checks", async () => {
+  const sessionId = "10000000-0000-4000-8000-000000000001",
+    id = "20000000-0000-4000-8000-000000000001";
+  const plan = {
+    id,
+    sessionId,
+    name: "Daily",
+    prompt: "Report",
+    timing: { kind: "cron", expression: "0 8 * * *", timezone: "Asia/Shanghai" },
+    missed: "latest",
+    revision: "2",
+    state: "paused",
+    nextFireAt: "2026-10-27T00:00:00.000Z",
+    lastRun: null,
+    lastSkippedAt: null,
+    error: null,
+    createdAt: "2026-10-26T00:00:00.000Z",
+    updatedAt: "2026-10-26T00:00:00.000Z",
+  };
+  const transport = vi.fn<typeof fetch>(async (path, init) => {
+    expect(path).toBe(`/v1/conversations/${sessionId}/schedules/${id}`);
+    expect(new Headers(init?.headers).get("content-type")).toBe("application/json");
+    if (init?.method === "PATCH") {
+      expect(JSON.parse(String(init.body))).toEqual({ action: "pause", revision: "1" });
+      return Response.json(plan);
+    }
+    expect(init?.method).toBe("DELETE");
+    expect(JSON.parse(String(init?.body))).toEqual({ revision: "2" });
+    return Response.json({ id, deleted: true, lastRunId: null, activeRun: null });
+  });
+  const api = new PiCloudApi(transport);
+  expect(await api.changeSchedule(sessionId, id, { action: "pause", revision: "1" })).toMatchObject(
+    { state: "paused", revision: "2" },
+  );
+  expect(await api.deleteSchedule(sessionId, id, "2")).toMatchObject({ deleted: true });
+});

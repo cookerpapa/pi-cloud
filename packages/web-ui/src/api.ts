@@ -1,4 +1,10 @@
 import {
+  parseSessionSchedule,
+  parseSessionScheduleList,
+  parseScheduleDeletion,
+  type ScheduleChange,
+} from "@pi-cloud/protocol";
+import {
   parseExecutionTargetList,
   parseSessionExecutionTarget,
   type ConversationHistoryQuery,
@@ -206,7 +212,7 @@ async function requestBytes(
 function jsonRequest(
   body: unknown,
   idempotencyKey?: string,
-  method: "POST" | "PUT" | "DELETE" = "POST",
+  method: "POST" | "PUT" | "PATCH" | "DELETE" = "POST",
 ): RequestInit {
   return {
     method,
@@ -697,6 +703,47 @@ export class PiCloudApi {
   conversationExportUrl(sessionId: string): string {
     return `/v1/conversations/${encodeURIComponent(sessionId)}/export`;
   }
+  async listSchedules(sessionId: string, cursor?: string, signal?: AbortSignal) {
+    return parseSessionScheduleList(
+      await request(
+        this.#fetch,
+        `/v1/conversations/${encodeURIComponent(sessionId)}/schedules${cursor ? "?cursor=" + encodeURIComponent(cursor) : ""}`,
+        { method: "GET", ...(signal ? { signal } : {}) },
+        this.#authorizationToken,
+      ),
+    );
+  }
+  async getSchedule(sessionId: string, id: string, signal?: AbortSignal) {
+    return parseSessionSchedule(
+      await request(
+        this.#fetch,
+        `/v1/conversations/${encodeURIComponent(sessionId)}/schedules/${encodeURIComponent(id)}`,
+        { method: "GET", ...(signal ? { signal } : {}) },
+        this.#authorizationToken,
+      ),
+    );
+  }
+  async changeSchedule(sessionId: string, id: string, input: ScheduleChange) {
+    return parseSessionSchedule(
+      await request(
+        this.#fetch,
+        `/v1/conversations/${encodeURIComponent(sessionId)}/schedules/${encodeURIComponent(id)}`,
+        jsonRequest(input, undefined, "PATCH"),
+        this.#authorizationToken,
+      ),
+    );
+  }
+  async deleteSchedule(sessionId: string, id: string, revision: string) {
+    return parseScheduleDeletion(
+      await request(
+        this.#fetch,
+        `/v1/conversations/${encodeURIComponent(sessionId)}/schedules/${encodeURIComponent(id)}`,
+        jsonRequest({ revision }, undefined, "DELETE"),
+        this.#authorizationToken,
+      ),
+    );
+  }
+
   async listExecutionTargets() {
     return parseExecutionTargetList(
       await request(

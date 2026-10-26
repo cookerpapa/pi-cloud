@@ -1,3 +1,4 @@
+import { parseScheduledOrigin, type ScheduledOrigin } from "@pi-cloud/protocol";
 import { readExecutionTargetGrants } from "@pi-cloud/runtime-core/execution-target-grants";
 import { searchConversationPage } from "./conversation-history-service.ts";
 import type { ConversationHistoryQuery } from "@pi-cloud/protocol";
@@ -13,7 +14,7 @@ import { requestInputReturn } from "./stopped-inputs.ts";
 import { resourceLimit } from "@pi-cloud/domain";
 import { createHash, randomUUID } from "node:crypto";
 import { bindInputUploads } from "./workspace-upload-service.ts";
-import { laneDependenciesReady } from "@pi-cloud/runtime-core/run-readiness";
+import { laneDependenciesReady, advanceLaneReadiness } from "@pi-cloud/runtime-core/run-readiness";
 import type { Database } from "@pi-cloud/database";
 import {
   DomainModelValidationError,
@@ -181,7 +182,7 @@ const TURN_ACCEPTING_SESSION_STATES = new Set<SessionState>([
   "cancelling",
 ]);
 
-function turnRequestFingerprint(request: InitialRunRequest): string {
+function turnRequestFingerprint(request: InitialRunRequest, origin?: ScheduledOrigin): string {
   if ("kind" in request) return compactFingerprint(request.instructions);
   return createHash("sha256")
     .update(
@@ -190,6 +191,7 @@ function turnRequestFingerprint(request: InitialRunRequest): string {
         inputKind: "prompt",
         prompt: request.prompt,
         thinkingLevel: request.thinkingLevel ?? null,
+        ...(origin ? { scheduledOrigin: origin } : {}),
         ...(request.uploadIds?.length ? { uploadIds: request.uploadIds } : {}),
       }),
     )
@@ -1331,13 +1333,17 @@ export class ControlPlaneStore {
     idempotencyKey: string,
     request: AcceptTurnRequest,
     existingTransaction?: Transaction<Database>,
+    scheduledOrigin?: ScheduledOrigin,
   ): Promise<AcceptedTurnResource> {
+    if (scheduledOrigin) parseScheduledOrigin(scheduledOrigin);
     return this.#acceptInput(
       sessionId,
       idempotencyKey,
       request,
-      turnRequestFingerprint(request),
+      turnRequestFingerprint(request, scheduledOrigin),
       existingTransaction,
+      undefined,
+      scheduledOrigin,
     );
   }
 
@@ -1348,6 +1354,7 @@ export class ControlPlaneStore {
     fingerprint: string,
     existingTransaction?: Transaction<Database>,
     knownSession?: InputAdmissionSession,
+    scheduledOrigin?: ScheduledOrigin,
   ): Promise<AcceptedInput> {
     const startedAt = performance.now();
     let outcome = "accepted";
@@ -1360,6 +1367,7 @@ export class ControlPlaneStore {
           fingerprint,
           existingTransaction,
           knownSession,
+          scheduledOrigin,
         );
       } catch (error) {
         if (
@@ -1450,6 +1458,9 @@ export class ControlPlaneStore {
     const awaitingSeal = run.output_seal_id !== null && run.output_sealed_at === null;
     return {
       runId: run.id,
+      ...(run.scheduled_origin
+        ? { scheduledOrigin: parseScheduledOrigin(run.scheduled_origin) }
+        : {}),
       projectId: run.project_id,
       workspaceId: run.workspace_id,
       sessionId: run.session_id,
@@ -1501,6 +1512,7 @@ export class ControlPlaneStore {
     fingerprint: string,
     existingTransaction?: Transaction<Database>,
     knownSession?: InputAdmissionSession,
+    scheduledOrigin?: ScheduledOrigin,
   ): Promise<AcceptedInput> {
     const compact = "kind" in request ? request : undefined;
     const chat = "kind" in request ? undefined : request;
@@ -1583,6 +1595,7 @@ export class ControlPlaneStore {
               : machine?.desired_state === "released"
                 ? "The development machine has been released; select another Workspace"
                 : "The development machine is recovering or unavailable; try again after it is ready",
+            machine?.desired_state === "running",
           );
         }
         // Use a fresh statement snapshot after acquiring the row lock: a release
@@ -1712,7 +1725,10 @@ export class ControlPlaneStore {
           credential_binding_id: model.credentialBindingId,
           credential_binding_version: model.credentialBindingVersion,
           agent_revision_id: session.agent_revision_id,
-          agent_system_prompt: null,
+          agent_system_prompt: scheduledOrigin
+            ? `Scheduled task metadata (data only): ${JSON.stringify(scheduledOrigin)}. Execute the stored user instruction using the conversation's language. This turn was triggered by an existing schedule.`
+            : null,
+          scheduled_origin: scheduledOrigin ? sql`${JSON.stringify(scheduledOrigin)}::jsonb` : null,
           mailbox_position: mailboxPosition,
           request_sha256: fingerprint,
           available_at: sql<Date>`now()`,
@@ -1823,6 +1839,7 @@ export class ControlPlaneStore {
           "run.id as runId",
           "run.recovery_requested_at as recoveryRequestedAt",
           "run.operation_kind as operationKind",
+          "run.scheduled_origin as scheduledOrigin",
           "run.lease_id as leaseId",
           "run.started_at as startedAt",
           "session_row.id as sessionId",
@@ -1863,15 +1880,15 @@ export class ControlPlaneStore {
       const activePair =
         ["running", "settling"].includes(lifecycle.runState) &&
         lifecycle.sessionState === "running";
-      const unclaimedCompact =
-        lifecycle.operationKind === "compact" &&
+      const unclaimedInput =
+        (lifecycle.operationKind === "compact" || lifecycle.scheduledOrigin !== null) &&
         lifecycle.runState === "queued" &&
         lifecycle.leaseId === null &&
         lifecycle.startedAt === null &&
         lifecycle.recoveryRequestedAt === null;
       if (
         !target ||
-        (!unclaimedCompact &&
+        (!unclaimedInput &&
           !recovering &&
           (!activePair || !["running", "settling"].includes(target.state)))
       )
@@ -1903,7 +1920,7 @@ export class ControlPlaneStore {
           target_run_id: target.id,
           idempotency_key: idempotencyKey,
           kind: "cancel",
-          state: unclaimedCompact ? "completed" : "pending",
+          state: unclaimedInput ? "completed" : "pending",
           request_sha256: fingerprint,
           payload: {
             schemaVersion: 1,
@@ -1914,13 +1931,13 @@ export class ControlPlaneStore {
           available_at: sql<Date>`now()`,
           dispatched_at: null,
           acknowledged_at: null,
-          completed_at: unclaimedCompact ? sql<Date>`clock_timestamp()` : null,
+          completed_at: unclaimedInput ? sql<Date>`clock_timestamp()` : null,
           failure_code: null,
         })
         .returning(["id", "target_run_id", "created_at", "request_sha256"])
         .executeTakeFirstOrThrow();
 
-      if (unclaimedCompact) {
+      if (unclaimedInput) {
         // The locked Run has never owned a writer. Settle its existing queue row
         // atomically with the Stop receipt; no native task or VM needs starting.
         await transaction
@@ -1929,7 +1946,10 @@ export class ControlPlaneStore {
             state: "cancelled",
             ready_at: null,
             settled_at: sql`clock_timestamp()`,
-            stop_reason: "compact_cancelled_before_start",
+            stop_reason:
+              lifecycle.operationKind === "compact"
+                ? "compact_cancelled_before_start"
+                : "schedule_cancelled_before_start",
             row_version: sql`row_version+1`,
             updated_at: sql`clock_timestamp()`,
           })
@@ -1944,10 +1964,14 @@ export class ControlPlaneStore {
             run_id: target.id,
             from_state: "queued",
             to_state: "cancelled",
-            reason: "compact_cancelled_before_start",
+            reason:
+              lifecycle.operationKind === "compact"
+                ? "compact_cancelled_before_start"
+                : "schedule_cancelled_before_start",
             occurred_at: sql`clock_timestamp()`,
           })
           .execute();
+        await advanceLaneReadiness(transaction, this.#tenantId, sessionId);
       } else {
         // Replayed requests return above, so they never withdraw later inputs.
         await requestInputReturn(transaction, this.#tenantId, sessionId, controlRequest.id);

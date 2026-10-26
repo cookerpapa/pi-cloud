@@ -9,13 +9,14 @@ export const ControlToolCatalogDefinitionSchema = Type.Object(
     description: Type.String({ minLength: 1 }),
     parameters: Type.Record(Type.String(), Type.Unknown()),
     environment: ToolEnvironmentRequirementSchema,
+    availability: Type.Optional(Type.Literal("root")),
   },
   { additionalProperties: false },
 );
 export type ControlToolCatalogDefinition = Static<typeof ControlToolCatalogDefinitionSchema>;
 export const ControlToolCatalogSchema = Type.Object(
   {
-    version: Type.Literal(2),
+    version: Type.Literal(3),
     revision: Type.String({ pattern: "^[a-f0-9]{64}$" }),
     tools: Type.Array(ControlToolCatalogDefinitionSchema),
   },

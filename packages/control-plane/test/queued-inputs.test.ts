@@ -1,3 +1,4 @@
+import { SessionScheduleService } from "../src/session-schedule-service.ts";
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { sql, type Kysely } from "kysely";
@@ -75,6 +76,38 @@ describe.sequential("native human inputs and cloud execution records", () => {
     };
     return { tenant, store, project, session, queue, deliver, accept, list, edit, start };
   }
+  it("keeps steer and native queue targeting the active Run ahead of scheduled work", async () => {
+    const f = await fixture(),
+      agent = await f.start();
+    let now = new Date();
+    const schedules = new SessionScheduleService({ database: db, clock: () => now });
+    const scope = { tenantId: f.tenant.tenantId, sessionId: f.session.sessionId };
+    try {
+      const plan = await schedules.create(scope, randomUUID(), {
+        name: "Queued timer",
+        prompt: "Run later",
+        timing: { kind: "after", seconds: 1 },
+      });
+      now = new Date(now.valueOf() + 1001);
+      await schedules.dispatchDue();
+      const queued = (await schedules.get(scope, plan.id)).lastRun!;
+      expect(queued.state).toBe("queued");
+      const accepted = await f.accept("Keep working on this active task", randomUUID(), "steer");
+      expect(accepted).toMatchObject({ kind: "input", runId: agent.root.runId });
+      const view = await f.list();
+      expect(view.activeTurnId).toBe(agent.root.turnId);
+      expect(view.items.some((item) => item.runId === queued.runId)).toBe(false);
+      await f.store.acceptTurnCancellation(scope.sessionId, queued.turnId, randomUUID(), {});
+      expect((await f.store.getRun(queued.runId)).state).toBe("cancelled");
+      expect((await f.store.getRun(agent.root.runId)).state).toBe("running");
+    } finally {
+      await schedules.list(scope).then(async (value) => {
+        for (const row of value.schedules) await schedules.delete(scope, row.id, row.revision);
+      });
+      await agent.close();
+    }
+  });
+
   function queryGate(matches: (query: string) => boolean) {
     const held = Promise.withResolvers<void>(),
       release = Promise.withResolvers<void>();

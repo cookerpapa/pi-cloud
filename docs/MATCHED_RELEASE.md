@@ -1,5 +1,12 @@
 # Matched release procedure
 
+ADR-0280/0281 require schema 202 and tool catalog v3 with paired Worker, Control
+Plane, guest workflow and Web contracts. Preserve plans/history/Volumes during
+writer draining. The scheduling controller participates in normal runtime
+quiescence and must not admit work during cutover. Run the workspace-scoped
+Subagent and real scheduled-input checks after publication, alongside native
+input, Cube and existing Android target acceptance. [Scheduling behavior](SCHEDULES.md).
+
 ADR-0279 requires schema 201, tool catalog v2 and matching Worker/Control Plane/Web
 contracts for external device capabilities. Drain Session writers and confirm
 external execution-target admissions have closed before a protocol cutover;

@@ -3,7 +3,8 @@
 [Subagent workspace and scheduled-input implementation plan](reports/subagent-and-schedules-implementation-plan-20261026.md)
 covers accepted ADR-0280/0281 in sequential slices. It includes the ordinary
 schedule Tool, direct Web deletion through PG, history semantics, tests and
-matched publication; implementation and rollout are pending.
+matched publication. Source implementation and composed checks are complete;
+matched publication is pending. [Scheduled-input behavior and API](SCHEDULES.md).
 
 [Scheduled Agent input proposal](research/scheduled-agent-inputs-20261026.md)
 evaluates time-triggered admission into the existing Run queue. It is research
@@ -11,7 +12,7 @@ and proposed product semantics; no timer runtime is deployed.
 
 [Subagent resource-contract research](research/subagent-resource-contracts-20261026.md)
 compares upstream context, workspace and device-access designs. It records the
-proposed parameter boundary and validation criteria; implementation is pending.
+parameter boundary and validation criteria; source is implemented and live publication is pending.
 
 [Android execution targets](ANDROID_EXECUTION.md) are deployed under ADR-0279:
 core `android-a37491f4` (schema 201, tool catalog v2), device `android-7aa30c34`.

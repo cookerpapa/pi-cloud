@@ -33,7 +33,7 @@ import {
 import { useI18n } from "./i18n.tsx";
 
 type Anchor = { key: string; offset: number };
-type Target = { turnId: string; entryId: string };
+type Target = { turnId: string; entryId?: string };
 export type TimelineControl = { event(event: PiCloudEvent): void; latest(): void; search(): void };
 
 /** Browsing owns a bounded read window. The live reducer remains independent so
@@ -296,7 +296,11 @@ export function ConversationTimeline({
   }, [sessionId]);
   useEffect(() => {
     if (!jump || !sessionId) return;
-    void load({ turnId: jump.turnId, entryId: jump.entryId }, "replace", jump);
+    void load(
+      { turnId: jump.turnId, ...(jump.entryId ? { entryId: jump.entryId } : {}) },
+      "replace",
+      jump,
+    );
     onJumpSettled();
   }, [jump, sessionId, load, onJumpSettled]);
   useEffect(() => {

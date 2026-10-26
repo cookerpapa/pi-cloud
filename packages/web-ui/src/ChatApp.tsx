@@ -1,3 +1,4 @@
+import { SessionSchedules } from "./SessionSchedules.tsx";
 import { ConversationTimeline, type TimelineControl } from "./ConversationTimeline.tsx";
 import { useConversationCommands } from "./useConversationCommands.ts";
 import {
@@ -265,6 +266,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
   const [codeHostConnectionsOpen, setCodeHostConnectionsOpen] = useState(false);
   const [executionTargetOpen, setExecutionTargetOpen] = useState(false);
+  const [schedulesOpen, setSchedulesOpen] = useState(false);
   const initialResourceTab =
     typeof window !== "undefined" &&
     new URLSearchParams(window.location.search).get("resource") === "source-control"
@@ -287,7 +289,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const [reconnectGeneration, setReconnectGeneration] = useState(0);
   const [pendingTreeJump, setPendingTreeJump] = useState<{
     turnId: string;
-    entryId: string;
+    entryId?: string;
   } | null>(null);
   const [forkTarget, setForkTarget] = useState<{
     sourceSessionId: string;
@@ -885,7 +887,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
 
   async function openConversationSession(
     sessionId: string,
-    jumpTarget?: { turnId: string; entryId: string },
+    jumpTarget?: { turnId: string; entryId?: string },
     allowDuringOperation = false,
     delegatedSession: DelegatedSessionSummaryResource | null = null,
   ): Promise<void> {
@@ -1758,6 +1760,13 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
             <button
               type="button"
               disabled={state.session === null || selectedDelegatedSession !== null}
+              onClick={() => setSchedulesOpen(true)}
+            >
+              {t("schedule.title")}
+            </button>
+            <button
+              type="button"
+              disabled={state.session === null || selectedDelegatedSession !== null}
               onClick={() => setExecutionTargetOpen(true)}
             >
               {t("device.title")}
@@ -1836,6 +1845,19 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
               workspaceName={state.project?.name ?? state.session.title}
             />
           </Suspense>
+        ) : null}
+        {schedulesOpen && state.session ? (
+          <SessionSchedules
+            key={state.session.sessionId}
+            api={api}
+            sessionId={state.session.sessionId}
+            canMutate={canMutate}
+            onClose={() => setSchedulesOpen(false)}
+            onOpenRun={(turnId) => {
+              setSchedulesOpen(false);
+              void openConversationSession(state.session!.sessionId, { turnId }, false, null);
+            }}
+          />
         ) : null}
         {executionTargetOpen && state.session ? (
           <ExecutionTargetPicker

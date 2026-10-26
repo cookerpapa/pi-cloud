@@ -1,6 +1,6 @@
 # Implementation roadmap
 
-## Subagent workspace and scheduled inputs — implementation planned
+## Subagent workspace and scheduled inputs — source implemented
 
 [Implementation plan](reports/subagent-and-schedules-implementation-plan-20261026.md)
 implements ADR-0280 then ADR-0281 as complete sequential slices.
@@ -8,8 +8,8 @@ implements ADR-0280 then ADR-0281 as complete sequential slices.
 - [x] Research upstream contracts and scheduling candidates; record the owner's device-coordination decision.
 - [x] Record the accepted parameter, scheduling, direct-deletion and native-history boundaries.
 - [ ] Complete workspace-scoped subagent arguments, capability enforcement and native/real-model checks.
-- [ ] Complete PG schedule configuration and atomic due-to-Run admission with failure checks.
-- [ ] Connect the schedule Tool, direct browser management and scheduled-origin presentation.
+- [x] Complete PG schedule configuration and atomic due-to-Run admission with failure checks.
+- [x] Connect the schedule Tool, direct browser management and scheduled-origin presentation.
 - [ ] Run integrated/live acceptance and publish matched artifacts while preserving original assets.
 
 ## Cloud Android execution target — completed
