@@ -33,6 +33,8 @@ export type ControlPlaneApplicationOptions = Omit<
   ControlPlaneStoreOptions,
   "tenantId" | "defaultModelProfileId"
 > & {
+  executionTargets?: import("./execution-target-service.ts").ExecutionTargetService;
+  executionTargetIngress?: import("./execution-target-ingress.ts").ExecutionTargetIngress;
   tenantId?: string;
   defaultModelProfileId?: string;
   supervisorWebSocketGateway?: SupervisorWebSocketGateway;
@@ -69,6 +71,7 @@ export async function createControlPlaneApplication(
   options.toolProgressIngress?.install(adapter.getInstance());
   options.runActivityIngress?.install(adapter.getInstance());
   options.sessionPublicationService?.install(adapter.getInstance());
+  options.executionTargetIngress?.install(adapter.getInstance());
   options.supervisorProvisioningGateway?.install(adapter.getInstance());
   options.supervisorWebSocketGateway?.install(adapter.getInstance());
   options.workspaceTerminalGateway?.install(adapter.getInstance());

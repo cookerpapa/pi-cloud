@@ -32,7 +32,8 @@
     "./session-publication-ingress": "./src/session-publication-ingress.ts",
     "./worker-execution-log": "./src/worker-execution-log.ts",
     "./durable-session-publisher": "./src/durable-session-publisher.ts",
-    "./tool-invocation-fact": "./src/tool-invocation-fact.ts"
+    "./tool-invocation-fact": "./src/tool-invocation-fact.ts",
+    "./execution-target-grants": "./src/execution-target-grants.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

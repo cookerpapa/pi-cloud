@@ -1,0 +1,110 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-runtime
+data:
+  start.sh: |
+{{ .Files.Get "files/start.sh" | indent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  selector: { app.kubernetes.io/instance: {{ .Release.Name }} }
+  ports: [{ name: executor, port: 8090, targetPort: 8090 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  serviceName: {{ .Release.Name }}
+  replicas: 1
+  updateStrategy: { type: OnDelete }
+  selector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }} }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: android-target }
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: {{ required "nodeName is required" .Values.nodeName | quote }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 90
+      containers:
+        - name: android
+          image: {{ required "Pinned runtime image is required" .Values.images.runtime | quote }}
+          imagePullPolicy: IfNotPresent
+          securityContext: { privileged: true }
+          env:
+            - { name: PI_CLOUD_ANDROID_VSOCK_CID, value: {{ .Values.vsockCid | quote }} }
+          resources:
+            requests: { cpu: "1", memory: 3Gi }
+          volumeMounts:
+            - { name: runtime, mountPath: /config, readOnly: true }
+            - { name: source, mountPath: /source, readOnly: true }
+            - { name: host, mountPath: /cvd, readOnly: true }
+            - { name: state, mountPath: /data }
+        - name: automation
+          image: {{ required "Pinned automation image is required" .Values.images.automation | quote }}
+          imagePullPolicy: IfNotPresent
+          command: [/bin/sh, -c]
+          args: ["until /opt/android-sdk/platform-tools/adb connect 127.0.0.1:6520 | grep -q connected; do sleep 2; done; exec appium --address 127.0.0.1 --port 4723 --log-level warn --allow-insecure=uiautomator2:adb_shell"]
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+        - name: executor
+          image: {{ required "Pinned executor image is required" .Values.images.executor | quote }}
+          imagePullPolicy: IfNotPresent
+          securityContext: { runAsUser: 1000, runAsGroup: 1000, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          env:
+            - { name: PI_CLOUD_EXECUTION_TARGET_ID, value: {{ required "targetId is required" .Values.targetId | quote }} }
+            - { name: PI_CLOUD_APPIUM_URL, value: "http://127.0.0.1:4723" }
+            - { name: PI_CLOUD_ANDROID_UDID, value: "127.0.0.1:6520" }
+            - { name: PI_CLOUD_DATABASE_URL_FILE, value: /run/pi-cloud-secrets/database-url }
+            - { name: PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE, value: /run/pi-cloud-secrets/supervisor-management-token }
+            - { name: PI_CLOUD_KAFKA_BROKERS, value: {{ .Values.kafkaBrokers | quote }} }
+            - { name: PI_CLOUD_IMAGE_S3_ENDPOINT, value: {{ .Values.imageEndpoint | quote }} }
+            - { name: PI_CLOUD_IMAGE_S3_BUCKET, value: {{ .Values.imageBucket | quote }} }
+            - { name: PI_CLOUD_IMAGE_S3_CREDENTIALS_FILE, value: /run/pi-cloud-secrets/session-image-s3-credentials.json }
+          ports: [{ name: executor, containerPort: 8090 }]
+          readinessProbe: { tcpSocket: { port: executor }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /health/live, port: executor }, initialDelaySeconds: 200, periodSeconds: 10 }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+          volumeMounts: [{ name: executor-secrets, mountPath: /run/pi-cloud-secrets, readOnly: true }]
+        - name: egress
+          image: {{ required "Pinned egress image is required" .Values.images.egress | quote }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: PI_CLOUD_CUBE_EGRESS_HOST, value: "0.0.0.0" }
+            - { name: PI_CLOUD_CUBE_EGRESS_CONTROL_PLANE_URL, value: {{ printf "%s/v1/internal/cube-egress-configuration" .Values.controlPlaneUrl | quote }} }
+            - { name: PI_CLOUD_CUBE_EGRESS_CONFIG_TOKEN_FILE, value: /run/pi-cloud-secrets/cube-egress-config-token }
+          securityContext: { runAsUser: 1000, runAsGroup: 1000, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+          volumeMounts: [{ name: egress-secrets, mountPath: /run/pi-cloud-secrets, readOnly: true }]
+      volumes:
+        - name: runtime
+          configMap: { name: {{ .Release.Name }}-runtime, defaultMode: 365 }
+        - name: source
+          hostPath: { path: {{ required "artifactDirectory is required" .Values.artifactDirectory | quote }}, type: Directory }
+        - name: host
+          hostPath: { path: {{ required "hostDirectory is required" .Values.hostDirectory | quote }}, type: Directory }
+        - name: state
+          hostPath: { path: {{ required "stateDirectory is required" .Values.stateDirectory | quote }}, type: Directory }
+        - name: executor-secrets
+          secret:
+            secretName: {{ .Values.existingSecret }}
+            defaultMode: 292
+            items:
+              - { key: database-url, path: database-url }
+              - { key: supervisor-management-token, path: supervisor-management-token }
+              - { key: session-image-s3-credentials.json, path: session-image-s3-credentials.json }
+        - name: egress-secrets
+          secret:
+            secretName: {{ .Values.existingSecret }}
+            defaultMode: 288
+            items: [{ key: cube-egress-config-token, path: cube-egress-config-token }]
+      securityContext: { fsGroup: 1000 }

@@ -1,4 +1,4 @@
-import { parseModelRuntimeSnapshot } from "@pi-cloud/protocol";
+import { parseModelRuntimeSnapshot, parseExecutionTargetGrants } from "@pi-cloud/protocol";
 import { recordEnvironmentFailure } from "./environment-failure.ts";
 import { readDurableRunUsage } from "@pi-cloud/pi-session-postgres/durable";
 import { resourceLimit } from "@pi-cloud/domain";
@@ -70,6 +70,7 @@ export type TurnExecutionRequest = {
   sandboxProfileKey: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey;
   workingDirectory: string;
   toolCapabilities: CloudToolCapabilitySnapshot;
+  executionTargets?: import("@pi-cloud/protocol").ExecutionTargetGrant[];
   agentSystemPrompt?: string;
   model: {
     profileId: string;
@@ -737,6 +738,7 @@ export class RunExecutor {
           ),
           "run.trace_id as traceId",
           "run.tool_capability_snapshot as toolCapabilitySnapshot",
+          "run.execution_target_snapshot as executionTargetSnapshot",
           "run.agent_system_prompt as agentSystemPrompt",
           "run.working_directory as workingDirectory",
           "run.compute_session_id as computeSessionId",
@@ -888,6 +890,9 @@ export class RunExecutor {
         sandboxProfileKey: row.sandboxProfileKey,
         workingDirectory: row.workingDirectory,
         toolCapabilities,
+        ...(row.executionTargetSnapshot.length
+          ? { executionTargets: parseExecutionTargetGrants(row.executionTargetSnapshot) }
+          : {}),
         ...(row.agentSystemPrompt === null ? {} : { agentSystemPrompt: row.agentSystemPrompt }),
         model: {
           profileId: row.modelProfileId,

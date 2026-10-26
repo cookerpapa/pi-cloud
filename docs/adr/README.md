@@ -1,5 +1,10 @@
 # Current architecture decisions
 
+[ADR-0279](0279-android-execution-targets.md) approves the first cloud Android
+execution target, capability-based tool selection and a trusted executor's direct
+Kafka replies. Implementation/real-runtime verification is in progress; it is not
+yet a supported deployed backend or a fallback for Cube.
+
 [ADR-0278](0278-windowed-conversation-presentation.md) records bounded history
 reads within Runs, a virtual browser window, direct navigation, cancellable search
 and streamed export. It is deployed as `history-window-19c24570`, schema 200;

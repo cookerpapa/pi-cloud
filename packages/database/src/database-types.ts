@@ -725,6 +725,7 @@ export interface RunTable {
   sandbox_profile_key: Generated<SandboxProfileKey>;
   agent_system_prompt: GeneratedNullable<string>;
   tool_capability_snapshot: GeneratedJsonArray;
+  execution_target_snapshot: GeneratedJsonArray;
   input_text: string;
   input_uploads: GeneratedJsonArray;
   model_profile_id: string;

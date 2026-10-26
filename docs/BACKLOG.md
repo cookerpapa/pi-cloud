@@ -1,5 +1,19 @@
 # Maintained backlog
 
+## Cloud Android execution target — in progress
+
+The owner approved [ADR-0279](adr/0279-android-execution-targets.md), including
+direct internal Kafka replies from a trusted Android executor. First validate
+Cuttlefish and existing UI automation, then connect one operator-provisioned
+target to existing coding Sessions. Keep resource lifecycle separate, expose
+only bound capabilities and preserve native uncertain-effect/Stop semantics.
+Pure-phone Sessions and automatic Android allocation remain later vertical slices.
+Cuttlefish boot, real observation/Chinese input, retained device settings across
+restart, binding races, native catalog isolation and RF3 reply transport have
+passed. The six-tool path, schema 201, catalog v2, picker and operator release
+helper are implemented. Matched publication and full model/S3/browser acceptance
+remain pending; see [the operator guide](ANDROID_EXECUTION.md).
+
 ## Request failure wording — completed
 
 Replace technical retry/native-task prose with localized user-facing copy.

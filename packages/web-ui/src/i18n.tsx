@@ -14,6 +14,14 @@ export type UiLanguage = "zh-CN" | "en-US";
 const STORAGE_KEY = "pi-cloud:ui-language";
 
 const zhCN = {
+  "device.title": "云手机",
+  "device.choose": "设备",
+  "device.none": "不连接云手机",
+  "device.inUse": "已绑定其他会话",
+  "device.empty": "暂时没有可用的云手机。",
+  "device.waitIdle": "请先完成或停止当前任务，再更换云手机。",
+  "device.screen": "刷新屏幕",
+  "common.save": "保存",
   "commands.compact": "压缩上下文",
   "commands.menu": "会话命令",
   "commands.needSession": "请先打开一个会话",
@@ -509,6 +517,14 @@ const zhCN = {
 export type UiTextKey = keyof typeof zhCN;
 
 const enUS: Record<UiTextKey, string> = {
+  "common.save": "Save",
+  "device.title": "Cloud phone",
+  "device.choose": "Device",
+  "device.none": "No phone connected",
+  "device.inUse": "Bound to another conversation",
+  "device.empty": "No cloud phones are available yet.",
+  "device.waitIdle": "Finish or stop the current task before changing the phone.",
+  "device.screen": "Refresh screen",
   "commands.compact": "Compact context",
   "commands.menu": "Conversation commands",
   "commands.needSession": "Open a conversation first",

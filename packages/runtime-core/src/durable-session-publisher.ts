@@ -8,6 +8,8 @@ import {
   durableControlRecovery,
   DurableCommitIndex,
   isControlToolCommand,
+  isExecutorToolCommand,
+  isNamedToolCommand,
   parseDurableDisplayDescription,
   type DurableCommitPublication,
   type DurableCommitPublisher,
@@ -84,10 +86,30 @@ export class DurableSessionPublisher {
             const sourceTask = index.task(taskId);
             const identity = resolve(
               command.executionReference,
-              isControlToolCommand(command)
+              isNamedToolCommand(command)
                 ? command.conversationId
                 : (sourceTask?.conversationId as number | undefined),
             );
+            if (isExecutorToolCommand(command)) {
+              const intent = durableToolIntent(publication.commit, taskId, index);
+              if (
+                command.toolCallId !== `task:${taskId}` ||
+                command.nativeCallId !== intent.callId ||
+                !isDeepStrictEqual(command.arguments, intent.arguments) ||
+                sourceTask?.conversationId !== command.conversationId
+              )
+                throw new Error("Executor Tool intent changed");
+              return {
+                target: "executor",
+                operationId: command.operationId,
+                bindingId: command.bindingId,
+                taskId,
+                conversationId: command.conversationId,
+                toolName: command.toolName,
+                scope: identity,
+                replyTopic: this.options.replyTopic,
+              };
+            }
             if (isControlToolCommand(command)) {
               let recovery;
               if (command.recovery) {
@@ -156,7 +178,11 @@ export class DurableSessionPublisher {
             (command) => ({
               kind: "tool_cancel",
               scope: resolve(command.executionReference, command.conversationId),
-              request: { activationId: command.activationId, operationId: command.operationId },
+              request: {
+                activationId: command.activationId,
+                operationId: command.operationId,
+                ...(command.target ? { target: command.target } : {}),
+              },
             }),
           );
           const commit = await encodeSessionImages(

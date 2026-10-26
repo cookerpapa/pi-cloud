@@ -1,4 +1,6 @@
 import {
+  parseExecutionTargetList,
+  parseSessionExecutionTarget,
   type ConversationHistoryQuery,
   parseConversationSearchResult,
   type ConversationSearchResult,
@@ -694,6 +696,44 @@ export class PiCloudApi {
   }
   conversationExportUrl(sessionId: string): string {
     return `/v1/conversations/${encodeURIComponent(sessionId)}/export`;
+  }
+  async listExecutionTargets() {
+    return parseExecutionTargetList(
+      await request(
+        this.#fetch,
+        "/v1/execution-targets",
+        { method: "GET" },
+        this.#authorizationToken,
+      ),
+    );
+  }
+  async getSessionExecutionTarget(id: string) {
+    return parseSessionExecutionTarget(
+      await request(
+        this.#fetch,
+        `/v1/conversations/${encodeURIComponent(id)}/execution-target`,
+        { method: "GET" },
+        this.#authorizationToken,
+      ),
+    );
+  }
+  async bindExecutionTarget(id: string, targetId: string | null, revision: string) {
+    return parseSessionExecutionTarget(
+      await request(
+        this.#fetch,
+        `/v1/conversations/${encodeURIComponent(id)}/execution-target`,
+        { method: "PUT", body: JSON.stringify({ targetId, revision }) },
+        this.#authorizationToken,
+      ),
+    );
+  }
+  readExecutionTargetScreen(id: string, signal?: AbortSignal) {
+    return requestBytes(
+      this.#fetch,
+      `/v1/execution-targets/${encodeURIComponent(id)}/screen`,
+      this.#authorizationToken,
+      signal,
+    );
   }
 
   async getConversationTree(

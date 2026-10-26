@@ -1,5 +1,9 @@
 # Documentation map
 
+[Android execution targets](ANDROID_EXECUTION.md) are an implementation candidate under ADR-0279.
+A coding Session can bind an operator-provisioned Android device, with capability-scoped
+root tools and replies through the existing Kafka path. Deployment acceptance is pending.
+
 [Windowed conversation presentation](adr/0278-windowed-conversation-presentation.md)
 passes source and 1 GiB composed checks for long conversations, including one long Run.
 [Delivery evidence](reports/conversation-history-delivery-20261026.md) records the measurements.

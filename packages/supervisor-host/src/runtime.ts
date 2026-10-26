@@ -25,6 +25,7 @@ import {
   type ReconnectingSupervisorWebSocketClientStop,
 } from "@pi-cloud/sandbox-supervisor";
 import { WorkerToolRuntime } from "./tools/worker-tool-runtime.ts";
+import { ExecutionTargetClient } from "./tools/execution-target-client.ts";
 import { WorkerToolCatalog } from "./tools/worker-tool-catalog.ts";
 import { FamilyModelPermits } from "./family-model-permits.ts";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -146,6 +147,7 @@ export class PiWorkerRuntime {
   #ownsSessionMutationProducer = false;
   #nativeSessions: PostgresDurableSessionHost | undefined;
   #subagentControl: SubagentControlClient | undefined;
+  #executionTargets: ExecutionTargetClient | undefined;
   #agentRunner: RemoteToolSandboxTurnRunner | undefined;
   #images: ConfiguredImageAttachments | undefined;
   #toolReplies: KafkaToolReplyMailbox | undefined;
@@ -479,11 +481,17 @@ export class PiWorkerRuntime {
         return reply as import("@pi-cloud/protocol").ToolReplyWait<ToolResultPayload>;
       },
     });
+    const executionTargets = new ExecutionTargetClient(
+      this.#config.controlPlaneBaseUrl,
+      this.#config.managementToken,
+    );
+    this.#executionTargets = executionTargets;
     const trustedTools = new WorkerToolRuntime({
       catalog: this.#toolCatalog,
       nativeConversations: nativeSessions,
       control: this.#subagentControl,
       maximumDepth: this.#config.subagentMaximumDepth,
+      prepareTarget: (command, target, signal) => executionTargets.bind(command, target, signal),
       wait: (id, callId, name, signal, scope) =>
         restoreToolReply(toolReplies.wait(id, callId, name, signal), images?.codec, scope, signal),
     });
@@ -849,6 +857,7 @@ export class PiWorkerRuntime {
       () => this.#toolReplies?.shutdown(),
       () => this.#images?.blobs.close(),
       () => this.#subagentControl?.close(),
+      () => this.#executionTargets?.close(),
       () => this.#client?.stop(),
       () => this.#managementServer?.close(),
       () => this.#modelGateway?.close(),

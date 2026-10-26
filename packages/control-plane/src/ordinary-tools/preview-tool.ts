@@ -22,7 +22,7 @@ export const previewToolDefinition: ControlToolCatalogDefinition = {
     required: ["port"],
     additionalProperties: false,
   },
-  requiresEnvironment: true,
+  environment: { kind: "workspace" as const },
 };
 
 /** Platform business logic; process/filesystem inspection stays in Cube. */

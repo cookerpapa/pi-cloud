@@ -48,7 +48,8 @@ it("persists each dynamic hostcall once under its native Tool and retires its pe
   f.storage.beforeAdopt = (commit) => {
     const prepared = f.runtime.preparePublication(commit);
     for (const effect of prepared.tools)
-      if ("target" in effect.command) commands.push(effect.command);
+      if ("target" in effect.command && effect.command.target === "control")
+        commands.push(effect.command);
     prepared.confirmed();
   };
   try {
@@ -130,7 +131,7 @@ it("publishes an ordered native recovery reference before resolving a recovered 
     model: provider.getModel(),
     agent: {},
     context: {},
-    remoteTools: ["subagent"],
+    remoteTools: () => ["subagent"],
     tools: [],
     assertCurrent: async () => {},
     openModel: async (request) => ({
@@ -178,7 +179,8 @@ it("publishes an ordered native recovery reference before resolving a recovered 
     store.beforeAdopt = (commit) => {
       const prepared = runtime.preparePublication(commit);
       for (const effect of prepared.tools) {
-        if (!("target" in effect.command)) throw new Error("Unexpected physical execution");
+        if (!("target" in effect.command) || effect.command.target !== "control")
+          throw new Error("Unexpected physical execution");
         effects.push({ taskId: effect.taskId, command: effect.command });
         if (effect.command.recovery) {
           const recovery = effect.command.recovery;
@@ -349,7 +351,7 @@ it.each(["created", "configured", "submitted", "completed", "stop"] as const)(
         model: provider.getModel(),
         agent: {},
         context: {},
-        remoteTools: [],
+        remoteTools: () => [],
         tools,
         assertCurrent: async () => {},
         prepareRemote: async () => {
@@ -526,7 +528,7 @@ async function family() {
       model: providers[providerIndex]!.getModel(),
       agent: {},
       context: {},
-      remoteTools: [],
+      remoteTools: () => [],
       tools,
       assertCurrent: async () => {},
       prepareRemote: async () => {

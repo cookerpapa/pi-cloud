@@ -1,0 +1,9 @@
+{
+  "build": "16644040",
+  "target": "aosp_cf_x86_64_only_phone-userdebug",
+  "fetchImage": "us-docker.pkg.dev/android-cuttlefish-artifacts/cuttlefish-orchestration/cuttlefish-orchestration@sha256:080b718302407033c99ce2653b67d33f923d1f90ae4bbed8c0846c7f89449966",
+  "archives": {
+    "aosp_cf_x86_64_only_phone-img-16644040.zip": "eccdb248e171af6cb98711a6f2fbd5e5017e9c3a6e82337580181bbd4bb2c41b",
+    "cvd-host_package.tar.gz": "ec02c8e23985b37d9769732bf8bed992f10d851f40f7a835cf97128888900ecc"
+  }
+}

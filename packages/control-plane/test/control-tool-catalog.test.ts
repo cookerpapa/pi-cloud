@@ -27,7 +27,7 @@ import type { AcceptedControlToolCommand } from "@pi-cloud/runtime-core/accepted
 const definition = (name: string): ControlToolCatalogDefinition => ({
   name,
   description: `Perform ${name}`,
-  requiresEnvironment: false,
+  environment: { kind: "none" as const },
   parameters: { type: "object", properties: {}, additionalProperties: false },
 });
 
@@ -213,10 +213,11 @@ it("adds and withdraws an unknown Tool within one native submission while retain
     model: faux.getModel(),
     agent: {},
     context: {},
-    remoteTools: bindings
-      .current()
-      .filter((item) => item.offered !== false)
-      .map((item) => item.tool.name),
+    remoteTools: () =>
+      bindings
+        .current()
+        .filter((item) => item.offered !== false)
+        .map((item) => item.tool.name),
     tools: [],
     assertCurrent: async () => {},
     openModel: async (request) => ({

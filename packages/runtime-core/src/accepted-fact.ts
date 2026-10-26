@@ -99,7 +99,11 @@ export type DurableCubeToolDispatch = Omit<
 export type DurableControlToolDispatch = import("@pi-cloud/protocol").ControlToolDispatch & {
   scope: AcceptedFactScope;
 };
-export type DurableToolDispatch = DurableCubeToolDispatch | DurableControlToolDispatch;
+export type DurableExecutorToolDispatch = import("@pi-cloud/protocol").ExecutorToolDispatch & {
+  scope: AcceptedFactScope;
+};
+export type DurableToolDispatch =
+  DurableCubeToolDispatch | DurableControlToolDispatch | DurableExecutorToolDispatch;
 
 export type AcceptedControlToolCommand = DurableControlToolDispatch & {
   kind: "control_tool";

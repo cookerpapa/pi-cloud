@@ -1,4 +1,6 @@
 import { withDatabaseReadSignal } from "@pi-cloud/database";
+import { ExecutionTargetService } from "./execution-target-service.ts";
+import { parseBindExecutionTargetRequest } from "@pi-cloud/protocol";
 import {
   conversationMarkdown,
   conversationExportFilename,
@@ -142,7 +144,55 @@ export class ControlPlaneController {
     private readonly sshAccessTickets: SshAccessTicketService,
     @Inject(SourceControlService) private readonly sourceControl: SourceControlService,
     @Inject(SessionImageReader) private readonly sessionImages: SessionImageReader,
+    @Inject(ExecutionTargetService) private readonly executionTargets: ExecutionTargetService,
   ) {}
+
+  @Get("execution-targets")
+  executionTargetList(@Req() request: FastifyRequest) {
+    return this.executionTargets.list(this.tenantRequestContext.resolve(request).tenantId);
+  }
+  @Get("conversations/:sessionId/execution-target")
+  executionTargetSelection(@Req() request: FastifyRequest, @Param("sessionId") value: unknown) {
+    return this.executionTargets.selection(
+      this.tenantRequestContext.resolve(request).tenantId,
+      parseUuidPathParameter(value, "sessionId"),
+    );
+  }
+  @Put("conversations/:sessionId/execution-target")
+  setExecutionTarget(
+    @Req() request: FastifyRequest,
+    @Param("sessionId") value: unknown,
+    @Body() body: unknown,
+  ) {
+    const identity = this.tenantRequestContext.requireMutation(request);
+    let input;
+    try {
+      input = parseBindExecutionTargetRequest(body);
+    } catch {
+      throw new ControlPlaneApiValidationError("Invalid execution target binding");
+    }
+    return this.executionTargets.bindSession(
+      identity.tenantId,
+      parseUuidPathParameter(value, "sessionId"),
+      input.targetId,
+      input.revision,
+    );
+  }
+  @Get("execution-targets/:targetId/screen")
+  async executionTargetScreen(
+    @Req() request: FastifyRequest,
+    @Param("targetId") value: unknown,
+    @Res() reply: FastifyReply,
+  ) {
+    const image = await abortableHistoryRead(request, (signal) =>
+      this.executionTargets.screen(
+        this.tenantRequestContext.resolve(request).tenantId,
+        parseUuidPathParameter(value, "targetId"),
+        signal,
+      ),
+    );
+    await reply.header("content-type", "image/png").header("cache-control", "no-store").send(image);
+  }
 
   @Get("auth/providers")
   authenticationProviders(): AuthenticationConfigurationResource {

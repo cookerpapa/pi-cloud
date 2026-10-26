@@ -93,3 +93,10 @@ export {
   type SandboxHttpServiceRegistry,
   type SandboxHttpServiceTarget,
 } from "./sandbox-http-service-registry.ts";
+
+export {
+  HttpExecutorTransport,
+  ExecutorTransportFailure,
+  type ExecutorTransport,
+  type ExecutorStatus,
+} from "./executor-transport.ts";

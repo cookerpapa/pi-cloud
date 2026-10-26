@@ -51,7 +51,7 @@ it.each(["fast", null] as const)(
         agent: {},
         context: {},
         tools: [],
-        remoteTools: [],
+        remoteTools: () => [],
         assertCurrent: async () => {},
         prepareRemote: async () => {
           throw new Error("No effect expected");

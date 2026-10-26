@@ -84,7 +84,8 @@ export function encodeSessionLogFact(fact: SessionLogFact): string {
       tools: fact.tools.map((tool) => {
         const { scope: identity, replyTopic: _reply, ...descriptor } = tool;
         const address = view(identity, fact.scope);
-        if (descriptor.target === "control") return { ...descriptor, view: address };
+        if (descriptor.target === "control" || descriptor.target === "executor")
+          return { ...descriptor, view: address };
         if (descriptor.target !== "cube") throw new Error("Unknown Tool dispatch target");
         const {
           type: _type,
@@ -164,6 +165,19 @@ export function expandSessionLogEnvelope(input: unknown): SessionLogFact {
       ...fact,
       tools: tools.map((item) => {
         const tool = object(item);
+        if (tool.target === "executor") {
+          keys(tool, [
+            "target",
+            "operationId",
+            "bindingId",
+            "taskId",
+            "conversationId",
+            "toolName",
+            "view",
+          ]);
+          const { view: address, ...reference } = tool;
+          return { ...reference, scope: scope(root, address), replyTopic };
+        }
         if (tool.target === "control") {
           keys(tool, [
             "target",
@@ -197,11 +211,15 @@ export function expandSessionLogEnvelope(input: unknown): SessionLogFact {
       }),
       cancellations: list(value.cancellations).map((item) => {
         const cancel = object(item);
-        keys(cancel, ["view", "activationId", "operationId"]);
+        keys(cancel, ["view", "activationId", "operationId", "target"]);
         return {
           kind: "tool_cancel",
           scope: scope(root, cancel.view),
-          request: { activationId: cancel.activationId, operationId: cancel.operationId },
+          request: {
+            activationId: cancel.activationId,
+            operationId: cancel.operationId,
+            ...(cancel.target ? { target: cancel.target } : {}),
+          },
         };
       }),
       display: list(value.display).map((item) => {

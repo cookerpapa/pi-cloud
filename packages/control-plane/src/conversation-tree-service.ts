@@ -1,3 +1,4 @@
+import { unbindSessionTargets } from "./unbind-session-targets.ts";
 import { readNavigationEntries } from "@pi-cloud/pi-session-postgres/durable";
 import { createHash, randomUUID } from "node:crypto";
 import type { Database } from "@pi-cloud/database";
@@ -1008,6 +1009,7 @@ export class ConversationTreeService {
         }
         const subagentSessionIds = [...new Set(subagentRows.map((row) => row.sessionId))];
         const sessionsToPrune = [...new Set([...descendantIds, ...subagentSessionIds])];
+        await unbindSessionTargets(transaction, tenantId, sessionsToPrune);
         const now = new Date();
         if (prunedTurnIds.length > 0) {
           await transaction

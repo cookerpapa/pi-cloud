@@ -23,6 +23,15 @@ export const SessionControlChangeSchema = Type.Union([
   Type.Object(
     {
       ...CommonChange,
+      entity: Type.Literal("execution_binding"),
+      runId: Type.String({ format: "uuid" }),
+      closed: Type.Boolean(),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      ...CommonChange,
       entity: Type.Literal("sandbox_binding"),
       runId: Type.String({ format: "uuid" }),
       closed: Type.Boolean(),

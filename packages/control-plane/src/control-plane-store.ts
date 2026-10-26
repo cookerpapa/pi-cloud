@@ -1,3 +1,4 @@
+import { readExecutionTargetGrants } from "@pi-cloud/runtime-core/execution-target-grants";
 import { searchConversationPage } from "./conversation-history-service.ts";
 import type { ConversationHistoryQuery } from "@pi-cloud/protocol";
 import { compactFingerprint } from "./conversation-command-identity.ts";
@@ -1661,6 +1662,9 @@ export class ControlPlaneStore {
           "Session Tool grant is invalid",
         );
       }
+      const executionTargets = compact
+        ? []
+        : await readExecutionTargetGrants(transaction, this.#tenantId, session.id);
       const environment = await this.#activeEnvironmentForRun(transaction, session.project_id);
       const uploads = compact
         ? []
@@ -1717,6 +1721,7 @@ export class ControlPlaneStore {
           compute_session_id: session.compute_session_id,
           sandbox_profile_key: session.sandbox_profile_key,
           tool_capability_snapshot: sql<unknown[]>`${JSON.stringify(toolCapabilities)}::jsonb`,
+          execution_target_snapshot: sql<unknown[]>`${JSON.stringify(executionTargets)}::jsonb`,
           idempotency_key: idempotencyKey,
           state: "queued",
           ready_at: sql<Date | null>`case when ${laneDependenciesReady(this.#tenantId, session.id, sql`${mailboxPosition}::bigint`)} then clock_timestamp() else null end`,

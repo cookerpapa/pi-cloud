@@ -8,6 +8,7 @@ export const ToolCancellationSchema = Type.Object(
   {
     activationId: Uuid,
     operationId: Uuid,
+    target: Type.Optional(Type.Literal("executor")),
   },
   { additionalProperties: false },
 );

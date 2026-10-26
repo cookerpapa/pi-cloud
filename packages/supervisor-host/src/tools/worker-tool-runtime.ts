@@ -13,6 +13,11 @@ import {
   type SubagentTask,
   type ControlToolCatalogSource,
   type InfrastructureToolDefinition,
+  type ExecutionTargetGrant,
+  type ToolEnvironmentRequirement,
+  type CandidateToolEffect,
+  ToolExecutionFailure,
+  ANDROID_REPLY_TIMEOUT_MS,
 } from "@pi-cloud/protocol";
 import {
   toolInvocationId,
@@ -45,6 +50,11 @@ export class WorkerToolRuntime {
       };
       control: Pick<SubagentControlClient, "request">;
       maximumDepth: number | null;
+      prepareTarget?(
+        command: ExecuteTurnCommandMessage,
+        target: ExecutionTargetGrant,
+        signal?: AbortSignal,
+      ): Promise<string>;
       wait(
         operationId: string,
         callId: string,
@@ -59,8 +69,24 @@ export class WorkerToolRuntime {
     command: ExecuteTurnCommandMessage;
     prepareWorkflow: WorkflowPreparer;
     prepareEnvironment(): Promise<string>;
+    onExecutionUnavailable?(failure: { code: string; message: string }): void;
   }): Promise<TrustedAgentToolSet> {
     const scope = context.command.payload;
+    const targetBindings = new Map<string, Promise<string>>();
+    const prepareTarget = (target: ExecutionTargetGrant, signal?: AbortSignal) => {
+      let pending = targetBindings.get(target.targetId);
+      if (!pending) {
+        pending = this.options.prepareTarget
+          ? this.options.prepareTarget(context.command, target, signal)
+          : Promise.reject(new Error("Device transport is unavailable"));
+        targetBindings.set(target.targetId, pending);
+        void pending.catch(() => {
+          if (targetBindings.get(target.targetId) === pending)
+            targetBindings.delete(target.targetId);
+        });
+      }
+      return pending;
+    };
     const depth =
       scope.sessionKind === "subagent"
         ? await this.options.nativeConversations.conversationDepth(
@@ -172,8 +198,20 @@ export class WorkerToolRuntime {
       }
     };
 
-    type Definition = Omit<InfrastructureToolDefinition, "name"> & { name: string };
+    type Definition = Omit<InfrastructureToolDefinition, "name"> & {
+      name: string;
+      environment?: ToolEnvironmentRequirement;
+    };
     const createBinding = (definition: Definition, ordinary: boolean): TrustedAgentTool => {
+      const environment = definition.environment ?? { kind: "none" as const };
+      const target =
+        environment.kind === "target" && scope.sessionKind === "conversation"
+          ? scope.executionTargets?.find(
+              (t) =>
+                t.kind === environment.targetKind &&
+                environment.capabilities.every((c) => t.capabilities.includes(c)),
+            )
+          : undefined;
       const prepare = async (
         nativeCallId: string,
         raw: unknown,
@@ -191,7 +229,11 @@ export class WorkerToolRuntime {
           const current = this.options.catalog
             .read()
             .tools.find((tool) => tool.name === definition.name);
-          if (!current || !isDeepStrictEqual(current.parameters, definition.parameters))
+          if (
+            !current ||
+            !isDeepStrictEqual(current.parameters, definition.parameters) ||
+            !isDeepStrictEqual(current.environment, environment)
+          )
             throw new Error(
               `tool_unavailable: ${definition.name} was withdrawn or changed before admission`,
             );
@@ -216,9 +258,16 @@ export class WorkerToolRuntime {
         )
           throw new Error("Recovered invocation differs from its original intent");
         const operationId = randomUUID();
-        const bindingId = definition.requiresEnvironment
-          ? await context.prepareEnvironment()
-          : undefined;
+        const bindingId =
+          environment.kind === "workspace"
+            ? await context.prepareEnvironment()
+            : environment.kind === "target"
+              ? target
+                ? await prepareTarget(target, signal)
+                : undefined
+              : undefined;
+        if (environment.kind === "target" && !bindingId)
+          throw new Error("tool_unavailable: This conversation has no matching execution target");
         const anchor = original
           ? original.contextAnchor
           : ordinary
@@ -229,7 +278,13 @@ export class WorkerToolRuntime {
                 scope.piSession.conversationId,
               );
         const waiting = new AbortController();
-        const activeSignal = signal ? AbortSignal.any([signal, waiting.signal]) : waiting.signal;
+        const deadline =
+          environment.kind === "target" ? AbortSignal.timeout(ANDROID_REPLY_TIMEOUT_MS) : undefined;
+        const activeSignal = AbortSignal.any([
+          waiting.signal,
+          ...(signal ? [signal] : []),
+          ...(deadline ? [deadline] : []),
+        ]);
         const pending = this.options.wait(
           operationId,
           nativeCallId,
@@ -238,39 +293,77 @@ export class WorkerToolRuntime {
           { tenantId: scope.tenantId, runId: scope.runId },
         );
         void pending.result.catch(() => {});
+        const command: CandidateToolEffect =
+          environment.kind === "target"
+            ? {
+                target: "executor",
+                executionReference: scope.executionReference,
+                operationId,
+                bindingId: bindingId!,
+                toolCallId: invocationId,
+                nativeCallId,
+                conversationId: scope.piSession.conversationId,
+                toolName: definition.name,
+                arguments: args,
+                occurredAt: new Date().toISOString(),
+              }
+            : {
+                target: "control" as const,
+                executionReference: scope.executionReference,
+                operationId,
+                toolCallId: invocationId,
+                nativeCallId,
+                conversationId: scope.piSession.conversationId,
+                toolName: definition.name,
+                arguments: args,
+                contextAnchor: anchor === null ? null : Number(anchor),
+                ...(original
+                  ? { recovery: { sequence: original.sequence, operationId: original.operationId } }
+                  : {}),
+                ...(bindingId ? { bindingId } : {}),
+                occurredAt: new Date().toISOString(),
+              };
         return {
-          command: {
-            target: "control" as const,
-            executionReference: scope.executionReference,
-            operationId,
-            toolCallId: invocationId,
-            nativeCallId,
-            conversationId: scope.piSession.conversationId,
-            toolName: definition.name,
-            arguments: args,
-            contextAnchor: anchor === null ? null : Number(anchor),
-            ...(original
-              ? { recovery: { sequence: original.sequence, operationId: original.operationId } }
-              : {}),
-            ...(bindingId ? { bindingId } : {}),
-            occurredAt: new Date().toISOString(),
-          },
+          command,
           completed: pending.executionSettled,
           dispose: () => waiting.abort(new Error("Control Tool wait ended")),
           result: async () => {
-            const reply = await pending.result;
-            return { ...reply.result, isError: reply.isError };
+            try {
+              const reply = await pending.result;
+              return { ...reply.result, isError: reply.isError };
+            } catch (error) {
+              if (signal?.aborted) throw signal.reason;
+              if (deadline?.aborted && error === deadline.reason) {
+                const failure = new ToolExecutionFailure({
+                  code: "tool_reply_timeout",
+                  effect: "unknown",
+                  message:
+                    "No final device reply arrived. The action may have happened; inspect the device before repeating it.",
+                });
+                context.onExecutionUnavailable?.(failure);
+                throw failure;
+              }
+              if (
+                environment.kind === "target" &&
+                error instanceof ToolExecutionFailure &&
+                error.effect === "unknown"
+              )
+                context.onExecutionUnavailable?.(error);
+              throw error;
+            }
           },
         };
       };
       return {
         executionPlane: ordinary ? ("platform" as const) : ("orchestration" as const),
         offered:
-          definition.availability === "child"
-            ? scope.sessionKind === "subagent"
-            : definition.availability !== "delegation" ||
-              this.options.maximumDepth === null ||
-              depth < this.options.maximumDepth,
+          environment.kind === "target"
+            ? Boolean(target)
+            : definition.availability === "child"
+              ? scope.sessionKind === "subagent"
+              : definition.availability !== "delegation" ||
+                this.options.maximumDepth === null ||
+                depth < this.options.maximumDepth,
         tool: {
           ...definition,
           async execute() {
@@ -305,7 +398,7 @@ export class WorkerToolRuntime {
                   description: definition.description,
                   parameters: definition.parameters as import("typebox").TSchema,
                   replay: "unsafe",
-                  ...(definition.requiresEnvironment ? { requiresEnvironment: true as const } : {}),
+                  environment: definition.environment,
                 },
                 true,
               ),

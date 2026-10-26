@@ -57,7 +57,7 @@ function parseArguments(argv) {
       if (argument === "--cache-dir") result.cacheDirectory = resolve(repositoryRoot, value);
       if (argument === "--image-version") result.imageVersion = value;
       if (argument === "--component") {
-        if (!["all", "provider", "web", "control-plane"].includes(value))
+        if (!["all", "provider", "web", "control-plane", "android"].includes(value))
           throw new Error("Unsupported evidence scope");
         result.component = value;
       }
@@ -70,7 +70,7 @@ function parseArguments(argv) {
     }
     if (argument === "--help") {
       process.stdout.write(
-        "Usage: npm run release:evidence -- [--output-dir EMPTY_PATH] [--cache-dir PATH] [--image-version VERSION] [--component all|provider|web|control-plane] [--allow-dirty]\n",
+        "Usage: npm run release:evidence -- [--output-dir EMPTY_PATH] [--cache-dir PATH] [--image-version VERSION] [--component all|provider|web|control-plane|android] [--allow-dirty]\n",
       );
       process.exit(0);
     }
@@ -162,6 +162,7 @@ function trivyContainerArguments({
   outputDirectory,
   network,
   temporaryMiB = 256,
+  temporaryDiskDirectory,
 }) {
   const uid = process.getuid?.() ?? 1_000;
   const gid = process.getgid?.() ?? 1_000;
@@ -182,8 +183,9 @@ function trivyContainerArguments({
     "no-new-privileges:true",
     "--user",
     `${String(uid)}:${String(gid)}`,
-    "--tmpfs",
-    `/tmp:rw,noexec,nosuid,nodev,size=${temporaryMiB}m`,
+    ...(temporaryDiskDirectory
+      ? ["--mount", `type=bind,source=${temporaryDiskDirectory},target=/tmp`]
+      : ["--tmpfs", `/tmp:rw,noexec,nosuid,nodev,size=${temporaryMiB}m`]),
     "--mount",
     `type=bind,source=${cacheDirectory},target=/cache`,
     "--mount",
@@ -280,36 +282,68 @@ try {
       : []),
   ]);
 
+  if (options.component === "android") {
+    // The Java index downloader keeps multiple archive copies. Use owned disk
+    // scratch, not a multi-GiB tmpfs competing with running VMs.
+    const javaScratch = resolve(temporaryDirectory, "java-download");
+    await mkdir(javaScratch, { mode: 0o700 });
+    await run("docker", [
+      ...trivyContainerArguments({
+        cacheDirectory: options.cacheDirectory,
+        inputDirectory: temporaryDirectory,
+        outputDirectory: stageDirectory,
+        network: proxyDownloadNetwork(
+          process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY,
+          process.env.PI_CLOUD_TRIVY_DOWNLOAD_NETWORK,
+        ),
+        temporaryDiskDirectory: javaScratch,
+      }),
+      "image",
+      "--cache-dir",
+      "/cache",
+      "--download-java-db-only",
+      "--no-progress",
+    ]);
+  }
+
   const images = [];
   const guestIdentity =
     options.component === "all" ? await guestBuildIdentity(repositoryRoot) : undefined;
   const imageDescriptors =
-    options.component !== "all"
-      ? [
-          {
-            imageName: imageReleaseTargets[options.component].imageName,
-            reference: `pi-cloud/${imageReleaseTargets[options.component].imageName}:${options.imageVersion}`,
-            labelVersion: options.imageVersion,
-          },
-        ]
-      : [
-          ...PRODUCTION_IMAGE_NAMES.map((imageName) => ({
+    options.component === "android"
+      ? ["android-runtime", "android-automation", "android-executor", "android-egress"].map(
+          (imageName) => ({
             imageName,
             reference: `pi-cloud/${imageName}:${options.imageVersion}`,
             labelVersion: options.imageVersion,
-          })),
-          ...CUBE_PLATFORM_IMAGES.map((imageName) => ({
-            imageName,
-            reference: `pi-cloud/${imageName}:${options.imageVersion}`,
-            labelVersion: options.imageVersion,
-          })),
-          {
-            imageName: "cubesandbox-tool",
-            reference: `localhost:5000/pi-cloud/cubesandbox-tool:${guestIdentity}`,
-            labelVersion: "cube-primary",
-            guestIdentity,
-          },
-        ];
+          }),
+        )
+      : options.component !== "all"
+        ? [
+            {
+              imageName: imageReleaseTargets[options.component].imageName,
+              reference: `pi-cloud/${imageReleaseTargets[options.component].imageName}:${options.imageVersion}`,
+              labelVersion: options.imageVersion,
+            },
+          ]
+        : [
+            ...PRODUCTION_IMAGE_NAMES.map((imageName) => ({
+              imageName,
+              reference: `pi-cloud/${imageName}:${options.imageVersion}`,
+              labelVersion: options.imageVersion,
+            })),
+            ...CUBE_PLATFORM_IMAGES.map((imageName) => ({
+              imageName,
+              reference: `pi-cloud/${imageName}:${options.imageVersion}`,
+              labelVersion: options.imageVersion,
+            })),
+            {
+              imageName: "cubesandbox-tool",
+              reference: `localhost:5000/pi-cloud/cubesandbox-tool:${guestIdentity}`,
+              labelVersion: "cube-primary",
+              guestIdentity,
+            },
+          ];
   for (const { imageName, ...descriptor } of imageDescriptors) {
     const { reference } = descriptor;
     const evidence = await inspectReleaseImage(

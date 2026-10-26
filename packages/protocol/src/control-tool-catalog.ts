@@ -1,20 +1,21 @@
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { isControlToolName } from "./control-tools.ts";
+import { ToolEnvironmentRequirementSchema } from "./execution-target.ts";
 
 export const ControlToolCatalogDefinitionSchema = Type.Object(
   {
     name: Type.String({ pattern: "^[a-z][a-z0-9_-]{0,63}$" }),
     description: Type.String({ minLength: 1 }),
     parameters: Type.Record(Type.String(), Type.Unknown()),
-    requiresEnvironment: Type.Boolean(),
+    environment: ToolEnvironmentRequirementSchema,
   },
   { additionalProperties: false },
 );
 export type ControlToolCatalogDefinition = Static<typeof ControlToolCatalogDefinitionSchema>;
 export const ControlToolCatalogSchema = Type.Object(
   {
-    version: Type.Literal(1),
+    version: Type.Literal(2),
     revision: Type.String({ pattern: "^[a-f0-9]{64}$" }),
     tools: Type.Array(ControlToolCatalogDefinitionSchema),
   },

@@ -5,6 +5,11 @@ import { SubagentController } from "./subagent-controller.ts";
 import { PlatformRuntimeSettingsService } from "./platform-runtime-settings.ts";
 import { ControlToolDispatcher } from "./control-tool-dispatcher.ts";
 import { createOrdinaryToolRegistry } from "./ordinary-tools/registry.ts";
+import { ExecutionTargetService, ExecutionBindingView } from "./execution-target-service.ts";
+import { ExecutionTargetIngress } from "./execution-target-ingress.ts";
+import { ExecutorDispatcher } from "./executor-dispatcher.ts";
+import { executionToolCatalog } from "./execution-tool-catalog.ts";
+import { HttpExecutorTransport } from "@pi-cloud/sandbox-control";
 import { ImageGenerationClient } from "./ordinary-tools/image-generation-client.ts";
 import { isControlToolName } from "@pi-cloud/protocol";
 import { createDatabase } from "@pi-cloud/database";
@@ -113,6 +118,9 @@ export async function startControlPlane(): Promise<void> {
   let imageReaper: ImageAttachmentReaper | undefined;
   let queueDatabase: ReturnType<typeof createDatabase> | undefined;
   let conversationDatabase: ReturnType<typeof createDatabase> | undefined;
+  let executorTransport: HttpExecutorTransport | undefined;
+  let executorCleanupTimer: ReturnType<typeof setInterval> | undefined;
+  let executorCleanup: Promise<void> | undefined;
   let queueViews: InputQueueView | undefined;
   let sourceControlDispatcher: EnvHttpProxyAgent | undefined;
   let internalSourceControlDispatcher: Agent | undefined;
@@ -128,6 +136,11 @@ export async function startControlPlane(): Promise<void> {
       () => queueViews?.close(),
       () => queueDatabase?.destroy(),
       () => runtime?.close(),
+      async () => {
+        clearInterval(executorCleanupTimer);
+        await executorCleanup;
+        await executorTransport?.close();
+      },
       () => conversationDatabase?.destroy(),
       () => developmentEnvironmentService?.close(),
       () => operationalMetrics?.close(),
@@ -305,6 +318,34 @@ export async function startControlPlane(): Promise<void> {
     });
     queueViews = inputQueues;
     const { bindingView, consumeBindingChange } = sandboxControl;
+    executorTransport = new HttpExecutorTransport(config.supervisorManagementToken);
+    const executionTargets = new ExecutionTargetService({
+      database,
+      transport: executorTransport,
+      publish: (ids) => controlChanges.flushEntities("execution_binding", ids),
+    });
+    const executionBindings = new ExecutionBindingView(executionTargets, config.kafkaPartitions);
+    const executorDispatcher = new ExecutorDispatcher({
+      cube: sandboxControl.dispatcher,
+      routes: executionBindings,
+      transport: executorTransport,
+      publish: (topic, reply) => sandboxControl!.publishReply(topic, reply),
+    });
+    executorCleanupTimer = setInterval(() => {
+      executorCleanup ??= executionTargets
+        .cleanup()
+        .catch(() =>
+          operationalLog({
+            service: "pi-cloud-control-plane",
+            level: "warn",
+            event: "executor.cleanup_unavailable",
+          }),
+        )
+        .finally(() => {
+          executorCleanup = undefined;
+        });
+    }, 2000);
+    executorCleanupTimer.unref();
     agentEvents = new SessionProjector({
       publicationToken: config.supervisorManagementToken,
       projectionGate: quiescence,
@@ -330,24 +371,30 @@ export async function startControlPlane(): Promise<void> {
         },
         close: () => subagents.close(),
       },
-      toolCommands: sandboxControl.dispatcher,
+      toolCommands: executorDispatcher,
       controlTools,
       executionProbes: sandboxControl.probes,
       runtimeRetention: sandboxControl.retention,
       controlChanges: {
         load: async (partitions, current) => {
           await bindingView.load(partitions, current);
+          if (current()) await executionBindings.load(partitions, current);
           if (current()) await controlTools.recover(partitions, current);
         },
         reset: () => {
           bindingView.reset();
+          executionBindings.reset();
           inputQueues.reset();
           subagents.reset();
           controlTools.reset();
         },
-        prepare: (change, current) => bindingView.prepare(change, current),
+        prepare: async (change, current) => {
+          await bindingView.prepare(change, current);
+          await executionBindings.prepare(change, current);
+        },
         consume: async (change, current, position) => {
           await consumeBindingChange(change, current, position);
+          await executionBindings.consume(change, current);
           if (current()) controlTools.wake(change.scope.tenantId, change.scope.piSessionId);
           inputQueues.consume(change, current);
         },
@@ -547,10 +594,15 @@ export async function startControlPlane(): Promise<void> {
       readTimeoutMs: 5000,
     });
     runtime = await createControlPlaneRuntime({
+      executionTargets,
+      executionTargetIngress: new ExecutionTargetIngress(
+        executionTargets,
+        config.supervisorManagementToken,
+      ),
       conversationReadDatabase: conversationDatabase,
       platformRuntimeSettings,
       gateway: {
-        toolCatalog: ordinaryTools,
+        toolCatalog: executionToolCatalog(ordinaryTools),
         runtimeConfiguration: async () => ({
           publicEgress: await platformRuntimeSettings.publicEgress(),
         }),

@@ -1,0 +1,17 @@
+# Operator-owned per-target settings. No endpoint/device credentials enter Android.
+targetId: ""
+nodeName: ""
+vsockCid: 20003
+artifactDirectory: ""
+hostDirectory: ""
+stateDirectory: ""
+existingSecret: pi-cloud-platform-secrets
+controlPlaneUrl: http://control-plane:8080
+kafkaBrokers: kafka-1:9092,kafka-2:9092,kafka-3:9092
+imageEndpoint: http://session-images:8333
+imageBucket: pi-cloud-session-images
+images:
+  runtime: ""
+  automation: ""
+  executor: ""
+  egress: ""

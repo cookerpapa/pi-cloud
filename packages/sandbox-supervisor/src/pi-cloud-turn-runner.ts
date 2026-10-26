@@ -593,7 +593,8 @@ export class PiCloudTurnRunner {
                 cwd: p.workingDirectory,
                 thinkingLevel: resolveAgentProfile(p.model.thinkingLevel).thinkingLevel,
               },
-        remoteTools: tools.tools.filter((tool) => tool.prepareExecution).map((tool) => tool.name),
+        remoteTools: () =>
+          tools.tools.filter((tool) => tool.prepareExecution).map((tool) => tool.name),
         tools: tools.tools.filter((tool) => !tool.prepareExecution),
         assertCurrent: () => owner.authority.assertCurrent(),
         ...(p.stopOnResume || options.beforeEffect

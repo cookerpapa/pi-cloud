@@ -1,7 +1,19 @@
 import type { ToolSandboxOperationRequest } from "./tool-sandbox.ts";
 import type { CandidateControlToolCommand } from "./control-tool-command.ts";
+import type { CandidateExecutorToolCommand } from "./execution-target.ts";
 
-export type CandidateToolEffect = CandidateToolCommand | CandidateControlToolCommand;
+export type CandidateToolEffect =
+  CandidateToolCommand | CandidateControlToolCommand | CandidateExecutorToolCommand;
+export function isExecutorToolCommand(
+  command: CandidateToolEffect,
+): command is CandidateExecutorToolCommand {
+  return "target" in command && command.target === "executor";
+}
+export function isNamedToolCommand(
+  command: CandidateToolEffect,
+): command is CandidateControlToolCommand | CandidateExecutorToolCommand {
+  return "target" in command;
+}
 export function isControlToolCommand(
   command: CandidateToolEffect,
 ): command is CandidateControlToolCommand {

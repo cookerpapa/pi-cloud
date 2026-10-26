@@ -37,7 +37,7 @@ export const showImageToolDefinition = {
   name: "show_image",
   description:
     "Display an existing image from the current Sandbox to the user in the conversation. Use this for screenshots, diagrams, artwork or an existing generated file when the user wants to see it, or when showing a visual result helps explain your work. This Tool does not generate or modify images. The application presents the returned image inline even when Tool details are collapsed; describe it without embedding a duplicate Markdown image. Use read for model-only visual inspection.",
-  requiresEnvironment: true,
+  environment: { kind: "workspace" as const },
   parameters: {
     type: "object",
     properties: {
@@ -117,7 +117,7 @@ export const imageToolDefinition = {
   name: "generate_image",
   description:
     "Generate or edit one image using the configured image service. Provide prompt and optionally reference images: use referenced_image_paths for files accessible in the current Sandbox, or num_last_images_to_include for the last 1–5 images visible in this Conversation. Never use both. Omit both for a new image from text. Inspect local references with read before editing. Set transparent_background for transparent assets. The Tool saves a new file under generated_images in the current working directory and returns the image and actual path. The application presents the returned image inline; do not embed another copy or call show_image merely to repeat it. Copy the saved file into the project when needed. Do not call again merely because a previous result is UNKNOWN.",
-  requiresEnvironment: true,
+  environment: { kind: "workspace" as const },
   parameters: {
     type: "object",
     properties: {

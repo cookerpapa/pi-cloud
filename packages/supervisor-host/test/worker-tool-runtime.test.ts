@@ -329,3 +329,110 @@ it("cancels outstanding workflow host calls and rejects late callbacks after dis
   expect(f.control.request).toHaveBeenCalledOnce();
   f.mailbox.close();
 });
+
+it("offers phone capabilities only to the granted root and lazily prepares its own destination", async () => {
+  const { androidToolDefinitions, ANDROID_CAPABILITIES } = await import("@pi-cloud/protocol");
+  const { WorkerToolCatalog } = await import("../src/tools/worker-tool-catalog.ts");
+  const { controlToolCatalog } = await import("@pi-cloud/control-plane");
+  const catalog = new WorkerToolCatalog();
+  catalog.update(controlToolCatalog(androidToolDefinitions()));
+  const mailbox = new ToolReplyMailbox();
+  const prepareTarget = vi.fn(async () => crypto.randomUUID());
+  const runtime = new WorkerToolRuntime({
+    catalog,
+    prepareTarget,
+    maximumDepth: null,
+    control: {
+      request: async () => {
+        throw Error("Not a child command");
+      },
+    },
+    nativeConversations: {
+      originalControlIntent: async () => {
+        throw Error("No replay");
+      },
+      childAnchor: async () => {
+        throw Error("Phone Tools do not need native ancestry");
+      },
+      conversationDepth: async () => 0,
+    },
+    wait: (id, callId, name, signal, scope) =>
+      restoreToolReply(mailbox.wait(id, callId, name, signal), undefined, scope, signal),
+  });
+  const granted = {
+    ...command,
+    payload: {
+      ...command.payload,
+      executionTargets: [
+        {
+          targetId: crypto.randomUUID(),
+          revision: "1",
+          name: "phone",
+          kind: "android" as const,
+          capabilities: [...ANDROID_CAPABILITIES],
+        },
+      ],
+    },
+  };
+  const prepareEnvironment = vi.fn(async () => {
+    throw Error("Phone tools must not allocate Cube");
+  });
+  const context = {
+    command: granted,
+    prepareEnvironment,
+    prepareWorkflow: async () => {
+      throw Error("No workflow");
+    },
+  };
+  const root = await runtime.create(context);
+  expect(
+    root
+      .current()
+      .filter((t) => t.offered && t.tool.name.startsWith("android_"))
+      .map((t) => t.tool.name),
+  ).toHaveLength(6);
+  const child = await runtime.create({
+    ...context,
+    command: { ...granted, payload: { ...granted.payload, sessionKind: "subagent" } },
+  });
+  expect(
+    child.current().filter((t) => t.offered && t.tool.name.startsWith("android_")).length,
+  ).toBe(0);
+  const bare = await runtime.create({ ...context, command });
+  expect(bare.current().filter((t) => t.offered && t.tool.name.startsWith("android_")).length).toBe(
+    0,
+  );
+  expect(prepareTarget).not.toHaveBeenCalled();
+  const tool = root.current().find((t) => t.tool.name === "android_observe")!
+    .tool as PreparedAgentTool;
+  const prepared = await withToolInvocation({ id: "task:8", nativeToolCallId: "phone-call" }, () =>
+    tool.prepareExecution!("phone-call", {}),
+  );
+  expect(prepared.command).toMatchObject({ target: "executor", toolName: "android_observe" });
+  expect(prepareTarget).toHaveBeenCalledTimes(1);
+  expect(prepareEnvironment).not.toHaveBeenCalled();
+  if (!("operationId" in prepared.command)) throw Error("Wrong target");
+  mailbox.accept({
+    kind: "tool_result",
+    sequence: 1,
+    operationId: prepared.command.operationId,
+    result: {
+      toolName: "android_observe",
+      toolCallId: "phone-call",
+      isError: false,
+      result: { content: [{ type: "text", text: "screen" }] },
+    },
+  });
+  await expect(prepared.result()).resolves.toMatchObject({
+    content: [{ type: "text", text: "screen" }],
+  });
+  prepared.dispose();
+  catalog.update(controlToolCatalog([]));
+  expect(root.current().some((t) => t.tool.name === "android_observe")).toBe(false);
+  await expect(
+    withToolInvocation({ id: "task:9", nativeToolCallId: "old-call" }, () =>
+      tool.prepareExecution!("old-call", {}),
+    ),
+  ).rejects.toThrow("withdrawn");
+  mailbox.close();
+});

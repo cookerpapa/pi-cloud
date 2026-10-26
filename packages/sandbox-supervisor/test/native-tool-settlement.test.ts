@@ -89,7 +89,7 @@ async function fixture(
     model: provider.getModel(),
     agent: {},
     context: {},
-    remoteTools: [name],
+    remoteTools: () => [name],
     tools: [],
     assertCurrent: async () => {},
     openModel: async ({ options }: { options: object }) => ({

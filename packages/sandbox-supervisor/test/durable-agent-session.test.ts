@@ -129,7 +129,7 @@ async function fixture(
         ? { selectedThinkingLevel: options.selectedThinkingLevel }
         : {}),
     },
-    remoteTools: [name],
+    remoteTools: () => [name],
     tools: options.tools ?? [],
     assertCurrent: async () => {},
     openModel: async ({ options: request }) => ({
@@ -372,7 +372,7 @@ it("restores an interrupted unsafe Tool without replay and waits for the recover
       model: provider.getModel(),
       agent: {},
       context: {},
-      remoteTools: ["bash"],
+      remoteTools: () => ["bash"],
       tools: [],
       assertCurrent: async () => {},
       prepareRemote: async () => {
@@ -504,7 +504,7 @@ it.each(["reply", "abort", "early-answer"] as const)(
         model,
         agent: {},
         context: {},
-        remoteTools: [],
+        remoteTools: () => [],
         tools: definitions,
         assertCurrent: async () => {},
         prepareRemote: async () => {

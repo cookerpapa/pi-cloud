@@ -1,0 +1,5 @@
+apiVersion: v2
+name: pi-cloud-android
+description: One explicitly provisioned KVM Android execution target
+type: application
+version: 0.1.0

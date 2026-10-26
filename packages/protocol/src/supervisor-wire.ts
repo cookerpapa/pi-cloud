@@ -1,4 +1,5 @@
 import { ModelRuntimeSnapshotSchema } from "./model-catalog.ts";
+import { ExecutionTargetGrantsSchema } from "./execution-target.ts";
 import { ResourceLimitSchema } from "./protocol-primitives.ts";
 import { MAX_AGENT_INPUT_CHARACTERS, assertUserInputBudget } from "./agent-input-budget.ts";
 import { Type, type Static } from "typebox";
@@ -195,6 +196,7 @@ export const ExecuteTurnCommandMessageSchema = Type.Object(
           pattern: "^/",
         }),
         toolCapabilities: CloudToolCapabilitySnapshotSchema,
+        executionTargets: Type.Optional(ExecutionTargetGrantsSchema),
         agentSystemPrompt: Type.Optional(
           Type.String({ minLength: 1, maxLength: MAX_AGENT_INPUT_CHARACTERS }),
         ),

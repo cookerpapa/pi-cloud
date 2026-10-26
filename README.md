@@ -1,5 +1,9 @@
 # PiCloud
 
+[Android execution targets](docs/ANDROID_EXECUTION.md) are an implementation candidate under ADR-0279.
+A coding Session can bind an operator-provisioned Android device, with capability-scoped
+root tools and replies through the existing Kafka path. Deployment acceptance is pending.
+
 A self-hosted, multi-tenant coding agent. Pi Durable 1.0.0 runs the native Harness in a shared
 Worker pool; file and shell tools execute in isolated CubeSandbox KVM guests.
 

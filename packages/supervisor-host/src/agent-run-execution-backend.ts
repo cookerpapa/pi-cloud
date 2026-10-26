@@ -403,6 +403,9 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           sandboxProfileKey: request.sandboxProfileKey,
           workingDirectory: request.workingDirectory,
           toolCapabilities: request.toolCapabilities,
+          ...(request.executionTargets?.length
+            ? { executionTargets: request.executionTargets }
+            : {}),
           ...(request.agentSystemPrompt === undefined
             ? {}
             : { agentSystemPrompt: request.agentSystemPrompt }),

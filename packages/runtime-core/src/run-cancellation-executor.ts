@@ -1,3 +1,4 @@
+import { parseExecutionTargetGrants } from "@pi-cloud/protocol";
 import { parseModelRuntimeSnapshot } from "@pi-cloud/protocol";
 import { databaseTime, type Database } from "@pi-cloud/database";
 import {
@@ -378,6 +379,7 @@ export class RunCancellationExecutor {
           "run.sandbox_profile_key as sandboxProfileKey",
           "run.working_directory as workingDirectory",
           "run.tool_capability_snapshot as toolCapabilitySnapshot",
+          "run.execution_target_snapshot as executionTargetSnapshot",
           "environment.id as environmentVersionId",
           "environment.version_number as environmentVersionNumber",
           "environment.profile_key as environmentProfileKey",
@@ -475,6 +477,7 @@ export class RunCancellationExecutor {
             sandboxProfileKey: row.sandboxProfileKey,
             workingDirectory: row.workingDirectory,
             toolCapabilities: parseCloudToolCapabilitySnapshot(row.toolCapabilitySnapshot),
+            executionTargets: parseExecutionTargetGrants(row.executionTargetSnapshot),
             model: {
               profileId: row.modelProfileId,
               provider: row.provider,

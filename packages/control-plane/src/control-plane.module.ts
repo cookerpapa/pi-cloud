@@ -36,11 +36,13 @@ import { ConversationTreeService } from "./conversation-tree-service.ts";
 import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
 import { SourceControlService } from "./source-control-service.ts";
+import { ExecutionTargetService } from "./execution-target-service.ts";
 
 export type ControlPlaneModuleOptions = Omit<
   ControlPlaneStoreOptions,
   "tenantId" | "defaultModelProfileId"
 > & {
+  executionTargets?: ExecutionTargetService;
   sessionEventStreamOptions?: SessionEventStreamOptions;
   eventRuntime: ControlPlaneEventRuntime;
   staticRequestIdentity?: TenantRequestIdentity;
@@ -107,6 +109,11 @@ export class ControlPlaneModule {
       module: ControlPlaneModule,
       controllers: [ControlPlaneController],
       providers: [
+        {
+          provide: ExecutionTargetService,
+          useValue:
+            options.executionTargets ?? new ExecutionTargetService({ database: options.database }),
+        },
         {
           provide: SessionImageReader,
           useValue: new SessionImageReader(options.database, options.imageAttachmentStore),

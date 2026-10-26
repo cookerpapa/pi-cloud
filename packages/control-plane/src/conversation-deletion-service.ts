@@ -1,3 +1,4 @@
+import { unbindSessionTargets } from "./unbind-session-targets.ts";
 import type { Database } from "@pi-cloud/database";
 import {
   deletePostgresPiSessionsInTransaction,
@@ -74,6 +75,7 @@ export class ConversationDeletionService {
           .limit(1)
           .executeTakeFirst();
         if (children) throw new ConversationDeletionError("Delegated work is still active");
+        await unbindSessionTargets(transaction, tenantId, ids);
 
         await transaction
           .deleteFrom("outbox")

@@ -1,3 +1,4 @@
+import * as executionTargets from "./201_execution_targets.ts";
 import * as durableRuntimeRevision from "./180_durable_runtime_revision.ts";
 import * as durableExecutionRecovery from "./179_durable_execution_recovery.ts";
 import * as durableConversationBinding from "./178_durable_conversation_binding.ts";
@@ -383,6 +384,7 @@ export const migrationProvider: MigrationProvider = {
       "198_resource_intent": resourceIntent,
       "199_conversation_commands": conversationCommands,
       "200_conversation_history_windows": conversationHistoryWindows,
+      "201_execution_targets": executionTargets,
     };
   },
 };

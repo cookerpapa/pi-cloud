@@ -4309,3 +4309,20 @@ body.product-panel-resizing {
   font-size: 11px;
   padding: 6px 12px;
 }
+
+.product-device-modal {
+  max-height: 88vh;
+  overflow: auto;
+}
+.product-device-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+}
+.product-device-screen {
+  display: block;
+  max-width: 100%;
+  max-height: 60vh;
+  margin: 16px auto 0;
+  object-fit: contain;
+}

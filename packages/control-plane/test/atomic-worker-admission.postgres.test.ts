@@ -905,7 +905,9 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     await store.acceptTurn(f.session.sessionId, randomUUID(), { prompt: "follow-up" });
     // The driver adds BEGIN/COMMIT outside Kysely's query-plugin callbacks.
     // ADR-0215 removes the queue-count query; Session ordering still holds its lock.
-    expect(queries).toHaveLength(5);
+    // One admission read freezes optional external device grants for the Run.
+    expect(queries).toHaveLength(6);
+    expect(queries.filter((q) => q.includes("from execution_targets"))).toHaveLength(1);
     expect(
       queries.filter((q) => q.startsWith('select count(*)::int as "count" from "runs"')),
     ).toHaveLength(0);

@@ -43,7 +43,7 @@
     "cubesandbox:ps": "node scripts/production-kubernetes.mjs status",
     "cubesandbox:logs": "node scripts/production-kubernetes.mjs logs",
     "cubesandbox:down": "node scripts/production-kubernetes.mjs down",
-    "helm:check": "node scripts/check-helm-pi-worker-pool.mjs && node scripts/check-helm-platform.mjs && node scripts/check-distributed-values-policy.mjs && node scripts/check-distributed-preflight.mjs && node scripts/check-helm-self-hosted.mjs",
+    "helm:check": "node scripts/check-helm-pi-worker-pool.mjs && node scripts/check-helm-platform.mjs && node scripts/check-distributed-values-policy.mjs && node scripts/check-distributed-preflight.mjs && node scripts/check-helm-self-hosted.mjs && node scripts/check-helm-android.mjs",
     "observability:check": "node scripts/check-observability.mjs",
     "image:closure-check": "node scripts/check-supervisor-image-closure.mjs",
     "image:context-check": "node scripts/check-docker-build-context.mjs",
@@ -129,7 +129,8 @@
     "test:transport": "node scripts/run-transport-integration.mjs",
     "release:component": "node --import tsx scripts/run-component-release.mjs",
     "release:check": "node scripts/run-release-scope-check.mjs",
-    "browser:history:check": "node scripts/run-with-test-postgres.mjs -- node node_modules/tsx/dist/cli.mjs --tsconfig packages/control-plane/tsconfig.json scripts/run-history-window-check.mjs"
+    "browser:history:check": "node scripts/run-with-test-postgres.mjs -- node node_modules/tsx/dist/cli.mjs --tsconfig packages/control-plane/tsconfig.json scripts/run-history-window-check.mjs",
+    "android:prepare": "node scripts/prepare-android-target.mjs"
   },
   "devDependencies": {
     "@earendil-works/chord": "1.0.0",

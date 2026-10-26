@@ -136,6 +136,7 @@ export type RemoteToolSandboxTurnRunnerOptions = {
     context: Readonly<{
       prepareWorkflow: WorkflowPreparer;
       prepareEnvironment(): Promise<string>;
+      onExecutionUnavailable(failure: { code: string; message: string }): void;
     }>,
   ) => Promise<TrustedAgentToolSet> | TrustedAgentToolSet;
   acquireModelPermit?: (
@@ -426,6 +427,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           input: request.input,
           workingDirectory: view.workingDirectory,
           toolCapabilities: view.toolCapabilities,
+          executionTargets: [],
           agentSystemPrompt: view.agentSystemPrompt,
           ...(view.computeSessionId ? { computeSessionId: view.computeSessionId } : {}),
         },
@@ -698,6 +700,9 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           return prepareWorkflow(...args);
         },
         prepareEnvironment: async () => (await ensureActivation()).activationId,
+        onExecutionUnavailable: (failure) => {
+          toolRuntimeFailure ??= new PiTurnError(failure.code, failure.message, false);
+        },
       })) ?? { current: () => [] as readonly TrustedAgentTool[], subscribe: () => () => {} };
       const trustedTools = () =>
         trustedToolBindings
@@ -764,6 +769,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       let recordPreparedInput: (() => Promise<void>) | undefined;
       const runner = new PiCloudTurnRunner({
         beforeEffect: async (effectSignal) => {
+          if (toolRuntimeFailure) throw toolRuntimeFailure;
           const family = this.#families.get(command.payload.executionReference);
           if (!family) throw new Error("Native Session work is closing");
           await awaitWithContext(

@@ -287,7 +287,7 @@ describe.sequential("authenticated supervisor WebSocket transport", () => {
           name: "new_tool",
           description: "New remote tool",
           parameters: { type: "object", properties: {} },
-          requiresEnvironment: false,
+          environment: { kind: "none" as const },
         },
         async execute() {
           return { result: { content: [] } };

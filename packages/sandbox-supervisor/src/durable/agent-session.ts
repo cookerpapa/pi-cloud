@@ -122,7 +122,7 @@ export type DurableRunConfiguration = {
   autoCompactTokenLimit?: number;
   agent: Omit<AgentChange, "model" | "tools" | "extensions">;
   context: Record<string, JsonValue>;
-  remoteTools: readonly string[];
+  remoteTools: () => readonly string[];
   tools: readonly ToolRegistration[];
   assertCurrent(): Promise<void>;
   beforeEffect?(signal?: AbortSignal): Promise<void>;
@@ -145,6 +145,7 @@ export class DurableAgentSession {
   readonly #abort = new AbortController();
   readonly #registry = createRegistry();
   readonly #installed = new Set<string>();
+  #selectionUpdate: Promise<void> = Promise.resolve();
   readonly #unsubscribeTools: (() => void) | undefined;
   readonly #controlPublications = new Map<
     string,
@@ -239,6 +240,35 @@ export class DurableAgentSession {
         hooks: [this.remote.hook],
       }),
     );
+    if (this.#bindings.size) {
+      this.#selectionUpdate = this.#selectionUpdate.then(async () => {
+        for (const run of this.#bindings.values()) {
+          if (this.#abort.signal.aborted || this.#bindings.get(run.conversationId) !== run)
+            continue;
+          const conversation = await this.#harness.conversation(
+            run.conversationId as ConversationId,
+            BACKGROUND_CONTEXT,
+          );
+          if (!conversation) continue;
+          await conversation.commit(async (tx) => {
+            if (this.#bindings.get(run.conversationId) !== run) return;
+            const wanted = [
+              ...this.remote.definitions.filter((tool) => run.remoteTools().includes(tool.name)),
+              ...run.tools,
+            ];
+            const state = await tx.doc(AgentDoc, conversation.id);
+            if (
+              !isDeepStrictEqual(
+                state.tools,
+                wanted.map((t) => t.name),
+              )
+            )
+              await configure(tx, conversation.id, { tools: wanted });
+          }, BACKGROUND_CONTEXT);
+        }
+      });
+      void this.#selectionUpdate.catch((error) => this.#abort.abort(error));
+    }
   }
   async #prepareRemote(invocation: RemoteInvocation): Promise<PreparedRemoteInvocation> {
     const id = this.#conversations.get(invocation.conversationId);
@@ -426,9 +456,10 @@ export class DurableAgentSession {
               extension.name === "pi-cloud-remote-tools" ||
               run.tools.some((tool) => extension.name === `pi-cloud-tool:${tool.name}`),
           ),
-        tools: {
-          remove: this.remote.definitions.filter((tool) => !run.remoteTools.includes(tool.name)),
-        },
+        tools: [
+          ...this.remote.definitions.filter((tool) => run.remoteTools().includes(tool.name)),
+          ...run.tools,
+        ],
       });
     }, BACKGROUND_CONTEXT);
     for (const wake of this.#waiters.get(`${run.runId}:${run.conversationId}`) ?? []) wake();
@@ -689,6 +720,7 @@ export class DurableAgentSession {
     this.#unsubscribeTools?.();
     this.#abort.abort(new Error("Native Session owner closed"));
     try {
+      await this.#selectionUpdate.catch(() => {});
       await this.#harness.close(BACKGROUND_CONTEXT);
     } finally {
       this.remote.close();

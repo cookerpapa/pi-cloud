@@ -114,7 +114,6 @@ export type InfrastructureToolDefinition = {
   parameters: TSchema;
   replay?: "safe" | "unsafe";
   prepareArguments?(value: unknown): unknown;
-  requiresEnvironment?: true;
   availability?: "child" | "delegation";
   inheritedContext?(args: Record<string, unknown>): boolean;
   workflowScript?(args: Record<string, unknown>): string | undefined;

@@ -50,7 +50,7 @@ async function fixture() {
     agent: {},
     context: {},
     tools: [],
-    remoteTools: [],
+    remoteTools: () => [],
     assertCurrent: async () => {},
     prepareRemote: async () => {
       throw new Error("No tool expected");

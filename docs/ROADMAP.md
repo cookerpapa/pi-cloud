@@ -1,5 +1,14 @@
 # Implementation roadmap
 
+## Cloud Android execution target — in progress
+
+- [x] Record ADR-0279: operator-provisioned cloud target, existing Session ownership and direct internal replies.
+- [x] Prove and pin Cuttlefish/AOSP plus Appium UIAutomator2 on the actual host.
+- [x] Separate executor transport from VM lifecycle and preserve Cube contracts.
+- [x] Add idle Session binding, explicit tool capabilities and root-only phone operations.
+- [ ] Complete native/Kafka/image/UI integration, cancellation and crash acceptance.
+- [ ] Publish matched artifacts, demonstrate with Luna and reconcile original resources.
+
 ## Long conversation presentation — completed
 
 - [x] Record ADR-0278 and evaluate pinned TanStack Virtual against existing React/PG interfaces.

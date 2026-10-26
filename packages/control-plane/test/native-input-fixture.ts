@@ -96,7 +96,7 @@ export async function startNativeInputAgent(
     model: faux.getModel(),
     agent: {},
     context: { sessionId: accepted.sessionId, turnId: accepted.turnId },
-    remoteTools: [],
+    remoteTools: () => [],
     tools: [
       {
         name: "hold",

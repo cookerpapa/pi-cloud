@@ -708,3 +708,7 @@ export {
   type NativeCompactResult,
 } from "./conversation-commands.ts";
 export * from "./conversation-history.ts";
+export * from "./execution-target.ts";
+export * from "./android-tools.ts";
+export * from "./executor-transport.ts";
+export { isExecutorToolCommand, isNamedToolCommand } from "./tool-command.ts";

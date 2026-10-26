@@ -108,7 +108,7 @@ describe.sequential("native human inputs and cloud execution records", () => {
     });
   }
 
-  it("uses eight intake queries and two retry queries without rereading the locked Session", async () => {
+  it("uses nine intake queries and two retry queries without rereading the locked Session", async () => {
     const f = await fixture(),
       queries: string[] = [];
     const statements = new WeakMap<object, string>();
@@ -131,7 +131,8 @@ describe.sequential("native human inputs and cloud execution records", () => {
     const first = await accept();
     expect(first.kind).toBe("run");
     // Driver BEGIN/COMMIT are separate; these are completed business statements.
-    expect(queries).toHaveLength(8);
+    expect(queries).toHaveLength(9);
+    expect(queries.filter((q) => q.includes("from execution_targets"))).toHaveLength(1);
     expect(queries.filter((q) => q.includes('from "sessions" as "session_row"'))).toHaveLength(1);
     expect(queries.filter((q) => q.startsWith('with "accepted_run"'))).toHaveLength(1);
     queries.length = 0;

@@ -9,7 +9,10 @@ import { parseKafkaAcceptedFact } from "./kafka-accepted-fact.ts";
 
 export type KafkaAcceptedFactRecord = KafkaLogRecord<AcceptedFact>;
 export type KafkaToolDispatchRecord = KafkaLogRecord<
-  AcceptedFact | AcceptedToolCommand | AcceptedToolCancellation
+  | AcceptedFact
+  | AcceptedToolCommand
+  | AcceptedToolCancellation
+  | import("@pi-cloud/protocol").AcceptedExecutorToolCommand
 >;
 
 export class KafkaAcceptedFactConsumer extends KafkaLogConsumer<AcceptedFact> {

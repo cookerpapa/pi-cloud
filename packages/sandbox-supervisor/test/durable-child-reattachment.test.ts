@@ -100,7 +100,7 @@ it.each(["continue", "stop"] as const)(
         cwd: "/workspace",
       },
       context: child ? { sessionId, turnId, view: { id: "owned-view" } } : {},
-      remoteTools: [],
+      remoteTools: () => [],
       tools,
       assertCurrent: async () => {},
       prepareRemote: async () => {

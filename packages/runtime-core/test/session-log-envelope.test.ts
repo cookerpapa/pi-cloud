@@ -111,3 +111,46 @@ it("shares owner metadata for grouped execution probes", () => {
   expect(wire.execution.bindings[0]).not.toHaveProperty("scope");
   expect(decodeSessionLogFact(JSON.stringify(wire)).fact).toEqual(probe);
 });
+
+it("routes Android using the native intent once, with ordered position and no duplicate arguments", () => {
+  const { fact } = toolInvocationFixture("phone input");
+  const source: import("../src/accepted-fact.ts").AcceptedDurableCommitFact = {
+    ...fact,
+    tools: [
+      {
+        target: "executor",
+        scope: fact.scope,
+        operationId: crypto.randomUUID(),
+        bindingId: crypto.randomUUID(),
+        taskId: 4,
+        conversationId: 1,
+        toolName: "android_input_text",
+        replyTopic: "reply-worker-boot",
+      },
+    ],
+    cancellations: [
+      {
+        kind: "tool_cancel",
+        scope: fact.scope,
+        request: {
+          target: "executor",
+          operationId: crypto.randomUUID(),
+          activationId: crypto.randomUUID(),
+        },
+      },
+    ],
+  };
+  const wire = encodeSessionLogFact(source);
+  expect(JSON.parse(wire).tools[0]).not.toHaveProperty("arguments");
+  const decoded = decodeSessionLogFact(wire);
+  expect(decoded.fact).toEqual(source);
+  expect(decoded.tools[0]).toMatchObject({
+    kind: "executor_tool",
+    operationIndex: 0,
+    nativeCallId: "provider-1",
+    arguments: { content: "phone input" },
+  });
+  const malformed = JSON.parse(wire);
+  malformed.tools[0].arguments = { text: "other input" };
+  expect(() => decodeSessionLogFact(JSON.stringify(malformed))).toThrow();
+});

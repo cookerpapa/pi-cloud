@@ -10,6 +10,8 @@ import {
   durableToolIntent,
   DurableCommitIndex,
   isControlToolCommand,
+  isExecutorToolCommand,
+  isNamedToolCommand,
   PublicationNotSentError,
   type CandidateToolEffect,
   type CandidateToolCancellation,
@@ -72,7 +74,7 @@ export class DurableRemoteTools {
         });
         if (
           prepared.command.toolCallId !== `task:${api.taskId}` ||
-          (isControlToolCommand(prepared.command)
+          (isNamedToolCommand(prepared.command)
             ? prepared.command.toolName
             : (prepared.command.nativeToolName ?? prepared.command.request.toolName)) !== call.name
         ) {
@@ -158,7 +160,15 @@ export class DurableRemoteTools {
         !pending.prepared.completed()
       ) {
         const command = pending.prepared.command;
-        if (!isControlToolCommand(command))
+        if (isExecutorToolCommand(command))
+          cancellations.push({
+            executionReference: command.executionReference,
+            conversationId: task.conversationId,
+            activationId: command.bindingId,
+            operationId: command.operationId,
+            target: "executor",
+          });
+        else if (!isControlToolCommand(command))
           cancellations.push({
             executionReference: command.executionReference,
             conversationId: task.conversationId,
@@ -174,7 +184,7 @@ export class DurableRemoteTools {
       ) {
         const intent = durableToolIntent(commit, task.id, index),
           command = pending.prepared.command;
-        const matches = isControlToolCommand(command)
+        const matches = isNamedToolCommand(command)
           ? command.nativeCallId === intent.callId &&
             isDeepStrictEqual(command.arguments, intent.arguments)
           : command.request.toolCallId === intent.callId &&

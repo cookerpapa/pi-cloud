@@ -3,7 +3,7 @@ import type { ToolTranscriptItem } from "./ToolActivity.tsx";
 import { SessionImage, isSessionImagePath } from "./SessionImage.tsx";
 import { useI18n } from "./i18n.tsx";
 
-const imageTools = new Set(["show_image", "generate_image"]);
+const imageTools = new Set(["show_image", "generate_image", "android_observe"]);
 const object = (value: unknown): Record<string, unknown> | undefined =>
   value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)

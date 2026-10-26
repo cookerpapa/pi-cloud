@@ -53,7 +53,7 @@ async function fixture() {
     model: faux.getModel(),
     agent: {},
     context: { sessionId: randomUUID(), turnId: randomUUID() },
-    remoteTools: [],
+    remoteTools: () => [],
     tools: [
       {
         name: "hold",

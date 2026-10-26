@@ -35,7 +35,7 @@ async function interruptedCompaction() {
     agent: {},
     context: {},
     tools: [],
-    remoteTools: [],
+    remoteTools: () => [],
     assertCurrent: async () => {},
     prepareRemote: async () => {
       throw new Error("No Tool expected");

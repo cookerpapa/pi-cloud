@@ -42,7 +42,9 @@ export function parseSessionLogFact(value: string | Buffer): SessionLogFact {
 
 export type PreparedSessionLogFact = Readonly<{
   fact: SessionLogFact;
-  tools: readonly AcceptedToolCommand[];
+  tools: readonly (
+    AcceptedToolCommand | import("@pi-cloud/protocol").AcceptedExecutorToolCommand
+  )[];
 }>;
 
 export function decodeSessionLogFact(value: string | Buffer): PreparedSessionLogFact {

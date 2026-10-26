@@ -66,7 +66,7 @@ it.each([false, true])(
         model: provider.getModel(),
         agent: {},
         context: {},
-        remoteTools: ["workflow"],
+        remoteTools: () => ["workflow"],
         tools: [],
         assertCurrent: async () => {},
         openModel: async ({ options }) => ({ model: provider.getModel(), options, release() {} }),
