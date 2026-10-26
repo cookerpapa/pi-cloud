@@ -88,5 +88,9 @@ Cover duplicate/multi-instance fire, before/after-commit crash, timezones/DST,
 clock jumps, downtime/overlap/resume, edits/deletion racing admission, queued-Run
 cancellation, unavailable resources, root/child visibility and source rendering.
 Use real Luna for short one-off and busy-Session cases; retain failed samples and
-clean owned fixtures. Schema/protocol/Web changes require a drained matched
+clean owned fixtures. Separately test at least 10,000 synthetic plans with sparse
+and simultaneous deadlines through actual Run admission, not only an indexed
+lookup. Measure admission latency separately from Worker start, and preserve
+API/Projector responsiveness with bounded batches/concurrency. Notifications are
+coalesced; one wait per controller never becomes one timer per plan. Schema/protocol/Web changes require a drained matched
 release, preserving existing user assets and credentials.

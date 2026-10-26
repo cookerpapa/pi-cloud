@@ -61,6 +61,21 @@ Test earlier-plan insertion, moving/deleting the nearest plan, changes while a
 scan is running, missed hints, reconnect and clock jumps. Every wake still admits
 through PG; never hold a transaction open while waiting or spin on contended rows.
 
+Scale acceptance must distinguish plan count from due-arrival rate. Use at least
+10,000 plans in isolated test data: sparse deadlines, a common due instant,
+concentrated versus distributed Session targets, and bursts of edits/deletes.
+A wake processes bounded due batches continuously while work remains; it does
+not create one timer per plan or wait for Agent completion. Coalesce change hints,
+bound admission concurrency and yield so timer backlog cannot starve API/Projector
+work. One invalid or contended plan must not stall unrelated work.
+
+Measure nearest/due-query EXPLAIN/BUFFERS, idle query rate, database/CPU pressure,
+transaction lock waits, timer count/memory, and planned-time-to-Run-admission
+latency separately from Worker-start latency. Assert duplicate-free admissions
+and the documented delete ordering under load/restart. These are planned tests,
+not an existing 10,000-Agent capacity claim; a simple indexed-query microbenchmark
+is insufficient evidence for the complete admission path.
+
 ## 3. Connect the schedule Tool and direct Web management
 
 Register an environment-independent ordinary Tool in the execution-owned registry.

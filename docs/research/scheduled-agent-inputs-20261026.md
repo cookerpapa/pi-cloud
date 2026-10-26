@@ -138,6 +138,30 @@ cannot authorize an obsolete plan. Measure cadence/batch size and ensure contend
 or failed work cannot cause a zero-delay query loop. A due timestamp remains an
 eligibility time rather than a guarantee of instant model output.
 
+## Deadline wake-up and scale clarification
+
+A nearest-deadline wait controls when the dispatcher wakes; it does not contain
+or execute the whole schedule set. At the deadline, dispatch due rows in bounded
+batches and continue while work is due. Wait for a future deadline only after
+that backlog is drained (or an admission/backoff budget requires yielding).
+Coalesce notification bursts rather than issuing a query per notification.
+
+With an appropriate B-tree index, PostgreSQL can retrieve an ordered LIMIT directly
+without sorting/scanning all remaining rows; the actual query plan must be checked.
+[PostgreSQL documentation](https://www.postgresql.org/docs/current/indexes-ordering.html).
+Quartz's scheduler thread likewise acquires a batch and waits until the earliest
+trigger, reacting to schedule-change signals. This is evidence for the waiting
+pattern, not evidence of PiCloud throughput or an instruction to adopt its job store.
+[Quartz source](https://github.com/quartz-scheduler/quartz/blob/main/quartz/src/main/java/org/quartz/core/QuartzSchedulerThread.java).
+
+Ten thousand once-daily plans spread evenly average about seven occurrences per
+minute; ten thousand at one timestamp are a burst of ten thousand admissions.
+The latter must exercise actual PiCloud Run admission, transaction contention,
+Session readiness and API/Projector responsiveness in isolated load tests. Do
+not claim instant Agent starts: Worker/model capacity is a separate bottleneck.
+Keep the proposed deadline/notification/low-frequency fallback design until
+measurements identify a specific need for a different mechanism.
+
 ## Management and acceptance
 
 A future ordinary platform Tool can create/list/update/pause/delete plans. Its
