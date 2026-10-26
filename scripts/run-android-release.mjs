@@ -38,7 +38,7 @@ if (action === "prepare") {
   const version = arg;
   for (const [image, file, context] of [
     ["android-runtime", "deploy/android/runtime/Dockerfile", "deploy/android/runtime"],
-    ["android-automation", "deploy/android/automation/Dockerfile", "deploy/android/automation"],
+    ["android-automation", "deploy/android/automation/Dockerfile", "."],
     ["android-executor", "packages/android-executor/Dockerfile", "."],
     ["android-egress", "packages/cube-egress-gateway/Dockerfile", "."],
   ])

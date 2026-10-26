@@ -15,7 +15,8 @@ RUN mkdir -p /opt/android-sdk/build-tools/37.0.0 \
  && cp -a /tmp/android-build/*/. /opt/android-sdk/build-tools/37.0.0/ \
  && rm -rf /tmp/android-build /tmp/platform.zip /tmp/build.zip
 WORKDIR /opt/appium
-COPY package*.json upstream-driver.json prepare-driver.mjs ./
+COPY deploy/android/automation/package.json deploy/android/automation/package-lock.json deploy/android/automation/upstream-driver.json deploy/android/automation/prepare-driver.mjs ./
+COPY deploy/android/automation/driver/package.json driver/package.json
 RUN node prepare-driver.mjs && npm ci --omit=dev --ignore-scripts && appium driver list --installed --json && npm cache clean --force \
  && rm -rf /usr/local/lib/node_modules/npm \
  && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
