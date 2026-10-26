@@ -1,9 +1,15 @@
 # Current architecture decisions
 
-[ADR-0279](0279-android-execution-targets.md) approves the first cloud Android
-execution target, capability-based tool selection and a trusted executor's direct
-Kafka replies. Implementation/real-runtime verification is in progress; it is not
-yet a supported deployed backend or a fallback for Cube.
+[ADR-0280](0280-workspace-scoped-subagent-contract.md) and
+[ADR-0281](0281-scheduled-session-inputs.md) are accepted for implementation, not
+deployed. They define workspace-scoped delegation and scheduled inputs through
+existing PG Run admission. [Implementation plan](../reports/subagent-and-schedules-implementation-plan-20261026.md).
+
+[ADR-0279](0279-android-execution-targets.md) is deployed as core
+`android-a37491f4` / schema 201 / catalog v2 and device `android-7aa30c34`.
+It adds the verified cloud Android target and executor alongside Cube;
+[delivery evidence](../reports/android-execution-delivery-20261026.md) records
+native model, browser, restart and preservation checks.
 
 [ADR-0278](0278-windowed-conversation-presentation.md) records bounded history
 reads within Runs, a virtual browser window, direct navigation, cancellable search

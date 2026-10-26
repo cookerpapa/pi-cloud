@@ -1,5 +1,10 @@
 # Documentation map
 
+[Subagent workspace and scheduled-input implementation plan](reports/subagent-and-schedules-implementation-plan-20261026.md)
+covers accepted ADR-0280/0281 in sequential slices. It includes the ordinary
+schedule Tool, direct Web deletion through PG, history semantics, tests and
+matched publication; implementation and rollout are pending.
+
 [Scheduled Agent input proposal](research/scheduled-agent-inputs-20261026.md)
 evaluates time-triggered admission into the existing Run queue. It is research
 and proposed product semantics; no timer runtime is deployed.

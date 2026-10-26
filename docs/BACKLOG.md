@@ -15,16 +15,22 @@ part of any subsequent implementation.
 The owner subsequently approved the workspace-parameter direction and explicitly
 kept device-use coordination with Agents. Do not add platform device occupancy
 registration, reservation Tools or a device-use scheduler.
+[ADR-0280](adr/0280-workspace-scoped-subagent-contract.md) records the accepted
+parameter contract; implement it as the first complete slice of the
+[combined plan](reports/subagent-and-schedules-implementation-plan-20261026.md).
 
-## Scheduled Agent inputs — proposal
+## Scheduled Agent inputs — plan accepted, implementation pending
 
 The owner asked how time-triggered Agent work should fit the current architecture.
 [The design comparison](research/scheduled-agent-inputs-20261026.md) covers K3s
 CronJob, pg_cron, pg-boss and a bounded existing-PG adapter with an adopted calendar
 parser. Prefer converting a due occurrence into normal Run admission in the same
 transaction that advances its schedule; retain one Run/Worker execution authority.
-Timing, overlap, catch-up, origin rendering and edit/delete semantics remain
-proposed defaults. No scheduler implementation or runtime publication has begun.
+The owner approved the direction, including direct Web deletion through PG and
+native Tool/history semantics. [ADR-0281](adr/0281-scheduled-session-inputs.md) and
+the [implementation plan](reports/subagent-and-schedules-implementation-plan-20261026.md)
+record transaction, timing, overlap, catch-up and accepted-Run boundaries.
+No scheduler implementation or runtime publication has begun.
 
 ## Cloud Android execution target — completed
 
