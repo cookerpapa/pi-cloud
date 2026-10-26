@@ -71,6 +71,17 @@ controller to create a replacement Run or replay Tools. Missing/deleted resource
 are surfaced; user-paused machines are not resumed by the timer. Clock wake-ups
 may be lossy because persistent due state is authoritative.
 
+Use one nearest-deadline wait per controller, interrupted by PostgreSQL
+LISTEN/NOTIFY hints for committed schedule changes. Reuse the existing
+PostgresNotificationWake generation/reconnection behavior and rescan on startup
+and listener establishment/reconnection. Read only the next effective eligibility
+time rather than loading every plan into memory. Retain a low-frequency fallback
+check (initial proposal: 60 seconds), which bounds discovery delay when a hint is
+missed; normal known deadlines wake at their own time. Validate and tune that
+interval against acceptable lateness. Notifications/timers carry no execution
+authority and do not replace the firing transaction. Avoid zero-delay spinning
+when another controller holds a due row or admission needs backoff.
+
 ## Acceptance and publication
 
 Cover duplicate/multi-instance fire, before/after-commit crash, timezones/DST,

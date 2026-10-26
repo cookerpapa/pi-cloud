@@ -54,6 +54,13 @@ no duplicate Run, Session deletion/clock/edit races, lock ordering, clock shifts
 timezone/DST, overlap/catch-up, paused resources and idle indexed query behavior.
 No timing scan enters Kafka or scans the native transcript.
 
+Use the existing PostgreSQL notification wake helper: one nearest-deadline timer,
+committed plan-change hints, startup/reconnect scans and a low-frequency fallback
+(initial proposal: 60 seconds). Idle controllers should not query once per second.
+Test earlier-plan insertion, moving/deleting the nearest plan, changes while a
+scan is running, missed hints, reconnect and clock jumps. Every wake still admits
+through PG; never hold a transaction open while waiting or spin on contended rows.
+
 ## 3. Connect the schedule Tool and direct Web management
 
 Register an environment-independent ordinary Tool in the execution-owned registry.

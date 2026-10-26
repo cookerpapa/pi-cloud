@@ -123,10 +123,20 @@ The controller may retry transient *admission* failures, but once a Run exists,
 Agent execution recovery belongs to PiCloud/Pi. A failed/unknown Tool is not a
 reason for the calendar controller to create another Run with the same input.
 
-Polling is only a wake-up mechanism; the PostgreSQL schedule is authoritative.
-An index on due enabled rows avoids scanning Session logs or all schedules. Poll
-interval/batch size must be measured on the deployment, and a due timestamp is
-an eligibility time rather than a guarantee of instant model output.
+Wake-up refinement after the owner's database-load question: use one wait for the
+nearest effective eligibility time plus committed-change LISTEN/NOTIFY hints,
+reusing `packages/database/src/postgres-queue-wake.ts`. Rescan on startup/listener
+reconnect and keep a low-frequency fallback (initial proposal: 60 seconds), rather
+than fixed one-second idle polling. Notifications arriving during a scan must
+advance the wake generation so the change is not lost before the next wait.
+
+An index on due enabled rows and the nearest-time lookup avoid scanning Session
+logs or all schedules. A timer wake always rechecks authoritative PG state before
+admission, including deletion/revision and clock changes. Readiness notifications
+are not a durable queue; missing one can delay discovery until the fallback but
+cannot authorize an obsolete plan. Measure cadence/batch size and ensure contended
+or failed work cannot cause a zero-delay query loop. A due timestamp remains an
+eligibility time rather than a guarantee of instant model output.
 
 ## Management and acceptance
 
