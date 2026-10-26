@@ -111,14 +111,22 @@ try {
     });
     await page.navigate(baseUrl + "/?session=" + session.sessionId);
     await page.waitFor(
-      "[...document.querySelectorAll('button')].some(b=>['云手机','Cloud phone'].includes(b.textContent.trim()))",
+      "[...document.querySelectorAll('button')].some(b=>!b.disabled&&['云手机','Cloud phone'].includes(b.textContent.trim()))",
     );
     await page.evaluate(
       "[...document.querySelectorAll('button')].find(b=>['云手机','Cloud phone'].includes(b.textContent.trim())).click()",
     );
-    await page.waitFor(
-      "document.querySelector('.product-device-modal select')?.disabled === false",
-    );
+    try {
+      await page.waitFor(
+        "document.querySelector('.product-device-modal select')?.disabled === false",
+      );
+    } catch (error) {
+      report.devicePickerFailure = await page.evaluate(
+        "({modal:document.querySelector('.product-device-modal')?.innerText, select:document.querySelector('.product-device-modal select')?.outerHTML, alerts:[...document.querySelectorAll('[role=alert]')].map(x=>x.innerText)})",
+      );
+      await page.screenshot(output + ".failure.png");
+      throw error;
+    }
     await page.evaluate(
       `(() => { const select=document.querySelector('.product-device-modal select'); select.value=${JSON.stringify(targetId)}; select.dispatchEvent(new Event('change',{bubbles:true})); })()`,
     );
@@ -233,9 +241,17 @@ try {
     await page.evaluate(
       "[...document.querySelectorAll('button')].find(b=>['云手机','Cloud phone'].includes(b.textContent.trim())).click()",
     );
-    await page.waitFor(
-      "document.querySelector('.product-device-modal select')?.disabled === false",
-    );
+    try {
+      await page.waitFor(
+        "document.querySelector('.product-device-modal select')?.disabled === false",
+      );
+    } catch (error) {
+      report.devicePickerFailure = await page.evaluate(
+        "({modal:document.querySelector('.product-device-modal')?.innerText, select:document.querySelector('.product-device-modal select')?.outerHTML, alerts:[...document.querySelectorAll('[role=alert]')].map(x=>x.innerText)})",
+      );
+      await page.screenshot(output + ".failure.png");
+      throw error;
+    }
     assert.equal(
       await page.evaluate("document.querySelector('.product-device-modal select').value"),
       targetId,

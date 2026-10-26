@@ -1,23 +1,26 @@
 # Maintained backlog
 
-## Cloud Android execution target — in progress
+## Cloud Android execution target — completed
 
-The owner approved [ADR-0279](adr/0279-android-execution-targets.md), including
-direct internal Kafka replies from a trusted Android executor. First validate
-Cuttlefish and existing UI automation, then connect one operator-provisioned
-target to existing coding Sessions. Keep resource lifecycle separate, expose
-only bound capabilities and preserve native uncertain-effect/Stop semantics.
-Pure-phone Sessions and automatic Android allocation remain later vertical slices.
-Cuttlefish boot, real observation/Chinese input, retained device settings across
-restart, binding races, native catalog isolation and RF3 reply transport have
-passed. The six-tool path, schema 201, catalog v2, picker and operator release
-helper are implemented. Core/schema and the device are deployed; real Luna exercised
-all six tools, read Chinese input, retained four object-store screenshots and showed
-them in the chat without allocating a Cube VM. Final acceptance found a missing JSON
-Content-Type in browser binding; reuse the existing request helper, check bind/unbind,
-and wait for loaded device selection in the browser fixture. Publication of that fix,
-full browser binding/refresh and native recovery acceptance remain pending; see
-[the operator guide](ANDROID_EXECUTION.md).
+[ADR-0279](adr/0279-android-execution-targets.md) is deployed as core
+`android-a37491f4` (schema 201/catalog v2) and device `android-7aa30c34`.
+Idle coding Sessions can bind one operator-provisioned Cuttlefish device. Six
+root-only tools reuse ordered Session dispatch, boot-scoped Kafka replies and
+existing screenshot storage. No independent device scheduler or result ledger.
+
+Real Luna exercised every tool and read Chinese input; the browser bound the
+device, rendered stored screenshots and refreshed its screen. No Cube VM was
+allocated by those phone operations. Persisted settings/files survived a real
+Pod/guest restart. Native input/Stop/Worker-and-Control-Plane recovery and Cube
+coding/Preview/persistence checks pass. Existing accounts, Sessions, images,
+Workspace bytes and applications were retained. [Delivery evidence](reports/android-execution-delivery-20261026.md).
+
+The implementation corrected a missing JSON request header in browser binding,
+OnDelete readiness/Pod creation waits, direct secret file mounts and the dedicated
+Control Plane-to-executor network route. The browser acceptance now waits for an
+enabled action and loaded selection instead of racing initial page loading.
+Pure-phone Sessions, physical-phone apps, APK installation, camera tools,
+automatic allocation/pools and multi-node placement remain later slices.
 
 ## Request failure wording — completed
 

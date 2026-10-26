@@ -6,9 +6,12 @@ registration and idle Session binding; the Run freezes capability grants. One
 shared Projector routes committed intent using its ordered binding view. The
 trusted Android executor uses Appium/UiAutomator2 and the existing boot-scoped
 Kafka reply channel; the Android guest receives no infrastructure credentials.
-Screenshots use the existing attachment store. This candidate has no separate
-scheduler, Tool-result ledger or automatic device pool. See the
-[operator guide](ANDROID_EXECUTION.md); live deployment acceptance is pending.
+Screenshots use the existing attachment store. There is no separate scheduler,
+Tool-result ledger or automatic device pool. Core `android-a37491f4` (schema 201,
+catalog v2) and device `android-7aa30c34` are deployed. Native model/Tool/image,
+browser binding, restart retention and existing coding recovery checks pass; see
+the [operator guide](ANDROID_EXECUTION.md) and
+[delivery evidence](reports/android-execution-delivery-20261026.md).
 
 [Windowed conversation presentation](adr/0278-windowed-conversation-presentation.md)
 is deployed as `history-window-19c24570`, schema 200. Native-position paging,

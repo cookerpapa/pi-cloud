@@ -1,6 +1,8 @@
 # ADR-0279: Android execution targets and internal Kafka replies
 
-Status: approved for implementation, 2026-10-26; not deployed.
+Status: accepted and deployed, 2026-10-26. Core `android-a37491f4` / schema 201 /
+catalog v2; device `android-7aa30c34`. See
+[delivery evidence](../reports/android-execution-delivery-20261026.md).
 
 The owner chose a cloud Android virtual device as the first additional execution
 target, then approved a trusted cloud executor publishing directly to the existing

@@ -1,9 +1,12 @@
 # Android execution targets
 
-Status: implementation candidate under ADR-0279; rollout/live acceptance pending.
+Status: deployed under ADR-0279 on 2026-10-26. Core `android-a37491f4`
+(schema 201/catalog v2), device `android-7aa30c34`.
+[Delivery evidence](reports/android-execution-delivery-20261026.md) covers real
+model calls, Web binding/images, device restart and original-asset preservation.
 
 An existing coding conversation can additionally control one operator-provisioned
-Android virtual device. Bind it from the conversation's **Device** picker while
+Android virtual device. Bind it from the conversation's **Cloud phone / 云手机** picker while
 idle. The next Run receives the device capabilities. Its root Agent can observe
 the screen, tap, swipe, enter text, press a navigation key and open an installed
 application. Child Agents do not inherit control of that screen. The existing
@@ -114,9 +117,26 @@ intent encoding, ordered destination admission, duplicate/stale delivery,
 cancellation and uncertain replies. The opt-in
 `scripts/run-android-transport-check.mjs` exercises a real owned Android device
 and an isolated RF3 Kafka cluster; it deliberately uses a test image store.
-Production acceptance must additionally prove native model calls, S3 references,
-Web image rendering and restart retention. Transport-only success does not prove
-that entire path.
+The deployed path additionally passes real native model calls, S3 checksum reads,
+Web image rendering/binding/refresh and restart retention. Repeat the owned
+fixture only while the selected device is unbound:
+
+```sh
+PI_CLOUD_LIVE_ANDROID_CHECK=1 node --import tsx scripts/run-live-android-check.mjs \
+  TARGET_UUID PRIVATE_REPORT_PATH
+```
+
+This uses a temporary owner credential and an empty coding Workspace, drives the
+actual browser binding and all six tools with Luna, checks persisted screenshots
+and no Cube allocation, then deletes its Session/Workspace and revokes/removes
+its own credential. Reports and browser captures stay private. It never takes over
+an already-bound device. Transport-only success is not evidence of this whole path.
+
+Device restart retention concerns writes already persisted inside Android. A UI
+acknowledgement does not promise an application's in-memory state has been flushed.
+The restart acceptance waits for SettingsProvider's asynchronous write, syncs an
+owned filesystem marker, restarts the Pod, then checks a changed guest boot and
+both retained values.
 
 This slice does not implement pure-phone Sessions, physical-phone applications,
 camera tools, APK installation, automatic device pools, migration of Android

@@ -1,13 +1,18 @@
 # Implementation roadmap
 
-## Cloud Android execution target — in progress
+## Cloud Android execution target — completed
 
 - [x] Record ADR-0279: operator-provisioned cloud target, existing Session ownership and direct internal replies.
 - [x] Prove and pin Cuttlefish/AOSP plus Appium UIAutomator2 on the actual host.
 - [x] Separate executor transport from VM lifecycle and preserve Cube contracts.
 - [x] Add idle Session binding, explicit tool capabilities and root-only phone operations.
-- [ ] Complete native/Kafka/image/UI integration, cancellation and crash acceptance.
-- [ ] Publish matched artifacts, demonstrate with Luna and reconcile original resources.
+- [x] Complete native/Kafka/image/UI integration, cancellation and crash acceptance.
+- [x] Publish matched artifacts, demonstrate with Luna and reconcile original resources.
+
+Core `android-a37491f4`, device `android-7aa30c34`, schema 201 and catalog v2 are
+deployed. [Delivery](reports/android-execution-delivery-20261026.md) records all six
+real tools, browser binding/screenshots, device restart and original-asset checks.
+Pure-phone Sessions, physical phones and automatic pools remain outside this slice.
 
 ## Long conversation presentation — completed
 

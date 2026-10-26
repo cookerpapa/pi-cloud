@@ -1,8 +1,10 @@
 # Documentation map
 
-[Android execution targets](ANDROID_EXECUTION.md) are an implementation candidate under ADR-0279.
-A coding Session can bind an operator-provisioned Android device, with capability-scoped
-root tools and replies through the existing Kafka path. Deployment acceptance is pending.
+[Android execution targets](ANDROID_EXECUTION.md) are deployed under ADR-0279:
+core `android-a37491f4` (schema 201, tool catalog v2), device `android-7aa30c34`.
+An idle coding Session can bind a cloud phone; its root Agent receives six device
+operations alongside its Cube tools. Real Luna, screenshot storage/Web rendering,
+browser binding and device restart retention pass. [Delivery evidence](reports/android-execution-delivery-20261026.md).
 
 [Windowed conversation presentation](adr/0278-windowed-conversation-presentation.md)
 passes source and 1 GiB composed checks for long conversations, including one long Run.

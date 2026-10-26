@@ -1,5 +1,14 @@
 # Matched release procedure
 
+ADR-0279 requires schema 201, tool catalog v2 and matching Worker/Control Plane/Web
+contracts for external device capabilities. Drain Session writers and confirm
+external execution-target admissions have closed before a protocol cutover;
+retain idle device selections and device userdata. The first Android device is
+published separately through [the Android operator procedure](ANDROID_EXECUTION.md),
+which rejects active bindings before replacing its OnDelete Pod. Native result
+ownership, ordered dispatch and unsafe-action recovery remain unchanged. Run the
+real Android fixture as well as the existing coding/input recovery checks.
+
 ADR-0278 requires schema 200 and paired API/Web snapshot version 3. Drain native
 writers before index/caption backfill; preserve all native bodies/checksums and
 current human-input state. Run `npm run browser:history:check` against an isolated
