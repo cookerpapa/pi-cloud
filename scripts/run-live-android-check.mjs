@@ -102,8 +102,39 @@ try {
     "/workspace",
     { provider: "openai-codex", modelId: report.model, thinkingLevel: "low", fastMode: false },
   );
-  const selection = await api.getSessionExecutionTarget(session.sessionId);
-  await api.bindExecutionTarget(session.sessionId, targetId, selection.revision);
+  report.sessionId = session.sessionId;
+  report.workspaceId = project.workspaceId;
+  report.credentialId = credential.credentialId;
+  await withChromePage({}, async (page) => {
+    await page.send("Network.setExtraHTTPHeaders", {
+      headers: { Authorization: "Bearer " + credential.token },
+    });
+    await page.navigate(baseUrl + "/?session=" + session.sessionId);
+    await page.waitFor(
+      "[...document.querySelectorAll('button')].some(b=>['云手机','Cloud phone'].includes(b.textContent.trim()))",
+    );
+    await page.evaluate(
+      "[...document.querySelectorAll('button')].find(b=>['云手机','Cloud phone'].includes(b.textContent.trim())).click()",
+    );
+    await page.waitFor(
+      "document.querySelector('.product-device-modal select')?.disabled === false",
+    );
+    await page.evaluate(
+      `(() => { const select=document.querySelector('.product-device-modal select'); select.value=${JSON.stringify(targetId)}; select.dispatchEvent(new Event('change',{bubbles:true})); })()`,
+    );
+    await page.waitFor(
+      "document.querySelector('.product-device-actions button:last-child')?.disabled === false",
+    );
+    await page.evaluate(
+      "document.querySelector('.product-device-actions button:last-child').click()",
+    );
+    await until(
+      async () =>
+        (await api.getSessionExecutionTarget(session.sessionId)).target?.targetId === targetId,
+      "browser device binding",
+    );
+    report.browserBinding = true;
+  });
   console.log(
     JSON.stringify({ phase: "native Android model round", sessionId: session.sessionId }),
   );
@@ -202,13 +233,17 @@ try {
     await page.evaluate(
       "[...document.querySelectorAll('button')].find(b=>['云手机','Cloud phone'].includes(b.textContent.trim())).click()",
     );
-    await page.waitFor("document.querySelector('.product-device-modal select')");
+    await page.waitFor(
+      "document.querySelector('.product-device-modal select')?.disabled === false",
+    );
     assert.equal(
       await page.evaluate("document.querySelector('.product-device-modal select').value"),
       targetId,
     );
     await page.evaluate("document.querySelector('.product-device-actions button').click()");
     await page.waitFor("document.querySelector('.product-device-screen')?.naturalWidth>100");
+    const capture = await page.send("Page.captureScreenshot", { format: "png" });
+    await writeFile(output + ".png", Buffer.from(capture.data, "base64"), { mode: 0o600 });
     report.devicePicker = true;
   });
   report.accepted = true;
@@ -248,11 +283,24 @@ try {
     errors.push(error);
     report.cleanupError = String(error);
   }
-  if (credential)
-    await revokePrivateTenantCredential(db, {
-      tenant: target.tenant_id,
-      credentialId: credential.credentialId,
-    }).catch((e) => errors.push(e));
+  if (credential) {
+    try {
+      await revokePrivateTenantCredential(db, {
+        tenant: target.tenant_id,
+        credentialId: credential.credentialId,
+      });
+      // This credential was created by this fixture, not a pre-existing account key.
+      await db
+        .deleteFrom("tenant_api_credentials")
+        .where("credential_id", "=", credential.credentialId)
+        .where("tenant_id", "=", target.tenant_id)
+        .where("revoked_at", "is not", null)
+        .execute();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  report.accepted = report.accepted && errors.length === 0;
   await writeFile(output, JSON.stringify(report, null, 2) + "\n", { mode: 0o600 });
   blobs.close();
   await db.destroy();

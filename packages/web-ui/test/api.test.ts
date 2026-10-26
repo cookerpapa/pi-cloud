@@ -33,6 +33,24 @@ it("accepts committed permanent deletion with an empty 204 response", async () =
 });
 
 describe("tenant-aware browser API", () => {
+  it.each(["20000000-0000-4000-8000-000000000001", null])(
+    "sends device binding %s as JSON with its observed revision",
+    async (targetId) => {
+      const sessionId = "10000000-0000-4000-8000-000000000001";
+      const transport = vi.fn<typeof fetch>(async (input, init) => {
+        const wire = new Request(new URL(String(input), "http://pi-cloud.test"), init);
+        expect(new URL(wire.url).pathname).toBe(`/v1/conversations/${sessionId}/execution-target`);
+        expect(wire.method).toBe("PUT");
+        expect(wire.headers.get("content-type")).toBe("application/json");
+        expect(await wire.json()).toEqual({ targetId, revision: "7" });
+        return Response.json({ sessionId, revision: "8", target: null });
+      });
+      await expect(
+        new PiCloudApi(transport).bindExecutionTarget(sessionId, targetId, "7"),
+      ).resolves.toMatchObject({ sessionId, revision: "8" });
+      expect(transport).toHaveBeenCalledOnce();
+    },
+  );
   it("reads returned inputs and acknowledges only the restored page", async () => {
     const sessionId = "10000000-0000-4000-8000-000000000001";
     const turnId = "20000000-0000-4000-8000-000000000001";

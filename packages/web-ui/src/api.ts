@@ -722,7 +722,7 @@ export class PiCloudApi {
       await request(
         this.#fetch,
         `/v1/conversations/${encodeURIComponent(id)}/execution-target`,
-        { method: "PUT", body: JSON.stringify({ targetId, revision }) },
+        jsonRequest({ targetId, revision }, undefined, "PUT"),
         this.#authorizationToken,
       ),
     );

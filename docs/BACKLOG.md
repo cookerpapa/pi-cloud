@@ -11,8 +11,13 @@ Pure-phone Sessions and automatic Android allocation remain later vertical slice
 Cuttlefish boot, real observation/Chinese input, retained device settings across
 restart, binding races, native catalog isolation and RF3 reply transport have
 passed. The six-tool path, schema 201, catalog v2, picker and operator release
-helper are implemented. Matched publication and full model/S3/browser acceptance
-remain pending; see [the operator guide](ANDROID_EXECUTION.md).
+helper are implemented. Core/schema and the device are deployed; real Luna exercised
+all six tools, read Chinese input, retained four object-store screenshots and showed
+them in the chat without allocating a Cube VM. Final acceptance found a missing JSON
+Content-Type in browser binding; reuse the existing request helper, check bind/unbind,
+and wait for loaded device selection in the browser fixture. Publication of that fix,
+full browser binding/refresh and native recovery acceptance remain pending; see
+[the operator guide](ANDROID_EXECUTION.md).
 
 ## Request failure wording — completed
 
