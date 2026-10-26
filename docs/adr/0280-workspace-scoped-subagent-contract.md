@@ -1,6 +1,7 @@
 # ADR-0280: Workspace-scoped subagent parameters
 
-Status: implemented in source on 2026-10-26; matched publication pending.
+Status: deployed on 2026-10-26 as `schedules-08063299` (schema 202/catalog v3).
+[Delivery evidence](../reports/scheduled-inputs-delivery-20261026.md).
 
 ## Decision
 

@@ -1,7 +1,8 @@
 # Scheduled Agent inputs
 
-Source implementation under ADR-0281; matched publication and live acceptance are
-pending. The candidate uses schema 202 and tool catalog version 3.
+Deployed under ADR-0281 as `schedules-08063299`, schema 202/tool catalog version 3.
+[Delivery evidence](reports/scheduled-inputs-delivery-20261026.md) records source,
+load, live acceptance and original-asset preservation.
 
 A plan belongs to a root conversation. Each eligible occurrence creates a new
 Run in that same Session, using its current model and resource settings. Existing

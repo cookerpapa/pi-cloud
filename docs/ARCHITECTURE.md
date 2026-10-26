@@ -1,7 +1,7 @@
 # Architecture
 
 Scheduled inputs under [ADR-0281](adr/0281-scheduled-session-inputs.md) are
-implemented in source for schema 202/catalog v3; matched publication is pending.
+deployed as `schedules-08063299`, schema 202/catalog v3.
 PG current plans feed the existing Run queue transactionally. A timer occurrence
 is a new Run in the same Session, separate from native steer/follow-up. One
 nearest-deadline timer plus PG notification hints and a 60-second fallback replace
@@ -9,6 +9,8 @@ per-plan timers or a second job engine. [Details](SCHEDULES.md).
 The paired [ADR-0280](adr/0280-workspace-scoped-subagent-contract.md) uses explicit
 workspace-scoped subagent parameters, with null disabling workspace access and
 ephemeral meaning separate Linux compute on the same Volume, never a phone clone.
+[Delivery evidence](reports/scheduled-inputs-delivery-20261026.md) records source,
+load and live acceptance, plus the preserved original assets.
 
 [ADR-0279](adr/0279-android-execution-targets.md) extends the execution boundary with an
 operator-provisioned Android device beside the existing Cube Workspace. PG owns
@@ -17,8 +19,8 @@ shared Projector routes committed intent using its ordered binding view. The
 trusted Android executor uses Appium/UiAutomator2 and the existing boot-scoped
 Kafka reply channel; the Android guest receives no infrastructure credentials.
 Screenshots use the existing attachment store. There is no separate scheduler,
-Tool-result ledger or automatic device pool. Core `android-a37491f4` (schema 201,
-catalog v2) and device `android-7aa30c34` are deployed. Native model/Tool/image,
+Tool-result ledger or automatic device pool. Core `schedules-08063299` (schema 202,
+catalog v3) and device `android-7aa30c34` are deployed. Native model/Tool/image,
 browser binding, restart retention and existing coding recovery checks pass; see
 the [operator guide](ANDROID_EXECUTION.md) and
 [delivery evidence](reports/android-execution-delivery-20261026.md).

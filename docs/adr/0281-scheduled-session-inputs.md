@@ -1,6 +1,7 @@
 # ADR-0281: Scheduled inputs reuse normal Run admission
 
-Status: implemented in source on 2026-10-26; matched publication pending.
+Status: deployed on 2026-10-26 as `schedules-08063299` (schema 202/catalog v3).
+[Delivery evidence](../reports/scheduled-inputs-delivery-20261026.md).
 
 ## Decision and authorities
 

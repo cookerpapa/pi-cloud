@@ -1,7 +1,7 @@
 # Android execution targets
 
-Status: deployed under ADR-0279 on 2026-10-26. Core `android-a37491f4`
-(schema 201/catalog v2), device `android-7aa30c34`.
+Status: deployed under ADR-0279 on 2026-10-26. Current core `schedules-08063299`
+(schema 202/catalog v3), device `android-7aa30c34`.
 [Delivery evidence](reports/android-execution-delivery-20261026.md) covers real
 model calls, Web binding/images, device restart and original-asset preservation.
 
@@ -56,7 +56,7 @@ userdata deletion or action replay.
 
 ## Operator installation
 
-Use the maintained K3s installation with schema 201, tool catalog version 2 and
+Use the maintained K3s installation with schema 202, tool catalog version 3 and
 matching Worker/Control Plane code. A matched upgrade must drain writers first.
 Do not expose Appium, ADB, device management credentials or Kafka to public clients.
 

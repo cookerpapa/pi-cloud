@@ -1,8 +1,8 @@
 # Subagent workspace and scheduled-input implementation plan
 
-Status: implementation plan requested and approved in direction, 2026-10-26.
-Source implementation and composed checks now exist; matched rollout remains
-pending. Follow
+Status: completed and deployed as `schedules-08063299`, 2026-10-26.
+[Delivery evidence](scheduled-inputs-delivery-20261026.md) records acceptance and
+remaining measurement limits. This retained plan follows
 [ADR-0280](../adr/0280-workspace-scoped-subagent-contract.md) and
 [ADR-0281](../adr/0281-scheduled-session-inputs.md) in the order below.
 

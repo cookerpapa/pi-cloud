@@ -114,7 +114,7 @@ async function scheduledRun(session, id) {
 }
 try {
   tenant = await createPrivateTenant(db, {
-    slug: `release-acceptance-schedules-${randomUUID()}`,
+    slug: `release-acceptance-schedules-${randomUUID()}`.slice(0, 63),
     ownerDisplayName: "Schedule acceptance",
     initialModel: { provider: "openai-codex", modelId: report.model },
   });

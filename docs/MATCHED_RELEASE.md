@@ -7,7 +7,8 @@ quiescence and must not admit work during cutover. Run the workspace-scoped
 Subagent and real scheduled-input checks after publication, alongside native
 input, Cube and existing Android target acceptance. [Scheduling behavior](SCHEDULES.md).
 
-ADR-0279 requires schema 201, tool catalog v2 and matching Worker/Control Plane/Web
+ADR-0279 originally introduced schema 201/catalog v2; the current matched
+release above uses schema 202/catalog v3 with matching Worker/Control Plane/Web
 contracts for external device capabilities. Drain Session writers and confirm
 external execution-target admissions have closed before a protocol cutover;
 retain idle device selections and device userdata. The first Android device is

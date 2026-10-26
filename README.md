@@ -1,7 +1,14 @@
 # PiCloud
 
+[Scheduled inputs and workspace-scoped Subagents](docs/reports/scheduled-inputs-delivery-20261026.md)
+are deployed as `schedules-08063299`, schema 202 / tool catalog v3. The `schedule`
+Tool creates one-time or recurring plans; the browser can edit, pause and delete
+them. Each occurrence starts a new Run in the same Session when existing work
+settles. Subagent workspace access is explicit and separate from phone access.
+Real Luna, browser, recovery, Cube and Android checks pass; original assets remain.
+
 [Android execution targets](docs/ANDROID_EXECUTION.md) are deployed under ADR-0279:
-core `android-a37491f4` (schema 201, tool catalog v2), device `android-7aa30c34`.
+core `schedules-08063299` (schema 202, tool catalog v3), device `android-7aa30c34`.
 An idle coding Session can bind a cloud phone; its root Agent receives six device
 operations alongside its Cube tools. Real Luna, screenshot storage/Web rendering,
 browser binding and device restart retention pass. [Delivery evidence](docs/reports/android-execution-delivery-20261026.md).
@@ -60,6 +67,8 @@ Real Luna guest interaction, screenshot vision and live/cold preview navigation 
   a draft is present and shows Stop when empty.
   Stop withdraws pending messages and restores their text and attachments to the
   composer for editing, alongside the existing draft.
+- [Scheduled tasks](docs/SCHEDULES.md) in the same conversation, with current-plan
+  management and ordinary Run queue/recovery semantics.
 - Persistent conversations, context compaction and interruption recovery.
   [Long-conversation presentation](docs/adr/0278-windowed-conversation-presentation.md)
   adds bounded history pages, virtual scrolling, direct search/navigation and

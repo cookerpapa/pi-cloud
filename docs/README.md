@@ -1,21 +1,21 @@
 # Documentation map
 
 [Subagent workspace and scheduled-input implementation plan](reports/subagent-and-schedules-implementation-plan-20261026.md)
-covers accepted ADR-0280/0281 in sequential slices. It includes the ordinary
-schedule Tool, direct Web deletion through PG, history semantics, tests and
-matched publication. Source implementation and composed checks are complete;
-matched publication is pending. [Scheduled-input behavior and API](SCHEDULES.md).
+covers ADR-0280/0281, deployed as `schedules-08063299` (schema 202/catalog v3).
+[Delivery evidence](reports/scheduled-inputs-delivery-20261026.md) includes actual
+10,000-plan Run admission, real Luna, browser, recovery, Cube and Android checks.
+[Scheduled-input behavior and API](SCHEDULES.md).
 
 [Scheduled Agent input proposal](research/scheduled-agent-inputs-20261026.md)
 evaluates time-triggered admission into the existing Run queue. It is research
-and proposed product semantics; no timer runtime is deployed.
+and the build-versus-adopt basis for the deployed PG admission adapter.
 
 [Subagent resource-contract research](research/subagent-resource-contracts-20261026.md)
 compares upstream context, workspace and device-access designs. It records the
-parameter boundary and validation criteria; source is implemented and live publication is pending.
+parameter boundary and validation criteria; the new contract is deployed.
 
 [Android execution targets](ANDROID_EXECUTION.md) are deployed under ADR-0279:
-core `android-a37491f4` (schema 201, tool catalog v2), device `android-7aa30c34`.
+core `schedules-08063299` (schema 202, tool catalog v3), device `android-7aa30c34`.
 An idle coding Session can bind a cloud phone; its root Agent receives six device
 operations alongside its Cube tools. Real Luna, screenshot storage/Web rendering,
 browser binding and device restart retention pass. [Delivery evidence](reports/android-execution-delivery-20261026.md).

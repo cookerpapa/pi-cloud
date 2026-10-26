@@ -1,49 +1,29 @@
 # Maintained backlog
 
-## Subagent workspace/resource contract — implementation in progress
+## Subagent workspace and scheduled inputs — completed
 
-The owner requested upstream research before changing the model-facing subagent
-parameters. [The comparison](research/subagent-resource-contracts-20261026.md)
-pins OpenClaw, OpenHands and Deep Agents source, plus Cua's separately licensed
-computer-access module. The proposed task/context/workspace separation is a good
-fit for the current coding-workspace-plus-device model; it is not a universal
-resource scheduler. Keep device grants explicit, define omitted versus null
-workspace, and make null suppress every workspace-dependent tool. Parameter
-validation, resource binding, native tool visibility and child environment text
-must agree. The deployed schema is unchanged; real-model semantic evaluation is
-part of any subsequent implementation.
-The owner subsequently approved the workspace-parameter direction and explicitly
-kept device-use coordination with Agents. Do not add platform device occupancy
-registration, reservation Tools or a device-use scheduler.
-[ADR-0280](adr/0280-workspace-scoped-subagent-contract.md) records the accepted
-parameter contract. The first source slice now uses workspace-scoped direct and
-workflow arguments, rejects grant expansion, suppresses workspace-dependent tools
-and activation for null-workspace children, and renders their actual environment.
-Focused protocol/Worker/native/PG checks pass; integrated and live publication
-remain pending under the [combined plan](reports/subagent-and-schedules-implementation-plan-20261026.md).
+ADRs [0280](adr/0280-workspace-scoped-subagent-contract.md) and
+[0281](adr/0281-scheduled-session-inputs.md) are deployed as `schedules-08063299`,
+schema 202/catalog v3. Workspace-scoped direct/workflow delegation shares one
+capability contract; null removes workspace access and ephemeral remains Linux
+compute on a shared Volume. Device coordination stays with Agents.
 
-## Scheduled Agent inputs — source implemented, publication pending
+Current PG plans feed ordinary Run admission atomically, using one deadline wait,
+notification hints and a 60-second fallback. The root schedule Tool and direct Web
+management are connected. Every occurrence is a new Run; queued timer work does
+not intercept steer/follow-up or active compaction. Source/calendar/PG/browser
+checks, 375 fault cases, actual 10,000-plan admission and real Luna/Cube/Android
+recovery acceptance pass. Original Sessions, images, files, accounts/configuration
+and running applications are preserved. [Delivery evidence](reports/scheduled-inputs-delivery-20261026.md)
+and [behavior/API](SCHEDULES.md).
 
-The owner asked how time-triggered Agent work should fit the current architecture.
-[The design comparison](research/scheduled-agent-inputs-20261026.md) covers K3s
-CronJob, pg_cron, pg-boss and a bounded existing-PG adapter with an adopted calendar
-parser. Prefer converting a due occurrence into normal Run admission in the same
-transaction that advances its schedule; retain one Run/Worker execution authority.
-The owner approved the direction, including direct Web deletion through PG and
-native Tool/history semantics. [ADR-0281](adr/0281-scheduled-session-inputs.md) and
-the [implementation plan](reports/subagent-and-schedules-implementation-plan-20261026.md)
-record transaction, timing, overlap, catch-up and accepted-Run boundaries.
-The source now connects current PG plans, atomic normal Run admission, nearest
-deadline/NOTIFY wakeups, root-scoped management Tool and direct Web management.
-Scheduled source metadata is retained in live/cold views; queued timer work does
-not intercept native human input. Transaction/controller/calendar/browser tests
-and 10,000-plan actual-admission samples pass. The load fixture is not an Agent
-execution or production Projector capacity test. Integrated checks and matched
-live publication remain pending. [Behavior and API](SCHEDULES.md).
+Fleet execution and mixed Kafka/Projector saturation remain unmeasured; the
+admission benchmark measures real PG Run creation and API responsiveness only.
+They remain part of the existing capacity backlog, not a 10,000-Agent claim.
 
 ## Cloud Android execution target — completed
 
-[ADR-0279](adr/0279-android-execution-targets.md) is deployed as core
+[ADR-0279](adr/0279-android-execution-targets.md) was initially deployed as core
 `android-a37491f4` (schema 201/catalog v2) and device `android-7aa30c34`.
 Idle coding Sessions can bind one operator-provisioned Cuttlefish device. Six
 root-only tools reuse ordered Session dispatch, boot-scoped Kafka replies and

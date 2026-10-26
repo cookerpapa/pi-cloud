@@ -1,16 +1,20 @@
 # Implementation roadmap
 
-## Subagent workspace and scheduled inputs — source implemented
+## Subagent workspace and scheduled inputs — completed
 
 [Implementation plan](reports/subagent-and-schedules-implementation-plan-20261026.md)
 implements ADR-0280 then ADR-0281 as complete sequential slices.
 
 - [x] Research upstream contracts and scheduling candidates; record the owner's device-coordination decision.
 - [x] Record the accepted parameter, scheduling, direct-deletion and native-history boundaries.
-- [ ] Complete workspace-scoped subagent arguments, capability enforcement and native/real-model checks.
+- [x] Complete workspace-scoped subagent arguments, capability enforcement and native/real-model checks.
 - [x] Complete PG schedule configuration and atomic due-to-Run admission with failure checks.
 - [x] Connect the schedule Tool, direct browser management and scheduled-origin presentation.
-- [ ] Run integrated/live acceptance and publish matched artifacts while preserving original assets.
+- [x] Run integrated/live acceptance and publish matched artifacts while preserving original assets.
+
+Deployed as `schedules-08063299`, schema 202/catalog v3. [Delivery evidence](reports/scheduled-inputs-delivery-20261026.md)
+separates 10,000-plan admission from unmeasured fleet execution/Projector capacity,
+and records real Luna/Cube/Android/browser recovery plus original-asset preservation.
 
 ## Cloud Android execution target — completed
 
@@ -21,8 +25,8 @@ implements ADR-0280 then ADR-0281 as complete sequential slices.
 - [x] Complete native/Kafka/image/UI integration, cancellation and crash acceptance.
 - [x] Publish matched artifacts, demonstrate with Luna and reconcile original resources.
 
-Core `android-a37491f4`, device `android-7aa30c34`, schema 201 and catalog v2 are
-deployed. [Delivery](reports/android-execution-delivery-20261026.md) records all six
+The initial Android delivery used core `android-a37491f4`, device
+`android-7aa30c34`, schema 201 and catalog v2. [Delivery](reports/android-execution-delivery-20261026.md) records all six
 real tools, browser binding/screenshots, device restart and original-asset checks.
 Pure-phone Sessions, physical phones and automatic pools remain outside this slice.
 
