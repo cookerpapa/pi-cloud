@@ -2,8 +2,8 @@
 
 [Tool settlement presentation](reports/tool-settlement-presentation-20261028.md)
 limits the error line to the failed Tool and verifies preview-to-result settlement,
-empty Bash results and the existing native parallel-Read policy. Source checks
-pass; scoped Web publication is pending.
+empty Bash results and the existing native parallel-Read policy. Web-only
+`tool-settlement-053f6582` is deployed and live-verified (Helm 118).
 
 [Tool group display correction](reports/tool-group-display-correction-20261027.md)
 restores the requested group-only toggle and original individual Tool rendering,

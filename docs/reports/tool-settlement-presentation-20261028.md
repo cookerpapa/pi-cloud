@@ -1,6 +1,6 @@
 # Tool settlement presentation
 
-Status: source verified; Web-only publication pending, 2026-10-28.
+Status: deployed Web-only as `tool-settlement-053f6582`, Helm 118, 2026-10-28.
 
 The owner requested that a failed Tool mark only its own card, rather than the
 whole expanded activity group. Remove the group-wide error border and put the
@@ -36,5 +36,18 @@ A read-only check of the reported conversation confirms that the latest 50 Tool
 batches each contain one call. Earlier batches include three Reads in one model
 reply. This observation establishes the recent response pattern, not why the model
 chose it. No prompt forcing parallel calls or execution-policy change is introduced.
+
+The Web type check, 233 tests, full browser presentation/queue checks and 22
+layout scenarios pass, followed by the one-image build/scan and scoped release.
+The first full browser run timed out initializing an unrelated composer fixture
+before interaction; its failure log is retained, and the unchanged complete gate
+passes on the repeat. This is not claimed as a repaired product defect.
+
+Read-only live inspection expands two groups containing 22 Tools. Exactly one
+failed Tool has a red marker, both group borders remain neutral, and no completed
+card retains a temporary preview. Collapse/expand and the 710 px content width
+remain correct. All 28 backend Pod/container identities, the machine allocation
+and 27 configuration hashes match the pre-release inventory. The temporary
+viewer credential is revoked and removed. Refresh an open page for the new assets.
 
 Private evidence: `deploy/production/runtime/release-evidence/tool-settlement-ui-20261028/`.

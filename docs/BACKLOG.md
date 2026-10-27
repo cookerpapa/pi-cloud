@@ -1,12 +1,14 @@
 # Maintained backlog
 
-## Tool settlement presentation — source verified
+## Tool settlement presentation — completed
 
 Move the error line from the whole activity group to the failed Tool alone.
 Verify that success, failure and UNKNOWN settlement replace disposable previews
 with the final result and ignore late preview updates. Existing native empty-output
-and parallel-Read checks pass; Tool execution policy is unchanged. Scoped Web
-publication and read-only live verification remain to complete.
+and parallel-Read checks pass; Tool execution policy is unchanged. Web-only
+`tool-settlement-053f6582` is deployed (Helm 118). Read-only live inspection
+confirms one failed Tool among 22 cards receives the only red marker, with no
+settled preview remaining; backend/Workspace identities are retained.
 [Evidence](reports/tool-settlement-presentation-20261028.md).
 
 ## Tool group display correction — completed
