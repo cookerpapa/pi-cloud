@@ -79,7 +79,7 @@ try {
     await page.send("Page.addScriptToEvaluateOnNewDocument", {
       source: `
       window.layoutSamples=[];window.layoutErrors=[];addEventListener('error',e=>layoutErrors.push(e.message));
-      window.geometry=()=>{const p=document.querySelector('.product-chat-scroll');if(!p)return null;const b=p.getBoundingClientRect(),rows=[...p.querySelectorAll('[data-history-row-key]')].map(e=>({i:Number(e.dataset.index),r:e.getBoundingClientRect()}));let gap=0,overlap=0;for(let i=1;i<rows.length;i++){const a=rows[i-1],n=rows[i];if(n.i===a.i+1&&n.r.top>b.top&&a.r.bottom<b.bottom){gap=Math.max(gap,n.r.top-a.r.bottom);overlap=Math.max(overlap,a.r.bottom-n.r.top);}}return {t:performance.now(),gap,overlap,end:p.scrollHeight-p.scrollTop-p.clientHeight,rows:rows.length,text:p.querySelectorAll('.product-process-narration,.product-assistant-text').length};};
+      window.geometry=()=>{const p=document.querySelector('.product-chat-scroll');if(!p)return null;const b=p.getBoundingClientRect(),rows=[...p.querySelectorAll('[data-history-row-key]')].map(e=>({i:Number(e.dataset.index),r:e.getBoundingClientRect()}));let gap=0,overlap=0;for(let i=1;i<rows.length;i++){const a=rows[i-1],n=rows[i];if(n.i===a.i+1&&n.r.top>b.top&&a.r.bottom<b.bottom){gap=Math.max(gap,n.r.top-a.r.bottom);overlap=Math.max(overlap,a.r.bottom-n.r.top);}}return {t:performance.now(),gap,overlap,end:p.scrollHeight-p.scrollTop-p.clientHeight,rows:rows.length};};
       function sample(){requestAnimationFrame(()=>setTimeout(()=>{const g=geometry();if(g&&g.rows){layoutSamples.push(g);if(layoutSamples.length>20000)layoutSamples.shift();}sample();},0));}sample();`,
     });
     await page.navigate(origin + "/?session=" + session.sessionId);

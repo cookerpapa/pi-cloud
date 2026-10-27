@@ -1,11 +1,11 @@
 # Implementation roadmap
 
-## Streaming conversation layout — source verified
+## Streaming conversation layout — completed
 
 - [x] Reproduce persistent row gaps and lost live following using production components.
 - [x] Retain valid measurements, synchronize coordinates and restore mounted reading anchors.
 - [x] Verify streamed Tool transitions, manual reading and bounded 1 GiB history composition.
-- [ ] Publish the Web image and verify real output plus unchanged backend/VM identities.
+- [x] Publish the Web image and verify real output plus unchanged backend/VM identities.
 
 [Repair evidence](reports/conversation-layout-repair-20261027.md).
 

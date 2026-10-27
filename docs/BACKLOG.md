@@ -1,6 +1,6 @@
 # Maintained backlog
 
-## Long-conversation layout stability — source verified, publication pending
+## Long-conversation layout stability — completed
 
 The owner reported large gaps that disappear after scrolling and uneven Session
 opening after virtual-history delivery. Read-only browser sampling reproduces
@@ -14,7 +14,10 @@ The real PG/API/browser composition passes with 1 GiB, four resident pages and
 15.5–15.7 MiB retained heap. A persistent-footer append case is explicitly followed
 without interpreting layout adjustments as reader gestures; bookmarks wait for
 their target DOM node. [Repair evidence](reports/conversation-layout-repair-20261027.md).
-Scoped Web publication and real streaming acceptance remain pending.
+Deployed Web-only as `history-layout-8155cc9e` (Helm 112). Real Luna streaming,
+three Tool calls and existing-conversation inspection pass. All 28 non-Web Pod
+identities, the original machine allocation and 27 configuration hashes remain
+unchanged; owned test resources are cleaned.
 
 ## Subagent workspace and scheduled inputs — completed
 

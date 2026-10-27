@@ -2,8 +2,8 @@
 
 [Conversation layout repair](reports/conversation-layout-repair-20261027.md)
 addresses gaps during streamed text/Tool transitions, tail following and bookmark
-restoration. Source geometry and 1 GiB composition pass; scoped Web publication
-and live acceptance are pending.
+restoration. Deployed Web-only as `history-layout-8155cc9e`; geometry, 1 GiB
+composition and real Luna streaming pass, with existing backend/VM identities retained.
 
 [Subagent workspace and scheduled-input implementation plan](reports/subagent-and-schedules-implementation-plan-20261026.md)
 covers ADR-0280/0281, deployed as `schedules-08063299` (schema 202/catalog v3).

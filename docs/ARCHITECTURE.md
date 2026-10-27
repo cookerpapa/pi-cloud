@@ -33,7 +33,8 @@ records 1 GiB composition, real execution/recovery and retained original assets.
 The [October 27 layout repair](reports/conversation-layout-repair-20261027.md)
 retains measured rows across bounded-window changes, synchronizes their geometry
 through the pinned virtualizer and preserves live/read-mode and bookmark intent.
-It is a presentation-only change with source checks complete and publication pending.
+It is deployed Web-only as `history-layout-8155cc9e`, with source, 1 GiB and real
+streaming acceptance complete and backend/VM identities retained.
 
 Conversation commands follow [ADR-0277](adr/0277-model-event-waiting-and-conversation-commands.md),
 first deployed as `commands-514e2b0f`, schema 199.

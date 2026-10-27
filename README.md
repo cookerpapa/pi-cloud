@@ -1,5 +1,10 @@
 # PiCloud
 
+[Conversation layout stability](docs/reports/conversation-layout-repair-20261027.md)
+is deployed as Web-only `history-layout-8155cc9e`. It repairs stale spacing during
+streamed text/Tool changes and preserves live following and reading positions.
+The 1 GiB history check and real Luna stream pass; backend/VM identities are retained.
+
 [Scheduled inputs and workspace-scoped Subagents](docs/reports/scheduled-inputs-delivery-20261026.md)
 are deployed as `schedules-08063299`, schema 202 / tool catalog v3. The `schedule`
 Tool creates one-time or recurring plans; the browser can edit, pause and delete

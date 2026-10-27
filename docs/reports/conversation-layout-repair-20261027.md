@@ -1,7 +1,8 @@
 # Conversation layout stability repair
 
-Status: implemented and verified in source; scoped Web publication/live acceptance
-pending. Schema 202, backend protocols and dependency pins remain unchanged.
+Status: deployed as Web-only `history-layout-8155cc9e`, source
+`8155cc9efcbc8618e282d0374edf7dc4604ff8b2`, Helm revision 112, 2026-10-27.
+Schema 202, backend protocols and dependency pins remain unchanged.
 
 ## Findings and behavior
 
@@ -72,6 +73,9 @@ These are single-host generated-history measurements, not a fleet or arbitrary
 Markdown latency claim. API/storage behavior was not optimized by this change.
 Web typechecks and 213 unit tests pass; the scoped publisher also runs its required
 presentation/queue/operator checks and the new geometry fixture before building.
+The final scoped run passes 228 Web/operator tests, the full presentation and queue
+browser checks, all 17 geometry scenarios, and the single-image provenance/SBOM/
+vulnerability gate.
 
 An initial fixture missed the generated CSS asset and was corrected to load and
 assert the real stylesheet. Intermediate variants exposed an RO loop and a lost
@@ -84,6 +88,27 @@ classification includes the new geometry/live fixture and the previous release's
 fixture-only Android/schedule fixes; shared API/protocol/dependency/runtime edits
 remain rejected. Relevant private evidence is under
 `deploy/production/runtime/release-evidence/history-layout-20261027/`.
+
+## Deployed acceptance
+
+The owned GPT-6 Luna Run produced four native text messages and three successful
+Bash results. The browser reached its final marker without a corrective scroll,
+stayed in live mode and ended exactly at the latest edge. Across 1,528 sampled
+frames, the longest intermediate geometry mismatch was 17.4 ms; the settled gap
+was 0 px and fractional overlap below 0.5 px. No browser errors occurred. The
+fixture's writer, tenant and physical Workspace cleanup completed.
+
+Read-only inspection of all three existing conversations also completed without
+browser errors. Raw pre-observer width-change samples can still report intermediate
+geometry; they are not proof of a painted gap or a guarantee of zero transient
+DOM discrepancy. This repair removes the reproduced persistent spacing/following
+failure and retains explicit settled-layout and reading-position checks.
+
+All 28 non-Web Pods retain their Pod/container/image identities. The existing
+development machine keeps the same allocation, generation, Workspace and desired
+state. All 27 regular secret/configuration file hashes match. No schema migration,
+Worker retirement, VM replacement or user-message injection was needed for this
+publication. Reload an existing page to load the new Web assets.
 
 Live stream reproduction after publication:
 
