@@ -1,8 +1,8 @@
 # Documentation map
 
 [Retry notices and Tool disclosure](reports/retry-tool-display-20261027.md) records
-single-row retry updates and one toolbar button for Tool details. Source checks
-pass; Web-only publication is pending.
+single-row retry updates and one toolbar button for Tool details. Web-only
+`retry-tools-3083d24d` is deployed and live-verified with backend identities retained.
 
 [Native model continuation](reports/model-continuation-delivery-20261027.md)
 implements ADR-0282 with native Pi delta requests, scoped connection cleanup and

@@ -1,12 +1,14 @@
 # Maintained backlog
 
-## Retry notices and Tool disclosure — source accepted, publication pending
+## Retry notices and Tool disclosure — completed
 
 Merge each consecutive retry sequence into one updating line, consistently in
 live and loaded history. Add one toolbar action for all Tool input/text-result
 disclosures, retaining individual controls and image previews. Preserve all
 native events and request behavior. Browser, 22 geometry cases and the actual
-8 MiB PG/API/SSE composition pass. [Evidence](reports/retry-tool-display-20261027.md).
+8 MiB PG/API/SSE composition pass. Web-only `retry-tools-3083d24d` is deployed
+(Helm 116); actual page controls pass and backend/Workspace identities are retained.
+[Evidence](reports/retry-tool-display-20261027.md).
 
 ## Manual live-tail return and snapshot/live Tool grouping — completed
 

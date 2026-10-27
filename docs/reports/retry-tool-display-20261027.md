@@ -1,6 +1,6 @@
 # Retry notices and global Tool disclosure
 
-Status: source accepted; Web-only publication pending.
+Status: deployed Web-only as `retry-tools-3083d24d`, Helm 116, 2026-10-27.
 
 Consecutive increasing retry attempts render one row showing the latest attempt.
 The first item's presentation key stays stable during live updates; native events
@@ -29,6 +29,19 @@ The reviewed pure presentation helpers are added explicitly to ADR-0267's Web
 scope. The existing matched-release script is classified as operator code so its
 prior deployment-helper change does not force a backend rollout for this UI slice.
 Public API, dependencies, provider and runtime source remain outside Web scope.
+
+The scoped release passes 233 Web/operator assertions, presentation/queue browser
+checks, all 22 geometry scenarios and the one-image artifact scan. An unrelated
+identity-reload browser check timed out once; its clean repeat passed and the
+failed evidence is retained. No runtime change was made to work around that test.
+
+Read-only deployed verification in galgame expands all four mounted Tool groups
+and 31 detail panels, then collapses them with the same toolbar button. The viewer
+credential is removed afterwards. All 28 non-Web Pod/container identities, the
+existing machine allocation/generation and 27 configuration hashes are unchanged.
+Retry live/snapshot behavior is covered by the deterministic browser fixture;
+the live page did not have retry notices in its mounted tail during this check.
+Refresh an existing browser page to use the new assets.
 
 Private evidence:
 `deploy/production/runtime/release-evidence/retry-tool-display-20261027/`.
