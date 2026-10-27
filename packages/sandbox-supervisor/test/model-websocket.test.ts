@@ -311,6 +311,14 @@ it("falls back through native SSE when upstream rejects the WebSocket upgrade", 
   expect(f.payloads).toHaveLength(0);
 });
 
+it("preserves the provider's message-size close code for native transport handling", async () => {
+  const f = await fixture(),
+    client = await f.raw();
+  const closed = once(client, "close");
+  f.peers[0]!.close(1009, "Fixture frame too large");
+  expect((await closed)[0]).toBe(1009);
+});
+
 it.each(["stop", "owner", "idle"] as const)(
   "closes unfinished output on %s without exposing partial Tool calls",
   async (reason) => {

@@ -33,11 +33,11 @@ uses the API for binding/screen reads and verifies that the page has no phone en
 
 ## Source and isolated provider evidence
 
-Nineteen focused tests cover native Pi + Gateway + WebSocket upstream continuation,
+Twenty focused tests cover native Pi + Gateway + WebSocket upstream continuation,
 per-request sampling, separate conversation/summary caches, changed context,
 missing reference, connection loss, HTTP fallback, Stop/owner loss/inactivity,
 model/budget rejection, frame/response bounds, overlapped requests, a blocked
-reader and resource cleanup. The actual Pi test's second Tool round omits the
+reader, provider close-code propagation and resource cleanup. The actual Pi test's second Tool round omits the
 256 KiB image entirely and has less than 1% of the first request's bytes. Ordinary
 HTTP Gateway and existing request-policy contracts remain in the relevant gate.
 

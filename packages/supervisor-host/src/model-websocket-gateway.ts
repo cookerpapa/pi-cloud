@@ -133,7 +133,21 @@ export class ModelWebSocketGateway {
         socket.end("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
       else close();
     });
-    upstream.on("close", close);
+    upstream.on("close", (code, reason) => {
+      if (current) current.timing.upstreamCloseCode = code;
+      // Preserve usable provider close codes (notably 1009) for Pi's native
+      // transport handling. Ownership cancellation still terminates immediately.
+      if (
+        !closed &&
+        client?.readyState === WebSocket.OPEN &&
+        code >= 1000 &&
+        code < 5000 &&
+        ![1004, 1005, 1006, 1015].includes(code)
+      ) {
+        rejecting = true;
+        client.close(code, reason);
+      } else close();
+    });
     upstream.on("open", () => {
       if (closed || grant.signal.aborted) {
         close();
