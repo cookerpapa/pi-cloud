@@ -446,6 +446,28 @@ try {
         };
         assert(report.initialBrowser.rows < 80);
         await page.screenshot(join(directory, "latest.png"));
+        phase("load a stationary top edge without a second gesture");
+        // Let initial end-following settle, then jump directly to the edge.
+        // The old test always clicked Load Earlier and hid a missed scroll wake.
+        await page.wait(550);
+        const edgeReads = readCounts.history;
+        const edgeAt = performance.now();
+        await page.evaluate("document.querySelector('.product-chat-scroll').scrollTop=0");
+        const edgeDeadline = Date.now() + 3000;
+        while (readCounts.history === edgeReads && Date.now() < edgeDeadline)
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        report.topEdgeAfterWait = await view();
+        assert(readCounts.history > edgeReads, "The top edge waited for another gesture");
+        const edgeRequestMs = performance.now() - edgeAt;
+        await page.waitFor(
+          "Number(document.querySelector('.product-chat-scroll')?.dataset.historyPages)>1 && !document.querySelector('.product-history-controls button')?.disabled",
+        );
+        report.automaticTopEdge = {
+          requests: readCounts.history - edgeReads,
+          requestStartedMs: edgeRequestMs,
+          milliseconds: performance.now() - edgeAt,
+          secondGesture: false,
+        };
         phase("browse and evict older pages");
         const heaps = [];
         for (let i = 0; i < 24; i++) {

@@ -1,5 +1,18 @@
 # Maintained backlog
 
+## Historical top-edge loading — in progress
+
+Read-only inspection of galgame finds four visible-history pages taking roughly
+35–50 ms each, but a fresh direct jump/rapid drag to the top can issue no request
+until another wheel event. Entering frozen history returns before the new state
+is visible; a guarded anchor adjustment can also consume the only scroll event.
+Recheck the older edge once after history/layout state settles, respecting the
+existing in-flight/error gates and bounded page window. The composed browser test
+must reach the edge without clicking Load Earlier or sending a second gesture.
+The source repair, 8 MiB and 1 GiB composition pass, including the offscreen-anchor
+correction; all 17 stream/layout cases also pass. [Evidence](reports/history-edge-repair-20261027.md).
+Scoped Web publication is in progress.
+
 ## Long-conversation layout stability — completed
 
 The owner reported large gaps that disappear after scrolling and uneven Session

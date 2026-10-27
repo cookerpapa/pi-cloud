@@ -145,14 +145,20 @@ export function ConversationTimeline({
     const container = scrollerRef.current;
     if (!container) return;
     const top = container.getBoundingClientRect().top;
+    const bottom = top + container.clientHeight;
     const first = [...container.querySelectorAll<HTMLElement>("[data-history-row-key]")].find(
-      (e) => e.getBoundingClientRect().bottom > top + 2,
+      (e) => {
+        const rect = e.getBoundingClientRect();
+        return rect.bottom > top + 2 && rect.top < bottom - 2;
+      },
     );
-    if (first?.dataset.historyRowKey)
-      anchor.current = {
-        key: first.dataset.historyRowKey,
-        offset: first.getBoundingClientRect().top - top,
-      };
+    anchorRequest.current = null;
+    anchor.current = first?.dataset.historyRowKey
+      ? {
+          key: first.dataset.historyRowKey,
+          offset: first.getBoundingClientRect().top - top,
+        }
+      : null;
   }, [scrollerRef]);
   const latest = useCallback(() => {
     request.current?.abort();
@@ -452,7 +458,8 @@ export function ConversationTimeline({
     if (!container || performance.now() < guardUntil.current) return;
     const end = container.scrollHeight - container.scrollTop - container.clientHeight < 80;
     if (!end && pagesRef.current === null) {
-      capture();
+      // Freezing the same rows does not prepend content. Keep the user's actual
+      // scroll position, not an overscan row from the previous rendered range.
       pagesOwner.current = sessionRef.current;
       setPages([freezeHistoryView(liveRef.current)]);
     }
@@ -491,6 +498,35 @@ export function ConversationTimeline({
         } catch {}
     }, 300);
   };
+  useEffect(() => {
+    if (ownedPages === null || loading || error) return;
+    const version = epoch.current;
+    let timer: ReturnType<typeof setTimeout>;
+    const checkOlderEdge = () => {
+      if (version !== epoch.current || pagesRef.current === null) return;
+      // Entering history or restoring its anchor can consume the only scroll
+      // event of a fast gesture. Recheck after layout settles; do not require
+      // another wheel event at an already stationary top edge.
+      const remaining = guardUntil.current - performance.now();
+      if (remaining > 0) {
+        timer = setTimeout(checkOlderEdge, Math.ceil(remaining) + 1);
+        return;
+      }
+      const container = scrollerRef.current;
+      const first = pagesRef.current?.[0];
+      if (
+        container &&
+        first?.history.hasBefore &&
+        !busy.current &&
+        container.scrollTop < Math.max(320, container.clientHeight) + 250
+      ) {
+        const query = historyBeforeQuery(first);
+        if (query) void load(query, "before");
+      }
+    };
+    timer = setTimeout(checkOlderEdge, Math.max(0, guardUntil.current - performance.now()) + 1);
+    return () => clearTimeout(timer);
+  }, [ownedPages, loading, error, load, scrollerRef]);
   const before = ownedPages?.[0]?.history.hasBefore ?? live.history.hasBefore;
   const after = ownedPages?.at(-1)?.history.hasAfter ?? false;
   const disclosureState = useMemo(

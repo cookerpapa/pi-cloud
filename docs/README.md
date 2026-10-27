@@ -1,5 +1,9 @@
 # Documentation map
 
+[Historical edge loading](reports/history-edge-repair-20261027.md) records a
+reproduced missed fetch after a fast jump to the top. Source repair and 1 GiB
+composition pass; Web publication is in progress.
+
 [Conversation layout repair](reports/conversation-layout-repair-20261027.md)
 addresses gaps during streamed text/Tool transitions, tail following and bookmark
 restoration. Deployed Web-only as `history-layout-8155cc9e`; geometry, 1 GiB

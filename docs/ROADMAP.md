@@ -1,5 +1,13 @@
 # Implementation roadmap
 
+## Historical top-edge loading — source verified
+
+- [x] Distinguish API latency from a missing page request using a read-only reproduction.
+- [x] Recheck the settled edge and avoid anchoring offscreen rows during a fast jump.
+- [ ] Complete full-size composition and scoped Web/live verification.
+
+[Repair evidence](reports/history-edge-repair-20261027.md).
+
 ## Streaming conversation layout — completed
 
 - [x] Reproduce persistent row gaps and lost live following using production components.
