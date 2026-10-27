@@ -32,9 +32,24 @@ import {
 } from "./virtual-conversation-rows.ts";
 import { useI18n } from "./i18n.tsx";
 
-type Anchor = { key: string; offset: number };
+type Anchor = { key: string; offset: number; cursor?: string };
+function anchorIndex(rows: readonly (VirtualConversationRow | null)[], value: Anchor): number {
+  const exact = rows.findIndex((row) => row?.key === value.key);
+  // Several text fragments share one cursor; prefer the exact fragment before
+  // following a merged retry row through one of its retained source cursors.
+  return exact >= 0 || !value.cursor
+    ? exact
+    : rows.findIndex(
+        (row) => row?.cursor === value.cursor || row?.cursors?.includes(value.cursor!),
+      );
+}
 type Target = { turnId: string; entryId?: string };
-export type TimelineControl = { event(event: PiCloudEvent): void; latest(): void; search(): void };
+export type TimelineControl = {
+  event(event: PiCloudEvent): void;
+  latest(): void;
+  search(): void;
+  resetToolDisclosures(): void;
+};
 
 /** Browsing owns a bounded read window. The live reducer remains independent so
  * a slow historical request cannot overwrite newer execution/output coverage. */
@@ -47,6 +62,7 @@ export function ConversationTimeline({
   onJumpSettled,
   renderRow,
   inherited,
+  toolsExpanded,
 }: {
   api: PiCloudApi;
   live: SessionViewState;
@@ -56,6 +72,7 @@ export function ConversationTimeline({
   onJumpSettled(): void;
   renderRow(row: VirtualConversationRow): ReactNode;
   inherited?: ReactNode;
+  toolsExpanded?: boolean | undefined;
 }) {
   const { t } = useI18n();
   const sessionId = live.session?.sessionId;
@@ -153,10 +170,12 @@ export function ConversationTimeline({
       },
     );
     anchorRequest.current = null;
+    const row = rowsRef.current.find((row) => row?.key === first?.dataset.historyRowKey);
     anchor.current = first?.dataset.historyRowKey
       ? {
           key: first.dataset.historyRowKey,
           offset: first.getBoundingClientRect().top - top,
+          ...(row?.cursor ? { cursor: row.cursor } : {}),
         }
       : null;
   }, [scrollerRef]);
@@ -298,7 +317,13 @@ export function ConversationTimeline({
               : saved.query.turnId && saved.query.entryId
                 ? { turnId: saved.query.turnId, entryId: saved.query.entryId }
                 : undefined,
-            saved.key ? { key: saved.key, offset: saved.offset ?? 0 } : undefined,
+            saved.key
+              ? {
+                  key: saved.key,
+                  offset: saved.offset ?? 0,
+                  ...(saved.query.at ? { cursor: saved.query.at } : {}),
+                }
+              : undefined,
           );
       } catch {}
     }
@@ -324,6 +349,10 @@ export function ConversationTimeline({
   useEffect(() => {
     controlRef.current = {
       latest,
+      resetToolDisclosures() {
+        if (pagesRef.current !== null) capture();
+        setDisclosures({});
+      },
       search() {
         setSearchOpen((value) => !value);
         requestAnimationFrame(() => searchInput.current?.focus());
@@ -338,7 +367,7 @@ export function ConversationTimeline({
     return () => {
       controlRef.current = null;
     };
-  }, [latest, controlRef]);
+  }, [latest, capture, controlRef]);
 
   const search = async (before?: string) => {
     const id = sessionRef.current,
@@ -383,7 +412,7 @@ export function ConversationTimeline({
     const remembered = anchor.current;
     let restored = false;
     if (remembered) {
-      const index = rows.findIndex((r) => r?.key === remembered.key);
+      const index = anchorIndex(rows, remembered);
       if (index >= 0) {
         restored = true;
         initial.current = sessionId;
@@ -391,7 +420,7 @@ export function ConversationTimeline({
         guardUntil.current = performance.now() + 200;
         const container = scrollerRef.current;
         const element = container?.querySelector<HTMLElement>(
-          `[data-history-row-key="${CSS.escape(remembered.key)}"]`,
+          `[data-history-row-key="${CSS.escape(rows[index]!.key)}"]`,
         );
         if (container && element) {
           const delta =
@@ -499,7 +528,7 @@ export function ConversationTimeline({
       capture();
       const saved = anchor.current;
       anchor.current = null;
-      const row = saved ? rowsRef.current.find((r) => r?.key === saved.key) : undefined;
+      const row = saved ? rowsRef.current[anchorIndex(rowsRef.current, saved)] : undefined;
       const query = row?.cursor
         ? { at: row.cursor }
         : row?.entryId
@@ -539,6 +568,7 @@ export function ConversationTimeline({
   const disclosureState = useMemo(
     () => ({
       values: disclosures,
+      ...(toolsExpanded === undefined ? {} : { allToolsExpanded: toolsExpanded }),
       set(keys: readonly string[], value: boolean) {
         setDisclosures((previous) => {
           const next = { ...previous };
@@ -547,7 +577,7 @@ export function ConversationTimeline({
         });
       },
     }),
-    [disclosures],
+    [disclosures, toolsExpanded],
   );
   useEffect(() => {
     if (busy.current) return;

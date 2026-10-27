@@ -1,6 +1,7 @@
 export const catalogSeed = "deploy/helm/pi-cloud-platform/files/model-catalog.json";
 export const operatorSources = new Set([
   "scripts/run-component-release.mjs",
+  "scripts/run-matched-release.mjs",
   "scripts/run-release-scope-check.mjs",
   "scripts/run-live-component-release-check.mjs",
   "scripts/lib/component-release.mjs",

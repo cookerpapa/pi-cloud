@@ -22,9 +22,14 @@ export type ConversationPresentationRow =
       items: readonly Extract<TranscriptItem, { kind: "hosted_search" }>[];
     }
   | {
+      kind: "retry";
+      key: string;
+      items: readonly Extract<TranscriptItem, { kind: "retry" }>[];
+    }
+  | {
       kind: "item";
       key: string;
-      item: Exclude<TranscriptItem, { kind: "text" } | { kind: "tool" }>;
+      item: Exclude<TranscriptItem, { kind: "text" } | { kind: "tool" } | { kind: "retry" }>;
     };
 
 /**
@@ -60,6 +65,24 @@ export function deriveConversationPresentationRows(
           item.phase === "commentary" || (item.phase === undefined && index < lastTools[index]!),
       });
       index += 1;
+      continue;
+    }
+    if (item.kind === "retry") {
+      const retries = [item];
+      index++;
+      while (index < items.length) {
+        const next = items[index]!;
+        // Attempts restart at two for a new request. Keep that boundary even
+        // when no message was produced between two separate retry sequences.
+        if (
+          next.kind !== "retry" ||
+          next.nextSamplingAttempt <= retries.at(-1)!.nextSamplingAttempt
+        )
+          break;
+        retries.push(next);
+        index++;
+      }
+      rows.push({ kind: "retry", key: item.key, items: retries });
       continue;
     }
     if (item.kind === "tool") {

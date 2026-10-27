@@ -72,6 +72,7 @@ import { WorkspaceRebindDialog } from "/src/WorkspaceRebindDialog.tsx";
 import { ConversationTreeNavigator } from "/src/ConversationTreeNavigator.tsx";
 import { PiCloudApi, PiCloudApiError } from "/src/api.ts";
 import { I18nProvider } from "/src/i18n.tsx";
+import { createInitialSessionView, sessionViewReducer } from "/src/session-view.ts";
 import { copyMessageText } from "/src/MessageCopyButton.tsx";
 import { DEVELOPMENT_ENVIRONMENT_PROFILES,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE, DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
@@ -103,6 +104,17 @@ window.renderTurn = (text, recoveredTextLength = 0, status = "running", stopReas
     status,startedSequence:1,terminalSequence:null,stopReason,failure:null,cancellation:null,
     items:[{kind:"text",key:"text:"+(phase??'1'),text,firstSequence:1,lastSequence:2,recoveredTextLength,...(phase?{phase}:{})}]
   }})));
+window.retryView=createInitialSessionView();window.retrySequence=0;
+window.renderRetry=attempt=>{
+  const envelope=(type,payload)=>({schemaVersion:1,eventId:'10000000-0000-4000-8000-000000000001',sessionId:'retry-session',turnId:'retry-turn',agentId:'root',seq:++window.retrySequence,occurredAt:'2026-10-27T00:00:00Z',type,payload});
+  if(!window.retryView.turns.length)window.retryView=sessionViewReducer(window.retryView,{type:'stream.event',event:envelope('turn.started',{inputKind:'prompt'})});
+  window.retryView=sessionViewReducer(window.retryView,{type:'stream.event',event:envelope('model.sampling.retry.scheduled',{stepSequence:1,stepSha256:'a'.repeat(64),completedSamplingAttempt:attempt-1,nextSamplingAttempt:attempt,maximumSamplingAttempts:6,delayMs:500})});
+  root.render(React.createElement(I18nProvider,{initialLanguage:'zh-CN'},React.createElement(ConversationTurn,{turn:window.retryView.turns[0]})));
+};
+window.reloadRetry=()=>{
+  const t=window.retryView.turns[0];window.retryView=sessionViewReducer(window.retryView,{type:'conversation.loaded',conversation:{project:{},session:{sessionId:'retry-session',state:'running'},inheritedMessages:[],history:{before:'history-page',after:null,hasBefore:false,hasAfter:false},turns:[{...t,state:t.status,transcript:{schemaVersion:1,throughSequence:retrySequence,startedSequence:t.startedSequence,terminalSequence:null,stopReason:null,failure:null,cancellation:null,items:t.items.map(i=>({...i,historyCursor:'cursor:'+i.sequence}))}}]}});
+  root.render(React.createElement(I18nProvider,{initialLanguage:'zh-CN'},React.createElement(ConversationTurn,{turn:window.retryView.turns[0]})));
+};
 window.renderPreviewPresentation=(status='completed',withLink=true,single=false)=>{
   window.requestAnimationFrame=nativeRaf;window.cancelAnimationFrame=nativeCancelRaf;
   const path='/v1/conversations/10000000-0000-4000-8000-000000000001/preview/5173/';
@@ -247,7 +259,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
   const conversation=(sessionId=sid)=>({project,session:{...session,sessionId,...(window.fixtureWorkspaceMissing?{workspaceState:'missing'}:{})},inheritedMessages:[],turns:history?[{
     turnId:fixtureTurnId,runId:'60000000-0000-4000-8000-000000000011',mailboxPosition:1,prompt:'Tree question',state:sessionState==='running'?'running':'completed',acceptedAt:createdAt,
     transcript:{schemaVersion:1,throughSequence:sessionState==='running'?2:3,startedSequence:1,terminalSequence:sessionState==='running'?null:3,stopReason:sessionState==='running'?null:'stop',failure:null,cancellation:null,
-      items:[{kind:'text',text:'Tree answer',firstSequence:2,lastSequence:2}]}
+      items:window.fixtureToolHistory??[{kind:'text',text:'Tree answer',firstSequence:2,lastSequence:2}]}
   }]:[],history:{before:null,after:null,hasBefore:false,hasAfter:false}});
   const modelResource = () => ({sessionId:sid,modelProfileId:profileId,...selection,
     displayName:models.find(m=>m.provider===selection.provider).displayName});
@@ -512,6 +524,90 @@ const server = await createServer({
 try {
   await server.listen();
   const port = server.httpServer.address().port;
+  await withChromePage({}, async (page) => {
+    await page.navigate(`http://127.0.0.1:${port}/review.html`);
+    await page.waitFor("window.fixtureReady");
+    await page.evaluate("renderRetry(2)");
+    await page.waitFor(
+      "document.querySelector('.product-lifecycle-retry')?.textContent.includes('第 2 次')",
+    );
+    await page.evaluate(
+      "void(window.retryElement=document.querySelector('.product-lifecycle-retry'))",
+    );
+    for (const attempt of [3, 4]) {
+      await page.evaluate(`renderRetry(${attempt})`);
+      await page.waitFor(
+        `document.querySelector('.product-lifecycle-retry')?.textContent.includes('第 ${attempt} 次')`,
+      );
+      assert.equal(
+        await page.evaluate("document.querySelectorAll('.product-lifecycle-retry').length"),
+        1,
+      );
+      assert(
+        await page.evaluate(
+          "window.retryElement===document.querySelector('.product-lifecycle-retry')",
+        ),
+        "Retry counter should update the same row",
+      );
+    }
+    await page.evaluate("reloadRetry()");
+    await page.waitFor(
+      "document.querySelector('.product-lifecycle-retry')?.textContent.includes('第 4 次')",
+    );
+    assert.equal(
+      await page.evaluate("document.querySelectorAll('.product-lifecycle-retry').length"),
+      1,
+    );
+  });
+  await withChromePage({}, async (page) => {
+    await page.navigate(`http://127.0.0.1:${port}/review.html`);
+    await page.evaluate(
+      "history.replaceState(null,'','/review.html?session=10000000-0000-4000-8000-000000000001')",
+    );
+    await page.waitFor("window.fixtureReady");
+    await page.evaluate(`window.fixtureToolHistory=[
+      {kind:'tool',toolCallId:'task:1',toolName:'bash',input:{command:'INPUT_START'+String.fromCharCode(10)+'line'+(String.fromCharCode(10)+'line').repeat(20)+String.fromCharCode(10)+'INPUT_END'},output:{content:[{type:'text',text:'RESULT_START'+String.fromCharCode(10)+'line'+(String.fromCharCode(10)+'line').repeat(25)+String.fromCharCode(10)+'RESULT_END'}]},status:'completed',firstSequence:1,lastSequence:2,startedAt:'2026-10-27T00:00:00Z',completedAt:'2026-10-27T00:00:01Z'},
+      {kind:'tool',toolCallId:'task:2',toolName:'preview',input:{port:8080},output:{content:[{type:'text',text:'PREVIEW_DETAIL'}]},status:'completed',firstSequence:1,lastSequence:2,startedAt:'2026-10-27T00:00:00Z',completedAt:'2026-10-27T00:00:01Z'}];renderChat('running',true,true)`);
+    await page.waitFor(
+      "document.querySelector('.product-activity-group-toggle') && document.querySelector('.product-tool-disclosure-toggle')?.disabled===false",
+    );
+    await page.evaluate("document.querySelector('.product-tool-disclosure-toggle').click()");
+    await page.waitFor(
+      "document.querySelector('.product-chat-scroll').textContent.includes('INPUT_END') && document.querySelector('.product-chat-scroll').textContent.includes('RESULT_START') && document.querySelector('.product-chat-scroll').textContent.includes('PREVIEW_DETAIL')",
+    );
+    assert.equal(
+      await page.evaluate(
+        "document.querySelector('.product-tool-disclosure-toggle').getAttribute('aria-pressed')",
+      ),
+      "true",
+    );
+    await page.evaluate("document.querySelector('.product-tool-disclosure-toggle').click()");
+    await page.waitFor(
+      "!document.querySelector('.product-chat-scroll').textContent.includes('INPUT_END') && !document.querySelector('.product-chat-scroll').textContent.includes('RESULT_START')",
+    );
+    await page.evaluate("document.querySelector('.product-activity-group-toggle').click()");
+    await page.waitFor("document.querySelectorAll('.product-tool').length===2");
+    assert.equal(
+      await page.evaluate("document.querySelectorAll('.product-tool details[open]').length"),
+      0,
+    );
+    await page.evaluate("document.querySelector('.product-tool details summary').click()");
+    await page.waitFor(
+      "document.querySelector('.product-chat-scroll').textContent.includes('INPUT_START')",
+    );
+    await page.evaluate("document.querySelector('.product-tool-disclosure-toggle').click()");
+    await page.waitFor("document.querySelectorAll('.product-tool details[open]').length===2");
+    await page.evaluate(
+      `emitFixtureEvent({schemaVersion:1,eventId:crypto.randomUUID(),sessionId:'10000000-0000-4000-8000-000000000001',turnId:'50000000-0000-4000-8000-000000000011',agentId:'root',seq:3,occurredAt:new Date().toISOString(),type:'tool.started',payload:{toolCallId:'task:3',toolName:'bash',input:{command:'NEXT_INPUT'}}});emitFixtureEvent({schemaVersion:1,eventId:crypto.randomUUID(),sessionId:'10000000-0000-4000-8000-000000000001',turnId:'50000000-0000-4000-8000-000000000011',agentId:'root',seq:4,occurredAt:new Date().toISOString(),type:'tool.completed',payload:{toolCallId:'task:3',outcome:'completed',output:{content:[{type:'text',text:'NEXT_RESULT'}]}}})`,
+    );
+    await page.waitFor(
+      "document.querySelector('.product-chat-scroll').textContent.includes('NEXT_RESULT')",
+    );
+    assert.equal(
+      await page.evaluate("document.querySelectorAll('.product-tool details[open]').length"),
+      3,
+    );
+  });
   await withChromePage({}, async (page) => {
     await page.navigate(`http://127.0.0.1:${port}/review.html`);
     await page.waitFor("window.fixtureReady");

@@ -1,5 +1,9 @@
 # Documentation map
 
+[Retry notices and Tool disclosure](reports/retry-tool-display-20261027.md) records
+single-row retry updates and one toolbar button for Tool details. Source checks
+pass; Web-only publication is pending.
+
 [Native model continuation](reports/model-continuation-delivery-20261027.md)
 implements ADR-0282 with native Pi delta requests, scoped connection cleanup and
 private per-request metadata. Deployed as `continuation-5f-final`; real provider

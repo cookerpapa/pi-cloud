@@ -18,6 +18,48 @@ function tool(key: string, sequence: number): Extract<TranscriptItem, { kind: "t
 }
 
 describe("conversation presentation rows", () => {
+  it("updates one retry row across live and historical page boundaries without losing source items", () => {
+    const items: TranscriptItem[] = [2, 3, 4].map((attempt) => ({
+      kind: "retry",
+      key: `retry:${attempt}`,
+      sequence: attempt,
+      nextSamplingAttempt: attempt,
+      historyCursor: `cursor:${attempt}`,
+      pageKey: attempt === 2 ? "snapshot" : "later",
+    }));
+    for (let length = 1; length <= items.length; length++) {
+      const rows = deriveConversationPresentationRows(items.slice(0, length));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        kind: "retry",
+        key: "retry:2",
+        items: items.slice(0, length),
+      });
+    }
+    expect(items.map((item) => item.key)).toEqual(["retry:2", "retry:3", "retry:4"]);
+  });
+  it("starts a fresh notice after a retry counter reset or intervening work", () => {
+    const retry = (attempt: number, sequence: number): TranscriptItem => ({
+      kind: "retry",
+      key: `retry:${sequence}`,
+      sequence,
+      nextSamplingAttempt: attempt,
+    });
+    const rows = deriveConversationPresentationRows([
+      retry(2, 1),
+      retry(3, 2),
+      retry(2, 3),
+      tool("read:4", 4),
+      retry(2, 5),
+      retry(3, 6),
+    ]);
+    expect(rows.map((row) => row.kind)).toEqual(["retry", "retry", "activity", "retry"]);
+    expect(
+      rows
+        .filter((row) => row.kind === "retry")
+        .map((row) => row.items.at(-1)!.nextSamplingAttempt),
+    ).toEqual([3, 2, 3]);
+  });
   it("keeps real page boundaries and bounded groups while live items continue their page", () => {
     const rows = deriveConversationPresentationRows(
       Array.from({ length: 15 }, (_, index) => ({

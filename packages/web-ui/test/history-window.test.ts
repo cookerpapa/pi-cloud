@@ -62,6 +62,25 @@ function page(index: number): HistoryPage {
 }
 
 describe("conversation read windows", () => {
+  it("keeps every retry cursor addressable in one virtual row", () => {
+    const item = (attempt: number) => ({
+      kind: "retry" as const,
+      key: `retry:${attempt}`,
+      sequence: attempt,
+      nextSamplingAttempt: attempt,
+      historyCursor: `retry-cursor:${attempt}`,
+      pageKey: `page:${attempt}`,
+    });
+    const rows = virtualConversationRows([
+      { ...turn(0), continuesAfter: true, items: [item(2), item(3), item(4)] },
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      key: `${turnId}:retry:2`,
+      cursor: "retry-cursor:2",
+      cursors: ["retry-cursor:2", "retry-cursor:3", "retry-cursor:4"],
+    });
+  });
   it("evicts the far side during sustained browsing while preserving order and content", () => {
     let pages: readonly HistoryPage[] = [];
     for (let i = 1000; i >= 0; i--) pages = appendHistoryPage(pages, page(i), "before");

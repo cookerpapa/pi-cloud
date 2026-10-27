@@ -849,6 +849,6 @@ describe("product chat experience", () => {
     expect(markup).toContain("上下文已压缩");
     expect(markup).toContain("100,000 → 24,000 tokens");
     expect(markup).toContain("正在继续当前任务");
-    expect(markup).toContain("1.5s 后重试");
+    expect(markup).toContain("模型请求失败，正在重试（第 2 次尝试）");
   });
 });

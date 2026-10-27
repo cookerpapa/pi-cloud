@@ -93,8 +93,9 @@ No Tool replay or model substitution is introduced.
 
 ## Presentation-only Web
 
-TSX/CSS presentation changes, plus the explicitly reviewed `session-view.ts`
-browser reducer, can replace just the Web image when the installed
+TSX/CSS presentation changes, plus the explicitly reviewed `session-view.ts`,
+`conversation-presentation.ts` and `virtual-conversation-rows.ts` browser helpers,
+can replace just the Web image when the installed
 API/protocol, dependencies, Caddy configuration and Helm templates are unchanged:
 
 ```sh

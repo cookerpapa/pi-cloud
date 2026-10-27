@@ -52,6 +52,13 @@ reading does not follow live output. Newly streamed items continue the snapshot'
 last presentation page so adjacent Tools group consistently before/after reload;
 actual page boundaries and the 12-Tool group bound remain intact.
 
+Consecutive retry notices share one row with all source cursors retained. Their
+counter updates without appending another row. If prepending merges an older
+retry into the group, restore reading by its retained cursor only when its exact
+row key no longer exists; text fragments sharing a cursor still prefer their
+own key. Global Tool disclosure stays browser-local, applies to future mounted
+rows, and preserves the current reading anchor and existing image presentation.
+
 Prepending/eviction/resize preserve a message anchor and its viewport offset.
 Only readers at the latest edge follow streaming output. History readers retain
 their location and can return to the latest view. Direct navigation fetches the

@@ -265,6 +265,12 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
   const [codeHostConnectionsOpen, setCodeHostConnectionsOpen] = useState(false);
   const [schedulesOpen, setSchedulesOpen] = useState(false);
+  const [toolDisclosure, setToolDisclosure] = useState<{
+    sessionId: string;
+    expanded: boolean;
+  } | null>(null);
+  const toolsExpanded =
+    toolDisclosure?.sessionId === state.session?.sessionId ? toolDisclosure?.expanded : undefined;
   const initialResourceTab =
     typeof window !== "undefined" &&
     new URLSearchParams(window.location.search).get("resource") === "source-control"
@@ -1808,6 +1814,22 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
               ⌕
             </button>
             <button
+              className="product-tool-disclosure-toggle"
+              type="button"
+              disabled={state.session === null}
+              aria-pressed={toolsExpanded === true}
+              onClick={() => {
+                if (!state.session) return;
+                timelineControl.current?.resetToolDisclosures();
+                setToolDisclosure({
+                  sessionId: state.session.sessionId,
+                  expanded: toolsExpanded !== true,
+                });
+              }}
+            >
+              {t(toolsExpanded ? "chat.collapseTools" : "chat.expandTools")}
+            </button>
+            <button
               className="product-workspace-button"
               disabled={
                 state.session === null ||
@@ -2251,6 +2273,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
 
         <div className={`product-content ${inspectorOpen ? "with-inspector" : ""}`}>
           <ConversationTimeline
+            toolsExpanded={toolsExpanded}
             key={state.session?.sessionId ?? "empty"}
             api={api}
             live={state}

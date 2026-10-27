@@ -1,5 +1,9 @@
 import { useContext, type ReactNode } from "react";
-import { useHistoryDisclosure, ToolDisclosureContext } from "./history-disclosure.tsx";
+import {
+  useHistoryDisclosure,
+  ToolDisclosureContext,
+  HistoryDisclosureContext,
+} from "./history-disclosure.tsx";
 import { LargeCode } from "./LargeCode.tsx";
 import { ChildAgentProgressContext } from "./ChildAgentProgress.tsx";
 import { HighlightedCode } from "./HighlightedCode.tsx";
@@ -399,9 +403,10 @@ export function ToolActivity({ item }: { item: ToolTranscriptItem }) {
         : item.status === "failed"
           ? "!"
           : "✓";
-  const details = ["subagent", "workflow", "preview", "show_image", "generate_image"].includes(
-    item.toolName,
-  );
+  const historyDisclosure = useContext(HistoryDisclosureContext);
+  const details =
+    historyDisclosure?.allToolsExpanded !== undefined ||
+    ["subagent", "workflow", "preview", "show_image", "generate_image"].includes(item.toolName);
   const turnId = useContext(ChildAgentProgressContext)?.turnId ?? "";
   const disclosure = `${turnId}\0${item.toolCallId}`;
   const [detailsOpen, setDetailsOpen] = useHistoryDisclosure([`${disclosure}\0details`]);

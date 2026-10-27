@@ -1,5 +1,13 @@
 # Maintained backlog
 
+## Retry notices and Tool disclosure — source accepted, publication pending
+
+Merge each consecutive retry sequence into one updating line, consistently in
+live and loaded history. Add one toolbar action for all Tool input/text-result
+disclosures, retaining individual controls and image previews. Preserve all
+native events and request behavior. Browser, 22 geometry cases and the actual
+8 MiB PG/API/SSE composition pass. [Evidence](reports/retry-tool-display-20261027.md).
+
 ## Manual live-tail return and snapshot/live Tool grouping — completed
 
 Automatically resume live following when manual scrolling exhausts the latest
@@ -31,6 +39,9 @@ Retain the alternate executor port/operator API and readable historical images.
 Browser checks and original asset preservation pass. [Delivery evidence](reports/model-continuation-delivery-20261027.md).
 
 ## Very large cold visual context — investigation remains
+
+The owner accepts occasional manual `/compact` for now. Keep native automatic
+token-based compaction; do not add a byte-triggered policy without a new decision.
 
 The active long conversation repeatedly sends a context containing 25 images:
 79.6 MiB raw / 106.1 MiB base64 before other context. The current proxy HTTP path

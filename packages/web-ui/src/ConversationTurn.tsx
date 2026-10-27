@@ -298,22 +298,10 @@ function LifecycleItem({
 }) {
   const { t } = useI18n();
   if (item.kind === "retry") {
-    const delay =
-      item.delayMs === undefined
-        ? null
-        : item.delayMs < 1_000
-          ? `${String(item.delayMs)}ms`
-          : `${(item.delayMs / 1_000).toFixed(1)}s`;
     return (
       <div className="product-lifecycle product-lifecycle-retry">
         <span aria-hidden="true">↻</span>
-        {delay === null || item.maximumSamplingAttempts === undefined
-          ? t("turn.retryAttempt", { attempt: item.nextSamplingAttempt })
-          : t("turn.retryScheduled", {
-              attempt: item.nextSamplingAttempt,
-              maximum: item.maximumSamplingAttempts,
-              delay,
-            })}
+        {t("turn.retryAttempt", { attempt: item.nextSamplingAttempt })}
       </div>
     );
   }
@@ -376,12 +364,12 @@ function ToolPreparation({ item }: { item: Extract<TranscriptItem, { kind: "tool
 function OtherItem({
   item,
 }: {
-  item: Exclude<TranscriptItem, { kind: "text" } | { kind: "tool" }>;
+  item: Exclude<TranscriptItem, { kind: "text" } | { kind: "tool" } | { kind: "retry" }>;
 }) {
   if (item.kind === "tool_preparing") {
     return <ToolPreparation item={item} />;
   }
-  if (item.kind === "compaction" || item.kind === "retry") return <LifecycleItem item={item} />;
+  if (item.kind === "compaction") return <LifecycleItem item={item} />;
   if (item.kind === "notification") {
     return (
       <div className={`product-notification product-notification-${item.level}`}>
@@ -560,6 +548,9 @@ export function ConversationTurn({
                 }
                 if (row.kind === "hosted_search") {
                   return <HostedSearchGroup items={row.items} key={row.key} />;
+                }
+                if (row.kind === "retry") {
+                  return <LifecycleItem key={row.key} item={row.items.at(-1)!} />;
                 }
                 return <OtherItem item={row.item} key={row.key} />;
               })}

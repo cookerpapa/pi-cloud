@@ -30,6 +30,10 @@ Web scope for snapshot/live presentation reduction. Its page-group metadata is
 browser-local and does not change an API or storage schema. This is a reviewed
 file inclusion, not permission for arbitrary TypeScript/API-client changes.
 
+The same presentation-only scope explicitly includes `conversation-presentation.ts`
+and `virtual-conversation-rows.ts`: they group browser transcript items and retain
+navigation cursors without changing API/storage/execution contracts.
+
 Keep Helm/Kubernetes as deployment authority and PostgreSQL as Run authority.
 Add bounded provider and catalog release operations to the maintained release
 tooling. Full application/schema/transport changes retain the drained matched

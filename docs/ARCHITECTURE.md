@@ -780,6 +780,12 @@ metadata, while Cube Volumes retain files.
 
 ## Browser view
 
+Consecutive increasing retry attempts form one presentation row whose counter
+updates in place. Native retry records remain intact. The conversation toolbar
+can expand/collapse Tool input and text results through the bounded reader's
+disclosure state; it does not fetch lifetime history or alter execution. Individual
+disclosures still work and image previews remain outside the folded Tool details.
+
 The public SSE request has no cursor. The assigned Projector subscribes to live
 wakes, captures an immutable tail and then reads primary PG. That PG snapshot
 cannot precede coverage already committed and observed by the tail. It merges
