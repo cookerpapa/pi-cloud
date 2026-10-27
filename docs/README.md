@@ -2,7 +2,8 @@
 
 [Tool group display correction](reports/tool-group-display-correction-20261027.md)
 restores the requested group-only toggle and original individual Tool rendering,
-with a long-output width repair. Web-only publication is pending.
+with a long-output width repair. Web-only `tool-groups-40bbf76f` is deployed
+and live-verified (Helm 117).
 
 [Retry notices and Tool disclosure](reports/retry-tool-display-20261027.md) records
 single-row retry updates and one toolbar button for Tool details. Web-only

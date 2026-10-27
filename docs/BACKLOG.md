@@ -1,11 +1,13 @@
 # Maintained backlog
 
-## Tool group display correction — source accepted, publication pending
+## Tool group display correction — completed
 
 Correct the toolbar to control only outer Tool-group expansion. Restore individual
 Tool rendering and preserve manual detail/text choices. Constrain long output to
 its code block after reproducing a 53,171 px overflow in a 710 px pane. Desktop
-and mobile browser checks pass. [Evidence](reports/tool-group-display-correction-20261027.md).
+and mobile browser checks pass. Web-only `tool-groups-40bbf76f` is deployed
+(Helm 117); live group/width checks pass with backend identities retained.
+[Evidence](reports/tool-group-display-correction-20261027.md).
 
 ## Retry notices and Tool disclosure — completed
 

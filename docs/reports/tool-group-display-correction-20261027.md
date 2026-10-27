@@ -1,6 +1,6 @@
 # Tool group display correction
 
-Status: source/browser checks pass; Web-only publication pending.
+Status: deployed Web-only as `tool-groups-40bbf76f`, Helm 117, 2026-10-27.
 
 The owner clarified that the toolbar should change whether consecutive Tools
 default to one collapsed group or individual visible cards. The preceding
@@ -23,5 +23,13 @@ global group change, verifies normal text previews and closed special details,
 retains manual detail/text choices through group toggles, and checks a later Tool
 result does not reopen a manually closed group. No API, native history, model
 request or execution policy changes.
+
+The scoped Web gate and all 22 geometry scenarios pass. Read-only live inspection
+of galgame opens its four mounted groups, finds zero added details wrappers on
+native Tools, and retains the two pre-existing special Tool details as closed.
+The chat pane and its scrollable content both measure 710 px. The same button
+collapses the groups again. All 28 backend Pod/container identities, the existing
+machine allocation and 27 configuration hashes are unchanged; the temporary
+viewer credential is removed. Refresh an open page to load the corrected assets.
 
 Private evidence: `deploy/production/runtime/release-evidence/tool-group-fix-20261027/`.
