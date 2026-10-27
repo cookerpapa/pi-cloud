@@ -39,7 +39,11 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 FROM ${CLI_PROXY_BASE_IMAGE}
 
 COPY scripts/install-node-os-security-updates.sh /tmp/install-node-os-security-updates.sh
-RUN sh /tmp/install-node-os-security-updates.sh && rm /tmp/install-node-os-security-updates.sh
+RUN sh /tmp/install-node-os-security-updates.sh && rm /tmp/install-node-os-security-updates.sh \
+    && apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update \
+    && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
+      install --yes --no-install-recommends libssl3=3.0.22-1~deb12u2 openssl=3.0.22-1~deb12u2 \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /out/CLIProxyAPI /CLIProxyAPI/CLIProxyAPI
 RUN chmod 0555 /CLIProxyAPI/CLIProxyAPI
 

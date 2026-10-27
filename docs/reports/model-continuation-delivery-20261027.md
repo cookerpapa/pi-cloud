@@ -56,6 +56,11 @@ check exposed a pre-existing registry expectation that omitted the already
 deployed `schedule` Tool; its expected advertised list is corrected and the
 targeted test passes. No Tool implementation is changed by that correction.
 
+The matched artifact gate found CVE-2026-84782 in the provider base image's
+`libssl3` and `openssl` 3.0.20-1~deb12u2 packages. Pin the Debian security revision
+3.0.22-1~deb12u2 in that image only and rescan; no provider source/model or account
+configuration changes. [Debian advisory](https://lists.debian.org/debian-lts-announce/2026/10/msg00053.html).
+
 ## Publication acceptance
 
 Use the maintained matched operator and compute-only maintenance. Preserve
