@@ -1,5 +1,26 @@
 # Maintained backlog
 
+## Manual live-tail return and snapshot/live Tool grouping — source accepted
+
+Automatically resume live following when manual scrolling exhausts the latest
+canonical page; preserve anchors and read intervening pages first. Continue the
+snapshot page identity through new live Tools so grouping matches reopening.
+Targeted tests, 20 browser geometry cases and the actual 8 MiB PG/API/SSE composition
+pass. Web-only release is pending; backend ownership/data remain unchanged.
+[Evidence and separate provider findings](reports/live-tail-and-model-latency-20261027.md).
+
+## Large visual-context provider latency — investigated, optimization pending
+
+The active long conversation repeatedly sends a context containing 25 images:
+79.6 MiB raw / 106.1 MiB base64 before other context. The current proxy HTTP path
+resends full uncompressed JSON upstream and creates an upstream connection per
+request. Timings show roughly 200-second first responses, four event-idle timeouts
+and confirmed TLS EOFs. Cache token hits do not save upload bytes. Measure upstream
+phase timings without payloads, then evaluate request compression and supported
+incremental continuation; do not silently remove images, force compaction, or
+invent another durable context authority. These findings do not establish that
+all delay is in the proxy. [Investigation](reports/live-tail-and-model-latency-20261027.md).
+
 ## Historical top-edge loading — completed
 
 Read-only inspection of galgame finds four visible-history pages taking roughly

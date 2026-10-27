@@ -1,5 +1,9 @@
 # Documentation map
 
+[Live-tail return and provider latency](reports/live-tail-and-model-latency-20261027.md)
+separates the manual-scroll/Tool-grouping repairs from measured first-response
+stalls and repeated large-image context uploads. Web-only publication is pending.
+
 [Historical edge loading](reports/history-edge-repair-20261027.md) records a
 reproduced missed fetch after a fast jump to the top. Deployed Web-only as
 `history-edge-92f0d1f9`; source, 1 GiB and live edge-gesture checks pass.

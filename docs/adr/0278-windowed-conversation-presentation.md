@@ -45,6 +45,13 @@ new rows are inserted before it. Bookmark offsets apply after the target mounts,
 and prefetch distance must not become a blank viewport in the transcript. These
 refinements preserve the existing read/storage boundaries and dependency pin.
 
+Reaching the latest canonical page's bottom automatically returns to the live
+suffix, including after an empty forward page confirms the tail. Reaching a
+window edge with unread canonical pages still loads those pages first. Historical
+reading does not follow live output. Newly streamed items continue the snapshot's
+last presentation page so adjacent Tools group consistently before/after reload;
+actual page boundaries and the 12-Tool group bound remain intact.
+
 Prepending/eviction/resize preserve a message anchor and its viewport offset.
 Only readers at the latest edge follow streaming output. History readers retain
 their location and can return to the latest view. Direct navigation fetches the

@@ -49,6 +49,7 @@ it("keeps presentation acceptance helpers outside the deployed runtime boundary"
   expect(() =>
     assertScopedSources("web", [
       "packages/web-ui/src/ConversationTimeline.tsx",
+      "packages/web-ui/src/session-view.ts",
       "scripts/run-history-layout-check.mjs",
       "scripts/run-history-window-check.mjs",
       "scripts/run-live-android-check.mjs",

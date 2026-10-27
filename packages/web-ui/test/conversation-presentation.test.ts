@@ -18,6 +18,15 @@ function tool(key: string, sequence: number): Extract<TranscriptItem, { kind: "t
 }
 
 describe("conversation presentation rows", () => {
+  it("keeps real page boundaries and bounded groups while live items continue their page", () => {
+    const rows = deriveConversationPresentationRows(
+      Array.from({ length: 15 }, (_, index) => ({
+        ...tool(`bash:${index}`, index),
+        pageKey: index === 0 ? "older" : "latest",
+      })),
+    );
+    expect(rows.map((row) => (row.kind === "activity" ? row.items.length : 0))).toEqual([1, 12, 2]);
+  });
   it("uses explicit phase before a Tool exists and does not reclassify an explicit final answer", () => {
     expect(
       deriveConversationPresentationRows([

@@ -10,6 +10,7 @@ import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
 } from "@pi-cloud/protocol";
 import { describe, expect, it } from "vitest";
+import { deriveConversationPresentationRows } from "../src/conversation-presentation.ts";
 import { projectConversationTurnTranscript } from "../../runtime-core/src/conversation-turn-projection.ts";
 import { CompactEventTail } from "../../runtime-core/src/compact-event-tail.ts";
 import {
@@ -121,6 +122,74 @@ function preparedState(): SessionViewState {
 }
 
 describe("session transcript reducer", () => {
+  it("continues the snapshot's Tool group through preparing/start/completion and reload", () => {
+    const conversation: ConversationDetailResource = {
+      project,
+      session: { ...session, state: "running", updatedAt: CREATED_AT, lastActiveAt: CREATED_AT },
+      inheritedMessages: [],
+      turns: [
+        {
+          turnId: TURN_ID,
+          runId: accepted.runId,
+          mailboxPosition: 1,
+          prompt: "Inspect and edit",
+          state: "running",
+          acceptedAt: CREATED_AT,
+        },
+      ],
+      history: {
+        before: "snapshot-page",
+        after: "snapshot-tail",
+        hasBefore: true,
+        hasAfter: false,
+      },
+    };
+    const calls = ["bash", "edit", "bash"].flatMap((toolName, i) => [
+      envelope(i * 3 + 1, {
+        type: "assistant.tool_call.preparing",
+        payload: { toolCallId: `task:${i}`, toolName },
+      }),
+      envelope(i * 3 + 2, {
+        type: "tool.started",
+        payload: { toolCallId: `task:${i}`, toolName, input: {} },
+      }),
+      envelope(i * 3 + 3, {
+        type: "tool.completed",
+        payload: {
+          toolCallId: `task:${i}`,
+          outcome: "completed",
+          output: { content: [{ type: "text", text: "Done" }] },
+        },
+      }),
+    ]);
+    // Loading after either a final reply or a preparing observation must behave
+    // the same as opening the complete canonical snapshot later.
+    for (const boundary of [3, 4]) {
+      let state = sessionViewReducer(createInitialSessionView(), {
+        type: "conversation.loaded",
+        conversation: materialize(conversation, calls.slice(0, boundary)),
+      });
+      for (const event of calls.slice(boundary))
+        state = sessionViewReducer(state, { type: "stream.event", event });
+      const rows = deriveConversationPresentationRows(state.turns[0]!.items);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        kind: "activity",
+        items: [
+          { toolName: "bash", status: "completed" },
+          { toolName: "edit", status: "completed" },
+          { toolName: "bash", status: "completed" },
+        ],
+      });
+      const reloaded = sessionViewReducer(createInitialSessionView(), {
+        type: "conversation.loaded",
+        conversation: materialize(conversation, calls),
+      });
+      expect(
+        deriveConversationPresentationRows(reloaded.turns[0]!.items).map((row) => row.kind),
+      ).toEqual(rows.map((row) => row.kind));
+    }
+  });
   it.each(["acceptance", "discovery"] as const)(
     "keeps an early streamed Turn's input unknown until %s supplies its actual content",
     (source) => {

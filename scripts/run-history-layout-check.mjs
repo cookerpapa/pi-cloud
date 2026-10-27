@@ -28,7 +28,8 @@ function turn(i,session='one'){const id=session+'-turn-'+i;return {turnId:id,run
 {kind:'tool',key:id+'-tool2',toolCallId:'task:'+(i*10+5),toolName:'preview',input:{port:8080},output:{content:[{type:'text',text:'Preview output'}]},status:'completed',firstSequence:i*10+5,lastSequence:i*10+6,startedAt:'2026-10-27T00:00:00Z',completedAt:'2026-10-27T00:00:01Z'},
 {kind:'text',key:id+'-final',messageId:'entry:'+(i*10+5)+':0',text:'Completed '+i+'\\n\\n'+paragraph.repeat(1+i%3),firstSequence:i*10+5,lastSequence:i*10+5,recoveredTextLength:10000}]};}
 function state(id='one',start=0){return {...createInitialSessionView(),session:{sessionId:id},turns:Array.from({length:80},(_,i)=>turn(start+i,id)),history:{before:null,after:null,hasBefore:false,hasAfter:false}};}
-const api={getConversation:async()=>{throw Error('No history fetch expected in geometry fixture')}};
+window.historyRequests=[];window.historyResponses=[];
+const api={getConversation:async(id,query)=>{historyRequests.push(query);if(!query.after&&query.direction!=='after')throw Error('Unexpected history direction');await new Promise(r=>setTimeout(r,80));return {project:{},session:{sessionId:id,state:'running'},inheritedMessages:[],turns:[],history:{before:null,after:null,hasBefore:false,hasAfter:false},...historyResponses.shift()};}};
 window.layoutErrors=[];window.layoutSamples=[];window.resizeSamples=[];window.layoutLabel='open';window.firstRowsAt=null;
 addEventListener('error',e=>layoutErrors.push(e.message));addEventListener('unhandledrejection',e=>layoutErrors.push(String(e.reason)));
 window.geometry=()=>{const p=document.querySelector('.product-chat-scroll');if(!p)return null;const box=p.getBoundingClientRect();const rows=[...p.querySelectorAll('[data-history-row-key]')].map(n=>({i:Number(n.dataset.index),key:n.dataset.historyRowKey,top:n.getBoundingClientRect().top,bottom:n.getBoundingClientRect().bottom,height:n.getBoundingClientRect().height}));let gap=0,overlap=0;for(let i=1;i<rows.length;i++){const a=rows[i-1],b=rows[i];if(b.i===a.i+1&&b.top>box.top&&a.bottom<box.bottom){gap=Math.max(gap,b.top-a.bottom);overlap=Math.max(overlap,a.bottom-b.top);}}return {gap,overlap,rows:rows.length,scroll:p.scrollTop,total:p.scrollHeight,end:p.scrollHeight-p.scrollTop-p.clientHeight,key:rows.find(n=>n.bottom>box.top+2)?.key,offset:(rows.find(n=>n.bottom>box.top+2)?.top??box.top)-box.top};};
@@ -36,6 +37,7 @@ window.watchLayout=()=>{const p=document.querySelector('.product-chat-scroll');c
 function sample(){requestAnimationFrame(()=>setTimeout(()=>{const g=geometry();if(g){if(g.rows&&!firstRowsAt)window.firstRowsAt=performance.now();layoutSamples.push({label:layoutLabel,t:performance.now(),...g});if(layoutSamples.length>10000)layoutSamples.shift();}sample();},0));}sample();
 function Fixture(){const[live,setLive]=useState(()=>state()),[width,setWidth]=useState(940);const scroll=useRef(null),control=useRef(null);window.narrow=()=>setWidth(580);window.wide=()=>setWidth(940);window.latest=()=>control.current?.latest();window.swap=()=>setLive(state('two'));window.trim=()=>setLive(s=>({...s,turns:s.turns.slice(20)}));window.reset=()=>setLive(state());window.grow=()=>setLive(s=>({...s,turns:s.turns.map((t,i)=>i!==s.turns.length-1?t:{...t,items:t.items.map((x,j)=>j!==t.items.length-1?x:{...x,text:x.text+'\\n\\n'+paragraph.repeat(3)})})}));
 const sequence=useRef(100000);window.emit=(type,payload)=>{const event={schemaVersion:1,eventId:'40000000-0000-4000-8000-000000000001',sessionId:live.session.sessionId,turnId:live.turns.at(-1).turnId,agentId:'root',occurredAt:new Date().toISOString(),seq:++sequence.current,type,payload};setLive(s=>sessionViewReducer(s,{type:'stream.event',event}));control.current?.event(event);};
+window.appendPagedTurn=()=>{const t=turn(80);historyResponses.push({turns:[{...t,state:t.status,transcript:{items:t.items,startedSequence:t.startedSequence,terminalSequence:t.terminalSequence,stopReason:t.stopReason,failure:null,cancellation:null}}],history:{before:'following-page',after:'following-tail',hasBefore:true,hasAfter:false}});setLive(s=>({...s,turns:[...s.turns,t]}));};
 return React.createElement('div',{style:{display:'grid',height:700,width,maxWidth:'100vw',margin:'20px auto'}},React.createElement(ConversationTimeline,{api,live,scrollerRef:scroll,controlRef:control,jump:null,onJumpSettled:()=>{},renderRow:row=>React.createElement(ConversationTurn,{turn:row.turn,fragment:row.fragment})}));}
 createRoot(document.getElementById('root')).render(React.createElement(I18nProvider,null,React.createElement(Fixture)));
 `;
@@ -246,8 +248,46 @@ try {
     const held = await page.evaluate("geometry()");
     assert.equal(held.key, reading.key, "New output changed the reading anchor");
     assert(Math.abs(held.offset - reading.offset) < 4, "New output moved the reader");
-    await page.evaluate("latest()");
-    await page.wait(600);
+    await check("manual-return-to-live", async () => {
+      const before = await page.evaluate("historyRequests.length");
+      await page.evaluate("document.querySelector('.product-chat-scroll').scrollTop=1e9");
+      await page.waitFor("!document.querySelector('.product-return-to-latest')");
+      assert.equal(
+        await page.evaluate("historyRequests.length"),
+        before + 1,
+        "Confirm the canonical tail once",
+      );
+      await page.evaluate("grow()");
+    });
+    await page.send("Input.dispatchMouseEvent", {
+      type: "mouseWheel",
+      x: 640,
+      y: 400,
+      deltaX: 0,
+      deltaY: -420,
+    });
+    await page.waitFor("document.querySelector('.product-return-to-latest')");
+    await page.wait(250);
+    await page.evaluate("appendPagedTurn()");
+    await check("load-newer-before-joining-live", async () => {
+      const before = await page.evaluate("historyRequests.length");
+      await page.evaluate("document.querySelector('.product-chat-scroll').scrollTop=1e9");
+      await page.waitFor(`historyRequests.length>${before}`);
+      await page.wait(500);
+      assert(
+        await page.evaluate("!!document.querySelector('.product-return-to-latest')"),
+        "Do not skip unread canonical content",
+      );
+      assert(
+        (await page.evaluate("geometry()")).end > 80,
+        "Newer history should remain below the reading point",
+      );
+    });
+    await check("manual-return-after-newer-page", async () => {
+      await page.evaluate("document.querySelector('.product-chat-scroll').scrollTop=1e9");
+      await page.waitFor("!document.querySelector('.product-return-to-latest')");
+      await page.evaluate("grow()");
+    });
     await check("switch-session", async () => {
       await page.evaluate("swap()");
     });
@@ -268,7 +308,14 @@ try {
       );
       assert(scenario.last.rows < 70, "Mounted rows must remain bounded");
     }
-    for (const name of ["tool-preparing", "tool-started", "tool-completed", "continuous-output"])
+    for (const name of [
+      "tool-preparing",
+      "tool-started",
+      "tool-completed",
+      "continuous-output",
+      "manual-return-to-live",
+      "manual-return-after-newer-page",
+    ])
       assert(
         report.scenarios.find((s) => s.name === name).last.end <= 80,
         name + " lost following at the live edge",

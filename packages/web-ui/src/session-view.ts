@@ -439,6 +439,8 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
         return {
           kind: "tool",
           key: item.key,
+          ...(item.pageKey ? { pageKey: item.pageKey } : {}),
+          ...(item.historyCursor ? { historyCursor: item.historyCursor } : {}),
           toolCallId: item.toolCallId,
           toolName: event.payload.toolName,
           input: event.payload.input,
@@ -691,9 +693,26 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
     event.type === "turn.completed" ||
     event.type === "turn.failed" ||
     event.type === "turn.cancelled";
+  // The snapshot's last page continues through SSE. Leaving new items untagged
+  // would split adjacent Tools until a reload tags them all again. Real history
+  // page boundaries remain intact for stable grouping during page eviction.
+  const tailPageKey = state.turns
+    .find((turn) => turn.turnId === event.turnId)
+    ?.items.at(-1)?.pageKey;
   return {
     ...state,
-    turns,
+    turns: tailPageKey
+      ? turns.map((turn) =>
+          turn.turnId === event.turnId && turn.items.some((item) => !item.pageKey)
+            ? {
+                ...turn,
+                items: turn.items.map((item) =>
+                  item.pageKey ? item : { ...item, pageKey: tailPageKey },
+                ),
+              }
+            : turn,
+        )
+      : turns,
     sessionState: terminal
       ? "idle"
       : event.type === "turn.started"

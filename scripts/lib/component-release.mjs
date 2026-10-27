@@ -89,6 +89,7 @@ export function assertScopedSources(scope, files) {
         (scope === "control-plane" && ordinaryControlToolSource(file)) ||
         (scope === "web" &&
           (/^packages\/web-ui\/src\/.*\.(tsx|css)$/.test(file) ||
+            file === "packages/web-ui/src/session-view.ts" ||
             [
               "scripts/production-kubernetes.mjs",
               "scripts/run-browser-presentation-check.mjs",

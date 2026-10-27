@@ -453,6 +453,30 @@ export function ConversationTimeline({
       last?.afterQuery ?? (last?.history.after ? { after: last.history.after } : undefined);
     if (query) void load(query, "after");
   };
+  const checkEdges = useCallback(() => {
+    const container = scrollerRef.current;
+    const current = pagesRef.current;
+    if (!container || !current || busy.current || error) return;
+    const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
+    const last = current.at(-1);
+    const afterQuery =
+      last?.afterQuery ?? (last?.history.after ? { after: last.history.after } : undefined);
+    // Exhaust known canonical pages before joining the live suffix. A frozen
+    // all-live view can have no canonical cursor yet, so there is nothing to page.
+    if (distance < 80 && (!last?.history.hasAfter || !afterQuery)) {
+      latest();
+      return;
+    }
+    if (
+      container.scrollTop < Math.max(320, container.clientHeight) + 250 &&
+      current[0]?.history.hasBefore
+    ) {
+      const query = historyBeforeQuery(current[0]);
+      if (query) void load(query, "before");
+    } else if (distance < 250 && last?.history.hasAfter && afterQuery) {
+      void load(afterQuery, "after");
+    }
+  }, [error, latest, load, scrollerRef]);
   const scrolling = () => {
     const container = scrollerRef.current;
     if (!container || performance.now() < guardUntil.current) return;
@@ -467,15 +491,7 @@ export function ConversationTimeline({
       return;
     }
 
-    if (!busy.current && !error) {
-      if (container.scrollTop < loadingZone + 250 && pagesRef.current[0]?.history.hasBefore)
-        earlier();
-      else if (
-        container.scrollHeight - container.scrollTop - container.clientHeight < 250 &&
-        pagesRef.current.at(-1)?.history.hasAfter
-      )
-        newer();
-    }
+    checkEdges();
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       const id = sessionRef.current;
@@ -502,31 +518,22 @@ export function ConversationTimeline({
     if (ownedPages === null || loading || error) return;
     const version = epoch.current;
     let timer: ReturnType<typeof setTimeout>;
-    const checkOlderEdge = () => {
+    const checkSettledEdges = () => {
       if (version !== epoch.current || pagesRef.current === null) return;
       // Entering history or restoring its anchor can consume the only scroll
       // event of a fast gesture. Recheck after layout settles; do not require
-      // another wheel event at an already stationary top edge.
+      // another wheel event at either stationary edge, including an empty last
+      // page confirming that manual scrolling has reached the live tail.
       const remaining = guardUntil.current - performance.now();
       if (remaining > 0) {
-        timer = setTimeout(checkOlderEdge, Math.ceil(remaining) + 1);
+        timer = setTimeout(checkSettledEdges, Math.ceil(remaining) + 1);
         return;
       }
-      const container = scrollerRef.current;
-      const first = pagesRef.current?.[0];
-      if (
-        container &&
-        first?.history.hasBefore &&
-        !busy.current &&
-        container.scrollTop < Math.max(320, container.clientHeight) + 250
-      ) {
-        const query = historyBeforeQuery(first);
-        if (query) void load(query, "before");
-      }
+      checkEdges();
     };
-    timer = setTimeout(checkOlderEdge, Math.max(0, guardUntil.current - performance.now()) + 1);
+    timer = setTimeout(checkSettledEdges, Math.max(0, guardUntil.current - performance.now()) + 1);
     return () => clearTimeout(timer);
-  }, [ownedPages, loading, error, load, scrollerRef]);
+  }, [ownedPages, loading, error, checkEdges]);
   const before = ownedPages?.[0]?.history.hasBefore ?? live.history.hasBefore;
   const after = ownedPages?.at(-1)?.history.hasAfter ?? false;
   const disclosureState = useMemo(

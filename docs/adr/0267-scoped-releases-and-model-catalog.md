@@ -25,6 +25,11 @@ visible connection/staleness warnings, browser recovery and actual Tool status.
 This bounded extension avoids shutting down a user's development machine for a
 display-only change; it adds no deployment authority or service.
 
+October 27 refinement: explicitly include `web-ui/src/session-view.ts` in the
+Web scope for snapshot/live presentation reduction. Its page-group metadata is
+browser-local and does not change an API or storage schema. This is a reviewed
+file inclusion, not permission for arbitrary TypeScript/API-client changes.
+
 Keep Helm/Kubernetes as deployment authority and PostgreSQL as Run authority.
 Add bounded provider and catalog release operations to the maintained release
 tooling. Full application/schema/transport changes retain the drained matched
