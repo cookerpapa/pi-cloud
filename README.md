@@ -19,8 +19,8 @@ Real Luna, browser, recovery, Cube and Android checks pass; original assets rema
 
 [Android execution targets](docs/ANDROID_EXECUTION.md) are deployed under ADR-0279:
 core `schedules-08063299` (schema 202, tool catalog v3), device `android-7aa30c34`.
-An idle coding Session can bind a cloud phone; its root Agent receives six device
-operations alongside its Cube tools. Real Luna, screenshot storage/Web rendering,
+The alternate-target prototype retains its operator API and six device tools;
+the October 27 product scope removes the cloud-phone controls from Web. Real Luna, screenshot storage/Web rendering,
 browser binding and device restart retention pass. [Delivery evidence](docs/reports/android-execution-delivery-20261026.md).
 
 A self-hosted, multi-tenant coding agent. Pi Durable 1.0.0 runs the native Harness in a shared

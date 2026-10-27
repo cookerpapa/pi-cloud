@@ -13,7 +13,9 @@ ephemeral meaning separate Linux compute on the same Volume, never a phone clone
 load and live acceptance, plus the preserved original assets.
 
 [ADR-0279](adr/0279-android-execution-targets.md) extends the execution boundary with an
-operator-provisioned Android device beside the existing Cube Workspace. PG owns
+operator-provisioned Android device beside the existing Cube Workspace. The
+October 27 product scope withdraws the Web picker while retaining the operator
+API and execution-target port as a prototype. PG owns
 registration and idle Session binding; the Run freezes capability grants. One
 shared Projector routes committed intent using its ordered binding view. The
 trusted Android executor uses Appium/UiAutomator2 and the existing boot-scoped

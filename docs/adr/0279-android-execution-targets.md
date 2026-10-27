@@ -4,6 +4,11 @@ Status: accepted and deployed, 2026-10-26. Core `android-a37491f4` / schema 201 
 catalog v2; device `android-7aa30c34`. See
 [delivery evidence](../reports/android-execution-delivery-20261026.md).
 
+October 27 product amendment: the owner only needed to validate alternate-sandbox
+flexibility. Remove the Web phone picker, its controls and unused presentation
+code. Keep the existing executor abstraction, operator API and retained historical
+screenshots. This does not authorize deletion of an allocation or device userdata.
+
 The owner chose a cloud Android virtual device as the first additional execution
 target, then approved a trusted cloud executor publishing directly to the existing
 Worker Kafka reply transport. The Android guest/application does not receive

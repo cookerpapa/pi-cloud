@@ -35,6 +35,10 @@ and records real Luna/Cube/Android/browser recovery plus original-asset preserva
 
 ## Cloud Android execution target — completed
 
+The October 27 product scope removes the Web phone picker and screen controls.
+The alternate-target port/API and its operator acceptance remain available as a
+prototype; phone provisioning is not a current user-facing feature.
+
 - [x] Record ADR-0279: operator-provisioned cloud target, existing Session ownership and direct internal replies.
 - [x] Prove and pin Cuttlefish/AOSP plus Appium UIAutomator2 on the actual host.
 - [x] Separate executor transport from VM lifecycle and preserve Cube contracts.

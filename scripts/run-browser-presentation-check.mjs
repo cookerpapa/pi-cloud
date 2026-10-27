@@ -1043,6 +1043,13 @@ try {
     });
     await page.evaluate("renderChat()");
     await page.waitFor("document.querySelector('.product-main')");
+    assert.equal(
+      await page.evaluate(
+        "[...document.querySelectorAll('button')].some(b=>['云手机','Cloud phone'].includes(b.textContent.trim()))",
+      ),
+      false,
+      "The phone prototype must not have a product-page entry",
+    );
     const mobileChat = await page.evaluate(
       "document.querySelector('.product-main').clientHeight===innerHeight",
     );

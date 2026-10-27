@@ -62,7 +62,6 @@ import { streamSessionEvents } from "./sse.ts";
 import { ToolProgressStore } from "./tool-progress-store.ts";
 import { RunObservationStore } from "./run-observation-store.ts";
 import { errorMessage } from "./ui-errors.ts";
-import { ExecutionTargetPicker } from "./ExecutionTargetPicker.tsx";
 import { WorkspaceInspector } from "./WorkspaceInspector.tsx";
 import { useResizablePanel } from "./use-resizable-panel.ts";
 import { useI18n, type Translate, type UiLanguage } from "./i18n.tsx";
@@ -265,7 +264,6 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const [inspectorRefreshSignal, setInspectorRefreshSignal] = useState(0);
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
   const [codeHostConnectionsOpen, setCodeHostConnectionsOpen] = useState(false);
-  const [executionTargetOpen, setExecutionTargetOpen] = useState(false);
   const [schedulesOpen, setSchedulesOpen] = useState(false);
   const initialResourceTab =
     typeof window !== "undefined" &&
@@ -1764,13 +1762,6 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
             >
               {t("schedule.title")}
             </button>
-            <button
-              type="button"
-              disabled={state.session === null || selectedDelegatedSession !== null}
-              onClick={() => setExecutionTargetOpen(true)}
-            >
-              {t("device.title")}
-            </button>
             {state.connection.phase === "failed" ? (
               <button onClick={() => setReconnectGeneration((value) => value + 1)} type="button">
                 {t("chat.reconnect")}
@@ -1857,16 +1848,6 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
               setSchedulesOpen(false);
               void openConversationSession(state.session!.sessionId, { turnId }, false, null);
             }}
-          />
-        ) : null}
-        {executionTargetOpen && state.session ? (
-          <ExecutionTargetPicker
-            key={state.session.sessionId}
-            api={api}
-            sessionId={state.session.sessionId}
-            busyRun={Boolean(currentTurn)}
-            canMutate={canMutate}
-            onClose={() => setExecutionTargetOpen(false)}
           />
         ) : null}
 

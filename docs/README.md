@@ -30,8 +30,8 @@ parameter boundary and validation criteria; the new contract is deployed.
 
 [Android execution targets](ANDROID_EXECUTION.md) are deployed under ADR-0279:
 core `schedules-08063299` (schema 202, tool catalog v3), device `android-7aa30c34`.
-An idle coding Session can bind a cloud phone; its root Agent receives six device
-operations alongside its Cube tools. Real Luna, screenshot storage/Web rendering,
+The alternate-target prototype retains its operator API and six device tools;
+the October 27 product scope removes the cloud-phone controls from Web. Real Luna, screenshot storage/Web rendering,
 browser binding and device restart retention pass. [Delivery evidence](reports/android-execution-delivery-20261026.md).
 
 [Windowed conversation presentation](adr/0278-windowed-conversation-presentation.md)

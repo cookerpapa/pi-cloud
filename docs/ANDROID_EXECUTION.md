@@ -5,9 +5,11 @@ Status: deployed under ADR-0279 on 2026-10-26. Current core `schedules-08063299`
 [Delivery evidence](reports/android-execution-delivery-20261026.md) covers real
 model calls, Web binding/images, device restart and original-asset preservation.
 
-An existing coding conversation can additionally control one operator-provisioned
-Android virtual device. Bind it from the conversation's **Cloud phone / 云手机** picker while
-idle. The next Run receives the device capabilities. Its root Agent can observe
+The October 27 owner decision withdraws the cloud-phone picker/screen controls
+from the product page. The execution-target abstraction and operator API remain
+as a verified alternate-sandbox prototype; no backend/device data is deleted.
+An operator can bind an existing idle coding conversation to a provisioned
+Android virtual device through the API. The next Run receives the device capabilities. Its root Agent can observe
 the screen, tap, swipe, enter text, press a navigation key and open an installed
 application. Child Agents do not inherit control of that screen. The existing
 Cube Workspace and coding tools remain available.
@@ -30,7 +32,7 @@ No independent broker, executor command queue or Tool-result database is added.
 
 Android itself has no Kafka, database or model credential. The external executor
 is trusted private infrastructure. Screenshots use the existing attachment
-inventory/object store; Kafka carries references. The Device picker's refresh
+inventory/object store; Kafka carries references. The operator screen endpoint
 reads a disposable screenshot directly and does not add it to model context.
 Android application data lives in its own persistent device state directory;
 that directory is distinct from the coding Workspace Volume.
@@ -118,7 +120,7 @@ cancellation and uncertain replies. The opt-in
 `scripts/run-android-transport-check.mjs` exercises a real owned Android device
 and an isolated RF3 Kafka cluster; it deliberately uses a test image store.
 The deployed path additionally passes real native model calls, S3 checksum reads,
-Web image rendering/binding/refresh and restart retention. Repeat the owned
+Web history-image rendering, API binding/screen reads and restart retention. Repeat the owned
 fixture only while the selected device is unbound:
 
 ```sh
@@ -127,7 +129,7 @@ PI_CLOUD_LIVE_ANDROID_CHECK=1 node --import tsx scripts/run-live-android-check.m
 ```
 
 This uses a temporary owner credential and an empty coding Workspace, drives the
-actual browser binding and all six tools with Luna, checks persisted screenshots
+API binding and all six tools with Luna, checks persisted screenshots
 and no Cube allocation, then deletes its Session/Workspace and revokes/removes
 its own credential. Reports and browser captures stay private. It never takes over
 an already-bound device. Transport-only success is not evidence of this whole path.

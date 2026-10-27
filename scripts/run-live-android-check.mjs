@@ -106,44 +106,10 @@ try {
   report.sessionId = session.sessionId;
   report.workspaceId = project.workspaceId;
   report.credentialId = credential.credentialId;
-  await withChromePage({}, async (page) => {
-    await page.send("Network.setExtraHTTPHeaders", {
-      headers: { Authorization: "Bearer " + credential.token },
-    });
-    await page.navigate(baseUrl + "/?session=" + session.sessionId);
-    await page.waitFor(
-      "[...document.querySelectorAll('button')].some(b=>!b.disabled&&['云手机','Cloud phone'].includes(b.textContent.trim()))",
-    );
-    await page.evaluate(
-      "[...document.querySelectorAll('button')].find(b=>['云手机','Cloud phone'].includes(b.textContent.trim())).click()",
-    );
-    try {
-      await page.waitFor(
-        "document.querySelector('.product-device-modal select')?.disabled === false",
-      );
-    } catch (error) {
-      report.devicePickerFailure = await page.evaluate(
-        "({modal:document.querySelector('.product-device-modal')?.innerText, select:document.querySelector('.product-device-modal select')?.outerHTML, alerts:[...document.querySelectorAll('[role=alert]')].map(x=>x.innerText)})",
-      );
-      await page.screenshot(output + ".failure.png");
-      throw error;
-    }
-    await page.evaluate(
-      `(() => { const select=document.querySelector('.product-device-modal select'); select.value=${JSON.stringify(targetId)}; select.dispatchEvent(new Event('change',{bubbles:true})); })()`,
-    );
-    await page.waitFor(
-      "document.querySelector('.product-device-actions button:last-child')?.disabled === false",
-    );
-    await page.evaluate(
-      "document.querySelector('.product-device-actions button:last-child').click()",
-    );
-    await until(
-      async () =>
-        (await api.getSessionExecutionTarget(session.sessionId)).target?.targetId === targetId,
-      "browser device binding",
-    );
-    report.browserBinding = true;
-  });
+  const selection = await api.getSessionExecutionTarget(session.sessionId);
+  await api.bindExecutionTarget(session.sessionId, targetId, selection.revision);
+  assert.equal((await api.getSessionExecutionTarget(session.sessionId)).target?.targetId, targetId);
+  report.apiBinding = true;
   console.log(
     JSON.stringify({ phase: "native Android model round", sessionId: session.sessionId }),
   );
@@ -259,30 +225,17 @@ try {
     report.browserImages = await page.evaluate(
       "[...document.querySelectorAll('img')].filter(i=>i.complete&&i.naturalWidth>100).length",
     );
-    await page.evaluate(
-      "[...document.querySelectorAll('button')].find(b=>['云手机','Cloud phone'].includes(b.textContent.trim())).click()",
-    );
-    try {
-      await page.waitFor(
-        "document.querySelector('.product-device-modal select')?.disabled === false",
-      );
-    } catch (error) {
-      report.devicePickerFailure = await page.evaluate(
-        "({modal:document.querySelector('.product-device-modal')?.innerText, select:document.querySelector('.product-device-modal select')?.outerHTML, alerts:[...document.querySelectorAll('[role=alert]')].map(x=>x.innerText)})",
-      );
-      await page.screenshot(output + ".failure.png");
-      throw error;
-    }
     assert.equal(
-      await page.evaluate("document.querySelector('.product-device-modal select').value"),
-      targetId,
+      await page.evaluate(
+        "[...document.querySelectorAll('button')].some(b=>['云手机','Cloud phone'].includes(b.textContent.trim()))",
+      ),
+      false,
     );
-    await page.evaluate("document.querySelector('.product-device-actions button').click()");
-    await page.waitFor("document.querySelector('.product-device-screen')?.naturalWidth>100");
-    const capture = await page.send("Page.captureScreenshot", { format: "png" });
-    await writeFile(output + ".png", Buffer.from(capture.data, "base64"), { mode: 0o600 });
-    report.devicePicker = true;
+    report.phoneEntryRemoved = true;
   });
+  const screen = await api.readExecutionTargetScreen(targetId);
+  assert(screen.bytes.byteLength > 0 && screen.contentType.startsWith("image/"));
+  report.apiScreen = true;
   if (process.env.PI_CLOUD_LIVE_SUBAGENT_WORKSPACE === "1") {
     report.subagentWorkspace = await checkSubagentWorkspace({
       db,
@@ -366,7 +319,7 @@ console.log(
     accepted: report.accepted,
     tools: report.tools,
     images: report.retainedImages.length,
-    browser: report.devicePicker,
+    browser: report.phoneEntryRemoved,
     cleanupConfirmed: report.cleanupConfirmed,
   }),
 );

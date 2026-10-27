@@ -80,6 +80,12 @@ They remain part of the existing capacity backlog, not a 10,000-Agent claim.
 
 ## Cloud Android execution target — completed
 
+Owner-directed October 27 scope: withdraw the phone entry/picker and screen
+controls from Web, deleting unused component/styles/translations. Retain the
+execution-target abstraction and operator API; keep historical images readable.
+The maintained Android acceptance uses API binding/screen reads and asserts that
+the product has no phone entry.
+
 [ADR-0279](adr/0279-android-execution-targets.md) was initially deployed as core
 `android-a37491f4` (schema 201/catalog v2) and device `android-7aa30c34`.
 Idle coding Sessions can bind one operator-provisioned Cuttlefish device. Six
