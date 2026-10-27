@@ -1,11 +1,12 @@
 # Implementation roadmap
 
-## Native model continuation — source verified, matched release pending
+## Native model continuation — completed
 
-Adopt [ADR-0282](adr/0282-native-model-websocket-continuation.md): native Pi
+Deployed [ADR-0282](adr/0282-native-model-websocket-continuation.md) as
+`continuation-5f-final` (Helm 115): native Pi
 continuation, per-request cloud metadata outside the provider payload, disposable
-connections and full-input recovery. Complete deployed image/Tool and cold-owner
-acceptance, retaining user conversation/Workspace assets. The same release removes
+connections and full-input recovery. Deployed image/Tool, provider outbound-byte
+and cross-Worker cold-owner checks pass, retaining user conversation/Workspace assets. The same release removes
 the phone prototype's Web controls while retaining its executor port/operator API.
 
 ## Historical top-edge loading — completed

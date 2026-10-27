@@ -1517,8 +1517,10 @@ and forwards it to CLIProxyAPI. Cache scope is the writer incarnation, Conversat
 and request purpose, and is closed on Run cleanup. Provider context caches are
 disposable; PG/Kafka and attachment storage retain durable authority. Cold opening,
 context replacement or lost continuation can resend full input. Existing Pi retry,
-event-idle and HTTP fallback policies remain. Implementation is source-verified;
-matched deployment and live acceptance are tracked in its delivery report.
+event-idle and HTTP fallback policies remain. CLIProxyAPI's native per-account
+WebSocket preference is also enabled through its management API on publication.
+Deployed as `continuation-5f-final`, schema 202; actual provider traffic and
+cross-Worker image continuation are verified in its delivery report.
 
 The [October 19 focused review](reports/model-request-response-review-20261019.md)
 is repaired under [ADR-0263](adr/0263-model-response-and-work-lifetimes.md), with

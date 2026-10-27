@@ -309,6 +309,7 @@ try {
     mode: 0o600,
   });
   await rename(deploymentPath + ".next", deploymentPath);
+  run("scripts/configure-provider-websockets.mjs");
   phase("deployed; run maintained acceptance before user traffic");
 } catch (error) {
   // Pre-cutover failures restore exactly the observed replica counts. A partial

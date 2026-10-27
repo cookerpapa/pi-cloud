@@ -11,7 +11,7 @@ return gestures pass; all 28 backend Pod identities, machine allocation and 27
 configuration hashes remain unchanged.
 [Evidence and separate provider findings](reports/live-tail-and-model-latency-20261027.md).
 
-## Native model continuation and phone UI withdrawal — implementation accepted, deployment pending
+## Native model continuation and phone UI withdrawal — completed
 
 [ADR-0282](adr/0282-native-model-websocket-continuation.md) adopts Pi's native
 WebSocket delta/cache behavior through the existing Worker Model Gateway. New
@@ -19,15 +19,18 @@ request metadata stays outside the provider payload, preserves per-request
 sampling and budgets, and cannot invalidate context-prefix matching. Separate
 incarnation/conversation/purpose identities and cleanup retain native cancellation
 and storage ownership. Protocol, transport, recovery and bounded-flow tests pass;
-actual Luna + local Worker gateway + installed subscription proxy recalls an image
-through one full request and one delta, with no SSE fallback. The maintained live
-fixture must also pass after matched deployment and cold owner reopening.
+actual Luna + Worker + installed subscription proxy recalls an image through
+one full request and later deltas. Deployed as `continuation-5f-final`, Helm 115,
+schema 202. Native upstream WebSockets are enabled in both provider accounts;
+the maintained operator reapplies this setting on publication. Two different
+Workers pass cold opening and continuation. About 3.11 MB becomes 19.8 KB per
+request, with only 3.45 MB total actual provider transmission across three requests.
 
 Remove the cloud-phone picker/component, styles and translations as requested.
 Retain the alternate executor port/operator API and readable historical images.
-Browser checks pass. [Delivery evidence](reports/model-continuation-delivery-20261027.md).
+Browser checks and original asset preservation pass. [Delivery evidence](reports/model-continuation-delivery-20261027.md).
 
-## Large visual-context provider latency — transport repair in progress
+## Very large cold visual context — investigation remains
 
 The active long conversation repeatedly sends a context containing 25 images:
 79.6 MiB raw / 106.1 MiB base64 before other context. The current proxy HTTP path
@@ -35,7 +38,10 @@ resends full uncompressed JSON upstream and creates an upstream connection per
 request. Timings show roughly 200-second first responses, four event-idle timeouts
 and confirmed TLS EOFs. Cache token hits do not save upload bytes. ADR-0282 adds
 native incremental continuation and payload-free Gateway size/phase timing.
-Proxy-to-provider upload/queue timing remains unmeasured; the proxy's outgoing
+Normal native continuation is deployed and measured end to end. Approximately
+113 MB cold-input probes have not completed successfully; this does not invalidate
+the measured normal-size delta path. Proxy-to-provider upload/queue timing remains
+unmeasured; the proxy's outgoing
 compression restriction remains. Do not silently remove images, force compaction,
 or invent another durable context authority. These findings do not establish that
 all delay is in the proxy. [Investigation](reports/live-tail-and-model-latency-20261027.md).

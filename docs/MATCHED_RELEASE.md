@@ -8,6 +8,10 @@ matched path, retain Workspace/machine intent and image assets, and run
 image context; ordinary continuations must send only new input. The phone Web
 picker is removed; retained Android operator acceptance uses API binding and
 screen reads instead of the withdrawn controls.
+Publication also applies the provider's native Codex-account WebSocket preference
+through its management API. After adding accounts, rerun
+`node scripts/configure-provider-websockets.mjs`; the live fixture verifies
+actual provider transmission as well as local delta sizes.
 
 ADR-0280/0281 require schema 202 and tool catalog v3 with paired Worker, Control
 Plane, guest workflow and Web contracts. Preserve plans/history/Volumes during

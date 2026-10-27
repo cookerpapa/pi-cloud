@@ -2,13 +2,15 @@
 
 [Native model continuation](reports/model-continuation-delivery-20261027.md)
 implements ADR-0282 with native Pi delta requests, scoped connection cleanup and
-private per-request metadata. Source and isolated Luna image recall pass; matched
-deployment is pending. The same slice removes the cloud-phone product controls.
+private per-request metadata. Deployed as `continuation-5f-final`; real provider
+traffic and cross-Worker image recall pass. The same slice removes the cloud-phone
+product controls while preserving the original assets.
 
 [Live-tail return and provider latency](reports/live-tail-and-model-latency-20261027.md)
 separates the manual-scroll/Tool-grouping repairs from measured first-response
 stalls and repeated large-image context uploads. Web-only `live-tail-744c1cd6`
-is deployed and live-verified; provider optimization remains a separate backlog item.
+is deployed and live-verified; normal provider continuation is delivered above,
+while very large cold input remains a separate investigation.
 
 [Historical edge loading](reports/history-edge-repair-20261027.md) records a
 reproduced missed fetch after a fast jump to the top. Deployed Web-only as

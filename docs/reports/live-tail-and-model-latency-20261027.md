@@ -4,6 +4,10 @@ Status: Web-only release `live-tail-744c1cd6` deployed and accepted, Helm 114,
 2026-10-27. Provider investigation is complete to the limits stated below;
 provider transport optimization remains a separate backlog item.
 
+Follow-up: [native continuation delivery](model-continuation-delivery-20261027.md)
+is now deployed and measured end to end. The historical findings below describe
+the preceding HTTP path; very large cold input remains unverified.
+
 ## Presentation findings and repair
 
 The owner observed a return-to-latest indicator even after scrolling to the

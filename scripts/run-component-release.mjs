@@ -632,6 +632,11 @@ save(resolve(directory, "applied.json"), {
   deploymentDigest: digest(next),
   at: new Date().toISOString(),
 });
+if (candidate.scope === "provider")
+  execFileSync(process.execPath, ["scripts/configure-provider-websockets.mjs"], {
+    cwd: root,
+    stdio: "inherit",
+  });
 console.log(
   JSON.stringify({
     phase: "component deployed; run relevant live acceptance",

@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import sharp from "sharp";
 import { readWorkerModelTimings } from "./lib/live-run-timing.mjs";
+import { ensureProviderWebsocketAccounts } from "./lib/provider-websocket-policy.mjs";
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -14,6 +15,7 @@ import {
   runtimeDirectory,
   runtimeEnvironment,
   serviceAddress,
+  kubectl,
 } from "./lib/production-kubernetes.mjs";
 import { nativeHistory, nativeMessages, imageReferences } from "./lib/native-session-history.mjs";
 import { purgeOwnedAcceptanceTenant } from "./lib/owned-acceptance-cleanup.mjs";
@@ -52,8 +54,16 @@ async function until(read, label, budget = 600000) {
   throw Error(label + " timed out");
 }
 try {
+  report.providerPolicy = await ensureProviderWebsocketAccounts({
+    baseUrl: `http://${serviceAddress("cli-proxy-api")}:8317`,
+    managementKey: (
+      await readFile(`${runtimeDirectory}/secrets/cli-proxy-management-key`, "utf8")
+    ).trim(),
+    verifyOnly: true,
+  });
+  assert(report.providerPolicy.codexAccounts > 0);
   tenant = await createPrivateTenant(db, {
-    slug: `release-acceptance-continuation-${randomUUID()}`,
+    slug: `release-acceptance-ws-${randomUUID()}`,
     ownerDisplayName: "Model continuation acceptance",
     initialModel: { provider: "openai-codex", modelId: report.model },
   });
@@ -91,6 +101,7 @@ try {
   report.imageBytes = png.length;
   report.rounds = [];
   for (const round of [1, 2]) {
+    const trafficBefore = providerTraffic();
     const started = Date.now();
     run = await api.acceptTurn(
       session.sessionId,
@@ -148,10 +159,26 @@ try {
       deltas.every((t) => t.connectionReused && t.requestBytes < ws[0].requestBytes / 4),
       "A continuation retransmitted the large image body",
     );
+    const trafficAfter = providerTraffic();
+    assert.equal(
+      trafficAfter.boot,
+      trafficBefore.boot,
+      "Provider process changed during traffic measurement",
+    );
+    const providerBytesSent = trafficAfter.sent - trafficBefore.sent;
+    assert(
+      providerBytesSent > ws[0].requestBytes * 0.8,
+      "Traffic must include the initial provider upload",
+    );
+    assert(
+      providerBytesSent < ws[0].requestBytes * 1.6,
+      "Proxy expanded continuation into repeated full upstream uploads",
+    );
     report.rounds.push({
       runId: run.runId,
       workerId: settled.workerId,
       imageRecall: true,
+      providerBytesSent,
       tools: tools.length,
       retainedImages: imageReferences(history).length,
       requests: timings.map((t) => ({
@@ -264,3 +291,14 @@ try {
   console.log(JSON.stringify(report));
 }
 if (failure) throw failure;
+
+// One-provider local acceptance only. Byte counters include encrypted upstream
+// traffic and downstream replies; they never inspect prompts or image contents.
+function providerTraffic() {
+  const pod = JSON.parse(kubectl(["get", "pod", "cli-proxy-api-0", "-o", "json"]));
+  const counters = kubectl(["exec", "cli-proxy-api-0", "--", "cat", "/proc/net/dev"]);
+  const row = counters.split("\n").find((line) => /^\s*eth0:/.test(line));
+  assert(row, "Provider interface counters unavailable");
+  const values = row.split(":")[1].trim().split(/\s+/);
+  return { boot: pod.status.containerStatuses[0].containerID, sent: Number(values[8]) };
+}

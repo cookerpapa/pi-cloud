@@ -64,6 +64,14 @@ release probes.
 
 ## Provider image
 
+Native model continuation also requires each Codex account's provider-owned
+`websockets` metadata to be enabled. Matched and provider publication apply this
+preference through the management API after readiness. After importing accounts,
+run `node scripts/configure-provider-websockets.mjs`; credentials, disabled state
+and non-Codex accounts are preserved. Acceptance verifies the setting and actual
+provider outbound traffic, since a downstream WebSocket alone can still expand
+full HTTP requests upstream. No per-request account/configuration lookup is added.
+
 Change the pinned provider source/catalog in `deploy/provider-gateway/Dockerfile`,
 commit, and choose an absent private candidate directory and new image tag:
 

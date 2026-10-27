@@ -1,7 +1,9 @@
 # Native model continuation and phone UI withdrawal
 
-Status: implementation and source/isolated live verification complete; matched
-deployment pending. ADR-0282 adds no PG migration, Tool protocol or storage authority.
+Status: deployed as `continuation-5f-final`, image source `cee48223`, schema 202,
+Helm 115; end-to-end acceptance and asset preservation complete. ADR-0282 adds
+no PG migration, Tool protocol or storage authority. Subsequent operator changes
+configure the provider's upstream transport and strengthen acceptance.
 
 ## Behavior
 
@@ -20,6 +22,16 @@ remaining native cache scope. A new owner starts with a fresh scope. No Tool rep
 partial Tool admission, new provider context database or extra sampling retry
 owner is added. Request bytes and first-frame/write timings are content-free;
 gateway write timing ends at CLIProxyAPI, not at the model provider.
+
+CLIProxyAPI's per-account `websockets` flag is required too. Without it, the proxy
+accepts downstream deltas but reconstructs full HTTP requests upstream. Both
+installed Codex accounts now enable native upstream WebSockets through the
+provider's management API. The maintained matched/provider release operators
+apply that preference; importing accounts requires rerunning
+`node scripts/configure-provider-websockets.mjs`. The operator changes only the
+transport flag and never prints or copies account credentials. Acceptance verifies
+the flags read-only and checks actual provider Pod transmission to catch hidden
+upstream expansion. This adds no Worker hot-path account/PG queries.
 
 The proxy currently disables outgoing WebSocket compression because of documented
 flate-tail failures. This release preserves that policy and existing HTTP zstd;
@@ -41,12 +53,13 @@ reader, provider close-code propagation and resource cleanup. The actual Pi test
 256 KiB image entirely and has less than 1% of the first request's bytes. Ordinary
 HTTP Gateway and existing request-policy contracts remain in the relevant gate.
 
-A raw subscription probe through installed CLIProxyAPI succeeds with a full image
-request followed by an incremental request. A separate real Luna probe through
-the new local Worker gateway and actual ScopedDurableModels/Pi provider succeeds:
+Early downstream-only probes were insufficient to prove external bandwidth savings;
+their evidence is retained as such. After upstream eligibility was enabled, a
+separate real Luna probe through the new local Worker gateway and actual
+ScopedDurableModels/Pi provider succeeds:
 one connection, two requests, one complete input, one delta, zero SSE fallback.
 The second answer identifies the first request's red image correctly after a Tool
-result. First Tool output takes about 3.4 seconds; second text about 2.55 seconds.
+result. First Tool output takes about 3.92 seconds; second text about 1.42 seconds.
 The tiny fixture is a correctness check, not a latency claim for the owner's
 250k-token Sol conversation. An initially invalid one-pixel PNG fixture was
 replaced by a valid generated PNG; that failed fixture is retained separately.
@@ -61,9 +74,51 @@ The matched artifact gate found CVE-2026-84782 in the provider base image's
 3.0.22-1~deb12u2 in that image only and rescan; no provider source/model or account
 configuration changes. [Debian advisory](https://lists.debian.org/debian-lts-announce/2026/10/msg00053.html).
 
-## Publication acceptance
+## Publication acceptance — passed
 
-Use the maintained matched operator and compute-only maintenance. Preserve
+The deployed fixture uses a 2,317,596-byte synthetic image and two sequential
+Runs on different Workers. Both return its correct color and complete two Bash
+Tools. The first request in each Run carries complete context; later requests
+reuse the native upstream connection and response reference.
+
+| Measurement | First Run | Reopened Run |
+| --- | ---: | ---: |
+| Initial model request | 3,110,618 B | 3,111,879 B |
+| Each subsequent request | 19,802 B | 19,802 B |
+| Provider Pod outbound bytes for all three requests | 3,448,166 B | 3,431,668 B |
+| Subsequent first-frame latency | 0.41–0.68 s | 0.44–1.24 s |
+
+The outbound counter includes encrypted upstream traffic, returned responses and
+incidental provider management traffic. It proves the proxy did not expand both
+deltas into full image uploads. It is measured on the single isolated provider
+Pod, not inferred from token-cache hits or only the local gateway's body size.
+The page has no cloud-phone entry. Owned fixture Sessions, compute, Volumes,
+image objects and tenant credentials were physically reconciled and removed.
+
+All 15 protected account/configuration/native-history table snapshots match, as
+do 5,816 protected Workspace files and 27 configuration/secret hashes. All 47
+original image objects pass length/SHA checks. The logical machine and its Volume
+are retained, and the original 4188 application serves the same HTML hash after
+verified old-allocation closure and recovery. Only its log/PID artifacts change.
+All 29 serving Pods are ready and no active Run/writer/Tool binding remains.
+
+Workspace type checks and 2,238 assertions passed in the broad run; its one stale
+schedule-registry expectation was corrected and passed a targeted rerun. The 20
+focused model/protocol assertions, browser presentation checks, operator checks,
+375 deterministic fault cases, clean-repeat Kafka transport checks and all twelve
+image scans pass. Fault evidence retains its actual pre-commit/dirty-tree stamp;
+it is not relabelled as a final-image test. The first transport cleanup exceeded
+Docker's caller wait; absence and network removal were subsequently confirmed,
+and the clean repeat completed normally.
+
+Very large cold input remains a separate limitation. Approximately 113 MB probes
+did not establish a successful complete round: earlier probes used the proxy's
+HTTP upstream mode, and the later native-upstream warmup probe lost its connection.
+These are not counted as acceptance. First/cold requests can still require full
+transfer; no general bandwidth, inference-latency or arbitrary-size guarantee is
+made. The tested reduction applies after a successful reusable response.
+
+Publication used the maintained matched operator and compute-only maintenance. Preserve
 accounts/configuration, native history, image objects, logical development-machine
 intent and Workspace Volume. Confirm old writer/physical allocation closure before
 discarding its handle. Restart retained applications after compute returns.

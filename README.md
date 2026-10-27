@@ -2,8 +2,11 @@
 
 [Native model continuation](docs/reports/model-continuation-delivery-20261027.md)
 reduces repeated GPT image uploads using Pi's existing WebSocket continuation.
-Source and isolated Luna checks pass; matched deployment is pending. The cloud-phone
+Deployed as `continuation-5f-final`: actual provider traffic and cross-Worker image
+continuation pass (about 3.11 MB initially, then 19.8 KB per request). The cloud-phone
 prototype's page controls are removed while its executor abstraction remains.
+After importing Codex accounts in CLIProxyAPI, run
+`node scripts/configure-provider-websockets.mjs` to enable native upstream continuation.
 
 [Historical top-edge loading](docs/reports/history-edge-repair-20261027.md) is
 deployed as Web-only `history-edge-92f0d1f9`. Fast jumps to the top now request

@@ -1,7 +1,7 @@
 # ADR-0282: Native model WebSocket continuation through the Worker gateway
 
-Status: implemented and source/isolated-provider verified; matched deployment
-pending, 2026-10-27. The owner approved reducing
+Status: deployed and end-to-end accepted as `continuation-5f-final`, schema 202,
+Helm 115, 2026-10-27. The owner approved reducing
 repeated image transmission using the native Codex/Pi incremental transport.
 
 ## Evidence and choice
@@ -20,6 +20,14 @@ Primary evidence: [OpenAI WebSocket guide](https://developers.openai.com/api/doc
 the locally pinned Pi `api/openai-codex-responses` and CLIProxyAPI
 `48549e65b86d17648029190331807b89e7fd65f4` WebSocket implementation, plus
 [ws](https://github.com/websockets/ws/tree/8.21.1).
+
+CLIProxyAPI account metadata must also enable `websockets: true`. Its downstream
+WebSocket interface can otherwise expand delta input and send full HTTP requests
+upstream. The maintained publication operator applies this transport preference
+through the provider's management API, preserving tokens, account disabled state
+and non-Codex accounts. Provider metadata remains the sole authority for that
+setting. Reapply the operator after importing Codex accounts; no per-request
+management query or separate account configuration store is introduced.
 
 ## Boundary and protocol
 
@@ -80,3 +88,9 @@ becomes committed. Exercise actual subscription Luna continuation separately,
 then the deployed Worker/Cube path with retained image input and one reconnect.
 The first request and reconnect remain full-input cases; do not claim that every
 request or provider can avoid retransmission.
+
+Acceptance verifies account eligibility and the isolated provider Pod's outbound
+byte count, not only the Worker-to-proxy frame size. The deployed two-Run fixture
+uses different Workers: each initial request is about 3.11 MB, each subsequent
+delta 19.8 KB, and total provider transmission about 3.45 MB per three-request Run.
+See the [delivery report](../reports/model-continuation-delivery-20261027.md).
