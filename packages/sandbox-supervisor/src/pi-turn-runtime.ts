@@ -11,7 +11,7 @@ export type PiModelRuntimeConfig = {
   baseUrl: string;
   api: "openai-completions" | "openai-responses" | "openai-codex-responses";
   apiKey: string;
-  transport?: "sse";
+  transport?: "sse" | "auto";
   reasoning?: boolean;
   contextWindow?: number;
   autoCompactTokenLimit?: number;

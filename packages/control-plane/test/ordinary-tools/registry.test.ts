@@ -21,7 +21,7 @@ it("advertises only configured executable tools and preserves explicit enablemen
     createOrdinaryToolRegistry(options)
       .read()
       .tools.map((t) => t.name),
-  ).toEqual(["preview"]);
+  ).toEqual(["preview", "schedule"]);
   const images = {
     store,
     codec: new ImageAttachmentCodec(store),
@@ -31,7 +31,7 @@ it("advertises only configured executable tools and preserves explicit enablemen
     createOrdinaryToolRegistry({ ...options, images: images! })
       .read()
       .tools.map((t) => t.name),
-  ).toEqual(["preview", "show_image"]);
+  ).toEqual(["preview", "schedule", "show_image"]);
   expect(
     createOrdinaryToolRegistry({ ...options, images: images!, enabled: [] }).read().tools,
   ).toEqual([]);

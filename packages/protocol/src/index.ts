@@ -714,3 +714,8 @@ export * from "./executor-transport.ts";
 export { isExecutorToolCommand, isNamedToolCommand } from "./tool-command.ts";
 
 export * from "./session-schedules.ts";
+export {
+  encodeModelSocketRequest,
+  parseModelSocketRequest,
+  type ModelSocketRequest,
+} from "./model-socket.ts";

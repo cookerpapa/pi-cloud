@@ -11,16 +11,33 @@ return gestures pass; all 28 backend Pod identities, machine allocation and 27
 configuration hashes remain unchanged.
 [Evidence and separate provider findings](reports/live-tail-and-model-latency-20261027.md).
 
-## Large visual-context provider latency — investigated, optimization pending
+## Native model continuation and phone UI withdrawal — implementation accepted, deployment pending
+
+[ADR-0282](adr/0282-native-model-websocket-continuation.md) adopts Pi's native
+WebSocket delta/cache behavior through the existing Worker Model Gateway. New
+request metadata stays outside the provider payload, preserves per-request
+sampling and budgets, and cannot invalidate context-prefix matching. Separate
+incarnation/conversation/purpose identities and cleanup retain native cancellation
+and storage ownership. Protocol, transport, recovery and bounded-flow tests pass;
+actual Luna + local Worker gateway + installed subscription proxy recalls an image
+through one full request and one delta, with no SSE fallback. The maintained live
+fixture must also pass after matched deployment and cold owner reopening.
+
+Remove the cloud-phone picker/component, styles and translations as requested.
+Retain the alternate executor port/operator API and readable historical images.
+Browser checks pass. [Delivery evidence](reports/model-continuation-delivery-20261027.md).
+
+## Large visual-context provider latency — transport repair in progress
 
 The active long conversation repeatedly sends a context containing 25 images:
 79.6 MiB raw / 106.1 MiB base64 before other context. The current proxy HTTP path
 resends full uncompressed JSON upstream and creates an upstream connection per
 request. Timings show roughly 200-second first responses, four event-idle timeouts
-and confirmed TLS EOFs. Cache token hits do not save upload bytes. Measure upstream
-phase timings without payloads, then evaluate request compression and supported
-incremental continuation; do not silently remove images, force compaction, or
-invent another durable context authority. These findings do not establish that
+and confirmed TLS EOFs. Cache token hits do not save upload bytes. ADR-0282 adds
+native incremental continuation and payload-free Gateway size/phase timing.
+Proxy-to-provider upload/queue timing remains unmeasured; the proxy's outgoing
+compression restriction remains. Do not silently remove images, force compaction,
+or invent another durable context authority. These findings do not establish that
 all delay is in the proxy. [Investigation](reports/live-tail-and-model-latency-20261027.md).
 
 ## Historical top-edge loading — completed

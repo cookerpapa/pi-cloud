@@ -1,5 +1,14 @@
 # Matched release procedure
 
+ADR-0282 changes the private Runner/Model-Gateway WebSocket transport, with no
+schema change (202) or native storage change. Drain writers through the maintained
+matched path, retain Workspace/machine intent and image assets, and run
+`scripts/run-live-model-continuation-check.mjs` with
+`PI_CLOUD_LIVE_MODEL_CONTINUATION_CHECK=1`. First/cold requests must carry complete
+image context; ordinary continuations must send only new input. The phone Web
+picker is removed; retained Android operator acceptance uses API binding and
+screen reads instead of the withdrawn controls.
+
 ADR-0280/0281 require schema 202 and tool catalog v3 with paired Worker, Control
 Plane, guest workflow and Web contracts. Preserve plans/history/Volumes during
 writer draining. The scheduling controller participates in normal runtime

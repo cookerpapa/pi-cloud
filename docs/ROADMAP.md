@@ -1,5 +1,13 @@
 # Implementation roadmap
 
+## Native model continuation — source verified, matched release pending
+
+Adopt [ADR-0282](adr/0282-native-model-websocket-continuation.md): native Pi
+continuation, per-request cloud metadata outside the provider payload, disposable
+connections and full-input recovery. Complete deployed image/Tool and cold-owner
+acceptance, retaining user conversation/Workspace assets. The same release removes
+the phone prototype's Web controls while retaining its executor port/operator API.
+
 ## Historical top-edge loading — completed
 
 - [x] Distinguish API latency from a missing page request using a read-only reproduction.

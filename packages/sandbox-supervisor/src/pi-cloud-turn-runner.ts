@@ -6,6 +6,11 @@ import {
 } from "./pi-settlement-gate.ts";
 import { fixedRemoteToolDefinitions } from "./fixed-remote-tool-definitions.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash } from "node:crypto";
+import {
+  closeOpenAICodexWebSocketSessions,
+  resetOpenAICodexWebSocketDebugStats,
+} from "@earendil-works/pi-ai/api/openai-codex-responses";
 import {
   BACKGROUND_CONTEXT,
   withAbortSignal,
@@ -341,6 +346,14 @@ export class PiCloudTurnRunner {
       text: DurableTextPresentation | undefined;
     let toolSampling: ModelSamplingIdentity | undefined;
     const cleanup: (() => void)[] = [];
+    const modelSocketScopes = new Set<string>();
+    cleanup.push(() => {
+      for (const key of modelSocketScopes) {
+        closeOpenAICodexWebSocketSessions(key);
+        resetOpenAICodexWebSocketDebugStats(key);
+      }
+      modelSocketScopes.clear();
+    });
     // User Stop still needs native reads to withdraw queued input and settle
     // aborts. Worker retirement, unlike Stop, cancels this owner's startup I/O.
     const readLifetime = new AbortController();
@@ -705,6 +718,12 @@ export class PiCloudTurnRunner {
               const context = { ...source, messages: prepared.messages };
               const headers = prepared.headers;
               const requestSampling = scoped.identity;
+              const socketScope = createHash("sha256")
+                .update(
+                  `${p.tenantId}:${p.piSession.id}:${p.piSession.writerId}:${p.piSession.conversationId}:${native.purpose}`,
+                )
+                .digest("hex");
+              if (model.api === "openai-codex-responses") modelSocketScopes.add(socketScope);
               if (
                 native.purpose === "agent" ||
                 p.input.kind === "compact" ||
@@ -723,7 +742,11 @@ export class PiCloudTurnRunner {
                   : {}),
                 options: {
                   ...request.options,
+                  ...(config.transport ? { transport: config.transport } : {}),
                   apiKey: config.apiKey,
+                  ...(model.api === "openai-codex-responses"
+                    ? { sessionId: socketScope, websocketConnectTimeoutMs: 15_000 }
+                    : {}),
                   signal: requestSignal,
                   headers,
                   onPayload: (payload: unknown) =>

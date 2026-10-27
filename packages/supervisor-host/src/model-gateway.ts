@@ -27,6 +27,7 @@ import type { AddressInfo } from "node:net";
 import { once } from "node:events";
 import { addAbortSignal } from "node:stream";
 import { zstdDecompressSync } from "node:zlib";
+import { ModelWebSocketGateway, type ModelSocketGrant } from "./model-websocket-gateway.ts";
 
 const CODEX_RESPONSES_PATH = "/codex/responses";
 const PROVIDER_RESPONSES_PATH = "/v1/responses";
@@ -359,6 +360,7 @@ export class TenantModelGateway {
   readonly #randomBytes: (size: number) => Buffer;
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #server: Server;
+  readonly #sockets: ModelWebSocketGateway;
   readonly #capabilities = new Map<string, ActiveCapability>();
   readonly #budgets = new Map<string, RootModelBudget>();
   #started = false;
@@ -474,6 +476,104 @@ export class TenantModelGateway {
         },
       );
     });
+    this.#sockets = new ModelWebSocketGateway(
+      (request) => this.#socketGrant(request),
+      connectTimeoutMs,
+    );
+    this.#server.on("upgrade", (request, socket, head) =>
+      this.#sockets.upgrade(request, socket, head),
+    );
+  }
+
+  #socketGrant(request: IncomingMessage): ModelSocketGrant {
+    const token = bearerCapability(request.headers.authorization);
+    const active = this.#requireCapability(
+      token ? this.#capabilities.get(capabilityDigest(token)) : undefined,
+    );
+    const path = new URL(request.url ?? "/", "http://model-gateway.invalid").pathname;
+    if (active.provider !== "openai-codex" || path !== active.requestPath)
+      throw new SafeGatewayHttpError(
+        403,
+        "model_protocol_mismatch",
+        "Model transport does not match its capability",
+      );
+    const controller = new AbortController();
+    active.requestControllers.add(controller);
+    const url = new URL(`${this.#providerGatewayBaseUrl}${active.providerPath}`);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    return {
+      upstreamUrl: url.toString(),
+      headers: Object.fromEntries(upstreamHeaders(request, active, this.#providerGatewayApiKey)),
+      signal: controller.signal,
+      admit: (body) => {
+        this.#validateModelBody(body, active);
+        this.#admit(active, controller.signal);
+      },
+      reserve: (bytes) => {
+        if (this.#requestBytes + bytes > 256 * 1024 * 1024)
+          throw new Error("Model upload capacity is exhausted");
+        this.#requestBytes += bytes;
+        let released = false;
+        return () => {
+          if (!released) {
+            released = true;
+            this.#requestBytes -= bytes;
+          }
+        };
+      },
+      observe: (sampling, timing) => {
+        operationalLog({
+          service: "pi-cloud-model-gateway",
+          level: "info",
+          event: "model.transport.timing",
+          attributes: {
+            runId: active.runId,
+            ...sampling,
+            provider: active.provider,
+            model: active.modelId,
+            ...timing,
+          },
+        });
+        this.#observe(
+          active,
+          timing.transportCompleted ? "eof" : active.revoked ? "revoked" : "disconnected",
+          Number(timing.receivedMonotonicMs),
+        );
+      },
+      release: () => {
+        active.requestControllers.delete(controller);
+      },
+    };
+  }
+
+  #validateModelBody(body: Record<string, unknown>, active: ActiveCapability): void {
+    if (body.model !== active.modelId)
+      throw new SafeGatewayHttpError(
+        403,
+        "model_binding_mismatch",
+        "Model request does not match its Turn capability",
+      );
+    if (
+      (active.serviceTier === "fast" && body.service_tier !== "fast") ||
+      (active.serviceTier === null && body.service_tier !== undefined)
+    )
+      throw new SafeGatewayHttpError(
+        403,
+        "model_service_tier_mismatch",
+        "Model request does not match its Turn service tier",
+      );
+  }
+
+  #admit(active: ActiveCapability, signal: AbortSignal): void {
+    this.#requireCapability(active);
+    signal.throwIfAborted();
+    if (active.budget.maximum !== null && active.budget.started >= active.budget.maximum)
+      throw new SafeGatewayHttpError(
+        429,
+        "model_request_limit_exceeded",
+        "Model request quota exceeded",
+      );
+    active.budget.started++;
   }
 
   get listeningPort(): number {
@@ -691,24 +791,7 @@ export class TenantModelGateway {
       addAbortSignal(controller.signal, request);
       const requestBytes = await readBody(request, reserve);
       const body = parseBody(requestBytes, request.headers["content-encoding"], reserve);
-      if (body.model !== active.modelId) {
-        throw new SafeGatewayHttpError(
-          403,
-          "model_binding_mismatch",
-          "Model request does not match its Turn capability",
-        );
-      }
-      const requestedServiceTier = body.service_tier;
-      if (
-        (active.serviceTier === "fast" && requestedServiceTier !== "fast") ||
-        (active.serviceTier === null && requestedServiceTier !== undefined)
-      ) {
-        throw new SafeGatewayHttpError(
-          403,
-          "model_service_tier_mismatch",
-          "Model request does not match its Turn service tier",
-        );
-      }
+      this.#validateModelBody(body, active);
       if (body.stream !== true) {
         throw new SafeGatewayHttpError(
           400,
@@ -717,16 +800,8 @@ export class TenantModelGateway {
         );
       }
       // No await between the final authority/count check and reservation.
-      this.#requireCapability(active);
-      controller.signal.throwIfAborted();
-      if (active.budget.maximum !== null && active.budget.started >= active.budget.maximum) {
-        throw new SafeGatewayHttpError(
-          429,
-          "model_request_limit_exceeded",
-          "Model request quota exceeded",
-        );
-      }
-      active.budget.started++;
+      this.#admit(active, controller.signal);
+      timing.requestBytes = requestBytes.length;
       timing.upstreamStartMs = elapsed();
       upstreamAttempts = 1;
       const upstream = await this.#fetch(`${this.#providerGatewayBaseUrl}${active.providerPath}`, {
@@ -791,6 +866,7 @@ export class TenantModelGateway {
           samplingAttempt: requestSamplingIdentity.samplingAttempt,
           provider: active.provider,
           model: active.modelId,
+          transport: "sse",
           receivedAtMs,
           receivedMonotonicMs: startedAt,
           processStartedAtMs: performance.timeOrigin,
@@ -841,6 +917,7 @@ export class TenantModelGateway {
 
   async #close(): Promise<void> {
     for (const active of [...this.#capabilities.values()]) this.#revoke(active);
+    this.#sockets.close();
     if (this.#started) {
       this.#started = false;
       this.#server.close();

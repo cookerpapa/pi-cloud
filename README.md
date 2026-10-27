@@ -1,5 +1,10 @@
 # PiCloud
 
+[Native model continuation](docs/reports/model-continuation-delivery-20261027.md)
+reduces repeated GPT image uploads using Pi's existing WebSocket continuation.
+Source and isolated Luna checks pass; matched deployment is pending. The cloud-phone
+prototype's page controls are removed while its executor abstraction remains.
+
 [Historical top-edge loading](docs/reports/history-edge-repair-20261027.md) is
 deployed as Web-only `history-edge-92f0d1f9`. Fast jumps to the top now request
 older pages without a second gesture, retaining the bounded history window and

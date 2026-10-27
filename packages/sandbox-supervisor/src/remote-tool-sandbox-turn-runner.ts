@@ -689,7 +689,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         api: modelRuntimeLease.runtime.api,
         apiKey: modelRuntimeLease.runtime.capability,
         ...(modelRuntimeLease.runtime.api === "openai-codex-responses"
-          ? { transport: "sse" as const }
+          ? { transport: "auto" as const }
           : {}),
         ...(modelRuntimeLease.runtime.reasoning === undefined
           ? {}
