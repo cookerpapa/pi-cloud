@@ -37,7 +37,8 @@ It is deployed Web-only as `history-layout-8155cc9e`, with source, 1 GiB and rea
 streaming acceptance complete and backend/VM identities retained.
 The [top-edge follow-up](reports/history-edge-repair-20261027.md) rechecks bounded
 older-page eligibility after reader/anchor state settles, rather than requiring
-a second user gesture. It is a source-verified presentation repair awaiting publication.
+a second user gesture. It is deployed Web-only as `history-edge-92f0d1f9`, with
+live gesture and 1 GiB acceptance complete.
 
 Conversation commands follow [ADR-0277](adr/0277-model-event-waiting-and-conversation-commands.md),
 first deployed as `commands-514e2b0f`, schema 199.

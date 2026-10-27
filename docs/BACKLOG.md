@@ -1,6 +1,6 @@
 # Maintained backlog
 
-## Historical top-edge loading — in progress
+## Historical top-edge loading — completed
 
 Read-only inspection of galgame finds four visible-history pages taking roughly
 35–50 ms each, but a fresh direct jump/rapid drag to the top can issue no request
@@ -11,7 +11,9 @@ existing in-flight/error gates and bounded page window. The composed browser tes
 must reach the edge without clicking Load Earlier or sending a second gesture.
 The source repair, 8 MiB and 1 GiB composition pass, including the offscreen-anchor
 correction; all 17 stream/layout cases also pass. [Evidence](reports/history-edge-repair-20261027.md).
-Scoped Web publication is in progress.
+Deployed Web-only as `history-edge-92f0d1f9` (Helm 113). Read-only live tests of
+galgame confirm automatic fetching after all three fast-edge gestures; backend,
+machine and configuration identities remain unchanged.
 
 ## Long-conversation layout stability — completed
 

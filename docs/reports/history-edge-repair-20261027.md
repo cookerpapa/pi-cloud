@@ -1,7 +1,8 @@
 # Historical top-edge loading repair
 
-Status: implemented; scoped Web publication pending. API, schema 202, history
-budgets and dependencies remain unchanged.
+Status: deployed Web-only as `history-edge-92f0d1f9`, source
+`92f0d1f973fd864dbaed900f64fb553336ec906c`, Helm revision 113, 2026-10-27.
+API, schema 202, history budgets and dependencies remain unchanged.
 
 Read-only inspection of the owner's galgame conversation found four visible
 history pages, each taking about 35–50 ms and returning roughly 79–243 kB of
@@ -42,6 +43,18 @@ stream/layout regression passes as well.
 Publication uses the maintained Web-only operator. The existing composed-history
 acceptance script is explicitly classified as operator/test code; public API,
 protocol and runtime source changes remain outside that narrow scope.
+
+The scoped gate passes 228 Web/operator tests, full presentation/queue browser
+checks, all 17 layout scenarios and the single-image scan/provenance check.
+Deployed read-only tests against galgame verify a single wheel jump, direct top
+jump and rapid drag. All three automatically fetched earlier pages before any
+second gesture. Each prefetched two bounded pages to fill the nearby edge;
+the browser requests completed in about 25–51 ms. No user messages or native
+execution were created by this verification, and temporary credentials were removed.
+
+All 28 non-Web Pod/container identities, the existing development-machine
+allocation/generation, and 27 regular secret/configuration hashes are unchanged.
+Reload an open page to use the updated Web assets.
 
 Private evidence:
 `deploy/production/runtime/release-evidence/history-paging-20261027/`.

@@ -1,5 +1,10 @@
 # PiCloud
 
+[Historical top-edge loading](docs/reports/history-edge-repair-20261027.md) is
+deployed as Web-only `history-edge-92f0d1f9`. Fast jumps to the top now request
+older pages without a second gesture, retaining the bounded history window and
+reading position. Live browser and 1 GiB checks pass.
+
 [Conversation layout stability](docs/reports/conversation-layout-repair-20261027.md)
 is deployed as Web-only `history-layout-8155cc9e`. It repairs stale spacing during
 streamed text/Tool changes and preserves live following and reading positions.
