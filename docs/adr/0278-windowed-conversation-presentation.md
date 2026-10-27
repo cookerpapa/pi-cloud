@@ -37,6 +37,14 @@ is not one virtual row. Details and images mount on demand; exceptionally large
 text/code blocks use bounded presentation chunks rather than a giant DOM subtree.
 Evicted page bodies and parser/measurement state must be released.
 
+The October 27 [layout repair](../reports/conversation-layout-repair-20261027.md)
+keeps measurements for retained row identities while evicting removed keys. The
+pinned adapter owns live coordinates and the size container; React must not also
+write those coordinates. A stable footer needs explicit live-tail following when
+new rows are inserted before it. Bookmark offsets apply after the target mounts,
+and prefetch distance must not become a blank viewport in the transcript. These
+refinements preserve the existing read/storage boundaries and dependency pin.
+
 Prepending/eviction/resize preserve a message anchor and its viewport offset.
 Only readers at the latest edge follow streaming output. History readers retain
 their location and can return to the latest view. Direct navigation fetches the

@@ -45,6 +45,23 @@ it("accepts operator-only replacement repairs without relabeling the prepared ru
   ).toThrow();
 });
 
+it("keeps presentation acceptance helpers outside the deployed runtime boundary", () => {
+  expect(() =>
+    assertScopedSources("web", [
+      "packages/web-ui/src/ConversationTimeline.tsx",
+      "scripts/run-history-layout-check.mjs",
+      "scripts/run-live-android-check.mjs",
+      "scripts/run-live-schedules-check.mjs",
+    ]),
+  ).not.toThrow();
+  for (const file of [
+    "packages/web-ui/src/api.ts",
+    "packages/protocol/src/control-plane-api.ts",
+    "scripts/unreviewed-runtime.mjs",
+  ])
+    expect(() => assertScopedSources("web", [file])).toThrow("matched release");
+});
+
 it("limits Control Plane scope to ordinary tool implementations and one unchanged deployment template", () => {
   expect(() =>
     assertScopedSources("control-plane", [

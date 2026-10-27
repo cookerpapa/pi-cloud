@@ -84,6 +84,7 @@ export function ConversationTimeline({
     epoch = useRef(0),
     busy = useRef(false);
   const anchor = useRef<Anchor | null>(null),
+    anchorRequest = useRef<string | null>(null),
     guardUntil = useRef(0),
     initial = useRef<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -101,7 +102,9 @@ export function ConversationTimeline({
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
   const hasOlder = ownedPages?.[0]?.history.hasBefore ?? live.history.hasBefore;
-  const loadingZone = hasOlder ? Math.max(160, scrollerRef.current?.clientHeight ?? 600) : 40;
+  // Prefetch before the reader reaches the edge; a loading threshold is not
+  // empty transcript space. Keep only room for the history controls above it.
+  const loadingZone = Math.max(320, scrollerRef.current?.clientHeight ?? 600);
   const stableKeys = useRef<readonly string[]>([]);
   const candidateKeys = rows.map((r) => r?.key ?? "inherited");
   if (
@@ -117,11 +120,18 @@ export function ConversationTimeline({
     getItemKey,
     estimateSize: () => 120,
     overscan: 6,
-    useAnimationFrameWithResizeObserver: true,
+    // The pinned adapter updates positions and the sizer together, before
+    // paint. Deferring RO into another frame leaves old gaps/overlaps visible.
+    directDomUpdates: true,
+    // Coordinates update directly; mounting a new range can wait for React's
+    // normal commit instead of recursively flushing inside ResizeObserver.
+    useFlushSync: false,
+    measureElement: (node, entry) =>
+      Math.round(entry?.borderBoxSize?.[0]?.blockSize ?? node.getBoundingClientRect().height),
     anchorTo: "end",
     followOnAppend: ownedPages === null,
     scrollEndThreshold: 80,
-    paddingStart: loadingZone,
+    paddingStart: 40,
     paddingEnd: 80,
   });
   // A late image above the reading point must compensate even after a backward
@@ -151,6 +161,7 @@ export function ConversationTimeline({
     setLoading(false);
     setError(false);
     anchor.current = null;
+    anchorRequest.current = null;
     guardUntil.current = performance.now() + 500;
     setPages(null);
     setNewOutput(false);
@@ -259,6 +270,7 @@ export function ConversationTimeline({
     setDisclosures({});
     initial.current = null;
     anchor.current = null;
+    anchorRequest.current = null;
     guardUntil.current = performance.now() + 500;
     if (sessionId && !jump) {
       try {
@@ -348,43 +360,48 @@ export function ConversationTimeline({
     }
   };
 
-  const measuredKeys = useRef(new Set<string>());
+  const previousKeys = useRef<readonly string[]>([]);
   useLayoutEffect(() => {
-    if (!sessionId || !rows.length) return;
-    const keys = new Set(rows.map((row) => row?.key ?? "inherited"));
-    if ([...measuredKeys.current].some((key) => !keys.has(key))) {
-      virtualizer.measure();
-      for (const node of scrollerRef.current?.querySelectorAll<HTMLElement>(
-        "[data-history-row-key][data-index]",
-      ) ?? [])
-        virtualizer.measureElement(node);
-      if (ownedPages === null) virtualizer.scrollToEnd();
+    const structureChanged = previousKeys.current !== keys;
+    previousKeys.current = keys;
+    // Keep measurements for retained identities. measure() would discard them
+    // all on every page eviction/live trim and replace known rows with estimates.
+    // Evict only keys that left this bounded window; getItemKey invalidates the
+    // positional layout independently when the list changes.
+    if (structureChanged) {
+      const retained = new Set(keys);
+      for (const key of virtualizer.itemSizeCache.keys())
+        if (!retained.has(String(key))) virtualizer.itemSizeCache.delete(key);
     }
-    measuredKeys.current = keys;
+    if (!sessionId || !rows.length) return;
     const remembered = anchor.current;
     let restored = false;
     if (remembered) {
-      anchor.current = null;
       const index = rows.findIndex((r) => r?.key === remembered.key);
       if (index >= 0) {
         restored = true;
         initial.current = sessionId;
-        setPendingTarget(null);
+        if (pendingTarget) setPendingTarget(null);
         guardUntil.current = performance.now() + 200;
-        virtualizer.scrollToIndex(index, { align: "start" });
-        requestAnimationFrame(() => {
-          const container = scrollerRef.current;
-          const element = container?.querySelector<HTMLElement>(
-            `[data-history-row-key="${CSS.escape(remembered.key)}"]`,
-          );
-          if (container && element)
-            virtualizer.scrollToOffset(
-              container.scrollTop +
-                element.getBoundingClientRect().top -
-                container.getBoundingClientRect().top -
-                remembered.offset,
-            );
-        });
+        const container = scrollerRef.current;
+        const element = container?.querySelector<HTMLElement>(
+          `[data-history-row-key="${CSS.escape(remembered.key)}"]`,
+        );
+        if (container && element) {
+          const delta =
+            element.getBoundingClientRect().top -
+            container.getBoundingClientRect().top -
+            remembered.offset;
+          anchor.current = null;
+          anchorRequest.current = null;
+          if (Math.abs(delta) > 0.5) virtualizer.scrollToOffset(container.scrollTop + delta);
+        } else if (anchorRequest.current !== remembered.key) {
+          anchorRequest.current = remembered.key;
+          virtualizer.scrollToIndex(index, { align: "start" });
+        }
+      } else {
+        anchor.current = null;
+        anchorRequest.current = null;
       }
     }
     if (!restored && pendingTarget) {
@@ -408,8 +425,16 @@ export function ConversationTimeline({
     } else if (!restored && initial.current !== sessionId) {
       initial.current = sessionId;
       if (ownedPages === null && !jump) virtualizer.scrollToEnd();
+    } else if (!restored && ownedPages === null && structureChanged && !jump) {
+      // New output is inserted before a persistent footer. Its last key stays
+      // unchanged, so the library's append detection cannot follow that case.
+      // Browsing owns separate frozen pages; only the live view follows here.
+      guardUntil.current = performance.now() + 200;
+      virtualizer.scrollToEnd();
     }
-  }, [rows, pendingTarget, sessionId, virtualizer, ownedPages, jump, scrollerRef]);
+    // A restored row may mount in a later virtual-range commit without any
+    // props changing. Retain its offset until that DOM node actually exists.
+  });
 
   const earlier = () => {
     const first = pagesRef.current?.[0] ?? freezeHistoryView(liveRef.current);
@@ -569,6 +594,8 @@ export function ConversationTimeline({
         ref={scrollerRef as RefObject<HTMLElement>}
         onScroll={scrolling}
         onWheel={(event) => {
+          // A real reading gesture can interrupt programmatic tail following.
+          guardUntil.current = 0;
           if (
             event.deltaY < 0 &&
             !busy.current &&
@@ -577,6 +604,13 @@ export function ConversationTimeline({
             hasOlder
           )
             earlier();
+        }}
+        onTouchMove={() => {
+          guardUntil.current = 0;
+        }}
+        onKeyDown={(event) => {
+          if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(event.key))
+            guardUntil.current = 0;
         }}
         data-history-pages={ownedPages?.length ?? 0}
         data-history-rows={rows.length}
@@ -591,7 +625,7 @@ export function ConversationTimeline({
             ) : null}
             {error ? <span role="alert">{t("chat.historyFailed")}</span> : null}
           </div>
-          <div style={{ height: virtualizer.getTotalSize(), position: "relative", width: "100%" }}>
+          <div ref={virtualizer.containerRef} style={{ position: "relative", width: "100%" }}>
             {virtualizer.getVirtualItems().map((v) => {
               const row = rows[v.index];
               return (
@@ -607,7 +641,6 @@ export function ConversationTimeline({
                     top: 0,
                     left: 0,
                     width: "100%",
-                    transform: `translateY(${v.start}px)`,
                   }}
                 >
                   {row ? renderRow(row) : inherited}

@@ -2270,6 +2270,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
 
         <div className={`product-content ${inspectorOpen ? "with-inspector" : ""}`}>
           <ConversationTimeline
+            key={state.session?.sessionId ?? "empty"}
             api={api}
             live={state}
             scrollerRef={chatScrollerRef}

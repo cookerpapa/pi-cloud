@@ -10,6 +10,10 @@ export const operatorSources = new Set([
   "scripts/lib/release-image-evidence.mjs",
   "scripts/lib/control-plane-release.mjs",
   "scripts/run-live-control-plane-release-check.mjs",
+  "scripts/run-live-android-check.mjs",
+  "scripts/run-live-schedules-check.mjs",
+  "scripts/run-history-layout-check.mjs",
+  "scripts/run-live-history-layout-check.mjs",
   "scripts/release-impact.mjs",
   "scripts/lib/release-impact.mjs",
 ]);

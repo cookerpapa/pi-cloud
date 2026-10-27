@@ -61,6 +61,7 @@ if (scope === "web") {
   );
   execFileSync(process.execPath, ["scripts/run-browser-presentation-check.mjs"], options);
   execFileSync(process.execPath, ["scripts/run-browser-queue-check.mjs"], options);
+  execFileSync(process.execPath, ["scripts/run-history-layout-check.mjs"], options);
   console.log(JSON.stringify({ scope, passed: true }));
   process.exit(0);
 }

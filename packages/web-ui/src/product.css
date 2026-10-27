@@ -1007,6 +1007,7 @@ body.product-panel-resizing {
   overscroll-behavior: contain;
   scrollbar-color: #4a4a4a transparent;
   scrollbar-width: thin;
+  scrollbar-gutter: stable;
 }
 
 .product-return-to-latest {

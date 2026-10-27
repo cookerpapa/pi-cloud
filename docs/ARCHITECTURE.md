@@ -30,6 +30,10 @@ is deployed as `history-window-19c24570`, schema 200. Native-position paging,
 bounded virtual browser views, cancellable search and streaming export preserve
 the existing history authority and SSE coverage. [Delivery evidence](reports/conversation-history-delivery-20261026.md)
 records 1 GiB composition, real execution/recovery and retained original assets.
+The [October 27 layout repair](reports/conversation-layout-repair-20261027.md)
+retains measured rows across bounded-window changes, synchronizes their geometry
+through the pinned virtualizer and preserves live/read-mode and bookmark intent.
+It is a presentation-only change with source checks complete and publication pending.
 
 Conversation commands follow [ADR-0277](adr/0277-model-event-waiting-and-conversation-commands.md),
 first deployed as `commands-514e2b0f`, schema 199.

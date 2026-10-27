@@ -1,5 +1,21 @@
 # Maintained backlog
 
+## Long-conversation layout stability — source verified, publication pending
+
+The owner reported large gaps that disappear after scrolling and uneven Session
+opening after virtual-history delivery. Read-only browser sampling reproduces
+transient gaps up to 409 px; an isolated production-component fixture also
+reproduces persistent gaps/overlaps after trimming a live window. Keep the
+existing bounded pages and native history contracts. Retain valid row-size
+measurements across eviction, synchronize dynamic sizes/positions before paint,
+and reset presentation ownership on Session switches. Verify width changes,
+Tool expansion, live growth/trim and reading anchors pass the new geometry check.
+The real PG/API/browser composition passes with 1 GiB, four resident pages and
+15.5–15.7 MiB retained heap. A persistent-footer append case is explicitly followed
+without interpreting layout adjustments as reader gestures; bookmarks wait for
+their target DOM node. [Repair evidence](reports/conversation-layout-repair-20261027.md).
+Scoped Web publication and real streaming acceptance remain pending.
+
 ## Subagent workspace and scheduled inputs — completed
 
 ADRs [0280](adr/0280-workspace-scoped-subagent-contract.md) and
