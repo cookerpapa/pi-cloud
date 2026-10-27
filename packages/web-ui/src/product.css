@@ -1463,14 +1463,19 @@ body.product-panel-resizing {
 }
 
 .product-tool {
+  position: relative;
   margin: 9px 0 15px;
+}
+.product-tool-failed::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 -9px;
+  width: 2px;
+  background: #674646;
 }
 .product-activity-group {
   margin: 10px 0 15px;
   border-left: 1px solid #353535;
-}
-.product-activity-group.has-issue {
-  border-left-color: #674646;
 }
 .product-activity-group-toggle {
   display: grid;

@@ -1,5 +1,14 @@
 # Maintained backlog
 
+## Tool settlement presentation — source verified
+
+Move the error line from the whole activity group to the failed Tool alone.
+Verify that success, failure and UNKNOWN settlement replace disposable previews
+with the final result and ignore late preview updates. Existing native empty-output
+and parallel-Read checks pass; Tool execution policy is unchanged. Scoped Web
+publication and read-only live verification remain to complete.
+[Evidence](reports/tool-settlement-presentation-20261028.md).
+
 ## Tool group display correction — completed
 
 Correct the toolbar to control only outer Tool-group expansion. Restore individual

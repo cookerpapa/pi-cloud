@@ -786,6 +786,10 @@ changes whether consecutive Tool groups default to collapsed or expanded through
 the bounded reader's disclosure state. Individual Tool rendering, text previews
 and details retain their own controls. It does not fetch lifetime history or
 alter execution; image previews remain outside the grouped activity.
+Failed Tools carry their own error marker; an expanded group's shared border
+does not mark successful neighbors as failed. Running Tool previews are discarded
+when the canonical result arrives, including failure and UNKNOWN settlement;
+late observations cannot restore the preview or replace that result.
 
 The public SSE request has no cursor. The assigned Projector subscribes to live
 wakes, captures an immutable tail and then reads primary PG. That PG snapshot

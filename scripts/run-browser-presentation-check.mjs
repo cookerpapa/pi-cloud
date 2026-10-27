@@ -61,6 +61,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { ConversationTurn } from "/src/ConversationTurn.tsx";
 import { RunObservationStore } from "/src/run-observation-store.ts";
+import { ToolProgressStore } from "/src/tool-progress-store.ts";
 import { useResizablePanel } from "/src/use-resizable-panel.ts";
 import ChatApp from "/src/ChatApp.tsx";
 import { AdminPage } from "/src/AdminPage.tsx";
@@ -99,6 +100,19 @@ const configuration={productUrl:location.origin,adminUrl:location.origin,
   managementUrls:{providerGateway:'https://models.example.test/management.html',grafana:'',prometheus:'',alertmanager:'',jaeger:''}};
 window.renderPanel = () => root.render(React.createElement(React.StrictMode, null, React.createElement(Panel)));
 window.runObservations = new RunObservationStore();
+window.toolProgressStore = new ToolProgressStore();
+window.renderToolSettlement = (status='running',output, single=false) => {
+  const tool=(id,state,text)=>({kind:'tool',key:'tool:'+id,toolCallId:id,toolName:'bash',input:{command:'fixture '+id},status:state,
+    firstSequence:1,lastSequence:2,startedAt:'2026-10-28T00:00:00Z',...(state==='running'?{}:{completedAt:'2026-10-28T00:00:01Z'}),
+    ...(text===undefined?{}:{output:{content:[{type:'text',text}]}})});
+  const current=tool('settling',status,output);
+  root.render(React.createElement(React.StrictMode,null,React.createElement(I18nProvider,{initialLanguage:'zh-CN'},React.createElement(ConversationTurn,{
+    progressStore:toolProgressStore,turn:{runId:'run',turnId:'settlement-turn',mailboxPosition:null,prompt:'Fixture',acceptedAt:null,
+      status:'running',startedSequence:1,terminalSequence:null,stopReason:null,failure:null,cancellation:null,
+      items:single?[current]:[tool('before','completed','BEFORE_RESULT'),current,tool('after','completed','AFTER_RESULT')]}
+  }))));
+};
+window.emitToolPreview = text => toolProgressStore.receive({type:'tool.progress',version:2,sessionId:'s',turnId:'settlement-turn',toolCallId:'settling',operationId:'op',update:{kind:'reset',revision:1,text}});
 window.renderTurn = (text, recoveredTextLength = 0, status = "running", stopReason = null, phase, connected = true) => root.render(
   React.createElement(React.StrictMode, null, React.createElement(ConversationTurn, {observationStore:runObservations,connected,turn:{
     runId:"run",turnId:"turn",mailboxPosition:null,prompt:"Question",acceptedAt:null,
@@ -558,6 +572,68 @@ try {
     assert.equal(
       await page.evaluate("document.querySelectorAll('.product-lifecycle-retry').length"),
       1,
+    );
+  });
+  await withChromePage({ toolGroups: true }, async (page) => {
+    await page.navigate(`http://127.0.0.1:${port}/review.html`);
+    await page.waitFor("window.fixtureReady");
+    for (const [status, result] of [
+      ["completed", "FINAL_RESULT"],
+      ["failed", "Command exited with code 7"],
+      ["unknown", "Execution outcome is unknown"],
+    ]) {
+      await page.evaluate("renderToolSettlement()");
+      await page.waitFor("document.querySelector('.product-activity-group-toggle')");
+      await page.evaluate(
+        "if(document.querySelector('.product-activity-group-toggle').getAttribute('aria-expanded')==='false')document.querySelector('.product-activity-group-toggle').click()",
+      );
+      await page.waitFor("document.querySelector('.product-tool-progress button')");
+      await page.evaluate(
+        "document.querySelector('.product-tool-progress button').click();emitToolPreview('TEMPORARY_ONLY')",
+      );
+      await page.waitFor(
+        "document.querySelector('.product-tool-progress-tail')?.textContent==='TEMPORARY_ONLY'",
+      );
+      await page.evaluate(
+        `renderToolSettlement(${JSON.stringify(status)},${JSON.stringify(result)})`,
+      );
+      await page.waitFor(
+        `!document.querySelector('.product-tool-progress') && document.body.textContent.includes(${JSON.stringify(result)})`,
+      );
+      await page.evaluate("emitToolPreview('LATE_PREVIEW')");
+      assert.equal(
+        await page.evaluate(
+          "toolProgressStore.get('settlement-turn'+String.fromCharCode(0)+'settling')",
+        ),
+        undefined,
+      );
+      assert.equal(
+        await page.evaluate(
+          "document.body.textContent.includes('TEMPORARY_ONLY') || document.body.textContent.includes('LATE_PREVIEW')",
+        ),
+        false,
+      );
+      const borders = await page.evaluate(
+        `(()=>{const g=document.querySelector('.product-activity-group');return{group:getComputedStyle(g).borderLeftColor,tools:[...g.querySelectorAll('.product-tool')].map(t=>({failed:t.classList.contains('product-tool-failed'),marker:getComputedStyle(t,'::before').backgroundColor}))}})()`,
+      );
+      assert.equal(
+        borders.group,
+        "rgb(53, 53, 53)",
+        "A failed Tool must not color the whole group border",
+      );
+      assert.equal(
+        borders.tools.filter((tool) => tool.marker === "rgb(103, 70, 70)").length,
+        status === "failed" ? 1 : 0,
+      );
+      assert(borders.tools.every((tool) => tool.marker !== "rgb(103, 70, 70)" || tool.failed));
+    }
+    await page.evaluate("renderToolSettlement('failed','Command exited with code 7',true)");
+    await page.waitFor("document.querySelectorAll('.product-tool').length===1");
+    assert.equal(
+      await page.evaluate(
+        "getComputedStyle(document.querySelector('.product-tool'),'::before').backgroundColor",
+      ),
+      "rgb(103, 70, 70)",
     );
   });
   await withChromePage({ toolGroups: true }, async (page) => {
@@ -2110,6 +2186,9 @@ try {
             groupingOnly: true,
             individualDetailsPreserved: true,
             boundedWidth: true,
+            previewReplacedByFinalResult: true,
+            latePreviewDiscarded: true,
+            errorMarkerOnlyOnFailedTool: true,
           }
         : process.env.PI_CLOUD_BROWSER_SCOPE === "commands"
           ? {
@@ -2131,6 +2210,9 @@ try {
               previewUsesNamedAnswerLink: true,
               previewDetailsKeepPortAndResult: true,
               previewHasNoFallbackOrDuplicateCard: true,
+              previewReplacedByFinalResult: true,
+              latePreviewDiscarded: true,
+              errorMarkerOnlyOnFailedTool: true,
               earlyRunNeverFabricatesUserInput: true,
               acceptanceDiscoveryRaceKeepsDraftAndStream: true,
               composerEnterPreference: true,

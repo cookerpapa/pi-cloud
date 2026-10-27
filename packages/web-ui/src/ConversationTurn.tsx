@@ -199,10 +199,7 @@ function ToolActivityGroup({ items }: { items: readonly ToolTranscriptItem[] }) 
     ) ?? items.at(-1)!;
   const summary = running ? compactToolSummary(current) : activitySummary(items);
   return (
-    <section
-      className={`product-activity-group ${issue ? "has-issue" : ""}`}
-      data-expanded={expanded}
-    >
+    <section className="product-activity-group" data-expanded={expanded}>
       <button
         aria-expanded={expanded}
         className="product-activity-group-toggle"
