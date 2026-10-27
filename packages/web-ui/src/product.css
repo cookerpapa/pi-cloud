@@ -1639,8 +1639,13 @@ body.product-panel-resizing {
 }
 .product-tool-body {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 5px;
   margin: 7px 0 0 25px;
+}
+.product-tool-body > details {
+  min-width: 0;
 }
 .product-tool-text {
   min-width: 0;

@@ -56,8 +56,10 @@ Consecutive retry notices share one row with all source cursors retained. Their
 counter updates without appending another row. If prepending merges an older
 retry into the group, restore reading by its retained cursor only when its exact
 row key no longer exists; text fragments sharing a cursor still prefer their
-own key. Global Tool disclosure stays browser-local, applies to future mounted
-rows, and preserves the current reading anchor and existing image presentation.
+own key. The toolbar controls only the default expansion of Tool groups. It
+stays browser-local, applies to future groups and preserves the reading anchor,
+individual Tool details/text choices and existing image presentation. It must
+not add details wrappers or force full text expansion within individual Tools.
 
 Prepending/eviction/resize preserve a message anchor and its viewport offset.
 Only readers at the latest edge follow streaming output. History readers retain

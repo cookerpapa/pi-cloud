@@ -265,12 +265,12 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
   const [codeHostConnectionsOpen, setCodeHostConnectionsOpen] = useState(false);
   const [schedulesOpen, setSchedulesOpen] = useState(false);
-  const [toolDisclosure, setToolDisclosure] = useState<{
+  const [toolGroupDisplay, setToolGroupDisplay] = useState<{
     sessionId: string;
     expanded: boolean;
   } | null>(null);
-  const toolsExpanded =
-    toolDisclosure?.sessionId === state.session?.sessionId ? toolDisclosure?.expanded : undefined;
+  const toolGroupsExpanded =
+    toolGroupDisplay?.sessionId === state.session?.sessionId && toolGroupDisplay?.expanded === true;
   const initialResourceTab =
     typeof window !== "undefined" &&
     new URLSearchParams(window.location.search).get("resource") === "source-control"
@@ -1814,20 +1814,20 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
               ⌕
             </button>
             <button
-              className="product-tool-disclosure-toggle"
+              className="product-tool-group-display-toggle"
               type="button"
               disabled={state.session === null}
-              aria-pressed={toolsExpanded === true}
+              aria-pressed={toolGroupsExpanded === true}
               onClick={() => {
                 if (!state.session) return;
-                timelineControl.current?.resetToolDisclosures();
-                setToolDisclosure({
+                timelineControl.current?.resetToolGroups();
+                setToolGroupDisplay({
                   sessionId: state.session.sessionId,
-                  expanded: toolsExpanded !== true,
+                  expanded: toolGroupsExpanded !== true,
                 });
               }}
             >
-              {t(toolsExpanded ? "chat.collapseTools" : "chat.expandTools")}
+              {t(toolGroupsExpanded ? "chat.collapseToolGroups" : "chat.expandToolGroups")}
             </button>
             <button
               className="product-workspace-button"
@@ -2273,7 +2273,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
 
         <div className={`product-content ${inspectorOpen ? "with-inspector" : ""}`}>
           <ConversationTimeline
-            toolsExpanded={toolsExpanded}
+            toolGroupsExpanded={toolGroupsExpanded}
             key={state.session?.sessionId ?? "empty"}
             api={api}
             live={state}

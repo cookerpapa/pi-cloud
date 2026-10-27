@@ -2,6 +2,10 @@
 
 Status: deployed Web-only as `retry-tools-3083d24d`, Helm 116, 2026-10-27.
 
+The Tool button's scope below was subsequently corrected after owner clarification:
+see [the group-only correction](tool-group-display-correction-20261027.md).
+The retry-row change remains in effect.
+
 Consecutive increasing retry attempts render one row showing the latest attempt.
 The first item's presentation key stays stable during live updates; native events
 and history are retained. A reset attempt counter or intervening content starts a

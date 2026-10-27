@@ -1,4 +1,4 @@
-import { useHistoryDisclosure } from "./history-disclosure.tsx";
+import { useHistoryDisclosure, HistoryDisclosureContext } from "./history-disclosure.tsx";
 import { CompactStatus } from "./ConversationUsage.tsx";
 import type { ConversationCompactResource } from "@pi-cloud/protocol";
 import { UploadCards } from "./UploadCards.tsx";
@@ -186,8 +186,10 @@ function ToolActivityGroup({ items }: { items: readonly ToolTranscriptItem[] }) 
   const running = items.some((item) => item.status === "running");
   const issue = items.some((item) => item.status === "failed" || item.status === "unknown");
   const turnId = useContext(ChildAgentProgressContext)?.turnId ?? "";
+  const groupsExpanded = useContext(HistoryDisclosureContext)?.toolGroupsExpanded ?? false;
   const [expanded, setExpanded] = useHistoryDisclosure(
     items.map((item) => `${turnId}\0${item.toolCallId}\0activity`),
+    groupsExpanded,
   );
   if (items.length === 1) return <ToolActivity item={items[0]!} />;
   const current =

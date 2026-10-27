@@ -1,5 +1,12 @@
 # Maintained backlog
 
+## Tool group display correction — source accepted, publication pending
+
+Correct the toolbar to control only outer Tool-group expansion. Restore individual
+Tool rendering and preserve manual detail/text choices. Constrain long output to
+its code block after reproducing a 53,171 px overflow in a 710 px pane. Desktop
+and mobile browser checks pass. [Evidence](reports/tool-group-display-correction-20261027.md).
+
 ## Retry notices and Tool disclosure — completed
 
 Merge each consecutive retry sequence into one updating line, consistently in

@@ -1,5 +1,9 @@
 # Documentation map
 
+[Tool group display correction](reports/tool-group-display-correction-20261027.md)
+restores the requested group-only toggle and original individual Tool rendering,
+with a long-output width repair. Web-only publication is pending.
+
 [Retry notices and Tool disclosure](reports/retry-tool-display-20261027.md) records
 single-row retry updates and one toolbar button for Tool details. Web-only
 `retry-tools-3083d24d` is deployed and live-verified with backend identities retained.

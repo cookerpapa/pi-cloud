@@ -48,7 +48,7 @@ export type TimelineControl = {
   event(event: PiCloudEvent): void;
   latest(): void;
   search(): void;
-  resetToolDisclosures(): void;
+  resetToolGroups(): void;
 };
 
 /** Browsing owns a bounded read window. The live reducer remains independent so
@@ -62,7 +62,7 @@ export function ConversationTimeline({
   onJumpSettled,
   renderRow,
   inherited,
-  toolsExpanded,
+  toolGroupsExpanded = false,
 }: {
   api: PiCloudApi;
   live: SessionViewState;
@@ -72,7 +72,7 @@ export function ConversationTimeline({
   onJumpSettled(): void;
   renderRow(row: VirtualConversationRow): ReactNode;
   inherited?: ReactNode;
-  toolsExpanded?: boolean | undefined;
+  toolGroupsExpanded?: boolean | undefined;
 }) {
   const { t } = useI18n();
   const sessionId = live.session?.sessionId;
@@ -349,9 +349,15 @@ export function ConversationTimeline({
   useEffect(() => {
     controlRef.current = {
       latest,
-      resetToolDisclosures() {
+      resetToolGroups() {
         if (pagesRef.current !== null) capture();
-        setDisclosures({});
+        // Only group overrides follow the toolbar mode. Individual Tool details
+        // and text previews keep the user's existing choices.
+        setDisclosures((previous) =>
+          Object.fromEntries(
+            Object.entries(previous).filter(([key]) => !key.endsWith("\0activity")),
+          ),
+        );
       },
       search() {
         setSearchOpen((value) => !value);
@@ -568,7 +574,7 @@ export function ConversationTimeline({
   const disclosureState = useMemo(
     () => ({
       values: disclosures,
-      ...(toolsExpanded === undefined ? {} : { allToolsExpanded: toolsExpanded }),
+      toolGroupsExpanded,
       set(keys: readonly string[], value: boolean) {
         setDisclosures((previous) => {
           const next = { ...previous };
@@ -577,7 +583,7 @@ export function ConversationTimeline({
         });
       },
     }),
-    [disclosures, toolsExpanded],
+    [disclosures, toolGroupsExpanded],
   );
   useEffect(() => {
     if (busy.current) return;
