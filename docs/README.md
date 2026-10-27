@@ -2,7 +2,8 @@
 
 [Live-tail return and provider latency](reports/live-tail-and-model-latency-20261027.md)
 separates the manual-scroll/Tool-grouping repairs from measured first-response
-stalls and repeated large-image context uploads. Web-only publication is pending.
+stalls and repeated large-image context uploads. Web-only `live-tail-744c1cd6`
+is deployed and live-verified; provider optimization remains a separate backlog item.
 
 [Historical edge loading](reports/history-edge-repair-20261027.md) records a
 reproduced missed fetch after a fast jump to the top. Deployed Web-only as

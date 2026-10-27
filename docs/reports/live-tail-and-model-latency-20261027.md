@@ -1,6 +1,8 @@
 # Live-tail presentation and provider latency investigation
 
-Status: source and targeted acceptance pass; Web-only publication pending.
+Status: Web-only release `live-tail-744c1cd6` deployed and accepted, Helm 114,
+2026-10-27. Provider investigation is complete to the limits stated below;
+provider transport optimization remains a separate backlog item.
 
 ## Presentation findings and repair
 
@@ -36,6 +38,16 @@ ADR-0267 explicitly includes the browser-only `session-view.ts` reducer in the
 Web publication scope. API client, protocol, dependencies, provider and backend
 changes still require their existing release scopes. Publication must retain the
 running Worker, Session ownership, Workspace allocation and configuration.
+
+The scoped gate passes all 230 Web/operator tests, browser presentation/queue
+checks, the 20 layout scenarios and the one-image scan/provenance checks.
+Deployed read-only verification against the owner's long conversation passes
+both scrollbar and wheel return: one bounded forward query, then zero distance
+to the tail, zero owned history pages, no return indicator and 18 mounted rows.
+The temporary viewer credential was revoked and removed. All 28 non-Web
+Pod/container identities, the existing machine allocation/generation and 27
+configuration/secret file hashes are unchanged. Reload an open page to obtain
+the new Web assets.
 
 ## Model findings — separate from the UI repair
 

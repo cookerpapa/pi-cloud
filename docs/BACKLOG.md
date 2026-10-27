@@ -1,12 +1,14 @@
 # Maintained backlog
 
-## Manual live-tail return and snapshot/live Tool grouping — source accepted
+## Manual live-tail return and snapshot/live Tool grouping — completed
 
 Automatically resume live following when manual scrolling exhausts the latest
 canonical page; preserve anchors and read intervening pages first. Continue the
 snapshot page identity through new live Tools so grouping matches reopening.
 Targeted tests, 20 browser geometry cases and the actual 8 MiB PG/API/SSE composition
-pass. Web-only release is pending; backend ownership/data remain unchanged.
+pass. Web-only `live-tail-744c1cd6` is deployed (Helm 114). Both real-page manual
+return gestures pass; all 28 backend Pod identities, machine allocation and 27
+configuration hashes remain unchanged.
 [Evidence and separate provider findings](reports/live-tail-and-model-latency-20261027.md).
 
 ## Large visual-context provider latency — investigated, optimization pending
