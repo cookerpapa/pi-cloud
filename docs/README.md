@@ -1,5 +1,11 @@
 # Documentation map
 
+[First-request comparison](reports/first-model-request-comparison-20261028.md)
+compares the pinned Pi provider, PiCloud model path and actual Codex CLI using
+the same installed model route. Large uploads reproduce WebSocket failure and
+HTTP fallback in both native Pi and Codex; source and timing differences are
+separated from unmeasured desktop/direct-route behavior.
+
 [Independent Fork and history retention design](adr/0284-independent-forks-and-history-retention.md)
 revises the earlier copy-only plan. It separates immutable body sharing from
 Session execution ownership and specifies cold reorganization, reference safety,
