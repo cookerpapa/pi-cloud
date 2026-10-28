@@ -359,11 +359,17 @@ try {
     const reportRelativePath = `${outputRoot}.vulnerabilities.json`;
     const policyReportRelativePath = `${outputRoot}.policy-vulnerabilities.json`;
     const sbomRelativePath = `${outputRoot}.cdx.json`;
+    // Language analysis copies Chromium/JDK binaries; owned disk scratch avoids
+    // a large RAM-backed temporary mount competing with running KVM guests.
+    const scanScratch =
+      imageName === "cubesandbox-tool" ? resolve(temporaryDirectory, "guest-scan") : undefined;
+    if (scanScratch) await mkdir(scanScratch, { mode: 0o700 });
     const scanBase = trivyContainerArguments({
       cacheDirectory: options.cacheDirectory,
       inputDirectory: temporaryDirectory,
       outputDirectory: stageDirectory,
       network: "none",
+      ...(scanScratch ? { temporaryDiskDirectory: scanScratch } : {}),
     });
     const common = [
       "image",

@@ -90,7 +90,9 @@ Local and CI scans both cover OS and language packages. Guest evidence must
 include Node, Python and Go inventory; an OS-only report cannot pass. In particular,
 the guest's global npm has its own bundled dependencies, outside the repository
 lockfile/audit. Its Undici is pinned to 6.29.1. The Java index is downloaded once
-into the shared scanner cache with owned disk scratch; image scans remain offline.
+into the shared scanner cache with owned disk scratch. The guest's full language
+scan also uses owned disk scratch for Chromium/JDK extraction; small-image scans
+retain their 256 MiB temporary limit. All image scans remain offline.
 
 
 The Web runtime compiles Caddy 2.11.4 from its verified release commit with a
