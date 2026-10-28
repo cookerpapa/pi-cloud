@@ -1,11 +1,18 @@
 # Maintained backlog
 
-## Answer copy action alignment — in progress
+## Answer copy action alignment — completed
 
 Place the completed answer's copy button in the same footer row as “从此对话开始”.
 Preserve the full copy payload when a long answer spans virtual rows, without
-duplicating its button in the text fragment. Verify desktop/mobile alignment,
-clipboard content and the existing bounded-history layout before a Web-only release.
+duplicating its button in the text fragment. Desktop/mobile alignment, clipboard
+content, 234 tests and the full browser/queue/history-layout gate pass. Web-only
+`answer-copy-20261028` is deployed (Helm 120). Read-only live inspection confirms
+the footer placement and no horizontal overflow; all 28 backend Pod identities,
+the machine allocation and 27 configuration hashes are unchanged.
+Two unrelated fixture-initialization timeouts are retained in the private evidence;
+the complete gate passes on repeat. Added resource-failure diagnostics, without
+claiming to have repaired that intermittent fixture-loading issue.
+Evidence: `deploy/production/runtime/release-evidence/answer-copy-20261028/`.
 
 ## Interrupted assistant text in model context — completed
 
