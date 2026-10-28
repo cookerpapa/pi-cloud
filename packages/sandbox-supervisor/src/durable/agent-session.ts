@@ -7,6 +7,7 @@ import {
 export type { NativeRequestContext } from "./model-task-context.ts";
 import { PiTurnError } from "../pi-turn-runtime.ts";
 import { publicEgressSection } from "./runtime-capabilities.ts";
+import { preserveInterruptedText } from "./interrupted-text.ts";
 import { delegationInstructions } from "./delegation-policy.ts";
 import type { GuestPublicEgress, AgentThinkingLevel } from "@pi-cloud/protocol";
 import { isDeepStrictEqual } from "node:util";
@@ -348,6 +349,15 @@ export class DurableAgentSession {
       for (const conversationId of new Set(
         inspection.tasks.map((task) => task.record.conversationId),
       )) {
+        // Harness.open restores task records but leaves scheduling paused. Repair
+        // each live Conversation before any other binding can enable scheduling.
+        const conversation = await session.#harness.conversation(conversationId, context);
+        if (conversation)
+          await preserveInterruptedText({
+            conversation,
+            context,
+            assertCurrent: async () => context.abortSignal?.throwIfAborted(),
+          });
         const state = await session.#harness.snapshot(CloudRunDocument, conversationId, context);
         if (typeof state?.runId !== "string" || !state.model) continue;
         session.#conversations.set(conversationId, state.runId);
@@ -376,6 +386,11 @@ export class DurableAgentSession {
     if (!conversation && run.conversationId === 1)
       conversation = await this.#harness.root(BACKGROUND_CONTEXT);
     if (!conversation) throw new Error("Native conversation has not been created");
+    await preserveInterruptedText({
+      conversation,
+      context: BACKGROUND_CONTEXT,
+      assertCurrent: run.assertCurrent,
+    });
     const previous = await this.#harness.snapshot(
       CloudRunDocument,
       conversation.id,
@@ -417,8 +432,15 @@ export class DurableAgentSession {
     }
     if (typeof previous?.runId === "string" && previous.runId !== run.runId) {
       const live = await this.#harness.inspect(BACKGROUND_CONTEXT);
-      if (live.tasks.some((task) => task.record.conversationId === conversation!.id))
+      if (live.tasks.some((task) => task.record.conversationId === conversation!.id)) {
         await conversation.abort(BACKGROUND_CONTEXT);
+        await conversation.waitForIdle(BACKGROUND_CONTEXT);
+        await preserveInterruptedText({
+          conversation,
+          context: BACKGROUND_CONTEXT,
+          assertCurrent: run.assertCurrent,
+        });
+      }
     }
     const baseEntry =
       previous?.runId === run.runId

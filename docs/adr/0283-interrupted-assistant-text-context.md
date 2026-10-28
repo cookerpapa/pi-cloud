@@ -1,6 +1,10 @@
 # ADR-0283: Preserve cancelled assistant text in model context
 
-Status: proposed, not implemented or deployed, 2026-10-28.
+Status: accepted for implementation, not deployed, 2026-10-28.
+
+The owner approved the native ContextEdit approach, including its one extra text
+copy per cancelled response. A reference-only custom context resolver was discussed
+and rejected in favor of native recovery/compaction behavior.
 
 ## Intended behavior
 
@@ -13,7 +17,9 @@ The native source Entry and cloud Run retain their true aborted/cancelled outcom
 This first slice handles a generation that has actually settled as cancelled.
 Do not indiscriminately restore all Entries with `stopReason: aborted`: native
 recovery and retries also create aborted Entries. For a cancelled GenerationTask,
-consider its last settled response attempt, not earlier failed-attempt drafts.
+consider its last persisted assistant Entry, not every earlier failed-attempt draft.
+When ownership recovery preserved the latest visible partial but the next request
+produced no newer Entry before cancellation, that latest recorded text is eligible.
 Confirm this selection with the pinned Harness before integration. No visible
 text means no replacement. Commentary and final-answer text are both eligible.
 Use a neutral marker such as `[Reply interrupted]` unless user cancellation is
@@ -96,6 +102,13 @@ new user message, keeps its assistant attribution, occurs once and contains no
 partial Tool/reasoning structures. Confirm the model can identify the exact claim
 being corrected. Verify both a warm request and a fresh provider connection;
 connection-scoped continuation cannot be the only source of retained context.
+
+The October 28 preflight passes the installed GPT-6 Luna and DeepSeek Flash
+Responses routes with thinking enabled, Tools advertised and a preceding completed
+Tool call/result. Both recall a unique identifier supplied only in the interrupted
+assistant representation and follow the subsequent correction. The initial Flash
+probe used a forced Tool choice unsupported in thinking mode; changing only that
+probe to `auto` passes. The original failed sample is retained separately.
 
 ## Implementation and acceptance
 

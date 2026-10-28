@@ -1,5 +1,13 @@
 # Matched release procedure
 
+ADR-0283 changes Worker interpretation of cancelled assistant text using Pi's
+public context-only edits. It retains schema 202 and existing transport contracts.
+Use the matched writer-draining procedure and preserve existing assets. After
+publication, run `PI_CLOUD_LIVE_INTERRUPTED_TEXT_CHECK=1 node --import tsx
+scripts/run-live-interrupted-text-check.mjs /private/interrupted-text`: actual
+GPT-6 Luna and Flash streams must stop, persist their original aborted outcome,
+and recall their own interrupted text through the next Run's cold native context.
+
 ADR-0282 changes the private Runner/Model-Gateway WebSocket transport, with no
 schema change (202) or native storage change. Drain writers through the maintained
 matched path, retain Workspace/machine intent and image assets, and run

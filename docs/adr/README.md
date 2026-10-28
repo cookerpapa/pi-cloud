@@ -1,6 +1,7 @@
 # Current architecture decisions
 
-[ADR-0283](0283-interrupted-assistant-text-context.md) is proposed, not implemented.
+[ADR-0283](0283-interrupted-assistant-text-context.md) is accepted and implemented in
+source; matched rollout is pending.
 It retains cancelled assistant wording in model context through Pi's public
 context-only edits while preserving the original aborted outcome.
 

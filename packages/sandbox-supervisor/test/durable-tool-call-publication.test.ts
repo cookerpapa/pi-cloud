@@ -20,14 +20,23 @@ import {
   MemoryStorage,
   type StorageWrite,
   type TaskId,
+  type EntryId,
+  type ConversationId,
 } from "@earendil-works/pi-durable";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { ScopedDurableModels } from "../src/durable/scoped-models.ts";
 import { DurableRunEvents } from "../src/durable/run-events.ts";
+import {
+  preserveInterruptedText,
+  interruptedTextMessage,
+  INTERRUPTED_TEXT_ENTRY,
+  INTERRUPTION_MARKER,
+} from "../src/durable/interrupted-text.ts";
 import type { PiCloudEventBody } from "@pi-cloud/protocol";
 
 /** First response is externally paced; later requests use Pi's scripted provider. */
 function controlledProvider() {
+  const requests: import("@earendil-works/pi-ai").Context[] = [];
   const base = createModels(),
     faux = fauxProvider({ tokensPerSecond: 1_000_000 });
   base.setProvider(faux.provider);
@@ -52,6 +61,7 @@ function controlledProvider() {
       const value = Reflect.get(target, key, target);
       if (key === "stream" || key === "streamSimple" || key === "streamDeferred")
         return (...args: Parameters<typeof base.streamSimple>) => {
+          requests.push(structuredClone(args[1]));
           if (!first) return Reflect.apply(value, target, args);
           first = false;
           const signal = args[2]?.signal,
@@ -62,6 +72,11 @@ function controlledProvider() {
           started.resolve();
           return stream;
         };
+      if (key === "complete" || key === "completeSimple")
+        return (...args: Parameters<typeof base.completeSimple>) => {
+          requests.push(structuredClone(args[1]));
+          return Reflect.apply(value, target, args);
+        };
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
@@ -71,6 +86,7 @@ function controlledProvider() {
     faux,
     started,
     finish,
+    requests,
     push(event: AssistantMessageEvent) {
       if ("partial" in event) partial = event.partial;
       stream.push(event);
@@ -190,6 +206,8 @@ async function nativeFixture(
     journal?: readonly StorageWrite[][];
     runId?: string;
     holdIntent?: boolean;
+    keepRecentTokens?: number;
+    editFailure?: "before" | "after";
   } = {},
 ) {
   const provider = controlledProvider(),
@@ -200,6 +218,11 @@ async function nativeFixture(
   const store = new (class extends MemoryStorage {
     override async commit(writes: readonly StorageWrite[]) {
       const prepared = this.prepareCommit(writes);
+      const edit = writes.some(
+        (write) => write.type === "entry" && write.value.kind === INTERRUPTED_TEXT_ENTRY,
+      );
+      if (edit && options.editFailure === "before")
+        throw new Error("context edit was not committed");
       journal.push(structuredClone([...prepared.writes]));
       if (
         writes.some(
@@ -213,7 +236,10 @@ async function nativeFixture(
         intent.resolve();
         if (options.holdIntent) await acknowledged.promise;
       }
-      return prepared.apply();
+      const sequence = prepared.apply();
+      if (edit && options.editFailure === "after")
+        throw new Error("context edit acknowledgement lost");
+      return sequence;
     }
   })();
   for (const writes of options.journal ?? []) await store.commit(writes);
@@ -240,7 +266,15 @@ async function nativeFixture(
     {
       models: f.router.models,
       registry,
-      settings: { compaction: { enabled: false }, retry: { maxRetries: 0 } },
+      settings: {
+        compaction: {
+          enabled: false,
+          ...(options.keepRecentTokens === undefined
+            ? {}
+            : { keepRecentTokens: options.keepRecentTokens }),
+        },
+        retry: { maxRetries: 0 },
+      },
     },
     context,
   );
@@ -369,6 +403,238 @@ it("Stop during argument generation retains text without a Tool or phantom resul
     expect(f.execute).not.toHaveBeenCalled();
   } finally {
     f.provider.finish("aborted");
+    await f.harness.close(context);
+  }
+});
+
+it("retains cancelled text through Pi context edits, with one original aborted receipt", async () => {
+  const f = await nativeFixture({ keepRecentTokens: 1 });
+  try {
+    const { submission } = await streamDraft(f);
+    await f.root.abort(context);
+    await submission.wait(context);
+    await f.root.waitForIdle(context);
+    const before = await f.root.context(context);
+    expect(JSON.stringify(before.messages)).not.toContain("VISIBLE STREAM TEXT");
+    const usage = await f.harness.usage(context);
+    const options = { conversation: f.root, assertCurrent: async () => {}, context };
+    const view = await preserveInterruptedText({ ...options, view: before });
+    const source = view.entries.find((entry) => entry.kind === "pi.assistant")!;
+    expect(source.model?.[0]).toMatchObject({ stopReason: "aborted" });
+    const replacement = view.entries.find((entry) => entry.kind === INTERRUPTED_TEXT_ENTRY)!;
+    expect(replacement.edits?.[0]).toMatchObject({ target: source.id, action: "replace" });
+    expect(replacement.model).toBeUndefined();
+    expect(JSON.stringify(view.messages)).toContain("VISIBLE STREAM TEXT");
+    expect(JSON.stringify(view.messages)).toContain("AFTER TOOL SLOT");
+    expect(JSON.stringify(view.messages)).not.toMatch(/toolCall|INCOMPLETE_ARGUMENT/);
+    expect((await preserveInterruptedText({ ...options, view: before })).entries).toEqual(
+      view.entries,
+    );
+    expect(await f.harness.usage(context)).toEqual(usage);
+    expect(f.execute).not.toHaveBeenCalled();
+
+    const followUp = await f.root.submit(
+      { type: "input", content: "I need a backend too" },
+      context,
+    );
+    expect((await followUp.wait(context)).status).toBe("done");
+    const sent = f.provider.requests.at(-1)!.messages;
+    const partial = sent.findIndex(
+      (message) =>
+        message.role === "assistant" && JSON.stringify(message).includes(INTERRUPTION_MARKER),
+    );
+    expect(partial).toBeGreaterThan(-1);
+    expect(sent[partial + 1]).toMatchObject({ role: "user", content: "I need a backend too" });
+
+    f.provider.faux.setResponses([
+      fauxAssistantMessage("Summary: earlier text was interrupted; backend required."),
+    ]);
+    const compact = await f.root.compact(undefined, context);
+    expect((await f.harness.waitForTask(compact, context)).state.outcome.status).toBe("completed");
+    expect(JSON.stringify(f.provider.requests.at(-1))).toContain(INTERRUPTION_MARKER);
+    const afterCompact = await f.root.context(context);
+    expect(afterCompact.head?.kind).toBe("pi.compaction");
+    expect(JSON.stringify(afterCompact.messages)).not.toContain("VISIBLE STREAM TEXT");
+    const writes = f.journal.length;
+    await preserveInterruptedText(options);
+    expect(f.journal).toHaveLength(writes);
+  } finally {
+    f.provider.finish("aborted");
+    await f.harness.close(context);
+  }
+});
+
+it("repairs a cold owner and an inherited cancelled prefix without duplicate text", async () => {
+  const first = await nativeFixture();
+  const { submission } = await streamDraft(first);
+  await first.root.abort(context);
+  await submission.wait(context);
+  await first.root.waitForIdle(context);
+  const raw = await first.root.context(context);
+  const source = raw.entries.find((entry) => entry.kind === "pi.assistant")!;
+  const journal = structuredClone(first.journal);
+  await first.harness.close(context);
+  const next = await nativeFixture({ journal, runId: first.runId });
+  try {
+    const fork = await next.root.fork(source.id, { ownership: { kind: "ownerless" } }, context);
+    const rootOptions = { conversation: next.root, assertCurrent: async () => {}, context };
+    const view = await preserveInterruptedText(rootOptions);
+    expect(view.entries.filter((entry) => entry.kind === INTERRUPTED_TEXT_ENTRY)).toHaveLength(1);
+    const forkView = await preserveInterruptedText({ ...rootOptions, conversation: fork });
+    expect(JSON.stringify(forkView.messages)).toContain(INTERRUPTION_MARKER);
+    expect(forkView.entries.filter((entry) => entry.kind === INTERRUPTED_TEXT_ENTRY)).toHaveLength(
+      1,
+    );
+    const repeated = await Promise.all([
+      preserveInterruptedText(rootOptions),
+      preserveInterruptedText(rootOptions),
+    ]);
+    expect(
+      repeated.every(
+        (v) => v.entries.filter((e) => e.kind === INTERRUPTED_TEXT_ENTRY).length === 1,
+      ),
+    ).toBe(true);
+    expect(next.provider.requests).toHaveLength(0);
+  } finally {
+    await next.harness.close(context);
+  }
+});
+
+it("does not promote a failed provider draft or override an explicit context omission", async () => {
+  const f = await nativeFixture();
+  try {
+    const { submission } = await streamDraft(f);
+    f.provider.finish("error");
+    await submission.wait(context);
+    await f.root.waitForIdle(context);
+    const before = await f.root.context(context);
+    const view = await preserveInterruptedText({
+      conversation: f.root,
+      assertCurrent: async () => {},
+      context,
+    });
+    expect(view.entries).toEqual(before.entries);
+    expect(view.entries.some((e) => e.kind === INTERRUPTED_TEXT_ENTRY)).toBe(false);
+  } finally {
+    await f.harness.close(context);
+  }
+  const stopped = await nativeFixture();
+  try {
+    const { submission } = await streamDraft(stopped);
+    await stopped.root.abort(context);
+    await submission.wait(context);
+    await stopped.root.waitForIdle(context);
+    const source = (await stopped.root.context(context)).entries.find(
+      (entry) => entry.kind === "pi.assistant",
+    )!;
+    await stopped.root.commit(async (tx) => {
+      await tx.appendEntry(stopped.root.id, {
+        kind: "test.omit",
+        edits: [{ target: source.id, action: "omit" }],
+      });
+    }, context);
+    const view = await preserveInterruptedText({
+      conversation: stopped.root,
+      assertCurrent: async () => {},
+      context,
+    });
+    expect(JSON.stringify(view.messages)).not.toContain("VISIBLE STREAM TEXT");
+    expect(view.entries.some((e) => e.kind === INTERRUPTED_TEXT_ENTRY)).toBe(false);
+  } finally {
+    await stopped.harness.close(context);
+  }
+});
+
+it("keeps only original visible text and safe phases in the model representation", () => {
+  const source = fauxAssistantMessage(
+    [
+      { type: "thinking", thinking: "PRIVATE_REASONING", thinkingSignature: "PRIVATE_SIGNATURE" },
+      {
+        type: "text",
+        text: "Original wording\n",
+        textSignature: JSON.stringify({ v: 1, id: "old_provider_id", phase: "commentary" }),
+      },
+      fauxToolCall("bash", { command: "UNFINISHED_TOOL" }),
+      { type: "text", text: "More original text", textSignature: "OPAQUE_SIGNATURE" },
+    ],
+    { stopReason: "aborted", responseId: "old_response" },
+  );
+  const entry = {
+    id: 10 as EntryId,
+    conversationId: 1 as ConversationId,
+    kind: "pi.assistant",
+    model: [source],
+  } as import("@earendil-works/pi-durable").EntryRecord;
+  const message = interruptedTextMessage(entry)!;
+  expect(message.content).toEqual([
+    {
+      type: "text",
+      text: "Original wording\n",
+      textSignature: JSON.stringify({ v: 1, id: "msg_pc_interrupted_10_0", phase: "commentary" }),
+    },
+    { type: "text", text: `More original text\n\n${INTERRUPTION_MARKER}` },
+  ]);
+  expect(JSON.stringify(message)).not.toMatch(
+    /PRIVATE_|UNFINISHED|OPAQUE|old_provider|old_response/,
+  );
+  expect(source.stopReason).toBe("aborted");
+  expect(
+    interruptedTextMessage({
+      ...entry,
+      model: [{ ...source, content: [{ type: "thinking", thinking: "PRIVATE" }] }],
+    }),
+  ).toBeUndefined();
+});
+
+it.each(["before", "after"] as const)(
+  "reconciles a context edit after a failure %s commit",
+  async (editFailure) => {
+    const first = await nativeFixture({ editFailure });
+    const { submission } = await streamDraft(first);
+    await first.root.abort(context);
+    await submission.wait(context);
+    await first.root.waitForIdle(context);
+    await expect(
+      preserveInterruptedText({ conversation: first.root, context, assertCurrent: async () => {} }),
+    ).rejects.toThrow(/context edit/);
+    const journal = structuredClone(first.journal);
+    await first.harness.close(context).catch(() => {});
+    const next = await nativeFixture({ journal, runId: first.runId });
+    try {
+      const view = await preserveInterruptedText({
+        conversation: next.root,
+        context,
+        assertCurrent: async () => {},
+      });
+      expect(view.entries.filter((entry) => entry.kind === INTERRUPTED_TEXT_ENTRY)).toHaveLength(1);
+      expect(JSON.stringify(view.messages).split(INTERRUPTION_MARKER)).toHaveLength(2);
+      expect(next.execute).not.toHaveBeenCalled();
+      expect(next.provider.requests).toHaveLength(0);
+    } finally {
+      await next.harness.close(context);
+    }
+  },
+);
+
+it("does not publish retained text after owner revocation", async () => {
+  const f = await nativeFixture();
+  try {
+    const { submission } = await streamDraft(f);
+    await f.root.abort(context);
+    await submission.wait(context);
+    await f.root.waitForIdle(context);
+    const writes = f.journal.length;
+    await expect(
+      preserveInterruptedText({
+        conversation: f.root,
+        context,
+        assertCurrent: async () => {
+          throw new Error("owner revoked");
+        },
+      }),
+    ).rejects.toThrow("owner revoked");
+    expect(f.journal).toHaveLength(writes);
+  } finally {
     await f.harness.close(context);
   }
 });

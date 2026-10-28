@@ -52,6 +52,7 @@ import {
 } from "./pi-sandbox-continuity.ts";
 import { DurableSampling, type PiSamplingStepCapture } from "./durable/sampling.ts";
 import { withToolInvocation } from "./tool-invocation.ts";
+import { preserveInterruptedText } from "./durable/interrupted-text.ts";
 import { prepareToolPresentation } from "./durable/tool-presentation.ts";
 import { PiRunActivity } from "./pi-run-activity.ts";
 import {
@@ -813,6 +814,11 @@ export class PiCloudTurnRunner {
       this.#compact = async (request) => {
         combined.throwIfAborted();
         await owner.authority.assertCurrent();
+        await preserveInterruptedText({
+          conversation,
+          context: BACKGROUND_CONTEXT,
+          assertCurrent: () => owner.authority.assertCurrent(),
+        });
         const receipt = await admitManualCompaction(runtime.harness, owner.storage, conversation, {
           requestId: request.commandId,
           fingerprint: request.fingerprint,
@@ -979,7 +985,11 @@ export class PiCloudTurnRunner {
           break;
       }
       await aborting;
-      const final = await conversation.context(BACKGROUND_CONTEXT);
+      const final = await preserveInterruptedText({
+        conversation,
+        context: BACKGROUND_CONTEXT,
+        assertCurrent: () => owner.authority.assertCurrent(),
+      });
       const through = Math.max(0, ...final.entries.map((entry) => entry.id));
       while (observedEntry < through && !deliveryFailure) {
         await new Promise<void>((resolve) => {
