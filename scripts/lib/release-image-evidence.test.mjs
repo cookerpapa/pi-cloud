@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, it } from "vitest";
 import { guestBuildIdentity } from "./guest-build-identity.mjs";
-import { inspectReleaseImage } from "./release-image-evidence.mjs";
+import { inspectReleaseImage, assertGuestInventory } from "./release-image-evidence.mjs";
 
 it("reuses a guest across application-only releases while verifying original inputs and digest evidence", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-cloud-image-evidence-")),
@@ -89,4 +89,18 @@ it("reuses a guest across application-only releases while verifying original inp
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+it("rejects a guest inventory which covers only OS packages", () => {
+  expect(() =>
+    assertGuestInventory({ Results: [{ Type: "ubuntu", Vulnerabilities: [] }] }),
+  ).toThrow("missing node-pkg");
+  expect(() =>
+    assertGuestInventory({
+      Results: ["ubuntu", "node-pkg", "python-pkg", "gobinary"].map((Type) => ({
+        Type,
+        Vulnerabilities: [],
+      })),
+    }),
+  ).not.toThrow();
 });

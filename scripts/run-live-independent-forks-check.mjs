@@ -196,15 +196,19 @@ try {
   );
   const b = await ask(root, `Remember code B: ${codeB}. Reply exactly ROOT_B. Do not use tools.`),
     bAnchor = await anchor(root, b);
-  const png =
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2uV8AAAAASUVORK5CYII=";
+  const imageCommand = `node -e "require('/opt/pi-cloud/node_modules/sharp')({create:{width:128,height:128,channels:3,background:{r:40,g:90,b:180}}}).png().toFile('/workspace/fork-check.png').then(()=>console.log('PNG_READY')).catch(e=>{console.error(e.message);process.exitCode=1})"`;
   const c = await ask(
       root,
-      `Remember code C: ${codeC}. Use bash to execute exactly: printf '%s' '${png}' | base64 -d > /workspace/fork-check.png\nThen use show_image on /workspace/fork-check.png. Finish by replying ROOT_C. This is a tiny synthetic image for storage acceptance.`,
+      `Remember code C: ${codeC}. Use bash to execute this exact command:\n${imageCommand}\nThen call show_image on /workspace/fork-check.png. Finish with ROOT_C. This is a synthetic fixture image.`,
     ),
     cAnchor = await anchor(root, c);
   const original = await scope(root),
     images = imageReferences(await nativeHistory(db, { ...original, turnId: c.turnId }));
+  await writeFile(
+    resolve(directory, "image-turn.json"),
+    JSON.stringify(await nativeHistory(db, { ...original, turnId: c.turnId }), null, 2),
+    { mode: 0o600 },
+  );
   assert(images.length > 0, "The image did not enter native history");
   const d = await api.acceptTurn(
     root.sessionId,

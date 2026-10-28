@@ -86,12 +86,12 @@ Docker socket. Its root filesystem and capabilities are removed; only the
 database cache and evidence directory are writable. Network is enabled only for
 the one vulnerability-database refresh, then disabled for all image scans.
 
-The `cubesandbox-tool` image scan selects Trivy's `os` package type. The guest
-package inventory therefore covers the packaged Node, Python and OpenJDK
-runtimes without downloading Trivy's optional Java index; repository
-application packages remain covered by the root npm audit/SBOM. This override
-and rationale are recorded in `manifest.json`. CI deliberately performs the
-unrestricted image scan, including language packages.
+Local and CI scans both cover OS and language packages. Guest evidence must
+include Node, Python and Go inventory; an OS-only report cannot pass. In particular,
+the guest's global npm has its own bundled dependencies, outside the repository
+lockfile/audit. Its Undici is pinned to 6.29.1. The Java index is downloaded once
+into the shared scanner cache with owned disk scratch; image scans remain offline.
+
 
 The Web runtime compiles Caddy 2.11.4 from its verified release commit with a
 pinned Go 1.26.9 builder, `golang.org/x/net@v0.60.0` and the fixed

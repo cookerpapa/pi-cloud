@@ -49,3 +49,10 @@ export async function inspectReleaseImage(
     },
   };
 }
+
+/** The guest contains language runtimes as well as OS packages; root npm audit cannot cover global npm. */
+export function assertGuestInventory(report) {
+  const types = new Set((report.Results ?? []).map((result) => result.Type));
+  for (const type of ["node-pkg", "python-pkg", "gobinary"])
+    assert(types.has(type), `Guest inventory is missing ${type}; do not publish an OS-only scan`);
+}

@@ -18,7 +18,7 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { guestBuildIdentity } from "./lib/guest-build-identity.mjs";
-import { inspectReleaseImage } from "./lib/release-image-evidence.mjs";
+import { inspectReleaseImage, assertGuestInventory } from "./lib/release-image-evidence.mjs";
 
 configureBuildProxy();
 
@@ -282,7 +282,7 @@ try {
       : []),
   ]);
 
-  if (options.component === "android") {
+  if (options.component === "all" || options.component === "android") {
     // The Java index downloader keeps multiple archive copies. Use owned disk
     // scratch, not a multi-GiB tmpfs competing with running VMs.
     const javaScratch = resolve(temporaryDirectory, "java-download");
@@ -377,7 +377,8 @@ try {
       "vuln",
       "--severity",
       "HIGH,CRITICAL",
-      ...(imageName === "cubesandbox-tool" ? ["--pkg-types", "os"] : []),
+      "--pkg-types",
+      "os,library",
     ];
     await run("docker", [
       ...scanBase,
@@ -409,6 +410,7 @@ try {
     const policyReport = JSON.parse(
       await readFile(resolve(stageDirectory, policyReportRelativePath), "utf8"),
     );
+    if (imageName === "cubesandbox-tool") assertGuestInventory(report);
     const vulnerabilities = vulnerabilitySummary(report);
     const policyVulnerabilities = vulnerabilitySummary(policyReport);
     images.push({
@@ -438,13 +440,7 @@ try {
       reportUnfixed: true,
       maximumFixableFindings: 0,
       exceptionPolicy: await fileEvidence(stageDirectory, ".trivyignore.yaml"),
-      packageTypeOverrides: {
-        "localhost:5000/pi-cloud/cubesandbox-tool": {
-          packageTypes: ["os"],
-          rationale:
-            "Repository npm audit/SBOM covers its application packages; this image scan covers the Cube guest's OS packages without requiring Trivy's optional Java index. CI still performs the unrestricted image scan.",
-        },
-      },
+      packageTypes: ["os", "library"],
     },
     rootSbom: await fileEvidence(stageDirectory, relative(stageDirectory, rootSbomPath)),
     images,

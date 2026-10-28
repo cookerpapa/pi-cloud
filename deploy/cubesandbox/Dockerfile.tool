@@ -160,13 +160,16 @@ RUN sh scripts/retry-npm-command.sh install --global npm@12.0.2 \
          brace-expansion@5.0.12 \
          ip-address@10.4.0 \
          tar@7.5.21 \
+         undici@6.29.1 \
     && rm -rf \
          /usr/local/lib/node_modules/npm/node_modules/brace-expansion \
          /usr/local/lib/node_modules/npm/node_modules/ip-address \
          /usr/local/lib/node_modules/npm/node_modules/tar \
+         /usr/local/lib/node_modules/npm/node_modules/undici \
     && install -d /usr/local/lib/node_modules/npm/node_modules/brace-expansion \
     && install -d /usr/local/lib/node_modules/npm/node_modules/ip-address \
     && install -d /usr/local/lib/node_modules/npm/node_modules/tar \
+    && install -d /usr/local/lib/node_modules/npm/node_modules/undici \
     && tar -xzf /tmp/brace-expansion-5.0.12.tgz \
         --strip-components=1 \
         -C /usr/local/lib/node_modules/npm/node_modules/brace-expansion \
@@ -176,13 +179,18 @@ RUN sh scripts/retry-npm-command.sh install --global npm@12.0.2 \
     && tar -xzf /tmp/tar-7.5.21.tgz \
         --strip-components=1 \
         -C /usr/local/lib/node_modules/npm/node_modules/tar \
+    && tar -xzf /tmp/undici-6.29.1.tgz \
+        --strip-components=1 \
+        -C /usr/local/lib/node_modules/npm/node_modules/undici \
     && rm \
+         /tmp/undici-6.29.1.tgz \
          /tmp/brace-expansion-5.0.12.tgz \
          /tmp/ip-address-10.4.0.tgz \
          /tmp/tar-7.5.21.tgz \
     && node -e 'if (require("/usr/local/lib/node_modules/npm/node_modules/brace-expansion/package.json").version !== "5.0.12") process.exit(1)' \
     && node -e 'if (require("/usr/local/lib/node_modules/npm/node_modules/ip-address/package.json").version !== "10.4.0") process.exit(1)' \
     && node -e 'if (require("/usr/local/lib/node_modules/npm/node_modules/tar/package.json").version !== "7.5.21") process.exit(1)' \
+    && node -e 'if (require("/usr/local/lib/node_modules/npm/node_modules/undici/package.json").version !== "6.29.1") process.exit(1)' \
     && npm cache clean --force
 
 # Keep Go-only rebuilds independent of the browser/OS dependency layers.
