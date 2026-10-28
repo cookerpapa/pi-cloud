@@ -101,10 +101,13 @@ try {
   project = await api.createProject("Interrupted text acceptance", { kind: "empty" });
   report.workspaceId = project.workspaceId;
   await save();
-  for (const selection of [
+  const selections = [
     { provider: "openai-codex", modelId: "gpt-6-luna", thinkingLevel: "low", fastMode: false },
     { provider: "deepseek", modelId: "deepseek-v4-flash", thinkingLevel: "low", fastMode: false },
-  ]) {
+  ];
+  for (const [selection, nextSelection] of selections.flatMap((source) =>
+    selections.map((target) => [source, target]),
+  )) {
     const session = await api.createSession(
       project.projectId,
       project.workspaceId,
@@ -183,6 +186,8 @@ try {
         .filter((c) => c.type === "toolCall").length,
       0,
     );
+    if (selection.modelId !== nextSelection.modelId)
+      await api.updateSessionModel(session.sessionId, nextSelection);
     const follow = await api.acceptTurn(
       session.sessionId,
       "你刚才说要做纯前端，但我需要后端。只回复你刚才自己写出的八字母暗号，然后一个空格和 BACKEND_REQUIRED。不要调用工具。",
@@ -202,6 +207,7 @@ try {
     );
     report.checks.push({
       model: selection.modelId,
+      followUpModel: nextSelection.modelId,
       sessionId: session.sessionId,
       stoppedRun: run.runId,
       followUpRun: follow.runId,

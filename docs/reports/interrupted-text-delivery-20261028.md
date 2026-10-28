@@ -44,3 +44,11 @@ Run to recall a code generated only in the interrupted answer. It verifies brows
 history still contains the original response and performs physical fixture cleanup.
 
 Private evidence: `deploy/production/runtime/release-evidence/interrupted-text-20261028/`.
+
+The first matched image scan blocks publication on CVE-2026-116587 in Caddy and
+Cubelet's two binaries, all using go-jose v4.1.4. Pin the upstream fixed v4.1.6
+in the Web builder and the checked Cube module/sum patch; retain the original
+failed image evidence and use the normal scan gate. The
+[upstream release](https://github.com/go-jose/go-jose/releases/tag/v4.1.6)
+also documents its 4096-bit default bound for imported RSA JWKs. This dependency
+update does not alter Pi's execution or context implementation.

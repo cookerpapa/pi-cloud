@@ -45,7 +45,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     && export GOPROXY="${PI_CLOUD_GOPROXY}" \
     && downloaded=0 \
     && for attempt in 1 2 3; do \
-      if go get github.com/klauspost/compress@v1.18.7 google.golang.org/grpc@v1.83.2 golang.org/x/crypto@v0.57.0 golang.org/x/net@v0.60.0 golang.org/x/text@v0.42.0 \
+      if go get github.com/go-jose/go-jose/v4@v4.1.6 github.com/klauspost/compress@v1.18.7 google.golang.org/grpc@v1.83.2 golang.org/x/crypto@v0.57.0 golang.org/x/net@v0.60.0 golang.org/x/text@v0.42.0 \
         && go mod download; then downloaded=1; break; fi; \
     done \
     && test "$downloaded" = 1 \

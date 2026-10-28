@@ -59,6 +59,10 @@
     {
       "file": "0014-elastic-runtime-retention.patch",
       "sha256": "2abcd344d023054cc10c9346a8ab19102807fb24511c5c2507585eb82bf265bc"
+    },
+    {
+      "file": "0015-jose-dependency.patch",
+      "sha256": "5721527643c76eb09dce4a8e95b59224b305f74b70af77ef4e506cc85e2e4828"
     }
   ],
   "buildImages": {
