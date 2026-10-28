@@ -1,6 +1,6 @@
 # Implementation roadmap
 
-## Independent human Forks and history retention — source verified; publication pending
+## Independent human Forks and history retention — deployed
 
 [ADR-0284](adr/0284-independent-forks-and-history-retention.md) defines shared
 immutable bodies with independent Session ownership and guarded reclamation.
@@ -11,7 +11,10 @@ immutable bodies with independent Session ownership and guarded reclamation.
 - [x] Prove body sharing and cold family reorganization against native storage/recovery contracts.
 - [x] Decouple reads, implement independent prune/active-source fork and verify collection races.
 - [x] Validate 1 GiB API/Web/history sharing and quantify metadata, memory and cold-copy cost.
-- [ ] Complete matched publication and isolated live acceptance without modifying user history.
+- [x] Complete matched publication and isolated live acceptance without modifying user history.
+
+Deployed as `independent-forks-final2-20261029` (schema 203, Helm 123).
+[Measurements and delivery](reports/independent-history-delivery-20261029.md).
 
 ## Interrupted assistant text — deployed
 

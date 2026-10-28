@@ -1,9 +1,9 @@
 # ADR-0284：独立 Fork、共享历史正文与安全回收
 
-状态：**源码实现和 S0–S3、1 GiB 体量验证已通过，匹配发布与现场验收待完成**。2026-10-28。
-用户在方案修订后要求与主分支整理、首请求延迟对比一并实施。
-实施仍须通过下文 S0–S4 门槛；不把未通过的存储验证视为已经完成，
-不以此执行一次用户会话或 Workspace 数据清空。
+状态：**已部署并验收**。2026-10-29。
+版本 `independent-forks-final2-20261029`，schema 203，Helm 123。
+[交付与测量](../reports/independent-history-delivery-20261029.md)记录源代码、并发、
+1 GiB、真实模型/沙箱和恢复验收。原会话、附件、配置与 Workspace 校验通过。
 
 ## 要交付的行为
 
@@ -194,7 +194,23 @@ Kafka 的未投影提交和恢复后缀继续受现有保留边界保护；其�
 
 “最终回收”以数据库和对象存储可用、保留者已释放、清理任务继续执行为前提；
 不承诺点击后立刻释放磁盘文件。PG DELETE 的空间复用仍由 VACUUM 管理，Kafka 按现有
-安全分区前缀清理。增加可观察的待清理数量、字节和阻塞原因，避免无声地永久保留。
+安全分区前缀清理。当前 reaper 每分钟处理最多 64 个无引用对象；大量清理可能持续较久。
+待清理对象数/字节由下面的只读查询直接观察，引用行是唯一权威：
+
+```sql
+select b.body_kind, count(*) as pending_objects,
+       coalesce(sum(b.payload_bytes), 0) as pending_bytes
+from pi_history_bodies b
+where not exists (select 1 from pi_durable_writes w
+                  where w.tenant_id=b.tenant_id and w.entry_body_id=b.id)
+  and not exists (select 1 from pi_history_snapshots h
+                  where h.tenant_id=b.tenant_id and h.body_id=b.id)
+group by b.body_kind;
+```
+
+未结束 Task/Inbox、未返回输入、上传 pin、未封口 writer 或未绑定的子会话会明确拒绝
+冷态切换，事务保留原状态；对象删除失败进入现有维护错误日志，下一轮继续重试。
+这些诊断不会授权销毁 VM、重放工具或提前释放配额。
 
 ## 验证与实施顺序
 
@@ -224,7 +240,7 @@ WAL、TOAST 等物理开销）。测试进程峰值 RSS 约 736 MiB，浏览器�
 这个单机样本的首次 Fork 约 151 秒、嵌套 Fork 约 87 秒、冷态裁剪约 206 秒。
 导入仍解析原生正文并验证批次，成本随字节和记录数增长，不能称为零拷贝或 O(1)。
 源会话的普通投影更新不会被 Fork 的 KEY SHARE 阻塞；冷态裁剪会占住当前家族准入。
-源码验证不等于上线，现场 Luna/Cube/图片和匹配发布尚待完成。
+现场 Luna/Cube/图片、原生压缩、Worker/控制面恢复及匹配发布已通过。
 
 
 需要调整数据库表示、Storage 读写/重建、历史读取、裁剪与前端条件，属于匹配升级，

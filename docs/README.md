@@ -6,11 +6,11 @@ the same installed model route. Large uploads reproduce WebSocket failure and
 HTTP fallback in both native Pi and Codex; source and timing differences are
 separated from unmeasured desktop/direct-route behavior.
 
-[Independent Fork and history retention design](adr/0284-independent-forks-and-history-retention.md)
-revises the earlier copy-only plan. It separates immutable body sharing from
-Session execution ownership and specifies cold reorganization, reference safety,
-failure tests and adoption evidence. Source implementation and a 1 GiB composed
-check pass; matched publication and live acceptance remain pending.
+[Independent Fork and history retention](adr/0284-independent-forks-and-history-retention.md)
+is deployed as `independent-forks-final2-20261029` (schema 203, Helm 123). Shared
+immutable bodies, independent presentation metadata and guarded family retirement
+pass native contracts, 1 GiB composed checks and real Luna/Cube/recovery acceptance.
+[Delivery and measured costs](reports/independent-history-delivery-20261029.md).
 
 [Interrupted assistant text implementation](adr/0283-interrupted-assistant-text-context.md)
 defines original assistant wording plus an interruption marker in model context,

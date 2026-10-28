@@ -12,29 +12,18 @@ same fallback in native Pi and Codex. Six small and two large real-model respons
 completed. This is not a claimed general speed ranking or a repaired external
 proxy path. Stable provider cache hints remain a bounded improvement candidate.
 
-## Independent Forks and reclaimable history — deployed; final image correction pending
+## Independent Forks and reclaimable history — deployed
 
-[ADR-0284](adr/0284-independent-forks-and-history-retention.md) replaces the
-copy-only proposal with shared immutable Entry bodies and independent per-Session
-record ownership. Preserve active Forks across source pruning and remove parent
-history read dependencies. Physical collection requires verified cold storage
-reorganization/retirement and actual reference checks, not holes in checked logs.
-Native conformance, shared-body integrity, document policies, closed child-family
-retention, rollback, source/Fork concurrency and actual image-object reclamation
-pass. The 1 GiB composed check passes API/browser pagination, search/export, two
-independent Forks, source retirement and last-reference cleanup. The final point
-lookup reads one body through its primary key (~5 ms); import remains linear in
-body bytes and metadata. The first full workspace run found two obsolete SQL/
-cascade expectations; focused regressions pass after preserving the hot SQL count
-and updating the intended lifecycle checks. The first matched release is deployed (schema 203, Helm 122). Actual Luna/Cube
-Fork/prune, retained images, cold continuation, native compaction and browser
-navigation pass in an owned fixture. The original 3 conversations, 5,859 files,
-27 configuration/credential hashes and 65 images pass preservation checks.
-Remote CI exposed a separate release-gate gap: local guest scans had excluded
-language packages, missing global npm's bundled Undici 6.27.0. The follow-up pins
-6.29.1, requires complete guest inventory and aligns local/CI package coverage;
-its final matched image publication remains pending. The first live image fixture
-used a PNG with an invalid IDAT checksum; the valid Sharp-generated fixture passes.
+[ADR-0284](adr/0284-independent-forks-and-history-retention.md) is deployed as
+`independent-forks-final2-20261029` (schema 203, Helm 123). Independent history reads,
+active-source Forks, noncascading tail pruning, shared Entry bodies, frozen display
+metadata and closed-family retirement are implemented through public native APIs.
+[Delivery evidence](reports/independent-history-delivery-20261029.md) records native
+conformance, concurrency/rollback, real parent/child Harness reopen, 1 GiB
+API/browser measurements, actual Luna/Cube/image/compaction checks and native
+Worker/Control Plane crash recovery. Original conversations, images, configuration
+and Workspace contents pass preservation checks. Full guest language inventory
+now covers global npm's patched Undici; final image gates and remote CI pass.
 
 
 ## Image service rejection details — completed
