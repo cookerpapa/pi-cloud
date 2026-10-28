@@ -65,7 +65,7 @@ export function virtualConversationRows(
     );
     const footerAnswer =
       turn.status === "completed" && !turn.continuesAfter
-        ? rows.findLast((row) => row.kind === "text" && !row.processNarration)
+        ? rows.filter((row) => row.kind === "text" && !row.processNarration).at(-1)
         : undefined;
     for (const row of rows) {
       const item =
