@@ -801,7 +801,12 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
         }>`select record_kind as kind from pi_durable_log where tenant_id=${alpha.tenantId}::uuid
       and session_id=${forked.session.sessionId} order by seq,ordinal`.execute(database)
       ).rows,
-    ).toEqual([{ kind: "conversation" }, { kind: "entry" }, { kind: "entry" }]);
+    ).toEqual([
+      { kind: "conversation" },
+      { kind: "entry" },
+      { kind: "entry" },
+      { kind: "conversation" },
+    ]);
     const foreignTree = await http.inject({
       method: "GET",
       url: `/v1/conversations/${forked.session.sessionId}/tree`,
@@ -908,7 +913,7 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
       anchorTurnId: alphaTurn.turnId,
       anchorEntryId: assistantEntryId,
       prunedTurnCount: 1,
-      prunedSessionCount: 1,
+      prunedSessionCount: 0,
       replayed: false,
     });
     expect((await http.inject(pruneRequest)).json<ConversationPruneResource>()).toMatchObject({
@@ -923,12 +928,12 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
     ).toMatchObject({ prunedAt: expect.anything() });
     const nativeBinding = await database
       .selectFrom("sessions")
-      .select("pi_conversation_id")
+      .select(["pi_session_id", "pi_conversation_id"])
       .where("id", "=", alphaSession.sessionId)
       .executeTakeFirstOrThrow();
     const activeNative = await readDurableEntries(database, {
       tenantId: alpha.tenantId,
-      sessionId: alphaSession.sessionId,
+      sessionId: nativeBinding.pi_session_id,
       conversationId: Number(nativeBinding.pi_conversation_id),
       limit: 1,
     });
@@ -939,7 +944,7 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
         .select("pruned_at as prunedAt")
         .where("id", "=", forked.session.sessionId)
         .executeTakeFirstOrThrow(),
-    ).toMatchObject({ prunedAt: expect.anything() });
+    ).toMatchObject({ prunedAt: null });
     const afterPruneTree = await http.inject({
       method: "GET",
       url: `/v1/conversations/${alphaSession.sessionId}/tree?view=full`,
@@ -954,6 +959,7 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
             { turnId: alphaTurn.turnId, role: "assistant" },
           ],
         },
+        { sessionId: forked.session.sessionId },
       ],
     });
 

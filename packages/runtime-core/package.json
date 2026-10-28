@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./canonical-pi-conversation": "./src/canonical-pi-conversation.ts",
+    "./frozen-history": "./src/frozen-history.ts",
     "./canonical-history-window": "./src/canonical-history-window.ts",
     "./history-position": "./src/history-position.ts",
     "./conversation-markdown": "./src/conversation-markdown.ts",

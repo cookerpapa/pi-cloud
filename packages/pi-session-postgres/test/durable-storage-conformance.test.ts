@@ -925,9 +925,11 @@ it.each(["missing state", "changed state", "missing history", "changed history"]
           database,
         );
       else if (damage === "missing history")
-        await sql`delete from pi_durable_log where tenant_id=${f.tenantId}::uuid`.execute(database);
+        await sql`delete from pi_durable_writes where tenant_id=${f.tenantId}::uuid`.execute(
+          database,
+        );
       else
-        await sql`update pi_durable_log set body='{}' where tenant_id=${f.tenantId}::uuid`.execute(
+        await sql`update pi_durable_writes set body='{}' where tenant_id=${f.tenantId}::uuid`.execute(
           database,
         );
       const before = (

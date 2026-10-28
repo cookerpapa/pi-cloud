@@ -9,8 +9,8 @@ separated from unmeasured desktop/direct-route behavior.
 [Independent Fork and history retention design](adr/0284-independent-forks-and-history-retention.md)
 revises the earlier copy-only plan. It separates immutable body sharing from
 Session execution ownership and specifies cold reorganization, reference safety,
-failure tests and adoption evidence. Implementation is authorized; the storage
-validation gates remain open and this is not current runtime behavior.
+failure tests and adoption evidence. Source implementation and a 1 GiB composed
+check pass; matched publication and live acceptance remain pending.
 
 [Interrupted assistant text implementation](adr/0283-interrupted-assistant-text-context.md)
 defines original assistant wording plus an interruption marker in model context,

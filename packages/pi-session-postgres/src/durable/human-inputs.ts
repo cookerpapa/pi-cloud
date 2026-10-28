@@ -1,3 +1,4 @@
+import { nativeBodyAtRecord } from "./record-body.ts";
 import { createHash } from "node:crypto";
 import { sql, type Kysely } from "kysely";
 import type { Database } from "@pi-cloud/database";
@@ -142,7 +143,7 @@ export async function readNativeHumanSubmission(
   inputId: string,
 ) {
   const row = await sql<{ body: string | null; fields: Record<string, string> }>`
-    select l.body,r.fields from pi_durable_records r left join pi_durable_record_bodies l using(tenant_id,session_id,seq,ordinal)
+    select l.body,r.fields from pi_durable_records r ${nativeBodyAtRecord}
     where r.tenant_id=${scope.tenantId}::uuid and r.session_id=${scope.sessionId}
       and r.kind='submission' and r.fields->>'conversation'=${String(scope.conversationId)}
       and r.fields->>'request'=${JSON.stringify(inputId)} limit 1`.execute(database);
@@ -166,7 +167,7 @@ export async function readHumanInputOutcomes(
   if (!keys.length) return new Map<string, { status: string; entry?: number; reason?: string }>();
   const result = await sql<{ body: string | null; request: string }>`
     select l.body,r.fields->>'request' as request from pi_durable_records r
-      left join pi_durable_record_bodies l using(tenant_id,session_id,seq,ordinal)
+      ${nativeBodyAtRecord}
     where r.tenant_id=${scope.tenantId}::uuid and r.session_id=${scope.sessionId}
       and r.kind='submission' and r.fields->>'conversation'=${String(scope.conversationId)}
       and r.fields->>'request'=any(${keys.map((key) => JSON.stringify(key))}::text[])`.execute(

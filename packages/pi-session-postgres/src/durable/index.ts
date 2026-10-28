@@ -17,13 +17,8 @@ export {
   type ManagedNativeRuntime,
 } from "./session-host.ts";
 export type { DurableBatch, StoredDurableBatch, DurableScope } from "./types.ts";
-export {
-  readDurableEntries,
-  iterateDurableHistoryPrefix,
-  forkIdleConversation,
-  copyDurableHistory,
-  type StoredHistoryEntry,
-} from "./history.ts";
+export { readDurableEntries, forkIdleConversation, type StoredHistoryEntry } from "./history.ts";
+export { importForkHistory } from "./history-import.ts";
 export { readDurableRunUsage } from "./run-usage.ts";
 export {
   readNativeHumanInputs,
@@ -53,3 +48,6 @@ export {
   humanPresentationSliceCharacters,
 } from "./human-input-presentation.ts";
 export { readNavigationEntries, type NavigationEntry } from "./navigation.ts";
+
+export { retainIdleFamily } from "./history-retention.ts";
+export { reapUnreferencedEntryBodies } from "./shared-entry-bodies.ts";

@@ -1,3 +1,11 @@
+import { Harness, createRegistry, type ConversationId } from "@earendil-works/pi-durable";
+import { createModels } from "@earendil-works/pi-ai/models";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import {
+  DurablePostgresProjection,
+  PublishedDurableStorage,
+} from "@pi-cloud/pi-session-postgres/durable";
+import { ConversationTreeService } from "../src/conversation-tree-service.ts";
 import { fixtureModelRuntime } from "../../../scripts/lib/test-model-catalog.mjs";
 import { expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -319,6 +327,80 @@ it.each([false, true])(
         ),
       ).toBe(true);
       expect(create).not.toHaveBeenCalled();
+      if (!publicationFails) {
+        await writer.finish({ type: "turn.completed", payload: { stopReason: "stop" } });
+        const tree = new ConversationTreeService({ database: f.database });
+        const end = (await tree.tree(f.scope.tenantId, f.scope.sessionId, "focus")).branches
+          .flatMap((b) => b.entries)
+          .filter((e) => e.finalAssistant)
+          .at(-1)!;
+        await tree.prune(f.scope.tenantId, f.scope.sessionId, crypto.randomUUID(), {
+          turnId: end.turnId,
+          entryId: end.entryId,
+        });
+        const binding = await f.database
+          .selectFrom("sessions")
+          .select(["pi_session_id", "pi_conversation_id"])
+          .where("id", "=", f.scope.sessionId)
+          .executeTakeFirstOrThrow();
+        expect(binding.pi_session_id).not.toBe(f.scope.piSessionId);
+        expect(
+          (
+            await sql`select 1 from pi_durable_records where tenant_id=${f.scope.tenantId}::uuid and session_id=${binding.pi_session_id}
+          and kind='document' and fields->>'nativeKind'='"pi-cloud.conversation-creation"'`.execute(
+              f.database,
+            )
+          ).rows,
+        ).toHaveLength(1);
+        expect(
+          (
+            await f.database
+              .selectFrom("subagent_executions")
+              .select("state")
+              .executeTakeFirstOrThrow()
+          ).state,
+        ).toBe("completed");
+        const storage = await PublishedDurableStorage.open({
+          projection: new DurablePostgresProjection(
+            f.database,
+            { tenantId: f.scope.tenantId, sessionId: binding.pi_session_id },
+            undefined,
+            "references",
+          ),
+          publish: async () => {
+            throw new Error("Read-only cold restore attempted a write");
+          },
+          waitProjected: async () => {},
+        });
+        const models = createModels();
+        models.setProvider(provider.provider);
+        const restored = await Harness.open(
+          storage,
+          { models, registry: createRegistry() },
+          BACKGROUND_CONTEXT,
+        );
+        try {
+          expect((await restored.inspect(BACKGROUND_CONTEXT)).tasks).toHaveLength(0);
+          const root = await restored.conversation(
+            Number(binding.pi_conversation_id) as ConversationId,
+            BACKGROUND_CONTEXT,
+          );
+          const child = await restored.conversation(
+            conversationId as ConversationId,
+            BACKGROUND_CONTEXT,
+          );
+          expect(JSON.stringify(await root!.context(BACKGROUND_CONTEXT))).toContain("ROOT DONE");
+          expect(JSON.stringify(await child!.context(BACKGROUND_CONTEXT))).toContain(
+            "FIRST CHILD ANSWER",
+          );
+          expect(JSON.stringify(await child!.context(BACKGROUND_CONTEXT))).toContain(
+            "Additional child context",
+          );
+          expect(provider.state.callCount).toBe(4);
+        } finally {
+          await restored.close(BACKGROUND_CONTEXT);
+        }
+      }
     } finally {
       continueChild.resolve();
       continueParent.resolve();

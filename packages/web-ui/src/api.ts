@@ -938,7 +938,7 @@ export class PiCloudApi {
   ): Promise<{ bytes: Uint8Array; contentType: string }> {
     return requestBytes(
       this.#fetch,
-      `/v1/sessions/${encodeURIComponent(upload.sessionId)}/uploads/${encodeURIComponent(upload.id)}/image`,
+      `/v1/sessions/${encodeURIComponent(upload.sessionId)}/images/${encodeURIComponent(upload.image!.id)}`,
       this.#authorizationToken,
       signal,
     );

@@ -852,3 +852,61 @@ describe("product chat experience", () => {
     expect(markup).toContain("模型请求失败，正在重试（第 2 次尝试）");
   });
 });
+
+it("keeps a focused independent Fork and a detached full-tree anchor navigable", () => {
+  const child = {
+    kind: "conversation" as const,
+    sessionId: "child",
+    title: "Retained branch",
+    parentSessionId: "parent",
+    forkedFromTurnId: "turn",
+    forkedFromEntryId: "C",
+    current: true,
+    entries: [
+      {
+        entryId: "C",
+        parentEntryId: null,
+        turnId: "turn",
+        role: "assistant" as const,
+        text: "Retained C",
+        finalAssistant: true,
+        createdAt: "2026-10-28T00:00:00Z",
+      },
+    ],
+  };
+  const tree = {
+    view: "focus" as const,
+    rootSessionId: "parent",
+    currentSessionId: "child",
+    branches: [child],
+    delegatedSessions: [],
+    truncated: false,
+  };
+  const render = (value: typeof tree) =>
+    renderToStaticMarkup(
+      <ConversationTreeNavigator
+        tree={value}
+        view="focus"
+        loading={false}
+        scrollerRef={{ current: null }}
+        onViewChange={() => {}}
+        onNavigate={() => {}}
+      />,
+    );
+  expect(render(tree)).toContain("Retained C");
+  expect(
+    render({
+      ...tree,
+      branches: [
+        {
+          ...child,
+          sessionId: "parent",
+          parentSessionId: null as never,
+          entries: [],
+          current: false,
+        },
+        child,
+      ],
+    }),
+  ).toContain("Retained C");
+});

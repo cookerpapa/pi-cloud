@@ -1,5 +1,15 @@
 # Matched release procedure
 
+ADR-0284 requires schema 203 and paired API/Worker/Web storage contracts. Preserve
+existing bodies, images, machine intent and Workspace Volumes while draining. The
+bootstrap job converts any existing Fork display prefixes once; it refuses active
+legacy work. Source checks include `PI_CLOUD_FORK_RETENTION_CHECK=1 npm run
+browser:history:check`. After publication run `PI_CLOUD_LIVE_FORK_CHECK=1 node
+--import tsx scripts/run-live-independent-forks-check.mjs /private/fork-check`: an
+owned Luna/Cube fixture must keep C and its image in an active Fork while pruning
+the source to B, then continue and compact through native Pi. Ordinary native
+recovery and Cube release acceptance still apply. No user conversation is a fixture.
+
 ADR-0283 changes Worker interpretation of cancelled assistant text using Pi's
 public context-only edits. It retains schema 202 and existing transport contracts.
 Use the matched writer-draining procedure and preserve existing assets. After

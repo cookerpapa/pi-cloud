@@ -1,5 +1,5 @@
 import {
-  copyDurableHistory,
+  importForkHistory,
   readDurableEntries,
   forkIdleConversation,
 } from "@pi-cloud/pi-session-postgres/durable";
@@ -696,12 +696,10 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
     await database
       .transaction()
       .execute(async (tx) =>
-        copyDurableHistory(
+        importForkHistory(
           tx,
           { tenantId: scope.tenantId, sessionId: independentId },
-          (
-            await readDurableEntries(tx, { ...nativeScope, conversationId: 1, limit: 100 })
-          ).reverse(),
+          { ...nativeScope, conversationId: 1, through: entry.id },
         ),
       );
     const otherTenant = await createPrivateTenant(database, {

@@ -1,4 +1,6 @@
+import { nativeBodyAtRecord } from "./record-body.ts";
 import { assertIdleNativeSession } from "../idle-session-mutation.ts";
+import { retainedHistoryBody, writeRetainedHistory } from "./shared-entry-bodies.ts";
 import { createHash } from "node:crypto";
 import { sql, type Kysely, type Transaction, type RawBuilder } from "kysely";
 import { databaseReadSignal, type Database } from "@pi-cloud/database";
@@ -71,6 +73,8 @@ const INDEX_FIELDS = new Set([
   "ownerTask",
   "scope",
   "address",
+  "forkPolicy",
+  "historyPolicy",
   "cloudSession",
   "run",
   "turn",
@@ -152,7 +156,7 @@ export class DurablePostgresProjection {
   async get(id: number): Promise<IndexedRecord | undefined> {
     const result =
       await sql<RecordRow>`select r.kind,r.seq,r.ordinal,r.fields,r.created_seq,r.retired_seq,l.body
-      from pi_durable_records r left join pi_durable_record_bodies l using(tenant_id,session_id,seq,ordinal)
+      from pi_durable_records r ${nativeBodyAtRecord}
       where ${this.scoped("r")} and r.id=${id}`.execute(this.database);
     return (
       result.rows[0] &&
@@ -192,10 +196,9 @@ export class DurablePostgresProjection {
       );
     const result =
       await sql<RecordRow>`select r.kind,r.seq,r.ordinal,r.fields,r.created_seq,r.retired_seq,l.body
-      from pi_durable_records r left join pi_durable_record_bodies l using(tenant_id,session_id,seq,ordinal)
-      where ${sql.join(clauses, sql` and `)} order by r.id ${query.descending ? sql`desc` : sql`asc`} limit ${limit}`.execute(
-        this.database,
-      );
+      from (select r.* from pi_durable_records r where ${sql.join(clauses, sql` and `)}
+        order by r.id ${query.descending ? sql`desc` : sql`asc`} limit ${limit}) r ${nativeBodyAtRecord}
+      order by r.id ${query.descending ? sql`desc` : sql`asc`}`.execute(this.database);
     if (this.imageRepresentation === "references") return result.rows.map(decodeRecord);
     return decodeSessionImages<IndexedRecord[]>(
       this.images,
@@ -450,7 +453,7 @@ export class DurablePostgresProjection {
           ordinal,
           record_kind: write.type,
           record_id: String(id),
-          body: JSON.stringify(write),
+          body: retainedHistoryBody(write),
           phase:
             write.type === "task" && "checkpoint" in write.value.state
               ? (JSON.stringify((write.value.state.checkpoint as { phase?: unknown }).phase) ??
@@ -471,14 +474,7 @@ export class DurablePostgresProjection {
       values(${this.scope.tenantId}::uuid,${this.scope.sessionId},${batch.seq},${batch.nextId},${fingerprint},${batch.writes.length},${history.length},${historyFingerprint(history)},${JSON.stringify(Object.fromEntries(current.rows.map((row) => [row.id, currentStateFingerprint(row)])))}::jsonb,${cloudMetadata === undefined ? null : JSON.stringify(cloudMetadata)})`.execute(
       tx,
     );
-    if (history.length)
-      await sql`insert into pi_durable_log(tenant_id,session_id,seq,ordinal,record_kind,record_id,body,phase,cloud_origin) values
-      ${sql.join(
-        history.map(
-          (row) =>
-            sql`(${this.scope.tenantId}::uuid,${this.scope.sessionId},${batch.seq},${row.ordinal},${row.record_kind},${row.record_id},${row.body},${row.phase},${row.cloud_origin === null ? null : JSON.stringify(row.cloud_origin)}::jsonb)`,
-        ),
-      )}`.execute(tx);
+    await writeRetainedHistory(tx, this.scope, batch.seq, history);
     const retiredCurrent = current.rows
       .filter((r) => r.retired_seq !== null)
       .map((r) => Number(r.id));
@@ -829,81 +825,83 @@ export class DurablePostgresProjection {
 
   /** Rebuild disposable indexes from history AND current state; never a Worker bootstrap. */
   async rebuild(): Promise<void> {
-    await this.database.transaction().execute(async (tx) => {
-      await assertIdleNativeSession(tx, this.scope.tenantId, this.scope.sessionId);
-      const missing = await sql`with expected as (
+    await this.database.transaction().execute((tx) => this.rebuildIn(tx));
+  }
+
+  async rebuildIn(tx: Transaction<Database>): Promise<void> {
+    await assertIdleNativeSession(tx, this.scope.tenantId, this.scope.sessionId);
+    const missing = await sql`with expected as (
         select distinct on (state.key) state.key::bigint as id,c.seq
           from pi_durable_commits c cross join lateral jsonb_each_text(c.current_hashes) state
           where ${this.scoped("c")} order by state.key,c.seq desc
       ), actual as (select id,seq from pi_durable_current c where ${this.scoped("c")})
       select 1 from expected e full join actual a using(id)
         where e.id is null or a.id is null or e.seq<>a.seq limit 1`.execute(tx);
-      if (missing.rows.length) throw new Error("Native current-state recovery set is incomplete");
-      await sql`delete from pi_durable_records r where ${this.scoped("r")}`.execute(tx);
-      await sql`delete from pi_durable_document_revisions r where ${this.scoped("r")}`.execute(tx);
-      let afterId = 0;
-      for (;;) {
-        const rows = await sql<
-          CurrentStateRow & { expected: string }
-        >`select s.*,c.current_hashes->>s.id::text as expected
+    if (missing.rows.length) throw new Error("Native current-state recovery set is incomplete");
+    await sql`delete from pi_durable_records r where ${this.scoped("r")}`.execute(tx);
+    await sql`delete from pi_durable_document_revisions r where ${this.scoped("r")}`.execute(tx);
+    let afterId = 0;
+    for (;;) {
+      const rows = await sql<
+        CurrentStateRow & { expected: string }
+      >`select s.*,c.current_hashes->>s.id::text as expected
           from pi_durable_current s join pi_durable_commits c using(tenant_id,session_id,seq)
           where ${this.scoped("s")} and s.id>${afterId} order by s.id limit 64`.execute(tx);
-        if (!rows.rows.length) break;
-        for (const row of rows.rows)
-          if (currentStateFingerprint(row) !== row.expected)
-            throw new Error("Native current-state integrity check failed");
-        await this.#writeIndexes(tx, rows.rows.map(currentStateIndex), true);
-        afterId = Number(rows.rows.at(-1)!.id);
-      }
-      let through = 0;
-      for (;;) {
-        const headers = await sql<{
+      if (!rows.rows.length) break;
+      for (const row of rows.rows)
+        if (currentStateFingerprint(row) !== row.expected)
+          throw new Error("Native current-state integrity check failed");
+      await this.#writeIndexes(tx, rows.rows.map(currentStateIndex), true);
+      afterId = Number(rows.rows.at(-1)!.id);
+    }
+    let through = 0;
+    for (;;) {
+      const headers = await sql<{
+        seq: string;
+        next_id: string;
+        write_count: number;
+        history_write_count: number;
+        history_fingerprint: string;
+      }>`select seq,next_id,write_count,history_write_count,history_fingerprint from pi_durable_commits c
+          where ${this.scoped("c")} and seq>${through} order by seq limit 1`.execute(tx);
+      if (!headers.rows.length) break;
+      const rows = await sql<
+        HistoryWriteRow & {
           seq: string;
-          next_id: string;
-          write_count: number;
-          history_write_count: number;
-          history_fingerprint: string;
-        }>`select seq,next_id,write_count,history_write_count,history_fingerprint from pi_durable_commits c
-          where ${this.scoped("c")} and seq>${through} order by seq limit 128`.execute(tx);
-        if (!headers.rows.length) break;
-        const rows = await sql<
-          HistoryWriteRow & {
-            seq: string;
-          }
-        >`
+        }
+      >`
           select seq,ordinal,record_kind,body,record_id,phase,cloud_origin from pi_durable_log l where ${this.scoped("l")}
           and seq>${through} and seq<=${headers.rows.at(-1)!.seq} order by seq,ordinal`.execute(tx);
-        const grouped = new Map<string, typeof rows.rows>();
-        for (const row of rows.rows) {
-          const group = grouped.get(row.seq) ?? [];
-          group.push(row);
-          grouped.set(row.seq, group);
-        }
-        for (const header of headers.rows) {
-          const entries = grouped.get(header.seq) ?? [];
-          if (
-            Number(header.seq) !== ++through ||
-            entries.length !== header.history_write_count ||
-            entries.some((entry) => entry.ordinal < 0 || entry.ordinal >= header.write_count) ||
-            historyFingerprint(entries) !== header.history_fingerprint
-          )
-            throw new Error("Native retained history integrity check failed");
-          const batch = {
-            seq: Number(header.seq) as Seq,
-            nextId: Number(header.next_id),
-            writes: entries.map((row) => JSON.parse(row.body)),
-          } as DurableBatch;
-          await this.#indexBatch(
-            tx,
-            batch,
-            new Map(entries.map((row) => [Number(row.record_id), row.cloud_origin ?? undefined])),
-            new Set(),
-            entries.map((row) => row.ordinal),
-          );
-        }
-        through = Number(headers.rows.at(-1)!.seq);
+      const grouped = new Map<string, typeof rows.rows>();
+      for (const row of rows.rows) {
+        const group = grouped.get(row.seq) ?? [];
+        group.push(row);
+        grouped.set(row.seq, group);
       }
-    });
+      for (const header of headers.rows) {
+        const entries = grouped.get(header.seq) ?? [];
+        if (
+          Number(header.seq) !== ++through ||
+          entries.length !== header.history_write_count ||
+          entries.some((entry) => entry.ordinal < 0 || entry.ordinal >= header.write_count) ||
+          historyFingerprint(entries) !== header.history_fingerprint
+        )
+          throw new Error("Native retained history integrity check failed");
+        const batch = {
+          seq: Number(header.seq) as Seq,
+          nextId: Number(header.next_id),
+          writes: entries.map((row) => JSON.parse(row.body)),
+        } as DurableBatch;
+        await this.#indexBatch(
+          tx,
+          batch,
+          new Map(entries.map((row) => [Number(row.record_id), row.cloud_origin ?? undefined])),
+          new Set(),
+          entries.map((row) => row.ordinal),
+        );
+      }
+      through = Number(headers.rows.at(-1)!.seq);
+    }
   }
 }
 

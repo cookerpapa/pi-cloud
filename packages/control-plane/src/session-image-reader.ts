@@ -5,7 +5,7 @@ import { parseImageAttachmentReference, type ImageAttachmentReference } from "@p
 import type { ImageAttachmentSource } from "@pi-cloud/session-attachments";
 import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
 
-/** Read an immutable image only after canonical history retains it in this Session. */
+/** Canonical history or a ready upload ticket grants access within this product Session. */
 export class SessionImageReader {
   constructor(
     readonly database: Kysely<Database>,
@@ -34,10 +34,13 @@ export class SessionImageReader {
         byte_length: string;
         mime_type: string;
       }>`select o.id,o.sha256,o.byte_length,o.mime_type from sessions s
-      join session_image_references r on r.tenant_id=s.tenant_id and r.session_id=s.pi_session_id
-      join session_image_objects o on o.tenant_id=r.tenant_id and o.id=r.image_id
+      join session_image_objects o on o.tenant_id=s.tenant_id and o.id=${imageId}::uuid
       where s.tenant_id=${tenantId}::uuid and s.id=${sessionId}::uuid and s.pruned_at is null
-        and o.id=${imageId}::uuid and o.state='ready'`.execute(this.database),
+        and o.state='ready' and (
+          exists(select 1 from session_image_references r where r.tenant_id=s.tenant_id and r.session_id=s.pi_session_id and r.image_id=o.id)
+          or exists(select 1 from session_uploads u where u.tenant_id=s.tenant_id and u.session_id=s.id and u.image_id=o.id and u.state='ready'))`.execute(
+        this.database,
+      ),
     );
     const row = rows[0];
     if (!row)

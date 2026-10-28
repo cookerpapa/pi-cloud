@@ -2316,7 +2316,6 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
                     canMutate &&
                     selectedDelegatedSession === null &&
                     operation === null &&
-                    currentTurn === undefined &&
                     target !== undefined
                   }
                   canPrune={

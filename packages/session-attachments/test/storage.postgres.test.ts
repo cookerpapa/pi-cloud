@@ -6,7 +6,7 @@ import {
   PublishedDurableStorage,
   DurablePostgresProjection,
   readDurableEntries,
-  copyDurableHistory,
+  importForkHistory,
   type DurableBatch,
 } from "@pi-cloud/pi-session-postgres/durable";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
@@ -198,9 +198,18 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
             limit: 100,
           })
         ).reverse();
-        await db
-          .transaction()
-          .execute((tx) => copyDurableHistory(tx, { tenantId, sessionId: target }, entries));
+        await db.transaction().execute((tx) =>
+          importForkHistory(
+            tx,
+            { tenantId, sessionId: target },
+            {
+              tenantId,
+              sessionId: source,
+              conversationId: 1,
+              through: entries.at(-1)!.entry.id,
+            },
+          ),
+        );
         return target;
       };
       const fork = await copy(id),

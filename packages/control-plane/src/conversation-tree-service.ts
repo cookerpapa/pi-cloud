@@ -1,12 +1,13 @@
+import { replacePrunedHistory } from "./conversation-history-retention.ts";
+import { freezeForkHistory, retainFrozenImages } from "@pi-cloud/runtime-core/frozen-history";
 import { unbindSessionTargets } from "./unbind-session-targets.ts";
 import { readNavigationEntries } from "@pi-cloud/pi-session-postgres/durable";
 import { createHash, randomUUID } from "node:crypto";
 import type { Database } from "@pi-cloud/database";
 import {
   readDurableEntries,
-  iterateDurableHistoryPrefix,
   forkIdleConversation,
-  copyDurableHistory,
+  importForkHistory,
 } from "@pi-cloud/pi-session-postgres/durable";
 import type {
   ConversationForkResource,
@@ -145,13 +146,8 @@ function activeBranch(rows: readonly PiEntryRow[], leafId: string | null): PiEnt
 function ownBranch(branch: readonly PiEntryRow[], forkEntryId: string | null): PiEntryRow[] {
   if (forkEntryId === null) return [...branch];
   const anchor = branch.findIndex((entry) => entry.id === forkEntryId);
-  if (anchor < 0) {
-    throw new ControlPlaneStoreError(
-      "control_plane_misconfigured",
-      "Fork anchor is missing from the child Pi Session",
-    );
-  }
-  return branch.slice(anchor + 1);
+  // The original source point is provenance; an independent branch may be pruned before it.
+  return anchor < 0 ? [...branch] : branch.slice(anchor + 1);
 }
 
 function mappedConversationEntries(
@@ -274,20 +270,11 @@ async function completedTurns(
   sessionIds: readonly string[],
 ): Promise<Map<string, CompletedTurnRow[]>> {
   if (sessionIds.length === 0) return new Map();
-  const rows = await database
-    .selectFrom("conversation_turns as run")
-    .select([
-      "run.session_id as sessionId",
-      "run.turn_id as turnId",
-      "run.mailbox_position as mailboxPosition",
-    ])
-    .where("run.tenant_id", "=", tenantId)
-    .where("run.session_id", "in", sessionIds)
-    .where("run.pruned_at", "is", null)
-    .where("run.state", "=", "completed")
-    .orderBy("run.session_id")
-    .orderBy("run.mailbox_position")
-    .execute();
+  const rows = (
+    await sql<CompletedTurnRow>`select session_id as "sessionId",turn_id as "turnId",mailbox_position::text as "mailboxPosition"
+    from pi_history_turns where tenant_id=${tenantId}::uuid and session_id=any(${[...sessionIds]}::uuid[]) and state='completed' and not waiting_for_seal
+    order by session_id,mailbox_position`.execute(database)
+  ).rows;
   const grouped = new Map<string, CompletedTurnRow[]>();
   for (const row of rows) {
     if (row.mailboxPosition === null) continue;
@@ -379,10 +366,29 @@ export class ConversationTreeService {
         "Delegated Session has no parent execution",
       );
     }
-    const lineage = await this.#lineage(database, tenantId, humanSessionId);
+    const lineage =
+      view === "focus"
+        ? [
+            await database
+              .selectFrom("sessions")
+              .select([
+                "id",
+                "title",
+                "conversation_parent_session_id as parentSessionId",
+                "conversation_fork_turn_id as forkTurnId",
+                "conversation_fork_entry_id as forkEntryId",
+              ])
+              .where("tenant_id", "=", tenantId)
+              .where("id", "=", humanSessionId)
+              .where("pruned_at", "is", null)
+              .executeTakeFirstOrThrow(),
+          ]
+        : await this.#lineage(database, tenantId, humanSessionId);
     const humanRootSessionId = lineage[0]!.id;
     const humanSessions =
-      view === "focus" ? lineage : await this.#family(database, tenantId, humanRootSessionId);
+      view === "focus"
+        ? [lineage.at(-1)!]
+        : await this.#family(database, tenantId, humanRootSessionId);
     const delegated = await this.#delegatedFamily(
       database,
       tenantId,
@@ -451,7 +457,9 @@ export class ConversationTreeService {
         sessionId: binding.piSessionId,
         conversationId: Number(binding.piConversationId),
         limit: wanted ? 80 : 8,
-        ...(binding.productSessionId === selectedDelegated?.sessionId
+        ...(view === "focus" ||
+        binding.productSessionId === humanRootSessionId ||
+        binding.productSessionId === selectedDelegated?.sessionId
           ? {}
           : {
               from: Math.max(
@@ -498,18 +506,13 @@ export class ConversationTreeService {
       ),
     ];
     const turnRows = visibleTurnIds.length
-      ? await database
-          .selectFrom("conversation_turns")
-          .select([
-            "session_id as sessionId",
-            "turn_id as turnId",
-            "mailbox_position as mailboxPosition",
-          ])
-          .where("tenant_id", "=", tenantId)
-          .where("turn_id", "in", visibleTurnIds)
-          .where("pruned_at", "is", null)
-          .where("state", "=", "completed")
-          .execute()
+      ? (
+          await sql<CompletedTurnRow>`select session_id as "sessionId",turn_id as "turnId",mailbox_position::text as "mailboxPosition"
+      from pi_history_turns where tenant_id=${tenantId}::uuid and session_id=any(${uniqueSessionIds}::uuid[])
+        and turn_id=any(${visibleTurnIds}::uuid[]) and state='completed' and not waiting_for_seal`.execute(
+            database,
+          )
+        ).rows
       : [];
     const turnsBySession = new Map<string, CompletedTurnRow[]>();
     for (const row of turnRows) {
@@ -519,26 +522,13 @@ export class ConversationTreeService {
     }
     const leaves = conversationLeaves(entriesBySession);
     let entryCount = 0;
-    const humanBranches: ConversationTreeBranchResource[] = humanSessions.map((session, index) => {
+    const humanBranches: ConversationTreeBranchResource[] = humanSessions.map((session) => {
       const allEntries = entriesBySession.get(session.id) ?? [];
       const branch = ownBranch(
         activeBranch(allEntries, leaves.get(session.id) ?? null),
-        session.forkEntryId,
+        view === "focus" || session.id === humanRootSessionId ? null : session.forkEntryId,
       );
       let mapped = mappedConversationEntries(branch, turnsBySession.get(session.id) ?? [], true);
-      if (view === "focus") {
-        const child = humanSessions[index + 1];
-        if (child?.parentSessionId === session.id && child.forkEntryId !== null) {
-          const boundary = mapped.findIndex((entry) => entry.entryId === child.forkEntryId);
-          if (boundary < 0) {
-            throw new ControlPlaneStoreError(
-              "control_plane_misconfigured",
-              "Focused fork anchor is missing from its parent branch",
-            );
-          }
-          mapped = mapped.slice(0, boundary + 1);
-        }
-      }
       entryCount += mapped.length;
       if (entryCount > MAX_TREE_ENTRIES) {
         throw new ControlPlaneStoreError("invalid_request", "Conversation tree is too large");
@@ -875,16 +865,30 @@ export class ConversationTreeService {
         }
 
         const bindings = await sessionBindings(transaction, tenantId, [sessionId]);
+        const pendingNative =
+          await sql`select 1 from pi_durable_records where tenant_id=${tenantId}::uuid and session_id=${bindings[0]?.piSessionId ?? ""}
+          and ((kind='task' and fields->>'status'<>'terminal') or (kind='submission' and fields->>'status' in ('queued','placed'))) limit 1`.execute(
+            transaction,
+          );
+        if (pendingNative.rows.length)
+          throw new ControlPlaneStoreError(
+            "conflict",
+            "Native work and pending inputs must settle before pruning",
+          );
         const [entriesBySession, turnsBySession] = await Promise.all([
-          sessionEntries(transaction, tenantId, bindings),
+          sessionEntries(transaction, tenantId, bindings, sessionId),
           completedTurns(transaction, tenantId, [sessionId]),
         ]);
         const leaves = conversationLeaves(entriesBySession);
-        const branch = ownBranch(
-          activeBranch(entriesBySession.get(sessionId) ?? [], leaves.get(sessionId) ?? null),
-          session.forkEntryId,
+        const branch = activeBranch(
+          entriesBySession.get(sessionId) ?? [],
+          leaves.get(sessionId) ?? null,
         );
-        const target = mappedConversationEntries(branch, turnsBySession.get(sessionId) ?? []).find(
+        const target = mappedConversationEntries(
+          branch,
+          turnsBySession.get(sessionId) ?? [],
+          true,
+        ).find(
           (entry) =>
             entry.finalAssistant &&
             entry.turnId === request.turnId &&
@@ -896,13 +900,17 @@ export class ConversationTreeService {
             "Conversation prune target is not an owned completed final response",
           );
         }
-        const anchorRun = await transaction
-          .selectFrom("runs")
-          .select("mailbox_position as mailboxPosition")
-          .where("tenant_id", "=", tenantId)
-          .where("session_id", "=", sessionId)
-          .where("turn_id", "=", request.turnId)
-          .executeTakeFirstOrThrow();
+        const anchorRun = (
+          await sql<{
+            mailboxPosition: string;
+            sequence: string;
+            ordinal: number;
+          }>`select h.mailbox_position::text as "mailboxPosition",r.seq::text as sequence,r.ordinal
+          from pi_history_turns h join pi_durable_records r on r.tenant_id=h.tenant_id and r.session_id=h.pi_session_id and r.id=${request.entryId}::bigint and r.kind='entry'
+          where h.tenant_id=${tenantId}::uuid and h.session_id=${sessionId}::uuid and h.turn_id=${request.turnId}::uuid`.execute(
+            transaction,
+          )
+        ).rows[0]!;
 
         const prunedTurns = await transaction
           .selectFrom("runs as run")
@@ -914,64 +922,11 @@ export class ConversationTreeService {
           .execute();
         const prunedTurnIds = prunedTurns.map((turn) => turn.id);
 
-        const descendantResult = await sql<{ id: string }>`
-          with recursive descendants as (
-            select child.id
-              from sessions child
-              join runs anchor
-                on anchor.tenant_id = child.tenant_id
-               and anchor.session_id = child.conversation_parent_session_id
-               and anchor.turn_id = child.conversation_fork_turn_id
-             where child.tenant_id = ${tenantId}::uuid
-               and child.conversation_parent_session_id = ${sessionId}::uuid
-               and child.session_kind = 'conversation'
-               and child.pruned_at is null
-               and anchor.mailbox_position >= ${anchorRun.mailboxPosition}::bigint
-            union
-            select child.id
-              from sessions child
-              join descendants parent on child.conversation_parent_session_id = parent.id
-             where child.tenant_id = ${tenantId}::uuid
-               and child.session_kind = 'conversation'
-               and child.pruned_at is null
-          )
-          select id from descendants
-        `.execute(transaction);
-        const descendantIds = descendantResult.rows.map((row) => row.id);
-        if (descendantIds.length > 0) {
-          const activeDescendant = await transaction
-            .selectFrom("sessions")
-            .select("id")
-            .where("tenant_id", "=", tenantId)
-            .where("id", "in", descendantIds)
-            .where("state", "not in", ["cold", "idle", "failed"])
-            .limit(1)
-            .executeTakeFirst();
-          const unsettledDescendant = await transaction
-            .selectFrom("runs")
-            .select("id")
-            .where("tenant_id", "=", tenantId)
-            .where("session_id", "in", descendantIds)
-            .where("pruned_at", "is", null)
-            .where("state", "in", ["queued", "running", "settling", "cancel_requested"])
-            .limit(1)
-            .executeTakeFirst();
-          if (activeDescendant !== undefined || unsettledDescendant !== undefined) {
-            throw new ControlPlaneStoreError(
-              "conflict",
-              "A descendant conversation is still running",
-            );
-          }
-        }
-
         const affectedSubagentConditions = [
-          ...(descendantIds.length === 0
-            ? []
-            : [
-                sql`execution.parent_session_id in (${sql.join(
-                  descendantIds.map((id) => sql`${id}::uuid`),
-                )})`,
-              ]),
+          sql`execution.parent_session_id=${sessionId}::uuid and execution.parent_turn_id=${request.turnId}::uuid and exists(
+            select 1 from pi_durable_writes w where w.tenant_id=execution.tenant_id and w.session_id=${bindings[0]!.piSessionId}
+              and w.seq=execution.source_sequence and w.record_id=execution.source_record_id and w.record_kind=execution.source_kind
+              and (w.seq,w.ordinal)>(${anchorRun.sequence}::bigint,${anchorRun.ordinal}))`,
           ...(prunedTurnIds.length === 0
             ? []
             : [
@@ -1008,7 +963,7 @@ export class ConversationTreeService {
           throw new ControlPlaneStoreError("conflict", "Delegated work is still active");
         }
         const subagentSessionIds = [...new Set(subagentRows.map((row) => row.sessionId))];
-        const sessionsToPrune = [...new Set([...descendantIds, ...subagentSessionIds])];
+        const sessionsToPrune = subagentSessionIds;
         await unbindSessionTargets(transaction, tenantId, sessionsToPrune);
         const now = new Date();
         if (prunedTurnIds.length > 0) {
@@ -1036,6 +991,15 @@ export class ConversationTreeService {
         const binding = bindings.find((candidate) => candidate.productSessionId === sessionId);
         if (!binding?.piConversationId)
           throw new ControlPlaneStoreError("conflict", "Conversation has no native branch");
+        await freezeForkHistory(transaction, {
+          tenantId,
+          sourceSessionId: sessionId,
+          targetSessionId: sessionId,
+          throughTurnId: request.turnId,
+          throughEntryId: request.entryId,
+        });
+        await sql`delete from pi_history_snapshots where tenant_id=${tenantId}::uuid and session_id=${sessionId}::uuid
+          and position>${anchorRun.mailboxPosition}::bigint`.execute(transaction);
         const conversationId = await forkIdleConversation(
           transaction,
           { tenantId, sessionId: binding.piSessionId },
@@ -1054,6 +1018,7 @@ export class ConversationTreeService {
           .where("tenant_id", "=", tenantId)
           .where("id", "=", sessionId)
           .executeTakeFirstOrThrow();
+        await replacePrunedHistory(transaction, tenantId, binding.piSessionId);
         await transaction
           .insertInto("conversation_prune_operations")
           .values({
@@ -1098,6 +1063,7 @@ export class ConversationTreeService {
     sourceSessionId: string,
     idempotencyKey: string,
     request: CreateConversationForkRequest,
+    retry = 0,
   ): Promise<ConversationForkResource> {
     const requestSha256 = sha256(request);
     try {
@@ -1190,29 +1156,10 @@ export class ConversationTreeService {
           )
           .where("tenant_id", "=", tenantId)
           .where("id", "=", sourceSessionId)
-          .forUpdate()
+          .forKeyShare()
           .executeTakeFirst();
         if (source === undefined || source.pruned_at !== null) {
           throw new ControlPlaneStoreError("not_found", "Conversation was not found");
-        }
-        if (!(["cold", "idle", "failed"] as const).some((state) => state === source.state)) {
-          throw new ControlPlaneStoreError(
-            "conflict",
-            "Wait for the current conversation run to settle before forking",
-          );
-        }
-        const unsettled = await transaction
-          .selectFrom("runs")
-          .select("id")
-          .where("tenant_id", "=", tenantId)
-          .where("session_id", "=", sourceSessionId)
-          .where("state", "in", ["queued", "running", "settling", "cancel_requested"])
-          .executeTakeFirst();
-        if (unsettled !== undefined) {
-          throw new ControlPlaneStoreError(
-            "conflict",
-            "Wait for the current conversation run to settle before forking",
-          );
         }
         const policy = await transaction
           .selectFrom("tenant_runtime_policies")
@@ -1235,17 +1182,18 @@ export class ConversationTreeService {
         }
         const bindings = await sessionBindings(transaction, tenantId, [sourceSessionId]);
         const [entriesBySession, turnsBySession] = await Promise.all([
-          sessionEntries(transaction, tenantId, bindings),
+          sessionEntries(transaction, tenantId, bindings, sourceSessionId),
           completedTurns(transaction, tenantId, [sourceSessionId]),
         ]);
         const leafId = entriesBySession.get(sourceSessionId)?.at(-1)?.id;
         if (!leafId)
           throw new ControlPlaneStoreError("conflict", "Conversation has no forkable Pi history");
         const sourceBranch = activeBranch(entriesBySession.get(sourceSessionId) ?? [], leafId);
-        const sourceOwnBranch = ownBranch(sourceBranch, source.conversation_fork_entry_id);
+        const sourceOwnBranch = sourceBranch;
         const mapped = mappedConversationEntries(
           sourceOwnBranch,
           turnsBySession.get(sourceSessionId) ?? [],
+          true,
         );
         const target = mapped.find(
           (entry) =>
@@ -1301,21 +1249,35 @@ export class ConversationTreeService {
             id: childSessionId,
           })
           .executeTakeFirstOrThrow();
-        await copyDurableHistory(
+        const imported = await importForkHistory(
           transaction,
           { tenantId, sessionId: childSessionId },
-          iterateDurableHistoryPrefix(transaction, {
-            tenantId,
-            sessionId: bindings[0]!.piSessionId,
-            conversationId: Number(bindings[0]!.piConversationId),
-            through: Number(request.entryId),
-          }),
           {
             tenantId,
             sessionId: bindings[0]!.piSessionId,
             conversationId: Number(bindings[0]!.piConversationId),
+            through: Number(request.entryId),
           },
         );
+        const inheritedPosition = await freezeForkHistory(transaction, {
+          tenantId,
+          sourceSessionId,
+          targetSessionId: childSessionId,
+          throughTurnId: request.turnId,
+          throughEntryId: request.entryId,
+        });
+        await retainFrozenImages(transaction, { tenantId, sessionId: childSessionId }, [
+          childSessionId,
+        ]);
+        await transaction
+          .updateTable("sessions")
+          .set({
+            pi_conversation_id: String(imported.conversationId),
+            next_mailbox_position: String(inheritedPosition + 1),
+          })
+          .where("tenant_id", "=", tenantId)
+          .where("id", "=", childSessionId)
+          .executeTakeFirstOrThrow();
         await transaction
           .insertInto("conversation_fork_operations")
           .values({
@@ -1350,6 +1312,15 @@ export class ConversationTreeService {
       });
     } catch (error: unknown) {
       if (error instanceof ControlPlaneStoreError) throw error;
+      if (
+        retry < 2 &&
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        (error.code === "40001" || error.code === "40P01")
+      ) {
+        return this.fork(tenantId, sourceSessionId, idempotencyKey, request, retry + 1);
+      }
       if (
         typeof error === "object" &&
         error !== null &&
@@ -1395,7 +1366,9 @@ export class ConversationTreeService {
         .where("pruned_at", "is", null)
         .executeTakeFirst();
       if (row === undefined) {
-        throw new ControlPlaneStoreError("not_found", "Conversation was not found");
+        if (result.length === 0)
+          throw new ControlPlaneStoreError("not_found", "Conversation was not found");
+        break;
       }
       result.push(row);
       cursor = row.parentSessionId;

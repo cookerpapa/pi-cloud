@@ -2,7 +2,8 @@ import { Buffer } from "node:buffer";
 
 export type NativeHistoryPosition = { sequence: number; ordinal: number };
 export type HistoryPosition = NativeHistoryPosition & {
-  version: 1;
+  version: 2;
+  storageId: string;
   sessionId: string;
   originSessionId: string;
   turnId: string;
@@ -15,8 +16,11 @@ export function decodeHistoryPosition(value: string, sessionId: string): History
   if (!/^[A-Za-z0-9_-]{1,2048}$/.test(value)) throw new Error("Invalid history cursor");
   const p = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as HistoryPosition;
   if (
-    p.version !== 1 ||
+    p.version !== 2 ||
     p.sessionId !== sessionId ||
+    typeof p.storageId !== "string" ||
+    p.storageId.length < 1 ||
+    p.storageId.length > 256 ||
     !uuid.test(p.originSessionId) ||
     !uuid.test(p.turnId) ||
     !Number.isSafeInteger(p.sequence) ||

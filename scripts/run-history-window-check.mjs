@@ -15,6 +15,8 @@ import {
   ControlPlaneStore,
 } from "../packages/control-plane/src/index.ts";
 import { DurablePostgresProjection } from "../packages/pi-session-postgres/src/durable/index.ts";
+import { ConversationTreeService } from "../packages/control-plane/src/conversation-tree-service.ts";
+import { reapUnreferencedEntryBodies } from "../packages/pi-session-postgres/src/durable/index.ts";
 import { SessionLiveView } from "../packages/runtime-core/src/session-live-view.ts";
 import {
   createPiCloudEventFactory,
@@ -219,7 +221,7 @@ try {
     .set({ state: "idle", next_event_seq: String(seq + 2) })
     .where("id", "=", session.sessionId)
     .execute();
-  await sql`analyze pi_durable_log; analyze pi_durable_records; analyze pi_durable_commits`.execute(
+  await sql`analyze pi_durable_writes; analyze pi_history_bodies; analyze pi_durable_records; analyze pi_durable_commits`.execute(
     db,
   );
   report.seed = {
@@ -230,6 +232,45 @@ try {
   };
   await save();
 
+  let pointQuery;
+  const pointDb = db.withPlugin({
+    transformQuery({ node, queryId }) {
+      const query = db.getExecutor().compileQuery(node, queryId);
+      if (query.sql.includes("pi_durable_record_bodies")) pointQuery = query;
+      return node;
+    },
+    async transformResult({ result }) {
+      return result;
+    },
+  });
+  const pointAt = performance.now();
+  await new DurablePostgresProjection(
+    pointDb,
+    { tenantId: tenant.tenantId, sessionId: binding.pi_session_id },
+    undefined,
+    "references",
+  ).get(final);
+  const pointMs = performance.now() - pointAt;
+  const pointPlan = await db.executeQuery({
+    ...pointQuery,
+    sql: "explain (analyze,format json) " + pointQuery.sql,
+  });
+  const nodes = [];
+  const visit = (node) => {
+    nodes.push(node);
+    for (const child of node.Plans ?? []) visit(child);
+  };
+  visit(pointPlan.rows[0]["QUERY PLAN"][0].Plan);
+  const bodyReads = nodes.filter((n) => n["Relation Name"] === "pi_history_bodies");
+  assert(
+    bodyReads.length > 0 && bodyReads.every((n) => n["Actual Rows"] <= 1 && n["Actual Loops"] <= 1),
+    "Point read scanned shared history bodies",
+  );
+  report.pointRead = {
+    milliseconds: pointMs,
+    bodyRows: bodyReads.map((n) => n["Actual Rows"]),
+    bodyIndexes: bodyReads.map((n) => n["Index Name"]),
+  };
   let queryCount = 0,
     bodyBytes = 0;
   const measured = db.withPlugin({
@@ -605,7 +646,16 @@ try {
         report.delayedImageAnchor = true;
         await page.evaluate("document.getElementById('delayed-history-image').remove()");
 
-        // Return to the saved old neighborhood for the background-output check.
+        // Establish an actual reading gesture after the layout guard, then verify its saved anchor.
+        await page.wait(600);
+        await page.evaluate(
+          "(()=>{const p=document.querySelector('.product-chat-scroll');p.scrollTop=Math.max(500,p.scrollTop-1500);p.dispatchEvent(new Event('scroll'));})()",
+        );
+        await page.wait(500);
+        report.beforeLiveBookmark = await page.evaluate(
+          `JSON.parse(sessionStorage.getItem('pi-cloud:reading:'+${JSON.stringify(session.sessionId)})??'null')`,
+        );
+        assert(report.beforeLiveBookmark?.query, "Reading gesture did not persist a bookmark");
         await page.send("Page.reload", { ignoreCache: true });
         await page.waitFor("document.querySelector('.product-return-to-latest')", 30000);
         await page.wait(500);
@@ -692,6 +742,128 @@ try {
       }
     },
   );
+  if (process.env.PI_CLOUD_FORK_RETENTION_CHECK === "1") {
+    phase("fork and retire real 1 GiB native history");
+    const tree = new ConversationTreeService({ database: db });
+    const resident = [];
+    const sampler = setInterval(() => resident.push(process.memoryUsage().rss), 100);
+    sampler.unref();
+    try {
+      const inventory = async () =>
+        (
+          await sql`select count(*)::int as objects,coalesce(sum(payload_bytes),0)::text as bytes
+        from pi_history_bodies where tenant_id=${tenant.tenantId}::uuid and body_kind='entry'`.execute(
+            db,
+          )
+        ).rows[0];
+      const before = await inventory(),
+        started = performance.now();
+      const fork = await tree.fork(tenant.tenantId, session.sessionId, randomUUID(), {
+        turnId: run.turnId,
+        entryId: String(final),
+      });
+      const firstMs = performance.now() - started;
+      phase("first independent Fork retained");
+      const forkPage = await store.getConversation(fork.session.sessionId);
+      assert(JSON.stringify(forkPage).includes("HISTORY_FIXTURE_END"));
+      const toolPage = await store.getConversation(fork.session.sessionId, {
+        turnId: run.turnId,
+        toolCallId: `task:${lastToolId}`,
+      });
+      const tool = toolPage.turns
+        .flatMap((t) => t.transcript?.items ?? [])
+        .find((i) => i.kind === "tool" && i.toolCallId === `task:${lastToolId}`);
+      assert.equal(tool?.input.path, `fixture-${units - 1}.txt`);
+      assert(
+        JSON.stringify(tool?.output).includes(`Result ${units - 1} `),
+        "Frozen metadata selected another record body",
+      );
+      assert.equal(
+        (await inventory()).objects,
+        before.objects,
+        "Fork duplicated immutable Entry bodies",
+      );
+      const nestedAt = performance.now();
+      const nested = await tree.fork(tenant.tenantId, fork.session.sessionId, randomUUID(), {
+        turnId: run.turnId,
+        entryId: String(final),
+      });
+      const nestedMs = performance.now() - nestedAt;
+      phase("nested independent Fork retained");
+      const pending = await store.acceptTurn(fork.session.sessionId, randomUUID(), {
+        prompt: "Queued isolated fork work",
+      });
+      const pruneAt = performance.now();
+      await tree.prune(tenant.tenantId, session.sessionId, randomUUID(), {
+        turnId: run.turnId,
+        entryId: String(final),
+      });
+      const pruneMs = performance.now() - pruneAt;
+      assert.equal(
+        (
+          await db
+            .selectFrom("runs")
+            .select("state")
+            .where("id", "=", pending.runId)
+            .executeTakeFirstOrThrow()
+        ).state,
+        "queued",
+      );
+      assert.equal(
+        (
+          await db
+            .selectFrom("pi_sessions")
+            .select("id")
+            .where("id", "=", binding.pi_session_id)
+            .execute()
+        ).length,
+        0,
+      );
+      let collected = 0;
+      for (;;) {
+        const n = await reapUnreferencedEntryBodies(db, 1024);
+        collected += n;
+        if (n < 1024) break;
+      }
+      const after = await inventory();
+      assert.equal(
+        after.objects,
+        before.objects - 600,
+        "Discarded live suffix still has a body owner",
+      );
+      for (const id of [session.sessionId, fork.session.sessionId, nested.session.sessionId]) {
+        const page = await store.getConversation(id);
+        assert(JSON.stringify(page).includes("HISTORY_FIXTURE_END"));
+        const prior = await store.getConversation(id, { before: page.history.before });
+        assert(prior.turns.length > 0);
+      }
+      const metadata = (
+        await sql`select count(*)::int as objects,coalesce(sum(payload_bytes),0)::text as bytes from pi_history_bodies
+        where tenant_id=${tenant.tenantId}::uuid and body_kind='metadata'`.execute(db)
+      ).rows[0];
+      const referenceRows = {};
+      for (const table of ["pi_durable_writes", "pi_durable_records", "pi_history_snapshots"])
+        referenceRows[table] = (
+          await sql`
+        select count(*)::int as rows,coalesce(sum(pg_column_size(r)),0)::text as rowBytes from ${sql.id(table)} r where tenant_id=${tenant.tenantId}::uuid`.execute(
+            db,
+          )
+        ).rows[0];
+      report.forkRetention = {
+        before,
+        after,
+        metadata,
+        referenceRows,
+        collected,
+        firstMs,
+        nestedMs,
+        pruneMs,
+        peakRss: Math.max(...resident),
+      };
+    } finally {
+      clearInterval(sampler);
+    }
+  }
   report.accepted = true;
 } catch (error) {
   failure = error;

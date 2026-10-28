@@ -166,9 +166,12 @@ it("classifies unavailable data for recovery but keeps corrupt content fatal", a
   }
   const corrupt = await fixture();
   try {
-    await sql`update pi_durable_log set body='invalid native JSON' where tenant_id=${corrupt.scope.tenantId}::uuid and record_id=2`.execute(
-      database,
-    );
+    await sql`update pi_history_bodies set payload_text='invalid native JSON',
+      payload_bytes=octet_length('invalid native JSON')
+      where tenant_id=${corrupt.scope.tenantId}::uuid and id in (
+        select entry_body_id from pi_durable_writes
+        where tenant_id=${corrupt.scope.tenantId}::uuid and session_id=${corrupt.scope.sessionId} and record_id=2
+      )`.execute(database);
     await expect(corrupt.store.entry(2 as never, context)).rejects.toBeInstanceOf(SyntaxError);
     expect(corrupt.failed).not.toHaveBeenCalled();
   } finally {

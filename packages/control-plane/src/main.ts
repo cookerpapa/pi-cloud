@@ -1,3 +1,4 @@
+import { reapUnreferencedEntryBodies } from "@pi-cloud/pi-session-postgres/durable";
 import { SessionScheduleService } from "./session-schedule-service.ts";
 import { SessionScheduleController } from "./session-schedule-controller.ts";
 import { runtimeModelCatalog } from "./runtime-model-catalog.ts";
@@ -191,14 +192,15 @@ export async function startControlPlane(): Promise<void> {
     });
     ownedProjectionDatabase = projectionDatabase;
     images = await configuredImageAttachments(database);
-    if (images) {
-      await images.blobs.checkHealth();
-      const store = images.store;
+    if (images) await images.blobs.checkHealth();
+    {
+      const store = images?.store;
       imageReaper = new ImageAttachmentReaper(
         {
           async reap(grace, signal) {
             await reconcileUploadPins(maintenanceDatabase, signal);
-            return store.reap(grace, signal);
+            await reapUnreferencedEntryBodies(maintenanceDatabase);
+            return store ? store.reap(grace, signal) : 0;
           },
         },
         () =>

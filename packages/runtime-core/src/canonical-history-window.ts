@@ -1,3 +1,4 @@
+import { readFrozenHistoryWindow } from "./frozen-history-window.ts";
 import { sql, type Kysely } from "kysely";
 import type { Database } from "@pi-cloud/database";
 import {
@@ -23,6 +24,7 @@ export type HistoryTurnSource = {
   originSessionId: string;
   piSessionId: string;
   operationKind: "chat" | "compact";
+  frozen?: boolean;
   through?: { sequence: number; ordinal: number };
 };
 type Point = {
@@ -51,16 +53,69 @@ export type CanonicalHistoryWindow = {
 
 /** Indexed seeks limit positions before body fetches. Tool intent is fetched by
  * native Task identity, including when its assistant is outside this page. */
+export type HistoryWindowInput = {
+  tenantId: string;
+  sessionId: string;
+  turns: readonly HistoryTurnSource[];
+  direction: "before" | "after";
+  position?: HistoryPosition;
+  inclusive?: boolean;
+  maxRecords?: number;
+  maxBytes?: number;
+  allowEmpty?: boolean;
+};
 export async function readCanonicalHistoryWindow(
   db: Kysely<Database>,
-  input: {
-    tenantId: string;
-    sessionId: string;
-    turns: readonly HistoryTurnSource[];
-    direction: "before" | "after";
-    position?: HistoryPosition;
-    inclusive?: boolean;
-  },
+  input: HistoryWindowInput,
+): Promise<CanonicalHistoryWindow> {
+  const result: CanonicalHistoryWindow = {
+    transcripts: new Map(),
+    positions: [],
+    headers: new Set(),
+    more: false,
+    bytes: 0,
+    lastContinues: false,
+  };
+  const groups: HistoryTurnSource[][] = [];
+  for (const turn of input.turns) {
+    const last = groups.at(-1);
+    if (last && Boolean(last[0]!.frozen) === Boolean(turn.frozen)) last.push(turn);
+    else groups.push([turn]);
+  }
+  for (const [index, turns] of groups.entries()) {
+    const remaining = HISTORY_PAGE_RECORDS - result.positions.length,
+      budget = HISTORY_PAGE_BYTES - result.bytes;
+    if (remaining <= 0 || budget <= 0) {
+      result.more = true;
+      break;
+    }
+    const options = {
+      ...input,
+      turns,
+      maxRecords: remaining,
+      maxBytes: budget,
+      allowEmpty: result.positions.length > 0,
+    };
+    const page = turns[0]!.frozen
+      ? await readFrozenHistoryWindow(db, options)
+      : await readLiveHistoryWindow(db, options);
+    for (const [id, t] of page.transcripts)
+      (result.transcripts as Map<string, ConversationTurnTranscriptResource>).set(id, t);
+    for (const id of page.headers) (result.headers as Set<string>).add(id);
+    result.positions =
+      input.direction === "before"
+        ? [...page.positions, ...result.positions]
+        : [...result.positions, ...page.positions];
+    result.bytes += page.bytes;
+    result.lastContinues = page.lastContinues;
+    result.more = page.more || index < groups.length - 1;
+    if (page.more) break;
+  }
+  return result;
+}
+async function readLiveHistoryWindow(
+  db: Kysely<Database>,
+  input: HistoryWindowInput,
 ): Promise<CanonicalHistoryWindow> {
   if (!input.turns.length)
     return {
@@ -113,16 +168,16 @@ export async function readCanonicalHistoryWindow(
   ), points as (
     select t.turn_id,t.pi_session_id,t.session_id as origin_session_id,t.turn_index,p.*
     from scopes t cross join lateral (
-      (select l.record_id as id,l.seq,l.ordinal,r.fields,octet_length(l.body)::int as body_bytes,false as header
+      (select l.record_id as id,l.seq,l.ordinal,r.fields,l.body_bytes::int as body_bytes,false as header
         from pi_durable_log l join pi_durable_records r on r.tenant_id=l.tenant_id and r.session_id=l.session_id and r.id=l.record_id
         where t.operation_kind='chat' and l.tenant_id=t.tenant_id and l.session_id=t.pi_session_id and l.cloud_origin->>'turn'=t.turn_id::text
           and (l.record_kind='entry' or (l.record_kind='task' and l.phase='"retry"'))
           and r.fields->>'turn'=t.turn_id::text
           and (t.ended or l.seq<=t.output_display_native_seq or r.fields->>'role'='user')
           ${bound("l")}
-        order by l.seq ${order},l.ordinal ${order} limit ${HISTORY_PAGE_RECORDS + 1})
+        order by l.seq ${order},l.ordinal ${order} limit ${(input.maxRecords ?? HISTORY_PAGE_RECORDS) + 1})
       union all
-      (select r.id,r.seq,r.ordinal,r.fields,octet_length(l.body)::int,false
+      (select r.id,r.seq,r.ordinal,r.fields,l.body_bytes::int,false
         from pi_durable_records r join pi_durable_log l on l.tenant_id=r.tenant_id and l.session_id=r.session_id and l.seq=r.seq and l.ordinal=r.ordinal
         where t.operation_kind='chat' and r.tenant_id=t.tenant_id and r.session_id=t.pi_session_id and r.fields->>'turn'=t.turn_id::text and r.kind='task'
           and r.fields->>'nativeKind' in ('"pi.tool"','"pi.compaction"') and not(r.fields ? 'resultEntry')
@@ -131,15 +186,15 @@ export async function readCanonicalHistoryWindow(
           and not exists(select 1 from pi_durable_records result where result.tenant_id=r.tenant_id and result.session_id=r.session_id
             and result.kind='entry' and result.fields->>'task'=r.id::text)
           ${bound("r")}
-        order by r.seq ${order},r.ordinal ${order} limit ${HISTORY_PAGE_RECORDS + 1})
+        order by r.seq ${order},r.ordinal ${order} limit ${(input.maxRecords ?? HISTORY_PAGE_RECORDS) + 1})
       union all
       select 0::bigint,0::bigint,0,'{}'::jsonb,
         coalesce(octet_length(t.input_text),0)+coalesce(octet_length(t.input_source),0)+octet_length(t.input_uploads::text)+2048,true
         where (0::bigint,0::int) ${compare} ${upper} or (${input.direction === "after" && input.position === undefined})
     ) p
-    order by t.turn_index,p.seq ${order},p.ordinal ${order} limit ${HISTORY_PAGE_RECORDS + 1}
+    order by t.turn_index,p.seq ${order},p.ordinal ${order} limit ${(input.maxRecords ?? HISTORY_PAGE_RECORDS) + 1}
   ) select b.id::text,b.seq::text,b.ordinal,b.fields,b.body_bytes,b.header,b.turn_id::text,b.pi_session_id,b.origin_session_id::text,b.turn_index::text,
-    coalesce(exact.id,a.id)::text as assistant_id,coalesce(octet_length(ab.body),0)::int as assistant_bytes,task.fields->>'nativeKind' as task_kind
+    coalesce(exact.id,a.id)::text as assistant_id,coalesce(ab.body_bytes,0)::int as assistant_bytes,task.fields->>'nativeKind' as task_kind
   from points b
   left join pi_durable_records task on task.tenant_id=${input.tenantId}::uuid and task.session_id=b.pi_session_id and task.id=(b.fields->>'task')::bigint and task.kind='task'
   left join pi_durable_records exact on exact.tenant_id=${input.tenantId}::uuid and exact.session_id=b.pi_session_id
@@ -158,11 +213,15 @@ export async function readCanonicalHistoryWindow(
   for (const p of points.rows) {
     const human = p.fields.role === "user" ? humanPresentationSliceCharacters(p.body_bytes) * 4 : 0;
     const cost = p.body_bytes + p.assistant_bytes + human + 1024;
-    if (selected.length >= HISTORY_PAGE_RECORDS || bytes + cost > HISTORY_PAGE_BYTES) break;
+    if (
+      selected.length >= (input.maxRecords ?? HISTORY_PAGE_RECORDS) ||
+      bytes + cost > (input.maxBytes ?? HISTORY_PAGE_BYTES)
+    )
+      break;
     bytes += cost;
     selected.push(p);
   }
-  if (!selected.length && points.rows.length)
+  if (!selected.length && points.rows.length && !input.allowEmpty)
     throw new Error("History record exceeds the native presentation page boundary");
   const bodyPoints = selected.filter((p) => !p.header);
   const rows = bodyPoints.length
@@ -268,7 +327,8 @@ export async function readCanonicalHistoryWindow(
   };
   for (const p of ordered) {
     const position: HistoryPosition = {
-      version: 1,
+      version: 2,
+      storageId: p.pi_session_id,
       sessionId: input.sessionId,
       originSessionId: p.origin_session_id,
       turnId: p.turn_id,

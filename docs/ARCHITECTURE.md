@@ -379,11 +379,18 @@ persisted Turn binding; it never pairs prompts and answers by message count.
 Its thin navigation index selects user/final-assistant records before reading bodies.
 Reads use 64-record pages and the existing tree response budget; Tool payloads do
 not travel through the ordinary navigation query. Prune validates navigation anchors.
-Independent Forks separately stream the full prefix through the selected anchor and
-copy it in bounded batches inside the same quiescent PG transaction (ADR-0232).
-Human Fork copies preserve that binding in their self-contained log.
-Canonical Turn reads select its actual execution Session, excluding inherited
-copies in independent Fork logs.
+Independent Forks retain their own native ancestry, document bases and immutable
+presentation metadata under ADR-0284. Completed source prefixes can be read while
+later work runs: source KEY SHARE blocks administrative pruning, not ordinary
+projection counters. Documents are selected at the captured native head/cutoff.
+PG stores Entry identity envelopes in `pi_durable_writes` and shared immutable
+payloads in `pi_history_bodies`; `pi_durable_log` is the logical native read view.
+`pi_history_snapshots` retains frozen Turn headers and display relationships for
+independent reads; it creates no executable Run or Task. Focused navigation,
+pagination, search and export read the selected Session, not a parent Run's
+visibility. Point body lookups use a bounded lateral index lookup; a plain join
+over the historical/current UNION can otherwise scan the full body inventory.
+
 
 Delegated details expose a bounded text-context preview from their frozen anchor.
 The read stops at native Compaction or 65 ancestors; summary, retained messages
@@ -1113,15 +1120,26 @@ Tool task ID (`task:<id>`); provider call IDs stay in native messages, and a sep
 operation UUID correlates physical replies. Unoffered calls have their native
 result-entry identity. A late physical reply cannot overwrite native abort.
 
-Independent human forks own copied entries, document bases and image references.
-Native `asOf`/`current` document fork policies are honored; `initial`, task and
-Session documents do not copy execution grants. Deleting the source cannot break
-the stored copies themselves. Current product readers still depend on source
-lineage and tail pruning can cascade to manual Forks; the stored-copy property
-alone does not make their product lifecycle independent.
-[ADR-0284](adr/0284-independent-forks-and-history-retention.md) proposes independent
-reads/lifecycle, shared immutable bodies and guarded reclamation. It is not
-implemented; current tail pruning does not physically reclaim individual Entries.
+Independent human Forks share immutable Entry bodies and own separate references,
+native Conversations, document baselines and image references. Native `asOf` and
+`current` fork policies remain authoritative; `initial`, Tasks and Session grants
+do not become execution authority in a manual Fork. Its frozen display metadata
+is canonical retained data, not a disposable cache or a cloud input queue.
+Tail pruning affects the selected physical family; it neither prunes a manual
+Fork nor waits for that Fork to finish. Unsettled native work, pending input
+returns, upload pins and unclosed writers still prevent unsafe cold mutation.
+
+Cold pruning initializes a fresh physical Session using public Storage semantics,
+preserves retained child ownership/creation receipts, verifies reconstruction and
+atomically replaces the family's product bindings. Only then is the old closed
+store retired. There are no holes in checked append-only commits, and old-writer
+Kafka replays cannot revive the retired store. Shared-body collection checks real
+FK-backed references; image cleanup uses the existing object authority. Workspace
+bytes and VM/process lifecycle are unchanged. History cursor v2 carries the
+physical storage identity so stale cursors cannot resolve against new sequences.
+[ADR-0284](adr/0284-independent-forks-and-history-retention.md) documents the
+schema-203 matched transition and its costs. Entry import still parses and
+validates native bodies; sharing removes persistent copies, not all copy CPU/I/O.
 World State compares against its native document baseline.
 A verification reminder is derived from committed current-Run entries at native
 yield; neither delayed display callbacks nor Worker replacement can duplicate it.

@@ -1,24 +1,35 @@
 # Maintained backlog
 
-## Main publication and first-request comparison — in progress
+## Main publication and first-request comparison — measured; follow-up tracked
 
-Promote the reviewed Durable line to `main`, refresh the public README, publish
-the complete history and remove obsolete branches after ancestry/use checks.
-Compare cold model requests with pinned native Pi and Codex using equivalent
-model/context/effort and separate startup, connection, transfer and provider times.
-Preserve user conversations; controlled live probes use owned fixtures.
+The Durable line is published as `main`; obsolete branches are removed and the
+pre-migration tag is retained remotely. README now describes the maintained
+runtime instead of embedding its release journal. A remote-CI fixture timestamp
+race was repaired and its 12 PostgreSQL reconnect cases pass.
+[First-request measurements](reports/first-model-request-comparison-20261028.md)
+locate large WebSocket upload resets beyond the local Gateway and reproduce the
+same fallback in native Pi and Codex. Six small and two large real-model responses
+completed. This is not a claimed general speed ranking or a repaired external
+proxy path. Stable provider cache hints remain a bounded improvement candidate.
 
-## Independent Forks and reclaimable history — accepted for implementation
+## Independent Forks and reclaimable history — source verified; publication pending
 
 [ADR-0284](adr/0284-independent-forks-and-history-retention.md) replaces the
 copy-only proposal with shared immutable Entry bodies and independent per-Session
 record ownership. Preserve active Forks across source pruning and remove parent
 history read dependencies. Physical collection requires verified cold storage
 reorganization/retirement and actual reference checks, not holes in checked logs.
-Source investigation, anonymous size measurement and a native fork probe pass;
-PG storage conformance, recovery/concurrency tests and implementation remain open.
-The owner authorized implementation after the revision, alongside main publication
-and the model-request comparison. S0 remains a prerequisite for runtime cutover.
+Native conformance, shared-body integrity, document policies, closed child-family
+retention, rollback, source/Fork concurrency and actual image-object reclamation
+pass. The 1 GiB composed check passes API/browser pagination, search/export, two
+independent Forks, source retirement and last-reference cleanup. The final point
+lookup reads one body through its primary key (~5 ms); import remains linear in
+body bytes and metadata. The first full workspace run found two obsolete SQL/
+cascade expectations; focused regressions pass after preserving the hot SQL count
+and updating the intended lifecycle checks. Final release gates and matched/live
+publication remain pending. Original user histories and Workspace assets remain
+untouched; source verification is not a deployment claim.
+
 
 ## Image service rejection details — completed
 

@@ -45,7 +45,13 @@ function branchChildren(tree: ConversationTreeResource) {
   const children = new Map<string, ConversationTreeBranchResource[]>();
   for (const branch of tree.branches) {
     if (branch.parentSessionId === null) continue;
-    const key = `${branch.parentSessionId}:${branch.forkedFromEntryId ?? "__root__"}`;
+    const parent = tree.branches.find(
+      (candidate) => candidate.sessionId === branch.parentSessionId,
+    );
+    const anchor = parent?.entries.some((entry) => entry.entryId === branch.forkedFromEntryId)
+      ? branch.forkedFromEntryId
+      : null;
+    const key = `${branch.parentSessionId}:${anchor ?? "__root__"}`;
     const siblings = children.get(key) ?? [];
     siblings.push(branch);
     children.set(key, siblings);
@@ -285,7 +291,12 @@ export function ConversationTreeNavigator({
     }, PROGRAMMATIC_SCROLL_GUARD_MS);
   };
 
-  const root = tree?.branches.find((branch) => branch.parentSessionId === null) ?? null;
+  const root =
+    tree?.branches.find(
+      (branch) =>
+        branch.parentSessionId === null ||
+        !tree.branches.some((parent) => parent.sessionId === branch.parentSessionId),
+    ) ?? null;
   const children = tree === null ? new Map() : branchChildren(tree);
   return (
     <aside

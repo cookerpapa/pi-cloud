@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(202);
+      expect(firstMigrationPass.rows).toHaveLength(203);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("202_session_schedules");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("203_shared_native_entry_bodies");
       const terminalColumns = await sql<{ column_name: string }>`select column_name
         from information_schema.columns where table_name='workspace_terminal_sessions'`.execute(
         database,
@@ -90,7 +90,9 @@ describe("current PiCloud schema", () => {
         "turn_control_requests",
         "session_leases",
         "pi_sessions",
-        "pi_durable_log",
+        "pi_durable_writes",
+        "pi_history_bodies",
+        "pi_history_snapshots",
         "pi_durable_records",
         "pi_durable_commits",
         "pi_durable_document_revisions",
@@ -114,6 +116,11 @@ describe("current PiCloud schema", () => {
       ]) {
         expect(names.has(required), `missing current table ${required}`).toBe(true);
       }
+      const historyView = await sql<{
+        table_type: string;
+      }>`select table_type from information_schema.tables
+        where table_schema='public' and table_name='pi_durable_log'`.execute(database);
+      expect(historyView.rows).toEqual([{ table_type: "VIEW" }]);
       const retiredIssueFlag = await sql`select 1 from information_schema.columns
         where table_schema='public' and table_name='source_control_issue_jobs'
           and column_name='claim_sync_pending'`.execute(database);

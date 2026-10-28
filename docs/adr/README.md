@@ -1,10 +1,10 @@
 # Current architecture decisions
 
-[ADR-0284](0284-independent-forks-and-history-retention.md) is **accepted for implementation,
-not deployed**: independent human Forks, shared immutable Entry bodies in PG,
-and verified cold storage retirement before reference-based collection. Native
-fork behavior and a read-only size sample are verified; the storage/concurrency
-implementation gates remain open.
+[ADR-0284](0284-independent-forks-and-history-retention.md) is **implemented and source-verified,
+not deployed**: independent human Forks, shared immutable Entry bodies and frozen
+presentation metadata in PG, with closed family replacement before collection.
+Native/storage, concurrency, image lifecycle and 1 GiB composed checks pass;
+matched release and owned live acceptance remain pending.
 
 [ADR-0283](0283-interrupted-assistant-text-context.md) is deployed as
 `interrupted-text-jose-20261028` (schema 202 / Helm 119). Source and live model,

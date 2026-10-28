@@ -86,6 +86,8 @@ export function indexNative(
     fields.scope = documentScope(record.scope);
     fields.address = documentAddress(record);
     fields.nativeKind = JSON.stringify(record.kind);
+    if (record.fork !== undefined) fields.forkPolicy = record.fork;
+    if (record.history !== undefined) fields.historyPolicy = record.history;
     if (record.key !== undefined) fields.key = JSON.stringify(record.key);
     fields.currentOnly = String(currentOnly(record));
     return {

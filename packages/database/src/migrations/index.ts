@@ -1,3 +1,4 @@
+import * as sharedNativeEntryBodies from "./203_shared_native_entry_bodies.ts";
 import * as sessionSchedules from "./202_session_schedules.ts";
 import * as executionTargets from "./201_execution_targets.ts";
 import * as durableRuntimeRevision from "./180_durable_runtime_revision.ts";
@@ -387,6 +388,7 @@ export const migrationProvider: MigrationProvider = {
       "200_conversation_history_windows": conversationHistoryWindows,
       "201_execution_targets": executionTargets,
       "202_session_schedules": sessionSchedules,
+      "203_shared_native_entry_bodies": sharedNativeEntryBodies,
     };
   },
 };

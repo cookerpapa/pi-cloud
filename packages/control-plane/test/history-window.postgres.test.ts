@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { beforeAll, afterAll, it, expect } from "vitest";
 import { sql, type Kysely } from "kysely";
-import { up as rebuildHistoryIndexes } from "../../database/src/migrations/200_conversation_history_windows.ts";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { DurablePostgresProjection } from "@pi-cloud/pi-session-postgres/durable";
 import {
@@ -422,13 +421,17 @@ it("backfills disposable indexes without changing native history bodies or finge
     await sql`select tenant_id,session_id,id,fields from pi_durable_records where kind in ('entry','task') order by tenant_id,session_id,id`.execute(
       db,
     );
-  await db.transaction().execute(async (tx) => {
-    await sql`drop index pi_durable_history_position,pi_durable_task_history_position,pi_durable_entry_task,pi_durable_entry_role,pi_durable_submission_entry;
-      update pi_durable_records set fields=fields-'assistant'-'resultEntry'-'resultSubmission'-'preview' where kind in ('entry','task')`.execute(
-      tx,
-    );
-    await rebuildHistoryIndexes<Database>(tx);
-  });
+  const scopes = (
+    await sql<{
+      tenant_id: string;
+      session_id: string;
+    }>`select distinct tenant_id,session_id from pi_durable_commits`.execute(db)
+  ).rows;
+  for (const scope of scopes)
+    await new DurablePostgresProjection(db, {
+      tenantId: scope.tenant_id,
+      sessionId: scope.session_id,
+    }).rebuild();
   expect(
     (
       await sql`select tenant_id,session_id,seq,ordinal,md5(body) as fingerprint from pi_durable_log order by tenant_id,session_id,seq,ordinal`.execute(

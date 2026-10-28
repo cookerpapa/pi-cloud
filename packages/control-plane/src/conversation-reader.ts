@@ -1,3 +1,4 @@
+import { historyHeaders, type HistoryTurnRow } from "@pi-cloud/runtime-core/frozen-history";
 import { parseScheduledOrigin } from "@pi-cloud/protocol";
 import {
   readCanonicalHistoryWindow,
@@ -40,18 +41,12 @@ import {
   positiveSafeInteger,
   nonNegativeSafeInteger,
 } from "./store-resource-mapping.ts";
-type ConversationLineageNode = {
-  sessionId: string;
-  parentSessionId: string | null;
-  forkTurnId: string | null;
-  forkEntryId: string | null;
-};
-
 type ConversationHistoryRow = {
   piSessionId: string;
   coverage: string;
   through?: { sequence: number; ordinal: number };
   operationKind: "chat" | "compact";
+  frozen: boolean;
   stopReason: string | null;
   originSessionId: string;
   runId: string;
@@ -312,6 +307,7 @@ export class ConversationReader {
         "workspace.deleted_at as workspaceDeletedAt",
         "workspace.seed_kind as workspaceSeedKind",
         "session_row.next_event_seq as nextEventSequence",
+        "session_row.pi_session_id as piSessionId",
       ])
       .where("session_row.tenant_id", "=", this.#tenantId)
       .where("session_row.id", "=", sessionId)
@@ -321,28 +317,16 @@ export class ConversationReader {
       throw new ControlPlaneStoreError("not_found", "Conversation was not found");
     }
 
-    const lineage =
-      conversation.sessionKind === "conversation"
-        ? await this.#conversationLineage({
-            sessionId,
-            parentSessionId: conversation.parentSessionId,
-            forkTurnId: conversation.forkTurnId,
-            forkEntryId: conversation.forkEntryId,
-          })
-        : [{ sessionId, parentSessionId: null, forkTurnId: null, forkEntryId: null }];
-    const cutoff = filters.stopAtTurnId
-      ? await this.#database
-          .selectFrom("conversation_turns")
-          .select(["session_id", "mailbox_position"])
-          .where("tenant_id", "=", this.#tenantId)
-          .where("turn_id", "=", filters.stopAtTurnId)
-          .where("pruned_at", "is", null)
-          .executeTakeFirst()
-      : undefined;
-    if (
-      filters.stopAtTurnId &&
-      (!cutoff || !lineage.some((n) => n.sessionId === cutoff.session_id))
-    )
+    const owner = { tenantId: this.#tenantId, sessionId };
+    const findTurn = async (id: string) =>
+      (
+        await sql<HistoryTurnRow>`select * from pi_history_turns
+      where tenant_id=${owner.tenantId}::uuid and session_id=${sessionId}::uuid and turn_id=${id}::uuid`.execute(
+          this.#database,
+        )
+      ).rows[0];
+    const cutoff = filters.stopAtTurnId ? await findTurn(filters.stopAtTurnId) : undefined;
+    if (filters.stopAtTurnId && !cutoff)
       throw new ControlPlaneStoreError("not_found", "Export boundary is no longer available");
     let position: HistoryPosition | undefined;
     try {
@@ -351,33 +335,26 @@ export class ConversationReader {
     } catch {
       throw new ControlPlaneStoreError("invalid_request", "Invalid conversation history cursor");
     }
+    if (position?.storageId && position.storageId !== conversation.piSessionId)
+      throw new ControlPlaneStoreError(
+        "not_found",
+        "History storage changed; refresh the history window",
+      );
     let direction: "before" | "after" = query.direction ?? (query.after ? "after" : "before");
-    let inclusive = Boolean(query.at || query.turnId) && query.direction === undefined;
+    const inclusive = Boolean(query.at || query.turnId) && query.direction === undefined;
     const anchorTurn = position?.turnId ?? query.turnId;
-    const anchor = anchorTurn
-      ? await this.#database
-          .selectFrom("conversation_turns as a")
-          .innerJoin("sessions as s", (join) =>
-            join.onRef("s.tenant_id", "=", "a.tenant_id").onRef("s.id", "=", "a.session_id"),
-          )
-          .select(["a.session_id", "a.mailbox_position", "s.pi_session_id"])
-          .where("a.tenant_id", "=", this.#tenantId)
-          .where("a.turn_id", "=", anchorTurn)
-          .where("a.pruned_at", "is", null)
-          .executeTakeFirst()
-      : undefined;
+    const anchor = anchorTurn ? await findTurn(anchorTurn) : undefined;
     if (
       anchorTurn &&
-      (!anchor ||
-        !lineage.some((n) => n.sessionId === anchor.session_id) ||
-        (position && position.originSessionId !== anchor.session_id))
+      (!anchor || (position && position.originSessionId !== anchor.origin_session_id))
     )
       throw new ControlPlaneStoreError("not_found", "History anchor is not in this conversation");
     if (query.turnId && anchor) {
       position = {
-        version: 1,
+        version: 2,
         sessionId,
-        originSessionId: anchor.session_id,
+        storageId: conversation.piSessionId,
+        originSessionId: anchor.origin_session_id,
         turnId: query.turnId,
         sequence: 0,
         ordinal: 0,
@@ -385,162 +362,73 @@ export class ConversationReader {
       if (query.entryId || query.toolCallId) {
         const lookup = query.entryId ?? query.toolCallId!.split(":")[1]!;
         const kind = query.toolCallId?.startsWith("task:") ? "task" : "entry";
-        const found = await sql<{
-          id: string;
-          seq: string;
-          ordinal: number;
-          fields: Record<string, string>;
-        }>`select r.id::text,r.seq::text,r.ordinal,r.fields from pi_durable_records r
-          where r.tenant_id=${this.#tenantId}::uuid and r.session_id=${anchor.pi_session_id} and r.id=${lookup}::bigint
-            and r.fields->>'turn'=${query.turnId} and r.kind=${kind}`.execute(this.#database);
-        let record = found.rows[0];
-        if (!record || (kind === "task" && record.fields.nativeKind !== '"pi.tool"'))
-          throw new ControlPlaneStoreError("not_found", "History record is not in this Turn");
-        if (kind === "task" && record.fields.resultEntry) {
-          const result = await sql<
-            typeof record
-          >`select r.id::text,r.seq::text,r.ordinal,r.fields from pi_durable_records r
-            where r.tenant_id=${this.#tenantId}::uuid and r.session_id=${anchor.pi_session_id} and r.id=${record.fields.resultEntry}::bigint
-              and r.kind='entry' and r.fields->>'task'=${lookup} and r.fields->>'turn'=${query.turnId}`.execute(
-            this.#database,
-          );
-          if (!result.rows[0]) throw new Error("Tool result index is incomplete");
-          record = result.rows[0];
+        let record: { seq: string; ordinal: number } | undefined;
+        if (anchor.frozen) {
+          record = (
+            await sql<{
+              seq: string;
+              ordinal: number;
+            }>`select seq::text,ordinal from pi_history_snapshots
+            where tenant_id=${this.#tenantId}::uuid and session_id=${sessionId}::uuid and turn_id=${query.turnId}::uuid and kind='record'
+              and ${kind === "entry" ? sql`entry_id=${lookup}::bigint` : sql`(fields->>'task'=${lookup} or (entry_id is null and record_id=${lookup}::bigint))`}
+            order by seq desc,ordinal desc limit 1`.execute(this.#database)
+          ).rows[0];
+        } else {
+          const original = (
+            await sql<{
+              seq: string;
+              ordinal: number;
+              fields: Record<string, string>;
+            }>`select seq::text,ordinal,fields from pi_durable_records
+            where tenant_id=${this.#tenantId}::uuid and session_id=${anchor.pi_session_id} and id=${lookup}::bigint
+              and fields->>'turn'=${query.turnId} and kind=${kind}`.execute(this.#database)
+          ).rows[0];
+          if (original && (kind === "entry" || original.fields.nativeKind === '"pi.tool"')) {
+            record = original;
+            if (kind === "task" && original.fields.resultEntry) {
+              record = (
+                await sql<{
+                  seq: string;
+                  ordinal: number;
+                }>`select seq::text,ordinal from pi_durable_records
+                where tenant_id=${this.#tenantId}::uuid and session_id=${anchor.pi_session_id} and id=${original.fields.resultEntry}::bigint
+                  and kind='entry' and fields->>'task'=${lookup} and fields->>'turn'=${query.turnId}`.execute(
+                  this.#database,
+                )
+              ).rows[0];
+            }
+          }
         }
+        if (!record)
+          throw new ControlPlaneStoreError("not_found", "History record is not in this Turn");
         position.sequence = Number(record.seq);
         position.ordinal = record.ordinal;
       } else direction = "after";
     }
-    const lineageTurnRows: ConversationHistoryRow[] = [];
-    let reached = !anchor;
-    const traversal = direction === "before" ? [...lineage].reverse() : lineage;
-    for (const node of traversal) {
-      if (
-        cutoff &&
-        lineage.findIndex((n) => n.sessionId === node.sessionId) >
-          lineage.findIndex((n) => n.sessionId === cutoff.session_id)
-      )
-        continue;
-      if (!reached) {
-        if (node.sessionId !== anchor!.session_id) continue;
-        reached = true;
-      }
-      const child = lineage[lineage.findIndex((n) => n.sessionId === node.sessionId) + 1];
-      const fork = child?.forkTurnId
-        ? await this.#database
-            .selectFrom("conversation_turns as t")
-            .innerJoin("sessions as s", (join) =>
-              join.onRef("s.tenant_id", "=", "t.tenant_id").onRef("s.id", "=", "t.session_id"),
-            )
-            .select(["t.mailbox_position", "s.pi_session_id"])
-            .where("t.tenant_id", "=", this.#tenantId)
-            .where("t.session_id", "=", node.sessionId)
-            .where("t.turn_id", "=", child.forkTurnId)
-            .executeTakeFirst()
-        : undefined;
-      if (child?.forkTurnId && !fork)
-        throw new ControlPlaneStoreError("not_found", "Conversation fork anchor is missing");
-      if (
-        anchor?.session_id === node.sessionId &&
-        fork &&
-        BigInt(anchor.mailbox_position) > BigInt(fork.mailbox_position)
-      )
-        throw new ControlPlaneStoreError(
-          "not_found",
-          "History anchor is beyond this conversation fork",
-        );
-      let through: { sequence: number; ordinal: number } | undefined;
-      if (fork && child?.forkEntryId) {
-        const p = await sql<{
-          seq: string;
-          ordinal: number;
-        }>`select r.seq::text,r.ordinal from pi_durable_records r
-          where r.tenant_id=${this.#tenantId}::uuid and r.session_id=${fork.pi_session_id} and r.id=${child.forkEntryId}::bigint and r.kind='entry'`.execute(
-          this.#database,
-        );
-        if (!p.rows[0])
-          throw new ControlPlaneStoreError("not_found", "Native fork anchor is missing");
-        through = { sequence: Number(p.rows[0].seq), ordinal: p.rows[0].ordinal };
-        if (
-          position?.turnId === child.forkTurnId &&
-          (position.sequence > through.sequence ||
-            (position.sequence === through.sequence && position.ordinal > through.ordinal))
-        )
-          throw new ControlPlaneStoreError("not_found", "History position is beyond this fork");
-      }
-      const rows = await this.#database
-        .selectFrom("conversation_turns as run")
-        .innerJoin("sessions as scope", (join) =>
-          join
-            .onRef("scope.tenant_id", "=", "run.tenant_id")
-            .onRef("scope.id", "=", "run.session_id"),
-        )
-        .select([
-          "run.session_id as originSessionId",
-          "scope.pi_session_id as piSessionId",
-          "run.id as runId",
-          "run.turn_id as turnId",
-          "run.operation_kind as operationKind",
-          "run.scheduled_origin as scheduledOrigin",
-          "run.stop_reason as stopReason",
-          "run.state as runState",
-          "run.output_display_seq as coverage",
-          "run.mailbox_position as mailboxPosition",
-          "run.created_at as acceptedAt",
-          sql<boolean>`(run.output_seal_id is not null and run.output_sealed_at is null)`.as(
-            "waitingForSeal",
-          ),
-        ])
-        .where("run.tenant_id", "=", this.#tenantId)
-        .where("run.session_id", "=", node.sessionId)
-        .where("run.pruned_at", "is", null)
-        .$if(filters.completedOnly === true, (q) =>
-          q.where("run.state", "in", ["completed", "failed", "cancelled", "timed_out"]),
-        )
-        .$if(filters.completedOnly === true, (q) =>
-          q.where((eb) =>
-            eb.or([
-              eb("run.output_seal_id", "is", null),
-              eb("run.output_sealed_at", "is not", null),
-            ]),
-          ),
-        )
-        .$if(cutoff?.session_id === node.sessionId, (q) =>
-          q.where("run.mailbox_position", "<=", cutoff!.mailbox_position),
-        )
-        .where((eb) =>
-          eb.or([eb("run.state", "!=", "queued"), eb("run.operation_kind", "=", "compact")]),
-        )
-        .where((eb) =>
-          eb.or([
-            eb("run.operation_kind", "=", "compact"),
-            eb.not(eb.and([eb("run.state", "=", "cancelled"), eb("run.started_at", "is", null)])),
-          ]),
-        )
-        .$if(anchor?.session_id === node.sessionId, (q) =>
-          q.where(
-            "run.mailbox_position",
-            direction === "before" ? "<=" : ">=",
-            anchor!.mailbox_position,
-          ),
-        )
-        .$if(fork !== undefined, (q) =>
-          q.where("run.mailbox_position", "<=", fork!.mailbox_position),
-        )
-        .orderBy("run.mailbox_position", direction === "before" ? "desc" : "asc")
-        .orderBy("run.id", direction === "before" ? "desc" : "asc")
-        .limit(MAX_CONVERSATION_TURNS + 1 - lineageTurnRows.length)
-        .execute();
-      lineageTurnRows.push(
-        ...rows.map((r) => ({
-          ...r,
-          prompt: null,
-          uploads: [],
-          ...(r.turnId === child?.forkTurnId && through ? { through } : {}),
-        })),
-      );
-      if (lineageTurnRows.length > MAX_CONVERSATION_TURNS) break;
-    }
+    const rows = (
+      await sql<HistoryTurnRow>`select * from pi_history_turns where tenant_id=${this.#tenantId}::uuid and session_id=${sessionId}::uuid
+      ${filters.completedOnly ? sql`and state in ('completed','failed','cancelled','timed_out') and not waiting_for_seal` : sql``}
+      ${cutoff ? sql`and mailbox_position<=${cutoff.mailbox_position}::bigint` : sql``}
+      ${anchor ? sql`and mailbox_position ${sql.raw(direction === "before" ? "<=" : ">=")} ${anchor.mailbox_position}::bigint` : sql``}
+      order by mailbox_position ${sql.raw(direction === "before" ? "desc" : "asc")},turn_id ${sql.raw(direction === "before" ? "desc" : "asc")}
+      limit ${MAX_CONVERSATION_TURNS + 1}`.execute(this.#database)
+    ).rows;
+    const lineageTurnRows: ConversationHistoryRow[] = rows.map((r) => ({
+      piSessionId: r.pi_session_id,
+      coverage: r.output_display_seq,
+      operationKind: r.operation_kind,
+      stopReason: r.stop_reason,
+      originSessionId: r.origin_session_id,
+      runId: r.run_id,
+      turnId: r.turn_id,
+      prompt: null,
+      uploads: [],
+      runState: r.state as RunState,
+      waitingForSeal: r.waiting_for_seal,
+      mailboxPosition: r.mailbox_position,
+      acceptedAt: r.created_at,
+      frozen: r.frozen,
+    }));
     const sources = lineageTurnRows.slice(0, MAX_CONVERSATION_TURNS);
     const window = await readCanonicalHistoryWindow(this.#database, {
       tenantId: this.#tenantId,
@@ -551,15 +439,9 @@ export class ConversationReader {
       inclusive,
     });
     const sourceByTurn = new Map(sources.map((r) => [r.turnId, r]));
-    const headers = window.headers.size
-      ? await this.#database
-          .selectFrom("conversation_turns")
-          .select(["turn_id", "input_text", "input_source", "input_uploads"])
-          .where("tenant_id", "=", this.#tenantId)
-          .where("turn_id", "in", [...window.headers])
-          .execute()
-      : [];
-    const headerByTurn = new Map(headers.map((r) => [r.turn_id, r]));
+    const headerByTurn = await historyHeaders(this.#database, this.#tenantId, sessionId, [
+      ...window.headers,
+    ]);
     const selectedTurns = [...new Set(window.positions.map((p) => p.turnId))];
     const turns = selectedTurns.map((id) => {
       const row = sourceByTurn.get(id)!;
@@ -580,8 +462,8 @@ export class ConversationReader {
       const first = window.positions.find((p) => p.turnId === id)!;
       return {
         runId: row.runId,
-        ...(row.scheduledOrigin
-          ? { scheduledOrigin: parseScheduledOrigin(row.scheduledOrigin) }
+        ...(header?.scheduled_origin
+          ? { scheduledOrigin: parseScheduledOrigin(header.scheduled_origin) }
           : {}),
         turnId: id,
         mailboxPosition: positiveSafeInteger(row.mailboxPosition, "Conversation mailbox position"),
@@ -715,39 +597,6 @@ export class ConversationReader {
       limit: MAX_INHERITED_CONTEXT_ENTRIES + 1,
     });
     return inheritedContextPreview(rows);
-  }
-
-  async #conversationLineage(first: ConversationLineageNode): Promise<ConversationLineageNode[]> {
-    const lineage: ConversationLineageNode[] = [first];
-    const seen = new Set<string>([first.sessionId]);
-    let cursor: string | null = first.parentSessionId;
-    while (cursor !== null) {
-      if (seen.has(cursor) || lineage.length >= 100) {
-        throw new ControlPlaneStoreError(
-          "control_plane_misconfigured",
-          "Conversation lineage is invalid or too deep",
-        );
-      }
-      seen.add(cursor);
-      const row = await this.#database
-        .selectFrom("sessions")
-        .select([
-          "id as sessionId",
-          "conversation_parent_session_id as parentSessionId",
-          "conversation_fork_turn_id as forkTurnId",
-          "conversation_fork_entry_id as forkEntryId",
-        ])
-        .where("tenant_id", "=", this.#tenantId)
-        .where("id", "=", cursor)
-        .where("pruned_at", "is", null)
-        .executeTakeFirst();
-      if (row === undefined) {
-        throw new ControlPlaneStoreError("not_found", "Conversation was not found");
-      }
-      lineage.push(row);
-      cursor = row.parentSessionId;
-    }
-    return lineage.reverse();
   }
 
   async #loadActiveProjectEnvironment(projectId: string): Promise<ProjectEnvironmentResource> {
