@@ -1,5 +1,16 @@
 # Maintained backlog
 
+## Independent Forks and reclaimable history — revised proposal
+
+[ADR-0284](adr/0284-independent-forks-and-history-retention.md) replaces the
+copy-only proposal with shared immutable Entry bodies and independent per-Session
+record ownership. Preserve active Forks across source pruning and remove parent
+history read dependencies. Physical collection requires verified cold storage
+reorganization/retirement and actual reference checks, not holes in checked logs.
+Source investigation, anonymous size measurement and a native fork probe pass;
+PG storage conformance, recovery/concurrency tests and implementation remain open.
+No runtime code or serving data was changed for this revision.
+
 ## Image service rejection details — completed
 
 Preserve bounded provider error messages, codes, parameters and moderation

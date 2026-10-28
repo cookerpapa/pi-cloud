@@ -1116,7 +1116,13 @@ result-entry identity. A late physical reply cannot overwrite native abort.
 Independent human forks own copied entries, document bases and image references.
 Native `asOf`/`current` document fork policies are honored; `initial`, task and
 Session documents do not copy execution grants. Deleting the source cannot break
-the copied history. World State compares against its native document baseline.
+the stored copies themselves. Current product readers still depend on source
+lineage and tail pruning can cascade to manual Forks; the stored-copy property
+alone does not make their product lifecycle independent.
+[ADR-0284](adr/0284-independent-forks-and-history-retention.md) proposes independent
+reads/lifecycle, shared immutable bodies and guarded reclamation. It is not
+implemented; current tail pruning does not physically reclaim individual Entries.
+World State compares against its native document baseline.
 A verification reminder is derived from committed current-Run entries at native
 yield; neither delayed display callbacks nor Worker replacement can duplicate it.
 

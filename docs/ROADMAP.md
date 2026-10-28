@@ -1,5 +1,17 @@
 # Implementation roadmap
 
+## Independent human Forks and history retention — revised proposal
+
+[ADR-0284](adr/0284-independent-forks-and-history-retention.md) defines shared
+immutable bodies with independent Session ownership and guarded reclamation.
+
+- [x] Inspect pinned Pi fork/Storage contracts and existing copy/read/delete paths.
+- [x] Verify native ancestry sharing in isolation and measure an existing history's size.
+- [x] Compare mature reference/GC approaches and document the bounded PG adapter proposal.
+- [ ] Prove body sharing and cold family reorganization against native storage/recovery contracts.
+- [ ] Decouple reads, implement independent prune/active-source fork and verify collection races.
+- [ ] Complete matched publication and isolated live acceptance without modifying user history.
+
 ## Interrupted assistant text — deployed
 
 [ADR-0283](adr/0283-interrupted-assistant-text-context.md) retains cancelled
