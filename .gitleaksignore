@@ -1,0 +1,65 @@
+# Reviewed historical false positives: source/image identifiers and Go module checksums.
+# Exact finding fingerprints only; new files, commits and actual credentials remain scanned.
+
+# Pinned source commit
+4cb3440bb4fcbe4775158e494b291176febbb3c6:docs/reports/model-request-response-review-20261019.md:generic-api-key:5
+
+# Go module checksum in a go.sum patch
+325f0ebd2ff0be9d2848b4d79dbf3aa837eae2e9:deploy/cubesandbox/patches/0010-containerd-security.patch:generic-api-key:124
+
+# Go module checksum in a go.sum patch
+325f0ebd2ff0be9d2848b4d79dbf3aa837eae2e9:deploy/cubesandbox/patches/0010-containerd-security.patch:generic-api-key:152
+
+# Go module checksum in a go.sum patch
+325f0ebd2ff0be9d2848b4d79dbf3aa837eae2e9:deploy/cubesandbox/patches/0010-containerd-security.patch:generic-api-key:167
+
+# Go module checksum in a go.sum patch
+325f0ebd2ff0be9d2848b4d79dbf3aa837eae2e9:deploy/cubesandbox/patches/0010-containerd-security.patch:generic-api-key:331
+
+# Go module checksum in a go.sum patch
+325f0ebd2ff0be9d2848b4d79dbf3aa837eae2e9:deploy/cubesandbox/patches/0010-containerd-security.patch:generic-api-key:333
+
+# Go module checksum in a go.sum patch
+325f0ebd2ff0be9d2848b4d79dbf3aa837eae2e9:deploy/cubesandbox/patches/0010-containerd-security.patch:generic-api-key:335
+
+# Go module checksum in a go.sum patch
+325f0ebd2ff0be9d2848b4d79dbf3aa837eae2e9:deploy/cubesandbox/patches/0010-containerd-security.patch:generic-api-key:404
+
+# Go module checksum in a go.sum patch
+325f0ebd2ff0be9d2848b4d79dbf3aa837eae2e9:deploy/cubesandbox/patches/0010-containerd-security.patch:generic-api-key:406
+
+# Go module checksum in a go.sum patch
+325f0ebd2ff0be9d2848b4d79dbf3aa837eae2e9:deploy/cubesandbox/patches/0010-containerd-security.patch:generic-api-key:408
+
+# Go module checksum in a go.sum patch
+325f0ebd2ff0be9d2848b4d79dbf3aa837eae2e9:deploy/cubesandbox/patches/0010-containerd-security.patch:generic-api-key:412
+
+# Go module checksum in a go.sum patch
+18defa3ec16fa6f5fa395bc931239c1602e59a32:deploy/cubesandbox/patches/0005-release-security-dependencies.patch:generic-api-key:177
+
+# Go module checksum in a go.sum patch
+18defa3ec16fa6f5fa395bc931239c1602e59a32:deploy/cubesandbox/patches/0005-release-security-dependencies.patch:generic-api-key:205
+
+# Go module checksum in a go.sum patch
+18defa3ec16fa6f5fa395bc931239c1602e59a32:deploy/cubesandbox/patches/0005-release-security-dependencies.patch:generic-api-key:220
+
+# Go module checksum in a go.sum patch
+18defa3ec16fa6f5fa395bc931239c1602e59a32:deploy/cubesandbox/patches/0005-release-security-dependencies.patch:generic-api-key:579
+
+# Go module checksum in a go.sum patch
+18defa3ec16fa6f5fa395bc931239c1602e59a32:deploy/cubesandbox/patches/0005-release-security-dependencies.patch:generic-api-key:853
+
+# Go module checksum in a go.sum patch
+18defa3ec16fa6f5fa395bc931239c1602e59a32:deploy/cubesandbox/patches/0005-release-security-dependencies.patch:generic-api-key:855
+
+# Source file digest or image reference
+743499906e2561e671d864da54f90fb918d97498:docs/reports/cube-cutover-cluster-health-20261001.json:generic-api-key:10
+
+# Source file digest or image reference
+bd9d08cfe68b1f5d4355eadf546a8ef8293d3d8c:docs/reports/user-input-attachments-verification-20260929.json:generic-api-key:101
+
+# Source file digest or image reference
+bd9d08cfe68b1f5d4355eadf546a8ef8293d3d8c:docs/reports/user-input-attachments-verification-20260929.json:generic-api-key:134
+
+# Source file digest or image reference
+b372f858a535d555f9806e69c392d81c2ee5faa5:docs/reports/repository-review-verification-20260927.json:generic-api-key:96
