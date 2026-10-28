@@ -1,6 +1,6 @@
 # Implementation roadmap
 
-## Independent human Forks and history retention — revised proposal
+## Independent human Forks and history retention — accepted for implementation
 
 [ADR-0284](adr/0284-independent-forks-and-history-retention.md) defines shared
 immutable bodies with independent Session ownership and guarded reclamation.

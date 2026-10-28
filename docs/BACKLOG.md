@@ -1,6 +1,14 @@
 # Maintained backlog
 
-## Independent Forks and reclaimable history — revised proposal
+## Main publication and first-request comparison — in progress
+
+Promote the reviewed Durable line to `main`, refresh the public README, publish
+the complete history and remove obsolete branches after ancestry/use checks.
+Compare cold model requests with pinned native Pi and Codex using equivalent
+model/context/effort and separate startup, connection, transfer and provider times.
+Preserve user conversations; controlled live probes use owned fixtures.
+
+## Independent Forks and reclaimable history — accepted for implementation
 
 [ADR-0284](adr/0284-independent-forks-and-history-retention.md) replaces the
 copy-only proposal with shared immutable Entry bodies and independent per-Session
@@ -9,7 +17,8 @@ history read dependencies. Physical collection requires verified cold storage
 reorganization/retirement and actual reference checks, not holes in checked logs.
 Source investigation, anonymous size measurement and a native fork probe pass;
 PG storage conformance, recovery/concurrency tests and implementation remain open.
-No runtime code or serving data was changed for this revision.
+The owner authorized implementation after the revision, alongside main publication
+and the model-request comparison. S0 remains a prerequisite for runtime cutover.
 
 ## Image service rejection details — completed
 

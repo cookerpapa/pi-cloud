@@ -1,6 +1,6 @@
 # Current architecture decisions
 
-[ADR-0284](0284-independent-forks-and-history-retention.md) is a **revised proposal,
+[ADR-0284](0284-independent-forks-and-history-retention.md) is **accepted for implementation,
 not deployed**: independent human Forks, shared immutable Entry bodies in PG,
 and verified cold storage retirement before reference-based collection. Native
 fork behavior and a read-only size sample are verified; the storage/concurrency
