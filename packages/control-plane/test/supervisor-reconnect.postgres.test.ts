@@ -43,7 +43,12 @@ describe.skipIf(!endpoint)("Worker transport expiry and Boot authority on Postgr
     const expire = () =>
       db
         .updateTable("supervisor_connections")
-        .set({ expires_at: sql<Date>`clock_timestamp() - interval '1 millisecond'` })
+        .set({
+          // Shift the whole heartbeat window. Merely placing expiry 1 ms ago
+          // can precede the just-written heartbeat on a fast PostgreSQL host.
+          last_heartbeat_at: sql<Date>`last_heartbeat_at - interval '2 hours'`,
+          expires_at: sql<Date>`expires_at - interval '2 hours'`,
+        })
         .where("connection_id", "=", connectionId)
         .execute();
     const state = () =>
