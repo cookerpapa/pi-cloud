@@ -1,5 +1,18 @@
 # Maintained backlog
 
+## Interrupted assistant text in model context — proposed
+
+[ADR-0283](adr/0283-interrupted-assistant-text-context.md) proposes preserving
+cancelled visible text as assistant context with a short interruption marker.
+Keep the raw aborted Entry and use Pi's context-only edit mechanism so requests,
+recovery and compaction agree. One settled edit may duplicate that text once;
+there are no new per-fragment PG body writes. Provider encoding, cancellation
+ordering and cold reconciliation require validation before implementation rollout.
+
+- [ ] Prove pinned Pi context/compaction behavior and current GPT/DeepSeek encoding.
+- [ ] Implement authorized settlement, idempotence and bounded cold preparation.
+- [ ] Verify cancellation/recovery/compaction/model-switch behavior and publish.
+
 ## Tool settlement presentation — completed
 
 Move the error line from the whole activity group to the failed Tool alone.

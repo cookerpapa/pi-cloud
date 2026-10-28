@@ -1,5 +1,10 @@
 # Documentation map
 
+[Interrupted assistant text proposal](adr/0283-interrupted-assistant-text-context.md)
+defines original assistant wording plus an interruption marker in model context,
+using Pi's context-only edits. It is a plan, not implemented or deployed; provider
+validation, cancellation/recovery and compaction acceptance are specified.
+
 [Tool settlement presentation](reports/tool-settlement-presentation-20261028.md)
 limits the error line to the failed Tool and verifies preview-to-result settlement,
 empty Bash results and the existing native parallel-Read policy. Web-only

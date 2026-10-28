@@ -1,5 +1,9 @@
 # Current architecture decisions
 
+[ADR-0283](0283-interrupted-assistant-text-context.md) is proposed, not implemented.
+It retains cancelled assistant wording in model context through Pi's public
+context-only edits while preserving the original aborted outcome.
+
 [ADR-0280](0280-workspace-scoped-subagent-contract.md) and
 [ADR-0281](0281-scheduled-session-inputs.md) are accepted for implementation, not
 deployed. They define workspace-scoped delegation and scheduled inputs through
