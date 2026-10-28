@@ -20,7 +20,7 @@ async function withChromePage(options, operation) {
         JSON.stringify({
           browserFailure: await page
             .evaluate(
-              "({url:location.href,ready:document.readyState,errors:window.fixtureErrors??[],text:document.body?.innerText?.slice(0,500)})",
+              "({url:location.href,ready:document.readyState,errors:window.fixtureErrors??[],text:document.body?.innerText?.slice(0,500),resources:performance.getEntriesByType('resource').filter(r=>r.responseStatus!==200).slice(-10).map(r=>({path:new URL(r.name).pathname,status:r.responseStatus,duration:r.duration}))})",
             )
             .catch(() => ({ disconnected: true })),
         }),
