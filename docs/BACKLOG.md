@@ -1,5 +1,12 @@
 # Maintained backlog
 
+## Answer copy action alignment — in progress
+
+Place the completed answer's copy button in the same footer row as “从此对话开始”.
+Preserve the full copy payload when a long answer spans virtual rows, without
+duplicating its button in the text fragment. Verify desktop/mobile alignment,
+clipboard content and the existing bounded-history layout before a Web-only release.
+
 ## Interrupted assistant text in model context — completed
 
 [ADR-0283](adr/0283-interrupted-assistant-text-context.md) implements preserving

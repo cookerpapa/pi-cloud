@@ -1221,6 +1221,9 @@ body.product-panel-resizing {
 
 .product-answer-actions {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
   margin-top: 10px;
 }
 

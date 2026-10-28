@@ -436,6 +436,7 @@ export function ConversationTurn({
         .join("\n\n"),
     [rows],
   );
+  const answerCopyText = fragment ? fragment.copyText : finalAnswerText;
   if (turn.operation?.kind === "compact")
     return (
       <section
@@ -580,13 +581,13 @@ export function ConversationTurn({
               ) : null}
               {showFooter &&
               turn.status === "completed" &&
-              ((!fragment && finalAnswerText.length > 0) || onFork || onPrune) ? (
+              (answerCopyText || onFork || onPrune) ? (
                 <div className="product-answer-actions">
-                  {!fragment && finalAnswerText.length > 0 ? (
+                  {answerCopyText ? (
                     <MessageCopyButton
                       copiedLabel={t("turn.copied")}
                       label={t("turn.copyAssistantMessage")}
-                      text={finalAnswerText}
+                      text={answerCopyText}
                     />
                   ) : null}
                   {onFork ? (

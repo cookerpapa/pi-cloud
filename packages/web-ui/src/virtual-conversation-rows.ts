@@ -63,6 +63,10 @@ export function virtualConversationRows(
     const rows = deriveConversationPresentationRows(
       turn.items.filter((i) => i.kind !== "compaction" || i.reason !== "manual"),
     );
+    const footerAnswer =
+      turn.status === "completed" && !turn.continuesAfter
+        ? rows.findLast((row) => row.kind === "text" && !row.processNarration)
+        : undefined;
     for (const row of rows) {
       const item =
         row.kind === "activity" || row.kind === "hosted_search" || row.kind === "retry"
@@ -106,7 +110,7 @@ export function virtualConversationRows(
                   },
                 },
               ],
-              ...(!row.processNarration && index === blocks.length - 1
+              ...(!row.processNarration && row !== footerAnswer && index === blocks.length - 1
                 ? { copyText: row.item.text }
                 : {}),
             },
@@ -124,7 +128,12 @@ export function virtualConversationRows(
       result.push({
         key: `${turn.turnId}:footer`,
         turn,
-        fragment: { header: false, footer: true, rows: [] },
+        fragment: {
+          header: false,
+          footer: true,
+          rows: [],
+          ...(footerAnswer?.kind === "text" ? { copyText: footerAnswer.item.text } : {}),
+        },
       });
   }
   return result;

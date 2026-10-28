@@ -1392,6 +1392,46 @@ try {
     await page.evaluate(`document.querySelector(${JSON.stringify(parentButton)}).click()`);
     await page.waitFor("document.querySelector('.product-prune-action')?.disabled===false");
     assert.equal(await page.evaluate(`${forkButton}.disabled`), false);
+    for (const width of [1280, 390]) {
+      await page.send("Emulation.setDeviceMetricsOverride", {
+        width,
+        height: 900,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      await page.waitFor("document.querySelector('.product-answer-actions .product-message-copy')");
+      const actions = await page.evaluate(`(()=>{
+        const fork=${forkButton};
+        const copy=fork.parentElement.querySelector('.product-message-copy');
+        const a=copy.getBoundingClientRect(),b=fork.getBoundingClientRect();
+        return {centerDifference:Math.abs(a.y+a.height/2-b.y-b.height/2),
+          copies:document.querySelectorAll('.product-answer-actions .product-message-copy').length,
+          bodyCopies:document.querySelectorAll('.product-agent-answer .product-message-copy').length};
+      })()`);
+      assert(actions.centerDifference < 1, `Copy and fork must share an action row at ${width}px`);
+      assert.equal(actions.copies, 1);
+      assert.equal(
+        actions.bodyCopies,
+        0,
+        "The final answer must not retain a duplicate body button",
+      );
+    }
+    assert.equal(
+      await page.evaluate(`(async()=>{
+        const descriptor=Object.getOwnPropertyDescriptor(navigator,'clipboard');
+        let copied;
+        Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{copied=text;}}});
+        try {
+          document.querySelector('.product-answer-actions .product-message-copy').click();
+          await Promise.resolve();
+          return copied;
+        } finally {
+          if(descriptor)Object.defineProperty(navigator,'clipboard',descriptor);else delete navigator.clipboard;
+        }
+      })()`),
+      "Tree answer",
+    );
+    await page.send("Emulation.clearDeviceMetricsOverride");
     for (const mode of ["branch", "fresh"]) {
       await page.evaluate(
         `document.querySelector('.product-delegated-session.${mode} > button').click()`,

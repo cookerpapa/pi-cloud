@@ -62,6 +62,22 @@ function page(index: number): HistoryPage {
 }
 
 describe("conversation read windows", () => {
+  it("copies the complete final answer from the footer even when its text spans virtual rows", () => {
+    const finalText = ("Long answer paragraph. ".repeat(400) + "\n\n").repeat(3);
+    const base = turn(0);
+    const first = { ...base.items[0]!, text: "Earlier answer" };
+    const answer = { ...first, key: "final-answer", text: finalText };
+    const rows = virtualConversationRows([
+      { ...base, status: "completed", items: [first, answer] },
+    ]);
+    expect(rows.filter((row) => row.key.includes(":final-answer:")).length).toBeGreaterThan(1);
+    expect(rows.at(-1)?.fragment).toMatchObject({ footer: true, copyText: finalText });
+    expect(rows.filter((row) => row.fragment.copyText !== undefined)).toHaveLength(2);
+    expect(rows.find((row) => row.fragment.copyText === "Earlier answer")?.fragment.footer).toBe(
+      false,
+    );
+    expect(rows.filter((row) => row.fragment.copyText === finalText)).toHaveLength(1);
+  });
   it("keeps every retry cursor addressable in one virtual row", () => {
     const item = (attempt: number) => ({
       kind: "retry" as const,
