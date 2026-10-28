@@ -1,7 +1,8 @@
 # Current architecture decisions
 
-[ADR-0283](0283-interrupted-assistant-text-context.md) is accepted and implemented in
-source; matched rollout is pending.
+[ADR-0283](0283-interrupted-assistant-text-context.md) is deployed as
+`interrupted-text-jose-20261028` (schema 202 / Helm 119). Source and live model,
+Cube/recovery and large-image checks pass.
 It retains cancelled assistant wording in model context through Pi's public
 context-only edits while preserving the original aborted outcome.
 

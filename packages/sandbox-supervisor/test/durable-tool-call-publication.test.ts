@@ -7,6 +7,7 @@ import {
   type AssistantMessageEvent,
 } from "@earendil-works/pi-ai";
 import { createModels } from "@earendil-works/pi-ai/models";
+import { estimateContextTokens } from "@earendil-works/pi-ai/utils/estimate";
 import {
   fauxAssistantMessage,
   fauxProvider,
@@ -427,6 +428,9 @@ it("retains cancelled text through Pi context edits, with one original aborted r
     expect(JSON.stringify(view.messages)).toContain("VISIBLE STREAM TEXT");
     expect(JSON.stringify(view.messages)).toContain("AFTER TOOL SLOT");
     expect(JSON.stringify(view.messages)).not.toMatch(/toolCall|INCOMPLETE_ARGUMENT/);
+    expect(estimateContextTokens(view.messages).tokens).toBeGreaterThan(
+      estimateContextTokens(before.messages).tokens,
+    );
     expect((await preserveInterruptedText({ ...options, view: before })).entries).toEqual(
       view.entries,
     );

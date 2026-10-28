@@ -123,6 +123,7 @@ try {
       text: "",
       turnId: undefined,
       error: undefined,
+      live: false,
     };
     state.streaming = streamSessionEvents({
       sessionId: session.sessionId,
@@ -130,6 +131,9 @@ try {
       signal: state.controller.signal,
       fetchImplementation: (path, init) => fetch(new URL(String(path), origin), init),
       onSnapshot() {},
+      onStatus(status) {
+        state.live = status.phase === "live";
+      },
       onEvent(event) {
         if (
           event.type !== "assistant.text.delta" ||
@@ -142,6 +146,10 @@ try {
       state.error = error;
     });
     streams.push(state);
+    await until(() => {
+      if (state.error) throw state.error;
+      return state.live;
+    }, "SSE attachment");
     const run = await api.acceptTurn(
       session.sessionId,
       "这是中断恢复验收。不要调用工具。第一行自行创造一个由八个大写英文字母组成的暗号，严格写成 CODE:XXXXXXXX（用你创造的字母替换，不要使用XXXXXXXX）。然后立即写一篇至少五千字的中文文章解释为什么你打算把一个游戏做成纯前端。不要提问，不要使用代码块。",

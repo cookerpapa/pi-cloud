@@ -2,8 +2,9 @@
 
 [Interrupted assistant text implementation](adr/0283-interrupted-assistant-text-context.md)
 defines original assistant wording plus an interruption marker in model context,
-using Pi's context-only edits. Native and provider checks pass; the implementation
-is not yet deployed. Cancellation/recovery and compaction acceptance are specified.
+using Pi's context-only edits. Deployed as `interrupted-text-jose-20261028`, Helm
+119; source, fault, real GPT/Flash, Cube, native recovery and large-image cold
+recall checks pass. [Delivery evidence](reports/interrupted-text-delivery-20261028.md).
 
 [Tool settlement presentation](reports/tool-settlement-presentation-20261028.md)
 limits the error line to the failed Tool and verifies preview-to-result settlement,

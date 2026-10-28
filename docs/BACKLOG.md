@@ -1,17 +1,20 @@
 # Maintained backlog
 
-## Interrupted assistant text in model context — implementation in progress
+## Interrupted assistant text in model context — completed
 
 [ADR-0283](adr/0283-interrupted-assistant-text-context.md) implements preserving
 cancelled visible text as assistant context with a short interruption marker.
 Keep the raw aborted Entry and use Pi's context-only edit mechanism so requests,
 recovery and compaction agree. One settled edit may duplicate that text once;
 there are no new per-fragment PG body writes. Native recovery/compaction and real
-GPT/Flash encoding checks pass; complete source gates and matched live rollout remain.
+GPT/Flash encoding checks pass. Matched `interrupted-text-jose-20261028` is deployed;
+four real same/cross-model cases, full Cube and native Worker/Control Plane recovery
+pass. Large-image cold recall and final asset preservation also pass.
+[Delivery evidence](reports/interrupted-text-delivery-20261028.md).
 
 - [x] Prove pinned Pi context/compaction behavior and current GPT/DeepSeek encoding.
 - [x] Implement authorized settlement, idempotence and bounded cold preparation.
-- [ ] Verify cancellation/recovery/compaction/model-switch behavior and publish.
+- [x] Verify cancellation/recovery/compaction/model-switch behavior and publish.
 
 ## Tool settlement presentation — completed
 

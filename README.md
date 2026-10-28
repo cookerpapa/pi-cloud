@@ -1,5 +1,12 @@
 # PiCloud
 
+[Interrupted assistant text](docs/reports/interrupted-text-delivery-20261028.md)
+is deployed as `interrupted-text-jose-20261028` (schema 202). After Stop, the
+next request retains the assistant's original visible wording with an interruption
+marker, while the original receipt stays aborted. Native context edits also feed
+recovery and compaction. Real GPT/Flash same-model and model-switch checks, full
+Cube/Worker recovery and large-image cold recall pass.
+
 [Native model continuation](docs/reports/model-continuation-delivery-20261027.md)
 reduces repeated GPT image uploads using Pi's existing WebSocket continuation.
 Deployed as `continuation-5f-final`: actual provider traffic and cross-Worker image

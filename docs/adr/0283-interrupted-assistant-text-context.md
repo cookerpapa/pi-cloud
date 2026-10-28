@@ -1,6 +1,8 @@
 # ADR-0283: Preserve cancelled assistant text in model context
 
-Status: accepted for implementation, not deployed, 2026-10-28.
+Status: deployed as `interrupted-text-jose-20261028`, schema 202 / Helm 119,
+2026-10-28. Source, fault, four real GPT/Flash continuation cases, full Cube,
+native Worker recovery and large-image cold recall checks pass.
 
 The owner approved the native ContextEdit approach, including its one extra text
 copy per cancelled response. A reference-only custom context resolver was discussed

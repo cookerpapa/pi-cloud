@@ -1543,16 +1543,16 @@ and retirement bounds remain independent. Hosted completion is
 an empty native text slot carrying PiCloud-owned metadata, replayed as the exact
 provider item at the public payload hook. Gateway is transport-only. The Models
 boundary owns phases, hosted content and semantic outcomes. Native Store/Kafka
-commit and abort boundaries remain native. ADR-0283's source implementation adds
+commit and abort boundaries remain native. ADR-0283 adds
 one context-only edit for the last persisted assistant text of a cancelled native
 generation, retaining the original aborted Entry and usage. The model sees the
 original assistant wording plus an interruption marker; no thinking, unfinished
 Tool or provider replay state is promoted. Current and cold Worker preparation
 use the same native context edits for requests, context estimates and compaction.
 The existing Session writer/Kafka/PG path owns these edits, and normal browser
-history still displays only the original response. Its matched rollout is pending;
-the preceding deployed Worker excludes aborted/error Assistant entries from model
-context. Worker retirement has a bounded
+history still displays only the original response. Deployed as
+`interrupted-text-jose-20261028`, schema 202; original error/retry outcomes retain
+Pi's exclusion policy. Worker retirement has a bounded
 drain and closes late admission before entering existing same-Run recovery.
 
 Known transient failures retain Pi's native retry classification; quota, billing,

@@ -1,5 +1,14 @@
 # Implementation roadmap
 
+## Interrupted assistant text — deployed
+
+[ADR-0283](adr/0283-interrupted-assistant-text-context.md) retains cancelled
+assistant wording through native context-only edits, with the original aborted
+outcome intact. Deployed as `interrupted-text-jose-20261028` (schema 202 / Helm 119).
+Native context/compaction and fault checks, real GPT/Flash same/cross-model
+continuation, Cube/Worker recovery and large-image cold recall pass.
+[Delivery evidence](reports/interrupted-text-delivery-20261028.md).
+
 ## Native model continuation — completed
 
 Deployed [ADR-0282](adr/0282-native-model-websocket-continuation.md) as
