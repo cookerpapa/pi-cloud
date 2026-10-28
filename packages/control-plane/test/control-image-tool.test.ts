@@ -3,7 +3,7 @@ import { expect, it, vi } from "vitest";
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
 import { ImageAttachmentCodec } from "@pi-cloud/session-attachments";
-import type { ImageGenerationClient } from "../src/ordinary-tools/image-generation-client.ts";
+import { ImageGenerationClient } from "../src/ordinary-tools/image-generation-client.ts";
 import type { ImageAttachmentReference } from "@pi-cloud/protocol";
 import type { AcceptedControlToolCommand } from "@pi-cloud/runtime-core/accepted-fact";
 import { createImageTool } from "../src/ordinary-tools/image-tool.ts";
@@ -143,4 +143,46 @@ it("refuses an oversized combined reference set before contacting the image serv
   const result = await f.execute({ prompt: "edit", num_last_images_to_include: 1 });
   expect(result.isError).toBe(true);
   expect(f.generate).not.toHaveBeenCalled();
+});
+
+it("passes the provider's rejection reason to the Agent as a Tool error without creating an image", async () => {
+  const f = fixture();
+  const send = vi.fn(async () =>
+    Response.json(
+      {
+        error: {
+          code: "moderation_blocked",
+          message: "The generated output did not pass moderation.",
+          moderation_details: { moderation_stage: "output", categories: ["sexual"] },
+        },
+      },
+      { status: 400 },
+    ),
+  );
+  const client = new ImageGenerationClient({
+    baseUrl: "http://fixture",
+    apiKey: "test-key",
+    model: "gpt-image-2",
+    fetch: send,
+  });
+  f.generate.mockImplementation((...args) => client.generate(...args));
+  try {
+    const result = await f.execute({ prompt: "A landscape" });
+    expect(result.isError).toBe(true);
+    expect(result.result.content).toEqual([
+      {
+        type: "text",
+        text: expect.stringContaining("image_generation_failed: Image service returned HTTP 400"),
+      },
+    ]);
+    const text = result.result.content[0];
+    expect(text?.type === "text" && text.text).toContain('"code":"moderation_blocked"');
+    expect(text?.type === "text" && text.text).toContain("did not pass moderation");
+    expect(text?.type === "text" && text.text).toContain('"moderationStage":"output"');
+    expect(text?.type === "text" && text.text).toContain('"moderationCategories":["sexual"]');
+    expect(f.imageIo).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledTimes(1);
+  } finally {
+    await client.close();
+  }
 });

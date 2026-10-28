@@ -1595,7 +1595,13 @@ retain images independently of mutable Workspace files. See
 [chat attachment contracts](CHAT_ATTACHMENTS.md) and ADR-0200. Generated-image
 results are delivered under ADR-0274 as an explicit ordinary Tool.
 `generate_image` uses Codex-shaped arguments and a separately configured Images
-service through CLIProxyAPI. Recent-image references are bounded by the invoking
+service through CLIProxyAPI. Confirmed HTTP errors carry bounded, filtered
+provider messages/codes and reported moderation stage/categories in the ordinary
+Tool result, allowing Pi to explain refusals. Error-body parsing never forwards
+whole responses, credentials or image data; malformed/oversized/stalled bodies
+retain the HTTP status without inventing a cause. This changes neither cancellation
+nor the existing uncertain-outcome/retry boundary. Recent-image references are
+bounded by the invoking
 assistant entry in the current Conversation. File reads, normalization and
 exclusive generated-file placement execute in Cube through bound image I/O.
 Canonical image content retains the existing S3/Worker codec boundary; an

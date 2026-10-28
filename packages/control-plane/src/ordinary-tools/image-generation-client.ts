@@ -16,6 +16,78 @@ type Request = {
   signal: AbortSignal;
 };
 
+function errorText(value: unknown, apiKey: string, limit: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const text = (apiKey ? value.replaceAll(apiKey, "[redacted]") : value)
+    .replace(/data:[^\s"'<>]+/gi, "[image data omitted]")
+    .replace(/\bBearer\s+[^\s"'<>]+/gi, "Bearer [redacted]")
+    .replace(/\bsk-[\w-]+/g, "[redacted]")
+    .replace(
+      /\b(api[_-]?key|access[_-]?token|password|secret)\s*[:=]\s*["']?[^\s"',;]+/gi,
+      "$1=[redacted]",
+    )
+    .replace(/[\x00-\x1f\x7f]/g, " ")
+    .trim();
+  return text ? text.slice(0, limit) : undefined;
+}
+
+/** Error bodies are diagnostics, not image payloads or an additional retry path. */
+async function serviceErrorDetail(
+  response: Response,
+  apiKey: string,
+  signal: AbortSignal,
+): Promise<string | undefined> {
+  const reader = response.body?.getReader();
+  if (!reader) return undefined;
+  let discarded = false;
+  const cancel = () => {
+    discarded = true;
+    void reader.cancel().catch(() => undefined);
+  };
+  const timer = setTimeout(cancel, 5_000);
+  timer.unref();
+  signal.addEventListener("abort", cancel, { once: true });
+  try {
+    signal.throwIfAborted();
+    const chunks: Uint8Array[] = [];
+    let length = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      signal.throwIfAborted();
+      if (discarded) return undefined;
+      if (done) break;
+      length += value.length;
+      if (length > 64 * 1024) return undefined;
+      chunks.push(value);
+    }
+    const { error } = JSON.parse(Buffer.concat(chunks, length).toString("utf8"));
+    if (!error || typeof error !== "object" || Array.isArray(error)) return undefined;
+    const detail = {
+      code: errorText(error.code, apiKey, 128),
+      type: errorText(error.type, apiKey, 128),
+      message: errorText(error.message, apiKey, 2_000),
+      parameter: errorText(error.param, apiKey, 128),
+      moderationStage: errorText(error.moderation_details?.moderation_stage, apiKey, 64),
+      moderationCategories: Array.isArray(error.moderation_details?.categories)
+        ? error.moderation_details.categories
+            .slice(0, 8)
+            .map((value: unknown) => errorText(value, apiKey, 64))
+            .filter(Boolean)
+        : undefined,
+    };
+    return Object.values(detail).some((value) => value && value.length > 0)
+      ? JSON.stringify(detail)
+      : undefined;
+  } catch {
+    signal.throwIfAborted();
+    return undefined;
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener("abort", cancel);
+    await reader.cancel().catch(() => undefined);
+  }
+}
+
 /** One Images request, with no model retry or fallback to another credential route. */
 export class ImageGenerationClient {
   readonly #agent = new Agent({ headersTimeout: 300_000, bodyTimeout: 300_000 });
@@ -79,10 +151,11 @@ export class ImageGenerationClient {
       );
     }
     if (!response.ok) {
-      await response.body?.cancel();
+      const detail = await serviceErrorDetail(response, this.options.apiKey, signal);
+      signal.throwIfAborted();
       throw new ImageGenerationError(
         response.status >= 500 || response.status === 408,
-        `Image service returned HTTP ${response.status}. No automatic retry was sent.`,
+        `Image service returned HTTP ${response.status}.${detail ? ` Provider error: ${detail}.` : ""} No automatic retry was sent.`,
       );
     }
     const reader = response.body?.getReader();

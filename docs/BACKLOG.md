@@ -1,5 +1,14 @@
 # Maintained backlog
 
+## Image service rejection details — in progress
+
+Preserve bounded provider error messages, codes, parameters and moderation
+stage/categories in the existing Tool error text, so the Agent can explain a
+refusal. Keep malformed/non-JSON responses generic, redact credentials and image
+data, and bound error-body reading. Preserve cancellation, uncertain outcomes and
+the one-request policy. Verify through the client and Tool boundary, then deploy
+only the Control Plane using ADR-0276's quiescence procedure.
+
 ## Answer copy action alignment — completed
 
 Place the completed answer's copy button in the same footer row as “从此对话开始”.
