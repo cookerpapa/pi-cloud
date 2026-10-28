@@ -322,7 +322,9 @@ it("preserves the provider's message-size close code for native transport handli
 it.each(["stop", "owner", "idle"] as const)(
   "closes unfinished output on %s without exposing partial Tool calls",
   async (reason) => {
-    const f = await fixture({ idleMs: 100 }),
+    // Stop/owner checks must not race the deliberately tiny idle-only budget
+    // during connection setup or image upload on a loaded test host.
+    const f = await fixture({ idleMs: reason === "idle" ? 100 : 2000 }),
       stop = new AbortController();
     f.setHandle((_body, peer) => {
       peer.send(JSON.stringify(created));
@@ -351,7 +353,7 @@ it.each(["stop", "owner", "idle"] as const)(
         setTimeout(() => (reason === "stop" ? stop.abort() : f.owner.abort()), 20);
     });
     const result = await f.sample(context(), 1, randomUUID(), stop.signal);
-    expect(result.stopReason).toBe(reason === "stop" ? "aborted" : "error");
+    expect(result.stopReason, result.errorMessage).toBe(reason === "stop" ? "aborted" : "error");
     expect(result.content.some((c) => c.type === "toolCall")).toBe(false);
     await vi.waitFor(() =>
       expect(f.peers.every((p) => p.readyState === WebSocket.CLOSED)).toBe(true),

@@ -37,6 +37,14 @@ endpoint, so its PG suite timed out. The repeat through `run-with-test-postgres`
 passes all Worker/PG checks. Failed samples remain in private evidence rather than
 being counted as acceptance.
 
+The full workspace pass exposed an existing WebSocket fixture that used the same
+100 ms idle deadline for its Stop, owner-revocation and idle-expiry cases. The Stop
+case returned an error twice under build/test load, while the earlier limited
+concurrency pass succeeded. Separate the fixture budgets: retain 100 ms for the
+idle-expiry case and use its ordinary 2-second deadline for Stop/owner cases.
+Production model deadlines and cancellation code are unchanged. Preserve the
+failed runs and rerun the complete Worker workspace before publication.
+
 Deployed-stack acceptance is maintained in
 `scripts/run-live-interrupted-text-check.mjs`. It creates owned Sessions, observes
 real model text, issues Stop, checks raw PG source/edit records and asks the next
