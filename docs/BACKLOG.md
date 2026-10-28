@@ -1,13 +1,18 @@
 # Maintained backlog
 
-## Image service rejection details — in progress
+## Image service rejection details — completed
 
 Preserve bounded provider error messages, codes, parameters and moderation
 stage/categories in the existing Tool error text, so the Agent can explain a
 refusal. Keep malformed/non-JSON responses generic, redact credentials and image
 data, and bound error-body reading. Preserve cancellation, uncertain outcomes and
-the one-request policy. Verify through the client and Tool boundary, then deploy
-only the Control Plane using ADR-0276's quiescence procedure.
+the one-request policy. Client/Tool contracts and the 154-test scoped release gate
+pass. Deployed only the Control Plane as `image-errors-20261028` (Helm 121), using
+ADR-0276's quiescence procedure. The installed artifact passes five local HTTP
+fixture cases, including replay of the recorded moderation error through the
+registered Tool. This makes no external image request. All 28 other Pod identities,
+the machine allocation and 27 configuration hashes remain unchanged.
+Evidence: `deploy/production/runtime/release-evidence/image-error-details-20261028/`.
 
 ## Answer copy action alignment — completed
 
