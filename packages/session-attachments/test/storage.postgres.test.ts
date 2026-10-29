@@ -205,6 +205,7 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
             {
               tenantId,
               sessionId: source,
+              sourceProductSessionId: source,
               conversationId: 1,
               through: entries.at(-1)!.entry.id,
             },

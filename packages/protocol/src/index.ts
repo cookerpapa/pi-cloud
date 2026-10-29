@@ -714,6 +714,7 @@ export * from "./executor-transport.ts";
 export { isExecutorToolCommand, isNamedToolCommand } from "./tool-command.ts";
 
 export * from "./session-schedules.ts";
+export * from "./fork-provenance.ts";
 export {
   encodeModelSocketRequest,
   parseModelSocketRequest,

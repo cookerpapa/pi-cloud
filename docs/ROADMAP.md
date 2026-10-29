@@ -1,5 +1,14 @@
 # Implementation roadmap
 
+## Single-path shared Fork implementation — in progress
+
+- [x] Verify selected-path inheritance and model-visible Fork identity.
+- [ ] Implement shared bases with complete native Storage/current-state semantics.
+- [ ] Unify retained reads, images, independent pruning and reference collection.
+- [ ] Complete full-size, fault and matched live acceptance; remove obsolete paths.
+
+[ADR-0287](adr/0287-single-path-shared-forks.md).
+
 ## Shared history root validation — measured; production gates open
 
 - [x] Record prototype boundaries and build-versus-adopt evidence in ADR-0286.

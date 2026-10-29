@@ -1,5 +1,9 @@
 # Current architecture decisions
 
+[ADR-0287](0287-single-path-shared-forks.md) implements the owner's final single-path
+Fork semantics and model-visible runtime identity, followed by the shared-history
+Storage migration. Source work is in progress; the serving layout remains 203.
+
 [ADR-0286](0286-shared-history-root-prototype.md) authorizes isolated validation of
 shared history roots and their read/write/collection costs. The prototype is
 measured, with unresolved native-contract and performance gates; it is not a

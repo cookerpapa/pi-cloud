@@ -223,11 +223,12 @@ export class SubagentController {
           const target =
             args.target === "main"
               ? await this.options.database
-                  .selectFrom("sessions")
-                  .select("id")
-                  .where("tenant_id", "=", scope.tenantId)
-                  .where("pi_session_id", "=", scope.piSessionId)
-                  .where("pi_conversation_id", "=", "1")
+                  .selectFrom("runs as r")
+                  .innerJoin("sessions as s", "s.id", "r.session_id")
+                  .select("s.id")
+                  .where("r.tenant_id", "=", scope.tenantId)
+                  .where("r.id", "=", scope.runId)
+                  .where("s.pi_session_id", "=", scope.piSessionId)
                   .executeTakeFirst()
               : await this.options.database
                   .selectFrom("subagent_executions")
@@ -322,7 +323,7 @@ export class SubagentController {
     if (call.replyMode !== "hostcall")
       throw new SubagentConversationError(
         "invalid_control_request",
-        "Subagent target does not belong to this Session",
+        'Subagent target does not belong to this Session. Agent IDs in forked history are historical; use subagent(action="list") to find this Session\'s agents, or create a new agent when needed.',
       );
     const source = await sql<{
       document_id: string;

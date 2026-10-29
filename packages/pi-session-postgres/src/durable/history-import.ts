@@ -2,6 +2,7 @@ import { sql, type Transaction } from "kysely";
 import type { Database } from "@pi-cloud/database";
 import {
   createSession,
+  defineDoc,
   type ConversationId,
   type ConversationRecord,
   type EntryId,
@@ -9,6 +10,7 @@ import {
   type StorageWrite,
 } from "@earendil-works/pi-durable";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { FORK_PROVENANCE_DOCUMENT } from "@pi-cloud/protocol";
 import { assertIdleNativeSession } from "../idle-session-mutation.ts";
 import { importEntryReferences } from "./import-entry-references.ts";
 import { DurablePostgresProjection } from "./postgres-projection.ts";
@@ -16,6 +18,7 @@ import { PublishedDurableStorage } from "./published-storage.ts";
 import type { DurableScope, StoredDurableBatch } from "./types.ts";
 
 type Range = { conversationId: number; through: number; sequence: number };
+const ForkProvenanceDocument = defineDoc(FORK_PROVENANCE_DOCUMENT);
 type Row = {
   ordinal: number;
   record_id: string;
@@ -27,7 +30,11 @@ type Row = {
 export async function importForkHistory(
   tx: Transaction<Database>,
   target: DurableScope,
-  source: DurableScope & { conversationId: number; through: number },
+  source: DurableScope & {
+    conversationId: number;
+    through: number;
+    sourceProductSessionId: string;
+  },
 ): Promise<{ conversationId: number; entryCount: number }> {
   if (target.tenantId !== source.tenantId || target.sessionId === source.sessionId)
     throw new Error("Fork must create an independent Session in the same tenant");
@@ -157,15 +164,20 @@ export async function importForkHistory(
   });
   const session = createSession(storage);
   try {
-    const fork = await session.commit(
-      (change) =>
-        change.forkConversation(
-          source.conversationId as ConversationId,
-          source.through as EntryId,
-          { ownership: { kind: "ownerless" } },
-        ),
-      BACKGROUND_CONTEXT,
-    );
+    const fork = await session.commit(async (change) => {
+      const provenance = await change.doc(ForkProvenanceDocument);
+      const fork = await change.forkConversation(
+        source.conversationId as ConversationId,
+        source.through as EntryId,
+        { ownership: { kind: "ownerless" } },
+      );
+      provenance.origin = {
+        sessionId: target.sessionId,
+        sourceSessionId: source.sourceProductSessionId,
+        sourceEntryId: String(source.through),
+      };
+      return fork;
+    }, BACKGROUND_CONTEXT);
     return { conversationId: fork.id, entryCount: entries };
   } finally {
     await session.close(BACKGROUND_CONTEXT);

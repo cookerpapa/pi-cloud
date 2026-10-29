@@ -1276,6 +1276,7 @@ export class ConversationTreeService {
             {
               tenantId,
               sessionId: bindings[0]!.piSessionId,
+              sourceProductSessionId: sourceSessionId,
               conversationId: Number(bindings[0]!.piConversationId),
               through: Number(request.entryId),
             },

@@ -699,7 +699,12 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
         importForkHistory(
           tx,
           { tenantId: scope.tenantId, sessionId: independentId },
-          { ...nativeScope, conversationId: 1, through: entry.id },
+          {
+            ...nativeScope,
+            sourceProductSessionId: nativeScope.sessionId,
+            conversationId: 1,
+            through: entry.id,
+          },
         ),
       );
     const otherTenant = await createPrivateTenant(database, {

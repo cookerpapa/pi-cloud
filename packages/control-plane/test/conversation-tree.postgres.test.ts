@@ -16,6 +16,8 @@ import { ConversationTreeService } from "../src/conversation-tree-service.ts";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
 import { readCanonicalPiTurnTranscripts } from "../../runtime-core/src/canonical-pi-conversation.ts";
 import { up as backfillNavigation } from "../../database/src/migrations/181_durable_navigation_index.ts";
+import { FORK_PROVENANCE_DOCUMENT } from "@pi-cloud/protocol";
+import { upgradeForkProvenance } from "../src/upgrade-fork-provenance.ts";
 
 const endpoint = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 
@@ -126,6 +128,61 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
     const tree = () => service.tree(tenant.tenantId, session.sessionId, "focus");
     return { ...tenant, project, store, session, service, turn, tree };
   }
+
+  it("seeds pre-upgrade Fork identity once through cold native Storage", async () => {
+    const f = await fixture(),
+      source = await f.turn("Source", "completed");
+    const fork = await f.store.createSession(
+      f.project.projectId,
+      f.project.workspaceId,
+      "Previous Fork",
+      "elastic",
+    );
+    await appendNativeFixture(db, { tenantId: f.tenantId, sessionId: fork.sessionId }, [
+      { kind: "pi.user", model: [{ role: "user", content: "Source", timestamp: 1 }] },
+    ]);
+    await db
+      .updateTable("sessions")
+      .set({
+        conversation_parent_session_id: f.session.sessionId,
+        conversation_fork_turn_id: source.turnId,
+        conversation_fork_entry_id: source.user.id,
+      })
+      .where("id", "=", fork.sessionId)
+      .execute();
+    expect(await upgradeForkProvenance(db)).toBe(1);
+    const projection = new DurablePostgresProjection(
+      db,
+      { tenantId: f.tenantId, sessionId: fork.sessionId },
+      undefined,
+      "references",
+    );
+    const storage = await PublishedDurableStorage.open({
+      projection,
+      publish: async () => {
+        throw new Error("Read only");
+      },
+      waitProjected: async () => {},
+    });
+    const session = createSession(storage);
+    try {
+      expect(
+        await session.snapshot(defineDoc(FORK_PROVENANCE_DOCUMENT), BACKGROUND_CONTEXT),
+      ).toEqual({
+        origin: {
+          sessionId: fork.sessionId,
+          sourceSessionId: f.session.sessionId,
+          sourceEntryId: source.user.id,
+        },
+      });
+    } finally {
+      await session.close(BACKGROUND_CONTEXT);
+    }
+    const head = await projection.head();
+    expect(await upgradeForkProvenance(db)).toBe(0);
+    expect(await projection.head()).toEqual(head);
+    await projection.rebuild();
+  });
 
   it("reads only navigation bodies but preserves the complete Tool-heavy prefix in a paged Fork", async () => {
     const f = await fixture(),

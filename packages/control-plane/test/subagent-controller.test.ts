@@ -4,6 +4,7 @@ import { SubagentController } from "../src/subagent-controller.ts";
 import type { SubagentHostRequest } from "@pi-cloud/protocol";
 import type { ControlToolOutcome } from "../src/control-tool-dispatcher.ts";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
+import { randomUUID } from "node:crypto";
 
 let f: Awaited<ReturnType<typeof nativeSubagentFixture>>;
 const inputs: Extract<SubagentHostRequest, { action: "input" }>[] = [];
@@ -226,5 +227,68 @@ it("keeps infrastructure uncertainty retryable but settles invalid targets and o
     await expect(fail.executeTool(uncertain, () => true)).rejects.toThrow("delivery unconfirmed");
   } finally {
     await fail.close();
+  }
+});
+
+it("rejects old child IDs from a different Fork family without changing the source child", async () => {
+  const run = await f.command({ task: "Still owned by the original family" });
+  await host.executeTool(run, () => true);
+  const before = inputs.length;
+  for (const args of [
+    { action: "status", target: run.operationId },
+    { action: "wait", target: run.operationId },
+    { action: "cancel", target: run.operationId },
+    { action: "send", target: run.operationId, message: "Do not deliver", delivery: "steer" },
+  ]) {
+    const call = await f.command(args);
+    const outcome = await host.executeTool(
+      { ...call, scope: { ...call.scope, piSessionId: randomUUID() } },
+      () => true,
+    );
+    expect(outcome).toMatchObject({
+      isError: true,
+      result: { content: [{ type: "text", text: expect.stringContaining("historical") }] },
+    });
+  }
+  expect(inputs).toHaveLength(before);
+  const actual = await f.database
+    .selectFrom("subagent_executions")
+    .select("state")
+    .where("id", "=", run.operationId)
+    .executeTakeFirstOrThrow();
+  expect(actual.state).toBe("running");
+  await f.settle(run.operationId);
+});
+
+it("addresses the actual Run owner as main when its native Conversation is not one", async () => {
+  const start = await f.command({ task: "Report to the forked main Agent" });
+  await host.executeTool(start, () => true);
+  const child = f.children.get(start.operationId)!;
+  const root = await f.database
+    .selectFrom("sessions")
+    .select("pi_conversation_id")
+    .where("id", "=", f.scope.sessionId)
+    .executeTakeFirstOrThrow();
+  const nativeId = f.allocateId();
+  await f.append([{ type: "conversation", value: { id: nativeId } }]);
+  await f.database
+    .updateTable("sessions")
+    .set({ pi_conversation_id: String(nativeId) })
+    .where("id", "=", f.scope.sessionId)
+    .execute();
+  try {
+    const call = await f.command(
+      { action: "send", target: "main", message: "Progress", delivery: "follow_up" },
+      { ...child.request.view, conversationId: child.conversationId },
+    );
+    expect(value(await host.executeTool(call, () => true))).toMatchObject({ state: "accepted" });
+    expect(inputs.at(-1)).toMatchObject({ conversationId: nativeId });
+  } finally {
+    await f.database
+      .updateTable("sessions")
+      .set({ pi_conversation_id: root.pi_conversation_id })
+      .where("id", "=", f.scope.sessionId)
+      .execute();
+    await f.settle(start.operationId);
   }
 });

@@ -17,6 +17,9 @@ import { PublishedDurableStorage } from "../src/durable/published-storage.ts";
 import { DurablePostgresProjection } from "../src/durable/postgres-projection.ts";
 import { importForkHistory } from "../src/durable/history-import.ts";
 import { reapUnreferencedEntryBodies } from "../src/durable/shared-entry-bodies.ts";
+import { FORK_PROVENANCE_DOCUMENT } from "@pi-cloud/protocol";
+
+const ForkProvenanceDocument = defineDoc(FORK_PROVENANCE_DOCUMENT);
 
 let admin: Kysely<Database>, db: Kysely<Database>;
 const name = `entry_bodies_${randomUUID().replaceAll("-", "")}`;
@@ -68,6 +71,14 @@ it("shares ancestor payloads across independent Sessions and collects only the l
   const sourceStore = await source.open();
   await sourceStore.commit([{ type: "conversation", value: { id: 1 as never } }], context);
   const sourceSession = createSession(sourceStore);
+  await sourceSession.commit(async (tx) => {
+    const state = await tx.doc(ForkProvenanceDocument);
+    state.origin = {
+      sessionId: source.scope.sessionId,
+      sourceSessionId: randomUUID(),
+      sourceEntryId: "2",
+    };
+  }, context);
   const entries: EntryRecord[] = [];
   for (const label of ["A", "B", "C", "D", "E"])
     entries.push(
@@ -99,6 +110,7 @@ it("shares ancestor payloads across independent Sessions and collects only the l
   const imported = await db.transaction().execute((tx) =>
     importForkHistory(tx, target.scope, {
       ...source.scope,
+      sourceProductSessionId: source.scope.sessionId,
       conversationId: nativeChild.id,
       through: final.id,
     }),
@@ -135,6 +147,14 @@ it("shares ancestor payloads across independent Sessions and collects only the l
   await target.projection.rebuild();
   const read = await target.open();
   try {
+    const copied = createSession(read);
+    expect(await copied.snapshot(ForkProvenanceDocument, context)).toEqual({
+      origin: {
+        sessionId: target.scope.sessionId,
+        sourceSessionId: source.scope.sessionId,
+        sourceEntryId: String(final.id),
+      },
+    });
     const actual = [
       ...(
         await read.scanEntries(
@@ -303,7 +323,12 @@ it("retains native asOf semantics at inherited anchors while ignoring active sou
     .transaction()
     .setIsolationLevel("repeatable read")
     .execute((tx) =>
-      importForkHistory(tx, target.scope, { ...source.scope, conversationId: 1, through: c.id }),
+      importForkHistory(tx, target.scope, {
+        ...source.scope,
+        sourceProductSessionId: source.scope.sessionId,
+        conversationId: 1,
+        through: c.id,
+      }),
     );
   expect((await source.projection.head()).nextId).toBeLessThan(
     (await target.projection.head()).nextId,
@@ -341,6 +366,14 @@ it("reorganizes a closed multi-Conversation family without losing child ancestry
   const store = await source.open();
   await store.commit([{ type: "conversation", value: { id: 1 as never } }], context);
   const session = createSession(store);
+  const origin = {
+    sessionId: source.scope.sessionId,
+    sourceSessionId: randomUUID(),
+    sourceEntryId: "57",
+  };
+  await session.commit(async (tx) => {
+    (await tx.doc(ForkProvenanceDocument)).origin = origin;
+  }, context);
   const entries: EntryRecord[] = [];
   for (const label of ["A", "B", "C", "D", "E"])
     entries.push(
@@ -371,6 +404,9 @@ it("reorganizes a closed multi-Conversation family without losing child ancestry
   expect(await target.projection.get(childEntry.id)).toBeDefined();
   await target.projection.rebuild();
   const reopened = await target.open();
+  expect(await createSession(reopened).snapshot(ForkProvenanceDocument, context)).toEqual({
+    origin,
+  });
   const visible = await reopened.scanEntries({ conversationId: root.id }, 100, undefined, context);
   expect([...visible.items].reverse().map((e) => (e.data as { label: string }).label)).toEqual([
     "A",

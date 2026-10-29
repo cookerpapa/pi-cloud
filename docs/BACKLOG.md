@@ -1,5 +1,16 @@
 # Maintained backlog
 
+## Single-path shared Fork implementation — in progress
+
+[ADR-0287](adr/0287-single-path-shared-forks.md) retains the selected visible path
+and already-returned results, without importing old child histories or runtimes.
+The first slice adds stable Fork provenance and a native system section, verifies
+cold reopen/compaction/family pruning and prevents old child IDs crossing family
+boundaries. `main` messaging follows the actual Run owner, including non-1 native
+Conversation IDs. Cold bootstrap seeds existing Forks through public Storage.
+Shared history/read/retention integration and the matched live-verified migration
+remain in progress; the shared-directory prototype is not deployed.
+
 ## Shared history roots — prototype measured; migration remains gated
 
 [ADR-0286](adr/0286-shared-history-root-prototype.md) has a runnable isolated PG

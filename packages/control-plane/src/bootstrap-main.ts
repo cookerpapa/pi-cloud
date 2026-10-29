@@ -1,4 +1,5 @@
 import { upgradeIndependentHistories } from "./upgrade-independent-history.ts";
+import { upgradeForkProvenance } from "./upgrade-fork-provenance.ts";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
 import { pathToFileURL } from "node:url";
 import { bootstrapProductionDatabase, ProductionBootstrapError } from "./production-bootstrap.ts";
@@ -21,6 +22,7 @@ export async function runProductionBootstrap(): Promise<void> {
   try {
     const migration = await runMigrations(database, "up");
     const independentHistories = await upgradeIndependentHistories(database);
+    const forkProvenance = await upgradeForkProvenance(database);
     const result = await bootstrapProductionDatabase(database, bootstrapConfig, apiToken);
     process.stdout.write(
       `${JSON.stringify({
@@ -30,6 +32,7 @@ export async function runProductionBootstrap(): Promise<void> {
         })),
         bootstrap: result,
         independentHistories,
+        forkProvenance,
       })}\n`,
     );
   } finally {

@@ -1125,6 +1125,15 @@ native Conversations, document baselines and image references. Native `asOf` and
 `current` fork policies remain authoritative; `initial`, Tasks and Session grants
 do not become execution authority in a manual Fork. Its frozen display metadata
 is canonical retained data, not a disposable cache or a cloud input queue.
+Fork retains only the selected Agent's visible path and results already returned
+to it; sibling/descendant transcripts and pending inputs are not imported. The
+source family continues independently. A native Session-scoped provenance document
+renders a public Pi system section before model requests, so inherited Agent IDs
+are understood as historical. New children belong to the new family; their `main`
+target is the current Run owner, not a hard-coded native Conversation ID. Cold
+family reorganization preserves provenance, while another manual Fork replaces
+it. [ADR-0287](adr/0287-single-path-shared-forks.md) tracks this identity change
+and the separate shared-directory storage implementation still in progress.
 Tail pruning affects the selected physical family; it neither prunes a manual
 Fork nor waits for that Fork to finish. Unsettled native work, pending input
 returns, upload pins and unclosed writers still prevent unsafe cold mutation.
