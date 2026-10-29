@@ -2,13 +2,15 @@
 
 [Single-path shared Forks](adr/0287-single-path-shared-forks.md) implements shared
 native/presentation roots, independent source retirement and explicit runtime
-identity. Schema 204 is under final verification; deployment remains pending.
+identity. Matched `shared-forks-20261030` is deployed on schema 204 and passes
+real Fork, Cube/browser, native recovery and original-asset preservation checks.
 [Measurements and verification](reports/single-path-shared-forks-20261030.md).
 
 [Shared history root validation](adr/0286-shared-history-root-prototype.md) has a
 [measured isolated prototype](reports/shared-history-root-prototype-20261029.md).
-It demonstrates fast directory Forks but has outstanding native-contract and
-read/write performance gates; production remains on ADR-0284/0285.
+It demonstrated fast directory Forks with incomplete native-contract and
+read/write performance evidence. ADR-0287 supersedes that isolated prototype;
+its delivery report records the measured ordinary-write cost.
 
 [Batched native Fork imports](adr/0285-batched-native-history-forks.md) compares
 Git, Temporal and Dolt reference sharing and tracks measured PG import/metadata

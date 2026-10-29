@@ -1,5 +1,14 @@
 # Matched release procedure
 
+ADR-0287 requires schema 204 and a drained matched transition. Preserve existing
+native bytes, Inbox/current values, images, machine intent and Workspace Volumes.
+Bootstrap converts retained records, source presentation and image references
+once; it must not revive pruned data on a later startup. Run native Storage and
+Fork/GC contracts, the 1 GiB composed browser/Fork check below, and the independent
+Fork, Cube/browser and native-input recovery fixtures after deployment. Collection
+is incremental: a batch's returned body count does not mean its reference graph
+is fully collected. [Measurements and delivery](reports/single-path-shared-forks-20261030.md).
+
 ADR-0285 retains schema 203 and the existing hash/API protocols. Its private cold
 import optimization changes the shared storage adapter and uses the matched path.
 Run `scripts/run-fork-performance-check.mjs` inside the isolated PostgreSQL test

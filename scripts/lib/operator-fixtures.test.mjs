@@ -9,7 +9,9 @@ import {
   settleOwnedAcceptanceRuns,
 } from "./owned-acceptance-cleanup.mjs";
 import { ControlPlaneStore } from "../../packages/control-plane/src/control-plane-store.ts";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { sql } from "kysely";
+import { DurablePostgresProjection } from "../../packages/pi-session-postgres/src/durable/index.ts";
 import { PostgresImageAttachmentStore } from "../../packages/session-attachments/src/store.ts";
 
 let pg, database, api, settings, actor;
@@ -215,6 +217,97 @@ it("retains an owned tenant while its image writer has no completion proof", asy
     complete.resolve();
     await writing;
   }
+});
+
+it("removes only the settled fixture's retained image edges before its objects", async () => {
+  const tenant = await createPrivateTenant(database, {
+    slug: `release-acceptance-history-${randomUUID()}`,
+    ownerDisplayName: "Retained fixture",
+  });
+  const deleted = [],
+    blobs = { put: async () => {}, delete: async (key) => deleted.push(key) },
+    images = new PostgresImageAttachmentStore(database, blobs);
+  const image = await images.put(
+      { tenantId: tenant.tenantId },
+      Buffer.from("fixture"),
+      "image/png",
+    ),
+    operatorImage = await images.put(
+      { tenantId: actor.tenantId },
+      Buffer.from("operator"),
+      "image/png",
+    );
+  const sessionId = randomUUID();
+  await database
+    .insertInto("pi_sessions")
+    .values({ tenant_id: tenant.tenantId, id: sessionId })
+    .execute();
+  const projection = new DurablePostgresProjection(database, {
+    tenantId: tenant.tenantId,
+    sessionId,
+  });
+  await projection.apply({
+    seq: 1,
+    nextId: 3,
+    writes: [
+      { type: "conversation", value: { id: 1 } },
+      {
+        type: "entry",
+        value: {
+          id: 2,
+          conversationId: 1,
+          kind: "fixture",
+          image: { type: "pi_cloud_image_v1", attachment: image },
+        },
+      },
+    ],
+  });
+  const header = randomUUID(),
+    text = JSON.stringify({ input_uploads: [{ image }] });
+  await sql`insert into pi_history_bodies(tenant_id,id,body_kind,sha256,payload_text,payload_bytes)
+    values(${tenant.tenantId}::uuid,${header}::uuid,'metadata',${createHash("sha256").update(text).digest("hex")},${text},${Buffer.byteLength(text)})`.execute(
+    database,
+  );
+  await sql`insert into pi_history_header_images(tenant_id,body_id,image_id) values(${tenant.tenantId}::uuid,${header}::uuid,${image.id}::uuid)`.execute(
+    database,
+  );
+  const block = randomUUID(),
+    product = randomUUID(),
+    turn = randomUUID();
+  await sql`insert into pi_history_blocks(tenant_id,id,source_session_id,source_pi_session_id,owner_pi_session_id,turn_id,origin_session_id,position,header_body_id)
+    values(${tenant.tenantId}::uuid,${block}::uuid,${product}::uuid,${sessionId},${sessionId},${turn}::uuid,${product}::uuid,1,${header}::uuid)`.execute(
+    database,
+  );
+  await sql`insert into pi_history_frames(tenant_id,block_id,seq,ordinal,record_id,entry_id,entry_record_id,body_id,body_bytes)
+    select tenant_id,${block}::uuid,seq,ordinal,record_id,record_id,id,${header}::uuid,${Buffer.byteLength(text)}
+    from pi_history_records where tenant_id=${tenant.tenantId}::uuid and record_id=2`.execute(
+    database,
+  );
+  expect(
+    (
+      await sql`select * from pi_history_record_images where tenant_id=${tenant.tenantId}::uuid`.execute(
+        database,
+      )
+    ).rows,
+  ).toHaveLength(1);
+  await expect(purgeOwnedAcceptanceTenant(database, tenant, blobs)).rejects.toThrow(
+    "settled/purged",
+  );
+  expect(deleted).toEqual([]);
+  await database.deleteFrom("pi_sessions").where("tenant_id", "=", tenant.tenantId).execute();
+  expect(await purgeOwnedAcceptanceTenant(database, tenant, blobs)).toEqual({
+    tenantRemoved: true,
+    imagesRemoved: 1,
+  });
+  expect(deleted).toEqual([`session-images/${tenant.tenantId}/${image.id}`]);
+  expect(
+    await database
+      .selectFrom("session_image_objects")
+      .select("id")
+      .where("tenant_id", "=", actor.tenantId)
+      .where("id", "=", operatorImage.id)
+      .execute(),
+  ).toHaveLength(1);
 });
 
 it.each(["release-acceptance-", "native-input-", "cube-check-"])(

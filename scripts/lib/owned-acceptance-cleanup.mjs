@@ -56,6 +56,8 @@ export async function purgeOwnedAcceptanceTenant(database, tenant, blobs) {
   const assertSettled = async (db) => {
     const { rows } = await sql`select
       (select count(*) from sessions where tenant_id=${tenant.tenantId}::uuid)::int as sessions,
+      (select count(*) from pi_sessions where tenant_id=${tenant.tenantId}::uuid)::int as native_sessions,
+      (select count(*) from session_leases where tenant_id=${tenant.tenantId}::uuid and released_at is null)::int as writers,
       (select count(*) from workspaces where tenant_id=${tenant.tenantId}::uuid and (deleted_at is null or storage_purged_at is null))::int as workspaces,
       (select count(*) from outbox where tenant_id=${tenant.tenantId}::uuid and published_at is null)::int as controls,
       (select count(*) from session_image_references where tenant_id=${tenant.tenantId}::uuid)::int as images,
@@ -81,6 +83,13 @@ export async function purgeOwnedAcceptanceTenant(database, tenant, blobs) {
   await database.transaction().execute(async (tx) => {
     await assertSettled(tx);
     for (const table of [
+      // All owned Sessions are gone. Remove the remaining graph in dependency
+      // order instead of relying on the tenant's cascades or waiting for GC.
+      "pi_history_view_nodes",
+      "pi_history_blocks",
+      "pi_history_nodes",
+      "pi_history_records",
+      "pi_history_header_images",
       "session_image_objects",
       "outbox",
       "sandbox_http_services",

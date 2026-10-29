@@ -1,8 +1,9 @@
 # ADR-0287: Single-path Forks with explicit runtime identity
 
-Status: accepted for implementation, 2026-10-29. Implementation and rollout are
-in progress; ADR-0284/0285 remain the deployed storage representation until the
-matched transition is verified.
+Status: accepted and implemented. Matched `shared-forks-20261030` is deployed on
+schema 204, application Helm revision 125; live acceptance is verified.
+ADR-0284/0285 describe the preceding storage representation.
+[Measurements and delivery](../reports/single-path-shared-forks-20261030.md).
 
 ## Product boundary
 

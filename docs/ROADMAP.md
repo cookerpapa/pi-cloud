@@ -1,26 +1,28 @@
 # Implementation roadmap
 
-## Single-path shared Fork implementation — in progress
+## Single-path shared Fork implementation — deployed and verified
 
 - [x] Verify selected-path inheritance and model-visible Fork identity.
-- [ ] Implement shared bases with complete native Storage/current-state semantics.
-- [ ] Unify retained reads, images, independent pruning and reference collection.
-- [ ] Complete full-size, fault and matched live acceptance; remove obsolete paths.
+- [x] Implement shared bases with complete native Storage/current-state semantics.
+- [x] Unify retained reads, images, independent pruning and reference collection.
+- [x] Complete full-size, fault and matched live acceptance; remove obsolete paths.
 
-[ADR-0287](adr/0287-single-path-shared-forks.md).
+[ADR-0287](adr/0287-single-path-shared-forks.md). Matched `shared-forks-20261030`,
+schema 204 / Helm 125. [Measurements, costs and delivery](reports/single-path-shared-forks-20261030.md).
 
-## Shared history root validation — measured; production gates open
+## Shared history root validation — completed experiment
 
 - [x] Record prototype boundaries and build-versus-adopt evidence in ADR-0286.
 - [x] Implement isolated PG prefix ownership, bounded directory reads and collection.
 - [x] Verify scoped native context and concurrency/failure behavior without changing Pi core.
 - [x] Measure large/nested Forks and ordinary append/read/GC/WAL costs; record pass/fail gates.
-- [ ] Remove the Entry-order restriction and verify full native Storage semantics.
-- [ ] Meet the agreed read/write guardrails and complete production integration gates.
+- [x] Remove the Entry-order restriction and verify full native Storage semantics in ADR-0287.
+- [x] Measure ordinary-write costs and carry them into the production decision and delivery report.
 
 [Prototype results](reports/shared-history-root-prototype-20261029.md). The
-prototype is complete as an experiment; the production migration is not complete
-or deployed.
+prototype is complete as an experiment and superseded by the schema-204
+implementation above. The earlier 10% performance warning is not a passed metric;
+the current report records the absolute write cost and incremental cleanup limit.
 
 ## Batched independent Fork imports — deployed
 

@@ -1172,7 +1172,9 @@ are drained; bootstrap work is marked once and cannot reimport later pruned data
 [ADR-0284](adr/0284-independent-forks-and-history-retention.md) and
 [ADR-0285](adr/0285-batched-native-history-forks.md) describe the prior copying
 representation; [ADR-0286](adr/0286-shared-history-root-prototype.md) is the isolated
-experiment that preceded this implementation. Matched rollout remains pending.
+experiment that preceded this implementation. Matched `shared-forks-20261030`
+is deployed on schema 204; [verification and costs](reports/single-path-shared-forks-20261030.md)
+separate source measurements from live acceptance.
 World State compares against its native document baseline.
 A verification reminder is derived from committed current-Run entries at native
 yield; neither delayed display callbacks nor Worker replacement can duplicate it.

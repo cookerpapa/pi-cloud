@@ -1,28 +1,34 @@
 # Maintained backlog
 
-## Single-path shared Fork implementation — in progress
+## Single-path shared Fork implementation — deployed and verified
 
 [ADR-0287](adr/0287-single-path-shared-forks.md) retains the selected visible path
 and already-returned results, without importing old child histories or runtimes.
-The identity slice is committed and pushed. Shared native bases, source display
-frames, independent header versions and reference collection are implemented.
-The 1 GiB service fixture measured 522 ms for a first Fork and 323 ms for a nested
-Fork, with cold history reads of 386/249 ms; these are isolated measurements, not
-live rollout acceptance. Native contracts and targeted source deletion/pruning,
-continued-child and schema-203 conversion checks are being completed. Deep-chain,
-ordinary write/read, full regression, failure and matched live gates remain open.
+Shared native bases, source display frames, independent header versions and
+reference collection are deployed as `shared-forks-20261030` (schema 204, Helm 125).
+The 1 GiB service/context fixture measured 765/373 ms for first/nested Forks and
+114/92 ms for cold native context reads. The full browser/Fork/prune fixture,
+native contracts, schema-203 conversion and 1,000-Fork chain pass. Composed
+workspace/fault results and the roughly 8 ms ordinary-write increase are recorded
+in [delivery evidence](reports/single-path-shared-forks-20261030.md).
+Original history, files, images and configuration pass preservation checks.
+Real Fork, full Cube/browser and all five native recovery checks pass, including
+their owned-resource cleanup.
+Acceptance helpers now clean retained history in dependency order after verified
+physical cleanup. Operational follow-up: measure large-history GC drain time
+before changing the existing minute timer and per-batch budget.
 
-## Shared history roots — prototype measured; migration remains gated
+## Shared history roots — completed experiment, superseded by ADR-0287
 
 [ADR-0286](adr/0286-shared-history-root-prototype.md) has a runnable isolated PG
 prototype and [measurements](reports/shared-history-root-prototype-20261029.md).
 The 1 GiB directory Fork p95 is 12.0 ms with no old body reads/new Entry rows;
 1,000 nested Forks have height 11. Fourteen scoped checks pass, but this is not
-full native Storage conformance. Read/write p95 does not consistently meet 10%,
-deep inherited pages are 3.17 ms / 32% slower, and native out-of-order ID commits
-are not supported. Settle those semantics and measure a common batched resolver
-before integrating mutable state, Kafka, presentation and real S3 ownership.
-No runtime imports, production migrations or serving artifacts changed.
+full native Storage conformance. The prototype's ordering and integration limits
+are addressed by ADR-0287. Its read/write p95 did not consistently meet the 10%
+warning threshold; current production measurements report absolute cost rather
+than claiming that threshold passed. The experiment itself changed no serving
+artifacts; the subsequent schema-204 implementation replaces its copying path.
 
 ## Large-history Fork performance — deployed
 

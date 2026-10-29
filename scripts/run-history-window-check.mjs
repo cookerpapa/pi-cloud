@@ -17,6 +17,8 @@ import {
 import { DurablePostgresProjection } from "../packages/pi-session-postgres/src/durable/index.ts";
 import { ConversationTreeService } from "../packages/control-plane/src/conversation-tree-service.ts";
 import { reapUnreferencedEntryBodies } from "../packages/pi-session-postgres/src/durable/index.ts";
+import { captureNativePresentation } from "../packages/runtime-core/src/frozen-history.ts";
+import { settleHistoryTurn } from "../packages/runtime-core/src/presentation-settlement.ts";
 import { SessionLiveView } from "../packages/runtime-core/src/session-live-view.ts";
 import {
   createPiCloudEventFactory,
@@ -92,16 +94,24 @@ try {
   const publish = async (writes, scope = run) => {
     const bytes = writes.reduce((n, w) => n + Buffer.byteLength(JSON.stringify(w)), 0);
     logical += bytes;
-    await projection.apply(
-      { seq: ++seq, nextId, writes },
-      writes.map((w) => ({
-        recordId: w.value.id,
-        sessionId: session.sessionId,
-        runId: scope.runId,
-        turnId: scope.turnId,
-      })),
-      { topic: "history-acceptance-fixture", partition: 0, offset: BigInt(seq) },
-    );
+    const batch = { seq: ++seq, nextId, writes };
+    await db.transaction().execute(async (tx) => {
+      await projection.applyIn(
+        tx,
+        batch,
+        writes.map((w) => ({
+          recordId: w.value.id,
+          sessionId: session.sessionId,
+          runId: scope.runId,
+          turnId: scope.turnId,
+        })),
+      );
+      await captureNativePresentation(
+        tx,
+        { tenantId: tenant.tenantId, sessionId: binding.pi_session_id },
+        seq,
+      );
+    });
   };
   const usage = {
     input: 0,
@@ -221,7 +231,10 @@ try {
     .set({ state: "idle", next_event_seq: String(seq + 2) })
     .where("id", "=", session.sessionId)
     .execute();
-  await sql`analyze pi_durable_writes; analyze pi_history_bodies; analyze pi_durable_records; analyze pi_durable_commits`.execute(
+  await db
+    .transaction()
+    .execute((tx) => settleHistoryTurn(tx, tenant.tenantId, session.sessionId, run.turnId));
+  await sql`analyze pi_history_records; analyze pi_history_bodies; analyze pi_durable_owned_records; analyze pi_durable_commits`.execute(
     db,
   );
   report.seed = {
@@ -236,7 +249,7 @@ try {
   const pointDb = db.withPlugin({
     transformQuery({ node, queryId }) {
       const query = db.getExecutor().compileQuery(node, queryId);
-      if (query.sql.includes("pi_durable_record_bodies")) pointQuery = query;
+      if (query.sql.includes("pi_history_bodies")) pointQuery = query;
       return node;
     },
     async transformResult({ result }) {
@@ -251,6 +264,7 @@ try {
     "references",
   ).get(final);
   const pointMs = performance.now() - pointAt;
+  assert(pointQuery, "Native point read did not resolve its retained body");
   const pointPlan = await db.executeQuery({
     ...pointQuery,
     sql: "explain (analyze,format json) " + pointQuery.sql,
@@ -334,7 +348,7 @@ try {
   const blocker = new Pool({ connectionString: endpoint.toString(), max: 1 });
   try {
     await blocker.query("begin");
-    await blocker.query("lock table pi_durable_log in access exclusive mode");
+    await blocker.query("lock table pi_history_bodies in access exclusive mode");
     const abort = new AbortController();
     const pending = fetch(`${apiUrl}/v1/conversations/${session.sessionId}`, {
       signal: abort.signal,
@@ -606,14 +620,12 @@ try {
         const toolKey = await page.evaluate(
           "document.querySelector('.product-large-code').closest('[data-history-row-key]').dataset.historyRowKey",
         );
-        await page.evaluate(`document.querySelector('.product-chat-scroll').scrollTop=${2200}`);
-        await page.wait(300);
-        assert(
-          !(await page.evaluate(
-            `Boolean(document.querySelector('[data-history-row-key="${toolKey}"]'))`,
-          )),
-          "Tool row did not leave virtual range",
+        // A search jump owns a short layout guard. Model a reading gesture to
+        // leave it, then wait for actual eviction rather than a fixed pixel/time.
+        await page.evaluate(
+          `(()=>{const p=document.querySelector('.product-chat-scroll');p.dispatchEvent(new WheelEvent('wheel',{bubbles:true,deltaY:-8000}));p.scrollTop=0;})()`,
         );
+        await page.waitFor(`!document.querySelector('[data-history-row-key="${toolKey}"]')`, 10000);
         await page.evaluate(
           "document.querySelector('.product-chat-scroll').scrollTop=document.querySelector('.product-chat-scroll').scrollHeight",
         );
@@ -629,6 +641,10 @@ try {
         );
         await page.waitFor("document.querySelector('.product-history-hit')", 30000);
         await page.evaluate("document.querySelector('.product-history-hit').click()");
+        await page.waitFor(
+          `(()=>{const p=document.querySelector('.product-chat-scroll');if(!p?.textContent.includes(${JSON.stringify("History marker " + (units - 32))}))return false;const top=p.getBoundingClientRect().top;return [...p.querySelectorAll('[data-history-row-key]')].some(n=>n.getBoundingClientRect().bottom<=top+1);})()`,
+          30000,
+        );
         await page.wait(500);
         const resizedBefore = await view();
         const inserted = await page.evaluate(
@@ -714,6 +730,9 @@ try {
           .set({ state: "idle", next_event_seq: String(ended.seq + 1) })
           .where("id", "=", session.sessionId)
           .execute();
+        await db
+          .transaction()
+          .execute((tx) => settleHistoryTurn(tx, tenant.tenantId, session.sessionId, next.turnId));
         live.accept(tenant.tenantId, ended);
         const after = await view();
         report.liveWhileBrowsing = { before: anchor, after };
@@ -743,7 +762,7 @@ try {
     },
   );
   if (process.env.PI_CLOUD_FORK_RETENTION_CHECK === "1") {
-    phase("fork and retire real 1 GiB native history");
+    phase("fork and retire configured native history");
     const tree = new ConversationTreeService({ database: db });
     const resident = [];
     const sampler = setInterval(() => resident.push(process.memoryUsage().rss), 100);
@@ -819,13 +838,23 @@ try {
         ).length,
         0,
       );
-      let collected = 0;
+      let collected = 0,
+        collectionPasses = 0;
+      const collectionDeadline = performance.now() + 120000;
+      let after;
       for (;;) {
-        const n = await reapUnreferencedEntryBodies(db, 1024);
-        collected += n;
-        if (n < 1024) break;
+        collected += await reapUnreferencedEntryBodies(db, 1024);
+        collectionPasses++;
+        after = await inventory();
+        if (after.objects === before.objects - 600) break;
+        // A batch can reclaim only metadata before it reaches Entry bodies.
+        // Its body count is not a completion signal for the retained graph.
+        assert(after.objects > before.objects - 600, "Collection removed retained entries");
+        assert(
+          performance.now() < collectionDeadline,
+          "Discarded live suffix did not become collectible",
+        );
       }
-      const after = await inventory();
       assert.equal(
         after.objects,
         before.objects - 600,
@@ -855,6 +884,7 @@ try {
         metadata,
         referenceRows,
         collected,
+        collectionPasses,
         firstMs,
         nestedMs,
         pruneMs,
