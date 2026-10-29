@@ -299,15 +299,35 @@ export class ConversationTreeService {
   readonly #database: Kysely<Database>;
   readonly #readDatabase: Kysely<Database>;
   readonly #idGenerator: () => string;
+  readonly #onForkTiming:
+    ((stage: "native" | "presentation" | "images", milliseconds: number) => void) | undefined;
 
   constructor(options: {
     database: Kysely<Database>;
     readDatabase?: Kysely<Database>;
     idGenerator?: () => string;
+    onForkTiming?: (stage: "native" | "presentation" | "images", milliseconds: number) => void;
   }) {
     this.#database = options.database;
     this.#readDatabase = options.readDatabase ?? options.database;
     this.#idGenerator = options.idGenerator ?? randomUUID;
+    this.#onForkTiming = options.onForkTiming;
+  }
+
+  async #measureFork<T>(
+    stage: "native" | "presentation" | "images",
+    work: () => Promise<T>,
+  ): Promise<T> {
+    if (!this.#onForkTiming) return work();
+    const started = performance.now();
+    try {
+      return await work();
+    } finally {
+      // Diagnostics cannot change a mutation's commit/rollback result.
+      try {
+        this.#onForkTiming(stage, performance.now() - started);
+      } catch {}
+    }
   }
 
   async tree(
@@ -1249,26 +1269,32 @@ export class ConversationTreeService {
             id: childSessionId,
           })
           .executeTakeFirstOrThrow();
-        const imported = await importForkHistory(
-          transaction,
-          { tenantId, sessionId: childSessionId },
-          {
-            tenantId,
-            sessionId: bindings[0]!.piSessionId,
-            conversationId: Number(bindings[0]!.piConversationId),
-            through: Number(request.entryId),
-          },
+        const imported = await this.#measureFork("native", () =>
+          importForkHistory(
+            transaction,
+            { tenantId, sessionId: childSessionId },
+            {
+              tenantId,
+              sessionId: bindings[0]!.piSessionId,
+              conversationId: Number(bindings[0]!.piConversationId),
+              through: Number(request.entryId),
+            },
+          ),
         );
-        const inheritedPosition = await freezeForkHistory(transaction, {
-          tenantId,
-          sourceSessionId,
-          targetSessionId: childSessionId,
-          throughTurnId: request.turnId,
-          throughEntryId: request.entryId,
-        });
-        await retainFrozenImages(transaction, { tenantId, sessionId: childSessionId }, [
-          childSessionId,
-        ]);
+        const inheritedPosition = await this.#measureFork("presentation", () =>
+          freezeForkHistory(transaction, {
+            tenantId,
+            sourceSessionId,
+            targetSessionId: childSessionId,
+            throughTurnId: request.turnId,
+            throughEntryId: request.entryId,
+          }),
+        );
+        await this.#measureFork("images", () =>
+          retainFrozenImages(transaction, { tenantId, sessionId: childSessionId }, [
+            childSessionId,
+          ]),
+        );
         await transaction
           .updateTable("sessions")
           .set({

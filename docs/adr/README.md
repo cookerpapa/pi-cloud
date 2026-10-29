@@ -1,5 +1,9 @@
 # Current architecture decisions
 
+[ADR-0285](0285-batched-native-history-forks.md) is accepted for implementation:
+reuse retained bodies inside PG, batch presentation references and preserve the
+existing native integrity/ownership contracts. Source and live gates are pending.
+
 [ADR-0284](0284-independent-forks-and-history-retention.md) is deployed as
 `independent-forks-final2-20261029` (schema 203, Helm 123): shared immutable bodies,
 independent Fork presentation, closed family replacement and reference-based

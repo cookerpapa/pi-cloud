@@ -21,6 +21,10 @@ asking for another rollout confirmation, unless source-only work is requested.
 This does not waive writer draining, fencing or preservation of accounts,
 configuration and credentials.
 
+Push each completed commit to the configured remote as part of the same work.
+The owner has authorized these pushes; do not leave local-only commits or request
+another push confirmation.
+
 ## Before changing code
 
 Read these files first:

@@ -1,5 +1,9 @@
 # Documentation map
 
+[Batched native Fork imports](adr/0285-batched-native-history-forks.md) compares
+Git, Temporal and Dolt reference sharing and tracks measured PG import/metadata
+optimization. This follow-up is in progress; ADR-0284 remains the deployed contract.
+
 [First-request comparison](reports/first-model-request-comparison-20261028.md)
 compares the pinned Pi provider, PiCloud model path and actual Codex CLI using
 the same installed model route. Large uploads reproduce WebSocket failure and

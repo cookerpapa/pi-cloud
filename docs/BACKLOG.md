@@ -1,5 +1,14 @@
 # Maintained backlog
 
+## Large-history Fork performance — in progress
+
+[ADR-0285](adr/0285-batched-native-history-forks.md) records the Git/Temporal/Dolt/PG
+comparison and the accepted reference-copy slice. The baseline now separates
+native import, frozen presentation and image retention and counts SQL/bytes.
+Implement PG-local reference import with unchanged native hash contracts, batched
+descriptor writes and bounded image selection. Native, concurrency, image and
+1 GiB before/after checks plus the matched rollout remain the completion gate.
+
 ## Main publication and first-request comparison — measured; follow-up tracked
 
 The Durable line is published as `main`; obsolete branches are removed and the

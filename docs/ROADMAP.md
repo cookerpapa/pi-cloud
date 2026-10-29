@@ -1,5 +1,15 @@
 # Implementation roadmap
 
+## Batched independent Fork imports — in progress
+
+- [x] Compare maintained open-source reference-sharing implementations and licenses.
+- [x] Capture phase, SQL and byte baselines on an isolated 1 GiB fixture.
+- [ ] Complete bounded PG reference import and metadata/image batching.
+- [ ] Verify native hashes/rebuild, document semantics and concurrent collection.
+- [ ] Measure final 1 GiB behavior and publish the matched, live-verified release.
+
+[ADR-0285](adr/0285-batched-native-history-forks.md).
+
 ## Independent human Forks and history retention — deployed
 
 [ADR-0284](adr/0284-independent-forks-and-history-retention.md) defines shared
