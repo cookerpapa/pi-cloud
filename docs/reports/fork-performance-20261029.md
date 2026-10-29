@@ -73,3 +73,13 @@ host, first/nested Forks take 103.9 / 73.5 seconds and cold tail retirement take
 both Forks retain their expected history. These timings are not interchangeable
 with the isolated service fixture above. Full repository gates and live rollout
 evidence follow below when complete.
+
+## Release preparation
+
+The first candidate was blocked by the fresh image database on
+`CVE-2026-111497` in the Ubuntu Brotli library. Its findings apply to Cube Master
+and the guest image, not to the Fork algorithm. Pin the distro fixes
+`1.1.0-2ubuntu0.1` (24.04) and `1.0.9-2ubuntu0.1` (22.04), as listed in
+[Ubuntu's advisory](https://ubuntu.com/security/CVE-2026-111497), and rebuild the
+matched artifacts. Do not suppress the finding or weaken the existing image
+gate. This adds no runtime protocol or database change.

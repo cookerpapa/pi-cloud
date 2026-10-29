@@ -1129,12 +1129,16 @@ index 8c2c083..396e215 100644
 diff --git a/CubeMaster/docker/Dockerfile b/CubeMaster/docker/Dockerfile
 --- a/CubeMaster/docker/Dockerfile
 +++ b/CubeMaster/docker/Dockerfile
-@@ -83,6 +83,9 @@
+@@ -83,6 +83,13 @@
      && /tmp/docker-install-volume-deps.sh \
      && rm -f /tmp/docker-install-volume-deps.sh
  
 +# Keep the certificate bundle current without reinstalling the Volume tooling.
 +RUN python3 -m pip install --no-cache-dir --break-system-packages certifi==2026.10.19
++
++# Use the distro's fixed Brotli decoder from its signed archive.
++RUN apt-get update && apt-get install -y --no-install-recommends libbrotli1=1.1.0-2ubuntu0.1 \
++    && rm -rf /var/lib/apt/lists/*
 +
  # Layout matches one-click install prefix:
  #   /usr/local/services/cubetoolbox/CubeMaster/{bin,plugin,conf.yaml}
