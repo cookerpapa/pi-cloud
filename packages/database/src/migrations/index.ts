@@ -389,6 +389,7 @@ export const migrationProvider: MigrationProvider = {
       "201_execution_targets": executionTargets,
       "202_session_schedules": sessionSchedules,
       "203_shared_native_entry_bodies": sharedNativeEntryBodies,
+      "204_shared_native_history_bases": sharedNativeHistoryBases,
     };
   },
 };
@@ -417,3 +418,4 @@ import * as resourceIntent from "./198_resource_intent.ts";
 import * as conversationCommands from "./199_conversation_commands.ts";
 
 import * as conversationHistoryWindows from "./200_conversation_history_windows.ts";
+import * as sharedNativeHistoryBases from "./204_shared_native_history_bases.ts";

@@ -1,3 +1,4 @@
+import { captureNativePresentation } from "../../runtime-core/src/frozen-history.ts";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
@@ -154,13 +155,24 @@ export async function nativeSubagentFixture() {
         cancellations: [],
         occurredAt: new Date().toISOString(),
       });
-    else
-      await projection.apply(
-        commit as unknown as StoredDurableBatch,
-        origins,
-        { topic: "fixture", partition: 0, offset: BigInt(seq) },
-        metadata,
-      );
+    else {
+      const state = projection.liveState.fork();
+      await database.transaction().execute(async (tx) => {
+        await projection.applyIn(
+          tx,
+          commit as unknown as StoredDurableBatch,
+          origins,
+          { state, position: { topic: "fixture", partition: 0, offset: BigInt(seq) } },
+          metadata,
+        );
+        await captureNativePresentation(
+          tx,
+          { tenantId: scope.tenantId, sessionId: scope.piSessionId },
+          seq,
+        );
+      });
+      projection.liveState.adopt(state);
+    }
     return seq;
   };
   await append([{ type: "conversation", value: { id: 1 } }]);

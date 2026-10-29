@@ -610,7 +610,6 @@ export interface SessionTable {
   conversation_parent_session_id: GeneratedNullable<string>;
   conversation_fork_turn_id: GeneratedNullable<string>;
   conversation_fork_entry_id: GeneratedNullable<string>;
-  history_imported: Generated<boolean>;
   pruned_at: NullableTimestamp;
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;
@@ -978,6 +977,7 @@ export interface PlatformRuntimeSettingChangeTable {
 }
 
 export interface PiSessionTable {
+  history_bootstrap_pending: Generated<boolean>;
   session_hash: GeneratedInt8;
   tenant_id: string;
   id: string;

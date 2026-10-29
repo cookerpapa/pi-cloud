@@ -4,28 +4,20 @@ import {
   createSession,
   defineDoc,
   type ConversationId,
-  type ConversationRecord,
   type EntryId,
-  type Seq,
-  type StorageWrite,
 } from "@earendil-works/pi-durable";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { FORK_PROVENANCE_DOCUMENT } from "@pi-cloud/protocol";
 import { assertIdleNativeSession } from "../idle-session-mutation.ts";
-import { importEntryReferences } from "./import-entry-references.ts";
+import { HistoryDirectory } from "./history-directory.ts";
+import { PostgresHistoryDirectory } from "./postgres-history-directory.ts";
+import { readSharedBase, sharedStateFingerprint } from "./shared-history-base.ts";
 import { DurablePostgresProjection } from "./postgres-projection.ts";
 import { PublishedDurableStorage } from "./published-storage.ts";
 import type { DurableScope, StoredDurableBatch } from "./types.ts";
 
 type Range = { conversationId: number; through: number; sequence: number };
 const ForkProvenanceDocument = defineDoc(FORK_PROVENANCE_DOCUMENT);
-type Row = {
-  ordinal: number;
-  record_id: string;
-  body: string;
-  cloud_origin: Record<string, string> | null;
-};
-
 /** Snapshot import into a NEW cold physical Session. No source Harness/writer is opened. */
 export async function importForkHistory(
   tx: Transaction<Database>,
@@ -43,26 +35,28 @@ export async function importForkHistory(
   if ((await destination.head()).seq !== 0) throw new Error("Fork target is not empty");
   const original = new DurablePostgresProjection(tx, source, undefined, "references");
   const head = await original.head(); // Stable history can be copied while disposable pi.live is pending.
-  const cutoff = await original.get(source.through);
+  const cutoff = (
+    await sql<{
+      kind: string;
+      fields: Record<string, string>;
+    }>`select kind,fields from pi_durable_records
+    where tenant_id=${source.tenantId}::uuid and session_id=${source.sessionId} and id=${source.through}`.execute(
+      tx,
+    )
+  ).rows[0];
   if (cutoff?.kind !== "entry") throw new Error("Fork cutoff is not a retained Entry");
   const ranges: Range[] = [];
-  const seen = new Set<number>();
-  let conversationId = source.conversationId,
-    through = source.through;
-  for (;;) {
-    if (seen.has(conversationId)) throw new Error("Fork ancestry contains a cycle");
-    seen.add(conversationId);
-    const stored = await original.get(conversationId);
-    if (stored?.kind !== "conversation") throw new Error("Fork source Conversation is missing");
-    const point = await original.get(through);
-    if (point?.kind !== "entry") throw new Error("Fork ancestry cutoff is missing");
-    ranges.push({ conversationId, through, sequence: point.seq });
-    const parent = (stored.value as ConversationRecord).parent;
-    if (!parent) break;
-    through = Math.min(through, parent.at);
-    conversationId = parent.conversationId;
+  const sequenceCache = new Map<number, number>();
+  for (const item of await original.conversationPath(source.conversationId, source.through)) {
+    let sequence = sequenceCache.get(item.through);
+    if (sequence === undefined) {
+      sequence = await original.recordSequence(item.through);
+      if (sequence === undefined) throw new Error("Fork ancestry cutoff is missing");
+      sequenceCache.set(item.through, sequence);
+    }
+    ranges.push({ conversationId: item.record.value.id, through: item.through, sequence });
   }
-  const cutoffConversation = (cutoff.value as { conversationId: number }).conversationId;
+  const cutoffConversation = Number(cutoff.fields.conversation);
   if (!ranges.some((r) => r.conversationId === cutoffConversation && r.through >= source.through))
     throw new Error("Fork cutoff is outside the visible ancestry");
   const conversationIds = [...new Set([1, ...ranges.map((r) => r.conversationId)])];
@@ -77,86 +71,68 @@ export async function importForkHistory(
     from pi_durable_records r where r.tenant_id=${source.tenantId}::uuid and r.session_id=${source.sessionId}
       and r.kind='document' and r.fields->>'scope'=any(${scopes}::text[])
       and r.fields->>'forkPolicy' in ('asOf','current') and created_seq<=${head.seq}`.execute(tx);
+  const byScope = new Map(
+    ranges.map((r) => [JSON.stringify(["conversation", r.conversationId]), r]),
+  );
   const documents = definitions.flatMap((d) => {
-    const range = ranges.find(
-      (r) => d.scope === JSON.stringify(["conversation", r.conversationId]),
-    )!;
+    const range = byScope.get(d.scope)!;
     const sequence =
       d.policy === "current" && range.conversationId === source.conversationId
         ? head.seq
         : range.sequence;
     return Number(d.created) <= sequence ? [{ id: d.id, sequence }] : [];
   });
-  const selected = sql`(
-    (l.record_kind='conversation' and l.record_id=any(${conversationIds}::bigint[]))
-    or (l.record_kind='entry' and exists(
-      select 1 from pi_durable_records r
-      join unnest(${ranges.map((r) => r.conversationId)}::bigint[],${ranges.map((r) => r.through)}::bigint[]) p(conversation_id,through_id)
-        on r.fields->>'conversation'=p.conversation_id::text and r.id<=p.through_id
-      where r.tenant_id=l.tenant_id and r.session_id=l.session_id and r.id=l.record_id and r.kind='entry'))
-    or (l.record_kind in ('document.create','document.change','document.retire') and exists(
-      select 1 from unnest(${documents.map((d) => d.id)}::bigint[],${documents.map((d) => d.sequence)}::bigint[]) d(id,through_seq)
-      where l.record_id=d.id and l.seq<=d.through_seq))
-  )`;
-  let seq = 0,
-    entries = 0;
-  const publish = async (rows: readonly Row[]) => {
-    if (!rows.length) return;
-    const writes = rows.map((row) => {
-      const write = JSON.parse(row.body) as StorageWrite;
-      if (write.type === "conversation") {
-        const { owner: _owner, ...value } = write.value;
-        return { type: "conversation", value } as StorageWrite;
-      }
-      return write;
+  const adapter = new PostgresHistoryDirectory(tx, target.tenantId);
+  const directory = new HistoryDirectory(adapter);
+  const existingBase = await readSharedBase(tx, source);
+  if (existingBase?.entry_root) await adapter.prefetch(existingBase.entry_root);
+  let root = existingBase?.entry_root
+    ? await directory.mapRanges(await directory.read(existingBase.entry_root), async (range) => {
+        const maximum = ranges.find((r) => r.conversationId === range.conversationId)?.through;
+        if (maximum === undefined) return undefined;
+        const selected = range.maxId <= maximum ? range : await adapter.clip(range, maximum);
+        return selected && !selected.clearTask ? { ...selected, clearTask: true } : selected;
+      })
+    : undefined;
+  const ownedConversations = new Set(
+    (
+      await sql<{
+        id: string;
+      }>`select distinct entry_conversation_id::text as id from pi_history_records
+    where tenant_id=${source.tenantId}::uuid and session_id=${source.sessionId} and record_kind='entry' and seq<=${head.seq}`.execute(
+        tx,
+      )
+    ).rows.map((r) => Number(r.id)),
+  );
+  for (const range of [...ranges]
+    .reverse()
+    .filter((r) => ownedConversations.has(r.conversationId))) {
+    const own = await adapter.range({
+      sourceId: source.sessionId,
+      conversationId: range.conversationId,
+      throughSequence: head.seq,
+      maximumId: range.through,
+      clearTask: true,
     });
-    await destination.applyIn(tx, {
-      seq: ++seq as Seq,
-      nextId: head.nextId,
-      writes,
-    } as StoredDurableBatch);
-  };
-  let afterSeq = 0;
-  for (;;) {
-    const { rows: commits } = await sql<{
-      seq: string;
-      has_state: boolean;
-    }>`select l.seq,bool_or(l.record_kind<>'entry') as has_state from pi_durable_writes l
-      where l.tenant_id=${source.tenantId}::uuid and l.session_id=${source.sessionId}
-        and l.seq>${afterSeq} and l.seq<=${head.seq} and ${selected}
-      group by l.seq order by l.seq limit 64`.execute(tx);
-    if (!commits.length) break;
-    for (const commit of commits) {
-      // All document changes from an original commit precede its copied Entries.
-      // Splitting Entry pages then preserves every native asOf commit boundary.
-      const { rows: state } = commit.has_state
-        ? await sql<Row>`select l.ordinal,l.record_id::text,l.body,l.cloud_origin
-        from pi_durable_log l where l.tenant_id=${source.tenantId}::uuid and l.session_id=${source.sessionId}
-          and l.seq=${commit.seq}::bigint and l.record_kind<>'entry' and ${selected}
-        order by l.ordinal`.execute(tx)
-        : { rows: [] };
-      await publish(state);
-      let ordinal = -1;
-      for (;;) {
-        const copied = await importEntryReferences(tx, {
-          source,
-          target,
-          sourceSequence: Number(commit.seq),
-          afterOrdinal: ordinal,
-          sequence: seq + 1,
-          nextId: head.nextId,
-          selected,
-        });
-        if (!copied.count) break;
-        seq++;
-        entries += copied.count;
-        ordinal = copied.lastOrdinal;
-        if (!copied.hasMore) break;
-      }
-      afterSeq = Number(commit.seq);
-    }
+    if (own) root = await directory.join(root, directory.range(own));
   }
-  if (!entries) throw new Error("Fork has no retained entries");
+  if (!root) throw new Error("Fork has no retained entries");
+  await directory.persist(root);
+  // Only small native state references are installed per Fork. Entries retain
+  // their immutable ranges and original publication positions through the root.
+  await sql`insert into pi_durable_write_refs(tenant_id,session_id,seq,ordinal,retained_record_id,base,clear_owner)
+    select ${target.tenantId}::uuid,${target.sessionId},l.seq,l.ordinal,l.retained_record_id,true,l.record_kind='conversation'
+    from pi_durable_writes l where l.tenant_id=${source.tenantId}::uuid and l.session_id=${source.sessionId} and l.seq<=${head.seq}
+      and ((l.record_kind='conversation' and l.record_id=any(${conversationIds}::bigint[]))
+        or (l.record_kind in ('document.create','document.change','document.retire') and exists(
+          select 1 from unnest(${documents.map((d) => d.id)}::bigint[],${documents.map((d) => d.sequence)}::bigint[]) d(id,through_seq)
+          where l.record_id=d.id and l.seq<=d.through_seq)))`.execute(tx);
+  const state = await sharedStateFingerprint(tx, target);
+  await sql`insert into pi_durable_bases(tenant_id,session_id,through_seq,next_id,entry_root,entry_digest,history_count,history_fingerprint)
+    values(${target.tenantId}::uuid,${target.sessionId},${head.seq},${head.nextId},${root.id}::uuid,${root.digest},${state.count}::bigint,${state.fingerprint})`.execute(
+    tx,
+  );
+  await destination.initializeBaseIn(tx);
   const storage = await PublishedDurableStorage.open({
     projection: destination,
     publish: async (batch) => void (await destination.applyIn(tx, batch as StoredDurableBatch)),
@@ -178,7 +154,7 @@ export async function importForkHistory(
       };
       return fork;
     }, BACKGROUND_CONTEXT);
-    return { conversationId: fork.id, entryCount: entries };
+    return { conversationId: fork.id, entryCount: root.count };
   } finally {
     await session.close(BACKGROUND_CONTEXT);
   }

@@ -6,7 +6,7 @@ import {
   deletePostgresPiSessionsInTransaction,
 } from "@pi-cloud/pi-session-postgres";
 import { retainIdleFamily } from "@pi-cloud/pi-session-postgres/durable";
-import { freezeForkHistory, retainFrozenImages } from "@pi-cloud/runtime-core/frozen-history";
+import { freezeForkHistory } from "@pi-cloud/runtime-core/frozen-history";
 import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
 
 /** Runs only inside the pruning transaction, after ordered writer closure. No Workspace mutation. */
@@ -14,6 +14,7 @@ export async function replacePrunedHistory(
   tx: Transaction<Database>,
   tenantId: string,
   oldId: string,
+  preservedViews: readonly string[] = [],
 ): Promise<string> {
   const family = await tx
     .selectFrom("sessions")
@@ -45,6 +46,7 @@ export async function replacePrunedHistory(
     );
   const visible = family.filter((s) => s.pruned_at === null && s.pi_conversation_id !== null);
   for (const session of visible) {
+    if (preservedViews.includes(session.id)) continue;
     const last = (
       await sql<{
         turn_id: string;
@@ -93,11 +95,6 @@ export async function replacePrunedHistory(
     visible.map((s) => Number(s.pi_conversation_id)),
     sourcePositions,
   );
-  await retainFrozenImages(
-    tx,
-    target,
-    visible.map((s) => s.id),
-  );
   for (const r of references)
     await tx
       .updateTable("subagent_conversations")
@@ -120,7 +117,9 @@ export async function replacePrunedHistory(
     .execute();
   await sql`delete from session_uploads u where u.tenant_id=${tenantId}::uuid and u.pi_session_id=${target.sessionId}
     and u.accepted_at is not null and u.image_id is not null and not exists(select 1 from session_image_references r
-      where r.tenant_id=u.tenant_id and r.session_id=u.pi_session_id and r.image_id=u.image_id)`.execute(
+      where r.tenant_id=u.tenant_id and r.session_id=u.pi_session_id and r.image_id=u.image_id)
+      and not exists(select 1 from pi_history_record_images r join pi_durable_writes w on w.tenant_id=r.tenant_id and w.retained_record_id=r.retained_record_id
+        where r.tenant_id=u.tenant_id and w.session_id=u.pi_session_id and r.image_id=u.image_id)`.execute(
     tx,
   );
   await deletePostgresPiSessionsInTransaction(tx, tenantId, [oldId]);

@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-import { importEntryReferences } from "../src/durable/import-entry-references.ts";
 import { retainIdleFamily } from "../src/durable/history-retention.ts";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it } from "vitest";
@@ -255,7 +253,7 @@ it("keeps identical payloads in separate tenant scopes", async () => {
   expect(objects[0]!.id).not.toBe(objects[1]!.id);
   const foreign = objects.find((o) => o.tenant_id === secondTenant)!;
   await expect(
-    sql`update pi_durable_writes set entry_body_id=${foreign.id}::uuid
+    sql`update pi_history_records set entry_body_id=${foreign.id}::uuid
     where tenant_id=${firstTenant}::uuid and record_kind='entry'`.execute(db),
   ).rejects.toMatchObject({ code: "23503" });
   for (const id of [firstTenant, secondTenant]) {
@@ -424,7 +422,7 @@ it("reorganizes a closed multi-Conversation family without losing child ancestry
   await reopened.close(context);
 });
 
-it("copies immutable references with byte-identical native hashes and no ordinary body traffic", async () => {
+it("shares Entry ranges without copying Entry rows or reading whole historical bodies", async () => {
   const id = await tenant(),
     source = await physical(id),
     target = await physical(id);
@@ -468,11 +466,11 @@ it("copies immutable references with byte-identical native hashes and no ordinar
     },
     entries.map((e) => ({ recordId: e.value.id, ...origin })),
   );
-  await target.projection.apply({
-    seq: 1 as never,
-    nextId: 40,
-    writes: [{ type: "conversation", value: { id: 1 as never } }],
-  });
+  const before = (
+    await sql`select fingerprint from pi_durable_commits where tenant_id=${id}::uuid and session_id=${source.scope.sessionId}`.execute(
+      db,
+    )
+  ).rows;
   const returned: string[] = [];
   const measured = db.withPlugin({
     transformQuery: ({ node }) => node,
@@ -481,52 +479,39 @@ it("copies immutable references with byte-identical native hashes and no ordinar
       return result;
     },
   });
-  await measured.transaction().execute(async (tx) => {
-    const first = await importEntryReferences(tx, {
-      source: source.scope,
-      target: target.scope,
-      sourceSequence: 1,
-      afterOrdinal: -1,
-      sequence: 2,
-      nextId: 40,
-      selected: sql`true`,
-    });
-    expect(first.count).toBe(32);
-    expect(first.hasMore).toBe(true);
-    const second = await importEntryReferences(tx, {
-      source: source.scope,
-      target: target.scope,
-      sourceSequence: 1,
-      afterOrdinal: first.lastOrdinal,
-      sequence: 3,
-      nextId: 40,
-      selected: sql`true`,
-    });
-    expect(second.count).toBe(3);
-    expect(second.hasMore).toBe(false);
-  });
-  expect(returned.join("")).not.toContain("ORDINARY_BODY_");
-  for (const [index, writes] of [entries.slice(0, 32), entries.slice(32)].entries()) {
-    const batch = {
-      seq: index + 2,
-      nextId: 40,
-      writes: writes.map(({ value }) => {
-        const { byTaskId: _task, ...rest } = value;
-        return { type: "entry", value: rest };
-      }),
-    };
-    const origins = writes.map((e) => ({ recordId: e.value.id, ...origin }));
-    const actual = (
-      await sql<{
-        fingerprint: string;
-      }>`select fingerprint from pi_durable_commits where tenant_id=${id}::uuid
-      and session_id=${target.scope.sessionId} and seq=${index + 2}`.execute(db)
-    ).rows[0]!;
-    expect(actual.fingerprint).toBe(
-      createHash("sha256").update(JSON.stringify({ batch, origins })).digest("hex"),
-    );
-    expect(await target.projection.apply(batch as never, origins)).toBe(false);
-  }
+  const fork = await measured.transaction().execute((tx) =>
+    importForkHistory(tx, target.scope, {
+      ...source.scope,
+      sourceProductSessionId: source.scope.sessionId,
+      conversationId: 1,
+      through: entries.at(-1)!.value.id,
+    }),
+  );
+  expect(fork.entryCount).toBe(35);
+  // Native forkConversation reads its boundary Entry once. Other old bodies stay in PG.
+  expect(returned.join("")).not.toContain("ORDINARY_BODY_0x");
+  expect(returned.join("")).not.toContain("ORDINARY_BODY_32x");
+  const refs = (
+    await sql`select 1 from pi_durable_write_refs r join pi_history_records g on g.tenant_id=r.tenant_id and g.id=r.retained_record_id
+    where r.tenant_id=${id}::uuid and r.session_id=${target.scope.sessionId} and g.record_kind='entry'`.execute(
+      db,
+    )
+  ).rows;
+  expect(refs).toHaveLength(0);
+  expect(
+    (
+      await sql`select fingerprint from pi_durable_commits where tenant_id=${id}::uuid and session_id=${source.scope.sessionId}`.execute(
+        db,
+      )
+    ).rows,
+  ).toEqual(before);
+  expect(
+    (
+      await sql`select 1 from pi_durable_commits where tenant_id=${id}::uuid and session_id=${target.scope.sessionId}`.execute(
+        db,
+      )
+    ).rows,
+  ).toHaveLength(1);
   const fields = (
     await sql`select id,fields from pi_durable_records where tenant_id=${id}::uuid and session_id=${target.scope.sessionId} order by id`.execute(
       db,
@@ -543,7 +528,7 @@ it("copies immutable references with byte-identical native hashes and no ordinar
   expect((await target.projection.get(3))?.value).toMatchObject({ data: entries[0]!.value.data });
 });
 
-it("rolls back reference imports when an immutable source body no longer matches its digest", async () => {
+it("verifies shared payload integrity during explicit cold rebuild without depending on the source owner", async () => {
   const id = await tenant(),
     source = await physical(id),
     target = await physical(id);
@@ -563,28 +548,150 @@ it("rolls back reference imports when an immutable source body no longer matches
       },
     ],
   });
-  await target.projection.apply({
-    seq: 1 as never,
-    nextId: 3,
-    writes: [{ type: "conversation", value: { id: 1 as never } }],
-  });
+  await db.transaction().execute((tx) =>
+    importForkHistory(tx, target.scope, {
+      ...source.scope,
+      sourceProductSessionId: source.scope.sessionId,
+      conversationId: 1,
+      through: 2,
+    }),
+  );
+  await db
+    .deleteFrom("pi_sessions")
+    .where("tenant_id", "=", id)
+    .where("id", "=", source.scope.sessionId)
+    .execute();
+  await reapUnreferencedEntryBodies(db);
+  const before = (
+    await sql`select * from pi_durable_records where tenant_id=${id}::uuid and session_id=${target.scope.sessionId} order by id`.execute(
+      db,
+    )
+  ).rows;
   const changed = JSON.stringify({ kind: "fixture.entry", data: { value: "tampered" } });
   await sql`update pi_history_bodies set payload_text=${changed},payload_bytes=${Buffer.byteLength(changed)} where tenant_id=${id}::uuid`.execute(
     db,
   );
-  await expect(
-    db.transaction().execute((tx) =>
-      importEntryReferences(tx, {
-        source: source.scope,
-        target: target.scope,
-        sourceSequence: 1,
-        afterOrdinal: -1,
-        sequence: 2,
-        nextId: 3,
-        selected: sql`true`,
-      }),
-    ),
-  ).rejects.toThrow("integrity");
-  expect((await target.projection.head()).seq).toBe(1);
-  expect(await target.projection.get(2)).toBeUndefined();
+  await expect(target.projection.rebuild()).rejects.toThrow("integrity");
+  expect(
+    (
+      await sql`select * from pi_durable_records where tenant_id=${id}::uuid and session_id=${target.scope.sessionId} order by id`.execute(
+        db,
+      )
+    ).rows,
+  ).toEqual(before);
+});
+
+it("keeps native ID ordering while a Fork excludes IDs published after its captured head", async () => {
+  const id = await tenant(),
+    source = await physical(id),
+    target = await physical(id);
+  await source.projection.apply({
+    seq: 1 as never,
+    nextId: 40,
+    writes: [
+      { type: "conversation", value: { id: 1 as never } },
+      ...[30, 10, 20].map((n) => ({
+        type: "entry" as const,
+        value: { id: n as never, conversationId: 1 as never, kind: "fixture.entry", data: { n } },
+      })),
+    ],
+  });
+  const fork = await db.transaction().execute((tx) =>
+    importForkHistory(tx, target.scope, {
+      ...source.scope,
+      sourceProductSessionId: source.scope.sessionId,
+      conversationId: 1,
+      through: 30,
+    }),
+  );
+  await source.projection.apply({
+    seq: 2 as never,
+    nextId: 40,
+    writes: [
+      {
+        type: "entry",
+        value: {
+          id: 15 as never,
+          conversationId: 1 as never,
+          kind: "fixture.entry",
+          data: { n: 15 },
+        },
+      },
+    ],
+  });
+  expect(await source.projection.get(15)).toBeDefined();
+  expect(await target.projection.get(15)).toBeUndefined();
+  await target.projection.rebuild();
+  const storage = await target.open();
+  try {
+    expect(
+      (
+        await storage.scanEntries(
+          { conversationId: fork.conversationId as never },
+          10,
+          undefined,
+          context,
+        )
+      ).items.map((e) => e.id),
+    ).toEqual([30, 20, 10]);
+  } finally {
+    await storage.close(context);
+  }
+});
+
+it("retries collection after a skipped reference lock rolls back", async () => {
+  const id = await tenant(),
+    source = await physical(id);
+  await source.projection.apply({
+    seq: 1 as never,
+    nextId: 3,
+    writes: [
+      { type: "conversation", value: { id: 1 as never } },
+      {
+        type: "entry",
+        value: {
+          id: 2 as never,
+          conversationId: 1 as never,
+          kind: "fixture.entry",
+          data: { value: "orphan after rollback" },
+        },
+      },
+    ],
+  });
+  await db
+    .deleteFrom("pi_sessions")
+    .where("tenant_id", "=", id)
+    .where("id", "=", source.scope.sessionId)
+    .execute();
+  const locked = Promise.withResolvers<void>(),
+    release = Promise.withResolvers<void>();
+  const tentative = db
+    .transaction()
+    .execute(async (tx) => {
+      await sql`select id from pi_history_records where tenant_id=${id}::uuid and record_kind='entry' for key share`.execute(
+        tx,
+      );
+      locked.resolve();
+      await release.promise;
+      throw new Error("rollback tentative reference");
+    })
+    .catch((error) => {
+      if (!(error instanceof Error) || error.message !== "rollback tentative reference")
+        throw error;
+    });
+  await locked.promise;
+  try {
+    expect(await reapUnreferencedEntryBodies(db, 64)).toBe(0);
+    expect(
+      (
+        await sql<{
+          pending_gc: boolean;
+        }>`select pending_gc from pi_history_streams where tenant_id=${id}::uuid`.execute(db)
+      ).rows,
+    ).toEqual([{ pending_gc: true }]);
+  } finally {
+    release.resolve();
+    await tentative;
+  }
+  expect(await reapUnreferencedEntryBodies(db, 64)).toBe(1);
 });

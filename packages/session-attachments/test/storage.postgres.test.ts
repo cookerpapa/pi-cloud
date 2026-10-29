@@ -1,3 +1,4 @@
+import { reapUnreferencedEntryBodies } from "@pi-cloud/pi-session-postgres/durable";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
 import { sql } from "kysely";
 import { randomUUID, randomBytes } from "node:crypto";
@@ -241,6 +242,7 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
         .where("tenant_id", "=", tenantId)
         .where("id", "=", nested)
         .execute();
+      await reapUnreferencedEntryBodies(db, 1024);
       expect(await store.reap(0)).toBe(1);
       await Promise.all(
         [first, cold, forkReader, nestedReader].map((value) =>

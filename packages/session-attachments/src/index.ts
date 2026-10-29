@@ -4,4 +4,4 @@ export * from "./store.ts";
 export * from "./s3.ts";
 export * from "./configured.ts";
 export * from "./reaper.ts";
-export { retainSessionImages } from "./retain.ts";
+export { retainSessionImages, retainedImageReferences } from "./retain.ts";

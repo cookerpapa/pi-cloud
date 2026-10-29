@@ -777,7 +777,9 @@ it("keeps one Inbox/Submission body across edits, atomically consumes it, and re
         )
       ).rows;
     const indexed = await snapshot();
-    await sql`delete from pi_durable_records where tenant_id=${f.tenantId}::uuid`.execute(database);
+    await sql`delete from pi_durable_owned_records where tenant_id=${f.tenantId}::uuid`.execute(
+      database,
+    );
     await sql`delete from pi_durable_document_revisions where tenant_id=${f.tenantId}::uuid`.execute(
       database,
     );
@@ -925,11 +927,11 @@ it.each(["missing state", "changed state", "missing history", "changed history"]
           database,
         );
       else if (damage === "missing history")
-        await sql`delete from pi_durable_writes where tenant_id=${f.tenantId}::uuid`.execute(
+        await sql`delete from pi_durable_write_refs where tenant_id=${f.tenantId}::uuid`.execute(
           database,
         );
       else
-        await sql`update pi_durable_writes set body='{}' where tenant_id=${f.tenantId}::uuid`.execute(
+        await sql`update pi_history_records set body='{}' where tenant_id=${f.tenantId}::uuid`.execute(
           database,
         );
       const before = (

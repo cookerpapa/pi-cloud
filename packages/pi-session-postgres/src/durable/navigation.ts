@@ -1,6 +1,5 @@
 import { sql, type Kysely } from "kysely";
 import type { Database } from "@pi-cloud/database";
-import type { ConversationRecord } from "@earendil-works/pi-durable";
 import { DurablePostgresProjection } from "./postgres-projection.ts";
 import type { DurableScope } from "./types.ts";
 
@@ -26,11 +25,13 @@ export async function readNavigationEntries(
   },
 ): Promise<{ entries: NavigationEntry[]; hasMore: boolean; beforeId: string | null }> {
   const projection = new DurablePostgresProjection(db, input, undefined, "references");
-  let conversation = input.conversationId,
-    through = input.through ?? Number.MAX_SAFE_INTEGER;
-  const entries: NavigationEntry[] = [],
-    forced: NavigationEntry[] = [];
-  const visited = new Set<number>();
+  const path = await projection.conversationPath(
+    input.conversationId,
+    Number.MAX_SAFE_INTEGER,
+    true,
+  );
+  if (!path.length) return { entries: [], hasMore: false, beforeId: null };
+  const scopes = sql`(values ${sql.join(path.map((r, i) => sql`(${r.record.value.id}::bigint,${r.through}::bigint,${i}::int)`))})`;
   const convert = (r: {
     id: string;
     seq: string;
@@ -51,51 +52,25 @@ export async function readNavigationEntries(
     turnId: r.fields.turn ?? null,
     createdAt: r.committed_at.toISOString(),
   });
-  while (true) {
-    if (visited.has(conversation)) throw new Error("Navigation ancestry cycle");
-    visited.add(conversation);
-    const native = await projection.get(conversation);
-    if (!native) break;
-    if (native.kind !== "conversation") throw new Error("Invalid navigation Conversation");
-    const remaining = Math.max(0, input.limit + 1 - entries.length);
-    if (remaining) {
-      const page = await sql<{
-        id: string;
-        seq: string;
-        fields: Record<string, string>;
-        committed_at: Date;
-      }>`select r.id::text,r.seq::text,r.fields,c.committed_at
-        from pi_durable_records r join pi_durable_commits c using(tenant_id,session_id,seq)
-        where r.tenant_id=${input.tenantId}::uuid and r.session_id=${input.sessionId} and r.kind='entry'
-          and r.fields->>'conversation'=${String(conversation)} and r.fields->>'navigation' in ('user','assistant') and r.id<=${through}
-          ${input.from === undefined ? sql`` : sql`and r.id>=${input.from}`}
-        order by r.id desc limit ${remaining}`.execute(db);
-      entries.push(...page.rows.map(convert));
-    }
-    if (input.includeIds?.length) {
-      const needed = await sql<{
-        id: string;
-        seq: string;
-        fields: Record<string, string>;
-        committed_at: Date;
-      }>`select r.id::text,r.seq::text,r.fields,c.committed_at
-        from pi_durable_records r join pi_durable_commits c using(tenant_id,session_id,seq)
-        where r.tenant_id=${input.tenantId}::uuid and r.session_id=${input.sessionId} and r.kind='entry'
-          and r.fields->>'conversation'=${String(conversation)} and r.id=any(${[...input.includeIds]}::bigint[])`.execute(
-        db,
-      );
-      forced.push(...needed.rows.map(convert));
-    }
-    const parent = (native.value as ConversationRecord).parent;
-    if (!parent) break;
-    if (
-      entries.length > input.limit &&
-      !(input.includeIds ?? []).some((id) => !forced.some((r) => r.id === id))
-    )
-      break;
-    conversation = parent.conversationId;
-    through = Math.min(through, parent.at);
-  }
+  type Row = { id: string; seq: string; fields: Record<string, string>; committed_at: Date };
+  const entries = (
+    await sql<Row>`select r.id::text,r.seq::text,r.fields,g.committed_at
+    from ${scopes} s(conversation_id,through_id,position) join pi_durable_records r
+      on r.tenant_id=${input.tenantId}::uuid and r.session_id=${input.sessionId} and r.kind='entry'
+        and r.fields->>'conversation'=s.conversation_id::text and r.id<=least(s.through_id,${input.through ?? Number.MAX_SAFE_INTEGER})
+        and r.id>=${input.from ?? 0} and r.fields->>'navigation' in ('user','assistant')
+    join pi_history_records g on g.tenant_id=r.tenant_id and g.id=r.retained_record_id
+    order by s.position,r.id desc limit ${input.limit + 1}`.execute(db)
+  ).rows.map(convert);
+  const forced = input.includeIds?.length
+    ? (
+        await sql<Row>`select r.id::text,r.seq::text,r.fields,g.committed_at
+    from ${scopes} s(conversation_id,through_id,position) join pi_durable_records r
+      on r.tenant_id=${input.tenantId}::uuid and r.session_id=${input.sessionId} and r.kind='entry'
+        and r.fields->>'conversation'=s.conversation_id::text and r.id<=s.through_id and r.id=any(${[...input.includeIds]}::bigint[])
+    join pi_history_records g on g.tenant_id=r.tenant_id and g.id=r.retained_record_id`.execute(db)
+      ).rows.map(convert)
+    : [];
   const page = entries.slice(0, input.limit);
   const all = new Map([...page, ...forced].map((r) => [r.id, r]));
   return {

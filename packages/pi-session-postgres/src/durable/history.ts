@@ -6,13 +6,13 @@ import {
   type ConversationId,
   type EntryId,
   type EntryRecord,
-  type ConversationRecord,
 } from "@earendil-works/pi-durable";
 import type { ImagePacked } from "@pi-cloud/protocol";
 import { assertIdleNativeSession } from "../idle-session-mutation.ts";
 import { PublishedDurableStorage } from "./published-storage.ts";
 import { DurablePostgresProjection } from "./postgres-projection.ts";
 import type { DurableScope, StoredDurableBatch } from "./types.ts";
+import { nativeBodyAtRecord } from "./record-body.ts";
 
 export type StoredHistoryEntry = {
   entry: ImagePacked<EntryRecord>;
@@ -49,52 +49,37 @@ export async function readDurableEntries(
   },
 ): Promise<StoredHistoryEntry[]> {
   const projection = new DurablePostgresProjection(database, input, undefined, "references");
-  const rows: StoredHistoryEntry[] = [],
-    visited = new Set<number>();
-  let conversationId = input.conversationId,
-    through = input.through ?? Number.MAX_SAFE_INTEGER;
-  let head: number | undefined;
+  const path = await projection.conversationPath(
+    input.conversationId,
+    input.through ?? Number.MAX_SAFE_INTEGER,
+    true,
+  );
+  const rows: StoredHistoryEntry[] = [];
+  if (!path.length) return rows;
+  const scopes = sql`(values ${sql.join(path.map((r, i) => sql`(${r.record.value.id}::bigint,${r.through}::bigint,${i}::int)`))})`;
+  let pageThrough = input.through ?? Number.MAX_SAFE_INTEGER,
+    head: number | undefined;
   while (rows.length < input.limit) {
-    if (visited.has(conversationId))
-      throw new Error("Native conversation ancestry contains a cycle");
-    visited.add(conversationId);
-    const record = await projection.get(conversationId);
-    if (!record) break;
-    if (record.kind !== "conversation") throw new Error("Invalid native conversation binding");
-    const conversation = record.value as ConversationRecord;
-    let pageThrough = through;
-    while (rows.length < input.limit) {
-      const count = Math.min(64, input.limit - rows.length);
-      const page = await sql<HistoryRow>`
-      select l.body,r.fields,r.seq,c.committed_at
-      from pi_durable_records r join pi_durable_log l using(tenant_id,session_id,seq,ordinal)
-        join pi_durable_commits c using(tenant_id,session_id,seq)
-      where r.tenant_id=${input.tenantId}::uuid and r.session_id=${input.sessionId}
-        and r.kind='entry' and r.fields->>'conversation'=${String(conversationId)} and r.id<=${pageThrough}
-        ${input.from === undefined ? sql`` : sql`and r.id>=${input.from}`}
+    const count = Math.min(64, input.limit - rows.length);
+    const page = await sql<HistoryRow>`select l.body,r.fields,r.seq,l.committed_at from (
+      select r.*,s.position from ${scopes} s(conversation_id,through_id,position) join pi_durable_records r
+        on r.tenant_id=${input.tenantId}::uuid and r.session_id=${input.sessionId} and r.kind='entry'
+        and r.fields->>'conversation'=s.conversation_id::text and r.id<=least(s.through_id,${pageThrough}) and r.id>=${Math.max(input.from ?? 0, head ?? 0)}
         ${input.navigationOnly ? sql`and (r.fields->>'navigation' in ('user','assistant') ${input.includeEntryIds?.length ? sql`or r.id=any(${[...input.includeEntryIds]}::bigint[])` : sql``})` : sql``}
-        ${head === undefined ? sql`` : sql`and r.id>=${head}`}
-      order by r.id desc limit ${count}`.execute(database);
-      for (const row of page.rows) {
-        const write = JSON.parse(row.body) as { type: "entry"; value: ImagePacked<EntryRecord> };
-        const entry = write.value;
-        if (input.activeOnly && head === undefined && entry.head !== undefined) head = entry.head;
-        if (head !== undefined && entry.id < head) break;
-        rows.push(historyEntry(row));
-      }
-      if (page.rows.length < count) break;
-      pageThrough = historyEntry(page.rows.at(-1)!).entry.id - 1;
-      if (head !== undefined && pageThrough < head) break;
+      order by s.position,r.id desc limit ${count}
+    ) r ${nativeBodyAtRecord} order by r.position,r.id desc`.execute(database);
+    for (const row of page.rows) {
+      const entry = historyEntry(row);
+      if (input.activeOnly && head === undefined && entry.entry.head !== undefined)
+        head = entry.entry.head;
+      if (head !== undefined && entry.entry.id < head) break;
+      rows.push(entry);
     }
-    if (
-      !conversation.parent ||
-      (head !== undefined && conversation.parent.at < head) ||
-      (input.from !== undefined && conversation.parent.at < input.from)
-    )
-      break;
-    through = Math.min(through, conversation.parent.at);
-    conversationId = conversation.parent.conversationId;
+    if (page.rows.length < count) break;
+    pageThrough = historyEntry(page.rows.at(-1)!).entry.id - 1;
+    if (head !== undefined && pageThrough < head) break;
   }
+
   return rows;
 }
 

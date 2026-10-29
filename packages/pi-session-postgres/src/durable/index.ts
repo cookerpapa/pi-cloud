@@ -51,3 +51,9 @@ export { readNavigationEntries, type NavigationEntry } from "./navigation.ts";
 
 export { retainIdleFamily } from "./history-retention.ts";
 export { reapUnreferencedEntryBodies } from "./shared-entry-bodies.ts";
+export {
+  HistoryDirectory,
+  type HistoryCoordinates,
+  type HistoryDirectoryNode,
+  type HistoryDirectoryStore,
+} from "./history-directory.ts";

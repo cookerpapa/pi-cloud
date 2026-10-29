@@ -10,11 +10,7 @@ import {
 /** Native JSON text can contain NUL/lone surrogates and must not be coerced to
  * PG jsonb merely to find images. Collect bounded references at the trusted
  * projection boundary and retain them in the existing attachment authority. */
-export async function retainSessionImages(
-  tx: Transaction<Database>,
-  scope: { tenantId: string; sessionId: string },
-  value: unknown,
-): Promise<void> {
+export function retainedImageReferences(value: unknown): ImageAttachmentReference[] {
   const references = new Map<string, ImageAttachmentReference>();
   const visit = (part: unknown): void => {
     if (!part || typeof part !== "object") return;
@@ -35,6 +31,15 @@ export async function retainSessionImages(
       if (!IMAGE_OPAQUE_FIELDS.has(key)) visit(child);
   };
   visit(value);
+  return [...references.values()];
+}
+
+export async function retainSessionImages(
+  tx: Transaction<Database>,
+  scope: { tenantId: string; sessionId: string },
+  value: unknown,
+): Promise<void> {
+  const references = new Map(retainedImageReferences(value).map((ref) => [ref.id, ref]));
   if (!references.size) return;
   const ids = [...references.keys()].sort();
   const inventory = await sql<{

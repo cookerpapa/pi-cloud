@@ -8,6 +8,7 @@ import type { FactPosition } from "./accepted-fact-recovery.ts";
 import { recordFactProjection } from "./accepted-fact-recovery.ts";
 import { transitionLockedRun, type RunTransitionState } from "./run-state.ts";
 import { advanceLaneReadiness } from "./run-readiness.ts";
+import { settleHistoryTurn, settleFamilyHistory } from "./presentation-settlement.ts";
 
 /** Called with an unsealed Root Run under its row and Session writer locks.
  * Pi has settled the family; this materializes cloud work and presentation. */
@@ -142,6 +143,8 @@ export async function finishWorkIn(
       .where("lease_id", "=", fact.scope.writerId)
       .execute();
   await recordFactProjection(tx, position);
+  await settleHistoryTurn(tx, fact.scope.tenantId, fact.scope.sessionId, fact.scope.turnId);
+  await settleFamilyHistory(tx, fact.scope.tenantId, fact.scope.runId);
   await advanceLaneReadiness(tx, fact.scope.tenantId, fact.scope.sessionId);
   return event;
 }

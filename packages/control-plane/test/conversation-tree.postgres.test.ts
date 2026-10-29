@@ -1,3 +1,4 @@
+import { settleHistoryTurn } from "../../runtime-core/src/presentation-settlement.ts";
 import { randomUUID } from "node:crypto";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { createSession, defineDoc, type ConversationId } from "@earendil-works/pi-durable";
@@ -6,6 +7,7 @@ import {
   DurablePostgresProjection,
   PublishedDurableStorage,
   readDurableEntries,
+  reapUnreferencedEntryBodies,
 } from "@pi-cloud/pi-session-postgres/durable";
 import { appendNativeFixture } from "./fixtures/durable-native.ts";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
@@ -15,7 +17,6 @@ import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { ConversationTreeService } from "../src/conversation-tree-service.ts";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
 import { readCanonicalPiTurnTranscripts } from "../../runtime-core/src/canonical-pi-conversation.ts";
-import { up as backfillNavigation } from "../../database/src/migrations/181_durable_navigation_index.ts";
 import { FORK_PROVENANCE_DOCUMENT } from "@pi-cloud/protocol";
 import { upgradeForkProvenance } from "../src/upgrade-fork-provenance.ts";
 
@@ -61,7 +62,29 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
       "Tree",
       "elastic",
     );
-    const service = new ConversationTreeService({ database: db });
+    const settle = async (owner = session.sessionId) => {
+      const turns = (
+        await sql<{
+          turn_id: string;
+        }>`select turn_id from conversation_turns where tenant_id=${tenant.tenantId}::uuid and session_id=${owner}::uuid and pruned_at is null order by mailbox_position`.execute(
+          db,
+        )
+      ).rows;
+      for (const turn of turns)
+        await db
+          .transaction()
+          .execute((tx) => settleHistoryTurn(tx, tenant.tenantId, owner, turn.turn_id));
+    };
+    const service = new (class extends ConversationTreeService {
+      override async fork(...args: Parameters<ConversationTreeService["fork"]>) {
+        await settle(args[1]);
+        return super.fork(...args);
+      }
+      override async prune(...args: Parameters<ConversationTreeService["prune"]>) {
+        await settle(args[1]);
+        return super.prune(...args);
+      }
+    })({ database: db });
     async function turn(prompt: string, state: "completed" | "failed" | "queued") {
       const accepted = await store.acceptTurn(session.sessionId, randomUUID(), { prompt });
       const scope = {
@@ -126,7 +149,7 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
       return { ...accepted, user, answer, respond };
     }
     const tree = () => service.tree(tenant.tenantId, session.sessionId, "focus");
-    return { ...tenant, project, store, session, service, turn, tree };
+    return { ...tenant, project, store, session, service, turn, tree, settle };
   }
 
   it("seeds pre-upgrade Fork identity once through cold native Storage", async () => {
@@ -265,7 +288,7 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
     expect(copied.map((row) => row.entry)).toEqual(source.map((row) => row.entry));
     const commits = await sql<{ write_count: number }>`select write_count from pi_durable_commits
       where tenant_id=${f.tenantId}::uuid and session_id=${fork.session.sessionId}`.execute(db);
-    expect(commits.rows.length).toBeGreaterThan(1);
+    expect(commits.rows).toHaveLength(1);
     expect(commits.rows.every((row) => row.write_count <= 32)).toBe(true);
   });
 
@@ -524,6 +547,7 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
       new AbortController().signal,
     );
     expect(read).toBe("C image");
+    await reapUnreferencedEntryBodies(db, 1024);
     await images.reap(0);
     expect([...bytes.keys()].some((k) => k.endsWith(eImage.id))).toBe(false);
     expect([...bytes.keys()].some((k) => k.endsWith(cImage.id))).toBe(true);
@@ -531,6 +555,7 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
       f.tenantId,
       fork.session.sessionId,
     );
+    await reapUnreferencedEntryBodies(db, 1024);
     await images.reap(0);
     expect([...bytes.keys()].some((k) => k.endsWith(cImage.id))).toBe(false);
   }, 30000);
@@ -558,6 +583,12 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
     const service = new ConversationTreeService({ database: failing }),
       key = randomUUID(),
       request = { turnId: a.turnId, entryId: a.answer!.id };
+    await f.settle();
+    const beforeRoot = (
+      await sql`select root_id from pi_history_views where tenant_id=${f.tenantId}::uuid and session_id=${f.session.sessionId}::uuid`.execute(
+        db,
+      )
+    ).rows;
     await expect(service.prune(f.tenantId, f.session.sessionId, key, request)).rejects.toThrow(
       "injected cutover",
     );
@@ -579,11 +610,11 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
     ).toBeNull();
     expect(
       (
-        await sql`select 1 from pi_history_snapshots where tenant_id=${f.tenantId}::uuid`.execute(
+        await sql`select root_id from pi_history_views where tenant_id=${f.tenantId}::uuid and session_id=${f.session.sessionId}::uuid`.execute(
           db,
         )
       ).rows,
-    ).toHaveLength(0);
+    ).toEqual(beforeRoot);
     await f.service.prune(f.tenantId, f.session.sessionId, key, request);
     expect(await f.service.prune(f.tenantId, f.session.sessionId, key, request)).toMatchObject({
       replayed: true,
@@ -591,52 +622,44 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
     });
   }, 30000);
 
-  it("converts an old Fork prefix once and never reimports it after later pruning", async () => {
-    const { upgradeIndependentHistories } = await import("../src/upgrade-independent-history.ts");
+  it("shares settled display blocks and never expands a pruned boundary on completion replay", async () => {
     const f = await fixture(),
-      a = await f.turn("A", "completed"),
-      b = await f.turn("B", "completed");
+      a = await f.turn("A", "completed");
+    await a.respond("A later answer");
+    const b = await f.turn("B", "completed");
     const fork = await f.service.fork(f.tenantId, f.session.sessionId, randomUUID(), {
       turnId: b.turnId,
       entryId: b.answer!.id,
     });
-    await sql`delete from pi_history_snapshots where tenant_id=${f.tenantId}::uuid and session_id=${fork.session.sessionId}::uuid`.execute(
-      db,
-    );
-    await sql`update sessions set history_imported=false,next_mailbox_position=1 where tenant_id=${f.tenantId}::uuid and id=${fork.session.sessionId}::uuid`.execute(
-      db,
-    );
-    const own = await f.store.acceptTurn(fork.session.sessionId, randomUUID(), {
-      prompt: "Own later input",
+    const count = async () =>
+      Number(
+        (
+          await sql<{
+            n: string;
+          }>`select count(*)::text as n from pi_history_frames where tenant_id=${f.tenantId}::uuid`.execute(
+            db,
+          )
+        ).rows[0]!.n,
+      );
+    const before = await count();
+    const nested = await f.service.fork(f.tenantId, fork.session.sessionId, randomUUID(), {
+      turnId: b.turnId,
+      entryId: b.answer!.id,
     });
-    await db
-      .updateTable("runs")
-      .set({ state: "completed", started_at: new Date(), settled_at: new Date() })
-      .where("id", "=", own.runId)
-      .execute();
-    await db
-      .updateTable("sessions")
-      .set({ state: "idle" })
-      .where("id", "=", fork.session.sessionId)
-      .execute();
-    expect(await upgradeIndependentHistories(db)).toBe(1);
-    expect(
-      (
-        await db
-          .selectFrom("runs")
-          .select("mailbox_position")
-          .where("id", "=", own.runId)
-          .executeTakeFirstOrThrow()
-      ).mailbox_position,
-    ).toBe("3");
-    expect(await upgradeIndependentHistories(db)).toBe(0);
-    await f.service.prune(f.tenantId, fork.session.sessionId, randomUUID(), {
+    expect(await count()).toBe(before);
+    await f.service.prune(f.tenantId, f.session.sessionId, randomUUID(), {
       turnId: a.turnId,
       entryId: a.answer!.id,
     });
-    expect(await upgradeIndependentHistories(db)).toBe(0);
-    const tree = await f.service.tree(f.tenantId, fork.session.sessionId, "focus");
-    expect(tree.branches[0]!.entries.map((e) => e.text)).toEqual(["A", "A answer"]);
+    await db
+      .transaction()
+      .execute((tx) => settleHistoryTurn(tx, f.tenantId, f.session.sessionId, a.turnId));
+    expect((await f.tree()).branches[0]!.entries.map((e) => e.text)).toEqual(["A", "A answer"]);
+    expect(
+      (
+        await f.service.tree(f.tenantId, nested.session.sessionId, "focus")
+      ).branches[0]!.entries.map((e) => e.text),
+    ).toEqual(["A", "A answer", "A later answer", "B", "B answer"]);
   }, 30000);
 
   it("allows source projection counters during Fork copying and serializes source pruning behind its reference transaction", async () => {
@@ -655,7 +678,7 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
     const measured = db.withPlugin({
       transformQuery({ node, queryId }) {
         const q = db.getExecutor().compileQuery(node, queryId);
-        if (!paused && q.sql.includes("insert into pi_durable_writes")) watched.add(queryId);
+        if (!paused && q.sql.includes("insert into pi_durable_write_refs")) watched.add(queryId);
         return node;
       },
       async transformResult({ result, queryId }) {
@@ -667,6 +690,7 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
         return result;
       },
     });
+    await f.settle();
     const copying = new ConversationTreeService({ database: measured }).fork(
       f.tenantId,
       f.session.sessionId,
@@ -708,7 +732,7 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
     ]);
   }, 30000);
 
-  it("backfills and rebuilds navigation without coercing native NUL or surrogate text", async () => {
+  it("rebuilds navigation without coercing native NUL or surrogate text", async () => {
     const f = await fixture(),
       turn = await f.turn("index", "completed");
     await appendNativeFixture(
@@ -740,16 +764,10 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
         db,
       );
     const before = (await native()).rows;
-    await db.transaction().execute(async (tx) => {
-      await sql`alter table pi_durable_records drop constraint pi_durable_navigation_required,
-        drop constraint pi_durable_document_policy_required;drop index pi_durable_navigation`.execute(
-        tx,
-      );
-      await sql`update pi_durable_records set fields=fields-'navigation' where kind='entry'`.execute(
-        tx,
-      );
-      await backfillNavigation<Database>(tx);
-    });
+    await sql`delete from pi_durable_document_revisions where tenant_id=${f.tenantId}::uuid`.execute(
+      db,
+    );
+    await sql`delete from pi_durable_owned_records where tenant_id=${f.tenantId}::uuid`.execute(db);
     expect((await native()).rows).toEqual(before);
     const projection = new DurablePostgresProjection(db, {
       tenantId: f.tenantId,
@@ -765,7 +783,7 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
     });
     expect(JSON.stringify(visible[0]!.entry)).toContain("native\\u0000\\ud800");
     await expect(
-      sql`update pi_durable_records set fields=fields-'navigation' where tenant_id=${f.tenantId}::uuid and kind='entry'`.execute(
+      sql`update pi_durable_owned_records set fields=fields-'navigation' where tenant_id=${f.tenantId}::uuid and kind='entry'`.execute(
         db,
       ),
     ).rejects.toMatchObject({ code: "23514" });

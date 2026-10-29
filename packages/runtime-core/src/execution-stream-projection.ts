@@ -1,3 +1,4 @@
+import { settleHistoryTurn, settleFamilyHistory } from "./presentation-settlement.ts";
 import { transitionLockedRun } from "./run-state.ts";
 import { PostgresDurableCommitProjector } from "./postgres-durable-commit-projector.ts";
 import type { Database } from "@pi-cloud/database";
@@ -309,6 +310,12 @@ export class ExecutionStreamProjector {
               .where("id", "=", event.sessionId)
               .execute();
             await recordFactProjection(tx, record);
+            await settleHistoryTurn(
+              tx,
+              fact.scope.tenantId,
+              fact.scope.sessionId,
+              fact.scope.turnId,
+            );
             if (!current()) throw new Error("Conversation completion owner changed");
           });
           this.#prefixes.delete(
@@ -416,10 +423,10 @@ export class ExecutionStreamProjector {
       if (fact.nativeSequence > 0) {
         const head = await sql<{
           seq: string;
-        }>`select coalesce(max(seq),0)::text seq from pi_durable_commits
-          where tenant_id=${fact.scope.tenantId}::uuid and session_id=${fact.scope.piSessionId}`.execute(
-          tx,
-        );
+        }>`select coalesce(max(seq),0)::text seq from (
+          select seq from pi_durable_commits where tenant_id=${fact.scope.tenantId}::uuid and session_id=${fact.scope.piSessionId}
+          union all select through_seq from pi_durable_bases where tenant_id=${fact.scope.tenantId}::uuid and session_id=${fact.scope.piSessionId}
+        ) positions`.execute(tx);
         if (Number(head.rows[0]!.seq) !== fact.nativeSequence)
           throw new Error("Root completion does not follow its final native commit");
       }
@@ -669,6 +676,13 @@ export class ExecutionStreamProjector {
         .execute();
       await recordFactProjection(transaction, position);
       if (event.type === "turn.failed") await recoverQuarantinedSession(transaction, fact.scope);
+      await settleHistoryTurn(
+        transaction,
+        fact.scope.tenantId,
+        fact.scope.sessionId,
+        fact.scope.turnId,
+      );
+      await settleFamilyHistory(transaction, fact.scope.tenantId, fact.scope.runId);
       if (
         event.type !== "turn.completed" &&
         event.type !== "turn.failed" &&

@@ -71,6 +71,36 @@ indexes and reference constraints rather than adding an event store or scheduler
 
 ## Acceptance
 
+The next storage slice separates immutable retained records from the lifetime of
+an active physical Session. Local commit references keep the original Kafka batch
+fingerprints; an independent Fork holds a shared, bounded range directory plus
+small native state baselines and a local commit suffix. No archived Session may
+remain an admissible writer merely to keep its history alive. Directory leaves
+freeze both native ID bounds and publication bounds. Entries committed later with
+a previously reserved ID therefore cannot enter an existing manual Fork. Native
+IDs remain the context ordering key; publication positions remain version bounds.
+
+The directory balances range references, not the contents of every model message.
+Ordinary appends retain their existing indexed write path. Clipping a range may
+count/hash its small indexed descriptors; it must not read or copy the historical
+message bodies. This is not a claim of constant work for arbitrary metadata/state
+sizes. Measure that cost independently from body bytes and directory depth.
+
+Presentation descriptors must be retained once at their source, then shared with
+the same independent lifetime rules. Per-Fork Entry reference copying or display
+descriptor copying is not the final path. Native mutable state remains independent;
+shared image edges belong to retained objects, with tenant/session visibility
+checked through the retained history view. Collection removes unreachable
+directory nodes before reclaiming uncovered records and their image edges.
+
+A child Conversation can complete an input and receive another input during the
+same root Run. Its source display stream therefore remains appendable. Each
+directory leaf fixes both a frame boundary and an immutable header version;
+later child activity updates only the source's directory root. A Fork continues
+reading its captured version. Active or advanced source Turns use their live
+view until the next completed snapshot. Retirement/pruning cannot be undone by
+replaying a completion from the old physical Session.
+
 Correctness and ownership are hard gates. Performance combines body/row/SQL counts,
 absolute latency, throughput and WAL. The earlier 10% threshold remains a warning
 for ordinary write/load regressions, not proof that an extra few milliseconds of

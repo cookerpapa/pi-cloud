@@ -1,4 +1,10 @@
 import { nativeBodyAtRecord } from "./record-body.ts";
+import {
+  readSharedBase,
+  sharedStateFingerprint,
+  verifySharedEntries,
+  type SharedHistoryBase,
+} from "./shared-history-base.ts";
 import { assertIdleNativeSession } from "../idle-session-mutation.ts";
 import { retainedHistoryBody, writeRetainedHistory } from "./shared-entry-bodies.ts";
 import { createHash } from "node:crypto";
@@ -139,8 +145,10 @@ export class DurablePostgresProjection {
         : sql`false`
     } as incomplete
       from (select 1) seed left join lateral (
-        select seq,next_id from pi_durable_commits c
-        where ${this.scoped("c")} order by seq desc limit 1
+        select seq,next_id from (
+          select seq,next_id from pi_durable_commits c where ${this.scoped("c")}
+          union all select through_seq,next_id from pi_durable_bases c where ${this.scoped("c")}
+        ) positions order by seq desc limit 1
       ) h on true`.execute(this.database);
     const row = result.rows[0]!;
     if (row.incomplete)
@@ -152,6 +160,88 @@ export class DurablePostgresProjection {
     const { rows } = await sql<{ seq: string }>`select r.seq from pi_durable_records r
       where ${this.scoped("r")} and r.id=${id}`.execute(this.database);
     return rows[0] === undefined ? undefined : Number(rows[0].seq);
+  }
+  /** Load only the requested immutable Conversation ancestry in one round trip.
+   * JSON (not JSONB) extracts fixed numeric links without rewriting native text. */
+  async conversationAncestry(id: number): Promise<IndexedRecord[]> {
+    const { rows } = await sql<RecordRow>`with recursive chain(id) as (
+      select ${id}::bigint union
+      select (g.body::json#>>'{value,parent,conversationId}')::bigint from chain c
+        join pi_durable_owned_records r on ${this.scoped("r")} and r.id=c.id and r.kind='conversation'
+        join pi_history_records g on g.tenant_id=r.tenant_id and g.id=r.retained_record_id
+        where g.body::json#>>'{value,parent,conversationId}' is not null
+    ) select r.kind,r.seq,r.ordinal,r.fields,r.created_seq,r.retired_seq,l.body
+      from chain c join pi_durable_owned_records r on ${this.scoped("r")} and r.id=c.id and r.kind='conversation'
+      ${nativeBodyAtRecord}`.execute(this.database);
+    return rows.map(decodeRecord);
+  }
+  async conversationPath(
+    id: number,
+    through = Number.MAX_SAFE_INTEGER,
+    missingIsEmpty = false,
+  ): Promise<{ record: IndexedRecord; through: number }[]> {
+    const records = new Map(
+      (await this.conversationAncestry(id)).map((r) => [r.value.id as number, r]),
+    );
+    if (missingIsEmpty && !records.has(id)) return [];
+    const path: { record: IndexedRecord; through: number }[] = [],
+      visited = new Set<number>();
+    for (;;) {
+      if (visited.has(id)) throw new Error("Native conversation ancestry has a cycle");
+      visited.add(id);
+      const record = records.get(id);
+      if (!record) throw new Error("Native conversation ancestry is incomplete");
+      path.push({ record, through });
+      const parent = (record.value as import("@earendil-works/pi-durable").ConversationRecord)
+        .parent;
+      if (!parent) return path;
+      id = parent.conversationId;
+      through = Math.min(through, parent.at);
+    }
+  }
+
+  async scanEntryRanges(
+    ranges: readonly { conversationId: number; through: number }[],
+    limit: number,
+    minimum: number,
+    head: boolean,
+    exclude: readonly number[],
+  ): Promise<IndexedRecord[]> {
+    if (!ranges.length) return [];
+    const { rows } = await sql<RecordRow>`with scopes(conversation_id,through_id,position) as (
+      values ${sql.join(ranges.map((r, i) => sql`(${r.conversationId}::bigint,${r.through}::bigint,${i}::int)`))}
+    ), owned as (
+      select r.*,s.position from scopes s join pi_durable_owned_records r
+        on ${this.scoped("r")} and r.kind='entry' and r.fields->>'conversation'=s.conversation_id::text
+        and r.id between ${minimum} and s.through_id
+        ${head ? sql`and r.fields ? 'head'` : sql``}
+        ${exclude.length ? sql`and not(r.id=any(${[...exclude]}::bigint[]))` : sql``}
+      order by s.position,r.id desc limit ${limit}
+    ), inherited as (
+      select b.tenant_id,b.session_id,g.record_id as id,'entry'::text as kind,g.seq,g.ordinal,
+        case when (n.clear_task or (n.retained_tasks is not null and not coalesce(g.entry_task_id=any(n.retained_tasks),false))) then g.fields-'task' else g.fields end as fields,
+        null::bigint as created_seq,null::bigint as retired_seq,g.id as retained_record_id,(n.clear_task or (n.retained_tasks is not null and not coalesce(g.entry_task_id=any(n.retained_tasks),false))) as body_fork,s.position
+      from pi_durable_bases b cross join lateral pi_history_ranges(b.tenant_id,b.entry_root) n
+      join scopes s on s.conversation_id=n.conversation_id
+      join pi_history_records g on g.tenant_id=b.tenant_id and g.session_id=n.source_id and g.record_kind='entry'
+        and g.entry_conversation_id=n.conversation_id and g.record_id between greatest(${minimum},n.min_id) and least(s.through_id,n.max_id)
+        and g.seq<=n.through_seq
+        ${head ? sql`and g.fields ? 'head'` : sql``}
+        ${exclude.length ? sql`and not(g.record_id=any(${[...exclude]}::bigint[]))` : sql``}
+      where ${this.scoped("b")}
+      order by s.position,g.record_id desc limit ${limit}
+    ), selected as (
+      select * from (select * from owned union all select * from inherited) candidates order by position,id desc limit ${limit}
+    ) select r.kind,r.seq,r.ordinal,r.fields,r.created_seq,r.retired_seq,l.body
+      from selected r ${nativeBodyAtRecord} order by r.position,r.id desc`.execute(this.database);
+    return this.imageRepresentation === "references"
+      ? rows.map(decodeRecord)
+      : decodeSessionImages<IndexedRecord[]>(
+          this.images,
+          this.scope,
+          rows.map(decodeRecord),
+          databaseReadSignal(),
+        );
   }
   async get(id: number): Promise<IndexedRecord | undefined> {
     const result =
@@ -237,8 +327,9 @@ export class DurablePostgresProjection {
       join pi_durable_log l using(tenant_id,session_id,seq,ordinal)
       where ${this.scoped("d")} and d.document_id=${id} and d.seq>=(select seq from base) and d.seq<=${through}
       union all select c.seq,c.ordinal,c.delta_count,null::text as checkpoint,null::text,true,c.replay_seq,
-        row_to_json(c),h.current_hashes->>c.id::text
-        from pi_durable_current c join pi_durable_commits h using(tenant_id,session_id,seq)
+        row_to_json(c),case when c.base_state then b.current_hashes->c.id::text->>'hash' else h.current_hashes->>c.id::text end
+        from pi_durable_current c left join pi_durable_commits h using(tenant_id,session_id,seq)
+        left join pi_durable_bases b using(tenant_id,session_id)
         where ${this.scoped("c")} and c.id=${id}
           and c.kind='document' and c.retired_seq is null and c.seq<=${through}
       order by seq`.execute(this.database);
@@ -358,7 +449,10 @@ export class DurablePostgresProjection {
       select coalesce(h.seq,0)::text as seq,coalesce(h.next_id,2)::text as next_id,
         coalesce(state.inputs,'[]'::json) as inputs,${pendingLive} as pending_live
       from (select 1) seed left join lateral (
-        select seq,next_id from pi_durable_commits c where ${this.scoped("c")} order by seq desc limit 1
+        select seq,next_id from (
+          select seq,next_id from pi_durable_commits c where ${this.scoped("c")}
+          union all select through_seq,next_id from pi_durable_bases c where ${this.scoped("c")}
+        ) positions order by seq desc limit 1
       ) h on true left join lateral (
         select json_agg(row) as inputs from (
           select ${CURRENT_SOURCE_COLUMNS}
@@ -479,7 +573,7 @@ export class DurablePostgresProjection {
       .filter((r) => r.retired_seq !== null)
       .map((r) => Number(r.id));
     if (retiredCurrent.length)
-      await sql`update pi_durable_records r set retired_seq=${batch.seq}
+      await sql`update pi_durable_owned_records r set retired_seq=${batch.seq}
       where ${this.scoped("r")} and id=any(${retiredCurrent}::bigint[])`.execute(tx);
     await this.#indexBatch(tx, batch, effective, current.omitted);
     await this.#checkpointRows(tx, checkpoints);
@@ -520,11 +614,18 @@ export class DurablePostgresProjection {
   ): Promise<void> {
     if (!rows.length) return;
     const result = await sql`insert into pi_durable_current as existing
-      (tenant_id,session_id,id,kind,seq,ordinal,body,delta_count,created_seq,retired_seq,cloud_origin) values
-      ${sql.join(rows.map((r) => sql`(${this.scope.tenantId}::uuid,${this.scope.sessionId},${r.id},${r.kind},${r.seq},${r.ordinal},${r.body},${r.delta_count},${r.created_seq},${r.retired_seq},${r.cloud_origin === null ? null : JSON.stringify(r.cloud_origin)}::jsonb)`))}
+      (tenant_id,session_id,id,kind,seq,ordinal,body,delta_count,created_seq,retired_seq,cloud_origin,committed_at) values
+      ${sql.join(
+        rows.map(
+          (
+            r,
+          ) => sql`(${this.scope.tenantId}::uuid,${this.scope.sessionId},${r.id},${r.kind},${r.seq},${r.ordinal},${r.body},${r.delta_count},${r.created_seq},${r.retired_seq},${r.cloud_origin === null ? null : JSON.stringify(r.cloud_origin)}::jsonb,
+        (select committed_at from pi_durable_commits where tenant_id=${this.scope.tenantId}::uuid and session_id=${this.scope.sessionId} and seq=${r.seq}::bigint))`,
+        ),
+      )}
       on conflict(tenant_id,session_id,id) do update set seq=excluded.seq,ordinal=excluded.ordinal,
-        body=excluded.body,delta_count=excluded.delta_count,retired_seq=excluded.retired_seq,cloud_origin=excluded.cloud_origin,
-        replay_topic=null,replay_partition=null,replay_offset=null,replay_seq=null
+        body=excluded.body,delta_count=excluded.delta_count,retired_seq=excluded.retired_seq,cloud_origin=excluded.cloud_origin,committed_at=excluded.committed_at,
+        base_state=false,replay_topic=null,replay_partition=null,replay_offset=null,replay_seq=null
       where existing.kind=excluded.kind and existing.seq<=excluded.seq
       returning id`.execute(tx);
     if (result.rows.length !== rows.length)
@@ -704,7 +805,7 @@ export class DurablePostgresProjection {
     // Retire addresses before installing replacements. One batch can update a
     // task repeatedly, so the derived pointer retains its last write only.
     if (retired.size)
-      await sql`update pi_durable_records r set retired_seq=${batch.seq}
+      await sql`update pi_durable_owned_records r set retired_seq=${batch.seq}
         where ${this.scoped("r")} and id=any(${[...retired]}::bigint[]) and kind='document'`.execute(
         tx,
       );
@@ -806,11 +907,13 @@ export class DurablePostgresProjection {
     current = false,
   ) {
     if (!records.length) return;
-    const result = await sql`insert into pi_durable_records as existing
-      (tenant_id,session_id,id,kind,seq,ordinal,fields,created_seq,retired_seq) values
-      ${sql.join(records.map((r) => sql`(${this.scope.tenantId}::uuid,${this.scope.sessionId},${r.value.id},${r.kind},${r.seq},${r.ordinal},${JSON.stringify(r.fields)}::jsonb,${r.createdSeq ?? null},${r.retiredSeq ?? null})`))}
+    const result = await sql`insert into pi_durable_owned_records as existing
+      (tenant_id,session_id,id,kind,seq,ordinal,fields,created_seq,retired_seq,retained_record_id,body_fork)
+      select ${this.scope.tenantId}::uuid,${this.scope.sessionId},v.*,p.retained_record_id,coalesce(p.clear_owner,false)
+      from (values ${sql.join(records.map((r) => sql`(${r.value.id}::bigint,${r.kind}::text,${r.seq}::bigint,${r.ordinal}::int,${JSON.stringify(r.fields)}::jsonb,${r.createdSeq ?? null}::bigint,${r.retiredSeq ?? null}::bigint)`))}) v(id,kind,seq,ordinal,fields,created_seq,retired_seq)
+      left join pi_durable_write_refs p on p.tenant_id=${this.scope.tenantId}::uuid and p.session_id=${this.scope.sessionId} and (p.seq,p.ordinal)=(v.seq,v.ordinal)
       on conflict(tenant_id,session_id,id) do update set seq=excluded.seq,ordinal=excluded.ordinal,
-        retired_seq=excluded.retired_seq,
+        retired_seq=excluded.retired_seq,retained_record_id=excluded.retained_record_id,body_fork=excluded.body_fork,
         fields=excluded.fields || jsonb_strip_nulls(jsonb_build_object(
           'cloudSession',coalesce(existing.fields->'cloudSession',excluded.fields->'cloudSession'),
           'run',coalesce(existing.fields->'run',excluded.fields->'run'),
@@ -828,24 +931,126 @@ export class DurablePostgresProjection {
     await this.database.transaction().execute((tx) => this.rebuildIn(tx));
   }
 
-  async rebuildIn(tx: Transaction<Database>): Promise<void> {
+  /** The cold importer has already fixed its ranges in this transaction. This
+   * builds only small mutable-state indexes, not an Entry-by-Entry copy/hash. */
+  async initializeBaseIn(tx: Transaction<Database>): Promise<void> {
     await assertIdleNativeSession(tx, this.scope.tenantId, this.scope.sessionId);
-    const missing = await sql`with expected as (
-        select distinct on (state.key) state.key::bigint as id,c.seq
-          from pi_durable_commits c cross join lateral jsonb_each_text(c.current_hashes) state
-          where ${this.scoped("c")} order by state.key,c.seq desc
-      ), actual as (select id,seq from pi_durable_current c where ${this.scoped("c")})
-      select 1 from expected e full join actual a using(id)
-        where e.id is null or a.id is null or e.seq<>a.seq limit 1`.execute(tx);
-    if (missing.rows.length) throw new Error("Native current-state recovery set is incomplete");
-    await sql`delete from pi_durable_records r where ${this.scoped("r")}`.execute(tx);
-    await sql`delete from pi_durable_document_revisions r where ${this.scoped("r")}`.execute(tx);
+    const base = await readSharedBase(tx, this.scope);
+    const existing =
+      await sql`select 1 from pi_durable_commits c where ${this.scoped("c")} limit 1`.execute(tx);
+    if (!base || existing.rows.length)
+      throw new Error("Shared native base is not a new cold Session");
+    await this.#restoreCurrentState(tx);
+    await this.#restoreBaseState(tx, base);
+  }
+
+  async #restoreBaseState(tx: Transaction<Database>, base: SharedHistoryBase): Promise<void> {
+    const actual = await sharedStateFingerprint(tx, this.scope);
+    if (actual.count !== base.history_count || actual.fingerprint !== base.history_fingerprint)
+      throw new Error("Shared native state integrity check failed");
+    // Empty Fork ancestors consist mostly of immutable Conversation definitions
+    // and single-base documents. Index them in bounded sets, preserving each
+    // original sequence instead of making a round trip per old commit.
+    const definitions = (
+      await sql<{
+        id: string;
+        seq: string;
+        ordinal: number;
+        kind: string;
+        definition: string;
+        version: number | null;
+        clear_owner: boolean;
+        cloud_origin: Record<string, string> | null;
+        single: boolean;
+      }>`select g.record_id::text as id,r.seq::text,r.ordinal,g.record_kind as kind,
+      case when g.record_kind='conversation' then (g.body::json->'value')::text else (g.body::json->'record')::text end as definition,
+      (g.body::json#>>'{content,version}')::int as version,r.clear_owner,g.cloud_origin,
+      not exists(select 1 from pi_durable_write_refs other join pi_history_records w on w.tenant_id=other.tenant_id and w.id=other.retained_record_id
+        where other.tenant_id=r.tenant_id and other.session_id=r.session_id and other.base and w.record_id=g.record_id
+          and (other.seq,other.ordinal)<>(r.seq,r.ordinal)) as single
+      from pi_durable_write_refs r join pi_history_records g on g.tenant_id=r.tenant_id and g.id=r.retained_record_id
+      where ${this.scoped("r")} and r.base and g.record_kind in ('conversation','document.create')
+      order by r.seq,r.ordinal`.execute(tx)
+    ).rows.map((row) => {
+      const definition = JSON.parse(row.definition);
+      if (row.clear_owner) delete definition.owner;
+      const indexed = indexNative(
+        row.kind === "conversation" ? "conversation" : "document",
+        row.kind === "conversation" ? definition : { ...definition, createdAt: Number(row.seq) },
+        Number(row.seq),
+        row.ordinal,
+      );
+      Object.assign(indexed.fields, row.cloud_origin ?? {});
+      return { ...row, indexed };
+    });
+    const addresses = new Map<string, number>();
+    for (const row of definitions)
+      if (row.kind === "document.create")
+        addresses.set(
+          row.indexed.fields.address!,
+          (addresses.get(row.indexed.fields.address!) ?? 0) + 1,
+        );
+    const simple = definitions.filter(
+      (row) =>
+        row.kind === "conversation" ||
+        (row.single && addresses.get(row.indexed.fields.address!) === 1),
+    );
+    for (let start = 0; start < simple.length; start += 128) {
+      const page = simple.slice(start, start + 128);
+      await this.#writeIndexes(
+        tx,
+        page.map((row) => row.indexed),
+      );
+      const docs = page.filter((row) => row.kind === "document.create");
+      if (docs.length)
+        await sql`insert into pi_durable_document_revisions(tenant_id,session_id,document_id,seq,ordinal,kind,version,delta_count)
+        values ${sql.join(docs.map((row) => sql`(${this.scope.tenantId}::uuid,${this.scope.sessionId},${row.id}::bigint,${row.seq}::bigint,${row.ordinal},'base',${row.version},0)`))}`.execute(
+          tx,
+        );
+    }
+    const simpleIds = simple.map((row) => Number(row.id));
+    let after = -1;
+    for (;;) {
+      const { rows: sequences } = await sql<{
+        seq: string;
+      }>`select r.seq::text from pi_durable_write_refs r join pi_history_records g on g.tenant_id=r.tenant_id and g.id=r.retained_record_id
+        where ${this.scoped("r")} and r.base and r.seq>${after} and not(g.record_id=any(${simpleIds}::bigint[])) group by r.seq order by r.seq limit 64`.execute(
+        tx,
+      );
+      if (!sequences.length) break;
+      for (const { seq } of sequences) {
+        const { rows } =
+          await sql<HistoryWriteRow>`select l.ordinal,l.record_kind,l.record_id::text,l.body,l.phase,l.cloud_origin
+          from pi_durable_write_refs r join pi_durable_log l using(tenant_id,session_id,seq,ordinal)
+          where ${this.scoped("r")} and r.base and r.seq=${seq}::bigint and not(l.record_id=any(${simpleIds}::bigint[])) order by r.ordinal`.execute(
+            tx,
+          );
+        if (rows.some((r) => r.record_kind === "entry") || Number(seq) > Number(base.through_seq))
+          throw new Error("Shared native state escaped its base boundary");
+        await this.#indexBatch(
+          tx,
+          {
+            seq: Number(seq) as Seq,
+            nextId: Number(base.next_id),
+            writes: rows.map((r) => JSON.parse(r.body)),
+          },
+          new Map(rows.map((r) => [Number(r.record_id), r.cloud_origin ?? undefined])),
+          new Set(),
+          rows.map((r) => r.ordinal),
+        );
+        after = Number(seq);
+      }
+    }
+  }
+
+  async #restoreCurrentState(tx: Transaction<Database>): Promise<void> {
     let afterId = 0;
     for (;;) {
       const rows = await sql<
         CurrentStateRow & { expected: string }
-      >`select s.*,c.current_hashes->>s.id::text as expected
-          from pi_durable_current s join pi_durable_commits c using(tenant_id,session_id,seq)
+      >`select s.*,case when s.base_state then b.current_hashes->s.id::text->>'hash' else c.current_hashes->>s.id::text end as expected
+          from pi_durable_current s left join pi_durable_commits c using(tenant_id,session_id,seq)
+          left join pi_durable_bases b using(tenant_id,session_id)
           where ${this.scoped("s")} and s.id>${afterId} order by s.id limit 64`.execute(tx);
       if (!rows.rows.length) break;
       for (const row of rows.rows)
@@ -854,7 +1059,28 @@ export class DurablePostgresProjection {
       await this.#writeIndexes(tx, rows.rows.map(currentStateIndex), true);
       afterId = Number(rows.rows.at(-1)!.id);
     }
-    let through = 0;
+  }
+
+  async rebuildIn(tx: Transaction<Database>): Promise<void> {
+    await assertIdleNativeSession(tx, this.scope.tenantId, this.scope.sessionId);
+    const base = await readSharedBase(tx, this.scope);
+    if (base) await verifySharedEntries(tx, this.scope, base);
+    const missing = await sql`with versions as (
+        select state.key::bigint as id,c.seq
+          from pi_durable_commits c cross join lateral jsonb_each_text(c.current_hashes) state
+          where ${this.scoped("c")}
+        union all select state.key::bigint,(state.value->>'seq')::bigint from pi_durable_bases c
+          cross join lateral jsonb_each(c.current_hashes) state where ${this.scoped("c")}
+      ), expected as (select distinct on(id) id,seq from versions order by id,seq desc
+      ), actual as (select id,seq from pi_durable_current c where ${this.scoped("c")})
+      select 1 from expected e full join actual a using(id)
+        where e.id is null or a.id is null or e.seq<>a.seq limit 1`.execute(tx);
+    if (missing.rows.length) throw new Error("Native current-state recovery set is incomplete");
+    await sql`delete from pi_durable_owned_records r where ${this.scoped("r")}`.execute(tx);
+    await sql`delete from pi_durable_document_revisions r where ${this.scoped("r")}`.execute(tx);
+    await this.#restoreCurrentState(tx);
+    if (base) await this.#restoreBaseState(tx, base);
+    let through = Number(base?.through_seq ?? 0);
     for (;;) {
       const headers = await sql<{
         seq: string;

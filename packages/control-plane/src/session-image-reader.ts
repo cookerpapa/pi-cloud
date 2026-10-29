@@ -38,6 +38,14 @@ export class SessionImageReader {
       where s.tenant_id=${tenantId}::uuid and s.id=${sessionId}::uuid and s.pruned_at is null
         and o.state='ready' and (
           exists(select 1 from session_image_references r where r.tenant_id=s.tenant_id and r.session_id=s.pi_session_id and r.image_id=o.id)
+          or exists(select 1 from pi_history_record_images image join pi_durable_writes w
+            on w.tenant_id=image.tenant_id and w.retained_record_id=image.retained_record_id
+            where image.tenant_id=s.tenant_id and image.image_id=o.id and w.session_id=s.pi_session_id)
+          or exists(select 1 from pi_history_header_images image
+            join pi_history_view_nodes candidate on candidate.tenant_id=image.tenant_id and candidate.header_body_id=image.body_id
+            join pi_history_views v on v.tenant_id=s.tenant_id and v.session_id=s.id
+            cross join lateral pi_history_view_ranges(v.tenant_id,v.root_id,candidate.min_position,candidate.max_position) n
+            where image.tenant_id=s.tenant_id and image.image_id=o.id and n.header_body_id=image.body_id)
           or exists(select 1 from session_uploads u where u.tenant_id=s.tenant_id and u.session_id=s.id and u.image_id=o.id and u.state='ready'))`.execute(
         this.database,
       ),

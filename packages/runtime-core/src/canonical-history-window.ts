@@ -227,13 +227,11 @@ async function readLiveHistoryWindow(
   const rows = bodyPoints.length
     ? await sql<
         NativeHistoryRow & { ordinal: number; pi_session_id: string }
-      >`select l.record_id::text as id,l.seq::text,l.ordinal,r.fields,l.body,c.committed_at,l.session_id as pi_session_id
+      >`select l.record_id::text as id,l.seq::text,l.ordinal,r.fields,l.body,l.committed_at,l.session_id as pi_session_id
     from unnest(${bodyPoints.map((r) => r.pi_session_id)}::text[],${bodyPoints.map((r) => r.seq)}::bigint[],${bodyPoints.map((r) => r.ordinal)}::int[]) p(session_id,seq,ordinal)
     join pi_durable_log l on l.tenant_id=${input.tenantId}::uuid and l.session_id=p.session_id and l.seq=p.seq and l.ordinal=p.ordinal
     join pi_durable_records r on r.tenant_id=l.tenant_id and r.session_id=l.session_id and r.id=l.record_id
-    join pi_durable_commits c on c.tenant_id=l.tenant_id and c.session_id=l.session_id and c.seq=l.seq`.execute(
-        db,
-      )
+    `.execute(db)
     : { rows: [] };
   const assistantKeys = [
     ...new Map(
@@ -252,13 +250,11 @@ async function readLiveHistoryWindow(
   const dependencies = assistantKeys.length
     ? await sql<
         NativeHistoryRow & { pi_session_id: string }
-      >`select r.id::text,r.seq::text,r.ordinal,r.fields,l.body,c.committed_at,r.session_id as pi_session_id
+      >`select r.id::text,r.seq::text,r.ordinal,r.fields,l.body,l.committed_at,r.session_id as pi_session_id
     from unnest(${assistantKeys.map((r) => r.session)}::text[],${assistantKeys.map((r) => r.id)}::bigint[]) p(session_id,id)
     join pi_durable_records r on r.tenant_id=${input.tenantId}::uuid and r.session_id=p.session_id and r.id=p.id and r.kind='entry'
     join pi_durable_log l on l.tenant_id=r.tenant_id and l.session_id=r.session_id and l.seq=r.seq and l.ordinal=r.ordinal
-    join pi_durable_commits c on c.tenant_id=r.tenant_id and c.session_id=r.session_id and c.seq=r.seq`.execute(
-        db,
-      )
+    `.execute(db)
     : { rows: [] };
   const users = bodyPoints.filter((r) => r.fields.role === "user");
   const inputs = users.length

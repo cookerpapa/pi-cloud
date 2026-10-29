@@ -1,5 +1,5 @@
 import { replacePrunedHistory } from "./conversation-history-retention.ts";
-import { freezeForkHistory, retainFrozenImages } from "@pi-cloud/runtime-core/frozen-history";
+import { freezeForkHistory } from "@pi-cloud/runtime-core/frozen-history";
 import { unbindSessionTargets } from "./unbind-session-targets.ts";
 import { readNavigationEntries } from "@pi-cloud/pi-session-postgres/durable";
 import { createHash, randomUUID } from "node:crypto";
@@ -1008,6 +1008,8 @@ export class ConversationTreeService {
             .execute();
         }
 
+        await sql`delete from pi_history_views v using sessions s where s.tenant_id=v.tenant_id and s.id=v.session_id
+          and s.tenant_id=${tenantId}::uuid and s.pruned_at is not null`.execute(transaction);
         const binding = bindings.find((candidate) => candidate.productSessionId === sessionId);
         if (!binding?.piConversationId)
           throw new ControlPlaneStoreError("conflict", "Conversation has no native branch");
@@ -1018,8 +1020,6 @@ export class ConversationTreeService {
           throughTurnId: request.turnId,
           throughEntryId: request.entryId,
         });
-        await sql`delete from pi_history_snapshots where tenant_id=${tenantId}::uuid and session_id=${sessionId}::uuid
-          and position>${anchorRun.mailboxPosition}::bigint`.execute(transaction);
         const conversationId = await forkIdleConversation(
           transaction,
           { tenantId, sessionId: binding.piSessionId },
@@ -1038,7 +1038,7 @@ export class ConversationTreeService {
           .where("tenant_id", "=", tenantId)
           .where("id", "=", sessionId)
           .executeTakeFirstOrThrow();
-        await replacePrunedHistory(transaction, tenantId, binding.piSessionId);
+        await replacePrunedHistory(transaction, tenantId, binding.piSessionId, [sessionId]);
         await transaction
           .insertInto("conversation_prune_operations")
           .values({
@@ -1235,7 +1235,12 @@ export class ConversationTreeService {
           );
         }
         const childSessionId = this.#idGenerator();
-        const title = request.title ?? `${source.title} · 分支`;
+        const suffix = " · 分支";
+        const title =
+          request.title ??
+          (source.title.endsWith(suffix)
+            ? source.title
+            : `${Array.from(source.title).slice(0, 251).join("")}${suffix}`);
 
         const child = await transaction
           .insertInto("sessions")
@@ -1290,11 +1295,6 @@ export class ConversationTreeService {
             throughTurnId: request.turnId,
             throughEntryId: request.entryId,
           }),
-        );
-        await this.#measureFork("images", () =>
-          retainFrozenImages(transaction, { tenantId, sessionId: childSessionId }, [
-            childSessionId,
-          ]),
         );
         await transaction
           .updateTable("sessions")

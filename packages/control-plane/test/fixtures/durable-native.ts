@@ -1,3 +1,4 @@
+import { captureNativePresentation } from "../../../runtime-core/src/frozen-history.ts";
 import type { Database } from "@pi-cloud/database";
 import {
   DurablePostgresProjection,
@@ -55,7 +56,11 @@ export async function appendNativeFixture(
           runId,
         }))
       : [];
-  if (db.isTransaction) await projection.applyIn(db as Transaction<Database>, batch, origins);
-  else await projection.apply(batch, origins);
+  const apply = async (tx: Transaction<Database>) => {
+    await projection.applyIn(tx, batch, origins);
+    await captureNativePresentation(tx, scope, batch.seq);
+  };
+  if (db.isTransaction) await apply(db as Transaction<Database>);
+  else await db.transaction().execute(apply);
   return native;
 }

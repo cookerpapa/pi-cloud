@@ -1413,7 +1413,7 @@
       "id": "native-index-text-backfill",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/conversation-tree.postgres.test.ts",
-      "test": "backfills and rebuilds navigation without coercing native NUL or surrogate text",
+      "test": "rebuilds navigation without coercing native NUL or surrogate text",
       "invariant": "Index backfill/rebuild leaves canonical JSON text exact and refuses outdated metadata writes."
     },
     {
@@ -2626,6 +2626,34 @@
       "file": "test/shared-compute-lifecycle.postgres.test.ts",
       "test": "retains a completed ephemeral scope from an development_environment parent until Cube expiry or reference removal",
       "invariant": "A visible child Conversation retains its separate elastic compute scope regardless of the parent product mode; Cube alone owns ordinary idle expiry."
+    },
+    {
+      "id": "shared-fork-late-id",
+      "file": "test/shared-entry-bodies.postgres.test.ts",
+      "test": "keeps native ID ordering while a Fork excludes IDs published after its captured head",
+      "invariant": "A shared root freezes publication membership independently of reserved native IDs.",
+      "workspace": "@pi-cloud/pi-session-postgres"
+    },
+    {
+      "id": "shared-fork-gc-rollback",
+      "file": "test/shared-entry-bodies.postgres.test.ts",
+      "test": "retries collection after a skipped reference lock rolls back",
+      "invariant": "Skipped tentative references cannot permanently suppress later collection.",
+      "workspace": "@pi-cloud/pi-session-postgres"
+    },
+    {
+      "id": "shared-fork-continued-child",
+      "file": "test/native-child-history.postgres.test.ts",
+      "test": "freezes a child Fork while the original child accepts another input in the same family",
+      "invariant": "Later child input and completion update only the source header/frame root.",
+      "workspace": "@pi-cloud/control-plane"
+    },
+    {
+      "id": "shared-history-conversion",
+      "file": "test/shared-history-upgrade.postgres.test.ts",
+      "test": "converts schema-203 native bodies and frozen presentation once without changing the transcript",
+      "invariant": "Matched conversion preserves exact native text and images, and bootstrap cannot undo later pruning.",
+      "workspace": "@pi-cloud/control-plane"
     }
   ]
 }

@@ -7,6 +7,8 @@ import { nativeSubagentFixture } from "./native-subagent-fixture.ts";
 import { ConversationTreeService } from "../src/conversation-tree-service.ts";
 import { ConversationDeletionService } from "../src/conversation-deletion-service.ts";
 import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
+import { settleHistoryTurn } from "../../runtime-core/src/presentation-settlement.ts";
 
 it("shows child progress metadata in human focus without requiring a child history binding", async () => {
   const f = await nativeSubagentFixture();
@@ -275,6 +277,134 @@ it("prunes a child created after the selected answer within the same root Run", 
       .executeTakeFirstOrThrow();
     expect(childRow.pruned_at).not.toBeNull();
     expect(childRow.pi_conversation_id).toBeNull();
+  } finally {
+    await f.close();
+  }
+}, 60000);
+
+it("freezes a child Fork while the original child accepts another input in the same family", async () => {
+  const f = await nativeSubagentFixture();
+  try {
+    const call = await f.command({ task: "First child input" });
+    const jobs = new PostgresSubagentConversations({ database: f.database, native: f.native });
+    const child = await jobs.start({
+      id: call.operationId,
+      tenantId: f.scope.tenantId,
+      rootRunId: f.scope.runId,
+      parentSessionId: f.scope.sessionId,
+      parentTurnId: f.scope.turnId,
+      executionReference: f.reference,
+      parentToolCallId: `task:${call.taskId}`,
+      source: { sequence: call.nativeSequence, taskId: call.taskId },
+      prompt: "First child input",
+      contextMode: "fresh",
+      contextAnchor: null,
+      sandboxMode: "none",
+    });
+    await f.settle(child.executionId, "completed", "FIRST CHILD ANSWER");
+    await f.finishCall(call);
+    await f.database
+      .updateTable("subagent_conversations")
+      .set({
+        output_display_seq: "1",
+        output_display_native_seq: String((await f.projection.head()).seq),
+      })
+      .where("id", "=", child.executionId)
+      .execute();
+    const current = f.children.get(child.executionId)!;
+    const entries = await readDurableEntries(f.database, {
+      tenantId: f.scope.tenantId,
+      sessionId: f.scope.piSessionId,
+      conversationId: current.conversationId,
+      limit: 10,
+    });
+    const service = new ConversationTreeService({ database: f.database });
+    const fork = await service.fork(f.scope.tenantId, child.childSessionId, crypto.randomUUID(), {
+      turnId: child.childTurnId,
+      entryId: String(entries[0]!.entry.id),
+    });
+    const frozen = JSON.stringify(await f.store.getConversation(fork.session.sessionId));
+    const userId = f.allocateId(),
+      inputId = f.allocateId(),
+      taskId = f.allocateId();
+    const task = {
+      id: taskId,
+      conversationId: current.conversationId,
+      kind: "pi.generation",
+      version: 1,
+      input: {},
+      background: false,
+      abortRequested: false,
+    };
+    const input = {
+      id: inputId,
+      conversationId: current.conversationId,
+      type: "input",
+      requestId: "second-child-input",
+      entry: userId,
+    };
+    await f.append(
+      [
+        {
+          type: "entry",
+          value: {
+            id: userId,
+            conversationId: current.conversationId,
+            kind: "pi.user",
+            model: [{ role: "user", content: "SECOND CHILD QUESTION", timestamp: Date.now() }],
+          },
+        },
+        { type: "submission", value: { ...input, status: "placed" } },
+        {
+          type: "task",
+          value: { ...task, state: { status: "running", checkpoint: { phase: "request" } } },
+        },
+      ],
+      current.request.view,
+    );
+    expect((await jobs.status(f.scope.tenantId, child.executionId)).state).toBe("running");
+    expect((await f.store.getConversation(child.childSessionId)).turns[0]?.state).toBe("running");
+    expect(JSON.stringify(await f.store.getConversation(fork.session.sessionId))).toBe(frozen);
+    const answerId = f.allocateId();
+    await f.append(
+      [
+        {
+          type: "entry",
+          value: {
+            id: answerId,
+            conversationId: current.conversationId,
+            kind: "pi.assistant",
+            model: [fauxAssistantMessage("SECOND CHILD ANSWER")],
+          },
+        },
+        { type: "submission", value: { ...input, status: "done", answer: answerId } },
+        {
+          type: "task",
+          value: {
+            ...task,
+            state: { status: "terminal", outcome: { status: "completed", value: null } },
+          },
+        },
+      ],
+      current.request.view,
+    );
+    await f.database
+      .updateTable("subagent_conversations")
+      .set({
+        output_display_seq: "2",
+        output_display_native_seq: String((await f.projection.head()).seq),
+      })
+      .where("id", "=", child.executionId)
+      .execute();
+    await f.database
+      .transaction()
+      .execute((tx) =>
+        settleHistoryTurn(tx, f.scope.tenantId, child.childSessionId, child.childTurnId),
+      );
+    expect(JSON.stringify(await f.store.getConversation(child.childSessionId))).toContain(
+      "SECOND CHILD ANSWER",
+    );
+    expect(JSON.stringify(await f.store.getConversation(fork.session.sessionId))).toBe(frozen);
   } finally {
     await f.close();
   }

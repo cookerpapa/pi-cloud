@@ -19,9 +19,10 @@ scale or as a highly available production service.
 - **Long histories:** bounded pagination and virtual scrolling, history navigation,
   search and streamed Markdown export. `/usage` shows committed token usage and
   context estimates; `/compact [instructions]` requests native compaction.
-- **Independent branches:** Fork completed history while later work runs; pruning
-  the source preserves its Forks. Immutable Entry bodies are shared, and closed
-  histories are rebuilt safely before unreferenced bodies can be collected.
+- **Independent branches:** Fork only the selected Agent's history while later
+  work continues. Old subagents and pending inputs are not inherited. Native and
+  display history use shared immutable references; source pruning preserves Forks.
+  Workspace files are shared, not copied or rolled back by conversation Fork.
 - **Workspaces:** elastic compute or dedicated development machines, persistent
   Volume-backed files, browser tooling, terminals, SSH and application previews.
 - **Images:** chat uploads enter the model directly. `generate_image` creates or

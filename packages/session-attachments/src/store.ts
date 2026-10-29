@@ -301,6 +301,8 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
         where created_at < clock_timestamp() - ${graceMs} * interval '1 millisecond'
           and cleanup_available_at <= clock_timestamp()
           and not exists(select 1 from session_image_references r where r.tenant_id=o.tenant_id and r.image_id=o.id)
+          and not exists(select 1 from pi_history_record_images r where r.tenant_id=o.tenant_id and r.image_id=o.id)
+          and not exists(select 1 from pi_history_header_images r where r.tenant_id=o.tenant_id and r.image_id=o.id)
           and not exists(select 1 from session_uploads u where u.tenant_id=o.tenant_id and u.image_id=o.id)
           and not exists(select 1 from runs where id=o.source_run_id and output_sealed_at is null)
         order by cleanup_available_at,created_at limit 32 for update skip locked`.execute(tx);
@@ -313,6 +315,8 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
       }>`update session_image_objects o set state='deleting'
         where (tenant_id,id) in (${sql.join(candidates.map((r) => sql`(${r.tenant_id}::uuid,${r.id}::uuid)`))})
           and not exists(select 1 from session_image_references r where r.tenant_id=o.tenant_id and r.image_id=o.id)
+          and not exists(select 1 from pi_history_record_images r where r.tenant_id=o.tenant_id and r.image_id=o.id)
+          and not exists(select 1 from pi_history_header_images r where r.tenant_id=o.tenant_id and r.image_id=o.id)
           and not exists(select 1 from session_uploads u where u.tenant_id=o.tenant_id and u.image_id=o.id)
           and not exists(select 1 from runs where id=o.source_run_id and output_sealed_at is null)
         returning tenant_id,id,write_completed_at`.execute(tx);

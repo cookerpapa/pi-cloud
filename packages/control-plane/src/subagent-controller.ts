@@ -323,7 +323,7 @@ export class SubagentController {
     if (call.replyMode !== "hostcall")
       throw new SubagentConversationError(
         "invalid_control_request",
-        'Subagent target does not belong to this Session. Agent IDs in forked history are historical; use subagent(action="list") to find this Session\'s agents, or create a new agent when needed.',
+        'Subagent target does not belong to this Session. Agent IDs in forked history are historical; use subagent_control(action="list") to find this Session\'s agents, or create a new agent when needed.',
       );
     const source = await sql<{
       document_id: string;

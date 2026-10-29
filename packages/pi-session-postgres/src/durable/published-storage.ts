@@ -357,14 +357,11 @@ export class PublishedDurableStorage implements Storage {
       if (!record || record.kind !== "entry") return undefined;
       const entry = record.value as EntryRecord;
       let upper = Number.MAX_SAFE_INTEGER;
-      const visited = new Set<number>();
-      while (conversation && conversation.id !== entry.conversationId) {
-        if (visited.has(conversation.id))
-          throw new Error("Native conversation ancestry has a cycle");
-        visited.add(conversation.id);
-        if (!conversation.parent) return undefined;
-        upper = Math.min(upper, conversation.parent.at);
-        conversation = await this.#conversation(conversation.parent.conversationId);
+      if (conversation && conversation.id !== entry.conversationId) {
+        const path = await this.#ancestry(conversation.id);
+        const match = path.find((row) => row.conversation.id === entry.conversationId);
+        if (!match) return undefined;
+        upper = match.through;
       }
       return entry.id > upper
         ? undefined
@@ -377,35 +374,81 @@ export class PublishedDurableStorage implements Storage {
     cursor?: Cursor,
     head = false,
   ): Promise<EntryRecord[]> {
-    let conversation = await this.#conversation(query.conversationId);
-    let upper = Math.min(
+    const maximum = Math.min(
       query.maxEntryId ?? Number.MAX_SAFE_INTEGER,
       (cursorId(cursor) ?? Number.MAX_SAFE_INTEGER + 1) - 1,
     );
-    const values: EntryRecord[] = [],
-      visited = new Set<number>();
-    while (true) {
-      if (visited.has(conversation.id)) throw new Error("Native conversation ancestry has a cycle");
-      visited.add(conversation.id);
-      const rows = await this.#scan(
-        {
-          kind: "entry",
-          fields: { conversation: String(conversation.id) },
-          maxId: upper,
-          minId: query.minEntryId ?? 0,
-          descending: true,
-          head,
-        },
-        limit - values.length,
+    const path = await this.#ancestry(query.conversationId);
+    const ranges = path
+      .map((row) => ({
+        conversationId: Number(row.conversation.id),
+        through: Math.min(maximum, row.through),
+      }))
+      .filter((row) => row.through >= (query.minEntryId ?? 0));
+    const order = new Map(ranges.map((row, index) => [row.conversationId, { ...row, index }]));
+    const local = [...this.#records.values()].filter((record) => {
+      if (record.kind !== "entry") return false;
+      const entry = record.value as EntryRecord,
+        range = order.get(entry.conversationId);
+      return (
+        range !== undefined &&
+        entry.id <= range.through &&
+        entry.id >= (query.minEntryId ?? 0) &&
+        (!head || entry.head !== undefined)
       );
-      values.push(...rows.map((r) => r.value as EntryRecord));
-      if (values.length >= limit || !conversation.parent) break;
-      upper = Math.min(upper, conversation.parent.at);
-      if (query.minEntryId !== undefined && upper < query.minEntryId) break;
-      conversation = await this.#conversation(conversation.parent.conversationId);
-    }
-    return values;
+    });
+    const cold =
+      this.#coldSeq === 0
+        ? []
+        : await this.#options.projection.scanEntryRanges(
+            ranges,
+            limit,
+            query.minEntryId ?? 0,
+            head,
+            [...this.#records.keys()],
+          );
+    return [...local, ...cold]
+      .sort((a, b) => {
+        const x = a.value as EntryRecord,
+          y = b.value as EntryRecord;
+        return (
+          order.get(x.conversationId)!.index - order.get(y.conversationId)!.index || y.id - x.id
+        );
+      })
+      .slice(0, limit)
+      .map((row) => row.value as EntryRecord);
   }
+
+  async #ancestry(
+    id: ConversationId,
+  ): Promise<{ conversation: ConversationRecord; through: number }[]> {
+    const result: { conversation: ConversationRecord; through: number }[] = [],
+      visited = new Set<number>();
+    const cold = new Map<number, ConversationRecord>();
+    let current: number | undefined = id,
+      through = Number.MAX_SAFE_INTEGER,
+      fetched = false;
+    while (current !== undefined) {
+      if (visited.has(current)) throw new Error("Native conversation ancestry has a cycle");
+      visited.add(current);
+      let record = this.#records.get(current);
+      let conversation: ConversationRecord | undefined =
+        record?.kind === "conversation" ? (record.value as ConversationRecord) : cold.get(current);
+      if (!conversation && !fetched && this.#coldSeq !== 0) {
+        for (const row of await this.#options.projection.conversationAncestry(current))
+          cold.set(row.value.id, row.value as ConversationRecord);
+        fetched = true;
+        conversation = cold.get(current);
+      }
+      if (!conversation) throw new Error(`Unknown conversation: ${current}`);
+      result.push({ conversation, through });
+      if (!conversation.parent) break;
+      through = Math.min(through, conversation.parent.at);
+      current = conversation.parent.conversationId;
+    }
+    return result;
+  }
+
   findLatestHeadMarker(
     conversationId: ConversationId,
     atOrBeforeEntryId: EntryId | undefined,

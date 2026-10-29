@@ -693,20 +693,18 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
         id: independentId,
       })
       .execute();
-    await database
-      .transaction()
-      .execute(async (tx) =>
-        importForkHistory(
-          tx,
-          { tenantId: scope.tenantId, sessionId: independentId },
-          {
-            ...nativeScope,
-            sourceProductSessionId: nativeScope.sessionId,
-            conversationId: 1,
-            through: entry.id,
-          },
-        ),
-      );
+    await database.transaction().execute(async (tx) =>
+      importForkHistory(
+        tx,
+        { tenantId: scope.tenantId, sessionId: independentId },
+        {
+          ...nativeScope,
+          sourceProductSessionId: nativeScope.sessionId,
+          conversationId: 1,
+          through: entry.id,
+        },
+      ),
+    );
     const otherTenant = await createPrivateTenant(database, {
       slug: randomUUID(),
       ownerDisplayName: "Other",

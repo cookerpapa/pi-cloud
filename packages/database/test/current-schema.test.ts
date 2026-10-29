@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(203);
+      expect(firstMigrationPass.rows).toHaveLength(204);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("203_shared_native_entry_bodies");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("204_shared_native_history_bases");
       const terminalColumns = await sql<{ column_name: string }>`select column_name
         from information_schema.columns where table_name='workspace_terminal_sessions'`.execute(
         database,
@@ -90,10 +90,17 @@ describe("current PiCloud schema", () => {
         "turn_control_requests",
         "session_leases",
         "pi_sessions",
-        "pi_durable_writes",
+        "pi_durable_write_refs",
+        "pi_history_records",
+        "pi_history_streams",
+        "pi_durable_bases",
+        "pi_history_nodes",
+        "pi_history_frames",
+        "pi_history_blocks",
+        "pi_history_views",
+        "pi_history_view_nodes",
         "pi_history_bodies",
-        "pi_history_snapshots",
-        "pi_durable_records",
+        "pi_durable_owned_records",
         "pi_durable_commits",
         "pi_durable_document_revisions",
         "pi_durable_current",

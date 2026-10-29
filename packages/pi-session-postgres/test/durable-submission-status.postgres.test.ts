@@ -99,7 +99,7 @@ const walk = (p: Plan): Plan[] => [p, ...(p.Plans ?? []).flatMap(walk)];
 it("uses the Submission status index with actual named custom/generic plans and preserves paging/receipts", async () => {
   const small = await seed(0),
     large = await seed(10_000);
-  await sql`analyze pi_durable_records`.execute(db);
+  await sql`analyze pi_durable_owned_records`.execute(db);
   await sql`analyze pi_durable_current`.execute(db);
   for (const mode of ["force_custom_plan", "force_generic_plan"] as const) {
     await db.connection().execute(async (connection) => {

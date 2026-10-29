@@ -1,5 +1,10 @@
 # Documentation map
 
+[Single-path shared Forks](adr/0287-single-path-shared-forks.md) implements shared
+native/presentation roots, independent source retirement and explicit runtime
+identity. Schema 204 is under final verification; deployment remains pending.
+[Measurements and verification](reports/single-path-shared-forks-20261030.md).
+
 [Shared history root validation](adr/0286-shared-history-root-prototype.md) has a
 [measured isolated prototype](reports/shared-history-root-prototype-20261029.md).
 It demonstrates fast directory Forks but has outstanding native-contract and

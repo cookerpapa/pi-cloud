@@ -1120,43 +1120,59 @@ Tool task ID (`task:<id>`); provider call IDs stay in native messages, and a sep
 operation UUID correlates physical replies. Unoffered calls have their native
 result-entry identity. A late physical reply cannot overwrite native abort.
 
-Independent human Forks share immutable Entry bodies and own separate references,
-native Conversations, document baselines and image references. Native `asOf` and
-`current` fork policies remain authoritative; `initial`, Tasks and Session grants
-do not become execution authority in a manual Fork. Its frozen display metadata
-is canonical retained data, not a disposable cache or a cloud input queue.
-Fork retains only the selected Agent's visible path and results already returned
-to it; sibling/descendant transcripts and pending inputs are not imported. The
-source family continues independently. A native Session-scoped provenance document
-renders a public Pi system section before model requests, so inherited Agent IDs
-are understood as historical. New children belong to the new family; their `main`
-target is the current Run owner, not a hard-coded native Conversation ID. Cold
-family reorganization preserves provenance, while another manual Fork replaces
-it. [ADR-0287](adr/0287-single-path-shared-forks.md) tracks this identity change
-and the separate shared-directory storage implementation still in progress.
-Tail pruning affects the selected physical family; it neither prunes a manual
-Fork nor waits for that Fork to finish. Unsettled native work, pending input
-returns, upload pins and unclosed writers still prevent unsafe cold mutation.
+Independent human Forks retain only the selected Agent's visible path and results
+already returned to it. Sibling/descendant transcripts, pending inputs, Tasks and
+execution grants do not transfer. Source Agents continue independently. Forking a
+child creates an independent main conversation with its visible ancestor context.
+A Session-scoped provenance document renders a public Pi system section before
+sampling; inherited Agent IDs are historical. New children address `main` through
+the current Run owner, not a hard-coded native Conversation ID. Workspace bytes
+are neither copied nor rolled back.
 
-Cold pruning initializes a fresh physical Session using public Storage semantics,
-preserves retained child ownership/creation receipts, verifies reconstruction and
-atomically replaces the family's product bindings. Only then is the old closed
-store retired. There are no holes in checked append-only commits, and old-writer
-Kafka replays cannot revive the retired store. Shared-body collection checks real
-FK-backed references; image cleanup uses the existing object authority. Workspace
-bytes and VM/process lifecycle are unchanged. History cursor v2 carries the
-physical storage identity so stale cursors cannot resolve against new sequences.
-[ADR-0284](adr/0284-independent-forks-and-history-retention.md) documents the
-schema-203 matched transition. [ADR-0285](adr/0285-batched-native-history-forks.md)
-copies manual-Fork Entry references in PG, retaining byte-equivalent native
-checksums without returning ordinary history bodies to the application. Frozen
-metadata writes are batched; image retention selects candidate bodies before
-paging. Reference insertion and DB checksum reads remain linear. Mutable native
-documents, anchor reconstruction and cold family retirement keep their existing
-public Storage paths; these are not constant-time operations.
-[ADR-0286](adr/0286-shared-history-root-prototype.md) is a measured, isolated
-shared-root experiment. It has not passed the native-contract/performance gates
-for changing this production representation or its ownership rules.
+Under [ADR-0287](adr/0287-single-path-shared-forks.md), active commits retain their
+original Kafka fingerprints and contiguous local sequence. `pi_history_records`
+owns immutable native history independently of the original physical Session;
+`pi_durable_write_refs` associates local commits and small inherited native state
+with those records. `pi_durable_bases` fixes the inherited publication boundary,
+ID high-water mark, Entry directory and current-state integrity information. New
+commits start after that base. No empty synthetic commit chain or second active
+writer is introduced. The original native ID still orders context; a separate
+publication bound prevents a later committed reserved ID entering a prior Fork.
+
+`pi_history_nodes` is a persistent balanced directory of Entry ranges. Ranges
+retain original Conversation scopes and publication bounds, so old side paths do
+not become visible merely because they shared a physical log. Small native state
+baselines retain `asOf`/`current`/`initial` semantics. Inbox/Submission current-value
+policy and Kafka-only live suffixes are unchanged. Ancestry and range reads are
+batched; opening a conversation does not scan lifetime message bodies.
+
+Display descriptors are captured with their source native commit, before transient
+Task/input metadata can disappear. `pi_history_frames` and source Turn blocks own
+this retained presentation. `pi_history_view_nodes` fixes both a frame prefix and
+an immutable header version; `pi_history_views` holds the logical conversation's
+root. A child may receive more inputs after completing one: its source stream
+continues, while earlier Fork roots retain their captured version. This is
+presentation data, not an execution queue or an additional Run authority.
+
+Cold pruning requires closed writers and settled native work. It creates a fresh
+physical base, preserves retained child ownership/creation receipts and current
+state, then atomically switches the family's product bindings. Already selected
+presentation cutoffs are not expanded during this replacement. Old writer replays
+cannot recreate the deleted physical Session. Index rebuild verifies the shared
+base and the local commit suffix separately, without changing original Kafka
+fingerprints. History cursor v2 retains its physical-storage identity.
+
+Collection follows real references: directory roots, retained frames/state,
+immutable records/bodies, then image objects. Stream/block key locks protect new
+range admission, and a skipped lock never clears pending cleanup work. Images
+retain existing S3 bytes through record/header edges; user reads check membership
+in the selected conversation. No image payload or per-image copy is needed merely
+to Fork. The schema-204 matched transition converts schema-203 data while writers
+are drained; bootstrap work is marked once and cannot reimport later pruned data.
+[ADR-0284](adr/0284-independent-forks-and-history-retention.md) and
+[ADR-0285](adr/0285-batched-native-history-forks.md) describe the prior copying
+representation; [ADR-0286](adr/0286-shared-history-root-prototype.md) is the isolated
+experiment that preceded this implementation. Matched rollout remains pending.
 World State compares against its native document baseline.
 A verification reminder is derived from committed current-Run entries at native
 yield; neither delayed display callbacks nor Worker replacement can duplicate it.

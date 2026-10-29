@@ -1,3 +1,9 @@
+import { Harness, createRegistry } from "@earendil-works/pi-durable";
+import { createModels } from "@earendil-works/pi-ai/models";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { PublishedDurableStorage } from "../packages/pi-session-postgres/src/durable/index.ts";
+import { captureNativePresentation } from "../packages/runtime-core/src/frozen-history.ts";
+import { settleHistoryTurn } from "../packages/runtime-core/src/presentation-settlement.ts";
 // Isolated PG and real Fork service. Payloads are synthetic; no model/VM/user data.
 import assert from "node:assert/strict";
 import { randomUUID, randomBytes } from "node:crypto";
@@ -59,15 +65,25 @@ try {
     bytes = 0,
     units = 0;
   const origins = (writes) =>
-    writes.map((w) => ({
-      recordId: w.value.id,
-      sessionId: source.sessionId,
-      runId: run.runId,
-      turnId: run.turnId,
-    }));
+    writes
+      .filter((w) => w.value?.id !== undefined)
+      .map((w) => ({
+        recordId: w.value.id,
+        sessionId: source.sessionId,
+        runId: run.runId,
+        turnId: run.turnId,
+      }));
   const commit = async (writes) => {
     bytes += Buffer.byteLength(JSON.stringify(writes));
-    await projection.apply({ seq: ++seq, nextId, writes }, origins(writes));
+    const batch = { seq: ++seq, nextId, writes };
+    await db.transaction().execute(async (tx) => {
+      await projection.applyIn(tx, batch, origins(writes));
+      await captureNativePresentation(
+        tx,
+        { tenantId: tenant.tenantId, sessionId: source.sessionId },
+        seq,
+      );
+    });
   };
   const usage = {
     input: 1,
@@ -98,6 +114,20 @@ try {
     },
   });
   await commit([{ type: "conversation", value: { id: 1 } }]);
+  if (process.env.PI_CLOUD_FORK_CHECK_DOCUMENT === "1")
+    await commit([
+      {
+        type: "document.create",
+        record: {
+          id: nextId++,
+          kind: "fixture.preferences",
+          scope: { kind: "conversation", conversationId: 1 },
+          history: "rewindable",
+          fork: "asOf",
+        },
+        content: { kind: "base", version: 1, value: { text: "synthetic state ".repeat(512) } },
+      },
+    ]);
   phase("seed");
   const seedAt = performance.now();
   while (bytes < target) {
@@ -158,6 +188,24 @@ try {
     }
     await commit(writes);
   }
+  const withContext = process.env.PI_CLOUD_FORK_CHECK_CONTEXT === "1";
+  if (withContext) {
+    const keep = nextId - 3;
+    await commit([
+      {
+        type: "entry",
+        value: {
+          id: nextId++,
+          conversationId: 1,
+          kind: "pi.compaction",
+          head: keep,
+          model: [
+            { role: "user", content: "Older synthetic work is summarized here.", timestamp: 1 },
+          ],
+        },
+      },
+    ]);
+  }
   const final = nextId++;
   await commit([assistant(final, "FORK_END")]);
   await db
@@ -176,10 +224,18 @@ try {
     .set({ state: "idle" })
     .where("id", "=", source.sessionId)
     .execute();
-  await sql`analyze pi_durable_writes; analyze pi_durable_records; analyze pi_history_bodies`.execute(
+  await db
+    .transaction()
+    .execute((tx) => settleHistoryTurn(tx, tenant.tenantId, source.sessionId, run.turnId));
+  await sql`analyze pi_history_records; analyze pi_durable_owned_records; analyze pi_history_bodies`.execute(
     db,
   );
-  report.seed = { bytes, units, entries: 2 * units + 1, milliseconds: performance.now() - seedAt };
+  report.seed = {
+    bytes,
+    units,
+    entries: 2 * units + 1 + (withContext ? 1 : 0),
+    milliseconds: performance.now() - seedAt,
+  };
   const measure = async (sessionId, label) => {
     let sampleQuery;
     const pending = new WeakMap(),
@@ -286,8 +342,51 @@ try {
           { mode: 0o600 },
         );
       }
+      const readAt = performance.now();
       const view = await store.getConversation(fork.session.sessionId);
+      report[label].coldHistoryReadMs = performance.now() - readAt;
       assert(JSON.stringify(view).includes("FORK_END"));
+      if (withContext) {
+        const nativeAt = performance.now();
+        const binding = await db
+          .selectFrom("sessions")
+          .select(["pi_session_id", "pi_conversation_id"])
+          .where("id", "=", fork.session.sessionId)
+          .executeTakeFirstOrThrow();
+        const storage = await PublishedDurableStorage.open({
+          projection: new DurablePostgresProjection(
+            db,
+            { tenantId: tenant.tenantId, sessionId: binding.pi_session_id },
+            undefined,
+            "references",
+          ),
+          publish: async () => {
+            throw new Error("Context check must not mutate storage");
+          },
+          waitProjected: async () => {},
+        });
+        const harness = await Harness.open(
+          storage,
+          { models: createModels({ providers: [] }), registry: createRegistry() },
+          BACKGROUND_CONTEXT,
+        );
+        try {
+          const context = await (
+            await harness.conversation(Number(binding.pi_conversation_id), BACKGROUND_CONTEXT)
+          ).context(BACKGROUND_CONTEXT);
+          const encoded = JSON.stringify(context.messages);
+          assert(encoded.includes("Older synthetic work is summarized here."));
+          assert(encoded.includes("FORK_END"));
+          assert(Buffer.byteLength(encoded) < 128 * 1024);
+          report[label].nativeContext = {
+            milliseconds: performance.now() - nativeAt,
+            bytes: Buffer.byteLength(encoded),
+            messages: context.messages.length,
+          };
+        } finally {
+          await harness.close(BACKGROUND_CONTEXT);
+        }
+      }
       return fork.session.sessionId;
     } finally {
       clearInterval(timer);
@@ -296,7 +395,19 @@ try {
   phase("first");
   const first = await measure(source.sessionId, "first");
   phase("nested");
-  await measure(first, "nested");
+  let latest = await measure(first, "nested");
+  const depth = Number(process.env.PI_CLOUD_FORK_CHECK_DEPTH ?? 2);
+  for (let i = 2; i < depth; i++) {
+    const result = await new ConversationTreeService({ database: db }).fork(
+      tenant.tenantId,
+      latest,
+      randomUUID(),
+      { turnId: run.turnId, entryId: String(final) },
+    );
+    latest = result.session.sessionId;
+    if (i % 100 === 0) phase("depth-" + i);
+  }
+  if (depth > 2) await measure(latest, "deep");
   const inventory = (
     await sql`select count(*)::int objects,sum(payload_bytes)::text as bytes from pi_history_bodies where tenant_id=${tenant.tenantId}::uuid and body_kind='entry'`.execute(
       db,

@@ -1,21 +1,17 @@
 import { sql, type Transaction } from "kysely";
 import type { Database } from "@pi-cloud/database";
-import type { ConversationRecord, Seq, StorageWrite, TaskRecord } from "@earendil-works/pi-durable";
-import type { DurableRecordOrigin } from "@pi-cloud/protocol";
+import type { ConversationRecord, TaskRecord } from "@earendil-works/pi-durable";
 import { assertIdleNativeSession } from "../idle-session-mutation.ts";
 import { DurablePostgresProjection } from "./postgres-projection.ts";
-import type { DurableScope, StoredDurableBatch } from "./types.ts";
+import type { DurableScope } from "./types.ts";
+import { currentStateFingerprint, type CurrentStateRow } from "./current-state.ts";
+import { retainSessionImages } from "@pi-cloud/session-attachments";
+import { HistoryDirectory } from "./history-directory.ts";
+import { PostgresHistoryDirectory } from "./postgres-history-directory.ts";
+import { readSharedBase, sharedStateFingerprint } from "./shared-history-base.ts";
 
 type Range = { id: number; through: number; sequence: number; leaf: boolean };
-type Row = {
-  record_id: string;
-  seq: string;
-  ordinal: number;
-  body: string;
-  cloud_origin: Record<string, string> | null;
-};
-
-/** Rebuild a closed physical family, keeping native identities but allocating a fresh commit sequence.
+/** Rebuild a closed physical family, sharing retained entries and preserving native commit positions.
  * The caller freezes presentation, switches ALL product bindings and retires the old store in this transaction. */
 export async function retainIdleFamily(
   tx: Transaction<Database>,
@@ -123,94 +119,59 @@ export async function retainIdleFamily(
   const currentIds = selectedDocs.filter((d) => d.current).map((d) => d.id);
   const selected = sql`((l.record_kind='task' and l.record_id=any(${[...owners]}::bigint[]))
     or (l.record_kind='conversation' and l.record_id=any(${ids}::bigint[]))
-    or (l.record_kind='entry' and exists(select 1 from pi_durable_records r
-      join unnest(${[...ranges.keys()]}::bigint[],${[...ranges.values()].map((r) => r.through)}::bigint[]) p(id,through_id)
-        on r.fields->>'conversation'=p.id::text and r.id<=p.through_id
-      where r.tenant_id=l.tenant_id and r.session_id=l.session_id and r.id=l.record_id and r.kind='entry'))
     or (l.record_kind in ('document.create','document.change','document.retire') and exists(
       select 1 from unnest(${selectedDocs.filter((d) => !d.current).map((d) => d.id)}::bigint[],${selectedDocs.filter((d) => !d.current).map((d) => d.sequence)}::bigint[]) d(id,through_seq)
       where l.record_id=d.id and l.seq<=d.through_seq)))`;
-  let seq = 0;
-  const positions = new Map<string, number>();
-  const publish = async (rows: readonly Row[]) => {
-    if (!rows.length) return;
-    const origins: DurableRecordOrigin[] = [];
-    const writes = rows.map((row) => {
-      if (
-        retainedSources.some(
-          (r) => r.sequence === Number(row.seq) && r.recordId === Number(row.record_id),
-        )
-      )
-        positions.set(`${row.seq}:${row.record_id}`, seq + 1);
-      let write = JSON.parse(row.body) as StorageWrite;
-      if (
-        write.type === "entry" &&
-        write.value.byTaskId !== undefined &&
-        !owners.has(write.value.byTaskId)
-      ) {
-        const { byTaskId: _task, ...value } = write.value;
-        write = { type: "entry", value };
-      }
-      const origin = row.cloud_origin;
-      if (origin?.cloudSession && origin.run && origin.turn)
-        origins.push({
-          recordId: Number(row.record_id),
-          sessionId: origin.cloudSession,
-          runId: origin.run,
-          turnId: origin.turn,
-        });
-      return write;
+  const adapter = new PostgresHistoryDirectory(tx, target.tenantId),
+    directory = new HistoryDirectory(adapter);
+  const existing = await readSharedBase(tx, source);
+  if (existing?.entry_root) await adapter.prefetch(existing.entry_root);
+  const retainedTasks = [...owners].sort((a, b) => a - b);
+  const rootBefore = existing?.entry_root ? await directory.read(existing.entry_root) : undefined;
+  let root = await directory.mapRanges(rootBefore, async (range) => {
+    const bound = ranges.get(range.conversationId)?.through;
+    if (bound === undefined) return undefined;
+    const visible = range.maxId <= bound ? range : await adapter.clip(range, bound);
+    if (!visible || visible.clearTask) return visible;
+    const tasks = visible.retainedTasks?.filter((id) => owners.has(id)) ?? retainedTasks;
+    return { ...visible, retainedTasks: tasks, clearTask: tasks.length === 0 };
+  });
+  for (const range of ranges.values()) {
+    const own = await adapter.range({
+      sourceId: source.sessionId,
+      conversationId: range.id,
+      throughSequence: head.seq,
+      maximumId: range.through,
+      clearTask: owners.size === 0,
+      retainedTasks,
     });
-    await destination.applyIn(
-      tx,
-      { seq: ++seq as Seq, nextId: head.nextId, writes } as StoredDurableBatch,
-      origins,
-    );
-  };
-  let after = 0;
-  for (;;) {
-    const commits = (
-      await sql<{ seq: string }>`select distinct l.seq from pi_durable_log l
-      where l.tenant_id=${source.tenantId}::uuid and l.session_id=${source.sessionId} and l.seq>${after} and ${selected}
-      order by l.seq limit 64`.execute(tx)
-    ).rows;
-    if (!commits.length) break;
-    for (const commit of commits) {
-      const state = (
-        await sql<Row>`select l.record_id::text,l.seq::text,l.ordinal,l.body,l.cloud_origin from pi_durable_log l
-        where l.tenant_id=${source.tenantId}::uuid and l.session_id=${source.sessionId} and l.seq=${commit.seq}::bigint
-          and l.record_kind<>'entry' and ${selected} order by l.ordinal`.execute(tx)
-      ).rows;
-      await publish(state);
-      let ordinal = -1;
-      for (;;) {
-        const rows = (
-          await sql<Row>`select l.record_id::text,l.seq::text,l.ordinal,l.body,l.cloud_origin from pi_durable_log l
-          where l.tenant_id=${source.tenantId}::uuid and l.session_id=${source.sessionId} and l.seq=${commit.seq}::bigint
-            and l.ordinal>${ordinal} and l.record_kind='entry' and ${selected} order by l.ordinal limit 32`.execute(
-            tx,
-          )
-        ).rows;
-        if (!rows.length) break;
-        await publish(rows);
-        ordinal = rows.at(-1)!.ordinal;
-      }
-      after = Number(commit.seq);
-    }
+    if (own) root = await directory.join(root, directory.range(own));
   }
-  // Current Inbox/input/Submission values remain current; no abandoned intermediate versions are recreated.
+  await directory.persist(root);
+  await sql`insert into pi_durable_write_refs(tenant_id,session_id,seq,ordinal,retained_record_id,base,clear_owner)
+    select ${target.tenantId}::uuid,${target.sessionId},l.seq,l.ordinal,l.retained_record_id,true,r.clear_owner
+    from pi_durable_writes l join pi_durable_write_refs r using(tenant_id,session_id,seq,ordinal)
+    where l.tenant_id=${source.tenantId}::uuid and l.session_id=${source.sessionId} and ${selected}`.execute(
+    tx,
+  );
+  const hashes: Record<string, { seq: string; hash: string }> = {};
   let afterId = 0;
   for (;;) {
     const rows = (
-      await sql<Row>`select c.id::text as record_id,c.seq::text,c.ordinal,c.body,c.cloud_origin
+      await sql<CurrentStateRow & { committed_at: Date; expected: string }>`select c.*,
+      case when c.base_state then b.current_hashes->c.id::text->>'hash' else h.current_hashes->>c.id::text end as expected
       from pi_durable_current c join pi_durable_records r on r.tenant_id=c.tenant_id and r.session_id=c.session_id and r.id=c.id
+      left join pi_durable_commits h on h.tenant_id=c.tenant_id and h.session_id=c.session_id and h.seq=c.seq
+      left join pi_durable_bases b on b.tenant_id=c.tenant_id and b.session_id=c.session_id
       where c.tenant_id=${source.tenantId}::uuid and c.session_id=${source.sessionId} and c.id>${afterId}
         and ((c.kind='document' and c.id=any(${currentIds}::bigint[]) and c.retired_seq is null)
           or (c.kind='submission' and r.fields->>'conversation'=any(${conversations.map(String)}::text[])))
-      order by c.id limit 32`.execute(tx)
+      order by c.id limit 64`.execute(tx)
     ).rows;
     if (!rows.length) break;
     for (const row of rows) {
+      if (currentStateFingerprint(row) !== row.expected)
+        throw new Error("Retained current state integrity check failed");
       const write = JSON.parse(row.body);
       if (
         write.type === "document.create" &&
@@ -218,13 +179,35 @@ export async function retainIdleFamily(
         write.content.value.items?.length
       )
         throw new Error("Cold history still has pending Inbox inputs");
+      hashes[row.id] = { seq: String(row.seq), hash: row.expected };
     }
-    await publish(rows);
-    afterId = Number(rows.at(-1)!.record_id);
+    await sql`insert into pi_durable_current(tenant_id,session_id,id,kind,seq,ordinal,body,delta_count,created_seq,retired_seq,cloud_origin,base_state,committed_at)
+      values ${sql.join(rows.map((r) => sql`(${target.tenantId}::uuid,${target.sessionId},${r.id}::bigint,${r.kind},${r.seq}::bigint,${r.ordinal},${r.body},${r.delta_count},${r.created_seq}::bigint,${r.retired_seq}::bigint,${r.cloud_origin ? JSON.stringify(r.cloud_origin) : null}::jsonb,true,${r.committed_at})`))}`.execute(
+      tx,
+    );
+    await retainSessionImages(
+      tx,
+      target,
+      rows.map((r) => JSON.parse(r.body)),
+    );
+    afterId = Number(rows.at(-1)!.id);
   }
-  for (const source of retainedSources)
-    if (!positions.has(`${source.sequence}:${source.recordId}`))
-      throw new Error("Retained child creation source is missing");
-  await destination.rebuildIn(tx);
+  const state = await sharedStateFingerprint(tx, target);
+  await sql`insert into pi_durable_bases(tenant_id,session_id,through_seq,next_id,entry_root,entry_digest,history_count,history_fingerprint,current_hashes)
+    values(${target.tenantId}::uuid,${target.sessionId},${head.seq},${head.nextId},${root?.id ?? null}::uuid,${root?.digest ?? null},${state.count}::bigint,${state.fingerprint},${JSON.stringify(hashes)}::jsonb)`.execute(
+    tx,
+  );
+  await destination.initializeBaseIn(tx);
+  const positions = new Map<string, number>();
+  for (const source of retainedSources) {
+    const found = (
+      await sql`select 1 from pi_durable_writes l where l.tenant_id=${target.tenantId}::uuid and l.session_id=${target.sessionId}
+      and l.seq=${source.sequence} and l.record_id=${source.recordId} and l.record_kind=${source.kind}`.execute(
+        tx,
+      )
+    ).rows;
+    if (!found.length) throw new Error("Retained child creation source is missing");
+    positions.set(`${source.sequence}:${source.recordId}`, source.sequence);
+  }
   return positions;
 }

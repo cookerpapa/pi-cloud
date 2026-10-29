@@ -806,6 +806,7 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
       { kind: "entry" },
       { kind: "entry" },
       { kind: "conversation" },
+      { kind: "document.create" }, // Session-scoped Fork provenance.
     ]);
     const foreignTree = await http.inject({
       method: "GET",

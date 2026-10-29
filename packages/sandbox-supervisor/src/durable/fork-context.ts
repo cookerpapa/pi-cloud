@@ -8,6 +8,7 @@ export function describeForkContext(origin: ForkProvenance, currentSessionId: st
     `Current conversation: ${currentSessionId}.`,
     `This execution family (${origin.sessionId}) was forked from conversation ${origin.sourceSessionId} through entry ${origin.sourceEntryId}.`,
     "Only the selected agent's visible history was inherited, including results already returned to that history. The source family's agent instances, pending inputs, and separate subagent conversations were not inherited.",
+    "Workspace files were not copied or rewound by this conversation fork.",
     "Agent IDs in inherited history are historical references, not live agents in this family. Use current-session agent information; create new subagents when needed and permitted. Do not wait for or send instructions to source agents on the assumption that they moved here.",
   ].join("\n");
 }

@@ -4,12 +4,13 @@
 
 [ADR-0287](adr/0287-single-path-shared-forks.md) retains the selected visible path
 and already-returned results, without importing old child histories or runtimes.
-The first slice adds stable Fork provenance and a native system section, verifies
-cold reopen/compaction/family pruning and prevents old child IDs crossing family
-boundaries. `main` messaging follows the actual Run owner, including non-1 native
-Conversation IDs. Cold bootstrap seeds existing Forks through public Storage.
-Shared history/read/retention integration and the matched live-verified migration
-remain in progress; the shared-directory prototype is not deployed.
+The identity slice is committed and pushed. Shared native bases, source display
+frames, independent header versions and reference collection are implemented.
+The 1 GiB service fixture measured 522 ms for a first Fork and 323 ms for a nested
+Fork, with cold history reads of 386/249 ms; these are isolated measurements, not
+live rollout acceptance. Native contracts and targeted source deletion/pruning,
+continued-child and schema-203 conversion checks are being completed. Deep-chain,
+ordinary write/read, full regression, failure and matched live gates remain open.
 
 ## Shared history roots — prototype measured; migration remains gated
 

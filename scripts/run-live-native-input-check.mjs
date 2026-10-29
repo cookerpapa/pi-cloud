@@ -17,7 +17,7 @@ import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 
 if (process.env.PI_CLOUD_LIVE_NATIVE_INPUT_CHECK !== "1")
   throw new Error(
-    "Set PI_CLOUD_LIVE_NATIVE_INPUT_CHECK=1 for schema 203 matched Luna/Cube acceptance and an owned Worker crash",
+    "Set PI_CLOUD_LIVE_NATIVE_INPUT_CHECK=1 for schema 204 matched Luna/Cube acceptance and an owned Worker crash",
   );
 const runtime = "deploy/production/runtime",
   env = await readFile(`${runtime}/.env`, "utf8");
@@ -78,7 +78,7 @@ try {
     .executeTakeFirstOrThrow();
   assert.equal(
     schema.name,
-    "203_shared_native_entry_bodies",
+    "204_shared_native_history_bases",
     "Deploy the matched schema/app first",
   );
   tenant = await createPrivateTenant(db, {
