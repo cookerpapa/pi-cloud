@@ -39,16 +39,54 @@ export type HistoryTurnRow = {
   frozen: boolean;
 };
 
-async function metadataObject(tx: Transaction<Database>, tenant: string, value: unknown) {
-  const body = JSON.stringify(value),
-    hash = createHash("sha256").update(body).digest("hex");
-  const result = await sql<{ id: string }>`insert into pi_history_bodies
-    (tenant_id,body_kind,id,sha256,payload_text,payload_bytes)
-    values(${tenant}::uuid,'metadata',${randomUUID()}::uuid,${hash},${body},${Buffer.byteLength(body)})
+type FrozenWrite = {
+  turnId: string;
+  originSessionId: string;
+  kind: "turn" | "record";
+  recordId: string;
+  seq: string;
+  ordinal: number;
+  position: string;
+  entryId?: string;
+  assistantId?: string | null;
+  fields: Record<string, unknown>;
+  value: unknown;
+  entryBytes?: number;
+};
+/** One set-based statement interns a bounded descriptor batch and establishes every reference. */
+async function writeFrozenBatch(
+  tx: Transaction<Database>,
+  tenant: string,
+  owner: string,
+  writes: readonly FrozenWrite[],
+) {
+  if (!writes.length) return;
+  const objects = new Map<string, { id: string; text: string; bytes: number }>();
+  const records = writes.map((write) => {
+    const text = JSON.stringify(write.value),
+      digest = createHash("sha256").update(text).digest("hex");
+    const prior = objects.get(digest);
+    if (prior && prior.text !== text) throw new Error("Frozen history metadata digest conflict");
+    if (!prior) objects.set(digest, { id: randomUUID(), text, bytes: Buffer.byteLength(text) });
+    return { ...write, digest, bytes: Buffer.byteLength(text) + (write.entryBytes ?? 0) };
+  });
+  await sql`with bodies as (
+    insert into pi_history_bodies(tenant_id,body_kind,id,sha256,payload_text,payload_bytes)
+    values ${sql.join([...objects].sort(([a], [b]) => a.localeCompare(b)).map(([hash, v]) => sql`(${tenant}::uuid,'metadata',${v.id}::uuid,${hash},${v.text},${v.bytes})`))}
     on conflict(tenant_id,body_kind,sha256) do update set sha256=excluded.sha256
-      where pi_history_bodies.payload_text=excluded.payload_text returning id`.execute(tx);
-  if (result.rows.length !== 1) throw new Error("Frozen history metadata digest conflict");
-  return { id: result.rows[0]!.id, bytes: Buffer.byteLength(body) };
+      where pi_history_bodies.payload_text=excluded.payload_text returning id,sha256
+  ), refs(turn_id,origin_session_id,kind,record_id,seq,ordinal,position,entry_id,assistant_id,digest,fields,body_bytes) as (
+    values ${sql.join(
+      records.map(
+        (
+          r,
+        ) => sql`(${r.turnId}::uuid,${r.originSessionId}::uuid,${r.kind}::text,${r.recordId}::bigint,${r.seq}::bigint,
+      ${r.ordinal}::int,${r.position}::bigint,${r.entryId ?? null}::bigint,${r.assistantId ?? null}::bigint,${r.digest}::text,${JSON.stringify(r.fields)}::jsonb,${r.bytes}::bigint)`,
+      ),
+    )}
+  ) insert into pi_history_snapshots(tenant_id,session_id,turn_id,origin_session_id,kind,record_id,seq,ordinal,position,entry_id,assistant_id,body_id,fields,body_bytes)
+    select ${tenant}::uuid,${owner}::uuid,r.turn_id,r.origin_session_id,r.kind,r.record_id,r.seq,r.ordinal,r.position,r.entry_id,r.assistant_id,b.id,r.fields,r.body_bytes
+    from refs r left join bodies b on b.sha256=r.digest`.execute(tx);
 }
 
 export async function historyHeaders(
@@ -106,6 +144,7 @@ export async function retainFrozenImages(
       select h.session_id,h.turn_id,h.kind,h.seq::text,h.ordinal,b.payload_text from pi_history_snapshots h
       join pi_history_bodies b on b.tenant_id=h.tenant_id and b.id=h.body_id
       where h.tenant_id=${scope.tenantId}::uuid and h.session_id=any(${[...owners]}::uuid[])
+        and strpos(b.payload_text,'"image":')>0
         ${after ? sql`and (h.session_id,h.turn_id,h.kind,h.seq,h.ordinal)>(${after.session}::uuid,${after.turn}::uuid,${after.kind},${after.seq}::bigint,${after.ordinal})` : sql``}
       order by h.session_id,h.turn_id,h.kind,h.seq,h.ordinal limit 32`.execute(tx)
     ).rows;
@@ -187,7 +226,6 @@ export async function freezeForkHistory(
       }
       const header = (await historyHeaders(tx, tenant, source, [turn.turn_id])).get(turn.turn_id);
       if (!header) throw new Error("History header is missing");
-      const body = await metadataObject(tx, tenant, header);
       const fields = {
         runId: turn.run_id,
         operationKind: turn.operation_kind,
@@ -197,11 +235,19 @@ export async function freezeForkHistory(
         nativeCoverage: turn.output_display_native_seq,
         acceptedAt: new Date(turn.created_at).toISOString(),
       };
-      await sql`insert into pi_history_snapshots(tenant_id,session_id,turn_id,origin_session_id,kind,record_id,seq,ordinal,position,body_id,fields,body_bytes)
-        values(${tenant}::uuid,${target}::uuid,${turn.turn_id}::uuid,${turn.origin_session_id}::uuid,'turn',0,0,0,
-          ${turn.mailbox_position}::bigint,${body.id}::uuid,${JSON.stringify(fields)}::jsonb,${body.bytes})`.execute(
-        tx,
-      );
+      await writeFrozenBatch(tx, tenant, target, [
+        {
+          turnId: turn.turn_id,
+          originSessionId: turn.origin_session_id,
+          kind: "turn",
+          recordId: "0",
+          seq: "0",
+          ordinal: 0,
+          position: turn.mailbox_position,
+          fields,
+          value: header,
+        },
+      ]);
       const cutoff =
         turn.turn_id === input.throughTurnId && input.throughEntryId
           ? (
@@ -232,7 +278,7 @@ export async function freezeForkHistory(
             and w.cloud_origin->>'turn'=${turn.turn_id} and w.record_kind in ('entry','task')
             and (w.seq,w.ordinal)>(${position.seq}::bigint,${position.ordinal})
             ${cutoff ? sql`and (w.seq,w.ordinal)<=(${cutoff.seq}::bigint,${cutoff.ordinal})` : sql``}
-          order by w.seq,w.ordinal limit 32
+          order by w.seq,w.ordinal limit 128
         ) select l.record_id::text as id,l.seq::text,l.ordinal,r.fields,l.record_kind as kind,l.body,
           case when l.record_kind='entry' then b.payload_bytes+octet_length(pi_native_entry_prefix(l.record_id,l.entry_conversation_id,l.entry_task_id))
             else octet_length(l.body) end::int as body_bytes,c.committed_at,
@@ -283,6 +329,7 @@ export async function freezeForkHistory(
           { tenantId: tenant, sessionId: turn.pi_session_id },
           requests,
         );
+        const snapshots: FrozenWrite[] = [];
         for (const row of rows.filter((r) => r.eligible)) {
           const request = requests.find((r) => r.entryId === row.id),
             human = request ? humans.get(request.inputId) : undefined;
@@ -301,15 +348,21 @@ export async function freezeForkHistory(
                 }
               : {}),
           };
-          const stored = await metadataObject(tx, tenant, descriptor);
-          await sql`insert into pi_history_snapshots(tenant_id,session_id,turn_id,origin_session_id,kind,record_id,seq,ordinal,
-            position,entry_id,assistant_id,body_id,fields,body_bytes)
-            values(${tenant}::uuid,${target}::uuid,${turn.turn_id}::uuid,${turn.origin_session_id}::uuid,'record',${row.id}::bigint,${row.seq}::bigint,${row.ordinal},
-              ${turn.mailbox_position}::bigint,${row.kind === "entry" ? row.id : null}::bigint,${row.assistant_id}::bigint,${stored.id}::uuid,
-              ${JSON.stringify(descriptor.fields)}::jsonb,${stored.bytes + (row.kind === "entry" ? row.body_bytes : 0)})`.execute(
-            tx,
-          );
+          snapshots.push({
+            turnId: turn.turn_id,
+            originSessionId: turn.origin_session_id,
+            kind: "record",
+            recordId: row.id,
+            seq: row.seq,
+            ordinal: row.ordinal,
+            position: turn.mailbox_position,
+            ...(row.kind === "entry" ? { entryId: row.id, entryBytes: row.body_bytes } : {}),
+            assistantId: row.assistant_id,
+            fields: descriptor.fields,
+            value: descriptor,
+          });
         }
+        await writeFrozenBatch(tx, tenant, target, snapshots);
         const last = rows.at(-1)!;
         position = { seq: last.seq, ordinal: last.ordinal };
       }

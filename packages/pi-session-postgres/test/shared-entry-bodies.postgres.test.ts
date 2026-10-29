@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { importEntryReferences } from "../src/durable/import-entry-references.ts";
 import { retainIdleFamily } from "../src/durable/history-retention.ts";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it } from "vitest";
@@ -384,4 +386,169 @@ it("reorganizes a closed multi-Conversation family without losing child ancestry
     ["A", "child"],
   );
   await reopened.close(context);
+});
+
+it("copies immutable references with byte-identical native hashes and no ordinary body traffic", async () => {
+  const id = await tenant(),
+    source = await physical(id),
+    target = await physical(id);
+  const origin = { sessionId: randomUUID(), runId: randomUUID(), turnId: randomUUID() };
+  const markers = ["\0", "\b\f\n\r\t", "\ud800", "\udfff", "😀中文", "\u2028\u2029", '"\\/<>'];
+  const entries = Array.from({ length: 35 }, (_, i) => ({
+    type: "entry" as const,
+    value: {
+      id: (i + 3) as never,
+      conversationId: 1 as never,
+      byTaskId: 2 as never,
+      kind: "fixture.entry",
+      data: {
+        marker: markers[i % markers.length]!,
+        sentinel: "ORDINARY_BODY_" + i + "x".repeat(32768),
+        nested: { value: 1.25 },
+      },
+    },
+  }));
+  await source.projection.apply(
+    {
+      seq: 1 as never,
+      nextId: 40,
+      writes: [
+        { type: "conversation", value: { id: 1 as never } },
+        {
+          type: "task",
+          value: {
+            id: 2,
+            conversationId: 1,
+            kind: "fixture.task",
+            version: 1,
+            input: {},
+            background: false,
+            abortRequested: false,
+            state: { status: "terminal", outcome: { status: "completed", result: null } },
+          },
+        } as never,
+        ...entries,
+      ],
+    },
+    entries.map((e) => ({ recordId: e.value.id, ...origin })),
+  );
+  await target.projection.apply({
+    seq: 1 as never,
+    nextId: 40,
+    writes: [{ type: "conversation", value: { id: 1 as never } }],
+  });
+  const returned: string[] = [];
+  const measured = db.withPlugin({
+    transformQuery: ({ node }) => node,
+    async transformResult({ result }) {
+      returned.push(JSON.stringify(result.rows));
+      return result;
+    },
+  });
+  await measured.transaction().execute(async (tx) => {
+    const first = await importEntryReferences(tx, {
+      source: source.scope,
+      target: target.scope,
+      sourceSequence: 1,
+      afterOrdinal: -1,
+      sequence: 2,
+      nextId: 40,
+      selected: sql`true`,
+    });
+    expect(first.count).toBe(32);
+    expect(first.hasMore).toBe(true);
+    const second = await importEntryReferences(tx, {
+      source: source.scope,
+      target: target.scope,
+      sourceSequence: 1,
+      afterOrdinal: first.lastOrdinal,
+      sequence: 3,
+      nextId: 40,
+      selected: sql`true`,
+    });
+    expect(second.count).toBe(3);
+    expect(second.hasMore).toBe(false);
+  });
+  expect(returned.join("")).not.toContain("ORDINARY_BODY_");
+  for (const [index, writes] of [entries.slice(0, 32), entries.slice(32)].entries()) {
+    const batch = {
+      seq: index + 2,
+      nextId: 40,
+      writes: writes.map(({ value }) => {
+        const { byTaskId: _task, ...rest } = value;
+        return { type: "entry", value: rest };
+      }),
+    };
+    const origins = writes.map((e) => ({ recordId: e.value.id, ...origin }));
+    const actual = (
+      await sql<{
+        fingerprint: string;
+      }>`select fingerprint from pi_durable_commits where tenant_id=${id}::uuid
+      and session_id=${target.scope.sessionId} and seq=${index + 2}`.execute(db)
+    ).rows[0]!;
+    expect(actual.fingerprint).toBe(
+      createHash("sha256").update(JSON.stringify({ batch, origins })).digest("hex"),
+    );
+    expect(await target.projection.apply(batch as never, origins)).toBe(false);
+  }
+  const fields = (
+    await sql`select id,fields from pi_durable_records where tenant_id=${id}::uuid and session_id=${target.scope.sessionId} order by id`.execute(
+      db,
+    )
+  ).rows;
+  await target.projection.rebuild();
+  expect(
+    (
+      await sql`select id,fields from pi_durable_records where tenant_id=${id}::uuid and session_id=${target.scope.sessionId} order by id`.execute(
+        db,
+      )
+    ).rows,
+  ).toEqual(fields);
+  expect((await target.projection.get(3))?.value).toMatchObject({ data: entries[0]!.value.data });
+});
+
+it("rolls back reference imports when an immutable source body no longer matches its digest", async () => {
+  const id = await tenant(),
+    source = await physical(id),
+    target = await physical(id);
+  await source.projection.apply({
+    seq: 1 as never,
+    nextId: 3,
+    writes: [
+      { type: "conversation", value: { id: 1 as never } },
+      {
+        type: "entry",
+        value: {
+          id: 2 as never,
+          conversationId: 1 as never,
+          kind: "fixture.entry",
+          data: { value: "original" },
+        },
+      },
+    ],
+  });
+  await target.projection.apply({
+    seq: 1 as never,
+    nextId: 3,
+    writes: [{ type: "conversation", value: { id: 1 as never } }],
+  });
+  const changed = JSON.stringify({ kind: "fixture.entry", data: { value: "tampered" } });
+  await sql`update pi_history_bodies set payload_text=${changed},payload_bytes=${Buffer.byteLength(changed)} where tenant_id=${id}::uuid`.execute(
+    db,
+  );
+  await expect(
+    db.transaction().execute((tx) =>
+      importEntryReferences(tx, {
+        source: source.scope,
+        target: target.scope,
+        sourceSequence: 1,
+        afterOrdinal: -1,
+        sequence: 2,
+        nextId: 3,
+        selected: sql`true`,
+      }),
+    ),
+  ).rejects.toThrow("integrity");
+  expect((await target.projection.head()).seq).toBe(1);
+  expect(await target.projection.get(2)).toBeUndefined();
 });

@@ -1138,8 +1138,13 @@ FK-backed references; image cleanup uses the existing object authority. Workspac
 bytes and VM/process lifecycle are unchanged. History cursor v2 carries the
 physical storage identity so stale cursors cannot resolve against new sequences.
 [ADR-0284](adr/0284-independent-forks-and-history-retention.md) documents the
-schema-203 matched transition and its costs. Entry import still parses and
-validates native bodies; sharing removes persistent copies, not all copy CPU/I/O.
+schema-203 matched transition. [ADR-0285](adr/0285-batched-native-history-forks.md)
+copies manual-Fork Entry references in PG, retaining byte-equivalent native
+checksums without returning ordinary history bodies to the application. Frozen
+metadata writes are batched; image retention selects candidate bodies before
+paging. Reference insertion and DB checksum reads remain linear. Mutable native
+documents, anchor reconstruction and cold family retirement keep their existing
+public Storage paths; these are not constant-time operations.
 World State compares against its native document baseline.
 A verification reminder is derived from committed current-Run entries at native
 yield; neither delayed display callbacks nor Worker replacement can duplicate it.

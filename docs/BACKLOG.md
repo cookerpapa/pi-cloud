@@ -3,11 +3,13 @@
 ## Large-history Fork performance — in progress
 
 [ADR-0285](adr/0285-batched-native-history-forks.md) records the Git/Temporal/Dolt/PG
-comparison and the accepted reference-copy slice. The baseline now separates
-native import, frozen presentation and image retention and counts SQL/bytes.
-Implement PG-local reference import with unchanged native hash contracts, batched
-descriptor writes and bounded image selection. Native, concurrency, image and
-1 GiB before/after checks plus the matched rollout remain the completion gate.
+comparison and the implemented reference-copy slice. Native Entry copying stays
+inside PG with unchanged hashes; display descriptors are batched and image-free
+metadata is filtered before paging. The 1 GiB service fixture drops from 193.0 to
+61.7 seconds and from 83,431 to 2,001 SQL calls; nested Forks drop from 123.3 to
+50.1 seconds. Native/hash/image contracts and the composed 1 GiB API/Web
+Fork/prune/collection checks pass. Full repository gates and the matched,
+live-verified rollout remain the completion gate.
 
 ## Main publication and first-request comparison — measured; follow-up tracked
 

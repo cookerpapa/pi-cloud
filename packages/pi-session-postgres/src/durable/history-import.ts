@@ -9,8 +9,8 @@ import {
   type StorageWrite,
 } from "@earendil-works/pi-durable";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { DurableRecordOrigin } from "@pi-cloud/protocol";
 import { assertIdleNativeSession } from "../idle-session-mutation.ts";
+import { importEntryReferences } from "./import-entry-references.ts";
 import { DurablePostgresProjection } from "./postgres-projection.ts";
 import { PublishedDurableStorage } from "./published-storage.ts";
 import type { DurableScope, StoredDurableBatch } from "./types.ts";
@@ -95,60 +95,56 @@ export async function importForkHistory(
     entries = 0;
   const publish = async (rows: readonly Row[]) => {
     if (!rows.length) return;
-    const origins: DurableRecordOrigin[] = [];
     const writes = rows.map((row) => {
       const write = JSON.parse(row.body) as StorageWrite;
-      if (write.type === "entry") {
-        const { byTaskId: _task, ...value } = write.value;
-        entries++;
-        const o = row.cloud_origin;
-        if (o?.cloudSession && o.run && o.turn)
-          origins.push({
-            recordId: value.id,
-            sessionId: o.cloudSession,
-            runId: o.run,
-            turnId: o.turn,
-          });
-        return { type: "entry", value } as StorageWrite;
-      }
       if (write.type === "conversation") {
         const { owner: _owner, ...value } = write.value;
         return { type: "conversation", value } as StorageWrite;
       }
       return write;
     });
-    await destination.applyIn(
-      tx,
-      { seq: ++seq as Seq, nextId: head.nextId, writes } as StoredDurableBatch,
-      origins,
-    );
+    await destination.applyIn(tx, {
+      seq: ++seq as Seq,
+      nextId: head.nextId,
+      writes,
+    } as StoredDurableBatch);
   };
   let afterSeq = 0;
   for (;;) {
-    const { rows: commits } = await sql<{ seq: string }>`select distinct l.seq from pi_durable_log l
+    const { rows: commits } = await sql<{
+      seq: string;
+      has_state: boolean;
+    }>`select l.seq,bool_or(l.record_kind<>'entry') as has_state from pi_durable_writes l
       where l.tenant_id=${source.tenantId}::uuid and l.session_id=${source.sessionId}
         and l.seq>${afterSeq} and l.seq<=${head.seq} and ${selected}
-      order by l.seq limit 64`.execute(tx);
+      group by l.seq order by l.seq limit 64`.execute(tx);
     if (!commits.length) break;
     for (const commit of commits) {
       // All document changes from an original commit precede its copied Entries.
       // Splitting Entry pages then preserves every native asOf commit boundary.
-      const { rows: state } =
-        await sql<Row>`select l.ordinal,l.record_id::text,l.body,l.cloud_origin
+      const { rows: state } = commit.has_state
+        ? await sql<Row>`select l.ordinal,l.record_id::text,l.body,l.cloud_origin
         from pi_durable_log l where l.tenant_id=${source.tenantId}::uuid and l.session_id=${source.sessionId}
           and l.seq=${commit.seq}::bigint and l.record_kind<>'entry' and ${selected}
-        order by l.ordinal`.execute(tx);
+        order by l.ordinal`.execute(tx)
+        : { rows: [] };
       await publish(state);
       let ordinal = -1;
       for (;;) {
-        const { rows } = await sql<Row>`select l.ordinal,l.record_id::text,l.body,l.cloud_origin
-          from pi_durable_log l where l.tenant_id=${source.tenantId}::uuid and l.session_id=${source.sessionId}
-            and l.seq=${commit.seq}::bigint and l.record_kind='entry' and l.ordinal>${ordinal} and ${selected}
-          order by l.ordinal limit 32`.execute(tx);
-        if (!rows.length) break;
-        await publish(rows);
-        ordinal = rows.at(-1)!.ordinal;
-        if (rows.length < 32) break;
+        const copied = await importEntryReferences(tx, {
+          source,
+          target,
+          sourceSequence: Number(commit.seq),
+          afterOrdinal: ordinal,
+          sequence: seq + 1,
+          nextId: head.nextId,
+          selected,
+        });
+        if (!copied.count) break;
+        seq++;
+        entries += copied.count;
+        ordinal = copied.lastOrdinal;
+        if (!copied.hasMore) break;
       }
       afterSeq = Number(commit.seq);
     }

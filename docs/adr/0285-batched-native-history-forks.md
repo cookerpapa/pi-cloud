@@ -29,16 +29,21 @@ Its native/display/image phases are 60.5 / 79.6 / 52.9 s. Nested Fork: 123.3 s,
 including 55.2 s of image-metadata paging despite having no images. These byte
 counts describe application parameters/result encoding, not TCP packet captures.
 
-The first set-based version eliminates ordinary body round trips, but its SQL
-still spends too much time manipulating wide checksum intermediates. Keep that
-measurement as evidence; SQL count reduction alone does not prove the final
-performance target. Private reports are under
+The first set-based version eliminated ordinary body round trips, but spent too
+much time manipulating wide checksum intermediates. Narrow reference CTEs and a
+small materialized hash result avoid repeatedly handling the large preimages.
+The final fixture measures 61.7 s / 2,001 SQL calls for the first Fork and
+50.1 s / 1,181 calls for a nested Fork. First-Fork parameter/result encoding falls
+to 11.2 / 30.2 MB. Its phases are 53.0 / 8.5 / 0.05 s; DB checksum work is now the
+largest cost. These are local measurements, not latency guarantees. The generator,
+size and shape match the baseline; generated paragraph bytes are random per run.
+Private reports are under
 `deploy/production/runtime/work-evidence/fork-performance-20261029/`.
 
-## Intended implementation
+## Implementation
 
 1. Measure native import, display metadata and image retention separately, with
-   SQL counts and application/database bytes. Compare the same synthetic data.
+   SQL counts and application/database bytes. Compare the same synthetic workload.
 2. Import existing Entry references in bounded SQL batches. Keep the canonical
    body IDs, native IDs, ancestry, ID watermark and cloud provenance; remove
    execution ownership exactly as the current independent import does. Reuse
@@ -52,8 +57,10 @@ performance target. Private reports are under
    to JSONB, preserving NUL/lone-surrogate semantics. Install image ownership in
    the same transaction. Mutable native documents continue through the existing
    public Storage path and preserve `asOf`/`current` policies.
-5. Batch frozen display descriptors and references rather than issuing two SQL
-   statements per record. Existing frozen metadata remains directly shareable.
+5. Batch up to 128 frozen display descriptors and references rather than issuing
+   two SQL statements per record. Existing frozen metadata remains directly
+   shareable. Select possible image metadata before paging; image-free histories
+   no longer page through every descriptor solely to retain images.
 6. Keep source KEY SHARE, target quiescence, fresh contiguous commits, FK-backed
    collection, idempotent admission and complete transaction rollback. An
    incomplete destination cannot become visible or acquire a writer.

@@ -1,5 +1,11 @@
 # Matched release procedure
 
+ADR-0285 retains schema 203 and the existing hash/API protocols. Its private cold
+import optimization changes the shared storage adapter and uses the matched path.
+Run `scripts/run-fork-performance-check.mjs` inside the isolated PostgreSQL test
+wrapper, the composed history fixture below, then owned live Fork/image/native
+recovery checks after publication. Preserve original history and Workspace bytes.
+
 ADR-0284 requires schema 203 and paired API/Worker/Web storage contracts. Preserve
 existing bodies, images, machine intent and Workspace Volumes while draining. The
 bootstrap job converts any existing Fork display prefixes once; it refuses active
