@@ -1,5 +1,17 @@
 # Maintained backlog
 
+## Shared history roots — prototype measured; migration remains gated
+
+[ADR-0286](adr/0286-shared-history-root-prototype.md) has a runnable isolated PG
+prototype and [measurements](reports/shared-history-root-prototype-20261029.md).
+The 1 GiB directory Fork p95 is 12.0 ms with no old body reads/new Entry rows;
+1,000 nested Forks have height 11. Fourteen scoped checks pass, but this is not
+full native Storage conformance. Read/write p95 does not consistently meet 10%,
+deep inherited pages are 3.17 ms / 32% slower, and native out-of-order ID commits
+are not supported. Settle those semantics and measure a common batched resolver
+before integrating mutable state, Kafka, presentation and real S3 ownership.
+No runtime imports, production migrations or serving artifacts changed.
+
 ## Large-history Fork performance — deployed
 
 [ADR-0285](adr/0285-batched-native-history-forks.md) records the Git/Temporal/Dolt/PG

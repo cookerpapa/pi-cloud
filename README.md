@@ -145,9 +145,12 @@ individual delivery reports retain both successes and unresolved failures.
   Recovery preserves uncertainty instead of silently executing them again.
 - Self-hosted defaults have no product quotas on conversations, concurrency or
   uploads. Physical capacity and transport/provider bounds still apply.
-- Independent human Fork lifecycle, shared history bodies and safe reclamation are
-  being implemented under [ADR-0284](docs/adr/0284-independent-forks-and-history-retention.md).
-  They are not deployed capabilities yet; current tail pruning can affect branches.
+- Independent human Forks, shared history bodies and safe reclamation are deployed
+  under [ADR-0284](docs/adr/0284-independent-forks-and-history-retention.md).
+  [Batched imports](docs/reports/fork-performance-20261029.md) reduce the measured
+  1 GiB Fork cost, but it remains linear. Shared history roots are a separate
+  [isolated prototype](docs/adr/0286-shared-history-root-prototype.md), not a
+  deployed capability.
 
 ## Development and releases
 

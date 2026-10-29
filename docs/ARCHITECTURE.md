@@ -1145,6 +1145,9 @@ metadata writes are batched; image retention selects candidate bodies before
 paging. Reference insertion and DB checksum reads remain linear. Mutable native
 documents, anchor reconstruction and cold family retirement keep their existing
 public Storage paths; these are not constant-time operations.
+[ADR-0286](adr/0286-shared-history-root-prototype.md) is a measured, isolated
+shared-root experiment. It has not passed the native-contract/performance gates
+for changing this production representation or its ownership rules.
 World State compares against its native document baseline.
 A verification reminder is derived from committed current-Run entries at native
 yield; neither delayed display callbacks nor Worker replacement can duplicate it.

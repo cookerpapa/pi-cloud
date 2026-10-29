@@ -1,8 +1,13 @@
 # Current architecture decisions
 
-[ADR-0285](0285-batched-native-history-forks.md) is accepted for implementation:
-reuse retained bodies inside PG, batch presentation references and preserve the
-existing native integrity/ownership contracts. Source and live gates are pending.
+[ADR-0286](0286-shared-history-root-prototype.md) authorizes isolated validation of
+shared history roots and their read/write/collection costs. The prototype is
+measured, with unresolved native-contract and performance gates; it is not a
+deployed replacement for the current storage contract.
+
+[ADR-0285](0285-batched-native-history-forks.md) is deployed and live-verified as
+`fork-performance-brotli-20261029`: reuse retained bodies inside PG, batch
+presentation references and preserve native integrity/ownership contracts.
 
 [ADR-0284](0284-independent-forks-and-history-retention.md) is deployed as
 `independent-forks-final2-20261029` (schema 203, Helm 123): shared immutable bodies,

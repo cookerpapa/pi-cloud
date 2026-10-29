@@ -1,5 +1,18 @@
 # Implementation roadmap
 
+## Shared history root validation — measured; production gates open
+
+- [x] Record prototype boundaries and build-versus-adopt evidence in ADR-0286.
+- [x] Implement isolated PG prefix ownership, bounded directory reads and collection.
+- [x] Verify scoped native context and concurrency/failure behavior without changing Pi core.
+- [x] Measure large/nested Forks and ordinary append/read/GC/WAL costs; record pass/fail gates.
+- [ ] Remove the Entry-order restriction and verify full native Storage semantics.
+- [ ] Meet the agreed read/write guardrails and complete production integration gates.
+
+[Prototype results](reports/shared-history-root-prototype-20261029.md). The
+prototype is complete as an experiment; the production migration is not complete
+or deployed.
+
 ## Batched independent Fork imports — deployed
 
 - [x] Compare maintained open-source reference-sharing implementations and licenses.

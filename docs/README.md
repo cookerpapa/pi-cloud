@@ -1,5 +1,10 @@
 # Documentation map
 
+[Shared history root validation](adr/0286-shared-history-root-prototype.md) has a
+[measured isolated prototype](reports/shared-history-root-prototype-20261029.md).
+It demonstrates fast directory Forks but has outstanding native-contract and
+read/write performance gates; production remains on ADR-0284/0285.
+
 [Batched native Fork imports](adr/0285-batched-native-history-forks.md) compares
 Git, Temporal and Dolt reference sharing and tracks measured PG import/metadata
 optimization. [Before/after measurements](reports/fork-performance-20261029.md)
