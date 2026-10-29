@@ -1,14 +1,17 @@
 # Implementation roadmap
 
-## Batched independent Fork imports — in progress
+## Batched independent Fork imports — deployed
 
 - [x] Compare maintained open-source reference-sharing implementations and licenses.
 - [x] Capture phase, SQL and byte baselines on an isolated 1 GiB fixture.
 - [x] Complete bounded PG reference import and metadata/image batching.
 - [x] Verify native hashes/rebuild, document semantics and concurrent collection.
-- [ ] Measure final 1 GiB behavior and publish the matched, live-verified release.
+- [x] Measure final 1 GiB behavior and publish the matched, live-verified release.
 
-[ADR-0285](adr/0285-batched-native-history-forks.md).
+[ADR-0285](adr/0285-batched-native-history-forks.md). Matched
+`fork-performance-brotli-20261029`, schema 203 / Helm 124, passes live Fork,
+Cube/browser, native recovery and original-asset preservation.
+[Measurements and delivery](reports/fork-performance-20261029.md).
 
 ## Independent human Forks and history retention — deployed
 

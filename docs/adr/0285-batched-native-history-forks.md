@@ -1,6 +1,8 @@
 # ADR-0285: Batch reference imports for independent history
 
-Status: accepted for implementation, 2026-10-29. Builds on ADR-0284; not yet deployed.
+Status: implemented and deployed, 2026-10-29. Builds on ADR-0284.
+Matched `fork-performance-brotli-20261029` retains schema 203.
+[Measurements and live acceptance](../reports/fork-performance-20261029.md).
 
 The owner requested faster large-history Forks and a survey of mature open-source
 approaches. Existing native ownership, document policies, reference collection and

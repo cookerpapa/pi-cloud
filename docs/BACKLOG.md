@@ -1,6 +1,6 @@
 # Maintained backlog
 
-## Large-history Fork performance — in progress
+## Large-history Fork performance — deployed
 
 [ADR-0285](adr/0285-batched-native-history-forks.md) records the Git/Temporal/Dolt/PG
 comparison and the implemented reference-copy slice. Native Entry copying stays
@@ -8,8 +8,12 @@ inside PG with unchanged hashes; display descriptors are batched and image-free
 metadata is filtered before paging. The 1 GiB service fixture drops from 193.0 to
 61.7 seconds and from 83,431 to 2,001 SQL calls; nested Forks drop from 123.3 to
 50.1 seconds. Native/hash/image contracts and the composed 1 GiB API/Web
-Fork/prune/collection checks pass. Full repository gates and the matched,
-live-verified rollout remain the completion gate.
+Fork/prune/collection checks pass. Matched `fork-performance-brotli-20261029`
+(schema 203, Helm 124) passes real Luna Fork/image/compaction, Cube/browser and
+Worker/Control Plane crash recovery acceptance. Original history, 65 images,
+Workspace files and configuration pass preservation checks. The final image gate
+includes Ubuntu Brotli fixes; the full remote quality budget is raised from 20
+to 60 minutes after its timed cancellation. [Delivery evidence](reports/fork-performance-20261029.md).
 
 ## Main publication and first-request comparison — measured; follow-up tracked
 

@@ -35,7 +35,8 @@ jobs:
     needs: impact
     name: Format, types, tests, and deployment checks
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Full PostgreSQL contracts plus the fault suite exceed the former 20-minute budget.
+    timeout-minutes: 60
 
     services:
       postgres:

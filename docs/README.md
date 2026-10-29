@@ -3,8 +3,9 @@
 [Batched native Fork imports](adr/0285-batched-native-history-forks.md) compares
 Git, Temporal and Dolt reference sharing and tracks measured PG import/metadata
 optimization. [Before/after measurements](reports/fork-performance-20261029.md)
-cover the 1 GiB service and composed API/Web fixtures. Publication is in progress;
-ADR-0284 remains the deployed contract.
+cover the 1 GiB service and composed API/Web fixtures. Matched
+`fork-performance-brotli-20261029` is deployed and live-verified, retaining
+ADR-0284's schema-203 storage and ownership contract.
 
 [First-request comparison](reports/first-model-request-comparison-20261028.md)
 compares the pinned Pi provider, PiCloud model path and actual Codex CLI using
