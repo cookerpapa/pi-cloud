@@ -388,6 +388,10 @@ func (h *OpenAIResponsesAPIHandler) PiCloudResponses(c *gin.Context) {
 		piCloudModelError(c, 400, "invalid_request")
 		return
 	}
+	// CPA receives decoded JSON below. Ingress compression/length must not
+	// describe the executor's rebuilt upstream request.
+	c.Request.Header.Del("Content-Encoding")
+	c.Request.Header.Del("Content-Length")
 	s, err := p.acquire(key)
 	if err != nil {
 		piCloudModelError(c, 429, err.Error())
@@ -516,6 +520,11 @@ func piCloudFailure(err error) *piCloudAttemptError {
 	}
 	if f.status == 400 {
 		f.code = "provider_request_rejected"
+	}
+	if f.status == 413 {
+		f.code = "request_too_large"
+		f.message = "Model request is too large; use /compact before retrying"
+		return f
 	}
 	// Preserve CPA's existing redacted provider error contract. Native Pi needs
 	// context-overflow/quota distinctions to compact or avoid futile retries.

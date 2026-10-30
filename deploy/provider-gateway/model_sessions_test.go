@@ -53,6 +53,9 @@ func piCloudFixture(t *testing.T) *piCloudModelFixture {
 	upgrade := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !websocket.IsWebSocketUpgrade(r) {
+			if r.Header.Get("Content-Encoding") != "" {
+				t.Error("decoded upstream payload retained ingress compression header")
+			}
 			f.httpCalls.Add(1)
 			body, _ := io.ReadAll(r.Body)
 			f.received <- piCloudTestRequest{0, body}
@@ -176,6 +179,12 @@ const piCloudAnswer = `{"type":"message","role":"assistant","content":[{"type":"
 func (f *piCloudModelFixture) send(t *testing.T, body string, key string) string {
 	t.Helper()
 	req, _ := http.NewRequest("POST", f.server.URL+"/v1/picloud/responses", strings.NewReader(body))
+	encoder, _ := zstd.NewWriter(nil)
+	encoded := encoder.EncodeAll([]byte(body), nil)
+	encoder.Close()
+	req.Body = io.NopCloser(bytes.NewReader(encoded))
+	req.ContentLength = int64(len(encoded))
+	req.Header.Set("Content-Encoding", "zstd")
 	req.Header.Set("X-PiCloud-Model-Session", key)
 	req.Header.Set("Authorization", "Bearer fixture")
 	client := &http.Client{Timeout: 10 * time.Second}
