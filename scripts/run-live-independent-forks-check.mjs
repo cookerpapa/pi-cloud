@@ -325,6 +325,67 @@ try {
     !JSON.stringify(await nativeHistory(db, await scope(root))).includes(codeC),
     "Source retained discarded C context",
   );
+  phase("peer sidebar and source navigation");
+  await withChromePage(
+    { profilePrefix: "pi-cloud-peer-forks-", width: 1280, height: 900 },
+    async (page) => {
+      await page.send("Page.addScriptToEvaluateOnNewDocument", {
+        source: `const originalFetch=window.fetch.bind(window);window.fetch=(input,init={})=>{const u=new URL(input instanceof Request?input.url:String(input),location.href);const h=new Headers(init.headers??(input instanceof Request?input.headers:undefined));if(u.origin===location.origin&&u.pathname.startsWith('/v1/'))h.set('authorization',${JSON.stringify("Bearer " + tenant.credential.token)});return originalFetch(input,{...init,headers:h});};`,
+      });
+      await page.navigate(`${origin}/?session=${fork.session.sessionId}`);
+      await page.waitFor(
+        "document.querySelectorAll('.product-conversation-row:not(.product-delegated-session)').length===2",
+        30000,
+      );
+      const placement = await page.evaluate(
+        "[...document.querySelectorAll('.product-conversation-row:not(.product-delegated-session)')].map(r=>({left:r.getBoundingClientRect().left,nested:!!r.parentElement.parentElement.closest('.product-conversation-tree-node')}))",
+      );
+      assert.equal(placement[0].left, placement[1].left);
+      assert(placement.every((r) => !r.nested));
+      await page.waitFor("document.querySelector('.product-fork-source')", 30000);
+      await page.evaluate("document.querySelector('.product-fork-source').click()");
+      await page.waitFor(
+        "document.querySelector('.product-topbar-title strong')?.textContent==='Fork source'",
+        30000,
+      );
+      assert.equal(
+        await page.evaluate("Boolean(document.querySelector('.product-error-banner'))"),
+        false,
+      );
+      await page.screenshot(resolve(directory, "peer-forks.png"));
+    },
+  );
+  phase("delete source while the independent Fork executes");
+  const continued = await api.acceptTurn(
+    fork.session.sessionId,
+    "Use bash to run sleep 20 and then printf INDEPENDENT_DELETE_DONE. Wait for it to finish. Then return the remembered code C without other tools.",
+    newIdempotencyKey("fork-delete-gate"),
+    "low",
+  );
+  await runningTool(continued);
+  await api.deleteConversation(root.sessionId);
+  assert.equal((await settled(continued.runId)).state, "completed");
+  const surviving = await api.getConversation(fork.session.sessionId);
+  assert(
+    JSON.stringify(surviving.turns.find((t) => t.turnId === continued.turnId)?.transcript).includes(
+      codeC,
+    ),
+  );
+  assert.equal(surviving.session.forkSource.title, null);
+  for (const image of images) {
+    const response = await fetch(
+      `${origin}/v1/sessions/${fork.session.sessionId}/images/${image.id}`,
+      { headers: { authorization: "Bearer " + tenant.credential.token } },
+    );
+    assert.equal(response.status, 200);
+    assert.equal((await response.arrayBuffer()).byteLength, image.byteLength);
+  }
+  report.checks.push({
+    peerSidebar: true,
+    sourceNavigationAfterPrune: true,
+    activeForkSurvivesSourceDeletion: true,
+    imagesSurviveSourceDeletion: true,
+  });
   await compactionPadding(fork.session);
   const compact = await api.compactConversation(
     fork.session.sessionId,
@@ -364,6 +425,7 @@ try {
         `document.querySelector('.product-tree-nav')?.textContent.includes('ROOT_C')`,
         30000,
       );
+      await page.waitFor("document.querySelector('.product-fork-source-unavailable')", 30000);
       await page.screenshot(resolve(directory, "independent-fork.png"));
     },
   );
@@ -377,7 +439,7 @@ try {
     if (tenant && api) {
       const sessions = await db
         .selectFrom("sessions")
-        .select("id")
+        .select(["id", "session_kind"])
         .where("tenant_id", "=", tenant.tenantId)
         .execute();
       for (const s of sessions) {
@@ -388,7 +450,8 @@ try {
           .execute();
         await settleOwnedAcceptanceRuns(api, s.id, rows, settled);
       }
-      if (root) await api.deleteConversation(root.sessionId);
+      for (const session of sessions.filter((s) => s.session_kind === "conversation"))
+        await api.deleteConversation(session.id);
       if (project) {
         await api.deleteWorkspace(project.workspaceId, newIdempotencyKey("cleanup"));
         await until(

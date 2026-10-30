@@ -177,6 +177,8 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const [state, setState] = useState(createInitialSessionView);
   const renderedState = useRef(state);
   renderedState.current = state;
+  const forkSource =
+    state.session && "forkSource" in state.session ? state.session.forkSource : undefined;
   const commands = useConversationCommands(
     api,
     authPhase === "authenticated" ? state.session?.sessionId : undefined,
@@ -250,6 +252,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     | "cancelling"
     | "steering"
     | "forking"
+    | "opening-fork-source"
     | "pruning"
     | "deleting-conversation"
     | "managing-environment"
@@ -257,6 +260,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     | "switching-model"
     | null
   >(null);
+  const [unavailableForkSource, setUnavailableForkSource] = useState<string | null>(null);
   const composerPreference = useComposerEnterMode(identity);
   const composerSubmission = useRef(new ComposerSubmission());
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -374,23 +378,6 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
             ? "composer.followUp"
             : "chat.send",
   );
-  const conversationChildren = useMemo(() => {
-    const children = new Map<string, ConversationSummaryResource[]>();
-    for (const conversation of conversations) {
-      if (conversation.parentSessionId === undefined) continue;
-      const siblings = children.get(conversation.parentSessionId) ?? [];
-      siblings.push(conversation);
-      children.set(conversation.parentSessionId, siblings);
-    }
-    return children;
-  }, [conversations]);
-  const rootConversations = useMemo(() => {
-    const known = new Set(conversations.map((conversation) => conversation.sessionId));
-    return conversations.filter(
-      (conversation) =>
-        conversation.parentSessionId === undefined || !known.has(conversation.parentSessionId),
-    );
-  }, [conversations]);
   const delegatesByParent = useMemo(() => {
     const children = new Map<string, DelegatedSessionSummaryResource[]>();
     for (const delegated of delegatedSessions) {
@@ -928,6 +915,40 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     return openConversationSession(delegatedSession.sessionId, undefined, false, delegatedSession);
   }
 
+  async function openForkSource(): Promise<void> {
+    const session = state.session,
+      source = forkSource;
+    if (!session || !source?.title || operation !== null || conversationLoading !== null) return;
+    setOperation("opening-fork-source");
+    try {
+      const tree = await api.getConversationTree(source.sessionId, "focus");
+      let target: { turnId: string; entryId: string } | undefined = {
+        turnId: source.turnId,
+        entryId: source.entryId,
+      };
+      try {
+        await api.getConversation(source.sessionId, target);
+      } catch (error) {
+        if (!(error instanceof PiCloudApiError) || error.status !== 404) throw error;
+        target = undefined; // The source survives, but its original point may have been pruned.
+      }
+      if (currentStreamSession.current !== session.sessionId) return;
+      await openConversationSession(
+        source.sessionId,
+        target,
+        true,
+        tree.delegatedSessions.find((child) => child.sessionId === source.sessionId) ?? null,
+      );
+    } catch (error) {
+      if (currentStreamSession.current !== session.sessionId) return;
+      if (error instanceof PiCloudApiError && error.status === 404)
+        setUnavailableForkSource(source.sessionId);
+      else update({ type: "api.error", message: errorMessage(error, t) });
+    } finally {
+      setOperation(null);
+    }
+  }
+
   async function createConversationFork(): Promise<void> {
     if (forkTarget === null || operation !== null) return;
     setOperation("forking");
@@ -1144,23 +1165,31 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   }
 
   async function deleteConversation(conversation: ConversationSummaryResource): Promise<void> {
-    const deletesChildren =
-      (conversationChildren.get(conversation.sessionId)?.length ?? 0) > 0 ||
-      (delegatesByParent.get(conversation.sessionId)?.length ?? 0) > 0;
     if (
       operation !== null ||
-      !window.confirm(
-        deletesChildren
-          ? t("chat.deleteTreeConfirm", { title: conversation.title })
-          : t("chat.deleteConfirm", { title: conversation.title }),
-      )
+      !window.confirm(t("chat.deleteConfirm", { title: conversation.title }))
     ) {
       return;
     }
     setOperation("deleting-conversation");
     try {
       await api.deleteConversation(conversation.sessionId);
-      if (state.session?.sessionId === conversation.sessionId) resetConversation();
+      if (
+        state.session?.sessionId === conversation.sessionId ||
+        selectedDelegatedSession?.rootSessionId === conversation.sessionId
+      )
+        resetConversation();
+      const source = forkSource;
+      if (
+        source &&
+        (source.sessionId === conversation.sessionId ||
+          delegatedSessions.some(
+            (child) =>
+              child.sessionId === source.sessionId &&
+              child.rootSessionId === conversation.sessionId,
+          ))
+      )
+        setUnavailableForkSource(source.sessionId);
       await Promise.all([refreshConversations(), refreshWorkspaces()]);
     } catch (error: unknown) {
       update({ type: "api.error", message: errorMessage(error, t) });
@@ -1465,26 +1494,21 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     );
   }
 
-  function renderConversationNode(conversation: ConversationSummaryResource, depth = 0): ReactNode {
-    const childConversations = conversationChildren.get(conversation.sessionId) ?? [];
+  function renderConversationNode(conversation: ConversationSummaryResource): ReactNode {
     const childDelegates = delegatesByParent.get(conversation.sessionId) ?? [];
     return (
       <div className="product-conversation-tree-node" key={conversation.sessionId}>
         <div
-          className={`product-conversation-row${depth === 0 ? "" : " branch"}${
+          className={`product-conversation-row${
             state.session?.sessionId === conversation.sessionId ? " active" : ""
           }`}
-          style={{ "--conversation-depth": depth } as CSSProperties}
         >
           <button
             disabled={conversationLoading !== null || operation !== null}
             onClick={() => void openConversation(conversation)}
             type="button"
           >
-            <strong>
-              {depth === 0 ? null : <span className="product-conversation-branch-mark">↳ </span>}
-              {conversation.title}
-            </strong>
+            <strong>{conversation.title}</strong>
             <small>
               {conversation.workspaceName} · {relativeTime(conversation.lastActiveAt, language, t)}
             </small>
@@ -1500,8 +1524,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
             ×
           </button>
         </div>
-        {childConversations.map((child) => renderConversationNode(child, depth + 1))}
-        {childDelegates.map((delegated) => renderDelegatedNode(delegated, depth + 1))}
+        {childDelegates.map((delegated) => renderDelegatedNode(delegated, 1))}
       </div>
     );
   }
@@ -1641,7 +1664,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
             {conversations.length === 0 ? (
               <div className="product-conversation-empty" aria-hidden="true" />
             ) : (
-              rootConversations.map((conversation) => renderConversationNode(conversation))
+              conversations.map((conversation) => renderConversationNode(conversation))
             )}
             {conversationCursor ? (
               <button
@@ -1712,7 +1735,26 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
             ☰
           </button>
           <div className="product-topbar-title">
-            <strong>{state.session?.title ?? t("chat.newConversation")}</strong>
+            <div className="product-conversation-heading">
+              <strong>{state.session?.title ?? t("chat.newConversation")}</strong>
+              {forkSource ? (
+                forkSource.title === null || unavailableForkSource === forkSource.sessionId ? (
+                  <span className="product-fork-source-unavailable">
+                    {t("chat.forkSourceDeleted")}
+                  </span>
+                ) : (
+                  <button
+                    className="product-fork-source"
+                    type="button"
+                    disabled={operation !== null || conversationLoading !== null}
+                    onClick={() => void openForkSource()}
+                    title={t("chat.forkSource", { title: forkSource.title })}
+                  >
+                    {t("chat.forkSource", { title: forkSource.title })}
+                  </button>
+                )
+              ) : null}
+            </div>
             {selectedDelegatedSession === null ? null : (
               <span className="product-delegated-title">
                 {t("chat.subagentTitle")} ·{" "}

@@ -53,7 +53,7 @@ try {
         provider: migrationProvider,
         allowUnorderedMigrations: true,
       }).migrateTo(
-        mode === "before" ? "203_shared_native_entry_bodies" : "204_shared_native_history_bases",
+        mode === "before" ? "203_shared_native_entry_bodies" : "205_independent_fork_lifetimes",
       );
       if (migration.error) throw migration.error;
       for (const bytes of [768, 30 * 1024]) {

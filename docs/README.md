@@ -1,5 +1,11 @@
 # Documentation map
 
+[Peer Fork navigation and independent deletion](adr/0288-peer-forks-and-independent-deletion.md)
+separates manual-Fork provenance from runtime ownership. Schema 205 and the paired
+API/Web change are under verification; shared history and model context policy
+remain unchanged.
+[Implementation and verification](reports/peer-forks-20261030.md).
+
 [Single-path shared Forks](adr/0287-single-path-shared-forks.md) implements shared
 native/presentation roots, independent source retirement and backend provenance.
 The [prompt amendment](reports/fork-context-removal-20261030.md), deployed as

@@ -155,7 +155,6 @@ export class ConversationReader {
         "session_row.created_at as createdAt",
         "session_row.updated_at as updatedAt",
         "session_row.last_active_at as lastActiveAt",
-        "session_row.conversation_parent_session_id as parentSessionId",
         "project.name as workspaceName",
         "workspace.deleted_at as workspaceDeletedAt",
       ])
@@ -193,7 +192,6 @@ export class ConversationReader {
         createdAt: isoTimestamp(row.createdAt),
         updatedAt: isoTimestamp(row.updatedAt),
         lastActiveAt: isoTimestamp(row.lastActiveAt),
-        ...(row.parentSessionId === null ? {} : { parentSessionId: row.parentSessionId }),
       })),
       delegatedSessions: delegated.items,
       truncated: rows.length > MAX_CONVERSATION_SUMMARIES || delegated.truncated,
@@ -280,9 +278,16 @@ export class ConversationReader {
           .onRef("workspace.tenant_id", "=", "session_row.tenant_id")
           .onRef("workspace.id", "=", "session_row.workspace_id"),
       )
+      .leftJoin("sessions as fork_source", (join) =>
+        join
+          .onRef("fork_source.tenant_id", "=", "session_row.tenant_id")
+          .onRef("fork_source.id", "=", "session_row.conversation_parent_session_id")
+          .on("fork_source.pruned_at", "is", null),
+      )
       .select([
         "session_row.id as sessionId",
         "session_row.session_kind as sessionKind",
+        "fork_source.title as forkSourceTitle",
         "session_row.title as sessionTitle",
         "session_row.project_id as projectId",
         "session_row.workspace_id as workspaceId",
@@ -546,7 +551,14 @@ export class ConversationReader {
           lastActiveAt: isoTimestamp(conversation.lastActiveAt),
           ...(conversation.parentSessionId === null
             ? {}
-            : { parentSessionId: conversation.parentSessionId }),
+            : {
+                forkSource: {
+                  sessionId: conversation.parentSessionId,
+                  turnId: conversation.forkTurnId!,
+                  entryId: conversation.forkEntryId!,
+                  title: conversation.forkSourceTitle,
+                },
+              }),
         },
         ...inheritedContext,
         turns,

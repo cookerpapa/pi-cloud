@@ -32,7 +32,7 @@ export class ConversationDeletionService {
           throw new ConversationDeletionError(
             "Delegated conversations are deleted with their parent",
           );
-        const original = await this.#tree(transaction, tenantId, sessionId);
+        const original = await this.#family(transaction, tenantId, sessionId);
         const ids = original.map((row) => row.id);
         const locked = await transaction
           .selectFrom("sessions")
@@ -43,11 +43,11 @@ export class ConversationDeletionService {
           .forUpdate()
           .noWait()
           .execute();
-        const current = await this.#tree(transaction, tenantId, sessionId);
+        const current = await this.#family(transaction, tenantId, sessionId);
         const lockedIds = new Set(locked.map((row) => row.id));
         if (current.length !== lockedIds.size || current.some((row) => !lockedIds.has(row.id)))
           throw new ConversationDeletionError(
-            "Conversation tree changed during deletion; retry the request",
+            "Conversation family changed during deletion; retry the request",
           );
         if (locked.some((row) => !["cold", "idle", "failed"].includes(row.state)))
           throw new ConversationDeletionError("An active conversation cannot be deleted");
@@ -112,16 +112,13 @@ export class ConversationDeletionService {
     }
   }
 
-  async #tree(transaction: Transaction<Database>, tenantId: string, sessionId: string) {
+  async #family(transaction: Transaction<Database>, tenantId: string, sessionId: string) {
     return (
-      await sql<{ id: string }>`with recursive tree as (
-      select id,pi_session_id from sessions where tenant_id=${tenantId}::uuid and id=${sessionId}::uuid
-      union
-      select child.id,child.pi_session_id from sessions child join tree parent
-        on child.conversation_parent_session_id=parent.id or
-          (child.session_kind='subagent' and child.pi_session_id=parent.pi_session_id)
-      where child.tenant_id=${tenantId}::uuid
-    ) select id from tree order by id`.execute(transaction)
+      await sql<{ id: string }>`select member.id from sessions root join sessions member
+        on member.tenant_id=root.tenant_id and member.pi_session_id=root.pi_session_id
+      where root.tenant_id=${tenantId}::uuid and root.id=${sessionId}::uuid
+        and (member.id=root.id or member.session_kind='subagent')
+      order by member.id`.execute(transaction)
     ).rows;
   }
 }

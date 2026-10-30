@@ -319,12 +319,12 @@ const zhCN = {
   "chat.send": "发送",
   "chat.streamDisconnected": "实时连接已中断，正在等待重新连接。",
   "chat.pruneConfirm":
-    "保留这条回复，删除它之后的对话、分支和 Subagent 记录？Workspace 文件不会回滚。",
+    "保留这条回复，删除它之后的对话及相应子 Agent 记录？独立分叉和 Workspace 文件保留。",
   "chat.selectExclusiveError": "请选择一台可用的云端开发机。",
   "chat.selectWorkspaceError": "请选择一个 Workspace。",
-  "chat.deleteTreeConfirm":
-    "永久删除对话“{title}”及其全部分支和 Subagent？会话历史不可恢复，Workspace 文件保留。",
-  "chat.deleteConfirm": "永久删除对话“{title}”？会话历史不可恢复，Workspace 文件保留。",
+  "chat.deleteConfirm": "永久删除对话“{title}”及其子 Agent 历史？独立分叉和 Workspace 文件保留。",
+  "chat.forkSource": "分叉自 {title}",
+  "chat.forkSourceDeleted": "分叉来源已删除",
   "chat.subagentDepth": "第 {depth} 层",
   "chat.state.queued": "排队中",
   "chat.state.running": "运行中",
@@ -879,13 +879,13 @@ const enUS: Record<UiTextKey, string> = {
   "chat.send": "Send",
   "chat.streamDisconnected": "The live connection was interrupted. Waiting to reconnect.",
   "chat.pruneConfirm":
-    "Keep this response and delete all later chat entries, branches, and Subagent records? Workspace files will not be rewound.",
+    "Keep this response and delete later chat entries and their subagent records? Independent forks and Workspace files are kept.",
   "chat.selectExclusiveError": "Select an available cloud development machine.",
   "chat.selectWorkspaceError": "Select a Workspace.",
-  "chat.deleteTreeConfirm":
-    "Permanently delete “{title}” and all its branches and Subagents? Conversation history cannot be restored. Workspace files are kept.",
   "chat.deleteConfirm":
-    "Permanently delete “{title}”? Conversation history cannot be restored. Workspace files are kept.",
+    "Permanently delete “{title}” and its subagent history? Independent forks and Workspace files are kept.",
+  "chat.forkSource": "Forked from {title}",
+  "chat.forkSourceDeleted": "Fork source deleted",
   "chat.subagentDepth": "Level {depth}",
   "chat.state.queued": "Queued",
   "chat.state.running": "Running",

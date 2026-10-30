@@ -532,7 +532,7 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
     ).toEqual({ deleted_at: null });
   });
 
-  it("does not delete a child whose message commits while its parent is being deleted", async () => {
+  it("deletes a source while an independent Fork message is being admitted", async () => {
     const { project, session: parent } = await fixture("parent-delete");
     const anchor = await store.acceptTurn(parent.sessionId, "anchor", { prompt: "prior turn" });
     await database
@@ -573,21 +573,28 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
           (value) => ({ deleted: value }),
           (error) => ({ rejected: error }),
         );
-      expect(await deletion).toMatchObject({ rejected: { code: "conflict" } });
+      expect(await deletion).toEqual({ deleted: undefined });
     } finally {
       paused.release();
     }
     await admission;
-    expect(await deletion).toMatchObject({ rejected: { code: "conflict" } });
+    expect(await deletion).toEqual({ deleted: undefined });
     const sessions = await database
       .selectFrom("sessions")
       .select("pruned_at")
       .where("id", "in", [parent.sessionId, child.sessionId])
       .execute();
-    expect(sessions).toEqual([{ pruned_at: null }, { pruned_at: null }]);
+    expect(sessions).toEqual([{ pruned_at: null }]);
+    expect(
+      await database
+        .selectFrom("runs")
+        .select("state")
+        .where("session_id", "=", child.sessionId)
+        .execute(),
+    ).toEqual([{ state: "queued" }]);
   });
 
-  it("rejects deletion if the descendant tree grows while child locks are being acquired", async () => {
+  it("does not lock or delete independent Fork descendants while their provenance changes", async () => {
     const { project, session: parent } = await fixture("growing-tree");
     const anchor = await store.acceptTurn(parent.sessionId, "anchor", { prompt: "prior turn" });
     await database
@@ -653,20 +660,20 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
           (value) => ({ deleted: value }),
           (error) => ({ rejected: error }),
         );
-      expect(await deletion).toMatchObject({ rejected: { code: "conflict" } });
+      expect(await deletion).toEqual({ deleted: undefined });
     } finally {
       release();
     }
     await growth;
-    expect(await deletion).toMatchObject({ rejected: { code: "conflict" } });
+    expect(await deletion).toEqual({ deleted: undefined });
     expect(
       await database
         .selectFrom("sessions")
         .select("pruned_at")
         .where("id", "in", [parent.sessionId, child.sessionId, grandchild.sessionId])
         .execute(),
-    ).toEqual([{ pruned_at: null }, { pruned_at: null }, { pruned_at: null }]);
-    // Retrying against the new stable tree deletes every descendant.
+    ).toEqual([{ pruned_at: null }, { pruned_at: null }]);
+    // Repeating deletion of the removed source does not touch surviving Forks.
     await new ConversationDeletionService({ database }).delete(scope.tenantId, parent.sessionId);
     expect(
       await database
@@ -675,7 +682,15 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
         .where("id", "in", [parent.sessionId, child.sessionId, grandchild.sessionId])
         .where("pruned_at", "is", null)
         .execute(),
-    ).toHaveLength(0);
+    ).toHaveLength(2);
+    await new ConversationDeletionService({ database }).delete(scope.tenantId, child.sessionId);
+    expect(
+      await database
+        .selectFrom("sessions")
+        .select("id")
+        .where("id", "=", grandchild.sessionId)
+        .execute(),
+    ).toHaveLength(1);
   });
   it("erases owned history and references atomically while retaining independent native copies and Workspace bytes", async () => {
     const { project, session } = await fixture("permanent-history");

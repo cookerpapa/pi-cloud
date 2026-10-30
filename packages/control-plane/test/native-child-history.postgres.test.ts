@@ -31,6 +31,12 @@ it("shows child progress metadata in human focus without requiring a child histo
       contextAnchor: null,
       sandboxMode: "none",
     });
+    await expect(
+      new ConversationDeletionService({ database: f.database }).delete(
+        f.scope.tenantId,
+        f.scope.sessionId,
+      ),
+    ).rejects.toThrow();
     await f.database
       .updateTable("sessions")
       .set({ pi_conversation_id: null })
@@ -176,22 +182,34 @@ it("forks native child history and preserves parent-owned deletion boundaries wi
     await expect(deletion.delete(f.scope.tenantId, child.childSessionId)).rejects.toThrow(
       "with their parent",
     );
-    await deletion.delete(f.scope.tenantId, fork.session.sessionId);
-    expect(await f.database.selectFrom("runs").select("id").execute()).toEqual([
-      { id: f.scope.runId },
-    ]);
+    await deletion.delete(f.scope.tenantId, f.scope.sessionId);
+    expect(await f.database.selectFrom("runs").select("id").execute()).toEqual([]);
     expect(
       await f.database
         .selectFrom("pi_sessions")
         .select("id")
         .where("id", "=", replacement)
         .execute(),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     expect(
       await f.database.selectFrom("subagent_conversations").select("id").execute(),
-    ).toHaveLength(1);
-
-    await deletion.delete(f.scope.tenantId, f.scope.sessionId);
+    ).toHaveLength(0);
+    const independent = await f.store.getConversation(fork.session.sessionId);
+    expect(JSON.stringify(independent)).toContain("CHILD-HISTORY-PRESERVED");
+    expect(independent.session.forkSource).toMatchObject({
+      sessionId: child.childSessionId,
+      title: null,
+    });
+    expect(
+      (
+        await new ConversationTreeService({ database: f.database }).tree(
+          f.scope.tenantId,
+          fork.session.sessionId,
+          "full",
+        )
+      ).branches.map((branch) => branch.sessionId),
+    ).toEqual([fork.session.sessionId]);
+    await deletion.delete(f.scope.tenantId, fork.session.sessionId);
     expect(await f.database.selectFrom("subagent_conversations").select("id").execute()).toEqual(
       [],
     );

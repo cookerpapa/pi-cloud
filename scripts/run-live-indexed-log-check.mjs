@@ -283,6 +283,7 @@ try {
   }
   try {
     if (source) await api.deleteConversation(source.sessionId);
+    if (fork) await api.deleteConversation(fork.session.sessionId);
   } catch (error) {
     cleanupErrors.push(error.message);
   }

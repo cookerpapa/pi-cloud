@@ -1132,6 +1132,18 @@ on the next generation. New children address `main` through
 the current Run owner, not a hard-coded native Conversation ID. Workspace bytes
 are neither copied nor rolled back.
 
+[ADR-0288](adr/0288-peer-forks-and-independent-deletion.md) separates provenance
+from lifecycle ownership. Human Forks are peers in ordinary navigation; only
+native delegated Agents are nested. Deleting a human conversation closes/removes
+its own physical Session family after the existing work/lease checks, without
+locking or deleting independent Forks. Historical source addresses and accepted
+Fork receipts may outlive the source Session. The receipt still follows the
+destination's lifetime. No archived source row is kept to retain history.
+Conversation details expose `forkSource`; its title is null for an unavailable
+source. The UI uses existing navigation APIs and opens the source's current view
+if the original point was pruned. History-tree edges remain provenance, and native
+subagent parent fields remain runtime ownership.
+
 Under [ADR-0287](adr/0287-single-path-shared-forks.md), active commits retain their
 original Kafka fingerprints and contiguous local sequence. `pi_history_records`
 owns immutable native history independently of the original physical Session;

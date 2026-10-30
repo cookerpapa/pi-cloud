@@ -15,6 +15,7 @@ import { sql, type Kysely, type QueryId } from "kysely";
 import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { ConversationTreeService } from "../src/conversation-tree-service.ts";
+import { ConversationDeletionService } from "../src/conversation-deletion-service.ts";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
 import { readCanonicalPiTurnTranscripts } from "../../runtime-core/src/canonical-pi-conversation.ts";
 import { FORK_PROVENANCE_DOCUMENT } from "@pi-cloud/protocol";
@@ -151,6 +152,172 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
     const tree = () => service.tree(tenant.tenantId, session.sessionId, "focus");
     return { ...tenant, project, store, session, service, turn, tree, settle };
   }
+
+  it("deletes sources independently of active and nested Forks, preserving receipts and retained history", async () => {
+    const f = await fixture();
+    const c = await f.turn("C", "completed"),
+      key = randomUUID();
+    await db
+      .updateTable("runs")
+      .set({ output_display_seq: "3", output_display_native_seq: "2" })
+      .where("id", "=", c.runId)
+      .execute();
+    const request = { turnId: c.turnId, entryId: c.answer!.id };
+    const fork = await f.service.fork(f.tenantId, f.session.sessionId, key, request);
+    const nested = await f.service.fork(f.tenantId, fork.session.sessionId, randomUUID(), request);
+    expect((await f.store.getConversation(fork.session.sessionId)).session.forkSource).toEqual({
+      sessionId: f.session.sessionId,
+      turnId: c.turnId,
+      entryId: c.answer!.id,
+      title: f.session.title,
+    });
+    const work = await f.store.acceptTurn(fork.session.sessionId, randomUUID(), {
+      prompt: "Independent work",
+    });
+    const deletion = new ConversationDeletionService({ database: db });
+    await deletion.delete(f.tenantId, f.session.sessionId);
+    await reapUnreferencedEntryBodies(db, 1024);
+    expect(
+      (await f.service.fork(f.tenantId, f.session.sessionId, key, request)).session.sessionId,
+    ).toBe(fork.session.sessionId);
+    expect(
+      (
+        await db
+          .selectFrom("runs")
+          .select("state")
+          .where("id", "=", work.runId)
+          .executeTakeFirstOrThrow()
+      ).state,
+    ).toBe("queued");
+    const retained = await f.store.getConversation(fork.session.sessionId);
+    expect(JSON.stringify(retained)).toContain("C answer");
+    expect(retained.session.forkSource).toMatchObject({
+      sessionId: f.session.sessionId,
+      title: null,
+    });
+    expect(
+      (await f.service.tree(f.tenantId, fork.session.sessionId, "full")).branches.map(
+        (b) => b.sessionId,
+      ),
+    ).toEqual([fork.session.sessionId, nested.session.sessionId]);
+    await expect(deletion.delete(f.tenantId, fork.session.sessionId)).rejects.toThrow();
+    await db
+      .updateTable("runs")
+      .set({ state: "cancelled", ready_at: null, settled_at: new Date() })
+      .where("id", "=", work.runId)
+      .execute();
+    await db
+      .updateTable("sessions")
+      .set({ state: "idle" })
+      .where("id", "=", fork.session.sessionId)
+      .execute();
+    await deletion.delete(f.tenantId, fork.session.sessionId);
+    expect(JSON.stringify(await f.store.getConversation(nested.session.sessionId))).toContain(
+      "C answer",
+    );
+    expect(
+      (await f.service.tree(f.tenantId, nested.session.sessionId, "full")).branches.map(
+        (b) => b.sessionId,
+      ),
+    ).toEqual([nested.session.sessionId]);
+    await deletion.delete(f.tenantId, nested.session.sessionId);
+    await reapUnreferencedEntryBodies(db, 1024);
+    expect(
+      (
+        await sql`select 1 from pi_history_bodies where tenant_id=${f.tenantId}::uuid and body_kind='entry'`.execute(
+          db,
+        )
+      ).rows,
+    ).toEqual([]);
+  });
+
+  it.each(["fork", "delete"])(
+    "orders concurrent source deletion and Fork admission when %s commits first",
+    async (first) => {
+      const f = await fixture(),
+        answer = await f.turn("Race", "completed");
+      await db
+        .updateTable("runs")
+        .set({ output_display_seq: "3", output_display_native_seq: "2" })
+        .where("id", "=", answer.runId)
+        .execute();
+      await f.settle();
+      const entered = Promise.withResolvers<void>(),
+        release = Promise.withResolvers<void>();
+      const watched = new WeakSet<QueryId>();
+      let paused = false;
+      const held = db.withPlugin({
+        transformQuery({ node, queryId }) {
+          const text = db.getExecutor().compileQuery(node, queryId).sql;
+          if (
+            !paused &&
+            text.includes(
+              first === "fork"
+                ? 'insert into "conversation_fork_operations"'
+                : 'delete from "sessions"',
+            )
+          )
+            watched.add(queryId);
+          return node;
+        },
+        async transformResult({ result, queryId }) {
+          if (!paused && watched.has(queryId)) {
+            paused = true;
+            entered.resolve();
+            await release.promise;
+          }
+          return result;
+        },
+      });
+      const fork = () =>
+        new ConversationTreeService({ database: first === "fork" ? held : db }).fork(
+          f.tenantId,
+          f.session.sessionId,
+          randomUUID(),
+          { turnId: answer.turnId, entryId: answer.answer!.id },
+        );
+      const remove = () =>
+        new ConversationDeletionService({ database: first === "delete" ? held : db }).delete(
+          f.tenantId,
+          f.session.sessionId,
+        );
+      const leading = first === "fork" ? fork() : remove();
+      let following: Promise<unknown> | undefined;
+      try {
+        await entered.promise;
+        following = (first === "fork" ? remove() : fork()).then(
+          (value) => ({ value }),
+          (error) => ({ error }),
+        );
+        await vi.waitFor(async () => {
+          const { rows } = await sql<{
+            n: number;
+          }>`select count(*)::int as n from pg_stat_activity where datname=current_database() and wait_event_type='Lock'`.execute(
+            db,
+          );
+          expect(rows[0]!.n).toBeGreaterThan(0);
+        });
+      } finally {
+        release.resolve();
+      }
+      const result = await leading;
+      if (first === "fork") {
+        expect(await following).toEqual({ value: undefined });
+        expect(JSON.stringify(await f.store.getConversation(result!.session.sessionId))).toContain(
+          "Race answer",
+        );
+      } else {
+        expect(await following).toMatchObject({ error: { code: "not_found" } });
+        expect(
+          await db
+            .selectFrom("sessions")
+            .select("id")
+            .where("tenant_id", "=", f.tenantId)
+            .execute(),
+        ).toEqual([]);
+      }
+    },
+  );
 
   it("seeds pre-upgrade Fork identity once through cold native Storage", async () => {
     const f = await fixture(),

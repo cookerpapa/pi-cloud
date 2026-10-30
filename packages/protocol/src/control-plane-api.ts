@@ -429,7 +429,6 @@ export const ConversationSummaryResourceSchema = Type.Object(
     createdAt: UtcTimestampSchema,
     updatedAt: UtcTimestampSchema,
     lastActiveAt: UtcTimestampSchema,
-    parentSessionId: Type.Optional(UuidSchema),
   },
   { additionalProperties: false },
 );
@@ -510,7 +509,17 @@ export const ConversationSessionResourceSchema = Type.Object(
     createdAt: UtcTimestampSchema,
     updatedAt: UtcTimestampSchema,
     lastActiveAt: UtcTimestampSchema,
-    parentSessionId: Type.Optional(UuidSchema),
+    forkSource: Type.Optional(
+      Type.Object(
+        {
+          sessionId: UuidSchema,
+          turnId: UuidSchema,
+          entryId: PiEntryIdSchema,
+          title: Type.Union([Type.String({ minLength: 1, maxLength: 256 }), Type.Null()]),
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );

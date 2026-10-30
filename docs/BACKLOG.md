@@ -1,5 +1,12 @@
 # Maintained backlog
 
+## Peer Fork navigation and independent deletion — in progress
+
+ADR-0288 separates provenance from runtime ownership: flat human conversation
+rows, traceable sources, and deletion restricted to the selected native family.
+Verify active/nested Fork preservation, actual child cleanup, source races,
+idempotent retries, image retention and the real browser before matched rollout.
+
 ## Remove automatic Fork identity instructions — deployed
 
 The owner approved removing the `fork-context` system section. Keep backend

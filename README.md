@@ -20,8 +20,10 @@ scale or as a highly available production service.
   search and streamed Markdown export. `/usage` shows committed token usage and
   context estimates; `/compact [instructions]` requests native compaction.
 - **Independent branches:** Fork only the selected Agent's history while later
-  work continues. Old subagents and pending inputs are not inherited. Native and
-  display history use shared immutable references; source pruning preserves Forks.
+  work continues. Forks are peers in the conversation list and retain a source
+  link; deleting the source preserves independent Forks. Old subagents and pending
+  inputs are not inherited. Native and display history use shared immutable
+  references; source pruning preserves Forks.
   Workspace files are shared, not copied or rolled back by conversation Fork.
 - **Workspaces:** elastic compute or dedicated development machines, persistent
   Volume-backed files, browser tooling, terminals, SSH and application previews.
@@ -146,12 +148,11 @@ individual delivery reports retain both successes and unresolved failures.
   Recovery preserves uncertainty instead of silently executing them again.
 - Self-hosted defaults have no product quotas on conversations, concurrency or
   uploads. Physical capacity and transport/provider bounds still apply.
-- Independent human Forks, shared history bodies and safe reclamation are deployed
-  under [ADR-0284](docs/adr/0284-independent-forks-and-history-retention.md).
-  [Batched imports](docs/reports/fork-performance-20261029.md) reduce the measured
-  1 GiB Fork cost, but it remains linear. Shared history roots are a separate
-  [isolated prototype](docs/adr/0286-shared-history-root-prototype.md), not a
-  deployed capability.
+- Shared native/presentation roots and safe reclamation are implemented under
+  [ADR-0287](docs/adr/0287-single-path-shared-forks.md). A measured 1 GiB Fork takes
+  about 0.8 seconds; ordinary complete-message writes cost about 8 ms more in the
+  isolated comparison. [Measurements and limits](docs/reports/single-path-shared-forks-20261030.md)
+  include cold reads and incremental collection. These are not fleet-scale SLAs.
 
 ## Development and releases
 

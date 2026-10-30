@@ -1,13 +1,17 @@
 # Current architecture decisions
 
-[ADR-0287](0287-single-path-shared-forks.md) implements the owner's final single-path
-Fork semantics and model-visible runtime identity, followed by the shared-history
-Storage migration. Source work is in progress; the serving layout remains 203.
+[ADR-0288](0288-peer-forks-and-independent-deletion.md) makes manual Forks peers
+in ordinary navigation and independent deletion. Provenance remains traceable
+without owning the destination's lifecycle; schema/API/Web work is in progress.
+
+[ADR-0287](0287-single-path-shared-forks.md) implements single-path Forks and shared
+native/presentation roots on deployed schema 204. Its later prompt amendment
+retains backend provenance without automatic model-visible Fork instructions.
 
 [ADR-0286](0286-shared-history-root-prototype.md) authorizes isolated validation of
 shared history roots and their read/write/collection costs. The prototype is
-measured, with unresolved native-contract and performance gates; it is not a
-deployed replacement for the current storage contract.
+measured and superseded by ADR-0287's implemented native contracts and measured
+write/collection tradeoffs.
 
 [ADR-0285](0285-batched-native-history-forks.md) is deployed and live-verified as
 `fork-performance-brotli-20261029`: reuse retained bodies inside PG, batch

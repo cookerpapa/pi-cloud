@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { createServer } from "vite";
 import { withChromePage as openChromePage } from "./lib/chrome-cdp.mjs";
 async function withChromePage(options, operation) {
+  if (process.env.PI_CLOUD_BROWSER_SCOPE === "peer-forks" && !options.peerForks) return;
   if (process.env.PI_CLOUD_BROWSER_SCOPE === "commands" && !options.commands) return;
   if (process.env.PI_CLOUD_BROWSER_SCOPE === "tool-groups" && !options.toolGroups) return;
   return openChromePage(options, async (page) => {
@@ -237,7 +238,7 @@ window.renderRebind = (withMachine=true) => {
     onRefresh:async()=>{},onBound:async(id)=>{rebindBound.push(id);},onClose:()=>{},onOpenResources:()=>{},
   })));
 };
-window.renderChat = (sessionState='idle', history=false, childViews=false) => {
+window.renderChat = (sessionState='idle', history=false, childViews=false, peerForks=false) => {
   window.requestAnimationFrame = nativeRaf; window.cancelAnimationFrame = nativeCancelRaf;
   const sid = "10000000-0000-4000-8000-000000000001";
   const profileId = "20000000-0000-4000-8000-000000000001";
@@ -269,9 +270,12 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
     entries:[{entryId:'answer-entry',turnId:fixtureTurnId,role:'assistant',text:label,finalAssistant:true}]}],delegatedSessions:[]});
   window.treeRequests=[];window.deferTrees=false;
   window.historyMutations=[];
-  window.fixtureParentDeleted=false;
+  window.fixtureParentDeleted=false;window.fixtureForkDeleted=false;window.fixtureSourcePointGone=false;window.sourceNavigationReads=[];
+  const forkSessionId='10000000-0000-4000-8000-000000000009';
+  const sourceId=peerForks==='child'?delegates[0].sessionId:sid;
+  const sourceTitle=peerForks==='child'?delegates[0].title:'Parent conversation';
   window.holdNextConversationList=false;
-  const conversation=(sessionId=sid)=>({project,session:{...session,sessionId,...(window.fixtureWorkspaceMissing?{workspaceState:'missing'}:{})},inheritedMessages:[],turns:history?[{
+  const conversation=(sessionId=sid)=>({project,session:{...session,sessionId,...(peerForks&&sessionId===forkSessionId?{title:'Independent Fork',forkSource:{sessionId:sourceId,turnId:fixtureTurnId,entryId:'answer-entry',title:window.fixtureParentDeleted?null:sourceTitle}}:{}),...(peerForks&&sessionId!==sid&&sessionId!==forkSessionId?{title:sourceTitle}:{}),...(window.fixtureWorkspaceMissing?{workspaceState:'missing'}:{})},inheritedMessages:[],turns:history?[{
     turnId:fixtureTurnId,runId:'60000000-0000-4000-8000-000000000011',mailboxPosition:1,prompt:'Tree question',state:sessionState==='running'?'running':'completed',acceptedAt:createdAt,
     transcript:{schemaVersion:1,throughSequence:sessionState==='running'?2:3,startedSequence:1,terminalSequence:sessionState==='running'?null:3,stopReason:sessionState==='running'?null:'stop',failure:null,cancellation:null,
       items:window.fixtureToolHistory??[{kind:'text',text:'Tree answer',firstSequence:2,lastSequence:2}]}
@@ -284,21 +288,28 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
       return {tenantId:"test-tenant",userId:window.fixtureUserId??"test-user",displayName:"Fixture",role:"owner",platformAdministrator:false};
     },
     listConversations:async()=>{
-      const listed={conversations:childViews&&!window.fixtureParentDeleted?[{...session,workspaceName:'fixture'}]:[],
+      const listed={conversations:[...(peerForks&&!window.fixtureForkDeleted?[{...session,sessionId:forkSessionId,title:'Independent Fork',workspaceName:'fixture'}]:[]),...(childViews&&!window.fixtureParentDeleted?[{...session,workspaceName:'fixture'}]:[])],
         delegatedSessions:childViews&&!window.fixtureParentDeleted?delegates:[]};
       if(window.holdNextConversationList){window.holdNextConversationList=false;return new Promise(resolve=>{window.finishOldConversationList=()=>resolve(listed);});}
       return listed;
     },
-    deleteConversation:async()=>{window.fixtureParentDeleted=true;return {};},
+    deleteConversation:async(id)=>{if(peerForks&&id===forkSessionId)window.fixtureForkDeleted=true;else window.fixtureParentDeleted=true;return {};},
     listWorkspaces:async()=>{
       if(window.holdWorkspaceList) await new Promise(resolve=>{window.releaseWorkspaceList=resolve;});
       return {workspaces:[{...project,sessionCount:0,lastActiveAt:new Date().toISOString()}],truncated:false};
     },
     listDevelopmentEnvironments:async()=>({environments:[],profiles:DEVELOPMENT_ENVIRONMENT_PROFILES,truncated:false}),
     getModelCatalog:async()=>({models,revision:"a".repeat(64),reloadFailed:false,defaultModel:DEFAULT_NEW_CONVERSATION_MODEL}),
-    getConversationTree:async(sessionId,view)=>window.deferTrees
-      ?new Promise(resolve=>window.treeRequests.push({view,resolve:label=>resolve(tree(label,sessionId))}))
-      :history?tree('Initial tree',sessionId):{branches:[],delegatedSessions:[]},
+    getConversationTree:async(sessionId,view)=>{
+      if(peerForks){
+        if(window.fixtureParentDeleted&&sessionId!==forkSessionId)throw new PiCloudApiError(404,'not_found','Source deleted');
+        const result=tree('Initial tree',sessionId);result.delegatedSessions=window.fixtureParentDeleted?[]:delegates;
+        if(sessionId===forkSessionId)result.branches[0]={...result.branches[0],kind:'conversation',parentSessionId:null};
+        return result;
+      }
+      return window.deferTrees?new Promise(resolve=>window.treeRequests.push({view,resolve:label=>resolve(tree(label,sessionId))}))
+      :history?tree('Initial tree',sessionId):{branches:[],delegatedSessions:[]};
+    },
     pruneConversation:async(sessionId)=>{window.historyMutations.push({operation:'prune',sessionId});return {prunedTurnCount:0};},
     createSession:async (projectId,workspaceId,title,executionMode,sandboxProfileKey,workingDirectory,model)=>{
       selection=model; window.savedSelection=selection;
@@ -315,7 +326,8 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
     removeDraftUpload:async()=>{},
     readInputImage:async()=>({bytes:Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2uV8AAAAASUVORK5CYII='),c=>c.charCodeAt(0)),contentType:'image/png'}),
     getSessionModel:async()=>modelResource(),
-    getConversation:async(sessionId)=>{
+    getConversation:async(sessionId,query)=>{
+      if(peerForks){window.sourceNavigationReads.push({sessionId,query});if(sessionId!==forkSessionId&&(window.fixtureParentDeleted||(window.fixtureSourcePointGone&&query?.entryId)))throw new PiCloudApiError(404,'not_found','Source point unavailable');}
       const view=conversation(sessionId);
       if(!window.raceTurn)return view;
       const next={...view,turns:[...view.turns,window.raceTurn]};
@@ -444,7 +456,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false) => {
     }
     return nativeFetch(url,init);
   };
-  root.render(React.createElement(I18nProvider,{initialLanguage:"en-US"},React.createElement(ChatApp,{key:sessionState+String(history)+String(childViews)+String(window.identityErrorStatus),configuration})));
+  root.render(React.createElement(I18nProvider,{initialLanguage:"en-US"},React.createElement(ChatApp,{key:sessionState+String(history)+String(childViews)+String(peerForks)+String(window.identityErrorStatus),configuration})));
 };
 window.renderGeneratedImage=()=>root.render(React.createElement(Markdown,null,
   '![Character design](/v1/sessions/10000000-0000-4000-8000-000000000001/images/10000000-0000-4000-8000-000000000002)'));
@@ -526,7 +538,8 @@ const server = await createServer({
             res.setHeader("content-type", "application/json");
             return res.end(JSON.stringify({ local: { login: true, registration: true } }));
           }
-          if (req.url !== "/review.html") return next();
+          if (new URL(req.url ?? "/", "http://fixture.invalid").pathname !== "/review.html")
+            return next();
           res.setHeader("content-type", "text/html");
           res.end(
             '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/presentation-fixture.js"></script>',
@@ -539,6 +552,90 @@ const server = await createServer({
 try {
   await server.listen();
   const port = server.httpServer.address().port;
+  for (const source of ["parent", "child"]) {
+    await withChromePage({ peerForks: true }, async (page) => {
+      await page.navigate(`http://127.0.0.1:${port}/review.html`);
+      await page.waitFor("window.fixtureReady");
+      await page.evaluate(
+        `renderChat('idle',true,true,${JSON.stringify(source)});window.confirm=()=>true`,
+      );
+      const humans = ".product-conversation-row:not(.product-delegated-session)";
+      await page.waitFor(`document.querySelectorAll('${humans}').length===2`);
+      const layout = await page.evaluate(
+        `(()=>{const rows=[...document.querySelectorAll('${humans}')];return {names:rows.map(r=>r.querySelector('strong').textContent),left:rows.map(r=>r.getBoundingClientRect().left),nested:rows.some(r=>r.parentElement.parentElement.closest('.product-conversation-tree-node')),children:document.querySelectorAll('.product-delegated-session').length};})()`,
+      );
+      assert.deepEqual(layout.names, ["Independent Fork", "Parent conversation"]);
+      assert.equal(layout.left[0], layout.left[1]);
+      assert.equal(layout.nested, false);
+      assert.equal(layout.children, 2);
+      const openFork = async () => {
+        await page.evaluate(
+          `document.querySelectorAll('${humans} > button:first-child')[0].click()`,
+        );
+        await page.waitFor(
+          "document.querySelector('.product-topbar-title strong')?.textContent==='Independent Fork'",
+        );
+        await page.waitFor("document.querySelector('.product-fork-source')");
+      };
+      await openFork();
+      await page.screenshot(`/tmp/pi-cloud-peer-forks-${source}.png`);
+      await page.evaluate("document.querySelector('.product-fork-source').click()");
+      await page.waitFor(
+        source === "child"
+          ? "document.querySelector('.product-delegated-title')?.textContent.includes('Read only')"
+          : "document.querySelector('.product-topbar-title strong')?.textContent==='Parent conversation'",
+      );
+      assert(
+        await page.evaluate("sourceNavigationReads.some(r=>r.query?.entryId==='answer-entry')"),
+      );
+      await openFork();
+      if (source === "parent") {
+        await page.evaluate(
+          "window.fixtureSourcePointGone=true;document.querySelector('.product-fork-source').click()",
+        );
+        await page.waitFor(
+          "document.querySelector('.product-topbar-title strong')?.textContent==='Parent conversation'",
+        );
+        assert.equal(
+          await page.evaluate("Boolean(document.querySelector('.product-error-banner'))"),
+          false,
+        );
+        await openFork();
+      }
+      await page.evaluate(
+        `document.querySelectorAll('${humans} .product-delete-conversation')[1].click()`,
+      );
+      await page.waitFor(`document.querySelectorAll('${humans}').length===1`);
+      await page.waitFor("document.querySelector('.product-fork-source-unavailable')");
+      assert.equal(
+        await page.evaluate("document.querySelector('.product-topbar-title strong').textContent"),
+        "Independent Fork",
+      );
+      assert.equal(
+        await page.evaluate("document.querySelectorAll('.product-delegated-session').length"),
+        0,
+      );
+      for (const width of [1280, 390]) {
+        await page.send("Emulation.setDeviceMetricsOverride", {
+          width,
+          height: 900,
+          deviceScaleFactor: 1,
+          mobile: false,
+        });
+        await page.wait(100);
+        assert(await page.evaluate("document.documentElement.scrollWidth<=innerWidth+1"));
+      }
+      console.log(
+        JSON.stringify({
+          peerForks: true,
+          source,
+          flatRows: true,
+          sourceNavigation: true,
+          independentDelete: true,
+        }),
+      );
+    });
+  }
   await withChromePage({}, async (page) => {
     await page.navigate(`http://127.0.0.1:${port}/review.html`);
     await page.waitFor("window.fixtureReady");
@@ -2219,86 +2316,98 @@ try {
   });
   console.log(
     JSON.stringify(
-      process.env.PI_CLOUD_BROWSER_SCOPE === "tool-groups"
+      process.env.PI_CLOUD_BROWSER_SCOPE === "peer-forks"
         ? {
             accepted: true,
-            scope: "tool-groups",
-            groupingOnly: true,
-            individualDetailsPreserved: true,
-            boundedWidth: true,
-            previewReplacedByFinalResult: true,
-            latePreviewDiscarded: true,
-            errorMarkerOnlyOnFailedTool: true,
+            scope: "peer-forks",
+            flatHumanRows: true,
+            delegatedSourcesReadOnly: true,
+            sourceNavigation: true,
+            prunedSourcePointFallback: true,
+            independentDelete: true,
+            deletedSourceLabel: true,
+            boundedViewport: true,
           }
-        : process.env.PI_CLOUD_BROWSER_SCOPE === "commands"
+        : process.env.PI_CLOUD_BROWSER_SCOPE === "tool-groups"
           ? {
               accepted: true,
-              scope: "commands",
-              slashUsageAndCompact: true,
-              compactLostReplyAndDraftRetention: true,
-              compactWaitsForPlacement: true,
-            }
-          : {
-              accepted: true,
-              scope: "all",
-              slashUsageAndCompact: true,
-              compactLostReplyAndDraftRetention: true,
-              compactWaitsForPlacement: true,
-              retainedSessionImageLoads: true,
-              canonicalToolImagesOutsideCollapsedActivity: true,
-              imageCaptionPlainTextAndDetailsNoDuplicate: true,
-              previewUsesNamedAnswerLink: true,
-              previewDetailsKeepPortAndResult: true,
-              previewHasNoFallbackOrDuplicateCard: true,
+              scope: "tool-groups",
+              groupingOnly: true,
+              individualDetailsPreserved: true,
+              boundedWidth: true,
               previewReplacedByFinalResult: true,
               latePreviewDiscarded: true,
               errorMarkerOnlyOnFailedTool: true,
-              earlyRunNeverFabricatesUserInput: true,
-              acceptanceDiscoveryRaceKeepsDraftAndStream: true,
-              composerEnterPreference: true,
-              composerButtonMatchesEnter: true,
-              composerEmptyEnterSafe: true,
-              composerImeAndShiftEnter: true,
-              composerScopedEscapePreservesDraft: true,
-              composerAccountIsolation: true,
-              composerPreferencePersistenceFallback: true,
-              directSteerRetryIdentity: true,
-              ordinarySendRetryIdentity: true,
-              initialImageSendRetryIdentity: true,
-              directSteerPendingPresentation: true,
-              machineWorkspaceRebind: true,
-              rebindRetryUsesSameTargetAndKey: true,
-              persistentRuntimeStatus: true,
-              collapsedRuntimeDiagnostics: true,
-              runtimeWarningsVisible: true,
-              observationGenerationRecovery: true,
-              separateActivityAndPath: true,
-              firstImageOnlyMessage: true,
-              uploadIdentityOnRetry: true,
-              debuggerDisconnect: true,
-              strictModeAnimation: true,
-              commentaryAnimation: true,
-              commentaryReconnectAndReducedMotion: true,
-              outputLimitVisible: true,
-              reconnectSnapshotImmediate: true,
-              initialPanelWidth: true,
-              resizeUnmountCleanup: true,
-              pointerCancellation: true,
-              composerSessionSettings: true,
-              providerSwitchClearsFast: true,
-              compositionAndPendingDraft: true,
-              inspectorSelectionAndTerminalLifetime: true,
-              logoutLifecycle: true,
-              branchSelectionAndManualJump: true,
-              childHistoryReadOnlyAndParentActions: true,
-              pendingInputNavigation: true,
-              childWorkspaceReadOnly: true,
-              unavailableIdentityRetry: true,
-              staleConversationListAfterDelete: true,
-              terminalSocketIsolation: true,
-              directoryPickerLifecycle: true,
-              responsivePageScrolling: true,
-            },
+            }
+          : process.env.PI_CLOUD_BROWSER_SCOPE === "commands"
+            ? {
+                accepted: true,
+                scope: "commands",
+                slashUsageAndCompact: true,
+                compactLostReplyAndDraftRetention: true,
+                compactWaitsForPlacement: true,
+              }
+            : {
+                accepted: true,
+                scope: "all",
+                slashUsageAndCompact: true,
+                compactLostReplyAndDraftRetention: true,
+                compactWaitsForPlacement: true,
+                retainedSessionImageLoads: true,
+                canonicalToolImagesOutsideCollapsedActivity: true,
+                imageCaptionPlainTextAndDetailsNoDuplicate: true,
+                previewUsesNamedAnswerLink: true,
+                previewDetailsKeepPortAndResult: true,
+                previewHasNoFallbackOrDuplicateCard: true,
+                previewReplacedByFinalResult: true,
+                latePreviewDiscarded: true,
+                errorMarkerOnlyOnFailedTool: true,
+                earlyRunNeverFabricatesUserInput: true,
+                acceptanceDiscoveryRaceKeepsDraftAndStream: true,
+                composerEnterPreference: true,
+                composerButtonMatchesEnter: true,
+                composerEmptyEnterSafe: true,
+                composerImeAndShiftEnter: true,
+                composerScopedEscapePreservesDraft: true,
+                composerAccountIsolation: true,
+                composerPreferencePersistenceFallback: true,
+                directSteerRetryIdentity: true,
+                ordinarySendRetryIdentity: true,
+                initialImageSendRetryIdentity: true,
+                directSteerPendingPresentation: true,
+                machineWorkspaceRebind: true,
+                rebindRetryUsesSameTargetAndKey: true,
+                persistentRuntimeStatus: true,
+                collapsedRuntimeDiagnostics: true,
+                runtimeWarningsVisible: true,
+                observationGenerationRecovery: true,
+                separateActivityAndPath: true,
+                firstImageOnlyMessage: true,
+                uploadIdentityOnRetry: true,
+                debuggerDisconnect: true,
+                strictModeAnimation: true,
+                commentaryAnimation: true,
+                commentaryReconnectAndReducedMotion: true,
+                outputLimitVisible: true,
+                reconnectSnapshotImmediate: true,
+                initialPanelWidth: true,
+                resizeUnmountCleanup: true,
+                pointerCancellation: true,
+                composerSessionSettings: true,
+                providerSwitchClearsFast: true,
+                compositionAndPendingDraft: true,
+                inspectorSelectionAndTerminalLifetime: true,
+                logoutLifecycle: true,
+                branchSelectionAndManualJump: true,
+                childHistoryReadOnlyAndParentActions: true,
+                pendingInputNavigation: true,
+                childWorkspaceReadOnly: true,
+                unavailableIdentityRetry: true,
+                staleConversationListAfterDelete: true,
+                terminalSocketIsolation: true,
+                directoryPickerLifecycle: true,
+                responsivePageScrolling: true,
+              },
     ),
   );
 } finally {

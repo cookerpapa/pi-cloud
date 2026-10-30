@@ -764,7 +764,11 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
     expect(childDetail.json<ConversationDetailResource>()).toMatchObject({
       session: {
         sessionId: forked.session.sessionId,
-        parentSessionId: alphaSession.sessionId,
+        forkSource: {
+          sessionId: alphaSession.sessionId,
+          turnId: alphaTurn.turnId,
+          entryId: assistantEntryId,
+        },
       },
       turns: [{ turnId: alphaTurn.turnId, originSessionId: alphaSession.sessionId }],
     });
@@ -973,7 +977,7 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
       payload: {
         turnId: alphaTurn.turnId,
         entryId: assistantEntryId,
-        title: "Child removed with parent",
+        title: "Independent Fork survives",
       },
     });
     expect(replacementFork.statusCode).toBe(201);
@@ -994,7 +998,45 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
         .where("id", "in", [alphaSession.sessionId, replacementChildId])
         .orderBy("id")
         .execute(),
-    ).toEqual([]);
+    ).toEqual([{ id: replacementChildId, prunedAt: null }]);
+    const surviving = await http.inject({
+      method: "GET",
+      url: `/v1/conversations/${replacementChildId}`,
+      headers: authorization(alpha.apiToken),
+    });
+    expect(surviving.statusCode, surviving.body).toBe(200);
+    expect(surviving.json().session.forkSource).toEqual({
+      sessionId: alphaSession.sessionId,
+      turnId: alphaTurn.turnId,
+      entryId: assistantEntryId,
+      title: null,
+    });
+    const replayAfterDeletion = await http.inject({
+      ...forkRequest,
+      headers: {
+        ...authorization(alpha.apiToken),
+        "idempotency-key": "fork-alpha-before-subtree-delete",
+      },
+      payload: {
+        turnId: alphaTurn.turnId,
+        entryId: assistantEntryId,
+        title: "Independent Fork survives",
+      },
+    });
+    expect(replayAfterDeletion.statusCode, replayAfterDeletion.body).toBe(201);
+    expect(replayAfterDeletion.json()).toMatchObject({
+      replayed: true,
+      session: { sessionId: replacementChildId },
+    });
+    expect(
+      (
+        await http.inject({
+          method: "DELETE",
+          url: `/v1/conversations/${replacementChildId}`,
+          headers: authorization(alpha.apiToken),
+        })
+      ).statusCode,
+    ).toBe(204);
   });
 
   it("pages conversation history by a tenant-scoped Turn anchor", async () => {

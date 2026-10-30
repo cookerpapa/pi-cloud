@@ -1,5 +1,14 @@
 # Matched release procedure
 
+ADR-0288 requires schema 205 and paired API/Web contracts. Ordinary summaries
+drop `parentSessionId`; details expose `forkSource`. Source deletion no longer
+cascades through manual Forks. Preserve retained history and images while draining
+writers. Run the native-family/Fork deletion and concurrency tests, peer-Fork
+browser checks (`PI_CLOUD_BROWSER_SCOPE=peer-forks npm run browser:presentation:check`),
+and the maintained live independent-Fork driver. It now verifies source deletion
+while the Fork executes, retained images, source navigation and deleted-source UI.
+Owned cleanup must explicitly delete all independent fixture conversations.
+
 ADR-0287 requires schema 204 and a drained matched transition. Preserve existing
 native bytes, Inbox/current values, images, machine intent and Workspace Volumes.
 Bootstrap converts retained records, source presentation and image references
