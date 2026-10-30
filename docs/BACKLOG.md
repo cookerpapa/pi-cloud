@@ -1,11 +1,14 @@
 # Maintained backlog
 
-## Peer Fork navigation and independent deletion — in progress
+## Peer Fork navigation and independent deletion — deployed
 
 ADR-0288 separates provenance from runtime ownership: flat human conversation
 rows, traceable sources, and deletion restricted to the selected native family.
-Verify active/nested Fork preservation, actual child cleanup, source races,
-idempotent retries, image retention and the real browser before matched rollout.
+Active/nested Fork preservation, actual child cleanup, source races, idempotent
+retries, image retention and browser checks pass. Matched `peer-forks-20261030`
+(schema 205, Helm 127) also passes real source deletion while a Luna Fork executes
+in Cube, subsequent image access/compaction, and original-asset preservation.
+[Delivery](reports/peer-forks-20261030.md).
 
 ## Remove automatic Fork identity instructions — deployed
 

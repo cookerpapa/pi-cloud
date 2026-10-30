@@ -2,7 +2,8 @@
 
 [ADR-0288](0288-peer-forks-and-independent-deletion.md) makes manual Forks peers
 in ordinary navigation and independent deletion. Provenance remains traceable
-without owning the destination's lifecycle; schema/API/Web work is in progress.
+without owning the destination's lifecycle. Matched `peer-forks-20261030` is
+deployed on schema 205; source, browser, real Luna/Cube and asset checks pass.
 
 [ADR-0287](0287-single-path-shared-forks.md) implements single-path Forks and shared
 native/presentation roots on deployed schema 204. Its later prompt amendment

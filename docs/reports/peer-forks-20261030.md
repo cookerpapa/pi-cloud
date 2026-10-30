@@ -1,8 +1,8 @@
 # Peer Fork navigation and independent deletion
 
 Implementation: [ADR-0288](../adr/0288-peer-forks-and-independent-deletion.md),
-schema 205. Source and browser checks pass; matched publication and live checks
-are pending.
+schema 205. Matched `peer-forks-20261030` is deployed from `5981c10c`, application
+Helm revision 127. Source, browser and real Luna/Cube checks pass.
 
 Manual Forks are ordinary conversation-list peers in the existing recency order.
 Real delegated Agents remain nested. The title has a small source link, including
@@ -44,3 +44,25 @@ removes every independent fixture conversation before deleting its Workspace.
 
 Private source evidence:
 `deploy/production/runtime/work-evidence/peer-forks-20261030/`.
+
+## Matched delivery
+
+All 12 matched image gates pass. The original allocation was closed and confirmed
+physically absent before replacement; the same development machine/Workspace
+recovered as generation 30. All 29 runtime Pods are Ready. Fourteen protected
+database tables/views, 68 image contents, 5,859 Workspace files and 27 private
+configuration/credential hashes match the captured values. No business-data reset
+was performed.
+
+Real GPT-6 Luna created an independent Fork while the source ran, retained C when
+the source was pruned to B, and navigated the peer sidebar/source link in the real
+browser. While the Fork executed another Cube Tool, the source was deleted. The
+Fork completed normally, recalled C and served its retained image. Compaction and
+cold continuation still recalled C; the browser showed the deleted-source label.
+The default Fork identity notice remains absent and backend provenance is retained.
+The owned fixture's Runs, compute, Workspace and tenant were cleaned successfully.
+
+Private release evidence:
+`deploy/production/runtime/release-evidence/peer-forks-20261030/live-fork/report.json`
+and the adjacent `maintenance/` preservation/image/state reports. Existing browser
+tabs should reload for the paired API/Web contract.

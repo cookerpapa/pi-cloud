@@ -1,6 +1,7 @@
 # ADR-0288: Peer Forks and independent conversation deletion
 
-Status: accepted for implementation, 2026-10-30.
+Status: implemented and deployed as `peer-forks-20261030`, schema 205 / Helm 127.
+[Verification and delivery](../reports/peer-forks-20261030.md), 2026-10-30.
 
 ## Decision
 

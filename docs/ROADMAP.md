@@ -1,13 +1,14 @@
 # Implementation roadmap
 
-## Peer Fork navigation and independent deletion — in progress
+## Peer Fork navigation and independent deletion — deployed
 
-- [ ] Separate source provenance from deletion ownership and keep retry receipts.
-- [ ] Show human Forks as peers with source navigation and unavailable-source state.
-- [ ] Verify native children, active Forks, races, retained images and browser behavior.
-- [ ] Publish the matched schema/API/Web change and verify original-asset preservation.
+- [x] Separate source provenance from deletion ownership and keep retry receipts.
+- [x] Show human Forks as peers with source navigation and unavailable-source state.
+- [x] Verify native children, active Forks, races, retained images and browser behavior.
+- [x] Publish the matched schema/API/Web change and verify original-asset preservation.
 
-[ADR-0288](adr/0288-peer-forks-and-independent-deletion.md).
+[ADR-0288](adr/0288-peer-forks-and-independent-deletion.md). Matched
+`peer-forks-20261030`, schema 205 / Helm 127; [delivery](reports/peer-forks-20261030.md).
 
 ## Single-path shared Fork implementation — deployed and verified
 
