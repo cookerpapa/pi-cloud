@@ -120,7 +120,7 @@ func piCloudFixture(t *testing.T) *piCloudModelFixture {
 	router.POST("/codex/responses", f.handler.PiCloudResponses)
 	f.server = httptest.NewServer(router)
 	t.Cleanup(func() {
-		if p := f.handler.piCloud.pool; p != nil {
+		if p := f.handler.piCloud; p != nil {
 			p.mu.Lock()
 			for _, s := range p.entries {
 				p.removeLocked(s)
@@ -253,7 +253,7 @@ func TestPiCloudModelCancelAndExpiry(t *testing.T) {
 	<-returned
 	deadline := time.Now().Add(3 * time.Second)
 	for {
-		p := f.handler.piCloud.pool
+		p := f.handler.piCloud
 		p.mu.Lock()
 		n := len(p.entries)
 		p.mu.Unlock()
@@ -271,7 +271,7 @@ func TestPiCloudModelCancelAndExpiry(t *testing.T) {
 	if second.connection == first.connection {
 		t.Fatal("cancelled connection reused")
 	}
-	p := f.handler.piCloud.pool
+	p := f.handler.piCloud
 	p.mu.Lock()
 	for _, s := range p.entries {
 		s.used = time.Now().Add(-time.Hour)
@@ -389,4 +389,15 @@ func TestPiCloudModelPoolBoundsAndLateCleanup(t *testing.T) {
 		t.Fatal("upload admission broken")
 	}
 	_ = fmt.Sprintf("%v", closed)
+}
+
+func TestPiCloudModelConfigurationValidatedBeforeServing(t *testing.T) {
+	t.Setenv("PI_CLOUD_MODEL_REQUEST_MAX_BYTES", "2.68435456e+08")
+	defer func() {
+		if got := recover(); got != "invalid PI_CLOUD_MODEL_REQUEST_MAX_BYTES" {
+			t.Fatalf("expected startup configuration rejection, got %v", got)
+		}
+	}()
+	NewOpenAIResponsesAPIHandler(nil)
+	t.Fatal("invalid environment reached the serving stage")
 }

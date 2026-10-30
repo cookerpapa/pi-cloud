@@ -25,6 +25,13 @@ it("uses narrow model gates and no unrelated images", () => {
   const provider = releaseImpact(["deploy/provider-gateway/Dockerfile", "docs/README.md"]);
   expect(provider.scope).toBe("provider");
   expect(provider.matrix.include.map((i) => i.image)).toEqual(["cli-proxy-api"]);
+  expect(releaseImpact(["deploy/provider-gateway/model_sessions.go"]).scope).toBe("provider");
+  expect(
+    releaseImpact([
+      "deploy/provider-gateway/model_sessions.patch",
+      "scripts/lib/component-release.mjs",
+    ]).matrix.include.map((i) => i.image),
+  ).toEqual(["cli-proxy-api"]);
   const both = releaseImpact([catalogSeed, "deploy/provider-gateway/Dockerfile"]);
   expect(both.scope).toBe("catalog");
   expect(both.matrix.include).toHaveLength(1);

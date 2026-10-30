@@ -64,6 +64,15 @@ release probes.
 
 ## Provider image
 
+ADR-0289 also permits the explicitly listed provider adapter Go/patch files when
+they preserve the installed private model HTTP contract. Provider image inputs
+include every local Docker COPY source. The complete manifest check additionally
+allows decimal rendering of the four existing model-transport integer environment
+values only when their numeric values are identical. It rejects changed limits,
+unrelated environment, replicas, storage and other workloads. This supports the
+scientific-notation deployment repair without rebuilding development machines;
+new protocol/ownership behavior still requires a matched release.
+
 Native model continuation also requires each Codex account's provider-owned
 `websockets` metadata to be enabled. Matched and provider publication apply this
 preference through the management API after readiness. After importing accounts,

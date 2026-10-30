@@ -4,6 +4,7 @@ import {
   modelTests,
   ordinaryControlToolSource,
   imageReleaseTargets,
+  providerSources,
 } from "./release-impact.mjs";
 export { catalogSeed } from "./release-impact.mjs";
 export { imageReleaseTargets } from "./release-impact.mjs";
@@ -107,6 +108,7 @@ export function assertScopedSources(scope, files) {
             ].includes(file))) ||
         (["provider", "catalog"].includes(scope) &&
           (file === catalogSeed || file === "deploy/provider-gateway/Dockerfile")) ||
+        (scope === "provider" && providerSources.has(file)) ||
         file === "README.md" ||
         file === "AGENTS.md" ||
         file.startsWith("docs/") ||
@@ -170,6 +172,29 @@ export function assertScopedManifests(scope, before, after, desired) {
       );
       assert(container, "Missing provider container");
       container.image = desired;
+      // ADR-0289: repair Helm's float spelling without changing a configured
+      // value or permitting unrelated environment/template changes.
+      const incoming = next
+        .get(key)
+        ?.spec.template.spec.containers.find((c) => c.name === "cli-proxy-api");
+      const integerNames = new Set([
+        "PI_CLOUD_MODEL_REQUEST_MAX_BYTES",
+        "PI_CLOUD_MODEL_UPLOAD_MAX_BYTES",
+        "PI_CLOUD_MODEL_SESSION_IDLE_SECONDS",
+        "PI_CLOUD_MODEL_SESSION_CACHE_ENTRIES",
+      ]);
+      for (const env of container.env ?? []) {
+        const other = incoming?.env?.find((e) => e.name === env.name);
+        if (
+          integerNames.has(env.name) &&
+          typeof env.value === "string" &&
+          typeof other?.value === "string" &&
+          /^\d+$/.test(other.value) &&
+          Number.isSafeInteger(Number(env.value)) &&
+          Number(env.value) === Number(other.value)
+        )
+          env.value = other.value;
+      }
       targets++;
     } else if (
       ["web", "control-plane"].includes(scope) &&

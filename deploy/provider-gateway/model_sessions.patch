@@ -31,14 +31,26 @@ index 10219fc3..dcc82cc5 100644
  		if errRead != nil {
  			invalidate := func() {
 diff --git a/sdk/api/handlers/openai/openai_responses_handlers.go b/sdk/api/handlers/openai/openai_responses_handlers.go
-index 4a830afc..97a2f972 100644
+index 4a830afc..73ab42bb 100644
 --- a/sdk/api/handlers/openai/openai_responses_handlers.go
 +++ b/sdk/api/handlers/openai/openai_responses_handlers.go
 @@ -444,6 +444,7 @@ func responsesSSENeedsLineBreak(pending, chunk []byte) bool {
  // It holds a pool of clients to interact with the backend service.
  type OpenAIResponsesAPIHandler struct {
  	*handlers.BaseAPIHandler
-+	piCloud piCloudSessionCache
++	piCloud *piCloudModelSessions
  }
  
  // NewOpenAIResponsesAPIHandler creates a new OpenAIResponses API handlers instance.
+@@ -457,6 +458,11 @@ type OpenAIResponsesAPIHandler struct {
+ func NewOpenAIResponsesAPIHandler(apiHandlers *handlers.BaseAPIHandler) *OpenAIResponsesAPIHandler {
+ 	return &OpenAIResponsesAPIHandler{
+ 		BaseAPIHandler: apiHandlers,
++		piCloud: newPiCloudModelSessions(func(id string) {
++			if apiHandlers != nil && apiHandlers.AuthManager != nil {
++				apiHandlers.AuthManager.CloseExecutionSession(id)
++			}
++		}),
+ 	}
+ }
+ 

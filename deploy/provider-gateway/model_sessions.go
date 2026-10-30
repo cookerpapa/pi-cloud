@@ -31,11 +31,6 @@ import (
 
 const piCloudMiB = 1024 * 1024
 
-type piCloudSessionCache struct {
-	once sync.Once
-	pool *piCloudModelSessions
-}
-
 type piCloudModelSession struct {
 	id, key, auth, responseID string
 	parameters                [32]byte
@@ -347,8 +342,11 @@ func piCloudModelError(c *gin.Context, status int, code string, messages ...stri
 // PiCloudResponses is a full-input HTTP/SSE port. Only CPA's native WebSocket
 // executor keeps upstream state. No Run/lease/Kafka authority enters this cache.
 func (h *OpenAIResponsesAPIHandler) PiCloudResponses(c *gin.Context) {
-	h.piCloud.once.Do(func() { h.piCloud.pool = newPiCloudModelSessions(h.AuthManager.CloseExecutionSession) })
-	p := h.piCloud.pool
+	if h.AuthManager == nil {
+		piCloudModelError(c, 503, "provider_gateway_unavailable")
+		return
+	}
+	p := h.piCloud
 	key := c.GetHeader("X-PiCloud-Model-Session")
 	if len(key) != 64 {
 		piCloudModelError(c, 400, "invalid_request")

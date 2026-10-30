@@ -174,6 +174,31 @@ it("accepts only the provider image difference and rejects side effects on data 
     assertScopedManifests("provider", yaml(provider, other), yaml(next), "new"),
   ).toThrow();
 });
+it("normalizes only equivalent provider integer environment spelling", () => {
+  const before = structuredClone(provider);
+  before.spec.template.spec.containers[0].env = [
+    { name: "PI_CLOUD_MODEL_REQUEST_MAX_BYTES", value: "2.68435456e+08" },
+    { name: "OTHER", value: "1e2" },
+  ];
+  const after = structuredClone(before);
+  after.spec.template.spec.containers[0].image = "new";
+  after.spec.template.spec.containers[0].env[0].value = "268435456";
+  expect(() =>
+    assertScopedManifests("provider", yaml(before, other), yaml(after, other), "new"),
+  ).not.toThrow();
+  for (const change of [
+    (v) => (v.spec.template.spec.containers[0].env[0].value = "536870912"),
+    (v) => (v.spec.template.spec.containers[0].env[1].value = "100"),
+    (v) => v.spec.template.spec.containers[0].env.push({ name: "NEW", value: "1" }),
+  ]) {
+    const bad = structuredClone(after);
+    change(bad);
+    expect(() =>
+      assertScopedManifests("provider", yaml(before, other), yaml(bad, other), "new"),
+    ).toThrow();
+  }
+});
+
 it("catalog publishing changes only its JSON, with unrelated resource changes refused", () => {
   const before = {
     apiVersion: "v1",

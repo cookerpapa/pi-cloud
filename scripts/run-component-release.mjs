@@ -135,7 +135,15 @@ function inputs(scope) {
       "packages/protocol/src",
       "packages/web-ui",
     ]).split("\n");
-  return scope === "provider" ? ["deploy/provider-gateway/Dockerfile"] : [catalogSeed];
+  if (scope === "provider") {
+    const file = "deploy/provider-gateway/Dockerfile";
+    return dockerSourceInputs(
+      file,
+      capture("git", ["ls-files"]).split("\n"),
+      readFileSync(resolve(root, file), "utf8"),
+    );
+  }
+  return [catalogSeed];
 }
 
 if (action === "prepare") {

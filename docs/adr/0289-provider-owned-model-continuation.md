@@ -4,6 +4,17 @@ Status: accepted for implementation, 2026-10-30. The owner approved the research
 proxy-side proposal. This supersedes ADR-0282's Worker-owned connection/delta path,
 not Pi's semantic context, native retry or storage ownership. Deployment is pending.
 
+Publication amendment: deployed Helm values exposed scientific notation in large
+integer environment values, which strict Go configuration rejected. Render these
+provider values explicitly as decimal integers and initialize/validate the cache
+at server construction, before readiness. The maintained provider-only release
+may carry the explicitly listed provider adapter sources and this template, with
+whole-manifest comparison allowing only the provider image and numerically
+identical decimal normalization of the four model-transport environment values.
+It cannot change those values, any other environment, replicas, volumes or other
+workloads. Hash all provider build inputs, not only its Dockerfile. Test rejection
+of changed limits and unrelated manifests before using this narrower repair path.
+
 ## Problem and adoption evidence
 
 Normal Run settlement releases the Worker-local model grant and native socket.

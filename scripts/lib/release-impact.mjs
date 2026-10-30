@@ -1,6 +1,7 @@
 export const catalogSeed = "deploy/helm/pi-cloud-platform/files/model-catalog.json";
 export const operatorSources = new Set([
   "scripts/run-component-release.mjs",
+  "scripts/check-helm-self-hosted.mjs",
   "scripts/run-matched-release.mjs",
   "scripts/run-release-scope-check.mjs",
   "scripts/run-live-component-release-check.mjs",
@@ -25,6 +26,16 @@ export const operatorSources = new Set([
 ]);
 export const ordinaryControlToolSource = (file) =>
   /^packages\/control-plane\/src\/ordinary-tools\/.*\.ts$/.test(file);
+export const providerSources = new Set([
+  "deploy/provider-gateway/Dockerfile",
+  "deploy/provider-gateway/model_sessions.go",
+  "deploy/provider-gateway/model_sessions_test.go",
+  "deploy/provider-gateway/model_sessions.patch",
+  "deploy/provider-gateway/image_request_policy.go",
+  "deploy/provider-gateway/image_request_policy_test.go",
+  "deploy/provider-gateway/image_request_policy.patch",
+  "deploy/helm/pi-cloud-infrastructure/templates/provider.yaml",
+]);
 export const imageReleaseTargets = {
   provider: {
     imageName: "cli-proxy-api",
@@ -96,17 +107,13 @@ export function releaseImpact(files) {
       (file) =>
         !documentation(file) &&
         file !== catalogSeed &&
-        file !== "deploy/provider-gateway/Dockerfile" &&
+        !providerSources.has(file) &&
         !operatorSources.has(file) &&
         !modelTests.has(file),
     )
   )
     return full();
-  const provider = files.includes("deploy/provider-gateway/Dockerfile");
-  const scope =
-    provider &&
-    files.every((file) => documentation(file) || file === "deploy/provider-gateway/Dockerfile")
-      ? "provider"
-      : "catalog";
+  const provider = files.some((file) => providerSources.has(file));
+  const scope = provider && !files.includes(catalogSeed) ? "provider" : "catalog";
   return { scope, matrix: { include: provider ? [fullImages.at(-1)] : [] }, buildImages: provider };
 }

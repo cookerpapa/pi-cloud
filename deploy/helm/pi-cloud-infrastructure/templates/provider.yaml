@@ -86,10 +86,10 @@ spec:
             - { name: HTTPS_PROXY, value: "http://provider-egress-relay:3129" }
             - { name: NO_PROXY, value: "127.0.0.1,localhost,.svc,.cluster.local" }
             - { name: MANAGEMENT_STATIC_PATH, value: /data/static }
-            - { name: PI_CLOUD_MODEL_REQUEST_MAX_BYTES, value: {{ .Values.provider.modelTransport.requestMaxBytes | quote }} }
-            - { name: PI_CLOUD_MODEL_UPLOAD_MAX_BYTES, value: {{ .Values.provider.modelTransport.uploadMaxBytes | quote }} }
-            - { name: PI_CLOUD_MODEL_SESSION_IDLE_SECONDS, value: {{ .Values.provider.modelTransport.idleSeconds | quote }} }
-            - { name: PI_CLOUD_MODEL_SESSION_CACHE_ENTRIES, value: {{ .Values.provider.modelTransport.cacheEntries | quote }} }
+            - { name: PI_CLOUD_MODEL_REQUEST_MAX_BYTES, value: {{ .Values.provider.modelTransport.requestMaxBytes | int64 | quote }} }
+            - { name: PI_CLOUD_MODEL_UPLOAD_MAX_BYTES, value: {{ .Values.provider.modelTransport.uploadMaxBytes | int64 | quote }} }
+            - { name: PI_CLOUD_MODEL_SESSION_IDLE_SECONDS, value: {{ .Values.provider.modelTransport.idleSeconds | int64 | quote }} }
+            - { name: PI_CLOUD_MODEL_SESSION_CACHE_ENTRIES, value: {{ .Values.provider.modelTransport.cacheEntries | int64 | quote }} }
           ports: [{ name: http, containerPort: 8317 }]
           readinessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 5 }
           livenessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10, failureThreshold: 6 }

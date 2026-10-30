@@ -4,6 +4,14 @@ Status: implementation/source acceptance complete; matched publication and deplo
 acceptance pending. ADR-0289 replaces the Worker-owned socket cache with an
 in-process provider adapter. No schema change or Pi core patch.
 
+Matched `provider-continuation-20261030` (schema 205, Helm 130) exposed a deployment
+rendering error before deployed model acceptance: large numeric environment values
+were emitted in scientific notation. Strict Go configuration rejected them during
+lazy request initialization, then left the cache uninitialized. Render decimal
+integers and validate the cache at server construction. Regression tests cover
+actual Helm output, startup refusal and narrowly scoped manifest normalization.
+The failed owned fixture was fully cleaned; it is not counted as acceptance.
+
 ## Behavior
 
 Pi supplies complete effective context over HTTP/SSE inside the cluster. The

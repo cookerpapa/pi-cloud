@@ -104,6 +104,9 @@ try {
   assert.equal(worker.spec.replicas, 2);
   assert.equal(worker.spec.template.spec.hostNetwork, false);
   const gateway = find("StatefulSet", "cli-proxy-api").spec.template.spec.containers[0];
+  const providerEnv = Object.fromEntries(gateway.env.map((e) => [e.name, e.value]));
+  assert.equal(providerEnv.PI_CLOUD_MODEL_REQUEST_MAX_BYTES, "268435456");
+  assert.equal(providerEnv.PI_CLOUD_MODEL_UPLOAD_MAX_BYTES, "536870912");
   assert.equal(gateway.resources.limits, undefined);
   assert.equal(
     gateway.env.some((e) => e.name === "GOMEMLIMIT"),
