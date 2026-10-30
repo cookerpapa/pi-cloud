@@ -1,11 +1,13 @@
 # Maintained backlog
 
-## Remove automatic Fork identity instructions — in progress
+## Remove automatic Fork identity instructions — deployed
 
 The owner approved removing the `fork-context` system section. Keep backend
-provenance, current-family listings and old-target validation. Verify native
-section removal for existing history, compaction and cold reopen, then deploy
-through the maintained Worker/matched release path. ADR-0287 records the decision.
+provenance, current-family listings and old-target validation. Native prompt
+retirement, compaction/reopen, family checks and real Luna Fork/image/compaction
+acceptance pass. Matched `fork-context-removal-20261030` (schema 204, Helm 126)
+preserves existing assets and restores the original Workspace. ADR-0287 records
+the decision; [verification and delivery](reports/fork-context-removal-20261030.md).
 
 ## Single-path shared Fork implementation — deployed and verified
 

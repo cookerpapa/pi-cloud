@@ -2,8 +2,9 @@
 
 [Single-path shared Forks](adr/0287-single-path-shared-forks.md) implements shared
 native/presentation roots, independent source retirement and backend provenance.
-The approved [prompt amendment](reports/fork-context-removal-20261030.md) removes
-the automatic Fork identity notice while retaining Agent scope checks.
+The [prompt amendment](reports/fork-context-removal-20261030.md), deployed as
+`fork-context-removal-20261030`, removes the automatic Fork identity notice while
+retaining Agent scope checks and passes real Luna Fork/compaction acceptance.
 Matched `shared-forks-20261030` is deployed on schema 204 and passes
 real Fork, Cube/browser, native recovery and original-asset preservation checks.
 [Measurements and verification](reports/single-path-shared-forks-20261030.md).

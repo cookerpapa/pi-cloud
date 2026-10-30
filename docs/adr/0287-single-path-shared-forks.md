@@ -4,6 +4,8 @@ Status: accepted and implemented. Matched `shared-forks-20261030` is deployed on
 schema 204, application Helm revision 125; live acceptance is verified.
 ADR-0284/0285 describe the preceding storage representation.
 [Measurements and delivery](../reports/single-path-shared-forks-20261030.md).
+The prompt amendment below is deployed as `fork-context-removal-20261030`,
+schema 204 / Helm 126; [verification](../reports/fork-context-removal-20261030.md).
 
 ## Product boundary
 
