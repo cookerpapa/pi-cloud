@@ -1,8 +1,12 @@
 # ADR-0289: Provider-owned model continuation
 
-Status: accepted for implementation, 2026-10-30. The owner approved the researched
-proxy-side proposal. This supersedes ADR-0282's Worker-owned connection/delta path,
-not Pi's semantic context, native retry or storage ownership. Deployment is pending.
+Status: deployed. Base matched release `provider-continuation-20261030`, provider
+configuration repair `provider-continuation-config-20261030`, and send-once
+refinement `provider-send-once2-20261031`; schema remains 205. The owner approved
+the researched proxy-side proposal. This supersedes ADR-0282's Worker-owned
+connection/delta path, not Pi's semantic context, native retry or storage ownership.
+See the [delivery report](../reports/provider-continuation-20261030.md) for passed
+checks and the owner-deferred large cold-upload gate.
 
 Publication amendment: deployed Helm values exposed scientific notation in large
 integer environment values, which strict Go configuration rejected. Render these

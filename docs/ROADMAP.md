@@ -1,12 +1,13 @@
 # Implementation roadmap
 
-## Provider-owned model continuation — implementing
+## Provider-owned model continuation — deployed
 
 Adopt the existing CPA executor behind an in-process full-input model port.
 [ADR-0289](adr/0289-provider-owned-model-continuation.md) preserves native context
 and cloud execution ownership while enabling cross-Worker transport reuse.
-Source contracts, matched release and real provider acceptance are tracked in
-[the backlog](BACKLOG.md#provider-owned-model-continuation--in-progress).
+[Delivery evidence](reports/provider-continuation-20261030.md) records successful
+ordinary-size continuation and recovery. The owner deferred additional 131 MiB
+provider probes; that network investigation remains separately tracked.
 
 ## Peer Fork navigation and independent deletion — deployed
 

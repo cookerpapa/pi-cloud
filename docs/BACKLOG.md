@@ -1,13 +1,13 @@
 # Maintained backlog
 
-## Provider-owned model continuation — in progress
+## Provider-owned model continuation — deployed
 
 - [x] Research upstream lifetimes, native Pi ports and bounded adoption choices.
 - [x] Add the in-process provider adapter and remove Worker WebSocket ownership.
 - [x] Verify cross-client/native Pi image/Tool deltas, cancellation, missing state,
       expiry and real 129 MiB decoded input in isolated checks.
-- [ ] Complete broad contracts, memory/transport measurement and matched release.
-- [ ] Verify real Luna cross-Worker/image/Tool continuation and cold/failure recovery.
+- [x] Complete broad contracts, memory/transport measurement and matched release.
+- [x] Verify real Luna cross-Worker/image/Tool continuation and native failure recovery.
 
 [ADR-0289](adr/0289-provider-owned-model-continuation.md). No change to semantic
 history, model retry ownership, native token compaction or image quality. Provider
@@ -233,6 +233,17 @@ Browser checks and original asset preservation pass. [Delivery evidence](reports
 
 The owner accepts occasional manual `/compact` for now. Keep native automatic
 token-based compaction; do not add a byte-triggered policy without a new decision.
+
+October 30/31 follow-up: local Worker/provider adapters accept valid decoded
+requests above 128 MiB and use a configurable 256 MiB boundary. Two approximately
+131 MiB cold provider probes, before the send-once refinement and including a
+proxy-node switch, encountered upstream write resets and a 300-second header wait.
+The owner explicitly deferred more large real-provider tests. Remove the redundant
+SDK WebSocket resend and preserve a bounded HTTP fallback preference after failed
+attempts; verify with local send-failure tests and ordinary-size live requests.
+Do not claim the very-large provider gate passed.
+[Current delivery evidence](reports/provider-continuation-20261030.md).
+
 
 The active long conversation repeatedly sends a context containing 25 images:
 79.6 MiB raw / 106.1 MiB base64 before other context. The current proxy HTTP path

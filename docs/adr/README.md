@@ -2,7 +2,9 @@
 
 [ADR-0289](0289-provider-owned-model-continuation.md) defines provider-side upstream
 continuation across Run/Worker replacement, with full-input HTTP ingress and
-bounded disposable caches. Implementation and matched publication are in progress.
+bounded disposable caches. It is deployed with ordinary image/Tool/recovery
+acceptance; [delivery](../reports/provider-continuation-20261030.md) retains the
+separate large cold-upload limitation.
 
 [ADR-0288](0288-peer-forks-and-independent-deletion.md) makes manual Forks peers
 in ordinary navigation and independent deletion. Provenance remains traceable

@@ -16,6 +16,7 @@ import {
   runtimeEnvironment,
   serviceAddress,
   kubectl,
+  kubectlAsync,
 } from "./lib/production-kubernetes.mjs";
 import { nativeHistory, nativeMessages, imageReferences } from "./lib/native-session-history.mjs";
 import { purgeOwnedAcceptanceTenant } from "./lib/owned-acceptance-cleanup.mjs";
@@ -102,6 +103,43 @@ try {
   report.rounds = [];
   for (const round of [1, 2]) {
     if (round === 2) await delay(Number(process.env.PI_CLOUD_CONTINUATION_IDLE_MS ?? 0));
+    if (round === 2) {
+      // Placement is intentionally not sticky. Replace only the verified idle
+      // fixture owner so this contract cannot pass/fail by a claim race.
+      const previous = report.rounds[0].workerId;
+      const other = await db
+        .selectFrom("runs")
+        .select("id")
+        .where("state", "not in", ["completed", "cancelled", "failed", "timed_out"])
+        .limit(1)
+        .execute();
+      assert.equal(other.length, 0, "Active work prevents idle Worker replacement");
+      const leases = await db
+        .selectFrom("session_leases")
+        .select("lease_id")
+        .where("worker_id", "=", previous)
+        .where("released_at", "is", null)
+        .execute();
+      assert.equal(leases.length, 0, "Previous owner still has execution authority");
+      const owner = await db
+        .selectFrom("workers")
+        .select("supervisor_id")
+        .where("id", "=", previous)
+        .executeTakeFirstOrThrow();
+      assert(/^pi-cloud-pi-worker-primary-v1-\d+$/.test(owner.supervisor_id));
+      await kubectlAsync(["delete", "pod", owner.supervisor_id, "--wait=true", "--timeout=120s"]);
+      await kubectlAsync([
+        "rollout",
+        "status",
+        "statefulset/pi-cloud-pi-worker-primary-v1",
+        "--timeout=120s",
+      ]);
+      report.idleWorkerReplacement = {
+        pod: owner.supervisor_id,
+        previousWorkerId: previous,
+        graceful: true,
+      };
+    }
     const trafficBefore = providerTraffic();
     const started = Date.now();
     run = await api.acceptTurn(

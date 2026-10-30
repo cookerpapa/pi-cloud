@@ -142,8 +142,10 @@ individual delivery reports retain both successes and unresolved failures.
   the cluster and reuses compatible OpenAI upstream context across Run/Worker
   changes. Caches are disposable; reconnects or changed context can require full
   input. Native token compaction and manual `/compact` remain the reduction policy.
-  [ADR-0289](docs/adr/0289-provider-owned-model-continuation.md) records the contracts;
-  matched deployment and real-provider verification are currently pending.
+  [ADR-0289](docs/adr/0289-provider-owned-model-continuation.md) records the contracts.
+  Cross-Worker image/Tool continuation and native recovery are verified on the
+  deployed stack. Very large cold uploads remain a
+  [separate limitation](docs/BACKLOG.md#very-large-cold-visual-context--investigation-remains).
 - The single-host deployment does not provide node-level HA. Active Cubelet loss
   may leave Volume references unconfirmed; cleanup waits for positive evidence.
 - Arbitrary shell commands and remote effects do not have exactly-once guarantees.
