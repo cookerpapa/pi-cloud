@@ -1,11 +1,14 @@
 # Maintained backlog
 
-## Collapsible sidebar subagents — in progress
+## Collapsible sidebar subagents — deployed
 
 Human conversation rows with delegated children get a local disclosure button.
 Children are collapsed by default, including after page reload; toggling only
 changes sidebar visibility. Manual Forks remain peers. Verify independent
-selection, child navigation and list refresh, then use the scoped Web release.
+selection and child navigation. Web-only `sidebar-subagents-20261030` (Helm 128)
+passes 236 scoped tests, browser gates and served-asset disclosure/reload/keyboard
+checks. Backend Pods, the development machine and configuration remain unchanged.
+[Delivery](reports/sidebar-subagents-20261030.md).
 
 ## Peer Fork navigation and independent deletion — deployed
 
