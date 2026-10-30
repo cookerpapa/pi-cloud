@@ -1,12 +1,16 @@
 # Maintained backlog
 
-## Fork Workspace and machine inheritance — in progress
+## Fork Workspace and machine inheritance — deployed
 
 Copy the stable development-machine binding into new Forks and return it on
 creation/replay. Preserve Workspace, directory and execution mode without
 creating compute. Display missing/unknown machine state honestly instead of
 labelling it elastic. The current live inventory contains no missing bindings;
 no speculative data backfill or runtime fallback is needed.
+Matched `fork-machine-binding-20261030` (schema 205, Helm 129) passes source/browser
+checks and real Luna execution on the same owned machine and custom directory.
+Original assets are preserved and test resources are cleaned.
+[Delivery](reports/fork-machine-binding-20261030.md).
 
 ## Collapsible sidebar subagents — deployed
 
