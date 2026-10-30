@@ -567,7 +567,17 @@ try {
       assert.deepEqual(layout.names, ["Independent Fork", "Parent conversation"]);
       assert.equal(layout.left[0], layout.left[1]);
       assert.equal(layout.nested, false);
-      assert.equal(layout.children, 2);
+      assert.equal(layout.children, 0, "Subagent chats start collapsed");
+      assert.equal(
+        await page.evaluate("document.querySelectorAll('.product-conversation-toggle').length"),
+        1,
+      );
+      assert.equal(
+        await page.evaluate(
+          "document.querySelector('.product-conversation-toggle').getAttribute('aria-expanded')",
+        ),
+        "false",
+      );
       const openFork = async () => {
         await page.evaluate(
           `document.querySelectorAll('${humans} > button:first-child')[0].click()`,
@@ -578,6 +588,20 @@ try {
         await page.waitFor("document.querySelector('.product-fork-source')");
       };
       await openFork();
+      await page.screenshot(`/tmp/pi-cloud-sidebar-collapsed-${source}.png`);
+      await page.evaluate("document.querySelector('.product-conversation-toggle').click()");
+      await page.waitFor("document.querySelectorAll('.product-delegated-session').length===2");
+      assert.equal(
+        await page.evaluate("document.querySelector('.product-topbar-title strong').textContent"),
+        "Independent Fork",
+        "Disclosure must not navigate",
+      );
+      assert.equal(
+        await page.evaluate(
+          "document.querySelector('.product-conversation-toggle').getAttribute('aria-expanded')",
+        ),
+        "true",
+      );
       await page.screenshot(`/tmp/pi-cloud-peer-forks-${source}.png`);
       await page.evaluate("document.querySelector('.product-fork-source').click()");
       await page.waitFor(
@@ -588,6 +612,20 @@ try {
       assert(
         await page.evaluate("sourceNavigationReads.some(r=>r.query?.entryId==='answer-entry')"),
       );
+      const selectedTitle = await page.evaluate(
+        "document.querySelector('.product-topbar-title strong').textContent",
+      );
+      await page.evaluate("document.querySelector('.product-conversation-toggle').click()");
+      await page.waitFor("document.querySelectorAll('.product-delegated-session').length===0");
+      assert.equal(
+        await page.evaluate("document.querySelector('.product-topbar-title strong').textContent"),
+        selectedTitle,
+        "Collapsing must preserve the open conversation",
+      );
+      if (source === "child")
+        assert(await page.evaluate("Boolean(document.querySelector('.product-delegated-title'))"));
+      await page.evaluate("document.querySelector('.product-conversation-toggle').click()");
+      await page.waitFor("document.querySelectorAll('.product-delegated-session').length===2");
       await openFork();
       if (source === "parent") {
         await page.evaluate(
@@ -1481,6 +1519,12 @@ try {
     // Exercise ChatApp's actual parent/child selection and snapshot path, not
     // just a ConversationTurn rendered with an already-disabled prop.
     await page.evaluate("renderChat('idle',true,true);window.confirm=()=>true");
+    await page.waitFor("document.querySelector('.product-conversation-toggle')");
+    assert.equal(
+      await page.evaluate("document.querySelectorAll('.product-delegated-session').length"),
+      0,
+    );
+    await page.evaluate("document.querySelector('.product-conversation-toggle').click()");
     await page.waitFor("document.querySelectorAll('.product-delegated-session').length===2");
     const forkButton =
       "Array.from(document.querySelectorAll('.product-answer-actions button')).find(b=>b.textContent.includes('↳'))";
@@ -2321,6 +2365,8 @@ try {
             accepted: true,
             scope: "peer-forks",
             flatHumanRows: true,
+            subagentsCollapsedByDefault: true,
+            disclosureKeepsSelection: true,
             delegatedSourcesReadOnly: true,
             sourceNavigation: true,
             prunedSourcePointFallback: true,

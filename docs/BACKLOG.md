@@ -1,5 +1,12 @@
 # Maintained backlog
 
+## Collapsible sidebar subagents — in progress
+
+Human conversation rows with delegated children get a local disclosure button.
+Children are collapsed by default, including after page reload; toggling only
+changes sidebar visibility. Manual Forks remain peers. Verify independent
+selection, child navigation and list refresh, then use the scoped Web release.
+
 ## Peer Fork navigation and independent deletion — deployed
 
 ADR-0288 separates provenance from runtime ownership: flat human conversation

@@ -453,6 +453,21 @@ body.product-panel-resizing {
 .product-conversation-row.active {
   background: #2b2b2b;
 }
+.product-conversation-row.has-subagents {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+.product-conversation-row .product-conversation-toggle {
+  display: grid;
+  width: 26px;
+  height: 28px;
+  padding: 0;
+  place-items: center;
+  color: #999;
+}
+.product-conversation-row .product-conversation-toggle:hover {
+  background: #363636;
+  color: #ddd;
+}
 
 .product-conversation-row > button:first-child {
   padding-left: calc(9px + var(--conversation-depth, 0) * 12px);

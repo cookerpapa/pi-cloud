@@ -1143,6 +1143,9 @@ Conversation details expose `forkSource`; its title is null for an unavailable
 source. The UI uses existing navigation APIs and opens the source's current view
 if the original point was pruned. History-tree edges remain provenance, and native
 subagent parent fields remain runtime ownership.
+The ordinary sidebar hides delegated descendants by default. A per-conversation
+disclosure button expands or collapses that subtree in local page state, without
+navigating or changing Agent execution. Reload starts collapsed again.
 
 Under [ADR-0287](adr/0287-single-path-shared-forks.md), active commits retain their
 original Kafka fingerprints and contiguous local sequence. `pi_history_records`

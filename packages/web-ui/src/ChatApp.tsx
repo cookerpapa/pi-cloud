@@ -264,6 +264,9 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const composerPreference = useComposerEnterMode(identity);
   const composerSubmission = useRef(new ComposerSubmission());
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [expandedConversations, setExpandedConversations] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspectorRefreshSignal, setInspectorRefreshSignal] = useState(0);
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
@@ -1496,10 +1499,13 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
 
   function renderConversationNode(conversation: ConversationSummaryResource): ReactNode {
     const childDelegates = delegatesByParent.get(conversation.sessionId) ?? [];
+    const hasChildren = childDelegates.length > 0;
+    const expanded = expandedConversations.has(conversation.sessionId);
+    const childrenId = `subagents-${conversation.sessionId}`;
     return (
       <div className="product-conversation-tree-node" key={conversation.sessionId}>
         <div
-          className={`product-conversation-row${
+          className={`product-conversation-row${hasChildren ? " has-subagents" : ""}${
             state.session?.sessionId === conversation.sessionId ? " active" : ""
           }`}
         >
@@ -1513,6 +1519,30 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
               {conversation.workspaceName} · {relativeTime(conversation.lastActiveAt, language, t)}
             </small>
           </button>
+          {hasChildren ? (
+            <button
+              className="product-conversation-toggle"
+              type="button"
+              aria-expanded={expanded}
+              aria-controls={childrenId}
+              aria-label={t(expanded ? "chat.subagentsCollapse" : "chat.subagentsExpand", {
+                title: conversation.title,
+              })}
+              title={t(expanded ? "chat.subagentsCollapse" : "chat.subagentsExpand", {
+                title: conversation.title,
+              })}
+              onClick={() =>
+                setExpandedConversations((current) => {
+                  const next = new Set(current);
+                  if (next.has(conversation.sessionId)) next.delete(conversation.sessionId);
+                  else next.add(conversation.sessionId);
+                  return next;
+                })
+              }
+            >
+              <span aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+            </button>
+          ) : null}
           <button
             aria-label={t("chat.deleteConversation", { title: conversation.title })}
             className="product-delete-conversation"
@@ -1524,7 +1554,11 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
             ×
           </button>
         </div>
-        {childDelegates.map((delegated) => renderDelegatedNode(delegated, 1))}
+        {hasChildren ? (
+          <div id={childrenId} hidden={!expanded}>
+            {expanded ? childDelegates.map((delegated) => renderDelegatedNode(delegated, 1)) : null}
+          </div>
+        ) : null}
       </div>
     );
   }

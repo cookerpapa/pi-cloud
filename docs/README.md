@@ -1,5 +1,9 @@
 # Documentation map
 
+[Collapsible sidebar subagents](reports/sidebar-subagents-20261030.md) adds
+per-conversation disclosure with subagent rows hidden by default. It only changes
+local presentation; peer Forks and runtime ownership remain unchanged.
+
 [Peer Fork navigation and independent deletion](adr/0288-peer-forks-and-independent-deletion.md)
 separates manual-Fork provenance from runtime ownership. Matched `peer-forks-20261030`
 is deployed on schema 205 and passes real active-Fork source deletion, image,
