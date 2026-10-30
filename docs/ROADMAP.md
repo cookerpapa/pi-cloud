@@ -2,7 +2,7 @@
 
 ## Single-path shared Fork implementation — deployed and verified
 
-- [x] Verify selected-path inheritance and model-visible Fork identity.
+- [x] Verify selected-path inheritance and backend Fork provenance.
 - [x] Implement shared bases with complete native Storage/current-state semantics.
 - [x] Unify retained reads, images, independent pruning and reference collection.
 - [x] Complete full-size, fault and matched live acceptance; remove obsolete paths.

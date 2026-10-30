@@ -1,4 +1,5 @@
-import { createSession } from "@earendil-works/pi-durable";
+import { createSession, defineDoc } from "@earendil-works/pi-durable";
+import { FORK_PROVENANCE_DOCUMENT } from "../packages/protocol/src/fork-provenance.ts";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { assertIdleNativeSession } from "../packages/pi-session-postgres/src/idle-session-mutation.ts";
 import {
@@ -242,6 +243,37 @@ try {
   );
   assert.equal(pruned.prunedSessionCount, 0);
   assert.equal((await settled(f.runId)).state, "completed");
+  const forkScope = await scope(fork.session);
+  const forkHistory = await nativeHistory(db, forkScope);
+  assert(
+    !forkHistory.some((row) =>
+      row.entry.model?.some(
+        (message) =>
+          message.role === "system" && typeof message.sections?.["fork-context"] === "string",
+      ),
+    ),
+    "A fresh Fork must not receive automatic identity instructions",
+  );
+  const forkStorage = await PublishedDurableStorage.open({
+    projection: new DurablePostgresProjection(db, forkScope, undefined, "references"),
+    publish: async () => {
+      throw new Error("Fork provenance verification is read-only");
+    },
+    waitProjected: async () => {},
+  });
+  const forkNative = createSession(forkStorage);
+  try {
+    assert.deepEqual(
+      (await forkNative.snapshot(defineDoc(FORK_PROVENANCE_DOCUMENT), BACKGROUND_CONTEXT))?.origin,
+      {
+        sessionId: fork.session.sessionId,
+        sourceSessionId: root.sessionId,
+        sourceEntryId: cAnchor.entryId,
+      },
+    );
+  } finally {
+    await forkNative.close(BACKGROUND_CONTEXT);
+  }
   const forkView = await api.getConversation(fork.session.sessionId);
   const fText = JSON.stringify(forkView.turns.find((t) => t.turnId === f.turnId)?.transcript);
   assert(fText.includes(codeC), "Fork lost its native inherited model context");
@@ -276,6 +308,8 @@ try {
     busyForkPrune: true,
     oldPhysicalStoreRetired: true,
     forkModelRecalledC: true,
+    noAutomaticForkNotice: true,
+    backendProvenanceRetained: true,
     imageObjects: images.length,
   });
   await save();

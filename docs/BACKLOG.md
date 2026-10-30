@@ -1,5 +1,12 @@
 # Maintained backlog
 
+## Remove automatic Fork identity instructions — in progress
+
+The owner approved removing the `fork-context` system section. Keep backend
+provenance, current-family listings and old-target validation. Verify native
+section removal for existing history, compaction and cold reopen, then deploy
+through the maintained Worker/matched release path. ADR-0287 records the decision.
+
 ## Single-path shared Fork implementation — deployed and verified
 
 [ADR-0287](adr/0287-single-path-shared-forks.md) retains the selected visible path

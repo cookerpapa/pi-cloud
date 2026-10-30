@@ -21,23 +21,32 @@ that were never part of the selected path. Main-path messages, returned results
 and their retained images remain independently owned. Workspace bytes are not
 copied or rolled back by Fork.
 
-## Model-visible identity
+## Backend provenance and model context
 
 Persist a small, immutable Fork provenance snapshot in the destination's native
 Session metadata in the same cold transaction that creates it. This is code-owned
 data, not a user prompt or executable child state. Session metadata is not imported
 by manual Fork. A subsequent manual Fork receives a fresh value. Cold pruning of
-the same physical family preserves this metadata. Newly created native children
-can see the family's historical boundary without being described as root Agents.
+the same physical family preserves this metadata.
 
-The trusted Runner renders a public Pi system section from that snapshot. The
-section identifies the current conversation, the forked family and source boundary, and explains that
-old subagent IDs are historical and were not imported as runtimes. It does not
-promise a separate historical-child query capability. Pi compares sections and
-persists `pi.system` through the existing Storage/Kafka/Projector path before model
-sampling; unchanged text is not repeatedly appended. Native compaction may rebuild
-the system baseline. These entries are not normal chat bubbles. No Pi core patch
-or separate notification transport is introduced.
+2026-10-30 amendment, approved by the owner: provenance does not automatically
+become model instructions. Remove the `fork-context` system section and its
+renderer. Current-family list queries and target checks already enforce that old
+Agent IDs are not usable; their existing Tool feedback remains available. Actual
+environment/capability changes retain their normal context updates.
+
+The earlier implementation rendered a persistent identity notice. On the next
+generation, Pi's native section reconciliation removes a no-longer-registered
+section from the effective system state. Its ordinary committed removal/baseline
+handles reopen and compaction without rewriting history, filtering model requests,
+or keeping a PiCloud compatibility renderer. Historical system entries retain
+their normal native history semantics. Verify both new Fork metadata and an old
+persisted section; the backend provenance must survive either case.
+
+Evidence: the isolated Codex CLI/App Server 0.164.0 experiment preserved
+`forkedFromId` but sent identical system/developer instructions before Fork,
+after Fork and after reopen. Its new family listed only its root. This explains
+the comparison, not a guarantee about every Codex desktop version.
 
 ## Storage correction and migration
 
@@ -52,8 +61,9 @@ equating ID allocation order with durable publication in every Storage call.
 
 Continue the implementation as complete vertical slices:
 
-1. Codify single-path inheritance, old-agent lookup behavior and native Fork
-   context rendering, including second Fork, compaction and cold reopen.
+1. Codify single-path inheritance, old-agent lookup behavior and backend Fork
+   provenance, including second Fork, compaction and cold reopen. The amendment
+   removes automatic model-visible Fork identity.
 2. Replace the body-volume-dependent import with an explicit shared history base
    plus local commits. Keep original Kafka commit fingerprints, fencing and current
    Inbox/Submission/pi.live policies. Full official Storage conformance, document

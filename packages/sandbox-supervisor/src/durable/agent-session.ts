@@ -9,7 +9,6 @@ import { PiTurnError } from "../pi-turn-runtime.ts";
 import { publicEgressSection } from "./runtime-capabilities.ts";
 import { preserveInterruptedText } from "./interrupted-text.ts";
 import { delegationInstructions } from "./delegation-policy.ts";
-import { forkContextSection } from "./fork-context.ts";
 import type { GuestPublicEgress, AgentThinkingLevel } from "@pi-cloud/protocol";
 import { isDeepStrictEqual } from "node:util";
 import {
@@ -201,10 +200,6 @@ export class DurableAgentSession {
       defineExtension({
         name: "pi-cloud-runtime",
         sections: [
-          forkContextSection((conversationId) => {
-            const sessionId = this.#bindings.get(conversationId)?.context.sessionId;
-            return typeof sessionId === "string" ? sessionId : undefined;
-          }),
           ...(options.publicEgress ? [publicEgressSection(options.publicEgress)] : []),
           section("delegation-policy", async (input, context) => {
             if (

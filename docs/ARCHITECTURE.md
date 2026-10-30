@@ -1124,8 +1124,11 @@ Independent human Forks retain only the selected Agent's visible path and result
 already returned to it. Sibling/descendant transcripts, pending inputs, Tasks and
 execution grants do not transfer. Source Agents continue independently. Forking a
 child creates an independent main conversation with its visible ancestor context.
-A Session-scoped provenance document renders a public Pi system section before
-sampling; inherited Agent IDs are historical. New children address `main` through
+A Session-scoped document retains backend provenance without adding automatic
+Fork identity instructions to model context. Current-family queries and target
+validation exclude inherited Agent IDs; invalid targets return actionable Tool
+feedback. Pi's normal section reconciliation retires the former prompt section
+on the next generation. New children address `main` through
 the current Run owner, not a hard-coded native Conversation ID. Workspace bytes
 are neither copied nor rolled back.
 

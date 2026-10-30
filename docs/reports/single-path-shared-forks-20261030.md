@@ -5,6 +5,10 @@ Matched `shared-forks-20261030` is deployed from `f21b5b42` on schema 204,
 application Helm revision 125. Source, composed-browser and live acceptance pass.
 These measurements do not establish a fleet SLA.
 
+The later [prompt amendment](fork-context-removal-20261030.md) removes the
+automatic identity notice described in this release's original behavior below.
+Shared history, backend provenance and Agent-family boundaries are unchanged.
+
 ## Behavior
 
 A manual Fork keeps the selected Agent's visible path and already returned
