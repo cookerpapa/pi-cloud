@@ -125,14 +125,26 @@ func (p *piCloudModelSessions) finish(s *piCloudModelSession, keep bool) {
 		return
 	}
 	if !keep {
-		p.removeLocked(s)
-		return
+		if !time.Now().Before(s.httpUntil) {
+			p.removeLocked(s)
+			return
+		}
+		// Failure invalidates all context/connection state. Only the short-lived
+		// transport preference survives, avoiding another large WS upload when
+		// native Pi retries the same full-input HTTP request.
+		p.closeSession(s.id)
+		s.id, s.auth, s.responseID = "picloud-model-"+uuid.NewString(), "", ""
+		s.input = nil
 	}
 	s.busy, s.used = false, time.Now()
-	s.timer = time.AfterFunc(p.idle, func() {
+	duration := p.idle
+	if !s.httpUntil.IsZero() && time.Until(s.httpUntil) < duration {
+		duration = time.Until(s.httpUntil)
+	}
+	s.timer = time.AfterFunc(duration, func() {
 		p.mu.Lock()
 		defer p.mu.Unlock()
-		if !s.busy && time.Since(s.used) >= p.idle {
+		if !s.busy && (time.Since(s.used) >= p.idle || (!s.httpUntil.IsZero() && !time.Now().Before(s.httpUntil))) {
 			p.removeLocked(s)
 		}
 	})
@@ -472,6 +484,7 @@ func (h *OpenAIResponsesAPIHandler) PiCloudResponses(c *gin.Context) {
 			s.input = nil
 			s.auth = ""
 			s.httpUntil = time.Now().Add(5 * time.Minute)
+			s.parameters = r.parameters
 			httpMode = true
 			payload, incremental, _ = r.payload(s)
 			upstreamBytes += len(payload)
@@ -506,7 +519,8 @@ func piCloudFailure(err error) *piCloudAttemptError {
 	f.missing = coreexecutor.IsUpstreamWebsocketReplayRequired(err) || code == "previous_response_not_found"
 	var network net.Error
 	var closed *websocket.CloseError
-	f.transport = errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &network) || errors.As(err, &closed)
+	var ownedSend interface{ IsPiCloudModelSendFailure() bool }
+	f.transport = errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &network) || errors.As(err, &closed) || (errors.As(err, &ownedSend) && ownedSend.IsPiCloudModelSendFailure())
 	if f.status == 426 && !f.missing {
 		f.transport = true
 	}

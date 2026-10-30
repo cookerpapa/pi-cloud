@@ -30,6 +30,37 @@ index 10219fc3..dcc82cc5 100644
  		msgType, payload, errRead := conn.ReadMessage()
  		if errRead != nil {
  			invalidate := func() {
+diff --git a/internal/runtime/executor/codex_websockets_stream.go b/internal/runtime/executor/codex_websockets_stream.go
+index 217d6e6a..9f6578dc 100644
+--- a/internal/runtime/executor/codex_websockets_stream.go
++++ b/internal/runtime/executor/codex_websockets_stream.go
+@@ -199,6 +199,12 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
+ 		errSend = mapCodexWebsocketWriteError(sess, conn, errSend)
+ 		helps.RecordAPIWebsocketError(ctx, e.cfg, "send", errSend)
+ 		if sess != nil {
++			if strings.HasPrefix(executionSessionID, "picloud-model-") {
++				e.invalidateUpstreamConn(sess, conn, "send_error", errSend)
++				sess.clearActive(conn, readCh)
++				sess.reqMu.Unlock()
++				return nil, piCloudModelSendError{cause: errSend}
++			}
+ 			if cliproxyexecutor.RequiredUpstreamWebsocket(ctx) {
+ 				e.invalidateUpstreamConnWithoutDisconnectNotify(sess, conn, "send_error", errSend)
+ 				sess.clearActive(conn, readCh)
+@@ -657,3 +663,13 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
+ 
+ 	return &cliproxyexecutor.StreamResult{Headers: upstreamHeaders, Chunks: out}, nil
+ }
++
++// PiCloud owns pre-output HTTP fallback; neither this executor nor the auth
++// manager may repeat its failed WebSocket business payload first.
++type piCloudModelSendError struct{ cause error }
++
++func (e piCloudModelSendError) Error() string         { return e.cause.Error() }
++func (e piCloudModelSendError) Unwrap() error         { return e.cause }
++func (e piCloudModelSendError) IsRequestScoped() bool { return true }
++
++func (e piCloudModelSendError) IsPiCloudModelSendFailure() bool { return true }
 diff --git a/sdk/api/handlers/openai/openai_responses_handlers.go b/sdk/api/handlers/openai/openai_responses_handlers.go
 index 4a830afc..73ab42bb 100644
 --- a/sdk/api/handlers/openai/openai_responses_handlers.go

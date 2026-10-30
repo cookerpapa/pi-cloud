@@ -33,18 +33,20 @@ type piCloudTestRequest struct {
 	body       []byte
 }
 type piCloudModelFixture struct {
-	handler     *OpenAIResponsesAPIHandler
-	server      *httptest.Server
-	received    chan piCloudTestRequest
-	connections atomic.Int64
-	block       atomic.Bool
-	tool        atomic.Bool
-	turns       atomic.Int64
-	missing     atomic.Bool
-	closeFirst  atomic.Bool
-	httpCalls   atomic.Int64
-	peersMu     sync.Mutex
-	peers       []*websocket.Conn
+	handler         *OpenAIResponsesAPIHandler
+	server          *httptest.Server
+	received        chan piCloudTestRequest
+	connections     atomic.Int64
+	block           atomic.Bool
+	tool            atomic.Bool
+	turns           atomic.Int64
+	missing         atomic.Bool
+	closeFirst      atomic.Bool
+	closeBeforeRead atomic.Bool
+	httpBlock       atomic.Bool
+	httpCalls       atomic.Int64
+	peersMu         sync.Mutex
+	peers           []*websocket.Conn
 }
 
 func piCloudFixture(t *testing.T) *piCloudModelFixture {
@@ -59,6 +61,10 @@ func piCloudFixture(t *testing.T) *piCloudModelFixture {
 			f.httpCalls.Add(1)
 			body, _ := io.ReadAll(r.Body)
 			f.received <- piCloudTestRequest{0, body}
+			if f.httpBlock.Load() {
+				<-r.Context().Done()
+				return
+			}
 			w.Header().Set("Content-Type", "text/event-stream")
 			fmt.Fprint(w, "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_http\",\"status\":\"in_progress\"}}\n\n")
 			fmt.Fprint(w, "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_http\",\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n")
@@ -73,6 +79,9 @@ func piCloudFixture(t *testing.T) *piCloudModelFixture {
 		f.peersMu.Lock()
 		f.peers = append(f.peers, conn)
 		f.peersMu.Unlock()
+		if f.closeBeforeRead.Load() {
+			return
+		}
 		for {
 			_, b, err := conn.ReadMessage()
 			if err != nil {
@@ -310,6 +319,70 @@ func TestPiCloudModelPreOutputHTTPFallback(t *testing.T) {
 	next := <-f.received
 	if next.connection != 0 || gjson.GetBytes(next.body, "previous_response_id").Exists() {
 		t.Fatal("fallback must send full input without retrying a known-broken websocket each step")
+	}
+}
+
+func TestPiCloudModelSendFailureIsNotUploadedTwice(t *testing.T) {
+	f := piCloudFixture(t)
+	f.closeBeforeRead.Store(true)
+	// Exceeds the local TCP send buffer, forcing a write failure when the fake
+	// upstream closes immediately after its handshake. No external network.
+	body := piCloudBody(`[{"role":"user","content":"` + strings.Repeat("x", 8*piCloudMiB) + `"}]`)
+	f.send(t, body, strings.Repeat("1", 64))
+	if f.connections.Load() != 1 || f.httpCalls.Load() != 1 {
+		t.Fatalf("WS sends=%d HTTP attempts=%d", f.connections.Load(), f.httpCalls.Load())
+	}
+}
+
+func TestPiCloudModelFailedHTTPKeepsOnlyFallbackPreference(t *testing.T) {
+	f := piCloudFixture(t)
+	f.closeBeforeRead.Store(true)
+	f.httpBlock.Store(true)
+	ctx, cancel := context.WithCancel(context.Background())
+	body := piCloudBody(`[{"role":"user","content":"` + strings.Repeat("x", 8*piCloudMiB) + `"}]`)
+	req, _ := http.NewRequestWithContext(ctx, "POST", f.server.URL+"/v1/picloud/responses", strings.NewReader(body))
+	req.Header.Set("X-PiCloud-Model-Session", strings.Repeat("2", 64))
+	req.Header.Set("Authorization", "Bearer fixture")
+	returned := make(chan error, 1)
+	go func() {
+		r, e := http.DefaultClient.Do(req)
+		if r != nil {
+			r.Body.Close()
+		}
+		returned <- e
+	}()
+	select {
+	case first := <-f.received:
+		if first.connection != 0 {
+			t.Fatal("expected HTTP fallback")
+		}
+	case <-time.After(10 * time.Second):
+		cancel()
+		t.Fatal("HTTP fallback did not start")
+	}
+	cancel()
+	<-returned
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		p := f.handler.piCloud
+		p.mu.Lock()
+		ready := false
+		for _, s := range p.entries {
+			ready = !s.busy && s.responseID == "" && len(s.input) == 0 && time.Now().Before(s.httpUntil)
+		}
+		p.mu.Unlock()
+		if ready {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("failure discarded fallback or retained response state")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	f.httpBlock.Store(false)
+	f.send(t, piCloudBody("["+piCloudUser+"]"), strings.Repeat("2", 64))
+	if f.connections.Load() != 1 || f.httpCalls.Load() != 2 {
+		t.Fatal("retry repeated the failed WebSocket upload")
 	}
 }
 

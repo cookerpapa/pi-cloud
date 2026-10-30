@@ -12,6 +12,30 @@ integers and validate the cache at server construction. Regression tests cover
 actual Helm output, startup refusal and narrowly scoped manifest normalization.
 The failed owned fixture was fully cleaned; it is not counted as acceptance.
 
+The provider-only decimal/startup repair was deployed as
+`provider-continuation-config-20261030` from `904a2e01`. The 28 unrelated Pod
+identities and both development-machine allocations remained unchanged. Deployed
+Luna/Cube/browser acceptance now passes: distinct Workers perform two Runs with
+two Bash tools each, retain image context and reuse the provider connection. The
+second Run's first selected upstream payload is 20,159 B instead of 3,111,646 B
+full input. Provider Pod transmission is 3,462,265 B for the first three-request
+Run and 300,388 B for the second; these counters also include returned responses
+and incidental provider traffic. Stop, queue editing, Worker crash and simultaneous
+Worker/Control Plane crash pass the maintained native-input driver, with owned
+fixtures physically reconciled and removed.
+
+Two approximately 131 MiB cold-image probes, including after the owner's proxy
+node switch, passed the local size boundary but did not receive a response within
+300 seconds. The proxy logged resets during upstream writes. It also exposed a
+redundant CPA reconnect/resend before HTTP fallback. The owner explicitly deferred
+further large real-model probes and requested that duplicate send be fixed.
+The scoped executor guard now suppresses that extra send/account retry, while a
+failed HTTP attempt retains only a bounded fallback preference. Local failure
+tests reproduce two upstream connections without the guard and pass with one WS
+attempt plus one HTTP fallback; cancellation cannot retain failed context. These
+tests use a local fake upstream, not the VPN. Publication of this retry refinement
+is pending; no claim of successful 131 MiB provider acceptance is made.
+
 ## Behavior
 
 Pi supplies complete effective context over HTTP/SSE inside the cluster. The

@@ -15,6 +15,16 @@ It cannot change those values, any other environment, replicas, volumes or other
 workloads. Hash all provider build inputs, not only its Dockerfile. Test rejection
 of changed limits and unrelated manifests before using this narrower repair path.
 
+Transport retry amendment (2026-10-31): real cold-image probes exposed CPA's
+additional reconnect/resend inside its WebSocket executor before the adapter's
+HTTP fallback. Adapter-owned sessions return a request-scoped send failure instead
+of repeating that upload or rotating credentials. The adapter may then make its
+single pre-output HTTP fallback. A failed/cancelled HTTP attempt retains only its
+bounded fallback preference, never response/input state, so native Pi retries do
+not repeat the broken WebSocket upload. The owner explicitly deferred further
+131 MiB real-provider probes; verify this repair with local deterministic send
+failures and ordinary-size live requests.
+
 ## Problem and adoption evidence
 
 Normal Run settlement releases the Worker-local model grant and native socket.
