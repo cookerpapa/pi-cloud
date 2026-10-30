@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { createServer } from "vite";
 import { withChromePage as openChromePage } from "./lib/chrome-cdp.mjs";
 async function withChromePage(options, operation) {
+  if (process.env.PI_CLOUD_BROWSER_SCOPE === "fork-workspace" && !options.forkWorkspace) return;
   if (process.env.PI_CLOUD_BROWSER_SCOPE === "peer-forks" && !options.peerForks) return;
   if (process.env.PI_CLOUD_BROWSER_SCOPE === "commands" && !options.commands) return;
   if (process.env.PI_CLOUD_BROWSER_SCOPE === "tool-groups" && !options.toolGroups) return;
@@ -265,6 +266,9 @@ window.renderChat = (sessionState='idle', history=false, childViews=false, peerF
   if(childViews) session={sessionId:sid,projectId:project.projectId,workspaceId:project.workspaceId,title:'Parent conversation',
     executionMode:'elastic',sandboxProfileKey:'starter',workingDirectory:'/workspace',state:sessionState,workspaceState:'attached',modelProfileId:profileId,
     createdAt,updatedAt:createdAt,lastActiveAt:createdAt};
+  const fixtureMachineId='70000000-0000-4000-8000-000000000009';
+  if(window.fixtureMachineState)session={...session,executionMode:'development_environment',workingDirectory:'/home/user/project',...(window.fixtureMachineState==='missing-binding'?{}:{developmentEnvironmentId:fixtureMachineId})};
+  const fixtureMachines=window.fixtureMachineState&&!['missing-binding','unavailable'].includes(window.fixtureMachineState)?[{environmentId:fixtureMachineId,projectId:project.projectId,workspaceId:project.workspaceId,workspaceName:'Bound machine',state:window.fixtureMachineState,generation:1,profileKey:'starter',cpuCount:1,memoryMiB:2048,systemDiskGiB:8,createdAt,updatedAt:createdAt}]:[];
   const tree=(label,sessionId=sid)=>({currentSessionId:sessionId,branches:[{sessionId,parentSessionId:sessionId===sid?null:sid,
     kind:sessionId===sid?'conversation':'subagent',title:'Fixture tree',current:true,
     entries:[{entryId:'answer-entry',turnId:fixtureTurnId,role:'assistant',text:label,finalAssistant:true}]}],delegatedSessions:[]});
@@ -298,7 +302,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false, peerF
       if(window.holdWorkspaceList) await new Promise(resolve=>{window.releaseWorkspaceList=resolve;});
       return {workspaces:[{...project,sessionCount:0,lastActiveAt:new Date().toISOString()}],truncated:false};
     },
-    listDevelopmentEnvironments:async()=>({environments:[],profiles:DEVELOPMENT_ENVIRONMENT_PROFILES,truncated:false}),
+    listDevelopmentEnvironments:async()=>({environments:fixtureMachines,profiles:DEVELOPMENT_ENVIRONMENT_PROFILES,truncated:false}),
     getModelCatalog:async()=>({models,revision:"a".repeat(64),reloadFailed:false,defaultModel:DEFAULT_NEW_CONVERSATION_MODEL}),
     getConversationTree:async(sessionId,view)=>{
       if(peerForks){
@@ -552,6 +556,40 @@ const server = await createServer({
 try {
   await server.listen();
   const port = server.httpServer.address().port;
+  for (const state of ["running", "paused", "released", "unavailable", "missing-binding"]) {
+    await withChromePage({ forkWorkspace: true }, async (page) => {
+      await page.navigate(`http://127.0.0.1:${port}/review.html`);
+      await page.waitFor("window.fixtureReady");
+      await page.evaluate(
+        `window.fixtureMachineState=${JSON.stringify(state)};renderChat('idle',true,true)`,
+      );
+      await page.waitFor(
+        "document.querySelector('.product-conversation-row:not(.product-delegated-session)>button')",
+      );
+      await page.evaluate(
+        "document.querySelector('.product-conversation-row:not(.product-delegated-session)>button').click()",
+      );
+      await page.waitFor(
+        "document.querySelector('.product-topbar-title').textContent.includes('/home/user/project')",
+      );
+      const header = await page.evaluate(
+        "document.querySelector('.product-topbar-title').textContent",
+      );
+      assert(!header.includes("Elastic"));
+      assert(!header.includes("/workspace"));
+      assert(
+        header.includes(
+          state === "unavailable"
+            ? "Status unconfirmed"
+            : state === "missing-binding"
+              ? "Missing binding"
+              : "Bound machine",
+        ),
+      );
+      if (state === "paused" || state === "released") assert(header.toLowerCase().includes(state));
+      console.log(JSON.stringify({ forkWorkspace: state, correctModeAndDirectory: true }));
+    });
+  }
   for (const source of ["parent", "child"]) {
     await withChromePage({ peerForks: true }, async (page) => {
       await page.navigate(`http://127.0.0.1:${port}/review.html`);
@@ -2360,100 +2398,108 @@ try {
   });
   console.log(
     JSON.stringify(
-      process.env.PI_CLOUD_BROWSER_SCOPE === "peer-forks"
+      process.env.PI_CLOUD_BROWSER_SCOPE === "fork-workspace"
         ? {
             accepted: true,
-            scope: "peer-forks",
-            flatHumanRows: true,
-            subagentsCollapsedByDefault: true,
-            disclosureKeepsSelection: true,
-            delegatedSourcesReadOnly: true,
-            sourceNavigation: true,
-            prunedSourcePointFallback: true,
-            independentDelete: true,
-            deletedSourceLabel: true,
-            boundedViewport: true,
+            scope: "fork-workspace",
+            preservedDirectory: true,
+            noElasticFallback: true,
+            machineStates: true,
           }
-        : process.env.PI_CLOUD_BROWSER_SCOPE === "tool-groups"
+        : process.env.PI_CLOUD_BROWSER_SCOPE === "peer-forks"
           ? {
               accepted: true,
-              scope: "tool-groups",
-              groupingOnly: true,
-              individualDetailsPreserved: true,
-              boundedWidth: true,
-              previewReplacedByFinalResult: true,
-              latePreviewDiscarded: true,
-              errorMarkerOnlyOnFailedTool: true,
+              scope: "peer-forks",
+              flatHumanRows: true,
+              subagentsCollapsedByDefault: true,
+              disclosureKeepsSelection: true,
+              delegatedSourcesReadOnly: true,
+              sourceNavigation: true,
+              prunedSourcePointFallback: true,
+              independentDelete: true,
+              deletedSourceLabel: true,
+              boundedViewport: true,
             }
-          : process.env.PI_CLOUD_BROWSER_SCOPE === "commands"
+          : process.env.PI_CLOUD_BROWSER_SCOPE === "tool-groups"
             ? {
                 accepted: true,
-                scope: "commands",
-                slashUsageAndCompact: true,
-                compactLostReplyAndDraftRetention: true,
-                compactWaitsForPlacement: true,
-              }
-            : {
-                accepted: true,
-                scope: "all",
-                slashUsageAndCompact: true,
-                compactLostReplyAndDraftRetention: true,
-                compactWaitsForPlacement: true,
-                retainedSessionImageLoads: true,
-                canonicalToolImagesOutsideCollapsedActivity: true,
-                imageCaptionPlainTextAndDetailsNoDuplicate: true,
-                previewUsesNamedAnswerLink: true,
-                previewDetailsKeepPortAndResult: true,
-                previewHasNoFallbackOrDuplicateCard: true,
+                scope: "tool-groups",
+                groupingOnly: true,
+                individualDetailsPreserved: true,
+                boundedWidth: true,
                 previewReplacedByFinalResult: true,
                 latePreviewDiscarded: true,
                 errorMarkerOnlyOnFailedTool: true,
-                earlyRunNeverFabricatesUserInput: true,
-                acceptanceDiscoveryRaceKeepsDraftAndStream: true,
-                composerEnterPreference: true,
-                composerButtonMatchesEnter: true,
-                composerEmptyEnterSafe: true,
-                composerImeAndShiftEnter: true,
-                composerScopedEscapePreservesDraft: true,
-                composerAccountIsolation: true,
-                composerPreferencePersistenceFallback: true,
-                directSteerRetryIdentity: true,
-                ordinarySendRetryIdentity: true,
-                initialImageSendRetryIdentity: true,
-                directSteerPendingPresentation: true,
-                machineWorkspaceRebind: true,
-                rebindRetryUsesSameTargetAndKey: true,
-                persistentRuntimeStatus: true,
-                collapsedRuntimeDiagnostics: true,
-                runtimeWarningsVisible: true,
-                observationGenerationRecovery: true,
-                separateActivityAndPath: true,
-                firstImageOnlyMessage: true,
-                uploadIdentityOnRetry: true,
-                debuggerDisconnect: true,
-                strictModeAnimation: true,
-                commentaryAnimation: true,
-                commentaryReconnectAndReducedMotion: true,
-                outputLimitVisible: true,
-                reconnectSnapshotImmediate: true,
-                initialPanelWidth: true,
-                resizeUnmountCleanup: true,
-                pointerCancellation: true,
-                composerSessionSettings: true,
-                providerSwitchClearsFast: true,
-                compositionAndPendingDraft: true,
-                inspectorSelectionAndTerminalLifetime: true,
-                logoutLifecycle: true,
-                branchSelectionAndManualJump: true,
-                childHistoryReadOnlyAndParentActions: true,
-                pendingInputNavigation: true,
-                childWorkspaceReadOnly: true,
-                unavailableIdentityRetry: true,
-                staleConversationListAfterDelete: true,
-                terminalSocketIsolation: true,
-                directoryPickerLifecycle: true,
-                responsivePageScrolling: true,
-              },
+              }
+            : process.env.PI_CLOUD_BROWSER_SCOPE === "commands"
+              ? {
+                  accepted: true,
+                  scope: "commands",
+                  slashUsageAndCompact: true,
+                  compactLostReplyAndDraftRetention: true,
+                  compactWaitsForPlacement: true,
+                }
+              : {
+                  accepted: true,
+                  scope: "all",
+                  slashUsageAndCompact: true,
+                  compactLostReplyAndDraftRetention: true,
+                  compactWaitsForPlacement: true,
+                  retainedSessionImageLoads: true,
+                  canonicalToolImagesOutsideCollapsedActivity: true,
+                  imageCaptionPlainTextAndDetailsNoDuplicate: true,
+                  previewUsesNamedAnswerLink: true,
+                  previewDetailsKeepPortAndResult: true,
+                  previewHasNoFallbackOrDuplicateCard: true,
+                  previewReplacedByFinalResult: true,
+                  latePreviewDiscarded: true,
+                  errorMarkerOnlyOnFailedTool: true,
+                  earlyRunNeverFabricatesUserInput: true,
+                  acceptanceDiscoveryRaceKeepsDraftAndStream: true,
+                  composerEnterPreference: true,
+                  composerButtonMatchesEnter: true,
+                  composerEmptyEnterSafe: true,
+                  composerImeAndShiftEnter: true,
+                  composerScopedEscapePreservesDraft: true,
+                  composerAccountIsolation: true,
+                  composerPreferencePersistenceFallback: true,
+                  directSteerRetryIdentity: true,
+                  ordinarySendRetryIdentity: true,
+                  initialImageSendRetryIdentity: true,
+                  directSteerPendingPresentation: true,
+                  machineWorkspaceRebind: true,
+                  rebindRetryUsesSameTargetAndKey: true,
+                  persistentRuntimeStatus: true,
+                  collapsedRuntimeDiagnostics: true,
+                  runtimeWarningsVisible: true,
+                  observationGenerationRecovery: true,
+                  separateActivityAndPath: true,
+                  firstImageOnlyMessage: true,
+                  uploadIdentityOnRetry: true,
+                  debuggerDisconnect: true,
+                  strictModeAnimation: true,
+                  commentaryAnimation: true,
+                  commentaryReconnectAndReducedMotion: true,
+                  outputLimitVisible: true,
+                  reconnectSnapshotImmediate: true,
+                  initialPanelWidth: true,
+                  resizeUnmountCleanup: true,
+                  pointerCancellation: true,
+                  composerSessionSettings: true,
+                  providerSwitchClearsFast: true,
+                  compositionAndPendingDraft: true,
+                  inspectorSelectionAndTerminalLifetime: true,
+                  logoutLifecycle: true,
+                  branchSelectionAndManualJump: true,
+                  childHistoryReadOnlyAndParentActions: true,
+                  pendingInputNavigation: true,
+                  childWorkspaceReadOnly: true,
+                  unavailableIdentityRetry: true,
+                  staleConversationListAfterDelete: true,
+                  terminalSocketIsolation: true,
+                  directoryPickerLifecycle: true,
+                  responsivePageScrolling: true,
+                },
     ),
   );
 } finally {

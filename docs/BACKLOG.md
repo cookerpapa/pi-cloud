@@ -1,5 +1,13 @@
 # Maintained backlog
 
+## Fork Workspace and machine inheritance — in progress
+
+Copy the stable development-machine binding into new Forks and return it on
+creation/replay. Preserve Workspace, directory and execution mode without
+creating compute. Display missing/unknown machine state honestly instead of
+labelling it elastic. The current live inventory contains no missing bindings;
+no speculative data backfill or runtime fallback is needed.
+
 ## Collapsible sidebar subagents — deployed
 
 Human conversation rows with delegated children get a local disclosure button.

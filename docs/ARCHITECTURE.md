@@ -1131,6 +1131,11 @@ feedback. Pi's normal section reconciliation retires the former prompt section
 on the next generation. New children address `main` through
 the current Run owner, not a hard-coded native Conversation ID. Workspace bytes
 are neither copied nor rolled back.
+Manual Fork creation and replay preserve the source Workspace, execution mode,
+directory, profile and stable development-machine ID. They do not allocate/resume
+compute or copy a VM allocation/child compute lifetime. Paused or unavailable
+machines retain their identity; the Web header follows the actual execution mode
+and reports unknown/missing bindings without claiming elastic execution.
 
 [ADR-0288](adr/0288-peer-forks-and-independent-deletion.md) separates provenance
 from lifecycle ownership. Human Forks are peers in ordinary navigation; only

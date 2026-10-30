@@ -1,5 +1,9 @@
 # Documentation map
 
+[Fork machine inheritance](reports/fork-machine-binding-20261030.md) corrects the
+missing stable machine binding and the misleading elastic fallback label. It
+preserves Workspace/directory and machine lifecycle intent; verification is underway.
+
 [Collapsible sidebar subagents](reports/sidebar-subagents-20261030.md) adds
 per-conversation disclosure with subagent rows hidden by default. It only changes
 local presentation; peer Forks and runtime ownership remain unchanged.

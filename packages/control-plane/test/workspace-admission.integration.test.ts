@@ -16,6 +16,9 @@ import {
   createPrivateTenant,
 } from "../src/index.ts";
 import { QueuedInputService } from "../src/queued-input-service.ts";
+import { ConversationTreeService } from "../src/conversation-tree-service.ts";
+import { settleHistoryTurn } from "../../runtime-core/src/presentation-settlement.ts";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 
 const connectionString = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 
@@ -117,6 +120,175 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
       .execute();
     return { ...project, environmentId };
   }
+
+  it.each(["running", "paused", "released"] as const)(
+    "inherits a %s machine's stable binding when Forking and replaying",
+    async (state) => {
+      const machine = await machineFixture();
+      const source = await store.createSession(
+        machine.projectId,
+        machine.workspaceId,
+        "Machine source",
+        "development_environment",
+        {
+          ownerUserId: scope.ownerUserId,
+          workingDirectory: "/home/user/project",
+          sandboxProfileKey: "starter",
+        },
+      );
+      const accepted = await store.acceptTurn(source.sessionId, randomUUID(), {
+        prompt: "Source history",
+      });
+      const entries = await appendNativeFixture(
+        database,
+        {
+          tenantId: scope.tenantId,
+          sessionId: source.sessionId,
+          runId: accepted.runId,
+          turnId: accepted.turnId,
+        },
+        [
+          { kind: "pi.user", model: [{ role: "user", content: "Source history", timestamp: 1 }] },
+          { kind: "pi.assistant", model: [fauxAssistantMessage("Machine answer")] },
+        ],
+      );
+      await database
+        .updateTable("runs")
+        .set({
+          state: "completed",
+          settled_at: new Date(),
+          started_at: new Date(),
+          output_display_seq: "3",
+          output_display_native_seq: "1",
+        })
+        .where("id", "=", accepted.runId)
+        .execute();
+      await database
+        .updateTable("sessions")
+        .set({ state: "idle" })
+        .where("id", "=", source.sessionId)
+        .execute();
+      await database
+        .transaction()
+        .execute((tx) => settleHistoryTurn(tx, scope.tenantId, source.sessionId, accepted.turnId));
+      if (state !== "running") {
+        await database
+          .updateTable("development_environments")
+          .set({
+            desired_state: state,
+            intent_revision: sql<string>`intent_revision+1`,
+            ...(state === "released"
+              ? {
+                  state: "released" as const,
+                  allocation_closed: true,
+                  allocation_absent: true,
+                  runtime_id: null,
+                  runtime_name: null,
+                  runtime_capsule: null,
+                  owner_instance_id: null,
+                  owner_base_url: null,
+                  released_at: new Date(),
+                }
+              : {}),
+          })
+          .where("id", "=", machine.environmentId)
+          .execute();
+        if (state === "released")
+          await database
+            .updateTable("workspaces")
+            .set({ deleted_at: new Date() })
+            .where("id", "=", machine.workspaceId)
+            .execute();
+      }
+      const before = await database
+        .selectFrom("development_environments")
+        .selectAll()
+        .where("id", "=", machine.environmentId)
+        .executeTakeFirstOrThrow();
+      const service = new ConversationTreeService({ database }),
+        key = randomUUID();
+      const request = { turnId: accepted.turnId, entryId: String(entries.at(-1)!.id) };
+      const fork = await service.fork(scope.tenantId, source.sessionId, key, request);
+      const expected = {
+        workspaceId: machine.workspaceId,
+        developmentEnvironmentId: machine.environmentId,
+        executionMode: "development_environment",
+        workingDirectory: "/home/user/project",
+        sandboxProfileKey: "starter",
+        workspaceState: state === "released" ? "missing" : "attached",
+      };
+      expect(fork.session).toMatchObject(expected);
+      expect(await service.fork(scope.tenantId, source.sessionId, key, request)).toEqual({
+        ...fork,
+        replayed: true,
+      });
+      expect((await store.getConversation(fork.session.sessionId)).session).toMatchObject(expected);
+      const nested = await service.fork(
+        scope.tenantId,
+        fork.session.sessionId,
+        randomUUID(),
+        request,
+      );
+      expect(nested.session).toMatchObject(expected);
+      expect(
+        await database
+          .selectFrom("sessions")
+          .select(["development_environment_id", "compute_session_id"])
+          .where("id", "=", fork.session.sessionId)
+          .executeTakeFirstOrThrow(),
+      ).toEqual({ development_environment_id: machine.environmentId, compute_session_id: null });
+      expect(
+        await database
+          .selectFrom("development_environments")
+          .selectAll()
+          .where("id", "=", machine.environmentId)
+          .executeTakeFirstOrThrow(),
+      ).toEqual(before);
+      expect(
+        await database
+          .selectFrom("development_environment_operations")
+          .select("id")
+          .where("environment_id", "=", machine.environmentId)
+          .execute(),
+      ).toEqual([]);
+      if (state === "running") {
+        const next = await store.acceptTurn(fork.session.sessionId, randomUUID(), {
+          prompt: "Continue here",
+        });
+        expect(
+          await database
+            .selectFrom("runs")
+            .select(["workspace_id", "working_directory"])
+            .where("id", "=", next.runId)
+            .executeTakeFirstOrThrow(),
+        ).toEqual({
+          workspace_id: machine.workspaceId,
+          working_directory: "/home/user/project",
+        });
+        await database
+          .updateTable("sessions")
+          .set({ development_environment_id: null })
+          .where("id", "=", source.sessionId)
+          .execute();
+        try {
+          await expect(
+            service.fork(scope.tenantId, source.sessionId, randomUUID(), request),
+          ).rejects.toMatchObject({ code: "control_plane_misconfigured" });
+        } finally {
+          await database
+            .updateTable("sessions")
+            .set({ development_environment_id: machine.environmentId })
+            .where("id", "=", source.sessionId)
+            .execute();
+        }
+      } else
+        await expect(
+          store.acceptTurn(fork.session.sessionId, randomUUID(), {
+            prompt: "Do not start compute",
+          }),
+        ).rejects.toThrow();
+    },
+  );
 
   it("binds a missing Workspace to its owner's machine without changing history identity or accepted Runs", async () => {
     const { project, session } = await fixture("machine-rebind");

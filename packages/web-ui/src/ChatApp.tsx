@@ -322,10 +322,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     (environment) =>
       state.session?.executionMode === "development_environment" &&
       state.session.developmentEnvironmentId !== undefined &&
-      environment.environmentId === state.session.developmentEnvironmentId &&
-      ["requested", "provisioning", "running", "paused", "releasing", "failed", "unknown"].includes(
-        environment.state,
-      ),
+      environment.environmentId === state.session.developmentEnvironmentId,
   );
   const selectableDevelopmentEnvironments = developmentEnvironments.filter((environment) =>
     ["running", "paused"].includes(environment.state),
@@ -1799,13 +1796,15 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
             )}
             {state.project ? (
               <span>
-                {currentDevelopmentEnvironment === undefined
-                  ? `/workspace · ${state.project.name} · ${t("chat.elastic")}`
-                  : `${state.session?.workingDirectory ?? "/workspace"} · ${t("chat.exclusive", {
-                      name: currentDevelopmentEnvironment.workspaceName,
-                    })} · ${String(currentDevelopmentEnvironment.cpuCount)}C/${String(
-                      currentDevelopmentEnvironment.memoryMiB / 1024,
-                    )}G`}
+                {state.session?.executionMode !== "development_environment"
+                  ? `${state.session?.workingDirectory ?? "/workspace"} · ${state.project.name} · ${t("chat.elastic")}`
+                  : currentDevelopmentEnvironment === undefined
+                    ? `${state.session.workingDirectory} · ${t(state.session.developmentEnvironmentId ? "chat.machineStateUnknown" : "chat.machineBindingMissing")}`
+                    : `${state.session.workingDirectory} · ${t("chat.exclusive", {
+                        name: currentDevelopmentEnvironment.workspaceName,
+                      })} · ${String(currentDevelopmentEnvironment.cpuCount)}C/${String(
+                        currentDevelopmentEnvironment.memoryMiB / 1024,
+                      )}G${currentDevelopmentEnvironment.state === "running" ? "" : ` · ${developmentStateLabel(currentDevelopmentEnvironment.state, t)}`}`}
                 {state.session?.workspaceState === "missing"
                   ? ` · ${t("chat.workspaceDeleted")}`
                   : ""}

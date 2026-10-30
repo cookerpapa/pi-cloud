@@ -24,7 +24,8 @@ scale or as a highly available production service.
   link; deleting the source preserves independent Forks. Old subagents and pending
   inputs are not inherited. Native and display history use shared immutable
   references; source pruning preserves Forks.
-  Workspace files are shared, not copied or rolled back by conversation Fork.
+  Forks keep the source Workspace, directory and stable development-machine
+  binding. Files are shared, not copied or rolled back by conversation Fork.
 - **Workspaces:** elastic compute or dedicated development machines, persistent
   Volume-backed files, browser tooling, terminals, SSH and application previews.
 - **Images:** chat uploads enter the model directly. `generate_image` creates or

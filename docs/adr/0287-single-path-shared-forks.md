@@ -23,6 +23,15 @@ that were never part of the selected path. Main-path messages, returned results
 and their retained images remain independently owned. Workspace bytes are not
 copied or rolled back by Fork.
 
+2026-10-30 binding correction: a manual Fork inherits the source row's current
+Workspace, working directory, execution mode, profile and stable development
+machine ID. Creation and idempotent replay return that ID. Fork does not create
+or resume compute, copy an allocation/lease, or retain a child's temporary
+`compute_session_id`. Paused/released resources keep their identity and normal
+admission rules. Missing machine identity is an invalid source binding, not an
+instruction to allocate elastic compute. Subsequent source rebinding does not
+move an already-created Fork.
+
 ## Backend provenance and model context
 
 Persist a small, immutable Fork provenance snapshot in the destination's native

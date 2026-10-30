@@ -1110,6 +1110,7 @@ export class ConversationTreeService {
             "child.project_id as projectId",
             "child.workspace_id as workspaceId",
             "child.execution_mode as executionMode",
+            "child.development_environment_id as developmentEnvironmentId",
             "child.sandbox_profile_key as sandboxProfileKey",
             "child.working_directory as workingDirectory",
             "child.desired_model_profile_id as modelProfileId",
@@ -1135,6 +1136,11 @@ export class ConversationTreeService {
               workspaceState: replay.workspaceDeletedAt === null ? "attached" : "missing",
               state: "cold",
               executionMode: replay.executionMode,
+              ...(replay.developmentEnvironmentId === null
+                ? {}
+                : {
+                    developmentEnvironmentId: replay.developmentEnvironmentId,
+                  }),
               sandboxProfileKey: replay.sandboxProfileKey,
               workingDirectory: replay.workingDirectory,
               modelProfileId: replay.modelProfileId,
@@ -1161,6 +1167,7 @@ export class ConversationTreeService {
             "created_by_user_id",
             "state",
             "execution_mode",
+            "development_environment_id",
             "sandbox_profile_key",
             "working_directory",
             "conversation_fork_entry_id",
@@ -1181,6 +1188,14 @@ export class ConversationTreeService {
         if (source === undefined || source.pruned_at !== null) {
           throw new ControlPlaneStoreError("not_found", "Conversation was not found");
         }
+        if (
+          source.execution_mode === "development_environment" &&
+          source.development_environment_id === null
+        )
+          throw new ControlPlaneStoreError(
+            "control_plane_misconfigured",
+            "Source development-machine binding has no environment identity",
+          );
         const policy = await transaction
           .selectFrom("tenant_runtime_policies")
           .select("maximum_sessions")
@@ -1259,6 +1274,7 @@ export class ConversationTreeService {
             created_by_user_id: source.created_by_user_id,
             state: "cold",
             execution_mode: source.execution_mode,
+            development_environment_id: source.development_environment_id,
             sandbox_profile_key: source.sandbox_profile_key,
             working_directory: source.working_directory,
             conversation_parent_session_id: sourceSessionId,
@@ -1326,6 +1342,11 @@ export class ConversationTreeService {
             workspaceState: source.workspaceDeletedAt === null ? "attached" : "missing",
             state: "cold",
             executionMode: source.execution_mode,
+            ...(source.development_environment_id === null
+              ? {}
+              : {
+                  developmentEnvironmentId: source.development_environment_id,
+                }),
             sandboxProfileKey: source.sandbox_profile_key,
             workingDirectory: source.working_directory,
             modelProfileId: source.desired_model_profile_id,
