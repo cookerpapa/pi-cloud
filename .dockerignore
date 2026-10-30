@@ -21,6 +21,9 @@
 !deploy/provider-gateway/image_request_policy.go
 !deploy/provider-gateway/image_request_policy_test.go
 !deploy/provider-gateway/image_request_policy.patch
+!deploy/provider-gateway/model_sessions.go
+!deploy/provider-gateway/model_sessions_test.go
+!deploy/provider-gateway/model_sessions.patch
 !deploy/cubesandbox/browser/package.json
 !deploy/cubesandbox/browser/package-lock.json
 !deploy/cubesandbox/browser/index.mjs

@@ -25,14 +25,18 @@ import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { once } from "node:events";
-import { addAbortSignal } from "node:stream";
-import { zstdDecompressSync } from "node:zlib";
-import { ModelWebSocketGateway, type ModelSocketGrant } from "./model-websocket-gateway.ts";
+import { addAbortSignal, Readable } from "node:stream";
+import { createZstdDecompress } from "node:zlib";
+import {
+  modelTransportKey,
+  MODEL_PURPOSE_HEADER,
+  MODEL_SESSION_HEADER,
+  DEFAULT_MODEL_REQUEST_MAX_BYTES,
+  DEFAULT_MODEL_UPLOAD_MAX_BYTES,
+} from "@pi-cloud/protocol";
 
 const CODEX_RESPONSES_PATH = "/codex/responses";
 const PROVIDER_RESPONSES_PATH = "/v1/responses";
-const MAX_REQUEST_BYTES = 128 * 1_024 * 1_024;
-const MAX_DECOMPRESSED_REQUEST_BYTES = 128 * 1_024 * 1_024;
 const MAX_RESPONSE_BYTES = 64 * 1_024 * 1_024;
 
 type SupportedModel =
@@ -54,6 +58,10 @@ type ActiveCapabilityFields = {
   sessionId: string;
   turnId: string;
   runId: string;
+  piSessionId: string;
+  conversationId: number;
+  credentialBindingId: string;
+  credentialBindingVersion: number;
   modelProfileId: string;
   serviceTier: "fast" | null;
   detachOwner?: () => void;
@@ -72,6 +80,8 @@ export type TenantModelGatewayOptions = {
   advertisedBaseUrl: string;
   providerGatewayBaseUrl: string;
   providerGatewayApiKey: string;
+  maximumRequestBytes?: number;
+  maximumUploadBytes?: number;
   maximumRequestsPerTurn?: number | null;
   connectTimeoutMs?: number;
   eventIdleTimeoutMs?: number;
@@ -222,6 +232,7 @@ function sendStreamingError(
 
 async function readBody(
   request: IncomingMessage,
+  maximum: number,
   reserve: (bytes: number) => void,
 ): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -229,7 +240,7 @@ async function readBody(
   for await (const value of request) {
     const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
     size += chunk.length;
-    if (size > MAX_REQUEST_BYTES) {
+    if (size > maximum) {
       throw new SafeGatewayHttpError(413, "request_too_large", "Model request is too large");
     }
     reserve(chunk.length);
@@ -238,11 +249,13 @@ async function readBody(
   return Buffer.concat(chunks);
 }
 
-function parseBody(
+async function parseBody(
   bytes: Buffer,
   contentEncoding: string | undefined,
+  maximum: number,
   reserve: (bytes: number) => void,
-): Record<string, unknown> {
+  signal: AbortSignal,
+): Promise<{ body: Record<string, unknown>; decodedBytes: number }> {
   let decoded = bytes;
   if (contentEncoding !== undefined && contentEncoding.trim().length > 0) {
     if (contentEncoding.trim().toLowerCase() !== "zstd") {
@@ -252,20 +265,40 @@ function parseBody(
         "Model request encoding is unsupported",
       );
     }
+    const decoder = createZstdDecompress();
+    addAbortSignal(signal, decoder);
     try {
-      decoded = zstdDecompressSync(bytes, { maxOutputLength: MAX_DECOMPRESSED_REQUEST_BYTES });
-    } catch {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      Readable.from([bytes]).pipe(decoder);
+      for await (const value of decoder) {
+        const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+        size += chunk.length;
+        if (size > maximum)
+          throw new SafeGatewayHttpError(
+            413,
+            "request_too_large",
+            "Model request is too large; use /compact before retrying",
+          );
+        reserve(chunk.length);
+        chunks.push(chunk);
+      }
+      decoded = Buffer.concat(chunks, size);
+    } catch (error) {
+      if (error instanceof SafeGatewayHttpError) throw error;
+      signal.throwIfAborted();
       throw new SafeGatewayHttpError(
         400,
         "invalid_request_encoding",
-        "Model request encoding is invalid",
+        "Model request compression is invalid",
       );
+    } finally {
+      decoder.destroy();
     }
   }
-  if (decoded.length > MAX_DECOMPRESSED_REQUEST_BYTES) {
+  if (decoded.length > maximum) {
     throw new SafeGatewayHttpError(413, "request_too_large", "Model request is too large");
   }
-  reserve(Math.max(0, decoded.length - bytes.length));
   let value: unknown;
   try {
     value = JSON.parse(decoded.toString("utf8")) as unknown;
@@ -275,7 +308,7 @@ function parseBody(
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new SafeGatewayHttpError(400, "invalid_request", "Model request must be a JSON object");
   }
-  return value as Record<string, unknown>;
+  return { body: value as Record<string, unknown>, decodedBytes: decoded.length };
 }
 
 async function writeChunk(
@@ -360,7 +393,8 @@ export class TenantModelGateway {
   readonly #randomBytes: (size: number) => Buffer;
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #server: Server;
-  readonly #sockets: ModelWebSocketGateway;
+  readonly #maximumRequestBytes: number;
+  readonly #maximumUploadBytes: number;
   readonly #capabilities = new Map<string, ActiveCapability>();
   readonly #budgets = new Map<string, RootModelBudget>();
   #started = false;
@@ -369,6 +403,21 @@ export class TenantModelGateway {
 
   constructor(options: TenantModelGatewayOptions) {
     this.#host = options.host;
+    this.#maximumRequestBytes = positiveInteger(
+      options.maximumRequestBytes ?? DEFAULT_MODEL_REQUEST_MAX_BYTES,
+      "maximumRequestBytes",
+      1024 * 1024 * 1024,
+    );
+    this.#maximumUploadBytes = positiveInteger(
+      options.maximumUploadBytes ?? DEFAULT_MODEL_UPLOAD_MAX_BYTES,
+      "maximumUploadBytes",
+      4 * 1024 * 1024 * 1024,
+    );
+    if (this.#maximumUploadBytes < this.#maximumRequestBytes)
+      throw new TenantModelGatewayError(
+        "invalid_gateway_configuration",
+        "Upload capacity must fit one model request",
+      );
     if (!Number.isSafeInteger(options.port) || options.port < 0 || options.port > 65_535) {
       throw new TenantModelGatewayError("invalid_gateway_configuration", "port is invalid");
     }
@@ -476,74 +525,6 @@ export class TenantModelGateway {
         },
       );
     });
-    this.#sockets = new ModelWebSocketGateway(
-      (request) => this.#socketGrant(request),
-      connectTimeoutMs,
-    );
-    this.#server.on("upgrade", (request, socket, head) =>
-      this.#sockets.upgrade(request, socket, head),
-    );
-  }
-
-  #socketGrant(request: IncomingMessage): ModelSocketGrant {
-    const token = bearerCapability(request.headers.authorization);
-    const active = this.#requireCapability(
-      token ? this.#capabilities.get(capabilityDigest(token)) : undefined,
-    );
-    const path = new URL(request.url ?? "/", "http://model-gateway.invalid").pathname;
-    if (active.provider !== "openai-codex" || path !== active.requestPath)
-      throw new SafeGatewayHttpError(
-        403,
-        "model_protocol_mismatch",
-        "Model transport does not match its capability",
-      );
-    const controller = new AbortController();
-    active.requestControllers.add(controller);
-    const url = new URL(`${this.#providerGatewayBaseUrl}${active.providerPath}`);
-    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-    return {
-      upstreamUrl: url.toString(),
-      headers: Object.fromEntries(upstreamHeaders(request, active, this.#providerGatewayApiKey)),
-      signal: controller.signal,
-      admit: (body) => {
-        this.#validateModelBody(body, active);
-        this.#admit(active, controller.signal);
-      },
-      reserve: (bytes) => {
-        if (this.#requestBytes + bytes > 256 * 1024 * 1024)
-          throw new Error("Model upload capacity is exhausted");
-        this.#requestBytes += bytes;
-        let released = false;
-        return () => {
-          if (!released) {
-            released = true;
-            this.#requestBytes -= bytes;
-          }
-        };
-      },
-      observe: (sampling, timing) => {
-        operationalLog({
-          service: "pi-cloud-model-gateway",
-          level: "info",
-          event: "model.transport.timing",
-          attributes: {
-            runId: active.runId,
-            ...sampling,
-            provider: active.provider,
-            model: active.modelId,
-            ...timing,
-          },
-        });
-        this.#observe(
-          active,
-          timing.transportCompleted ? "eof" : active.revoked ? "revoked" : "disconnected",
-          Number(timing.receivedMonotonicMs),
-        );
-      },
-      release: () => {
-        active.requestControllers.delete(controller);
-      },
-    };
   }
 
   #validateModelBody(body: Record<string, unknown>, active: ActiveCapability): void {
@@ -668,6 +649,10 @@ export class TenantModelGateway {
       sessionId: command.payload.sessionId,
       turnId: command.payload.turnId,
       runId: command.payload.runId,
+      piSessionId: command.payload.piSession.id,
+      conversationId: command.payload.piSession.conversationId,
+      credentialBindingId: command.payload.model.credentialBindingId,
+      credentialBindingVersion: command.payload.model.credentialBindingVersion,
       modelProfileId: command.payload.model.profileId,
       serviceTier: command.payload.model.serviceTier,
       budget,
@@ -769,6 +754,7 @@ export class TenantModelGateway {
     response.once("close", abortOnResponse);
     active.requestControllers.add(controller);
     const timing: Record<string, number> = {};
+    const providerTiming: Record<string, string | number | boolean> = {};
     const elapsed = () => Math.round((performance.now() - startedAt) * 1000) / 1000;
     let upstreamAttempts = 0,
       responseBytes = 0,
@@ -776,7 +762,7 @@ export class TenantModelGateway {
     let transportCompleted = false;
     let reservedBytes = 0;
     const reserve = (bytes: number) => {
-      if (this.#requestBytes + bytes > 256 * 1024 * 1024)
+      if (this.#requestBytes + bytes > this.#maximumUploadBytes)
         throw new SafeGatewayHttpError(
           429,
           "model_upload_capacity_exhausted",
@@ -789,8 +775,17 @@ export class TenantModelGateway {
       // Uploads are in-flight work too: revocation must interrupt them before
       // they can become provider requests. Node removes this hook on stream end.
       addAbortSignal(controller.signal, request);
-      const requestBytes = await readBody(request, reserve);
-      const body = parseBody(requestBytes, request.headers["content-encoding"], reserve);
+      const requestBytes = await readBody(request, this.#maximumRequestBytes, reserve);
+      timing.requestBytes = requestBytes.length;
+      const parsed = await parseBody(
+        requestBytes,
+        request.headers["content-encoding"],
+        this.#maximumRequestBytes,
+        reserve,
+        controller.signal,
+      );
+      const body = parsed.body;
+      timing.decodedRequestBytes = parsed.decodedBytes;
       this.#validateModelBody(body, active);
       if (body.stream !== true) {
         throw new SafeGatewayHttpError(
@@ -799,19 +794,72 @@ export class TenantModelGateway {
           "Model Gateway requires a streaming request",
         );
       }
-      // No await between the final authority/count check and reservation.
-      this.#admit(active, controller.signal);
       timing.requestBytes = requestBytes.length;
       timing.upstreamStartMs = elapsed();
       upstreamAttempts = 1;
-      const upstream = await this.#fetch(`${this.#providerGatewayBaseUrl}${active.providerPath}`, {
+      const headers = upstreamHeaders(request, active, this.#providerGatewayApiKey);
+      let providerPath: string = active.providerPath;
+      if (active.provider === "openai-codex") {
+        const purpose = request.headers[MODEL_PURPOSE_HEADER] ?? "agent";
+        if (purpose !== "agent" && purpose !== "context_maintenance")
+          throw new SafeGatewayHttpError(400, "invalid_model_purpose", "Model purpose is invalid");
+        headers.set(
+          MODEL_SESSION_HEADER,
+          await modelTransportKey({
+            tenantId: active.tenantId,
+            sessionId: active.piSessionId,
+            conversationId: active.conversationId,
+            credentialBindingId: active.credentialBindingId,
+            credentialBindingVersion: active.credentialBindingVersion,
+            purpose,
+          }),
+        );
+        headers.set("x-picloud-run-id", active.runId);
+        for (const name of [
+          MODEL_STEP_SEQUENCE_HEADER,
+          MODEL_STEP_SHA256_HEADER,
+          MODEL_SAMPLING_ATTEMPT_HEADER,
+        ]) {
+          const value = request.headers[name];
+          if (typeof value === "string") headers.set(name, value);
+        }
+        providerPath = "/v1/picloud/responses";
+      }
+      // Scope hashing can yield; check the live grant after it, immediately
+      // before admitting/forwarding this request.
+      this.#admit(active, controller.signal);
+      const upstream = await this.#fetch(`${this.#providerGatewayBaseUrl}${providerPath}`, {
         method: "POST",
-        headers: upstreamHeaders(request, active, this.#providerGatewayApiKey),
+        headers,
         body: new Uint8Array(requestBytes),
         signal: controller.signal,
       });
       timing.upstreamHeadersMs = elapsed();
       upstreamStatus = upstream.status;
+      if (active.provider === "openai-codex") {
+        const transport = upstream.headers.get("x-picloud-model-transport");
+        const reason = upstream.headers.get("x-picloud-model-cache");
+        if (
+          reason &&
+          /^(cold|prefix_match|prefix_changed|request_properties_changed|missing_response|websocket_failed)$/.test(
+            reason,
+          )
+        )
+          providerTiming.cacheReason = reason;
+        if (transport === "websocket" || transport === "http")
+          providerTiming.upstreamTransport = transport;
+        const incremental = upstream.headers.get("x-picloud-model-incremental");
+        if (incremental === "true" || incremental === "false")
+          providerTiming.incremental = incremental === "true";
+        for (const [header, field] of [
+          ["x-picloud-model-upstream-bytes", "upstreamRequestBytes"],
+          ["x-picloud-model-full-bytes", "upstreamFullBytes"],
+        ] as const) {
+          const raw = upstream.headers.get(header);
+          if (raw !== null && /^\d+$/.test(raw) && Number.isSafeInteger(Number(raw)))
+            providerTiming[field] = Number(raw);
+        }
+      }
       response.writeHead(upstream.status, {
         "cache-control": "no-store",
         "content-type": upstream.headers.get("content-type") ?? "text/event-stream; charset=utf-8",
@@ -871,6 +919,7 @@ export class TenantModelGateway {
           receivedMonotonicMs: startedAt,
           processStartedAtMs: performance.timeOrigin,
           ...timing,
+          ...providerTiming,
           elapsedMs: elapsed(),
           upstreamAttempts,
           upstreamStatus,
@@ -917,7 +966,6 @@ export class TenantModelGateway {
 
   async #close(): Promise<void> {
     for (const active of [...this.#capabilities.values()]) this.#revoke(active);
-    this.#sockets.close();
     if (this.#started) {
       this.#started = false;
       this.#server.close();

@@ -715,8 +715,4 @@ export { isExecutorToolCommand, isNamedToolCommand } from "./tool-command.ts";
 
 export * from "./session-schedules.ts";
 export * from "./fork-provenance.ts";
-export {
-  encodeModelSocketRequest,
-  parseModelSocketRequest,
-  type ModelSocketRequest,
-} from "./model-socket.ts";
+export * from "./model-transport.ts";

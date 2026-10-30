@@ -138,11 +138,12 @@ checks, browser layout tests, deterministic fault scenarios and opt-in live
 model/Cube acceptance. [Evaluation](docs/EVALUATION.md) describes their scope;
 individual delivery reports retain both successes and unresolved failures.
 
-- Normal-size GPT image continuation has been verified through the actual provider
-  route: one measured request of about 3.11 MB was followed by 19.8 KB requests.
-  This is a transport-size result, not a general latency claim. New Runs, reconnects
-  and changed context can still require full input. Very large cold visual context
-  remains a [tracked limitation](docs/BACKLOG.md#very-large-cold-visual-context--investigation-remains).
+- The provider-owned continuation implementation uses full HTTP/SSE input inside
+  the cluster and reuses compatible OpenAI upstream context across Run/Worker
+  changes. Caches are disposable; reconnects or changed context can require full
+  input. Native token compaction and manual `/compact` remain the reduction policy.
+  [ADR-0289](docs/adr/0289-provider-owned-model-continuation.md) records the contracts;
+  matched deployment and real-provider verification are currently pending.
 - The single-host deployment does not provide node-level HA. Active Cubelet loss
   may leave Volume references unconfirmed; cleanup waits for positive evidence.
 - Arbitrary shell commands and remote effects do not have exactly-once guarantees.

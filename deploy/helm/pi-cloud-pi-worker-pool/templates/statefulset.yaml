@@ -201,6 +201,10 @@ spec:
               value: {{ .Values.runtime.timeouts.workerRetirementMs | quote }}
             - name: PI_CLOUD_MODEL_CONNECT_TIMEOUT_MS
               value: {{ .Values.runtime.timeouts.modelConnectMs | quote }}
+            - name: PI_CLOUD_MODEL_REQUEST_MAX_BYTES
+              value: {{ .Values.runtime.modelTransport.requestMaxBytes | quote }}
+            - name: PI_CLOUD_MODEL_UPLOAD_MAX_BYTES
+              value: {{ .Values.runtime.modelTransport.uploadMaxBytes | quote }}
             - name: PI_CLOUD_MODEL_EVENT_IDLE_TIMEOUT_MS
               value: {{ .Values.runtime.timeouts.modelEventIdleMs | quote }}
             - name: PI_CLOUD_METRICS_HOST

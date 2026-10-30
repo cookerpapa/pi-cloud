@@ -415,6 +415,8 @@ export class PiWorkerRuntime {
       providerGatewayBaseUrl: this.#config.providerGatewayBaseUrl,
       providerGatewayApiKey: this.#config.providerGatewayApiKey,
       maximumRequestsPerTurn: this.#config.modelGatewayMaximumRequestsPerTurn,
+      maximumRequestBytes: this.#config.modelRequestMaxBytes,
+      maximumUploadBytes: this.#config.modelUploadMaxBytes,
       connectTimeoutMs: this.#config.modelConnectTimeoutMs,
       eventIdleTimeoutMs: this.#config.modelEventIdleTimeoutMs,
       ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),

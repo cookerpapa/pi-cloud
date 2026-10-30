@@ -1602,18 +1602,35 @@ use independent product authority; they are not Agent execution commands.
 
 ## Models, Subagents and integrations
 
-[ADR-0282](adr/0282-native-model-websocket-continuation.md) adds a private
-Runner-to-Gateway WebSocket frame carrying current sampling metadata outside the
-native provider request. Pi owns full/delta selection and cached previous-response
-state; the Gateway validates each request against its existing capability/budget
-and forwards it to CLIProxyAPI. Cache scope is the writer incarnation, Conversation
-and request purpose, and is closed on Run cleanup. Provider context caches are
-disposable; PG/Kafka and attachment storage retain durable authority. Cold opening,
-context replacement or lost continuation can resend full input. Existing Pi retry,
-event-idle and HTTP fallback policies remain. CLIProxyAPI's native per-account
-WebSocket preference is also enabled through its management API on publication.
-Deployed as `continuation-5f-final`, schema 202; actual provider traffic and
-cross-Worker image continuation are verified in its delivery report.
+[ADR-0289](adr/0289-provider-owned-model-continuation.md) moves upstream model
+continuation into an in-process CLIProxyAPI transport adapter. Worker Pi sends
+full effective input through its native HTTP/SSE provider and the current Run's
+local gateway. The gateway derives a stable tenant/physical-Session/Conversation/
+credential-version/purpose key. The authenticated provider route uses CPA's
+existing auth manager and Codex executor, retaining only completed connection
+state and bounded transcript fingerprints across downstream clients. Compatible
+requests send incremental input upstream; changed context and cold caches send
+full input. The internal network still carries full context. The former Worker
+WebSocket envelope/cache is removed. DeepSeek keeps its native HTTP path.
+
+Cancellation closes active upstream work; normal completion can retain an idle
+connection without retaining a Run grant, Worker slot or execution lease. Cache
+misses never reconstruct missing history or authorize Tool replay. Missing response
+state can rebuild once from the current full request before output. A pre-output
+WebSocket transport failure may fall back once to HTTP, matching the previous Pi
+transport behavior; after output, Pi owns semantic retry. The proxy temporarily
+retains HTTP fallback for five minutes to avoid repeating a failed WebSocket
+upload on every Tool step. Idle transport entries expire after 15 minutes by
+configurable policy, with a 55-minute maximum connection age. Provider limits may
+invalidate them earlier. See ADR-0289 for build/adopt evidence and acceptance.
+
+The Worker and provider share a configurable 256 MiB decoded request default and
+512 MiB aggregate upload budget. Admission accounts actual retained chunks, not
+a maximum-size reservation per small request. Oversize and malformed compression
+have separate errors; the Web recommends /compact for oversize. Existing native
+token compaction/manual commands and image quality remain unchanged. Transport
+telemetry distinguishes internal compressed/decoded bytes from selected provider
+payload bytes; actual network counters remain a separate acceptance measurement.
 
 The [October 19 focused review](reports/model-request-response-review-20261019.md)
 is repaired under [ADR-0263](adr/0263-model-response-and-work-lifetimes.md), with

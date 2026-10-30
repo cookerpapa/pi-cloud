@@ -221,6 +221,8 @@ describe("PiWorkerRuntime", () => {
       modelGatewayAdvertisedBaseUrl: "http://model-gateway.test:4200",
       modelGatewayMaximumRequestsPerTurn: 8,
       modelConnectTimeoutMs: 10_000,
+      modelRequestMaxBytes: 268435456,
+      modelUploadMaxBytes: 536870912,
       modelEventIdleTimeoutMs: 30_000,
       workerDrainGraceMs: 100,
       workerRetirementTimeoutMs: 10_000,

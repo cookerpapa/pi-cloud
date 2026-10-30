@@ -702,3 +702,29 @@ DeepSeek Flash uses the Responses route with text/image input and an owner-appro
 search declaration. September 26 probes confirm image input and an accepted search
 parameter, but no actual Responses search. The separate Anthropic-route search
 probe succeeded; this deployment retains Responses.
+
+## Model transport cache and request sizes
+
+ADR-0289 uses the existing authenticated Worker gateway and an in-process
+CLIProxyAPI `/v1/picloud/responses` adapter for GPT. DeepSeek stays on `/v1/responses`.
+The private `x-picloud-model-session` header is derived by the trusted Worker gateway,
+not copied from user input. It identifies disposable transport state and grants
+no execution authority. Sampling identity remains request-scoped.
+
+Self-hosted runtime `.env` values are rendered into both Worker and provider Helm
+configuration by the maintained release operator:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PI_CLOUD_MODEL_REQUEST_MAX_BYTES` | `268435456` | Encoded/decoded request boundary |
+| `PI_CLOUD_MODEL_UPLOAD_MAX_BYTES` | `536870912` | Aggregate retained upload bytes per process |
+| `PI_CLOUD_MODEL_SESSION_IDLE_SECONDS` | `900` | Provider idle cache retention |
+| `PI_CLOUD_MODEL_SESSION_CACHE_ENTRIES` | `256` | Provider connection cache entry bound |
+
+Distributed operators use Worker `runtime.modelTransport` and infrastructure
+`provider.modelTransport` with matching request limits. These are transport memory
+bounds, not context token budgets or whole-Run timeouts. Native automatic token
+compaction and `/compact` remain unchanged. Larger requests require memory/load
+validation and remain subject to provider/network limits. Local telemetry reports
+compressed/decoded input and selected upstream payload size; cache tokens alone
+are not evidence of reduced uploads.

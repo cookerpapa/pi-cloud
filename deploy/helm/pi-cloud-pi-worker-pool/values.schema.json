@@ -310,6 +310,23 @@
               "maximum": 900000
             }
           }
+        },
+        "modelTransport": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["requestMaxBytes", "uploadMaxBytes"],
+          "properties": {
+            "requestMaxBytes": {
+              "type": "integer",
+              "minimum": 1048576,
+              "maximum": 1073741824
+            },
+            "uploadMaxBytes": {
+              "type": "integer",
+              "minimum": 1048576,
+              "maximum": 4294967296
+            }
+          }
         }
       }
     },

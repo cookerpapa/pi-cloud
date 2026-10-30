@@ -1,5 +1,9 @@
 # Documentation map
 
+[Provider-owned model continuation](adr/0289-provider-owned-model-continuation.md)
+defines the current implementation slice: proxy-side upstream reuse, native Pi
+HTTP input, bounded large requests and explicit size errors. Publication is pending.
+
 [Fork machine inheritance](reports/fork-machine-binding-20261030.md) corrects the
 missing stable machine binding and the misleading elastic fallback label. It
 preserves Workspace/directory and machine lifecycle intent. Matched

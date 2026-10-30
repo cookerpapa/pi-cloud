@@ -1,5 +1,13 @@
 # Matched release procedure
 
+ADR-0289 requires paired Worker/provider publication (no schema change). Remove
+the private Worker WebSocket envelope; GPT uses native Pi HTTP/SSE and the new
+authenticated provider adapter. Drain writers and preserve original assets. Run
+the provider Go race/native Pi contracts, Worker model/Stop checks, large zstd
+boundaries, and the owned live model-continuation driver. Verify different Worker
+processes reuse provider context and actual outbound bytes omit old images.
+Provider restart/missing state must cold-open from full input; no Tool replay.
+
 ADR-0288 requires schema 205 and paired API/Web contracts. Ordinary summaries
 drop `parentSessionId`; details expose `forkSource`. Source deletion no longer
 cascades through manual Forks. Preserve retained history and images while draining

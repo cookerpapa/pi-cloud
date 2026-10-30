@@ -1,5 +1,18 @@
 # Maintained backlog
 
+## Provider-owned model continuation — in progress
+
+- [x] Research upstream lifetimes, native Pi ports and bounded adoption choices.
+- [x] Add the in-process provider adapter and remove Worker WebSocket ownership.
+- [x] Verify cross-client/native Pi image/Tool deltas, cancellation, missing state,
+      expiry and real 129 MiB decoded input in isolated checks.
+- [ ] Complete broad contracts, memory/transport measurement and matched release.
+- [ ] Verify real Luna cross-Worker/image/Tool continuation and cold/failure recovery.
+
+[ADR-0289](adr/0289-provider-owned-model-continuation.md). No change to semantic
+history, model retry ownership, native token compaction or image quality. Provider
+cache hits reduce outbound provider bytes; Worker HTTP input remains complete.
+
 ## Fork Workspace and machine inheritance — deployed
 
 Copy the stable development-machine binding into new Forks and return it on

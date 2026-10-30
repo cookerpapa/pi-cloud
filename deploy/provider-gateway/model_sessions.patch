@@ -1,0 +1,44 @@
+diff --git a/internal/api/server_routes.go b/internal/api/server_routes.go
+index 815f6e3b..51400a7c 100644
+--- a/internal/api/server_routes.go
++++ b/internal/api/server_routes.go
+@@ -76,6 +76,7 @@ func (s *Server) setupRoutes() {
+ 		v1.POST("/messages/count_tokens", claudeCodeHandlers.ClaudeCountTokens)
+ 		v1.GET("/responses", openaiResponsesHandlers.ResponsesWebsocket)
+ 		v1.POST("/responses", openaiResponsesHandlers.Responses)
++		v1.POST("/picloud/responses", openaiResponsesHandlers.PiCloudResponses)
+ 		v1.POST("/responses/compact", openaiResponsesHandlers.Compact)
+ 		v1.POST("/alpha/search", s.codexAlphaSearch)
+ 		v1.POST("/live", s.codexLiveHandler.Handle)
+diff --git a/internal/runtime/executor/codex_websockets_session.go b/internal/runtime/executor/codex_websockets_session.go
+index 10219fc3..dcc82cc5 100644
+--- a/internal/runtime/executor/codex_websockets_session.go
++++ b/internal/runtime/executor/codex_websockets_session.go
+@@ -549,7 +549,14 @@ func (e *CodexWebsocketsExecutor) readUpstreamLoop(sess *codexWebsocketSession,
+ 		return
+ 	}
+ 	for {
+-		_ = conn.SetReadDeadline(time.Now().Add(codexResponsesWebsocketIdleTimeout))
++		deadline := time.Now().Add(codexResponsesWebsocketIdleTimeout)
++		// PiCloud's provider-owned sessions have an explicit bounded idle owner.
++		// Active requests retain caller cancellation/event inactivity; a second
++		// reader deadline must not retire an otherwise reusable idle session.
++		if strings.HasPrefix(sess.sessionID, "picloud-model-") {
++			deadline = time.Time{}
++		}
++		_ = conn.SetReadDeadline(deadline)
+ 		msgType, payload, errRead := conn.ReadMessage()
+ 		if errRead != nil {
+ 			invalidate := func() {
+diff --git a/sdk/api/handlers/openai/openai_responses_handlers.go b/sdk/api/handlers/openai/openai_responses_handlers.go
+index 4a830afc..97a2f972 100644
+--- a/sdk/api/handlers/openai/openai_responses_handlers.go
++++ b/sdk/api/handlers/openai/openai_responses_handlers.go
+@@ -444,6 +444,7 @@ func responsesSSENeedsLineBreak(pending, chunk []byte) bool {
+ // It holds a pool of clients to interact with the backend service.
+ type OpenAIResponsesAPIHandler struct {
+ 	*handlers.BaseAPIHandler
++	piCloud piCloudSessionCache
+ }
+ 
+ // NewOpenAIResponsesAPIHandler creates a new OpenAIResponses API handlers instance.

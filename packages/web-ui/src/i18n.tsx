@@ -559,6 +559,8 @@ const zhCN = {
   "error.generic": "请求没有完成，请稍后重试。",
   "error.runFailed": "请求未能完成，请稍后重试。",
   "error.responseUnavailable": "暂时无法完成回复，请稍后重试。",
+  "error.modelRequestTooLarge":
+    "本次请求包含的文字和图片超过传输上限，请输入 /compact 压缩上下文后再继续。",
   "error.runTimedOut": "运行超时，请重试。",
 } as const;
 
@@ -1132,6 +1134,8 @@ const enUS: Record<UiTextKey, string> = {
   "error.generic": "The request did not complete. Try again later.",
   "error.runFailed": "Unable to complete the request. Please try again later.",
   "error.responseUnavailable": "Unable to complete the response right now. Please try again later.",
+  "error.modelRequestTooLarge":
+    "The text and images exceed the request transport limit. Use /compact before continuing.",
   "error.runTimedOut": "The run timed out. Try again.",
 };
 

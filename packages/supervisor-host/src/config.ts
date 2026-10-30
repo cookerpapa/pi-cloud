@@ -2,7 +2,11 @@ import { resourceLimit } from "@pi-cloud/domain";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { isAbsolute } from "node:path";
-import { MAX_TOOL_EXECUTION_TIMEOUT_MS } from "@pi-cloud/protocol";
+import {
+  MAX_TOOL_EXECUTION_TIMEOUT_MS,
+  DEFAULT_MODEL_REQUEST_MAX_BYTES,
+  DEFAULT_MODEL_UPLOAD_MAX_BYTES,
+} from "@pi-cloud/protocol";
 import {
   loadProducerCapacity,
   type ProducerCapacity,
@@ -44,6 +48,8 @@ export type SupervisorHostConfig = {
   modelGatewayPort: number;
   modelGatewayAdvertisedBaseUrl: string;
   modelGatewayMaximumRequestsPerTurn: number | null;
+  modelRequestMaxBytes: number;
+  modelUploadMaxBytes: number;
   modelConnectTimeoutMs: number;
   modelEventIdleTimeoutMs: number;
   workerDrainGraceMs: number;
@@ -425,6 +431,20 @@ export async function loadSupervisorHostConfig(
     ),
     modelConnectTimeoutMs,
     modelEventIdleTimeoutMs,
+    modelRequestMaxBytes: integerValue(
+      environment,
+      "PI_CLOUD_MODEL_REQUEST_MAX_BYTES",
+      DEFAULT_MODEL_REQUEST_MAX_BYTES,
+      1024 * 1024,
+      1024 * 1024 * 1024,
+    ),
+    modelUploadMaxBytes: integerValue(
+      environment,
+      "PI_CLOUD_MODEL_UPLOAD_MAX_BYTES",
+      DEFAULT_MODEL_UPLOAD_MAX_BYTES,
+      1024 * 1024,
+      4 * 1024 * 1024 * 1024,
+    ),
     workerDrainGraceMs,
     workerRetirementTimeoutMs,
   };

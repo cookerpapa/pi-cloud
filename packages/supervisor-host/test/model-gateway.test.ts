@@ -163,6 +163,8 @@ function createGateway(
     connectTimeoutMs?: number;
     eventIdleTimeoutMs?: number;
     metrics?: PiCloudMetrics;
+    maximumRequestBytes?: number;
+    maximumUploadBytes?: number;
   } = {},
 ) {
   const gateway = new TenantModelGateway({
@@ -178,6 +180,133 @@ function createGateway(
   gateways.push(gateway);
   return gateway;
 }
+
+it("keeps provider context identity across Run grants while retiring the old grant", async () => {
+  const keys: string[] = [];
+  const upstream = vi.fn<typeof fetch>(async (_url, init) => {
+    keys.push(new Headers(init?.headers).get("x-picloud-model-session")!);
+    return new Response("ok");
+  });
+  const gateway = createGateway(upstream);
+  await gateway.start();
+  const a = command("openai-codex", "gpt-6-luna");
+  const first = gateway.issue(a);
+  const send = async (capability: string, purpose = "agent") => {
+    const response = await fetch(`http://127.0.0.1:${gateway.listeningPort}/codex/responses`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${capability}`,
+        ...samplingHeaders(),
+        "x-pi-cloud-model-purpose": purpose,
+      },
+      body: JSON.stringify({ model: "gpt-6-luna", stream: true, input: [] }),
+    });
+    await response.text();
+    return response.status;
+  };
+  expect(await send(first.runtime.capability)).toBe(200);
+  first.release();
+  const b = structuredClone(a);
+  b.payload.runId = crypto.randomUUID();
+  b.payload.piSession.writerId = crypto.randomUUID();
+  const next = gateway.issue(b);
+  expect(await send(first.runtime.capability)).toBe(401);
+  expect(await send(next.runtime.capability)).toBe(200);
+  expect(keys[1]).toBe(keys[0]);
+  expect(await send(next.runtime.capability, "context_maintenance")).toBe(200);
+  expect(keys[2]).not.toBe(keys[0]);
+  next.release();
+});
+
+it("distinguishes decoded request overflow from malformed zstd before forwarding", async () => {
+  const upstream = vi.fn<typeof fetch>(async () => new Response("ok"));
+  const gateway = createGateway(upstream, 8, {
+    maximumRequestBytes: 1024,
+    maximumUploadBytes: 4096,
+  });
+  await gateway.start();
+  const lease = gateway.issue(command());
+  for (const [body, code, status] of [
+    [zstdCompressSync(Buffer.alloc(1025, 32)), "request_too_large", 413],
+    [Buffer.from("bad zstd"), "invalid_request_encoding", 400],
+  ] as const) {
+    const response = await fetch(`http://127.0.0.1:${gateway.listeningPort}/v1/responses`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${lease.runtime.capability}`,
+        "content-encoding": "zstd",
+        ...samplingHeaders(),
+      },
+      body: new Uint8Array(body),
+    });
+    expect(response.status).toBe(status);
+    expect((await response.json()).error.code).toBe(code);
+  }
+  expect(upstream).not.toHaveBeenCalled();
+  lease.release();
+});
+
+it("admits valid compressed context above the retired 128 MiB limit", async () => {
+  const upstream = vi.fn<typeof fetch>(async () => new Response("ok"));
+  const gateway = createGateway(upstream);
+  await gateway.start();
+  const lease = gateway.issue(command());
+  const body = zstdCompressSync(
+    JSON.stringify({
+      model: "deepseek-v4-flash",
+      stream: true,
+      input: "x".repeat(129 * 1024 * 1024),
+    }),
+  );
+  const response = await fetch(`http://127.0.0.1:${gateway.listeningPort}/v1/responses`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${lease.runtime.capability}`,
+      "content-encoding": "zstd",
+      ...samplingHeaders(),
+    },
+    body: new Uint8Array(body),
+  });
+  expect(response.status).toBe(200);
+  await response.text();
+  expect(upstream).toHaveBeenCalledOnce();
+  lease.release();
+}, 20000);
+
+it("accounts small concurrent uploads by their actual bytes", async () => {
+  const ready = Promise.withResolvers<void>(),
+    release = Promise.withResolvers<void>();
+  let entered = 0;
+  const upstream = vi.fn<typeof fetch>(async () => {
+    if (++entered === 4) ready.resolve();
+    await release.promise;
+    return new Response("ok");
+  });
+  const gateway = createGateway(upstream, 8, {
+    maximumRequestBytes: 1024,
+    maximumUploadBytes: 2048,
+  });
+  await gateway.start();
+  const lease = gateway.issue(command());
+  const requests = Array.from({ length: 4 }, () =>
+    fetch(`http://127.0.0.1:${gateway.listeningPort}/v1/responses`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${lease.runtime.capability}`, ...samplingHeaders() },
+      body: JSON.stringify({ model: "deepseek-v4-flash", stream: true, input: [] }),
+    }),
+  );
+  try {
+    await ready.promise;
+    release.resolve();
+    for (const response of await Promise.all(requests)) {
+      expect(response.status).toBe(200);
+      await response.text();
+    }
+  } finally {
+    release.resolve();
+    lease.release();
+  }
+});
 
 describe("tenant model gateway", () => {
   it("shares the root request budget across Conversation capabilities and independent release", async () => {
@@ -396,7 +525,7 @@ describe("tenant model gateway", () => {
 
   it("preserves Pi's native Codex Responses protocol and zstd body", async () => {
     const upstream = vi.fn<typeof fetch>(async (input, init) => {
-      expect(String(input)).toBe("http://provider-gateway:8317/v1/responses");
+      expect(String(input)).toBe("http://provider-gateway:8317/v1/picloud/responses");
       expect(new Headers(init?.headers).get("content-encoding")).toBe("zstd");
       expect(init?.body).toBeInstanceOf(Uint8Array);
       return new Response('data: {"type":"response.completed","response":{"id":"r1"}}\n\n', {

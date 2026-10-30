@@ -31,6 +31,7 @@ import { command } from "./fixtures/durable-command.ts";
 
 it.each([
   "complete",
+  "request_too_large",
   "stop_on_resume",
   "stop_before_setup",
   "long_work",
@@ -42,6 +43,19 @@ it.each([
   async (mode) => {
     const fake = new FakeModelServer({ defaultScenario: "text" });
     await fake.start();
+    if (mode === "request_too_large")
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              message: "Model request is too large; use /compact before retrying",
+              type: "invalid_request_error",
+              code: "request_too_large",
+            },
+          }),
+          { status: 413, headers: { "content-type": "application/json" } },
+        ),
+      );
     const events: EventPublishMessage[] = [];
     const textDisplay = nativeTestDisplay((event) =>
       events.push({
@@ -344,6 +358,12 @@ it.each([
             userStop.signal,
           );
       void executing.catch(() => {});
+      if (mode === "request_too_large") {
+        await expect(executing).rejects.toMatchObject({ code: "model_request_too_large" });
+        expect(acquired).toBe(1);
+        expect(released).toBe(1);
+        return;
+      }
       if (mode === "cold_compact_history" || mode === "cold_compact_stop") {
         await enteredPermit.promise;
         if (mode === "cold_compact_stop") {
@@ -441,6 +461,7 @@ it.each([
       expect(submissions.items[0]?.status).toBe("done");
     } finally {
       vi.useRealTimers();
+      vi.restoreAllMocks();
       releasePermit.resolve();
       await (await runtime)?.close();
       await fake.stop();

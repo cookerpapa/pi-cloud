@@ -1,5 +1,9 @@
 # Current architecture decisions
 
+[ADR-0289](0289-provider-owned-model-continuation.md) defines provider-side upstream
+continuation across Run/Worker replacement, with full-input HTTP ingress and
+bounded disposable caches. Implementation and matched publication are in progress.
+
 [ADR-0288](0288-peer-forks-and-independent-deletion.md) makes manual Forks peers
 in ordinary navigation and independent deletion. Provenance remains traceable
 without owning the destination's lifecycle. Matched `peer-forks-20261030` is

@@ -561,13 +561,15 @@ export function ConversationTurn({
                 <div className="product-turn-error">
                   <strong>{t("turn.runFailed")}</strong>
                   <span>
-                    {turn.failure.code === "run_timed_out"
-                      ? t("error.runTimedOut")
-                      : ["native_task_failed", "model_request_failed"].includes(turn.failure.code)
-                        ? t("error.responseUnavailable")
-                        : turn.failure.code === "run_failed"
-                          ? t("error.runFailed")
-                          : turn.failure.message}
+                    {turn.failure.code === "model_request_too_large"
+                      ? t("error.modelRequestTooLarge")
+                      : turn.failure.code === "run_timed_out"
+                        ? t("error.runTimedOut")
+                        : ["native_task_failed", "model_request_failed"].includes(turn.failure.code)
+                          ? t("error.responseUnavailable")
+                          : turn.failure.code === "run_failed"
+                            ? t("error.runFailed")
+                            : turn.failure.message}
                   </span>
                 </div>
               ) : null}

@@ -101,6 +101,7 @@ try {
   report.imageBytes = png.length;
   report.rounds = [];
   for (const round of [1, 2]) {
+    if (round === 2) await delay(Number(process.env.PI_CLOUD_CONTINUATION_IDLE_MS ?? 0));
     const trafficBefore = providerTraffic();
     const started = Date.now();
     run = await api.acceptTurn(
@@ -144,35 +145,49 @@ try {
       "Retained image recall failed",
     );
     const timings = await readWorkerModelTimings([run.runId], started);
-    const ws = timings.filter(
-      (t) => t.transport === "websocket" && t.terminalEvent === "response.completed",
-    );
-    assert(ws.length >= 2, "Need native model/tool continuation through WebSocket");
-    assert.equal(ws[0].incremental, false, "A new native owner must send full context");
+    const completed = timings.filter((t) => t.modelOutcome === "completed");
+    assert(completed.length >= 3, "Need model/Tool continuation through the provider adapter");
     assert(
-      ws[0].requestBytes > 512 * 1024,
-      "The initial request must include the large retained image",
+      completed.every((t) => t.transport === "sse"),
+      "Worker must use native full-input HTTP/SSE",
     );
-    const deltas = ws.filter((t) => t.incremental);
-    assert(deltas.length >= 1, "Native Pi did not reuse its response context");
     assert(
-      deltas.every((t) => t.connectionReused && t.requestBytes < ws[0].requestBytes / 4),
-      "A continuation retransmitted the large image body",
+      completed.every((t) => t.upstreamTransport === "websocket"),
+      "Upstream must stay on WebSocket in the healthy reuse gate",
+    );
+    assert(
+      completed.every((t) => t.decodedRequestBytes > 512 * 1024),
+      "Internal full input must retain the image",
+    );
+    if (round === 1)
+      assert.equal(completed[0].incremental, false, "First provider request is cold");
+    else
+      assert.equal(
+        completed[0].incremental,
+        true,
+        "New Worker/Run must reuse provider-owned context",
+      );
+    const deltas = completed.filter((t) => t.incremental);
+    assert(deltas.length >= 2, "Provider did not continue context");
+    assert(
+      deltas.every((t) => t.upstreamRequestBytes < t.decodedRequestBytes / 4),
+      "Provider delta retransmitted old image input",
     );
     const trafficAfter = providerTraffic();
     assert.equal(
       trafficAfter.boot,
       trafficBefore.boot,
-      "Provider process changed during traffic measurement",
+      "Provider process changed during measurement",
     );
     const providerBytesSent = trafficAfter.sent - trafficBefore.sent;
+    if (round === 1)
+      assert(
+        providerBytesSent > completed[0].decodedRequestBytes * 0.8,
+        "Measure real initial provider upload",
+      );
     assert(
-      providerBytesSent > ws[0].requestBytes * 0.8,
-      "Traffic must include the initial provider upload",
-    );
-    assert(
-      providerBytesSent < ws[0].requestBytes * 1.6,
-      "Proxy expanded continuation into repeated full upstream uploads",
+      providerBytesSent < completed[0].decodedRequestBytes * (round === 1 ? 1.6 : 0.4),
+      "Actual provider network retransmitted historical images",
     );
     report.rounds.push({
       runId: run.runId,
@@ -183,10 +198,13 @@ try {
       retainedImages: imageReferences(history).length,
       requests: timings.map((t) => ({
         transport: t.transport,
-        terminalEvent: t.terminalEvent,
+        upstreamTransport: t.upstreamTransport,
+        upstreamRequestBytes: t.upstreamRequestBytes,
+        decodedRequestBytes: t.decodedRequestBytes,
+        cacheReason: t.cacheReason,
         requestBytes: t.requestBytes,
         incremental: t.incremental,
-        connectionReused: t.connectionReused,
+
         firstByteMs: t.firstByteMs,
         elapsedMs: t.elapsedMs,
         modelOutcome: t.modelOutcome,
@@ -210,6 +228,11 @@ try {
     );
     report.phoneEntryRemoved = true;
   });
+  assert.notEqual(
+    report.rounds[0].workerId,
+    report.rounds[1].workerId,
+    "Live acceptance requires distinct Worker processes",
+  );
   report.accepted = true;
 } catch (error) {
   failure = error;

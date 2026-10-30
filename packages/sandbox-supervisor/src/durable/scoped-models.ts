@@ -10,7 +10,6 @@ import type { Models } from "@earendil-works/pi-ai/models";
 import { isRetryableAssistantError } from "@earendil-works/pi-ai/utils/retry";
 import { completeModelResponse } from "./model-stream-policy.ts";
 import { ProviderResponse } from "./provider-response.ts";
-import { withModelWebSocket } from "./model-websocket.ts";
 import { MODEL_EVENT_IDLE_MS, ModelEventWait, isModelStreamEvent } from "./model-wait-policy.ts";
 import type { ProviderHostedActivity } from "../agent-turn-runtime.ts";
 
@@ -221,42 +220,37 @@ export class ScopedDurableModels {
           requestLifetime.abort(new Error("Model response event inactivity deadline")),
         );
         const requestPermit = permit;
-        const stream = (sourceStream = withModelWebSocket(
+        const stream = (sourceStream = Reflect.apply(this.source[operation], this.source, [
           requestPermit.model,
-          requestPermit.options,
-          () =>
-            Reflect.apply(this.source[operation], this.source, [
-              requestPermit.model,
-              requestPermit.input ?? input,
-              {
-                ...requestPermit.options,
-                // Codex SSE accepts zero as disabled. The OpenAI SDK used by the
-                // Responses adapter treats zero as immediate expiry; its header-only
-                // fallback must outlive our initial-event deadline instead.
-                timeoutMs:
-                  requestPermit.model.api === "openai-responses" ||
-                  requestPermit.model.api === "openai-completions"
-                    ? (requestPermit.eventIdleTimeoutMs ?? MODEL_EVENT_IDLE_MS) + 30_000
-                    : 0,
-                maxRetries: 0,
-                signal: requestPermit.options.signal
-                  ? AbortSignal.any([requestPermit.options.signal, requestLifetime.signal])
-                  : requestLifetime.signal,
-                onResponse: async (
-                  value: { status: number; headers: Record<string, string> },
-                  real: Model<Api>,
-                ) => {
-                  status = value.status;
-                  await previousResponse?.(value, real);
-                },
-                onProviderStreamEvent: async (event: unknown, real: Model<Api>) => {
-                  if (isModelStreamEvent(event)) eventWait?.touch();
-                  response!.observe(event);
-                  await previous?.(event, real);
-                },
-              },
-            ]) as AssistantMessageEventStream,
-        ));
+          requestPermit.input ?? input,
+          {
+            ...requestPermit.options,
+            // Codex SSE accepts zero as disabled. The OpenAI SDK used by the
+            // Responses adapter treats zero as immediate expiry; its header-only
+            // fallback must outlive our initial-event deadline instead.
+            timeoutMs:
+              requestPermit.model.api === "openai-responses" ||
+              requestPermit.model.api === "openai-completions"
+                ? (requestPermit.eventIdleTimeoutMs ?? MODEL_EVENT_IDLE_MS) + 30_000
+                : 0,
+            maxRetries: 0,
+            signal: requestPermit.options.signal
+              ? AbortSignal.any([requestPermit.options.signal, requestLifetime.signal])
+              : requestLifetime.signal,
+            onResponse: async (
+              value: { status: number; headers: Record<string, string> },
+              real: Model<Api>,
+            ) => {
+              status = value.status;
+              await previousResponse?.(value, real);
+            },
+            onProviderStreamEvent: async (event: unknown, real: Model<Api>) => {
+              if (isModelStreamEvent(event)) eventWait?.touch();
+              response!.observe(event);
+              await previous?.(event, real);
+            },
+          },
+        ]) as AssistantMessageEventStream);
         let terminal: Extract<AssistantMessageEvent, { type: "done" | "error" }> | undefined;
         for await (const event of stream) {
           if (["text_delta", "thinking_delta", "toolcall_delta"].includes(event.type))

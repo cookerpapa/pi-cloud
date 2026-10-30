@@ -12,6 +12,10 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
   });
   const nodeSelector = { "kubernetes.io/hostname": cluster.nodeName };
   const imageAttachments = { endpoint: "http://session-images:8333" };
+  const modelTransport = {
+    requestMaxBytes: n("PI_CLOUD_MODEL_REQUEST_MAX_BYTES", 268435456),
+    uploadMaxBytes: n("PI_CLOUD_MODEL_UPLOAD_MAX_BYTES", 536870912),
+  };
   const publicUrl =
     e.PI_CLOUD_PUBLIC_ORIGIN_BASE_URL ?? `http://127.0.0.1:${n("PI_CLOUD_HTTP_PORT", 8080)}`;
   return {
@@ -24,6 +28,11 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
       providerConfigPath: resolve(runtime, "secrets/cli-proxy-config.yaml"),
       relaySocketPath: resolve(runtime, "state/provider-relay"),
       provider: {
+        modelTransport: {
+          ...modelTransport,
+          idleSeconds: n("PI_CLOUD_MODEL_SESSION_IDLE_SECONDS", 900),
+          cacheEntries: n("PI_CLOUD_MODEL_SESSION_CACHE_ENTRIES", 256),
+        },
         uid: n("PI_CLOUD_APPLICATION_UID", 1000),
         gid: n("PI_CLOUD_APPLICATION_GID", 1000),
         image: images.provider,
@@ -181,6 +190,7 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
         imageAttachments,
         database: { maxConnections: n("PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS", 4) },
         runtime: {
+          modelTransport,
           subagents: {
             maximumDepth: quota("PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH"),
             maximumNodes: quota("PI_CLOUD_SUBAGENT_MAXIMUM_NODES"),
