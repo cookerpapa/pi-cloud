@@ -165,11 +165,11 @@ it("explicit abandonment ends an uncertain intent without letting its late ACK c
   expect(await submission.send(input, async (key) => key)).toBe(newKey);
 });
 
-it.each(["turn", "compact"] as const)(
+it.each(["turn", "steer"] as const)(
   "retires only the returned %s identity, preserving an unrelated Session or newer intent",
-  async (kind) => {
+  async (mode) => {
     const submission = new ComposerSubmission(),
-      request = { ...input, kind };
+      request = { ...input, ...(mode === "steer" ? { whenBusy: "steer" as const } : {}) };
     const keys: string[] = [];
     const lost = async (key: string) => {
       keys.push(key);

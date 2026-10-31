@@ -1,5 +1,14 @@
 # Matched release procedure
 
+ADR-0290/0291 require schema 206 and paired API/Web/guest publication. The composer
+uses one human-intake endpoint with a busy preference; remove the old Turn-targeted
+steer endpoint. Skill packages use inventoried S3 objects and scoped PG metadata;
+only fixed file placement runs in Cube. Run the input-boundary, Skill PG/guest and
+browser checks, then `PI_CLOUD_LIVE_SKILLS_CHECK=1 node --import tsx
+scripts/run-live-skill-market-check.mjs /private/skills.json` and the maintained
+native-input/Cube recovery fixture. Preserve existing conversations, images,
+Workspace bytes, machine intent and application startup information.
+
 ADR-0289 requires paired Worker/provider publication (no schema change). Remove
 the private Worker WebSocket envelope; GPT uses native Pi HTTP/SSE and the new
 authenticated provider adapter. Drain writers and preserve original assets. Run

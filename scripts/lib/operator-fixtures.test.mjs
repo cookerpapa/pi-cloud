@@ -1,3 +1,4 @@
+import { SkillMarketService } from "../../packages/control-plane/src/skill-market-service.ts";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { testPostgres } from "./test-postgres.mjs";
 import { createDatabase, runMigrations } from "../../packages/database/src/index.ts";
@@ -298,6 +299,7 @@ it("removes only the settled fixture's retained image edges before its objects",
   expect(await purgeOwnedAcceptanceTenant(database, tenant, blobs)).toEqual({
     tenantRemoved: true,
     imagesRemoved: 1,
+    skillObjectsRemoved: 0,
   });
   expect(deleted).toEqual([`session-images/${tenant.tenantId}/${image.id}`]);
   expect(
@@ -347,3 +349,72 @@ it.each(["release-acceptance-", "native-input-", "cube-check-"])(
     ).toBeDefined();
   },
 );
+
+it("retains unfinished Skill imports and removes only the settled fixture's package objects", async () => {
+  const tenant = await createPrivateTenant(database, {
+    slug: `release-acceptance-skills-${randomUUID()}`,
+    ownerDisplayName: "Skill fixture",
+  });
+  const entered = Promise.withResolvers(),
+    complete = Promise.withResolvers(),
+    deleted = [];
+  const blobs = {
+    async put(key) {
+      if (key.includes(tenant.tenantId)) {
+        entered.resolve();
+        await complete.promise;
+      }
+    },
+    async *readStream() {
+      throw Error("not a read fixture");
+    },
+    async delete(key) {
+      deleted.push(key);
+    },
+  };
+  const service = new SkillMarketService({ database, blobs });
+  const input = {
+    label: "1",
+    requirements: { tools: [], software: [], runtime: "none" },
+    source: {
+      kind: "files",
+      files: [
+        {
+          path: "SKILL.md",
+          base64: Buffer.from(
+            "---\nname: fixture-skill\ndescription: Fixture\n---\nOnly inspect.",
+          ).toString("base64"),
+        },
+      ],
+    },
+  };
+  const original = await service.publish(actor, input);
+  const writing = service.publish(
+    { tenantId: tenant.tenantId, userId: tenant.ownerUserId, role: "owner" },
+    input,
+  );
+  try {
+    await entered.promise;
+    await expect(purgeOwnedAcceptanceTenant(database, tenant, blobs)).rejects.toThrow(
+      "settled/purged",
+    );
+    expect(deleted).toEqual([]);
+    complete.resolve();
+    await writing;
+    expect(await purgeOwnedAcceptanceTenant(database, tenant, blobs)).toEqual({
+      tenantRemoved: true,
+      imagesRemoved: 0,
+      skillObjectsRemoved: 1,
+    });
+    expect(deleted).toHaveLength(1);
+    expect(deleted[0]).toContain(`skills/${tenant.tenantId}/`);
+    const rows =
+      await sql`select id from skill_versions where tenant_id=${actor.tenantId}::uuid and id=${original.versionId}::uuid`.execute(
+        database,
+      );
+    expect(rows.rows).toHaveLength(1);
+  } finally {
+    complete.resolve();
+    await writing;
+  }
+});
