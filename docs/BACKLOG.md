@@ -1,5 +1,19 @@
 # Maintained backlog
 
+## Sandbox capability boundaries and current documentation — in progress
+
+- [x] Narrow lifecycle/execution/file/image/terminal/preview/workflow/credential
+      dependencies while preserving the shared Cube implementation and owner.
+- [x] Verify file-only access, admission before upload consumption, machine
+      routing, cancellation, uncertain outcomes and existing recovery contracts.
+- [x] Replace chronological architecture/navigation prose with the current flow,
+      preserve report links separately, and fix retired ingress guidance.
+- [ ] Complete required checks, matched publication and relevant live acceptance.
+
+[Scope and comparison](research/pi-runtime-adapter-comparison-20261031.md).
+[Delivery record](reports/sandbox-capabilities-20261031.md). No Pi upgrade or
+automatic project text/Skill discovery is included in this slice.
+
 ## Provider-owned model continuation — deployed
 
 - [x] Research upstream lifetimes, native Pi ports and bounded adoption choices.

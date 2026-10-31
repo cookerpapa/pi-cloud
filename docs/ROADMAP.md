@@ -1,5 +1,17 @@
 # Implementation roadmap
 
+## Sandbox capability boundaries and current documentation
+
+Implement focused provider ports and a file-access consumer with the existing
+owner's admission callbacks. Keep lifecycle and recovery in one controller;
+retain whole guest Tools and source-side bounded data handling. Simplify the
+current architecture/map and preserve dated evidence in the report index.
+[Scope](research/pi-runtime-adapter-comparison-20261031.md) and
+[verification/publication](reports/sandbox-capabilities-20261031.md).
+
+Project text-resource discovery, provider phase tracing and Pi upgrade evaluation
+remain independent future slices.
+
 ## Provider-owned model continuation — deployed
 
 Adopt the existing CPA executor behind an in-process full-input model port.

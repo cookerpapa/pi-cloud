@@ -37,9 +37,10 @@ It retains cancelled assistant wording in model context through Pi's public
 context-only edits while preserving the original aborted outcome.
 
 [ADR-0280](0280-workspace-scoped-subagent-contract.md) and
-[ADR-0281](0281-scheduled-session-inputs.md) are accepted for implementation, not
-deployed. They define workspace-scoped delegation and scheduled inputs through
-existing PG Run admission. [Implementation plan](../reports/subagent-and-schedules-implementation-plan-20261026.md).
+[ADR-0281](0281-scheduled-session-inputs.md) define workspace-scoped delegation and
+scheduled inputs through existing PG Run admission. They are deployed on schema
+202/catalog v3; [delivery](../reports/scheduled-inputs-delivery-20261026.md)
+records the source, load and live checks.
 
 [ADR-0279](0279-android-execution-targets.md) is deployed as core
 `android-a37491f4` / schema 201 / catalog v2 and device `android-7aa30c34`.

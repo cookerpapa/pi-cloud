@@ -106,7 +106,7 @@ The production stream is:
 
 ```text
 Pi event / native Entry / Tool command
-    -> trusted Worker -> control-plane ingress -> Kafka transaction commit
+    -> trusted Worker -> Session transactional producer -> Kafka transaction commit
     -> one Session Projector group
          ├-> PostgreSQL Durable Storage
          ├-> live view -> snapshot-first SSE
@@ -116,7 +116,7 @@ Pi event / native Entry / Tool command
 Kafka RF3/transaction commit precedes visibility. Kafka retains a bounded
 log of Assistant text deltas, complete Tool/lifecycle Items and Pi mutations;
 PostgreSQL stores Pi-native complete messages once. The two checks separately
-measure Kafka/Gateway ordering and PostgreSQL complete-message projection
+measure Kafka publication ordering and PostgreSQL complete-message projection
 latency/WAL, so token fragments never masquerade as canonical database state.
 
 Interactive latency reports use distinct boundaries:

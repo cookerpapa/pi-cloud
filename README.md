@@ -77,6 +77,11 @@ process. There is no independent Tool Broker. Ordinary control tools are registe
 on the execution side; their definitions reach Workers over the existing management
 connection and take effect at the next model request.
 
+Sandbox integration uses focused lifecycle, execution, file, image, terminal,
+preview, workflow and credential interfaces over the same Cube implementation.
+The resource owner keeps admission and recovery; file access adds no lifecycle
+authority or extra network hop. See the [provider boundaries](docs/ARCHITECTURE.md#tools-and-cube).
+
 One physical Pi Session has one renewable execution lease, one writer and one
 Worker family slot. Its child Conversations share that ownership. Workers publish
 directly with a stable transactional Kafka producer identity; takeover checks PG

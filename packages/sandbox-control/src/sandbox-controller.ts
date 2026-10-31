@@ -1,4 +1,5 @@
 import { resourceLimit } from "@pi-cloud/domain";
+import { WorkspaceFileAccess } from "./workspace-file-access.ts";
 import { createWorkspaceSeed, encodeWorkspaceBlob } from "@pi-cloud/workspace-runtime";
 import type { SandboxExecutionTarget } from "./sandbox-execution.ts";
 import { BindingClosurePending, type SandboxBindings } from "./sandbox-bindings.ts";
@@ -74,6 +75,14 @@ import {
   type SandboxCreateSpec,
   type SandboxInspection,
   type SandboxProvider,
+  type SandboxLifecycle,
+  type SandboxExecution,
+  type SandboxWorkspaceFiles,
+  type SandboxImages,
+  type SandboxTerminals,
+  type SandboxPreviews,
+  type SandboxWorkflows,
+  type SandboxSourceCredentials,
   type SandboxTerminalSession,
   type SandboxTerminalSize,
 } from "./sandbox-provider.ts";
@@ -127,7 +136,7 @@ type ManagedToolBinding = {
   executionContextSha256: string;
   currentStep?: Readonly<{ sequence: number; sha256: string }>;
   allowedTools: ReadonlySet<CloudToolName>;
-  spec: Parameters<SandboxProvider["create"]>[0];
+  spec: SandboxCreateSpec;
   reservation: WorkspaceRuntimeReservation;
   handle?: SandboxHandle;
   usedPhysicalRuntime: boolean;
@@ -150,7 +159,7 @@ type ManagedElasticRuntime = {
   capsuleStored?: boolean;
   physicalActivationId: string;
   workspaceKey: string;
-  spec: Parameters<SandboxProvider["create"]>[0];
+  spec: SandboxCreateSpec;
   handle?: SandboxHandle;
   materializing?: Promise<SandboxHandle>;
   bindingIds: Set<string>;
@@ -263,7 +272,7 @@ function sameAssignment(left: ToolSandboxAssignment, right: ToolSandboxAssignmen
 
 function handleMatches(
   handle: SandboxHandle,
-  provider: SandboxProvider,
+  provider: Pick<SandboxLifecycle, "providerId">,
   activationId: string,
   assignment: ToolSandboxAssignment,
   environment: EnvironmentRuntimeSnapshot,
@@ -349,7 +358,15 @@ export class SandboxController {
   readonly #inputImages: (ImageAttachmentSource & Pick<ImageAttachmentStore, "put">) | undefined;
   readonly #inputPreparation = new PQueue({ concurrency: 1 });
   readonly #workflowChannels = new WorkflowChannels();
-  readonly #provider: SandboxProvider;
+  readonly #provider: SandboxLifecycle;
+  readonly #execution: SandboxExecution;
+  readonly #files: SandboxWorkspaceFiles;
+  readonly #images: SandboxImages;
+  readonly #terminalsProvider: SandboxTerminals;
+  readonly #previews: SandboxPreviews;
+  readonly #workflows: SandboxWorkflows;
+  readonly #credentials: SandboxSourceCredentials;
+  readonly #workspaceFiles: WorkspaceFileAccess;
   readonly #ownerBaseUrl: string;
   readonly #stateRepository: WorkspaceRuntimeStateRepository;
   readonly #serviceRegistry: SandboxHttpServiceRegistry | undefined;
@@ -381,6 +398,17 @@ export class SandboxController {
       throw new TypeError("Sandbox Provider ID is invalid");
     }
     this.#provider = options.provider;
+    this.#execution = options.provider;
+    this.#files = options.provider;
+    this.#images = options.provider;
+    this.#terminalsProvider = options.provider;
+    this.#previews = options.provider;
+    this.#workflows = options.provider;
+    this.#credentials = options.provider;
+    this.#workspaceFiles = new WorkspaceFileAccess(options.provider, {
+      machine: (request) => this.#machineBrowserHandle(request),
+      upload: (request) => this.#authorizeUpload(request),
+    });
     this.#ownerBaseUrl = new URL(options.ownerBaseUrl).toString();
     this.#stateRepository = options.stateRepository;
     this.#serviceRegistry = options.serviceRegistry;
@@ -884,7 +912,7 @@ export class SandboxController {
     let state: "running" | "paused" | "unknown" = "unknown";
     try {
       const observed = this.#runtimeHealth.observation(
-        this.#provider.executionIdentity(environment.handle),
+        this.#execution.executionIdentity(environment.handle),
       );
       if (observed && observed.at >= environment.observedAt) {
         if (
@@ -1121,7 +1149,7 @@ export class SandboxController {
     request: DevelopmentEnvironmentProvisionRequest,
   ): Promise<DevelopmentEnvironmentBrokerResponse> {
     if (
-      this.#provider.openTerminal === undefined ||
+      this.#terminalsProvider.openTerminal === undefined ||
       this.#provider.pause === undefined ||
       this.#provider.resume === undefined ||
       this.#provider.persistentCapsule === undefined ||
@@ -1367,9 +1395,9 @@ export class SandboxController {
   ): Promise<DevelopmentEnvironmentBrokerResponse> {
     if (
       (request.type === "development_environment.directory" &&
-        this.#provider.listDirectory === undefined) ||
+        this.#files.listDirectory === undefined) ||
       (request.type === "development_environment.create_directory" &&
-        this.#provider.createDirectory === undefined)
+        this.#files.createDirectory === undefined)
     ) {
       throw new SandboxControlError(
         "development_environment_directory_unsupported",
@@ -1410,8 +1438,8 @@ export class SandboxController {
     }
     const directory =
       request.type === "development_environment.create_directory"
-        ? await this.#provider.createDirectory!(environment.handle, request.path, request.name)
-        : await this.#provider.listDirectory!(environment.handle, request.path);
+        ? await this.#files.createDirectory!(environment.handle, request.path, request.name)
+        : await this.#files.listDirectory!(environment.handle, request.path);
     return {
       developmentEnvironmentProtocolVersion: 1,
       type: "development_environment.directory",
@@ -1425,7 +1453,7 @@ export class SandboxController {
   async openDevelopmentEnvironmentTerminal(
     input: DevelopmentEnvironmentTerminalOpenRequest,
   ): Promise<WorkspaceTerminalConnection> {
-    if (this.#provider.openTerminal === undefined) {
+    if (this.#terminalsProvider.openTerminal === undefined) {
       throw new SandboxControlError(
         "development_environment_terminal_unsupported",
         "The configured Sandbox Provider does not support interactive terminals",
@@ -1486,7 +1514,7 @@ export class SandboxController {
     const terminalHandle = environment.handle;
     let terminal: SandboxTerminalSession;
     try {
-      terminal = await this.#provider.openTerminal(terminalHandle, {
+      terminal = await this.#terminalsProvider.openTerminal(terminalHandle, {
         rows: input.rows,
         cols: input.cols,
       });
@@ -1523,7 +1551,7 @@ export class SandboxController {
   }
 
   async #openTerminal(input: WorkspaceTerminalOpenInput): Promise<WorkspaceTerminalConnection> {
-    if (this.#provider.openTerminal === undefined) {
+    if (this.#terminalsProvider.openTerminal === undefined) {
       throw new SandboxControlError(
         "workspace_terminal_unsupported",
         "The configured Sandbox Provider does not support interactive terminals",
@@ -1621,7 +1649,7 @@ export class SandboxController {
           true,
         );
       }
-      terminal = await this.#provider.openTerminal(handle, input.size);
+      terminal = await this.#terminalsProvider.openTerminal(handle, input.size);
       const activeTerminal = terminal;
       const managed: ManagedWorkspaceTerminal = {
         assignment,
@@ -1737,13 +1765,13 @@ export class SandboxController {
         "Application workspace changed",
         false,
       );
-    if (this.#provider.openPreviewConnection === undefined)
+    if (this.#previews.openPreviewConnection === undefined)
       throw new SandboxControlError(
         "sandbox_preview_unsupported",
         "Application connections are unavailable",
         false,
       );
-    return this.#provider.openPreviewConnection(handle, request.port, signal);
+    return this.#previews.openPreviewConnection(handle, request.port, signal);
   }
 
   async create(
@@ -1768,7 +1796,7 @@ export class SandboxController {
       try {
         const handle = await this.#materialize(activation, signal);
         signal?.throwIfAborted();
-        const descriptor = await this.#provider.describeExecution(
+        const descriptor = await this.#execution.describeExecution(
           handle,
           response.activationId,
           request.toolRoot,
@@ -2188,13 +2216,13 @@ export class SandboxController {
         let response: ToolSandboxOperationResponse;
         try {
           {
-            if (!this.#provider.openWorkflow)
+            if (!this.#workflows.openWorkflow)
               throw new SandboxControlError(
                 "workflow_unavailable",
                 "Isolated workflow execution is unavailable",
                 false,
               );
-            const stream = await this.#provider.openWorkflow(handle, {
+            const stream = await this.#workflows.openWorkflow(handle, {
               script: request.script,
               operationId: request.operationId,
               cwd: activation.spec.toolRoot ?? handle.workspaceRoot,
@@ -2253,7 +2281,7 @@ export class SandboxController {
   }
 
   async imageIo(request: ToolImageRequest, signal?: AbortSignal): Promise<ToolImageResponse> {
-    if (!this.#inputImages || !this.#provider.imageIo)
+    if (!this.#inputImages || !this.#images.imageIo)
       throw new SandboxControlError(
         "tool_image_io_unavailable",
         "Tool image I/O is unavailable",
@@ -2299,7 +2327,7 @@ export class SandboxController {
             this.#stateRepository.assertLocalOwnership();
             const prepared =
               request.action.kind === "read"
-                ? await this.#provider.imageIo!(
+                ? await this.#images.imageIo!(
                     handle,
                     { ...base, kind: "read", path: request.action.path },
                     combined,
@@ -2308,7 +2336,7 @@ export class SandboxController {
                     request.assignment.tenantId,
                     request.action.source,
                     (chunks, sourceSignal) =>
-                      this.#provider.imageIo!(
+                      this.#images.imageIo!(
                         handle,
                         {
                           ...base,
@@ -2371,7 +2399,7 @@ export class SandboxController {
     request: InputImageRequest,
     signal?: AbortSignal,
   ): Promise<InputImageResponse> {
-    if (!this.#inputImages || !this.#provider.prepareInputImage)
+    if (!this.#inputImages || !this.#images.prepareInputImage)
       throw new SandboxControlError(
         "input_images_unavailable",
         "Input image preparation is unavailable",
@@ -2430,7 +2458,7 @@ export class SandboxController {
                 activation.assignment.tenantId,
                 source,
                 (chunks, signal) =>
-                  this.#provider.prepareInputImage!(
+                  this.#images.prepareInputImage!(
                     handle,
                     {
                       chunks,
@@ -2529,7 +2557,7 @@ export class SandboxController {
     ]);
     for (const runtime of runtimes) {
       if (runtime.handle?.runtimeName !== target.sandboxId) continue;
-      const descriptor = await this.#provider.describeExecution(
+      const descriptor = await this.#execution.describeExecution(
         runtime.handle,
         runtime.physicalActivationId,
         runtime.handle.workspaceRoot,
@@ -2560,14 +2588,14 @@ export class SandboxController {
 
   async refreshServices(activationId: string, assignment: ToolSandboxAssignment): Promise<void> {
     const activation = this.#ownedBinding(activationId, assignment);
-    if (this.#provider.discoverHttpServices === undefined)
+    if (this.#previews.discoverHttpServices === undefined)
       throw new SandboxControlError(
         "service_discovery_unavailable",
         "Service discovery is unavailable",
         false,
       );
     const handle = await this.#materialize(activation);
-    const discovery = await this.#provider.discoverHttpServices(handle);
+    const discovery = await this.#previews.discoverHttpServices(handle);
     await this.#observeHttpServices(activation, handle, randomUUID(), discovery);
   }
 
@@ -2887,24 +2915,7 @@ export class SandboxController {
   async listWorkspaceDirectory(
     request: SandboxControlListWorkspaceDirectoryRequest,
   ): Promise<SandboxControlListWorkspaceDirectoryResponse> {
-    if (request.machine !== undefined) {
-      const handle = await this.#machineBrowserHandle(request);
-      if (!this.#provider.listMachineWorkspaceDirectory)
-        throw new SandboxControlError(
-          "workspace_browser_unavailable",
-          "Machine directory browsing is unavailable",
-          false,
-        );
-      return this.#provider.listMachineWorkspaceDirectory(handle, request);
-    }
-    if (this.#provider.listWorkspaceDirectory === undefined) {
-      throw new SandboxControlError(
-        "workspace_browser_unavailable",
-        "The configured Sandbox Provider cannot list Workspace directories",
-        false,
-      );
-    }
-    return this.#provider.listWorkspaceDirectory(request);
+    return this.#workspaceFiles.listWorkspaceDirectory(request);
   }
 
   async prepareWorkspaceUpload(request: WorkspaceUploadRequest): Promise<void> {
@@ -2928,47 +2939,14 @@ export class SandboxController {
     chunks: AsyncIterable<Uint8Array>,
     signal?: AbortSignal,
   ) {
-    const handle = await this.#authorizeUpload(request);
-    if (handle) {
-      if (!this.#provider.uploadMachineWorkspaceFile)
-        throw new SandboxControlError(
-          "workspace_upload_unavailable",
-          "Machine upload is unavailable",
-          false,
-        );
-      return this.#provider.uploadMachineWorkspaceFile(handle, request, chunks, signal);
-    }
-    if (!this.#provider.uploadWorkspaceFile)
-      throw new SandboxControlError(
-        "workspace_upload_unavailable",
-        "Workspace upload is unavailable",
-        false,
-      );
-    return this.#provider.uploadWorkspaceFile(request, chunks, signal);
+    return this.#workspaceFiles.uploadWorkspaceFile(request, chunks, signal);
   }
 
   async readWorkspaceFile(
     request: SandboxControlReadWorkspaceFileRequest,
     signal?: AbortSignal,
   ): Promise<SandboxControlReadWorkspaceFileResponse> {
-    if (request.machine !== undefined) {
-      const handle = await this.#machineBrowserHandle(request);
-      if (!this.#provider.readMachineWorkspaceFile)
-        throw new SandboxControlError(
-          "workspace_browser_unavailable",
-          "Machine file browsing is unavailable",
-          false,
-        );
-      return this.#provider.readMachineWorkspaceFile(handle, request);
-    }
-    if (this.#provider.readWorkspaceFile === undefined) {
-      throw new SandboxControlError(
-        "workspace_browser_unavailable",
-        "The configured Sandbox Provider cannot read Workspace files",
-        false,
-      );
-    }
-    return this.#provider.readWorkspaceFile(request, signal);
+    return this.#workspaceFiles.readWorkspaceFile(request, signal);
   }
 
   async #machineBrowserHandle(
@@ -3009,53 +2987,53 @@ export class SandboxController {
   async authorizeSourceCredential(
     request: SourceControlWorkspaceCredentialAuthorizeRequest,
   ): Promise<SourceControlWorkspaceCredentialResponse> {
-    if (this.#provider.authorizeSourceCredential === undefined) {
+    if (this.#credentials.authorizeSourceCredential === undefined) {
       throw new SandboxControlError(
         "source_control_credential_unavailable",
         "The configured Sandbox Provider cannot store Workspace Git credentials",
         false,
       );
     }
-    return this.#provider.authorizeSourceCredential(request);
+    return this.#credentials.authorizeSourceCredential(request);
   }
 
   async preflightSourceCredential(
     request: SourceControlWorkspaceCredentialPreflightRequest,
   ): Promise<SourceControlWorkspaceCredentialResponse> {
-    if (this.#provider.preflightSourceCredential === undefined) {
+    if (this.#credentials.preflightSourceCredential === undefined) {
       throw new SandboxControlError(
         "source_control_credential_unavailable",
         "The configured Sandbox Provider cannot verify Workspace Git credentials",
         false,
       );
     }
-    return this.#provider.preflightSourceCredential(request);
+    return this.#credentials.preflightSourceCredential(request);
   }
 
   async listSourceCredentials(
     request: SourceControlWorkspaceCredentialListRequest,
   ): Promise<SourceControlWorkspaceCredentialListResponse> {
-    if (this.#provider.listSourceCredentials === undefined) {
+    if (this.#credentials.listSourceCredentials === undefined) {
       throw new SandboxControlError(
         "source_control_credential_unavailable",
         "The configured Sandbox Provider cannot list Workspace Git credentials",
         false,
       );
     }
-    return this.#provider.listSourceCredentials(request);
+    return this.#credentials.listSourceCredentials(request);
   }
 
   async disconnectSourceCredential(
     request: SourceControlWorkspaceCredentialDisconnectRequest,
   ): Promise<SourceControlWorkspaceCredentialDisconnectResponse> {
-    if (this.#provider.disconnectSourceCredential === undefined) {
+    if (this.#credentials.disconnectSourceCredential === undefined) {
       throw new SandboxControlError(
         "source_control_credential_unavailable",
         "The configured Sandbox Provider cannot disconnect Workspace Git credentials",
         false,
       );
     }
-    return this.#provider.disconnectSourceCredential(request);
+    return this.#credentials.disconnectSourceCredential(request);
   }
 
   close(): Promise<void> {
@@ -3286,7 +3264,7 @@ export class SandboxController {
     return candidates.flatMap((candidate) => {
       let id: string;
       try {
-        id = this.#provider.executionIdentity(candidate.handle);
+        id = this.#execution.executionIdentity(candidate.handle);
       } catch (error) {
         // A missing local handle is not physical VM-loss evidence. Keep other
         // targets observable and report the affected resource for recovery.
@@ -3298,7 +3276,7 @@ export class SandboxController {
           tenantId: candidate.handle.assignment.tenantId,
           id,
           observe: () => this.#provider.observeRuntime(candidate.handle),
-          probe: () => this.#provider.probeExecution(candidate.handle),
+          probe: () => this.#execution.probeExecution(candidate.handle),
           fail: () =>
             candidate.fail(
               new SandboxControlError(
@@ -3600,7 +3578,7 @@ export class SandboxController {
   async #verifyDevelopmentEnvironment(
     environment: ManagedDevelopmentEnvironment,
   ): Promise<{ continuityId: string }> {
-    const observation = await this.#provider.probeExecution(environment.handle);
+    const observation = await this.#execution.probeExecution(environment.handle);
     const runtimeCapsule = await this.#persistentCapsule(environment.handle);
     if (runtimeCapsule === undefined) {
       throw new SandboxControlError(

@@ -208,34 +208,13 @@ export type SandboxTerminalSession = Readonly<{
   disconnect(): void;
 }>;
 
-/**
- * Provider-neutral execution contract owned by the trusted Sandbox control.
- * Implementations must not expose their native SDK/client objects through a
- * handle or require the Agent Runner to know provider-specific arguments.
- */
-export interface SandboxProvider {
-  imageIo?(
-    handle: SandboxHandle,
-    input: ToolImageIo,
-    signal?: AbortSignal,
-  ): Promise<PreparedInputImage & { path?: string; placementError?: string }>;
-  openWorkflow?(
-    handle: SandboxHandle,
-    input: { script: string; operationId: string; cwd: string },
-  ): Promise<Duplex>;
-  openPreviewConnection?(
-    handle: SandboxHandle,
-    port: number,
-    signal?: AbortSignal,
-  ): Promise<Duplex>;
+/** Allocation, recovery and physical cleanup. Only the resource owner uses this port. */
+export interface SandboxLifecycle {
   readonly providerId: string;
   readonly cleanPrewarmCount?: number;
   /** Provider-specific policy selected only by trusted deployment config. */
   readonly defaultPolicy: SandboxPolicy;
   checkHealth(): Promise<void>;
-  /** Attest Guest execution, not merely the provider's control-plane record. */
-  probeExecution(handle: SandboxHandle): Promise<{ continuityId: string }>;
-  executionIdentity(handle: SandboxHandle): string;
   observeRuntimeInventory(): Promise<ReadonlyMap<string, SandboxRuntimeObservation>>;
   create(
     spec: SandboxCreateSpec,
@@ -246,11 +225,6 @@ export interface SandboxProvider {
     activationId: string,
     assignment: ToolSandboxAssignment,
   ): Promise<void>;
-  describeExecution(
-    handle: SandboxHandle,
-    bindingId: string,
-    toolRoot: string,
-  ): Promise<import("./sandbox-execution.ts").SandboxExecutionDescriptor>;
   observeRuntime(handle: SandboxHandle): Promise<SandboxRuntimeObservation>;
   /** Observe an existing creation on its recorded node without adopting or starting it. */
   observeAllocation?(
@@ -258,12 +232,6 @@ export interface SandboxProvider {
     authorization: SandboxAllocationAuthorization,
     capsule?: string,
   ): Promise<SandboxRuntimeObservation | undefined>;
-  discoverHttpServices?(
-    handle: SandboxHandle,
-    signal?: AbortSignal,
-  ): Promise<SandboxHttpServiceDiscovery>;
-  /** Open a human-operated PTY without granting Agent Tool authority. */
-  openTerminal?(handle: SandboxHandle, size: SandboxTerminalSize): Promise<SandboxTerminalSession>;
   /** Pause a long-lived user environment while preserving Cube VM state. */
   pause?(handle: SandboxHandle): Promise<void>;
   /** Resume the same paused Cube identity and return its refreshed handle. */
@@ -274,6 +242,32 @@ export interface SandboxProvider {
   adoptPersistentCapsule?(capsule: string): Promise<SandboxHandle>;
   /** Forget a preserved machine without destroying its physical Cube. */
   detachPersistent?(handle: SandboxHandle): Promise<void>;
+  destroy(handle: SandboxHandle): Promise<void>;
+  inspect(handle: SandboxHandle): Promise<SandboxInspection>;
+  /** Used only when the Sandbox control restarted before it could reconstruct a handle. */
+  destroyRuntime(
+    activationId: string,
+    assignment: ToolSandboxAssignment,
+    authorization: SandboxAllocationAuthorization | undefined,
+  ): Promise<void>;
+
+  close(): Promise<void>;
+}
+
+/** Describe and probe an already authorized execution attachment; never create or retire it. */
+export interface SandboxExecution {
+  /** Attest Guest execution, not merely the provider's control-plane record. */
+  probeExecution(handle: SandboxHandle): Promise<{ continuityId: string }>;
+  executionIdentity(handle: SandboxHandle): string;
+  describeExecution(
+    handle: SandboxHandle,
+    bindingId: string,
+    toolRoot: string,
+  ): Promise<import("./sandbox-execution.ts").SandboxExecutionDescriptor>;
+}
+
+/** Current Workspace bytes and human file access. This port has no VM lifecycle authority. */
+export interface SandboxWorkspaceFiles {
   /** Browse the tenant-owned guest filesystem without restoring a Session settlement. */
   listDirectory?(handle: SandboxHandle, path: string): Promise<SandboxDirectoryListing>;
   listMachineWorkspaceDirectory?(
@@ -290,23 +284,16 @@ export interface SandboxProvider {
     path: string,
     name: string,
   ): Promise<SandboxDirectoryListing>;
-  destroy(handle: SandboxHandle): Promise<void>;
-  inspect(handle: SandboxHandle): Promise<SandboxInspection>;
   /** List only one current directory from the persistent Workspace Volume. */
   listWorkspaceDirectory?(
     request: SandboxControlListWorkspaceDirectoryRequest,
   ): Promise<SandboxControlListWorkspaceDirectoryResponse>;
-  /** Read one current bounded file without creating a Cube. */
+  /** Stream an upload to the persistent Volume without creating a Cube. */
   uploadWorkspaceFile?(
     request: WorkspaceUploadRequest,
     chunks: AsyncIterable<Uint8Array>,
     signal?: AbortSignal,
   ): Promise<WorkspaceUploadReceipt>;
-  prepareInputImage?(
-    handle: SandboxHandle,
-    source: { chunks: AsyncIterable<Uint8Array>; byteLength: number; mimeType: string },
-    signal?: AbortSignal,
-  ): Promise<PreparedInputImage>;
   uploadMachineWorkspaceFile?(
     handle: SandboxHandle,
     request: WorkspaceUploadRequest,
@@ -317,6 +304,51 @@ export interface SandboxProvider {
     request: SandboxControlReadWorkspaceFileRequest,
     signal?: AbortSignal,
   ): Promise<SandboxControlReadWorkspaceFileResponse>;
+}
+
+/** Image normalization and placement inside an already bound execution environment. */
+export interface SandboxImages {
+  imageIo?(
+    handle: SandboxHandle,
+    input: ToolImageIo,
+    signal?: AbortSignal,
+  ): Promise<PreparedInputImage & { path?: string; placementError?: string }>;
+  prepareInputImage?(
+    handle: SandboxHandle,
+    source: { chunks: AsyncIterable<Uint8Array>; byteLength: number; mimeType: string },
+    signal?: AbortSignal,
+  ): Promise<PreparedInputImage>;
+}
+
+/** Human-operated terminal transport; its process lifetime is separate from Agent Tools. */
+export interface SandboxTerminals {
+  /** Open a human-operated PTY without granting Agent Tool authority. */
+  openTerminal?(handle: SandboxHandle, size: SandboxTerminalSize): Promise<SandboxTerminalSession>;
+}
+
+/** Discover and connect to services in an already authorized environment. */
+export interface SandboxPreviews {
+  openPreviewConnection?(
+    handle: SandboxHandle,
+    port: number,
+    signal?: AbortSignal,
+  ): Promise<Duplex>;
+  discoverHttpServices?(
+    handle: SandboxHandle,
+    signal?: AbortSignal,
+  ): Promise<SandboxHttpServiceDiscovery>;
+}
+
+/** Open the fixed guest workflow transport without granting VM lifecycle authority. */
+export interface SandboxWorkflows {
+  openWorkflow?(
+    handle: SandboxHandle,
+    input: { script: string; operationId: string; cwd: string },
+  ): Promise<Duplex>;
+}
+
+/** Workspace-scoped Git credential operations, independent of execution and VM lifecycle. */
+export interface SandboxSourceCredentials {
   authorizeSourceCredential?(
     request: SourceControlWorkspaceCredentialAuthorizeRequest,
   ): Promise<SourceControlWorkspaceCredentialResponse>;
@@ -329,12 +361,18 @@ export interface SandboxProvider {
   disconnectSourceCredential?(
     request: SourceControlWorkspaceCredentialDisconnectRequest,
   ): Promise<SourceControlWorkspaceCredentialDisconnectResponse>;
-  /** Used only when the Sandbox control restarted before it could reconstruct a handle. */
-  destroyRuntime(
-    activationId: string,
-    assignment: ToolSandboxAssignment,
-    authorization: SandboxAllocationAuthorization | undefined,
-  ): Promise<void>;
-
-  close(): Promise<void>;
 }
+
+/** Composition contract for the runtime factory and concrete provider. Consumers
+ * use the focused ports above; implementations never expose vendor clients or
+ * management credentials to the Agent Runner. All ports may share one provider. */
+export interface SandboxProvider
+  extends
+    SandboxLifecycle,
+    SandboxExecution,
+    SandboxWorkspaceFiles,
+    SandboxImages,
+    SandboxTerminals,
+    SandboxPreviews,
+    SandboxWorkflows,
+    SandboxSourceCredentials {}
