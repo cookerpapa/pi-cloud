@@ -1,11 +1,12 @@
 # Implementation roadmap
 
-## Sandbox capability boundaries and current documentation
+## Sandbox capability boundaries and current documentation — deployed
 
-Implement focused provider ports and a file-access consumer with the existing
-owner's admission callbacks. Keep lifecycle and recovery in one controller;
-retain whole guest Tools and source-side bounded data handling. Simplify the
-current architecture/map and preserve dated evidence in the report index.
+Focused provider ports and a file-access consumer use the existing owner's
+admission callbacks. Lifecycle and recovery remain in one controller; whole guest
+Tools and source-side bounded data handling are retained. The current architecture
+and map are simplified, with dated evidence in the report index. Matched
+`sandbox-capabilities-20261031` is deployed and live-verified on schema 205.
 [Scope](research/pi-runtime-adapter-comparison-20261031.md) and
 [verification/publication](reports/sandbox-capabilities-20261031.md).
 

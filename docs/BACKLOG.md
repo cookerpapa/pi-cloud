@@ -1,6 +1,6 @@
 # Maintained backlog
 
-## Sandbox capability boundaries and current documentation — in progress
+## Sandbox capability boundaries and current documentation — deployed
 
 - [x] Narrow lifecycle/execution/file/image/terminal/preview/workflow/credential
       dependencies while preserving the shared Cube implementation and owner.
@@ -8,11 +8,15 @@
       routing, cancellation, uncertain outcomes and existing recovery contracts.
 - [x] Replace chronological architecture/navigation prose with the current flow,
       preserve report links separately, and fix retired ingress guidance.
-- [ ] Complete required checks, matched publication and relevant live acceptance.
+- [x] Complete required checks, matched publication and relevant live acceptance.
 
 [Scope and comparison](research/pi-runtime-adapter-comparison-20261031.md).
 [Delivery record](reports/sandbox-capabilities-20261031.md). No Pi upgrade or
 automatic project text/Skill discovery is included in this slice.
+Matched `sandbox-capabilities-20261031` is deployed on schema 205. The 2,412-test
+workspace/helper gate, 379 fault cases, live file/pause/resume, Luna browser and
+native recovery checks pass. Original files, conversations, images and configuration
+are preserved; the two development machines and original application are restored.
 
 ## Provider-owned model continuation — deployed
 
