@@ -1,5 +1,29 @@
 # Maintained backlog
 
+## Answer controls and historical paging — in progress
+
+- [x] Reproduce unstyled copies on settled text inside a running/follow-up Run.
+- [x] Use the same answer action style for body fragments and final footers.
+- [x] Remove the speculative newer-page button; retain automatic paging and
+      explicit retry of the exact failed request.
+- [x] Verify wide/narrow layouts, complete long-answer copying and one failed
+      request before manual retry.
+- [ ] Publish the presentation-only Web change and verify the deployed asset.
+
+## Same-Worker Run recovery — diagnosed, not repaired
+
+- [x] Correlate the reported `Command identity changed` failure with PG lease
+      history and reproduce it without a model or production writes.
+- [ ] Separate logical Run deduplication from execution-incarnation identity in
+      AgentRunSupervisor. Preserve payload conflict detection within an incarnation,
+      stale-epoch rejection, cancellation targeting and safe retirement of old state.
+      A higher authorized lease for the same Run must recover even on a Worker
+      retaining its prior settled execution. A fresh Worker already accepts it.
+
+[Diagnosis and UI scope](reports/command-identity-and-message-controls-20261031.md).
+The second recovery trigger is not established by retained PG closure records;
+do not attribute it to the provider or network without evidence.
+
 ## Manual reading and native text selection — deployed
 
 - [x] Reproduce end-following jumps after manual Tool disclosure and lost text selection.

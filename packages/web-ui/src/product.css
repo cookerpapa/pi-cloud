@@ -4299,7 +4299,7 @@ body.product-panel-resizing {
   align-items: center;
 }
 .product-history-controls button,
-.product-history-newer {
+.product-history-tail-error button {
   border: 0;
   background: none;
   color: #aaa;
@@ -4308,12 +4308,16 @@ body.product-panel-resizing {
   font-size: 12px;
   padding: 6px;
 }
-.product-history-controls [role="alert"] {
+.product-history-controls [role="alert"],
+.product-history-tail-error [role="alert"] {
   color: #e9a18b;
   font-size: 12px;
 }
-.product-history-newer {
-  display: block;
+.product-history-tail-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   margin: -60px auto 24px;
   position: relative;
 }

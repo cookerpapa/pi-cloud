@@ -106,7 +106,6 @@ const zhCN = {
   "upload.previewFailed": "图片预览暂不可用",
 
   "chat.loadEarlier": "加载更早的消息",
-  "chat.loadNewer": "加载后续消息",
   "chat.loadingHistory": "加载中…",
   "chat.historyFailed": "历史加载失败，请重试",
   "chat.historyLabel": "会话历史",
@@ -662,7 +661,6 @@ const enUS: Record<UiTextKey, string> = {
   "upload.previewFailed": "Image preview unavailable",
 
   "chat.loadEarlier": "Load earlier messages",
-  "chat.loadNewer": "Load newer messages",
   "chat.loadingHistory": "Loading…",
   "chat.historyFailed": "Could not load history. Try again.",
   "chat.historyLabel": "Conversation history",

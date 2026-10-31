@@ -1,5 +1,7 @@
 # Delivery and research evidence
 
+- [Run identity diagnosis and message controls](command-identity-and-message-controls-20261031.md):
+  same-Worker recovery conflict, consistent copy actions and quiet historical paging.
 - [Preparation timings and manual reading](timing-and-reader-20261031.md): bounded
   startup/model diagnostics, Tool disclosure, native selection and matched acceptance.
 - [Human input and Skill market](skill-market-input-20261031.md): unified admission,

@@ -162,6 +162,9 @@ Selection pins only the selected rows/lines in the current bounded window and
 pauses history pagination and text animation. Known Tool results may settle in
 place when no selection is active. Returning to live displays buffered text at
 once. These are browser reading policies, not execution or history mutations.
+Normal history paging is automatic at the reading edge. A failed page offers a
+retry of that same query; a speculative later-page flag is not a user notification.
+Copies on settled answer fragments and final footers share the answer action style.
 See [ADR-0278](adr/0278-windowed-conversation-presentation.md).
 
 Model phase observations, child progress and running Tool previews are disposable.

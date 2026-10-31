@@ -46,6 +46,12 @@ function anchorIndex(rows: readonly (VirtualConversationRow | null)[], value: An
       );
 }
 type Target = { turnId: string; entryId?: string };
+type HistoryReadRequest = {
+  query: ConversationHistoryQuery;
+  direction: "before" | "after" | "replace";
+  target?: Target | { cursor: string };
+  restored?: Anchor;
+};
 function nestedScroll(
   target: EventTarget | null,
   root: HTMLElement | null,
@@ -103,7 +109,14 @@ export function ConversationTimeline({
   const pagesOwner = useRef<string | undefined>(sessionId);
   const ownedPages = pagesOwner.current === sessionId ? pages : null;
   const [loading, setLoading] = useState(false),
-    [error, setError] = useState(false);
+    [error, setErrorView] = useState<HistoryReadRequest | null>(null);
+  const errorRef = useRef<HistoryReadRequest | null>(null);
+  const setError = useCallback((failure: HistoryReadRequest | null) => {
+    // Wheel/scroll/RAF callbacks can run before React presents a failed read.
+    // Keep that interval from issuing the same failed page again automatically.
+    errorRef.current = failure;
+    setErrorView(failure);
+  }, []);
   const [pendingTarget, setPendingTarget] = useState<Target | { cursor: string } | null>(null);
   const [newOutput, setNewOutput] = useState(false);
   const [disclosures, setDisclosures] = useState<Record<string, boolean>>({});
@@ -237,7 +250,7 @@ export function ConversationTimeline({
     epoch.current++;
     busy.current = false;
     setLoading(false);
-    setError(false);
+    setError(null);
     anchor.current = null;
     anchorRequest.current = null;
     guardUntil.current = performance.now() + 500;
@@ -260,7 +273,7 @@ export function ConversationTimeline({
       if (!id || (busy.current && direction !== "replace")) return;
       busy.current = true;
       setLoading(true);
-      setError(false);
+      setError(null);
       const abort = new AbortController();
       request.current?.abort();
       request.current = abort;
@@ -325,7 +338,13 @@ export function ConversationTimeline({
         }
         guardUntil.current = performance.now() + 200;
       } catch (e) {
-        if (!abort.signal.aborted && version === epoch.current) setError(true);
+        if (!abort.signal.aborted && version === epoch.current)
+          setError({
+            query,
+            direction,
+            ...(target ? { target } : {}),
+            ...(restored ? { restored } : {}),
+          });
       } finally {
         if (version === epoch.current) {
           busy.current = false;
@@ -341,7 +360,7 @@ export function ConversationTimeline({
     epoch.current++;
     busy.current = false;
     setLoading(false);
-    setError(false);
+    setError(null);
     setPages(null);
     setPendingTarget(null);
     setNewOutput(false);
@@ -538,16 +557,13 @@ export function ConversationTimeline({
     const query = historyBeforeQuery(first);
     if (query) void load(query, "before");
   };
-  const newer = () => {
-    const last = pagesRef.current?.at(-1);
-    const query =
-      last?.afterQuery ?? (last?.history.after ? { after: last.history.after } : undefined);
-    if (query) void load(query, "after");
+  const retryHistory = () => {
+    if (error) void load(error.query, error.direction, error.target, error.restored);
   };
   const checkEdges = useCallback(() => {
     const container = scrollerRef.current;
     const current = pagesRef.current;
-    if (!container || !current || busy.current || error || selection.isActive()) return;
+    if (!container || !current || busy.current || errorRef.current || selection.isActive()) return;
     const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
     const last = current.at(-1);
     const afterQuery =
@@ -634,7 +650,6 @@ export function ConversationTimeline({
     }
   }, [live.turns, ownedPages, selection.active, capture]);
   const before = ownedPages?.[0]?.history.hasBefore ?? live.history.hasBefore;
-  const after = ownedPages?.at(-1)?.history.hasAfter ?? false;
   const disclosureState = useMemo(
     () => ({
       values: disclosures,
@@ -771,7 +786,7 @@ export function ConversationTimeline({
           if (
             event.deltaY < 0 &&
             !busy.current &&
-            !error &&
+            !errorRef.current &&
             (scrollerRef.current?.scrollTop ?? 0) < loadingZone + 250 &&
             hasOlder
           )
@@ -839,7 +854,14 @@ export function ConversationTimeline({
                 {loading ? t("chat.loadingHistory") : t("chat.loadEarlier")}
               </button>
             ) : null}
-            {error ? <span role="alert">{t("chat.historyFailed")}</span> : null}
+            {error && error.direction !== "after" ? (
+              <>
+                <span role="alert">{t("chat.historyFailed")}</span>
+                <button type="button" onClick={retryHistory}>
+                  {t("common.retry")}
+                </button>
+              </>
+            ) : null}
           </div>
           <div ref={virtualizer.containerRef} style={{ position: "relative", width: "100%" }}>
             {virtualizer.getVirtualItems().map((v) => {
@@ -865,15 +887,13 @@ export function ConversationTimeline({
               );
             })}
           </div>
-          {after ? (
-            <button
-              className="product-history-newer"
-              type="button"
-              disabled={loading}
-              onClick={newer}
-            >
-              {loading ? t("chat.loadingHistory") : t("chat.loadNewer")}
-            </button>
+          {error?.direction === "after" ? (
+            <div className="product-history-tail-error">
+              <span role="alert">{t("chat.historyFailed")}</span>
+              <button type="button" onClick={retryHistory}>
+                {t("common.retry")}
+              </button>
+            </div>
           ) : null}
         </div>
       </section>

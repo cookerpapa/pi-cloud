@@ -169,6 +169,7 @@ function AssistantTextItem({
   processNarration: boolean;
   streaming: boolean;
 }) {
+  const { t } = useI18n();
   const mountedLength = useRef(windowed ? item.text.length : 0);
   const disclosure = useContext(HistoryDisclosureContext);
   const selectionActive = disclosure?.selectionActive ?? false;
@@ -194,7 +195,13 @@ function AssistantTextItem({
         {visibleText}
       </Markdown>
       {copyText !== undefined && !streaming ? (
-        <MessageCopyButton text={copyText} label="复制消息" copiedLabel="已复制" />
+        <div className="product-answer-actions">
+          <MessageCopyButton
+            text={copyText}
+            label={t("turn.copyAssistantMessage")}
+            copiedLabel={t("turn.copied")}
+          />
+        </div>
       ) : null}
     </div>
   );

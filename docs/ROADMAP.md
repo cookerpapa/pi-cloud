@@ -1,5 +1,13 @@
 # Implementation roadmap
 
+## Answer controls and historical paging
+
+Unify copy styling across virtual answer fragments and follow-up boundaries.
+Historical reading uses automatic edge loading and the existing return-to-latest
+action; only a failed read exposes retry. Publish through the existing Web scope.
+The independently diagnosed same-Worker recovery identity conflict remains a
+runtime fix, with its boundaries recorded in the backlog.
+
 ## Tool disclosure and text selection — deployed
 
 Manual reading must take priority over end following. Retain the selected band

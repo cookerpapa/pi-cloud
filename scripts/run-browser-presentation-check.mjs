@@ -10,6 +10,7 @@ async function withChromePage(options, operation) {
   if (process.env.PI_CLOUD_BROWSER_SCOPE === "peer-forks" && !options.peerForks) return;
   if (process.env.PI_CLOUD_BROWSER_SCOPE === "commands" && !options.commands) return;
   if (process.env.PI_CLOUD_BROWSER_SCOPE === "tool-groups" && !options.toolGroups) return;
+  if (process.env.PI_CLOUD_BROWSER_SCOPE === "message-actions" && !options.messageActions) return;
   return openChromePage(options, async (page) => {
     await page.send("Page.addScriptToEvaluateOnNewDocument", {
       source:
@@ -62,6 +63,8 @@ const fixture = `
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { ConversationTurn } from "/src/ConversationTurn.tsx";
+import { ConversationTimeline } from "/src/ConversationTimeline.tsx";
+import { virtualConversationRows } from "/src/virtual-conversation-rows.ts";
 import { RunObservationStore } from "/src/run-observation-store.ts";
 import { ToolProgressStore } from "/src/tool-progress-store.ts";
 import { useResizablePanel } from "/src/use-resizable-panel.ts";
@@ -100,6 +103,34 @@ function Panel() {
 const root = createRoot(document.getElementById("root"));
 const configuration={productUrl:location.origin,adminUrl:location.origin,
   managementUrls:{providerGateway:'https://models.example.test/management.html',grafana:'',prometheus:'',alertmanager:'',jaeger:''}};
+window.renderAnswerActions=mode=>{
+  const first={kind:'text',key:'first',messageId:'entry:1:0',phase:'final_answer',text:'FIRST_ANSWER',firstSequence:1,lastSequence:1};
+  const last={...first,key:'last',messageId:mode==='follow-up'?'pending-answer':'entry:3:0',text:('Long final paragraph. '.repeat(420)+String.fromCharCode(10,10)).repeat(3)};
+  window.answerActionExpected=mode==='completed'?['FIRST_ANSWER',last.text]:['FIRST_ANSWER'];
+  const turn={runId:'actions-run',turnId:'actions-turn',mailboxPosition:1,prompt:null,acceptedAt:null,
+    status:['completed','paged'].includes(mode)?'completed':'running',startedSequence:1,terminalSequence:null,stopReason:null,failure:null,cancellation:null,
+    ...(mode==='paged'?{continuesAfter:true}:{}),
+    items:['follow-up','completed'].includes(mode)?[first,{kind:'user',key:'follow-up',inputId:'follow-up',messageId:'entry:2:0',text:'Follow up',firstSequence:2,lastSequence:2},last]:[first]};
+  root.render(React.createElement(I18nProvider,{initialLanguage:'zh-CN'},
+    React.createElement('div',{style:{maxWidth:920,margin:'20px auto'}},
+      ...virtualConversationRows([turn]).map(row=>React.createElement(ConversationTurn,{key:row.key,turn:row.turn,fragment:row.fragment,
+        canFork:true,onFork:()=>{},canPrune:true,onPrune:()=>{}})))));
+};
+window.renderHistoryEdge=()=>{
+  window.requestAnimationFrame=nativeRaf;window.cancelAnimationFrame=nativeCancelRaf;
+  window.edgeRequests=[];window.edgeFail=true;
+  const turn={runId:'edge-run',turnId:'edge-turn',mailboxPosition:1,prompt:'Question',acceptedAt:null,status:'completed',
+    startedSequence:1,terminalSequence:3,stopReason:'stop',failure:null,cancellation:null,
+    items:[{kind:'text',key:'edge-text',messageId:'entry:2:0',text:'A stable historical paragraph. '.repeat(120),firstSequence:2,lastSequence:2,historyCursor:'edge-cursor'}]};
+  const live={...createInitialSessionView(),session:{sessionId:'edge-session'},turns:[turn],history:{before:null,after:'edge-cursor',hasBefore:false,hasAfter:false}};
+  const api={getConversation:async(_id,query)=>{edgeRequests.push(query);if(edgeFail)throw Error('Simulated history read failure');
+    return {project:{},session:{sessionId:'edge-session',state:'idle'},turns:[],inheritedMessages:[],history:{before:null,after:null,hasBefore:false,hasAfter:false}};}};
+  function Edge(){const scroll=React.useRef(null),control=React.useRef(null);
+    return React.createElement('div',{style:{display:'grid',height:500,width:700,margin:'20px auto'}},
+      React.createElement(ConversationTimeline,{api,live,scrollerRef:scroll,controlRef:control,jump:null,onJumpSettled:()=>{},
+        renderRow:row=>React.createElement(ConversationTurn,{turn:row.turn,fragment:row.fragment})}));}
+  root.render(React.createElement(I18nProvider,{initialLanguage:'zh-CN'},React.createElement(Edge)));
+};
 window.renderPanel = () => root.render(React.createElement(React.StrictMode, null, React.createElement(Panel)));
 window.runObservations = new RunObservationStore();
 window.toolProgressStore = new ToolProgressStore();
@@ -561,6 +592,120 @@ const server = await createServer({
 try {
   await server.listen();
   const port = server.httpServer.address().port;
+  await withChromePage({ width: 1280, height: 900, messageActions: true }, async (page) => {
+    await page.navigate(`http://127.0.0.1:${port}/review.html`);
+    await page.waitFor("window.fixtureReady");
+    for (const width of [1280, 390]) {
+      await page.send("Emulation.setDeviceMetricsOverride", {
+        width,
+        height: 900,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      for (const mode of ["settling", "follow-up", "completed", "paged"]) {
+        await page.evaluate(`renderAnswerActions(${JSON.stringify(mode)})`);
+        await page.wait(80);
+        const controls = await page.evaluate(`(async()=>{
+          const copies=[...document.querySelectorAll('.product-assistant-message .product-message-copy')].filter(button=>!button.closest('.product-user-message'));
+          const descriptor=Object.getOwnPropertyDescriptor(navigator,'clipboard'), copied=[];
+          Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>copied.push(text)}});
+          try {
+            for(const button of copies){button.click();await Promise.resolve();}
+            const styles=copies.map(button=>{const s=getComputedStyle(button);return {
+              inActions:!!button.closest('.product-answer-actions'),
+              display:s.display,padding:s.padding,background:s.backgroundColor,label:button.title};});
+            const fork=[...document.querySelectorAll('.product-answer-actions button')].find(b=>b.textContent.includes('↳'));
+            const copy=fork?.parentElement.querySelector('.product-message-copy');
+            const a=copy?.getBoundingClientRect(),b=fork?.getBoundingClientRect();
+            return {styles,copied,expected:answerActionExpected,centerDifference:a&&b?Math.abs(a.y+a.height/2-b.y-b.height/2):null};
+          } finally {if(descriptor)Object.defineProperty(navigator,'clipboard',descriptor);else delete navigator.clipboard;}
+        })()`);
+        assert.deepEqual(
+          controls.copied,
+          controls.expected,
+          mode + " must copy each complete answer once",
+        );
+        assert(
+          controls.styles.every((s) => s.inActions),
+          mode + " has an unstyled body copy button",
+        );
+        assert(
+          controls.styles.every(
+            (s) =>
+              ["flex", "inline-flex"].includes(s.display) &&
+              s.padding === "5px 8px" &&
+              s.background === "rgba(0, 0, 0, 0)",
+          ),
+          JSON.stringify({ mode, width, styles: controls.styles }),
+        );
+        if (mode === "completed")
+          assert(
+            controls.centerDifference < 1,
+            "Copy, Fork and prune must share the final action row",
+          );
+        if (mode === "completed" || mode === "follow-up")
+          await page.screenshot(`/tmp/pi-cloud-message-actions-${mode}-${width}.png`);
+      }
+    }
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 1280,
+      height: 900,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await page.evaluate("renderHistoryEdge()");
+    await page.waitFor("document.querySelector('[data-history-row-key]')");
+    await page.wait(650);
+    const edgePoint = await page.evaluate(
+      "(()=>{const p=document.querySelector('.product-chat-scroll'),r=p.getBoundingClientRect();return {x:r.left+50,y:r.top+150};})()",
+    );
+    await page.send("Input.dispatchMouseEvent", {
+      type: "mouseWheel",
+      ...edgePoint,
+      deltaX: 0,
+      deltaY: -32,
+    });
+    await page.wait(350);
+    assert.equal(
+      await page.evaluate("!!document.querySelector('.product-return-to-latest')"),
+      true,
+    );
+    assert.equal(
+      await page.evaluate(
+        "document.querySelector('.product-chat-scroll').textContent.includes('加载后续消息')",
+      ),
+      false,
+      "A reading window must not advertise a speculative later page",
+    );
+    assert.equal(await page.evaluate("edgeRequests.length"), 0);
+    await page.send("Input.dispatchMouseEvent", {
+      type: "mouseWheel",
+      ...edgePoint,
+      deltaX: 0,
+      deltaY: 512,
+    });
+    await page.wait(350);
+    const edgeState = await page.evaluate(
+      "(()=>{const p=document.querySelector('.product-chat-scroll');return {requests:edgeRequests.length,scroll:p.scrollTop,height:p.scrollHeight,client:p.clientHeight,pages:p.dataset.historyPages,reading:!!document.querySelector('.product-return-to-latest'),error:document.querySelector('[role=alert]')?.textContent};})()",
+    );
+    assert.equal(edgeState.requests, 1, JSON.stringify(edgeState));
+    await page.waitFor("edgeRequests.length===1 && document.querySelector('[role=alert]')");
+    assert.equal(
+      await page.evaluate("!!document.querySelector('.product-history-tail-error button')"),
+      true,
+    );
+    await page.evaluate(
+      "edgeFail=false;document.querySelector('.product-history-tail-error button').click()",
+    );
+    await page.waitFor(
+      "edgeRequests.length===2 && !document.querySelector('.product-return-to-latest')",
+    );
+    assert.equal(
+      await page.evaluate("JSON.stringify(edgeRequests[0])===JSON.stringify(edgeRequests[1])"),
+      true,
+    );
+    assert.equal(await page.evaluate("document.querySelector('[role=alert]')===null"), true);
+  });
   for (const state of ["running", "paused", "released", "unavailable", "missing-binding"]) {
     await withChromePage({ forkWorkspace: true }, async (page) => {
       await page.navigate(`http://127.0.0.1:${port}/review.html`);
@@ -2432,108 +2577,118 @@ try {
   });
   console.log(
     JSON.stringify(
-      process.env.PI_CLOUD_BROWSER_SCOPE === "fork-workspace"
+      process.env.PI_CLOUD_BROWSER_SCOPE === "message-actions"
         ? {
             accepted: true,
-            scope: "fork-workspace",
-            preservedDirectory: true,
-            noElasticFallback: true,
-            machineStates: true,
+            scope: "message-actions",
+            uniformAnswerCopies: true,
+            longAnswerCopy: true,
+            finalActionRow: true,
+            automaticNewerPaging: true,
+            historyRetry: true,
           }
-        : process.env.PI_CLOUD_BROWSER_SCOPE === "peer-forks"
+        : process.env.PI_CLOUD_BROWSER_SCOPE === "fork-workspace"
           ? {
               accepted: true,
-              scope: "peer-forks",
-              flatHumanRows: true,
-              subagentsCollapsedByDefault: true,
-              disclosureKeepsSelection: true,
-              delegatedSourcesReadOnly: true,
-              sourceNavigation: true,
-              prunedSourcePointFallback: true,
-              independentDelete: true,
-              deletedSourceLabel: true,
-              boundedViewport: true,
+              scope: "fork-workspace",
+              preservedDirectory: true,
+              noElasticFallback: true,
+              machineStates: true,
             }
-          : process.env.PI_CLOUD_BROWSER_SCOPE === "tool-groups"
+          : process.env.PI_CLOUD_BROWSER_SCOPE === "peer-forks"
             ? {
                 accepted: true,
-                scope: "tool-groups",
-                groupingOnly: true,
-                individualDetailsPreserved: true,
-                boundedWidth: true,
-                previewReplacedByFinalResult: true,
-                latePreviewDiscarded: true,
-                errorMarkerOnlyOnFailedTool: true,
+                scope: "peer-forks",
+                flatHumanRows: true,
+                subagentsCollapsedByDefault: true,
+                disclosureKeepsSelection: true,
+                delegatedSourcesReadOnly: true,
+                sourceNavigation: true,
+                prunedSourcePointFallback: true,
+                independentDelete: true,
+                deletedSourceLabel: true,
+                boundedViewport: true,
               }
-            : process.env.PI_CLOUD_BROWSER_SCOPE === "commands"
+            : process.env.PI_CLOUD_BROWSER_SCOPE === "tool-groups"
               ? {
                   accepted: true,
-                  scope: "commands",
-                  slashUsageAndCompact: true,
-                  compactLostReplyAndDraftRetention: true,
-                  compactWaitsForPlacement: true,
-                }
-              : {
-                  accepted: true,
-                  scope: "all",
-                  slashUsageAndCompact: true,
-                  compactLostReplyAndDraftRetention: true,
-                  compactWaitsForPlacement: true,
-                  retainedSessionImageLoads: true,
-                  canonicalToolImagesOutsideCollapsedActivity: true,
-                  imageCaptionPlainTextAndDetailsNoDuplicate: true,
-                  previewUsesNamedAnswerLink: true,
-                  previewDetailsKeepPortAndResult: true,
-                  previewHasNoFallbackOrDuplicateCard: true,
+                  scope: "tool-groups",
+                  groupingOnly: true,
+                  individualDetailsPreserved: true,
+                  boundedWidth: true,
                   previewReplacedByFinalResult: true,
                   latePreviewDiscarded: true,
                   errorMarkerOnlyOnFailedTool: true,
-                  earlyRunNeverFabricatesUserInput: true,
-                  acceptanceDiscoveryRaceKeepsDraftAndStream: true,
-                  composerEnterPreference: true,
-                  composerButtonMatchesEnter: true,
-                  composerEmptyEnterSafe: true,
-                  composerImeAndShiftEnter: true,
-                  composerScopedEscapePreservesDraft: true,
-                  composerAccountIsolation: true,
-                  composerPreferencePersistenceFallback: true,
-                  directSteerRetryIdentity: true,
-                  ordinarySendRetryIdentity: true,
-                  initialImageSendRetryIdentity: true,
-                  directSteerPendingPresentation: true,
-                  machineWorkspaceRebind: true,
-                  rebindRetryUsesSameTargetAndKey: true,
-                  persistentRuntimeStatus: true,
-                  collapsedRuntimeDiagnostics: true,
-                  runtimeWarningsVisible: true,
-                  observationGenerationRecovery: true,
-                  separateActivityAndPath: true,
-                  firstImageOnlyMessage: true,
-                  uploadIdentityOnRetry: true,
-                  debuggerDisconnect: true,
-                  strictModeAnimation: true,
-                  commentaryAnimation: true,
-                  commentaryReconnectAndReducedMotion: true,
-                  outputLimitVisible: true,
-                  reconnectSnapshotImmediate: true,
-                  initialPanelWidth: true,
-                  resizeUnmountCleanup: true,
-                  pointerCancellation: true,
-                  composerSessionSettings: true,
-                  providerSwitchClearsFast: true,
-                  compositionAndPendingDraft: true,
-                  inspectorSelectionAndTerminalLifetime: true,
-                  logoutLifecycle: true,
-                  branchSelectionAndManualJump: true,
-                  childHistoryReadOnlyAndParentActions: true,
-                  pendingInputNavigation: true,
-                  childWorkspaceReadOnly: true,
-                  unavailableIdentityRetry: true,
-                  staleConversationListAfterDelete: true,
-                  terminalSocketIsolation: true,
-                  directoryPickerLifecycle: true,
-                  responsivePageScrolling: true,
-                },
+                }
+              : process.env.PI_CLOUD_BROWSER_SCOPE === "commands"
+                ? {
+                    accepted: true,
+                    scope: "commands",
+                    slashUsageAndCompact: true,
+                    compactLostReplyAndDraftRetention: true,
+                    compactWaitsForPlacement: true,
+                  }
+                : {
+                    accepted: true,
+                    scope: "all",
+                    slashUsageAndCompact: true,
+                    compactLostReplyAndDraftRetention: true,
+                    compactWaitsForPlacement: true,
+                    retainedSessionImageLoads: true,
+                    canonicalToolImagesOutsideCollapsedActivity: true,
+                    imageCaptionPlainTextAndDetailsNoDuplicate: true,
+                    previewUsesNamedAnswerLink: true,
+                    previewDetailsKeepPortAndResult: true,
+                    previewHasNoFallbackOrDuplicateCard: true,
+                    previewReplacedByFinalResult: true,
+                    latePreviewDiscarded: true,
+                    errorMarkerOnlyOnFailedTool: true,
+                    earlyRunNeverFabricatesUserInput: true,
+                    acceptanceDiscoveryRaceKeepsDraftAndStream: true,
+                    composerEnterPreference: true,
+                    composerButtonMatchesEnter: true,
+                    composerEmptyEnterSafe: true,
+                    composerImeAndShiftEnter: true,
+                    composerScopedEscapePreservesDraft: true,
+                    composerAccountIsolation: true,
+                    composerPreferencePersistenceFallback: true,
+                    directSteerRetryIdentity: true,
+                    ordinarySendRetryIdentity: true,
+                    initialImageSendRetryIdentity: true,
+                    directSteerPendingPresentation: true,
+                    machineWorkspaceRebind: true,
+                    rebindRetryUsesSameTargetAndKey: true,
+                    persistentRuntimeStatus: true,
+                    collapsedRuntimeDiagnostics: true,
+                    runtimeWarningsVisible: true,
+                    observationGenerationRecovery: true,
+                    separateActivityAndPath: true,
+                    firstImageOnlyMessage: true,
+                    uploadIdentityOnRetry: true,
+                    debuggerDisconnect: true,
+                    strictModeAnimation: true,
+                    commentaryAnimation: true,
+                    commentaryReconnectAndReducedMotion: true,
+                    outputLimitVisible: true,
+                    reconnectSnapshotImmediate: true,
+                    initialPanelWidth: true,
+                    resizeUnmountCleanup: true,
+                    pointerCancellation: true,
+                    composerSessionSettings: true,
+                    providerSwitchClearsFast: true,
+                    compositionAndPendingDraft: true,
+                    inspectorSelectionAndTerminalLifetime: true,
+                    logoutLifecycle: true,
+                    branchSelectionAndManualJump: true,
+                    childHistoryReadOnlyAndParentActions: true,
+                    pendingInputNavigation: true,
+                    childWorkspaceReadOnly: true,
+                    unavailableIdentityRetry: true,
+                    staleConversationListAfterDelete: true,
+                    terminalSocketIsolation: true,
+                    directoryPickerLifecycle: true,
+                    responsivePageScrolling: true,
+                  },
     ),
   );
 } finally {
