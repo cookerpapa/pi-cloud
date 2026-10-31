@@ -75,6 +75,11 @@ export async function purgeOwnedAcceptanceTenant(database, tenant, blobs) {
     await sql`select id from session_image_objects where tenant_id=${tenant.tenantId}::uuid`.execute(
       database,
     );
+  const { rows: packages } =
+    await sql`select distinct object_key from skill_versions where tenant_id=${tenant.tenantId}::uuid`.execute(
+      database,
+    );
+  for (const pack of packages) await blobs.delete(pack.object_key, AbortSignal.timeout(30000));
   for (const image of images)
     await blobs.delete(
       `session-images/${tenant.tenantId}/${image.id}`,
@@ -85,6 +90,10 @@ export async function purgeOwnedAcceptanceTenant(database, tenant, blobs) {
     for (const table of [
       // All owned Sessions are gone. Remove the remaining graph in dependency
       // order instead of relying on the tenant's cascades or waiting for GC.
+      "run_skill_catalogs",
+      "skill_installations",
+      "skill_versions",
+      "skill_packages",
       "pi_history_view_nodes",
       "pi_history_blocks",
       "pi_history_nodes",
@@ -117,5 +126,9 @@ export async function purgeOwnedAcceptanceTenant(database, tenant, blobs) {
       .where("slug", "=", tenant.tenantSlug)
       .execute();
   });
-  return { tenantRemoved: true, imagesRemoved: images.length };
+  return {
+    tenantRemoved: true,
+    imagesRemoved: images.length,
+    skillObjectsRemoved: packages.length,
+  };
 }

@@ -1,3 +1,11 @@
+import type {
+  SkillImport,
+  SkillMarket,
+  SkillVersion,
+  SkillInstallation,
+  SkillInstallationChange,
+  SkillPackageContent,
+} from "@pi-cloud/protocol";
 import {
   parseSessionSchedule,
   parseSessionScheduleList,
@@ -700,6 +708,61 @@ export class PiCloudApi {
   }
   conversationExportUrl(sessionId: string): string {
     return `/v1/conversations/${encodeURIComponent(sessionId)}/export`;
+  }
+  async listSkills(
+    projectId?: string,
+    cursor?: string,
+    signal?: AbortSignal,
+  ): Promise<SkillMarket> {
+    const query = new URLSearchParams({
+      ...(projectId ? { projectId } : {}),
+      ...(cursor ? { cursor } : {}),
+    });
+    return (await request(
+      this.#fetch,
+      `/v1/skills?${query}`,
+      { method: "GET", ...(signal ? { signal } : {}) },
+      this.#authorizationToken,
+    )) as SkillMarket;
+  }
+  async importSkill(input: SkillImport): Promise<SkillVersion> {
+    return (await request(
+      this.#fetch,
+      "/v1/skills/imports",
+      {
+        method: "POST",
+        headers: { "content-type": "application/octet-stream" },
+        body: JSON.stringify(input),
+      },
+      this.#authorizationToken,
+    )) as SkillVersion;
+  }
+  async installSkill(
+    packageId: string,
+    input: SkillInstallationChange,
+  ): Promise<SkillInstallation> {
+    return (await request(
+      this.#fetch,
+      `/v1/skills/${encodeURIComponent(packageId)}/installation`,
+      jsonRequest(input, undefined, "PUT"),
+      this.#authorizationToken,
+    )) as SkillInstallation;
+  }
+  async uninstallSkill(packageId: string, input: SkillInstallationChange): Promise<void> {
+    await request(
+      this.#fetch,
+      `/v1/skills/${encodeURIComponent(packageId)}/installation`,
+      jsonRequest(input, undefined, "DELETE"),
+      this.#authorizationToken,
+    );
+  }
+  async exportSkill(versionId: string): Promise<SkillPackageContent> {
+    return (await request(
+      this.#fetch,
+      `/v1/skills/versions/${encodeURIComponent(versionId)}/files`,
+      { method: "GET" },
+      this.#authorizationToken,
+    )) as SkillPackageContent;
   }
   async listSchedules(sessionId: string, cursor?: string, signal?: AbortSignal) {
     return parseSessionScheduleList(

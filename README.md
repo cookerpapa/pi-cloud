@@ -43,6 +43,10 @@ validated deployment catalog; provider discovery alone does not publish a model.
 GPT-6 Luna is used for routine live checks. Provider capabilities and availability
 remain separate from declaring a tool in the catalog.
 
+The internal [Skill market](docs/SKILLS.md) supports portable instruction packages,
+public GitHub/local imports, versioned installation and environment requirements.
+Instructions are read on demand; scripts run in the current Tool Sandbox.
+
 ## Architecture
 
 ```text

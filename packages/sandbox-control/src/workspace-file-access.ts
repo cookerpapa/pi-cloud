@@ -29,6 +29,20 @@ export class WorkspaceFileAccess {
     private readonly admission: WorkspaceFileAdmission,
   ) {}
 
+  async preparePackage(
+    handle: SandboxHandle,
+    input: Parameters<NonNullable<SandboxWorkspaceFiles["preparePackage"]>>[1],
+    signal?: AbortSignal,
+  ) {
+    if (!this.files.preparePackage)
+      throw new SandboxControlError(
+        "package_preparation_unavailable",
+        "Workspace package placement is unavailable",
+        false,
+      );
+    return this.files.preparePackage(handle, input, signal);
+  }
+
   async listWorkspaceDirectory(
     request: SandboxControlListWorkspaceDirectoryRequest,
   ): Promise<SandboxControlListWorkspaceDirectoryResponse> {

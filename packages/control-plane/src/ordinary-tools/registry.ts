@@ -1,3 +1,5 @@
+import { createSkillTools } from "./skill-tools.ts";
+import type { SkillMarketService } from "../skill-market-service.ts";
 import { createScheduleTool } from "./schedule-tool.ts";
 import { SessionScheduleService } from "../session-schedule-service.ts";
 import type { Database } from "@pi-cloud/database";
@@ -13,6 +15,8 @@ import type { ImageGenerationClient } from "./image-generation-client.ts";
 export function createOrdinaryToolRegistry(options: {
   database: Kysely<Database>;
   schedules?: SessionScheduleService;
+  skills?: SkillMarketService;
+  prepareSkill?: Parameters<typeof createSkillTools>[1];
   enabled?: readonly string[];
   images?: ConfiguredImageAttachments;
   imageGeneration?: ImageGenerationClient;
@@ -33,6 +37,8 @@ export function createOrdinaryToolRegistry(options: {
         }),
     },
   ];
+  if (options.skills && options.prepareSkill)
+    definitions.push(...createSkillTools(options.skills, options.prepareSkill));
   if (options.images) {
     const common = { images: options.images, imageIo: options.imageIo };
     definitions.push(createShowImageTool(common));

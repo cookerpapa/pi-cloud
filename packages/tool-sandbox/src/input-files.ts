@@ -1,3 +1,4 @@
+import { prepareSkillPackage } from "./skill-package-files.ts";
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -58,6 +59,17 @@ export async function prepareInputFile(
     const stat = await source.stat();
     if (!stat.isFile() || stat.size !== input.byteLength)
       throw new Error("Input file length changed");
+    if (input.mode === "prepare_skill_package") {
+      if (
+        typeof input.directory !== "string" ||
+        !input.directory.startsWith("/") ||
+        typeof input.digest !== "string" ||
+        !/^[a-f0-9]{64}$/.test(input.digest) ||
+        stat.size > 24 * 1024 * 1024
+      )
+        throw new Error("Invalid Skill package identity");
+      return prepareSkillPackage(input.directory, await source.readFile(), input.digest);
+    }
     if (input.mode === "normalize_image") {
       if (typeof input.mimeType !== "string") throw new Error("Missing image format");
       const result = await processImageSource(`/proc/self/fd/${source.fd}`, {

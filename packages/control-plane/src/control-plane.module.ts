@@ -1,3 +1,5 @@
+import { SkillMarketService } from "./skill-market-service.ts";
+import { SkillMarketController } from "./skill-market-controller.ts";
 import { SessionScheduleService } from "./session-schedule-service.ts";
 import { ConversationCompactService } from "./conversation-compact-service.ts";
 import { Module, type DynamicModule } from "@nestjs/common";
@@ -45,6 +47,7 @@ export type ControlPlaneModuleOptions = Omit<
 > & {
   executionTargets?: ExecutionTargetService;
   schedules?: SessionScheduleService;
+  skills?: SkillMarketService;
   sessionEventStreamOptions?: SessionEventStreamOptions;
   eventRuntime: ControlPlaneEventRuntime;
   staticRequestIdentity?: TenantRequestIdentity;
@@ -109,8 +112,12 @@ export class ControlPlaneModule {
       });
     return {
       module: ControlPlaneModule,
-      controllers: [ControlPlaneController],
+      controllers: [ControlPlaneController, SkillMarketController],
       providers: [
+        {
+          provide: SkillMarketService,
+          useValue: options.skills ?? new SkillMarketService({ database: options.database }),
+        },
         {
           provide: SessionScheduleService,
           useValue:

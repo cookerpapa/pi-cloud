@@ -1,5 +1,10 @@
 # Current architecture decisions
 
+[ADR-0291](0291-internal-skill-market.md) adds the internal Skill market: portable
+packages, immutable object-store versions, scoped installation and per-Run
+selection. Reading instructions does not require a VM; file preparation stays
+behind the current Workspace binding. Matched publication is pending.
+
 [ADR-0290](0290-human-input-boundary-and-feedback.md) is accepted for implementation:
 one human-input endpoint with a busy preference, durable receipt-based routing,
 queued-steer editing and immediate local submission feedback. Native queue,

@@ -21,6 +21,7 @@ import {
   type InternalServiceError,
   type SupervisorManagementResponse,
   RUNTIME_EXECUTION_EVIDENCE_PATH,
+  SKILL_ENVELOPE_BYTES,
 } from "@pi-cloud/protocol";
 import fastifyWebsocket from "@fastify/websocket";
 import { parseTraceCarrier, withSpan, type PiCloudMetrics } from "@pi-cloud/observability";
@@ -104,6 +105,7 @@ export type SandboxControlBackend = Pick<
       | "prepareWorkspaceUpload"
       | "prepareInputImages"
       | "imageIo"
+      | "preparePackage"
       | "recordRuntimeEvidence"
     >
   >;
@@ -648,131 +650,155 @@ export class SandboxControlServer {
       });
     }
 
-    this.#server.post(SANDBOX_CONTROL_SERVICE_PATH, async (request, reply) => {
-      if (!this.#authorized(request.headers.authorization)) {
-        await reply.code(401).send({
-          error: {
-            code: "invalid_tool_broker_credential",
-            message: "Sandbox control request is not authorized",
-            retryable: false,
-          },
-        } satisfies InternalServiceError);
-        return;
-      }
-      try {
-        const message = parseSandboxControlRequest(request.body);
-        if (message.type === "tool_sandbox.create") {
-          const cancellation = new AbortController();
-          const disconnected = () => {
-            if (!reply.raw.writableFinished)
-              cancellation.abort(new Error("Binding request disconnected"));
-          };
-          reply.raw.once("close", disconnected);
-          let reserved;
-          try {
-            reserved = await this.#observed({
-              request,
-              spanName: "sandbox.reserve",
-              operation: "reserve",
-              run: () => this.#broker.create(message, cancellation.signal),
-            });
-          } catch (error: unknown) {
-            if (!(error instanceof SandboxOwnerRedirectError)) throw error;
+    this.#server.post(
+      SANDBOX_CONTROL_SERVICE_PATH,
+      { bodyLimit: SKILL_ENVELOPE_BYTES + 16384 },
+      async (request, reply) => {
+        if (!this.#authorized(request.headers.authorization)) {
+          await reply.code(401).send({
+            error: {
+              code: "invalid_tool_broker_credential",
+              message: "Sandbox control request is not authorized",
+              retryable: false,
+            },
+          } satisfies InternalServiceError);
+          return;
+        }
+        try {
+          const message = parseSandboxControlRequest(request.body);
+          if (message.type === "tool_sandbox.create") {
+            const cancellation = new AbortController();
+            const disconnected = () => {
+              if (!reply.raw.writableFinished)
+                cancellation.abort(new Error("Binding request disconnected"));
+            };
+            reply.raw.once("close", disconnected);
+            let reserved;
+            try {
+              reserved = await this.#observed({
+                request,
+                spanName: "sandbox.reserve",
+                operation: "reserve",
+                run: () => this.#broker.create(message, cancellation.signal),
+              });
+            } catch (error: unknown) {
+              if (!(error instanceof SandboxOwnerRedirectError)) throw error;
+              await reply.code(200).send({
+                toolBrokerProtocolVersion: 1,
+                type: "tool_sandbox.owner_redirect",
+                requestId: message.requestId,
+                ownerBaseUrl: error.ownerBaseUrl,
+              });
+              return;
+            } finally {
+              reply.raw.removeListener("close", disconnected);
+            }
+            this.#metrics?.sandboxActive.set(
+              { provider: this.#broker.providerId },
+              this.#broker.activeCount,
+            );
+            this.#metrics?.sandboxPrewarm.set(
+              { provider: this.#broker.providerId },
+              this.#broker.cleanPrewarmCount,
+            );
+            await reply.code(200).send(reserved);
+            return;
+          }
+          if (message.type === "tool_sandbox.prepare_package") {
+            if (!this.#broker.preparePackage)
+              throw new SandboxControlError(
+                "package_preparation_unavailable",
+                "Package placement is unavailable",
+                false,
+              );
+            const abort = new AbortController();
+            const closed = () => {
+              if (!reply.raw.writableEnded) abort.abort(new Error("Package caller disconnected"));
+            };
+            reply.raw.on("close", closed);
+            try {
+              await reply.code(200).send(await this.#broker.preparePackage(message, abort.signal));
+            } finally {
+              reply.raw.removeListener("close", closed);
+            }
+            return;
+          }
+          if (message.type === "tool_sandbox.image_io") {
+            if (!this.#broker.imageIo)
+              throw new SandboxControlError(
+                "tool_image_io_unavailable",
+                "Tool image I/O is unavailable",
+                false,
+              );
+            const abort = new AbortController();
+            const closed = () => {
+              if (!reply.raw.writableEnded)
+                abort.abort(new Error("Tool image caller disconnected"));
+            };
+            reply.raw.on("close", closed);
+            try {
+              await reply.code(200).send(await this.#broker.imageIo(message, abort.signal));
+            } finally {
+              reply.raw.removeListener("close", closed);
+            }
+            return;
+          }
+          if (message.type === "tool_sandbox.prepare_input_images") {
+            if (!this.#broker.prepareInputImages)
+              throw new SandboxControlError(
+                "input_images_unavailable",
+                "Input image preparation is unavailable",
+                false,
+              );
+            const abort = new AbortController();
+            const closed = () => {
+              if (!reply.raw.writableEnded)
+                abort.abort(new Error("Input preparation caller disconnected"));
+            };
+            reply.raw.on("close", closed);
+            try {
+              await reply
+                .code(200)
+                .send(await this.#broker.prepareInputImages(message, abort.signal));
+            } finally {
+              reply.raw.removeListener("close", closed);
+            }
+            return;
+          }
+          if (message.type === "tool_sandbox.refresh_services") {
+            await this.#broker.refreshServices(message.activationId, message.assignment);
             await reply.code(200).send({
               toolBrokerProtocolVersion: 1,
-              type: "tool_sandbox.owner_redirect",
+              type: "tool_sandbox.services_refreshed",
               requestId: message.requestId,
-              ownerBaseUrl: error.ownerBaseUrl,
+              activationId: message.activationId,
             });
             return;
-          } finally {
-            reply.raw.removeListener("close", disconnected);
           }
-          this.#metrics?.sandboxActive.set(
-            { provider: this.#broker.providerId },
-            this.#broker.activeCount,
-          );
-          this.#metrics?.sandboxPrewarm.set(
-            { provider: this.#broker.providerId },
-            this.#broker.cleanPrewarmCount,
-          );
-          await reply.code(200).send(reserved);
-          return;
-        }
-        if (message.type === "tool_sandbox.image_io") {
-          if (!this.#broker.imageIo)
-            throw new SandboxControlError(
-              "tool_image_io_unavailable",
-              "Tool image I/O is unavailable",
-              false,
+          if (message.type === "tool_sandbox.release") {
+            const released = await this.#observed({
+              request,
+              spanName: "sandbox.release",
+              operation: "release",
+              run: () => this.#broker.release(message),
+            });
+            this.#metrics?.sandboxActive.set(
+              { provider: this.#broker.providerId },
+              this.#broker.activeCount,
             );
-          const abort = new AbortController();
-          const closed = () => {
-            if (!reply.raw.writableEnded) abort.abort(new Error("Tool image caller disconnected"));
-          };
-          reply.raw.on("close", closed);
-          try {
-            await reply.code(200).send(await this.#broker.imageIo(message, abort.signal));
-          } finally {
-            reply.raw.removeListener("close", closed);
-          }
-          return;
-        }
-        if (message.type === "tool_sandbox.prepare_input_images") {
-          if (!this.#broker.prepareInputImages)
-            throw new SandboxControlError(
-              "input_images_unavailable",
-              "Input image preparation is unavailable",
-              false,
+            this.#metrics?.sandboxPrewarm.set(
+              { provider: this.#broker.providerId },
+              this.#broker.cleanPrewarmCount,
             );
-          const abort = new AbortController();
-          const closed = () => {
-            if (!reply.raw.writableEnded)
-              abort.abort(new Error("Input preparation caller disconnected"));
-          };
-          reply.raw.on("close", closed);
-          try {
-            await reply
-              .code(200)
-              .send(await this.#broker.prepareInputImages(message, abort.signal));
-          } finally {
-            reply.raw.removeListener("close", closed);
+            await reply.code(200).send(released);
+            return;
           }
-          return;
+          message satisfies never;
+        } catch (error: unknown) {
+          await this.#failure(reply, error);
         }
-        if (message.type === "tool_sandbox.refresh_services") {
-          await this.#broker.refreshServices(message.activationId, message.assignment);
-          await reply.code(200).send({
-            toolBrokerProtocolVersion: 1,
-            type: "tool_sandbox.services_refreshed",
-            requestId: message.requestId,
-            activationId: message.activationId,
-          });
-          return;
-        }
-        if (message.type === "tool_sandbox.release") {
-          const released = await this.#observed({
-            request,
-            spanName: "sandbox.release",
-            operation: "release",
-            run: () => this.#broker.release(message),
-          });
-          this.#metrics?.sandboxActive.set(
-            { provider: this.#broker.providerId },
-            this.#broker.activeCount,
-          );
-          this.#metrics?.sandboxPrewarm.set(
-            { provider: this.#broker.providerId },
-            this.#broker.cleanPrewarmCount,
-          );
-          await reply.code(200).send(released);
-          return;
-        }
-        message satisfies never;
-      } catch (error: unknown) {
-        await this.#failure(reply, error);
-      }
-    });
+      },
+    );
 
     this.#server.addContentTypeParser("application/octet-stream", (_request, body, done) =>
       done(null, body),

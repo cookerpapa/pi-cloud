@@ -341,6 +341,53 @@ function providerFixture() {
 }
 
 describe("provider-backed Sandbox controller", () => {
+  it("keeps package preparation under binding ownership and never reports success after cancellation", async () => {
+    const fixture = providerFixture();
+    const entered = Promise.withResolvers<void>(),
+      finish = Promise.withResolvers<void>();
+    const preparePackage = vi.fn<NonNullable<SandboxProvider["preparePackage"]>>(async () => {
+      entered.resolve();
+      await finish.promise;
+      return { path: "/workspace/.pi-cloud/skills/test" };
+    });
+    fixture.provider.preparePackage = preparePackage;
+    const broker = testBroker({ provider: fixture.provider });
+    const reserved = await broker.create(createRequest);
+    const request = {
+      toolBrokerProtocolVersion: 1 as const,
+      type: "tool_sandbox.prepare_package" as const,
+      requestId: crypto.randomUUID(),
+      operationId: crypto.randomUUID(),
+      activationId: reserved.activationId,
+      assignment,
+      digest: "a".repeat(64),
+      content: {
+        name: "test",
+        requirements: { tools: [], runtime: "none" as const, software: [] },
+        files: [{ path: "SKILL.md", base64: "b2s=" }],
+      },
+    };
+    const abort = new AbortController();
+    const result = broker.preparePackage(request, abort.signal).catch((error) => error);
+    try {
+      await entered.promise;
+      const duplicate = broker.preparePackage(request).catch((error) => error);
+      abort.abort(new Error("stop"));
+      finish.resolve();
+      expect(await result).toBeInstanceOf(Error);
+      expect(await duplicate).toBeInstanceOf(Error);
+      expect(preparePackage).toHaveBeenCalledOnce();
+      await expect(
+        broker.preparePackage({ ...request, activationId: crypto.randomUUID() }),
+      ).rejects.toThrow();
+      expect(preparePackage).toHaveBeenCalledOnce();
+    } finally {
+      finish.resolve();
+      await result;
+      await broker.close();
+    }
+  });
+
   it("serializes Tool image decoding with existing image admission and waits for running cancellation", async () => {
     const fixture = providerFixture();
     const entered = Promise.withResolvers<void>(),

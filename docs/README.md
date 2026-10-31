@@ -14,6 +14,7 @@ Release names and historical measurements belong to reports, not the component m
 | [Cube provider](CUBESANDBOX_PROVIDER.md) | Tool execution, lifecycle and transport boundaries |
 | [Subagents](SUBAGENTS.md) | Native children, shared ownership and Workspace choices |
 | [Attachments](CHAT_ATTACHMENTS.md) | Uploads, visual input and retained images |
+| [Skills](SKILLS.md) | Internal market, version selection and Sandbox preparation |
 | [Schedules](SCHEDULES.md) | Scheduled input and ordinary Run admission |
 | [Threat model](THREAT_MODEL.md) | Trusted Runner and untrusted execution boundaries |
 | [Network matrix](NETWORK_MATRIX.md) | Component connections and network ownership |

@@ -7,9 +7,10 @@
       durable acknowledgement and stable retry identity.
 - [x] Add immediate local sending feedback and measure acknowledgement, claim and
       display separately; retain failed drafts and concurrent edits.
-- [ ] Implement the approved internal Skill market as a separate vertical slice:
+- [x] Implement the approved internal Skill market as a separate vertical slice:
       standard packages, immutable versions, scoped installation/enabling,
-      environment requirements, read_skill and existing sandbox execution.
+      environment requirements, read_skill/prepare_skill and existing Sandbox execution.
+      [ADR-0291](adr/0291-internal-skill-market.md), [usage/API](SKILLS.md).
 - [ ] Verify and deploy the completed slices with preserved original assets.
 
 Input slice source checks: 39 focused PG/API tests, 74 web unit tests, protocol

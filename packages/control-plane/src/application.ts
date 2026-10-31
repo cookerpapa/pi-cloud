@@ -34,6 +34,7 @@ export type ControlPlaneApplicationOptions = Omit<
   "tenantId" | "defaultModelProfileId"
 > & {
   executionTargets?: import("./execution-target-service.ts").ExecutionTargetService;
+  skills?: import("./skill-market-service.ts").SkillMarketService;
   schedules?: import("./session-schedule-service.ts").SessionScheduleService;
   executionTargetIngress?: import("./execution-target-ingress.ts").ExecutionTargetIngress;
   tenantId?: string;

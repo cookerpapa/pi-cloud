@@ -1,3 +1,4 @@
+import { SkillMarket } from "./SkillMarket.tsx";
 import { SessionSchedules } from "./SessionSchedules.tsx";
 import { ConversationTimeline, type TimelineControl } from "./ConversationTimeline.tsx";
 import { useConversationCommands } from "./useConversationCommands.ts";
@@ -281,6 +282,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
   const [codeHostConnectionsOpen, setCodeHostConnectionsOpen] = useState(false);
   const [schedulesOpen, setSchedulesOpen] = useState(false);
+  const [skillsOpen, setSkillsOpen] = useState(false);
   const [toolGroupDisplay, setToolGroupDisplay] = useState<{
     sessionId: string;
     expanded: boolean;
@@ -1661,6 +1663,17 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
       </Suspense>
     );
   }
+  if (skillsOpen)
+    return (
+      <SkillMarket
+        api={api}
+        userId={identity.userId}
+        owner={identity.role === "owner"}
+        canMutate={identity.role !== "viewer"}
+        {...(state.project?.projectId ? { projectId: state.project.projectId } : {})}
+        onClose={() => setSkillsOpen(false)}
+      />
+    );
   if (resourcePageOpen) {
     return (
       <Suspense fallback={<main className="product-loading-page" />}>
@@ -1733,6 +1746,13 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
               type="button"
             >
               <span>▦</span> {t("chat.resources")}
+            </button>
+            <button
+              className="product-resource-nav"
+              type="button"
+              onClick={() => setSkillsOpen(true)}
+            >
+              <span>◇</span> Skills
             </button>
           </div>
           <nav className="product-conversation-list" aria-label={t("chat.sidebar.label")}>

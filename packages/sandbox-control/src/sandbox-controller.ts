@@ -53,6 +53,11 @@ type InputImageResponse = Extract<
   SandboxControlResponse,
   { type: "tool_sandbox.input_images_prepared" }
 >;
+type ToolPackageRequest = Extract<SandboxControlRequest, { type: "tool_sandbox.prepare_package" }>;
+type ToolPackageResponse = Extract<
+  SandboxControlResponse,
+  { type: "tool_sandbox.package_prepared" }
+>;
 type ToolImageRequest = Extract<SandboxControlRequest, { type: "tool_sandbox.image_io" }>;
 type ToolImageResponse = Extract<SandboxControlResponse, { type: "tool_sandbox.image_io_result" }>;
 import {
@@ -146,7 +151,9 @@ type ManagedToolBinding = {
     string,
     Readonly<{
       requestSha256: string;
-      result: Promise<ToolSandboxOperationResponse | InputImageResponse | ToolImageResponse>;
+      result: Promise<
+        ToolSandboxOperationResponse | InputImageResponse | ToolImageResponse | ToolPackageResponse
+      >;
       controller: AbortController;
     }>
   >;
@@ -2278,6 +2285,59 @@ export class SandboxController {
     const forget = () => activation.operations.delete(request.operationId);
     void durable.then(forget, forget);
     return durable;
+  }
+
+  async preparePackage(
+    request: ToolPackageRequest,
+    signal?: AbortSignal,
+  ): Promise<ToolPackageResponse> {
+    const activation = this.#ownedBinding(request.activationId, request.assignment);
+    if (activation.inputClosed)
+      throw new SandboxControlError("tool_binding_closed", "Tool binding is closing", false);
+    const key = `package:${request.requestId}`;
+    const requestSha256 = createHash("sha256").update(JSON.stringify(request)).digest("hex");
+    const existing = activation.operations.get(key);
+    if (existing) {
+      if (existing.requestSha256 !== requestSha256) throw new Error("Package identity conflict");
+      return existing.result as Promise<ToolPackageResponse>;
+    }
+    const controller = new AbortController();
+    const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+    const result = (async (): Promise<ToolPackageResponse> => {
+      activation.activeOperations++;
+      if (activation.elasticRuntime) activation.elasticRuntime.activeOperations++;
+      try {
+        combined.throwIfAborted();
+        const handle = await this.#materialize(activation, combined);
+        this.#stateRepository.assertLocalOwnership();
+        const placed = await this.#workspaceFiles.preparePackage(
+          handle,
+          {
+            cwd: activation.spec.toolRoot ?? handle.workspaceRoot,
+            content: request.content,
+            digest: request.digest,
+          },
+          combined,
+        );
+        combined.throwIfAborted();
+        return {
+          toolBrokerProtocolVersion: 1,
+          type: "tool_sandbox.package_prepared",
+          requestId: request.requestId,
+          activationId: request.activationId,
+          path: placed.path,
+        };
+      } finally {
+        activation.activeOperations--;
+        if (activation.elasticRuntime) activation.elasticRuntime.activeOperations--;
+      }
+    })();
+    activation.operations.set(key, { requestSha256, result, controller });
+    void result.then(
+      () => activation.operations.delete(key),
+      () => activation.operations.delete(key),
+    );
+    return result;
   }
 
   async imageIo(request: ToolImageRequest, signal?: AbortSignal): Promise<ToolImageResponse> {

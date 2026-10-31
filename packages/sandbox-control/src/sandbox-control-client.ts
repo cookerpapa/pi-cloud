@@ -212,6 +212,24 @@ export class SandboxControlClient {
     return response;
   }
 
+  async preparePackage(
+    request: Extract<SandboxControlRequest, { type: "tool_sandbox.prepare_package" }>,
+    signal?: AbortSignal,
+  ) {
+    const response = await this.#service(request, signal);
+    if (
+      response.type !== "tool_sandbox.package_prepared" ||
+      response.requestId !== request.requestId ||
+      response.activationId !== request.activationId
+    )
+      throw new SandboxControlClientError(
+        "package_preparation_invalid",
+        "Package response identity changed",
+        false,
+      );
+    return response;
+  }
+
   async imageIo(
     request: Extract<
       import("@pi-cloud/protocol").SandboxControlRequest,

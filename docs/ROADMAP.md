@@ -5,8 +5,8 @@
 Repair the reported final-response submission/queue race and outgoing feedback
 first, under [ADR-0290](adr/0290-human-input-boundary-and-feedback.md). Then implement
 the approved internal Skill market with package, installation, requirements and
-session-binding responsibilities separated. Record its storage/protocol decision
-before implementation. Each slice retains its own validation and delivery evidence.
+session-binding responsibilities separated under [ADR-0291](adr/0291-internal-skill-market.md).
+Both source slices are implemented; full gates and matched publication remain pending. Each slice retains its own validation and delivery evidence.
 
 ## Sandbox capability boundaries and current documentation — deployed
 

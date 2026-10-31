@@ -710,3 +710,5 @@ export { isExecutorToolCommand, isNamedToolCommand } from "./tool-command.ts";
 export * from "./session-schedules.ts";
 export * from "./fork-provenance.ts";
 export * from "./model-transport.ts";
+
+export * from "./skills.ts";

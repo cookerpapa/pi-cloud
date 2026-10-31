@@ -391,6 +391,7 @@ export const migrationProvider: MigrationProvider = {
       "203_shared_native_entry_bodies": sharedNativeEntryBodies,
       "204_shared_native_history_bases": sharedNativeHistoryBases,
       "205_independent_fork_lifetimes": independentForkLifetimes,
+      "206_skill_market": skillMarket,
     };
   },
 };
@@ -421,3 +422,5 @@ import * as conversationCommands from "./199_conversation_commands.ts";
 import * as conversationHistoryWindows from "./200_conversation_history_windows.ts";
 import * as sharedNativeHistoryBases from "./204_shared_native_history_bases.ts";
 import * as independentForkLifetimes from "./205_independent_fork_lifetimes.ts";
+
+import * as skillMarket from "./206_skill_market.ts";

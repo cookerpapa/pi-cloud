@@ -1811,6 +1811,65 @@ export class CubeSandboxProvider implements SandboxProvider {
     }
   }
 
+  async preparePackage(
+    handle: SandboxHandle,
+    input: {
+      cwd: string;
+      content: import("@pi-cloud/protocol").SkillPackageContent;
+      digest: string;
+    },
+    signal?: AbortSignal,
+  ): Promise<{ path: string }> {
+    const activation = this.#dataOwned(handle);
+    const bytes = Buffer.from(JSON.stringify(input.content));
+    if (
+      bytes.length > 24 * 1024 * 1024 ||
+      createHash("sha256").update(bytes).digest("hex") !== input.digest
+    )
+      throw new Error("Skill package digest changed");
+    const value = await this.#withGuestUpload(
+      activation.instance,
+      (async function* () {
+        yield bytes;
+      })(),
+      bytes.length,
+      signal,
+      (sourcePath) =>
+        this.#guestJson(
+          activation.instance,
+          {
+            mode: "prepare_skill_package",
+            directory: input.cwd,
+            sourcePath,
+            byteLength: bytes.length,
+            digest: input.digest,
+          },
+          {
+            program: "input",
+            runAsToolUser: true,
+            timeoutMs: 60000,
+            maximumOutputBytes: 8192,
+            sourcePath,
+            ...(signal ? { signal } : {}),
+          },
+        ),
+    );
+    const envelope = record(value, "Skill placement");
+    if (envelope.ok !== true)
+      throw new SandboxControlError(
+        "skill_copy_failed",
+        "Skill files could not be placed; an existing modified copy is never overwritten",
+        false,
+      );
+    const result = record(envelope.result, "Skill directory");
+    if (
+      typeof result.path !== "string" ||
+      !result.path.startsWith(input.cwd.replace(/\/$/, "") + "/")
+    )
+      throw new Error("Skill directory is outside the requested Workspace");
+    return { path: result.path };
+  }
+
   async imageIo(handle: SandboxHandle, input: ToolImageIo, signal?: AbortSignal) {
     const activation = this.#dataOwned(handle);
     const run = (sourcePath?: string) =>

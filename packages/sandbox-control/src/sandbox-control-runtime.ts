@@ -331,6 +331,34 @@ export async function createSandboxControl(options: {
       dispatcher,
       publishReply: (topic: string, reply: import("@pi-cloud/event-log").ToolReply) =>
         replies.publish(topic, reply),
+      prepareToolPackage: async (
+        scope: import("@pi-cloud/protocol").AcceptedToolCommand["scope"],
+        bindingId: string,
+        operationId: string,
+        content: import("@pi-cloud/protocol").SkillPackageContent,
+        digest: string,
+        signal?: AbortSignal,
+      ) => {
+        const route = await bindingView.get(scope, bindingId);
+        if (!route || route.dispatchClosed) throw new Error("Package Tool binding is unavailable");
+        const request = {
+          toolBrokerProtocolVersion: 1 as const,
+          type: "tool_sandbox.prepare_package" as const,
+          requestId: crypto.randomUUID(),
+          activationId: bindingId,
+          assignment: route.snapshot.assignment,
+          operationId,
+          content,
+          digest,
+        };
+        if (route.instanceId === instanceId) return controller.preparePackage(request, signal);
+        return new SandboxControlClient({
+          baseUrl: route.baseUrl,
+          serviceToken: config.serviceToken,
+          allowInsecureHttp: true,
+          requestTimeoutMs: 120000,
+        }).preparePackage(request, signal);
+      },
       toolImageIo: async (
         scope: import("@pi-cloud/protocol").AcceptedToolCommand["scope"],
         bindingId: string,

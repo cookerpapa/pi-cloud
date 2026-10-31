@@ -268,6 +268,15 @@ export interface SandboxExecution {
 
 /** Current Workspace bytes and human file access. This port has no VM lifecycle authority. */
 export interface SandboxWorkspaceFiles {
+  preparePackage?(
+    handle: SandboxHandle,
+    input: {
+      cwd: string;
+      content: import("@pi-cloud/protocol").SkillPackageContent;
+      digest: string;
+    },
+    signal?: AbortSignal,
+  ): Promise<{ path: string }>;
   /** Browse the tenant-owned guest filesystem without restoring a Session settlement. */
   listDirectory?(handle: SandboxHandle, path: string): Promise<SandboxDirectoryListing>;
   listMachineWorkspaceDirectory?(

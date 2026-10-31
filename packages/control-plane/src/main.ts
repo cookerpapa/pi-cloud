@@ -1,3 +1,4 @@
+import { SkillMarketService } from "./skill-market-service.ts";
 import { reapUnreferencedEntryBodies } from "@pi-cloud/pi-session-postgres/durable";
 import { SessionScheduleService } from "./session-schedule-service.ts";
 import { SessionScheduleController } from "./session-schedule-controller.ts";
@@ -278,7 +279,29 @@ export async function startControlPlane(): Promise<void> {
       admissionDatabase: maintenanceDatabase,
       environmentImageRevision: config.environmentImageRevision,
     });
+    sourceControlDispatcher = new EnvHttpProxyAgent();
+    const skillDispatcher = sourceControlDispatcher;
+    const skills = new SkillMarketService({
+      database,
+      ...(images ? { blobs: images.blobs } : {}),
+      catalog: () => ordinaryTools.read().tools,
+      fetch: ((url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
+        undiciFetch(url as Parameters<typeof undiciFetch>[0], {
+          ...(init as Parameters<typeof undiciFetch>[1]),
+          dispatcher: skillDispatcher,
+        })) as unknown as typeof fetch,
+    });
     const ordinaryTools = createOrdinaryToolRegistry({
+      skills,
+      prepareSkill: (call, content, digest, signal) =>
+        sandboxControl!.prepareToolPackage(
+          call.scope,
+          call.bindingId!,
+          call.operationId,
+          content,
+          digest,
+          signal,
+        ),
       database,
       schedules,
       ...(config.enabledControlTools ? { enabled: config.enabledControlTools } : {}),
@@ -542,7 +565,7 @@ export async function startControlPlane(): Promise<void> {
     });
     let githubRuntime;
     if (config.githubApp !== undefined || config.gitlabProject !== undefined) {
-      sourceControlDispatcher = new EnvHttpProxyAgent();
+      sourceControlDispatcher ??= new EnvHttpProxyAgent();
     }
     if (config.gitlabProject?.internalBaseUrl !== undefined) {
       internalSourceControlDispatcher = new Agent();
@@ -606,6 +629,7 @@ export async function startControlPlane(): Promise<void> {
       readTimeoutMs: 5000,
     });
     runtime = await createControlPlaneRuntime({
+      skills,
       executionTargets,
       executionTargetIngress: new ExecutionTargetIngress(
         executionTargets,
