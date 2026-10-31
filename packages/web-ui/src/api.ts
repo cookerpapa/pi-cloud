@@ -30,7 +30,6 @@ import {
   type ReturnedInputsResource,
   parseAcceptedTurnCancellationResource,
   parseAcceptedConversationInputResource,
-  parseTurnSteerResource,
   parseAuthSessionResource,
   parseAuthenticationConfigurationResource,
   parseConversationDetailResource,
@@ -71,7 +70,6 @@ import {
   type ConversationPruneResource,
   type AcceptedTurnCancellationResource,
   type AcceptedConversationInputResource,
-  type TurnSteerResource,
   type ProjectResource,
   type RunResource,
   type ProviderModelSelection,
@@ -950,6 +948,7 @@ export class PiCloudApi {
     idempotencyKey: string,
     thinkingLevel?: TurnThinkingLevel,
     uploadIds?: string[],
+    whenBusy?: "follow_up" | "steer",
   ): Promise<AcceptedConversationInputResource> {
     return parseAcceptedConversationInputResource(
       await request(
@@ -960,6 +959,7 @@ export class PiCloudApi {
             prompt,
             ...(uploadIds?.length ? { uploadIds } : {}),
             ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
+            ...(whenBusy === undefined ? {} : { whenBusy }),
           },
           idempotencyKey,
         ),
@@ -1059,23 +1059,6 @@ export class PiCloudApi {
         this.#fetch,
         `/v1/sessions/${encodeURIComponent(sessionId)}/turns/${encodeURIComponent(turnId)}/cancellations`,
         jsonRequest({ gracePeriodMs }, idempotencyKey),
-        this.#authorizationToken,
-      ),
-    );
-  }
-
-  async steerTurn(
-    sessionId: string,
-    turnId: string,
-    text: string,
-    idempotencyKey: string,
-    uploadIds?: string[],
-  ): Promise<TurnSteerResource> {
-    return parseTurnSteerResource(
-      await request(
-        this.#fetch,
-        `/v1/sessions/${encodeURIComponent(sessionId)}/turns/${encodeURIComponent(turnId)}/steers`,
-        jsonRequest({ text, ...(uploadIds?.length ? { uploadIds } : {}) }, idempotencyKey),
         this.#authorizationToken,
       ),
     );

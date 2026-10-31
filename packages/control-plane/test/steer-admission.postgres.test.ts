@@ -56,14 +56,10 @@ it("releases cloud admission locks before native delivery and tolerates Tool bin
     });
     const accepted = await db.transaction().execute(async (tx) => {
       await tx.selectFrom("runs").select("id").where("id", "=", root.runId).forKeyShare().execute();
-      return queue.accept(
-        store,
-        tenant.tenantId,
-        session.sessionId,
-        "steer",
-        { prompt: "direction" },
-        "steer",
-      );
+      return queue.accept(store, tenant.tenantId, session.sessionId, "steer", {
+        prompt: "direction",
+        whenBusy: "steer",
+      });
     });
     expect(accepted).toMatchObject({ kind: "input", runId: root.runId, delivery: "steer" });
   } finally {

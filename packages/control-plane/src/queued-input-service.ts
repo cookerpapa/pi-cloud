@@ -52,6 +52,8 @@ const mutationId = (tenantId: string, sessionId: string, key: string): string =>
 function conflict(message: string): never {
   throw new ControlPlaneStoreError("conflict", message);
 }
+class NativeInputTargetClosed extends Error {}
+
 function unavailable(): never {
   throw new ControlPlaneStoreError(
     "input_delivery_unavailable",
@@ -198,6 +200,8 @@ export class QueuedInputService {
         await settleUploadPins(this.options.database, pinId, false);
       if (code === "idempotency_conflict")
         throw new ControlPlaneStoreError(code, "Input identity was reused for another operation");
+      if (code === "input_closed" && command.action === "submit")
+        throw new NativeInputTargetClosed("Native input admission has closed");
       if (["input_conflict", "input_closed"].includes(code))
         conflict("The input changed or has already been consumed");
       unavailable();
@@ -210,20 +214,37 @@ export class QueuedInputService {
       .catch(() => {});
   }
 
+  /** A busy preference is resolved against durable current ownership, never a
+   * browser-cached Turn. A closed local target only permits rechecking PG. */
   async accept(
     store: ControlPlaneStore,
     tenantId: string,
     sessionId: string,
     key: string,
     request: AcceptTurnRequest,
-    delivery: "follow_up" | "steer" = "follow_up",
-    targetTurnId?: string,
   ): Promise<AcceptedConversationInputResource> {
+    for (let retry = 0; ; retry++) {
+      try {
+        return await this.#accept(store, tenantId, sessionId, key, request);
+      } catch (error) {
+        if (!(error instanceof NativeInputTargetClosed)) throw error;
+        if (retry > 0) unavailable();
+      }
+    }
+  }
+
+  async #accept(
+    store: ControlPlaneStore,
+    tenantId: string,
+    sessionId: string,
+    key: string,
+    request: AcceptTurnRequest,
+  ): Promise<AcceptedConversationInputResource> {
+    const delivery = request.whenBusy ?? "follow_up";
     const inputId = nativeHumanInputId(tenantId, sessionId, key);
     const pinId = randomUUID();
     const fingerprint = hash({
       delivery,
-      targetTurnId: targetTurnId ?? null,
       prompt: request.prompt,
       uploadIds: request.uploadIds ?? [],
       thinkingLevel: request.thinkingLevel ?? null,
@@ -242,11 +263,6 @@ export class QueuedInputService {
         if (admittedTenantId !== tenantId)
           throw new ControlPlaneStoreError("not_found", "Conversation was not found");
         if (hasAcceptedRun) {
-          if (delivery !== "follow_up")
-            throw new ControlPlaneStoreError(
-              "idempotency_conflict",
-              "Identity already belongs to an initial request",
-            );
           return { accepted: await acceptInitial() };
         }
         if (session.pi_conversation_id !== null) {
@@ -289,13 +305,10 @@ export class QueuedInputService {
           (["completed", "failed", "cancelled", "timed_out"].includes(target.state) &&
             (target.lease_id === null || target.output_sealed_at !== null))
         ) {
-          if (delivery === "steer") conflict("There is no running Agent to steer");
           return { accepted: await acceptInitial() };
         }
         await this.#assertReceiving(tx, target);
         if (!target.lease_id || session.pi_conversation_id === null) unavailable();
-        if (targetTurnId !== undefined && target.turn_id !== targetTurnId)
-          conflict("The target Run changed");
         if (request.thinkingLevel !== undefined && request.thinkingLevel !== target.thinking_level)
           conflict("An additional input uses the current Run's model settings");
         const uploads = await bindInputUploads(tx, {
@@ -403,7 +416,14 @@ export class QueuedInputService {
         const bodies = selected.length
           ? await tx
               .selectFrom("runs")
-              .select(["id", "turn_id", "input_text", "input_uploads", "created_at"])
+              .select([
+                "id",
+                "turn_id",
+                "input_text",
+                "input_uploads",
+                "created_at",
+                "mailbox_position",
+              ])
               .where("tenant_id", "=", tenantId)
               .where(
                 "id",
@@ -425,6 +445,7 @@ export class QueuedInputService {
             uploads: parseUserUploads(r.input_uploads),
             acceptedAt: r.created_at.toISOString(),
             mailboxPosition: 0,
+            runMailboxPosition: Number(r.mailbox_position),
             status: "queued" as const,
           })),
         ].map((item, index) => ({ ...item, mailboxPosition: index + 1 }));

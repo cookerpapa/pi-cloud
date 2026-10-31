@@ -990,6 +990,7 @@ export const ConversationPruneResourceSchema = Type.Object(
 
 export const AcceptTurnRequestSchema = Type.Object(
   {
+    whenBusy: Type.Optional(Type.Union([Type.Literal("follow_up"), Type.Literal("steer")])),
     prompt: Type.String({ maxLength: MAX_AGENT_INPUT_CHARACTERS }),
     uploadIds: Type.Optional(UserUploadIdsSchema),
     thinkingLevel: Type.Optional(TurnThinkingLevelSchema),
@@ -1111,16 +1112,6 @@ export const AcceptedTurnCancellationResourceSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const CreateTurnSteerRequestSchema = Type.Object(
-  {
-    text: Type.String({ maxLength: MAX_AGENT_INPUT_CHARACTERS }),
-    uploadIds: Type.Optional(UserUploadIdsSchema),
-  },
-  { additionalProperties: false },
-);
-
-export const TurnSteerResourceSchema = NativeInputAcceptedSchema;
-
 export const ControlPlaneApiErrorSchema = Type.Object(
   {
     error: Type.Object(
@@ -1237,8 +1228,6 @@ export type CreateTurnCancellationRequest = Static<typeof CreateTurnCancellation
 export type AcceptedTurnCancellationResource = Static<
   typeof AcceptedTurnCancellationResourceSchema
 >;
-export type CreateTurnSteerRequest = Static<typeof CreateTurnSteerRequestSchema>;
-export type TurnSteerResource = Static<typeof TurnSteerResourceSchema>;
 export type ControlPlaneApiError = Static<typeof ControlPlaneApiErrorSchema>;
 
 export class ControlPlaneApiValidationError extends Error {
@@ -1446,19 +1435,6 @@ export function parseCreateTurnCancellationRequest(value: unknown): CreateTurnCa
   );
 }
 
-export function parseCreateTurnSteerRequest(value: unknown): CreateTurnSteerRequest {
-  const request = parseSchema(CreateTurnSteerRequestSchema, value, "create-turn-steer request");
-  if (request.text.trim().length === 0 && !request.uploadIds?.length) {
-    throw new ControlPlaneApiValidationError("Steer text must contain a non-whitespace character");
-  }
-  try {
-    assertUserInputBudget(request.text);
-  } catch (error) {
-    throw new ControlPlaneApiValidationError((error as Error).message);
-  }
-  return request;
-}
-
 export function parseProjectResource(value: unknown): ProjectResource {
   return parseSchema(ProjectResourceSchema, value, "project resource");
 }
@@ -1632,10 +1608,6 @@ export function parseAcceptedTurnCancellationResource(
     value,
     "accepted-turn-cancellation resource",
   );
-}
-
-export function parseTurnSteerResource(value: unknown): TurnSteerResource {
-  return parseSchema(TurnSteerResourceSchema, value, "turn-steer resource");
 }
 
 export function parseControlPlaneApiError(value: unknown): ControlPlaneApiError {

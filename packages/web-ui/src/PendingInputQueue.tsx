@@ -40,6 +40,7 @@ export function PendingInputQueue({
   const current = useRef<InputQueueResource | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const inFlight = useRef(false);
+  const refreshAfterMutation = useRef(false);
   const listId = useId();
   const root = useRef<HTMLElement>(null);
   const [expanded, setExpanded] = useState(false);
@@ -118,7 +119,12 @@ export function PendingInputQueue({
   );
   const refresh = useCallback(
     async (signal?: AbortSignal, force = false) => {
-      if (inFlight.current || (readAbort.current && !force)) return;
+      if (inFlight.current) {
+        refreshAfterMutation.current = true;
+        return;
+      }
+      if (readAbort.current && !force) return;
+      refreshAfterMutation.current = false;
       readAbort.current?.abort();
       const controller = new AbortController();
       readAbort.current = controller;
@@ -185,7 +191,7 @@ export function PendingInputQueue({
       if (readAbort.current === controller) readAbort.current = undefined;
       if (mounted.current) {
         setBusy(null);
-        if (reload) void refresh(undefined, true);
+        if (reload || refreshAfterMutation.current) void refresh(undefined, true);
       }
     }
   }
@@ -230,7 +236,7 @@ export function PendingInputQueue({
       inFlight.current = false;
       if (mounted.current) {
         setBusy(null);
-        if (!succeeded) void refresh(undefined, true);
+        if (!succeeded || refreshAfterMutation.current) void refresh(undefined, true);
       }
     }
   }
@@ -288,7 +294,9 @@ export function PendingInputQueue({
   ]);
 
   const editingItem = editing && queue?.items.find((item) => item.inputId === editing.inputId);
-  const editable = editingItem?.status === "queued";
+  // Every item in this resource is still pending, including queued steers.
+  // The native transaction, not the displayed mode, decides whether an edit won.
+  const editable = Boolean(editingItem);
   const showAll = expanded || editing !== null;
   const visibleItems = showAll ? queue?.items : queue?.items.slice(0, 3);
   const editor = editing ? (
@@ -483,7 +491,7 @@ export function PendingInputQueue({
                     aria-expanded={menuInputId === item.inputId}
                     aria-label={t("queue.actions")}
                     title={t("queue.actions")}
-                    disabled={!canMutate || busy !== null || item.status !== "queued"}
+                    disabled={!canMutate || busy !== null}
                     onClick={() =>
                       setMenuInputId(menuInputId === item.inputId ? null : item.inputId)
                     }
@@ -496,7 +504,7 @@ export function PendingInputQueue({
                     <button
                       type="button"
                       role="menuitem"
-                      disabled={!canMutate || busy !== null || item.status !== "queued"}
+                      disabled={!canMutate || busy !== null}
                       onClick={() => {
                         setMenuInputId(null);
                         setEditing({
@@ -512,13 +520,7 @@ export function PendingInputQueue({
                     <button
                       type="button"
                       role="menuitem"
-                      disabled={
-                        !canMutate ||
-                        busy !== null ||
-                        index === 0 ||
-                        item.status !== "queued" ||
-                        queue?.items[index - 1]?.status !== "queued"
-                      }
+                      disabled={!canMutate || busy !== null || index === 0}
                       onClick={() => {
                         setMenuInputId(null);
                         void perform(item.inputId, { action: "move", direction: "up" });
@@ -532,10 +534,7 @@ export function PendingInputQueue({
                       disabled={
                         !canMutate ||
                         busy !== null ||
-                        (index === queue!.items.length - 1 && !queue!.hasMore) ||
-                        item.status !== "queued" ||
-                        (index < queue!.items.length - 1 &&
-                          queue!.items[index + 1]?.status !== "queued")
+                        (index === queue!.items.length - 1 && !queue!.hasMore)
                       }
                       onClick={() => {
                         setMenuInputId(null);
@@ -547,7 +546,7 @@ export function PendingInputQueue({
                     <button
                       type="button"
                       role="menuitem"
-                      disabled={!canMutate || busy !== null || item.status !== "queued"}
+                      disabled={!canMutate || busy !== null}
                       onClick={() => {
                         setMenuInputId(null);
                         void perform(item.inputId, { action: "cancel" });

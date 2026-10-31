@@ -4,7 +4,6 @@ import {
   MAX_SUBAGENT_TASK_JSON_BYTES,
   assertSubagentTaskInputBudget,
   parseAcceptTurnRequest,
-  parseCreateTurnSteerRequest,
   assertUserInputBudget,
 } from "../src/index.ts";
 
@@ -36,7 +35,9 @@ describe("human input native publication budget", () => {
     expect(parseAcceptTurnRequest({ prompt: "汉".repeat(100000) }).prompt).toHaveLength(100000);
     const prompt = "fixture:" + "\u0001".repeat(99992);
     expect(() => parseAcceptTurnRequest({ prompt })).toThrow("native log byte budget");
-    expect(() => parseCreateTurnSteerRequest({ text: prompt })).toThrow("native log byte budget");
+    expect(() => parseAcceptTurnRequest({ prompt, whenBusy: "steer" })).toThrow(
+      "native log byte budget",
+    );
   });
   it.each(["\u0000", "\uD800", "\uDC00"])("rejects unsupported PG input %j", (prompt) => {
     expect(() => parseAcceptTurnRequest({ prompt })).toThrow("valid Unicode");

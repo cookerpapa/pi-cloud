@@ -116,8 +116,14 @@ export function useComposerUploads(
     serial.current = promise.catch(() => undefined);
     return promise;
   }
-  async function ready(target: string): Promise<UserUpload[]> {
-    const snapshot = [...current.current];
+  async function ready(target: string, ids?: readonly string[]): Promise<UserUpload[]> {
+    const snapshot = ids
+      ? ids.map((id) => {
+          const item = current.current.find((value) => value.id === id);
+          if (!item) throw new Error("The submitted attachment was removed");
+          return item;
+        })
+      : [...current.current];
     const result: UserUpload[] = [];
     for (const item of snapshot) result.push(await uploadOne(item, target));
     return result;

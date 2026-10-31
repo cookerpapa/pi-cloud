@@ -122,6 +122,38 @@ function preparedState(): SessionViewState {
 }
 
 describe("session transcript reducer", () => {
+  it("reconciles a missed completed event without inventing transcript coverage", () => {
+    let state = sessionViewReducer(preparedState(), {
+      type: "stream.event",
+      event: envelope(1, { type: "turn.started", payload: { inputKind: "prompt" } }),
+    });
+    const previousItems = state.turns[0]!.items;
+    const observed = {
+      type: "turn.completion.observed" as const,
+      sessionId: SESSION_ID,
+      turnId: TURN_ID,
+      runId: accepted.runId,
+      stopReason: "stop",
+    };
+    expect(sessionViewReducer(state, { ...observed, sessionId: "another-session" })).toBe(state);
+    expect(sessionViewReducer(state, { ...observed, runId: "another-run" })).toBe(state);
+    state = sessionViewReducer(state, observed);
+    expect(state.turns[0]).toMatchObject({
+      status: "completed",
+      terminalSequence: null,
+      startedSequence: 1,
+    });
+    expect(state.turns[0]!.items).toBe(previousItems);
+    expect(activeTurn(state)).toBeUndefined();
+    expect(state.sessionState).toBe("idle");
+    const late = sessionViewReducer(state, {
+      type: "stream.event",
+      event: envelope(1, { type: "turn.started", payload: { inputKind: "prompt" } }),
+    });
+    expect(late.turns[0]!.status).toBe("completed");
+    expect(activeTurn(late)).toBeUndefined();
+  });
+
   it("continues the snapshot's Tool group through preparing/start/completion and reload", () => {
     const conversation: ConversationDetailResource = {
       project,
@@ -1044,6 +1076,7 @@ it("reconciles pending edits, ordering and cancellation without replacing an act
     runId: accepted.runId,
     text: "edited draft",
     mailboxPosition: 2,
+    runMailboxPosition: 35,
     acceptedAt: CREATED_AT,
     status: "queued" as const,
   };
@@ -1059,12 +1092,41 @@ it("reconciles pending edits, ordering and cancellation without replacing an act
   };
   state = sessionViewReducer(state, { type: "queue.updated", queue: snapshot });
   expect(state.turns[0]?.prompt).toBe("edited draft");
+  expect(state.turns[0]?.mailboxPosition).toBe(35);
   expect(sessionViewReducer(state, { type: "queue.updated", queue: snapshot })).toBe(state);
   state = sessionViewReducer(state, {
     type: "queue.updated",
     queue: { ...snapshot, revision: `${"c".repeat(64)}.${"b".repeat(64)}`, items: [] },
   });
-  expect(state.turns).toEqual([]);
+  expect(state.turns[0]?.prompt).toBe("edited draft");
+  state = sessionViewReducer(state, {
+    type: "turn.admission.observed",
+    sessionId: SESSION_ID,
+    turnId: accepted.turnId,
+    runId: accepted.runId,
+    state: "running",
+  });
+  expect(state.turns[0]).toMatchObject({
+    status: "running",
+    prompt: "edited draft",
+    mailboxPosition: 35,
+    startedSequence: null,
+  });
+  // A later withdrawal observation cannot remove work already known to have started.
+  expect(
+    sessionViewReducer(state, {
+      type: "turn.admission.observed",
+      sessionId: SESSION_ID,
+      turnId: accepted.turnId,
+      runId: accepted.runId,
+      state: "withdrawn",
+    }),
+  ).toBe(state);
+  state = sessionViewReducer(createInitialSessionView(), {
+    type: "session.created",
+    project,
+    session,
+  });
   state = sessionViewReducer(state, { type: "turn.accepted", accepted, prompt: "started" });
   state = {
     ...state,
@@ -1130,4 +1192,17 @@ it("settles a recovered partial under its canonical identity before the same nat
   expect(projectConversationTurnTranscript(events.slice(2), historical).items).toMatchObject(
     expected,
   );
+});
+
+it("only removes an unclaimed accepted message after authoritative cancellation", () => {
+  const state = preparedState();
+  expect(
+    sessionViewReducer(state, {
+      type: "turn.admission.observed",
+      sessionId: SESSION_ID,
+      turnId: accepted.turnId,
+      runId: accepted.runId,
+      state: "withdrawn",
+    }).turns,
+  ).toEqual([]);
 });

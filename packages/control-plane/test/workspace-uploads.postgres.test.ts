@@ -10,7 +10,7 @@ import { createDatabase, runMigrations } from "@pi-cloud/database";
 import {
   uploadContentDigest,
   parseUserUpload,
-  parseTurnSteerResource,
+  parseAcceptedConversationInputResource,
   uploadRelativePath,
 } from "@pi-cloud/protocol";
 import { PostgresImageAttachmentStore } from "@pi-cloud/session-attachments";
@@ -299,8 +299,8 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
       });
       const request = {
         method: "POST" as const,
-        url: `/v1/sessions/${s.sessionId}/turns/${first.turnId}/steers`,
-        payload: { text: "", uploadIds: [image.id] },
+        url: `/v1/sessions/${s.sessionId}/turns`,
+        payload: { prompt: "", uploadIds: [image.id], whenBusy: "steer" },
       };
       for (const [token, status] of [
         [other.credential.token, 404],
@@ -320,7 +320,8 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
         },
       });
       expect(accepted.statusCode, accepted.body).toBe(202);
-      const direct = parseTurnSteerResource(accepted.json());
+      const direct = parseAcceptedConversationInputResource(accepted.json());
+      if (direct.kind !== "input") throw new Error("Expected active native input");
       expect(direct).toMatchObject({
         kind: "input",
         state: "accepted",

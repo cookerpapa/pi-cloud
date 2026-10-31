@@ -38,7 +38,6 @@ POST   /v1/projects
 POST   /v1/projects/:projectId/sessions
 POST   /v1/sessions/:sessionId/turns
 POST   /v1/sessions/:sessionId/turns/:turnId/cancellations
-POST   /v1/sessions/:sessionId/turns/:turnId/steers
 GET    /v1/sessions/:sessionId/queued-inputs
 POST   /v1/sessions/:sessionId/queued-inputs/:inputId/actions
 GET    /v1/sessions/:sessionId/events
@@ -54,7 +53,7 @@ durable side effects.
 
 An idle conversation request returns `kind:run` after one PG transaction records
 its initial input and execution. A running conversation's ordinary message uses
-native Pi follow-up; explicit `/turns/:turnId/steers` uses native steer. Both
+native Pi follow-up; `whenBusy:steer` selects native steer on that same endpoint. Both
 return only after the Worker's native Storage/Kafka acknowledgement:
 
 ```text

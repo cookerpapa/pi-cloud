@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   parseInputQueueResource,
   parseQueuedInputAction,
-  parseTurnSteerResource,
+  parseAcceptedConversationInputResource,
   parseAcknowledgeReturnedInputs,
   parseReturnedInputsResource,
 } from "../src/index.ts";
@@ -20,11 +20,17 @@ describe("pending input protocol", () => {
       acceptedAt: "2026-09-30T00:00:00.000Z",
       replayed: false,
     };
-    expect(parseTurnSteerResource(accepted)).toEqual(accepted);
+    expect(parseAcceptedConversationInputResource(accepted)).toEqual(accepted);
     expect(() =>
-      parseTurnSteerResource({ ...accepted, state: "delivered", deliveredAt: accepted.acceptedAt }),
+      parseAcceptedConversationInputResource({
+        ...accepted,
+        state: "delivered",
+        deliveredAt: accepted.acceptedAt,
+      }),
     ).toThrow();
-    expect(() => parseTurnSteerResource({ ...accepted, inputId: undefined })).toThrow();
+    expect(() =>
+      parseAcceptedConversationInputResource({ ...accepted, inputId: undefined }),
+    ).toThrow();
   });
   it("accepts atomic edited steer and requires an explicit queue revision", () => {
     expect(() =>

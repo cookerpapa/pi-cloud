@@ -1,14 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { expect, it } from "vitest";
 import { inputWithUploads, parseUserUploads, uploadFileName } from "../src/user-upload.ts";
-import { parseAcceptTurnRequest, parseCreateTurnSteerRequest } from "../src/control-plane-api.ts";
+import { parseAcceptTurnRequest } from "../src/control-plane-api.ts";
 
 it("accepts attachment-only input and preserves bounded identities without accepting inline bytes", () => {
   const uploadIds = [randomUUID()];
   expect(parseAcceptTurnRequest({ prompt: "", uploadIds })).toEqual({ prompt: "", uploadIds });
-  expect(parseCreateTurnSteerRequest({ text: "", uploadIds })).toEqual({ text: "", uploadIds });
+  expect(parseAcceptTurnRequest({ prompt: "", uploadIds, whenBusy: "steer" })).toEqual({
+    prompt: "",
+    uploadIds,
+    whenBusy: "steer",
+  });
   expect(() => parseAcceptTurnRequest({ prompt: " " })).toThrow();
-  expect(() => parseCreateTurnSteerRequest({ text: "" })).toThrow();
+  expect(() => parseAcceptTurnRequest({ prompt: "", whenBusy: "steer" })).toThrow();
   expect(() =>
     parseAcceptTurnRequest({ prompt: "x", uploadIds: [uploadIds[0], uploadIds[0]] }),
   ).toThrow();

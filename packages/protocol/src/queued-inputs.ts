@@ -50,6 +50,8 @@ export const QueuedInputResourceSchema = Type.Object(
     text: Text,
     uploads: Type.Optional(UserUploadsSchema),
     mailboxPosition: PositiveSafeIntegerSchema,
+    /** Absolute Run ordering; only present for unclaimed initial messages. */
+    runMailboxPosition: Type.Optional(PositiveSafeIntegerSchema),
     acceptedAt: UtcTimestampSchema,
     status: Type.Union([Type.Literal("queued"), Type.Literal("steering")]),
   },

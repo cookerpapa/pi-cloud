@@ -664,11 +664,13 @@ try {
       "Use bash exactly once to run sleep 8. After it finishes, reply exactly OLD-STEER-TEXT.",
     expectTools: true,
     onToolStarted: async (accepted) => {
-      const result = await api.steerTurn(
+      const result = await api.acceptTurn(
         session.sessionId,
-        accepted.turnId,
         "Replace the requested final reply with exactly PRODUCT-SURFACE-STEER-OK.",
         newIdempotencyKey("steer"),
+        undefined,
+        undefined,
+        "steer",
       );
       steerAccepted = result.state === "accepted";
     },

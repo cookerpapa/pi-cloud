@@ -1,5 +1,10 @@
 # Current architecture decisions
 
+[ADR-0290](0290-human-input-boundary-and-feedback.md) is accepted for implementation:
+one human-input endpoint with a busy preference, durable receipt-based routing,
+queued-steer editing and immediate local submission feedback. Native queue,
+closure and uncertainty boundaries remain authoritative.
+
 [ADR-0289](0289-provider-owned-model-continuation.md) defines provider-side upstream
 continuation across Run/Worker replacement, with full-input HTTP ingress and
 bounded disposable caches. It is deployed with ordinary image/Tool/recovery

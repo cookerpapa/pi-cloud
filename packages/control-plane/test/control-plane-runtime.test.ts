@@ -10,7 +10,7 @@ import { startNativeInputAgent } from "./native-input-fixture.ts";
 import type {
   NativeInputCommand,
   AcceptedTurnResource,
-  TurnSteerResource,
+  NativeInputAccepted,
 } from "@pi-cloud/protocol";
 
 import {
@@ -160,14 +160,11 @@ describe.sequential("remote control-plane runtime composition", () => {
       const key = randomUUID();
       expect(runtime.gateway.activeConnectionCount).toBe(0);
       let confirmed = false;
-      const delivery = fetch(
-        `${address}/v1/sessions/${session.sessionId}/turns/${turn.turnId}/steers`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json", "idempotency-key": key },
-          body: JSON.stringify({ text }),
-        },
-      );
+      const delivery = fetch(`${address}/v1/sessions/${session.sessionId}/turns`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "idempotency-key": key },
+        body: JSON.stringify({ prompt: text, whenBusy: "steer" }),
+      });
       void delivery.then(() => {
         confirmed = true;
       });
@@ -176,7 +173,7 @@ describe.sequential("remote control-plane runtime composition", () => {
       finishDelivery.resolve();
       const delivered = await delivery;
       expect(delivered.status).toBe(202);
-      const receipt = (await delivered.json()) as TurnSteerResource;
+      const receipt = (await delivered.json()) as NativeInputAccepted;
       expect(receipt).toMatchObject({
         kind: "input",
         runId: turn.runId,
@@ -197,14 +194,11 @@ describe.sequential("remote control-plane runtime composition", () => {
           .where("session_id", "=", session.sessionId)
           .execute(),
       ).toHaveLength(1);
-      const replay = await fetch(
-        `${address}/v1/sessions/${session.sessionId}/turns/${turn.turnId}/steers`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json", "idempotency-key": key },
-          body: JSON.stringify({ text }),
-        },
-      );
+      const replay = await fetch(`${address}/v1/sessions/${session.sessionId}/turns`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "idempotency-key": key },
+        body: JSON.stringify({ prompt: text, whenBusy: "steer" }),
+      });
       expect(replay.status).toBe(202);
       expect(await replay.json()).toMatchObject({ ...receipt, replayed: true });
       expect(humanInput).toHaveBeenCalledOnce();

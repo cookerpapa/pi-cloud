@@ -150,6 +150,20 @@ export type SessionViewState = {
 };
 
 export type SessionViewAction =
+  | {
+      type: "turn.admission.observed";
+      sessionId: string;
+      turnId: string;
+      runId: string;
+      state: "running" | "withdrawn";
+    }
+  | {
+      type: "turn.completion.observed";
+      sessionId: string;
+      turnId: string;
+      runId: string;
+      stopReason?: string;
+    }
   | { type: "queue.updated"; queue: InputQueueResource }
   | { type: "session.created"; project: ProjectResource; session: SessionResource }
   | {
@@ -212,7 +226,13 @@ function updateTurn(
 ): readonly TurnView[] {
   const index = turns.findIndex((turn) => turn.turnId === turnId);
   if (index < 0) return [...turns, update(unknownTurn(turnId))];
-  return turns.map((turn, current) => (current === index ? update(turn) : turn));
+  return turns.map((turn, current) => {
+    if (current !== index) return turn;
+    const next = update(turn);
+    // Completed root work cannot restart. A delayed event may still contribute
+    // content after a PG status reconciliation, but cannot revive its spinner.
+    return turn.status === "completed" ? { ...next, status: "completed" } : next;
+  });
 }
 
 function appendText(
@@ -295,6 +315,11 @@ function transcriptItem(
 
 function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewState {
   if (state.session !== null && event.sessionId !== state.session.sessionId) return state;
+  if (
+    event.type === "turn.started" &&
+    state.turns.some((turn) => turn.turnId === event.turnId && turn.status === "completed")
+  )
+    return state;
   if (event.type === "session.state.changed") {
     return { ...state, sessionState: event.payload.to };
   }
@@ -814,6 +839,40 @@ function reduceSessionView(state: SessionViewState, action: SessionViewAction): 
       ],
     };
   }
+  if (action.type === "turn.admission.observed") {
+    if (state.session?.sessionId !== action.sessionId) return state;
+    const target = state.turns.find(
+      (turn) => turn.turnId === action.turnId && turn.runId === action.runId,
+    );
+    if (target?.status !== "queued") return state;
+    return {
+      ...state,
+      turns:
+        action.state === "withdrawn"
+          ? state.turns.filter((turn) => turn !== target)
+          : updateTurn(state.turns, target.turnId, (turn) => ({ ...turn, status: "running" })),
+    };
+  }
+  if (action.type === "turn.completion.observed") {
+    if (
+      state.session?.sessionId !== action.sessionId ||
+      !state.turns.some((turn) => turn.turnId === action.turnId && turn.runId === action.runId)
+    )
+      return state;
+    const turns = updateTurn(state.turns, action.turnId, (turn) => ({
+      ...turn,
+      status: "completed",
+      stopReason: action.stopReason ?? turn.stopReason,
+    }));
+    // Status comes from PG; no SSE sequence or transcript coverage is invented.
+    return {
+      ...state,
+      turns,
+      sessionState: turns.some((turn) => turn.status === "running" || turn.status === "cancelling")
+        ? state.sessionState
+        : "idle",
+    };
+  }
   if (action.type === "turn.accepted") {
     const turns = updateTurn(state.turns, action.accepted.turnId, (turn) => ({
       ...turn,
@@ -831,39 +890,32 @@ function reduceSessionView(state: SessionViewState, action: SessionViewAction): 
   }
   if (action.type === "queue.updated") {
     if (state.session?.sessionId !== action.queue.sessionId) return state;
-    const history = state.turns.filter(
-      (turn) => turn.status !== "queued" || turn.operation !== undefined,
-    );
-    const started = new Set(history.map((turn) => turn.turnId));
-    const pending = action.queue.items
-      .filter((item) => !item.inputId.startsWith("input-") && !started.has(item.inputId))
-      .map((item) => ({
-        ...unknownTurn(item.inputId),
+    let turns = state.turns;
+    for (const item of action.queue.items) {
+      if (item.inputId.startsWith("input-")) continue;
+      const previous = turns.find((turn) => turn.turnId === item.inputId);
+      if (previous && (previous.status !== "queued" || previous.operation)) continue;
+      const position = item.runMailboxPosition ?? previous?.mailboxPosition ?? null;
+      if (
+        previous?.prompt === item.text &&
+        previous.runId === item.runId &&
+        previous.mailboxPosition === position &&
+        JSON.stringify(previous.uploads ?? []) === JSON.stringify(item.uploads ?? [])
+      )
+        continue;
+      turns = updateTurn(turns, item.inputId, (turn) => ({
+        ...turn,
         runId: item.runId,
-        mailboxPosition: item.mailboxPosition,
+        mailboxPosition: position,
         prompt: item.text,
-        ...(item.uploads ? { uploads: item.uploads } : {}),
+        uploads: item.uploads ?? [],
         acceptedAt: item.acceptedAt,
-        status: "queued" as const,
+        status: "queued",
       }));
-    const previous = state.turns.filter(
-      (turn) => turn.status === "queued" && turn.operation === undefined,
-    );
-    if (
-      previous.length === pending.length &&
-      previous.every((turn, index) => {
-        const next = pending[index]!;
-        return (
-          turn.turnId === next.turnId &&
-          turn.prompt === next.prompt &&
-          JSON.stringify(turn.uploads ?? []) === JSON.stringify(next.uploads ?? []) &&
-          turn.mailboxPosition === next.mailboxPosition &&
-          turn.runId === next.runId
-        );
-      })
-    )
-      return state;
-    return { ...state, turns: [...history, ...pending] };
+    }
+    // Absence from the queue may mean claim, cancellation, pagination or an
+    // older snapshot. Retain accepted input until its Run confirms the outcome.
+    return turns === state.turns ? state : { ...state, turns };
   }
   if (action.type === "compact.accepted") {
     const value = action.compact;

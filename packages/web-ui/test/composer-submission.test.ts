@@ -1,6 +1,14 @@
 import { expect, it } from "vitest";
 import { ComposerSubmission } from "../src/composer-submission.ts";
 
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 const input = {
   kind: "turn" as const,
   sessionId: "session",
@@ -8,7 +16,47 @@ const input = {
   uploadIds: ["image"],
 };
 
-it.each(["turn", "steer", "compact"] as const)(
+it("shows the captured draft before preparation and retains uncertainty until the same-key retry succeeds", async () => {
+  const submission = new ComposerSubmission();
+  const changes: unknown[] = [];
+  const unsubscribe = submission.subscribe(() => changes.push(submission.snapshot()));
+  const blocked = deferred();
+  let originalKey = "";
+  const pending = submission.send(input, async (key) => {
+    originalKey = key;
+    expect(submission.snapshot()).toMatchObject({ state: "sending", input });
+    await blocked.promise;
+    throw Error("reply lost");
+  });
+  expect(submission.snapshot()?.state).toBe("sending");
+  blocked.resolve();
+  await expect(pending).rejects.toThrow("reply lost");
+  expect(submission.snapshot()).toMatchObject({ state: "unconfirmed", input });
+  await submission.send(input, async (key) => expect(key).toBe(originalKey));
+  expect(submission.snapshot()).toBeNull();
+  expect(changes).toHaveLength(4);
+  unsubscribe();
+});
+
+it("a late failure cannot replace the feedback for a newer draft", async () => {
+  const submission = new ComposerSubmission(),
+    blocked = deferred();
+  const first = submission.send(input, async () => {
+    await blocked.promise;
+    throw Error("old failure");
+  });
+  const newer = { ...input, text: "new draft" };
+  await expect(
+    submission.send(newer, async () => {
+      throw Error("new failure");
+    }),
+  ).rejects.toThrow();
+  blocked.resolve();
+  await expect(first).rejects.toThrow("old failure");
+  expect(submission.snapshot()).toMatchObject({ state: "unconfirmed", input: newer });
+});
+
+it.each(["turn", "compact"] as const)(
   "%s retries a lost ACK but permits an intentional repeat after confirmation",
   async (kind) => {
     const submission = new ComposerSubmission(),
@@ -37,8 +85,8 @@ it.each([
   { ...input, text: "different task" },
   { ...input, sessionId: "another session" },
   { ...input, uploadIds: ["another image"] },
-  { ...input, targetTurnId: "another target" },
-  { ...input, kind: "steer" as const },
+  { ...input, whenBusy: "steer" as const },
+  { ...input, kind: "compact" as const },
 ])("assigns a new identity when the submitted input changes: %j", async (changed) => {
   const submission = new ComposerSubmission(),
     keys: string[] = [];
@@ -71,7 +119,7 @@ it("does not let an older acknowledgement discard an unresolved newer submission
   expect(keys[0]).toBe(keys[1]);
 });
 
-it.each(["turn", "steer", "compact"] as const)(
+it.each(["turn", "compact"] as const)(
   "ends uncertain %s identity after the other action succeeds",
   async (kind) => {
     const submission = new ComposerSubmission();
@@ -84,7 +132,7 @@ it.each(["turn", "steer", "compact"] as const)(
       }),
     ).rejects.toThrow();
     await submission.send(
-      { ...input, kind: kind === "turn" ? "steer" : "turn", text: "another instruction" },
+      { ...input, kind: kind === "turn" ? "compact" : "turn", text: "another instruction" },
       async () => {},
     );
     const freshKey = await submission.send(request, async (key) => key);
@@ -117,7 +165,7 @@ it("explicit abandonment ends an uncertain intent without letting its late ACK c
   expect(await submission.send(input, async (key) => key)).toBe(newKey);
 });
 
-it.each(["turn", "steer", "compact"] as const)(
+it.each(["turn", "compact"] as const)(
   "retires only the returned %s identity, preserving an unrelated Session or newer intent",
   async (kind) => {
     const submission = new ComposerSubmission(),

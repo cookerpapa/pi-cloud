@@ -41,7 +41,6 @@ import {
   parseCreateProjectRequest,
   parseCreateSessionRequest,
   parseCreateTurnCancellationRequest,
-  parseCreateTurnSteerRequest,
   parseCreateConversationForkRequest,
   parseCreateConversationPruneRequest,
   parseCreateDevelopmentEnvironmentRequest,
@@ -63,7 +62,6 @@ import {
   parseQueuedInputId,
   type AuthSessionResource,
   type AcceptedTurnCancellationResource,
-  type TurnSteerResource,
   type ConversationDetailResource,
   type ConversationListResource,
   type ConversationTreeResource,
@@ -1202,33 +1200,6 @@ export class ControlPlaneController {
     return this.controlPlaneStores
       .forIdentity(identity)
       .acceptTurnCancellation(sessionId, turnId, idempotencyKey, request);
-  }
-
-  @Post("sessions/:sessionId/turns/:turnId/steers")
-  @HttpCode(202)
-  async steerTurn(
-    @Req() httpRequest: FastifyRequest,
-    @Param("sessionId") sessionIdValue: unknown,
-    @Param("turnId") turnIdValue: unknown,
-    @Headers("idempotency-key") idempotencyKeyValue: unknown,
-    @Body() body: unknown,
-  ): Promise<TurnSteerResource> {
-    const sessionId = parseUuidPathParameter(sessionIdValue, "sessionId");
-    const turnId = parseUuidPathParameter(turnIdValue, "turnId");
-    const idempotencyKey = parseIdempotencyKey(idempotencyKeyValue);
-    const request = parseCreateTurnSteerRequest(body);
-    const identity = this.tenantRequestContext.requireMutation(httpRequest);
-    const accepted = await this.queuedInputs.accept(
-      this.controlPlaneStores.forIdentity(identity),
-      identity.tenantId,
-      sessionId,
-      idempotencyKey,
-      { prompt: request.text, ...(request.uploadIds ? { uploadIds: request.uploadIds } : {}) },
-      "steer",
-      turnId,
-    );
-    if (accepted.kind !== "input") throw new Error("Steer did not resolve to native input");
-    return accepted;
   }
 
   @Get("sessions/:sessionId/queued-inputs")

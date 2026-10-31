@@ -53,6 +53,7 @@ const api = {
     window.queue.items.forEach((item,i)=>item.mailboxPosition=i+1);
     const result={queue:pageOf(),replayed:false};receipts.set(key,result);
     if(window.loseReply){window.loseReply=false;throw new TypeError("reply lost");}
+    if(window.delayMutation){window.delayMutation=false;await new Promise(resolve=>{window.releaseMutation=resolve;});}
     return result;
   },
   async getReturnedInputs(sessionId,_signal,page={}){
@@ -146,6 +147,17 @@ try {
       );
       await page.send("Input.insertText", { text });
     };
+    // The final boundary can consume a promoted input before its HTTP reply.
+    // A terminal/focus refresh during that mutation must not be forgotten.
+    await page.evaluate("window.delayMutation=true");
+    await click(row(1), "引导");
+    await page.waitFor("typeof window.releaseMutation==='function'");
+    await page.evaluate(
+      "window.queue.items=[];window.queue.activeTurnId=null;window.queue.revision++;window.queue.viewVersion=String(window.queue.revision);window.refreshQueue();window.releaseMutation()",
+    );
+    await page.waitFor("document.querySelectorAll('.pending-input-row').length===0", 2000);
+    await page.evaluate("window.renderQueue()");
+    await page.waitFor("document.querySelectorAll('.pending-input-row').length===3");
     await click(row(2), "编辑");
     await page.waitFor("document.querySelector('.pending-input-editor textarea')");
     assert.equal(
@@ -182,11 +194,9 @@ try {
       await page.evaluate(
         `Array.from(document.querySelector(${JSON.stringify(row(2))}).querySelectorAll('button')).every(b=>b.disabled)`,
       ),
-      true,
+      false,
     );
-    await page.evaluate(
-      "window.queue.items.splice(1,1);window.queue.revision++;window.queue.viewVersion=String(window.queue.revision);window.refreshQueue()",
-    );
+    await click(row(2), "取消发送");
     await page.waitFor("document.querySelectorAll('.pending-input-row').length===1");
 
     await click(row(1), "编辑");

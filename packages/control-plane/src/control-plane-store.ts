@@ -191,6 +191,7 @@ function turnRequestFingerprint(request: InitialRunRequest, origin?: ScheduledOr
         inputKind: "prompt",
         prompt: request.prompt,
         thinkingLevel: request.thinkingLevel ?? null,
+        ...(request.whenBusy === "steer" ? { whenBusy: "steer" } : {}),
         ...(origin ? { scheduledOrigin: origin } : {}),
         ...(request.uploadIds?.length ? { uploadIds: request.uploadIds } : {}),
       }),

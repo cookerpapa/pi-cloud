@@ -12,6 +12,7 @@ import { InheritedContext } from "./InheritedContext.tsx";
 import { useComposerUploads } from "./useComposerUploads.ts";
 import { ComposerUploadCards } from "./UploadCards.tsx";
 import { ComposerSubmission } from "./composer-submission.ts";
+import { ComposerDelivery } from "./ComposerDelivery.tsx";
 import { useComposerEnterMode } from "./useComposerEnterMode.tsx";
 import {
   useCallback,
@@ -21,6 +22,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   Suspense,
   type CSSProperties,
   type ReactNode,
@@ -190,6 +192,9 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const [streamQueue, setStreamQueue] = useState<
     import("@pi-cloud/protocol").InputQueueResource | null
   >(null);
+  const reconcileQueue = useRef<
+    ((queue: import("@pi-cloud/protocol").InputQueueResource) => void) | null
+  >(null);
   const timelineControl = useRef<TimelineControl | null>(null);
   const [streamSessionId, setStreamSessionId] = useState<string | null>(null);
   const currentStreamSession = useRef(streamSessionId);
@@ -250,7 +255,6 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     | "creating"
     | "submitting"
     | "cancelling"
-    | "steering"
     | "forking"
     | "opening-fork-source"
     | "pruning"
@@ -263,6 +267,11 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const [unavailableForkSource, setUnavailableForkSource] = useState<string | null>(null);
   const composerPreference = useComposerEnterMode(identity);
   const composerSubmission = useRef(new ComposerSubmission());
+  const composerDelivery = useSyncExternalStore(
+    composerSubmission.current.subscribe,
+    composerSubmission.current.snapshot,
+    composerSubmission.current.snapshot,
+  );
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [expandedConversations, setExpandedConversations] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -689,6 +698,54 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     const controller = new AbortController();
     let snapshotInputRevision = inputRevision.current;
     const discoveredChildren = new Set<string>();
+    const reconcilingRuns = new Set<string>();
+    const reconcile = (queue: import("@pi-cloud/protocol").InputQueueResource) => {
+      if (
+        controller.signal.aborted ||
+        currentStreamSession.current !== sessionId ||
+        queue.sessionId !== sessionId
+      )
+        return;
+      // A queue snapshot is a reconciliation hint, not a terminal event.
+      // Confirm missed completion from PG without replacing the transcript.
+      for (const turn of renderedState.current.turns) {
+        if (
+          !turn.runId ||
+          !["queued", "running", "cancelling"].includes(turn.status) ||
+          (turn.status !== "queued" && queue.activeTurnId === turn.turnId) ||
+          (turn.status === "queued" &&
+            (queue.hasMore || queue.items.some((item) => item.inputId === turn.turnId))) ||
+          reconcilingRuns.has(turn.runId)
+        )
+          continue;
+        const runId = turn.runId;
+        reconcilingRuns.add(runId);
+        void api
+          .getRun(runId)
+          .then((run) => {
+            if (controller.signal.aborted || currentStreamSession.current !== sessionId) return;
+            if (run.state === "completed")
+              update({
+                type: "turn.completion.observed",
+                sessionId: run.sessionId,
+                turnId: run.turnId,
+                runId: run.runId,
+                ...(run.stopReason ? { stopReason: run.stopReason } : {}),
+              });
+            else if (run.state === "running" || (run.state === "cancelled" && !run.startedAt))
+              update({
+                type: "turn.admission.observed",
+                sessionId: run.sessionId,
+                turnId: run.turnId,
+                runId: run.runId,
+                state: run.state === "running" ? "running" : "withdrawn",
+              });
+          })
+          .catch(() => undefined)
+          .finally(() => reconcilingRuns.delete(runId));
+      }
+    };
+    reconcileQueue.current = reconcile;
     let childRefreshTimer: ReturnType<typeof setTimeout> | undefined;
     const refreshChildren = () => {
       if (childRefreshTimer !== undefined) return;
@@ -778,6 +835,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
           event.type === "turn.cancelled"
         ) {
           setInspectorRefreshSignal((value) => value + 1);
+          setQueueRefreshGeneration((value) => value + 1);
           void refreshConversations().catch(() => undefined);
           void refreshConversationTree(sessionId, streamPresentation.current.treeView).catch(
             () => undefined,
@@ -803,8 +861,8 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
         }
       },
       onInputQueue(queue) {
-        if (!controller.signal.aborted && currentStreamSession.current === sessionId)
-          setStreamQueue(queue);
+        if (controller.signal.aborted || currentStreamSession.current !== sessionId) return;
+        setStreamQueue(queue);
       },
       onStatus(status) {
         if (controller.signal.aborted) return;
@@ -832,6 +890,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     });
     return () => {
       controller.abort();
+      if (reconcileQueue.current === reconcile) reconcileQueue.current = null;
       if (childRefreshTimer !== undefined) clearTimeout(childRefreshTimer);
       toolProgress.reset();
       runObservations.reset();
@@ -1271,8 +1330,10 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   }
 
   function acceptComposerTurn(sessionId: string, text: string, uploadIds: string[]) {
-    return composerSubmission.current.send({ kind: "turn", sessionId, text, uploadIds }, (key) =>
-      api.acceptTurn(sessionId, text, key, undefined, uploadIds),
+    const whenBusy = composerPreference.enterMode;
+    return composerSubmission.current.send(
+      { kind: "turn", sessionId, text, uploadIds, whenBusy },
+      (key) => api.acceptTurn(sessionId, text, key, undefined, uploadIds, whenBusy),
     );
   }
 
@@ -1280,48 +1341,68 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     const submittedRevision = draftRevision.current;
     const text = prompt.trim();
     if ((!text && !uploads.items.length) || !canMutate || !canQueue || operation !== null) return;
+    const session = state.session;
+    if (!session) {
+      beginNewConversation(text);
+      return;
+    }
+    const sessionId = session.sessionId;
+    const uploadIds = uploads.items.map((file) => file.id);
+    const whenBusy = composerPreference.enterMode;
     setOperation("submitting");
     update({ type: "api.error.cleared" });
+    timelineControl.current?.latest();
     try {
-      let session = state.session;
-      if (session === null) {
-        setOperation(null);
-        beginNewConversation(text);
-        return;
-      }
-      if (session.executionMode === "development_environment") {
-        const environmentId = session.developmentEnvironmentId;
-        const environment = developmentEnvironments.find(
-          (candidate) => candidate.environmentId === environmentId,
-        );
-        if (environment?.state === "paused") {
-          const resumed = await api.developmentEnvironmentAction(
-            environment.environmentId,
-            "resume",
-            newIdempotencyKey("environment"),
+      // Feedback starts before preparation. Text and attachment selection are
+      // frozen even if the user edits their next draft while this awaits ACK.
+      const { accepted, attached } = await composerSubmission.current.send(
+        { kind: "turn", sessionId, text, uploadIds, whenBusy },
+        async (key) => {
+          if (session.executionMode === "development_environment") {
+            const environment = developmentEnvironments.find(
+              (candidate) => candidate.environmentId === session.developmentEnvironmentId,
+            );
+            if (environment?.state === "paused") {
+              const resumed = await api.developmentEnvironmentAction(
+                environment.environmentId,
+                "resume",
+                newIdempotencyKey("environment"),
+              );
+              setDevelopmentEnvironments((current) =>
+                current.map((candidate) =>
+                  candidate.environmentId === resumed.environmentId ? resumed : candidate,
+                ),
+              );
+            }
+          }
+          const attached = await uploads.ready(sessionId, uploadIds);
+          const accepted = await api.acceptTurn(
+            sessionId,
+            text,
+            key,
+            undefined,
+            attached.map((file) => file.id),
+            whenBusy,
           );
-          setDevelopmentEnvironments((current) =>
-            current.map((candidate) =>
-              candidate.environmentId === resumed.environmentId ? resumed : candidate,
-            ),
-          );
-        }
-      }
-      const attached = await uploads.ready(session.sessionId);
-      const accepted = await acceptComposerTurn(
-        session.sessionId,
-        text,
-        attached.map((file) => file.id),
+          return { accepted, attached };
+        },
       );
+      if (renderedState.current.session?.sessionId !== sessionId) return;
       if (accepted.kind === "run")
         update({ type: "turn.accepted", accepted, prompt: text, uploads: attached });
-      else setQueueRefreshGeneration((generation) => generation + 1);
+      else {
+        inputRevision.current++;
+        setQueueRefreshGeneration((generation) => generation + 1);
+      }
       uploads.clear(attached.map((file) => file.id));
       timelineControl.current?.latest();
       setPrompt((current) => (draftRevision.current === submittedRevision ? "" : current));
       void refreshConversations().catch(() => undefined);
     } catch (error: unknown) {
-      update({ type: "api.error", message: errorMessage(error, t) });
+      if (renderedState.current.session?.sessionId === sessionId) {
+        update({ type: "api.error", message: errorMessage(error, t) });
+        setQueueRefreshGeneration((generation) => generation + 1);
+      }
     } finally {
       setOperation(null);
       focusComposer();
@@ -1357,41 +1438,6 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
           update({ type: "conversation.loaded", conversation, preserveInputRevision: true });
         }
       }
-    } catch (error: unknown) {
-      update({ type: "api.error", message: errorMessage(error, t) });
-    } finally {
-      setOperation(null);
-      focusComposer();
-    }
-  }
-
-  async function steerTurn(): Promise<void> {
-    const submittedRevision = draftRevision.current;
-    const text = prompt.trim();
-    if (
-      state.session === null ||
-      currentTurn?.status !== "running" ||
-      (!text && !uploads.items.length) ||
-      !canMutate ||
-      !canQueue ||
-      operation !== null
-    ) {
-      return;
-    }
-    setOperation("steering");
-    update({ type: "api.error.cleared" });
-    try {
-      const attached = await uploads.ready(state.session.sessionId);
-      const uploadIds = attached.map((file) => file.id);
-      const sessionId = state.session.sessionId,
-        targetTurnId = currentTurn.turnId;
-      await composerSubmission.current.send(
-        { kind: "steer", sessionId, targetTurnId, text, uploadIds },
-        (key) => api.steerTurn(sessionId, targetTurnId, text, key, uploadIds),
-      );
-      setQueueRefreshGeneration((generation) => generation + 1);
-      uploads.clear(attached.map((file) => file.id));
-      setPrompt((current) => (draftRevision.current === submittedRevision ? "" : current));
     } catch (error: unknown) {
       update({ type: "api.error", message: errorMessage(error, t) });
     } finally {
@@ -1453,8 +1499,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
       update({ type: "api.error", message: t("commands.compactBusy") });
       return;
     }
-    if (composerAction === "steer") void steerTurn();
-    else void submitTurn();
+    void submitTurn();
   }
 
   function renderDelegatedNode(
@@ -2450,6 +2495,13 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
             <CompactStatus state={activeCompact.state} />
           ) : null}
           <div className="product-composer-shell">
+            <ComposerDelivery
+              value={
+                composerDelivery?.input.sessionId === state.session?.sessionId
+                  ? composerDelivery
+                  : null
+              }
+            />
             {authPhase === "authenticated" &&
             state.session !== null &&
             selectedDelegatedSession === null ? (
@@ -2461,7 +2513,10 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
                 returnRecovery={returnRecovery}
                 streamQueue={streamQueue}
                 refreshSignal={String(queueRefreshGeneration)}
-                onSnapshot={(queue) => update({ type: "queue.updated", queue })}
+                onSnapshot={(queue) => {
+                  reconcileQueue.current?.(queue);
+                  update({ type: "queue.updated", queue });
+                }}
                 onRestoreDraft={(text, attached, returnedKeys = []) => {
                   if (currentStreamSession.current !== state.session?.sessionId) return false;
                   if (!uploads.restore(attached)) return false;

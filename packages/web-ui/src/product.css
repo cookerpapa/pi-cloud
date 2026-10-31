@@ -1954,6 +1954,32 @@ body.product-panel-resizing {
 .product-composer-shell > .upload-cards:not(:empty) {
   padding: 10px 12px 0;
 }
+.composer-delivery {
+  margin: 0 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #444;
+  color: #ddd;
+  font-size: 13px;
+}
+.composer-delivery-state {
+  color: #aaa;
+  font-size: 12px;
+}
+.composer-delivery.unconfirmed .composer-delivery-state {
+  color: #f1bd79;
+}
+.composer-delivery p {
+  margin: 5px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 5.5em;
+  overflow: auto;
+}
+.composer-delivery small {
+  display: block;
+  margin-top: 4px;
+  color: #aaa;
+}
 .pending-input-queue {
   margin: 0 12px;
   padding: 7px 0;

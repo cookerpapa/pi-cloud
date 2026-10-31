@@ -110,7 +110,7 @@ export async function readInputQueue(
   const bodies = selected.length
     ? await database
         .selectFrom("runs")
-        .select(["id", "turn_id", "input_text", "input_uploads", "created_at"])
+        .select(["id", "turn_id", "input_text", "input_uploads", "created_at", "mailbox_position"])
         .where("tenant_id", "=", tenantId)
         .where(
           "id",
@@ -129,6 +129,7 @@ export async function readInputQueue(
       uploads: parseUserUploads(r.input_uploads),
       acceptedAt: r.created_at.toISOString(),
       mailboxPosition: native.items.length + pgStart + index + 1,
+      runMailboxPosition: Number(r.mailbox_position),
       status: "queued" as const,
     })),
   ];

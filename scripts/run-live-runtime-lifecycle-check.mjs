@@ -84,11 +84,13 @@ try {
   }
   assert.equal(cancellationStatus, 409, "Current product API must reject queued-Turn cancellation");
   report.queuedCancellationStatus = cancellationStatus;
-  const delivery = await api.steerTurn(
+  const delivery = await api.acceptTurn(
     session.sessionId,
-    first.turnId,
     `For this current task, include ${steerMarker} in your final response after the Tool completes.`,
     newIdempotencyKey("steer"),
+    undefined,
+    undefined,
+    "steer",
   );
   assert.equal(delivery.state, "accepted");
   report.steerDelivered = true;

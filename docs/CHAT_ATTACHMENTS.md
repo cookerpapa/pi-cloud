@@ -105,7 +105,7 @@ All paths require the ordinary tenant authentication and mutation authorization.
 | `DELETE /v1/sessions/:sessionId/uploads/:uploadId` | `204`; remove an unaccepted draft reference, leaving Workspace bytes intact; accepted references remain |
 | `GET /v1/sessions/:sessionId/uploads/:uploadId/image` | Source image bytes, tenant scoped, private/no-store |
 | `POST /v1/sessions/:sessionId/turns` | Optional `uploadIds`; empty `prompt` requires an attachment. Idle: `kind:run` after PG acceptance; active: `kind:input` after native Kafka durability |
-| `POST /v1/sessions/:sessionId/turns/:turnId/steers` | Optional `uploadIds`; empty `text` requires an attachment. Returns `kind:input` after native Kafka durability |
+| `POST /v1/sessions/:sessionId/turns` with `whenBusy:steer` | Optional `uploadIds`; empty `prompt` requires an attachment. Uses native steer when active, or ordinary PG Run admission when idle |
 | Queued input `edit` action | Optional `uploadIds` replaces attachments atomically; omission preserves them |
 
 Upload IDs are UUIDs chosen by the caller. Retry uses the same ID, filename,

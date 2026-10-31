@@ -1,5 +1,26 @@
 # Maintained backlog
 
+## Skill market and input-boundary repair — in progress
+
+- [x] Reproduce and repair late steer/follow-up intake and stale queue presentation
+      under [ADR-0290](adr/0290-human-input-boundary-and-feedback.md), preserving
+      durable acknowledgement and stable retry identity.
+- [x] Add immediate local sending feedback and measure acknowledgement, claim and
+      display separately; retain failed drafts and concurrent edits.
+- [ ] Implement the approved internal Skill market as a separate vertical slice:
+      standard packages, immutable versions, scoped installation/enabling,
+      environment requirements, read_skill and existing sandbox execution.
+- [ ] Verify and deploy the completed slices with preserved original assets.
+
+Input slice source checks: 39 focused PG/API tests, 74 web unit tests, protocol
+checks and both browser suites pass. Queue race fails before the fix and passes
+after it. Publication remains pending the matched release; original Galgame
+was inspected without resubmitting or compacting it.
+
+Custom Tool installation, a Tool marketplace, alternate sandboxes and a Pi upgrade
+are outside this work. Skill packages will remain distinct from executable Worker
+extensions and from mutable Workspace files.
+
 ## Sandbox capability boundaries and current documentation — deployed
 
 - [x] Narrow lifecycle/execution/file/image/terminal/preview/workflow/credential

@@ -61,7 +61,11 @@ describe.sequential("native human inputs and cloud execution records", () => {
       text: string,
       key: string = randomUUID(),
       mode: "follow_up" | "steer" = "follow_up",
-    ) => queue.accept(store, tenant.tenantId, session.sessionId, key, { prompt: text }, mode);
+    ) =>
+      queue.accept(store, tenant.tenantId, session.sessionId, key, {
+        prompt: text,
+        whenBusy: mode,
+      });
     const list = () => queue.list(tenant.tenantId, session.sessionId);
     const edit = (
       inputId: string,
@@ -361,6 +365,106 @@ describe.sequential("native human inputs and cloud execution records", () => {
         .execute(),
     ).toEqual([]);
     expect(f.deliver).not.toHaveBeenCalled();
+  });
+
+  it("uses an idle steer preference to admit one initial Run and keeps its retry identity", async () => {
+    const f = await fixture();
+    const first = await f.accept("continue", "idle-steer", "steer");
+    expect(first).toMatchObject({ kind: "run", replayed: false });
+    expect(await f.accept("continue", "idle-steer", "steer")).toEqual({ ...first, replayed: true });
+    await expect(f.accept("continue", "idle-steer", "follow_up")).rejects.toMatchObject({
+      code: "idempotency_conflict",
+    });
+    expect(f.deliver).not.toHaveBeenCalled();
+    expect(
+      await db
+        .selectFrom("runs")
+        .select("id")
+        .where("session_id", "=", f.session.sessionId)
+        .execute(),
+    ).toHaveLength(1);
+  });
+
+  it("rechecks durable closure when a native target closes before accepting input", async () => {
+    const f = await fixture(),
+      a = await f.start();
+    let closed = false;
+    try {
+      f.deliver.mockImplementationOnce(async () => {
+        await a.release();
+        await a.close();
+        closed = true;
+        throw Object.assign(new Error("input admission closed"), { code: "input_closed" });
+      });
+      const accepted = await f.accept("late steer", "boundary", "steer");
+      expect(accepted).toMatchObject({ kind: "run", replayed: false });
+      expect(accepted.runId).not.toBe(a.root.runId);
+      expect(await f.accept("late steer", "boundary", "steer")).toEqual({
+        ...accepted,
+        replayed: true,
+      });
+      expect(
+        await db
+          .selectFrom("runs")
+          .select("id")
+          .where("session_id", "=", f.session.sessionId)
+          .execute(),
+      ).toHaveLength(2);
+    } finally {
+      if (!closed) await a.close();
+    }
+  });
+
+  it("does not create a second Run when a lost native steer acknowledgement crosses completion", async () => {
+    const f = await fixture(),
+      a = await f.start();
+    let closed = false;
+    try {
+      f.deliver.mockImplementationOnce(async (command) => {
+        await a.backend.humanInput(command);
+        await a.release();
+        await a.close();
+        closed = true;
+        throw Error("lost reply after completion");
+      });
+      await expect(f.accept("accepted once", "closed-reply", "steer")).rejects.toMatchObject({
+        code: "input_delivery_unavailable",
+      });
+      const replay = await f.accept("accepted once", "closed-reply", "steer");
+      expect(replay).toMatchObject({ kind: "input", runId: a.root.runId, replayed: true });
+      expect(
+        await db
+          .selectFrom("runs")
+          .select("id")
+          .where("session_id", "=", f.session.sessionId)
+          .execute(),
+      ).toHaveLength(1);
+    } finally {
+      if (!closed) await a.close();
+    }
+  });
+
+  it("keeps a draft when a local closed-input refusal has no projected closure proof", async () => {
+    const f = await fixture(),
+      a = await f.start();
+    try {
+      f.deliver.mockRejectedValue(
+        Object.assign(new Error("local close"), { code: "input_closed" }),
+      );
+      await expect(f.accept("do not duplicate", "unsealed", "steer")).rejects.toMatchObject({
+        code: "input_delivery_unavailable",
+      });
+      expect(f.deliver).toHaveBeenCalledTimes(2);
+      expect(
+        await db
+          .selectFrom("runs")
+          .select("id")
+          .where("session_id", "=", f.session.sessionId)
+          .execute(),
+      ).toHaveLength(1);
+    } finally {
+      await a.close();
+    }
   });
 
   it("stores an idle request in one Run, and edits it without changing original idempotency", async () => {

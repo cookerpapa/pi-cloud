@@ -329,6 +329,11 @@ window.renderChat = (sessionState='idle', history=false, childViews=false, peerF
     },
     removeDraftUpload:async()=>{},
     readInputImage:async()=>({bytes:Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2uV8AAAAASUVORK5CYII='),c=>c.charCodeAt(0)),contentType:'image/png'}),
+    getRun:async(runId)=>{
+      window.runReads=(window.runReads??0)+1;
+      const receipt=[...window.turnReceipts.values()].find(r=>r.runId===runId);
+      return {runId,sessionId:sid,turnId:receipt?.turnId??fixtureTurnId,state:receipt?'queued':sessionState==='running'?'running':'completed',stopReason:'stop',startedAt:receipt?undefined:createdAt};
+    },
     getSessionModel:async()=>modelResource(),
     getConversation:async(sessionId,query)=>{
       if(peerForks){window.sourceNavigationReads.push({sessionId,query});if(sessionId!==forkSessionId&&(window.fixtureParentDeleted||(window.fixtureSourcePointGone&&query?.entryId)))throw new PiCloudApiError(404,'not_found','Source point unavailable');}
@@ -372,10 +377,10 @@ window.renderChat = (sessionState='idle', history=false, childViews=false, peerF
         const snapshot={schemaVersion:3,conversation:conversation(String(url).split('/').at(-2))};
         const frame=(event,data)=>'event: '+event+'\\n'+'data: '+JSON.stringify(data)+'\\n\\n';
         window.emitFixtureEvent=event=>controller.enqueue(new TextEncoder().encode(frame(event.type,event)));
-        window.finishFixtureTurn=()=>controller.enqueue(new TextEncoder().encode(frame('turn.completed',{
+        window.finishFixtureTurn=(emit=true)=>{ sessionState='idle';session={...session,state:'idle'};window.fixtureQueue.activeTurnId=null;window.fixtureQueue.revision++;if(emit) controller.enqueue(new TextEncoder().encode(frame('turn.completed',{
           schemaVersion:1,eventId:'90000000-0000-4000-8000-000000000001',sessionId:snapshot.conversation.session.sessionId,
           turnId:fixtureTurnId,agentId:'root',seq:3,occurredAt:new Date().toISOString(),type:'turn.completed',payload:{stopReason:'stop'}
-        })));
+        })));};
         controller.enqueue(new TextEncoder().encode(frame('stream.begin',{kind:'snapshot'})+
           frame('stream.part',JSON.stringify(snapshot))+frame('stream.end',{})));
       }
@@ -408,7 +413,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false, peerF
         pending:!!batch&&!window.returnInputsReady,hasMore:false,
         items:batch&&window.returnInputsReady?batch.items.filter(item=>item.mailboxPosition>afterPosition):[]});
     }
-    if(String(url).endsWith("/steers")) {
+    if(String(url).endsWith("/turns") && JSON.parse(init.body).whenBusy==="steer" && sessionState==="running" && !window.startBeforeAck) {
       const body=JSON.parse(init.body),key=new Headers(init.headers).get('idempotency-key');
       window.steerRequests.push({body,key});
       const previous=window.steerReceipts.get(key);
@@ -416,7 +421,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false, peerF
       const receipt=previous??{kind:'input',inputId:source,runId:'60000000-0000-4000-8000-000000000011',turnId:fixtureTurnId,
         delivery:'steer',sessionId:sid,state:'accepted',acceptedAt:new Date().toISOString(),replayed:false};
       if(!previous){window.steerReceipts.set(key,receipt);window.fixtureQueue.revision++;
-        window.fixtureQueue.items.push({inputId:source,runId:receipt.runId,text:body.text,uploads:(body.uploadIds??[]).map(id=>window.uploadReceipts.find(upload=>upload.id===id)),mailboxPosition:window.fixtureQueue.items.length+1,acceptedAt:receipt.acceptedAt,status:'steering'});}
+        window.fixtureQueue.items.push({inputId:source,runId:receipt.runId,text:body.prompt,uploads:(body.uploadIds??[]).map(id=>window.uploadReceipts.find(upload=>upload.id===id)),mailboxPosition:window.fixtureQueue.items.length+1,acceptedAt:receipt.acceptedAt,status:'steering'});}
       if(window.loseSteerReply){window.loseSteerReply=false;throw Error('Fixture lost Steer response');}
       return Response.json({...receipt,replayed:!!previous},{status:202});
     }
@@ -1888,6 +1893,26 @@ try {
       "Successful logout must discard the entire previous account's document state",
     );
   });
+  await withChromePage({}, async (page) => {
+    await page.navigate(`http://127.0.0.1:${port}/review.html`);
+    await page.waitFor("window.fixtureReady");
+    await page.evaluate("renderChat('running',true,true)");
+    await page.waitFor(
+      "document.querySelector('.product-conversation-row:not(.product-delegated-session)>button')",
+    );
+    await page.evaluate(
+      "document.querySelector('.product-conversation-row:not(.product-delegated-session)>button').click()",
+    );
+    await page.waitFor(
+      "window.finishFixtureTurn && document.querySelector('.product-stop-button')",
+    );
+    await page.evaluate("finishFixtureTurn(false);window.dispatchEvent(new Event('focus'))");
+    await page.waitFor("!document.querySelector('.product-stop-button') && window.runReads>0");
+    assert.equal(
+      await page.evaluate("document.querySelector('.product-user-bubble')?.textContent"),
+      "Tree question",
+    );
+  });
   // The SSE start may beat both the submit reply and the input metadata GET.
   // Observe every DOM mutation so a brief invented/old user bubble cannot pass.
   await withChromePage({}, async (page) => {
@@ -1919,6 +1944,12 @@ try {
       );
       await page.waitFor(
         `document.querySelector(${JSON.stringify(currentTurn + " .product-run-status")}) && window.releaseTurnMetadata && window.releaseTurnAck`,
+      );
+      assert.equal(
+        await page.evaluate(
+          `document.querySelector('.composer-delivery.sending')?.textContent.includes(${JSON.stringify(input)})`,
+        ),
+        true,
       );
       // A new Run exists, but neither source has yet confirmed its input to the browser.
       assert.equal(
