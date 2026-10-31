@@ -891,6 +891,9 @@ try {
       `emitFixtureEvent({schemaVersion:1,eventId:crypto.randomUUID(),sessionId:'10000000-0000-4000-8000-000000000001',turnId:'50000000-0000-4000-8000-000000000011',agentId:'root',seq:3,occurredAt:new Date().toISOString(),type:'tool.started',payload:{toolCallId:'task:3',toolName:'bash',input:{command:'NEXT_INPUT'}}});emitFixtureEvent({schemaVersion:1,eventId:crypto.randomUUID(),sessionId:'10000000-0000-4000-8000-000000000001',turnId:'50000000-0000-4000-8000-000000000011',agentId:'root',seq:4,occurredAt:new Date().toISOString(),type:'tool.completed',payload:{toolCallId:'task:3',outcome:'completed',output:{content:[{type:'text',text:'NEXT_RESULT'}]}}})`,
     );
     await page.wait(300);
+    // Reading holds the old window; returning to live must retain its overrides.
+    await page.evaluate("document.querySelector('.product-return-to-latest')?.click()");
+    await page.wait(100);
     assert.equal(
       await page.evaluate("document.querySelectorAll('.product-tool').length"),
       0,

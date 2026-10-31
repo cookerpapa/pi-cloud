@@ -10,6 +10,7 @@ import {
   mergeHistoryPages,
   observeHistoryPages,
   freezeHistoryView,
+  refreshKnownTools,
   type HistoryPage,
 } from "../src/history-window.ts";
 import {
@@ -62,6 +63,51 @@ function page(index: number): HistoryPage {
 }
 
 describe("conversation read windows", () => {
+  it("keeps the reading window across live trimming while settling only known Tools", () => {
+    const base = turn(0),
+      text = base.items[0]!;
+    const tool = {
+      kind: "tool" as const,
+      key: "original",
+      toolCallId: "task:1",
+      toolName: "bash",
+      input: { command: "echo ready" },
+      status: "running" as const,
+      firstSequence: 2,
+      startedAt: "2026-10-31T00:00:00Z",
+      pageKey: "page-a",
+      historyCursor: "old-cursor",
+    };
+    const pages = [{ ...page(0), turns: [{ ...base, items: [text, tool] }] }];
+    const completed = {
+      ...tool,
+      key: "other-key",
+      toolName: "unknown",
+      input: null,
+      status: "completed" as const,
+      lastSequence: 9,
+      output: { content: [{ type: "text", text: "finished" }] },
+      pageKey: "live",
+      historyCursor: "live-cursor",
+    };
+    const live = [
+      { ...base, items: [completed, { ...completed, key: "new", toolCallId: "task:2" }] },
+    ];
+    const updated = refreshKnownTools(pages, live);
+    expect(updated[0]!.turns[0]!.items).toHaveLength(2);
+    expect(updated[0]!.turns[0]!.items[0]).toBe(text);
+    expect(updated[0]!.turns[0]!.items[1]).toMatchObject({
+      key: "original",
+      toolName: "bash",
+      input: tool.input,
+      status: "completed",
+      output: completed.output,
+      pageKey: "page-a",
+      historyCursor: "old-cursor",
+    });
+    expect(refreshKnownTools(updated, live)).toBe(updated);
+    expect(refreshKnownTools(updated, [{ ...base, items: [tool] }])).toBe(updated);
+  });
   it("copies the complete final answer from the footer even when its text spans virtual rows", () => {
     const finalText = ("Long answer paragraph. ".repeat(400) + "\n\n").repeat(3);
     const base = turn(0);

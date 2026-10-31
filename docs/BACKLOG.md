@@ -1,5 +1,12 @@
 # Maintained backlog
 
+## Manual reading and native text selection — in progress
+
+- [x] Reproduce end-following jumps after manual Tool disclosure and lost text selection.
+- [x] Preserve explicit reading intent, selected DOM ranges and bounded history windows.
+- [x] Verify live Tool settlement, small scroll gestures, buffered-text resume and large code selection.
+- [ ] Publish and verify the actual Web with the Worker timing slice.
+
 ## Worker startup and model preparation timings — in progress
 
 - [x] Add bounded stage timing around existing public Harness/Models/Storage ports.

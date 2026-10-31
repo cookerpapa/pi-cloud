@@ -3,7 +3,7 @@ import { CompactStatus } from "./ConversationUsage.tsx";
 import type { ConversationCompactResource } from "@pi-cloud/protocol";
 import { UploadCards } from "./UploadCards.tsx";
 import type { PiCloudApi } from "./api.ts";
-import { useEffect, useMemo, useRef, useState, useContext } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useContext } from "react";
 import {
   deriveConversationPresentationRows,
   type ConversationPresentationRow,
@@ -75,6 +75,8 @@ function useProgressiveText(
   streaming: boolean,
   onProgress: (() => void) | undefined,
   recoveredTextLength = 0,
+  paused = false,
+  isSelecting?: () => boolean,
 ): string {
   const animated = useRef(streaming);
   const callback = useRef(onProgress);
@@ -82,6 +84,14 @@ function useProgressiveText(
   const targetRef = useRef(text);
   const visibleRef = useRef(initialProgressiveText(text, streaming, recoveredTextLength));
   const [visible, setVisible] = useState(visibleRef.current);
+  const readingGesture = useRef(isSelecting);
+  readingGesture.current = isSelecting;
+  useLayoutEffect(() => {
+    if (paused && frameRef.current !== null) {
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+  }, [paused]);
 
   useEffect(() => {
     callback.current = onProgress;
@@ -89,6 +99,7 @@ function useProgressiveText(
 
   useEffect(() => {
     targetRef.current = text;
+    if (paused || readingGesture.current?.()) return;
     if (streaming) animated.current = true;
     let current = visibleRef.current;
     // A reconnect Snapshot is already-visible history, including when React
@@ -112,6 +123,10 @@ function useProgressiveText(
     }
     if (current.length >= text.length || frameRef.current !== null) return;
     const advance = (): void => {
+      if (readingGesture.current?.()) {
+        frameRef.current = null;
+        return;
+      }
       const target = targetRef.current;
       const nextIndex = nextProgressiveTextIndex(target, visibleRef.current.length);
       const next = target.slice(0, nextIndex);
@@ -120,7 +135,7 @@ function useProgressiveText(
       frameRef.current = nextIndex < target.length ? requestAnimationFrame(advance) : null;
     };
     frameRef.current = requestAnimationFrame(advance);
-  }, [streaming, text, recoveredTextLength]);
+  }, [streaming, text, recoveredTextLength, paused]);
 
   useEffect(
     () => () => {
@@ -155,11 +170,23 @@ function AssistantTextItem({
   streaming: boolean;
 }) {
   const mountedLength = useRef(windowed ? item.text.length : 0);
+  const disclosure = useContext(HistoryDisclosureContext);
+  const selectionActive = disclosure?.selectionActive ?? false;
+  const reading = disclosure?.reading ?? false;
+  const resumed = useRef({ reading, length: 0 });
+  if (resumed.current.reading && !reading) resumed.current.length = item.text.length;
+  resumed.current.reading = reading;
   const visibleText = useProgressiveText(
     item.text,
     streaming,
     onPresentationProgress,
-    Math.max(mountedLength.current, item.recoveredTextLength ?? 0),
+    Math.max(
+      mountedLength.current,
+      item.recoveredTextLength ?? 0,
+      reading ? item.text.length : resumed.current.length,
+    ),
+    selectionActive,
+    disclosure?.isSelecting,
   );
   return (
     <div className={processNarration ? "product-agent-stage" : "product-agent-answer"}>

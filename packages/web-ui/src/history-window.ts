@@ -106,6 +106,60 @@ export function historyBeforeQuery(page: HistoryPage): ConversationHistoryQuery 
     (first ? { turnId: first.turnId } : undefined)
   );
 }
+
+/** A reading window keeps its membership/text stable across live-window trims,
+ * while already visible Tools can still finish. No new rows are imported. */
+export function refreshKnownTools(
+  pages: readonly HistoryPage[],
+  live: readonly TurnView[],
+): readonly HistoryPage[] {
+  const known = new Map(
+    live.map((turn) => [
+      turn.turnId,
+      new Map(
+        turn.items.flatMap((item) =>
+          item.kind === "tool" ? [[item.toolCallId, item] as const] : [],
+        ),
+      ),
+    ]),
+  );
+  let changed = false;
+  const next = pages.map((page) => {
+    let pageChanged = false;
+    const turns = page.turns.map((turn) => {
+      const tools = known.get(turn.turnId);
+      if (!tools) return turn;
+      let turnChanged = false;
+      const items = turn.items.map((item) => {
+        if (item.kind !== "tool" && item.kind !== "tool_preparing") return item;
+        const current = tools.get(item.toolCallId);
+        if (
+          !current ||
+          sequence(current) <= sequence(item) ||
+          (item.kind === "tool" && item.status !== "running" && current.status === "running")
+        )
+          return item;
+        turnChanged = true;
+        return {
+          ...current,
+          key: item.key,
+          firstSequence: item.firstSequence,
+          toolName: item.toolName === "unknown" ? current.toolName : item.toolName,
+          input: item.kind === "tool" ? (item.input ?? current.input) : current.input,
+          ...(item.pageKey ? { pageKey: item.pageKey } : {}),
+          ...(item.historyCursor ? { historyCursor: item.historyCursor } : {}),
+        };
+      });
+      if (!turnChanged) return turn;
+      pageChanged = true;
+      return { ...turn, items };
+    });
+    if (!pageChanged) return page;
+    changed = true;
+    return { ...page, turns };
+  });
+  return changed ? next : pages;
+}
 /** A frozen reading position does not append live output. Settled identities are
  * still renamed so a later canonical page replaces the same item, without duplicates. */
 export function observeHistoryPages(

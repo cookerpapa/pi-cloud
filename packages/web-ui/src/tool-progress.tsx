@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { ToolProgressStore } from "./tool-progress-store.ts";
 import { useI18n } from "./i18n.tsx";
+import { HistoryDisclosureContext } from "./history-disclosure.tsx";
 
 export const ToolProgressContext = createContext<{
   store: ToolProgressStore;
@@ -24,11 +25,16 @@ function ProgressPreview({ store, id }: { store: ToolProgressStore; id: string }
     (listener: () => void) => store.subscribe(id, listener),
     [store, id],
   );
-  const progress = useSyncExternalStore(
+  const observed = useSyncExternalStore(
     subscribe,
     () => store.get(id),
     () => undefined,
   );
+  const disclosure = useContext(HistoryDisclosureContext);
+  const selectionActive = disclosure?.isSelecting?.() ?? disclosure?.selectionActive ?? false;
+  const held = useRef(observed);
+  if (!selectionActive) held.current = observed;
+  const progress = held.current;
   useLayoutEffect(() => {
     // Follow only inside the fixed-height log box, and respect manual scrolling.
     if (output.current && following.current) output.current.scrollTop = output.current.scrollHeight;

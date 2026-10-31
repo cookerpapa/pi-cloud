@@ -157,6 +157,11 @@ History is windowed within long Runs as well as between Runs. Native-position
 cursors, virtual rows, bounded client residency, direct navigation, cancellable
 search and streamed export keep a large conversation from becoming one browser
 allocation. Live-tail intent and measured row geometry survive window changes.
+Manual disclosure, upward gestures and native text selection suspend end following.
+Selection pins only the selected rows/lines in the current bounded window and
+pauses history pagination and text animation. Known Tool results may settle in
+place when no selection is active. Returning to live displays buffered text at
+once. These are browser reading policies, not execution or history mutations.
 See [ADR-0278](adr/0278-windowed-conversation-presentation.md).
 
 Model phase observations, child progress and running Tool previews are disposable.

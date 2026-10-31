@@ -1,5 +1,11 @@
 # Implementation roadmap
 
+## Tool disclosure and text selection
+
+Manual reading must take priority over end following. Retain the selected band
+within the existing bounded reader, update already visible Tool results, and
+resume live output explicitly without replaying accumulated typing animation.
+
 ## Worker startup and model preparation timings
 
 Extend the existing operational logger at public port boundaries. Measure cold/warm

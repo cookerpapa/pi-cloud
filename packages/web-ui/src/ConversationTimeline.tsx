@@ -24,6 +24,7 @@ import {
   historyPage,
   mergeHistoryPages,
   observeHistoryPages,
+  refreshKnownTools,
   type HistoryPage,
 } from "./history-window.ts";
 import {
@@ -31,6 +32,7 @@ import {
   type VirtualConversationRow,
 } from "./virtual-conversation-rows.ts";
 import { useI18n } from "./i18n.tsx";
+import { useVirtualSelection } from "./use-virtual-selection.ts";
 
 type Anchor = { key: string; offset: number; cursor?: string };
 function anchorIndex(rows: readonly (VirtualConversationRow | null)[], value: Anchor): number {
@@ -44,6 +46,27 @@ function anchorIndex(rows: readonly (VirtualConversationRow | null)[], value: An
       );
 }
 type Target = { turnId: string; entryId?: string };
+function nestedScroll(
+  target: EventTarget | null,
+  root: HTMLElement | null,
+  delta: number,
+): boolean {
+  let element = target instanceof Element ? target : null;
+  while (element && element !== root) {
+    if (element instanceof HTMLElement && element.scrollHeight > element.clientHeight + 1) {
+      const style = getComputedStyle(element);
+      if (
+        ["auto", "scroll"].includes(style.overflowY) &&
+        ((delta < 0 && element.scrollTop > 0) ||
+          (delta > 0 && element.scrollTop + element.clientHeight < element.scrollHeight - 1) ||
+          ["contain", "none"].includes(style.overscrollBehaviorY))
+      )
+        return true;
+    }
+    element = element.parentElement;
+  }
+  return false;
+}
 export type TimelineControl = {
   event(event: PiCloudEvent): void;
   latest(): void;
@@ -84,6 +107,11 @@ export function ConversationTimeline({
   const [pendingTarget, setPendingTarget] = useState<Target | { cursor: string } | null>(null);
   const [newOutput, setNewOutput] = useState(false);
   const [disclosures, setDisclosures] = useState<Record<string, boolean>>({});
+  const disclosureRef = useRef(disclosures);
+  disclosureRef.current = disclosures;
+  // Being geometrically at the bottom after a resize is not a request to follow.
+  const holdTail = useRef(false),
+    touchY = useRef<number | null>(null);
   const [searchOpen, setSearchOpen] = useState(false),
     [searchText, setSearchText] = useState("");
   const [searchResult, setSearchResult] = useState<ConversationSearchResult | null>(null),
@@ -131,6 +159,7 @@ export function ConversationTimeline({
     stableKeys.current = candidateKeys;
   const keys = stableKeys.current;
   const getItemKey = useCallback((index: number) => keys[index]!, [keys]);
+  const selection = useVirtualSelection(scrollerRef, keys, () => pauseReading(true));
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollerRef.current,
@@ -145,8 +174,9 @@ export function ConversationTimeline({
     useFlushSync: false,
     measureElement: (node, entry) =>
       Math.round(entry?.borderBoxSize?.[0]?.blockSize ?? node.getBoundingClientRect().height),
-    anchorTo: "end",
+    anchorTo: ownedPages === null ? "end" : "start",
     followOnAppend: ownedPages === null,
+    rangeExtractor: selection.rangeExtractor,
     scrollEndThreshold: 80,
     paddingStart: 40,
     paddingEnd: 80,
@@ -158,6 +188,27 @@ export function ConversationTimeline({
     const offset = instance.scrollOffset ?? 0;
     return instance.itemSizeCache.has(item.key) ? item.end <= offset + 1 : item.start < offset;
   };
+  function pauseReading(hold: boolean): void {
+    virtualizer.cancelScroll();
+    guardUntil.current = 0;
+    anchor.current = null;
+    anchorRequest.current = null;
+    setPendingTarget(null);
+    if (hold) {
+      holdTail.current = true;
+      // A late page could evict the DOM node being selected or expanded.
+      request.current?.abort();
+      epoch.current++;
+      busy.current = false;
+      setLoading(false);
+    }
+    if (pagesRef.current === null) {
+      const frozen = [freezeHistoryView(liveRef.current)];
+      pagesOwner.current = sessionRef.current;
+      pagesRef.current = frozen;
+      setPages(frozen);
+    }
+  }
   const capture = useCallback(() => {
     const container = scrollerRef.current;
     if (!container) return;
@@ -180,6 +231,8 @@ export function ConversationTimeline({
       : null;
   }, [scrollerRef]);
   const latest = useCallback(() => {
+    selection.clear();
+    holdTail.current = false;
     request.current?.abort();
     epoch.current++;
     busy.current = false;
@@ -195,7 +248,7 @@ export function ConversationTimeline({
         sessionStorage.removeItem(`pi-cloud:reading:${sessionRef.current}`);
       } catch {}
     requestAnimationFrame(() => virtualizer.scrollToEnd());
-  }, [virtualizer]);
+  }, [virtualizer, selection.clear]);
   const load = useCallback(
     async (
       query: ConversationHistoryQuery,
@@ -293,6 +346,8 @@ export function ConversationTimeline({
     setPendingTarget(null);
     setNewOutput(false);
     setDisclosures({});
+    holdTail.current = false;
+    selection.clear();
     initial.current = null;
     anchor.current = null;
     anchorRequest.current = null;
@@ -350,7 +405,8 @@ export function ConversationTimeline({
     controlRef.current = {
       latest,
       resetToolGroups() {
-        if (pagesRef.current !== null) capture();
+        pauseReading(true);
+        capture();
         // Only group overrides follow the toolbar mode. Individual Tool details
         // and text previews keep the user's existing choices.
         setDisclosures((previous) =>
@@ -491,14 +547,14 @@ export function ConversationTimeline({
   const checkEdges = useCallback(() => {
     const container = scrollerRef.current;
     const current = pagesRef.current;
-    if (!container || !current || busy.current || error) return;
+    if (!container || !current || busy.current || error || selection.isActive()) return;
     const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
     const last = current.at(-1);
     const afterQuery =
       last?.afterQuery ?? (last?.history.after ? { after: last.history.after } : undefined);
     // Exhaust known canonical pages before joining the live suffix. A frozen
     // all-live view can have no canonical cursor yet, so there is nothing to page.
-    if (distance < 80 && (!last?.history.hasAfter || !afterQuery)) {
+    if (!holdTail.current && distance < 80 && (!last?.history.hasAfter || !afterQuery)) {
       latest();
       return;
     }
@@ -508,7 +564,7 @@ export function ConversationTimeline({
     ) {
       const query = historyBeforeQuery(current[0]);
       if (query) void load(query, "before");
-    } else if (distance < 250 && last?.history.hasAfter && afterQuery) {
+    } else if (!holdTail.current && distance < 250 && last?.history.hasAfter && afterQuery) {
       void load(afterQuery, "after");
     }
   }, [error, latest, load, scrollerRef]);
@@ -519,8 +575,7 @@ export function ConversationTimeline({
     if (!end && pagesRef.current === null) {
       // Freezing the same rows does not prepend content. Keep the user's actual
       // scroll position, not an overscan row from the previous rendered range.
-      pagesOwner.current = sessionRef.current;
-      setPages([freezeHistoryView(liveRef.current)]);
+      pauseReading(false);
     }
     if (pagesRef.current === null) {
       return;
@@ -568,22 +623,48 @@ export function ConversationTimeline({
     };
     timer = setTimeout(checkSettledEdges, Math.max(0, guardUntil.current - performance.now()) + 1);
     return () => clearTimeout(timer);
-  }, [ownedPages, loading, error, checkEdges]);
+  }, [ownedPages, loading, error, checkEdges, selection.active]);
+  useEffect(() => {
+    const current = pagesRef.current;
+    if (!current || selection.isActive()) return;
+    const next = refreshKnownTools(current, live.turns);
+    if (next !== current) {
+      capture();
+      setPages((value) => (value === current ? next : value));
+    }
+  }, [live.turns, ownedPages, selection.active, capture]);
   const before = ownedPages?.[0]?.history.hasBefore ?? live.history.hasBefore;
   const after = ownedPages?.at(-1)?.history.hasAfter ?? false;
   const disclosureState = useMemo(
     () => ({
       values: disclosures,
       toolGroupsExpanded,
+      selectionActive: selection.active,
+      isSelecting: selection.isActive,
+      reading: ownedPages !== null,
       set(keys: readonly string[], value: boolean) {
+        // details emits toggle on mount too. Only a changed disclosure is a
+        // reading gesture; otherwise mounting rows would pause live following.
+        const previous = disclosureRef.current;
+        if (
+          !keys.some(
+            (key) =>
+              (previous[key] ??
+                (key.endsWith("\0activity") ? (toolGroupsExpanded ?? false) : false)) !== value,
+          )
+        )
+          return;
+        pauseReading(true);
+        capture();
         setDisclosures((previous) => {
           const next = { ...previous };
           for (const key of keys) next[key] = value;
+          disclosureRef.current = next;
           return next;
         });
       },
     }),
-    [disclosures, toolGroupsExpanded],
+    [disclosures, toolGroupsExpanded, selection.active, ownedPages, capture],
   );
   useEffect(() => {
     if (busy.current) return;
@@ -673,8 +754,20 @@ export function ConversationTimeline({
         ref={scrollerRef as RefObject<HTMLElement>}
         onScroll={scrolling}
         onWheel={(event) => {
+          if (nestedScroll(event.target, scrollerRef.current, event.deltaY)) {
+            pauseReading(true);
+            return;
+          }
           // A real reading gesture can interrupt programmatic tail following.
+          virtualizer.cancelScroll();
           guardUntil.current = 0;
+          if (event.deltaY < 0) {
+            holdTail.current = true;
+            pauseReading(false);
+          } else if (event.deltaY > 0) {
+            holdTail.current = false;
+            requestAnimationFrame(checkEdges);
+          }
           if (
             event.deltaY < 0 &&
             !busy.current &&
@@ -684,12 +777,56 @@ export function ConversationTimeline({
           )
             earlier();
         }}
-        onTouchMove={() => {
+        onTouchStart={(event) => {
+          touchY.current = event.touches[0]?.clientY ?? null;
+        }}
+        onTouchMove={(event) => {
+          virtualizer.cancelScroll();
           guardUntil.current = 0;
+          const current = event.touches[0]?.clientY;
+          if (current !== undefined && touchY.current !== null) {
+            if (nestedScroll(event.target, scrollerRef.current, touchY.current - current)) {
+              pauseReading(true);
+              touchY.current = current;
+              return;
+            }
+            if (current > touchY.current) {
+              holdTail.current = true;
+              pauseReading(false);
+            } else if (current < touchY.current) holdTail.current = false;
+          }
+          touchY.current = current ?? null;
+        }}
+        onPointerDown={(event) => {
+          // Scrollbar dragging is navigation, not a text-selection hold.
+          if (event.target === scrollerRef.current) {
+            holdTail.current = false;
+            pauseReading(false);
+          }
         }}
         onKeyDown={(event) => {
-          if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(event.key))
+          if (
+            ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(event.key) &&
+            (event.shiftKey ||
+              nestedScroll(
+                event.target,
+                scrollerRef.current,
+                ["ArrowUp", "PageUp", "Home"].includes(event.key) ? -1 : 1,
+              ))
+          ) {
+            pauseReading(true);
+            return;
+          }
+          if (["ArrowUp", "PageUp", "Home"].includes(event.key)) {
+            holdTail.current = true;
+            pauseReading(false);
+          }
+          if (["ArrowDown", "PageDown", "End"].includes(event.key)) {
+            virtualizer.cancelScroll();
+            holdTail.current = false;
             guardUntil.current = 0;
+            requestAnimationFrame(checkEdges);
+          }
         }}
         data-history-pages={ownedPages?.length ?? 0}
         data-history-rows={rows.length}
@@ -713,6 +850,7 @@ export function ConversationTimeline({
                   data-index={v.index}
                   ref={virtualizer.measureElement}
                   data-history-row-key={row?.key ?? "inherited"}
+                  data-virtual-selection-key={row?.key ?? "inherited"}
                   {...(row ? { "data-conversation-turn-id": row.turn.turnId } : {})}
                   {...(row?.entryId ? { "data-conversation-entry-id": row.entryId } : {})}
                   style={{

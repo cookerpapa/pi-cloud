@@ -36,6 +36,10 @@ window.geometry=()=>{const p=document.querySelector('.product-chat-scroll');if(!
 window.watchLayout=()=>{const p=document.querySelector('.product-chat-scroll');const observed=new WeakSet();const ro=new ResizeObserver(()=>{const g=geometry();if(g)resizeSamples.push({label:layoutLabel,t:performance.now(),...g});});const watch=()=>{for(const n of p.querySelectorAll('[data-history-row-key]'))if(!observed.has(n)){observed.add(n);ro.observe(n);}};watch();new MutationObserver(watch).observe(p,{childList:true,subtree:true});};
 function sample(){requestAnimationFrame(()=>setTimeout(()=>{const g=geometry();if(g){if(g.rows&&!firstRowsAt)window.firstRowsAt=performance.now();layoutSamples.push({label:layoutLabel,t:performance.now(),...g});if(layoutSamples.length>10000)layoutSamples.shift();}sample();},0));}sample();
 function Fixture(){const[live,setLive]=useState(()=>state()),[width,setWidth]=useState(940),[toolGroupsExpanded,setToolGroupsExpanded]=useState();const scroll=useRef(null),control=useRef(null);window.showToolGroups=value=>{control.current?.resetToolGroups();setToolGroupsExpanded(value)};window.narrow=()=>setWidth(580);window.wide=()=>setWidth(940);window.latest=()=>control.current?.latest();window.swap=()=>setLive(state('two'));window.trim=()=>setLive(s=>({...s,turns:s.turns.slice(20)}));window.reset=()=>setLive(state());window.grow=()=>setLive(s=>({...s,turns:s.turns.map((t,i)=>i!==s.turns.length-1?t:{...t,items:t.items.map((x,j)=>j!==t.items.length-1?x:{...x,text:x.text+'\\n\\n'+paragraph.repeat(3)})})}));
+window.longToolGroup=()=>setLive(s=>({...s,turns:s.turns.map((t,i)=>i!==s.turns.length-1?t:{...t,status:'running',items:[{...t.items[0],text:'Progress before the tools.'},...Array.from({length:12},(_,j)=>({...t.items[1],key:t.turnId+'-large-'+j,toolCallId:'task:large-'+j,toolName:'bash',input:{command:'echo '+j},status:j===11?'running':'completed',output:j===11?undefined:t.items[1].output})),{...t.items.at(-1),text:'SELECTABLE alpha beta gamma delta epsilon. This text should stay still while reading.'}]})}));
+window.growInline=()=>setLive(s=>({...s,turns:s.turns.map((t,i)=>i!==s.turns.length-1?t:{...t,items:t.items.map((x,j)=>j!==t.items.length-1?x:{...x,text:x.text+' More streamed words.'})})}));
+window.missedStream=()=>setLive(s=>({...s,turns:s.turns.map((t,i)=>i!==s.turns.length-1?t:{...t,items:t.items.map((x,j)=>j!==t.items.length-1?x:{...x,recoveredTextLength:0,text:x.text+' Unseen streamed text.'.repeat(1800)+' MISSED_STREAM_TAIL'})})}));
+window.codeFixture=()=>setLive(s=>({...s,turns:s.turns.map((t,i)=>i!==s.turns.length-1?t:{...t,status:'completed',items:[{...t.items[1],key:t.turnId+'-code',toolCallId:'task:code',toolName:'read',input:{path:'/workspace/example.txt'},output:{content:[{type:'text',text:Array.from({length:1100},(_,j)=>'CODE_LINE_'+String(j).padStart(4,'0')+' stable selectable source text.').join('\\n')}]}}]})}));
 const sequence=useRef(100000);window.emit=(type,payload)=>{const event={schemaVersion:1,eventId:'40000000-0000-4000-8000-000000000001',sessionId:live.session.sessionId,turnId:live.turns.at(-1).turnId,agentId:'root',occurredAt:new Date().toISOString(),seq:++sequence.current,type,payload};setLive(s=>sessionViewReducer(s,{type:'stream.event',event}));control.current?.event(event);};
 window.appendPagedTurn=()=>{const t=turn(80);historyResponses.push({turns:[{...t,state:t.status,transcript:{items:t.items,startedSequence:t.startedSequence,terminalSequence:t.terminalSequence,stopReason:t.stopReason,failure:null,cancellation:null}}],history:{before:'following-page',after:'following-tail',hasBefore:true,hasAfter:false}});setLive(s=>({...s,turns:[...s.turns,t]}));};
 return React.createElement('div',{style:{display:'grid',height:700,width,maxWidth:'100vw',margin:'20px auto'}},React.createElement(ConversationTimeline,{api,live,toolGroupsExpanded,scrollerRef:scroll,controlRef:control,jump:null,onJumpSettled:()=>{},renderRow:row=>React.createElement(ConversationTurn,{turn:row.turn,fragment:row.fragment})}));}
@@ -265,6 +269,13 @@ try {
     assert(Math.abs(held.offset - reading.offset) < 4, "New output moved the reader");
     await check("manual-return-to-live", async () => {
       const before = await page.evaluate("historyRequests.length");
+      await page.send("Input.dispatchMouseEvent", {
+        type: "mouseWheel",
+        x: 640,
+        y: 400,
+        deltaX: 0,
+        deltaY: 1,
+      });
       await page.evaluate("document.querySelector('.product-chat-scroll').scrollTop=1e9");
       await page.waitFor("!document.querySelector('.product-return-to-latest')");
       assert.equal(
@@ -286,6 +297,13 @@ try {
     await page.evaluate("appendPagedTurn()");
     await check("load-newer-before-joining-live", async () => {
       const before = await page.evaluate("historyRequests.length");
+      await page.send("Input.dispatchMouseEvent", {
+        type: "mouseWheel",
+        x: 640,
+        y: 400,
+        deltaX: 0,
+        deltaY: 1,
+      });
       await page.evaluate("document.querySelector('.product-chat-scroll').scrollTop=1e9");
       await page.waitFor(`historyRequests.length>${before}`);
       await page.wait(500);
@@ -299,6 +317,13 @@ try {
       );
     });
     await check("manual-return-after-newer-page", async () => {
+      await page.send("Input.dispatchMouseEvent", {
+        type: "mouseWheel",
+        x: 640,
+        y: 400,
+        deltaX: 0,
+        deltaY: 1,
+      });
       await page.evaluate("document.querySelector('.product-chat-scroll').scrollTop=1e9");
       await page.waitFor("!document.querySelector('.product-return-to-latest')");
       await page.evaluate("grow()");
@@ -306,7 +331,250 @@ try {
     await check("switch-session", async () => {
       await page.evaluate("swap()");
     });
+    // A small wheel gesture must win against end following, including just
+    // after a manual disclosure. Large wheel deltas alone miss this failure.
+    await page.evaluate("longToolGroup();showToolGroups(false);latest()");
+    await page.wait(700);
+    const groupBefore = await page.evaluate(
+      `(()=>{const p=document.querySelector('.product-chat-scroll'),r=p.getBoundingClientRect();const button=[...p.querySelectorAll('.product-activity-group-toggle')].findLast(n=>{const b=n.getBoundingClientRect();return b.top>r.top&&b.bottom<r.bottom});if(!button)throw Error('No visible collapsed tool group');window.readerGroup=button;return button.getBoundingClientRect().top;})()`,
+    );
+    await page.evaluate("readerGroup.click()");
+    await page.wait(450);
+    const groupAfter = await page.evaluate("readerGroup.getBoundingClientRect().top");
+    await page.evaluate(
+      "emit('tool.completed',{toolCallId:'task:large-11',outcome:'completed',output:{content:[{type:'text',text:'TOOL_SETTLED_WHILE_READING'}]}})",
+    );
+    await page.wait(100);
+    report.toolUpdatesAfterDisclosure = await page.evaluate(
+      "document.querySelector('.product-chat-scroll').textContent.includes('TOOL_SETTLED_WHILE_READING')",
+    );
+    report.groupMovedAfterToolUpdate =
+      (await page.evaluate("readerGroup.getBoundingClientRect().top")) - groupBefore;
+    for (let i = 0; i < 5; i++) {
+      await page.send("Input.dispatchMouseEvent", {
+        type: "mouseWheel",
+        x: 640,
+        y: 400,
+        deltaX: 0,
+        deltaY: -24,
+      });
+      await page.evaluate("growInline()");
+      await page.wait(45);
+    }
+    const reader = await page.evaluate(
+      "({geometry:geometry(),reading:!!document.querySelector('.product-return-to-latest')})",
+    );
+    report.disclosureReading = { groupMovedPixels: groupAfter - groupBefore, ...reader };
+    // Native mouse selection, not a programmatically supplied Range, also
+    // needs to survive append and moving its origin outside normal overscan.
+    await page.evaluate("showToolGroups(false);latest()");
+    await page.wait(700);
+    await page.send("Input.dispatchMouseEvent", {
+      type: "mouseWheel",
+      x: 640,
+      y: 400,
+      deltaX: 0,
+      deltaY: -12,
+    });
+    await page.evaluate("growInline()");
+    await page.wait(450);
+    report.smallWheel = await page.evaluate(
+      "({reading:!!document.querySelector('.product-return-to-latest'),end:geometry().end})",
+    );
+    await page.evaluate("latest()");
+    await page.wait(500);
+    const textBox = await page.evaluate(
+      `(()=>{const p=[...document.querySelectorAll('.product-agent-answer p')].find(n=>n.textContent.startsWith('SELECTABLE'));if(!p)throw Error('No selection fixture');const n=document.createTreeWalker(p,NodeFilter.SHOW_TEXT).nextNode(),r=document.createRange();r.setStart(n,1);r.setEnd(n,2);const a=r.getBoundingClientRect();r.setStart(n,22);r.setEnd(n,23);const b=r.getBoundingClientRect();return {x:a.left+1,y:a.top+a.height/2,endX:b.left+1};})()`,
+    );
+    await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: textBox.x, y: textBox.y });
+    await page.send("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      button: "left",
+      buttons: 1,
+      clickCount: 1,
+      x: textBox.x,
+      y: textBox.y,
+    });
+    await page.send("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      button: "left",
+      buttons: 1,
+      x: textBox.endX,
+      y: textBox.y,
+    });
+    const selected = await page.evaluate(
+      "window.selectionOriginNode=getSelection().anchorNode;getSelection().toString()",
+    );
+    report.selectionStart = {
+      textBox,
+      selected,
+      debug: await page.evaluate(
+        "({geometry:geometry(),atStart:document.elementFromPoint(" +
+          textBox.x +
+          "," +
+          textBox.y +
+          ")?.tagName})",
+      ),
+    };
+    if (selected.length <= 5) await page.screenshot(join(directory, "selection-start.png"));
+    assert(selected.length > 5, "Native drag must select real text");
+    for (let i = 0; i < 5; i++) {
+      await page.evaluate("growInline()");
+      await page.wait(40);
+    }
+    const afterAppend = await page.evaluate("getSelection().toString()");
+    const requestsBefore = await page.evaluate("historyRequests.length");
+    await page.send("Input.dispatchMouseEvent", {
+      type: "mouseWheel",
+      buttons: 1,
+      x: 640,
+      y: 400,
+      deltaX: 0,
+      deltaY: -2600,
+    });
+    await page.wait(500);
+    const selection = await page.evaluate(
+      "({originRetained:selectionOriginNode.isConnected,anchorRetained:getSelection().anchorNode===selectionOriginNode,rows:geometry().rows,requests:historyRequests.length})",
+    );
+    report.selection = { selected, afterAppend, ...selection };
+    await page.send("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      button: "left",
+      buttons: 0,
+      clickCount: 1,
+      x: 640,
+      y: 400,
+    });
+    await page.evaluate("getSelection().removeAllRanges()");
+    await page.wait(200);
+    assert((await page.evaluate("geometry()")).rows < 70, "Selection pins must be released");
+    await page.evaluate("missedStream()");
+    await page.wait(100);
+    await page.evaluate("latest()");
+    await page.wait(400);
+    report.resumeShowsBufferedText = await page.evaluate(
+      "document.querySelector('.product-chat-scroll').textContent.includes('MISSED_STREAM_TAIL')",
+    );
+    await page.evaluate("codeFixture();latest()");
+    await page.wait(600);
+    await page.evaluate(
+      "[...document.querySelectorAll('[data-tool-name=read] .product-tool-text button')].at(-1).click()",
+    );
+    await page.waitFor("document.querySelector('.product-large-code')");
+    await page.evaluate(
+      "document.querySelector('.product-large-code').scrollIntoView({block:'center'})",
+    );
+    await page.wait(200);
+    const codeBox = await page.evaluate(
+      `(()=>{const p=document.querySelector('.product-large-code'),n=p.querySelector('[data-virtual-selection-key="line:2"] code').firstChild,r=document.createRange();r.setStart(n,1);r.setEnd(n,2);const a=r.getBoundingClientRect();r.setStart(n,20);r.setEnd(n,21);const b=r.getBoundingClientRect();return {x:a.left+1,y:a.top+a.height/2,endX:b.left+1};})()`,
+    );
+    await page.send("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      button: "left",
+      buttons: 1,
+      clickCount: 1,
+      x: codeBox.x,
+      y: codeBox.y,
+    });
+    await page.send("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      button: "left",
+      buttons: 1,
+      x: codeBox.endX,
+      y: codeBox.y,
+    });
+    assert(
+      (await page.evaluate("getSelection().toString()")).length > 5,
+      "Select code with a real drag",
+    );
+    await page.evaluate("window.codeOrigin=getSelection().anchorNode");
+    await page.send("Input.dispatchMouseEvent", {
+      type: "mouseWheel",
+      buttons: 1,
+      x: codeBox.endX,
+      y: codeBox.y,
+      deltaX: 0,
+      deltaY: 1200,
+    });
+    await page.wait(400);
+    report.codeSelection = await page.evaluate(
+      "({originRetained:codeOrigin.isConnected,anchorRetained:getSelection().anchorNode===codeOrigin,scroll:document.querySelector('.product-large-code').scrollTop})",
+    );
+    await page.send("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      button: "left",
+      buttons: 0,
+      clickCount: 1,
+      x: codeBox.endX,
+      y: codeBox.y,
+    });
+    await page.evaluate("getSelection().removeAllRanges()");
+    await page.wait(200);
+    report.codeSelection.releasedLines = await page.evaluate(
+      "document.querySelector('.product-large-code').querySelectorAll('[data-virtual-selection-key]').length",
+    );
+    await page.evaluate("latest()");
+    await page.wait(400);
+    const insideCode = await page.evaluate(
+      "(()=>{const r=document.querySelector('.product-large-code').getBoundingClientRect();return {x:r.left+100,y:r.top+100};})()",
+    );
+    await page.send("Input.dispatchMouseEvent", {
+      type: "mouseWheel",
+      x: insideCode.x,
+      y: insideCode.y,
+      deltaX: 0,
+      deltaY: 100,
+    });
+    await page.wait(400);
+    report.innerCodeReading = await page.evaluate(
+      "!!document.querySelector('.product-return-to-latest')",
+    );
+    assert(
+      report.innerCodeReading,
+      "Scrolling an inner code view must not resume outer tail following",
+    );
     await page.screenshot(join(directory, "layout.png"));
+    assert(
+      report.toolUpdatesAfterDisclosure,
+      "The expanded Tool must still receive its final result",
+    );
+    assert(
+      Math.abs(report.groupMovedAfterToolUpdate) < 4,
+      "Live trimming must not move the opened group",
+    );
+    assert(
+      report.smallWheel.reading,
+      "A small upward wheel must remain reading even within the end threshold",
+    );
+    assert(
+      report.resumeShowsBufferedText,
+      "Returning to live must show buffered text without replaying its typing animation",
+    );
+    assert(
+      report.codeSelection.originRetained &&
+        report.codeSelection.anchorRetained &&
+        report.codeSelection.scroll > 800,
+      "Large code selection must retain its origin while scrolling",
+    );
+    assert(report.codeSelection.releasedLines < 60, "Large code selection pins must be released");
+    assert(
+      Math.abs(groupAfter - groupBefore) < 4,
+      "Manual expansion must keep the clicked group in place",
+    );
+    assert(
+      reader.reading && reader.geometry.end > 80,
+      "Small upward wheel gestures must leave live following",
+    );
+    assert.equal(afterAppend, selected, "Streaming updates must preserve native text selection");
+    assert(
+      selection.originRetained && selection.anchorRetained,
+      "Virtualization must retain the selection origin",
+    );
+    assert.equal(
+      selection.requests,
+      requestsBefore,
+      "Selection must not load or evict historical pages",
+    );
     for (const scenario of report.scenarios) {
       assert.deepEqual(scenario.errors, [], scenario.name + " browser errors");
       assert(
