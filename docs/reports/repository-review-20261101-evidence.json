@@ -1,0 +1,206 @@
+{
+  "format": "pi-cloud.repository-review.v1",
+  "reviewDate": "2026-11-01",
+  "sourceRevision": "c636fe7adb4ccfbb888161ca91b798aa89e2cde1",
+  "scope": {
+    "trackedFilesAtBaseline": 2312,
+    "packages": 23,
+    "codeChanges": false,
+    "productionMutation": false,
+    "liveModelChecks": false,
+    "deferredLargeColdImageCheckRun": false
+  },
+  "tests": {
+    "check": {
+      "passed": 2445,
+      "skipped": 11,
+      "suites": 24,
+      "workspaces": 23,
+      "status": "passed",
+      "isolatedPostgres": true
+    },
+    "transport": {
+      "status": "passed",
+      "files": 8,
+      "tests": 9,
+      "isolatedPostgres": true,
+      "isolatedKafkaReplicationFactor": 3
+    },
+    "cubeAdmission": {
+      "status": "passed",
+      "source": "scripts/check-cube-admission.mjs"
+    },
+    "cubeAllocation": {
+      "status": "passed",
+      "source": "scripts/check-cube-allocation.mjs",
+      "isolatedMysql": true
+    },
+    "browserPresentation": {
+      "status": "passed",
+      "source": "scripts/run-browser-presentation-check.mjs"
+    },
+    "browserSchedules": {
+      "status": "passed",
+      "source": "scripts/run-schedule-browser-check.mjs"
+    },
+    "browserSkills": {
+      "initialStatus": "element_wait_timeout",
+      "standaloneRecheck": "passed",
+      "recheckModification": "additional browser-error diagnostic only",
+      "rootCauseEstablished": false
+    },
+    "installContracts": "passed",
+    "helmContracts": "passed",
+    "runtimePolicy": "passed",
+    "observability": "passed",
+    "imageClosure": "passed",
+    "dockerContext": "passed",
+    "faultEvaluation": {
+      "status": "passed",
+      "caseCount": 379,
+      "successful": 379,
+      "executionGroups": 109,
+      "executionDurationMs": 1032844,
+      "liveChaosExperiment": false,
+      "sourceWorktreeCleanAtStart": true
+    },
+    "format": "passed",
+    "documentation": "passed"
+  },
+  "probes": {
+    "storage": {
+      "source": "c636fe7a",
+      "isolated": true,
+      "findings": {
+        "expiredSandboxOwner": {
+          "healthError": "ownership_lost",
+          "state": "ready",
+          "stillExpiredAfterRenewalTicks": true,
+          "mainReadinessUsesLifecycleBoolean": true
+        },
+        "text-heavy": {
+          "navigationEntries": 256,
+          "bodyRows": 256,
+          "bodyBytes": 8490792,
+          "queries": 63,
+          "elapsedMs": 470.8179919999966,
+          "outcome": "forked"
+        },
+        "navigation-limit": {
+          "navigationEntries": 10001,
+          "bodyRows": 10001,
+          "bodyBytes": 4338224,
+          "queries": 163,
+          "elapsedMs": 371.3765710000007,
+          "outcome": {
+            "code": "invalid_request",
+            "message": "Conversation tree is too large"
+          }
+        }
+      }
+    },
+    "skills": {
+      "capabilityMismatch": {
+        "thinking": "max",
+        "actualSubagentOffered": true,
+        "skillAvailability": {
+          "state": "unsupported",
+          "reasons": ["tool:subagent"]
+        }
+      },
+      "staging": {
+        "killedOwnedChild": true,
+        "abandonedDirectories": 1,
+        "remainingAfterSuccessfulRetry": 1
+      }
+    },
+    "readingTerminal": {
+      "terminalWhileReading": {
+        "liveStatus": "failed",
+        "renderedFailure": false,
+        "working": true,
+        "tailLabel": "New output · Return to latest"
+      },
+      "terminalAfterLatest": true
+    },
+    "egress": {
+      "targetSocketConnections": "loopback-only",
+      "lifetimeMs": 300000,
+      "deadlineSimulation": true,
+      "echoedChunksBeforeExpiry": 10,
+      "lifetimeTimersDespiteTraffic": 1,
+      "activeConnectionClosed": true
+    }
+  },
+  "findings": [
+    {
+      "id": "R01",
+      "priority": "P1",
+      "evidence": "real PG expiry plus aggregate readiness source inspection; previously observed live symptom"
+    },
+    {
+      "id": "R02",
+      "priority": "P1",
+      "evidence": "reachable installation and deployment source call graph; no unsafe live upgrade attempted"
+    },
+    {
+      "id": "R03",
+      "priority": "P2",
+      "evidence": "isolated PG Fork body-count and 10001-node refusal"
+    },
+    {
+      "id": "R04",
+      "priority": "P2",
+      "evidence": "actual Worker/Skill methods with deterministic max-mode query result"
+    },
+    {
+      "id": "R05",
+      "priority": "P2",
+      "evidence": "real browser fixture with failed live Run during frozen reading"
+    },
+    {
+      "id": "R06",
+      "priority": "P2",
+      "evidence": "loopback CONNECT; real traffic and simulated registered lifetime deadline callback"
+    },
+    {
+      "id": "R07",
+      "priority": "P3",
+      "evidence": "owned child SIGKILL during staging; successful retry leaves abandoned directory"
+    },
+    {
+      "id": "R08",
+      "priority": "P3",
+      "evidence": "current instructions, script contract assertions and SQL measurement selector"
+    }
+  ],
+  "privateEvidenceHashes": {
+    "browser-presentation.log": "c71b123dffcb709e596ba74ddf5d0073e453519ada0450725e89d86e235bb8d0",
+    "browser-schedules.log": "80aeabd424471bf8366d5cbfdfbdcb6c95ecd4bc0c1cfaf588a51e60f2116719",
+    "browser-skills.log": "821cc67bf134f8b97bd51cffdb2211d8d6a78b28f8a4c39e71f22a0ca8cc0a08",
+    "check.log": "71a381cfe1fc093255b60b292c1220371c2832ab40d358ae9af3ccacdad3eae1",
+    "cube-admission.log": "7a11798c4bc86fe7af71ba0752e9e269f7fbb89a62e96edceb01c155192f831b",
+    "cube-allocation.log": "ae98c11e776d2bad58f51e8eb52d5aa3a8410168b45b55f2a5d6456b951370c0",
+    "egress-duration-probe.mjs": "e49cac8a8c8921d7a8c6e0c9b8b5142094f695df565efb57dcff39a454edf67b",
+    "fault-eval.log": "52766b242b29919e6f8939fa739fa4daba47f803c0308c864de6f167dfbfe6b5",
+    "format-check.log": "ee3c89742afe6548f8d589fa2c2a122bb7b08c46d64d5690070ee3308fcf510c",
+    "helm-check.log": "f6b2a2a2b1a1d8cdcb8a98902636fe85b87c220c4c3199bd7a73751cf861fe30",
+    "install-check.log": "e7369f89f513b6f21976f64f37fdacc8361d0014deac66b2753b8d9c98402d4a",
+    "skill-browser-probe.log": "28a44fa091b95e2426f6d577cc5132c328032eb5d4384ffa9789559136ee6a5e",
+    "skill-browser-probe.mjs": "594d323cd9749d149b49e03aec73f7de57e60b65690ce73bc2a92797e468cdfe",
+    "skill-probes.log": "a1b06dfda38d9793ef407db4f53acda70f216545e73cf37f32315a61e5afcec1",
+    "skill-probes.mjs": "7fd0d723e783f8c733301c24eaab28d88727cdceef5e0aeb6beb22449bffb362",
+    "storage-probes-2.log": "b12f0494488a9482dc3da0bb0e98db4f0bf1deb016d21036c66a95838a2a988d",
+    "storage-probes.log": "289788a21ac5e5f2ebb437c58750bd9a134c201bb194a9f575d1d10ac617aeb2",
+    "storage-probes.mjs": "32aa62a653bc00ddbe58600ea3bfd2f2444319f7b8fae13577a7f3c2561961ae",
+    "terminal-reading-probe.mjs": "75a7dcb5015d823ebb1eeacb29eb47ea738e529c216cff1d332669a4591ce733",
+    "terminal-reading.log": "8fdb032f0d53e8d0d8543a94f66d7d98daa9fdcc531823c6a95a6731b0666ddb",
+    "transport.log": "0b6cf309dc88c67d9500528e2ce92eeaad4aa8b20cd5360add5d8e8c6c56f5e1"
+  },
+  "caveats": [
+    "Suite counts overlap; do not sum as unique scenarios.",
+    "No paid-model, production crash or full multi-machine HA experiment in this review.",
+    "Private history index and transcript contents are excluded.",
+    "Storage probe first fixture failed a missing domain FK; corrected fixture reran successfully."
+  ]
+}

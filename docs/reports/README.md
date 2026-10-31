@@ -1,5 +1,8 @@
 # Delivery and research evidence
 
+- [Full repository review, November 1](repository-review-20261101.md): accepted
+  feature intent, eight findings, retained architecture, package coverage and
+  fresh isolated verification; no runtime changes or deployment.
 - [Same-Worker recovery](same-worker-recovery-20261031.md): execution-scoped
   duplicate/cancellation state, delayed cleanup and actual same-process recovery.
 - [Run identity diagnosis and message controls](command-identity-and-message-controls-20261031.md):

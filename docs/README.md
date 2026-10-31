@@ -41,6 +41,8 @@ work from remaining proposals and unverified limits.
 
 ## Decisions and evidence
 
+- [Full repository review, November 1](reports/repository-review-20261101.md):
+  feature coverage, confirmed issues, architecture tradeoffs and validation limits.
 - [Current ADR index](adr/README.md): why the maintained design was chosen.
 - [Delivery and research index](reports/README.md): evidence grouped by the revision
   that was actually exercised, including failed samples and superseded experiments.

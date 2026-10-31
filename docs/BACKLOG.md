@@ -1,5 +1,43 @@
 # Maintained backlog
 
+## Full repository review — 2026-11-01
+
+The [feature and architecture review](reports/repository-review-20261101.md)
+covers the conversation's accepted design decisions, all 23 packages, deployment
+and validation surfaces at `c636fe7a`. This is a review record, not a repair or
+deployment. Evidence distinguishes isolated reproduction from source inspection
+and prior live acceptance.
+
+- [ ] R01: propagate permanent Sandbox owner loss into aggregate readiness and
+      controlled recovery. The previously observed readiness follow-up below is
+      now reproduced; preserve expired-owner fencing and physical-absence rules.
+- [ ] R02: close the existing-deployment path through bootstrap/legacy deploy
+      commands that bypasses matched release admission, drain and provenance.
+      Preserve clean installation; reject before mutations when release gates
+      have not been met.
+- [ ] R03: replace whole-navigation-body Fork/prune validation with indexed
+      target/path validation; remove the resulting 10,000-navigation-entry
+      functional ceiling without unbounding memory. Repair the query measurement
+      and cover text-heavy histories, compaction and late lower-ID commits.
+- [ ] R04: derive Skill availability and Worker Tools from the same effective
+      capability rules; keep explicit-only versus proactive delegation distinct
+      from whether a Tool exists. Cover restricted child grants.
+- [ ] R05: keep terminal Run status truthful while historical text/selection is
+      frozen. Cover failure, completion and cancellation without scroll jumps.
+- [ ] R06: distinguish CONNECT establishment, inactivity and active-connection
+      lifetime. Remove or explicitly configure the hidden five-minute active
+      Sandbox tunnel cutoff; retain bounded failure and cancellation cleanup.
+- [ ] R07: reclaim confirmed-abandoned Skill preparation staging after hard
+      interruption without deleting active or user-modified Workspace content.
+- [ ] R08: reconcile maintained live drivers/current guidance with the current
+      contract, and prove measurement probes actually observe their target.
+      Historical reports retain their original results; stale checks must not
+      silently become unconditional passes.
+
+Existing Boot credential renewal, compute-only matched retirement, shared-history
+reclamation capacity and independent-machine recovery limits remain separate
+operational work. See the report for their exact scope and retained tradeoffs.
+
 ## Answer controls and historical paging — deployed
 
 - [x] Reproduce unstyled copies on settled text inside a running/follow-up Run.
@@ -63,9 +101,12 @@ Workspace assets are preserved; all three original applications are restored.
 
 ## Sandbox owner readiness — observed follow-up
 
-- [ ] Reproduce why the previous Sandbox controller remained serving after its
-      locally confirmed ownership lease expired, and expose a bounded maintenance
-      failure reason. A settled Run retained a closed binding until a quiescent
+- [x] Reproduce why the previous Sandbox controller remained serving after its
+      locally confirmed ownership lease expired. The November 1 review confirms
+      the main readiness wiring omits this ownership check while expired renewal
+      remains correctly fenced.
+- [ ] Implement R01 above and expose a bounded maintenance failure reason.
+      A settled Run retained a closed binding until a quiescent
       Control Plane restart let normal ownership recovery retire it. Both original
       VM allocations survived that restart. Do not weaken lease checks or treat
       a missing heartbeat as physical absence.
