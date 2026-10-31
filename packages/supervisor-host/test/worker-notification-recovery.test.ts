@@ -49,6 +49,8 @@ function fixture() {
     notificationConnectionString: "test",
     identity: "worker",
     maximumActiveFamilies: 1,
+    // This fixture tests LISTEN recovery; host memory pressure is tested separately.
+    memoryHeadroom: () => true,
     pollIntervalMs: 10,
     runExecutor: { dispatchNext: scan } as unknown as RunExecutor,
     cancellationExecutor: {} as RunCancellationExecutor,
