@@ -246,8 +246,9 @@ control-plane dispatch and Cube lifecycle operations. Prompts, Tool output and p
 credentials are never span attributes. Jaeger is retained because it makes a
 single slow/failed Run explainable; it is not required for alert correctness.
 
-Services emit bounded structured JSON through Docker's logging driver. A
-central log backend is intentionally not part of the default profile: one-host
+Services emit bounded structured JSON to stdout. The current K3s/containerd
+deployment captures it as rotating container logs (`kubectl logs`); it is not
+written to the conversation log, Kafka or PG. A central log backend is intentionally not part of the default profile: one-host
 operators can inspect `npm run production:logs`, while an enterprise
 deployment can forward the same JSON with its existing Fluent Bit, Vector or
 OpenTelemetry pipeline.
@@ -261,6 +262,56 @@ timeline on clock-synchronized hosts. No prompt, response text or Tool arguments
 are logged. `transportCompleted` means the HTTP body ended, not that the model
 or Run succeeded. Upstream timing includes CLIProxyAPI and its provider route;
 it is not a measurement of the provider's internal inference alone.
+
+## Worker startup and request preparation
+
+`run.preparation.timing` correlates fixed stage names with the Run and native
+Conversation/task where applicable. Startup covers `writer_prepare`, `model_grant`,
+`model_config`, `pi_session_open`, `pi_harness_open` (including its `reused` flag),
+`world_state_prepare`, `conversation_bind`, `family_restore`, `display_watch`,
+`input_prepare` and `input_submit`. Each stage emits once on success, failure or
+cancellation. Identifiers stay in logs, never in metric labels.
+
+The existing public task-definition adapter measures `native_context_prepare`
+(generation prepare / compaction select) and `native_request_prepare` (generation
+request / compaction summarize). The latter ends at the public Models port,
+**before** cloud admission or provider waiting. `reachedModel` distinguishes that
+boundary from an early return/error. Native commits/hooks within those phases are
+included; these are not claimed to be pure tokenizer or context-render CPU time.
+No upstream Pi implementation or scheduler is modified.
+
+Native read and image-load callbacks aggregate `storage_readCount`,
+`storage_readMs`, `image_readCount`, `image_readMs`, `imageBytes` and incomplete
+counts into the enclosing stage. There is no per-Entry/per-image log. Storage
+latency includes adapter queueing and memory-cache reads; it is **not** a SQL
+query count. Image latency includes the existing object read, integrity check and
+Base64 conversion. These are overlapping submeasurements: image time may already
+be included in storage time, and parallel read latencies can sum beyond stage wall
+time. Never add them together as independent pieces of the total.
+
+`model_binding_wait`, `model_permit_wait` and `model_request_prepare` expose cloud
+binding/family gates, fair model admission, and cloud context/header preparation.
+`model.preparation.timing` ends when Pi invokes the public HTTP fetch hook. It
+records SDK preparation, payload-hook time and the interval from the completed
+payload hook to fetch (encoding/compression/transport setup). It does not pretend
+to separate private SDK serialization and compression functions. It reuses the
+actual body length where available; string bodies report characters rather than
+rescanning them to calculate UTF-8 bytes. Existing fetch/payload hooks and bodies
+are forwarded unchanged. Preparation failure before HTTP is recorded separately.
+
+The existing `model.transport.timing` also records `bodyReceivedMs` (a receipt
+milestone), `bodyDecodeMs` and `bodyValidateMs`. Existing upstream/response timing
+continues to describe the network/provider portion. Correlate by Run, task and
+sampling attempt. `processStartedAtMs` and `startedMonotonicMs` distinguish owner
+incarnations; only same-process monotonic durations should be subtracted directly.
+
+Observers capture their own stage and ignore late completions after it closes.
+Their failures cannot replace the original result or error. Counts come from work
+already being performed: no added PG/S3 reads, history scans, payload copies or
+per-token logs. `node --import tsx scripts/run-preparation-timing-benchmark.mjs`
+measures synthetic JSON/metrics/stdout-pipe overhead; it is not a storage or
+production-load benchmark. Existing container rotation applies; permanent log
+retention is not part of the default profile.
 
 ## Privacy and cardinality
 

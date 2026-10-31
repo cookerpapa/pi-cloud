@@ -776,7 +776,9 @@ export class TenantModelGateway {
       // they can become provider requests. Node removes this hook on stream end.
       addAbortSignal(controller.signal, request);
       const requestBytes = await readBody(request, this.#maximumRequestBytes, reserve);
+      timing.bodyReceivedMs = elapsed();
       timing.requestBytes = requestBytes.length;
+      const parseStartedAt = performance.now();
       const parsed = await parseBody(
         requestBytes,
         request.headers["content-encoding"],
@@ -784,9 +786,12 @@ export class TenantModelGateway {
         reserve,
         controller.signal,
       );
+      timing.bodyDecodeMs = Math.round((performance.now() - parseStartedAt) * 1000) / 1000;
       const body = parsed.body;
       timing.decodedRequestBytes = parsed.decodedBytes;
+      const validateStartedAt = performance.now();
       this.#validateModelBody(body, active);
+      timing.bodyValidateMs = Math.round((performance.now() - validateStartedAt) * 1000) / 1000;
       if (body.stream !== true) {
         throw new SafeGatewayHttpError(
           400,

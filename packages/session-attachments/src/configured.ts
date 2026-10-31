@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import type { Database } from "@pi-cloud/database";
 import { IMAGE_OPAQUE_FIELDS, type ImagePacked } from "@pi-cloud/protocol";
 import type { Kysely } from "kysely";
-import { ImageAttachmentCodec, type ImageScope } from "./codec.ts";
+import { ImageAttachmentCodec, type ImageScope, type ImageReadObserver } from "./codec.ts";
 import { PostgresImageAttachmentStore } from "./store.ts";
 import { S3ImageBlobStore } from "./s3.ts";
 
@@ -14,6 +14,7 @@ export type ConfiguredImageAttachments = {
 export async function configuredImageAttachments(
   database: Kysely<Database>,
   readDatabase: Kysely<Database> = database,
+  onImageReadStart?: ImageReadObserver,
 ): Promise<ConfiguredImageAttachments | undefined> {
   const endpoint = process.env.PI_CLOUD_IMAGE_S3_ENDPOINT;
   if (!endpoint) return undefined;
@@ -32,7 +33,7 @@ export async function configuredImageAttachments(
     ...credentials,
   });
   const store = new PostgresImageAttachmentStore(database, blobs, readDatabase);
-  return { codec: new ImageAttachmentCodec(store), store, blobs };
+  return { codec: new ImageAttachmentCodec(store, onImageReadStart), store, blobs };
 }
 
 export function containsImage(value: unknown, stored = false): boolean {

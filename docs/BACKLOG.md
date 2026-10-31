@@ -1,5 +1,15 @@
 # Maintained backlog
 
+## Worker startup and model preparation timings — in progress
+
+- [x] Add bounded stage timing around existing public Harness/Models/Storage ports.
+- [x] Aggregate storage/image work without per-record logs, extra reads or payload copies.
+- [ ] Verify unchanged success/error/cancellation behavior, scope isolation and diagnostic overhead.
+- [ ] Publish through the matched procedure and verify real startup/model logs.
+
+These remain disposable operational logs; no native history, Kafka messages, PG
+receipts or new telemetry service are introduced.
+
 ## Skill market and input-boundary repair — deployed
 
 - [x] Reproduce and repair late steer/follow-up intake and stale queue presentation

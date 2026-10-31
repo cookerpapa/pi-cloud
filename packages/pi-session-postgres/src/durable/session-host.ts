@@ -114,6 +114,7 @@ export class PostgresDurableSessionHost {
       database: Kysely<Database>;
       leaseDatabase?: Kysely<Database>;
       images?: ImageAttachmentCodec;
+      onReadStart?: import("./published-storage.ts").DurableStorageOptions["onReadStart"];
     },
   ) {
     this.#leases = new PostgresSessionLeaseObserver({
@@ -446,6 +447,7 @@ export class PostgresDurableSessionHost {
         authority.start();
         const store = await PublishedDurableStorage.open({
           projection,
+          ...(this.options.onReadStart ? { onReadStart: this.options.onReadStart } : {}),
           signal: readSignal,
           onReadFailure: readFailed,
           assertCurrent: () => authority.assertCurrent(),

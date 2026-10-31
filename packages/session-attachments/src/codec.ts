@@ -7,6 +7,13 @@ import {
 } from "@pi-cloud/protocol";
 
 export type ImageScope = { tenantId: string; runId?: string };
+export type ImageReadObserver = () =>
+  | ((sample: {
+      durationMs: number;
+      byteLength: number;
+      outcome: "completed" | "failed" | "cancelled";
+    }) => void)
+  | undefined;
 export interface ImageAttachmentStore {
   put(
     scope: ImageScope,
@@ -35,7 +42,10 @@ const object = (v: unknown): v is Record<string, unknown> =>
 export class ImageAttachmentCodec {
   // References only, never a completed Tool result or a retained image byte cache.
   readonly #known = new Map<string, ImageAttachmentReference>();
-  constructor(readonly store: ImageAttachmentStore) {}
+  constructor(
+    readonly store: ImageAttachmentStore,
+    readonly onImageReadStart?: ImageReadObserver,
+  ) {}
   #remember(key: string, ref: ImageAttachmentReference) {
     this.#known.set(key, ref);
     if (this.#known.size > 1024) this.#known.delete(this.#known.keys().next().value!);
@@ -111,14 +121,37 @@ export class ImageAttachmentCodec {
         let pending = images.get(key);
         if (!pending) {
           pending = (async () => {
-            const bytes = await this.store.get(scope.tenantId, ref, signal);
-            signal?.throwIfAborted();
-            if (
-              bytes.length !== ref.byteLength ||
-              createHash("sha256").update(bytes).digest("hex") !== ref.sha256
-            )
-              throw new Error("Image attachment integrity check failed");
-            return bytes.toString("base64");
+            let observe: ReturnType<ImageReadObserver>;
+            try {
+              observe = this.onImageReadStart?.();
+            } catch {
+              /* optional observation */
+            }
+            const started = observe ? performance.now() : 0;
+            let byteLength = 0;
+            let outcome: "completed" | "failed" | "cancelled" = "failed";
+            try {
+              const bytes = await this.store.get(scope.tenantId, ref, signal);
+              byteLength = bytes.length;
+              signal?.throwIfAborted();
+              if (
+                bytes.length !== ref.byteLength ||
+                createHash("sha256").update(bytes).digest("hex") !== ref.sha256
+              )
+                throw new Error("Image attachment integrity check failed");
+              const data = bytes.toString("base64");
+              outcome = "completed";
+              return data;
+            } catch (error) {
+              if (signal?.aborted) outcome = "cancelled";
+              throw error;
+            } finally {
+              try {
+                observe?.({ durationMs: performance.now() - started, byteLength, outcome });
+              } catch {
+                /* preserve original outcome */
+              }
+            }
           })();
           images.set(key, pending);
         }

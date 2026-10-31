@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxProvider, fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import { ScopedDurableModels } from "../src/durable/scoped-models.ts";
+import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 
 describe("Durable model calls under cloud authority", () => {
   it("binds concurrent conversations to their own grants without persisting credentials", async () => {
@@ -81,6 +82,126 @@ describe("Durable model calls under cloud authority", () => {
     expect(faux.state.callCount).toBe(0);
   });
 });
+
+it("times SDK preparation before HTTP while preserving payload/fetch hooks and ignoring logging failure", async () => {
+  const base = createModels(),
+    faux = fauxProvider();
+  base.setProvider(faux.provider);
+  const dispatched = Promise.withResolvers<void>(),
+    response = Promise.withResolvers<void>();
+  const payload = { private: "original" },
+    replaced = { private: "replacement" };
+  const onPayload = vi.fn(async () => replaced),
+    fetcher = vi.fn(async () => new Response("ok"));
+  const prepared = vi.fn((_sample: unknown) => {
+      throw Error("diagnostic sink failed");
+    }),
+    release = vi.fn();
+  vi.spyOn(base, "streamSimple").mockImplementation((model, _input, options) => {
+    const stream = createAssistantMessageEventStream();
+    void (async () => {
+      const value = await options!.onPayload!(payload, model);
+      expect(value).toBe(replaced);
+      await options!.fetch!("http://example.invalid", {
+        method: "POST",
+        body: JSON.stringify(value),
+        ...(options!.signal ? { signal: options!.signal } : {}),
+      });
+      dispatched.resolve();
+      await response.promise;
+      const message = fauxAssistantMessage("done");
+      stream.push({ type: "done", reason: "stop", message });
+      stream.end(message);
+    })();
+    return stream;
+  });
+  const scoped = new ScopedDurableModels(base, async (request) => ({
+    model: faux.getModel(),
+    options: { ...request.options, onPayload, fetch: fetcher },
+    onPrepared: prepared,
+    release,
+  }));
+  const route = scoped.register(randomUUID(), 1, faux.getModel());
+  const result = scoped.models.completeSimple(
+    scoped.models.getModel(route.provider, route.modelId)!,
+    { messages: [] },
+  );
+  await dispatched.promise;
+  expect(prepared).toHaveBeenCalledOnce();
+  expect(prepared.mock.calls[0]).toEqual([
+    expect.objectContaining({
+      httpDispatched: true,
+      outcome: "completed",
+      payloadHookMs: expect.any(Number),
+      afterPayloadMs: expect.any(Number),
+      requestCharacters: JSON.stringify(replaced).length,
+    }),
+  ]);
+  expect(onPayload).toHaveBeenCalledExactlyOnceWith(payload, expect.any(Object));
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(JSON.stringify(prepared.mock.calls)).not.toContain("replacement");
+  response.resolve();
+  expect((await result).stopReason).toBe("stop");
+  expect(release).toHaveBeenCalledOnce();
+});
+
+it.each([false, true])(
+  "records pre-dispatch failure/cancellation (%s) without trying HTTP",
+  async (cancelled) => {
+    const base = createModels(),
+      faux = fauxProvider();
+    base.setProvider(faux.provider);
+    const abort = new AbortController(),
+      prepared = vi.fn(),
+      fetcher = vi.fn(),
+      release = vi.fn();
+    vi.spyOn(base, "streamSimple").mockImplementation((_model, _input, options) => {
+      const stream = createAssistantMessageEventStream();
+      void (async () => {
+        if (cancelled) abort.abort();
+        try {
+          await options!.onPayload!({}, faux.getModel());
+        } catch {
+          /* native adapters turn preparation errors into an error result */
+        }
+        const error = {
+          ...fauxAssistantMessage(""),
+          stopReason: cancelled ? ("aborted" as const) : ("error" as const),
+          errorMessage: "private failure",
+        };
+        stream.push({ type: "error", reason: error.stopReason, error });
+        stream.end(error);
+      })();
+      return stream;
+    });
+    const scoped = new ScopedDurableModels(base, async (request) => ({
+      model: faux.getModel(),
+      options: {
+        ...request.options,
+        fetch: fetcher,
+        onPayload: () => {
+          throw Error("private failure");
+        },
+      },
+      onPrepared: prepared,
+      release,
+    }));
+    const route = scoped.register(randomUUID(), 1, faux.getModel());
+    await scoped.models.completeSimple(
+      scoped.models.getModel(route.provider, route.modelId)!,
+      { messages: [] },
+      { signal: abort.signal },
+    );
+    expect(prepared).toHaveBeenCalledOnce();
+    expect(prepared.mock.calls[0]?.[0]).toMatchObject({
+      httpDispatched: false,
+      outcome: cancelled ? "cancelled" : "failed",
+    });
+    expect(JSON.stringify(prepared.mock.calls)).not.toContain("private failure");
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledOnce();
+  },
+);
 
 it("a late successful reply cannot overwrite the event inactivity timeout", async () => {
   vi.useFakeTimers();

@@ -1,3 +1,4 @@
+import { measureRunPreparation } from "@pi-cloud/observability";
 import { hasConversationWorkspace } from "@pi-cloud/protocol";
 import type { WorkflowPreparer } from "./workflow-transport.ts";
 import {
@@ -584,7 +585,16 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     const modelGrantSignal = signal
       ? AbortSignal.any([signal, modelGrant.signal])
       : modelGrant.signal;
-    const modelRuntimeLease = await this.#modelRuntimeLeaseResolver(command, modelGrantSignal);
+    const modelRuntimeLease = await measureRunPreparation(
+      command.payload.runId,
+      "model_grant",
+      this.#metrics,
+      async () => this.#modelRuntimeLeaseResolver(command, modelGrantSignal),
+      {
+        signal: modelGrantSignal,
+        details: { conversationId: command.payload.piSession.conversationId },
+      },
+    );
     let detachModelOwner: (() => void) | undefined;
     if (
       modelRuntimeLease.runtime.provider !== command.payload.model.provider ||

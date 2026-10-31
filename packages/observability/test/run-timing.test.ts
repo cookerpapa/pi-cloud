@@ -1,5 +1,10 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { measureRunPreparation, PiCloudMetrics } from "../src/index.ts";
+import {
+  measureRunPreparation,
+  startRunPreparation,
+  capturePreparationWork,
+  PiCloudMetrics,
+} from "../src/index.ts";
 import * as logger from "../src/logger.ts";
 
 afterEach(() => vi.restoreAllMocks());
@@ -22,6 +27,8 @@ it("correlates a bounded stage without logging its result or labelling metrics b
       stage: "writer_prepare",
       outcome: "completed",
       startedAtMs: 123456,
+      startedMonotonicMs: 10,
+      processStartedAtMs: performance.timeOrigin,
       durationMs: 15,
     },
   });
@@ -69,4 +76,80 @@ it("concurrent preparation stages retain their own Run identity", async () => {
   release();
   await first;
   expect(log.mock.calls.map(([r]) => r.attributes?.runId)).toEqual(["run-b", "run-a"]);
+});
+
+it("aggregates nested I/O without extra log lines or cross-Lane state", async () => {
+  const log = vi.spyOn(logger, "operationalLog").mockImplementation(() => {});
+  expect(capturePreparationWork("image_read")).toBeUndefined();
+  const gate = Promise.withResolvers<void>();
+  let late: ReturnType<typeof capturePreparationWork>;
+  const first = measureRunPreparation("root", "native_context_prepare", undefined, async () => {
+    late = capturePreparationWork("storage_read");
+    capturePreparationWork("storage_read")?.({ durationMs: 20, outcome: "completed" });
+    capturePreparationWork("image_read")?.({
+      durationMs: 12,
+      byteLength: 1024,
+      outcome: "completed",
+    });
+    await gate.promise;
+    return "private-content";
+  });
+  await measureRunPreparation("child", "native_context_prepare", undefined, async () => {
+    capturePreparationWork("image_read")?.({ durationMs: 3, byteLength: 16, outcome: "failed" });
+  });
+  gate.resolve();
+  await first;
+  late?.({ durationMs: 99, outcome: "completed" });
+  expect(log).toHaveBeenCalledTimes(2);
+  expect(log.mock.calls[0]![0].attributes).toMatchObject({
+    runId: "child",
+    image_readCount: 1,
+    image_readMs: 3,
+    imageBytes: 16,
+    image_readIncomplete: 1,
+  });
+  expect(log.mock.calls[1]![0].attributes).toMatchObject({
+    runId: "root",
+    storage_readCount: 1,
+    storage_readMs: 20,
+    image_readCount: 1,
+    imageBytes: 1024,
+  });
+  expect(JSON.stringify(log.mock.calls)).not.toContain("private-content");
+});
+it("closes pre-model timing at dispatch, not after the provider response", async () => {
+  const log = vi.spyOn(logger, "operationalLog").mockImplementation(() => {});
+  const timer = startRunPreparation("run", "native_request_prepare");
+  const response = Promise.withResolvers<void>();
+  const executing = timer.run(async () => {
+    timer.finish("completed");
+    expect(capturePreparationWork("storage_read")).toBeUndefined();
+    await response.promise;
+  });
+  expect(log).toHaveBeenCalledOnce();
+  response.resolve();
+  await executing;
+  expect(log).toHaveBeenCalledOnce();
+});
+it("records cancellation without replacing the original rejection or logging arbitrary metadata", async () => {
+  const log = vi.spyOn(logger, "operationalLog").mockImplementation(() => {});
+  const aborted = new AbortController(),
+    error = new Error("private-message");
+  await expect(
+    measureRunPreparation(
+      "run",
+      "pi_session_open",
+      undefined,
+      async () => {
+        aborted.abort(error);
+        throw error;
+      },
+      { signal: aborted.signal, details: { conversationId: 2, prompt: "secret-prompt" } as never },
+    ),
+  ).rejects.toBe(error);
+  expect(log.mock.calls[0]![0].attributes).toMatchObject({
+    outcome: "cancelled",
+    conversationId: 2,
+  });
+  expect(JSON.stringify(log.mock.calls)).not.toMatch(/private-message|secret-prompt/);
 });

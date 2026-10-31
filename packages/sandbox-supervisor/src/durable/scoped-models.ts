@@ -15,6 +15,18 @@ import type { ProviderHostedActivity } from "../agent-turn-runtime.ts";
 
 type ModelOperation = "stream" | "streamSimple" | "streamDeferred" | "cancelDeferred";
 type RequestOptions = Record<string, unknown> & { signal?: AbortSignal };
+export type ModelPreparationSample = {
+  startedAtMs: number;
+  startedMonotonicMs: number;
+  processStartedAtMs: number;
+  durationMs: number;
+  outcome: "completed" | "failed" | "cancelled";
+  httpDispatched: boolean;
+  payloadHookMs?: number;
+  afterPayloadMs?: number;
+  requestBytes?: number;
+  requestCharacters?: number;
+};
 export type CloudModelPermit = {
   model: Model<Api>;
   options: RequestOptions;
@@ -23,6 +35,7 @@ export type CloudModelPermit = {
   /** Lossy activity only. Tool names, IDs and arguments never leave this port. */
   onToolCallProgress?(): void;
   onHostedActivity?(activity: ProviderHostedActivity): void;
+  onPrepared?(sample: ModelPreparationSample): void;
   onOutcome?(sample: {
     outcome: "completed" | "error" | "aborted" | "deferred";
     startedAtMs: number;
@@ -167,12 +180,47 @@ export class ScopedDurableModels {
       let eventWait: ModelEventWait | undefined;
       let ownerSignal: AbortSignal | undefined;
       let providerResult = false;
+      let finishPreparation:
+        ((outcome: ModelPreparationSample["outcome"], init?: RequestInit) => void) | undefined;
       let report: ((outcome: "completed" | "error" | "aborted" | "deferred") => void) | undefined;
       try {
         permit = await this.#permit(operation, model, input, options);
         ownerSignal = permit.options.signal;
         const startedAt = performance.now();
         const startedAtMs = Date.now();
+        let preparationDone = false,
+          payloadFinishedAt: number | undefined,
+          payloadHookMs: number | undefined;
+        const observePreparation = permit.onPrepared;
+        const httpPreparation =
+          observePreparation && !String(permit.options.transport ?? "sse").startsWith("websocket");
+        if (httpPreparation)
+          finishPreparation = (outcome, init) => {
+            if (preparationDone) return;
+            preparationDone = true;
+            const at = performance.now();
+            try {
+              observePreparation({
+                startedAtMs,
+                startedMonotonicMs: startedAt,
+                processStartedAtMs: performance.timeOrigin,
+                durationMs: at - startedAt,
+                outcome,
+                httpDispatched: init !== undefined,
+                ...(payloadHookMs === undefined ? {} : { payloadHookMs }),
+                ...(payloadFinishedAt === undefined
+                  ? {}
+                  : { afterPayloadMs: at - payloadFinishedAt }),
+                ...(typeof init?.body === "string" ? { requestCharacters: init.body.length } : {}),
+                ...(ArrayBuffer.isView(init?.body) ? { requestBytes: init.body.byteLength } : {}),
+              });
+            } catch {
+              /* observation cannot gate dispatch */
+            }
+          };
+        const fetcher = (permit.options.fetch as typeof fetch | undefined) ?? globalThis.fetch;
+        const payloadHook = permit.options.onPayload as
+          ((payload: unknown, model: Model<Api>) => unknown | Promise<unknown>) | undefined;
         const observe = permit.onOutcome;
         let reported = false;
         report = (outcome) => {
@@ -225,6 +273,26 @@ export class ScopedDurableModels {
           requestPermit.input ?? input,
           {
             ...requestPermit.options,
+            ...(httpPreparation
+              ? {
+                  fetch: ((
+                    url: Parameters<typeof fetch>[0],
+                    init?: Parameters<typeof fetch>[1],
+                  ) => {
+                    finishPreparation?.("completed", init ?? {});
+                    return fetcher(url, init);
+                  }) as typeof fetch,
+                  onPayload: async (payload: unknown, real: Model<Api>) => {
+                    const before = performance.now();
+                    try {
+                      return await payloadHook?.(payload, real);
+                    } finally {
+                      payloadFinishedAt = performance.now();
+                      payloadHookMs = payloadFinishedAt - before;
+                    }
+                  },
+                }
+              : {}),
             // Codex SSE accepts zero as disabled. The OpenAI SDK used by the
             // Responses adapter treats zero as immediate expiry; its header-only
             // fallback must outlive our initial-event deadline instead.
@@ -275,6 +343,8 @@ export class ScopedDurableModels {
         providerResult = true;
         eventWait.close();
         const cancelled = options.signal?.aborted || ownerSignal?.aborted;
+        if (nativeResult.stopReason === "error" || nativeResult.stopReason === "aborted")
+          finishPreparation?.(cancelled ? "cancelled" : "failed");
         const result = completeModelResponse(
           response.result(
             eventWait.expired
@@ -341,6 +411,7 @@ export class ScopedDurableModels {
         await sourceStream?.result().catch(() => undefined);
         const real = this.#descriptors.get(model.id)?.model ?? model;
         const cancelled = options.signal?.aborted || ownerSignal?.aborted;
+        finishPreparation?.(cancelled ? "cancelled" : "failed");
         const failureMessage =
           eventWait?.expired && !cancelled
             ? eventWait.message

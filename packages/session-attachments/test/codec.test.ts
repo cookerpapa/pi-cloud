@@ -118,3 +118,45 @@ it("preserves image-shaped opaque Tool details and arguments without uploading t
   expect(f.store.put).not.toHaveBeenCalled();
   expect(f.store.get).not.toHaveBeenCalled();
 });
+
+it("observes unique image reads without extra fetches or exposing bytes and ignores observer failure", async () => {
+  const f = fixture(),
+    observed = vi.fn();
+  const packed = await f.codec.pack(f.scope, [f.image, f.image]);
+  const codec = new ImageAttachmentCodec(f.store, () => observed);
+  expect(await codec.unpack(f.scope, packed)).toEqual([f.image, f.image]);
+  expect(f.store.get).toHaveBeenCalledOnce();
+  expect(observed).toHaveBeenCalledOnce();
+  expect(observed.mock.calls[0]).toEqual([
+    { outcome: "completed", durationMs: expect.any(Number), byteLength: 3 * 1024 * 1024 },
+  ]);
+  observed.mockImplementation(() => {
+    throw new Error("sink broke");
+  });
+  expect(await codec.unpack(f.scope, packed)).toEqual([f.image, f.image]);
+  const failure = new Error("read failed");
+  vi.mocked(f.store.get).mockRejectedValueOnce(failure);
+  await expect(codec.unpack(f.scope, packed)).rejects.toBe(failure);
+  expect(observed.mock.calls.at(-1)?.[0]).toMatchObject({ outcome: "failed", byteLength: 0 });
+  const noObserver = new ImageAttachmentCodec(f.store, () => {
+    throw new Error("capture broke");
+  });
+  expect(await noObserver.unpack(f.scope, packed)).toEqual([f.image, f.image]);
+});
+it("classifies cancellation during image reading without accepting partial bytes", async () => {
+  const f = fixture(),
+    abort = new AbortController(),
+    observed = vi.fn();
+  const packed = await f.codec.pack(f.scope, f.image);
+  const original = f.store.get;
+  f.store.get = async (...args) => {
+    const bytes = await original(...args);
+    abort.abort(new Error("stopped"));
+    return bytes;
+  };
+  await expect(
+    new ImageAttachmentCodec(f.store, () => observed).unpack(f.scope, packed, abort.signal),
+  ).rejects.toThrow("stopped");
+  expect(observed).toHaveBeenCalledOnce();
+  expect(observed.mock.calls[0]?.[0]).toMatchObject({ outcome: "cancelled" });
+});

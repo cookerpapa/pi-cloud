@@ -39,7 +39,11 @@ import {
   ToolResultAttachmentError,
 } from "@pi-cloud/protocol";
 import type { DurableSessionHandle } from "@pi-cloud/pi-session-postgres/durable";
-import { operationalLog, type PiCloudMetrics } from "@pi-cloud/observability";
+import {
+  operationalLog,
+  measureRunPreparation,
+  type PiCloudMetrics,
+} from "@pi-cloud/observability";
 import { DurableAgentSession, type DurableRunConfiguration } from "./durable/agent-session.ts";
 import { DurableRunEvents } from "./durable/run-events.ts";
 import { CloudModelRegistry } from "./durable/model-registry.ts";
@@ -411,8 +415,21 @@ export class PiCloudTurnRunner {
       return delivery;
     };
     try {
-      const config = validateRuntimeConfig(command, await options.resolveModelRuntime(p.model));
-      handle = await options.openSession(command, readLifetime.signal);
+      const prepare = <T>(
+        stage: string,
+        operation: () => Promise<T>,
+        details: import("@pi-cloud/observability").PreparationDetails = {},
+      ) =>
+        measureRunPreparation(p.runId, stage, options.metrics, operation, {
+          signal: combined,
+          details: { conversationId: p.piSession.conversationId, ...details },
+        });
+      const config = await prepare("model_config", async () =>
+        validateRuntimeConfig(command, await options.resolveModelRuntime(p.model)),
+      );
+      handle = await prepare("pi_session_open", () =>
+        options.openSession(command, readLifetime.signal),
+      );
       const owner = handle;
       text = new DurableTextPresentation({
         conversationId: p.piSession.conversationId,
@@ -442,62 +459,74 @@ export class PiCloudTurnRunner {
       const registry = options.modelRegistry ?? sharedModels;
       const model = registry.configure(config);
       // Schemas are code-owned; constructing them does not access a guest.
-      family = await owner.runtime(async () => {
-        const runtime = await DurableAgentSession.open(
-          owner.storage,
-          {
-            models: registry.models,
-            remoteTools: [
-              ...fixedRemoteToolDefinitions(),
-              ...(options.trustedToolDefinitions?.current() ?? []).filter(
-                (tool) => "prepareExecution" in tool,
-              ),
-            ],
-            infrastructureTools: options.trustedToolDefinitions?.current() ?? [],
-            ...(options.trustedToolDefinitions
-              ? {
-                  remoteToolUpdates: {
-                    current: () => [
-                      ...fixedRemoteToolDefinitions(),
-                      ...options
-                        .trustedToolDefinitions!.current()
-                        .filter((tool) => "prepareExecution" in tool),
-                    ],
-                    subscribe: options.trustedToolDefinitions.subscribe,
+      const familyTiming = { conversationId: p.piSession.conversationId, reused: true };
+      family = await measureRunPreparation(
+        p.runId,
+        "pi_harness_open",
+        options.metrics,
+        () =>
+          owner.runtime(async () => {
+            familyTiming.reused = false;
+            const runtime = await DurableAgentSession.open(
+              owner.storage,
+              {
+                models: registry.models,
+                remoteTools: [
+                  ...fixedRemoteToolDefinitions(),
+                  ...(options.trustedToolDefinitions?.current() ?? []).filter(
+                    (tool) => "prepareExecution" in tool,
+                  ),
+                ],
+                infrastructureTools: options.trustedToolDefinitions?.current() ?? [],
+                ...(options.trustedToolDefinitions
+                  ? {
+                      remoteToolUpdates: {
+                        current: () => [
+                          ...fixedRemoteToolDefinitions(),
+                          ...options
+                            .trustedToolDefinitions!.current()
+                            .filter((tool) => "prepareExecution" in tool),
+                        ],
+                        subscribe: options.trustedToolDefinitions.subscribe,
+                      },
+                    }
+                  : {}),
+                ...(options.publicEgress ? { publicEgress: options.publicEgress } : {}),
+                settings: {
+                  stream: {
+                    timeoutMs: 0,
+                    maxRetries: 0,
+                    ...(config.transport ? { transport: config.transport } : {}),
                   },
-                }
-              : {}),
-            ...(options.publicEgress ? { publicEgress: options.publicEgress } : {}),
-            settings: {
-              stream: {
-                timeoutMs: 0,
-                maxRetries: 0,
-                ...(config.transport ? { transport: config.transport } : {}),
+                  retry: { maxRetries: MODEL_RETRY_COUNT },
+                  compaction: {
+                    reserveTokens: p.budgets?.compactionReserveTokens ?? 16384,
+                    keepRecentTokens: p.budgets?.compactionKeepRecentTokens ?? 20000,
+                  },
+                },
               },
-              retry: { maxRetries: MODEL_RETRY_COUNT },
-              compaction: {
-                reserveTokens: p.budgets?.compactionReserveTokens ?? 16384,
-                keepRecentTokens: p.budgets?.compactionKeepRecentTokens ?? 20000,
-              },
-            },
-          },
-          withAbortSignal(
-            AbortSignal.any([readLifetime.signal, owner.authority.signal]),
-            BACKGROUND_CONTEXT,
-          ),
-        );
-        owner.preparePublication((commit) => runtime.preparePublication(commit));
-        return runtime;
-      });
-      const runtime = family;
-      // root() writes only the native root; it does not enable scheduling.
-      if (p.piSession.conversationId === 1) await runtime.harness.root(BACKGROUND_CONTEXT);
-      const world = await PiSessionWorldStateController.create(
-        runtime.harness,
-        p.piSession.conversationId as ConversationId,
-        options.sandboxContinuity,
+              withAbortSignal(
+                AbortSignal.any([readLifetime.signal, owner.authority.signal]),
+                BACKGROUND_CONTEXT,
+              ),
+            );
+            owner.preparePublication((commit) => runtime.preparePublication(commit));
+            return runtime;
+          }),
+        { signal: combined, details: familyTiming },
       );
-      await world.capture();
+      const runtime = family;
+      const world = await prepare("world_state_prepare", async () => {
+        // root() writes only the native root; it does not enable scheduling.
+        if (p.piSession.conversationId === 1) await runtime.harness.root(BACKGROUND_CONTEXT);
+        const world = await PiSessionWorldStateController.create(
+          runtime.harness,
+          p.piSession.conversationId as ConversationId,
+          options.sandboxContinuity,
+        );
+        await world.capture();
+        return world;
+      });
       let sampling = new DurableSampling();
       const samplingScope = new AsyncLocalStorage<{
         sampling: DurableSampling;
@@ -583,6 +612,7 @@ export class PiCloudTurnRunner {
         .filter(Boolean)
         .join("\n\n");
       const binding: DurableRunConfiguration = {
+        ...(options.metrics ? { metrics: options.metrics } : {}),
         runId: p.runId,
         conversationId: p.piSession.conversationId,
         model,
@@ -675,109 +705,152 @@ export class PiCloudTurnRunner {
             ...(request.options.signal ? [request.options.signal] : []),
           ]);
           requestSignal.throwIfAborted();
-          const release = (await options.acquireModelPermit?.(requestSignal)) ?? (() => {});
+          const details: import("@pi-cloud/observability").PreparationDetails = {
+            conversationId: p.piSession.conversationId,
+            ...(native ? { taskId: native.taskId, purpose: native.purpose } : {}),
+          };
+          const release = await measureRunPreparation(
+            p.runId,
+            "model_permit_wait",
+            options.metrics,
+            async () => (await options.acquireModelPermit?.(requestSignal)) ?? (() => {}),
+            { signal: requestSignal, details },
+          );
           try {
-            if (!native) throw new Error("Model request has no native task context");
-            const task = await runtime.harness.getTask(native.taskId as TaskId, BACKGROUND_CONTEXT);
-            const sequence = await owner.recordSequence(native.taskId);
-            const checkpoint =
-              task?.state.status === "pending" ||
-              task?.state.status === "running" ||
-              task?.state.status === "waiting"
-                ? (task.state.checkpoint as { attempt?: number })
-                : undefined;
-            if (sequence === undefined || !checkpoint)
-              throw new Error("Model task has no committed checkpoint");
-            const scoped = {
-              sampling: new DurableSampling(),
-              identity: undefined as ModelSamplingIdentity | undefined,
-            };
-            scoped.sampling.select({
-              sequence,
-              attempt: checkpoint.attempt ?? 1,
-              publish: native.purpose === "agent",
-            });
-            if (native.purpose === "agent") sampling = scoped.sampling;
-            return await samplingScope.run(scoped, async () => {
-              const source = request.input as ModelContext;
-              const prepared = await tools.prepareModelRequest(
-                source.messages,
-                native.purpose,
-                request.options.headers as ProviderHeaders,
-              );
-              const context = { ...source, messages: prepared.messages };
-              const headers = prepared.headers;
-              const requestSampling = scoped.identity;
-              const cacheKey = await modelTransportKey({
-                tenantId: p.tenantId,
-                sessionId: p.piSession.id,
-                conversationId: p.piSession.conversationId,
-                credentialBindingId: p.model.credentialBindingId,
-                credentialBindingVersion: p.model.credentialBindingVersion,
-                purpose: native.purpose,
-              });
-              if (
-                native.purpose === "agent" ||
-                p.input.kind === "compact" ||
-                task?.owner !== undefined
-              )
-                activity.phase(
-                  native.purpose === "context_maintenance" ? "compacting" : "waiting_model",
+            return await measureRunPreparation(
+              p.runId,
+              "model_request_prepare",
+              options.metrics,
+              async () => {
+                if (!native) throw new Error("Model request has no native task context");
+                const task = await runtime.harness.getTask(
+                  native.taskId as TaskId,
+                  BACKGROUND_CONTEXT,
                 );
-              return {
-                model,
-                eventIdleTimeoutMs: options.modelEventIdleTimeoutMs ?? MODEL_EVENT_IDLE_MS,
-                input: nativeProviderContext(context, model),
-                release,
-                ...(native.purpose === "agent"
-                  ? { onToolCallProgress: () => activity.phase("preparing_tool") }
-                  : {}),
-                options: {
-                  ...request.options,
-                  ...(config.transport ? { transport: config.transport } : {}),
-                  apiKey: config.apiKey,
-                  ...(model.api === "openai-codex-responses" ? { sessionId: cacheKey } : {}),
-                  signal: requestSignal,
-                  headers: { ...headers, [MODEL_PURPOSE_HEADER]: native.purpose },
-                  onPayload: (payload: unknown) =>
-                    mergeProviderServiceTier(
-                      mergeProviderHostedTools(
-                        replayProviderHostedTranscripts(payload, context, model),
-                        native.purpose === "agent" ? (config.hostedTools ?? []) : [],
-                      ),
-                      config.serviceTier,
-                    ),
-                },
-                onHostedActivity,
-                onOutcome: (sample) => {
-                  options.metrics?.modelDuration.observe(
-                    { provider: model.provider, model: model.id, outcome: sample.outcome },
-                    sample.durationMs / 1000,
+                const sequence = await owner.recordSequence(native.taskId);
+                const checkpoint =
+                  task?.state.status === "pending" ||
+                  task?.state.status === "running" ||
+                  task?.state.status === "waiting"
+                    ? (task.state.checkpoint as { attempt?: number })
+                    : undefined;
+                if (sequence === undefined || !checkpoint)
+                  throw new Error("Model task has no committed checkpoint");
+                details.samplingAttempt = checkpoint.attempt ?? 1;
+                const scoped = {
+                  sampling: new DurableSampling(),
+                  identity: undefined as ModelSamplingIdentity | undefined,
+                };
+                scoped.sampling.select({
+                  sequence,
+                  attempt: checkpoint.attempt ?? 1,
+                  publish: native.purpose === "agent",
+                });
+                if (native.purpose === "agent") sampling = scoped.sampling;
+                return await samplingScope.run(scoped, async () => {
+                  const source = request.input as ModelContext;
+                  const prepared = await tools.prepareModelRequest(
+                    source.messages,
+                    native.purpose,
+                    request.options.headers as ProviderHeaders,
                   );
-                  operationalLog({
-                    service: "pi-cloud-trusted-runner",
-                    level: "info",
-                    event: "model.response.timing",
-                    attributes: {
-                      runId: p.runId,
-                      taskId: native.taskId,
-                      purpose: native.purpose,
-                      conversationId: p.piSession.conversationId,
-                      ...(requestSampling
-                        ? {
-                            stepSequence: requestSampling.stepSequence,
-                            stepSha256: requestSampling.stepSha256,
-                            samplingAttempt: requestSampling.samplingAttempt,
-                          }
-                        : {}),
-                      provider: model.provider,
-                      model: model.id,
-                      ...sample,
-                    },
+                  const context = { ...source, messages: prepared.messages };
+                  details.messageCount = context.messages.length;
+                  const headers = prepared.headers;
+                  const requestSampling = scoped.identity;
+                  const cacheKey = await modelTransportKey({
+                    tenantId: p.tenantId,
+                    sessionId: p.piSession.id,
+                    conversationId: p.piSession.conversationId,
+                    credentialBindingId: p.model.credentialBindingId,
+                    credentialBindingVersion: p.model.credentialBindingVersion,
+                    purpose: native.purpose,
                   });
-                },
-              };
-            });
+                  if (
+                    native.purpose === "agent" ||
+                    p.input.kind === "compact" ||
+                    task?.owner !== undefined
+                  )
+                    activity.phase(
+                      native.purpose === "context_maintenance" ? "compacting" : "waiting_model",
+                    );
+                  return {
+                    model,
+                    eventIdleTimeoutMs: options.modelEventIdleTimeoutMs ?? MODEL_EVENT_IDLE_MS,
+                    input: nativeProviderContext(context, model),
+                    release,
+                    ...(native.purpose === "agent"
+                      ? { onToolCallProgress: () => activity.phase("preparing_tool") }
+                      : {}),
+                    options: {
+                      ...request.options,
+                      ...(config.transport ? { transport: config.transport } : {}),
+                      apiKey: config.apiKey,
+                      ...(model.api === "openai-codex-responses" ? { sessionId: cacheKey } : {}),
+                      signal: requestSignal,
+                      headers: { ...headers, [MODEL_PURPOSE_HEADER]: native.purpose },
+                      onPayload: (payload: unknown) =>
+                        mergeProviderServiceTier(
+                          mergeProviderHostedTools(
+                            replayProviderHostedTranscripts(payload, context, model),
+                            native.purpose === "agent" ? (config.hostedTools ?? []) : [],
+                          ),
+                          config.serviceTier,
+                        ),
+                    },
+                    onHostedActivity,
+                    onPrepared: (sample) => {
+                      operationalLog({
+                        service: "pi-cloud-trusted-runner",
+                        level: "info",
+                        event: "model.preparation.timing",
+                        attributes: {
+                          runId: p.runId,
+                          conversationId: p.piSession.conversationId,
+                          taskId: native.taskId,
+                          purpose: native.purpose,
+                          ...(requestSampling
+                            ? {
+                                stepSequence: requestSampling.stepSequence,
+                                samplingAttempt: requestSampling.samplingAttempt,
+                              }
+                            : {}),
+                          ...sample,
+                        },
+                      });
+                    },
+                    onOutcome: (sample) => {
+                      options.metrics?.modelDuration.observe(
+                        { provider: model.provider, model: model.id, outcome: sample.outcome },
+                        sample.durationMs / 1000,
+                      );
+                      operationalLog({
+                        service: "pi-cloud-trusted-runner",
+                        level: "info",
+                        event: "model.response.timing",
+                        attributes: {
+                          runId: p.runId,
+                          taskId: native.taskId,
+                          purpose: native.purpose,
+                          conversationId: p.piSession.conversationId,
+                          ...(requestSampling
+                            ? {
+                                stepSequence: requestSampling.stepSequence,
+                                stepSha256: requestSampling.stepSha256,
+                                samplingAttempt: requestSampling.samplingAttempt,
+                              }
+                            : {}),
+                          provider: model.provider,
+                          model: model.id,
+                          ...sample,
+                        },
+                      });
+                    },
+                  };
+                });
+              },
+              { signal: requestSignal, details },
+            );
           } catch (error) {
             release();
             throw error;
@@ -796,9 +869,8 @@ export class PiCloudTurnRunner {
             }
           : {}),
       };
-      const conversation = await runtime.bind(
-        binding,
-        p.input.kind === "resume" ? "reattach" : "initialize",
+      const conversation = await prepare("conversation_bind", () =>
+        runtime.bind(binding, p.input.kind === "resume" ? "reattach" : "initialize"),
       );
       this.#compact = async (request) => {
         combined.throwIfAborted();
@@ -830,43 +902,46 @@ export class PiCloudTurnRunner {
           state: status.state,
         };
       };
-      await options.onNativeBound?.();
-      stream = await runtime.watch(conversation.id, async (batch) => {
-        try {
-          for (const event of batch) {
-            if (
-              p.input.kind !== "compact" &&
-              (event.type === "compaction_start" || event.type === "compaction_end") &&
-              event.reason === "manual"
-            )
-              continue;
-            activity.event(event);
-          }
-          for (const event of batch) {
-            const bodies: PiCloudEventBody[] = [];
-            await frameBodies.run(bodies, () => events.consume([event]));
-            if (bodies.length === 0) continue;
-            const entry =
-              event.type === "message_end" || event.type === "entry_appended"
-                ? event.entry
-                : event.type === "tool_execution_end"
+      if (options.onNativeBound) await prepare("family_restore", options.onNativeBound);
+      stream = await prepare("display_watch", () =>
+        runtime.watch(conversation.id, async (batch) => {
+          try {
+            for (const event of batch) {
+              if (
+                p.input.kind !== "compact" &&
+                (event.type === "compaction_start" || event.type === "compaction_end") &&
+                event.reason === "manual"
+              )
+                continue;
+              activity.event(event);
+            }
+            for (const event of batch) {
+              const bodies: PiCloudEventBody[] = [];
+              await frameBodies.run(bodies, () => events.consume([event]));
+              if (bodies.length === 0) continue;
+              const entry =
+                event.type === "message_end" || event.type === "entry_appended"
                   ? event.entry
-                  : undefined;
-            const sequence = entry ? await owner.recordSequence(entry.id) : undefined;
-            for (const [index, body] of bodies.entries())
-              await emit(body, index === bodies.length - 1 ? sequence : undefined);
+                  : event.type === "tool_execution_end"
+                    ? event.entry
+                    : undefined;
+              const sequence = entry ? await owner.recordSequence(entry.id) : undefined;
+              for (const [index, body] of bodies.entries())
+                await emit(body, index === bodies.length - 1 ? sequence : undefined);
+            }
+            for (const event of batch) {
+              if (event.type === "message_end" || event.type === "entry_appended")
+                observedEntry = Math.max(observedEntry, event.entry.id);
+              if (event.type === "snapshot")
+                for (const entry of event.entries)
+                  observedEntry = Math.max(observedEntry, entry.id);
+            }
+          } catch (error) {
+            deliveryFailure ??= error;
           }
-          for (const event of batch) {
-            if (event.type === "message_end" || event.type === "entry_appended")
-              observedEntry = Math.max(observedEntry, event.entry.id);
-            if (event.type === "snapshot")
-              for (const entry of event.entries) observedEntry = Math.max(observedEntry, entry.id);
-          }
-        } catch (error) {
-          deliveryFailure ??= error;
-        }
-        wakeObserved?.();
-      });
+          wakeObserved?.();
+        }),
+      );
       observedEntry = Math.max(0, ...stream.snapshot.entries.map((entry) => entry.id));
       events.baseline(stream.snapshot);
       const watching = stream;
@@ -940,10 +1015,17 @@ export class PiCloudTurnRunner {
               ...(p.scheduledOrigin ? { scheduledOrigin: p.scheduledOrigin } : {}),
             },
           });
-          const content = await this.#prepareInput(p.input.text, p.input.uploads, combined);
-          await conversation.submit(
-            { type: "input", content, requestId: p.runId, whenBusy: "followUp" },
-            BACKGROUND_CONTEXT,
+          const input = p.input;
+          const content = await prepare(
+            "input_prepare",
+            () => this.#prepareInput(input.text, input.uploads, combined),
+            { uploadCount: input.uploads?.length ?? 0 },
+          );
+          await prepare("input_submit", () =>
+            conversation.submit(
+              { type: "input", content, requestId: p.runId, whenBusy: "followUp" },
+              BACKGROUND_CONTEXT,
+            ),
           );
         } else runtime.harness.resume();
       }

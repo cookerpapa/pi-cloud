@@ -35,6 +35,7 @@ async function fixture(
     model?: unknown[];
     imageReference?: ImageAttachmentReference;
     signal?: AbortSignal;
+    onReadStart?: import("../src/durable/published-storage.ts").DurableStorageOptions["onReadStart"];
   } = {},
 ) {
   const scope = { tenantId: randomUUID(), sessionId: randomUUID() };
@@ -72,16 +73,22 @@ async function fixture(
     ],
   });
   const failed = vi.fn();
+  const reader = new DurablePostgresProjection(
+    options.readDatabase ?? reads,
+    scope,
+    options.images,
+  );
   const store = await PublishedDurableStorage.open({
-    projection: new DurablePostgresProjection(options.readDatabase ?? reads, scope, options.images),
+    projection: reader,
     ...(options.signal ? { signal: options.signal } : {}),
     onReadFailure: failed,
+    ...(options.onReadStart ? { onReadStart: options.onReadStart } : {}),
     publish: async (batch) => {
       await projection.apply(batch);
     },
     waitProjected: async () => {},
   });
-  return { store, failed, scope, projection };
+  return { store, failed, scope, projection, reader };
 }
 
 it("cancels a locked native read and a queued read, and closes without unlocking the fixture first", async () => {
@@ -338,4 +345,27 @@ it("still adopts an acknowledged commit when its caller is cancelled", async () 
     await store.close(context);
     await f.store.close(context);
   }
+});
+
+it("read observers report only numbers and cannot change results or add projection reads", async () => {
+  const observed = vi.fn((_sample: unknown) => {
+    throw new Error("diagnostic sink failed");
+  });
+  const start = vi.fn(() => observed);
+  const f = await fixture({ onReadStart: start });
+  const execute = vi.spyOn(f.reader, "get");
+  const value = await f.store.entry(2 as never, context);
+  expect(value?.entry.data).toBe("retained");
+  const firstQueries = execute.mock.calls.length;
+  expect(firstQueries).toBeGreaterThan(0);
+  expect((await f.store.entry(2 as never, context))?.entry.data).toBe("retained");
+  expect(execute.mock.calls.length).toBe(firstQueries);
+  expect(start).toHaveBeenCalledTimes(2);
+  expect(observed).toHaveBeenCalledTimes(2);
+  expect(observed.mock.calls[0]).toEqual([
+    expect.objectContaining({ outcome: "completed", durationMs: expect.any(Number) }),
+  ]);
+  expect(JSON.stringify(observed.mock.calls)).not.toContain("retained");
+  execute.mockRestore();
+  await f.store.close(context);
 });

@@ -2,6 +2,7 @@ import { withToolInvocation } from "../tool-invocation.ts";
 import {
   modelTaskRegistry,
   nativeModelTask,
+  finishNativePreparation,
   type NativeRequestContext,
 } from "./model-task-context.ts";
 export type { NativeRequestContext } from "./model-task-context.ts";
@@ -11,6 +12,7 @@ import { preserveInterruptedText } from "./interrupted-text.ts";
 import { delegationInstructions } from "./delegation-policy.ts";
 import type { GuestPublicEgress, AgentThinkingLevel } from "@pi-cloud/protocol";
 import { isDeepStrictEqual } from "node:util";
+import { measureRunPreparation, type PiCloudMetrics } from "@pi-cloud/observability";
 import {
   parseExecutionReference,
   isControlToolCommand,
@@ -117,6 +119,7 @@ type RemoteToolDefinitionsSource = {
   subscribe(listener: () => void): () => void;
 };
 export type DurableRunConfiguration = {
+  metrics?: PiCloudMetrics;
   runId: string;
   conversationId: number;
   model: Model<Api>;
@@ -167,13 +170,26 @@ export class DurableAgentSession {
     },
   ) {
     this.#models = new ScopedDurableModels(options.models, async (request) => {
-      const run = await this.#awaitRun(
+      finishNativePreparation();
+      const run = await measureRunPreparation(
         request.runId,
-        request.conversationId,
-        request.options.signal,
+        "model_binding_wait",
+        this.#bindings.get(request.conversationId)?.metrics,
+        async () => {
+          const run = await this.#awaitRun(
+            request.runId,
+            request.conversationId,
+            request.options.signal,
+          );
+          await run.assertCurrent();
+          await run.beforeEffect?.(request.options.signal);
+          return run;
+        },
+        {
+          ...(request.options.signal ? { signal: request.options.signal } : {}),
+          details: { conversationId: request.conversationId },
+        },
       );
-      await run.assertCurrent();
-      await run.beforeEffect?.(request.options.signal);
       const native = nativeModelTask();
       if (native?.conversationId !== run.conversationId)
         throw new Error("Model request has no matching native task invocation");
@@ -332,7 +348,9 @@ export class DurableAgentSession {
         storage,
         {
           models: session.#models.models,
-          registry: modelTaskRegistry(session.#registry),
+          registry: modelTaskRegistry(session.#registry, (conversationId) =>
+            session.#bindings.get(conversationId),
+          ),
           // Existing product Runs finish when their foreground work finishes. Keep
           // automatic Compaction blocking until independent background admission is exposed.
           settings: {

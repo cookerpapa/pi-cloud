@@ -81,6 +81,10 @@ export type DurableStorageOptions = {
   assertCurrent?(): Promise<void>;
   signal?: AbortSignal;
   onReadFailure?(error: NativeReadUnavailableError): void;
+  /** Optional diagnostics only; capture before queueing and never expose data. */
+  onReadStart?():
+    | ((sample: { durationMs: number; outcome: "completed" | "failed" | "cancelled" }) => void)
+    | undefined;
   maximumBufferedWrites?: number;
   maximumBufferedBytes?: number;
 };
@@ -167,9 +171,35 @@ export class PublishedDurableStorage implements Storage {
       this.#readClose.signal,
       ...(this.#options.signal ? [this.#options.signal] : []),
     ]);
-    return awaitWithContext(
+    let observe: ReturnType<NonNullable<DurableStorageOptions["onReadStart"]>>;
+    try {
+      observe = this.#options.onReadStart?.();
+    } catch {
+      /* optional observation */
+    }
+    const started = observe ? performance.now() : 0;
+    const result = awaitWithContext(
       this.#serial(() => nativeRead(work, signal, this.#options.onReadFailure), signal),
       withAbortSignal(signal, context),
+    );
+    if (!observe) return result;
+    const completed = observe;
+    const report = (outcome: "completed" | "failed" | "cancelled") => {
+      try {
+        completed({ durationMs: performance.now() - started, outcome });
+      } catch {
+        /* never replace read result */
+      }
+    };
+    return result.then(
+      (value) => {
+        report("completed");
+        return value;
+      },
+      (error) => {
+        report(signal.aborted ? "cancelled" : "failed");
+        throw error;
+      },
     );
   }
   async mintId<I extends Id<string>>(): Promise<I> {

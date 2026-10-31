@@ -1,3 +1,4 @@
+import { capturePreparationWork } from "@pi-cloud/observability";
 import { settleWorkerExecutions } from "./worker-retirement.ts";
 import { resourceLimit } from "@pi-cloud/domain";
 import type { PublicationAvailability } from "@pi-cloud/protocol";
@@ -448,7 +449,9 @@ export class PiWorkerRuntime {
     this.#toolReplies = toolReplies;
     await toolReplies.start();
     this.#assertStarting();
-    const images = await configuredImageAttachments(this.#database, this.#readDatabase);
+    const images = await configuredImageAttachments(this.#database, this.#readDatabase, () =>
+      capturePreparationWork("image_read"),
+    );
     this.#images = images;
     if (images) await images.blobs.checkHealth();
     const sessionMutationProducer =
@@ -470,6 +473,7 @@ export class PiWorkerRuntime {
     await runClaimReadiness.start();
     this.#assertStarting();
     const nativeSessions = new PostgresDurableSessionHost({
+      onReadStart: () => capturePreparationWork("storage_read"),
       database: this.#readDatabase,
       leaseDatabase: this.#leaseDatabase,
       ...(images ? { images: images.codec } : {}),

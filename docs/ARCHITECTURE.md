@@ -356,6 +356,11 @@ through the current Workspace binding; ordinary Sandbox Tools run scripts.
 Neither tool loads user extensions into the Worker. Automatic project-directory
 scanning and executable user extensions remain outside this slice.
 
+Worker preparation measurements use the existing stdout operational logger.
+Public Harness/Models/Storage boundaries provide stage timings and aggregate
+read/image counts. They do not enter native history, add reads for measurement,
+or change cancellation/admission. See [OBSERVABILITY](OBSERVABILITY.md#worker-startup-and-request-preparation).
+
 ## Authorities and scaling
 
 | Concern | Authority |

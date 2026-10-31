@@ -138,7 +138,7 @@ export class PiCloudMetrics {
     });
     this.runPreparationDuration = new Histogram({
       name: "pi_cloud_run_preparation_seconds",
-      help: "Latency of the durable steps before a trusted Agent Run starts",
+      help: "Latency of bounded Worker startup and native model preparation stages",
       labelNames: ["stage", "outcome"],
       buckets: DURATION_BUCKETS,
       registers: [this.registry],

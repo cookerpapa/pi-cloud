@@ -1,5 +1,12 @@
 # Implementation roadmap
 
+## Worker startup and model preparation timings
+
+Extend the existing operational logger at public port boundaries. Measure cold/warm
+Harness opening, native context preparation, image hydration, model admission and
+SDK-to-HTTP preparation; preserve payloads, retries, cancellation and ownership.
+Aggregate actual read activity instead of walking history again for diagnostics.
+
 ## Human input boundaries and Skill market — deployed
 
 [ADR-0290](adr/0290-human-input-boundary-and-feedback.md) unifies human intake and
