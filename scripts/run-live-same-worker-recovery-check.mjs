@@ -1,6 +1,6 @@
 // Owned acceptance: ordered Session closure without restarting its Worker process.
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -40,6 +40,11 @@ const pool = "statefulset/pi-cloud-pi-worker-primary-v1",
   pod = "pi-cloud-pi-worker-primary-v1-0";
 const report = {
   at: new Date().toISOString(),
+  runtimeRevision: JSON.parse(await readFile(runtimeDirectory + "/k3s/deployment.json", "utf8"))
+    .revision,
+  driverSha256: createHash("sha256")
+    .update(await readFile(new URL(import.meta.url)))
+    .digest("hex"),
   accepted: false,
   cleanupConfirmed: false,
   poolRestored: false,
@@ -115,7 +120,7 @@ try {
   const originalProcess = processIdentity();
   report.originalProcess = originalProcess;
   tenant = await createPrivateTenant(db, {
-    slug: "release-acceptance-same-worker-" + randomUUID(),
+    slug: "release-acceptance-same-" + randomUUID(),
     ownerDisplayName: "Same Worker recovery",
     initialModel: { provider: "openai-codex", modelId: "gpt-6-luna" },
   });

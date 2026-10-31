@@ -17,6 +17,7 @@ export const operatorSources = new Set([
   "scripts/run-history-layout-check.mjs",
   "scripts/run-history-window-check.mjs",
   "scripts/run-live-history-layout-check.mjs",
+  "scripts/run-live-same-worker-recovery-check.mjs",
   "scripts/run-live-model-continuation-check.mjs",
   "scripts/run-live-interrupted-text-check.mjs",
   "scripts/configure-provider-websockets.mjs",
