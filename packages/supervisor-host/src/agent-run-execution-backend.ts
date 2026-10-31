@@ -468,7 +468,8 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         );
       }
 
-      this.#openingExecutions.delete(request.runId);
+      if (this.#openingExecutions.get(request.runId) === opening)
+        this.#openingExecutions.delete(request.runId);
       const execution = prepared.run();
       tracked = this.#registerExecution(request.sessionId, prepared, execution, executionLog);
       opening.runnerReady = true;
@@ -516,7 +517,8 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         }
         if (executionLog !== undefined && tracked === undefined) await executionLog.drain();
       } finally {
-        this.#openingExecutions.delete(request.runId);
+        if (this.#openingExecutions.get(request.runId) === opening)
+          this.#openingExecutions.delete(request.runId);
         ready.resolve();
         done.resolve();
       }
@@ -592,7 +594,8 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       await lifecycle.started(acknowledgement);
       const result = await prepared.run();
       const tracked = this.#trackedExecutions.get(request.target.sessionId);
-      if (tracked !== undefined) await this.#closeTrackedChannel(tracked);
+      if (tracked?.prepared.ack.payload.executionReference === acknowledgement.executionReference)
+        await this.#closeTrackedChannel(tracked);
       return result;
     } catch (error: unknown) {
       throw normalizeCancellationError(error);

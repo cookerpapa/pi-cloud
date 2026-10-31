@@ -1,5 +1,21 @@
 # Matched release procedure
 
+The same-Worker recovery correction retains schema 206 and the existing protocols.
+Verify Supervisor duplicate/fencing/cancellation contracts, real PG atomic
+admission/closure and the native recovery suite. After matched publication run:
+
+```sh
+PI_CLOUD_LIVE_SAME_WORKER_RECOVERY_CHECK=1 node --import tsx scripts/run-live-same-worker-recovery-check.mjs /private/same-worker.json
+```
+
+The owned fixture requires no unrelated active work. It temporarily scales the
+existing Worker pool to one to remove scheduling ambiguity, requests closure
+through the existing PG Outbox/Kafka path, and verifies a new lease on the same
+Worker boot/container. It restores the original replica count, checks one logical
+Run and a completed Tool marker written once, and physically purges only its own
+Workspace. No affinity or public fault-injection endpoint is added. Also run the
+maintained native-input recovery fixture and preserve original assets.
+
 ADR-0290/0291 require schema 206 and paired API/Web/guest publication. The composer
 uses one human-intake endpoint with a busy preference; remove the old Turn-targeted
 steer endpoint. Skill packages use inventoried S3 objects and scoped PG metadata;

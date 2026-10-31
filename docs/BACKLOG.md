@@ -15,15 +15,18 @@ Web `message-controls-20261031` is live on platform Helm revision 134. Its
 follow-up acceptance passed. The other 28 serving Pods and both original
 development-machine allocations stayed unchanged.
 
-## Same-Worker Run recovery — diagnosed, not repaired
+## Same-Worker Run recovery — in progress
 
 - [x] Correlate the reported `Command identity changed` failure with PG lease
       history and reproduce it without a model or production writes.
-- [ ] Separate logical Run deduplication from execution-incarnation identity in
+- [x] Separate logical Run deduplication from execution-incarnation identity in
       AgentRunSupervisor. Preserve payload conflict detection within an incarnation,
       stale-epoch rejection, cancellation targeting and safe retirement of old state.
       A higher authorized lease for the same Run must recover even on a Worker
       retaining its prior settled execution. A fresh Worker already accepts it.
+- [x] Cover stale cancellations, delayed cleanup and bounded obsolete-outcome retention.
+- [x] Record bounded recovery reasons and verify same-process recovery through PG admission and ordered projection.
+- [ ] Complete matched publication and owned same-process Kafka/Cube/model acceptance.
 
 [Diagnosis and UI scope](reports/command-identity-and-message-controls-20261031.md).
 The second recovery trigger is not established by retained PG closure records;

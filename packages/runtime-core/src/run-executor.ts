@@ -466,6 +466,7 @@ export class RunExecutor {
               return this.#requestRecovery(
                 claim,
                 acknowledgement,
+                failure.code,
                 failure.code === "native_storage_unavailable" ? 5_000 : 0,
               );
             if (failure.quarantineSession)
@@ -488,7 +489,7 @@ export class RunExecutor {
               try {
                 await finalizer.finish(terminal);
               } catch {
-                return this.#requestRecovery(claim, acknowledgement);
+                return this.#requestRecovery(claim, acknowledgement, "terminal_publication_failed");
               }
               completed = true;
               const identity = {
@@ -506,7 +507,7 @@ export class RunExecutor {
                   };
             }
             if (error instanceof TurnExecutionCancelledError && error.reason === "user_request")
-              return this.#requestRecovery(claim, acknowledgement);
+              return this.#requestRecovery(claim, acknowledgement, "cancel_before_publication");
             const externallySettled = await this.#observeCancellation(claim);
             if (externallySettled !== undefined) return externallySettled;
             return this.#recordFailure(claim, failure, acknowledgement);
@@ -520,7 +521,7 @@ export class RunExecutor {
               payload: { stopReason: executionResult.stopReason },
             });
           } catch {
-            return this.#requestRecovery(claim, acknowledgement);
+            return this.#requestRecovery(claim, acknowledgement, "terminal_publication_failed");
           }
           completed = true;
           return {
@@ -1001,6 +1002,9 @@ export class RunExecutor {
           event: "run.claim.timing",
           attributes: {
             runId: result.request.runId,
+            workerId: this.#workerId,
+            leaseId: parseExecutionReference(result.admission.executionReference).leaseId,
+            leaseEpoch: parseExecutionReference(result.admission.executionReference).fencingToken,
             startedAtMs,
             durationMs: performance.now() - started,
             stages: Object.fromEntries(stages.map(([stage, seconds]) => [stage, seconds * 1000])),
@@ -1091,12 +1095,13 @@ export class RunExecutor {
   async #requestRecovery(
     claim: ClaimedTurn,
     grant: TurnExecutionReference,
+    reason: string,
     retryDelayMs = 0,
   ): Promise<RunExecutionResult> {
     const now = safeDate(this.#clock),
       ref = parseExecutionReference(grant.executionReference);
     let settled: RunExecutionResult | undefined;
-    await retryTransaction(this.#database, async (tx) => {
+    const requested = await retryTransaction(this.#database, async (tx) => {
       const run = await tx
         .selectFrom("runs")
         .select([
@@ -1151,7 +1156,28 @@ export class RunExecutor {
       });
       if (run.execution_released_at === null)
         await this.#executionAuthority.releaseCurrent(tx, claim.request, grant, now);
+      return true;
     });
+    if (requested) {
+      try {
+        operationalLog({
+          service: "pi-cloud-worker",
+          level: "warn",
+          event: "run.recovery.requested",
+          attributes: {
+            runId: claim.request.runId,
+            piSessionId: claim.request.piSessionId,
+            workerId: this.#workerId,
+            leaseId: ref.leaseId,
+            leaseEpoch: ref.fencingToken,
+            reason,
+            retryDelayMs,
+          },
+        });
+      } catch {
+        // Closure is already committed; diagnostics must not change its outcome.
+      }
+    }
     return (
       settled ?? {
         status: "recovering",

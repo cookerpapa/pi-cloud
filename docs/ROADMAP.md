@@ -1,5 +1,13 @@
 # Implementation roadmap
 
+## Same-Worker recovery identity — in progress
+
+Scope local duplicate and cancellation outcomes to the existing execution
+reference, retaining epoch fencing and exact-object cleanup. PG admission and
+ordered closure now have a same-process regression alongside delayed cancellation
+and retirement checks. Publish through the matched procedure, then verify real
+Kafka/Cube/native recovery with the Worker boot unchanged.
+
 ## Answer controls and historical paging — deployed
 
 Unify copy styling across virtual answer fragments and follow-up boundaries.

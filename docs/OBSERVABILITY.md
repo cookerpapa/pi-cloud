@@ -313,6 +313,16 @@ measures synthetic JSON/metrics/stdout-pipe overhead; it is not a storage or
 production-load benchmark. Existing container rotation applies; permanent log
 retention is not part of the default profile.
 
+After a Worker commits its recovery request, `run.recovery.requested` records the
+bounded reason code, Run/physical Session, Worker, old lease ID, `leaseEpoch`
+and any existing retry delay. It logs neither raw exceptions nor input bodies.
+The existing `run.claim.timing` includes Worker, lease ID and epoch, so recovery
+and later admission can be correlated without a new database read or column.
+Externally requested closure is not misreported as a new local recovery request.
+These best-effort logs do not reconstruct previously unrecorded failure causes.
+`runtime.assignments-reaped` reports retained `executions` rather than logical
+Runs, alongside cancellation and family counts.
+
 ## Privacy and cardinality
 
 - no tenant, Session, Run, prompt, path, repository or exception text is a

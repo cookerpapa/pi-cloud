@@ -55,14 +55,14 @@ function command(
       piSession: {
         id: overrides.piSessionId ?? overrides.sessionId ?? "session-1",
         conversationId: overrides.conversationId ?? 1,
-        writerId: "00000000-0000-4000-8000-000000000001",
+        writerId: overrides.leaseId ?? IDS.lease,
       },
       runId: overrides.runId ?? "40000000-0000-4000-8000-000000000001",
       turnId: "turn-1",
       agentId: "root",
       executionReference: createExecutionReference(
         overrides.leaseId ?? IDS.lease,
-        overrides.runId ?? "50000000-0000-4000-8000-000000000001",
+        overrides.runId ?? "40000000-0000-4000-8000-000000000001",
         overrides.generation ?? 1,
       ),
       nextEventSeq: 1,
@@ -142,7 +142,171 @@ function rejectUnexpectedEvent(): never {
   throw new Error("Recording runner did not expect to publish an event");
 }
 
+function recoveredCommand(previous: ExecuteTurnCommandMessage, epoch = 2) {
+  const next = structuredClone(previous);
+  const lease = epoch === 2 ? IDS.lease2 : crypto.randomUUID();
+  next.payload.executionReference = createExecutionReference(lease, previous.payload.runId, epoch);
+  next.payload.piSession.writerId = lease;
+  next.payload.nextEventSeq += 7;
+  return next;
+}
+
 describe("AgentRunSupervisor", () => {
+  it("resumes the same Run on the same supervisor under a new lease", async () => {
+    const first = command(),
+      next = recoveredCommand(first);
+    const calls: string[] = [];
+    const supervisor = new AgentRunSupervisor({
+      runner: {
+        async run(value) {
+          calls.push(value.payload.executionReference);
+          if (calls.length === 1) throw new Error("recoverable publication failure");
+          return { stopReason: "stop" };
+        },
+      },
+    });
+    await expect(supervisor.prepare(first, rejectUnexpectedEvent).run()).rejects.toThrow(
+      "recoverable",
+    );
+    expect(supervisor.prepare(first, rejectUnexpectedEvent).ack.payload.status).toBe("duplicate");
+    const recovery = supervisor.prepare(next, rejectUnexpectedEvent);
+    expect(recovery.ack.payload.status).toBe("accepted");
+    await expect(recovery.run()).resolves.toMatchObject({ lastEventSeq: 7 });
+    await supervisor.prepare(next, rejectUnexpectedEvent).run();
+    expect(calls).toEqual([first.payload.executionReference, next.payload.executionReference]);
+    expect(supervisor.prepare(first, rejectUnexpectedEvent).ack.payload).toMatchObject({
+      status: "rejected",
+      code: "stale_session_lease",
+    });
+    const changed = structuredClone(next);
+    changed.payload.workingDirectory = "/changed";
+    expect(supervisor.prepare(changed, rejectUnexpectedEvent).ack.payload).toMatchObject({
+      status: "rejected",
+      code: "invalid_command",
+    });
+    const sameEpoch = structuredClone(next);
+    sameEpoch.payload.executionReference = createExecutionReference(
+      crypto.randomUUID(),
+      next.payload.runId,
+      2,
+    );
+    expect(supervisor.prepare(sameEpoch, rejectUnexpectedEvent).ack.payload).toMatchObject({
+      status: "rejected",
+      code: "stale_session_lease",
+    });
+  });
+
+  it("targets cancellation and duplicate controls at their execution incarnation", async () => {
+    const first = command(),
+      next = recoveredCommand(first);
+    const signals = new Map<string, AbortSignal>();
+    const supervisor = new AgentRunSupervisor({
+      runner: {
+        async run(value, _publish, signal) {
+          signals.set(value.payload.executionReference, signal);
+          return new Promise((_resolve, reject) =>
+            signal.addEventListener(
+              "abort",
+              () => {
+                reject(new PiTurnCancelledError(signal.reason.reason, false));
+              },
+              { once: true },
+            ),
+          );
+        },
+      },
+    });
+    const old = supervisor.prepare(first, rejectUnexpectedEvent).run();
+    void old.catch(() => {});
+    const oldStop = supervisor.prepareCancellation(cancellation(first));
+    const fresh = supervisor.prepare(next, rejectUnexpectedEvent);
+    expect(fresh.ack.payload.status).toBe("accepted");
+    const current = fresh.run();
+    void current.catch(() => {});
+    await expect(old).rejects.toMatchObject({ reason: "session_lease_revoked" });
+    const stop = supervisor.prepareCancellation(cancellation(next));
+    expect(stop.ack.payload.status).toBe("accepted");
+    oldStop.releaseBeforeStart();
+    expect(supervisor.prepareCancellation(cancellation(next)).ack.payload.status).toBe("duplicate");
+    expect(supervisor.prepareCancellation(cancellation(first)).ack.payload).toMatchObject({
+      status: "rejected",
+      code: "stale_session_lease",
+    });
+    await expect(oldStop.run()).rejects.toBeDefined();
+    expect(signals.get(next.payload.executionReference)?.aborted).toBe(false);
+    await expect(stop.run()).resolves.toMatchObject({ reason: "user_request" });
+    await expect(current).rejects.toMatchObject({ reason: "user_request" });
+  });
+
+  it("keeps old completion and a pending reap from removing a resumed same-Run owner", async () => {
+    const first = command(),
+      next = recoveredCommand(first);
+    const oldFinish = Promise.withResolvers<void>(),
+      newFinish = Promise.withResolvers<void>();
+    const supervisor = new AgentRunSupervisor({
+      runner: {
+        async run(value) {
+          await (value.payload.executionReference === first.payload.executionReference
+            ? oldFinish.promise
+            : newFinish.promise);
+          return { stopReason: "stop" };
+        },
+      },
+    });
+    const old = supervisor.prepare(first, rejectUnexpectedEvent).run();
+    const fresh = supervisor.prepare(next, rejectUnexpectedEvent);
+    expect(fresh.ack.payload.status).toBe("accepted");
+    const current = fresh.run();
+    expect(await supervisor.reapSettled(async () => new Set())).toBe(0);
+    oldFinish.resolve();
+    await old;
+    const checked = Promise.withResolvers<ReadonlySet<string>>();
+    const reaping = supervisor.reapSettled(() => checked.promise);
+    checked.resolve(new Set());
+    expect(await reaping).toBe(1);
+    expect(supervisor.activeSessionCount).toBe(1);
+    expect(supervisor.prepare(next, rejectUnexpectedEvent).ack.payload.status).toBe("duplicate");
+    expect(supervisor.retainedState).toMatchObject({ executions: 1, families: 1 });
+    newFinish.resolve();
+    await current;
+    expect(await supervisor.reapSettled(async (ids) => new Set(ids))).toBe(1);
+    expect(supervisor.retainedState).toEqual({ executions: 0, cancellations: 0, families: 0 });
+  });
+
+  it("releases superseded preparations without letting old handles remove the replacement", async () => {
+    const first = command(),
+      next = recoveredCommand(first),
+      runner = new RecordingRunner();
+    const supervisor = new AgentRunSupervisor({ runner });
+    const old = supervisor.prepare(first, rejectUnexpectedEvent);
+    const fresh = supervisor.prepare(next, rejectUnexpectedEvent);
+    expect(fresh.ack.payload.status).toBe("accepted");
+    old.releaseBeforeStart();
+    await expect(old.run()).rejects.toBeDefined();
+    await fresh.run();
+    expect(runner.calls).toHaveLength(1);
+    expect(supervisor.retainedState).toMatchObject({ executions: 1 });
+  });
+
+  it("bounds obsolete same-Run outcomes without waiting for logical completion", async () => {
+    const supervisor = new AgentRunSupervisor({
+      runner: {
+        async run() {
+          throw Error("recover");
+        },
+      },
+    });
+    let current = command();
+    for (let epoch = 1; epoch <= 12; epoch++) {
+      if (epoch > 1) current = recoveredCommand(current, epoch);
+      const prepared = supervisor.prepare(current, rejectUnexpectedEvent);
+      expect(prepared.ack.payload.status).toBe("accepted");
+      await expect(prepared.run()).rejects.toThrow("recover");
+      await supervisor.reapSettled(async () => new Set());
+      expect(supervisor.retainedState).toEqual({ executions: 1, cancellations: 0, families: 1 });
+    }
+  });
+
   it("keeps a superseded Runner until its actual completion, even if PG is already closed", async () => {
     const finish = Promise.withResolvers<void>();
     const supervisor = new AgentRunSupervisor({
@@ -160,11 +324,11 @@ describe("AgentRunSupervisor", () => {
     );
     try {
       expect(await supervisor.reapSettled(async (ids) => new Set(ids))).toBe(0);
-      expect(supervisor.retainedState).toMatchObject({ runs: 2, families: 1 });
+      expect(supervisor.retainedState).toMatchObject({ executions: 2, families: 1 });
       finish.resolve();
       await old;
       expect(await supervisor.reapSettled(async (ids) => new Set(ids))).toBe(1);
-      expect(supervisor.retainedState).toMatchObject({ runs: 1, families: 1 });
+      expect(supervisor.retainedState).toMatchObject({ executions: 1, families: 1 });
     } finally {
       finish.resolve();
       await old;
@@ -191,7 +355,7 @@ describe("AgentRunSupervisor", () => {
     expect(await supervisor.reapSettled(async (ids) => new Set(ids))).toBe(0);
     finish.resolve();
     await run;
-    const retained = { runs: 1, cancellations: 1, families: 1 };
+    const retained = { executions: 1, cancellations: 1, families: 1 };
     expect(supervisor.retainedState).toEqual(retained);
     expect(await supervisor.reapSettled(async () => new Set())).toBe(0);
     await expect(
@@ -205,55 +369,63 @@ describe("AgentRunSupervisor", () => {
     await duplicate.run();
     expect(calls).toBe(1);
     expect(await supervisor.reapSettled(async (ids) => new Set(ids))).toBe(1);
-    expect(supervisor.retainedState).toEqual({ runs: 0, cancellations: 0, families: 0 });
+    expect(supervisor.retainedState).toEqual({ executions: 0, cancellations: 0, families: 0 });
     await prepared.run();
     expect(calls).toBe(1);
   });
 
-  it("does not retire a new family owner while an old retirement check is pending", async () => {
-    const finish = Promise.withResolvers<void>();
-    const old = command();
-    const fresh = command({ runId: IDS.command2, leaseId: IDS.lease2, generation: 2 });
-    const supervisor = new AgentRunSupervisor({
-      runner: {
-        async run(value) {
-          if (value.payload.runId === fresh.payload.runId) await finish.promise;
-          return { stopReason: "stop" };
+  it.each([false, true])(
+    "does not retire a new family owner during an old retirement check (same Run: %s)",
+    async (sameRun) => {
+      const finish = Promise.withResolvers<void>();
+      const old = command();
+      const fresh = sameRun
+        ? recoveredCommand(old)
+        : command({ runId: IDS.command2, leaseId: IDS.lease2, generation: 2 });
+      const supervisor = new AgentRunSupervisor({
+        runner: {
+          async run(value) {
+            if (value.payload.executionReference === fresh.payload.executionReference)
+              await finish.promise;
+            return { stopReason: "stop" };
+          },
         },
-      },
-    });
-    await supervisor.prepare(old, rejectUnexpectedEvent).run();
-    const checked = Promise.withResolvers<ReadonlySet<string>>();
-    const reap = supervisor.reapSettled(() => checked.promise);
-    const active = supervisor.prepare(fresh, rejectUnexpectedEvent).run();
-    checked.resolve(new Set([old.payload.runId]));
-    expect(await reap).toBe(1);
-    expect(supervisor.retainedState).toMatchObject({ runs: 1, families: 1 });
-    const stale = command({
-      runId: IDS.command,
-      sessionId: "late-child",
-      piSessionId: "session-1",
-      conversationId: 3,
-    });
-    expect(supervisor.prepare(stale, rejectUnexpectedEvent).ack.payload).toMatchObject({
-      status: "rejected",
-      code: "stale_session_lease",
-    });
-    finish.resolve();
-    await active;
-    await supervisor.reapSettled(async (ids) => new Set(ids));
-    expect(supervisor.retainedState).toMatchObject({ runs: 0, families: 0 });
-  });
+      });
+      await supervisor.prepare(old, rejectUnexpectedEvent).run();
+      const checked = Promise.withResolvers<ReadonlySet<string>>();
+      const reap = supervisor.reapSettled(() => checked.promise);
+      const active = supervisor.prepare(fresh, rejectUnexpectedEvent).run();
+      checked.resolve(new Set([old.payload.runId]));
+      expect(await reap).toBe(1);
+      expect(supervisor.retainedState).toMatchObject({ executions: 1, families: 1 });
+      const stale = command({
+        runId: IDS.command,
+        sessionId: "late-child",
+        piSessionId: "session-1",
+        conversationId: 3,
+      });
+      expect(supervisor.prepare(stale, rejectUnexpectedEvent).ack.payload).toMatchObject({
+        status: "rejected",
+        code: "stale_session_lease",
+      });
+      finish.resolve();
+      await active;
+      await supervisor.reapSettled(async (ids) => new Set(ids));
+      expect(supervisor.retainedState).toMatchObject({ executions: 0, families: 0 });
+    },
+  );
 
   it("releases completed command objects and pre-start owner bookkeeping after authoritative retirement", () => {
     const source = `
       import {AgentRunSupervisor} from ${JSON.stringify(new URL("../src/agent-run-supervisor.ts", import.meta.url).href)};
       import {setImmediate as tick} from 'node:timers/promises';
+      import {createExecutionReference} from ${JSON.stringify(new URL("../../protocol/src/execution-reference.ts", import.meta.url).href)};
       const refs=[];
       const supervisor=new AgentRunSupervisor({runner:{run:async command=>{refs.push(new WeakRef(command));return {stopReason:'stop'};}}});
       const template=${JSON.stringify(command())};
       async function complete(i){
-        await supervisor.prepare({...template,payload:{...template.payload,runId:'40000000-0000-4000-8000-'+String(i).padStart(12,'0')}},()=>{}).run();
+        const runId='40000000-0000-4000-8000-'+String(i).padStart(12,'0');
+        await supervisor.prepare({...template,payload:{...template.payload,runId,executionReference:createExecutionReference(${JSON.stringify(IDS.lease)},runId,1)}},()=>{}).run();
       }
       for(let i=0;i<16;i++)await complete(i);
       for(let i=0;i<5;i++){await tick();global.gc();}
@@ -273,7 +445,7 @@ describe("AgentRunSupervisor", () => {
     expect(JSON.parse(result)).toEqual({
       before: 16,
       after: 0,
-      retained: { runs: 0, cancellations: 0, families: 0 },
+      retained: { executions: 0, cancellations: 0, families: 0 },
     });
   });
 
@@ -294,6 +466,7 @@ describe("AgentRunSupervisor", () => {
     const source = `
       import {AgentRunSupervisor} from ${JSON.stringify(new URL("../src/agent-run-supervisor.ts", import.meta.url).href)};
       import {setImmediate as tick} from 'node:timers/promises';
+      import {createExecutionReference} from ${JSON.stringify(new URL("../../protocol/src/execution-reference.ts", import.meta.url).href)};
       const supervisor=new AgentRunSupervisor({runner:{run:async()=>({stopReason:'stop'})}});
       const template=${JSON.stringify(command())};
       const references=[];
@@ -301,7 +474,8 @@ describe("AgentRunSupervisor", () => {
         const context=new Uint8Array(1024);
         const publisher=()=>{throw new Error(String(context.length));};
         references.push(new WeakRef(publisher));
-        await supervisor.prepare({...template,payload:{...template.payload,runId:'40000000-0000-4000-8000-'+String(i).padStart(12,'0')}},publisher).run();
+        const runId='40000000-0000-4000-8000-'+String(i).padStart(12,'0');
+        await supervisor.prepare({...template,payload:{...template.payload,runId,executionReference:createExecutionReference(${JSON.stringify(IDS.lease)},runId,1)}},publisher).run();
       }
       for(let i=0;i<16;i++)await complete(i);
       for(let i=0;i<5;i++){await tick();global.gc();}

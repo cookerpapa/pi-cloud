@@ -139,6 +139,13 @@ and Projector confirms native closure before a replacement becomes eligible.
 The new Harness restores native Tasks, Inbox and the active context suffix.
 Unsafe interrupted effects become uncertain outcomes, not repeated Bash commands.
 
+Worker-local duplicate execution and cancellation outcomes are scoped to the
+existing ExecutionReference. The same Run may resume on the same still-running
+Worker under a new authorized lease. Older requests remain fenced before cache
+lookup; late cleanup only touches its original execution. Settled superseded
+incarnations can be reaped while the logical Run continues, retaining its current
+family epoch. See the recovery mapping in [ADR-0229](adr/0229-native-durable-runtime.md).
+
 Worker reply topics are boot-scoped, transient transport. A replacement Worker
 starts its own mailbox rather than consuming old physical replies. Recoverable
 control operations, such as direct subagent creation, locate their native receipt

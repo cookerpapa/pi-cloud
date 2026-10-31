@@ -127,6 +127,10 @@ function sameCancellationIdentity(
   return isDeepStrictEqual(left.payload, right.payload);
 }
 
+function cancellationKey(command: CancelTurnCommandMessage): string {
+  return `${command.payload.executionReference}\0${command.payload.controlRequestId}`;
+}
+
 export class AgentRunSupervisor {
   #retiring = false;
   readonly #runner: SupervisorTurnRunner;
@@ -136,7 +140,7 @@ export class AgentRunSupervisor {
   readonly #heartbeatStarted = new WeakMap<SupervisorHeartbeatMessage, number>();
   readonly #idGenerator: () => string;
   readonly #currentBySession = new Map<string, Assignment>();
-  readonly #byRun = new Map<string, Assignment>();
+  readonly #byExecution = new Map<string, Assignment>();
   readonly #cancellationsByRequest = new Map<string, Cancellation>();
   readonly #highestEpochByFamily = new Map<
     string,
@@ -163,18 +167,18 @@ export class AgentRunSupervisor {
 
   get retainedState() {
     return {
-      runs: this.#byRun.size,
+      executions: this.#byExecution.size,
       cancellations: this.#cancellationsByRequest.size,
       families: this.#highestEpochByFamily.size,
     };
   }
 
-  /** Composition must prove terminal Runs, projected seals and terminal controls
-   * before dropping local duplicate outcomes. This is not a time-based expiry. */
+  /** An admitted higher owner fences settled older incarnations. Other outcomes
+   * need authoritative Run retirement. Never reap a Runner that has not joined. */
   async reapSettled(
     retiredRuns: (runIds: readonly string[]) => Promise<ReadonlySet<string>>,
   ): Promise<number> {
-    const completed = [...this.#byRun.values()].filter((assignment) => assignment.settled);
+    const completed = [...this.#byExecution.values()].filter((assignment) => assignment.settled);
     const owners = [...this.#highestEpochByFamily];
     const candidates = [
       ...new Set([
@@ -187,14 +191,19 @@ export class AgentRunSupervisor {
     const removed = new Set<Assignment>();
     for (const assignment of completed) {
       const id = assignment.command.payload.runId;
-      if (!retired.has(id) || this.#byRun.get(id) !== assignment) continue;
-      this.#byRun.delete(id);
+      const reference = assignment.command.payload.executionReference;
+      if (
+        (!retired.has(id) && !this.#isStaleExecution(assignment.command)) ||
+        this.#byExecution.get(reference) !== assignment
+      )
+        continue;
+      this.#byExecution.delete(reference);
       removed.add(assignment);
     }
     for (const [key, control] of this.#cancellationsByRequest)
       if (removed.has(control.assignment)) this.#cancellationsByRequest.delete(key);
     const retainedFamilies = new Set(
-      [...this.#byRun.values()].map(
+      [...this.#byExecution.values()].map(
         ({ command }) => `${command.payload.tenantId}:${command.payload.piSession.id}`,
       ),
     );
@@ -374,36 +383,13 @@ export class AgentRunSupervisor {
         "Worker execution admission is closed",
         true,
       );
-    const duplicate = this.#byRun.get(command.payload.runId);
-    if (duplicate !== undefined) {
-      if (!sameIdentity(duplicate.command, command)) {
-        return this.#rejected(command, "invalid_command", "Command identity changed", false);
-      }
-      return this.#prepared(duplicate, "duplicate");
-    }
-
-    if (command.payload.input.kind === "resume") {
-      return this.#rejected(
-        command,
-        "unsupported",
-        "Child continuation belongs to its active family",
-        false,
-      );
-    }
-
     const reference = parseExecutionReference(command.payload.executionReference);
     const generation = reference.fencingToken;
     const familyKey = `${command.payload.tenantId}:${command.payload.piSession.id}`;
     const previousOwner = this.#highestEpochByFamily.get(familyKey);
     const highestGeneration = previousOwner?.epoch ?? 0;
     const current = this.#currentBySession.get(command.payload.sessionId);
-    if (
-      generation < highestGeneration ||
-      (generation === highestGeneration &&
-        previousOwner &&
-        (previousOwner.leaseId !== reference.leaseId ||
-          previousOwner.writerId !== command.payload.piSession.writerId))
-    ) {
+    if (this.#isStaleExecution(command)) {
       return this.#rejected(
         command,
         "stale_session_lease",
@@ -411,6 +397,21 @@ export class AgentRunSupervisor {
         false,
       );
     }
+    // Run identity survives recovery; duplicate execution identity does not.
+    // PG authorization and ordered writer closure happen before this local port.
+    const duplicate = this.#byExecution.get(command.payload.executionReference);
+    if (duplicate !== undefined) {
+      if (!sameIdentity(duplicate.command, command))
+        return this.#rejected(command, "invalid_command", "Command identity changed", false);
+      return this.#prepared(duplicate, "duplicate");
+    }
+    if (command.payload.input.kind === "resume")
+      return this.#rejected(
+        command,
+        "unsupported",
+        "Child continuation belongs to its active family",
+        false,
+      );
     const key = (payload: ExecuteTurnCommandMessage["payload"]) =>
       `${payload.tenantId}:${payload.piSession.id}`;
     const family = key(command.payload);
@@ -443,8 +444,11 @@ export class AgentRunSupervisor {
           parseExecutionReference(prior.command.payload.executionReference).fencingToken <
             generation
         ) {
-          this.#revokeExecution(prior);
-          prior.state = "superseded";
+          if (prior.state === "prepared") this.#releaseBeforeStart(prior);
+          else {
+            this.#revokeExecution(prior);
+            prior.state = "superseded";
+          }
         }
       }
     if (current !== undefined) current.state = "superseded";
@@ -464,7 +468,7 @@ export class AgentRunSupervisor {
       lastRunId: command.payload.runId,
     });
     this.#currentBySession.set(command.payload.sessionId, assignment);
-    this.#byRun.set(command.payload.runId, assignment);
+    this.#byExecution.set(command.payload.executionReference, assignment);
     return this.#prepared(assignment, "accepted");
   }
 
@@ -477,7 +481,22 @@ export class AgentRunSupervisor {
       );
     }
     const command = parsed;
-    const duplicate = this.#cancellationsByRequest.get(command.payload.controlRequestId);
+    const assignment = this.#byExecution.get(command.payload.executionReference);
+    const current = this.#currentBySession.get(command.payload.sessionId);
+    const duplicate = this.#cancellationsByRequest.get(cancellationKey(command));
+    const known = assignment ?? duplicate?.assignment;
+    if (
+      (known && this.#isStaleExecution(known.command)) ||
+      (!known &&
+        current &&
+        current.command.payload.executionReference !== command.payload.executionReference)
+    )
+      return this.#rejectedCancellation(
+        command,
+        "stale_session_lease",
+        "Cancellation execution is no longer current",
+        false,
+      );
     if (duplicate !== undefined) {
       if (!sameCancellationIdentity(duplicate.command, command)) {
         return this.#rejectedCancellation(
@@ -490,8 +509,6 @@ export class AgentRunSupervisor {
       return this.#preparedCancellation(duplicate, "duplicate");
     }
 
-    const assignment = this.#byRun.get(command.payload.targetRunId);
-    const current = this.#currentBySession.get(command.payload.sessionId);
     if (
       assignment === undefined ||
       current !== assignment ||
@@ -508,6 +525,7 @@ export class AgentRunSupervisor {
     const target = assignment.command.payload;
     if (
       command.payload.runId !== command.payload.targetRunId ||
+      command.payload.targetRunId !== target.runId ||
       command.payload.tenantId !== target.tenantId ||
       command.payload.projectId !== target.projectId ||
       command.payload.workspaceId !== target.workspaceId ||
@@ -525,7 +543,7 @@ export class AgentRunSupervisor {
     }
 
     const cancellation: Cancellation = { command, assignment, state: "prepared" };
-    this.#cancellationsByRequest.set(command.payload.controlRequestId, cancellation);
+    this.#cancellationsByRequest.set(cancellationKey(command), cancellation);
     return this.#preparedCancellation(cancellation, "accepted");
   }
 
@@ -537,6 +555,18 @@ export class AgentRunSupervisor {
       releaseBeforeStart: () => this.#releaseBeforeStart(assignment),
       revokeExecution: () => this.#revokeExecution(assignment),
     };
+  }
+
+  #isStaleExecution(command: ExecuteTurnCommandMessage): boolean {
+    const p = command.payload,
+      reference = parseExecutionReference(p.executionReference);
+    const owner = this.#highestEpochByFamily.get(`${p.tenantId}:${p.piSession.id}`);
+    return (
+      owner !== undefined &&
+      (reference.fencingToken < owner.epoch ||
+        (reference.fencingToken === owner.epoch &&
+          (reference.leaseId !== owner.leaseId || p.piSession.writerId !== owner.writerId)))
+    );
   }
 
   #rejected(
@@ -815,13 +845,17 @@ export class AgentRunSupervisor {
     if (this.#currentBySession.get(assignment.command.payload.sessionId) === assignment) {
       this.#currentBySession.delete(assignment.command.payload.sessionId);
     }
-    this.#byRun.delete(assignment.command.payload.runId);
+    const key = assignment.command.payload.executionReference;
+    if (this.#byExecution.get(key) === assignment) this.#byExecution.delete(key);
     assignment.state = "failed";
+    assignment.settled = true;
   }
 
   #releaseCancellationBeforeStart(cancellation: Cancellation): void {
     if (cancellation.state !== "prepared") return;
-    this.#cancellationsByRequest.delete(cancellation.command.payload.controlRequestId);
+    const key = cancellationKey(cancellation.command);
+    if (this.#cancellationsByRequest.get(key) === cancellation)
+      this.#cancellationsByRequest.delete(key);
     cancellation.state = "failed";
   }
 }

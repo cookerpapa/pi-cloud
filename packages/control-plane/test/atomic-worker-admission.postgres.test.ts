@@ -42,6 +42,7 @@ import { SessionExpiryReconciler } from "../src/session-expiry-reconciler.ts";
 import { deletePostgresPiSessionsInTransaction } from "@pi-cloud/pi-session-postgres";
 import { ConversationReader } from "../src/conversation-reader.ts";
 import { projectionTransaction } from "../../runtime-core/src/projection-transaction.ts";
+import * as logger from "../../observability/src/logger.ts";
 
 const endpoint = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 describe.skipIf(!endpoint)("atomic Worker admission", () => {
@@ -236,6 +237,213 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       logs,
     };
   }
+
+  it("recovers the same Run through PG closure on the same live Worker backend", async () => {
+    const f = await fixture();
+    const original = f.runner.getMockImplementation()!;
+    f.runner.mockImplementationOnce(async (...args) => {
+      await original(...args);
+      throw new TurnExecutionBackendError(
+        "writer_publication_failed",
+        "do-not-log-private-message",
+        true,
+      );
+    });
+    const emitted: string[] = [],
+      originalLog = logger.operationalLog;
+    const log = vi
+      .spyOn(logger, "operationalLog")
+      .mockImplementation((value) =>
+        originalLog({ ...value, write: (line) => emitted.push(line) }),
+      );
+    try {
+      const executor = f.executor();
+      expect(await executor.dispatchRun(f.accepted.runId)).toMatchObject({ status: "recovering" });
+      const first = f.runner.mock.calls[0]![0];
+      const old = parseExecutionReference(first.payload.executionReference);
+      const seals = await db
+        .selectFrom("outbox")
+        .select("payload")
+        .where("tenant_id", "=", f.tenant.tenantId)
+        .where("aggregate_type", "=", "session_terminal_event")
+        .execute();
+      expect(seals).toHaveLength(1);
+      expect(seals[0]!.payload).toMatchObject({ kind: "execution_seal", recover: true });
+      expect(await executor.dispatchRun(f.accepted.runId)).toEqual({ status: "idle" });
+      expect(await f.supervisor.reapSettled(async () => new Set())).toBe(0);
+      const projector = new ExecutionStreamProjector(db);
+      let offset = 0n;
+      const project = (fact: AcceptedFact) =>
+        projector.project({
+          fact,
+          topic: `same-worker-${f.worker}`,
+          partition: 0,
+          offset: offset++,
+        });
+      const firstFacts = f.facts.length;
+      for (const fact of f.facts) await project(fact);
+      await project(seals[0]!.payload as unknown as AcceptedFact);
+      expect((await f.state()).run.state).toBe("queued");
+      expect(await executor.dispatchRun(f.accepted.runId)).toMatchObject({ status: "completed" });
+      const second = f.runner.mock.calls[1]![0],
+        fresh = parseExecutionReference(second.payload.executionReference);
+      expect(second.payload.runId).toBe(first.payload.runId);
+      expect(second.payload.turnId).toBe(first.payload.turnId);
+      expect(fresh.leaseId).not.toBe(old.leaseId);
+      expect(fresh.fencingToken).toBe(old.fencingToken + 1);
+      expect(second.payload.nextEventSeq).toBeGreaterThan(first.payload.nextEventSeq);
+      expect(f.backend.healthy).toBe(true);
+      expect(
+        f.supervisor.prepare(first, () => {
+          throw Error("Stale publication");
+        }).ack.payload,
+      ).toMatchObject({ status: "rejected", code: "stale_session_lease" });
+      for (const fact of f.facts.slice(firstFacts)) await project(fact);
+      expect((await f.state()).run.state).toBe("completed");
+      expect((await f.state()).leases).toHaveLength(0);
+      const observations = log.mock.calls.map(([r]) => r);
+      expect(observations.filter((r) => r.event === "run.recovery.requested")).toEqual([
+        expect.objectContaining({
+          attributes: expect.objectContaining({
+            runId: f.accepted.runId,
+            workerId: f.worker,
+            leaseId: old.leaseId,
+            leaseEpoch: old.fencingToken,
+            reason: "writer_publication_failed",
+          }),
+        }),
+      ]);
+      expect(JSON.stringify(observations)).not.toContain("do-not-log-private-message");
+      expect(
+        emitted.some((line) => JSON.parse(line).attributes?.leaseEpoch === fresh.fencingToken),
+      ).toBe(true);
+      expect(
+        observations
+          .filter((r) => r.event === "run.claim.timing")
+          .map((r) => r.attributes?.leaseId),
+      ).toEqual([old.leaseId, fresh.leaseId]);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("does not drain the current Session writer when an older cancellation returns late", async () => {
+    const f = await fixture(),
+      original = f.runner.getMockImplementation()!;
+    const began = Promise.withResolvers<void>(),
+      nextBegan = Promise.withResolvers<void>();
+    const cancellationSettled = Promise.withResolvers<void>(),
+      returnCancellation = Promise.withResolvers<void>();
+    const finishNext = Promise.withResolvers<void>();
+    f.runner.mockImplementation(async (command, publish, signal) => {
+      await original(command, publish, signal);
+      if (command.payload.runId === f.accepted.runId) {
+        began.resolve();
+        return new Promise((_resolve, reject) =>
+          signal!.addEventListener(
+            "abort",
+            () => {
+              reject(new PiTurnCancelledError(signal!.reason.reason, false));
+            },
+            { once: true },
+          ),
+        );
+      }
+      nextBegan.resolve();
+      await finishNext.promise;
+      return { stopReason: "stop" };
+    });
+    const prepare = f.supervisor.prepareCancellation.bind(f.supervisor);
+    const prepareSpy = vi
+      .spyOn(f.supervisor, "prepareCancellation")
+      .mockImplementationOnce((value) => {
+        const prepared = prepare(value);
+        return {
+          ...prepared,
+          run: async () => {
+            const outcome = await prepared.run();
+            cancellationSettled.resolve();
+            await returnCancellation.promise;
+            return outcome;
+          },
+        };
+      });
+    const open = f.logs.open.bind(f.logs);
+    const drains: ReturnType<typeof vi.fn>[] = [];
+    const openSpy = vi.spyOn(f.logs, "open").mockImplementation(async (request) => {
+      const writer = await open(request);
+      const drain = vi.fn(writer.drain.bind(writer));
+      writer.drain = drain;
+      drains.push(drain);
+      return writer;
+    });
+    const executor = f.executor();
+    const old = executor.dispatchRun(f.accepted.runId);
+    let cancelled: Promise<unknown> | undefined, next: Promise<unknown> | undefined;
+    try {
+      await began.promise;
+      await f.store.acceptTurnCancellation(
+        f.session.sessionId,
+        f.accepted.turnId,
+        randomUUID(),
+        {},
+      );
+      const canceller = new RunCancellationExecutor({
+        database: db,
+        backend: f.backend,
+        executionAuthority: f.coordinator,
+      });
+      cancelled = canceller.dispatchTargetRun(f.accepted.runId);
+      await cancellationSettled.promise;
+      expect(await old).toMatchObject({ status: "cancelled" });
+      const projector = new ExecutionStreamProjector(db);
+      let offset = 0n;
+      const project = (fact: AcceptedFact) =>
+        projector.project({
+          fact,
+          topic: `late-cancel-${f.worker}`,
+          partition: 0,
+          offset: offset++,
+        });
+      const oldFacts = f.facts.length;
+      for (const fact of f.facts) await project(fact);
+      expect((await f.state()).run.state).toBe("cancelled");
+      const accepted = await f.store.acceptTurn(f.session.sessionId, randomUUID(), {
+        prompt: "next input",
+      });
+      next = executor.dispatchRun(accepted.runId);
+      await Promise.race([
+        nextBegan.promise,
+        next.then(() => {
+          throw Error("New execution did not start");
+        }),
+      ]);
+      expect(drains).toHaveLength(2);
+      expect(drains[1]).not.toHaveBeenCalled();
+      returnCancellation.resolve();
+      expect(await cancelled).toMatchObject({ status: "cancelled" });
+      expect(drains[1]).not.toHaveBeenCalled();
+      finishNext.resolve();
+      expect(await next).toMatchObject({ status: "completed" });
+      for (const fact of f.facts.slice(oldFacts)) await project(fact);
+      expect(
+        (
+          await db
+            .selectFrom("runs")
+            .select("state")
+            .where("id", "=", accepted.runId)
+            .executeTakeFirstOrThrow()
+        ).state,
+      ).toBe("completed");
+    } finally {
+      returnCancellation.resolve();
+      finishNext.resolve();
+      f.supervisor.revokeAllAssignments();
+      await Promise.allSettled([old, ...(cancelled ? [cancelled] : []), ...(next ? [next] : [])]);
+      prepareSpy.mockRestore();
+      openSpy.mockRestore();
+    }
+  });
 
   it("leaves unavailable partitions queued without claiming a lease and admits a ready partition", async () => {
     const f = await fixture();

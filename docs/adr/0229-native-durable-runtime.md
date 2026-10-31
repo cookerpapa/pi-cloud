@@ -43,6 +43,23 @@ attempt entity. Stop, deletion and an actual native terminal outcome remain
 logical termination. Native task checkpoints own continuation; the cloud queue
 owns admission, never an independent replay decision for each native task.
 
+### In-process recovery identity
+
+Worker-local duplicate outcomes belong to the existing ExecutionReference
+(Run, Session lease and epoch), not the logical Run alone. Check the retained
+family epoch before returning a duplicate. Within one incarnation, changed
+payloads remain conflicts; a higher PG-authorized incarnation resumes the same
+logical work through the existing ordered handoff. Cancellation deduplication
+also includes that reference, and late completion/cleanup can only touch its
+original execution object.
+
+A superseded execution remains retained until its Runner actually settles.
+After an authorized higher owner is admitted, settled older incarnations may be
+reaped without waiting for the logical Run to terminate. Retain the family
+high-water mark while its current work is live. Other duplicate outcomes retain
+the existing authoritative terminal-retirement check. This is a correction of
+the native recovery mapping, not a new attempt entity or execution authority.
+
 Delegated Conversations are owned by the requesting native generation, not by
 its delegation Tool task. Durable holds a completing task while its owned work
 is live; Tool ownership deadlocks a child decision request because the parent
