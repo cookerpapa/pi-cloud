@@ -1,5 +1,8 @@
 # Delivery and research evidence
 
+- [Human input and Skill market](skill-market-input-20261031.md): unified admission,
+  immediate feedback, immutable Skill packages and matched live acceptance.
+
 These records describe their named source revision, workload and deployment.
 They preserve successes, failures and superseded experiments; they are not
 current runtime or installation instructions. Read [Architecture](../ARCHITECTURE.md)

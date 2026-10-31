@@ -1,6 +1,6 @@
 # Maintained backlog
 
-## Skill market and input-boundary repair — in progress
+## Skill market and input-boundary repair — deployed
 
 - [x] Reproduce and repair late steer/follow-up intake and stale queue presentation
       under [ADR-0290](adr/0290-human-input-boundary-and-feedback.md), preserving
@@ -11,12 +11,14 @@
       standard packages, immutable versions, scoped installation/enabling,
       environment requirements, read_skill/prepare_skill and existing Sandbox execution.
       [ADR-0291](adr/0291-internal-skill-market.md), [usage/API](SKILLS.md).
-- [ ] Verify and deploy the completed slices with preserved original assets.
+- [x] Verify and deploy the completed slices with preserved original assets.
 
-Input slice source checks: 39 focused PG/API tests, 74 web unit tests, protocol
-checks and both browser suites pass. Queue race fails before the fix and passes
-after it. Publication remains pending the matched release; original Galgame
-was inspected without resubmitting or compacting it.
+Matched `skill-market-input-20261031-r2` is deployed on schema 206. The full check
+passed 2,426 tests (11 skipped), both input and market browser checks passed, and
+real Luna/Cube verification covered Skill reading/preparation, idle steer admission,
+native input/Stop/crash recovery and Chromium/image/preview behavior. Original
+history, images, configuration and Workspace assets are preserved; both existing
+applications are restored. [Delivery and evidence](reports/skill-market-input-20261031.md).
 
 Custom Tool installation, a Tool marketplace, alternate sandboxes and a Pi upgrade
 are outside this work. Skill packages will remain distinct from executable Worker

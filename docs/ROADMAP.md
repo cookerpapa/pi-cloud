@@ -1,12 +1,12 @@
 # Implementation roadmap
 
-## Human input boundaries, then the Skill market
+## Human input boundaries and Skill market — deployed
 
-Repair the reported final-response submission/queue race and outgoing feedback
-first, under [ADR-0290](adr/0290-human-input-boundary-and-feedback.md). Then implement
-the approved internal Skill market with package, installation, requirements and
-session-binding responsibilities separated under [ADR-0291](adr/0291-internal-skill-market.md).
-Both source slices are implemented; full gates and matched publication remain pending. Each slice retains its own validation and delivery evidence.
+[ADR-0290](adr/0290-human-input-boundary-and-feedback.md) unifies human intake and
+repairs queue/composer races. [ADR-0291](adr/0291-internal-skill-market.md) adds
+portable packages, scoped installations, immutable Run selections and Sandbox file
+preparation. Both are live in `skill-market-input-20261031-r2` on schema 206, with
+real model, browser, cancellation and recovery acceptance. [Delivery record](reports/skill-market-input-20261031.md).
 
 ## Sandbox capability boundaries and current documentation — deployed
 

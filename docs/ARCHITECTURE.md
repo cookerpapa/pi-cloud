@@ -55,6 +55,11 @@ canonical/live/Tool consumer group. See [RUN_LIFECYCLE](RUN_LIFECYCLE.md).
 
 ## Durable input and scheduling
 
+The human intake endpoint accepts a `whenBusy` preference. PG/native receipts,
+not a browser-selected old Turn, decide whether it becomes native steer/follow-up
+or a new root Run. Immediate composer feedback is local; successful submission
+still waits for durable acknowledgement. See [ADR-0290](adr/0290-human-input-boundary-and-feedback.md).
+
 PG owns root Run admission, execution ownership and resource intent. A Run covers
 the root native input and its child Conversations; children are not independent
 cloud queue rows or leases. Queue rows carry bounded command references, not

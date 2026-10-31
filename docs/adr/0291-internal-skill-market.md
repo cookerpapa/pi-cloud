@@ -2,6 +2,9 @@
 
 Status: accepted for implementation, 2026-10-31.
 
+Implemented and deployed in `skill-market-input-20261031-r2` on schema 206.
+[Verification and publication](../reports/skill-market-input-20261031.md).
+
 ## Decision
 
 Provide a tenant-local Skill market. A Skill is an Agent Skills directory containing

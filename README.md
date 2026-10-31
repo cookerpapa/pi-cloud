@@ -74,7 +74,7 @@ Retained images -> private S3 objects; Kafka/PG carry references
 | Session Projector | Native-state materialization, live views and dispatch of committed tool intents |
 | CubeSandbox | KVM isolation, fixed native file/shell tools and completion delivery |
 | CLIProxyAPI | Provider credentials, account selection and upstream model transport |
-| S3 / Cube Volumes | Immutable conversation images / mutable Workspace files |
+| S3 / Cube Volumes | Immutable conversation images and Skill packages / mutable Workspace files |
 
 The API, Projector and sandbox lifecycle controller share one Control Plane
 process. There is no independent Tool Broker. Ordinary control tools are registered

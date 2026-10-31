@@ -3,6 +3,9 @@
 Status: accepted for implementation, 2026-10-31. The owner requested repair of
 late steer/follow-up submission and delayed outgoing-message presentation.
 
+Implemented and deployed in `skill-market-input-20261031-r2` on schema 206.
+[Verification and publication](../reports/skill-market-input-20261031.md).
+
 ## Decision
 
 The composer's steer/follow-up preference expresses what to do **when busy**.
