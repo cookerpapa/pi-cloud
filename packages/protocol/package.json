@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./guest": "./src/guest.ts",
     "./workspace": "./src/workspace-seed.ts",
-    "./uploads": "./src/user-upload.ts"
+    "./uploads": "./src/user-upload.ts",
+    "./skills": "./src/skills.ts"
   },
   "imports": {
     "#schema-check": {

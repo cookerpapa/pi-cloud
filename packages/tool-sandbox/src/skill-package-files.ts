@@ -9,7 +9,7 @@ import {
   SKILL_ENVELOPE_BYTES,
   validSkillPath,
   type SkillPackageContent,
-} from "@pi-cloud/protocol";
+} from "@pi-cloud/protocol/skills";
 
 /** Data-only package placement. This function runs as the untrusted guest user. */
 export async function prepareSkillPackage(directory: string, bytes: Buffer, digest: string) {
