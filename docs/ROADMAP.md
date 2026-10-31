@@ -1,12 +1,13 @@
 # Implementation roadmap
 
-## Same-Worker recovery identity — in progress
+## Same-Worker recovery identity — deployed
 
 Scope local duplicate and cancellation outcomes to the existing execution
 reference, retaining epoch fencing and exact-object cleanup. PG admission and
 ordered closure now have a same-process regression alongside delayed cancellation
-and retirement checks. Publish through the matched procedure, then verify real
-Kafka/Cube/native recovery with the Worker boot unchanged.
+and retirement checks. Matched `same-worker-recovery-20261031` passed real
+Kafka/Cube/native recovery with the Worker boot unchanged, plus native Stop/crash
+and original-asset acceptance. [Delivery](reports/same-worker-recovery-20261031.md).
 
 ## Answer controls and historical paging — deployed
 
@@ -14,8 +15,8 @@ Unify copy styling across virtual answer fragments and follow-up boundaries.
 Historical reading uses automatic edge loading and the existing return-to-latest
 action; only a failed read exposes retry. Web `message-controls-20261031` is live,
 with actual follow-up and browser acceptance.
-The independently diagnosed same-Worker recovery identity conflict remains a
-runtime fix, with its boundaries recorded in the backlog.
+The independently diagnosed same-Worker identity conflict was subsequently
+corrected by the matched runtime release above.
 
 ## Tool disclosure and text selection — deployed
 

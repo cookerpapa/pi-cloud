@@ -1,5 +1,9 @@
 # Run identity diagnosis and message controls
 
+The runtime defect diagnosed below was subsequently fixed and live-verified in
+[the same-Worker recovery release](same-worker-recovery-20261031.md).
+This report retains the earlier diagnosis and separate Web publication evidence.
+
 ## Reported Run failure
 
 The reported Galgame Run started at 17:51:08 China time on October 31 and ended

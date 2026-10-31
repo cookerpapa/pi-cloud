@@ -1,5 +1,7 @@
 # Delivery and research evidence
 
+- [Same-Worker recovery](same-worker-recovery-20261031.md): execution-scoped
+  duplicate/cancellation state, delayed cleanup and actual same-process recovery.
 - [Run identity diagnosis and message controls](command-identity-and-message-controls-20261031.md):
   same-Worker recovery conflict, consistent copy actions and quiet historical paging.
 - [Preparation timings and manual reading](timing-and-reader-20261031.md): bounded
