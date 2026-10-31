@@ -69,7 +69,23 @@ assistant selector and assumed an inline-flex element would not be blockified
 inside a flex row; those test assumptions were corrected. Its paging assertion
 also exposed and verified the immediate-failure double-read race above.
 
-Presentation-only Web publication and deployed checks are pending. The Run
-identity diagnosis is recorded separately and is not advertised as repaired.
+Web `message-controls-20261031` is deployed from
+`d55980b1d347f00ee2eaff68b3b794e8da335a66`, on platform Helm revision 134.
+The maintained release scope passed 239 tests, complete browser presentation and
+queue checks, geometry/selection regression and its single-image provenance/scan.
+An additional standalone geometry/selection run also passed.
+
+A fresh owned Luna/Cube Run executed one Bash and accepted a native follow-up
+while it was active. The deployed browser displayed two completed answers, both
+with the same copy action style, and no speculative newer-page notice when
+entering history. Across 1,557 frames, its longest layout mismatch was 13.6 ms
+and the settled live view remained at the latest edge. The fixture's tenant,
+Workspace and physical resources were purged.
+
+All 28 non-Web serving Pods retained their exact Pod/container identities; both
+original dedicated allocations, generations and desired state matched the
+pre-publication inventory. All 29 serving Pods were Ready and no active Run,
+writer, binding, terminal, elastic fixture or unpublished control remained.
+The Run identity diagnosis is recorded separately and is not advertised as repaired.
 Private reproduction and browser evidence are under
 `deploy/production/runtime/work-evidence/command-identity-20261031/`.

@@ -1,10 +1,11 @@
 # Implementation roadmap
 
-## Answer controls and historical paging
+## Answer controls and historical paging — deployed
 
 Unify copy styling across virtual answer fragments and follow-up boundaries.
 Historical reading uses automatic edge loading and the existing return-to-latest
-action; only a failed read exposes retry. Publish through the existing Web scope.
+action; only a failed read exposes retry. Web `message-controls-20261031` is live,
+with actual follow-up and browser acceptance.
 The independently diagnosed same-Worker recovery identity conflict remains a
 runtime fix, with its boundaries recorded in the backlog.
 

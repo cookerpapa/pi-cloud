@@ -1,6 +1,6 @@
 # Maintained backlog
 
-## Answer controls and historical paging — in progress
+## Answer controls and historical paging — deployed
 
 - [x] Reproduce unstyled copies on settled text inside a running/follow-up Run.
 - [x] Use the same answer action style for body fragments and final footers.
@@ -8,7 +8,12 @@
       explicit retry of the exact failed request.
 - [x] Verify wide/narrow layouts, complete long-answer copying and one failed
       request before manual retry.
-- [ ] Publish the presentation-only Web change and verify the deployed asset.
+- [x] Publish the presentation-only Web change and verify the deployed asset.
+
+Web `message-controls-20261031` is live on platform Helm revision 134. Its
+239-test scope, complete presentation/queue/layout checks and real Luna/Cube
+follow-up acceptance passed. The other 28 serving Pods and both original
+development-machine allocations stayed unchanged.
 
 ## Same-Worker Run recovery — diagnosed, not repaired
 
