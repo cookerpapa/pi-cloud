@@ -1,21 +1,36 @@
 # Maintained backlog
 
-## Manual reading and native text selection — in progress
+## Manual reading and native text selection — deployed
 
 - [x] Reproduce end-following jumps after manual Tool disclosure and lost text selection.
 - [x] Preserve explicit reading intent, selected DOM ranges and bounded history windows.
 - [x] Verify live Tool settlement, small scroll gestures, buffered-text resume and large code selection.
-- [ ] Publish and verify the actual Web with the Worker timing slice.
+- [x] Publish and verify the actual Web with the Worker timing slice.
 
-## Worker startup and model preparation timings — in progress
+## Worker startup and model preparation timings — deployed
 
 - [x] Add bounded stage timing around existing public Harness/Models/Storage ports.
 - [x] Aggregate storage/image work without per-record logs, extra reads or payload copies.
-- [ ] Verify unchanged success/error/cancellation behavior, scope isolation and diagnostic overhead.
-- [ ] Publish through the matched procedure and verify real startup/model logs.
+- [x] Verify unchanged success/error/cancellation behavior, scope isolation and diagnostic overhead.
+- [x] Publish through the matched procedure and verify real startup/model logs.
 
 These remain disposable operational logs; no native history, Kafka messages, PG
 receipts or new telemetry service are introduced.
+
+Matched `timing-reader-20261031` is deployed on schema 206. Browser interaction,
+1 GiB history, real Luna/image preparation, deployed streaming and native
+Stop/crash recovery checks pass. Original history, images, configuration and
+Workspace assets are preserved; all three original applications are restored.
+[Delivery, measurements and limits](reports/timing-and-reader-20261031.md).
+
+## Sandbox owner readiness — observed follow-up
+
+- [ ] Reproduce why the previous Sandbox controller remained serving after its
+      locally confirmed ownership lease expired, and expose a bounded maintenance
+      failure reason. A settled Run retained a closed binding until a quiescent
+      Control Plane restart let normal ownership recovery retire it. Both original
+      VM allocations survived that restart. Do not weaken lease checks or treat
+      a missing heartbeat as physical absence.
 
 ## Skill market and input-boundary repair — deployed
 

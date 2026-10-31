@@ -1,17 +1,21 @@
 # Implementation roadmap
 
-## Tool disclosure and text selection
+## Tool disclosure and text selection — deployed
 
 Manual reading must take priority over end following. Retain the selected band
 within the existing bounded reader, update already visible Tool results, and
 resume live output explicitly without replaying accumulated typing animation.
+Matched `timing-reader-20261031` passed browser interaction, bounded 1 GiB history
+and deployed streaming acceptance. [Delivery](reports/timing-and-reader-20261031.md).
 
-## Worker startup and model preparation timings
+## Worker startup and model preparation timings — deployed
 
 Extend the existing operational logger at public port boundaries. Measure cold/warm
 Harness opening, native context preparation, image hydration, model admission and
 SDK-to-HTTP preparation; preserve payloads, retries, cancellation and ownership.
 Aggregate actual read activity instead of walking history again for diagnostics.
+Real small-image requests and native Stop/crash recovery pass on the same matched
+release. Diagnostics remain in rotating container logs and existing metrics.
 
 ## Human input boundaries and Skill market — deployed
 

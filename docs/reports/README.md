@@ -1,5 +1,7 @@
 # Delivery and research evidence
 
+- [Preparation timings and manual reading](timing-and-reader-20261031.md): bounded
+  startup/model diagnostics, Tool disclosure, native selection and matched acceptance.
 - [Human input and Skill market](skill-market-input-20261031.md): unified admission,
   immediate feedback, immutable Skill packages and matched live acceptance.
 
