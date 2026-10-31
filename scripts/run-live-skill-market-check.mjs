@@ -28,7 +28,10 @@ const sourceRevision = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "u
 const url = new URL((await readFile(`${runtimeDirectory}/secrets/database-url`, "utf8")).trim());
 url.hostname = serviceAddress("postgres");
 const db = createDatabase({ connectionString: url.toString(), maxConnections: 2 });
-const report = { sourceRevision, cases: [], cleanupConfirmed: false };
+const runtimeRevision = JSON.parse(
+  await readFile(`${runtimeDirectory}/k3s/deployment.json`, "utf8"),
+).revision;
+const report = { sourceRevision, runtimeRevision, cases: [], cleanupConfirmed: false };
 const save = () => writeFile(output, JSON.stringify(report, null, 2), { mode: 0o600 });
 const terminal = (state) => ["completed", "failed", "cancelled", "timed_out"].includes(state);
 async function until(check, label, ms = 240000) {
@@ -134,7 +137,7 @@ try {
   );
   const allocated = await db
     .selectFrom("workspace_runtimes")
-    .select("id")
+    .select("workspace_id")
     .where("tenant_id", "=", tenant.tenantId)
     .execute();
   assert.equal(allocated.length, 0, "Instruction-only reading started a VM");
