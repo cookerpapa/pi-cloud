@@ -121,10 +121,18 @@ it("publishes immutable packages, scopes installation and pins versions across c
       }),
     ).rejects.toThrow("reply lost");
     expect((await service.list(actor)).packages[0]!.versions).toHaveLength(1);
+    // An interrupted import from before the metadata migration must be resumable.
+    await sql`update skill_versions set runtime_metadata=null where tenant_id=${actor.tenantId}::uuid and not published`.execute(
+      db,
+    );
     const second = await service.publish(actor, {
       ...input("Updated workflow"),
       packageId: first.packageId,
       label: "2",
+    });
+    expect(second.runtimeMetadata).toEqual({
+      disableModelInvocation: false,
+      requiresWorkspaceFiles: false,
     });
     const updated = await service.install(actor, first.packageId, {
       ...install,

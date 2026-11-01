@@ -164,7 +164,8 @@ shared PostgreSQL Run queue rather than inferred from a local Worker.
 
 `pi_cloud_run_claim_stage_seconds` splits successful claims into transaction
 acquisition/BEGIN, candidate selection, context/configuration reads, locked
-ownership selection, lifecycle writes, `lease_*` checks/binding,
+ownership selection, frozen Skill catalog selection (`skill_catalog`), lifecycle
+writes, `lease_*` checks/binding,
 `publication_registered` and final mapping/COMMIT. Its only label
 is the code-owned stage; it records no query parameters, tenant or Session IDs.
 Idle scans and rolled-back claims remain in `pi_cloud_run_claim_seconds` and do

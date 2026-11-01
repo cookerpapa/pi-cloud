@@ -133,7 +133,7 @@ export class SkillMarketService {
       const rows =
         await sql<VersionRow>`insert into skill_versions(id,tenant_id,package_id,digest,object_key,byte_length,label,description,compatibility,requirements,source,runtime_metadata)
         values(${randomUUID()}::uuid,${actor.tenantId}::uuid,${pack.id}::uuid,${digest},${key},${parsed.byteLength},${input.label ?? `sha-${digest.slice(0, 12)}`},${parsed.description},${parsed.compatibility},${JSON.stringify(requirements)}::jsonb,${JSON.stringify(imported.source)}::jsonb,${JSON.stringify(parsed.runtimeMetadata)}::jsonb)
-        on conflict(tenant_id,package_id,digest) do update set digest=excluded.digest
+        on conflict(tenant_id,package_id,digest) do update set digest=excluded.digest,runtime_metadata=excluded.runtime_metadata
         returning *,${pack.name}::text as name`.execute(tx);
       return rows.rows[0]!;
     });

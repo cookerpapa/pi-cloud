@@ -132,6 +132,7 @@ describe.skipIf(!endpoint).sequential("Run queue authority", () => {
       "finish",
       "input_snapshot",
       "ownership",
+      "skill_catalog",
       "transaction_begin",
     ]);
     expect(counts.every((v) => v.value === 1)).toBe(true);
