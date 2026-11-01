@@ -1,6 +1,13 @@
 # Matched release procedure
 
-ADR-0292 retains schema 206 and existing wire contracts. Run the owner-loss,
+The current Cloud Skill runtime is `cloud-skills-20261101-r5` (source `b891ab2c`,
+schema 207, catalog protocol 4). It includes Worker catalog metadata, named
+activation and fixed guest package export. All matched gates, real publication and
+native recovery acceptance passed with original assets preserved.
+[Delivery evidence](reports/cloud-skills-20261101.md).
+
+The preceding ADR-0292 release retained schema 206 and its existing wire contracts.
+Keep the owner-loss,
 installed-bootstrap refusal, long-navigation Fork/prune, effective-capability,
 reading-terminal, CONNECT and killed-staging regressions. The matched manifest
 now includes the existing Cube egress gateway: **13 artifacts** are built/scanned.

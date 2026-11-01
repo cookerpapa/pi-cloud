@@ -60,7 +60,7 @@ Three code-owned Tools use the existing execution-owned catalog:
 - `publish_skill(path, packageId?, version?, requirements?)` exports complete file
   bytes through the fixed guest transport and publishes an immutable organization
   version. It never reconstructs files from truncated Bash output. Only root
-  Conversations can publish, as their initiating user. Without explicit
+  Conversations can publish, as the Session owner with member-level package authority. Without explicit
   requirements, scripts imply Linux/Bash; declare other dependencies as needed.
   Omitted version labels derive from content. Publishing does not install or
   upgrade the Skill for anyone.

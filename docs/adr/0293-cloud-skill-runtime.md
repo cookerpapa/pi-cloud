@@ -1,7 +1,7 @@
 # ADR-0293: Cloud Skill discovery, activation and publication
 
-Status: implementation authorized, 2026-11-01. Supersedes ADR-0291's first-use
-catalog selection and explicit prepare_skill model workflow.
+Status: deployed as `cloud-skills-20261101-r5`, 2026-11-01. Supersedes ADR-0291's
+first-use catalog selection and explicit prepare_skill model workflow.
 
 ## Decision and boundaries
 
@@ -41,8 +41,8 @@ Agent creation uses ordinary Workspace tools. publish_skill reads a bounded,
 complete directory through a fixed guest file-export operation and reuses the
 existing package publication service. It does not reconstruct files from truncated
 Tool output, execute scripts in the Control Plane/Worker, or send package bodies
-through Kafka. Publishing uses the originating user's organization and permissions;
-new versions do not install themselves for other users. Immutable content dedup and
+through Kafka. Publishing uses the Session owner's organization and member-level
+package authority; new versions do not install themselves for other users. Immutable content dedup and
 organization metadata lookup support uncertain publication without a Tool ledger.
 Unsafe publication is never automatically rerun after a crash.
 
@@ -79,3 +79,5 @@ Worker recovery, same-content publication, source export bounds/change detection
 missing files, cancellation and uncertain outcomes. Verify owner/member Web flows
 and draft preservation. Use Luna for model acceptance; no deferred 131 MiB probe.
 Publish matched artifacts after draining/sealing and preserve user assets.
+
+[Delivery and acceptance](../reports/cloud-skills-20261101.md).

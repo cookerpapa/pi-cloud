@@ -1,8 +1,9 @@
 # Current architecture decisions
 
-[ADR-0293](0293-cloud-skill-runtime.md) records the authorized Skill runtime
-alignment: early catalog selection, native prompt sections, automatic resource
-preparation and Agent publication. Implementation and verification are in progress.
+[ADR-0293](0293-cloud-skill-runtime.md) is deployed as
+`cloud-skills-20261101-r5`: early catalog selection, native prompt sections,
+named activation, automatic resources and Agent publication. Real model, browser
+and recovery acceptance passed; [delivery](../reports/cloud-skills-20261101.md).
 
 [ADR-0292](0292-repository-boundary-repairs.md) records the approved November 1
 review repairs: ownership recovery, release admission, indexed navigation,

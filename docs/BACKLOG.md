@@ -1,17 +1,21 @@
 # Maintained backlog
 
-## Cloud Skill runtime — in progress
+## Cloud Skill runtime — deployed
 
-- [ ] Pin catalog before model sampling; persist native system sections and restore
+- [x] Pin catalog before model sampling; persist native system sections and restore
       the same references after Worker replacement, including restricted children.
-- [ ] Keep instruction/reference reading VM-free; internalize execution-resource
+- [x] Keep instruction/reference reading VM-free; internalize execution-resource
       preparation and remove the public prepare_skill workflow.
-- [ ] Add complete bounded Workspace package export and Agent publication using
+- [x] Add complete bounded Workspace package export and Agent publication using
       existing immutable package storage; cover duplicates and uncertain outcomes.
-- [ ] Make Agent-assisted creation the Web entry, retaining local imports/drafts.
-- [ ] Complete contract/failure/browser and real Luna acceptance, matched rollout,
+- [x] Make Agent-assisted creation the Web entry, retaining local imports/drafts.
+- [x] Complete contract/failure/browser and real Luna acceptance, matched rollout,
       original-asset preservation and commit/push delivery.
 
+Published as `cloud-skills-20261101-r5` from `b891ab2c`, schema 207 / Helm 140.
+Named activation, Agent publication/deduplication and five native recovery cases
+passed real Luna acceptance. Existing accounts, configuration, history, images and
+Workspace files are retained. [Delivery](reports/cloud-skills-20261101.md).
 
 ## Organization Skill market — deployed
 

@@ -1,0 +1,55 @@
+{
+  "release": "cloud-skills-20261101-r5",
+  "runtimeRevision": "b891ab2c4bfaf09140ddafcc2198b7053775a8ef",
+  "schema": "207_skill_runtime_metadata",
+  "helmRevision": 140,
+  "featureAcceptance": {
+    "model": "gpt-6-luna",
+    "runs": 5,
+    "states": ["completed", "completed", "completed", "completed", "completed"],
+    "nativeCatalogAdvertised": true,
+    "textOnlyWithoutVm": true,
+    "automaticExecutionFiles": true,
+    "versionSelectionPreserved": true,
+    "agentPublication": true,
+    "sameContentDeduplicated": true,
+    "fixtureCleanupConfirmed": true
+  },
+  "browserAcceptance": {
+    "accepted": true,
+    "servingRelease": "cloud-skills-20261101-r4",
+    "uiUnchangedInFinalRelease": true,
+    "ownerAndMember": true,
+    "fixtureCleanupConfirmed": true
+  },
+  "recoveryAcceptance": {
+    "accepted": true,
+    "scenarios": ["consume", "stop", "recover", "stream_stop", "stream_both_crash"],
+    "fixtureCleanupConfirmed": true
+  },
+  "sourceVerification": {
+    "workspaceInitial": {
+      "passed": 2363,
+      "failed": 5,
+      "skipped": 11
+    },
+    "allFiveFailuresFixedAndRechecked": true,
+    "namedActivationFocusedTests": 18,
+    "faultCasesPassed": 383,
+    "faultCasesTotal": 383,
+    "faultReportStartedFromUncommittedFeatureWorktree": true,
+    "matchedImagesChecked": 13
+  },
+  "preservation": {
+    "protectedRelations": 18,
+    "workspaceFiles": 6006,
+    "images": 150,
+    "configurationAndCredentialFiles": 27,
+    "allMatched": true,
+    "runningPodsReady": 29,
+    "runningPodsTotal": 29,
+    "originalMachines": 2,
+    "originalApplicationsRunningBeforeUpgrade": 0
+  },
+  "deferred": ["131 MiB cold-image request (previously deferred by owner)"]
+}

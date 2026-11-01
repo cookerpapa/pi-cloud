@@ -1,12 +1,12 @@
 # Implementation roadmap
 
-## Cloud Skill runtime — in progress
+## Cloud Skill runtime — deployed
 
-Expose the frozen installed catalog through Pi's system section, activate Skill
-instructions directly, prepare execution files internally, and let Agents publish
-Workspace skills. Preserve PG/S3 authority, native recovery and Cube execution.
-Follow ADR-0293 and verify the complete flow before matched publication.
-
+The frozen catalog is exposed through Pi's system section, instructions activate
+by name, execution resources prepare internally, and Agents publish Workspace
+skills to the organization. `cloud-skills-20261101-r5` retains PG/S3 authority,
+native recovery and Cube execution. Real model, browser and recovery acceptance
+passed with original assets preserved. [Delivery](reports/cloud-skills-20261101.md).
 
 ## Organization Skill market — deployed
 
