@@ -247,6 +247,18 @@ try {
     ["read_skill"],
     "steer",
   );
+  const latestMessages = nativeMessages(
+    await nativeHistory(db, { tenantId: tenant.tenantId, runId: latest.runId }),
+  );
+  assert(
+    latestMessages.some(
+      (message) =>
+        message.role === "toolResult" &&
+        message.toolName === "read_skill" &&
+        JSON.stringify(message.content).includes("SKILL_VERSION_TWO"),
+    ),
+    "Named activation did not read the current version",
+  );
   const selections =
     await sql`select run_id,versions from run_skill_catalogs where run_id in (${pure.runId}::uuid,${execution.runId}::uuid,${latest.runId}::uuid)`.execute(
       db,

@@ -536,6 +536,7 @@ it("resolves Skill activation from the frozen manifest and only prepares a Works
         type: "object",
         properties: {
           action: { type: "string" },
+          name: { type: "string" },
           versionId: { type: "string" },
           path: { type: "string" },
         },
@@ -558,6 +559,7 @@ it("resolves Skill activation from the frozen manifest and only prepares a Works
   const script = {
     ...text,
     versionId: "script",
+    name: "script",
     runtimeMetadata: { ...text.runtimeMetadata, requiresWorkspaceFiles: true },
   };
   const prepare = vi.fn(async () => "binding");
@@ -572,9 +574,9 @@ it("resolves Skill activation from the frozen manifest and only prepares a Works
     .tool as PreparedAgentTool;
   try {
     for (const [n, args] of [
-      { action: "read", versionId: "text" },
-      { action: "read", versionId: "script", path: "references/a.md" },
-      { action: "read", versionId: "script" },
+      { action: "read", name: "text" },
+      { action: "read", name: "script", path: "references/a.md" },
+      { action: "read", name: "script" },
     ].entries()) {
       const prepared = await withToolInvocation(
         { id: `task:${n + 10}`, nativeToolCallId: `call-${n}` },

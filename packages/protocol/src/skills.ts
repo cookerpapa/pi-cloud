@@ -184,3 +184,27 @@ export function skillActivationNeedsWorkspace(
   const path = typeof args.path === "string" ? args.path : "SKILL.md";
   return skill.runtimeMetadata.requiresWorkspaceFiles && !path.startsWith("references/");
 }
+
+/** Resolve a model-friendly name against the Run's immutable selection. The
+ * explicit version reference is needed only to disambiguate duplicate names. */
+export function selectRunSkill<T extends SkillCatalogEntry>(
+  catalog: readonly T[],
+  args: { name?: unknown; versionId?: unknown },
+): T {
+  const name = typeof args.name === "string" ? args.name : undefined;
+  const versionId = typeof args.versionId === "string" ? args.versionId : undefined;
+  if (!name && !versionId)
+    throw new TypeError("Provide the Skill name from the current available_skills section.");
+  const selected = catalog.filter(
+    (skill) => (!name || skill.name === name) && (!versionId || skill.versionId === versionId),
+  );
+  if (selected.length > 1)
+    throw new TypeError(
+      "Several installed Skills share that name. Use action=list, then provide name and versionId to select one.",
+    );
+  if (!selected[0])
+    throw new TypeError(
+      "Skill is not selected for this Run. Use its name from the current available_skills section, not a historical version ID. action=list shows the selected versions.",
+    );
+  return selected[0];
+}

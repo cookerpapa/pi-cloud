@@ -1,6 +1,7 @@
 import {
   skillAvailability,
   skillActivationNeedsWorkspace,
+  selectRunSkill,
   SkillRequirementsSchema,
   UuidSchema,
   type SkillPackageContent,
@@ -166,11 +167,12 @@ export function createSkillTools(
         name: "read_skill",
         environment: { kind: "skill" },
         description:
-          "Read an installed Skill using the versionId advertised in the system prompt. Use action=read for SKILL.md or a package-relative reference path; follow nextOffset for longer text. action=list is available for explicit inspection. The Run's selected versions are fixed. On activation, execution resources are automatically prepared in the current Workspace and their real directory is returned; use ordinary bash/read with that directory. Instructions and textual references alone do not start a VM. Skills do not grant new tools or permissions.",
+          "Read an installed Skill by its name in the current system prompt; the platform selects the version pinned for this Run. Only provide versionId when disambiguating identical names, never copy an old version reference from history. Use action=read for SKILL.md or a package-relative reference path; follow nextOffset for longer text. action=list is available for explicit inspection. The Run's selected versions are fixed. On activation, execution resources are automatically prepared in the current Workspace and their real directory is returned; use ordinary bash/read with that directory. Instructions and textual references alone do not start a VM. Skills do not grant new tools or permissions.",
         parameters: {
           type: "object",
           properties: {
             action: { enum: ["list", "read"] },
+            name: string,
             versionId: string,
             path: string,
             cursor: string,
@@ -187,6 +189,7 @@ export function createSkillTools(
         const signal = outer ?? new AbortController().signal;
         const input = call.arguments as {
           action: string;
+          name?: string;
           versionId?: string;
           path?: string;
           cursor?: string;
@@ -241,9 +244,7 @@ export function createSkillTools(
             },
           };
         }
-        const selected = catalog.find((v) => v.versionId === input.versionId);
-        if (!selected)
-          return error("Skill version is not installed for this Run. Use action=list.");
+        const selected = selectRunSkill(catalog, input);
         const content = await service.content(call.scope.tenantId, selected.versionId, signal);
         const path = input.path ?? "SKILL.md";
         const file = content.files.find((f) => f.path === path);

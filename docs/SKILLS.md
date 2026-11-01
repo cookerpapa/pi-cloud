@@ -44,8 +44,10 @@ hides a Skill from automatic discovery; explicit inspection remains possible.
 
 Three code-owned Tools use the existing execution-owned catalog:
 
-- `read_skill(action="read", versionId=...)` reads the advertised SKILL.md without
-  a preliminary list call. `path` reads a package-relative reference; text, file
+- `read_skill(action="read", name=...)` resolves the advertised name to its frozen
+  version and reads SKILL.md without
+  a preliminary list call. For duplicate names, inspect the list and provide
+  `versionId` to disambiguate; ordinary use does not require copying UUIDs. `path` reads a package-relative reference; text, file
   lists and prerequisites have continuation offsets. `action="list"` remains for
   explicit inspection. Pure instructions and textual references come directly
   from cloud storage without a VM.

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   infrastructureToolDefinitions,
   skillActivationNeedsWorkspace,
+  selectRunSkill,
   skillAvailability,
   effectiveToolCapabilities,
   hasConversationWorkspace,
@@ -265,9 +266,7 @@ export class WorkerToolRuntime {
           throw new Error("Recovered invocation differs from its original intent");
         let needsWorkspace = environment.kind === "workspace";
         if (environment.kind === "skill" && args.action === "read") {
-          const skill = scope.skillCatalog?.find((value) => value.versionId === args.versionId);
-          if (!skill)
-            throw new Error("skill_unavailable: this version is not selected for the Run");
+          const skill = selectRunSkill(scope.skillCatalog ?? [], args);
           if (
             skillAvailability(
               skill.requirements,

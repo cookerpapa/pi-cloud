@@ -132,3 +132,34 @@ it("returns actionable validation failures and does not publish after owner loss
   const failed = await f.tool("publish_skill").execute(call({ path: "skills/test" }), () => true);
   expect((failed.result.content[0] as { text: string }).text).toContain("source changed");
 });
+
+it("loads by a unique name and requires explicit selection for duplicate names", async () => {
+  const f = fixture(),
+    reader = f.tool("read_skill");
+  expect(
+    (await reader.execute(call({ action: "read", name: "test" }, null), () => true)).isError,
+  ).toBe(true);
+  f.versions[0]!.name = "team-review";
+  const result = await reader.execute(
+    call({ action: "read", name: "team-review" }, null),
+    () => true,
+  );
+  expect(decoded(result).versionId).toBe("0000");
+  expect(f.prepare).not.toHaveBeenCalled();
+  expect(
+    (
+      await reader.execute(
+        call({ action: "read", name: "team-review", versionId: "0001" }, null),
+        () => true,
+      )
+    ).isError,
+  ).toBe(true);
+  expect(
+    decoded(
+      await reader.execute(
+        call({ action: "read", name: "test", versionId: "0001" }, null),
+        () => true,
+      ),
+    ).versionId,
+  ).toBe("0001");
+});

@@ -69,17 +69,16 @@ it("native Pi announces the catalog before a Tool, persists its system section a
     runId = randomUUID(),
     started = Promise.withResolvers<void>();
   provider.setResponses([
-    fauxAssistantMessage(
-      fauxToolCall("read_skill", { action: "read", versionId: skill.versionId }),
-      { stopReason: "toolUse" },
-    ),
+    fauxAssistantMessage(fauxToolCall("read_skill", { action: "read", name: skill.name }), {
+      stopReason: "toolUse",
+    }),
     fauxAssistantMessage("Recovered"),
   ]);
   const inputs: unknown[] = [];
   const tool: ToolRegistration = {
     name: "read_skill",
     description: "Load selected instructions",
-    parameters: Type.Object({ action: Type.Literal("read"), versionId: Type.String() }),
+    parameters: Type.Object({ action: Type.Literal("read"), name: Type.String() }),
     execute: async (_args, _api, ctx) => {
       started.resolve();
       await awaitWithContext(new Promise(() => {}), ctx);

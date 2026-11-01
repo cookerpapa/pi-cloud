@@ -22,7 +22,12 @@ metadata, not a handler moved into the Worker or an agent-loop modification.
 Future Skill packages require no Worker code changes. Missing/inconsistent metadata
 fails before effects rather than guessing permissions or switching versions.
 
-read_skill activates a known version directly. Instructions without execution
+read_skill activates a Skill by name, resolved against the frozen Run selection.
+An explicit versionId disambiguates identical installed names. Live acceptance
+showed that requiring UUIDs for ordinary reads made the model copy an obsolete,
+incorrect reference even when the current system section was correct; names keep
+version choice with the platform. Ambiguity and mismatched explicit selectors fail
+instead of silently selecting a different package. Instructions without execution
 resources return from cloud storage without a VM. An activation with scripts,
 assets or other execution files uses the current binding and the existing fixed
 package placement path, then returns the actual directory alongside instructions.
