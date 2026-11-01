@@ -1,3 +1,4 @@
+import { InitialInputMessage } from "./InitialInputMessage.tsx";
 import { useHistoryDisclosure, HistoryDisclosureContext } from "./history-disclosure.tsx";
 import { CompactStatus } from "./ConversationUsage.tsx";
 import type { ConversationCompactResource } from "@pi-cloud/protocol";
@@ -428,8 +429,12 @@ export function ConversationTurn({
   delegatedChildren = [],
   fragment,
   onOpenChild,
+  onRetrySubmission,
+  retryDisabled,
 }: {
   api?: PiCloudApi;
+  onRetrySubmission?: () => void;
+  retryDisabled?: boolean;
   fragment?: {
     header: boolean;
     footer: boolean;
@@ -503,29 +508,12 @@ export function ConversationTurn({
         >
           {!showHeader || turn.continuesBefore || turn.prompt === null ? null : (
             <div className="product-message product-user-message">
-              <div className="product-user-message-body">
-                {turn.scheduledOrigin ? (
-                  <div
-                    className="product-scheduled-origin"
-                    data-scheduled-origin={turn.scheduledOrigin.scheduleId}
-                    title={new Date(turn.scheduledOrigin.scheduledAt).toLocaleString()}
-                  >
-                    {t("schedule.origin")} · {turn.scheduledOrigin.name}
-                  </div>
-                ) : null}
-                <UploadCards
-                  {...(api ? { api } : {})}
-                  {...(turn.uploads ? { uploads: turn.uploads } : {})}
-                />
-                {turn.prompt ? <div className="product-user-bubble">{turn.prompt}</div> : null}
-                <div className="product-user-message-actions">
-                  <MessageCopyButton
-                    copiedLabel={t("turn.copied")}
-                    label={t("turn.copyUserMessage")}
-                    text={turn.prompt}
-                  />
-                </div>
-              </div>
+              <InitialInputMessage
+                turn={turn}
+                {...(api ? { api } : {})}
+                {...(onRetrySubmission ? { onRetry: onRetrySubmission } : {})}
+                {...(retryDisabled !== undefined ? { retryDisabled } : {})}
+              />
             </div>
           )}
           <div className="product-message product-assistant-message">

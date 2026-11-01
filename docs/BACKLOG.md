@@ -3,6 +3,16 @@
 Delivered sections retain evidence from their named releases; those historical
 tags are not a second inventory of currently serving images.
 
+## Initial message placement — in progress
+
+- [x] Show idle submissions immediately in the transcript with honest local
+      delivery state, then retain the same message through queued/start states.
+- [x] Show only native steer/follow-up items above the composer; share the existing
+      queue controller with initial-message edit/withdraw controls.
+- [x] Preserve exact retry payload/key, attachments and newer drafts; cover
+      receipt/event ordering, active/idle races, claim/edit conflicts and reload.
+- [ ] Complete Web/browser checks and scoped Web publication with live acceptance.
+
 ## Full repository review — 2026-11-01
 
 The [feature and architecture review](reports/repository-review-20261101.md)

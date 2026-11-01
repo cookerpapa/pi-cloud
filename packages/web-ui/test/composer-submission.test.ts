@@ -213,3 +213,31 @@ it("a late acknowledgement of a returned input cannot clear its resubmission", a
   expect(newKey).not.toBe(oldKey);
   expect(await submission.send(input, async (key) => key)).toBe(newKey);
 });
+
+it("keeps placement and identity on retry, and presents the receipt before clearing feedback", async () => {
+  const submission = new ComposerSubmission();
+  const placement = {
+    placement: "timeline" as const,
+    afterMailboxPosition: 7,
+    afterSequence: 30,
+    knownInputIds: ["old"],
+  };
+  await expect(
+    submission.send(
+      input,
+      async () => {
+        throw Error("lost");
+      },
+      { placement },
+    ),
+  ).rejects.toThrow();
+  const original = submission.snapshot()!;
+  await submission.send(input, async (key) => key, {
+    placement: { ...placement, placement: "queue", afterMailboxPosition: 8 },
+    confirmed: (key) => {
+      expect(key).toBe(original.key);
+      expect(submission.snapshot()).toMatchObject({ ...placement, state: "sending", key });
+    },
+  });
+  expect(submission.snapshot()).toBeNull();
+});

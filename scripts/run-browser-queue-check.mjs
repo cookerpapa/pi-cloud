@@ -10,7 +10,8 @@ const cacheDir = await mkdtemp(join(tmpdir(), "pi-cloud-queue-vite-"));
 const fixture = `
 import React from "react";
 import {createRoot} from "react-dom/client";
-import {PendingInputQueue} from "/src/PendingInputQueue.tsx";
+import {InputQueueProvider,PendingInputQueue,useInputQueue} from "/src/PendingInputQueue.tsx";
+import {InitialInputMessage} from "/src/InitialInputMessage.tsx";
 import {inputReturnRecovery} from "/src/returned-inputs.ts";
 import {PiCloudApiError} from "/src/api.ts";
 import {parseInputQueueResource,parseReturnedInputsResource,parseQueuedInputAction} from "@pi-cloud/protocol";
@@ -71,11 +72,22 @@ const api = {
   }
 
 };
-window.renderQueue=(canMutate=true,count=3)=>{
-  window.queue=reset(count);window.queueReads=0;window.returned=[];window.returnPending=false;window.returnAcknowledged=true;receipts=new Map();window.actions=[];window.restored=[];window.snapshots=[];
+function InitialDemo(){
+  const model=useInputQueue(), remembered=React.useRef(null);
+  const item=model.queue?.items.find(item=>item.runMailboxPosition!==undefined);
+  if(item)remembered.current=item;
+  if(!remembered.current||window.withdrawn)return null;
+  const value=remembered.current;
+  const turn={turnId:value.inputId,runId:value.runId,mailboxPosition:value.runMailboxPosition,prompt:value.text,uploads:value.uploads,
+    acceptedAt:value.acceptedAt,status:item?'queued':'running',items:[],startedSequence:null,terminalSequence:null,stopReason:null,failure:null,cancellation:null};
+  return React.createElement('section',{className:'product-transcript'},React.createElement('div',{className:'product-user-message'},React.createElement(InitialInputMessage,{turn,api})));
+}
+window.renderQueue=(canMutate=true,count=3,initial=false)=>{
+  window.queue=reset(count);window.queueReads=0;window.returned=[];window.returnPending=false;window.returnAcknowledged=true;receipts=new Map();window.actions=[];window.restored=[];window.snapshots=[];window.withdrawn=false;
+  if(initial){window.queue.items[0].runMailboxPosition=1;window.queue.activeTurnId=null;}
   root.render(React.createElement(React.StrictMode,null,React.createElement(I18nProvider,{initialLanguage:"zh-CN"},
-    React.createElement(PendingInputQueue,{key:++generation,api,sessionId:window.queue.sessionId,canMutate,refreshSignal:String(generation),streamQueue:null,
-      returnRecovery:inputReturnRecovery(),onSnapshot:q=>window.snapshots.push(q),onRestoreDraft:text=>window.restored.push(text)}))));
+    React.createElement(InputQueueProvider,{key:++generation,api,sessionId:window.queue.sessionId,canMutate,refreshSignal:String(generation),streamQueue:null,
+      returnRecovery:inputReturnRecovery(),onInitialWithdrawn:item=>{window.withdrawn=true;window.restored.push(item.text);},onSnapshot:q=>window.snapshots.push(q),onRestoreDraft:text=>window.restored.push(text)},React.createElement(React.Fragment,null,React.createElement(InitialDemo),React.createElement(PendingInputQueue))))));
 };
 window.refreshQueue=()=>window.dispatchEvent(new Event("focus"));
 window.renderQueue();window.fixtureReady=true;
@@ -314,8 +326,81 @@ try {
       false,
     );
   });
+  await withChromePage({ width: 1000, height: 800 }, async (page) => {
+    await page.navigate(`http://127.0.0.1:${port}/queue.html`);
+    await page.waitFor("window.fixtureReady");
+    const click = async (text) =>
+      page.evaluate(
+        `(()=>{const button=[...document.querySelectorAll('.initial-input-message button')].find(button=>button.textContent.trim()===${JSON.stringify(text)});if(!button||button.disabled)throw Error('Initial action unavailable');button.click();})()`,
+      );
+    const edit = async (text) => {
+      await page.evaluate("document.querySelector('.initial-input-more').click()");
+      await page.waitFor("document.querySelector('.initial-input-message [role=menuitem]')");
+      await click("编辑");
+      await page.waitFor("document.querySelector('.initial-input-message textarea')");
+      await page.evaluate("document.querySelector('.initial-input-message textarea').select()");
+      await page.send("Input.insertText", { text });
+    };
+    await page.evaluate("renderQueue(true,2,true)");
+    await page.waitFor(
+      "document.querySelector('.product-user-bubble')?.textContent==='A' && document.querySelectorAll('.pending-input-row').length===1",
+    );
+    assert.equal(
+      await page.evaluate("document.querySelector('.pending-input-row p')?.textContent"),
+      "B",
+    );
+    await page.screenshot("/tmp/pi-cloud-initial-input.png");
+    await edit("initial revised");
+    await page.screenshot("/tmp/pi-cloud-initial-input-edit.png");
+    assert.equal(
+      await page.evaluate(
+        "document.querySelector('.initial-input-message').textContent.includes('引导')",
+      ),
+      false,
+    );
+    await click("保存");
+    await page.waitFor(
+      "document.querySelector('.product-user-bubble')?.textContent==='initial revised'",
+    );
+    await page.evaluate(
+      "document.querySelector('.initial-input-more').click();window.loseReply=true",
+    );
+    await click("撤回");
+    await page.waitFor("document.querySelector('.initial-input-message')===null");
+    assert.deepEqual(await page.evaluate("window.restored"), ["initial revised"]);
+    assert.equal(await page.evaluate("actions.filter(a=>a.action.action==='cancel').length"), 2);
+    assert.equal(
+      await page.evaluate(
+        "new Set(actions.filter(a=>a.action.action==='cancel').map(a=>a.key)).size",
+      ),
+      1,
+    );
+    await page.evaluate("renderQueue(true,1,true)");
+    await page.waitFor("document.querySelector('.product-user-bubble')?.textContent==='A'");
+    assert.equal(
+      await page.evaluate("document.querySelector('.pending-input-queue')===null"),
+      true,
+    );
+    await edit("keep claimed edit");
+    await page.evaluate(
+      "queue.items=[];queue.activeTurnId=queueId(1);queue.revision++;queue.viewVersion=String(queue.revision)",
+    );
+    await click("保存");
+    await page.waitFor(
+      "document.querySelector('.pending-input-editor')?.textContent.includes('草稿仍保留')",
+    );
+    assert.equal(
+      await page.evaluate("document.querySelector('.initial-input-message textarea').value"),
+      "keep claimed edit",
+    );
+    await click("放回输入框");
+    await page.waitFor(
+      "window.restored.includes('keep claimed edit') && !document.querySelector('.pending-input-editor')",
+    );
+    assert.equal(await page.evaluate("document.querySelector('.initial-input-more')===null"), true);
+  });
   console.log(
-    "browser_queue_check_passed no_poll edit order cancel edited_steer lost_reply draft_retention stale_read read_recovery viewer mobile pagination page_conflict late_page_edit stop_withdrawal all_pages lost_ack steer_reconciliation",
+    "browser_queue_check_passed no_poll edit order cancel edited_steer lost_reply draft_retention stale_read read_recovery viewer mobile pagination page_conflict late_page_edit stop_withdrawal all_pages lost_ack steer_reconciliation initial_transcript edit_withdraw claim_race",
   );
 } finally {
   await server.close();

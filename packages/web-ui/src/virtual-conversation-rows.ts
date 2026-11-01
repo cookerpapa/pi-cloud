@@ -44,7 +44,6 @@ export function virtualConversationRows(
 ): readonly VirtualConversationRow[] {
   const result: VirtualConversationRow[] = [];
   for (const turn of turns) {
-    if (turn.status === "queued" && !turn.operation) continue;
     if (turn.operation) {
       result.push({
         key: `${turn.turnId}:command`,
@@ -55,11 +54,12 @@ export function virtualConversationRows(
     }
     if (!turn.continuesBefore && turn.prompt !== null)
       result.push({
-        key: `${turn.turnId}:header`,
+        key: `${turn.presentationKey ?? turn.turnId}:header`,
         turn,
         fragment: { header: true, footer: false, rows: [] },
         ...(turn.historyCursor ? { cursor: turn.historyCursor } : {}),
       });
+    if (turn.localSubmission) continue;
     const rows = deriveConversationPresentationRows(
       turn.items.filter((i) => i.kind !== "compaction" || i.reason !== "manual"),
     );

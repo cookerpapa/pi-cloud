@@ -40,6 +40,27 @@ acknowledgement. Only confirmed PG/native acceptance clears the submitted draft;
 failure or uncertainty keeps its text, attachments and retry identity. New edits
 and a different conversation must not be cleared by an older reply.
 
+## November 1 presentation amendment
+
+The owner approved separating initial input from native queued follow-ups.
+An idle submission appears immediately as a clearly local sending bubble in the
+transcript. Its acknowledged queued Run stays there with a waiting status, then
+continues into normal execution. Only native queued input appears above the
+composer. Unclaimed initial input retains revision-checked edit/withdraw actions
+in its transcript row; a claim wins an edit race without discarding the edit.
+
+Local delivery identity is not a Run or durable history. The existing HTTP
+receipt alone associates it with a Run/native input. Do not guess that a later
+event belongs to it based on matching text. If another authoritative input
+appears before its receipt is known, suppress duplicate provisional text and
+retain a compact unconfirmed/sending notice plus the draft until confirmation.
+Retried delivery preserves its original payload/key and does not clear a newer
+draft. Same-session state is reconciled without duplicating a user message.
+
+Reuse one browser queue controller for both visual locations. PG/native queue
+ownership, wire schemas, API admission and Worker dispatch are unchanged. This
+is a presentation-only Web release; no writer/VM retirement is needed.
+
 ## Evidence and limits
 
 Three owned real Luna initial submissions on the deployed baseline acknowledged

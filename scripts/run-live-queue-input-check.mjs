@@ -136,9 +136,11 @@ try {
       first = await page.evaluate("queueAdmissions[0]");
       assert.equal(first.kind, "run");
       assert.equal(
-        await page.evaluate("document.querySelector('.product-user-bubble')===null"),
+        await page.evaluate(
+          `document.querySelectorAll('.product-user-bubble').length===1 && document.querySelector('.product-user-bubble').textContent===${JSON.stringify(firstPrompt)} && !document.querySelector('.pending-input-row')`,
+        ),
         true,
-        "Early live execution must not fabricate user input",
+        "Initial input is visible once in the transcript while its receipt is pending",
       );
       await page.evaluate(
         "window.inputRaceArmed=false;releaseAcceptedPost();releaseInputMetadata.forEach(resolve=>resolve())",
@@ -154,6 +156,7 @@ try {
       );
       await page.evaluate("promptObserver.disconnect()");
       report.initialPromptNeverFabricated = true;
+      report.initialInputInTranscript = true;
       await until(
         () => api.getConversation(session.sessionId),
         (view) =>

@@ -4550,3 +4550,54 @@ body.product-panel-resizing {
 .skill-market [role="alert"] {
   color: #bd3535;
 }
+
+/* Provisional input shares the real user row; delivery state is not history. */
+.initial-input-message {
+  min-width: 0;
+}
+.initial-input-message .composer-delivery {
+  margin: 0;
+  padding: 3px 0;
+  border: 0;
+}
+.initial-input-attachments {
+  color: #aaa;
+  padding-top: 5px;
+}
+.initial-input-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 1;
+}
+.initial-input-message button:not(.product-message-copy),
+.composer-delivery button {
+  border: 0;
+  background: transparent;
+  color: #bbb;
+  border-radius: 6px;
+  min-height: 30px;
+  padding: 4px 7px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.initial-input-message button:hover:not(:disabled),
+.composer-delivery button:hover:not(:disabled) {
+  background: #414141;
+  color: #fff;
+}
+.initial-input-message button:disabled,
+.composer-delivery button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.initial-input-message .initial-input-more {
+  font-size: 18px;
+}
+.initial-input-message .pending-input-editor {
+  width: min(480px, 100%);
+}
+.initial-input-message:has(.pending-input-editor) {
+  width: min(640px, 100%);
+}

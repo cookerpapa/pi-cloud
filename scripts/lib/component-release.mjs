@@ -94,6 +94,8 @@ export function assertScopedSources(scope, files) {
               "session-view.ts",
               "conversation-presentation.ts",
               "virtual-conversation-rows.ts",
+              "composer-submission.ts",
+              "submission-presentation.ts",
             ].some((name) => file === `packages/web-ui/src/${name}`) ||
             [
               "scripts/production-kubernetes.mjs",

@@ -1,5 +1,12 @@
 # Implementation roadmap
 
+## Initial message placement — in progress
+
+Keep initial sends and queued Runs in the transcript, reserving the composer
+queue for native steer/follow-up input. Preserve local acknowledgement states,
+retry identity, attachments and unclaimed edit/withdraw races. Follow ADR-0290's
+presentation amendment and publish through the Web component release.
+
 ## November 1 review repairs — deployed
 
 R01–R08 from [the review](reports/repository-review-20261101.md) are deployed

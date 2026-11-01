@@ -105,6 +105,9 @@ export type TranscriptItem = { historyCursor?: string; pageKey?: string } & (
 );
 
 export type TurnView = {
+  /** Browser-only identity connecting a provisional bubble to its actual receipt. */
+  presentationKey?: string;
+  localSubmission?: import("./composer-submission.ts").ComposerSubmissionView;
   scheduledOrigin?: import("@pi-cloud/protocol").ScheduledOrigin;
   continuesBefore?: true;
   continuesAfter?: true;
@@ -222,6 +225,7 @@ export type SessionViewAction =
       accepted: AcceptedTurnResource;
       prompt: string;
       uploads?: UserUpload[];
+      presentationKey?: string;
     }
   | { type: "compact.accepted"; compact: import("@pi-cloud/protocol").ConversationCompactResource }
   | { type: "turn.cancellation.requested"; turnId: string }
@@ -838,6 +842,13 @@ function reduceSessionView(state: SessionViewState, action: SessionViewAction): 
         ...(turn.continuesAfter ? { continuesAfter: true as const } : {}),
         ...(turn.historyCursor ? { historyCursor: turn.historyCursor } : {}),
         ...(turn.uploads ? { uploads: turn.uploads } : {}),
+        ...(state.session?.sessionId === action.conversation.session.sessionId &&
+        state.turns.find((previous) => previous.turnId === turn.turnId)?.presentationKey
+          ? {
+              presentationKey: state.turns.find((previous) => previous.turnId === turn.turnId)!
+                .presentationKey!,
+            }
+          : {}),
         acceptedAt: turn.acceptedAt,
         status: turn.state,
       })),
@@ -895,8 +906,9 @@ function reduceSessionView(state: SessionViewState, action: SessionViewAction): 
       ...turn,
       runId: action.accepted.runId,
       mailboxPosition: action.accepted.mailboxPosition,
-      prompt: action.prompt,
-      ...(action.uploads ? { uploads: action.uploads } : {}),
+      prompt: turn.prompt ?? action.prompt,
+      ...(turn.uploads ? {} : action.uploads ? { uploads: action.uploads } : {}),
+      ...(action.presentationKey ? { presentationKey: action.presentationKey } : {}),
       acceptedAt: action.accepted.acceptedAt,
       status:
         turn.startedSequence === null && !["completed", "failed", "cancelled"].includes(turn.status)
@@ -909,7 +921,7 @@ function reduceSessionView(state: SessionViewState, action: SessionViewAction): 
     if (state.session?.sessionId !== action.queue.sessionId) return state;
     let turns = state.turns;
     for (const item of action.queue.items) {
-      if (item.inputId.startsWith("input-")) continue;
+      if (item.runMailboxPosition === undefined) continue;
       const previous = turns.find((turn) => turn.turnId === item.inputId);
       if (previous && (previous.status !== "queued" || previous.operation)) continue;
       const position = item.runMailboxPosition ?? previous?.mailboxPosition ?? null;

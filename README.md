@@ -15,7 +15,9 @@ scale or as a highly available production service.
   provider supports it, model selection and native context compaction.
 - **Interactive input:** native steer/follow-up queues with editing, ordering,
   cancellation and promotion to steer. Enter defaults to follow-up; Stop returns
-  unconsumed inputs to the composer.
+  unconsumed inputs to the composer. Initial messages appear directly in the
+  transcript with sending/acknowledgement states; only follow-up/steer uses the
+  pending-input list.
 - **Long histories:** bounded pagination and virtual scrolling, history navigation,
   search and streamed Markdown export. `/usage` shows committed token usage and
   context estimates; `/compact [instructions]` requests native compaction.

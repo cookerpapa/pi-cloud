@@ -1,4 +1,7 @@
+import { useInputQueue } from "./PendingInputQueue.tsx";
 import { HistoryDisclosureContext } from "./history-disclosure.tsx";
+import { withLocalSubmission } from "./submission-presentation.ts";
+import type { ComposerSubmissionView } from "./composer-submission.ts";
 import {
   useCallback,
   useEffect,
@@ -92,6 +95,7 @@ export function ConversationTimeline({
   renderRow,
   inherited,
   toolGroupsExpanded = false,
+  submission = null,
 }: {
   api: PiCloudApi;
   live: SessionViewState;
@@ -102,8 +106,10 @@ export function ConversationTimeline({
   renderRow(row: VirtualConversationRow): ReactNode;
   inherited?: ReactNode;
   toolGroupsExpanded?: boolean | undefined;
+  submission?: ComposerSubmissionView | null;
 }) {
   const { t } = useI18n();
+  const queue = useInputQueue();
   const sessionId = live.session?.sessionId;
   const [pages, setPages] = useState<readonly HistoryPage[] | null>(null);
   const pagesOwner = useRef<string | undefined>(sessionId);
@@ -150,7 +156,10 @@ export function ConversationTimeline({
     () => (ownedPages ? mergeHistoryPages(ownedPages) : undefined),
     [ownedPages],
   );
-  const visibleTurns = browsingTurns ?? live.turns;
+  const visibleTurns = useMemo(
+    () => browsingTurns ?? withLocalSubmission(live.turns, submission, queue?.queue),
+    [browsingTurns, live.turns, submission, queue?.queue],
+  );
   const showInherited =
     Boolean(inherited) && !(ownedPages?.[0]?.history.hasBefore ?? live.history.hasBefore);
   const rows = useMemo(

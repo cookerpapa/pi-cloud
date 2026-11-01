@@ -494,7 +494,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false, peerF
       }
       if(window.deferTurn) return new Promise(resolve=>{
         window.finishTurn=()=>{
-          window.fixtureQueue.revision++;window.fixtureQueue.items=[{inputId:"50000000-0000-4000-8000-000000000001",runId:"60000000-0000-4000-8000-000000000001",text:submitted.prompt,mailboxPosition:1,acceptedAt:new Date().toISOString(),status:"queued"}];
+          window.fixtureQueue.revision++;window.fixtureQueue.items=[{inputId:"50000000-0000-4000-8000-000000000001",runId:"60000000-0000-4000-8000-000000000001",text:submitted.prompt,mailboxPosition:1,runMailboxPosition:1,acceptedAt:new Date().toISOString(),status:"queued"}];
           resolve(Response.json({kind:"run",turnId:"50000000-0000-4000-8000-000000000001",
           sessionId:sid,runId:"60000000-0000-4000-8000-000000000001",mailboxPosition:1,
           state:"queued",acceptedAt:new Date().toISOString(),replayed:false},{status:202}));
@@ -502,7 +502,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false, peerF
       });
       if(window.acceptTurns) {
         const prior=window.turnReceipts.get(key);
-        const receipt=prior??(sessionState==='running'?{kind:'input',inputId:'input-'+crypto.randomUUID().replaceAll('-','').repeat(2),
+        const receipt=prior??((window.admitAsInput??sessionState==='running')?{kind:'input',inputId:'input-'+crypto.randomUUID().replaceAll('-','').repeat(2),
           turnId:fixtureTurnId,runId:'60000000-0000-4000-8000-000000000011',sessionId:sid,delivery:'follow_up',state:'accepted',acceptedAt:new Date().toISOString()}:
           {kind:'run',turnId:crypto.randomUUID(),sessionId:sid,runId:crypto.randomUUID(),mailboxPosition:window.turnReceipts.size+1,state:'queued',acceptedAt:new Date().toISOString()});
         if(!prior){window.turnReceipts.set(key,receipt);window.turnStates.set(receipt.inputId??receipt.runId,'queued');
@@ -1468,7 +1468,7 @@ try {
     await fill(".product-composer textarea", "next draft");
     await page.evaluate("finishTurn()");
     await page.waitFor(
-      'document.querySelector(".pending-input-content p")?.textContent==="submitted draft"',
+      '[...document.querySelectorAll(".product-user-bubble")].some(node=>node.textContent==="submitted draft")',
     );
     assert.equal(
       await page.evaluate('document.querySelector(".product-composer textarea").value'),
@@ -1927,7 +1927,7 @@ try {
     assert.deepEqual(await page.evaluate("turnBodies.at(-1).uploadIds"), firstImageBody.uploadIds);
     assert.equal(await page.evaluate("turnReceipts.size"), 1);
     assert.equal(await page.evaluate("turnRequests.at(-1).key===turnRequests.at(-2).key"), true);
-    await page.waitFor('!document.querySelector(".upload-card")');
+    await page.waitFor('!document.querySelector(".product-composer-shell .upload-card")');
     await page.evaluate("window.acceptTurns=false");
 
     // Actual ChatApp + validated HTTP responses: Stop ends only the returned
@@ -2116,7 +2116,7 @@ try {
       );
       assert.equal(
         await page.evaluate(
-          `document.querySelector('.composer-delivery.sending')?.textContent.includes(${JSON.stringify(input)})`,
+          `document.querySelector('.product-transcript .composer-delivery.sending')?.closest('.product-user-message-body')?.textContent.includes(${JSON.stringify(input)})`,
         ),
         true,
       );
@@ -2133,6 +2133,7 @@ try {
         ),
         false,
       );
+      if (first === "acceptance") await page.screenshot("/tmp/pi-cloud-initial-sending.png");
       await fill("发送过程中继续写的新草稿");
       if (first === "acceptance") await page.evaluate("releaseTurnAck()");
       else {
@@ -2172,7 +2173,57 @@ try {
       await page.waitFor(
         `[...document.querySelectorAll(${JSON.stringify(currentTurn)})].some(node=>node.textContent.includes('Working on the new request'))`,
       );
+      if (first === "lost-acceptance") {
+        await page.evaluate(
+          "window.startBeforeAck=false;window.acceptTurns=true;const request=turnRequests.at(-1);turnReceipts.set(request.key,{kind:'run',turnId:raceTurn.turnId,runId:raceTurn.runId,sessionId:'10000000-0000-4000-8000-000000000001',mailboxPosition:2,state:'queued',acceptedAt:raceTurn.acceptedAt});document.querySelector('.composer-delivery.unconfirmed button').click()",
+        );
+        await page.waitFor(
+          "!document.querySelector('.composer-delivery') && !document.querySelector('.product-send-button').disabled",
+        );
+        assert.equal(
+          await page.evaluate("turnRequests.at(-1).key===turnRequests.at(-2).key"),
+          true,
+        );
+        assert.deepEqual(
+          await page.evaluate("turnRequests.at(-1).body"),
+          await page.evaluate("turnRequests.at(-2).body"),
+        );
+        assert.equal(
+          await page.evaluate("document.querySelector('.product-composer textarea').value"),
+          "发送过程中继续写的新草稿",
+        );
+      }
       await page.evaluate("bubbleObserver.disconnect()");
+    }
+  });
+  // The server receipt determines placement when the UI's busy/idle view is stale.
+  await withChromePage({}, async (page) => {
+    for (const busy of [false, true]) {
+      await page.navigate(`http://127.0.0.1:${port}/review.html`);
+      await page.waitFor("window.fixtureReady");
+      await page.evaluate(
+        `renderChat('${busy ? "running" : "idle"}',true,true);window.acceptTurns=true;window.admitAsInput=${!busy}`,
+      );
+      await page.waitFor(
+        "document.querySelector('.product-conversation-row:not(.product-delegated-session)>button')",
+      );
+      await page.evaluate(
+        "document.querySelector('.product-conversation-row:not(.product-delegated-session)>button').click()",
+      );
+      await page.waitFor(
+        "document.querySelector('.product-user-bubble')?.textContent==='Tree question'",
+      );
+      await page.evaluate(
+        "localStorage.setItem('pi-cloud:composer-enter-mode','follow_up');document.querySelector('.product-composer textarea').focus()",
+      );
+      await page.send("Input.insertText", { text: "Admission placement race" });
+      await page.evaluate("document.querySelector('.product-send-button').click()");
+      await page.waitFor("document.querySelector('.product-composer textarea').value===''");
+      await page.waitFor(
+        busy
+          ? "[...document.querySelectorAll('.product-user-bubble')].some(node=>node.textContent==='Admission placement race') && !document.querySelector('.pending-input-row')"
+          : "document.querySelector('.pending-input-row p')?.textContent==='Admission placement race' && [...document.querySelectorAll('.product-user-bubble')].every(node=>node.textContent!=='Admission placement race')",
+      );
     }
   });
   // Composer keyboard/button choices use actual ChatApp effects and HTTP builders.
@@ -2666,6 +2717,9 @@ try {
                     errorMarkerOnlyOnFailedTool: true,
                     earlyRunNeverFabricatesUserInput: true,
                     acceptanceDiscoveryRaceKeepsDraftAndStream: true,
+                    initialTranscriptPlacement: true,
+                    busyIdleReceiptPlacement: true,
+                    frozenPayloadRetryPreservesNewDraft: true,
                     composerEnterPreference: true,
                     composerButtonMatchesEnter: true,
                     composerEmptyEnterSafe: true,

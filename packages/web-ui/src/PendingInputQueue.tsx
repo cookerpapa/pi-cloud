@@ -1,7 +1,16 @@
 import { restoreReturnedInputs, type InputReturnRecovery } from "./returned-inputs.ts";
 import { UploadCards } from "./UploadCards.tsx";
 import type { UserUpload } from "@pi-cloud/protocol";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type { InputQueueResource, QueuedInputAction } from "@pi-cloud/protocol";
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "./api.ts";
 import { useI18n } from "./i18n.tsx";
@@ -12,7 +21,7 @@ type Action =
   | { action: "move"; direction: "up" | "down" }
   | { action: "steer"; text?: string };
 
-export function PendingInputQueue({
+export function InputQueueProvider({
   api,
   sessionId,
   canMutate,
@@ -21,9 +30,13 @@ export function PendingInputQueue({
   onSnapshot,
   onRestoreDraft,
   returnRecovery,
+  children,
+  onInitialWithdrawn,
 }: {
+  children: ReactNode;
+  onInitialWithdrawn?: (item: InputQueueResource["items"][number]) => void;
   api: PiCloudApi;
-  sessionId: string;
+  sessionId: string | null;
   canMutate: boolean;
   refreshSignal: string;
   streamQueue: InputQueueResource | null;
@@ -41,8 +54,6 @@ export function PendingInputQueue({
   const [busy, setBusy] = useState<string | null>(null);
   const inFlight = useRef(false);
   const refreshAfterMutation = useRef(false);
-  const listId = useId();
-  const root = useRef<HTMLElement>(null);
   const [expanded, setExpanded] = useState(false);
   const [menuInputId, setMenuInputId] = useState<string | null>(null);
   const readAbort = useRef<AbortController | undefined>(undefined);
@@ -53,14 +64,18 @@ export function PendingInputQueue({
     inputId: string;
     text: string;
     uploads: UserUpload[];
+    initial: boolean;
   } | null>(null);
   const mounted = useRef(true);
   const sequence = useRef(0);
-  const callbacks = useRef({ onSnapshot, onRestoreDraft, t });
-  callbacks.current = { onSnapshot, onRestoreDraft, t };
+  const callbacks = useRef({ onSnapshot, onRestoreDraft, onInitialWithdrawn, t });
+  callbacks.current = { onSnapshot, onRestoreDraft, onInitialWithdrawn, t };
   useEffect(() => {
     if (!menuInputId) return;
-    root.current?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus();
+    [...document.querySelectorAll("[data-input-id]")]
+      .find((node) => node.getAttribute("data-input-id") === menuInputId)
+      ?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')
+      ?.focus();
     const close = (event: PointerEvent) => {
       if (
         !(event.target instanceof Element) ||
@@ -119,6 +134,7 @@ export function PendingInputQueue({
   );
   const refresh = useCallback(
     async (signal?: AbortSignal, force = false) => {
+      if (!sessionId) return;
       if (inFlight.current) {
         refreshAfterMutation.current = true;
         return;
@@ -167,7 +183,7 @@ export function PendingInputQueue({
   async function loadMore(): Promise<void> {
     const snapshot = current.current;
     const last = snapshot?.items.at(-1);
-    if (!snapshot?.hasMore || !last || inFlight.current) return;
+    if (!sessionId || !snapshot?.hasMore || !last || inFlight.current) return;
     inFlight.current = true;
     readAbort.current?.abort();
     const controller = new AbortController();
@@ -198,7 +214,7 @@ export function PendingInputQueue({
 
   async function perform(inputId: string, action: Action): Promise<boolean> {
     const snapshot = current.current;
-    if (!snapshot || inFlight.current || !canMutate) return false;
+    if (!sessionId || !snapshot || inFlight.current || !canMutate) return false;
     if (action.action === "steer" && !snapshot.activeTurnId) {
       setError("queue.noActive");
       return false;
@@ -222,6 +238,10 @@ export function PendingInputQueue({
         result = await send();
       }
       apply(result.queue);
+      if (mounted.current && action.action === "cancel") {
+        const item = snapshot.items.find((item) => item.inputId === inputId);
+        if (item?.runMailboxPosition !== undefined) callbacks.current.onInitialWithdrawn?.(item);
+      }
       succeeded = true;
       return mounted.current;
     } catch (cause) {
@@ -244,7 +264,7 @@ export function PendingInputQueue({
   const [returnStatus, setReturnStatus] = useState<"idle" | "pending" | "failed">("idle");
   const [returnRetry, retryReturns] = useState(0);
   useEffect(() => {
-    if ((!queue?.hasReturnedInputs && !returnRecovery.requestId) || !canMutate) {
+    if (!sessionId || (!queue?.hasReturnedInputs && !returnRecovery.requestId) || !canMutate) {
       // SSE may report the committed acknowledgement before its HTTP reply.
       // Cancelling that request must not leave the old waiting/error notice.
       setReturnStatus("idle");
@@ -293,12 +313,58 @@ export function PendingInputQueue({
     refresh,
   ]);
 
+  const model = {
+    api,
+    queue,
+    canMutate,
+    busy,
+    error,
+    setError,
+    editing,
+    setEditing,
+    expanded,
+    setExpanded,
+    menuInputId,
+    setMenuInputId,
+    perform,
+    loadMore,
+    returnStatus,
+    retryReturns,
+    onRestoreDraft: (text: string, uploads: UserUpload[]) =>
+      callbacks.current.onRestoreDraft(text, uploads),
+  };
+  return <InputQueueContext.Provider value={model}>{children}</InputQueueContext.Provider>;
+}
+
+const InputQueueContext = createContext<InputQueueModel | null>(null);
+export type InputQueueModel = {
+  api: PiCloudApi;
+  queue: InputQueueResource | null;
+  canMutate: boolean;
+  busy: string | null;
+  error: "queue.loadError" | "queue.actionError" | "queue.changed" | "queue.noActive" | null;
+  setError: (value: InputQueueModel["error"]) => void;
+  editing: { inputId: string; text: string; uploads: UserUpload[]; initial: boolean } | null;
+  setEditing: (value: InputQueueModel["editing"]) => void;
+  expanded: boolean;
+  setExpanded: (value: boolean) => void;
+  menuInputId: string | null;
+  setMenuInputId: (value: string | null) => void;
+  perform(inputId: string, action: Action): Promise<boolean>;
+  loadMore(): Promise<void>;
+  returnStatus: "idle" | "pending" | "failed";
+  retryReturns: (update: (n: number) => number) => void;
+  onRestoreDraft(text: string, uploads: UserUpload[]): boolean | void;
+};
+export const useInputQueue = () => useContext(InputQueueContext);
+
+export function PendingInputEditor({ started = false }: { started?: boolean }) {
+  const model = useInputQueue();
+  const { t } = useI18n();
+  if (!model) return null;
+  const { api, queue, editing, setEditing, canMutate, busy, perform, onRestoreDraft } = model;
   const editingItem = editing && queue?.items.find((item) => item.inputId === editing.inputId);
-  // Every item in this resource is still pending, including queued steers.
-  // The native transaction, not the displayed mode, decides whether an edit won.
-  const editable = Boolean(editingItem);
-  const showAll = expanded || editing !== null;
-  const visibleItems = showAll ? queue?.items : queue?.items.slice(0, 3);
+  const editable = Boolean(editingItem) && !started;
   const editor = editing ? (
     <form
       className="pending-input-editor"
@@ -342,29 +408,30 @@ export function PendingInputQueue({
         >
           {t("queue.save")}
         </button>
-        <button
-          type="button"
-          disabled={
-            !editable ||
-            !canMutate ||
-            busy !== null ||
-            !queue?.activeTurnId ||
-            (!editing.text.trim() && !editing.uploads.length)
-          }
-          onClick={() =>
-            void perform(editing.inputId, { action: "steer", text: editing.text }).then((ok) => {
-              if (ok) setEditing(null);
-            })
-          }
-        >
-          {t("queue.steer")}
-        </button>
+        {!editing.initial ? (
+          <button
+            type="button"
+            disabled={
+              !editable ||
+              !canMutate ||
+              busy !== null ||
+              !queue?.activeTurnId ||
+              (!editing.text.trim() && !editing.uploads.length)
+            }
+            onClick={() =>
+              void perform(editing.inputId, { action: "steer", text: editing.text }).then((ok) => {
+                if (ok) setEditing(null);
+              })
+            }
+          >
+            {t("queue.steer")}
+          </button>
+        ) : null}
         {!editable ? (
           <button
             type="button"
             onClick={() => {
-              if (callbacks.current.onRestoreDraft(editing.text, editing.uploads) !== false)
-                setEditing(null);
+              if (onRestoreDraft(editing.text, editing.uploads) !== false) setEditing(null);
             }}
           >
             {t("queue.restoreDraft")}
@@ -376,32 +443,68 @@ export function PendingInputQueue({
       </div>
     </form>
   ) : null;
-  if (!queue?.items.length && !editing && !error && returnStatus === "idle") return null;
+  return editor;
+}
+
+export function PendingInputQueue() {
+  const model = useInputQueue();
+  const { t } = useI18n();
+  const listId = useId();
+  if (!model) return null;
+  const {
+    api,
+    queue,
+    busy,
+    error,
+    setError,
+    editing,
+    setEditing,
+    canMutate,
+    expanded,
+    setExpanded,
+    menuInputId,
+    setMenuInputId,
+    perform,
+    loadMore,
+    returnStatus,
+    retryReturns,
+  } = model;
+  const nativeItems = queue?.items.filter((item) => item.runMailboxPosition === undefined) ?? [];
+  const nativeEditing = editing && !editing.initial ? editing : null;
+  const editingItem =
+    nativeEditing && nativeItems.find((item) => item.inputId === nativeEditing.inputId);
+  const showAll = expanded || nativeEditing !== null;
+  const visibleItems = showAll ? nativeItems : nativeItems.slice(0, 3);
+  const editor = <PendingInputEditor />;
+  if (!nativeItems.length && !nativeEditing && !queue?.hasMore && !error && returnStatus === "idle")
+    return null;
   return (
-    <section ref={root} className="pending-input-queue" aria-label={t("queue.title")}>
-      <header>
-        <strong>{t("queue.title")}</strong>
-        <span>
-          {queue?.items.length ?? 0}
-          {queue?.hasMore ? "+" : ""}
-        </span>
-        {(queue?.items.length ?? 0) > 3 || queue?.hasMore ? (
-          <button
-            type="button"
-            aria-expanded={showAll}
-            aria-controls={listId}
-            aria-label={t(showAll ? "queue.collapse" : "queue.expand")}
-            title={t(showAll ? "queue.collapse" : "queue.expand")}
-            disabled={editing !== null}
-            onClick={() => {
-              setExpanded(!showAll);
-              setMenuInputId(null);
-            }}
-          >
-            <span aria-hidden="true">{showAll ? "⌃" : "⌄"}</span>
-          </button>
-        ) : null}
-      </header>
+    <section className="pending-input-queue" aria-label={t("queue.title")}>
+      {nativeItems.length || queue?.hasMore ? (
+        <header>
+          <strong>{t("queue.title")}</strong>
+          <span>
+            {nativeItems.length}
+            {queue?.hasMore ? "+" : ""}
+          </span>
+          {nativeItems.length > 3 || queue?.hasMore ? (
+            <button
+              type="button"
+              aria-expanded={showAll}
+              aria-controls={listId}
+              aria-label={t(showAll ? "queue.collapse" : "queue.expand")}
+              title={t(showAll ? "queue.collapse" : "queue.expand")}
+              disabled={nativeEditing !== null}
+              onClick={() => {
+                setExpanded(!showAll);
+                setMenuInputId(null);
+              }}
+            >
+              <span aria-hidden="true">{showAll ? "⌃" : "⌄"}</span>
+            </button>
+          ) : null}
+        </header>
+      ) : null}
       {returnStatus === "pending" ? <p role="status">{t("queue.returnPending")}</p> : null}
       {returnStatus === "failed" ? (
         <p role="alert">
@@ -422,7 +525,7 @@ export function PendingInputQueue({
       <div id={listId} className="pending-input-list">
         {visibleItems?.map((item, index) => (
           <div
-            className={`pending-input-row${editing?.inputId === item.inputId ? " editing" : ""}`}
+            className={`pending-input-row${nativeEditing?.inputId === item.inputId ? " editing" : ""}`}
             data-input-id={item.inputId}
             key={item.inputId}
             onBlur={(event) => {
@@ -461,7 +564,7 @@ export function PendingInputQueue({
               }
             }}
           >
-            {editing?.inputId === item.inputId ? (
+            {nativeEditing?.inputId === item.inputId ? (
               editor
             ) : (
               <>
@@ -511,6 +614,7 @@ export function PendingInputQueue({
                           inputId: item.inputId,
                           text: item.text,
                           uploads: item.uploads ?? [],
+                          initial: false,
                         });
                         setError(null);
                       }}
@@ -534,7 +638,7 @@ export function PendingInputQueue({
                       disabled={
                         !canMutate ||
                         busy !== null ||
-                        (index === queue!.items.length - 1 && !queue!.hasMore)
+                        (index === nativeItems.length - 1 && !queue!.hasMore)
                       }
                       onClick={() => {
                         setMenuInputId(null);
@@ -561,7 +665,7 @@ export function PendingInputQueue({
           </div>
         ))}
         {/* A consumed input or a superseded pagination view must not discard an edit. */}
-        {editing && !editingItem ? editor : null}
+        {nativeEditing && !editingItem ? editor : null}
       </div>
       {showAll && queue?.hasMore ? (
         <button type="button" disabled={busy !== null} onClick={() => void loadMore()}>

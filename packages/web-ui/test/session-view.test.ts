@@ -1206,3 +1206,58 @@ it("only removes an unclaimed accepted message after authoritative cancellation"
     }).turns,
   ).toEqual([]);
 });
+
+it("keeps authoritative initial edits when the original send receipt arrives late", () => {
+  let state = sessionViewReducer(createInitialSessionView(), {
+    type: "session.created",
+    project,
+    session,
+  });
+  state = sessionViewReducer(state, { type: "turn.accepted", accepted, prompt: "original" });
+  state = {
+    ...state,
+    turns: state.turns.map((turn) => ({ ...turn, prompt: "edited elsewhere", uploads: [] })),
+  };
+  const result = sessionViewReducer(state, {
+    type: "turn.accepted",
+    accepted,
+    prompt: "original",
+    presentationKey: "browser-key",
+  });
+  expect(result.turns[0]).toMatchObject({
+    prompt: "edited elsewhere",
+    presentationKey: "browser-key",
+    uploads: [],
+  });
+});
+
+it("does not turn native queued input into an initial message based on its ID spelling", () => {
+  const state = sessionViewReducer(createInitialSessionView(), {
+    type: "session.created",
+    project,
+    session,
+  });
+  const result = sessionViewReducer(state, {
+    type: "queue.updated",
+    queue: {
+      sessionId: SESSION_ID,
+      revision: "a".repeat(64) + "." + "b".repeat(64),
+      viewVersion: "1",
+      afterPosition: 0,
+      hasMore: false,
+      hasReturnedInputs: false,
+      activeTurnId: accepted.turnId,
+      items: [
+        {
+          inputId: accepted.turnId,
+          runId: accepted.runId,
+          text: "native queued text",
+          status: "queued",
+          acceptedAt: CREATED_AT,
+          mailboxPosition: 1,
+        },
+      ],
+    },
+  });
+  expect(result).toBe(state);
+});

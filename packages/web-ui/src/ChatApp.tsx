@@ -12,7 +12,9 @@ import { inputReturnRecovery, type InputReturnRecovery } from "./returned-inputs
 import { InheritedContext } from "./InheritedContext.tsx";
 import { useComposerUploads } from "./useComposerUploads.ts";
 import { ComposerUploadCards } from "./UploadCards.tsx";
-import { ComposerSubmission } from "./composer-submission.ts";
+import { flushSync } from "react-dom";
+import { composerPlacement } from "./submission-presentation.ts";
+import { ComposerSubmission, type ComposerInput } from "./composer-submission.ts";
 import { ComposerDelivery } from "./ComposerDelivery.tsx";
 import { useComposerEnterMode } from "./useComposerEnterMode.tsx";
 import {
@@ -29,6 +31,8 @@ import {
   type ReactNode,
 } from "react";
 import type {
+  InputQueueResource,
+  UserUpload,
   ConversationTreeResource,
   ConversationTreeView,
   ConversationSummaryResource,
@@ -52,7 +56,7 @@ import { AuthScreen } from "./AuthScreen.tsx";
 import { ConversationTreeNavigator } from "./ConversationTreeNavigator.tsx";
 import { copyMessageText } from "./MessageCopyButton.tsx";
 import { ConversationTurn } from "./ConversationTurn.tsx";
-import { PendingInputQueue } from "./PendingInputQueue.tsx";
+import { InputQueueProvider, PendingInputQueue } from "./PendingInputQueue.tsx";
 import { WorkspaceRebindDialog } from "./WorkspaceRebindDialog.tsx";
 
 import {
@@ -268,6 +272,12 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const [unavailableForkSource, setUnavailableForkSource] = useState<string | null>(null);
   const composerPreference = useComposerEnterMode(identity);
   const composerSubmission = useRef(new ComposerSubmission());
+  const latestQueue = useRef<InputQueueResource | null>(null);
+  const retrySubmission = useRef<{
+    input: ComposerInput;
+    revision: number;
+    attached: UserUpload[] | undefined;
+  } | null>(null);
   const composerDelivery = useSyncExternalStore(
     composerSubmission.current.subscribe,
     composerSubmission.current.snapshot,
@@ -1177,18 +1187,12 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
       ]);
       if (pendingInitialPrompt !== null) {
         const attached = await uploads.ready(session.sessionId);
-        const accepted = await acceptComposerTurn(
+        await acceptComposerTurn(
           session.sessionId,
           pendingInitialPrompt,
-          attached.map((file) => file.id),
+          attached,
+          submittedRevision,
         );
-        if (accepted.kind === "run")
-          update({
-            type: "turn.accepted",
-            accepted,
-            prompt: pendingInitialPrompt,
-            uploads: attached,
-          });
         uploads.clear(attached.map((file) => file.id));
         setPrompt((current) => (draftRevision.current === submittedRevision ? "" : current));
       }
@@ -1331,34 +1335,86 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     }
   }
 
-  function acceptComposerTurn(sessionId: string, text: string, uploadIds: string[]) {
-    const whenBusy = composerPreference.enterMode;
+  function confirmComposerTurn(
+    accepted: Awaited<ReturnType<PiCloudApi["acceptTurn"]>>,
+    input: ComposerInput,
+    attached: UserUpload[],
+    key: string,
+  ) {
+    if (renderedState.current.session?.sessionId !== input.sessionId) return;
+    // One receipt boundary: replace provisional feedback before retiring it.
+    flushSync(() => {
+      if (accepted.kind === "run")
+        update({
+          type: "turn.accepted",
+          accepted,
+          prompt: input.text,
+          uploads: attached,
+          presentationKey: key,
+        });
+      else {
+        inputRevision.current++;
+        setQueueRefreshGeneration((generation) => generation + 1);
+      }
+    });
+  }
+
+  function acceptComposerTurn(
+    sessionId: string,
+    text: string,
+    attached: UserUpload[],
+    revision: number,
+  ) {
+    const input: ComposerInput = {
+      kind: "turn",
+      sessionId,
+      text,
+      uploadIds: attached.map((file) => file.id),
+      whenBusy: composerPreference.enterMode,
+    };
+    retrySubmission.current = { input, revision, attached };
     return composerSubmission.current.send(
-      { kind: "turn", sessionId, text, uploadIds, whenBusy },
-      (key) => api.acceptTurn(sessionId, text, key, undefined, uploadIds, whenBusy),
+      input,
+      (key) =>
+        api.acceptTurn(sessionId, text, key, undefined, [...input.uploadIds], input.whenBusy),
+      {
+        placement: composerPlacement(renderedState.current, null, false),
+        confirmed: (accepted, key) => confirmComposerTurn(accepted, input, attached, key),
+      },
     );
   }
 
-  async function submitTurn(): Promise<void> {
-    const submittedRevision = draftRevision.current;
-    const text = prompt.trim();
-    if ((!text && !uploads.items.length) || !canMutate || !canQueue || operation !== null) return;
+  async function submitTurn(retry = false): Promise<void> {
+    if (!canMutate || !canQueue || coldCompactActive || operation !== null) return;
+    const saved = retry ? retrySubmission.current : null;
+    const text = saved?.input.text ?? prompt.trim();
+    if (!saved && !text && !uploads.items.length) return;
     const session = state.session;
     if (!session) {
       beginNewConversation(text);
       return;
     }
     const sessionId = session.sessionId;
-    const uploadIds = uploads.items.map((file) => file.id);
-    const whenBusy = composerPreference.enterMode;
+    if (saved && saved.input.sessionId !== sessionId) return;
+    const submission = saved ?? {
+      input: {
+        kind: "turn" as const,
+        sessionId,
+        text,
+        uploadIds: uploads.items.map((file) => file.id),
+        whenBusy: composerPreference.enterMode,
+      },
+      revision: draftRevision.current,
+      attached: undefined as UserUpload[] | undefined,
+    };
+    retrySubmission.current = submission;
+    const { input, revision: submittedRevision } = submission;
     setOperation("submitting");
     update({ type: "api.error.cleared" });
     timelineControl.current?.latest();
     try {
-      // Feedback starts before preparation. Text and attachment selection are
-      // frozen even if the user edits their next draft while this awaits ACK.
-      const { accepted, attached } = await composerSubmission.current.send(
-        { kind: "turn", sessionId, text, uploadIds, whenBusy },
+      const { attached } = await composerSubmission.current.send(
+        input,
         async (key) => {
           if (session.executionMode === "development_environment") {
             const environment = developmentEnvironments.find(
@@ -1377,25 +1433,30 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
               );
             }
           }
-          const attached = await uploads.ready(sessionId, uploadIds);
+          const attached =
+            submission.attached ?? (await uploads.ready(sessionId, [...input.uploadIds]));
+          submission.attached = attached;
           const accepted = await api.acceptTurn(
             sessionId,
-            text,
+            input.text,
             key,
             undefined,
             attached.map((file) => file.id),
-            whenBusy,
+            input.whenBusy,
           );
           return { accepted, attached };
         },
+        {
+          placement: composerPlacement(
+            renderedState.current,
+            latestQueue.current?.sessionId === sessionId ? latestQueue.current : null,
+            currentTurn !== undefined,
+          ),
+          confirmed: ({ accepted, attached }, key) =>
+            confirmComposerTurn(accepted, input, attached, key),
+        },
       );
       if (renderedState.current.session?.sessionId !== sessionId) return;
-      if (accepted.kind === "run")
-        update({ type: "turn.accepted", accepted, prompt: text, uploads: attached });
-      else {
-        inputRevision.current++;
-        setQueueRefreshGeneration((generation) => generation + 1);
-      }
       uploads.clear(attached.map((file) => file.id));
       timelineControl.current?.latest();
       setPrompt((current) => (draftRevision.current === submittedRevision ? "" : current));
@@ -1409,6 +1470,21 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
       setOperation(null);
       focusComposer();
     }
+  }
+
+  function restoreInputDraft(
+    text: string,
+    attached: UserUpload[],
+    returnedKeys: readonly string[] = [],
+  ) {
+    const sessionId = state.session?.sessionId;
+    if (!sessionId || currentStreamSession.current !== sessionId || !uploads.restore(attached))
+      return false;
+    composerSubmission.current.retireReturned(sessionId, returnedKeys);
+    draftRevision.current++;
+    setPrompt((current) => (current.trim() ? `${current}\n\n${text}` : text));
+    focusComposer();
+    return true;
   }
 
   async function cancelTurn(): Promise<void> {
@@ -2411,314 +2487,334 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
           </div>
         ) : null}
 
-        <div className={`product-content ${inspectorOpen ? "with-inspector" : ""}`}>
-          <ConversationTimeline
-            toolGroupsExpanded={toolGroupsExpanded}
-            key={state.session?.sessionId ?? "empty"}
-            api={api}
-            live={state}
-            scrollerRef={chatScrollerRef}
-            controlRef={timelineControl}
-            jump={pendingTreeJump}
-            onJumpSettled={() => setPendingTreeJump(null)}
-            inherited={
-              state.inheritedMessages.length ||
-              state.inheritedContextSummary ||
-              state.inheritedMessagesTruncated ? (
-                <InheritedContext
-                  messages={state.inheritedMessages}
-                  summary={state.inheritedContextSummary}
-                  truncated={state.inheritedMessagesTruncated === true}
-                />
-              ) : undefined
-            }
-            renderRow={(row) => {
-              const turn = row.turn;
-              const target = forkTargets.get(turn.turnId);
-              return (
-                <ConversationTurn
-                  api={api}
-                  {...(commands.compact?.runId === turn.runId
-                    ? { compaction: commands.compact }
-                    : {})}
-                  progressStore={toolProgress}
-                  observationStore={runObservations}
-                  delegatedChildren={(conversationTree?.delegatedSessions ?? []).filter(
-                    (child) =>
-                      child.parentTurnId === turn.turnId &&
-                      child.parentSessionId === state.session?.sessionId,
-                  )}
-                  onOpenChild={(child) =>
-                    void openConversationSession(child.sessionId, undefined, false, child)
-                  }
-                  connected={state.connection.phase === "live"}
-                  canFork={
-                    canMutate &&
-                    selectedDelegatedSession === null &&
-                    operation === null &&
-                    target !== undefined
-                  }
-                  canPrune={
-                    canMutate &&
-                    selectedDelegatedSession === null &&
-                    operation === null &&
-                    currentTurn === undefined &&
-                    target !== undefined &&
-                    target.sourceSessionId === state.session?.sessionId
-                  }
-                  {...(target === undefined
-                    ? {}
-                    : {
-                        onFork: () => {
-                          setForkTitle("");
-                          setForkTarget(target);
-                        },
-                        onPrune: () => void pruneConversationTail(target),
-                      })}
-                  turn={turn}
-                  fragment={row.fragment}
-                />
-              );
-            }}
-          />
-          {inspectorOpen ? (
-            <WorkspaceInspector
+        <InputQueueProvider
+          key={state.session?.sessionId ?? "empty"}
+          api={api}
+          sessionId={
+            authPhase === "authenticated" && selectedDelegatedSession === null
+              ? (state.session?.sessionId ?? null)
+              : null
+          }
+          canMutate={canMutate && operation !== "submitting"}
+          returnRecovery={returnRecovery}
+          streamQueue={streamQueue}
+          refreshSignal={String(queueRefreshGeneration)}
+          onSnapshot={(queue) => {
+            latestQueue.current = queue;
+            reconcileQueue.current?.(queue);
+            update({ type: "queue.updated", queue });
+          }}
+          onRestoreDraft={restoreInputDraft}
+          onInitialWithdrawn={(item) => {
+            if (!state.session || !item.runId) return;
+            update({
+              type: "turn.admission.observed",
+              sessionId: state.session.sessionId,
+              turnId: item.inputId,
+              runId: item.runId,
+              state: "withdrawn",
+            });
+            restoreInputDraft(item.text, item.uploads ?? []);
+          }}
+        >
+          <div className={`product-content ${inspectorOpen ? "with-inspector" : ""}`}>
+            <ConversationTimeline
+              toolGroupsExpanded={toolGroupsExpanded}
+              key={state.session?.sessionId ?? "empty"}
               api={api}
-              onClose={() => setInspectorOpen(false)}
-              onError={(message) => update({ type: "api.error", message })}
-              refreshSignal={inspectorRefreshSignal}
-              sessionId={state.session?.sessionId ?? null}
-              workspaceId={state.project?.workspaceId ?? null}
-              workspaceName={state.project?.name ?? null}
-              developmentEnvironmentId={state.session?.developmentEnvironmentId ?? null}
-              workingDirectory={state.session?.workingDirectory ?? "/workspace"}
-            />
-          ) : null}
-        </div>
-
-        <footer className="product-composer-area">
-          {commands.usageOpen ? (
-            <ConversationUsage
-              value={commands.usage}
-              loading={commands.usageLoading}
-              error={commands.usageError}
-              onRefresh={() => void commands.refreshUsage()}
-              onClose={() => commands.closeUsage()}
-            />
-          ) : null}
-          {activeCompact &&
-          !state.turns.some(
-            (turn) =>
-              turn.runId === activeCompact.runId &&
-              (turn.status !== "queued" || turn.operation?.kind === "compact"),
-          ) ? (
-            <CompactStatus state={activeCompact.state} />
-          ) : null}
-          <div className="product-composer-shell">
-            <ComposerDelivery
-              value={
+              live={state}
+              submission={
                 composerDelivery?.input.sessionId === state.session?.sessionId
                   ? composerDelivery
                   : null
               }
+              scrollerRef={chatScrollerRef}
+              controlRef={timelineControl}
+              jump={pendingTreeJump}
+              onJumpSettled={() => setPendingTreeJump(null)}
+              inherited={
+                state.inheritedMessages.length ||
+                state.inheritedContextSummary ||
+                state.inheritedMessagesTruncated ? (
+                  <InheritedContext
+                    messages={state.inheritedMessages}
+                    summary={state.inheritedContextSummary}
+                    truncated={state.inheritedMessagesTruncated === true}
+                  />
+                ) : undefined
+              }
+              renderRow={(row) => {
+                const turn = row.turn;
+                const target = forkTargets.get(turn.turnId);
+                return (
+                  <ConversationTurn
+                    api={api}
+                    {...(commands.compact?.runId === turn.runId
+                      ? { compaction: commands.compact }
+                      : {})}
+                    progressStore={toolProgress}
+                    observationStore={runObservations}
+                    delegatedChildren={(conversationTree?.delegatedSessions ?? []).filter(
+                      (child) =>
+                        child.parentTurnId === turn.turnId &&
+                        child.parentSessionId === state.session?.sessionId,
+                    )}
+                    onOpenChild={(child) =>
+                      void openConversationSession(child.sessionId, undefined, false, child)
+                    }
+                    connected={state.connection.phase === "live"}
+                    canFork={
+                      canMutate &&
+                      selectedDelegatedSession === null &&
+                      operation === null &&
+                      target !== undefined
+                    }
+                    canPrune={
+                      canMutate &&
+                      selectedDelegatedSession === null &&
+                      operation === null &&
+                      currentTurn === undefined &&
+                      target !== undefined &&
+                      target.sourceSessionId === state.session?.sessionId
+                    }
+                    {...(target === undefined
+                      ? {}
+                      : {
+                          onFork: () => {
+                            setForkTitle("");
+                            setForkTarget(target);
+                          },
+                          onPrune: () => void pruneConversationTail(target),
+                        })}
+                    onRetrySubmission={() => void submitTurn(true)}
+                    retryDisabled={
+                      operation !== null || !canMutate || !canQueue || coldCompactActive
+                    }
+                    turn={turn}
+                    fragment={row.fragment}
+                  />
+                );
+              }}
             />
-            {authPhase === "authenticated" &&
-            state.session !== null &&
-            selectedDelegatedSession === null ? (
-              <PendingInputQueue
-                key={state.session.sessionId}
+            {inspectorOpen ? (
+              <WorkspaceInspector
                 api={api}
-                sessionId={state.session.sessionId}
-                canMutate={canMutate}
-                returnRecovery={returnRecovery}
-                streamQueue={streamQueue}
-                refreshSignal={String(queueRefreshGeneration)}
-                onSnapshot={(queue) => {
-                  reconcileQueue.current?.(queue);
-                  update({ type: "queue.updated", queue });
-                }}
-                onRestoreDraft={(text, attached, returnedKeys = []) => {
-                  if (currentStreamSession.current !== state.session?.sessionId) return false;
-                  if (!uploads.restore(attached)) return false;
-                  composerSubmission.current.retireReturned(state.session.sessionId, returnedKeys);
-                  draftRevision.current++;
-                  setPrompt((current) => (current.trim() ? `${current}\n\n${text}` : text));
-                  focusComposer();
-                  return true;
-                }}
+                onClose={() => setInspectorOpen(false)}
+                onError={(message) => update({ type: "api.error", message })}
+                refreshSignal={inspectorRefreshSignal}
+                sessionId={state.session?.sessionId ?? null}
+                workspaceId={state.project?.workspaceId ?? null}
+                workspaceName={state.project?.name ?? null}
+                developmentEnvironmentId={state.session?.developmentEnvironmentId ?? null}
+                workingDirectory={state.session?.workingDirectory ?? "/workspace"}
               />
             ) : null}
-            {selectedDelegatedSession === null ? null : (
-              <div className="product-delegated-readonly">{t("chat.subagentReadOnly")}</div>
-            )}
-            <ComposerUploadCards
-              items={uploads.items}
-              disabled={operation !== null}
-              remove={uploads.remove}
-              retry={uploads.retry}
-            />
-            {uploads.error ? (
-              <p role="alert" className="pending-input-error">
-                {t("upload.limit")}
-              </p>
-            ) : null}
-            <div
-              className="product-composer"
-              onDragOver={(event) => {
-                if (event.dataTransfer.types.includes("Files")) event.preventDefault();
-              }}
-              onDrop={(event) => {
-                event.preventDefault();
-                if (canMutate && canQueue && operation === null)
-                  uploads.add([...event.dataTransfer.files]);
-              }}
-            >
-              <input
-                type="file"
-                multiple
-                hidden
-                ref={filePickerRef}
-                aria-label={t("upload.add")}
-                onChange={(event) => {
-                  uploads.add([...(event.target.files ?? [])]);
-                  event.target.value = "";
-                }}
-              />
-              <button
-                type="button"
-                className="product-attach-button"
-                title={t("upload.limit")}
-                aria-label={t("upload.add")}
-                disabled={!canMutate || !canQueue || operation !== null}
-                onClick={() => filePickerRef.current?.click()}
-              >
-                ＋
-              </button>
-              {commandMenuOpen ? (
-                <div
-                  className="product-command-menu"
-                  id="composer-command-menu"
-                  role="listbox"
-                  aria-label={t("commands.menu")}
-                >
-                  {commandSuggestions.map((command, index) => (
-                    <button
-                      type="button"
-                      role="option"
-                      id={`composer-command-${command}`}
-                      key={command}
-                      aria-selected={command === selectedCommand}
-                      onMouseEnter={() => setCommandIndex(index)}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => void submitComposerCommand("/" + command)}
-                    >
-                      <code>/{command}</code>
-                      <span>{t(command === "usage" ? "usage.title" : "commands.compact")}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              <textarea
-                aria-expanded={commandMenuOpen}
-                aria-controls={commandMenuOpen ? "composer-command-menu" : undefined}
-                aria-activedescendant={
-                  commandMenuOpen ? `composer-command-${selectedCommand}` : undefined
-                }
-                aria-label={t("chat.sendLabel")}
-                onPaste={(event) => {
-                  const files = [...event.clipboardData.files];
-                  if (files.length && operation === null) {
-                    event.preventDefault();
-                    uploads.add(files);
-                  }
-                }}
-                disabled={state.session === null && (!canMutate || !canQueue)}
-                onChange={(event) => {
-                  draftRevision.current++;
-                  setPrompt(event.target.value);
-                  setCommandMenuDismissed(false);
-                  setCommandIndex(0);
-                }}
-                onKeyDown={(event) => {
-                  if (
-                    event.defaultPrevented ||
-                    event.nativeEvent.isComposing ||
-                    event.nativeEvent.keyCode === 229
-                  )
-                    return;
-                  if (commandMenuOpen && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
-                    event.preventDefault();
-                    setCommandIndex(
-                      (index) =>
-                        (index + (event.key === "ArrowDown" ? 1 : -1) + commandSuggestions.length) %
-                        commandSuggestions.length,
-                    );
-                    return;
-                  }
-                  if (commandMenuOpen && event.key === "Tab" && selectedCommand) {
-                    event.preventDefault();
-                    draftRevision.current++;
-                    setPrompt("/" + selectedCommand + (selectedCommand === "compact" ? " " : ""));
-                    setCommandMenuDismissed(true);
-                    return;
-                  }
-                  if (event.key === "Escape" && commandMenuOpen) {
-                    event.preventDefault();
-                    setCommandMenuDismissed(true);
-                    return;
-                  }
-                  if (event.key === "Escape" && commands.usageOpen) {
-                    event.preventDefault();
-                    commands.closeUsage();
-                    return;
-                  }
-                  if (event.key === "Escape") {
-                    // Scoped to the composer: menus, queue editors and dialogs own their Escape.
-                    event.preventDefault();
-                    if (!event.repeat) void cancelTurn();
-                    return;
-                  }
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    if (!event.repeat) sendComposer();
-                  }
-                }}
-                placeholder={t("chat.promptPlaceholder")}
-                ref={composerRef}
-                rows={1}
-                value={prompt}
-              />
-              {selectedDelegatedSession === null &&
-              modelCatalog !== null &&
-              composerModelSelection !== null ? (
-                <ModelSettingsMenu
-                  catalog={modelCatalog}
-                  disabled={currentTurn !== undefined || operation !== null}
-                  onApply={state.session === null ? setNewConversationModel : switchCurrentModel}
-                  t={t}
-                  value={composerModelSelection}
-                />
-              ) : null}
-              <button
-                className={
-                  composerAction === "stop" ? "product-stop-button" : "product-send-button"
-                }
-                disabled={
-                  operation !== null ||
-                  (composerAction === "stop"
-                    ? !canMutate || selectedDelegatedSession !== null
-                    : !hasComposerDraft || !canSendComposer)
-                }
-                onClick={() => (composerAction === "stop" ? void cancelTurn() : sendComposer())}
-                title={composerActionLabel}
-                aria-label={composerActionLabel}
-                type="button"
-              >
-                {composerAction === "stop" ? "■" : "↑"}
-              </button>
-            </div>
           </div>
-        </footer>
+
+          <footer className="product-composer-area">
+            {commands.usageOpen ? (
+              <ConversationUsage
+                value={commands.usage}
+                loading={commands.usageLoading}
+                error={commands.usageError}
+                onRefresh={() => void commands.refreshUsage()}
+                onClose={() => commands.closeUsage()}
+              />
+            ) : null}
+            {activeCompact &&
+            !state.turns.some(
+              (turn) =>
+                turn.runId === activeCompact.runId &&
+                (turn.status !== "queued" || turn.operation?.kind === "compact"),
+            ) ? (
+              <CompactStatus state={activeCompact.state} />
+            ) : null}
+            <div className="product-composer-shell">
+              <ComposerDelivery
+                value={
+                  composerDelivery?.input.sessionId === state.session?.sessionId
+                    ? composerDelivery
+                    : null
+                }
+                turns={state.turns}
+                onRetry={() => void submitTurn(true)}
+                disabled={operation !== null || !canMutate || !canQueue || coldCompactActive}
+              />
+              <PendingInputQueue />
+              {selectedDelegatedSession === null ? null : (
+                <div className="product-delegated-readonly">{t("chat.subagentReadOnly")}</div>
+              )}
+              <ComposerUploadCards
+                items={uploads.items}
+                disabled={operation !== null}
+                remove={uploads.remove}
+                retry={uploads.retry}
+              />
+              {uploads.error ? (
+                <p role="alert" className="pending-input-error">
+                  {t("upload.limit")}
+                </p>
+              ) : null}
+              <div
+                className="product-composer"
+                onDragOver={(event) => {
+                  if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  if (canMutate && canQueue && operation === null)
+                    uploads.add([...event.dataTransfer.files]);
+                }}
+              >
+                <input
+                  type="file"
+                  multiple
+                  hidden
+                  ref={filePickerRef}
+                  aria-label={t("upload.add")}
+                  onChange={(event) => {
+                    uploads.add([...(event.target.files ?? [])]);
+                    event.target.value = "";
+                  }}
+                />
+                <button
+                  type="button"
+                  className="product-attach-button"
+                  title={t("upload.limit")}
+                  aria-label={t("upload.add")}
+                  disabled={!canMutate || !canQueue || operation !== null}
+                  onClick={() => filePickerRef.current?.click()}
+                >
+                  ＋
+                </button>
+                {commandMenuOpen ? (
+                  <div
+                    className="product-command-menu"
+                    id="composer-command-menu"
+                    role="listbox"
+                    aria-label={t("commands.menu")}
+                  >
+                    {commandSuggestions.map((command, index) => (
+                      <button
+                        type="button"
+                        role="option"
+                        id={`composer-command-${command}`}
+                        key={command}
+                        aria-selected={command === selectedCommand}
+                        onMouseEnter={() => setCommandIndex(index)}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => void submitComposerCommand("/" + command)}
+                      >
+                        <code>/{command}</code>
+                        <span>{t(command === "usage" ? "usage.title" : "commands.compact")}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                <textarea
+                  aria-expanded={commandMenuOpen}
+                  aria-controls={commandMenuOpen ? "composer-command-menu" : undefined}
+                  aria-activedescendant={
+                    commandMenuOpen ? `composer-command-${selectedCommand}` : undefined
+                  }
+                  aria-label={t("chat.sendLabel")}
+                  onPaste={(event) => {
+                    const files = [...event.clipboardData.files];
+                    if (files.length && operation === null) {
+                      event.preventDefault();
+                      uploads.add(files);
+                    }
+                  }}
+                  disabled={state.session === null && (!canMutate || !canQueue)}
+                  onChange={(event) => {
+                    draftRevision.current++;
+                    setPrompt(event.target.value);
+                    setCommandMenuDismissed(false);
+                    setCommandIndex(0);
+                  }}
+                  onKeyDown={(event) => {
+                    if (
+                      event.defaultPrevented ||
+                      event.nativeEvent.isComposing ||
+                      event.nativeEvent.keyCode === 229
+                    )
+                      return;
+                    if (commandMenuOpen && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+                      event.preventDefault();
+                      setCommandIndex(
+                        (index) =>
+                          (index +
+                            (event.key === "ArrowDown" ? 1 : -1) +
+                            commandSuggestions.length) %
+                          commandSuggestions.length,
+                      );
+                      return;
+                    }
+                    if (commandMenuOpen && event.key === "Tab" && selectedCommand) {
+                      event.preventDefault();
+                      draftRevision.current++;
+                      setPrompt("/" + selectedCommand + (selectedCommand === "compact" ? " " : ""));
+                      setCommandMenuDismissed(true);
+                      return;
+                    }
+                    if (event.key === "Escape" && commandMenuOpen) {
+                      event.preventDefault();
+                      setCommandMenuDismissed(true);
+                      return;
+                    }
+                    if (event.key === "Escape" && commands.usageOpen) {
+                      event.preventDefault();
+                      commands.closeUsage();
+                      return;
+                    }
+                    if (event.key === "Escape") {
+                      // Scoped to the composer: menus, queue editors and dialogs own their Escape.
+                      event.preventDefault();
+                      if (!event.repeat) void cancelTurn();
+                      return;
+                    }
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      if (!event.repeat) sendComposer();
+                    }
+                  }}
+                  placeholder={t("chat.promptPlaceholder")}
+                  ref={composerRef}
+                  rows={1}
+                  value={prompt}
+                />
+                {selectedDelegatedSession === null &&
+                modelCatalog !== null &&
+                composerModelSelection !== null ? (
+                  <ModelSettingsMenu
+                    catalog={modelCatalog}
+                    disabled={currentTurn !== undefined || operation !== null}
+                    onApply={state.session === null ? setNewConversationModel : switchCurrentModel}
+                    t={t}
+                    value={composerModelSelection}
+                  />
+                ) : null}
+                <button
+                  className={
+                    composerAction === "stop" ? "product-stop-button" : "product-send-button"
+                  }
+                  disabled={
+                    operation !== null ||
+                    (composerAction === "stop"
+                      ? !canMutate || selectedDelegatedSession !== null
+                      : !hasComposerDraft || !canSendComposer)
+                  }
+                  onClick={() => (composerAction === "stop" ? void cancelTurn() : sendComposer())}
+                  title={composerActionLabel}
+                  aria-label={composerActionLabel}
+                  type="button"
+                >
+                  {composerAction === "stop" ? "■" : "↑"}
+                </button>
+              </div>
+            </div>
+          </footer>
+        </InputQueueProvider>
       </main>
     </div>
   );
