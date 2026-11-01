@@ -78,7 +78,30 @@ async function run(prompt, expectedTools, whenBusy = "follow_up") {
   await settled(accepted.runId);
   const rows = await nativeHistory(db, { tenantId: tenant.tenantId, runId: accepted.runId });
   const replies = nativeMessages(rows).filter((message) => message.role === "toolResult");
-  sample.tools = replies.map((message) => ({ name: message.toolName, isError: message.isError }));
+  sample.tools = replies.map((message) => ({
+    name: message.toolName,
+    isError: message.isError,
+    ...(message.isError
+      ? {
+          error: message.content
+            .filter((block) => block.type === "text")
+            .map((block) => block.text)
+            .join("\n")
+            .slice(0, 4096),
+        }
+      : {}),
+  }));
+  sample.skillCalls = nativeMessages(rows).flatMap((message) =>
+    message.role === "assistant"
+      ? message.content
+          .filter((block) => block.type === "toolCall" && block.name === "read_skill")
+          .map((block) => block.arguments)
+      : [],
+  );
+  sample.skillSections = nativeMessages(rows)
+    .filter((message) => message.role === "system" && message.sections?.skills)
+    .map((message) => message.sections.skills);
+  await save();
   for (const tool of expectedTools)
     assert(
       sample.tools.some((v) => v.name === tool && !v.isError),
