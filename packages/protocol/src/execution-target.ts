@@ -27,6 +27,7 @@ export function parseExecutionTargetGrants(value: unknown): ExecutionTargetGrant
 export const ToolEnvironmentRequirementSchema = Type.Union([
   Type.Object({ kind: Type.Literal("none") }, { additionalProperties: false }),
   Type.Object({ kind: Type.Literal("workspace") }, { additionalProperties: false }),
+  Type.Object({ kind: Type.Literal("skill") }, { additionalProperties: false }),
   Type.Object(
     {
       kind: Type.Literal("target"),

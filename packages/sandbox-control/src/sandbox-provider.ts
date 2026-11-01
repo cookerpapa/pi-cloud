@@ -268,6 +268,11 @@ export interface SandboxExecution {
 
 /** Current Workspace bytes and human file access. This port has no VM lifecycle authority. */
 export interface SandboxWorkspaceFiles {
+  exportPackage?(
+    handle: SandboxHandle,
+    input: { cwd: string; path: string },
+    signal?: AbortSignal,
+  ): Promise<{ files: import("@pi-cloud/protocol").SkillFile[] }>;
   preparePackage?(
     handle: SandboxHandle,
     input: {

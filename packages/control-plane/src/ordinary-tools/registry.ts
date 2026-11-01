@@ -17,6 +17,7 @@ export function createOrdinaryToolRegistry(options: {
   schedules?: SessionScheduleService;
   skills?: SkillMarketService;
   prepareSkill?: Parameters<typeof createSkillTools>[1];
+  exportSkill?: Parameters<typeof createSkillTools>[2];
   enabled?: readonly string[];
   images?: ConfiguredImageAttachments;
   imageGeneration?: ImageGenerationClient;
@@ -37,8 +38,10 @@ export function createOrdinaryToolRegistry(options: {
         }),
     },
   ];
-  if (options.skills && options.prepareSkill)
-    definitions.push(...createSkillTools(options.skills, options.prepareSkill));
+  if (options.skills && options.prepareSkill && options.exportSkill)
+    definitions.push(
+      ...createSkillTools(options.skills, options.prepareSkill, options.exportSkill),
+    );
   if (options.images) {
     const common = { images: options.images, imageIo: options.imageIo };
     definitions.push(createShowImageTool(common));

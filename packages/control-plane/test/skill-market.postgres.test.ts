@@ -1,3 +1,4 @@
+import { pinRunSkillCatalog } from "@pi-cloud/runtime-core";
 import { randomUUID } from "node:crypto";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
 import { sql } from "kysely";
@@ -77,6 +78,30 @@ it("publishes immutable packages, scopes installation and pins versions across c
     const run = await store.acceptTurn(session.sessionId, "skill-run", {
       prompt: "Inspect the project",
     });
+    await pinRunSkillCatalog(db, actor.tenantId, run.runId);
+    expect(
+      await service.runActor(actor.tenantId, run.runId, {
+        sessionId: session.sessionId,
+        conversationId: 1,
+      }),
+    ).toMatchObject({ userId: actor.userId, role: "member" });
+    await expect(
+      service.runActor(actor.tenantId, run.runId, { sessionId: randomUUID(), conversationId: 1 }),
+    ).rejects.toMatchObject({ code: "not_found" });
+    const published = await service.inspect(actor.tenantId, actor.userId, "fixture-skill");
+    expect(published.skills[0]).toMatchObject({
+      owned: true,
+      packageId: first.packageId,
+      versionId: first.versionId,
+    });
+    await sql`update skill_versions set runtime_metadata=null where tenant_id=${actor.tenantId}::uuid`.execute(
+      db,
+    );
+    await service.initialize();
+    expect((await service.runCatalog(actor.tenantId, run.runId))[0]?.runtimeMetadata).toEqual({
+      disableModelInvocation: false,
+      requiresWorkspaceFiles: false,
+    });
     const beforeWrites = writes;
     const snapshots = await Promise.all([
       service.runCatalog(actor.tenantId, run.runId),
@@ -111,6 +136,7 @@ it("publishes immutable packages, scopes installation and pins versions across c
     const run2 = await store.acceptTurn(session.sessionId, "skill-run-2", {
       prompt: "Inspect later",
     });
+    await pinRunSkillCatalog(db, actor.tenantId, run2.runId);
     expect((await service.runCatalog(actor.tenantId, run2.runId))[0]!.versionId).toBe(
       second.versionId,
     );
@@ -158,6 +184,7 @@ it("publishes immutable packages, scopes installation and pins versions across c
     const run3 = await store.acceptTurn(session.sessionId, "skill-run-3", {
       prompt: "Respect project disable",
     });
+    await pinRunSkillCatalog(db, actor.tenantId, run3.runId);
     expect(await service.runCatalog(actor.tenantId, run3.runId)).toEqual([]);
     expect((await service.list(actor, project.projectId)).packages[0]!.installations).toHaveLength(
       2,

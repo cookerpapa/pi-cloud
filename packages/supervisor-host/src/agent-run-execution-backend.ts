@@ -402,6 +402,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
             : { computeSessionId: request.computeSessionId }),
           sandboxProfileKey: request.sandboxProfileKey,
           workingDirectory: request.workingDirectory,
+          ...(request.skillCatalog ? { skillCatalog: request.skillCatalog } : {}),
           toolCapabilities: request.toolCapabilities,
           ...(request.executionTargets?.length
             ? { executionTargets: request.executionTargets }

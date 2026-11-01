@@ -180,7 +180,7 @@ export function SkillDetails({
                   type="button"
                   onClick={() => content && onEdit({ version, content })}
                 >
-                  {say("分享新版本", "Share new version")}
+                  {say("导入新版本", "Import new version")}
                 </button>
               ) : null}
               <button

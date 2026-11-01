@@ -1745,7 +1745,17 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
         api={api}
         userId={identity.userId}
         owner={identity.role === "owner"}
-        canMutate={identity.role !== "viewer"}
+        canMutate={identity.role !== "viewer" && operation === null}
+        onCreate={() => {
+          if (operation !== null) return;
+          setSkillsOpen(false);
+          if (selectedDelegatedSession) resetConversation(true);
+          draftRevision.current++;
+          setPrompt((current) =>
+            current.trim() ? `${current}\n\n${t("skills.createPrompt")}` : t("skills.createPrompt"),
+          );
+          focusComposer();
+        }}
         {...(state.project?.projectId ? { projectId: state.project.projectId } : {})}
         onClose={() => setSkillsOpen(false)}
       />

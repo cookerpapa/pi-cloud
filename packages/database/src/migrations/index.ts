@@ -1,3 +1,4 @@
+import * as skillRuntimeMetadata from "./207_skill_runtime_metadata.ts";
 import * as sharedNativeEntryBodies from "./203_shared_native_entry_bodies.ts";
 import * as sessionSchedules from "./202_session_schedules.ts";
 import * as executionTargets from "./201_execution_targets.ts";
@@ -392,6 +393,7 @@ export const migrationProvider: MigrationProvider = {
       "204_shared_native_history_bases": sharedNativeHistoryBases,
       "205_independent_fork_lifetimes": independentForkLifetimes,
       "206_skill_market": skillMarket,
+      "207_skill_runtime_metadata": skillRuntimeMetadata,
     };
   },
 };

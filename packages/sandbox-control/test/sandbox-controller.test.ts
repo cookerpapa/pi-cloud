@@ -388,6 +388,48 @@ describe("provider-backed Sandbox controller", () => {
     }
   });
 
+  it("exports package files under binding ownership and rejects cancelled exports", async () => {
+    const fixture = providerFixture();
+    const entered = Promise.withResolvers<void>(),
+      finish = Promise.withResolvers<void>();
+    const exportPackage = vi.fn<NonNullable<SandboxProvider["exportPackage"]>>(async () => {
+      entered.resolve();
+      await finish.promise;
+      return { files: [{ path: "SKILL.md", base64: "b2s=" }] };
+    });
+    fixture.provider.exportPackage = exportPackage;
+    const broker = testBroker({ provider: fixture.provider });
+    const reserved = await broker.create(createRequest);
+    const request = {
+      toolBrokerProtocolVersion: 1 as const,
+      type: "tool_sandbox.export_package" as const,
+      requestId: crypto.randomUUID(),
+      operationId: crypto.randomUUID(),
+      activationId: reserved.activationId,
+      assignment,
+      path: "skills/check",
+    };
+    const abort = new AbortController();
+    const result = broker.exportPackage(request, abort.signal).catch((error) => error);
+    try {
+      await entered.promise;
+      const duplicate = broker.exportPackage(request).catch((error) => error);
+      abort.abort(new Error("stop"));
+      finish.resolve();
+      expect(await result).toBeInstanceOf(Error);
+      expect(await duplicate).toBeInstanceOf(Error);
+      expect(exportPackage).toHaveBeenCalledOnce();
+      await expect(
+        broker.exportPackage({ ...request, activationId: crypto.randomUUID() }),
+      ).rejects.toThrow();
+      expect(exportPackage).toHaveBeenCalledOnce();
+    } finally {
+      finish.resolve();
+      await result;
+      await broker.close();
+    }
+  });
+
   it("serializes Tool image decoding with existing image admission and waits for running cancellation", async () => {
     const fixture = providerFixture();
     const entered = Promise.withResolvers<void>(),

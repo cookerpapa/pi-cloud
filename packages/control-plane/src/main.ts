@@ -309,8 +309,17 @@ export async function startControlPlane(): Promise<void> {
           dispatcher: skillDispatcher,
         })) as unknown as typeof fetch,
     });
+    await skills.initialize();
     const ordinaryTools = createOrdinaryToolRegistry({
       skills,
+      exportSkill: (call, path, signal) =>
+        sandboxControl!.exportToolPackage(
+          call.scope,
+          call.bindingId!,
+          call.operationId,
+          path,
+          signal,
+        ),
       prepareSkill: (call, content, digest, signal) =>
         sandboxControl!.prepareToolPackage(
           call.scope,

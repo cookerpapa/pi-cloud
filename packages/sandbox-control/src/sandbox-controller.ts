@@ -53,6 +53,14 @@ type InputImageResponse = Extract<
   SandboxControlResponse,
   { type: "tool_sandbox.input_images_prepared" }
 >;
+type ToolPackageExportRequest = Extract<
+  SandboxControlRequest,
+  { type: "tool_sandbox.export_package" }
+>;
+type ToolPackageExportResponse = Extract<
+  SandboxControlResponse,
+  { type: "tool_sandbox.package_exported" }
+>;
 type ToolPackageRequest = Extract<SandboxControlRequest, { type: "tool_sandbox.prepare_package" }>;
 type ToolPackageResponse = Extract<
   SandboxControlResponse,
@@ -152,7 +160,11 @@ type ManagedToolBinding = {
     Readonly<{
       requestSha256: string;
       result: Promise<
-        ToolSandboxOperationResponse | InputImageResponse | ToolImageResponse | ToolPackageResponse
+        | ToolSandboxOperationResponse
+        | InputImageResponse
+        | ToolImageResponse
+        | ToolPackageResponse
+        | ToolPackageExportResponse
       >;
       controller: AbortController;
     }>
@@ -2287,46 +2299,71 @@ export class SandboxController {
     return durable;
   }
 
+  async exportPackage(
+    request: ToolPackageExportRequest,
+    signal?: AbortSignal,
+  ): Promise<ToolPackageExportResponse> {
+    return this.#packageOperation(request, signal);
+  }
   async preparePackage(
     request: ToolPackageRequest,
     signal?: AbortSignal,
   ): Promise<ToolPackageResponse> {
+    return this.#packageOperation(request, signal);
+  }
+  #packageOperation(
+    request: ToolPackageRequest,
+    signal?: AbortSignal,
+  ): Promise<ToolPackageResponse>;
+  #packageOperation(
+    request: ToolPackageExportRequest,
+    signal?: AbortSignal,
+  ): Promise<ToolPackageExportResponse>;
+  async #packageOperation(
+    request: ToolPackageRequest | ToolPackageExportRequest,
+    signal?: AbortSignal,
+  ): Promise<ToolPackageResponse | ToolPackageExportResponse> {
     const activation = this.#ownedBinding(request.activationId, request.assignment);
     if (activation.inputClosed)
       throw new SandboxControlError("tool_binding_closed", "Tool binding is closing", false);
-    const key = `package:${request.requestId}`;
+    const key = `${request.type}:${request.requestId}`;
     const requestSha256 = createHash("sha256").update(JSON.stringify(request)).digest("hex");
     const existing = activation.operations.get(key);
     if (existing) {
-      if (existing.requestSha256 !== requestSha256) throw new Error("Package identity conflict");
-      return existing.result as Promise<ToolPackageResponse>;
+      if (existing.requestSha256 !== requestSha256) throw Error("Package identity conflict");
+      return existing.result as Promise<ToolPackageResponse | ToolPackageExportResponse>;
     }
-    const controller = new AbortController();
-    const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
-    const result = (async (): Promise<ToolPackageResponse> => {
+    const controller = new AbortController(),
+      combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+    const result = (async (): Promise<ToolPackageResponse | ToolPackageExportResponse> => {
       activation.activeOperations++;
       if (activation.elasticRuntime) activation.elasticRuntime.activeOperations++;
       try {
         combined.throwIfAborted();
         const handle = await this.#materialize(activation, combined);
         this.#stateRepository.assertLocalOwnership();
+        const cwd = activation.spec.toolRoot ?? handle.workspaceRoot;
+        const identity = {
+          toolBrokerProtocolVersion: 1 as const,
+          requestId: request.requestId,
+          activationId: request.activationId,
+        };
+        if (request.type === "tool_sandbox.export_package") {
+          const exported = await this.#workspaceFiles.exportPackage(
+            handle,
+            { cwd, path: request.path },
+            combined,
+          );
+          combined.throwIfAborted();
+          return { ...identity, type: "tool_sandbox.package_exported", files: exported.files };
+        }
         const placed = await this.#workspaceFiles.preparePackage(
           handle,
-          {
-            cwd: activation.spec.toolRoot ?? handle.workspaceRoot,
-            content: request.content,
-            digest: request.digest,
-          },
+          { cwd, content: request.content, digest: request.digest },
           combined,
         );
         combined.throwIfAborted();
-        return {
-          toolBrokerProtocolVersion: 1,
-          type: "tool_sandbox.package_prepared",
-          requestId: request.requestId,
-          activationId: request.activationId,
-          path: placed.path,
-        };
+        return { ...identity, type: "tool_sandbox.package_prepared", path: placed.path };
       } finally {
         activation.activeOperations--;
         if (activation.elasticRuntime) activation.elasticRuntime.activeOperations--;

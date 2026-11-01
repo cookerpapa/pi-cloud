@@ -11,9 +11,8 @@ import type { PiCloudApi } from "./api.ts";
 import { useI18n } from "./i18n.tsx";
 import { errorMessage } from "./ui-errors.ts";
 import { SkillDialog } from "./SkillDialog.tsx";
-import { skillBase64, skillText } from "./skill-package-view.tsx";
-const template =
-  "---\nname: my-skill\ndescription: Describe when to use this skill.\n---\n\n# My skill\n\n1. Inspect the task.\n2. Follow the project conventions.\n3. Verify the result.\n";
+import { Markdown } from "./Markdown.tsx";
+import { skillBase64, skillText, skillBody } from "./skill-package-view.tsx";
 export type SkillDraft = { version: SkillVersion; content: SkillPackageContent };
 export function SkillPublisher({
   api,
@@ -28,12 +27,11 @@ export function SkillPublisher({
 }) {
   const { language, t } = useI18n(),
     say = (cn: string, en: string) => (language === "zh-CN" ? cn : en);
-  const [mode, setMode] = useState<"write" | "files">("write"),
-    [text, setText] = useState(() =>
-      draft?.content.files.find((f) => f.path === "SKILL.md")
-        ? (skillText(draft.content.files.find((f) => f.path === "SKILL.md")!) ?? "")
-        : template,
-    );
+  const [text, setText] = useState(() =>
+    draft?.content.files.find((f) => f.path === "SKILL.md")
+      ? (skillText(draft.content.files.find((f) => f.path === "SKILL.md")!) ?? "")
+      : "",
+  );
   const [files, setFiles] = useState<SkillFile[]>(draft?.content.files ?? []),
     [label, setLabel] = useState(draft ? `${draft.version.label}-next` : "1.0");
   const [runtime, setRuntime] = useState(draft?.version.requirements.runtime ?? "none"),
@@ -111,10 +109,7 @@ export function SkillPublisher({
         requirements: { runtime, tools: words(tools), software: words(software) },
         source: {
           kind: "files",
-          files: [
-            { path: "SKILL.md", base64: skillBase64(text) },
-            ...files.filter((f) => f.path !== "SKILL.md"),
-          ],
+          files,
         },
       };
       const version = await api.importSkill(parseSkillImport(input));
@@ -128,7 +123,9 @@ export function SkillPublisher({
   }
   return (
     <SkillDialog
-      title={draft ? say("分享新版本", "Share a new version") : say("分享 Skill", "Share a Skill")}
+      title={
+        draft ? say("导入新版本", "Import a new version") : say("导入 Skill", "Import a Skill")
+      }
       busy={busy}
       onClose={onClose}
     >
@@ -139,60 +136,40 @@ export function SkillPublisher({
           void publish();
         }}
       >
-        <div className="skill-tabs" role="group" aria-label={say("内容来源", "Content source")}>
-          {(["write", "files"] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={mode === value}
+        <div className="skill-import-options">
+          <label className="skill-file-picker">
+            {say("选择目录", "Choose directory")}
+            <input
+              aria-label={say("选择目录", "Choose directory")}
               disabled={busy}
-              onClick={() => setMode(value)}
-            >
-              {value === "write" ? say("编写", "Write") : say("本地导入", "Local import")}
-            </button>
-          ))}
+              type="file"
+              multiple
+              ref={(node) => node?.setAttribute("webkitdirectory", "")}
+              onChange={(event) => void importLocal(event.target.files)}
+            />
+          </label>
+          <label className="skill-file-picker">
+            {say("选择 Skill 包", "Choose Skill package")}
+            <input
+              aria-label={say("选择 Skill 包", "Choose Skill package")}
+              disabled={busy}
+              type="file"
+              accept=".json"
+              onChange={(event) => void importLocal(event.target.files, true)}
+            />
+          </label>
+          {files.length ? (
+            <p className="skill-muted">{say(`${files.length} 个文件`, `${files.length} files`)}</p>
+          ) : null}
         </div>
-        {mode === "files" ? (
-          <div className="skill-import-options">
-            <label className="skill-file-picker">
-              {say("选择目录", "Choose directory")}
-              <input
-                aria-label={say("选择目录", "Choose directory")}
-                disabled={busy}
-                type="file"
-                multiple
-                ref={(node) => node?.setAttribute("webkitdirectory", "")}
-                onChange={(event) => void importLocal(event.target.files)}
-              />
-            </label>
-            <label className="skill-file-picker">
-              {say("选择 Skill 包", "Choose Skill package")}
-              <input
-                aria-label={say("选择 Skill 包", "Choose Skill package")}
-                disabled={busy}
-                type="file"
-                accept=".json"
-                onChange={(event) => void importLocal(event.target.files, true)}
-              />
-            </label>
-            {files.length ? (
-              <p className="skill-muted">
-                {say(`${files.length} 个文件`, `${files.length} files`)}
-              </p>
-            ) : null}
-          </div>
+        {text ? (
+          <details className="skill-advanced">
+            <summary>{say("查看 SKILL.md", "Preview SKILL.md")}</summary>
+            <div className="skill-preview">
+              <Markdown>{skillBody(text).slice(0, 65536)}</Markdown>
+            </div>
+          </details>
         ) : null}
-        <label className="skill-editor-label">
-          SKILL.md
-          <textarea
-            aria-label="SKILL.md"
-            value={text}
-            rows={12}
-            disabled={busy}
-            required
-            onChange={(event) => setText(event.target.value)}
-          />
-        </label>
         {files.length > 1 ? (
           <span className="skill-muted">
             {say(`附带 ${files.length - 1} 个文件`, `${files.length - 1} supporting files`)}
@@ -249,7 +226,7 @@ export function SkillPublisher({
           <button
             type="submit"
             className="skill-primary"
-            disabled={busy || !text.trim() || (mode === "files" && !files.length)}
+            disabled={busy || !text.trim() || !files.length}
           >
             {busy ? say("保存中…", "Saving…") : say("分享到组织", "Share with organization")}
           </button>

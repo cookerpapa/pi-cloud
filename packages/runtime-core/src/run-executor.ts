@@ -1,3 +1,4 @@
+import { pinRunSkillCatalog } from "./run-skill-catalog.ts";
 import { parseScheduledOrigin } from "@pi-cloud/protocol";
 import { parseModelRuntimeSnapshot, parseExecutionTargetGrants } from "@pi-cloud/protocol";
 import { recordEnvironmentFailure } from "./environment-failure.ts";
@@ -74,6 +75,7 @@ export type TurnExecutionRequest = {
   executionTargets?: import("@pi-cloud/protocol").ExecutionTargetGrant[];
   scheduledOrigin?: import("@pi-cloud/protocol").ScheduledOrigin;
   agentSystemPrompt?: string;
+  skillCatalog?: import("@pi-cloud/protocol").SkillCatalogEntry[];
   model: {
     profileId: string;
     provider: string;
@@ -952,6 +954,9 @@ export class RunExecutor {
         queuedAt: new Date(row.runQueuedAt),
         admission: await this.#backend.admit(transaction, request, mark, { physical }),
       };
+      const skills = await pinRunSkillCatalog(transaction, row.tenantId, row.runId);
+      if (skills.length) request.skillCatalog = skills;
+      mark("skill_catalog");
       await this.#startAdmittedRun(transaction, claim, row.runVersion);
       mark("admitted_running");
       committedCandidate = claim;

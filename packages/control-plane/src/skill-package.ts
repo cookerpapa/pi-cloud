@@ -60,6 +60,25 @@ export function skillPackage(files: readonly SkillFile[]) {
   const content = { name: metadata.name, files: normalized };
   const body = Buffer.from(JSON.stringify(content));
   return {
+    runtimeMetadata: {
+      disableModelInvocation: metadata["disable-model-invocation"] === true,
+      requiresWorkspaceFiles: normalized.some((file) => {
+        if (file.path === "SKILL.md") return false;
+        const documentation =
+          file.path.startsWith("references/") ||
+          /\.(md|markdown|txt|rst|adoc)$/i.test(file.path) ||
+          /(?:^|\/)(README|LICENSE|COPYING|NOTICE)$/i.test(file.path);
+        if (file.path.startsWith("scripts/") || file.path.startsWith("assets/") || !documentation)
+          return true;
+        try {
+          return new TextDecoder("utf-8", { fatal: true })
+            .decode(Buffer.from(file.base64, "base64"))
+            .includes("\0");
+        } catch {
+          return true;
+        }
+      }),
+    },
     content,
     body,
     description: metadata.description,

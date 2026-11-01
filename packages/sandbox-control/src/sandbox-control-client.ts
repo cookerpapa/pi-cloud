@@ -99,9 +99,32 @@ function positiveInteger(value: number, name: string): number {
   return value;
 }
 
-async function boundedJson(response: Response): Promise<unknown> {
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.byteLength < 1 || bytes.byteLength > MAX_RESPONSE_BYTES) {
+async function boundedJson(
+  response: Response,
+  maximumBytes = MAX_RESPONSE_BYTES,
+): Promise<unknown> {
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  const reader = response.body?.getReader();
+  if (reader)
+    try {
+      for (;;) {
+        const part = await reader.read();
+        if (part.done) break;
+        length += part.value.byteLength;
+        if (length > maximumBytes)
+          throw new SandboxControlClientError(
+            "tool_broker_protocol_error",
+            "Sandbox control response exceeded its byte limit",
+            false,
+          );
+        chunks.push(part.value);
+      }
+    } finally {
+      await reader.cancel().catch(() => {});
+    }
+  const bytes = Buffer.concat(chunks);
+  if (bytes.byteLength < 1 || bytes.byteLength > maximumBytes) {
     throw new SandboxControlClientError(
       "tool_broker_protocol_error",
       "Sandbox control response was outside its byte limit",
@@ -209,6 +232,24 @@ export class SandboxControlClient {
         false,
       );
     }
+    return response;
+  }
+
+  async exportPackage(
+    request: Extract<SandboxControlRequest, { type: "tool_sandbox.export_package" }>,
+    signal?: AbortSignal,
+  ) {
+    const response = await this.#service(request, signal);
+    if (
+      response.type !== "tool_sandbox.package_exported" ||
+      response.requestId !== request.requestId ||
+      response.activationId !== request.activationId
+    )
+      throw new SandboxControlClientError(
+        "package_export_invalid",
+        "Package response identity changed",
+        false,
+      );
     return response;
   }
 
@@ -662,7 +703,12 @@ export class SandboxControlClient {
       });
       return owner.#request(path, bearer, body, signal, redirects + 1);
     }
-    const value = await boundedJson(response);
+    const value = await boundedJson(
+      response,
+      action.type === "tool_sandbox.export_package" && response.ok
+        ? 24 * 1024 * 1024 + 16384
+        : MAX_RESPONSE_BYTES,
+    );
     if (!response.ok) {
       try {
         const failure = parseInternalServiceError(value).error;

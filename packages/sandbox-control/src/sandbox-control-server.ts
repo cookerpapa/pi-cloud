@@ -106,6 +106,7 @@ export type SandboxControlBackend = Pick<
       | "prepareInputImages"
       | "imageIo"
       | "preparePackage"
+      | "exportPackage"
       | "recordRuntimeEvidence"
     >
   >;
@@ -702,6 +703,25 @@ export class SandboxControlServer {
               this.#broker.cleanPrewarmCount,
             );
             await reply.code(200).send(reserved);
+            return;
+          }
+          if (message.type === "tool_sandbox.export_package") {
+            if (!this.#broker.exportPackage)
+              throw new SandboxControlError(
+                "package_export_unavailable",
+                "Package export is unavailable",
+                false,
+              );
+            const abort = new AbortController();
+            const closed = () => {
+              if (!reply.raw.writableEnded) abort.abort(new Error("Package caller disconnected"));
+            };
+            reply.raw.on("close", closed);
+            try {
+              await reply.code(200).send(await this.#broker.exportPackage(message, abort.signal));
+            } finally {
+              reply.raw.removeListener("close", closed);
+            }
             return;
           }
           if (message.type === "tool_sandbox.prepare_package") {

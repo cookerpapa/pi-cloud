@@ -1,6 +1,7 @@
+import { readRunSkillCatalog } from "@pi-cloud/runtime-core";
 import { createHash, randomUUID } from "node:crypto";
 import { sql, type Kysely } from "kysely";
-import { retryTransaction, type Database } from "@pi-cloud/database";
+import { type Database } from "@pi-cloud/database";
 import {
   SKILL_ENVELOPE_BYTES,
   CLOUD_TOOL_NAMES,
@@ -27,6 +28,7 @@ export interface SkillPackageBlobs {
   readStream(key: string, maximumBytes: number, signal: AbortSignal): AsyncIterable<Uint8Array>;
 }
 type VersionRow = {
+  runtime_metadata: SkillVersion["runtimeMetadata"] | null;
   published: boolean;
   id: string;
   package_id: string;
@@ -41,6 +43,7 @@ type VersionRow = {
   object_key: string;
 };
 const version = (row: VersionRow): SkillVersion => ({
+  runtimeMetadata: row.runtime_metadata!,
   versionId: row.id,
   packageId: row.package_id,
   name: row.name,
@@ -73,7 +76,7 @@ export class SkillMarketService {
 
   async publish(
     actor: Actor,
-    input: SkillImport,
+    input: Omit<SkillImport, "label"> & { label?: string },
     signal = new AbortController().signal,
   ): Promise<SkillVersion> {
     if (actor.role === "viewer")
@@ -128,8 +131,8 @@ export class SkillMarketService {
         return conflict("A version cannot rename its Skill package");
       const key = `skills/${actor.tenantId}/${digest}.json`;
       const rows =
-        await sql<VersionRow>`insert into skill_versions(id,tenant_id,package_id,digest,object_key,byte_length,label,description,compatibility,requirements,source)
-        values(${randomUUID()}::uuid,${actor.tenantId}::uuid,${pack.id}::uuid,${digest},${key},${parsed.byteLength},${input.label},${parsed.description},${parsed.compatibility},${JSON.stringify(requirements)}::jsonb,${JSON.stringify(imported.source)}::jsonb)
+        await sql<VersionRow>`insert into skill_versions(id,tenant_id,package_id,digest,object_key,byte_length,label,description,compatibility,requirements,source,runtime_metadata)
+        values(${randomUUID()}::uuid,${actor.tenantId}::uuid,${pack.id}::uuid,${digest},${key},${parsed.byteLength},${input.label ?? `sha-${digest.slice(0, 12)}`},${parsed.description},${parsed.compatibility},${JSON.stringify(requirements)}::jsonb,${JSON.stringify(imported.source)}::jsonb,${JSON.stringify(parsed.runtimeMetadata)}::jsonb)
         on conflict(tenant_id,package_id,digest) do update set digest=excluded.digest
         returning *,${pack.name}::text as name`.execute(tx);
       return rows.rows[0]!;
@@ -143,6 +146,41 @@ export class SkillMarketService {
     return version(row);
   }
 
+  /** An admitted root Run carries member-level mutation authority, never an
+   * implicit organization-owner installation grant. */
+  async runActor(
+    tenantId: string,
+    runId: string,
+    root?: { sessionId: string; conversationId: number },
+  ): Promise<Actor> {
+    const { rows } = await sql<{ userId: string }>`select s.created_by_user_id as "userId"
+      from runs r join sessions s on s.tenant_id=r.tenant_id and s.id=r.session_id
+      where r.tenant_id=${tenantId}::uuid and r.id=${runId}::uuid
+        and (${root?.sessionId ?? null}::uuid is null or (r.session_id=${root?.sessionId ?? null}::uuid and s.pi_conversation_id=${root?.conversationId ?? null}::bigint))`.execute(
+      this.options.database,
+    );
+    if (!rows[0]?.userId) return notFound();
+    return { tenantId, userId: rows[0].userId, role: "member" };
+  }
+  async inspect(tenantId: string, userId: string, name?: string, cursor?: string) {
+    const { rows } = await sql<{
+      packageId: string;
+      name: string;
+      owned: boolean;
+      versionId: string;
+      label: string;
+      digest: string;
+      description: string;
+    }>`
+      select p.id as "packageId",p.name,(p.owner_user_id=${userId}::uuid) as owned,
+        v.id as "versionId",v.label,v.digest,left(v.description,256) as description
+      from skill_packages p cross join lateral
+        (select id,label,digest,description from skill_versions where package_id=p.id and tenant_id=p.tenant_id and published order by created_at desc,id desc limit 1) v
+      where p.tenant_id=${tenantId}::uuid and (${name ?? null}::text is null or p.name=${name ?? null})
+        and (${cursor ?? null}::uuid is null or p.id>${cursor ?? null}::uuid)
+      order by p.id limit 21`.execute(this.options.database);
+    return { skills: rows.slice(0, 20), nextCursor: rows.length > 20 ? rows[19]!.packageId : null };
+  }
   async #scope(actor: Actor, scope: SkillScope, mutation: boolean): Promise<string> {
     if (mutation && actor.role === "viewer")
       throw new TenantRequestContextError(
@@ -316,52 +354,28 @@ export class SkillMarketService {
     );
   }
   async runCatalog(tenantId: string, runId: string): Promise<SkillVersion[]> {
-    const db = this.options.database;
-    const existing = await sql<{
-      versions: string[];
-    }>`select versions from run_skill_catalogs where tenant_id=${tenantId}::uuid and run_id=${runId}::uuid`.execute(
-      db,
-    );
-    let ids = existing.rows[0]?.versions;
-    if (!ids) {
-      ids = await retryTransaction(db, async (tx) => {
-        await sql`set transaction isolation level repeatable read`.execute(tx);
-        const roots = await sql<{
-          user_id: string;
-          project_id: string;
-        }>`select s.created_by_user_id as user_id,r.project_id from runs r join sessions s on s.tenant_id=r.tenant_id and s.id=r.session_id
-          where r.tenant_id=${tenantId}::uuid and r.id=${runId}::uuid`.execute(tx);
-        const root = roots.rows[0];
-        if (!root) return notFound();
-        // A nearer disabled installation masks a wider installation, too.
-        const installed = await sql<{
-          version_id: string;
-          enabled: boolean;
-        }>`select distinct on(package_id) version_id,enabled from skill_installations
-          where tenant_id=${tenantId}::uuid and ((scope_kind='personal' and scope_id=${root.user_id}::uuid)
-          or (scope_kind='tenant' and scope_id=${tenantId}::uuid) or (scope_kind='project' and scope_id=${root.project_id}::uuid))
-          order by package_id,case scope_kind when 'project' then 0 when 'personal' then 1 else 2 end`.execute(
-          tx,
-        );
-        const selected = installed.rows.filter((row) => row.enabled).map((row) => row.version_id);
-        // ON CONFLICT also handles concurrent first use by parent/child Tools.
-        const result = await sql<{
-          versions: string[];
-        }>`insert into run_skill_catalogs(tenant_id,run_id,versions)
-          values(${tenantId}::uuid,${runId}::uuid,${JSON.stringify(selected)}::jsonb)
-          on conflict(run_id) do update set versions=run_skill_catalogs.versions returning versions`.execute(
-          tx,
-        );
-        return result.rows[0]!.versions;
-      });
-    }
-    if (!ids.length) return [];
-    const rows =
-      await sql<VersionRow>`select v.*,p.name from skill_versions v join skill_packages p on p.id=v.package_id
-      where v.tenant_id=${tenantId}::uuid and v.id=any(${ids}::uuid[]) and v.published order by p.name,v.id`.execute(
-        db,
+    return readRunSkillCatalog(this.options.database, tenantId, runId);
+  }
+  /** One-time derived metadata migration; completed before control readiness. */
+  async initialize(): Promise<void> {
+    for (;;) {
+      const { rows } = await sql<{
+        tenant_id: string;
+        id: string;
+      }>`select tenant_id,id from skill_versions
+        where published and runtime_metadata is null order by id limit 30`.execute(
+        this.options.database,
       );
-    return rows.rows.map(version);
+      if (!rows.length) return;
+      for (const row of rows) {
+        const content = await this.content(row.tenant_id, row.id, AbortSignal.timeout(120000));
+        const metadata = skillPackage(content.files).runtimeMetadata;
+        await sql`update skill_versions set runtime_metadata=${JSON.stringify(metadata)}::jsonb
+          where tenant_id=${row.tenant_id}::uuid and id=${row.id}::uuid and runtime_metadata is null`.execute(
+          this.options.database,
+        );
+      }
+    }
   }
   async content(
     tenantId: string,

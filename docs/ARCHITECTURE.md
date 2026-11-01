@@ -381,14 +381,17 @@ The retained Android execution-target prototype has an operator API but no Web
 picker or automatic device pool; it is not a fallback for Cube coding execution.
 See [OPTIONAL_MODULES](OPTIONAL_MODULES.md) and [ANDROID_EXECUTION](ANDROID_EXECUTION.md).
 
-The organization-only [Skill market](SKILLS.md) separates browsing, installed
-management and on-demand package preview. The Web shares local file packages and
-does not connect to public catalogs. It stores portable packages in S3 and catalog,
-installation and per-Run version selections in PG. `read_skill` discovers and reads
-installed instructions; it does not allocate a VM. `prepare_skill` copies files
-through the current Workspace binding; ordinary Sandbox Tools run scripts.
-Neither tool loads user extensions into the Worker. Automatic project-directory
-scanning and executable user extensions remain outside this slice.
+The organization-only [Skill market](SKILLS.md) stores immutable packages in S3,
+installations and frozen Run selections in PG. At Run bootstrap, installed metadata
+reaches Pi's public system section; instructions are read on demand. `read_skill`
+automatically prepares execution resources through the existing Workspace binding;
+pure instructions and textual references need no VM. Ordinary Sandbox Tools run
+scripts. `publish_skill` exports a Workspace directory through the fixed guest
+file transport, while `inspect_skill` resolves publication uncertainty from the
+existing catalog. The Web creates an editable Agent request or imports local files.
+Neither Tool loads user extensions into the Worker. Automatic project scanning,
+mid-Run catalog reload and executable user extensions remain outside this slice.
+See [ADR-0293](adr/0293-cloud-skill-runtime.md).
 
 Worker preparation measurements use the existing stdout operational logger.
 Public Harness/Models/Storage boundaries provide stage timings and aggregate

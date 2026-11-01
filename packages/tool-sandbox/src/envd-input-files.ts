@@ -1,3 +1,4 @@
+import { SkillPackageExportError } from "./skill-package-export.ts";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { prepareInputFile } from "./input-files.ts";
@@ -21,7 +22,13 @@ void main().then(
   (result) => {
     process.stdout.write(JSON.stringify({ ok: true, result }));
   },
-  () => {
-    process.stdout.write(JSON.stringify({ ok: false, code: "input_file_preparation_failed" }));
+  (cause) => {
+    process.stdout.write(
+      JSON.stringify(
+        cause instanceof SkillPackageExportError
+          ? { ok: false, code: cause.code, message: cause.message }
+          : { ok: false, code: "input_file_preparation_failed" },
+      ),
+    );
   },
 );

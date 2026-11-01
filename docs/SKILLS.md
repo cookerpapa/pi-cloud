@@ -9,11 +9,12 @@ A list item shows its name, purpose and install state. Details load SKILL.md and
 supporting files on demand; version, scope, requirements and management actions
 live there. New versions never silently replace another member's installation.
 
-Share by writing SKILL.md, choosing a local directory or importing an exported
-`.skill.json` file package. Updating instructions retains supporting files.
-The Web page offers no public catalog or GitHub import. Existing GitHub provenance
-and the operator import API remain available; this presentation slice does not
-alter stored packages or the wire schema.
+Use **Create Skill** to put an editable request in the chat composer. The Agent
+writes SKILL.md and any supporting files in the Workspace, checks the workflow,
+and calls `publish_skill`. The shortcut preserves an existing draft and does not
+send automatically. **Import** accepts a local directory or exported `.skill.json`
+package; it is not a manual YAML editor. Existing GitHub provenance and the
+operator import API remain, but the Web has no public registry or GitHub import.
 
 Install a specific version for yourself. Tenant owners may also install for the
 organization or the selected conversation's project. Precedence is project,
@@ -35,38 +36,66 @@ requested delegation Tool exists. The market page describes deployment capabilit
 
 ## Agent use
 
-Two code-owned Tools are added through the existing execution-owned catalog:
+At authorized Run bootstrap, the runtime pins the installed version selection in
+PG and sends immutable metadata to the Worker. Pi's public system section presents
+applicable names, descriptions and version references before the first model
+request. It does not include every Skill body. `disable-model-invocation: true`
+hides a Skill from automatic discovery; explicit inspection remains possible.
 
-- `read_skill(action="list")` discovers installed names, descriptions, version IDs
-  and compatibility. `read_skill(action="read", versionId=...)` reads SKILL.md;
-  `path` selects a relative package file. Text, file-directory and prerequisite
-  pages have explicit continuation offsets. Binary assets require preparation.
-- `prepare_skill(versionId=...)` places a selected package under
-  `<Workspace>/.pi-cloud/skills/<name>-<digest>/` and returns that real directory.
-  Use ordinary `bash`, `read` and other granted tools afterwards. Preparation does
-  not run scripts, install dependencies, or grant tools/credentials. Invoke scripts
-  with their interpreter. Existing modified package files are not overwritten.
+Three code-owned Tools use the existing execution-owned catalog:
 
-The first Skill use captures that Run's selected versions in PG. Child
-Conversations use the same root Run selection. Recovery reads that selection;
-later updates, disable or uninstall affect subsequent Runs. Instructions already
-read remain ordinary Tool Results in context. This is configuration pinning, not
-a second input queue or another Agent scheduler.
+- `read_skill(action="read", versionId=...)` reads the advertised SKILL.md without
+  a preliminary list call. `path` reads a package-relative reference; text, file
+  lists and prerequisites have continuation offsets. `action="list"` remains for
+  explicit inspection. Pure instructions and textual references come directly
+  from cloud storage without a VM.
+- On activation, a package with scripts, assets or other execution files is
+  automatically prepared under `<Workspace>/.pi-cloud/skills/<name>-<digest>/`.
+  The read result includes this directory. Use ordinary `bash`/`read` afterwards;
+  there is no separate model-facing `prepare_skill`. Preparation neither executes
+  scripts nor grants permissions. Existing modified package files are not
+  overwritten. Use `inspect_skill` for a preview without activation.
+- `publish_skill(path, packageId?, version?, requirements?)` exports complete file
+  bytes through the fixed guest transport and publishes an immutable organization
+  version. It never reconstructs files from truncated Bash output. Only root
+  Conversations can publish, as their initiating user. Without explicit
+  requirements, scripts imply Linux/Bash; declare other dependencies as needed.
+  Omitted version labels derive from content. Publishing does not install or
+  upgrade the Skill for anyone.
+- `inspect_skill(name?, cursor?)` lists published organization metadata and marks
+  owned packages. `versionId` with optional `path`/`offset` previews text, including
+  uninstalled versions, without activation. Use this after an uncertain publication
+  reply before deciding to retry. Identical content reuses the existing version.
 
-Pure instruction reading does not start a VM. File preparation follows ordinary
-Tool admission, the current Sandbox binding and the fixed guest file transport.
-Kafka carries the Tool intent/version reference and the usual final reply, not the
-package body. Worker Harness processing still makes the result canonical.
+Child Conversations share the root Run's selection and filter it by their own
+capabilities. Worker recovery reads that same selection. Installing, disabling or
+updating a Skill affects the next Run, not a running task. Instructions already
+read remain ordinary Tool Results. Native system entries record the catalog the
+model saw. This does not add an input queue, scheduler or per-model PG query.
+Mid-Run `/reload` and local project-directory Skill scanning are not provided.
+
+Conditional Skill preparation resolves against frozen metadata and uses ordinary
+Tool admission and the existing Workspace binding. Kafka carries Tool intents and
+normal replies, not the complete package transfer. Worker Harness processing
+still makes the final Tool Result canonical.
 
 ## Storage and failure
 
 PG owns `skill_packages`, `skill_versions`, `skill_installations` and
-`run_skill_catalogs`. The latter contains immutable version IDs, not file bodies.
+`run_skill_catalogs`. The latter contains immutable version IDs, not file bodies. Published versions
+also retain derived discovery/resource metadata; startup backfills it from the
+verified immutable object before accepting work.
 Package bytes use the existing S3 service under `skills/<tenant>/<digest>.json`.
 They are separately inventoried from images and Workspace Volumes. The import
 inventory precedes object writes; a version is visible only after confirmation.
 Retrying the same package resumes that identity. Object loss or digest mismatch
 is an error, never an excuse to execute a different package.
+
+Publication exports at most 512 regular files / 16 MiB through the fixed guest
+reader. It rejects missing manifests, links, changed source files and overlarge
+packages with actionable errors. Cancellation cannot return a successful export;
+an uncertain publish is inspected rather than automatically replayed. Package
+bytes travel over the existing private file channel, never through Kafka.
 
 Guest placement uses an OS-held lock and managed staging under
 `<Workspace>/.pi-cloud/skill-staging/`. A bounded filesystem receipt precedes
@@ -91,7 +120,8 @@ load executable extensions in the Control Plane or Worker.
 
 Automatic repository scanning, private Git registry credentials, dependency
 resolution and arbitrary user Tool hosting remain separate proposals.
-See [ADR-0291](adr/0291-internal-skill-market.md) and the portable
+See [ADR-0291](adr/0291-internal-skill-market.md),
+[ADR-0293](adr/0293-cloud-skill-runtime.md) and the portable
 [example](../examples/skills/workspace-readiness/SKILL.md).
 
 ## Verification
@@ -99,4 +129,6 @@ See [ADR-0291](adr/0291-internal-skill-market.md) and the portable
 Run the focused Skill package/PG/guest tests, `node
 scripts/run-skill-market-browser-check.mjs`, and the maintained matched release.
 Real acceptance must demonstrate both instruction reading without VM activation
-and preparation plus ordinary script execution in Cube, using an owned fixture.
+and automatic preparation plus ordinary script execution in Cube, initial prompt
+discovery, immutable Run selection, complete Agent publication and uncertain-reply
+inspection using owned fixtures.

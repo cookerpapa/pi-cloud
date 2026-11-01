@@ -1811,6 +1811,38 @@ export class CubeSandboxProvider implements SandboxProvider {
     }
   }
 
+  async exportPackage(
+    handle: SandboxHandle,
+    input: { cwd: string; path: string },
+    signal?: AbortSignal,
+  ): Promise<{ files: import("@pi-cloud/protocol").SkillFile[] }> {
+    const activation = this.#dataOwned(handle);
+    const value = await this.#guestJson(
+      activation.instance,
+      { mode: "export_skill_package", directory: input.cwd, path: input.path },
+      {
+        program: "input",
+        runAsToolUser: true,
+        timeoutMs: 60000,
+        maximumOutputBytes: 24 * 1024 * 1024,
+        ...(signal ? { signal } : {}),
+      },
+    );
+    const envelope = record(value, "Skill export");
+    if (envelope.ok !== true)
+      throw new SandboxControlError(
+        "skill_export_failed",
+        envelope.code === "skill_export_invalid" && typeof envelope.message === "string"
+          ? envelope.message
+          : "Skill directory could not be exported",
+        false,
+      );
+    const result = record(envelope.result, "Skill package");
+    if (!Array.isArray(result.files) || result.files.length < 1 || result.files.length > 512)
+      throw Error("Skill export returned an invalid file list");
+    return { files: result.files as import("@pi-cloud/protocol").SkillFile[] };
+  }
+
   async preparePackage(
     handle: SandboxHandle,
     input: {

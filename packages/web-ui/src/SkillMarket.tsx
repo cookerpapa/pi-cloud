@@ -13,6 +13,7 @@ export function SkillMarket({
   canMutate,
   projectId,
   onClose,
+  onCreate,
 }: {
   api: PiCloudApi;
   userId: string;
@@ -20,6 +21,7 @@ export function SkillMarket({
   canMutate: boolean;
   projectId?: string;
   onClose(): void;
+  onCreate(): void;
 }) {
   const { language, t } = useI18n(),
     say = (cn: string, en: string) => (language === "zh-CN" ? cn : en);
@@ -145,13 +147,14 @@ export function SkillMarket({
         </button>
         <h1>Skills</h1>
         {canMutate ? (
-          <button
-            type="button"
-            className="skill-primary"
-            onClick={() => setPublishing({ draft: null })}
-          >
-            ＋ {say("分享 Skill", "Share Skill")}
-          </button>
+          <>
+            <button type="button" onClick={() => setPublishing({ draft: null })}>
+              {say("导入", "Import")}
+            </button>
+            <button type="button" className="skill-primary" onClick={onCreate}>
+              ＋ {say("创建 Skill", "Create Skill")}
+            </button>
+          </>
         ) : null}
       </header>
       <div className="skill-market-toolbar">
@@ -298,8 +301,8 @@ export function SkillMarket({
               {say("浏览组织市场", "Browse organization")}
             </button>
           ) : !search && canMutate ? (
-            <button type="button" onClick={() => setPublishing({ draft: null })}>
-              {say("分享 Skill", "Share Skill")}
+            <button type="button" onClick={onCreate}>
+              {say("创建 Skill", "Create Skill")}
             </button>
           ) : null}
         </div>

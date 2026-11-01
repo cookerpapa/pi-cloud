@@ -1,5 +1,18 @@
 # Maintained backlog
 
+## Cloud Skill runtime — in progress
+
+- [ ] Pin catalog before model sampling; persist native system sections and restore
+      the same references after Worker replacement, including restricted children.
+- [ ] Keep instruction/reference reading VM-free; internalize execution-resource
+      preparation and remove the public prepare_skill workflow.
+- [ ] Add complete bounded Workspace package export and Agent publication using
+      existing immutable package storage; cover duplicates and uncertain outcomes.
+- [ ] Make Agent-assisted creation the Web entry, retaining local imports/drafts.
+- [ ] Complete contract/failure/browser and real Luna acceptance, matched rollout,
+      original-asset preservation and commit/push delivery.
+
+
 ## Organization Skill market — deployed
 
 - [x] Separate browsing, installed management, details and local sharing.

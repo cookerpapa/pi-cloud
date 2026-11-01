@@ -1,4 +1,4 @@
-import { SkillPackageContentSchema } from "./skills.ts";
+import { SkillPackageContentSchema, SkillFileSchema } from "./skills.ts";
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { AgentWorkspaceSeedSchema } from "./workspace-seed.ts";
@@ -242,6 +242,18 @@ export const SandboxControlRequestSchema = Type.Union([
   Type.Object(
     {
       ...ToolSandboxEnvelope,
+      type: Type.Literal("tool_sandbox.export_package"),
+      requestId: UuidSchema,
+      activationId: UuidSchema,
+      assignment: ToolSandboxAssignmentSchema,
+      operationId: UuidSchema,
+      path: Type.String({ minLength: 1, maxLength: 4096 }),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      ...ToolSandboxEnvelope,
       type: Type.Literal("tool_sandbox.prepare_package"),
       requestId: UuidSchema,
       activationId: UuidSchema,
@@ -299,6 +311,16 @@ export const SandboxControlRequestSchema = Type.Union([
 ]);
 
 export const SandboxControlResponseSchema = Type.Union([
+  Type.Object(
+    {
+      ...ToolSandboxEnvelope,
+      type: Type.Literal("tool_sandbox.package_exported"),
+      requestId: UuidSchema,
+      activationId: UuidSchema,
+      files: Type.Array(SkillFileSchema, { minItems: 1, maxItems: 512 }),
+    },
+    { additionalProperties: false },
+  ),
   Type.Object(
     {
       ...ToolSandboxEnvelope,

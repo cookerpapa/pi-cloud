@@ -94,10 +94,18 @@ try {
           `[...${root}.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(text)}&&!b.disabled).click()`,
         );
       const fill = async (text) => {
+        const payload = {
+          label: "browser-version",
+          requirements: { runtime: "none", tools: [], software: [] },
+          source: {
+            kind: "files",
+            files: [{ path: "SKILL.md", base64: Buffer.from(text).toString("base64") }],
+          },
+        };
         await page.evaluate(
-          "document.querySelector('dialog textarea').focus();document.querySelector('dialog textarea').select()",
+          `(()=>{const data=new DataTransfer();data.items.add(new File([${JSON.stringify(JSON.stringify(payload))}],'skill.json',{type:'application/json'}));const element=document.querySelector('dialog input[accept=".json"]');element.files=data.files;element.dispatchEvent(new Event('change',{bubbles:true}));})()`,
         );
-        await page.send("Input.insertText", { text });
+        await page.waitFor("document.querySelector('dialog [type=submit]')?.disabled===false");
       };
       const scope = (value) =>
         page.evaluate(
@@ -114,8 +122,8 @@ try {
     });
   }
   await browser(tenant.credential.token, async ({ page, click, fill, scope, details }) => {
-    await click("＋ 分享 Skill");
-    await page.waitFor("document.querySelector('dialog textarea')");
+    await click("导入");
+    await page.waitFor("document.querySelector('dialog input[type=file]')");
     await fill(
       `---\nname: ${name}\ndescription: 团队检查流程\n---\n\n# 团队检查\n\n先阅读任务，再检查项目约定。\n`,
     );
@@ -131,8 +139,8 @@ try {
     await click("安装", "document.querySelector('dialog')");
     await page.waitFor("document.querySelector('dialog .skill-primary').textContent==='已启用'");
     await page.evaluate("document.querySelector('.skill-more').open=true");
-    await click("分享新版本");
-    await page.waitFor("document.querySelector('dialog textarea')");
+    await click("导入新版本");
+    await page.waitFor("document.querySelector('dialog input[type=file]')");
     await fill(
       `---\nname: ${name}\ndescription: 团队检查流程第二版\n---\n\n# 团队检查第二版\n\n检查后附上验证结果。\n`,
     );

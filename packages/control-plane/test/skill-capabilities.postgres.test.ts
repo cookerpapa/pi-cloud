@@ -22,10 +22,10 @@ it("uses accepted root/child grants and the current catalog without confusing ma
       name: "read_skill",
       description: "Instructions",
       parameters: { type: "object" },
-      environment: { kind: "none" },
+      environment: { kind: "skill" },
     },
     {
-      name: "prepare_skill",
+      name: "workspace_resource",
       description: "Files",
       parameters: { type: "object" },
       environment: { kind: "workspace" },
@@ -88,16 +88,16 @@ it("uses accepted root/child grants and the current catalog without confusing ma
       expect(caps.tools).toContain("contact_supervisor");
       expect(caps.tools).toContain("read_skill");
       expect(caps.runtimes).toEqual(workspace === null ? [] : ["linux"]);
-      expect(caps.tools.includes("prepare_skill")).toBe(workspace !== null);
+      expect(caps.tools.includes("workspace_resource")).toBe(workspace !== null);
       expect(
         skillAvailability({ runtime: "linux", tools: ["bash"], software: [] }, caps).state,
       ).toBe(workspace?.tools.includes("bash") ? "available" : "unsupported");
       expect(caps.tools.includes("write")).toBe(workspace?.tools.includes("write") ?? false);
       await f.settle(call.operationId);
     }
-    catalog = catalog.filter((tool) => tool.name !== "prepare_skill");
+    catalog = catalog.filter((tool) => tool.name !== "workspace_resource");
     expect((await service.runCapabilities(f.scope.tenantId, f.scope.runId, 1)).tools).not.toContain(
-      "prepare_skill",
+      "workspace_resource",
     );
     await expect(
       service.runCapabilities(f.scope.tenantId, f.scope.runId, 999999),

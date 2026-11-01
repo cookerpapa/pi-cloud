@@ -16,7 +16,7 @@ export const ControlToolCatalogDefinitionSchema = Type.Object(
 export type ControlToolCatalogDefinition = Static<typeof ControlToolCatalogDefinitionSchema>;
 export const ControlToolCatalogSchema = Type.Object(
   {
-    version: Type.Literal(3),
+    version: Type.Literal(4),
     revision: Type.String({ pattern: "^[a-f0-9]{64}$" }),
     tools: Type.Array(ControlToolCatalogDefinitionSchema),
   },

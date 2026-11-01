@@ -395,6 +395,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false, peerF
       if(window.holdTurnMetadata)return new Promise(resolve=>{window.releaseTurnMetadata=()=>resolve(next);});
       return next;
     },
+    listSkills:async()=>({packages:[],nextCursor:null}),
     getInputQueue:async(sessionId)=>parseInputQueueResource({...structuredClone(window.fixtureQueue),sessionId,
       viewVersion:String(window.fixtureQueue.revision),revision:window.fixtureQueue.revision.toString(16).padStart(64,"0")+"."+"a".repeat(64),afterPosition:0,hasMore:false,
       hasReturnedInputs:!!window.returnedInputs,
@@ -2225,6 +2226,40 @@ try {
           : "document.querySelector('.pending-input-row p')?.textContent==='Admission placement race' && [...document.querySelectorAll('.product-user-bubble')].every(node=>node.textContent!=='Admission placement race')",
       );
     }
+  });
+  await withChromePage({}, async (page) => {
+    await page.navigate(`http://127.0.0.1:${port}/review.html`);
+    await page.waitFor("window.fixtureReady");
+    await page.evaluate("renderChat('idle',true,true)");
+    await page.waitFor(
+      "document.querySelector('.product-conversation-row:not(.product-delegated-session)>button')",
+    );
+    await page.evaluate(
+      "document.querySelector('.product-conversation-row:not(.product-delegated-session)>button').click()",
+    );
+    await page.waitFor("document.querySelector('.product-composer textarea')");
+    await page.evaluate("document.querySelector('.product-composer textarea').focus()");
+    await page.send("Input.insertText", { text: "Keep this existing draft" });
+    const before = await page.evaluate("turnBodies.length");
+    await page.evaluate(
+      "[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Skills')).click()",
+    );
+    await page.waitFor("document.querySelector('.skill-market-header .skill-primary')");
+    await page.evaluate("document.querySelector('.skill-market-header .skill-primary').click()");
+    await page.waitFor(
+      "document.querySelector('.product-composer textarea')?.value.includes('Keep this existing draft') && !document.querySelector('.skill-market')",
+    );
+    assert.equal(
+      await page.evaluate(
+        "document.querySelector('.product-composer textarea').value.includes('share it with my organization')",
+      ),
+      true,
+    );
+    assert.equal(
+      await page.evaluate("turnBodies.length"),
+      before,
+      "Creating a Skill must not auto-send the draft",
+    );
   });
   // Composer keyboard/button choices use actual ChatApp effects and HTTP builders.
   await withChromePage({ width: 1280, height: 900 }, async (page) => {

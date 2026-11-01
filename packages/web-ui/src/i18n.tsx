@@ -291,6 +291,7 @@ const zhCN = {
   "chat.sendLabel": "发送消息",
   "composer.enterBehavior": "运行中 Enter 的行为",
   "composer.followUp": "排队发送",
+  "skills.createPrompt": "帮我创建一个 Skill，并在验证后分享到组织。用途是：",
   "composer.sending": "发送中",
   "composer.unconfirmed": "发送未确认",
   "composer.retry": "重试",
@@ -860,6 +861,8 @@ const enUS: Record<UiTextKey, string> = {
   "chat.sendLabel": "Send message",
   "composer.enterBehavior": "Enter while running",
   "composer.followUp": "Queue message",
+  "skills.createPrompt":
+    "Create a Skill, verify it, and share it with my organization. It should help with: ",
   "composer.sending": "Sending",
   "composer.unconfirmed": "Not confirmed",
   "composer.retry": "Retry",

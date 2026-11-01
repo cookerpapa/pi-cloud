@@ -8,6 +8,7 @@ import {
   type SkillPackage,
 } from "../src/skill-package-view.tsx";
 const version = {
+  runtimeMetadata: { disableModelInvocation: false, requiresWorkspaceFiles: false },
   versionId: "v2",
   packageId: "p1",
   label: "2.0",

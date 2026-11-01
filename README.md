@@ -46,8 +46,9 @@ GPT-6 Luna is used for routine live checks. Provider capabilities and availabili
 remain separate from declaring a tool in the catalog.
 
 The organization-only [Skill market](docs/SKILLS.md) supports browsing/search,
-instruction/file previews, local sharing and versioned installations.
-Instructions are read on demand; scripts run in the current Tool Sandbox.
+instruction/file previews, Agent-authored publication and versioned installations.
+Installed Skill summaries appear in the model prompt; instructions load on demand,
+and execution files are prepared in the current Tool Sandbox only when used.
 
 ## Architecture
 

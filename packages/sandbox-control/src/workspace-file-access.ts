@@ -29,6 +29,20 @@ export class WorkspaceFileAccess {
     private readonly admission: WorkspaceFileAdmission,
   ) {}
 
+  async exportPackage(
+    handle: SandboxHandle,
+    input: { cwd: string; path: string },
+    signal?: AbortSignal,
+  ) {
+    if (!this.files.exportPackage)
+      throw new SandboxControlError(
+        "package_export_unavailable",
+        "Workspace package export is unavailable",
+        false,
+      );
+    return this.files.exportPackage(handle, input, signal);
+  }
+
   async preparePackage(
     handle: SandboxHandle,
     input: Parameters<NonNullable<SandboxWorkspaceFiles["preparePackage"]>>[1],

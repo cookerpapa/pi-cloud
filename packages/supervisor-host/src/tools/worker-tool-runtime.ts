@@ -2,6 +2,9 @@ import { isDeepStrictEqual } from "node:util";
 import { randomUUID } from "node:crypto";
 import {
   infrastructureToolDefinitions,
+  skillActivationNeedsWorkspace,
+  skillAvailability,
+  effectiveToolCapabilities,
   hasConversationWorkspace,
   isConversationToolOffered,
   toolExecutionTarget,
@@ -260,15 +263,32 @@ export class WorkerToolRuntime {
             !isDeepStrictEqual(original.arguments, args))
         )
           throw new Error("Recovered invocation differs from its original intent");
+        let needsWorkspace = environment.kind === "workspace";
+        if (environment.kind === "skill" && args.action === "read") {
+          const skill = scope.skillCatalog?.find((value) => value.versionId === args.versionId);
+          if (!skill)
+            throw new Error("skill_unavailable: this version is not selected for the Run");
+          if (
+            skillAvailability(
+              skill.requirements,
+              effectiveToolCapabilities(capabilities, this.options.catalog.read().tools),
+            ).state === "unsupported"
+          )
+            throw new Error(
+              "skill_unavailable: this conversation does not provide the required capabilities",
+            );
+          needsWorkspace = skillActivationNeedsWorkspace(skill, args);
+          if (needsWorkspace && !workspaceAvailable)
+            throw new Error("skill_unavailable: this Skill needs workspace files");
+        }
         const operationId = randomUUID();
-        const bindingId =
-          environment.kind === "workspace"
-            ? await context.prepareEnvironment()
-            : environment.kind === "target"
-              ? target
-                ? await prepareTarget(target, signal)
-                : undefined
-              : undefined;
+        const bindingId = needsWorkspace
+          ? await context.prepareEnvironment()
+          : environment.kind === "target"
+            ? target
+              ? await prepareTarget(target, signal)
+              : undefined
+            : undefined;
         if (environment.kind === "target" && !bindingId)
           throw new Error("tool_unavailable: This conversation has no matching execution target");
         const anchor = original

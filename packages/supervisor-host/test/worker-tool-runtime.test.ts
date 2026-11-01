@@ -524,3 +524,73 @@ it("refreshes root-only catalog tools without treating native Conversation 1 as 
   expect(root.current().some((b) => b.tool.name === "root_management")).toBe(false);
   f.mailbox.close();
 });
+
+it("resolves Skill activation from the frozen manifest and only prepares a Workspace for execution files", async () => {
+  const f = fixture();
+  const catalog = f.runtime.options.catalog as ControlToolRegistry;
+  catalog.register({
+    definition: {
+      name: "read_skill",
+      description: "Read Skills",
+      parameters: {
+        type: "object",
+        properties: {
+          action: { type: "string" },
+          versionId: { type: "string" },
+          path: { type: "string" },
+        },
+      },
+      environment: { kind: "skill" },
+    },
+    execute: async () => {
+      throw Error("No Worker business execution");
+    },
+  });
+  const text = {
+    versionId: "text",
+    packageId: "pack",
+    name: "text",
+    description: "Text",
+    digest: "a".repeat(64),
+    requirements: { runtime: "none" as const, tools: [], software: [] },
+    runtimeMetadata: { disableModelInvocation: false, requiresWorkspaceFiles: false },
+  };
+  const script = {
+    ...text,
+    versionId: "script",
+    runtimeMetadata: { ...text.runtimeMetadata, requiresWorkspaceFiles: true },
+  };
+  const prepare = vi.fn(async () => "binding");
+  const bindings = await f.runtime.create({
+    command: { ...command, payload: { ...command.payload, skillCatalog: [text, script] } },
+    prepareWorkflow: async () => {
+      throw Error("No workflow");
+    },
+    prepareEnvironment: prepare,
+  });
+  const tool = bindings.current().find((t) => t.tool.name === "read_skill")!
+    .tool as PreparedAgentTool;
+  try {
+    for (const [n, args] of [
+      { action: "read", versionId: "text" },
+      { action: "read", versionId: "script", path: "references/a.md" },
+      { action: "read", versionId: "script" },
+    ].entries()) {
+      const prepared = await withToolInvocation(
+        { id: `task:${n + 10}`, nativeToolCallId: `call-${n}` },
+        () => tool.prepareExecution!(`call-${n}`, args),
+      );
+      if (n < 2) expect(prepare).not.toHaveBeenCalled();
+      else expect(prepare).toHaveBeenCalledOnce();
+      expect(prepared.command).toMatchObject({ target: "control", arguments: args });
+      prepared.dispose();
+    }
+    await expect(
+      withToolInvocation({ id: "task:20", nativeToolCallId: "unknown" }, () =>
+        tool.prepareExecution!("unknown", { action: "read", versionId: "unselected" }),
+      ),
+    ).rejects.toThrow("not selected");
+  } finally {
+    f.mailbox.close();
+  }
+});

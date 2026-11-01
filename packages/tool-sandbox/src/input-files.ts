@@ -1,3 +1,4 @@
+import { exportSkillPackage } from "./skill-package-export.ts";
 import { prepareSkillPackage } from "./skill-package-files.ts";
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
@@ -20,6 +21,11 @@ export async function prepareInputFile(
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Invalid input file request");
   const input = value as Record<string, unknown>;
+  if (input.mode === "export_skill_package") {
+    if (typeof input.directory !== "string" || typeof input.path !== "string")
+      throw new Error("Invalid Skill export request");
+    return exportSkillPackage(input.directory, input.path);
+  }
   const registry = options.registryDirectory ?? "/home/user/.pi-cloud-upload-areas-v1";
   if (input.mode === "reap_upload_staging" && Object.keys(input).length === 1)
     return reapRegisteredUploads(registry);

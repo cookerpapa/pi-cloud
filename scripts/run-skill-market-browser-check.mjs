@@ -23,7 +23,7 @@ const api={
  async importSkill(input){window.calls.push({action:'publish',input});if(window.failPublish){window.failPublish=false;throw Error('save unavailable');}return {...design,versionId:id(50)};}
 };
 const root=createRoot(document.getElementById('root'));
-window.render=(owner=true,canMutate=true)=>{packages=[{packageId:design.packageId,ownerUserId:'owner',versions:[design,{...design,versionId:id(9),label:'1.0',description:'旧版页面设计'}],installations:[]},{packageId:review.packageId,ownerUserId:'colleague',versions:[review],installations:[{scope:{kind:'tenant'},versionId:review.versionId,revision:'1',enabled:true}]},{packageId:report.packageId,ownerUserId:'colleague',versions:[report],installations:[]}];window.calls=[];window.reads=[];window.fileReads=[];window.packages=packages;root.render(React.createElement(React.StrictMode,null,React.createElement(I18nProvider,{initialLanguage:'zh-CN'},React.createElement(SkillMarket,{key:++generation,api,owner,canMutate,userId:'owner',projectId:id(300),onClose:()=>{}}))));};window.fixtureId=id;render();
+window.render=(owner=true,canMutate=true)=>{packages=[{packageId:design.packageId,ownerUserId:'owner',versions:[design,{...design,versionId:id(9),label:'1.0',description:'旧版页面设计'}],installations:[]},{packageId:review.packageId,ownerUserId:'colleague',versions:[review],installations:[{scope:{kind:'tenant'},versionId:review.versionId,revision:'1',enabled:true}]},{packageId:report.packageId,ownerUserId:'colleague',versions:[report],installations:[]}];window.calls=[];window.reads=[];window.fileReads=[];window.packages=packages;root.render(React.createElement(React.StrictMode,null,React.createElement(I18nProvider,{initialLanguage:'zh-CN'},React.createElement(SkillMarket,{key:++generation,api,owner,canMutate,userId:'owner',projectId:id(300),onClose:()=>{},onCreate:()=>{window.createRequests=(window.createRequests??0)+1}}))));};window.fixtureId=id;render();
 `;
 const server = await createServer({
   root: resolve("packages/web-ui"),
@@ -126,7 +126,7 @@ try {
     await page.evaluate("window.conflict=true");
     await click("停用");
     await page.waitFor(
-      "document.querySelector('dialog [role=alert]')?.textContent.includes('内容已更新')",
+      "document.querySelector('dialog [role=alert]')?.textContent.includes('内容已更新') && !document.querySelector('.skill-loading')",
     );
     await click("停用");
     await page.waitFor("document.querySelector('dialog .skill-primary').textContent==='启用'");
@@ -156,14 +156,14 @@ try {
     await click("说明");
     await page.screenshot("/tmp/pi-cloud-skill-details.png");
     await page.evaluate("document.querySelector('.skill-more').open=true");
-    await click("分享新版本");
+    await click("导入新版本");
     await page.waitFor("document.querySelector('.skill-publisher')");
     await page.evaluate("window.failPublish=true");
     await click("分享到组织");
     await page.waitFor("document.querySelector('.skill-publisher [role=alert]')");
     assert.equal(
       await page.evaluate(
-        "document.querySelector('textarea').value.includes('Follow the project')",
+        "document.querySelector('.skill-publisher .skill-preview').textContent.includes('Follow the project')",
       ),
       true,
     );
@@ -175,13 +175,15 @@ try {
       "scripts/check.mjs",
       "assets/icon.bin",
     ]);
-    await click("＋ 分享 Skill");
+    await click("＋ 创建 Skill");
+    assert.equal(await page.evaluate("createRequests"), 1);
+    assert.equal(await page.evaluate("document.querySelector('dialog')===null"), true);
+    await click("导入");
     await page.waitFor("document.querySelector('.skill-publisher')");
     assert.equal(
       await page.evaluate("document.querySelector('dialog').innerText.includes('GitHub')"),
       false,
     );
-    await click("本地导入");
     assert.equal(
       await page.evaluate("document.querySelector('dialog [type=submit]').disabled"),
       true,
@@ -189,7 +191,9 @@ try {
     await page.evaluate(
       String.raw`(()=>{const data=new DataTransfer();data.items.add(new File([JSON.stringify({label:'3.0',requirements:{runtime:'none',tools:[],software:[]},source:{kind:'files',files:[{path:'SKILL.md',base64:btoa('---\nname: imported\ndescription: Imported\n---\n# Imported workflow')},{path:'assets/a.txt',base64:btoa('asset')}]}})],'test.skill.json',{type:'application/json'}));const e=document.querySelector('dialog input[accept=".json"]');e.files=data.files;e.dispatchEvent(new Event('change',{bubbles:true}));})()`,
     );
-    await page.waitFor("document.querySelector('textarea').value.includes('Imported workflow')");
+    await page.waitFor(
+      "document.querySelector('.skill-publisher .skill-preview')?.textContent.includes('Imported workflow')",
+    );
     await click("分享到组织");
     await page.waitFor("!document.querySelector('dialog')");
     assert.equal(await page.evaluate("calls.at(-1).input.source.files.length"), 2);
@@ -205,7 +209,7 @@ try {
     );
     assert.equal(
       await page.evaluate(
-        "[...document.querySelectorAll('dialog button')].some(b=>['停用','卸载','分享新版本'].includes(b.textContent))",
+        "[...document.querySelectorAll('dialog button')].some(b=>['停用','卸载','导入新版本'].includes(b.textContent))",
       ),
       false,
     );

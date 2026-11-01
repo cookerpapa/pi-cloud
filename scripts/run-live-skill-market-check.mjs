@@ -114,27 +114,61 @@ try {
   );
   report.resources = { tenantId: tenant.tenantId, sessionId: session.sessionId };
   await save();
-  const first = await api.importSkill({
-    label: "live-git",
-    requirements: { tools: ["bash", "read"], runtime: "linux", software: ["node"] },
+  const pureVersion = await api.importSkill({
+    label: "text-v1",
+    requirements: { runtime: "none", tools: [], software: [] },
     source: {
-      kind: "github",
-      repository: "cookerpapa/pi-cloud",
-      ref: sourceRevision,
-      path: "examples/skills/workspace-readiness",
+      kind: "files",
+      files: [
+        {
+          path: "SKILL.md",
+          base64: Buffer.from(
+            "---\nname: team-review-format\ndescription: Use when asked for the team's review format without reading project files.\n---\nWhen using the team review format, answer with the exact marker SKILL_TEXT_OK and one brief sentence.\n",
+          ).toString("base64"),
+        },
+      ],
     },
   });
-  assert.equal(first.source.commit, sourceRevision);
-  const installed = await api.installSkill(first.packageId, {
+  await api.installSkill(pureVersion.packageId, {
     scope: { kind: "personal" },
-    versionId: first.versionId,
+    versionId: pureVersion.versionId,
     enabled: true,
     revision: null,
   });
-  const pure = await run(
-    "使用 read_skill 的 list 查找 workspace-readiness，再用 read_skill 阅读它的 SKILL.md。本轮只读取说明，不准备 Workspace，不调用 bash/read/prepare_skill。最后简短回复 SKILL_TEXT_OK。",
-    ["read_skill"],
+  const pure = await run("按已安装的团队评审格式给出一句简短结论，不查看工作区或执行命令。", [
+    "read_skill",
+  ]);
+  const initialRows = await nativeHistory(db, { tenantId: tenant.tenantId, runId: pure.runId });
+  const initialMessages = nativeMessages(initialRows);
+  const systems = initialMessages.filter((message) => message.role === "system");
+  assert(
+    systems.some((message) => JSON.stringify(message).includes(pureVersion.versionId)),
+    "Skill directory was missing from native system context",
   );
+  assert(
+    systems.every((message) => !JSON.stringify(message).includes("SKILL_TEXT_OK")),
+    "Full Skill instructions were eagerly included in the system prompt",
+  );
+  const calls = initialMessages.flatMap((message) =>
+    message.role === "assistant"
+      ? message.content.filter((block) => block.type === "toolCall")
+      : [],
+  );
+  assert(calls.some((call) => call.name === "read_skill" && call.arguments.action === "read"));
+  assert(
+    calls.every((call) => call.name !== "read_skill" || call.arguments.action !== "list"),
+    "Skill activation still required a discovery call",
+  );
+  assert(
+    initialMessages.some(
+      (message) =>
+        message.role === "assistant" &&
+        message.content.some(
+          (block) => block.type === "text" && block.text.includes("SKILL_TEXT_OK"),
+        ),
+    ),
+  );
+  report.nativeCatalogAdvertised = true;
   const allocated = await db
     .selectFrom("workspace_runtimes")
     .select("workspace_id")
@@ -142,10 +176,30 @@ try {
     .execute();
   assert.equal(allocated.length, 0, "Instruction-only reading started a VM");
   report.textOnlyWithoutVm = true;
-  await run(
-    "使用刚安装的 workspace-readiness Skill：调用 read_skill list 取得本轮固定版本，调用 prepare_skill 复制文件，然后用 bash 执行返回目录中的 scripts/inspect.mjs（node 命令，cwd 为当前 Workspace）。不要写文件或安装软件。最后简短报告输出。",
-    ["read_skill", "prepare_skill", "bash"],
+  const exampleFiles = await Promise.all(
+    ["SKILL.md", "scripts/inspect.mjs", "references/verification.md"].map(async (path) => ({
+      path,
+      base64: (await readFile(resolve("examples/skills/workspace-readiness", path))).toString(
+        "base64",
+      ),
+    })),
   );
+  const first = await api.importSkill({
+    label: "local-v1",
+    requirements: { tools: ["bash", "read"], runtime: "linux", software: ["node"] },
+    source: { kind: "files", files: exampleFiles },
+  });
+  const installed = await api.installSkill(first.packageId, {
+    scope: { kind: "personal" },
+    versionId: first.versionId,
+    enabled: true,
+    revision: null,
+  });
+  const execution = await run(
+    "使用已安装的工作区就绪检查技能，执行其只读检查脚本并简短汇报结果，不安装软件。",
+    ["read_skill", "bash"],
+  );
+  report.automaticExecutionFiles = true;
   const content = await api.exportSkill(first.versionId);
   const files = content.files.map((file) =>
     file.path === "SKILL.md"
@@ -166,20 +220,52 @@ try {
   });
   await api.installSkill(first.packageId, { ...installed, versionId: second.versionId });
   const latest = await run(
-    "使用 read_skill list 查询本轮版本，再用 read_skill 阅读 workspace-readiness 的 SKILL.md，报告末尾版本标记。无需 prepare_skill 或其他工具。",
+    "再次使用工作区就绪检查 Skill，读取并报告说明末尾的版本标记。本轮不用运行检查脚本。",
     ["read_skill"],
     "steer",
   );
   const selections =
-    await sql`select run_id,versions from run_skill_catalogs where run_id in (${pure.runId}::uuid,${latest.runId}::uuid)`.execute(
+    await sql`select run_id,versions from run_skill_catalogs where run_id in (${pure.runId}::uuid,${execution.runId}::uuid,${latest.runId}::uuid)`.execute(
       db,
     );
   assert.deepEqual(selections.rows.find((row) => row.run_id === pure.runId).versions, [
-    first.versionId,
+    pureVersion.versionId,
   ]);
-  assert.deepEqual(selections.rows.find((row) => row.run_id === latest.runId).versions, [
-    second.versionId,
-  ]);
+  assert.deepEqual(
+    new Set(selections.rows.find((row) => row.run_id === execution.runId).versions),
+    new Set([pureVersion.versionId, first.versionId]),
+  );
+  assert.deepEqual(
+    new Set(selections.rows.find((row) => row.run_id === latest.runId).versions),
+    new Set([pureVersion.versionId, second.versionId]),
+  );
+  const publishedName = `agent-workflow-${randomUUID().slice(0, 8)}`;
+  const published = await run(
+    `在 /workspace/skills/${publishedName} 创建一个 Skill：SKILL.md 使用 name: ${publishedName}，description 写清楚用于展示已验证的工作流；配套 scripts/check.mjs 仅打印 AGENT_SKILL_SCRIPT_OK。先运行这个脚本验证，再用 publish_skill 将目录分享到组织。不要替任何人安装，不要复制已有Skill。`,
+    ["publish_skill", "bash"],
+  );
+  const market = await api.listSkills();
+  const authored = market.packages.find((pack) => pack.versions[0]?.name === publishedName);
+  assert(authored, "Agent publication was not visible in the organization");
+  assert.equal(authored.ownerUserId, tenant.ownerUserId);
+  assert.equal(authored.installations.length, 0);
+  const authoredContent = await api.exportSkill(authored.versions[0].versionId);
+  assert(authoredContent.files.some((file) => file.path === "scripts/check.mjs"));
+  await run(
+    `用 inspect_skill 查找组织中的 ${publishedName}，然后用 publish_skill 再次发布同一个 /workspace/skills/${publishedName} 目录，requirements 必须为 ${JSON.stringify(authored.versions[0].requirements)}。不要编辑任何文件，不要安装。`,
+    ["inspect_skill", "publish_skill"],
+  );
+  const repeated = (await api.listSkills()).packages.find(
+    (pack) => pack.packageId === authored.packageId,
+  );
+  assert.equal(repeated.versions.length, 1);
+  assert.equal(repeated.versions[0].versionId, authored.versions[0].versionId);
+  report.agentPublication = {
+    runId: published.runId,
+    packageId: authored.packageId,
+    versionId: authored.versions[0].versionId,
+    deduplicated: true,
+  };
   report.versionSelectionPreserved = true;
   report.idleSteerStartsRun = true;
   await save();

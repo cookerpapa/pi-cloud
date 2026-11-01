@@ -194,6 +194,50 @@ function backend(ownerBaseUrl = "http://sandbox-control.invalid"): SandboxContro
 }
 
 describe("Sandbox control authenticated RPC", () => {
+  it("transfers a complete package larger than ordinary RPC results and checks its identity", async () => {
+    const broker = backend();
+    const bytes = Buffer.alloc(5 * 1024 * 1024, 7);
+    let mismatch = false;
+    broker.exportPackage = async (request) => ({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.package_exported",
+      requestId: request.requestId,
+      activationId: mismatch ? crypto.randomUUID() : request.activationId,
+      files: [{ path: "assets/sample.bin", base64: bytes.toString("base64") }],
+    });
+    const server = new SandboxControlServer({
+      host: "127.0.0.1",
+      port: 0,
+      serviceToken: SERVICE_TOKEN,
+      broker,
+    });
+    servers.push(server);
+    const client = new SandboxControlClient({
+      baseUrl: await server.listen(),
+      serviceToken: SERVICE_TOKEN,
+      allowInsecureHttp: true,
+    });
+    const request = {
+      toolBrokerProtocolVersion: 1 as const,
+      type: "tool_sandbox.export_package" as const,
+      requestId: crypto.randomUUID(),
+      operationId: crypto.randomUUID(),
+      activationId: ACTIVATION_ID,
+      assignment,
+      path: "skills/example",
+    };
+    const result = await client.exportPackage(request);
+    const received = Buffer.from(result.files[0]!.base64, "base64");
+    expect(received.byteLength).toBe(bytes.byteLength);
+    expect(createHash("sha256").update(received).digest("hex")).toBe(
+      createHash("sha256").update(bytes).digest("hex"),
+    );
+    mismatch = true;
+    await expect(client.exportPackage(request)).rejects.toMatchObject({
+      code: "package_export_invalid",
+    });
+  });
+
   it("binds its listener before publication recovery while readiness stays closed", async () => {
     let recovered = false;
     const server = new SandboxControlServer({

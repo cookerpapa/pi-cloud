@@ -69,7 +69,38 @@ export const SkillInstallationChangeSchema = Type.Object(
   closed,
 );
 export type SkillInstallationChange = Static<typeof SkillInstallationChangeSchema>;
+export const SkillRuntimeMetadataSchema = Type.Object(
+  {
+    disableModelInvocation: Type.Boolean(),
+    requiresWorkspaceFiles: Type.Boolean(),
+  },
+  closed,
+);
+export type SkillRuntimeMetadata = Static<typeof SkillRuntimeMetadataSchema>;
+export const SkillCatalogEntrySchema = Type.Object(
+  {
+    versionId: UuidSchema,
+    packageId: UuidSchema,
+    name: Type.String({ minLength: 1, maxLength: 64 }),
+    description: Type.String({ minLength: 1, maxLength: 1024 }),
+    digest: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+    requirements: SkillRequirementsSchema,
+    runtimeMetadata: SkillRuntimeMetadataSchema,
+  },
+  closed,
+);
+export const RunSkillCatalogSchema = Type.Array(SkillCatalogEntrySchema);
+export type SkillCatalogEntry = Static<typeof SkillCatalogEntrySchema>;
+export function parseRunSkillCatalog(value: unknown): SkillCatalogEntry[] {
+  if (
+    !Value.Check(RunSkillCatalogSchema, value) ||
+    new Set(value.map((v) => v.versionId)).size !== value.length
+  )
+    throw new TypeError("Invalid Run Skill catalog");
+  return value;
+}
 export type SkillVersion = {
+  runtimeMetadata: SkillRuntimeMetadata;
   versionId: string;
   packageId: string;
   label: string;
@@ -141,4 +172,15 @@ export function validSkillPath(path: string): boolean {
     !/[\\\u0000-\u001f:]/.test(path) &&
     path.split("/").every((part) => part.length > 0 && part !== "." && part !== "..")
   );
+}
+
+/** Reading an instruction or resource is an activation; textual references and
+ * continuation pages remain storage-only. Resolve against the immutable Run manifest. */
+export function skillActivationNeedsWorkspace(
+  skill: SkillCatalogEntry,
+  args: Record<string, unknown>,
+): boolean {
+  if (args.action !== "read" || (typeof args.offset === "number" && args.offset > 0)) return false;
+  const path = typeof args.path === "string" ? args.path : "SKILL.md";
+  return skill.runtimeMetadata.requiresWorkspaceFiles && !path.startsWith("references/");
 }

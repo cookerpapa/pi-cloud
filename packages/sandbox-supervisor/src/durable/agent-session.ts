@@ -1,3 +1,4 @@
+import { skillCatalogSection } from "./skill-context.ts";
 import { withToolInvocation } from "../tool-invocation.ts";
 import {
   modelTaskRegistry,
@@ -126,6 +127,8 @@ export type DurableRunConfiguration = {
   autoCompactTokenLimit?: number;
   agent: Omit<AgentChange, "model" | "tools" | "extensions">;
   context: Record<string, JsonValue>;
+  skillCatalog?: readonly import("@pi-cloud/protocol").SkillCatalogEntry[];
+  workspaceAvailable?: boolean;
   remoteTools: () => readonly string[];
   tools: readonly ToolRegistration[];
   assertCurrent(): Promise<void>;
@@ -216,6 +219,14 @@ export class DurableAgentSession {
       defineExtension({
         name: "pi-cloud-runtime",
         sections: [
+          section("skills", (input) => {
+            const run = this.#bindings.get(Number(input.conversationId));
+            return skillCatalogSection(
+              run?.skillCatalog ?? [],
+              input.agent.tools.map((tool) => tool.name),
+              run?.workspaceAvailable === true,
+            );
+          }),
           ...(options.publicEgress ? [publicEgressSection(options.publicEgress)] : []),
           section("delegation-policy", async (input, context) => {
             if (

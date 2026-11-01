@@ -619,10 +619,13 @@ export class PiCloudTurnRunner {
         ...(config.autoCompactTokenLimit === undefined
           ? {}
           : { autoCompactTokenLimit: config.autoCompactTokenLimit }),
+        skillCatalog: p.skillCatalog ?? [],
+        workspaceAvailable: hasConversationWorkspace(p),
         context: {
           sessionId: p.sessionId,
           turnId: p.turnId,
           selectedThinkingLevel: p.model.thinkingLevel,
+
           ...(p.conversationWork ? { view: JSON.parse(JSON.stringify(p.conversationWork)) } : {}),
         },
         agent:
