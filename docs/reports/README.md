@@ -1,5 +1,7 @@
 # Delivery and research evidence
 
+- [Initial message placement](input-placement-20261101.md): transcript-first sending,
+  native-only pending list, exact retries and Web-only publication acceptance.
 - [November 1 review repairs](review-repairs-20261101.md): source implementation,
   focused verification and matched publication status for R01–R08.
 - [Full repository review, November 1](repository-review-20261101.md): accepted

@@ -3,7 +3,7 @@
 Delivered sections retain evidence from their named releases; those historical
 tags are not a second inventory of currently serving images.
 
-## Initial message placement — in progress
+## Initial message placement — deployed
 
 - [x] Show idle submissions immediately in the transcript with honest local
       delivery state, then retain the same message through queued/start states.
@@ -11,7 +11,11 @@ tags are not a second inventory of currently serving images.
       queue controller with initial-message edit/withdraw controls.
 - [x] Preserve exact retry payload/key, attachments and newer drafts; cover
       receipt/event ordering, active/idle races, claim/edit conflicts and reload.
-- [ ] Complete Web/browser checks and scoped Web publication with live acceptance.
+- [x] Complete Web/browser checks and scoped Web publication with live acceptance.
+
+Published as `input-placement-20261101` from `6025dc30`. Scoped checks, two real
+Luna Runs, six queue actions and physical fixture cleanup passed. Backend Pods
+and existing machine allocations were retained. [Delivery](reports/input-placement-20261101.md).
 
 ## Full repository review — 2026-11-01
 

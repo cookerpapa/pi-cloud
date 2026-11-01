@@ -1,11 +1,12 @@
 # Implementation roadmap
 
-## Initial message placement — in progress
+## Initial message placement — deployed
 
-Keep initial sends and queued Runs in the transcript, reserving the composer
-queue for native steer/follow-up input. Preserve local acknowledgement states,
-retry identity, attachments and unclaimed edit/withdraw races. Follow ADR-0290's
-presentation amendment and publish through the Web component release.
+Initial sends and queued Runs stay in the transcript; the composer queue shows
+native steer/follow-up. Receipt ordering, exact retry identity, attachments and
+unclaimed edit/withdraw conflicts are covered. Scoped Web
+`input-placement-20261101` passed browser and real Luna acceptance with unchanged
+backend/VM identities. [Delivery](reports/input-placement-20261101.md).
 
 ## November 1 review repairs — deployed
 
