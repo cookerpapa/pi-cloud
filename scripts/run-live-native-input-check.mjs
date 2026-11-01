@@ -2,7 +2,7 @@ import { assertLiveContract } from "./lib/live-contract.mjs";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
-import { serviceAddress } from "./lib/production-kubernetes.mjs";
+import { serviceAddress, runtimeDirectory } from "./lib/production-kubernetes.mjs";
 import { sql } from "kysely";
 import { crashOwnedWorker } from "./lib/owned-worker-crash.mjs";
 import { checkNativeLiveProgress } from "./lib/live-native-progress.mjs";
@@ -20,7 +20,7 @@ if (process.env.PI_CLOUD_LIVE_NATIVE_INPUT_CHECK !== "1")
   throw new Error(
     "Set PI_CLOUD_LIVE_NATIVE_INPUT_CHECK=1 for current-contract matched Luna/Cube acceptance and an owned Worker crash",
   );
-const runtime = "deploy/production/runtime",
+const runtime = runtimeDirectory,
   env = await readFile(`${runtime}/.env`, "utf8");
 const base = `http://127.0.0.1:${env.match(/^PI_CLOUD_HTTP_PORT=(\d+)$/m)?.[1]}`;
 const pg = new URL((await readFile(`${runtime}/secrets/database-url`, "utf8")).trim());
