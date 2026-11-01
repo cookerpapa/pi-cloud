@@ -1,5 +1,12 @@
 # Implementation roadmap
 
+## Organization Skill market — in progress
+
+Deliver a quiet organization-only browser with search, Installed view, on-demand
+preview, scoped actions and local sharing. Keep the existing storage/runtime
+contracts and publish through the scoped Web procedure.
+
+
 ## Initial message placement — deployed
 
 Initial sends and queued Runs stay in the transcript; the composer queue shows

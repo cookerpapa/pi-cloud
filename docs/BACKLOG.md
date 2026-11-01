@@ -1,5 +1,15 @@
 # Maintained backlog
 
+## Organization Skill market — in progress
+
+- [x] Separate browsing, installed management, details and local sharing.
+- [x] Remove permanent implementation explanations and public-source Web import.
+- [x] Cover paginated discovery, scope/version mutations, failed and stale reads,
+      local file retention, viewer permissions and responsive keyboard use.
+- [ ] Publish Web only and demonstrate organization sharing/installation against
+      the live API with owned fixture cleanup and original resource preservation.
+
+
 Delivered sections retain evidence from their named releases; those historical
 tags are not a second inventory of currently serving images.
 

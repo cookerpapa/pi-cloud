@@ -381,7 +381,9 @@ The retained Android execution-target prototype has an operator API but no Web
 picker or automatic device pool; it is not a fallback for Cube coding execution.
 See [OPTIONAL_MODULES](OPTIONAL_MODULES.md) and [ANDROID_EXECUTION](ANDROID_EXECUTION.md).
 
-The internal [Skill market](SKILLS.md) stores portable packages in S3 and catalog,
+The organization-only [Skill market](SKILLS.md) separates browsing, installed
+management and on-demand package preview. The Web shares local file packages and
+does not connect to public catalogs. It stores portable packages in S3 and catalog,
 installation and per-Run version selections in PG. `read_skill` discovers and reads
 installed instructions; it does not allocate a VM. `prepare_skill` copies files
 through the current Workspace binding; ordinary Sandbox Tools run scripts.

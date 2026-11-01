@@ -45,6 +45,30 @@ format. Automatic crawling of repositories and credentialed external registries
 are outside this first slice. Explicit import and version selection provide a
 complete usable path without another registry service or dependency solver.
 
+## November 1 organization-only presentation
+
+The owner deferred public/open-source catalog discovery. The Web surface exposes
+only organization-shared packages, with Browse and Installed views, paginated
+metadata search and on-demand instruction/file preview. Sharing accepts authored
+SKILL.md, local directories and exported file packages. There is no Web GitHub
+import entry, remote catalog fetch, public publisher or seeded public collection.
+Existing stored source provenance and the operator API remain unchanged.
+
+Keep installation scopes, server revision checks, immutable versions, Run pinning
+and Sandbox-only execution. Scope/version controls belong in details; normal list
+items show purpose and a primary action. Publishing is a separate dialog. Routine
+explanations, digests and empty capability summaries do not occupy the listing.
+The existing paginated catalog is scanned one bounded page at a time for search
+and installed filtering, without downloading package bodies or constructing a
+second catalog. Public-schema and storage ownership changes are not required.
+
+Learn from SkillsGate's separate Discover/Library and ClawHub's detail views; do
+not adopt their Electron/local filesystem or Convex registry authority. The
+existing PiCloud API/S3 package mechanism remains sufficient for this internal
+slice. Source references: [SkillsGate](https://github.com/skillsgate/skillsgate),
+[ClawHub](https://github.com/openclaw/clawhub),
+[Vercel Skills CLI](https://github.com/vercel-labs/skills).
+
 ## Adopt versus build
 
 - [Agent Skills](https://agentskills.io/specification) supplies the portable

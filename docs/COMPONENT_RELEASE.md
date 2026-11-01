@@ -115,7 +115,8 @@ npm run release:component -- apply /private/releases/web-1
 ```
 
 The operator runs Web types/tests and browser presentation/queue checks, builds/scans
-one image and allows only the Web Deployment image to differ. No migration hooks,
+one image and allows only the Web Deployment image to differ. The Web gate also
+checks the organization Skill browser, local sharing and installation scopes. No migration hooks,
 Worker drain or VM release runs. Existing browser connections can reconnect through
 the usual SSE recovery; reload an open page to load new assets. Verify the relevant
 live browser flow and retain the original backend/VM identities in release evidence.

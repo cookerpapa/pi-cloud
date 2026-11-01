@@ -55,6 +55,8 @@ it("keeps presentation acceptance helpers outside the deployed runtime boundary"
       "packages/web-ui/src/composer-submission.ts",
       "packages/web-ui/src/submission-presentation.ts",
       "scripts/run-history-layout-check.mjs",
+      "scripts/run-skill-market-browser-check.mjs",
+      "scripts/run-live-skill-market-browser-check.mjs",
       "scripts/run-history-window-check.mjs",
       "scripts/run-live-android-check.mjs",
       "scripts/run-live-schedules-check.mjs",

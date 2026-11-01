@@ -1,10 +1,19 @@
 # Skill market
 
-The sidebar's **Skills** page is a tenant-local catalog of reusable workflows.
-Publish `SKILL.md` directly, import a local directory containing it, or import a
-public GitHub repository directory at a branch, tag or commit. Git references
-resolve to a fixed commit. Imports preserve `scripts/`, `references/` and assets.
-Exported `.skill.json` packages can be imported in the same publisher form.
+The sidebar's **Skills** page is an organization-only catalog of reusable
+workflows. Browse shared packages or switch to Installed; search reads catalog
+metadata one bounded page at a time until it finds a match. It does not fetch
+package bodies or query any external registry. Use the pager for further results.
+
+A list item shows its name, purpose and install state. Details load SKILL.md and
+supporting files on demand; version, scope, requirements and management actions
+live there. New versions never silently replace another member's installation.
+
+Share by writing SKILL.md, choosing a local directory or importing an exported
+`.skill.json` file package. Updating instructions retains supporting files.
+The Web page offers no public catalog or GitHub import. Existing GitHub provenance
+and the operator import API remain available; this presentation slice does not
+alter stored packages or the wire schema.
 
 Install a specific version for yourself. Tenant owners may also install for the
 organization or the selected conversation's project. Precedence is project,

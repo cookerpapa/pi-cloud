@@ -101,6 +101,8 @@ export function assertScopedSources(scope, files) {
               "scripts/production-kubernetes.mjs",
               "scripts/run-browser-presentation-check.mjs",
               "scripts/run-browser-queue-check.mjs",
+              "scripts/run-skill-market-browser-check.mjs",
+              "scripts/run-live-skill-market-browser-check.mjs",
               "scripts/run-live-browser-ui-check.mjs",
               "scripts/run-live-queue-input-check.mjs",
               "scripts/run-live-release-acceptance.mjs",
