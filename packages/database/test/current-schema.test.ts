@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(206);
+      expect(firstMigrationPass.rows).toHaveLength(207);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("206_skill_market");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("207_skill_runtime_metadata");
       const terminalColumns = await sql<{ column_name: string }>`select column_name
         from information_schema.columns where table_name='workspace_terminal_sessions'`.execute(
         database,
@@ -178,7 +178,7 @@ describe("current PiCloud schema", () => {
          where table_schema = 'public'
          and table_name in (
            'workspaces', 'sessions', 'subagent_executions', 'turns', 'runs', 'workers',
-           'tenant_runtime_policies', 'pi_sessions'
+           'tenant_runtime_policies', 'pi_sessions', 'skill_versions'
          )
       `.execute(database);
       const keys = new Set(columns.rows.map((row) => `${row.table_name}.${row.column_name}`));
@@ -220,6 +220,7 @@ describe("current PiCloud schema", () => {
       expect(keys.has("subagent_executions.workspace_mode")).toBe(false);
       expect(keys.has("subagent_executions.child_workspace_id")).toBe(false);
       expect(keys.has("subagent_executions.pi_context_base_entry_id")).toBe(true);
+      expect(keys.has("skill_versions.runtime_metadata")).toBe(true);
       expect(keys.has("runs.service_tier")).toBe(true);
       expect(keys.has("runs.agent_revision_id")).toBe(true);
       expect(keys.has("runs.command_id")).toBe(false);

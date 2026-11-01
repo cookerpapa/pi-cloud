@@ -23,9 +23,11 @@ vi.mock("../src/subagent-controller.ts", () => ({ SubagentController: calls.suba
 vi.mock("@pi-cloud/runtime-core/session-projector", () => ({ SessionProjector: calls.projector }));
 vi.mock("@pi-cloud/sandbox-control/runtime", () => ({ createSandboxControl: calls.sandbox }));
 import { startControlPlane } from "../src/main.ts";
+import { SkillMarketService } from "../src/skill-market-service.ts";
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.spyOn(SkillMarketService.prototype, "initialize").mockResolvedValue();
   calls.config.mockResolvedValue({
     databaseUrl: "postgresql://fixture",
     databaseNotificationUrl: "postgresql://direct-fixture",
