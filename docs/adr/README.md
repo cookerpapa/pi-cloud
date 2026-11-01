@@ -3,7 +3,8 @@
 [ADR-0292](0292-repository-boundary-repairs.md) records the approved November 1
 review repairs: ownership recovery, release admission, indexed navigation,
 capability consistency, reading status, egress waiting and managed staging.
-Implementation and matched acceptance are in progress.
+Matched `review-repairs-20261101` and source/live acceptance are complete;
+[delivery](../reports/review-repairs-20261101.md).
 
 [ADR-0291](0291-internal-skill-market.md) adds the internal Skill market: portable
 packages, immutable object-store versions, scoped installation and per-Run

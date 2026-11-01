@@ -1,35 +1,40 @@
 # Maintained backlog
 
+Delivered sections retain evidence from their named releases; those historical
+tags are not a second inventory of currently serving images.
+
 ## Full repository review — 2026-11-01
 
 The [feature and architecture review](reports/repository-review-20261101.md)
 covers the conversation's accepted design decisions, all 23 packages, deployment
-and validation surfaces at `c636fe7a`. This is a review record, not a repair or
-deployment. Evidence distinguishes isolated reproduction from source inspection
-and prior live acceptance.
+and validation surfaces at `c636fe7a`. The approved repairs are now deployed as
+`review-repairs-20261101` on schema 206
+from `53b2cd71`, with matched artifact, real model/browser and recovery acceptance.
+[Delivery evidence](reports/review-repairs-20261101.md) distinguishes fresh checks
+from historical evidence.
 
-- [ ] R01: propagate permanent Sandbox owner loss into aggregate readiness and
+- [x] R01: propagate permanent Sandbox owner loss into aggregate readiness and
       controlled recovery. The previously observed readiness follow-up below is
       now reproduced; preserve expired-owner fencing and physical-absence rules.
-- [ ] R02: close the existing-deployment path through bootstrap/legacy deploy
+- [x] R02: close the existing-deployment path through bootstrap/legacy deploy
       commands that bypasses matched release admission, drain and provenance.
       Preserve clean installation; reject before mutations when release gates
       have not been met.
-- [ ] R03: replace whole-navigation-body Fork/prune validation with indexed
+- [x] R03: replace whole-navigation-body Fork/prune validation with indexed
       target/path validation; remove the resulting 10,000-navigation-entry
       functional ceiling without unbounding memory. Repair the query measurement
       and cover text-heavy histories, compaction and late lower-ID commits.
-- [ ] R04: derive Skill availability and Worker Tools from the same effective
+- [x] R04: derive Skill availability and Worker Tools from the same effective
       capability rules; keep explicit-only versus proactive delegation distinct
       from whether a Tool exists. Cover restricted child grants.
-- [ ] R05: keep terminal Run status truthful while historical text/selection is
+- [x] R05: keep terminal Run status truthful while historical text/selection is
       frozen. Cover failure, completion and cancellation without scroll jumps.
-- [ ] R06: distinguish CONNECT establishment, inactivity and active-connection
+- [x] R06: distinguish CONNECT establishment, inactivity and active-connection
       lifetime. Remove or explicitly configure the hidden five-minute active
       Sandbox tunnel cutoff; retain bounded failure and cancellation cleanup.
-- [ ] R07: reclaim confirmed-abandoned Skill preparation staging after hard
+- [x] R07: reclaim confirmed-abandoned Skill preparation staging after hard
       interruption without deleting active or user-modified Workspace content.
-- [ ] R08: reconcile maintained live drivers/current guidance with the current
+- [x] R08: reconcile maintained live drivers/current guidance with the current
       contract, and prove measurement probes actually observe their target.
       Historical reports retain their original results; stale checks must not
       silently become unconditional passes.
@@ -38,9 +43,8 @@ Existing Boot credential renewal, compute-only matched retirement, shared-histor
 reclamation capacity and independent-machine recovery limits remain separate
 operational work. See the report for their exact scope and retained tradeoffs.
 
-R01–R08 source repairs and focused regressions are implemented under ADR-0292;
-[full verification and matched delivery](reports/review-repairs-20261101.md) remain
-in progress. Checkboxes above require the final deployment/acceptance evidence.
+R01–R08 are complete under ADR-0292. The clean revision passed 383 fault cases,
+owned Skill/Fork/browser/native recovery checks and original-asset preservation.
 
 ## Answer controls and historical paging — deployed
 
@@ -109,7 +113,7 @@ Workspace assets are preserved; all three original applications are restored.
       locally confirmed ownership lease expired. The November 1 review confirms
       the main readiness wiring omits this ownership check while expired renewal
       remains correctly fenced.
-- [ ] Implement R01 above and expose a bounded maintenance failure reason.
+- [x] Implement R01 above and expose a bounded maintenance failure reason.
       A settled Run retained a closed binding until a quiescent
       Control Plane restart let normal ownership recovery retire it. Both original
       VM allocations survived that restart. Do not weaken lease checks or treat

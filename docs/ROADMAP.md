@@ -1,11 +1,11 @@
 # Implementation roadmap
 
-## November 1 review repairs — in progress
+## November 1 review repairs — deployed
 
-Implement R01–R08 in [the full review](reports/repository-review-20261101.md)
-under [ADR-0292](adr/0292-repository-boundary-repairs.md), one bounded slice at a
-time. Preserve current ownership and native Pi behavior; publish only after
-source/fault/transport/browser checks and matched artifact acceptance.
+R01–R08 from [the review](reports/repository-review-20261101.md) are deployed
+under [ADR-0292](adr/0292-repository-boundary-repairs.md). Matched 13-artifact
+publication, 383 fault cases, real Skill/Fork/browser/native recovery and original
+asset checks passed. [Delivery](reports/review-repairs-20261101.md).
 
 ## Same-Worker recovery identity — deployed
 

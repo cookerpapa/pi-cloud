@@ -3,11 +3,14 @@
 Implements the owner-approved R01–R08 from the
 [review](repository-review-20261101.md) under
 [ADR-0292](../adr/0292-repository-boundary-repairs.md).
-Source implementation, all workspace tests and focused/source/transport/browser
-gates are complete. The first fault invocation found one stale test title; that
-manifest reference is corrected and its exact target passed a fresh PG recheck.
-A clean-revision fault run and matched publication remain in progress. This is
-not yet a deployment claim.
+Matched `review-repairs-20261101` is deployed from
+`53b2cd71dbc189ff39f2cb1790a810d1852542ab`, on schema 206 and platform Helm
+revision 136. All 13 artifacts passed the maintained scan/provenance gate.
+The later `082ae417` correction fixes only the native acceptance driver's runtime
+path; serving binaries remain the matched revision. Owned Luna/Cube/browser,
+Skill, Fork and native Stop/crash recovery acceptance passed.
+
+[Machine-readable delivery evidence](review-repairs-20261101-evidence.json).
 
 ## Behavior
 
@@ -94,5 +97,67 @@ network-failure diagnostics are retained for a recurrence.
 Evidence is private under
 `deploy/production/runtime/work-evidence/review-repairs-20261101/`.
 Original transcripts, credentials, application repositories and raw runtime
-inventories are not committed. Final gate/publication results will be recorded
-here after completion. The deferred 131 MiB cold-image experiment remains deferred.
+inventories are not committed. The deferred 131 MiB cold-image experiment remains deferred.
+
+## Matched publication and live acceptance
+
+The clean committed revision passed **383/383** deterministic fault cases. This
+supersedes the initial 382/383 invocation with its stale test title; the failed
+sample and the isolated target recheck are retained separately. All 2,345 workspace
+tests and 133 acceptance-helper cases passed, with 11 opt-in cases skipped. The
+remaining source, transport, Cube, browser and image gates described above passed.
+These overlapping suites are not independent fleet-scale experiments.
+
+Live checks used GPT-6 Luna and newly owned fixture tenants/Workspaces:
+
+- Three Skill Runs verified instruction reading without a VM, package placement
+  followed by Bash, pinned version selection and idle steer admission.
+- Fork acceptance verified active-source Forks, source pruning while the Fork
+  runs, independent source deletion, retained images, native cold continuation,
+  compaction and actual browser navigation. The model recalled the retained C
+  context while the pruned source continued from B.
+- Guest Chromium interaction/screenshot, `show_image` display and the named
+  application preview link passed.
+- Native input passed consumption, Stop and Worker recovery with stable input
+  identity. Streaming Stop and simultaneous Worker/Control Plane SIGKILL retained
+  partial text without keeping streaming bodies in PG. The transient `kubectl`
+  connection error during the deliberate Control Plane kill is retained beside
+  the confirmed exit/restart and successful continuation.
+
+Every fixture confirmed physical cleanup before its exact tenant was removed.
+Original tenant names were never used as a cleanup selector.
+
+Before cutover, a real user Run started while images were being prepared. It was
+allowed to finish naturally. Subsequent checks found no active Run, writer,
+binding, terminal, elastic fixture or pending control publication. Both original
+machine allocations were closed and their absence confirmed on the recorded node
+before live handles were cleared. Workspace Volumes and desired running state
+remained. The machines recovered at generations 38 and 8; their new allocations
+survived the later fault tests unchanged.
+
+Fresh process inventory found no listening application on the first machine and
+one application on port 8000 on the second. Only that observed application was
+restored, and its returned HTML hash matched before/after and after crash acceptance.
+No historical gallery processes were inferred from an old release inventory.
+
+Preservation covered **6,006 files, 150 retained images, 14 protected database
+relations and 27 configuration/credential files**. Immediately after deployment,
+before application startup, every file matched the strict stopped baseline. Final
+verification matched all protected rows, credentials and images; only the known
+application log and periodically refreshed `pm/data/snapshot.json.gz` differed.
+All 29 running Pods were Ready, with no remaining fixture Run/writer/binding,
+terminal, elastic allocation or unpublished control record.
+
+One operational sequencing error is retained explicitly: the apply command was
+started before the initial post-retirement file-check failure was inspected. Its
+owned operator processes were paused during image import, before runtime cutover.
+Comparison found no added/deleted files and only the log/refreshing snapshot above,
+already classified in the preceding release's final verification. After verifying
+that exact difference, a strict stopped baseline was captured and apply resumed.
+The check was not suppressed and no ownership/absence guard was removed.
+
+Local disk preparation removed 257 application-image cache tags older than a week,
+excluding every current workload/catalog image and every Docker container image.
+Serving catalog hashes stayed unchanged. Earlier bounded BuildKit cache-prune
+attempts reclaimed no bytes. No Workspace, database volume, current image or
+provider credential was removed by that cache cleanup.

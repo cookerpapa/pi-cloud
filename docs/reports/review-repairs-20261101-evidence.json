@@ -1,0 +1,140 @@
+{
+  "format": "pi-cloud.review-repair-delivery.v1",
+  "date": "2026-11-01",
+  "runtime": {
+    "version": "review-repairs-20261101",
+    "sourceRevision": "53b2cd71dbc189ff39f2cb1790a810d1852542ab",
+    "schema": "206_skill_market",
+    "helmRevision": 136,
+    "scannedArtifacts": 13,
+    "cubeEgressGatewayIncluded": true,
+    "readyPods": 29,
+    "totalRunningPods": 29
+  },
+  "operatorCorrection": "082ae417cc7ae8e78e52dc833d7d265f6891a405",
+  "sourceChecks": {
+    "workspaceTestsPassed": 2345,
+    "workspaceTestsSkipped": 11,
+    "acceptanceHelperTestsPassed": 133,
+    "allPackageTypesCovered": true,
+    "transportTestsPassed": 9,
+    "faultCasesPassed": 383,
+    "faultCaseCount": 383,
+    "faultRevisionClean": true,
+    "cubeAdmission": "passed",
+    "cubeAllocation": "passed",
+    "build": "passed",
+    "helm": "passed",
+    "install": "passed",
+    "runtimePolicy": "passed",
+    "observability": "passed",
+    "imageClosure": "passed",
+    "imageContext": "passed",
+    "dependencyAudit": "passed"
+  },
+  "live": {
+    "skills": {
+      "cases": 3,
+      "allRunsCompleted": true,
+      "textOnlyWithoutVm": true,
+      "versionSelectionPreserved": true,
+      "idleSteerStartsRun": true,
+      "cleanupConfirmed": true
+    },
+    "forks": {
+      "accepted": true,
+      "checks": [
+        {
+          "activeSourceFork": true,
+          "busyForkPrune": true,
+          "oldPhysicalStoreRetired": true,
+          "forkModelRecalledC": true,
+          "noAutomaticForkNotice": true,
+          "backendProvenanceRetained": true,
+          "imageObjects": 1
+        },
+        {
+          "peerSidebar": true,
+          "sourceNavigationAfterPrune": true,
+          "activeForkSurvivesSourceDeletion": true,
+          "imagesSurviveSourceDeletion": true
+        },
+        {
+          "sourceColdContextB": true,
+          "sourceDiscardedC": true,
+          "forkCompaction": true,
+          "postCompactionRecallC": true
+        },
+        {
+          "browserFocusIndependent": true
+        }
+      ],
+      "cleanupConfirmed": true
+    },
+    "guestBrowser": {
+      "accepted": true,
+      "cleanupConfirmed": true
+    },
+    "nativeInput": {
+      "accepted": true,
+      "scenarios": ["consume", "stop", "recover", "stream_stop", "stream_both_crash"],
+      "stableInputIdentity": true,
+      "noPgStreamingBodies": true,
+      "partialTextPreserved": true,
+      "cleanupConfirmed": true
+    }
+  },
+  "preservation": {
+    "workspaceFiles": 6006,
+    "retainedImages": 150,
+    "databaseTables": 14,
+    "credentialAndConfigFiles": 27,
+    "strictAfterDeploymentBeforeAppStartup": true,
+    "finalProtectedRecordsMatch": true,
+    "finalWorkspaceBytesMatchExceptKnownRuntimeArtifacts": true,
+    "credentialsAndConfigurationMatch": true,
+    "observedAppPortsRestored": [8000],
+    "restoredMachineGenerations": [38, 8],
+    "originalAllocationsSurvivedRecoveryChecks": true
+  },
+  "cleanup": {
+    "fixtureTenantsAndPhysicalResourcesConfirmed": true,
+    "finalActiveResourceCounts": {
+      "runs": 0,
+      "writers": 0,
+      "bindings": 0,
+      "terminals": 0,
+      "elastic": 0,
+      "controls": 0
+    },
+    "unusedHistoricalApplicationImageTagsRemoved": 257,
+    "currentImageCatalogPreservedDuringCacheCleanup": true
+  },
+  "limits": {
+    "largeColdImageExperimentRun": false,
+    "newMultiMachineHaClaim": false
+  },
+  "initialFailures": [
+    "One legacy owner fixture revived an expired identity; removed that fixture step and retained an independent permanent-fencing regression.",
+    "Initial navigation edit also removed a sidebar response bound; retained that bound separately.",
+    "Large prune regression exposed the expanded-writes/reference join; direct metadata references fixed the query without raising its timeout.",
+    "Two new test typing errors were corrected and both packages rechecked.",
+    "Initial fault manifest referenced a renamed test:382/383; corrected target passed, then clean-revision full383/383 passed.",
+    "Two development-browser fixture loads timed out; scoped and complete rechecks passed. Initial cause remains unestablished.",
+    "A native acceptance preflight variable was corrected before that live driver ran; runtime images were unchanged.",
+    "Initial post-retirement hash comparison omitted the already-known application snapshot refresh. Apply had started prematurely; its owned operator processes were paused during image import before runtime cutover. Verified only known log/snapshot differences, then captured strict stopped baseline and resumed."
+  ],
+  "privateEvidenceHashes": {
+    "acceptance-helpers.log": "8c75bb421bedd41b1f0ae59057f87f3c72845a14d860863ecd945b3e3ad9569e",
+    "all-tests.log": "90ba3e711a2369f3baf033495725ce861a3deadc089c96b587f453628a0e2cb4",
+    "apply.log": "59614aecc88f6f698d0c7284d9df1e10d02ab67863b179593c721d3ee00f096e",
+    "browser-full-diagnostic.log": "630ccf0f9f77b8fcda4afeccddc927f0f1744ba83ea66eb6ac7e658de4c3bbb5",
+    "fault-clean-revision.log": "c95488a3ee880cbcba73a62efec8540c8122904945afcf3b504fb7884025ae83",
+    "live-browser.log": "69f1430034765f9f8c6824f23e6aa2b49ee637e1bb1352ddf716987fabe3c8b7",
+    "live-forks.log": "86d4925c8d9dff18f45087a60fda77d05996e99bc33f874a4c89befa500bc6cd",
+    "live-native.log": "78e4cbbe01ad76d112bc0f3d23c4aa6a6ed8867845a3b5c994bef9251006261d",
+    "live-skills.log": "a5100f648ef31ba35b1eb3354eab4a85b50c056ed1e9cea3d931849cef8afd2a",
+    "prepare.log": "39f78e432ad7faa3f7a1c55472b28fbba5185df10699d8b9243be1ebe47f4cb2",
+    "transport.log": "f65ec791bfdd30e47a88f27306d6a467e17cdc69288496324c965ab025901a64"
+  }
+}

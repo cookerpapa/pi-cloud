@@ -1,6 +1,8 @@
 # ADR-0292: Repair existing ownership, release and capability boundaries
 
-Status: accepted for implementation, 2026-11-01.
+Status: implemented and deployed, 2026-11-01.
+
+[Verification and matched delivery](../reports/review-repairs-20261101.md).
 
 The owner approved R01–R08 in the [whole-repository review](../reports/repository-review-20261101.md).
 Implement one complete slice at a time, then publish matched application, guest
