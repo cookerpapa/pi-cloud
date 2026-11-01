@@ -213,7 +213,10 @@ Runner execution. Claim locks last only for the transaction, while leases/fencin
 govern the subsequent execution. A pre-commit rollback leaves work queued;
 post-commit loss requires the existing closure/recovery path, not blind replay.
 
-Normal fresh-lease admission is 9 business SQL statements, plus BEGIN/COMMIT.
+Normal fresh-lease admission is 11 business SQL statements, plus BEGIN/COMMIT.
+ADR-0293 adds two exchanges to pin Skill version references and read their
+immutable metadata before the Worker starts. Neither reads package bodies or
+rechecks execution authority; ordinary model requests do not repeat these queries.
 Child Conversations no longer enter this claim path; they use the root work's
 existing Session ownership through the native Harness.
 The [focused table review](reports/worker-claim-schema-review-20261010.md) retains

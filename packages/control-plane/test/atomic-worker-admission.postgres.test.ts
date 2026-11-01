@@ -1132,7 +1132,11 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
       status: "completed",
     });
     // The post-lock input snapshot prevents admission from reading a stale edit.
-    expect(queries).toHaveLength(9);
+    // Skill selection adds one immutable-reference write and one metadata read,
+    // not a second execution-authority lookup or package body fetch.
+    expect(queries).toHaveLength(11);
+    expect(queries.filter((q) => q.startsWith("insert into run_skill_catalogs"))).toHaveLength(1);
+    expect(queries.filter((q) => q.includes("from run_skill_catalogs c"))).toHaveLength(1);
     expect(
       queries.filter((q) => q.startsWith('select "input_text", "input_uploads" from "runs"')),
     ).toHaveLength(1);
