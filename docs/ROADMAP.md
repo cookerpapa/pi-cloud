@@ -1,10 +1,11 @@
 # Implementation roadmap
 
-## Organization Skill market — in progress
+## Organization Skill market — deployed
 
-Deliver a quiet organization-only browser with search, Installed view, on-demand
-preview, scoped actions and local sharing. Keep the existing storage/runtime
-contracts and publish through the scoped Web procedure.
+Organization browsing/search, Installed view, on-demand preview, scoped actions
+and local sharing are live in `skill-market-ui-20261101`. The scoped Web gate and
+real owner/member flow passed with retained backend and machine identities.
+[Delivery](reports/organization-skill-market-20261101.md).
 
 
 ## Initial message placement — deployed

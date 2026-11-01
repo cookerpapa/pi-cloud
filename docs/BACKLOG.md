@@ -1,13 +1,17 @@
 # Maintained backlog
 
-## Organization Skill market — in progress
+## Organization Skill market — deployed
 
 - [x] Separate browsing, installed management, details and local sharing.
 - [x] Remove permanent implementation explanations and public-source Web import.
 - [x] Cover paginated discovery, scope/version mutations, failed and stale reads,
       local file retention, viewer permissions and responsive keyboard use.
-- [ ] Publish Web only and demonstrate organization sharing/installation against
+- [x] Publish Web only and demonstrate organization sharing/installation against
       the live API with owned fixture cleanup and original resource preservation.
+
+Published as `skill-market-ui-20261101` from `69df83df`. The scoped Web gate and
+real two-member organization browser flow passed; original backend and machine
+identities were preserved. [Delivery](reports/organization-skill-market-20261101.md).
 
 
 Delivered sections retain evidence from their named releases; those historical

@@ -1,5 +1,7 @@
 # Delivery and research evidence
 
+- [Organization Skill market](organization-skill-market-20261101.md): compact internal
+  discovery, local sharing, scoped installations and live member acceptance.
 - [Initial message placement](input-placement-20261101.md): transcript-first sending,
   native-only pending list, exact retries and Web-only publication acceptance.
 - [November 1 review repairs](review-repairs-20261101.md): source implementation,
