@@ -8,8 +8,8 @@ firewall denial. Enforce deployment isolation with the configured networks/CNI.
 | Browser | Web/Control Plane | yes | product API and SSE |
 | Control Plane | PostgreSQL | yes | product/Run authority, resource ownership and bounded binding metadata |
 | Pi Worker | PostgreSQL | yes | queue, Session and lifecycle state |
-| Pi Worker | Control Plane | yes | publication ingress, binding APIs, boot registration, heartbeats and Steer control channel |
-| Pi Worker | Kafka | yes | consume its boot's Tool replies |
+| Pi Worker | Control Plane | yes | binding APIs, boot registration, management heartbeat and native input control |
+| Pi Worker | Kafka | yes | direct transactional Session publication and consumption of its boot's Tool replies |
 | Pi Worker | provider proxy/model provider | yes | model requests |
 | Control Plane / Session Projector | Kafka | yes | ordered data/seal publication and one consumer group for native history, live views and Tool routing |
 | Control Plane | Cube API | yes | bounded native Tool handoff, VM lifecycle and interactive transport |
@@ -26,6 +26,11 @@ The Sandbox default is deny-all. Public mode routes HTTP/HTTPS through the Cube
 egress gateway, which blocks loopback, RFC1918, link-local, metadata, Kubernetes
 and platform destinations. Allowing public egress does not grant direct access
 to the trusted cluster network.
+
+Sandbox HTTPS CONNECT has a ten-second establishment deadline and a five-minute
+idle deadline refreshed by actual socket traffic. Healthy active tunnels have
+no total-duration cutoff. Audit reasons distinguish `connect_timeout` from
+`idle_timeout`; this policy is separate from model-provider transport waiting.
 
 Placing Cube compute nodes on the same physical subnet as company servers does
 not by itself change this policy. The deployment may set

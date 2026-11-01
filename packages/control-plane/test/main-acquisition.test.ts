@@ -33,6 +33,7 @@ beforeEach(() => {
     sandboxControlBaseUrls: ["http://sandbox-control.test"],
     workspaceServiceToken: "fixture-workspace-token".repeat(3),
     allowInsecureInternalHttp: true,
+    subagentTreePolicy: { maximumDepth: null, maximumNodes: null },
   });
   calls.sandboxClose.mockResolvedValue(undefined);
   calls.sandbox.mockResolvedValue({ close: calls.sandboxClose, dispatcher: {} });

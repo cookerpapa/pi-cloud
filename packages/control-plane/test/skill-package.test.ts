@@ -18,11 +18,16 @@ it("keeps portable Skill files and compatibility prose without executing or infe
   expect(parsed.content.files).toHaveLength(2);
   expect(skillPackage([...parsed.content.files].reverse()).digest).toBe(parsed.digest);
   expect(
-    skillAvailability({ tools: ["camera"], runtime: "android", software: [] }, "linux", ["bash"]),
+    skillAvailability(
+      { tools: ["camera"], runtime: "android", software: [] },
+      { runtimes: ["linux"], tools: ["bash"] },
+    ),
   ).toEqual({ state: "unsupported", reasons: ["tool:camera", "runtime:android"] });
   expect(
-    skillAvailability({ tools: [], runtime: "none", software: ["python"] }, "linux", ["bash"])
-      .state,
+    skillAvailability(
+      { tools: [], runtime: "none", software: ["python"] },
+      { runtimes: ["linux"], tools: ["bash"] },
+    ).state,
   ).toBe("unverified");
 });
 it("rejects invalid package trees before creating a published version", () => {

@@ -1,5 +1,10 @@
 # Current architecture decisions
 
+[ADR-0292](0292-repository-boundary-repairs.md) records the approved November 1
+review repairs: ownership recovery, release admission, indexed navigation,
+capability consistency, reading status, egress waiting and managed staging.
+Implementation and matched acceptance are in progress.
+
 [ADR-0291](0291-internal-skill-market.md) adds the internal Skill market: portable
 packages, immutable object-store versions, scoped installation and per-Run
 selection. Reading instructions does not require a VM; file preparation stays

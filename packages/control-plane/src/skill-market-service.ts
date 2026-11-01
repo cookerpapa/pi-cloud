@@ -3,6 +3,10 @@ import { sql, type Kysely } from "kysely";
 import { retryTransaction, type Database } from "@pi-cloud/database";
 import {
   SKILL_ENVELOPE_BYTES,
+  CLOUD_TOOL_NAMES,
+  effectiveToolCapabilities,
+  parseCloudToolCapabilitySnapshot,
+  parseExecutionTargetGrants,
   skillAvailability,
   type SkillImport,
   type SkillInstallationChange,
@@ -63,6 +67,7 @@ export class SkillMarketService {
       blobs?: SkillPackageBlobs;
       catalog?(): readonly import("@pi-cloud/protocol").ControlToolCatalogDefinition[];
       fetch?: typeof fetch;
+      maximumDepth?: number | null;
     },
   ) {}
 
@@ -250,7 +255,18 @@ export class SkillMarketService {
           ownerUserId: pack.owner_user_id,
           versions: v.map((value) => ({
             ...value,
-            availability: skillAvailability(value.requirements, "linux", this.#tools()),
+            availability: skillAvailability(
+              value.requirements,
+              effectiveToolCapabilities(
+                {
+                  sessionKind: "conversation",
+                  toolCapabilities: CLOUD_TOOL_NAMES,
+                  depth: 0,
+                  maximumDepth: this.options.maximumDepth ?? null,
+                },
+                this.options.catalog?.() ?? [],
+              ),
+            ),
           })),
           installations: installations.rows
             .filter((row) => row.package_id === pack.id)
@@ -268,38 +284,36 @@ export class SkillMarketService {
       nextCursor: packages.rows.length > 30 ? visible.at(-1)!.id : null,
     };
   }
-  #tools(root = true) {
-    return [
-      "read",
-      "write",
-      "edit",
-      "bash",
-      "subagent",
-      "workflow",
-      ...(this.options
-        .catalog?.()
-        .filter((tool) => root || tool.availability !== "root")
-        .map((tool) => tool.name) ?? ["read_skill", "prepare_skill"]),
-    ];
-  }
-
   async runCapabilities(tenantId: string, runId: string, conversationId?: number) {
-    const run = await this.options.database
-      .selectFrom("runs as r")
-      .innerJoin("sessions as s", "s.id", "r.session_id")
-      .select(["r.thinking_level", "s.pi_conversation_id"])
-      .where("r.tenant_id", "=", tenantId)
-      .where("r.id", "=", runId)
-      .executeTakeFirst();
-    if (!run) return notFound();
-    const tools = this.#tools(
-      conversationId === undefined || Number(run.pi_conversation_id) === conversationId,
-    ).filter((name) => name !== "subagent" && name !== "workflow");
-    if (run.thinking_level === "ultra") tools.push("subagent", "workflow");
-    return {
-      runtime: "linux" as const,
-      tools,
-    };
+    const row = (
+      await sql<{
+        sessionKind: "conversation" | "subagent";
+        tools: unknown;
+        targets: unknown;
+        depth: number;
+      }>`select s.session_kind as "sessionKind",
+      case when s.id=r.session_id then r.tool_capability_snapshot else s.tool_capabilities end as tools,
+      case when s.id=r.session_id then r.execution_target_snapshot else '[]'::jsonb end as targets,
+      coalesce(e.depth,0)::int as depth
+      from runs r join sessions root on root.tenant_id=r.tenant_id and root.id=r.session_id
+      join sessions s on s.tenant_id=root.tenant_id and s.pi_session_id=root.pi_session_id and s.pruned_at is null
+      left join subagent_executions e on e.tenant_id=s.tenant_id and e.child_session_id=s.id and e.root_run_id=r.id
+      where r.tenant_id=${tenantId}::uuid and r.id=${runId}::uuid
+        and ${conversationId === undefined ? sql`s.id=r.session_id` : sql`s.pi_conversation_id=${String(conversationId)}::bigint`}
+        and (s.id=r.session_id or e.id is not null)
+    `.execute(this.options.database)
+    ).rows[0];
+    if (!row) return notFound();
+    return effectiveToolCapabilities(
+      {
+        sessionKind: row.sessionKind,
+        toolCapabilities: parseCloudToolCapabilitySnapshot(row.tools),
+        executionTargets: parseExecutionTargetGrants(row.targets),
+        depth: row.depth,
+        maximumDepth: this.options.maximumDepth ?? null,
+      },
+      this.options.catalog?.() ?? [],
+    );
   }
   async runCatalog(tenantId: string, runId: string): Promise<SkillVersion[]> {
     const db = this.options.database;

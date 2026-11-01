@@ -272,6 +272,7 @@ export type PostgresWorkspaceRuntimeStateRepositoryOptions = {
   heartbeatMs?: number;
   clock?: () => Date;
   monotonicNow?: () => number;
+  onOwnershipLost?: () => void;
 };
 
 function validDate(clock: () => Date): Date {
@@ -328,11 +329,13 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   readonly #heartbeatMs: number;
   readonly #clock: () => Date;
   readonly #monotonicNow: () => number;
+  readonly #onOwnershipLost: (() => void) | undefined;
   #heartbeat: NodeJS.Timeout | undefined;
   #heartbeatTask: Promise<void> | undefined;
   #reconciliation: Promise<void> | undefined;
   #closed = false;
   #ownershipDeadline = 0;
+  #ownershipLost = false;
 
   constructor(options: PostgresWorkspaceRuntimeStateRepositoryOptions) {
     this.#database = options.database;
@@ -346,6 +349,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     }
     this.#clock = options.clock ?? (() => new Date());
     this.#monotonicNow = options.monotonicNow ?? (() => performance.now());
+    this.#onOwnershipLost = options.onOwnershipLost;
   }
 
   async start(): Promise<void> {
@@ -424,7 +428,15 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     this.#heartbeat = setInterval(() => {
       if (this.#closed || this.#heartbeatTask) return;
       this.#heartbeatTask = this.#renew()
-        .catch(() => undefined)
+        .catch((error: unknown) => {
+          if (
+            !this.#closed &&
+            ((error instanceof WorkspaceRuntimeStateRepositoryError &&
+              error.code === "ownership_lost") ||
+              this.#monotonicNow() >= this.#ownershipDeadline)
+          )
+            this.#loseOwnership();
+        })
         .finally(() => {
           this.#heartbeatTask = undefined;
         });
@@ -434,6 +446,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   }
 
   async checkHealth(): Promise<void> {
+    if (this.#ownershipLost) this.assertLocalOwnership();
     const requestedAt = this.#monotonicNow();
     const row = await this.#database
       .selectFrom("sandbox_control_instances")
@@ -447,20 +460,36 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       .where("lease_expires_at", ">", sql<Date>`clock_timestamp()`)
       .executeTakeFirst();
     if (row === undefined) {
+      this.#loseOwnership();
       throw new WorkspaceRuntimeStateRepositoryError(
         "ownership_lost",
         "Sandbox control database ownership lease is not current",
       );
     }
+    if (this.#ownershipLost) this.assertLocalOwnership();
     this.#ownershipDeadline = requestedAt + Number(row.remaining_ms);
   }
 
   assertLocalOwnership(): void {
-    if (this.#closed || this.#monotonicNow() >= this.#ownershipDeadline) {
+    if (this.#closed || this.#ownershipLost || this.#monotonicNow() >= this.#ownershipDeadline) {
+      if (!this.#closed) this.#loseOwnership();
       throw new WorkspaceRuntimeStateRepositoryError(
         "ownership_lost",
         "Sandbox control locally confirmed ownership lease expired",
       );
+    }
+  }
+
+  #loseOwnership(): void {
+    if (this.#closed || this.#ownershipLost) return;
+    this.#ownershipLost = true;
+    this.#ownershipDeadline = 0;
+    clearInterval(this.#heartbeat);
+    // A notification cannot turn a fenced operation into an acknowledged one.
+    try {
+      this.#onOwnershipLost?.();
+    } catch {
+      /* Local admission remains permanently closed even if the observer fails. */
     }
   }
 
@@ -2241,6 +2270,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   }
 
   async #renew(): Promise<void> {
+    if (this.#ownershipLost) this.assertLocalOwnership();
     const requestedAt = this.#monotonicNow();
     const renewed = await this.#transaction(async (transaction) => {
       // Materialize the row lock BEFORE evaluating PG expiry. Renewal never
@@ -2261,6 +2291,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         "ownership_lost",
         "Sandbox control ownership heartbeat was fenced",
       );
+    if (this.#ownershipLost || this.#closed) return;
     this.#ownershipDeadline =
       requestedAt + renewed.lease_expires_at.valueOf() - renewed.last_heartbeat_at.valueOf();
   }
@@ -2298,6 +2329,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   }
 
   async #ownedTransaction<T>(work: (transaction: Transaction<Database>) => Promise<T>): Promise<T> {
+    this.assertLocalOwnership();
     return this.#transaction(async (transaction) => {
       const locked = await sql<{ remaining_ms: string }>`
         with owner as materialized (
@@ -2306,11 +2338,13 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         ) select extract(epoch from (lease_expires_at-clock_timestamp()))*1000 as remaining_ms
           from owner where state='ready' and lease_expires_at>clock_timestamp()
       `.execute(transaction);
-      if (!locked.rows.length)
+      if (!locked.rows.length) {
+        this.#loseOwnership();
         throw new WorkspaceRuntimeStateRepositoryError(
           "ownership_lost",
           "Sandbox control database ownership lease is not current",
         );
+      }
       if (Number(locked.rows[0]!.remaining_ms) <= this.#transactionBudgetMs + this.#heartbeatMs)
         throw new WorkspaceRuntimeStateRepositoryError(
           "unavailable",
@@ -2324,11 +2358,14 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .where("state", "=", "ready")
         .where("lease_expires_at", ">", sql<Date>`clock_timestamp()`)
         .executeTakeFirst();
-      if (!current)
+      if (!current) {
+        this.#loseOwnership();
         throw new WorkspaceRuntimeStateRepositoryError(
           "ownership_lost",
           "Sandbox control lease expired during lifecycle admission",
         );
+      }
+      this.assertLocalOwnership();
       return result;
     });
   }

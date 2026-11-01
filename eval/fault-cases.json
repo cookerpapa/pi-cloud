@@ -1406,7 +1406,7 @@
       "id": "native-tree-bounded-prefix-copy",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/conversation-tree.postgres.test.ts",
-      "test": "reads only navigation bodies but preserves the complete Tool-heavy prefix in a paged Fork",
+      "test": "uses bounded navigation metadata and preserves the complete Tool-heavy prefix in a Fork",
       "invariant": "Navigation omits unrelated Tool payloads while an independent Fork preserves the full selected native prefix."
     },
     {
@@ -2654,6 +2654,34 @@
       "test": "converts schema-203 native bodies and frozen presentation once without changing the transcript",
       "invariant": "Matched conversion preserves exact native text and images, and bootstrap cannot undo later pruning.",
       "workspace": "@pi-cloud/control-plane"
+    },
+    {
+      "id": "sandbox-owner-terminal-loss",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/workspace-runtime-state-repository.test.ts",
+      "test": "notifies permanent owner loss once and never revives the fenced identity",
+      "invariant": "Expired controller ownership closes local admission permanently; a later observation cannot revive it."
+    },
+    {
+      "id": "sandbox-owner-transient-renewal",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/workspace-runtime-state-repository.test.ts",
+      "test": "retries a transient renewal failure while its confirmed lease remains valid",
+      "invariant": "A transient renewal failure before the confirmed deadline does not retire a valid owner."
+    },
+    {
+      "id": "controller-owner-retirement",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/ownership-retirement.test.ts",
+      "test": "waits for startup acquisition, then closes once and retains bounded exit",
+      "invariant": "Ownership loss cannot leave a permanently unready process alive when cleanup leaks handles."
+    },
+    {
+      "id": "skill-staging-modified",
+      "workspace": "@pi-cloud/tool-sandbox",
+      "file": "test/skill-staging.test.ts",
+      "test": "preserves modified abandoned staging for inspection instead of deleting user bytes",
+      "invariant": "OS lock loss permits inspection, not deletion of changed Skill staging or completed user files."
     }
   ]
 }

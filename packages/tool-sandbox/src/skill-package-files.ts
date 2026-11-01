@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, mkdtemp, open, realpath, rename, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { lstat, mkdir, open, realpath, rename } from "node:fs/promises";
+import { join } from "node:path";
+import { withSkillStaging } from "./skill-staging.ts";
 import {
   parseSkill,
   SkillPackageContentSchema,
@@ -71,38 +72,33 @@ export async function prepareSkillPackage(directory: string, bytes: Buffer, dige
       }
     }
   };
-  if (
-    await lstat(target).then(
-      () => true,
-      (error: NodeJS.ErrnoException) => {
-        if (error.code === "ENOENT") return false;
-        throw error;
-      },
-    )
-  ) {
-    await verify();
-    return { path: target };
-  }
-  const temporary = await mkdtemp(join(packages, ".prepare-"));
-  try {
-    for (const [path, data] of files) {
-      await mkdir(dirname(join(temporary, path)), { recursive: true });
-      const file = await open(join(temporary, path), "wx", 0o644);
+  return withSkillStaging(
+    parent,
+    files,
+    async (temporary) => {
       try {
-        await file.writeFile(data);
-      } finally {
-        await file.close();
+        await rename(temporary, target);
+      } catch (error) {
+        if (!["EEXIST", "ENOTEMPTY"].includes((error as NodeJS.ErrnoException).code ?? ""))
+          throw error;
+        await verify();
       }
-    }
-    try {
-      await rename(temporary, target);
-    } catch (error) {
-      if (!["EEXIST", "ENOTEMPTY"].includes((error as NodeJS.ErrnoException).code ?? ""))
-        throw error;
-      await verify();
-    }
-    return { path: target };
-  } finally {
-    await rm(temporary, { recursive: true, force: true });
-  }
+      return { path: target };
+    },
+    async () => {
+      if (
+        await lstat(target).then(
+          () => true,
+          (error: NodeJS.ErrnoException) => {
+            if (error.code === "ENOENT") return false;
+            throw error;
+          },
+        )
+      ) {
+        await verify();
+        return { path: target };
+      }
+      return undefined;
+    },
+  );
 }

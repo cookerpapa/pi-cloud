@@ -15,7 +15,7 @@ it("reads instructions without placement, paginates large Unicode catalogs and p
   }));
   const service = {
     runCatalog: async () => versions,
-    runCapabilities: async () => ({ runtime: "linux", tools: [] }),
+    runCapabilities: async () => ({ runtimes: ["linux"], tools: [] }),
     content: async () => ({
       name: "test",
       files: [{ path: "SKILL.md", base64: Buffer.from("正文".repeat(10000)).toString("base64") }],

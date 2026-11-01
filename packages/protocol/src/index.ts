@@ -567,6 +567,12 @@ export {
 } from "./agent-profile.ts";
 
 export {
+  effectiveToolCapabilities,
+  isConversationToolOffered,
+  toolExecutionTarget,
+  type ConversationToolScope,
+} from "./effective-tool-capabilities.ts";
+export {
   CLOUD_TOOL_NAMES,
   CloudToolCapabilitySnapshotSchema,
   CloudToolNameSchema,

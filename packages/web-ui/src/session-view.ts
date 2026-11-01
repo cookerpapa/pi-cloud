@@ -43,6 +43,8 @@ export type TranscriptItem = { historyCursor?: string; pageKey?: string } & (
       lastSequence: number;
       /** Text recovered before this browser attached; render it without replay animation. */
       recoveredTextLength?: number;
+      /** Browser-only frozen stream fragment; never treat it as a complete copy. */
+      frozenStreaming?: true;
     }
   | {
       kind: "hosted_search";
@@ -123,6 +125,45 @@ export type TurnView = {
   failure: { code: string; message: string; retryable: boolean } | null;
   cancellation: { reason: string; forced: boolean } | null;
 };
+
+/** Lifecycle updates are independent of streamed text and viewport membership. */
+export function terminalTurnOutcome(event: PiCloudEvent, operation?: TurnView["operation"]) {
+  if (event.type === "turn.completed")
+    return {
+      status: "completed" as const,
+      terminalSequence: event.seq,
+      stopReason: event.payload.stopReason,
+      ...(operation
+        ? {
+            operation: {
+              ...operation,
+              state:
+                event.payload.stopReason === "compact_no_op"
+                  ? ("no_op" as const)
+                  : event.payload.stopReason === "compact_stale"
+                    ? ("stale" as const)
+                    : ("applied" as const),
+            },
+          }
+        : {}),
+    };
+  if (event.type === "turn.failed")
+    return {
+      status: "failed" as const,
+      terminalSequence: event.seq,
+      failure: event.payload,
+      ...(operation ? { operation: { ...operation, state: "failed" as const } } : {}),
+    };
+  if (event.type === "turn.cancelled")
+    return {
+      status: "cancelled" as const,
+      terminalSequence: event.seq,
+      stopReason: "cancelled",
+      cancellation: event.payload,
+      ...(operation ? { operation: { ...operation, state: "cancelled" as const } } : {}),
+    };
+  return undefined;
+}
 
 export type ConnectionView =
   | { phase: "offline"; attempt: 0; message: string | null }
@@ -634,22 +675,7 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
               ? { ...item, status: "completed" as const, lastSequence: event.seq }
               : item,
           ),
-        status: "completed",
-        terminalSequence: event.seq,
-        stopReason: event.payload.stopReason,
-        ...(turn.operation
-          ? {
-              operation: {
-                ...turn.operation,
-                state:
-                  event.payload.stopReason === "compact_no_op"
-                    ? ("no_op" as const)
-                    : event.payload.stopReason === "compact_stale"
-                      ? ("stale" as const)
-                      : ("applied" as const),
-              },
-            }
-          : {}),
+        ...terminalTurnOutcome(event, turn.operation),
       };
     }
     if (event.type === "turn.failed") {
@@ -674,10 +700,7 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
             }
             return item;
           }),
-        ...(turn.operation ? { operation: { ...turn.operation, state: "failed" as const } } : {}),
-        status: "failed",
-        terminalSequence: event.seq,
-        failure: event.payload,
+        ...terminalTurnOutcome(event, turn.operation),
       };
     }
     if (event.type === "turn.cancelled") {
@@ -702,13 +725,7 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
             }
             return item;
           }),
-        ...(turn.operation
-          ? { operation: { ...turn.operation, state: "cancelled" as const } }
-          : {}),
-        status: "cancelled",
-        terminalSequence: event.seq,
-        stopReason: "cancelled",
-        cancellation: event.payload,
+        ...terminalTurnOutcome(event, turn.operation),
       };
     }
     return turn;

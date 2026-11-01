@@ -61,11 +61,7 @@ export function createSkillTools(
           let length = 0,
             last: string | undefined;
           for (const value of candidates) {
-            const availability = skillAvailability(
-              value.requirements,
-              context.runtime,
-              context.tools,
-            );
+            const availability = skillAvailability(value.requirements, context);
             const item = {
               versionId: value.versionId,
               name: value.name,
@@ -189,11 +185,7 @@ export function createSkillTools(
           call.scope.runId,
           call.conversationId,
         );
-        const availability = skillAvailability(
-          selected.requirements,
-          context.runtime,
-          context.tools,
-        );
+        const availability = skillAvailability(selected.requirements, context);
         if (availability.state === "unsupported")
           return error(`Skill requirements are unsupported: ${availability.reasons.join(", ")}`);
         const content = await service.content(call.scope.tenantId, selected.versionId, signal);

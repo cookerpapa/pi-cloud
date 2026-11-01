@@ -1,3 +1,4 @@
+import { assertLiveContract } from "./lib/live-contract.mjs";
 import assert from "node:assert/strict";
 import { randomUUID, createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
@@ -89,13 +90,7 @@ const submit = (text) =>
   api.acceptTurn(session.sessionId, text, newIdempotencyKey("model-runtime"), "low");
 
 try {
-  const schema = await db
-    .selectFrom("kysely_migration")
-    .select("name")
-    .orderBy("name", "desc")
-    .limit(1)
-    .executeTakeFirstOrThrow();
-  assert.equal(schema.name, "195_gpt61_sol_selection");
+  report.contract = await assertLiveContract(db, runtimeDirectory, { modelRuntimeSnapshot: 1 });
   const other = await db
     .selectFrom("runs")
     .select("id")

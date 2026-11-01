@@ -21,8 +21,12 @@ research APIs are not compiled into the product.
 Prometheus, Jaeger and Grafana are already an explicit Compose profile:
 
 ```bash
-npm run production:up:observability
+npm run production:config:observability
 ```
+
+Set `PI_CLOUD_OBSERVABILITY_ENABLED=1` in the private runtime `.env` and use
+the [matched release procedure](MATCHED_RELEASE.md) to publish this configuration.
+The command above only renders manifests.
 
 ## Removed product surfaces
 

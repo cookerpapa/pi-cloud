@@ -113,13 +113,12 @@ export const parseSkillInstallationChange = (value: unknown) =>
 
 export function skillAvailability(
   requirements: SkillRequirements,
-  runtime: "linux" | "android" | "none",
-  tools: readonly string[],
+  capabilities: { runtimes: readonly ("linux" | "android")[]; tools: readonly string[] },
 ): SkillAvailability {
   const reasons = requirements.tools
-    .filter((name) => !tools.includes(name))
+    .filter((name) => !capabilities.tools.includes(name))
     .map((name) => `tool:${name}`);
-  if (requirements.runtime !== "none" && requirements.runtime !== runtime)
+  if (requirements.runtime !== "none" && !capabilities.runtimes.includes(requirements.runtime))
     reasons.push(`runtime:${requirements.runtime}`);
   if (reasons.length) return { state: "unsupported", reasons };
   return requirements.software.length

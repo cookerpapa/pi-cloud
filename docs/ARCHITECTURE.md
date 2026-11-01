@@ -172,6 +172,10 @@ once. These are browser reading policies, not execution or history mutations.
 Normal history paging is automatic at the reading edge. A failed page offers a
 retry of that same query; a speculative later-page flag is not a user notification.
 Copies on settled answer fragments and final footers share the answer action style.
+Execution terminal state remains current during historical reading and selection,
+including after an SSE snapshot reconnect. A frozen streaming fragment keeps its
+rendering identity and does not gain a complete-answer copy action until canonical
+content replaces it.
 See [ADR-0278](adr/0278-windowed-conversation-presentation.md).
 
 Model phase observations, child progress and running Tool previews are disposable.
@@ -266,6 +270,12 @@ objects and management credentials do not cross to Workers. Source-side bounded
 reads, output truncation, image normalization and attachment handling remain in
 their existing locations. See [CUBESANDBOX_PROVIDER](CUBESANDBOX_PROVIDER.md).
 
+Permanently lost controller ownership withdraws aggregate readiness and retires
+the process within a bounded cleanup window. Kubernetes restarts it and existing
+PG ownership recovery applies. Transient renewal errors before the confirmed
+deadline remain retryable; an expired local owner cannot revive itself. This
+failure never constitutes physical VM absence or permission to delete a Volume.
+
 Chat Stop requests native abort at the Worker and co-commits operation cancellation
 on the Session log. Projector delivers cancellation to Cube, which signals the
 unfinished Tool's process group. It does not retroactively terminate completed
@@ -343,6 +353,10 @@ Credential-free snapshots reach Workers over existing management connections;
 Pi applies changed definitions/selection to later requests in the same loop.
 Fixed guest Tools retain the matched protocol. See
 [ADR-0269](adr/0269-execution-owned-control-tool-catalog.md).
+
+Worker Tool availability and Skill requirements use the same effective-capability
+resolver, including child grants, depth, roles and accepted device targets.
+Availability is independent of the prompt policy controlling proactive delegation.
 
 Subagents are native child Conversations in the same Session family. Their identity
 and creation receipt survive parent interruption. Direct delegation recovers that

@@ -7,6 +7,7 @@ import {
 } from "@pi-cloud/protocol";
 import {
   conversationPageView,
+  terminalTurnOutcome,
   itemHistoryQuery,
   type SessionViewState,
   type TurnView,
@@ -35,7 +36,18 @@ export function freezeHistoryView(value: SessionViewState): HistoryPage {
       ? { ...last, direction: "after" as const }
       : undefined;
   return {
-    turns: value.turns,
+    turns: value.turns.map((turn) =>
+      ["queued", "running", "cancelling"].includes(turn.status)
+        ? {
+            ...turn,
+            items: turn.items.map((item) =>
+              item.kind === "text" && !item.messageId?.startsWith("entry:")
+                ? { ...item, frozenStreaming: true as const }
+                : item,
+            ),
+          }
+        : turn,
+    ),
     history: { ...value.history, hasAfter: true },
     ...(value.historyAnchor ? { beforeQuery: value.historyAnchor } : {}),
     ...(afterQuery ? { afterQuery } : {}),
@@ -109,10 +121,12 @@ export function historyBeforeQuery(page: HistoryPage): ConversationHistoryQuery 
 
 /** A reading window keeps its membership/text stable across live-window trims,
  * while already visible Tools can still finish. No new rows are imported. */
-export function refreshKnownTools(
+export function refreshReadingState(
   pages: readonly HistoryPage[],
   live: readonly TurnView[],
+  updateTools = true,
 ): readonly HistoryPage[] {
+  const currentTurns = new Map(live.map((turn) => [turn.turnId, turn]));
   const known = new Map(
     live.map((turn) => [
       turn.turnId,
@@ -129,30 +143,50 @@ export function refreshKnownTools(
     const turns = page.turns.map((turn) => {
       const tools = known.get(turn.turnId);
       if (!tools) return turn;
-      let turnChanged = false;
-      const items = turn.items.map((item) => {
-        if (item.kind !== "tool" && item.kind !== "tool_preparing") return item;
-        const current = tools.get(item.toolCallId);
-        if (
-          !current ||
-          sequence(current) <= sequence(item) ||
-          (item.kind === "tool" && item.status !== "running" && current.status === "running")
-        )
-          return item;
-        turnChanged = true;
-        return {
-          ...current,
-          key: item.key,
-          firstSequence: item.firstSequence,
-          toolName: item.toolName === "unknown" ? current.toolName : item.toolName,
-          input: item.kind === "tool" ? (item.input ?? current.input) : current.input,
-          ...(item.pageKey ? { pageKey: item.pageKey } : {}),
-          ...(item.historyCursor ? { historyCursor: item.historyCursor } : {}),
-        };
-      });
+      const currentTurn = currentTurns.get(turn.turnId)!;
+      const terminal =
+        ["completed", "failed", "cancelled"].includes(currentTurn.status) &&
+        (!["completed", "failed", "cancelled"].includes(turn.status) ||
+          (currentTurn.terminalSequence ?? -1) > (turn.terminalSequence ?? -1));
+      let turnChanged = terminal;
+      const items = !updateTools
+        ? turn.items
+        : turn.items.map((item) => {
+            if (item.kind !== "tool" && item.kind !== "tool_preparing") return item;
+            const current = tools.get(item.toolCallId);
+            if (
+              !current ||
+              sequence(current) <= sequence(item) ||
+              (item.kind === "tool" && item.status !== "running" && current.status === "running")
+            )
+              return item;
+            turnChanged = true;
+            return {
+              ...current,
+              key: item.key,
+              firstSequence: item.firstSequence,
+              toolName: item.toolName === "unknown" ? current.toolName : item.toolName,
+              input: item.kind === "tool" ? (item.input ?? current.input) : current.input,
+              ...(item.pageKey ? { pageKey: item.pageKey } : {}),
+              ...(item.historyCursor ? { historyCursor: item.historyCursor } : {}),
+            };
+          });
       if (!turnChanged) return turn;
       pageChanged = true;
-      return { ...turn, items };
+      return {
+        ...turn,
+        ...(terminal
+          ? {
+              status: currentTurn.status,
+              terminalSequence: currentTurn.terminalSequence,
+              stopReason: currentTurn.stopReason,
+              failure: currentTurn.failure,
+              cancellation: currentTurn.cancellation,
+              ...(currentTurn.operation ? { operation: currentTurn.operation } : {}),
+            }
+          : {}),
+        items,
+      };
     });
     if (!pageChanged) return page;
     changed = true;
@@ -166,6 +200,16 @@ export function observeHistoryPages(
   pages: readonly HistoryPage[],
   event: PiCloudEvent,
 ): readonly HistoryPage[] {
+  const outcome = terminalTurnOutcome(event);
+  if (outcome)
+    return pages.map((page) => ({
+      ...page,
+      turns: page.turns.map((turn) =>
+        turn.turnId === event.turnId && (turn.terminalSequence ?? -1) < event.seq
+          ? { ...turn, ...terminalTurnOutcome(event, turn.operation) }
+          : turn,
+      ),
+    }));
   if (event.type !== "assistant.text.delta" || !event.payload.settledMessageId) return pages;
   return pages.map((p) => ({
     ...p,

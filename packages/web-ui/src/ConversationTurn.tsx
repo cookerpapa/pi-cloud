@@ -570,9 +570,10 @@ export function ConversationTurn({
                       windowed={fragment !== undefined}
                       {...(fragment?.copyText !== undefined ? { copyText: fragment.copyText } : {})}
                       streaming={
-                        working &&
-                        !row.item.messageId?.startsWith("entry:") &&
-                        !rows.slice(index + 1).some((next) => next.kind === "user")
+                        row.item.frozenStreaming === true ||
+                        (working &&
+                          !row.item.messageId?.startsWith("entry:") &&
+                          !rows.slice(index + 1).some((next) => next.kind === "user"))
                       }
                     />
                   );
@@ -617,6 +618,7 @@ export function ConversationTurn({
               ) : null}
               {showFooter &&
               turn.status === "completed" &&
+              !turn.items.some((item) => item.kind === "text" && item.frozenStreaming) &&
               (answerCopyText || onFork || onPrune) ? (
                 <div className="product-answer-actions">
                   {answerCopyText ? (

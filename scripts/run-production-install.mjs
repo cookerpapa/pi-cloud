@@ -2,8 +2,21 @@ import { spawn } from "node:child_process";
 import { readFile, statfs } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertFirstInstallation } from "./lib/installation-admission.mjs";
+import { serializeRelease } from "./lib/release-lock.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
+const runtimeDirectory = resolve(
+  repositoryRoot,
+  process.env.PI_CLOUD_RUNTIME_DIRECTORY ?? "deploy/production/runtime",
+);
+const admission = {
+  runtimeDirectory,
+  kubeconfig: process.env.KUBECONFIG ?? resolve(runtimeDirectory, "k3s/kubeconfig.yaml"),
+};
+assertFirstInstallation(admission);
+serializeRelease(runtimeDirectory);
+assertFirstInstallation(admission);
 
 async function assertDeploymentDiskHeadroom() {
   const filesystem = await statfs(repositoryRoot);
@@ -41,12 +54,8 @@ await run("scripts/init-cubesandbox-runtime.mjs");
 await run("scripts/register-cubesandbox-tool-template.mjs");
 await run("scripts/production-kubernetes.mjs", ["build"]);
 await run("scripts/production-kubernetes.mjs", ["import-images"]);
-await run("scripts/production-kubernetes.mjs", ["deploy"]);
+await run("scripts/production-kubernetes.mjs", ["bootstrap"]);
 
-const runtimeDirectory = resolve(
-  repositoryRoot,
-  process.env.PI_CLOUD_RUNTIME_DIRECTORY ?? "deploy/production/runtime",
-);
 const environment = Object.fromEntries(
   (await readFile(resolve(runtimeDirectory, ".env"), "utf8"))
     .split(/\r?\n/)

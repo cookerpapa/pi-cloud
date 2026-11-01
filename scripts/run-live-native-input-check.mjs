@@ -1,3 +1,4 @@
+import { assertLiveContract } from "./lib/live-contract.mjs";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
@@ -17,7 +18,7 @@ import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 
 if (process.env.PI_CLOUD_LIVE_NATIVE_INPUT_CHECK !== "1")
   throw new Error(
-    "Set PI_CLOUD_LIVE_NATIVE_INPUT_CHECK=1 for schema 206 matched Luna/Cube acceptance and an owned Worker crash",
+    "Set PI_CLOUD_LIVE_NATIVE_INPUT_CHECK=1 for current-contract matched Luna/Cube acceptance and an owned Worker crash",
   );
 const runtime = "deploy/production/runtime",
   env = await readFile(`${runtime}/.env`, "utf8");
@@ -70,13 +71,7 @@ async function finished(id) {
 }
 
 try {
-  const schema = await db
-    .selectFrom("kysely_migration")
-    .select("name")
-    .orderBy("name", "desc")
-    .limit(1)
-    .executeTakeFirstOrThrow();
-  assert.equal(schema.name, "206_skill_market", "Deploy the matched schema/app first");
+  report.contract = await assertLiveContract(db, runtimeDirectory, { modelRuntimeSnapshot: 1 });
   tenant = await createPrivateTenant(db, {
     slug: `native-input-${randomUUID()}`,
     ownerDisplayName: "Native input acceptance",

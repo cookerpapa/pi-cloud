@@ -38,6 +38,7 @@ export async function createSandboxControl(options: {
   publishBindingChanges(ids: readonly string[]): Promise<void>;
   partitionFor(sessionId: string): number;
   partitionCount: number;
+  onOwnershipLost(): void;
 }) {
   const config = await loadSandboxControlConfig();
   const { database, instanceId, metrics } = options;
@@ -69,6 +70,18 @@ export async function createSandboxControl(options: {
       ownerBaseUrl: config.advertisedBaseUrl,
       leaseMs: config.ownershipLeaseMs,
       heartbeatMs: config.ownershipHeartbeatMs,
+      onOwnershipLost: () => {
+        started = false;
+        try {
+          operationalLog({
+            service: "pi-cloud-control-plane",
+            level: "error",
+            event: "sandbox.ownership_lost",
+          });
+        } finally {
+          options.onOwnershipLost();
+        }
+      },
     });
     cleanup.push(() => (controllerOwns ? undefined : ownership.close()));
     await ownership.start();
@@ -431,11 +444,18 @@ export async function createSandboxControl(options: {
       ) =>
         controller.developmentEnvironmentObservation(tenantId, userId, environmentId, allocationId),
       get ready() {
-        return started && closing === undefined;
+        if (!started || closing !== undefined) return false;
+        try {
+          ownership.assertLocalOwnership();
+          return true;
+        } catch {
+          return false;
+        }
       },
       start: async () => {
         if (starting) throw new Error("Sandbox control already started");
         starting = true;
+        ownership.assertLocalOwnership();
         provider.startUploadMaintenance(() =>
           operationalLog({
             service: "pi-cloud-sandbox-control",

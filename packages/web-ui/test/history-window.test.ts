@@ -10,7 +10,7 @@ import {
   mergeHistoryPages,
   observeHistoryPages,
   freezeHistoryView,
-  refreshKnownTools,
+  refreshReadingState,
   type HistoryPage,
 } from "../src/history-window.ts";
 import {
@@ -63,6 +63,86 @@ function page(index: number): HistoryPage {
 }
 
 describe("conversation read windows", () => {
+  it.each([
+    ["compact_no_op", "no_op"],
+    ["compact_stale", "stale"],
+    ["stop", "applied"],
+  ] as const)("updates a frozen manual compaction outcome %s", (stopReason, state) => {
+    const running: TurnView = { ...turn(0), operation: { kind: "compact", state: "summarizing" } };
+    const frozen = freezeHistoryView({ ...createInitialSessionView(), turns: [running] });
+    const updated = observeHistoryPages([frozen], {
+      type: "turn.completed",
+      turnId,
+      seq: 20,
+      payload: { stopReason },
+    } as PiCloudEvent);
+    expect(updated[0]!.turns[0]!.operation?.state).toBe(state);
+    expect(updated[0]!.turns[0]!.items).toBe(frozen.turns[0]!.items);
+  });
+  it.each(["completed", "failed", "cancelled"] as const)(
+    "keeps %s truthful without completing frozen text or its copy",
+    (status) => {
+      const text = turn(0).items[0]!;
+      if (text.kind !== "text") throw new Error("Expected text fixture");
+      const running: TurnView = {
+        ...turn(0),
+        items: [
+          {
+            ...text,
+            kind: "text" as const,
+            messageId: "live:doc:0",
+            text: "Partial answer",
+          },
+        ],
+      };
+      const frozen = freezeHistoryView({ ...createInitialSessionView(), turns: [running] });
+      const payload =
+        status === "completed"
+          ? { stopReason: "stop" }
+          : status === "failed"
+            ? { code: "model_request_failed", message: "connection failed", retryable: true }
+            : { reason: "user_stop", forced: false };
+      const event = { type: `turn.${status}`, turnId, seq: 20, payload } as PiCloudEvent;
+      const observed = observeHistoryPages([frozen], event);
+      expect(observed[0]!.turns[0]!.status).toBe(status);
+      expect(observed[0]!.turns[0]!.items).toBe(frozen.turns[0]!.items);
+      expect(observed[0]!.turns[0]!.items[0]).toMatchObject({
+        text: "Partial answer",
+        frozenStreaming: true,
+      });
+      expect(
+        virtualConversationRows(observed[0]!.turns).some(
+          (row) => row.fragment.copyText !== undefined,
+        ),
+      ).toBe(false);
+      const latest = {
+        ...observed[0]!.turns[0]!,
+        items: [{ ...text, messageId: "entry:5:0", text: "Partial answer, now complete" }],
+      };
+      const fromSnapshot = refreshReadingState([frozen], [latest], false);
+      expect(fromSnapshot[0]!.turns[0]!.status).toBe(status);
+      expect(fromSnapshot[0]!.turns[0]!.items).toBe(frozen.turns[0]!.items);
+      const identified = observeHistoryPages(observed, {
+        type: "assistant.text.delta",
+        turnId,
+        seq: 19,
+        payload: { messageId: "live:doc:0", settledMessageId: "entry:5:0", text: "" },
+      } as PiCloudEvent);
+      const canonical = mergeHistoryPages([...identified, { ...frozen, turns: [latest] }]);
+      expect(canonical[0]!.items[0]).not.toHaveProperty("frozenStreaming");
+      expect(
+        virtualConversationRows(canonical).some((row) => row.fragment.copyText !== undefined),
+      ).toBe(true);
+      expect(
+        observeHistoryPages(observed, {
+          ...event,
+          seq: 10,
+          payload: { stopReason: "stop" },
+          type: "turn.completed",
+        } as PiCloudEvent)[0]!.turns[0]!.status,
+      ).toBe(status);
+    },
+  );
   it("keeps the reading window across live trimming while settling only known Tools", () => {
     const base = turn(0),
       text = base.items[0]!;
@@ -93,7 +173,7 @@ describe("conversation read windows", () => {
     const live = [
       { ...base, items: [completed, { ...completed, key: "new", toolCallId: "task:2" }] },
     ];
-    const updated = refreshKnownTools(pages, live);
+    const updated = refreshReadingState(pages, live);
     expect(updated[0]!.turns[0]!.items).toHaveLength(2);
     expect(updated[0]!.turns[0]!.items[0]).toBe(text);
     expect(updated[0]!.turns[0]!.items[1]).toMatchObject({
@@ -105,8 +185,8 @@ describe("conversation read windows", () => {
       pageKey: "page-a",
       historyCursor: "old-cursor",
     });
-    expect(refreshKnownTools(updated, live)).toBe(updated);
-    expect(refreshKnownTools(updated, [{ ...base, items: [tool] }])).toBe(updated);
+    expect(refreshReadingState(updated, live)).toBe(updated);
+    expect(refreshReadingState(updated, [{ ...base, items: [tool] }])).toBe(updated);
   });
   it("copies the complete final answer from the footer even when its text spans virtual rows", () => {
     const finalText = ("Long answer paragraph. ".repeat(400) + "\n\n").repeat(3);

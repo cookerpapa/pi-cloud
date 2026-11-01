@@ -117,6 +117,10 @@ networks. All runtime services run in K3s; Docker builds the images.
 ./install.sh
 ```
 
+This is a first-installation command. An existing deployment must use the
+[matched](docs/MATCHED_RELEASE.md) or [scoped](docs/COMPONENT_RELEASE.md) release
+operator; rerunning the installer refuses before changing the serving release.
+
 1. Open `http://127.0.0.1:8080` and register an account.
 2. Promote your administrator account with
    `npm run production:administrator -- --username <username>`.

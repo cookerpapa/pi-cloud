@@ -61,6 +61,78 @@ async function fixtureDatabase() {
 }
 
 describe("PostgreSQL Sandbox control ownership", () => {
+  it("notifies permanent owner loss once and never revives the fenced identity", async () => {
+    const database = await fixtureDatabase(),
+      instanceId = randomUUID();
+    const lost = vi.fn();
+    const repository = new PostgresWorkspaceRuntimeStateRepository({
+      database,
+      instanceId,
+      sandboxDomainId: "sandbox-domain-0001",
+      ownerBaseUrl: "http://expired-owner.test",
+      leaseMs: 2000,
+      heartbeatMs: 100,
+      onOwnershipLost: lost,
+    });
+    resources.push(() => repository.close());
+    await repository.start();
+    await database
+      .updateTable("sandbox_control_instances")
+      .set({ lease_expires_at: new Date(Date.now() - 1000) })
+      .where("instance_id", "=", instanceId)
+      .execute();
+    await vi.waitFor(() => expect(lost).toHaveBeenCalledOnce());
+    await expect(repository.checkHealth()).rejects.toMatchObject({ code: "ownership_lost" });
+    await expect(repository.claimOrphanedTerminals(1)).rejects.toMatchObject({
+      code: "ownership_lost",
+    });
+    // Even a stale successful observation must not revive a retired local identity.
+    await database
+      .updateTable("sandbox_control_instances")
+      .set({ lease_expires_at: new Date(Date.now() + 30_000) })
+      .where("instance_id", "=", instanceId)
+      .execute();
+    await expect(repository.checkHealth()).rejects.toMatchObject({ code: "ownership_lost" });
+    expect(lost).toHaveBeenCalledOnce();
+  });
+
+  it("retries a transient renewal failure while its confirmed lease remains valid", async () => {
+    const database = await fixtureDatabase();
+    let renewals = 0;
+    const traced = database.withPlugin({
+      transformQuery({ node, queryId }) {
+        if (
+          database
+            .getExecutor()
+            .compileQuery(node, queryId)
+            .sql.includes("set last_heartbeat_at=clock_timestamp()")
+        ) {
+          renewals++;
+          if (renewals === 1) throw new Error("temporary fixture transport failure");
+        }
+        return node;
+      },
+      async transformResult({ result }) {
+        return result;
+      },
+    });
+    const lost = vi.fn();
+    const repository = new PostgresWorkspaceRuntimeStateRepository({
+      database: traced,
+      instanceId: randomUUID(),
+      sandboxDomainId: "sandbox-domain-0001",
+      ownerBaseUrl: "http://transient-owner.test",
+      leaseMs: 3000,
+      heartbeatMs: 100,
+      onOwnershipLost: lost,
+    });
+    resources.push(() => repository.close());
+    await repository.start();
+    await vi.waitFor(() => expect(renewals).toBeGreaterThanOrEqual(2));
+    await expect(repository.checkHealth()).resolves.toBeUndefined();
+    expect(lost).not.toHaveBeenCalled();
+  });
+
   async function allocationFixture(legacy = false) {
     const database = await fixtureDatabase(),
       instanceId = randomUUID();
@@ -1338,20 +1410,8 @@ describe("PostgreSQL Sandbox control ownership", () => {
     // Continue the ownership fixture after a separately confirmed recovery;
     // the old binding identities remain closed.
     await repository.setWorkspaceRuntimeState(activation.activationId, "allocated");
-    await database
-      .updateTable("sandbox_control_instances")
-      .set({ lease_expires_at: new Date(0) })
-      .where("instance_id", "=", "20000000-0000-4000-8000-000000000004")
-      .execute();
-    await expect(repository.reserve(childActivation)).rejects.toMatchObject({
-      code: "ownership_lost",
-    });
-    await database
-      .updateTable("sandbox_control_instances")
-      .set({ lease_expires_at: sql<Date>`clock_timestamp() + interval '1 minute'` })
-      .where("instance_id", "=", "20000000-0000-4000-8000-000000000004")
-      .execute();
-    await repository.setWorkspaceRuntimeState(activation.activationId, "allocated");
+    // Controller expiry is terminal and covered independently; never revive the
+    // same identity by moving its database expiry into the future in this fixture.
     await expect(repository.reserve(activation)).resolves.toEqual({ status: "reserved" });
     await expect(
       database

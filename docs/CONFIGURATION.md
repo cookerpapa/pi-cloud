@@ -177,7 +177,8 @@ application image is present.
 
 `npm run production:init` creates
 `deploy/production/runtime/.env` with mode `0600`. Edit that file, validate it,
-then recreate affected services with `npm run production:up`.
+then publish the change through the [matched release procedure](MATCHED_RELEASE.md).
+The first-installation command cannot reconcile an existing release.
 
 Application UID/GID are derived from private Secret ownership, not independent
 identity switches. The Volume reader stays on Cube's UID 1000; see the

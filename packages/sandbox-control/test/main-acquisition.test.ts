@@ -3,6 +3,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 const fixture = vi.hoisted(() => ({
   calls: [] as string[],
   errors: new Map<string, Error>(),
+  ownershipLost: undefined as (() => void) | undefined,
   call(name: string) {
     this.calls.push(name);
     const error = this.errors.get(name);
@@ -24,6 +25,12 @@ vi.mock("@pi-cloud/database", () => ({
 }));
 vi.mock("../src/workspace-runtime-state-repository.ts", () => ({
   PostgresWorkspaceRuntimeStateRepository: class {
+    constructor(options: { onOwnershipLost(): void }) {
+      fixture.ownershipLost = options.onOwnershipLost;
+    }
+    assertLocalOwnership() {
+      fixture.call("ownership.check");
+    }
     async start() {
       fixture.call("ownership.start");
     }
@@ -53,6 +60,7 @@ vi.mock("../src/workspace-volume-gateway.ts", () => ({
 }));
 vi.mock("../src/cubesandbox-sandbox-provider.ts", () => ({
   CubeSandboxProvider: class {
+    startUploadMaintenance() {}
     constructor(
       private readonly options: {
         workspaceVolumeGateway: { close(): Promise<void> };
@@ -156,6 +164,7 @@ beforeEach(() => {
   vi.resetModules();
   fixture.calls.length = 0;
   fixture.errors.clear();
+  fixture.ownershipLost = undefined;
 });
 
 const database = { destroy: vi.fn() };
@@ -169,6 +178,7 @@ async function start() {
     publishBindingChanges: async () => {},
     partitionFor: () => 0,
     partitionCount: 1,
+    onOwnershipLost: () => fixture.call("ownership.retire"),
     metrics: {} as any,
   });
 }
@@ -178,6 +188,24 @@ it("releases acquired resource ownership when native client initialization fails
   await expect(start()).rejects.toBe(failure);
   expect(fixture.calls).toEqual(["ownership.start", "cube.construct", "ownership.close"]);
   expect(database.destroy).not.toHaveBeenCalled();
+});
+
+it("withdraws readiness and retires the controller after ownership loss", async () => {
+  const runtime = await start();
+  await runtime.start();
+  expect(runtime.ready).toBe(true);
+  fixture.ownershipLost!();
+  expect(runtime.ready).toBe(false);
+  expect(fixture.calls).toContain("ownership.retire");
+  await runtime.close();
+});
+
+it("does not claim readiness after the locally confirmed ownership deadline", async () => {
+  const runtime = await start();
+  await runtime.start();
+  fixture.errors.set("ownership.check", new Error("expired"));
+  expect(runtime.ready).toBe(false);
+  await runtime.close();
 });
 it("preserves startup and cleanup errors without closing the shared database", async () => {
   const first = new Error("client failed"),

@@ -14,6 +14,7 @@ import { assertCubeKvmAvailable } from "./lib/cube-host-preflight.mjs";
 import {
   repositoryRoot as root,
   runtimeDirectory,
+  runtimeEnvironment,
   kubectl,
   workload,
   serviceAddress,
@@ -78,30 +79,31 @@ if (action === "prepare") {
   run("scripts/build-cube-tool-image.mjs", [], env);
   phase("build native Cube");
   run("scripts/build-cubesandbox-runtime.mjs", [], env);
-  phase("build matched Cube API authorization callback");
-  execFileSync(
-    "docker",
-    [
-      "build",
-      "--file",
-      "packages/cube-api-authorizer/Dockerfile",
-      "--network=host",
-      "--build-arg",
-      "HTTP_PROXY",
-      "--build-arg",
-      "HTTPS_PROXY",
-      "--build-arg",
-      "NO_PROXY",
-      "--build-arg",
-      `PI_CLOUD_VERSION=${version}`,
-      "--build-arg",
-      `PI_CLOUD_REVISION=${capture("git", ["rev-parse", "HEAD"])}`,
-      "--tag",
-      `pi-cloud/cube-api-authorizer:${version}`,
-      ".",
-    ],
-    { cwd: root, stdio: "inherit", env },
-  );
+  phase("build matched Cube API authorization callback and egress gateway");
+  for (const component of ["cube-api-authorizer", "cube-egress-gateway"])
+    execFileSync(
+      "docker",
+      [
+        "build",
+        "--file",
+        `packages/${component}/Dockerfile`,
+        "--network=host",
+        "--build-arg",
+        "HTTP_PROXY",
+        "--build-arg",
+        "HTTPS_PROXY",
+        "--build-arg",
+        "NO_PROXY",
+        "--build-arg",
+        `PI_CLOUD_VERSION=${version}`,
+        "--build-arg",
+        `PI_CLOUD_REVISION=${capture("git", ["rev-parse", "HEAD"])}`,
+        "--tag",
+        `pi-cloud/${component}:${version}`,
+        ".",
+      ],
+      { cwd: root, stdio: "inherit", env },
+    );
   phase("build application candidate");
   run("scripts/production-kubernetes.mjs", ["build"], env);
   phase("scan matched artifacts");
@@ -146,7 +148,7 @@ try {
       "save",
       "--output",
       archive,
-      ...["cube-api", "cube-master", "cubelet", "cube-api-authorizer"].map(
+      ...["cube-api", "cube-master", "cubelet", "cube-api-authorizer", "cube-egress-gateway"].map(
         (name) => `pi-cloud/${name}:${candidate.version}`,
       ),
     ],
@@ -274,7 +276,23 @@ try {
     ["--prepared-image-id", candidate.guestImageId],
     env,
   );
-  run("scripts/production-kubernetes.mjs", ["deploy"], env);
+  const { deployPlatform } = await import("./production-kubernetes.mjs");
+  await deployPlatform({
+    images: JSON.parse(await readFile(resolve(directory, "images.json"), "utf8")),
+    deploymentEnvironment: { ...runtimeEnvironment(), ...env },
+  });
+  // The gateway needs the restarted Control Plane's configuration before it can
+  // become Ready, so reconcile it after application readiness, before recording
+  // successful matched publication. Its image was built/imported/scanned above.
+  kubectl([
+    "set",
+    "image",
+    "deployment/pi-cloud-cube-egress-gateway",
+    `gateway=pi-cloud/cube-egress-gateway:${candidate.version}`,
+  ]);
+  kubectl(["rollout", "status", "deployment/pi-cloud-cube-egress-gateway", "--timeout=120s"], {
+    timeout: 125000,
+  });
   const installed = resolve(runtimeDirectory, "k3s/images.json");
   await writeFile(installed + ".candidate", await readFile(resolve(directory, "images.json")), {
     mode: 0o600,

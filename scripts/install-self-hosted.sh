@@ -30,12 +30,13 @@ skip_host_bootstrap="false"
 current_phase="argument validation"
 temporary_directory=""
 docker_wrapper_directory=""
+installer_arguments=("$@")
 
 usage() {
   cat <<'EOF'
 Usage: ./install.sh [options]
 
-Install or reconcile PiCloud on one x86_64 Linux host (native Linux or
+Install PiCloud for the first time on one x86_64 Linux host (native Linux or
 WSL2 with systemd and KVM).
 
 Options:
@@ -210,6 +211,24 @@ if [[ "${check_only}" == "true" ]]; then
   trap - ERR
   run_read_only_checks
   exit $?
+fi
+
+current_phase="installation admission"
+for marker in k3s/deployment.json k3s/bootstrap-completed.json; do
+  [[ ! -e "${runtime_directory}/${marker}" ]] ||
+    fail "PiCloud is already installed; use docs/MATCHED_RELEASE.md or docs/COMPONENT_RELEASE.md"
+done
+if [[ -f "${runtime_directory}/k3s/kubeconfig.yaml" ]]; then
+  command -v "${PI_CLOUD_HELM_BIN:-helm}" >/dev/null ||
+    fail "cannot establish whether this cluster is already installed without Helm"
+  installed_releases="$("${PI_CLOUD_HELM_BIN:-helm}" list --all --kubeconfig "${runtime_directory}/k3s/kubeconfig.yaml" --namespace cube-system --filter '^pi-cloud$' --short)" ||
+    fail "cannot read the current installation; no changes were made"
+  [[ -z "${installed_releases}" ]] ||
+    fail "PiCloud is already installed; use docs/MATCHED_RELEASE.md or docs/COMPONENT_RELEASE.md"
+fi
+if [[ "${PI_CLOUD_RELEASE_LOCKED:-}" != "1" ]]; then
+  mkdir -p "${runtime_directory}/k3s"
+  exec env PI_CLOUD_RELEASE_LOCKED=1 flock --nonblock "${runtime_directory}/k3s/release.lock" bash "$0" "${installer_arguments[@]}"
 fi
 
 current_phase="host validation"
@@ -504,9 +523,6 @@ export PI_CLOUD_CUBESANDBOX_REPOSITORY="${cube_repository}"
 export PI_CLOUD_HTTP_BIND_ADDRESS="${bind_address}"
 export PI_CLOUD_HTTP_PORT="${http_port}"
 
-runtime_was_initialized="false"
-[[ -f "${runtime_directory}/deployment.json" ]] && runtime_was_initialized="true"
-
 current_phase="Node dependency installation"
 log "Installing pinned PiCloud dependencies"
 (cd "${repository_root}" && npm ci --ignore-scripts)
@@ -535,7 +551,7 @@ run_root_node "${repository_root}/scripts/prepare-self-hosted-k3s.mjs"
 
 current_phase="PiCloud production deployment"
 log "Building and starting PiCloud"
-run_npm run production:deploy
+run_npm run production:install
 
 current_phase="post-deployment verification"
 log "Verifying the deployed product"
@@ -562,6 +578,6 @@ cat <<EOF
     4. Open the linked Provider Gateway page on port 8318 to configure an API
        key, or run: npm run production:provider-gateway:codex-login
 
-  Reconcile later:       ./install.sh
+  Upgrade later:         docs/MATCHED_RELEASE.md or docs/COMPONENT_RELEASE.md
   Read-only diagnosis:   ./install.sh --check-only
 EOF

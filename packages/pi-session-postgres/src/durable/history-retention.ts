@@ -121,7 +121,7 @@ export async function retainIdleFamily(
     or (l.record_kind='conversation' and l.record_id=any(${ids}::bigint[]))
     or (l.record_kind in ('document.create','document.change','document.retire') and exists(
       select 1 from unnest(${selectedDocs.filter((d) => !d.current).map((d) => d.id)}::bigint[],${selectedDocs.filter((d) => !d.current).map((d) => d.sequence)}::bigint[]) d(id,through_seq)
-      where l.record_id=d.id and l.seq<=d.through_seq)))`;
+      where l.record_id=d.id and r.seq<=d.through_seq)))`;
   const adapter = new PostgresHistoryDirectory(tx, target.tenantId),
     directory = new HistoryDirectory(adapter);
   const existing = await readSharedBase(tx, source);
@@ -148,10 +148,13 @@ export async function retainIdleFamily(
     if (own) root = await directory.join(root, directory.range(own));
   }
   await directory.persist(root);
+  // Only non-entry metadata uses write refs. Joining the expanded writes view
+  // back to refs needlessly expands shared entry ranges before discarding them,
+  // and can produce a quadratic nested loop as unrelated history accumulates.
   await sql`insert into pi_durable_write_refs(tenant_id,session_id,seq,ordinal,retained_record_id,base,clear_owner)
-    select ${target.tenantId}::uuid,${target.sessionId},l.seq,l.ordinal,l.retained_record_id,true,r.clear_owner
-    from pi_durable_writes l join pi_durable_write_refs r using(tenant_id,session_id,seq,ordinal)
-    where l.tenant_id=${source.tenantId}::uuid and l.session_id=${source.sessionId} and ${selected}`.execute(
+    select ${target.tenantId}::uuid,${target.sessionId},r.seq,r.ordinal,r.retained_record_id,true,r.clear_owner
+    from pi_durable_write_refs r join pi_history_records l on l.tenant_id=r.tenant_id and l.id=r.retained_record_id
+    where r.tenant_id=${source.tenantId}::uuid and r.session_id=${source.sessionId} and ${selected}`.execute(
     tx,
   );
   const hashes: Record<string, { seq: string; hash: string }> = {};

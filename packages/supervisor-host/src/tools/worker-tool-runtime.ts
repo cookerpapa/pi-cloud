@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import {
   infrastructureToolDefinitions,
   hasConversationWorkspace,
+  isConversationToolOffered,
+  toolExecutionTarget,
   isControlToolName,
   parseSubagentTaskId,
   type OriginalControlToolIntent,
@@ -96,6 +98,7 @@ export class WorkerToolRuntime {
             scope.piSession.conversationId,
           )
         : 0;
+    const capabilities = { ...scope, depth, maximumDepth: this.options.maximumDepth };
     const prepareWorkflow = async (
       nativeCallId: string,
       invocationId: string,
@@ -206,14 +209,7 @@ export class WorkerToolRuntime {
     };
     const createBinding = (definition: Definition, ordinary: boolean): TrustedAgentTool => {
       const environment = definition.environment ?? { kind: "none" as const };
-      const target =
-        environment.kind === "target" && scope.sessionKind === "conversation"
-          ? scope.executionTargets?.find(
-              (t) =>
-                t.kind === environment.targetKind &&
-                environment.capabilities.every((c) => t.capabilities.includes(c)),
-            )
-          : undefined;
+      const target = toolExecutionTarget(definition, capabilities);
       const prepare = async (
         nativeCallId: string,
         raw: unknown,
@@ -363,18 +359,7 @@ export class WorkerToolRuntime {
       };
       return {
         executionPlane: ordinary ? ("platform" as const) : ("orchestration" as const),
-        offered:
-          definition.availability === "root" && scope.sessionKind === "subagent"
-            ? false
-            : !workspaceAvailable && (environment.kind === "workspace" || definition.workflowScript)
-              ? false
-              : environment.kind === "target"
-                ? Boolean(target)
-                : definition.availability === "child"
-                  ? scope.sessionKind === "subagent"
-                  : definition.availability !== "delegation" ||
-                    this.options.maximumDepth === null ||
-                    depth < this.options.maximumDepth,
+        offered: isConversationToolOffered(definition, capabilities),
         tool: {
           ...definition,
           async execute() {

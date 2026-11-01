@@ -8,6 +8,9 @@ import {
 import { execFileSync, spawn } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, chmodSync } from "node:fs";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { assertFirstInstallation } from "./lib/installation-admission.mjs";
+import { serializeRelease } from "./lib/release-lock.mjs";
 import { stringify } from "yaml";
 import {
   repositoryRoot,
@@ -33,6 +36,20 @@ import { guestBuildIdentity, completionBuildIdentity } from "./lib/guest-build-i
 configureBuildProxy();
 
 const [action, ...args] = process.argv.slice(2);
+const isEntrypoint = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isEntrypoint && action === "deploy")
+  throw new Error("Direct deployment is removed; use the matched/scoped release operator");
+if (
+  isEntrypoint &&
+  action === "build" &&
+  imageCatalogPath === resolve(runtimeDirectory, "k3s/images.json")
+)
+  assertFirstInstallation({ runtimeDirectory, kubeconfig });
+if (isEntrypoint && action === "bootstrap") {
+  assertFirstInstallation({ runtimeDirectory, kubeconfig });
+  serializeRelease(runtimeDirectory);
+  assertFirstInstallation({ runtimeDirectory, kubeconfig });
+}
 const environment = { ...runtimeEnvironment(), ...process.env };
 const directory = resolve(runtimeDirectory, "k3s");
 mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -43,8 +60,8 @@ function run(command, argv, options = {}) {
 function helmRun(argv) {
   run(helm, [...argv, "--kubeconfig", kubeconfig]);
 }
-async function values() {
-  validateProductionRuntimeEnvironment(environment);
+async function values({ images = runtimeImages(), deploymentEnvironment = environment } = {}) {
+  validateProductionRuntimeEnvironment(deploymentEnvironment);
   const cluster = JSON.parse(readFileSync(resolve(runtimeDirectory, "cubesandbox/cluster.json")));
   const template = JSON.parse(readFileSync(resolve(runtimeDirectory, "cubesandbox/template.json")));
   if (template.imageRevision !== (await guestBuildIdentity(repositoryRoot))) {
@@ -53,11 +70,11 @@ async function values() {
     );
   }
   const config = selfHostedValues({
-    environment,
+    environment: deploymentEnvironment,
     runtime: runtimeDirectory,
     cluster,
     template,
-    images: runtimeImages(),
+    images,
   });
   const existing = JSON.parse(
     execFileSync(
@@ -267,7 +284,9 @@ function installSecrets() {
     stdio: ["pipe", "inherit", "inherit"],
   });
 }
-async function deploy() {
+/** Internal release operation. Existing installations reach this only after the
+ * matched operator's lock, artifact validation, writer drain and VM absence. */
+export async function deployPlatform({ images, deploymentEnvironment }) {
   const cubeNode = JSON.parse(kubectl(["get", "daemonset", "cube-node", "-o", "json"]));
   assertCubeWorkspaceContract(
     JSON.parse(kubectl(["get", "deployment", "cube-master", "-o", "json"])),
@@ -301,9 +320,9 @@ async function deploy() {
     await completionBuildIdentity(repositoryRoot),
     createHash("sha256").update(JSON.stringify(runtimeBuild)).digest("hex").slice(0, 16),
   );
-  const { platform } = await values();
+  const { platform } = await values({ images, deploymentEnvironment });
   installSecrets();
-  if (environment.PI_CLOUD_OBSERVABILITY_ENABLED === "1") {
+  if (deploymentEnvironment.PI_CLOUD_OBSERVABILITY_ENABLED === "1") {
     const files = {
       "prometheus.yml": "prometheus.yml",
       "alerts.yml": "alerts/pi-cloud.yml",
@@ -353,7 +372,7 @@ async function deploy() {
     { stdio: "inherit" },
   );
   run(helm, ["dependency", "build", chart("platform")]);
-  run(process.execPath, ["scripts/configure-cube-completion.mjs"]);
+  run(process.execPath, ["scripts/configure-cube-completion.mjs"], { env: deploymentEnvironment });
   helmRun([
     "upgrade",
     "--install",
@@ -391,72 +410,80 @@ async function deploy() {
   await configureLocalWeb();
   process.stdout.write(`PiCloud is ready at ${platform.controlPlane.publicOriginBaseUrl}\n`);
 }
-if (action === "build") await build();
-else if (action === "import-images") await importImages();
-else if (action === "config" || action === "render") {
-  await values();
-  run(helm, ["dependency", "build", chart("platform")]);
-  for (const key of ["infrastructure", "platform"]) {
-    const output = execFileSync(
-      helm,
-      [
-        "template",
-        key === "platform" ? "pi-cloud" : "pi-cloud-infrastructure",
-        chart(key),
-        ...flags(key),
-      ],
-      { encoding: "utf8" },
+if (isEntrypoint) {
+  if (action === "build") await build();
+  else if (action === "import-images") await importImages();
+  else if (action === "config" || action === "render") {
+    await values();
+    run(helm, ["dependency", "build", chart("platform")]);
+    for (const key of ["infrastructure", "platform"]) {
+      const output = execFileSync(
+        helm,
+        [
+          "template",
+          key === "platform" ? "pi-cloud" : "pi-cloud-infrastructure",
+          chart(key),
+          ...flags(key),
+        ],
+        { encoding: "utf8" },
+      );
+      writeFileSync(resolve(directory, `${key}-rendered.yaml`), output, { mode: 0o600 });
+    }
+    process.stdout.write(
+      "Kubernetes manifests validated; private rendered files are in runtime/k3s\n",
     );
-    writeFileSync(resolve(directory, `${key}-rendered.yaml`), output, { mode: 0o600 });
-  }
-  process.stdout.write(
-    "Kubernetes manifests validated; private rendered files are in runtime/k3s\n",
-  );
-} else if (action === "local-web") {
-  await configureLocalWeb();
-} else if (action === "deploy") await deploy();
-else if (action === "down") {
-  await removeWslWebForwarder();
-  helmRun(["uninstall", "pi-cloud", "--namespace", namespace, "--wait", "--timeout", "25m"]);
-  helmRun([
-    "uninstall",
-    "pi-cloud-infrastructure",
-    "--namespace",
-    namespace,
-    "--wait",
-    "--timeout",
-    "5m",
-  ]);
-} else if (action === "status") await kubectlAsync(["get", "pods,svc,pvc", "-o", "wide"]);
-else if (action === "logs")
-  await kubectlAsync(["logs", "--follow", workload(args[0] ?? "control-plane"), "--tail=100"]);
-else if (action === "exec")
-  await kubectlAsync([
-    "exec",
-    "-i",
-    podFor(args[0]),
-    "--",
-    ...args.slice(1).filter((x, i) => !(i === 0 && x === "--")),
-  ]);
-else if (action === "restart") {
-  const target = workload(args[0]);
-  if (target.startsWith("pod/")) await kubectlAsync(["delete", target]);
-  else {
-    await kubectlAsync(["rollout", "restart", target]);
-    await kubectlAsync(["rollout", "status", target, "--timeout=15m"]);
-  }
-} else if (action === "stop" || action === "start") {
-  const target = workload(args[0]);
-  if (target.startsWith("pod/"))
+  } else if (action === "local-web") {
+    await configureLocalWeb();
+  } else if (action === "bootstrap") {
+    await deployPlatform({ images: runtimeImages(), deploymentEnvironment: environment });
+    writeFileSync(
+      resolve(directory, "bootstrap-completed.json"),
+      JSON.stringify({ completedAt: new Date().toISOString() }) + "\n",
+      { mode: 0o600 },
+    );
+  } else if (action === "down") {
+    await removeWslWebForwarder();
+    helmRun(["uninstall", "pi-cloud", "--namespace", namespace, "--wait", "--timeout", "25m"]);
+    helmRun([
+      "uninstall",
+      "pi-cloud-infrastructure",
+      "--namespace",
+      namespace,
+      "--wait",
+      "--timeout",
+      "5m",
+    ]);
+  } else if (action === "status") await kubectlAsync(["get", "pods,svc,pvc", "-o", "wide"]);
+  else if (action === "logs")
+    await kubectlAsync(["logs", "--follow", workload(args[0] ?? "control-plane"), "--tail=100"]);
+  else if (action === "exec")
+    await kubectlAsync([
+      "exec",
+      "-i",
+      podFor(args[0]),
+      "--",
+      ...args.slice(1).filter((x, i) => !(i === 0 && x === "--")),
+    ]);
+  else if (action === "restart") {
+    const target = workload(args[0]);
+    if (target.startsWith("pod/")) await kubectlAsync(["delete", target]);
+    else {
+      await kubectlAsync(["rollout", "restart", target]);
+      await kubectlAsync(["rollout", "status", target, "--timeout=15m"]);
+    }
+  } else if (action === "stop" || action === "start") {
+    const target = workload(args[0]);
+    if (target.startsWith("pod/"))
+      throw new Error(
+        "Scale the Worker pool explicitly; individual Pods are reconciled automatically",
+      );
+    await kubectlAsync([
+      "scale",
+      target,
+      `--replicas=${action === "stop" ? 0 : args[0] === "pi-workers" ? 2 : 1}`,
+    ]);
+  } else
     throw new Error(
-      "Scale the Worker pool explicitly; individual Pods are reconciled automatically",
+      "Usage: production-kubernetes.mjs build|import-images|config|bootstrap|local-web|down|status|logs [service]|exec service -- command|restart service|stop service|start service",
     );
-  await kubectlAsync([
-    "scale",
-    target,
-    `--replicas=${action === "stop" ? 0 : args[0] === "pi-workers" ? 2 : 1}`,
-  ]);
-} else
-  throw new Error(
-    "Usage: production-kubernetes.mjs build|import-images|config|deploy|local-web|down|status|logs [service]|exec service -- command|restart service|stop service|start service",
-  );
+}

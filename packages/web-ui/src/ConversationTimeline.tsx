@@ -24,7 +24,7 @@ import {
   historyPage,
   mergeHistoryPages,
   observeHistoryPages,
-  refreshKnownTools,
+  refreshReadingState,
   type HistoryPage,
 } from "./history-window.ts";
 import {
@@ -642,8 +642,8 @@ export function ConversationTimeline({
   }, [ownedPages, loading, error, checkEdges, selection.active]);
   useEffect(() => {
     const current = pagesRef.current;
-    if (!current || selection.isActive()) return;
-    const next = refreshKnownTools(current, live.turns);
+    if (!current) return;
+    const next = refreshReadingState(current, live.turns, !selection.isActive());
     if (next !== current) {
       capture();
       setPages((value) => (value === current ? next : value));

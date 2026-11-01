@@ -63,9 +63,13 @@ export function virtualConversationRows(
     const rows = deriveConversationPresentationRows(
       turn.items.filter((i) => i.kind !== "compaction" || i.reason !== "manual"),
     );
-    const footerAnswer =
+    const footerCandidate =
       turn.status === "completed" && !turn.continuesAfter
         ? rows.filter((row) => row.kind === "text" && !row.processNarration).at(-1)
+        : undefined;
+    const footerAnswer =
+      footerCandidate?.kind === "text" && !footerCandidate.item.frozenStreaming
+        ? footerCandidate
         : undefined;
     for (const row of rows) {
       const item =
@@ -110,7 +114,10 @@ export function virtualConversationRows(
                   },
                 },
               ],
-              ...(!row.processNarration && row !== footerAnswer && index === blocks.length - 1
+              ...(!row.item.frozenStreaming &&
+              !row.processNarration &&
+              row !== footerAnswer &&
+              index === blocks.length - 1
                 ? { copyText: row.item.text }
                 : {}),
             },

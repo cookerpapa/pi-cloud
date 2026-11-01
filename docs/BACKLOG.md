@@ -38,6 +38,10 @@ Existing Boot credential renewal, compute-only matched retirement, shared-histor
 reclamation capacity and independent-machine recovery limits remain separate
 operational work. See the report for their exact scope and retained tradeoffs.
 
+R01–R08 source repairs and focused regressions are implemented under ADR-0292;
+[full verification and matched delivery](reports/review-repairs-20261101.md) remain
+in progress. Checkboxes above require the final deployment/acceptance evidence.
+
 ## Answer controls and historical paging — deployed
 
 - [x] Reproduce unstyled copies on settled text inside a running/follow-up Run.
@@ -1251,10 +1255,12 @@ not a new deployment operator or a guarantee for every active transport.
 - [x] Repair and verify owner-address cache invalidation under SP-03 above. The
       surviving-forwarder case is now reproduced; the zero-replica check restarts
       all such caches and does not cover it.
-- [ ] After the handoff gates, provide a maintained compatible Control Plane-only
-      image-replacement procedure with readiness, graceful exit, measured recovery
-      and recorded rollback. The full matched-release operator still drains work;
-      do not apply the lighter procedure to schema/Worker/Pi/Cube contract changes.
+- [x] Provide a maintained compatible Control Plane-only image-replacement
+      procedure with readiness, graceful exit, measured recovery and recorded
+      rollback. [Delivery](reports/control-plane-release-delivery-20261025.md)
+      supersedes this old open item. Full matched releases still drain work;
+      the lighter procedure does not cover schema/Worker/Pi/Cube changes or
+      establish that every interactive connection remains uninterrupted.
 - [ ] Evaluate renewal of the existing 24-hour Boot registration credential before
       claiming long-lived Workers can reconnect indefinitely across Control Plane updates.
       Expired/revoked credentials still fail closed; management reconnect does not renew them.
@@ -1818,8 +1824,10 @@ or model-configuration change.
       declaration, but September 26 probes still return no search on that route.
       Anthropic Messages search works; changing protocols or adding a substitute
       search tool remains a separate slice.
-- [ ] Add generated-image results only with native storage,
-      Compaction and cross-Worker/provider recovery contracts.
+- [x] Add generated-image results through ordinary Tool dispatch and retained
+      image storage. [Delivery](reports/image-tool-delivery-20261025.md) and
+      [provider continuation](reports/provider-continuation-20261030.md) record
+      the implemented contracts; very large cold requests remain separate.
 
 These are not authorizations for a new architecture or feature. Changes to
 ownership, persistence, execution or recovery semantics require owner discussion.

@@ -1,11 +1,11 @@
 # Architecture reading checkpoint
 
-Updated: 2026-10-26. The main-message walkthrough remains complete; current
-serving release is `history-window-19c24570`, schema 200. The owner approved ADR-0278
-for long-conversation presentation. This follow-up changes indexed history reads,
-browser windows, search and export; it does not restart the execution walkthrough.
-Matched publication, 1 GiB composed checks and real Luna/Cube/recovery acceptance
-are complete; original assets and applications are retained.
+Updated: 2026-11-01. The main-message walkthrough remains complete. Current
+behavior belongs to [Architecture](ARCHITECTURE.md); publication facts belong to
+the [delivery index](reports/README.md) and the private serving manifest, not a
+duplicated version summary here. The [whole-repository review](reports/repository-review-20261101.md)
+revisits the implemented features and records R01–R08; their approved repairs are
+tracked in [Backlog](BACKLOG.md) and ADR-0292. This does not restart the walkthrough.
 
 The owner has now authorized the separate resource/interaction branch reviews.
 The first, [Workspace/Volume lifecycle](reports/workspace-volume-lifecycle-review-20261020.md),

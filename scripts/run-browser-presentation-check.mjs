@@ -12,6 +12,24 @@ async function withChromePage(options, operation) {
   if (process.env.PI_CLOUD_BROWSER_SCOPE === "tool-groups" && !options.toolGroups) return;
   if (process.env.PI_CLOUD_BROWSER_SCOPE === "message-actions" && !options.messageActions) return;
   return openChromePage(options, async (page) => {
+    const requests = new Map(),
+      networkFailures = [];
+    const offNetwork = page.onNetworkEvent((method, event) => {
+      if (method === "Network.requestWillBeSent") {
+        const url = new URL(event.request.url);
+        requests.set(
+          event.requestId,
+          (/^https?:$/.test(url.protocol) ? url.pathname : url.protocol).slice(0, 300),
+        );
+        if (requests.size > 1000) requests.delete(requests.keys().next().value);
+      }
+      if (method === "Network.loadingFailed" && networkFailures.length < 30)
+        networkFailures.push({
+          path: requests.get(event.requestId),
+          error: String(event.errorText).slice(0, 200),
+          cancelled: event.canceled,
+        });
+    });
     await page.send("Page.addScriptToEvaluateOnNewDocument", {
       source:
         "window.fixtureErrors=[];window.addEventListener('error',e=>fixtureErrors.push(String(e.message).slice(0,300)));window.addEventListener('unhandledrejection',e=>fixtureErrors.push(String(e.reason).slice(0,300)));",
@@ -21,6 +39,7 @@ async function withChromePage(options, operation) {
     } catch (error) {
       console.error(
         JSON.stringify({
+          networkFailures,
           browserFailure: await page
             .evaluate(
               "({url:location.href,ready:document.readyState,errors:window.fixtureErrors??[],text:document.body?.innerText?.slice(0,500),resources:performance.getEntriesByType('resource').filter(r=>r.responseStatus!==200).slice(-10).map(r=>({path:new URL(r.name).pathname,status:r.responseStatus,duration:r.duration}))})",
@@ -30,6 +49,8 @@ async function withChromePage(options, operation) {
       );
       await page.screenshot("/tmp/pi-cloud-presentation-failure.png").catch(() => {});
       throw error;
+    } finally {
+      offNetwork();
     }
   });
 }

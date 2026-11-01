@@ -4,11 +4,7 @@ import { unbindSessionTargets } from "./unbind-session-targets.ts";
 import { readNavigationEntries } from "@pi-cloud/pi-session-postgres/durable";
 import { createHash, randomUUID } from "node:crypto";
 import type { Database } from "@pi-cloud/database";
-import {
-  readDurableEntries,
-  forkIdleConversation,
-  importForkHistory,
-} from "@pi-cloud/pi-session-postgres/durable";
+import { forkIdleConversation, importForkHistory } from "@pi-cloud/pi-session-postgres/durable";
 import type {
   ConversationForkResource,
   ConversationPruneResource,
@@ -28,7 +24,8 @@ import {
 } from "./delegated-session-projection.ts";
 
 const MAX_TREE_BRANCHES = 100;
-const MAX_TREE_ENTRIES = 10_000;
+// Bound one navigation response, never the lifetime history accepted by Fork/prune.
+const MAX_TREE_VIEW_ENTRIES = 10_000;
 const MAX_TREE_DELEGATIONS = 500;
 
 type SessionRow = {
@@ -189,56 +186,6 @@ function mappedConversationEntries(
   return result;
 }
 
-async function sessionEntries(
-  database: Kysely<Database> | Transaction<Database>,
-  tenantId: string,
-  bindings: readonly PiSessionBinding[],
-  includeInherited?: string,
-): Promise<Map<string, PiEntryRow[]>> {
-  const result = new Map<string, PiEntryRow[]>();
-  for (const binding of bindings) {
-    if (binding.piConversationId === null) {
-      result.set(binding.productSessionId, []);
-      continue;
-    }
-    const entries = (
-      await readDurableEntries(database, {
-        tenantId,
-        sessionId: binding.piSessionId,
-        conversationId: Number(binding.piConversationId),
-        navigationOnly: true,
-        ...(binding.productSessionId === includeInherited
-          ? {}
-          : {
-              from: Math.max(
-                Number(binding.contextBaseEntryId ?? 0),
-                Number(binding.forkEntryId ?? 0),
-              ),
-            }),
-        includeEntryIds: [binding.contextBaseEntryId, binding.forkEntryId]
-          .filter((value): value is string => value !== null)
-          .map(Number),
-        limit: MAX_TREE_ENTRIES + 1,
-      })
-    ).reverse();
-    if (entries.length > MAX_TREE_ENTRIES)
-      throw new ControlPlaneStoreError("invalid_request", "Conversation tree is too large");
-    result.set(
-      binding.productSessionId,
-      entries.map((row, index) => ({
-        id: String(row.entry.id),
-        turnId: row.turnId,
-        seq: String(row.seq),
-        parentId: index ? String(entries[index - 1]!.entry.id) : null,
-        type: row.entry.kind,
-        timestampMs: String(Date.parse(row.createdAt)),
-        payload: row.entry as unknown as Record<string, unknown>,
-      })),
-    );
-  }
-  return result;
-}
-
 async function sessionBindings(
   database: Kysely<Database> | Transaction<Database>,
   tenantId: string,
@@ -264,29 +211,37 @@ async function sessionBindings(
     .execute();
 }
 
-async function completedTurns(
+/** Validate one requested point through the native path and indexed captions.
+ * Shared bases already enforce publication membership; IDs are only path order. */
+async function completedNavigationTarget(
   database: Kysely<Database> | Transaction<Database>,
   tenantId: string,
-  sessionIds: readonly string[],
-): Promise<Map<string, CompletedTurnRow[]>> {
-  if (sessionIds.length === 0) return new Map();
-  const rows = (
-    await sql<CompletedTurnRow>`select session_id as "sessionId",turn_id as "turnId",mailbox_position::text as "mailboxPosition"
-    from pi_history_turns where tenant_id=${tenantId}::uuid and session_id=any(${[...sessionIds]}::uuid[]) and state='completed' and not waiting_for_seal
-    order by session_id,mailbox_position`.execute(database)
-  ).rows;
-  const grouped = new Map<string, CompletedTurnRow[]>();
-  for (const row of rows) {
-    if (row.mailboxPosition === null) continue;
-    const turns = grouped.get(row.sessionId) ?? [];
-    turns.push({
-      sessionId: row.sessionId,
-      turnId: row.turnId,
-      mailboxPosition: row.mailboxPosition,
-    });
-    grouped.set(row.sessionId, turns);
-  }
-  return grouped;
+  binding: PiSessionBinding | undefined,
+  request: { turnId: string; entryId: string },
+) {
+  if (!binding?.piConversationId) return undefined;
+  const entryId = safeInteger(request.entryId, "Pi entry ID");
+  const page = await readNavigationEntries(database, {
+    tenantId,
+    sessionId: binding.piSessionId,
+    conversationId: safeInteger(binding.piConversationId, "Pi conversation ID"),
+    from: entryId,
+    through: entryId,
+    limit: 1,
+  });
+  const target = page.entries[0];
+  if (!target?.finalAssistant || target.id !== entryId || target.turnId !== request.turnId)
+    return undefined;
+  return (
+    await sql<{ mailboxPosition: string; sequence: string; ordinal: number }>`
+    select h.mailbox_position::text as "mailboxPosition",r.seq::text as sequence,r.ordinal
+    from pi_history_turns h join pi_durable_records r
+      on r.tenant_id=h.tenant_id and r.session_id=h.pi_session_id
+        and r.id=${request.entryId}::bigint and r.kind='entry'
+    where h.tenant_id=${tenantId}::uuid and h.session_id=${binding.productSessionId}::uuid
+      and h.turn_id=${request.turnId}::uuid and h.state='completed' and not h.waiting_for_seal
+  `.execute(database)
+  ).rows[0];
 }
 
 function conversationLeaves(
@@ -550,7 +505,7 @@ export class ConversationTreeService {
       );
       let mapped = mappedConversationEntries(branch, turnsBySession.get(session.id) ?? [], true);
       entryCount += mapped.length;
-      if (entryCount > MAX_TREE_ENTRIES) {
+      if (entryCount > MAX_TREE_VIEW_ENTRIES) {
         throw new ControlPlaneStoreError("invalid_request", "Conversation tree is too large");
       }
       return {
@@ -591,7 +546,7 @@ export class ConversationTreeService {
         true,
       );
       entryCount += mapped.length;
-      if (entryCount > MAX_TREE_ENTRIES) {
+      if (entryCount > MAX_TREE_VIEW_ENTRIES) {
         throw new ControlPlaneStoreError("invalid_request", "Conversation tree is too large");
       }
       const parentBranch =
@@ -671,7 +626,7 @@ export class ConversationTreeService {
         true,
       );
       const mapped = [...inherited, ...own];
-      if (mapped.length > MAX_TREE_ENTRIES) {
+      if (mapped.length > MAX_TREE_VIEW_ENTRIES) {
         throw new ControlPlaneStoreError("invalid_request", "Conversation tree is too large");
       }
       const focusedRoot: ConversationTreeBranchResource = {
@@ -895,42 +850,17 @@ export class ConversationTreeService {
             "conflict",
             "Native work and pending inputs must settle before pruning",
           );
-        const [entriesBySession, turnsBySession] = await Promise.all([
-          sessionEntries(transaction, tenantId, bindings, sessionId),
-          completedTurns(transaction, tenantId, [sessionId]),
-        ]);
-        const leaves = conversationLeaves(entriesBySession);
-        const branch = activeBranch(
-          entriesBySession.get(sessionId) ?? [],
-          leaves.get(sessionId) ?? null,
+        const anchorRun = await completedNavigationTarget(
+          transaction,
+          tenantId,
+          bindings[0],
+          request,
         );
-        const target = mappedConversationEntries(
-          branch,
-          turnsBySession.get(sessionId) ?? [],
-          true,
-        ).find(
-          (entry) =>
-            entry.finalAssistant &&
-            entry.turnId === request.turnId &&
-            entry.entryId === request.entryId,
-        );
-        if (target === undefined) {
+        if (!anchorRun)
           throw new ControlPlaneStoreError(
             "invalid_request",
             "Conversation prune target is not an owned completed final response",
           );
-        }
-        const anchorRun = (
-          await sql<{
-            mailboxPosition: string;
-            sequence: string;
-            ordinal: number;
-          }>`select h.mailbox_position::text as "mailboxPosition",r.seq::text as sequence,r.ordinal
-          from pi_history_turns h join pi_durable_records r on r.tenant_id=h.tenant_id and r.session_id=h.pi_session_id and r.id=${request.entryId}::bigint and r.kind='entry'
-          where h.tenant_id=${tenantId}::uuid and h.session_id=${sessionId}::uuid and h.turn_id=${request.turnId}::uuid`.execute(
-            transaction,
-          )
-        ).rows[0]!;
 
         const prunedTurns = await transaction
           .selectFrom("runs as run")
@@ -1216,39 +1146,12 @@ export class ConversationTreeService {
           }
         }
         const bindings = await sessionBindings(transaction, tenantId, [sourceSessionId]);
-        const [entriesBySession, turnsBySession] = await Promise.all([
-          sessionEntries(transaction, tenantId, bindings, sourceSessionId),
-          completedTurns(transaction, tenantId, [sourceSessionId]),
-        ]);
-        const leafId = entriesBySession.get(sourceSessionId)?.at(-1)?.id;
-        if (!leafId)
-          throw new ControlPlaneStoreError("conflict", "Conversation has no forkable Pi history");
-        const sourceBranch = activeBranch(entriesBySession.get(sourceSessionId) ?? [], leafId);
-        const sourceOwnBranch = sourceBranch;
-        const mapped = mappedConversationEntries(
-          sourceOwnBranch,
-          turnsBySession.get(sourceSessionId) ?? [],
-          true,
-        );
-        const target = mapped.find(
-          (entry) =>
-            entry.finalAssistant &&
-            entry.turnId === request.turnId &&
-            entry.entryId === request.entryId,
-        );
-        if (target === undefined) {
+        const target = await completedNavigationTarget(transaction, tenantId, bindings[0], request);
+        if (!target)
           throw new ControlPlaneStoreError(
             "invalid_request",
-            "Fork target is not a completed final assistant response",
+            "Fork target is not a completed final assistant response on the selected path",
           );
-        }
-        const targetIndex = sourceBranch.findIndex((entry) => entry.id === request.entryId);
-        if (targetIndex < 0) {
-          throw new ControlPlaneStoreError(
-            "invalid_request",
-            "Fork entry is not on the main branch",
-          );
-        }
         const childSessionId = this.#idGenerator();
         const suffix = " · 分支";
         const title =

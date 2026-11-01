@@ -1,5 +1,14 @@
 # Matched release procedure
 
+ADR-0292 retains schema 206 and existing wire contracts. Run the owner-loss,
+installed-bootstrap refusal, long-navigation Fork/prune, effective-capability,
+reading-terminal, CONNECT and killed-staging regressions. The matched manifest
+now includes the existing Cube egress gateway: **13 artifacts** are built/scanned.
+After application startup the operator reconciles that gateway and waits for its
+configuration-dependent readiness before recording successful publication.
+Run owned Skill, Fork, guest-browser and native-input recovery acceptance; preserve
+original assets. [Implementation and acceptance status](reports/review-repairs-20261101.md).
+
 The same-Worker recovery correction retains schema 206 and the existing protocols.
 Verify Supervisor duplicate/fencing/cancellation contracts, real PG atomic
 admission/closure and the native recovery suite. After matched publication run:
@@ -148,7 +157,7 @@ node --import tsx scripts/run-matched-release.mjs preflight /private/releases/ca
 ```
 
 Preparation builds the guest without registering/pruning templates, builds the
-three pinned native Cube images, its authorization callback and seven application images, then runs the
+three pinned native Cube images, its authorization callback/egress gateway and seven application images, then runs the
 existing provenance/SBOM/vulnerability gate. The application catalog goes into
 the candidate directory; `runtime/k3s/images.json`, Helm and serving Pods remain
 unchanged. The candidate manifest is written only after successful scans.
@@ -195,7 +204,7 @@ The new controller recovers retained running intent after cutover. See the
 
 ADR-0272 requires matched managed Cube protocol 8 and the new typed
 `runtime_keepalive` Session fact. Guest Tool protocol 7 and schema 197 remain.
-The existing Cube authorization callback is the twelfth scanned artifact and is
+The existing Cube authorization callback is a scanned artifact and is
 replaced with the matched version before the native Cube/app cutover.
 After cutover, run the existing acceptance driver with
 `PI_CLOUD_LIVE_RELEASE_CHECK=1 PI_CLOUD_LIVE_ELASTIC_RETENTION=1 PI_CLOUD_RETENTION_CONTROL_OUTAGE=1`.

@@ -1,4 +1,5 @@
 import { SkillMarketService } from "./skill-market-service.ts";
+import { ownershipRetirement } from "./ownership-retirement.ts";
 import { reapUnreferencedEntryBodies } from "@pi-cloud/pi-session-postgres/durable";
 import { SessionScheduleService } from "./session-schedule-service.ts";
 import { SessionScheduleController } from "./session-schedule-controller.ts";
@@ -130,6 +131,7 @@ export async function startControlPlane(): Promise<void> {
   let sourceControlDispatcher: EnvHttpProxyAgent | undefined;
   let internalSourceControlDispatcher: Agent | undefined;
   let closePromise: Promise<void> | undefined;
+  const startupSettled = Promise.withResolvers<void>();
   const close = (): Promise<void> => {
     return (closePromise ??= closeControlPlaneResources([
       () => quiescence.close(),
@@ -164,6 +166,20 @@ export async function startControlPlane(): Promise<void> {
       () => ownedObservability?.close(),
     ]));
   };
+  const retireLostOwner = ownershipRetirement({
+    startupSettled: startupSettled.promise,
+    close,
+    fail: () => {
+      process.exitCode = 1;
+    },
+    exit: () => process.exit(1),
+    cleanupFailed: () =>
+      operationalLog({
+        service: "pi-cloud-control-plane",
+        level: "error",
+        event: "sandbox.owner_retirement_failed",
+      }),
+  });
   try {
     const observability = await startServiceObservability({
       serviceName: "pi-cloud-control-plane",
@@ -227,6 +243,7 @@ export async function startControlPlane(): Promise<void> {
       publishBindingChanges: (ids) => controlChanges.flushEntities("sandbox_binding", ids),
       partitionFor: (sessionId) => kafkaProducerLane(sessionId, config.kafkaPartitions),
       partitionCount: config.kafkaPartitions,
+      onOwnershipLost: retireLostOwner,
       ...(images ? { images } : {}),
     });
     const workspaceBrowserClient = new ReplicatedSandboxControlClient({
@@ -284,7 +301,8 @@ export async function startControlPlane(): Promise<void> {
     const skills = new SkillMarketService({
       database,
       ...(images ? { blobs: images.blobs } : {}),
-      catalog: () => ordinaryTools.read().tools,
+      catalog: () => toolCatalog.read().tools,
+      maximumDepth: config.subagentTreePolicy.maximumDepth,
       fetch: ((url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
         undiciFetch(url as Parameters<typeof undiciFetch>[0], {
           ...(init as Parameters<typeof undiciFetch>[1]),
@@ -311,6 +329,7 @@ export async function startControlPlane(): Promise<void> {
         sandboxControl!.toolImageIo(call.scope, call.bindingId!, call.operationId, action, signal),
       refreshServices: (call) => sandboxControl!.refreshToolServices(call.scope, call.bindingId!),
     });
+    const toolCatalog = executionToolCatalog(ordinaryTools);
     const controlTools = new ControlToolDispatcher({
       database,
       partitions: config.kafkaPartitions,
@@ -638,7 +657,7 @@ export async function startControlPlane(): Promise<void> {
       conversationReadDatabase: conversationDatabase,
       platformRuntimeSettings,
       gateway: {
-        toolCatalog: executionToolCatalog(ordinaryTools),
+        toolCatalog,
         runtimeConfiguration: async () => ({
           publicEgress: await platformRuntimeSettings.publicEgress(),
         }),
@@ -797,6 +816,8 @@ export async function startControlPlane(): Promise<void> {
       });
     }
     throw error;
+  } finally {
+    startupSettled.resolve();
   }
 }
 

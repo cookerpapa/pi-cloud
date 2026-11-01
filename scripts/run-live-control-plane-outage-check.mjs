@@ -1,3 +1,4 @@
+import { assertLiveContract } from "./lib/live-contract.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
@@ -243,13 +244,10 @@ async function finished(runId) {
 
 try {
   assert(await ready(), "Control Plane is not initially ready");
-  const schema = await db
-    .selectFrom("kysely_migration")
-    .select("name")
-    .orderBy("name", "desc")
-    .limit(1)
-    .executeTakeFirstOrThrow();
-  assert.equal(schema.name, "192_unbounded_agent_work");
+  report.contract = await assertLiveContract(db, runtimeDirectory, {
+    modelRuntimeSnapshot: 1,
+    controlPlaneReplacement: 1,
+  });
   report.controlPlaneImage = deployment.spec.template.spec.containers[0].image;
   report.beforePods = workerPods();
   report.initialInventory = await inventory();

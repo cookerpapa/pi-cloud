@@ -52,7 +52,7 @@ it("checks scanned image identity before any mutation and rejects catalog substi
     );
     const references = [
       ...Object.values(catalog),
-      ...["cube-api", "cube-master", "cubelet", "cube-api-authorizer"].map(
+      ...["cube-api", "cube-master", "cubelet", "cube-api-authorizer", "cube-egress-gateway"].map(
         (name) => `pi-cloud/${name}:${version}`,
       ),
       `localhost:5000/pi-cloud/cubesandbox-tool:${guestIdentity}`,

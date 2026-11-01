@@ -95,10 +95,12 @@ application traces ----------------> Jaeger
 bounded JSON logs -----------------> Kubernetes container logs
 ```
 
-Run it with:
+Set `PI_CLOUD_OBSERVABILITY_ENABLED=1` in the private runtime `.env`, render
+the configuration, then publish through the [matched release](MATCHED_RELEASE.md).
+Rendering alone does not change serving workloads:
 
 ```bash
-npm run production:up:observability
+npm run production:config:observability
 ```
 
 The loopback-only operator endpoints are:
@@ -339,7 +341,7 @@ Runs, alongside cancellation and family counts.
 ```bash
 npm run observability:check
 npm run production:config:observability
-npm run production:up:observability
+npm run production:config:observability
 curl -fsS http://127.0.0.1:9090/-/ready
 curl -fsS http://127.0.0.1:9093/-/ready
 curl -fsS http://127.0.0.1:3001/api/health

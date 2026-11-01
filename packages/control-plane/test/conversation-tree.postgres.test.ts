@@ -153,6 +153,27 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
     return { ...tenant, project, store, session, service, turn, tree, settle };
   }
 
+  function measureBodies() {
+    const observed = { rows: 0, bytes: 0, queries: 0 };
+    const measured = db.withPlugin({
+      transformQuery({ node }) {
+        observed.queries++;
+        return node;
+      },
+      async transformResult({ result }) {
+        // Observe returned bodies, not a brittle SQL alias/string spelling.
+        for (const row of result.rows) {
+          if (typeof row.body !== "string") continue;
+          observed.rows++;
+          observed.bytes += Buffer.byteLength(row.body);
+        }
+        return result;
+      },
+    });
+    const reset = () => Object.assign(observed, { rows: 0, bytes: 0, queries: 0 });
+    return { observed, measured, reset };
+  }
+
   it("deletes sources independently of active and nested Forks, preserving receipts and retained history", async () => {
     const f = await fixture();
     const c = await f.turn("C", "completed"),
@@ -374,7 +395,7 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
     await projection.rebuild();
   });
 
-  it("reads only navigation bodies but preserves the complete Tool-heavy prefix in a paged Fork", async () => {
+  it("uses bounded navigation metadata and preserves the complete Tool-heavy prefix in a Fork", async () => {
     const f = await fixture(),
       first = await f.turn("heavy", "completed");
     const scope = {
@@ -402,28 +423,16 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
         })),
       );
     const answer = await first.respond("finished");
-    const queries = new Set<QueryId>();
-    let bytes = 0,
-      rows = 0;
-    const measured = db.withPlugin({
-      transformQuery({ node, queryId }) {
-        if (
-          db
-            .getExecutor()
-            .compileQuery(node, queryId)
-            .sql.includes("select l.body,r.fields,r.seq,c.committed_at")
-        )
-          queries.add(queryId);
-        return node;
-      },
-      async transformResult({ result, queryId }) {
-        if (queries.delete(queryId)) {
-          rows += result.rows.length;
-          bytes += result.rows.reduce((n, row) => n + Buffer.byteLength(String(row.body)), 0);
-        }
-        return result;
-      },
+    const { observed, measured, reset } = measureBodies();
+    await readDurableEntries(measured, {
+      tenantId: f.tenantId,
+      sessionId: f.session.sessionId,
+      conversationId: 1,
+      limit: 1,
     });
+    expect(observed.rows).toBeGreaterThan(0); // A real body read must hit the meter.
+    expect(observed.bytes).toBeGreaterThan(0);
+    reset();
     const tree = await new ConversationTreeService({ database: measured }).tree(
       f.tenantId,
       f.session.sessionId,
@@ -434,12 +443,20 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
       "heavy answer",
       "finished",
     ]);
-    expect(rows).toBe(0);
-    expect(bytes).toBeLessThan(5000);
-    const fork = await f.service.fork(f.tenantId, f.session.sessionId, randomUUID(), {
-      turnId: first.turnId,
-      entryId: answer.id,
-    });
+    expect(observed.bytes).toBeLessThan(5000);
+    await f.settle();
+    reset();
+    const fork = await new ConversationTreeService({ database: measured }).fork(
+      f.tenantId,
+      f.session.sessionId,
+      randomUUID(),
+      {
+        turnId: first.turnId,
+        entryId: answer.id,
+      },
+    );
+    expect(observed.rows).toBeLessThan(32);
+    expect(observed.bytes).toBeLessThan(32 * 1024);
     const source = await readDurableEntries(db, {
       tenantId: f.tenantId,
       sessionId: f.session.sessionId,
@@ -458,6 +475,82 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
     expect(commits.rows).toHaveLength(1);
     expect(commits.rows.every((row) => row.write_count <= 32)).toBe(true);
   });
+
+  it("forks and prunes text-heavy history beyond 10000 navigation nodes without scanning its bodies", async () => {
+    const f = await fixture(),
+      first = await f.turn("long", "completed");
+    const scope = {
+      tenantId: f.tenantId,
+      sessionId: f.session.sessionId,
+      turnId: first.turnId,
+      runId: first.runId,
+    };
+    let last = 0,
+      middle = 0;
+    for (let base = 0; base < 10001; base += 256) {
+      const entries = await appendNativeFixture(
+        db,
+        scope,
+        Array.from({ length: Math.min(256, 10001 - base) }, (_, i) => ({
+          kind: "pi.assistant",
+          model: [
+            {
+              role: "assistant",
+              content: [
+                { type: "text", text: base + i < 256 ? "x".repeat(32768) : `answer ${base + i}` },
+              ],
+              api: "openai-completions",
+              provider: "test",
+              model: "test",
+              stopReason: "stop",
+              timestamp: Date.now(),
+              usage: {
+                input: 1,
+                output: 1,
+                cacheRead: 0,
+                cacheWrite: 0,
+                totalTokens: 2,
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+              },
+            },
+          ],
+        })),
+      );
+      last = entries.at(-1)!.id;
+      if (base === 5120) middle = last;
+    }
+    await f.settle();
+    const { observed, measured, reset } = measureBodies();
+    const service = new ConversationTreeService({ database: measured });
+    const fork = await service.fork(f.tenantId, f.session.sessionId, randomUUID(), {
+      turnId: first.turnId,
+      entryId: String(last),
+    });
+    expect(observed.rows).toBeLessThan(32);
+    expect(observed.bytes).toBeLessThan(64 * 1024);
+    expect(observed.queries).toBeLessThan(80);
+    reset();
+    const pruned = await service.prune(f.tenantId, f.session.sessionId, randomUUID(), {
+      turnId: first.turnId,
+      entryId: String(middle),
+    });
+    expect(pruned.anchorEntryId).toBe(String(middle));
+    expect(observed.bytes).toBeLessThan(256 * 1024);
+    expect(
+      await new DurablePostgresProjection(
+        db,
+        { tenantId: f.tenantId, sessionId: fork.session.sessionId },
+        undefined,
+        "references",
+      ).get(last),
+    ).toBeDefined();
+    await expect(
+      service.fork(f.tenantId, f.session.sessionId, randomUUID(), {
+        turnId: first.turnId,
+        entryId: String(last),
+      }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+  }, 120_000);
 
   it("forks completed history during active work, prunes independently, and releases only unreferenced bodies", async () => {
     const f = await fixture();

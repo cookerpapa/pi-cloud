@@ -42,21 +42,19 @@ not expose management endpoints. See [configuration](CONFIGURATION.md).
 For an existing cluster's coordinated application/guest/native upgrade, use the
 [matched release procedure](MATCHED_RELEASE.md). It stages and scans artifacts
 before draining the serving release and includes maintained targeted acceptance
-and configuration restoration. `production:deploy` retains its basic installer
-role; it does not independently rebuild the native host protocol.
+and configuration restoration. The installer and `production:install` only admit
+first installations. Existing Helm releases or serving manifests are rejected
+before mutation; do not reinstall to perform an upgrade.
 
 ```bash
 npm run production:config                    # validate/render private manifests
-npm run production:build                     # build matching application images
-node scripts/production-kubernetes.mjs import-images
-npm run production:up                        # reconcile both Helm releases
 npm run production:ps
 npm run production:logs -- control-plane
 node scripts/production-kubernetes.mjs logs pi-workers
 node scripts/production-kubernetes.mjs restart web
 ```
 
-`npm run production:deploy` also initializes configuration, registers the matching
+`npm run production:install` also initializes configuration, registers the matching
 Cube guest template, builds/imports application images and deploys. It does not
 implicitly rebuild the Cube host protocol. For a changed Cube patch set, use the
 matched Cube build/install instructions before platform rollout.
@@ -150,8 +148,12 @@ upgrade or rollback; no Cube host-protocol or guest-template change is needed fo
 these repairs. The source verification record does not claim a production rollout.
 
 `npm run production:down` uninstalls application and infrastructure releases;
-retained PV/PVC data survives. Cube host services remain installed. Start again
-with `production:up` using the same configuration and retained volumes. A local
+retained PV/PVC data survives. Cube host services remain installed. This is
+decommissioning, not a restart procedure: the installer refuses retained deployment
+metadata, and reinstalling retained state requires an explicitly verified recovery.
+For routine host restarts K3s resumes the installed workloads; for a deliberately
+scaled-down service use `node scripts/production-kubernetes.mjs start SERVICE`
+with its existing image/configuration. A local
 PV cannot move to another machine until its bytes are moved deliberately. Node
 loss, database HA and off-host backups are separate operational responsibilities;
 see [distributed deployment](DISTRIBUTED_DEPLOYMENT.md) for external authorities.

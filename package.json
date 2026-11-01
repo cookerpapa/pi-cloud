@@ -39,7 +39,6 @@
     "cubesandbox:template-register": "node scripts/register-cubesandbox-tool-template.mjs",
     "cubesandbox:config": "node scripts/production-kubernetes.mjs config",
     "cubesandbox:build": "node scripts/production-kubernetes.mjs build",
-    "cubesandbox:up": "node scripts/production-kubernetes.mjs deploy",
     "cubesandbox:ps": "node scripts/production-kubernetes.mjs status",
     "cubesandbox:logs": "node scripts/production-kubernetes.mjs logs",
     "cubesandbox:down": "node scripts/production-kubernetes.mjs down",
@@ -62,8 +61,6 @@
     "production:config": "node scripts/production-kubernetes.mjs config",
     "production:proxy": "node --import tsx scripts/set-upstream-proxy.mjs",
     "production:build": "node scripts/production-kubernetes.mjs build",
-    "production:up": "node scripts/production-kubernetes.mjs deploy",
-    "production:deploy": "node scripts/run-production-deploy.mjs",
     "production:install:check": "node scripts/test-self-hosted-install.mjs && bash -n install.sh scripts/install-self-hosted.sh",
     "production:ps": "node scripts/production-kubernetes.mjs status",
     "production:logs": "node scripts/production-kubernetes.mjs logs",
@@ -113,7 +110,7 @@
     "fake-model:start": "npm run start --workspace @pi-cloud/fake-model-server",
     "db:migrate": "npm run migrate --workspace @pi-cloud/database",
     "db:migrate:down": "npm run migrate:down --workspace @pi-cloud/database",
-    "demo": "npm run production:deploy",
+    "demo": "npm run production:install",
     "docs:check": "node scripts/check-documentation.mjs",
     "check": "npm run typecheck && npm test && npm run test:acceptance-helpers",
     "security:audit": "node scripts/run-security-audit.mjs",
@@ -122,7 +119,6 @@
     "production:image-check": "node --import tsx scripts/run-live-image-attachment-check.mjs",
     "production:gpt6-check": "node scripts/run-live-gpt6-capability-check.mjs",
     "production:user-upload-check": "node --import tsx scripts/run-live-user-upload-check.mjs",
-    "production:up:observability": "PI_CLOUD_OBSERVABILITY_ENABLED=1 node scripts/production-kubernetes.mjs deploy",
     "production:config:observability": "PI_CLOUD_OBSERVABILITY_ENABLED=1 node scripts/production-kubernetes.mjs config",
     "cubesandbox:admission-check": "node scripts/check-cube-admission.mjs",
     "cubesandbox:allocation-check": "node scripts/check-cube-allocation.mjs",
@@ -132,7 +128,8 @@
     "browser:history:check": "node scripts/run-with-test-postgres.mjs -- node node_modules/tsx/dist/cli.mjs --tsconfig packages/control-plane/tsconfig.json scripts/run-history-window-check.mjs",
     "android:prepare": "node scripts/prepare-android-target.mjs",
     "eval:schedules": "PI_CLOUD_SCHEDULE_LOAD_CHECK=1 node scripts/run-with-test-postgres.mjs -- node node_modules/tsx/dist/cli.mjs --tsconfig packages/control-plane/tsconfig.json scripts/run-schedule-load-check.mjs",
-    "browser:schedules:check": "node scripts/run-schedule-browser-check.mjs"
+    "browser:schedules:check": "node scripts/run-schedule-browser-check.mjs",
+    "production:install": "node scripts/run-production-install.mjs"
   },
   "devDependencies": {
     "@earendil-works/chord": "1.0.0",

@@ -17,6 +17,12 @@ required Tool names, runtime (`none`, `linux`, `android`) and software prerequis
 Unsupported capabilities and unverified software are shown separately. Software
 is checked/installed by ordinary Sandbox work when needed, not executed on import.
 The Android label describes a requirement and does not enable a phone runtime.
+During a Run, availability follows its accepted file/shell grants, native child
+scope and current execution-side Tool catalog. A read-only child does not gain
+Bash/write through a Skill; a child without a Workspace can still read pure
+instructions. Max versus Ultra changes delegation policy, not whether an explicitly
+requested delegation Tool exists. The market page describes deployment capabilities;
+`read_skill` checks the actual Conversation.
 
 ## Agent use
 
@@ -52,6 +58,14 @@ They are separately inventoried from images and Workspace Volumes. The import
 inventory precedes object writes; a version is visible only after confirmation.
 Retrying the same package resumes that identity. Object loss or digest mismatch
 is an error, never an excuse to execute a different package.
+
+Guest placement uses an OS-held lock and managed staging under
+`<Workspace>/.pi-cloud/skill-staging/`. A bounded filesystem receipt precedes
+partial files; individual files and the final package are published by rename.
+The next preparation reclaims verified abandoned staging after a killed process.
+Active preparations are excluded by the lock; changed/unrecognized staged content
+is preserved with an error for inspection. Completed package directories are
+outside the staging reaper and remain user Workspace bytes.
 
 The import/placement envelope is 512 regular files and 16 MiB decoded package
 content (24 MiB encoded). These bounds contain parser/transport memory; they do

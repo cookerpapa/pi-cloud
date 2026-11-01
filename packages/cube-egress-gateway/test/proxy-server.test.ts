@@ -1,5 +1,6 @@
 import { createServer, request, type Server } from "node:http";
 import { connect, type AddressInfo } from "node:net";
+import { once } from "node:events";
 import { afterEach, describe, expect, it } from "vitest";
 import type { CubeEgressRuntimeConfiguration } from "../src/configuration-poller.ts";
 import { createCubeEgressGateway, type CubeEgressAuditRecord } from "../src/proxy-server.ts";
@@ -82,6 +83,81 @@ async function throughConnect(gatewayPort: number, target: string): Promise<stri
 }
 
 describe("Cube egress gateway", () => {
+  it("keeps an active CONNECT tunnel beyond the idle window and closes only after inactivity", async () => {
+    const sockets = new Set<import("node:stream").Duplex>();
+    const proxy = createServer();
+    proxy.on("connect", (_request, socket) => {
+      sockets.add(socket);
+      socket.on("error", () => {});
+      socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+      socket.on("data", (bytes) => socket.write(bytes));
+    });
+    const port = await listen(proxy);
+    const audits: CubeEgressAuditRecord[] = [];
+    const gateway = createCubeEgressGateway({
+      poller: {
+        current: {
+          enabled: true,
+          revision: 1,
+          upstreamProxyUrl: new URL(`http://127.0.0.1:${port}`),
+        },
+      },
+      idleTimeoutMs: 200,
+      audit: (r) => audits.push(r),
+    });
+    const client = connect(await listen(gateway), "127.0.0.1");
+    client.on("error", () => {});
+    try {
+      await once(client, "connect");
+      const accepted = once(client, "data");
+      client.write("CONNECT 8.8.8.8:443 HTTP/1.1\r\nHost: 8.8.8.8:443\r\n\r\n");
+      expect(String((await accepted)[0])).toContain("200 Connection Established");
+      for (let i = 0; i < 8; i++) {
+        const echo = once(client, "data");
+        client.write(`still active ${i}`);
+        expect(String((await echo)[0])).toBe(`still active ${i}`);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(client.destroyed).toBe(false); // More than two complete idle windows.
+      await once(client, "close");
+      expect(audits.some((r) => r.reason === "idle_timeout")).toBe(true);
+      expect(audits.filter((r) => r.outcome === "closed")).toHaveLength(1);
+    } finally {
+      client.destroy();
+      for (const socket of sockets) socket.destroy();
+    }
+  });
+
+  it("bounds CONNECT establishment separately and reports its timeout reason", async () => {
+    const sockets = new Set<import("node:stream").Duplex>();
+    const proxy = createServer();
+    proxy.on("connect", (_request, socket) => {
+      sockets.add(socket);
+      socket.on("error", () => {});
+    });
+    const port = await listen(proxy),
+      audits: CubeEgressAuditRecord[] = [];
+    const gateway = createCubeEgressGateway({
+      poller: {
+        current: {
+          enabled: true,
+          revision: 1,
+          upstreamProxyUrl: new URL(`http://127.0.0.1:${port}`),
+        },
+      },
+      connectionTimeoutMs: 100,
+      idleTimeoutMs: 200,
+      audit: (r) => audits.push(r),
+    });
+    try {
+      expect(await throughConnect(await listen(gateway), "8.8.8.8:443")).toContain(
+        "504 Gateway Timeout",
+      );
+      expect(audits.some((r) => r.reason === "connect_timeout")).toBe(true);
+    } finally {
+      for (const socket of sockets) socket.destroy();
+    }
+  });
   it.each(["content-length", "chunked"])(
     "terminates a truncated upstream %s response without hanging the client",
     async (framing) => {

@@ -16,7 +16,7 @@ import type { CubeEgressRuntimeConfiguration } from "./configuration-poller.ts";
 
 const MAXIMUM_PROXY_HEADER_BYTES = 16 * 1_024;
 const CONNECTION_TIMEOUT_MS = 10_000;
-const CONNECTION_DURATION_MS = 5 * 60_000;
+const CONNECTION_IDLE_TIMEOUT_MS = 5 * 60_000;
 
 export type CubeEgressAuditRecord = Readonly<{
   timestamp: string;
@@ -109,7 +109,14 @@ export function createCubeEgressGateway(options: {
   poller: CubeEgressConfigurationSource;
   audit?: (record: CubeEgressAuditRecord) => void;
   now?: () => number;
+  connectionTimeoutMs?: number;
+  idleTimeoutMs?: number;
 }): Server {
+  const connectTimeout = options.connectionTimeoutMs ?? CONNECTION_TIMEOUT_MS;
+  const idleTimeout = options.idleTimeoutMs ?? CONNECTION_IDLE_TIMEOUT_MS;
+  for (const value of [connectTimeout, idleTimeout])
+    if (!Number.isSafeInteger(value) || value < 1)
+      throw new TypeError("Proxy timeout must be a positive integer");
   const now = options.now ?? Date.now;
   const audit = (record: Omit<CubeEgressAuditRecord, "timestamp">): void =>
     options.audit?.({ timestamp: new Date(now()).toISOString(), ...record });
@@ -257,22 +264,18 @@ export function createCubeEgressGateway(options: {
       const authority = `${address.includes(":") ? `[${address}]` : address}:443`;
       const upstream = upstreamSocket(configuration.upstreamProxyUrl!);
       const timeout = setTimeout(() => {
+        finish("connect_timeout");
         upstream.destroy();
         deny(client, 504, "Gateway Timeout");
-      }, CONNECTION_TIMEOUT_MS);
+      }, connectTimeout);
       timeout.unref();
-      const duration = setTimeout(() => {
-        upstream.destroy();
-        client.destroy();
-      }, CONNECTION_DURATION_MS);
-      duration.unref();
       let responseHeader = Buffer.alloc(0);
       let finalized = false;
       const finish = (reason: string): void => {
         if (finalized) return;
         finalized = true;
         clearTimeout(timeout);
-        clearTimeout(duration);
+        upstream.setTimeout(0);
         audit({
           outcome: "closed",
           reason,
@@ -309,6 +312,13 @@ export function createCubeEgressGateway(options: {
           return;
         }
         clearTimeout(timeout);
+        // Socket inactivity is refreshed by reads and writes in either direction.
+        // Healthy downloads/streams have no total connection lifetime.
+        upstream.setTimeout(idleTimeout, () => {
+          finish("idle_timeout");
+          upstream.destroy();
+          client.destroy();
+        });
         client.write("HTTP/1.1 200 Connection Established\r\nProxy-Agent: PiCloud\r\n\r\n");
         const remainder = responseHeader.subarray(boundary + 4);
         if (remainder.byteLength > 0) client.write(remainder);

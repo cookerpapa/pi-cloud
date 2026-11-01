@@ -1,5 +1,7 @@
 # Delivery and research evidence
 
+- [November 1 review repairs](review-repairs-20261101.md): source implementation,
+  focused verification and matched publication status for R01–R08.
 - [Full repository review, November 1](repository-review-20261101.md): accepted
   feature intent, eight findings, retained architecture, package coverage and
   fresh isolated verification; no runtime changes or deployment.
