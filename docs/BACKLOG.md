@@ -1,9 +1,17 @@
 # Maintained backlog
 
-## Skill creation entry — in progress
+## Skill creation entry — deployed
 
-- [ ] Remove the top-level Import button and its unused blank publisher state.
-- [ ] Verify the remaining creation/detail flows and publish the Web-only change.
+- [x] Remove the top-level Import button and its unused blank publisher state.
+- [x] Verify the remaining creation/detail flows and publish the Web-only change.
+
+Web `skill-create-entry-20261102` is deployed from `d06c88e5` (Helm 141).
+All 256 Web/release tests and the maintained browser gate passed. Initial browser
+bootstrap attempts reported Chromium `ERR_NETWORK_CHANGED`; the completed gate
+passed without weakening assertions. Live owner/member checks confirmed the
+creation-only header and existing version/installation flows; fixtures were
+cleaned. All 28 non-Web Pod identities and nine machine allocation records
+remained unchanged, with 29/29 running Pods Ready.
 
 ## Cloud Skill runtime — deployed
 

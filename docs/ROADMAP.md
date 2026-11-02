@@ -1,9 +1,10 @@
 # Implementation roadmap
 
-## Skill creation entry — in progress
+## Skill creation entry — deployed
 
-Keep Create Skill as the Skills page header action; remove the top-level Import
-entry and publish through the presentation-only Web release.
+Create Skill is the Skills page header action. The top-level Import entry is
+removed in Web release `skill-create-entry-20261102`; browser acceptance passed
+with backend Pods and machine allocations unchanged.
 
 ## Cloud Skill runtime — deployed
 
