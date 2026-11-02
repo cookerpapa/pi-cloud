@@ -36,7 +36,7 @@ export function SkillMarket({
     [error, setError] = useState<string>(),
     [notice, setNotice] = useState<string>();
   const [active, setActive] = useState<SkillPackage | null>(null),
-    [publishing, setPublishing] = useState<{ draft: SkillDraft | null } | null>(null);
+    [publishing, setPublishing] = useState<SkillDraft | null>(null);
   const [mutationError, setMutationError] = useState<string>();
   const [busy, setBusy] = useState<string | null>(null);
   const inFlight = useRef(false),
@@ -147,14 +147,9 @@ export function SkillMarket({
         </button>
         <h1>Skills</h1>
         {canMutate ? (
-          <>
-            <button type="button" onClick={() => setPublishing({ draft: null })}>
-              {say("导入", "Import")}
-            </button>
-            <button type="button" className="skill-primary" onClick={onCreate}>
-              ＋ {say("创建 Skill", "Create Skill")}
-            </button>
-          </>
+          <button type="button" className="skill-primary" onClick={onCreate}>
+            ＋ {say("创建 Skill", "Create Skill")}
+          </button>
         ) : null}
       </header>
       <div className="skill-market-toolbar">
@@ -339,7 +334,7 @@ export function SkillMarket({
           onClose={() => setActive(null)}
           onEdit={(draft) => {
             setActive(null);
-            setPublishing({ draft });
+            setPublishing(draft);
           }}
           onChanged={(scope, installation) => changed(active.packageId, scope, installation)}
           onRefresh={refresh}
@@ -348,7 +343,7 @@ export function SkillMarket({
       {publishing ? (
         <SkillPublisher
           api={api}
-          draft={publishing.draft}
+          draft={publishing}
           onClose={() => setPublishing(null)}
           onPublished={() => {
             setPublishing(null);

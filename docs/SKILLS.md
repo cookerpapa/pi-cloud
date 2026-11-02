@@ -12,9 +12,10 @@ live there. New versions never silently replace another member's installation.
 Use **Create Skill** to put an editable request in the chat composer. The Agent
 writes SKILL.md and any supporting files in the Workspace, checks the workflow,
 and calls `publish_skill`. The shortcut preserves an existing draft and does not
-send automatically. **Import** accepts a local directory or exported `.skill.json`
-package; it is not a manual YAML editor. Existing GitHub provenance and the
-operator import API remain, but the Web has no public registry or GitHub import.
+send automatically. The page header offers Create Skill. Existing package owners
+can import a new version from the details menu using a local directory or exported
+`.skill.json` package. Existing GitHub provenance and the operator import API
+remain; the Web has no public registry or GitHub import.
 
 Install a specific version for yourself. Tenant owners may also install for the
 organization or the selected conversation's project. Precedence is project,

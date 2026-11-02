@@ -21,22 +21,22 @@ export function SkillPublisher({
   onPublished,
 }: {
   api: PiCloudApi;
-  draft: SkillDraft | null;
+  draft: SkillDraft;
   onClose(): void;
   onPublished(version: SkillVersion): void;
 }) {
   const { language, t } = useI18n(),
     say = (cn: string, en: string) => (language === "zh-CN" ? cn : en);
   const [text, setText] = useState(() =>
-    draft?.content.files.find((f) => f.path === "SKILL.md")
+    draft.content.files.find((f) => f.path === "SKILL.md")
       ? (skillText(draft.content.files.find((f) => f.path === "SKILL.md")!) ?? "")
       : "",
   );
-  const [files, setFiles] = useState<SkillFile[]>(draft?.content.files ?? []),
-    [label, setLabel] = useState(draft ? `${draft.version.label}-next` : "1.0");
-  const [runtime, setRuntime] = useState(draft?.version.requirements.runtime ?? "none"),
-    [tools, setTools] = useState(draft?.version.requirements.tools.join(", ") ?? ""),
-    [software, setSoftware] = useState(draft?.version.requirements.software.join(", ") ?? "");
+  const [files, setFiles] = useState<SkillFile[]>(draft.content.files),
+    [label, setLabel] = useState(`${draft.version.label}-next`);
+  const [runtime, setRuntime] = useState(draft.version.requirements.runtime),
+    [tools, setTools] = useState(draft.version.requirements.tools.join(", ")),
+    [software, setSoftware] = useState(draft.version.requirements.software.join(", "));
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string>();
   const importing = useRef(false);
@@ -104,7 +104,7 @@ export function SkillPublisher({
     setError(undefined);
     try {
       const input: SkillImport = {
-        ...(draft ? { packageId: draft.version.packageId } : {}),
+        packageId: draft.version.packageId,
         label,
         requirements: { runtime, tools: words(tools), software: words(software) },
         source: {
@@ -122,13 +122,7 @@ export function SkillPublisher({
     }
   }
   return (
-    <SkillDialog
-      title={
-        draft ? say("导入新版本", "Import a new version") : say("导入 Skill", "Import a Skill")
-      }
-      busy={busy}
-      onClose={onClose}
-    >
+    <SkillDialog title={say("导入新版本", "Import a new version")} busy={busy} onClose={onClose}>
       <form
         className="skill-publisher"
         onSubmit={(event) => {

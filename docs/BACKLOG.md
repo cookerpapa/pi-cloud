@@ -1,5 +1,10 @@
 # Maintained backlog
 
+## Skill creation entry — in progress
+
+- [ ] Remove the top-level Import button and its unused blank publisher state.
+- [ ] Verify the remaining creation/detail flows and publish the Web-only change.
+
 ## Cloud Skill runtime — deployed
 
 - [x] Pin catalog before model sampling; persist native system sections and restore

@@ -1,5 +1,10 @@
 # Implementation roadmap
 
+## Skill creation entry — in progress
+
+Keep Create Skill as the Skills page header action; remove the top-level Import
+entry and publish through the presentation-only Web release.
+
 ## Cloud Skill runtime — deployed
 
 The frozen catalog is exposed through Pi's system section, instructions activate

@@ -121,19 +121,37 @@ try {
       await work({ page, click, fill, scope, details, open });
     });
   }
+  const seed = await ownerApi.importSkill({
+    label: "browser-seed",
+    requirements: { runtime: "none", tools: [], software: [] },
+    source: {
+      kind: "files",
+      files: [
+        {
+          path: "SKILL.md",
+          base64: Buffer.from(
+            `---\nname: ${name}\ndescription: 团队检查流程\n---\n\n# 团队检查\n\n先阅读任务，再检查项目约定。\n`,
+          ).toString("base64"),
+        },
+      ],
+    },
+  });
   await browser(tenant.credential.token, async ({ page, click, fill, scope, details }) => {
-    await click("导入");
-    await page.waitFor("document.querySelector('dialog input[type=file]')");
-    await fill(
-      `---\nname: ${name}\ndescription: 团队检查流程\n---\n\n# 团队检查\n\n先阅读任务，再检查项目约定。\n`,
+    assert.equal(
+      await page.evaluate(
+        "[...document.querySelectorAll('.skill-market-header button')].some(button => button.textContent.trim() === '导入')",
+      ),
+      false,
     );
-    await click("分享到组织");
-    await page.waitFor(
-      `!document.querySelector('dialog') && document.querySelector('[data-skill="${name}"]')`,
+    assert.equal(
+      await page.evaluate(
+        "[...document.querySelectorAll('.skill-market-header button')].some(button => button.textContent.includes('创建 Skill'))",
+      ),
+      true,
     );
-    pack = (await ownerApi.listSkills()).packages.find((p) => p.versions[0].name === name);
+    pack = (await ownerApi.listSkills()).packages.find((p) => p.packageId === seed.packageId);
     assert(pack);
-    firstVersion = pack.versions[0].versionId;
+    firstVersion = seed.versionId;
     await details();
     await scope("tenant");
     await click("安装", "document.querySelector('dialog')");
@@ -154,7 +172,7 @@ try {
     assert.equal(pack.installations.find((i) => i.scope.kind === "tenant").versionId, firstVersion);
     await page.screenshot(resolve(dirname(output), "organization-skills.png"));
     report.cases.push(
-      "owner publishes locally and shared installation retains its selected version",
+      "creation-only header, existing package version update and retained shared installation",
     );
     await save();
   });

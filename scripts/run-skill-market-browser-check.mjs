@@ -178,18 +178,25 @@ try {
     await click("＋ 创建 Skill");
     assert.equal(await page.evaluate("createRequests"), 1);
     assert.equal(await page.evaluate("document.querySelector('dialog')===null"), true);
-    await click("导入");
+    assert.equal(
+      await page.evaluate(
+        "[...document.querySelectorAll('.skill-market-header button')].some(button => button.textContent.trim() === '导入')",
+      ),
+      false,
+    );
+    await page.evaluate(
+      "document.querySelector('[data-skill=frontend-design] .skill-card-content').click()",
+    );
+    await page.waitFor("document.querySelector('.skill-preview')");
+    await page.evaluate("document.querySelector('.skill-more').open=true");
+    await click("导入新版本");
     await page.waitFor("document.querySelector('.skill-publisher')");
     assert.equal(
       await page.evaluate("document.querySelector('dialog').innerText.includes('GitHub')"),
       false,
     );
-    assert.equal(
-      await page.evaluate("document.querySelector('dialog [type=submit]').disabled"),
-      true,
-    );
     await page.evaluate(
-      String.raw`(()=>{const data=new DataTransfer();data.items.add(new File([JSON.stringify({label:'3.0',requirements:{runtime:'none',tools:[],software:[]},source:{kind:'files',files:[{path:'SKILL.md',base64:btoa('---\nname: imported\ndescription: Imported\n---\n# Imported workflow')},{path:'assets/a.txt',base64:btoa('asset')}]}})],'test.skill.json',{type:'application/json'}));const e=document.querySelector('dialog input[accept=".json"]');e.files=data.files;e.dispatchEvent(new Event('change',{bubbles:true}));})()`,
+      String.raw`(()=>{const data=new DataTransfer();data.items.add(new File([JSON.stringify({label:'3.0',requirements:{runtime:'none',tools:[],software:[]},source:{kind:'files',files:[{path:'SKILL.md',base64:btoa('---\nname: frontend-design\ndescription: Imported\n---\n# Imported workflow')},{path:'assets/a.txt',base64:btoa('asset')}]}})],'test.skill.json',{type:'application/json'}));const e=document.querySelector('dialog input[accept=".json"]');e.files=data.files;e.dispatchEvent(new Event('change',{bubbles:true}));})()`,
     );
     await page.waitFor(
       "document.querySelector('.skill-publisher .skill-preview')?.textContent.includes('Imported workflow')",
