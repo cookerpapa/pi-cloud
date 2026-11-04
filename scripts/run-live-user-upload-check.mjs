@@ -366,7 +366,11 @@ try {
       source.path.slice(session.workingDirectory.length + 1),
     );
     assert.equal(Buffer.from(changed.bytes).toString(), "changed");
-    const retained = await api.readInputImage({ id: uploadId, sessionId: session.sessionId });
+    const retainedUpload = (await api.getConversation(session.sessionId)).turns
+      .flatMap((turn) => turn.uploads ?? [])
+      .find((upload) => upload.id === uploadId);
+    assert(retainedUpload?.image, "History did not retain the uploaded image reference");
+    const retained = await api.readInputImage(retainedUpload);
     assert.equal(createHash("sha256").update(retained.bytes).digest("hex"), source.image.sha256);
     report.mutableSourceChanged = true;
     const { rows: counts } =

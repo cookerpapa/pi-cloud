@@ -1,6 +1,7 @@
 # ADR-0294: Retained user originals and editable long-paste attachments
 
-Status: implemented and source-verified; matched publication pending, 2026-11-04.
+Status: deployed as `retained-attachments-20261104`, 2026-11-04; source and live
+Luna/Cube/browser/recovery acceptance passed on schema 208.
 Tracking: https://github.com/cookerpapa/pi-cloud/issues/2 .
 
 [Implementation and verification](../reports/retained-user-attachments-20261104.md).

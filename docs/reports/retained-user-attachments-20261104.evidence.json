@@ -1,0 +1,125 @@
+{
+  "date": "2026-11-04",
+  "release": {
+    "version": "retained-attachments-20261104",
+    "revision": "ea9e76c537e6e5f2567d7ae1b0db577d5a6ac620",
+    "schema": "208_retained_user_attachments",
+    "helmRevision": 142,
+    "scannedArtifacts": 13
+  },
+  "source": {
+    "workspaceTestsPassed": 2379,
+    "workspaceOptInSkipped": 11,
+    "helperTestsPassed": 133,
+    "faultCasesPassed": 383,
+    "kafkaTransportTestsPassed": 9
+  },
+  "live": {
+    "model": "gpt-6-luna",
+    "originals": {
+      "characters": 60076,
+      "byteLength": 155083,
+      "localBeforeSend": true,
+      "editable": true,
+      "boundedInput": true,
+      "nativeReadAndBash": true,
+      "mutableCopyIndependent": true,
+      "sourceDeletionSafe": true,
+      "workspaceDeletionSafe": true,
+      "newWorkspaceCopy": {
+        "sameOriginal": true,
+        "newPlacement": true,
+        "actualGuestDigest": true
+      },
+      "runs": [
+        {
+          "tools": [
+            {
+              "name": "read",
+              "status": "completed"
+            },
+            {
+              "name": "bash",
+              "status": "completed"
+            }
+          ]
+        },
+        {
+          "tools": [
+            {
+              "name": "bash",
+              "status": "completed"
+            }
+          ]
+        },
+        {
+          "tools": [
+            {
+              "name": "bash",
+              "status": "completed"
+            }
+          ]
+        }
+      ],
+      "cleanupSucceeded": true
+    },
+    "queue": {
+      "sameRun": true,
+      "atomicEditedSteer": true,
+      "latestOriginalObserved": true,
+      "runs": [
+        {
+          "tools": [
+            {
+              "name": "bash",
+              "status": "completed"
+            },
+            {
+              "name": "read",
+              "status": "completed"
+            }
+          ]
+        }
+      ],
+      "cleanupSucceeded": true
+    },
+    "nativeRecovery": {
+      "scenarios": ["consume", "stop", "recover", "stream_stop", "stream_both_crash"],
+      "accepted": true,
+      "cleanupConfirmed": true
+    },
+    "vision": {
+      "originalVerified": true,
+      "directVisionWithoutRead": true,
+      "byteLength": 7133,
+      "runs": [
+        {
+          "tools": []
+        }
+      ],
+      "cleanupSucceeded": true
+    }
+  },
+  "preservation": {
+    "relations": 17,
+    "workspaceFiles": 6006,
+    "originals": 154,
+    "credentialFiles": 27,
+    "changedRelations": 0,
+    "changedFiles": 0,
+    "changedCredentials": 0,
+    "rootsMatch": true
+  },
+  "final": {
+    "pods": 26,
+    "ready": 26,
+    "machinesReady": 2,
+    "allocationsSurvivedRecoveryChecks": true,
+    "active": {
+      "runs": 0,
+      "writers": 0,
+      "bindings": 0,
+      "elastic": 0
+    }
+  }
+}

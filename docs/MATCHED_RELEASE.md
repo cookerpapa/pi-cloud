@@ -6,8 +6,9 @@ uploaded originals as well as images; S3 keys and image codec remain unchanged.
 Run the upload/claim, native edited-Steer, shared-Fork/GC and asset-recovery checks,
 and `PI_CLOUD_BROWSER_SCOPE=attachments npm run browser:presentation:check`.
 Preserve accounts, configuration and existing originals. New uploads retain their
-source before Workspace placement. An operator-paused deployment stays paused
-until its restart is authorized; report source and live acceptance separately.
+source before Workspace placement. The authorized resumption and matched
+`retained-attachments-20261104` publication passed real Luna/Cube/browser/native
+recovery checks; [delivery](reports/retained-user-attachments-20261104.md).
 
 
 The current Cloud Skill runtime is `cloud-skills-20261101-r5` (source `b891ab2c`,

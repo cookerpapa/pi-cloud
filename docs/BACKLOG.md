@@ -1,6 +1,6 @@
 # Maintained backlog
 
-## Retained user originals and long paste — source verified, publication pending
+## Retained user originals and long paste — deployed
 
 - [x] Record approved storage ownership, protocol and UX decisions in
       [ADR-0294](adr/0294-retained-user-attachments.md); open
@@ -10,10 +10,13 @@
 - [x] Add automatic long-paste files, local text editing, original viewing and reuse.
 - [x] Verify failure/recovery, reference lifetimes and browser behavior; update
       maintained documentation and record source/release acceptance separately.
-- [ ] Complete the authorized service resumption, matched publication and real
+- [x] Complete the authorized service resumption, matched publication and real
       Cube/model acceptance with original asset preservation.
 
-[Source verification and publication status](reports/retained-user-attachments-20261104.md).
+Published as `retained-attachments-20261104`, source `ea9e76c5`, schema 208 /
+Helm 142. Five real attachment Runs and five native recovery scenarios passed;
+6,006 Workspace files, 154 originals and 27 credential/configuration files are
+preserved. [Verification and delivery](reports/retained-user-attachments-20261104.md).
 
 ## Skill creation entry — deployed
 

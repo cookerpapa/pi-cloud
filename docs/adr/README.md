@@ -1,8 +1,8 @@
 # Current architecture decisions
 
-[ADR-0294](0294-retained-user-attachments.md) is implemented and source-verified:
+[ADR-0294](0294-retained-user-attachments.md) is deployed as `retained-attachments-20261104`:
 automatic editable long-paste attachments and retained user originals using the
-existing S3/PG reference authority. Matched publication is pending.
+existing S3/PG reference authority. Source and real Luna/Cube/browser/recovery checks passed.
 [Issue #2](https://github.com/cookerpapa/pi-cloud/issues/2).
 
 [ADR-0293](0293-cloud-skill-runtime.md) is deployed as

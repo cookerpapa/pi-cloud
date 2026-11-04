@@ -1,7 +1,8 @@
 # Retained user attachments — 2026-11-04
 
-Source implementation and isolated acceptance are complete. Matched publication
-and real Cube acceptance are pending. Tracking:
+Deployed as `retained-attachments-20261104`, source `ea9e76c5`, schema 208,
+Helm revision 142. Source and live acceptance passed.
+[Sanitized evidence](retained-user-attachments-20261104.evidence.json). Tracking:
 [Issue #2](https://github.com/cookerpapa/pi-cloud/issues/2),
 [ADR-0294](../adr/0294-retained-user-attachments.md), schema 208.
 
@@ -63,8 +64,49 @@ They are not represented as live production or clean-revision results.
 
 ## Publication
 
-The owner explicitly authorized resuming the paused deployment and publishing
-this feature on 2026-11-04. Preserve accounts, configuration, existing originals
-and Workspace bytes; use the maintained matched-release operator and verify old
-allocation absence before discarding ownership. Record release identifiers and
-real Luna/Cube results here after they actually pass.
+The owner explicitly authorized resuming the paused deployment. All 13 matched
+artifacts passed the configured provenance/SBOM/vulnerability gates. The two
+stopped development machines had allocation admission closed and physical absence
+confirmed on their original node before ownership was retired. Both kept their
+Workspace and desired running intent, and recovered with new allocations after
+publication. Those allocations survived the subsequent recovery tests.
+
+Real GPT-6 Luna/Cube acceptance passed five Runs across three focused invocations:
+
+- Browser paste/edit/send of 60,076 characters, with 155,083 bytes after editing.
+  Drafts stayed local before Send; admitted input contained only bounded metadata.
+  Native read and Bash returned the expected first/last lines.
+- Bash changed the mutable copy while the retained original's digest stayed exact.
+- A Fork retained the original after source deletion and confirmed physical
+  deletion of the old Workspace. Reuse in a fresh Workspace kept the same S3
+  object, and guest Bash verified the complete original digest.
+- While Bash was running, an uploaded follow-up was edited and promoted to Steer
+  atomically. The same Run read the latest file, without consuming the old draft.
+- A small uploaded PNG retained exact original bytes and entered the model as
+  visual content directly. Luna read its random six-digit code without a Tool call.
+
+Early live-driver attempts found a too-long fixture slug, navigation being used
+before loading completed, and an omitted/invalid tree-view argument. The driver
+was corrected and failed fixtures were cleaned. No production workaround or
+weakening of an assertion was used to pass these cases.
+
+The maintained native-input suite also passed consume, Stop, Worker recovery,
+streaming Stop and combined Worker/Control Plane crash recovery. The deliberate
+SIGKILL briefly interrupted kubectl's exec connection; restart and continuation
+were then verified. These are owned single-host checks, not fleet-level HA claims.
+
+Final comparisons preserved 17 protected relations, all 6,006 Workspace files,
+154 retained originals and 27 credential/configuration files. All owned test
+tenants, objects and compute were cleaned. There are 26/26 running Pods ready,
+two ready original machines, and no active Runs, writers, bindings or elastic
+fixtures. The earlier deferred 131 MiB provider request was not repeated.
+
+To repeat the maintained attachment acceptance against a matching deployment:
+
+```sh
+PI_CLOUD_LIVE_RETAINED_ATTACHMENTS_CHECK=1 node --import tsx scripts/run-live-retained-attachments-check.mjs /tmp/retained-attachments.json
+```
+
+The optional last argument is `originals`, `queue` or `vision`; the default runs all. The
+driver creates owned resources, uses ordinary APIs and requires confirmed physical
+cleanup before removing their database metadata.

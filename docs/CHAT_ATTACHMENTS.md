@@ -183,3 +183,8 @@ contains `envd-input-files.mjs`; an old template is not a supported fallback.
 The decision and acceptance scope are in
 [ADR-0200](adr/0200-workspace-uploads-and-user-image-input.md) and
 [ADR-0215](adr/0215-unlimited-product-quotas.md).
+
+ADR-0294 is deployed as `retained-attachments-20261104` on schema 208.
+[Source and real browser/Luna/Cube verification](reports/retained-user-attachments-20261104.md)
+covers long paste, edited Steer, source/Workspace deletion, new placement and
+recovery. The repeatable live driver is `scripts/run-live-retained-attachments-check.mjs`.
