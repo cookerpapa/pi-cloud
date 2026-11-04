@@ -1,7 +1,7 @@
 import { settleHistoryTurn } from "./presentation-settlement.ts";
 import { HistoryDirectory } from "@pi-cloud/pi-session-postgres/durable";
 import { PostgresPresentationDirectory } from "./presentation-directory.ts";
-import { retainedImageReferences } from "@pi-cloud/session-attachments";
+import { retainedUploadReferences } from "@pi-cloud/session-attachments";
 import { createHash, randomUUID } from "node:crypto";
 import { sql, type Kysely, type Transaction } from "kysely";
 import type { Database } from "@pi-cloud/database";
@@ -156,13 +156,8 @@ export async function captureNativePresentation(
       const text = JSON.stringify(descriptor),
         hash = createHash("sha256").update(text).digest("hex");
       if (!objects.has(hash)) objects.set(hash, { id: randomUUID(), text });
-      for (const upload of descriptor.human?.uploads ?? [])
-        if (upload.image)
-          for (const ref of retainedImageReferences({
-            type: "pi_cloud_image_v1",
-            attachment: upload.image,
-          }))
-            images.push({ record: row.retained_id, image: ref.id });
+      for (const ref of retainedUploadReferences(descriptor.human?.uploads ?? []))
+        images.push({ record: row.retained_id, image: ref.id });
       return {
         row,
         hash,
@@ -188,7 +183,7 @@ export async function captureNativePresentation(
       select ${scope.tenantId}::uuid,l.block_id,${sequence},l.ordinal,l.record_id,l.entry_id,l.entry_record_id,l.assistant_id,l.assistant_record_id,b.id,l.bytes,l.fields
       from links l left join bodies b on b.sha256=l.hash on conflict do nothing`.execute(tx);
     if (images.length)
-      await sql`insert into pi_history_record_images(tenant_id,retained_record_id,image_id)
+      await sql`insert into pi_history_record_attachments(tenant_id,retained_record_id,attachment_id)
       values ${sql.join(images.map((v) => sql`(${scope.tenantId}::uuid,${v.record}::uuid,${v.image}::uuid)`))} on conflict do nothing`.execute(
         tx,
       );

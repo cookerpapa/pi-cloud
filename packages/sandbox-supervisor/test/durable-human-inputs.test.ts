@@ -12,6 +12,7 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { Type } from "@earendil-works/pi-ai";
 import type { NativeHumanInput, NativeInputMutation } from "@pi-cloud/protocol";
+import { inputWithUploads, parseUserUpload } from "@pi-cloud/protocol";
 import { DurableAgentSession } from "../src/durable/agent-session.ts";
 import { DurableHumanInputs, HumanInputDocument } from "../src/durable/human-inputs.ts";
 
@@ -82,7 +83,7 @@ async function fixture() {
     sequence: () => writes.length,
     assertCurrent,
     accepting: () => accepting,
-    prepare: async (text) => text,
+    prepare: async (text, uploads) => inputWithUploads(text, uploads),
   });
   await conversation.submit(
     { type: "input", content: "initial", requestId: runId },
@@ -178,6 +179,74 @@ it("keeps edited follow-up in the native queue and delivers only the latest cont
       code: "input_conflict",
     });
     expect((await f.mutate(edit)).replayed).toBe(true);
+  } finally {
+    await f.close();
+  }
+});
+
+it("atomically replaces an attachment while steering and recovers only the selected original", async () => {
+  const f = await fixture();
+  const attachment = (name: string) =>
+    parseUserUpload({
+      id: randomUUID(),
+      sessionId: randomUUID(),
+      workspaceId: randomUUID(),
+      name,
+      path: `/workspace/uploads/${name}`,
+      mimeType: "text/plain",
+      byteLength: 150000,
+      sha256: "a".repeat(64),
+      original: {
+        type: "pi_cloud_attachment_v1",
+        attachment: {
+          id: randomUUID(),
+          mimeType: "text/plain",
+          byteLength: 150000,
+          sha256: "a".repeat(64),
+        },
+      },
+    });
+  try {
+    const old = attachment("old.txt"),
+      next = attachment("edited.txt");
+    const draft = { ...input("read this file"), uploads: [old] };
+    const queued = await f.inputs.submit(draft);
+    const mutation = {
+      operationId: randomUUID(),
+      inputId: draft.inputId,
+      revision: queued.queue.revision,
+      change: { action: "steer" as const, uploads: [next] },
+    };
+    const changed = await f.mutate(mutation);
+    expect(changed.queue.items[0]).toMatchObject({
+      status: "steering",
+      text: draft.text,
+      uploads: [next],
+    });
+    expect((await f.mutate(mutation)).replayed).toBe(true);
+    const replay = new MemoryStorage();
+    for (const batch of f.writes) await replay.commit(batch, BACKGROUND_CONTEXT);
+    const document = await replay.findDocument(
+      {
+        kind: "pi-cloud.human-inputs",
+        scope: { kind: "conversation", conversationId: 1 as never },
+        key: f.runId,
+      },
+      "current",
+      BACKGROUND_CONTEXT,
+    );
+    const recovered = await replay.document(document!.id, "current", BACKGROUND_CONTEXT);
+    expect(
+      (recovered!.value as unknown as { inputs: Record<string, { uploads: unknown[] }> }).inputs[
+        draft.inputId
+      ]?.uploads,
+    ).toEqual([next]);
+    await f.release();
+    expect(f.calls[1]).toContain(next.path);
+    expect(f.calls[1]).not.toContain(old.path);
+    await expect(
+      f.mutate({ ...mutation, operationId: randomUUID(), revision: changed.queue.revision }),
+    ).rejects.toMatchObject({ code: "input_conflict" });
   } finally {
     await f.close();
   }

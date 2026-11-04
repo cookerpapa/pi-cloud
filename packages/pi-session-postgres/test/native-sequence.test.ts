@@ -13,7 +13,7 @@ import {
   fauxAssistantMessage,
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
-import { ImageAttachmentCodec, PostgresImageAttachmentStore } from "@pi-cloud/session-attachments";
+import { ImageAttachmentCodec, PostgresAttachmentStore } from "@pi-cloud/session-attachments";
 import { PublishedDurableStorage } from "../src/durable/published-storage.ts";
 import { DurablePostgresProjection } from "../src/durable/postgres-projection.ts";
 
@@ -47,7 +47,7 @@ it("reads cold sequence metadata without loading an image or body", async () => 
   const objects = new Map<string, Buffer>();
   let unavailable = false,
     transferred = 0;
-  const attachments = new PostgresImageAttachmentStore(db, {
+  const attachments = new PostgresAttachmentStore(db, {
     async put(key, value) {
       objects.set(key, Buffer.from(value));
     },

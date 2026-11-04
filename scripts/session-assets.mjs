@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { S3Client, ListObjectsV2Command } from "@aws-sdk/client-s3";
-import { S3ImageBlobStore } from "../packages/session-attachments/src/s3.ts";
+import { S3AttachmentBlobStore } from "../packages/session-attachments/src/s3.ts";
 import { backupAssets, restoreAssets, verifyAssetBackup } from "./lib/asset-recovery.mjs";
 
 const [action, ...argv] = process.argv.slice(2);
@@ -38,7 +38,7 @@ if (action === "verify") {
   const databaseUrl = (await readFile(config.databaseUrlFile, "utf8")).trim();
   const credentials = JSON.parse(await readFile(config.images.credentialsFile, "utf8"));
   const settings = { ...config.images, ...credentials };
-  const blobs = new S3ImageBlobStore(settings);
+  const blobs = new S3AttachmentBlobStore(settings);
   const client = new S3Client({
     endpoint: settings.endpoint,
     region: settings.region ?? "us-east-1",

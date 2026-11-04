@@ -4,6 +4,7 @@ import {
   parseImageAttachmentReference,
   type ImageAttachmentReference,
   type ImagePacked,
+  type AttachmentReference,
 } from "@pi-cloud/protocol";
 
 export type ImageScope = { tenantId: string; runId?: string };
@@ -177,11 +178,20 @@ export class ImageAttachmentCodec {
 }
 
 /** Upload ingress uses a stream; native Pi image parts retain the Buffer API above. */
-export interface ImageUploadStore {
+export interface AttachmentUploadStore {
   putStream(
     scope: { tenantId: string; uploadId: string; claimToken: string },
     content: import("@pi-cloud/protocol").UploadContent,
-    mimeType: ImageAttachmentReference["mimeType"],
+    mimeType: string,
     signal: AbortSignal,
-  ): Promise<ImageAttachmentReference>;
+  ): Promise<AttachmentReference>;
+}
+
+export interface AttachmentSource {
+  withStream<T>(
+    tenantId: string,
+    reference: AttachmentReference,
+    consume: (chunks: AsyncIterable<Uint8Array>, signal: AbortSignal) => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T>;
 }

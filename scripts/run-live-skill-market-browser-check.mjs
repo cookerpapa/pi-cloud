@@ -8,7 +8,7 @@ import {
   createPrivateTenant,
   issuePrivateTenantCredential,
 } from "../packages/control-plane/src/tenant-administration.ts";
-import { S3ImageBlobStore } from "../packages/session-attachments/src/s3.ts";
+import { S3AttachmentBlobStore } from "../packages/session-attachments/src/s3.ts";
 import { PiCloudApi } from "../packages/web-ui/src/api.ts";
 import {
   runtimeDirectory,
@@ -266,7 +266,7 @@ try {
 } finally {
   const errors = [];
   if (tenant) {
-    const blobs = new S3ImageBlobStore({
+    const blobs = new S3AttachmentBlobStore({
       endpoint: `http://${serviceAddress("session-images")}:8333`,
       region: "us-east-1",
       bucket: "pi-cloud-session-images",

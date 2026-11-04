@@ -497,7 +497,10 @@ export class QueuedInputService {
     await this.#assertReceiving(this.options.database, target);
     if (!target.lease_id) unavailable();
     let uploads: UserUpload[] | undefined;
-    if (request.action === "edit" && request.uploadIds !== undefined)
+    if (
+      (request.action === "edit" || request.action === "steer") &&
+      request.uploadIds !== undefined
+    )
       uploads = await this.options.database.transaction().execute(async (tx) => {
         const files = await bindInputUploads(tx, {
           tenantId,
@@ -516,7 +519,7 @@ export class QueuedInputService {
             fingerprint,
           },
         });
-        this.#validate(request.text, files, target);
+        this.#validate(request.text ?? stored.state.inputs[inputId]?.text ?? "", files, target);
         return files;
       });
     if (
@@ -538,6 +541,7 @@ export class QueuedInputService {
             ? {
                 action: request.action,
                 ...(request.text === undefined ? {} : { text: request.text.trim() }),
+                ...(uploads ? { uploads } : {}),
               }
             : { action: request.action };
     const result = await this.#deliver(

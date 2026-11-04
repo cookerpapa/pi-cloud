@@ -2,7 +2,7 @@
 
 A self-hosted cloud runtime for coding agents, built around Pi Durable 1.0's
 public embedded SDK. Agent loops run in trusted Workers; file and shell tools
-run in separate CubeSandbox KVM guests. Conversations and retained images survive
+run in separate CubeSandbox KVM guests. Conversations and retained attachments survive
 Worker replacement and Workspace changes.
 
 PiCloud is a personal infrastructure project with integration and failure-recovery
@@ -30,7 +30,10 @@ scale or as a highly available production service.
   binding. Files are shared, not copied or rolled back by conversation Fork.
 - **Workspaces:** elastic compute or dedicated development machines, persistent
   Volume-backed files, browser tooling, terminals, SSH and application previews.
-- **Images:** chat uploads enter the model directly. `generate_image` creates or
+- **Attachments:** long text pastes become editable text files. Uploaded originals
+  stay with the conversation in object storage; Workspace copies support normal
+  file/shell tools. History originals can be viewed, downloaded and reused.
+- **Images:** chat image uploads enter the model directly. `generate_image` creates or
   edits images using file/recent-image references; `show_image` displays Workspace
   images. Retained image objects stay available in conversation history.
 - **Delegation and automation:** native child Conversations within one Session
@@ -66,7 +69,7 @@ Control changes -> PostgreSQL + Outbox -> same Session Kafka partition
 Cube/control Tool completion -> boot-scoped Kafka replies -> original Pi Worker
 
 Workspace files -> persistent Cube Volumes
-Retained images -> private S3 objects; Kafka/PG carry references
+Retained attachment originals -> private S3 objects; Kafka/PG carry references
 ```
 
 | Component | Responsibility |
@@ -77,7 +80,7 @@ Retained images -> private S3 objects; Kafka/PG carry references
 | Session Projector | Native-state materialization, live views and dispatch of committed tool intents |
 | CubeSandbox | KVM isolation, fixed native file/shell tools and completion delivery |
 | CLIProxyAPI | Provider credentials, account selection and upstream model transport |
-| S3 / Cube Volumes | Immutable conversation images and Skill packages / mutable Workspace files |
+| S3 / Cube Volumes | Immutable conversation attachments and Skill packages / mutable Workspace files |
 
 The API, Projector and sandbox lifecycle controller share one Control Plane
 process. There is no independent Tool Broker. Ordinary control tools are registered
@@ -198,4 +201,4 @@ are preserved; obsolete development compatibility paths are removed.
 [Roadmap](docs/ROADMAP.md) · [Backlog](docs/BACKLOG.md) ·
 [Documentation index](docs/README.md) ·
 [Distributed deployment](docs/DISTRIBUTED_DEPLOYMENT.md) ·
-[Conversation/image recovery](docs/ASSET_RECOVERY.md)
+[Conversation/attachment recovery](docs/ASSET_RECOVERY.md)

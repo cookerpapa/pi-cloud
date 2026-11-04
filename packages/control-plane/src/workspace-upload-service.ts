@@ -11,13 +11,11 @@ import {
   type UserUpload,
   type WorkspaceUploadRequest,
   parseImageAttachmentReference,
+  parseAttachmentReference,
+  type AttachmentReference,
 } from "@pi-cloud/protocol";
-import type {
-  ImageAttachmentStore,
-  ImageAttachmentSource,
-  ImageUploadStore,
-} from "@pi-cloud/session-attachments";
-import { forkUpload, verifiedUpload, sniffUpload } from "./workspace-upload-stream.ts";
+import type { AttachmentSource, AttachmentUploadStore } from "@pi-cloud/session-attachments";
+import { verifiedUpload, sniffUpload } from "./workspace-upload-stream.ts";
 import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
 import type { UploadInputPin } from "./upload-input-pins.ts";
 import { withDatabaseReadSignal } from "@pi-cloud/database/client";
@@ -45,7 +43,15 @@ function imageMime(bytes: Buffer): "image/png" | "image/jpeg" | "image/webp" | u
     return "image/webp";
   return undefined;
 }
+function fileMime(name: string): string {
+  if (/\.(txt|log|md|markdown|csv|tsv|yaml|yml|toml|ini|sh|py|js|ts|tsx|jsx|css|sql)$/i.test(name))
+    return "text/plain";
+  if (/\.json$/i.test(name)) return "application/json";
+  if (/\.pdf$/i.test(name)) return "application/pdf";
+  return "application/octet-stream";
+}
 export function uploadResource(row: Selectable<SessionUploadTable>): UserUpload {
+  const source = row.source_reference ? parseAttachmentReference(row.source_reference) : undefined;
   return parseUserUpload({
     id: row.id,
     sessionId: row.session_id,
@@ -55,7 +61,11 @@ export function uploadResource(row: Selectable<SessionUploadTable>): UserUpload 
     mimeType: row.mime_type,
     byteLength: Number(row.byte_length),
     sha256: row.sha256,
-    ...(row.image_reference ? { image: parseImageAttachmentReference(row.image_reference) } : {}),
+    ...(source
+      ? ["image/png", "image/jpeg", "image/webp"].includes(source.mimeType)
+        ? { image: parseImageAttachmentReference(source) }
+        : { original: { type: "pi_cloud_attachment_v1", attachment: source } }
+      : {}),
   });
 }
 
@@ -67,7 +77,7 @@ export class WorkspaceUploadService {
     readonly options: {
       database: Kysely<Database>;
       uploader?: WorkspaceUploader;
-      images?: ImageAttachmentStore & ImageUploadStore & ImageAttachmentSource;
+      images?: AttachmentUploadStore & AttachmentSource;
     },
   ) {}
 
@@ -79,6 +89,7 @@ export class WorkspaceUploadService {
     nameValue: string,
     content: UploadContent,
     signal?: AbortSignal,
+    retainedSource?: AttachmentReference,
   ): Promise<UserUpload> {
     let name: string;
     try {
@@ -103,16 +114,23 @@ export class WorkspaceUploadService {
       throw new ControlPlaneStoreError("invalid_request", "Upload stream failed its content check");
     });
     try {
-      const mimeType = imageMime(source.prefix);
-      if (!mimeType && /\.(png|jpe?g|webp|gif|bmp|avif|heic)$/i.test(name))
+      const visualMime = imageMime(source.prefix);
+      const mimeType = retainedSource?.mimeType ?? visualMime ?? fileMime(name);
+      if (
+        retainedSource &&
+        (retainedSource.sha256 !== content.sha256 ||
+          retainedSource.byteLength !== content.byteLength)
+      )
+        conflict("Retained original changed identity");
+      if (!visualMime && /\.(png|jpe?g|webp|gif|bmp|avif|heic)$/i.test(name))
         throw new ControlPlaneStoreError(
           "invalid_request",
           "Visual input supports PNG, JPEG and WebP images",
         );
-      if (mimeType && !this.options.images)
+      if (!this.options.images)
         throw new ControlPlaneStoreError(
           "control_plane_misconfigured",
-          "Image attachment storage is unavailable",
+          "Attachment storage is unavailable",
         );
       const sha256 = content.sha256,
         claimToken = randomUUID();
@@ -148,6 +166,13 @@ export class WorkspaceUploadService {
             "not_found",
             "Development environment is not owned by this user",
           );
+        if (retainedSource) {
+          const { rows } = await sql`select id from session_attachment_objects
+            where tenant_id=${tenantId}::uuid and id=${retainedSource.id}::uuid and state='ready'
+              and sha256=${retainedSource.sha256} and byte_length=${retainedSource.byteLength}
+              and mime_type=${retainedSource.mimeType} for share`.execute(tx);
+          if (!rows.length) conflict("Retained original is unavailable");
+        }
         const existing = await tx
           .selectFrom("session_uploads")
           .selectAll()
@@ -167,7 +192,11 @@ export class WorkspaceUploadService {
             conflict(
               "Upload identity was already used for different content or a different Workspace",
             );
-          if (existing.state === "ready") return { session, ready: uploadResource(existing) };
+          if (existing.state === "ready") {
+            if (!existing.source_reference)
+              conflict("Upload has no retained original; upload the file again");
+            return { session, ready: uploadResource(existing) };
+          }
           const updated = await tx
             .updateTable("session_uploads")
             .set({
@@ -175,6 +204,9 @@ export class WorkspaceUploadService {
               claim_token: claimToken,
               lease_expires_at: sql`clock_timestamp() + interval '2 minutes'`,
               expires_at: sql`clock_timestamp() + ${USER_UPLOAD_DRAFT_TTL_MS} * interval '1 millisecond'`,
+              ...(retainedSource
+                ? { attachment_id: retainedSource.id, source_reference: { ...retainedSource } }
+                : {}),
             })
             .where("id", "=", id)
             .where((eb) =>
@@ -199,13 +231,14 @@ export class WorkspaceUploadService {
               working_directory: session.working_directory,
               name,
               path: posix.join(session.working_directory, uploadRelativePath(id, name)),
-              mime_type: mimeType ?? "application/octet-stream",
+              mime_type: mimeType,
               byte_length: content.byteLength,
               sha256,
               state: "uploading",
               claim_token: claimToken,
               lease_expires_at: sql`clock_timestamp() + interval '2 minutes'`,
-              image_reference: null,
+              attachment_id: retainedSource?.id ?? null,
+              source_reference: retainedSource ? { ...retainedSource } : null,
               expires_at: sql`clock_timestamp() + ${USER_UPLOAD_DRAFT_TTL_MS} * interval '1 millisecond'`,
             })
             .execute();
@@ -251,7 +284,6 @@ export class WorkspaceUploadService {
           });
       }, 30_000);
       timer.unref();
-      let fork: ReturnType<typeof forkUpload> | undefined;
       try {
         combined.throwIfAborted();
         const session = claimed.session;
@@ -286,33 +318,25 @@ export class WorkspaceUploadService {
             : session.working_directory.slice("/workspace".length).replace(/^\//, ""),
           ...(machine ? { machine } : {}),
         };
-        if (mimeType) fork = forkUpload(source.chunks, combined);
-        const transfer = this.options.uploader.uploadWorkspaceFile(
-          request,
-          fork?.workspace ?? source.chunks,
-          combined,
-        );
-        const archival = mimeType
-          ? this.options.images!.putStream(
-              { tenantId, uploadId: id, claimToken },
-              { ...content, chunks: fork!.image },
-              mimeType,
+        // Preserve the immutable original before touching the mutable Workspace.
+        // Placement streams from S3; neither stage buffers the complete file.
+        const original =
+          retainedSource ??
+          (await this.options.images.putStream(
+            { tenantId, uploadId: id, claimToken },
+            { ...content, chunks: source.chunks },
+            mimeType,
+            combined,
+          ));
+        const receipt = retainedSource
+          ? await this.options.uploader.uploadWorkspaceFile(request, source.chunks, combined)
+          : await this.options.images.withStream(
+              tenantId,
+              original,
+              (chunks, active) =>
+                this.options.uploader!.uploadWorkspaceFile(request, chunks, active),
               combined,
-            )
-          : Promise.resolve(undefined);
-        // Join both effects on failure before releasing the claim. The sibling
-        // cannot keep publishing after a new retry takes ownership.
-        const results = await Promise.allSettled(
-          [transfer, archival].map((promise) =>
-            promise.catch((error) => {
-              controller.abort(error);
-              throw error;
-            }),
-          ),
-        );
-        for (const result of results) if (result.status === "rejected") throw result.reason;
-        const receipt = (results[0] as PromiseFulfilledResult<Awaited<typeof transfer>>).value;
-        const image = (results[1] as PromiseFulfilledResult<Awaited<typeof archival>>).value;
+            );
         if (
           receipt.sha256 !== sha256 ||
           receipt.byteLength !== content.byteLength ||
@@ -321,18 +345,18 @@ export class WorkspaceUploadService {
           throw new Error("Workspace upload receipt changed identity");
         combined.throwIfAborted();
         const row = await db.transaction().execute(async (tx) => {
-          if (image) {
-            const { rows } = await sql<{ id: string }>`select id from session_image_objects
-            where tenant_id=${tenantId}::uuid and id=${image.id}::uuid and state='ready'
+          {
+            const { rows } = await sql<{ id: string }>`select id from session_attachment_objects
+            where tenant_id=${tenantId}::uuid and id=${original.id}::uuid and state='ready'
             for update`.execute(tx);
-            if (!rows.length) conflict("Image attachment expired before the upload completed");
+            if (!rows.length) conflict("Attachment expired before the upload completed");
           }
           return tx
             .updateTable("session_uploads as u")
             .set({
               state: "ready",
-              image_id: image?.id ?? null,
-              image_reference: image ? { ...image } : null,
+              attachment_id: original.id,
+              source_reference: { ...original },
             })
             .where("u.id", "=", id)
             .where("u.claim_token", "=", claimToken)
@@ -365,7 +389,6 @@ export class WorkspaceUploadService {
         clearInterval(timer);
         await renewal;
         controller.abort();
-        fork?.close();
         this.#active.delete(activeKey);
         finished.resolve();
       }
@@ -428,9 +451,9 @@ export class WorkspaceUploadService {
         .executeTakeFirst(),
     );
     signal?.throwIfAborted();
-    if (!row?.image_reference || !this.options.images)
+    if (!row?.source_reference || !this.options.images)
       throw new ControlPlaneStoreError("not_found", "Image attachment is unavailable");
-    const image = parseImageAttachmentReference(row.image_reference);
+    const image = parseImageAttachmentReference(row.source_reference);
     return this.options.images.withStream(
       tenantId,
       image,
@@ -465,6 +488,7 @@ export async function bindInputUploads(
     .where("working_directory", "=", input.workingDirectory)
     .where("id", "in", input.ids)
     .where("state", "=", "ready")
+    .where("attachment_id", "is not", null)
     .where((eb) =>
       eb.or([
         eb("accepted_at", "is not", null),

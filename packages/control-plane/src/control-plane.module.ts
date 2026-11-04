@@ -5,11 +5,11 @@ import { ConversationCompactService } from "./conversation-compact-service.ts";
 import { Module, type DynamicModule } from "@nestjs/common";
 import { ControlPlaneController } from "./control-plane.controller.ts";
 import { WorkspaceUploadService, type WorkspaceUploader } from "./workspace-upload-service.ts";
-import { SessionImageReader } from "./session-image-reader.ts";
+import { SessionAttachmentReader } from "./session-attachment-reader.ts";
 import type {
   ImageAttachmentStore,
-  ImageUploadStore,
-  ImageAttachmentSource,
+  AttachmentUploadStore,
+  AttachmentSource,
 } from "@pi-cloud/session-attachments";
 import type { ControlPlaneStoreOptions } from "./control-plane-store.ts";
 import { ControlPlaneStoreFactory } from "./control-plane-store-factory.ts";
@@ -54,7 +54,7 @@ export type ControlPlaneModuleOptions = Omit<
   publicRegistration?: PublicTenantRegistrationConfiguration;
   workspaceBrowser?: TrustedWorkspaceBrowser;
   workspaceUploader?: WorkspaceUploader;
-  imageAttachmentStore?: ImageAttachmentStore & ImageUploadStore & ImageAttachmentSource;
+  imageAttachmentStore?: ImageAttachmentStore & AttachmentUploadStore & AttachmentSource;
   webAuthentication?: WebAuthenticationService;
   platformOperatorTenantId?: string;
   platformModelSourceTenantId?: string;
@@ -135,8 +135,8 @@ export class ControlPlaneModule {
             options.executionTargets ?? new ExecutionTargetService({ database: options.database }),
         },
         {
-          provide: SessionImageReader,
-          useValue: new SessionImageReader(options.database, options.imageAttachmentStore),
+          provide: SessionAttachmentReader,
+          useValue: new SessionAttachmentReader(options.database, options.imageAttachmentStore),
         },
         {
           provide: WorkspaceUploadService,

@@ -11,7 +11,7 @@ import { createPrivateTenant } from "../packages/control-plane/src/tenant-admini
 import { previewToolDefinition } from "../packages/control-plane/src/ordinary-tools/preview-tool.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { uploadRelativePath } from "../packages/protocol/src/user-upload.ts";
-import { S3ImageBlobStore } from "../packages/session-attachments/src/s3.ts";
+import { S3AttachmentBlobStore } from "../packages/session-attachments/src/s3.ts";
 import {
   runtimeDirectory,
   runtimeEnvironment,
@@ -362,7 +362,7 @@ cat '${path}'; echo CONTROL_RELEASE_TOOL_DONE`;
           ).length,
         "Owned controls",
       );
-      const blobs = new S3ImageBlobStore({
+      const blobs = new S3AttachmentBlobStore({
         endpoint: `http://${serviceAddress("session-images")}:8333`,
         region: "us-east-1",
         bucket: "pi-cloud-session-images",

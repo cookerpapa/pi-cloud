@@ -19,7 +19,7 @@ import {
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
 import { Type } from "@earendil-works/pi-ai";
-import { ImageAttachmentCodec, PostgresImageAttachmentStore } from "@pi-cloud/session-attachments";
+import { ImageAttachmentCodec, PostgresAttachmentStore } from "@pi-cloud/session-attachments";
 
 let database: Kysely<Database>, admin: Pool, name: string;
 beforeAll(async () => {
@@ -1383,7 +1383,7 @@ it("externalizes every image in real Harness submissions, Tool results and copie
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2uV8AAAAASUVORK5CYII=";
   const image = { type: "image" as const, data, mimeType: "image/png" };
   const objects = new Map<string, Buffer>();
-  const attachmentStore = new PostgresImageAttachmentStore(database, {
+  const attachmentStore = new PostgresAttachmentStore(database, {
     async put(key, bytes) {
       objects.set(key, Buffer.from(bytes));
     },
@@ -1481,7 +1481,7 @@ it("externalizes every image in real Harness submissions, Tool results and copie
     const bodies = await sql<{ body: string }>`select body from pi_durable_log
       where tenant_id=${f.tenantId}::uuid and session_id=${f.sessionId}`.execute(database);
     expect(JSON.stringify(bodies.rows)).not.toContain(data);
-    await sql`update session_image_objects set created_at=clock_timestamp()-interval '2 days'
+    await sql`update session_attachment_objects set created_at=clock_timestamp()-interval '2 days'
       where tenant_id=${f.tenantId}::uuid`.execute(database);
     expect(await attachmentStore.reap(1000)).toBe(0);
     const reader = new DurablePostgresProjection(

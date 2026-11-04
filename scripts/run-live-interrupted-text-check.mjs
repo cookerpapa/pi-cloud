@@ -7,7 +7,7 @@ import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
-import { S3ImageBlobStore } from "../packages/session-attachments/src/s3.ts";
+import { S3AttachmentBlobStore } from "../packages/session-attachments/src/s3.ts";
 import {
   INTERRUPTED_TEXT_ENTRY,
   INTERRUPTION_MARKER,
@@ -35,7 +35,7 @@ await mkdir(directory, { recursive: true, mode: 0o700 });
 const url = new URL((await readFile(`${runtimeDirectory}/secrets/database-url`, "utf8")).trim());
 url.hostname = serviceAddress("postgres");
 const db = createDatabase({ connectionString: url.toString(), maxConnections: 2 });
-const blobs = new S3ImageBlobStore({
+const blobs = new S3AttachmentBlobStore({
   endpoint: `http://${serviceAddress("session-images")}:8333`,
   bucket: "pi-cloud-session-images",
   region: "us-east-1",

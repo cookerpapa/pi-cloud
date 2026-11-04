@@ -1,5 +1,14 @@
 # Implementation roadmap
 
+## Retained user originals and long paste — source verified, publication pending
+
+[ADR-0294](adr/0294-retained-user-attachments.md) and
+[Issue #2](https://github.com/cookerpapa/pi-cloud/issues/2) define automatic editable
+text attachments, original retention, native queue references and shared Fork
+lifetimes. Reuse existing attachment infrastructure; no Pi core changes or second
+input queue. Source, failure, PG/native and browser acceptance passed; the owner
+authorized resumption and matched publication. [Evidence](reports/retained-user-attachments-20261104.md).
+
 ## Skill creation entry — deployed
 
 Create Skill is the Skills page header action. The top-level Import entry is

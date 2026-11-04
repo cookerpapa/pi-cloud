@@ -1000,8 +1000,8 @@ export interface SessionUploadTable {
   state: "uploading" | "ready" | "failed";
   claim_token: string;
   lease_expires_at: Timestamp;
-  image_id: GeneratedNullable<string>;
-  image_reference: JsonValue;
+  attachment_id: GeneratedNullable<string>;
+  source_reference: JsonValue;
   accepted_at: NullableTimestamp;
   created_at: GeneratedTimestamp;
   expires_at: Timestamp;

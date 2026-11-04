@@ -13,7 +13,7 @@ import { ControlPlaneStore } from "../../packages/control-plane/src/control-plan
 import { createHash, randomUUID } from "node:crypto";
 import { sql } from "kysely";
 import { DurablePostgresProjection } from "../../packages/pi-session-postgres/src/durable/index.ts";
-import { PostgresImageAttachmentStore } from "../../packages/session-attachments/src/store.ts";
+import { PostgresAttachmentStore } from "../../packages/session-attachments/src/store.ts";
 
 let pg, database, api, settings, actor;
 it("refreshes siblings withdrawn by Stop and uses the queue revision for still-queued cleanup", async () => {
@@ -199,7 +199,7 @@ it("retains an owned tenant while its image writer has no completion proof", asy
       deleted++;
     },
   };
-  const store = new PostgresImageAttachmentStore(database, blobs);
+  const store = new PostgresAttachmentStore(database, blobs);
   const writing = store.put({ tenantId: tenant.tenantId }, Buffer.from("owned"), "image/png");
   try {
     await entered.promise;
@@ -227,7 +227,7 @@ it("removes only the settled fixture's retained image edges before its objects",
   });
   const deleted = [],
     blobs = { put: async () => {}, delete: async (key) => deleted.push(key) },
-    images = new PostgresImageAttachmentStore(database, blobs);
+    images = new PostgresAttachmentStore(database, blobs);
   const image = await images.put(
       { tenantId: tenant.tenantId },
       Buffer.from("fixture"),
@@ -269,7 +269,7 @@ it("removes only the settled fixture's retained image edges before its objects",
     values(${tenant.tenantId}::uuid,${header}::uuid,'metadata',${createHash("sha256").update(text).digest("hex")},${text},${Buffer.byteLength(text)})`.execute(
     database,
   );
-  await sql`insert into pi_history_header_images(tenant_id,body_id,image_id) values(${tenant.tenantId}::uuid,${header}::uuid,${image.id}::uuid)`.execute(
+  await sql`insert into pi_history_header_attachments(tenant_id,body_id,attachment_id) values(${tenant.tenantId}::uuid,${header}::uuid,${image.id}::uuid)`.execute(
     database,
   );
   const block = randomUUID(),
@@ -286,7 +286,7 @@ it("removes only the settled fixture's retained image edges before its objects",
   );
   expect(
     (
-      await sql`select * from pi_history_record_images where tenant_id=${tenant.tenantId}::uuid`.execute(
+      await sql`select * from pi_history_record_attachments where tenant_id=${tenant.tenantId}::uuid`.execute(
         database,
       )
     ).rows,
@@ -304,7 +304,7 @@ it("removes only the settled fixture's retained image edges before its objects",
   expect(deleted).toEqual([`session-images/${tenant.tenantId}/${image.id}`]);
   expect(
     await database
-      .selectFrom("session_image_objects")
+      .selectFrom("session_attachment_objects")
       .select("id")
       .where("tenant_id", "=", actor.tenantId)
       .where("id", "=", operatorImage.id)

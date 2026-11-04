@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { mkdtemp, readFile, writeFile, rm, cp, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +13,8 @@ import { ControlPlaneStore } from "../../packages/control-plane/src/control-plan
 import { ConversationReader } from "../../packages/control-plane/src/conversation-reader.ts";
 import { appendNativeFixture } from "../../packages/control-plane/test/fixtures/durable-native.ts";
 import { createTestWorker } from "../../packages/control-plane/test/admit-test-execution.ts";
-import { PostgresImageAttachmentStore } from "../../packages/session-attachments/src/store.ts";
+import { PostgresAttachmentStore } from "../../packages/session-attachments/src/store.ts";
+import { WorkspaceUploadService } from "../../packages/control-plane/src/workspace-upload-service.ts";
 import { readDurableEntries } from "../../packages/pi-session-postgres/src/durable/history.ts";
 import { DurablePostgresProjection } from "../../packages/pi-session-postgres/src/durable/postgres-projection.ts";
 
@@ -29,6 +30,7 @@ let pg,
   bytes,
   before,
   beforeCurrent;
+let textUpload, textBytes;
 const names = ["source", "target"].map(
   (kind) => `recovery_${kind}_${randomUUID().replaceAll("-", "")}`,
 );
@@ -75,11 +77,52 @@ beforeAll(async () => {
     prompt: "Keep this image and Tool history",
   });
   scope = { ...tenant, ...project, ...session, ...accepted };
+  textBytes = Buffer.from("原始日志\r\n" + "字".repeat(50_000));
+  const originalStore = new PostgresAttachmentStore(source, sourceImages.blobs);
+  const uploads = new WorkspaceUploadService({
+    database: source,
+    images: originalStore,
+    uploader: {
+      async uploadWorkspaceFile(request, chunks) {
+        let byteLength = 0;
+        for await (const chunk of chunks) byteLength += chunk.byteLength;
+        return {
+          relativePath: `uploads/${request.uploadId}/${request.name}`,
+          byteLength,
+          sha256: request.sha256,
+        };
+      },
+    },
+  });
+  textUpload = await uploads.upload(
+    tenant.tenantId,
+    tenant.ownerUserId,
+    session.sessionId,
+    randomUUID(),
+    "pasted.txt",
+    {
+      byteLength: textBytes.length,
+      sha256: createHash("sha256").update(textBytes).digest("hex"),
+      chunks: (async function* () {
+        yield textBytes;
+      })(),
+    },
+  );
+  await source
+    .updateTable("session_uploads")
+    .set({ accepted_at: new Date() })
+    .where("id", "=", textUpload.id)
+    .execute();
+  await source
+    .updateTable("runs")
+    .set({ input_uploads: sql`${JSON.stringify([textUpload])}::jsonb` })
+    .where("id", "=", accepted.runId)
+    .execute();
   bytes = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aDXsAAAAASUVORK5CYII=",
     "base64",
   );
-  image = await new PostgresImageAttachmentStore(source, sourceImages.blobs).put(
+  image = await new PostgresAttachmentStore(source, sourceImages.blobs).put(
     scope,
     bytes,
     "image/png",
@@ -317,8 +360,11 @@ it("uses real pg_dump and includes independently verified immutable image bytes"
     directory: bundle(),
     revision,
   });
-  expect(manifest.images).toHaveLength(1);
-  expect(manifest.images[0].sha256).toBe(image.sha256);
+  expect(manifest.images).toHaveLength(2);
+  expect(manifest.images.find((object) => object.id === image.id).sha256).toBe(image.sha256);
+  expect(
+    manifest.images.find((object) => object.id === textUpload.original.attachment.id).sha256,
+  ).toBe(textUpload.sha256);
   expect((await stat(bundle())).mode & 0o777).toBe(0o700);
   expect((await stat(join(bundle(), "database.dump"))).mode & 0o777).toBe(0o600);
   expect(await verifyAssetBackup(bundle())).toEqual(manifest);
@@ -384,6 +430,12 @@ it("restores after source loss, preserves exact native history/images and admits
     }),
   );
   expect(result.restored).toBe(true);
+  expect(
+    await new PostgresAttachmentStore(target, targetImages.blobs).get(
+      scope.tenantId,
+      textUpload.original.attachment,
+    ),
+  ).toEqual(textBytes);
   expect(await logs(target)).toEqual(before);
   expect(await currentValues(target)).toEqual(beforeCurrent);
   await new DurablePostgresProjection(target, {
@@ -392,7 +444,7 @@ it("restores after source loss, preserves exact native history/images and admits
   }).rebuild();
   expect(await currentValues(target)).toEqual(beforeCurrent);
   expect(
-    await new PostgresImageAttachmentStore(target, targetImages.blobs).get(scope.tenantId, image),
+    await new PostgresAttachmentStore(target, targetImages.blobs).get(scope.tenantId, image),
   ).toEqual(bytes);
   const reader = new ConversationReader(target, scope.tenantId);
   const conversation = await reader.getConversation(scope.sessionId);

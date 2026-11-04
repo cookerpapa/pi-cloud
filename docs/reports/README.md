@@ -1,5 +1,8 @@
 # Delivery and research evidence
 
+- [Retained user attachments](retained-user-attachments-20261104.md): long paste,
+  immutable originals, queue editing, Fork/recovery and source/publication status.
+
 - [Organization Skill market](organization-skill-market-20261101.md): compact internal
   discovery, local sharing, scoped installations and live member acceptance.
 - [Initial message placement](input-placement-20261101.md): transcript-first sending,

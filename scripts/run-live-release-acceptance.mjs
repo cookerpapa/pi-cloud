@@ -17,7 +17,7 @@ import {
   serviceAddress,
 } from "./lib/production-kubernetes.mjs";
 import { withChromePage } from "./lib/chrome-cdp.mjs";
-import { S3ImageBlobStore } from "../packages/session-attachments/src/s3.ts";
+import { S3AttachmentBlobStore } from "../packages/session-attachments/src/s3.ts";
 import {
   purgeOwnedAcceptanceTenant,
   settleOwnedAcceptanceRuns,
@@ -468,7 +468,7 @@ try {
       .where("credential_id", "=", tenant.credential.credentialId)
       .execute();
     if (!errors.length) {
-      const blobs = new S3ImageBlobStore({
+      const blobs = new S3AttachmentBlobStore({
         endpoint: `http://${serviceAddress("session-images")}:8333`,
         region: "us-east-1",
         bucket: "pi-cloud-session-images",

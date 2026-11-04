@@ -7,7 +7,7 @@ import { nativeSubagentFixture } from "./native-subagent-fixture.ts";
 import { WorkspaceUploadService, bindInputUploads } from "../src/workspace-upload-service.ts";
 import { settleUploadPins } from "../src/upload-input-pins.ts";
 import { QueuedInputService } from "../src/queued-input-service.ts";
-import { PostgresImageAttachmentStore } from "../../session-attachments/src/store.ts";
+import { PostgresAttachmentStore } from "../../session-attachments/src/store.ts";
 import { uploadRelativePath } from "../../protocol/src/user-upload.ts";
 import {
   createControlPlaneApplication,
@@ -18,7 +18,7 @@ import { emptyEventRuntime } from "./fixtures/event-runtime.ts";
 import { fixtureModelRuntime } from "../../../scripts/lib/test-model-catalog.mjs";
 
 let f: Awaited<ReturnType<typeof nativeSubagentFixture>>;
-let uploads: WorkspaceUploadService, images: PostgresImageAttachmentStore;
+let uploads: WorkspaceUploadService, images: PostgresAttachmentStore;
 let app: NestFastifyApplication;
 const blobs = new Map<string, Buffer>();
 let holdPut: (() => Promise<void>) | undefined;
@@ -79,7 +79,7 @@ beforeAll(async () => {
       };
     },
   };
-  images = new PostgresImageAttachmentStore(f.database, {
+  images = new PostgresAttachmentStore(f.database, {
     async put(key, bytes) {
       blobs.set(key, Buffer.from(bytes));
     },
@@ -170,7 +170,7 @@ it("releases only the provisional upload pin when native delivery was definitely
     .set({ expires_at: new Date(0) })
     .where("id", "=", image.id)
     .execute();
-  await sql`update session_image_objects set created_at=to_timestamp(0) where id=${image.image!.id}::uuid`.execute(
+  await sql`update session_attachment_objects set created_at=to_timestamp(0) where id=${image.image!.id}::uuid`.execute(
     f.database,
   );
   await images.reap();
@@ -208,13 +208,13 @@ it.each(["after_reap", "during_delete"])(
       await entered.promise;
       const pin = await f.database
         .selectFrom("session_uploads")
-        .select("image_id")
+        .select("attachment_id")
         .where("id", "=", id)
         .executeTakeFirstOrThrow();
-      objectId = pin.image_id!;
+      objectId = pin.attachment_id!;
       // A progressing upload may outlive the GC grace. Its claim is still current;
       // age only the object to reach that legitimate deletion candidate boundary.
-      await sql`update session_image_objects set created_at=clock_timestamp()-interval '2 days'
+      await sql`update session_attachment_objects set created_at=clock_timestamp()-interval '2 days'
       where id=${objectId}::uuid`.execute(f.database);
       const removal = uploads.remove(f.tenant.tenantId, f.scope.sessionId, id);
       await vi.waitFor(async () =>
@@ -235,7 +235,7 @@ it.each(["after_reap", "during_delete"])(
       expect(await images.reap()).toBe(0);
       expect(
         (
-          await sql`select id from session_image_objects where id=${objectId}::uuid`.execute(
+          await sql`select id from session_attachment_objects where id=${objectId}::uuid`.execute(
             f.database,
           )
         ).rows,
@@ -244,7 +244,7 @@ it.each(["after_reap", "during_delete"])(
       await expect(pending).rejects.toMatchObject({ code: "conflict" });
       await removal;
       expect(blobs.has(`session-images/${f.tenant.tenantId}/${objectId}`)).toBe(true);
-      await sql`update session_image_objects set cleanup_available_at=to_timestamp(0) where id=${objectId}::uuid`.execute(
+      await sql`update session_attachment_objects set cleanup_available_at=to_timestamp(0) where id=${objectId}::uuid`.execute(
         f.database,
       );
       expect(await images.reap()).toBe(1);
@@ -370,15 +370,16 @@ it("can retire an image write that stopped before transmitting its complete body
   ).rejects.toMatchObject({ code: "conflict" });
   const row = await f.database
     .selectFrom("session_uploads")
-    .select(["state", "image_id"])
+    .select(["state", "attachment_id"])
     .where("id", "=", id)
     .executeTakeFirstOrThrow();
   expect(row.state).toBe("failed");
-  const ended = await sql`select id from session_image_objects where id=${row.image_id}::uuid
+  const ended =
+    await sql`select id from session_attachment_objects where id=${row.attachment_id}::uuid
     and state='uploading' and write_completed_at is not null`.execute(f.database);
   expect(ended.rows).toHaveLength(1);
   await uploads.remove(f.tenant.tenantId, f.scope.sessionId, id);
-  await sql`update session_image_objects set created_at=to_timestamp(0) where id=${row.image_id}::uuid`.execute(
+  await sql`update session_attachment_objects set created_at=to_timestamp(0) where id=${row.attachment_id}::uuid`.execute(
     f.database,
   );
   expect(await images.reap()).toBe(1);

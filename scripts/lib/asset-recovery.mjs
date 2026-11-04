@@ -7,7 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pipeline } from "node:stream/promises";
 import { Client } from "pg";
-import { parseImageAttachmentReference } from "../../packages/protocol/src/image-attachment.ts";
+import { parseAttachmentReference } from "../../packages/protocol/src/attachment-reference.ts";
 
 // Same adopted official image as the owned PostgreSQL integration fixture.
 const PG_IMAGE = "postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94";
@@ -118,7 +118,7 @@ async function fileIdentity(path) {
 
 function objectKey(image) {
   assert(uuid.test(image.tenantId), "Invalid attachment tenant");
-  parseImageAttachmentReference({
+  parseAttachmentReference({
     id: image.id,
     sha256: image.sha256,
     byteLength: image.byteLength,
@@ -179,8 +179,11 @@ export async function backupAssets({
     assert.deepEqual(applied, schema.migrations, "Source schema does not match this checkout");
     const snapshot = (await client.query("select pg_export_snapshot() as id")).rows[0].id;
     const images = (
-      await client.query(`select o.* from session_image_objects o where exists
-      (select 1 from session_image_references r where r.tenant_id=o.tenant_id and r.image_id=o.id)
+      await client.query(`select o.* from session_attachment_objects o where exists
+      (select 1 from session_attachment_references r where r.tenant_id=o.tenant_id and r.attachment_id=o.id)
+        or exists(select 1 from pi_history_record_attachments r where r.tenant_id=o.tenant_id and r.attachment_id=o.id)
+        or exists(select 1 from pi_history_header_attachments r where r.tenant_id=o.tenant_id and r.attachment_id=o.id)
+        or exists(select 1 from session_uploads u where u.tenant_id=o.tenant_id and u.attachment_id=o.id and u.accepted_at is not null)
       order by o.tenant_id,o.id`)
     ).rows.map((row) => {
       assert.equal(row.state, "ready", "Referenced image is not ready");

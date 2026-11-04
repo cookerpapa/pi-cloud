@@ -25,8 +25,8 @@ import type { RunActivityIngress } from "./run-activity-ingress.ts";
 import type { WorkspaceUploader } from "./workspace-upload-service.ts";
 import type {
   ImageAttachmentStore,
-  ImageUploadStore,
-  ImageAttachmentSource,
+  AttachmentUploadStore,
+  AttachmentSource,
 } from "@pi-cloud/session-attachments";
 
 export type ControlPlaneApplicationOptions = Omit<
@@ -48,7 +48,7 @@ export type ControlPlaneApplicationOptions = Omit<
   publicRegistration?: PublicTenantRegistrationConfiguration;
   workspaceBrowser?: TrustedWorkspaceBrowser;
   workspaceUploader?: WorkspaceUploader;
-  imageAttachmentStore?: ImageAttachmentStore & ImageUploadStore & ImageAttachmentSource;
+  imageAttachmentStore?: ImageAttachmentStore & AttachmentUploadStore & AttachmentSource;
   webAuthentication?: WebAuthenticationService;
   platformOperatorTenantId?: string;
   platformModelSourceTenantId?: string;

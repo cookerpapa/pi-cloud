@@ -156,7 +156,7 @@ export class DurableHumanInputs {
     if (!current) throw new NativeInputError("input_conflict", "Pending input was not found");
     const change = mutation.change;
     const uploads =
-      change.action === "edit" && change.uploads !== undefined
+      (change.action === "edit" || change.action === "steer") && change.uploads !== undefined
         ? [...change.uploads]
         : parseUserUploads(current.uploads);
     const text =
@@ -164,7 +164,8 @@ export class DurableHumanInputs {
         ? change.text
         : current.text;
     const content =
-      change.action === "edit" || (change.action === "steer" && change.text !== undefined)
+      change.action === "edit" ||
+      (change.action === "steer" && (change.text !== undefined || change.uploads !== undefined))
         ? await this.options.prepare(text, uploads)
         : undefined;
     let replayed = false;

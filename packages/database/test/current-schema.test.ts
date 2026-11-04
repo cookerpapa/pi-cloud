@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(207);
+      expect(firstMigrationPass.rows).toHaveLength(208);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("207_skill_runtime_metadata");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("208_retained_user_attachments");
       const terminalColumns = await sql<{ column_name: string }>`select column_name
         from information_schema.columns where table_name='workspace_terminal_sessions'`.execute(
         database,
@@ -118,8 +118,8 @@ describe("current PiCloud schema", () => {
         "agent_revisions",
         "source_control_issue_claims",
         "gitlab_issue_note_sync",
-        "session_image_objects",
-        "session_image_references",
+        "session_attachment_objects",
+        "session_attachment_references",
       ]) {
         expect(names.has(required), `missing current table ${required}`).toBe(true);
       }

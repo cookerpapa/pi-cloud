@@ -1,5 +1,15 @@
 # Matched release procedure
 
+ADR-0294 requires schema 208 and matched Control Plane/Worker/Web publication.
+The existing object inventory and history reference indexes now cover ordinary
+uploaded originals as well as images; S3 keys and image codec remain unchanged.
+Run the upload/claim, native edited-Steer, shared-Fork/GC and asset-recovery checks,
+and `PI_CLOUD_BROWSER_SCOPE=attachments npm run browser:presentation:check`.
+Preserve accounts, configuration and existing originals. New uploads retain their
+source before Workspace placement. An operator-paused deployment stays paused
+until its restart is authorized; report source and live acceptance separately.
+
+
 The current Cloud Skill runtime is `cloud-skills-20261101-r5` (source `b891ab2c`,
 schema 207, catalog protocol 4). It includes Worker catalog metadata, named
 activation and fixed guest package export. All matched gates, real publication and

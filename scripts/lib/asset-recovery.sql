@@ -38,6 +38,10 @@ delete from source_control_issue_claims;
 delete from source_control_webhook_deliveries;
 delete from source_control_issue_jobs;
 delete from web_sessions;
+-- Accepted user originals survive removal of old Workspace placement tickets.
+insert into session_attachment_references(tenant_id,session_id,attachment_id)
+  select tenant_id,pi_session_id,attachment_id from session_uploads
+  where accepted_at is not null and attachment_id is not null on conflict do nothing;
 delete from session_uploads;
 delete from workspace_delete_operations;
 delete from conversation_workspace_rebind_operations;
@@ -56,6 +60,8 @@ update sessions s set workspace_id=m.new_id from recovered_workspaces m
   where s.workspace_id=m.old_id and s.pruned_at is null;
 update sandbox_domains d set assigned_workspaces=(select count(*) from workspaces w
   where w.sandbox_domain_id=d.id and w.deleted_at is null);
--- Source image uploads without durable reachability are not part of the bundle.
-delete from session_image_objects o where not exists
-  (select 1 from session_image_references r where r.tenant_id=o.tenant_id and r.image_id=o.id);
+-- Unreferenced upload staging is not part of the conversation asset bundle.
+delete from session_attachment_objects o where not exists
+  (select 1 from session_attachment_references r where r.tenant_id=o.tenant_id and r.attachment_id=o.id)
+  and not exists(select 1 from pi_history_record_attachments r where r.tenant_id=o.tenant_id and r.attachment_id=o.id)
+  and not exists(select 1 from pi_history_header_attachments r where r.tenant_id=o.tenant_id and r.attachment_id=o.id);

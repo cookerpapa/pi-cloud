@@ -2,6 +2,10 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { UuidSchema } from "./protocol-primitives.ts";
 import { ImageAttachmentReferenceSchema } from "./image-attachment.ts";
+import {
+  StoredAttachmentReferenceSchema,
+  type AttachmentReference,
+} from "./attachment-reference.ts";
 
 export const USER_UPLOAD_DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -16,6 +20,7 @@ export const UserUploadSchema = Type.Object(
     byteLength: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
     sha256: Type.String({ pattern: "^[0-9a-f]{64}$" }),
     image: Type.Optional(ImageAttachmentReferenceSchema),
+    original: Type.Optional(StoredAttachmentReferenceSchema),
   },
   { additionalProperties: false },
 );
@@ -24,6 +29,22 @@ export const UserUploadsSchema = Type.Array(UserUploadSchema);
 export const UserUploadIdsSchema = Type.Array(UuidSchema, {
   uniqueItems: true,
 });
+
+export const ReuseAttachmentRequestSchema = Type.Object(
+  {
+    sourceSessionId: UuidSchema,
+    attachmentId: UuidSchema,
+    name: Type.String({ minLength: 1, maxLength: 200 }),
+  },
+  { additionalProperties: false },
+);
+export type ReuseAttachmentRequest = Static<typeof ReuseAttachmentRequestSchema>;
+export function parseReuseAttachmentRequest(value: unknown): ReuseAttachmentRequest {
+  if (!Value.Check(ReuseAttachmentRequestSchema, value))
+    throw new Error("Invalid attachment reuse request");
+  uploadFileName(value.name);
+  return value;
+}
 
 export const WorkspaceUploadRequestSchema = Type.Object(
   {
@@ -63,7 +84,19 @@ export function parseWorkspaceUploadRequest(value: unknown): WorkspaceUploadRequ
 export function parseUserUpload(value: unknown): UserUpload {
   if (!Value.Check(UserUploadSchema, value)) throw new Error("Invalid uploaded file metadata");
   uploadFileName(value.name);
+  const source = userUploadSource(value);
+  if (value.image && value.original) throw new Error("Duplicate uploaded original");
+  if (
+    source &&
+    (source.sha256 !== value.sha256 ||
+      source.byteLength !== value.byteLength ||
+      source.mimeType !== value.mimeType)
+  )
+    throw new Error("Uploaded original metadata changed");
   return value;
+}
+export function userUploadSource(upload: UserUpload): AttachmentReference | undefined {
+  return upload.image ?? upload.original?.attachment;
 }
 export function parseUserUploads(value: unknown): UserUpload[] {
   if (!Value.Check(UserUploadsSchema, value)) throw new Error("Invalid input attachments");

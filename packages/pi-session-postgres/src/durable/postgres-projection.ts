@@ -13,7 +13,7 @@ import { databaseReadSignal, type Database } from "@pi-cloud/database";
 import { validateImageReferencePayload, type DurableRecordOrigin } from "@pi-cloud/protocol";
 import {
   decodeSessionImages,
-  retainSessionImages,
+  retainSessionAttachments,
   type ImageAttachmentCodec,
 } from "@pi-cloud/session-attachments";
 import type {
@@ -563,7 +563,7 @@ export class DurablePostgresProjection {
         },
       ];
     });
-    await retainSessionImages(tx, this.scope, stored);
+    await retainSessionAttachments(tx, this.scope, stored);
     await sql`insert into pi_durable_commits(tenant_id,session_id,seq,next_id,fingerprint,write_count,history_write_count,history_fingerprint,current_hashes,cloud_metadata)
       values(${this.scope.tenantId}::uuid,${this.scope.sessionId},${batch.seq},${batch.nextId},${fingerprint},${batch.writes.length},${history.length},${historyFingerprint(history)},${JSON.stringify(Object.fromEntries(current.rows.map((row) => [row.id, currentStateFingerprint(row)])))}::jsonb,${cloudMetadata === undefined ? null : JSON.stringify(cloudMetadata)})`.execute(
       tx,

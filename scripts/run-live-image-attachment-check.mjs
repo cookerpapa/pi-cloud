@@ -9,8 +9,8 @@ import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { sql } from "kysely";
 import {
-  S3ImageBlobStore,
-  PostgresImageAttachmentStore,
+  S3AttachmentBlobStore,
+  PostgresAttachmentStore,
 } from "../packages/session-attachments/src/index.ts";
 
 if (process.env.PI_CLOUD_LIVE_IMAGE_CHECK !== "1")
@@ -30,13 +30,13 @@ const address = serviceAddress;
 const pgurl = new URL((await readFile(`${runtime}/secrets/database-url`, "utf8")).trim());
 pgurl.hostname = address("postgres");
 const db = createDatabase({ connectionString: pgurl.toString(), maxConnections: 2 });
-const blobs = new S3ImageBlobStore({
+const blobs = new S3AttachmentBlobStore({
   endpoint: `http://${address("session-images")}:8333`,
   bucket: "pi-cloud-session-images",
   region: "us-east-1",
   ...JSON.parse(await readFile(`${runtime}/secrets/session-image-s3-credentials.json`, "utf8")),
 });
-const images = new PostgresImageAttachmentStore(db, blobs);
+const images = new PostgresAttachmentStore(db, blobs);
 const report = {
   checkedAt: new Date().toISOString(),
   scriptSha256: createHash("sha256")

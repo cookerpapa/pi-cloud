@@ -1,5 +1,5 @@
-import { PostgresImageAttachmentStore } from "@pi-cloud/session-attachments";
-import { SessionImageReader } from "../src/session-image-reader.ts";
+import { PostgresAttachmentStore } from "@pi-cloud/session-attachments";
+import { SessionAttachmentReader } from "../src/session-attachment-reader.ts";
 import { randomUUID, createHash } from "node:crypto";
 import { expect, it } from "vitest";
 import { sql } from "kysely";
@@ -47,7 +47,7 @@ it("converts schema-203 native bodies and frozen presentation once without chang
     );
     const run = await store.acceptTurn(owner.sessionId, randomUUID(), { prompt: "USER BEFORE" });
     const blobs = new Map<string, Buffer>();
-    const images = new PostgresImageAttachmentStore(db, {
+    const images = new PostgresAttachmentStore(db, {
       async put(key, bytes) {
         blobs.set(key, Buffer.from(bytes));
       },
@@ -60,10 +60,19 @@ it("converts schema-203 native bodies and frozen presentation once without chang
         blobs.delete(key);
       },
     });
-    const image = await images.put(
-      { tenantId: tenant.tenantId },
-      Buffer.from("MIGRATED-IMAGE"),
-      "image/png",
+    // This half of the fixture deliberately targets schema 203, before the
+    // common attachment inventory. Current storage is used after migration.
+    const original = Buffer.from("MIGRATED-IMAGE");
+    const image = {
+      id: randomUUID(),
+      byteLength: original.length,
+      sha256: sha(original.toString()),
+      mimeType: "image/png" as const,
+    };
+    blobs.set(`session-images/${tenant.tenantId}/${image.id}`, original);
+    await sql`insert into session_image_objects(tenant_id,id,state,sha256,byte_length,mime_type,write_completed_at)
+      values(${tenant.tenantId}::uuid,${image.id}::uuid,'ready',${image.sha256},${image.byteLength},${image.mimeType},clock_timestamp())`.execute(
+      db,
     );
     await sql`insert into session_image_references(tenant_id,session_id,image_id) values(${tenant.tenantId}::uuid,${owner.sessionId},${image.id}::uuid)`.execute(
       db,
@@ -240,7 +249,7 @@ it("converts schema-203 native bodies and frozen presentation once without chang
       "ANSWER BEFORE",
     );
     expect(await images.reap(0)).toBe(0);
-    const retainedImage = await new SessionImageReader(db, images).withImage(
+    const retainedImage = await new SessionAttachmentReader(db, images).withImage(
       tenant.tenantId,
       fork.session.sessionId,
       image.id,

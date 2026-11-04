@@ -1,11 +1,11 @@
-import type { PostgresImageAttachmentStore } from "./store.ts";
+import type { PostgresAttachmentStore } from "./store.ts";
 
-export class ImageAttachmentReaper {
+export class AttachmentReaper {
   readonly #timer: NodeJS.Timeout;
   #pending: Promise<unknown> | undefined;
   readonly #abort = new AbortController();
   constructor(
-    store: Pick<PostgresImageAttachmentStore, "reap">,
+    store: Pick<PostgresAttachmentStore, "reap">,
     onError: () => void,
     intervalMs = 60_000,
   ) {
@@ -24,7 +24,7 @@ export class ImageAttachmentReaper {
   }
   async close() {
     clearInterval(this.#timer);
-    this.#abort.abort(new Error("Image cleanup stopped"));
+    this.#abort.abort(new Error("Attachment cleanup stopped"));
     await this.#pending;
   }
 }

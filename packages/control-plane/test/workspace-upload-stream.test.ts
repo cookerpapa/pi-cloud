@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
 import { expect, it } from "vitest";
-import { verifiedUpload, sniffUpload, forkUpload } from "../src/workspace-upload-stream.ts";
+import { verifiedUpload, sniffUpload } from "../src/workspace-upload-stream.ts";
 
 async function collect(chunks: AsyncIterable<Uint8Array>) {
   const values: Buffer[] = [];
   for await (const chunk of chunks) values.push(Buffer.from(chunk));
   return Buffer.concat(values);
 }
-it("sniffs split signatures without losing bytes and verifies both backpressured destinations", async () => {
+it("sniffs split signatures without losing original bytes", async () => {
   const bytes = Buffer.from("some image signature and its body");
   const abort = new AbortController();
   const source = verifiedUpload(
@@ -22,17 +22,10 @@ it("sniffs split signatures without losing bytes and verifies both backpressured
   );
   const sniffed = await sniffUpload(source);
   expect(sniffed.prefix).toEqual(bytes.subarray(0, 12));
-  const fork = forkUpload(sniffed.chunks, abort.signal);
-  try {
-    expect(await Promise.all([collect(fork.workspace), collect(fork.image)])).toEqual([
-      bytes,
-      bytes,
-    ]);
-  } finally {
-    fork.close();
-  }
+  expect(await collect(sniffed.chunks)).toEqual(bytes);
+  await sniffed.close();
 });
-it("aborts a demanded stalled chunk and rejects corruption on both destinations", async () => {
+it("aborts a demanded stalled chunk and rejects corrupted original bytes", async () => {
   const abort = new AbortController();
   const stalled = verifiedUpload(
     {
@@ -48,23 +41,15 @@ it("aborts a demanded stalled chunk and rejects corruption on both destinations"
     20,
   );
   await expect(stalled.next()).rejects.toThrow("stopped making progress");
-  const bad = forkUpload(
-    verifiedUpload(
-      {
-        byteLength: 20,
-        sha256: "a".repeat(64),
-        chunks: (async function* () {
-          yield Buffer.alloc(20);
-        })(),
-      },
-      abort.signal,
-    ),
+  const bad = verifiedUpload(
+    {
+      byteLength: 20,
+      sha256: "a".repeat(64),
+      chunks: (async function* () {
+        yield Buffer.alloc(20);
+      })(),
+    },
     abort.signal,
   );
-  try {
-    const results = await Promise.allSettled([collect(bad.workspace), collect(bad.image)]);
-    expect(results.map((r) => r.status)).toEqual(["rejected", "rejected"]);
-  } finally {
-    bad.close();
-  }
+  await expect(collect(bad)).rejects.toThrow("digest");
 });

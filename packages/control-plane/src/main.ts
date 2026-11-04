@@ -56,7 +56,7 @@ import { SourceControlIssueCoordinator } from "./source-control-issue-coordinato
 import { GitLabIssueNoteReconciler } from "./gitlab-issue-note-reconciler.ts";
 import {
   configuredImageAttachments,
-  ImageAttachmentReaper,
+  AttachmentReaper,
   type ConfiguredImageAttachments,
 } from "@pi-cloud/session-attachments";
 import { SourceControlCredentialVault } from "./source-control-credential-vault.ts";
@@ -121,7 +121,7 @@ export async function startControlPlane(): Promise<void> {
   let issueNoteReconciler: GitLabIssueNoteReconciler | undefined;
   let images: ConfiguredImageAttachments | undefined;
   let imageGeneration: ImageGenerationClient | undefined;
-  let imageReaper: ImageAttachmentReaper | undefined;
+  let imageReaper: AttachmentReaper | undefined;
   let queueDatabase: ReturnType<typeof createDatabase> | undefined;
   let conversationDatabase: ReturnType<typeof createDatabase> | undefined;
   let executorTransport: HttpExecutorTransport | undefined;
@@ -212,7 +212,7 @@ export async function startControlPlane(): Promise<void> {
     if (images) await images.blobs.checkHealth();
     {
       const store = images?.store;
-      imageReaper = new ImageAttachmentReaper(
+      imageReaper = new AttachmentReaper(
         {
           async reap(grace, signal) {
             await reconcileUploadPins(maintenanceDatabase, signal);

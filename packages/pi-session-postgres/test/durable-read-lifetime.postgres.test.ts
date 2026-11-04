@@ -4,7 +4,7 @@ import { beforeAll, afterAll, expect, it, vi } from "vitest";
 import { sql, type Kysely } from "kysely";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { BACKGROUND_CONTEXT as context, withAbortSignal } from "@earendil-works/chord/context";
-import { ImageAttachmentCodec, PostgresImageAttachmentStore } from "@pi-cloud/session-attachments";
+import { ImageAttachmentCodec, PostgresAttachmentStore } from "@pi-cloud/session-attachments";
 import type { ImageAttachmentReference } from "@pi-cloud/protocol";
 import { DurablePostgresProjection, PublishedDurableStorage } from "../src/durable/index.ts";
 
@@ -50,7 +50,7 @@ async function fixture(
   const projection = new DurablePostgresProjection(database, scope, options.images);
   if (options.imageReference) {
     const ref = options.imageReference;
-    await sql`insert into session_image_objects(tenant_id,id,state,sha256,byte_length,mime_type)
+    await sql`insert into session_attachment_objects(tenant_id,id,state,sha256,byte_length,mime_type)
       values(${scope.tenantId}::uuid,${ref.id}::uuid,'ready',${ref.sha256},${ref.byteLength},${ref.mimeType})`.execute(
       database,
     );
@@ -232,7 +232,7 @@ it("cancels attachment inventory reads on the dedicated read pool", async () => 
   const f = await fixture(),
     bytes = Buffer.from("Owned image inventory");
   let bodyReads = 0;
-  const images = new PostgresImageAttachmentStore(
+  const images = new PostgresAttachmentStore(
     database,
     {
       put: async () => {},
@@ -248,7 +248,7 @@ it("cancels attachment inventory reads on the dedicated read pool", async () => 
   const lock = Promise.withResolvers<void>(),
     unlock = Promise.withResolvers<void>();
   const holder = database.transaction().execute(async (tx) => {
-    await sql`lock table session_image_objects in access exclusive mode`.execute(tx);
+    await sql`lock table session_attachment_objects in access exclusive mode`.execute(tx);
     lock.resolve();
     await unlock.promise;
   });
@@ -262,7 +262,7 @@ it("cancels attachment inventory reads on the dedicated read pool", async () => 
         (
           await sql<{
             n: number;
-          }>`select count(*)::int n from pg_stat_activity where datname=current_database() and wait_event_type='Lock' and query like '%session_image_objects%'`.execute(
+          }>`select count(*)::int n from pg_stat_activity where datname=current_database() and wait_event_type='Lock' and query like '%session_attachment_objects%'`.execute(
             database,
           )
         ).rows[0]!.n,

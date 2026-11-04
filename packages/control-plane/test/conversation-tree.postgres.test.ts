@@ -678,147 +678,160 @@ describe.skipIf(!endpoint)("Conversation tree durable Turn bindings", () => {
     );
   }, 30000);
 
-  it("retains uploaded images in the Fork and deletes unreferenced object bytes after source pruning", async () => {
-    const { PostgresImageAttachmentStore } = await import("@pi-cloud/session-attachments");
-    const { SessionImageReader } = await import("../src/session-image-reader.ts");
-    const { ConversationDeletionService } = await import("../src/conversation-deletion-service.ts");
-    const f = await fixture(),
-      bytes = new Map<string, Buffer>();
-    const images = new PostgresImageAttachmentStore(db, {
-      async put(key, value) {
-        bytes.set(key, Buffer.from(value));
-      },
-      async *readStream(key) {
-        const b = bytes.get(key);
-        if (!b) throw new Error("missing");
-        yield b;
-      },
-      async delete(key) {
-        bytes.delete(key);
-      },
-    });
-    const b = await f.turn("B", "completed"),
-      c = await f.turn("C", "completed");
-    const cImage = await images.put({ tenantId: f.tenantId }, Buffer.from("C image"), "image/png");
-    const upload = {
-      id: randomUUID(),
-      sessionId: f.session.sessionId,
-      workspaceId: f.project.workspaceId,
-      name: "C.png",
-      path: "/workspace/C.png",
-      mimeType: "image/png",
-      byteLength: cImage.byteLength,
-      sha256: cImage.sha256,
-      image: cImage,
-    };
-    await db
-      .updateTable("runs")
-      .set({ input_uploads: sql`${JSON.stringify([upload])}::jsonb` })
-      .where("id", "=", c.runId)
-      .execute();
-    await db
-      .insertInto("session_uploads")
-      .values({
-        id: upload.id,
-        tenant_id: f.tenantId,
-        session_id: f.session.sessionId,
-        pi_session_id: f.session.sessionId,
-        workspace_id: f.project.workspaceId,
-        actor_user_id: f.ownerUserId,
-        working_directory: "/workspace",
-        name: upload.name,
-        path: upload.path,
-        mime_type: upload.mimeType,
-        byte_length: String(upload.byteLength),
-        sha256: upload.sha256,
-        state: "ready",
-        claim_token: randomUUID(),
-        lease_expires_at: new Date(),
-        accepted_at: new Date(),
-        expires_at: new Date(Date.now() + 86400000),
-        image_id: cImage.id,
-        image_reference: cImage,
-      })
-      .execute();
-    for (const [index, t] of [b, c].entries())
+  it.each(["image/png", "text/plain"])(
+    "retains uploaded originals (%s) in the Fork and deletes bytes only after the last reference",
+    async (mimeType) => {
+      const { PostgresAttachmentStore } = await import("@pi-cloud/session-attachments");
+      const { SessionAttachmentReader } = await import("../src/session-attachment-reader.ts");
+      const { ConversationDeletionService } =
+        await import("../src/conversation-deletion-service.ts");
+      const f = await fixture(),
+        bytes = new Map<string, Buffer>();
+      const images = new PostgresAttachmentStore(db, {
+        async put(key, value) {
+          bytes.set(key, Buffer.from(value));
+        },
+        async *readStream(key) {
+          const b = bytes.get(key);
+          if (!b) throw new Error("missing");
+          yield b;
+        },
+        async delete(key) {
+          bytes.delete(key);
+        },
+      });
+      const b = await f.turn("B", "completed"),
+        c = await f.turn("C", "completed");
+      const cImage = await images.put(
+        { tenantId: f.tenantId },
+        Buffer.from("C original"),
+        mimeType,
+      );
+      const upload = {
+        id: randomUUID(),
+        sessionId: f.session.sessionId,
+        workspaceId: f.project.workspaceId,
+        name: mimeType === "image/png" ? "C.png" : "C.txt",
+        path: mimeType === "image/png" ? "/workspace/C.png" : "/workspace/C.txt",
+        mimeType,
+        byteLength: cImage.byteLength,
+        sha256: cImage.sha256,
+        ...(mimeType === "image/png"
+          ? { image: cImage }
+          : { original: { type: "pi_cloud_attachment_v1", attachment: cImage } }),
+      };
       await db
-        .insertInto("session_terminal_events")
+        .updateTable("runs")
+        .set({ input_uploads: sql`${JSON.stringify([upload])}::jsonb` })
+        .where("id", "=", c.runId)
+        .execute();
+      await db
+        .insertInto("session_uploads")
         .values({
-          event_id: randomUUID(),
+          id: upload.id,
           tenant_id: f.tenantId,
           session_id: f.session.sessionId,
-          turn_id: t.turnId,
-          run_id: t.runId,
-          agent_id: "root",
-          schema_version: 1,
-          seq: index + 1,
-          type: "turn.completed",
-          payload: { stopReason: "stop" },
-          occurred_at: new Date(),
+          pi_session_id: f.session.sessionId,
+          workspace_id: f.project.workspaceId,
+          actor_user_id: f.ownerUserId,
+          working_directory: "/workspace",
+          name: upload.name,
+          path: upload.path,
+          mime_type: upload.mimeType,
+          byte_length: String(upload.byteLength),
+          sha256: upload.sha256,
+          state: "ready",
+          claim_token: randomUUID(),
+          lease_expires_at: new Date(),
+          accepted_at: new Date(),
+          expires_at: new Date(Date.now() + 86400000),
+          attachment_id: cImage.id,
+          source_reference: cImage,
         })
         .execute();
-    const fork = await f.service.fork(f.tenantId, f.session.sessionId, randomUUID(), {
-      turnId: c.turnId,
-      entryId: c.answer!.id,
-    });
-    const e = await f.turn("E", "completed"),
-      eImage = await images.put({ tenantId: f.tenantId }, Buffer.from("E image"), "image/png");
-    await appendNativeFixture(
-      db,
-      { tenantId: f.tenantId, sessionId: f.session.sessionId, turnId: e.turnId, runId: e.runId },
-      [
-        {
-          kind: "pi.tool-result",
-          model: [
-            {
-              role: "toolResult",
-              toolCallId: "image-E",
-              toolName: "show_image",
-              isError: false,
-              timestamp: Date.now(),
-              content: [{ type: "pi_cloud_image_v1", attachment: eImage }],
-            },
-          ],
-        } as never,
-      ],
-    );
-    await f.service.prune(f.tenantId, f.session.sessionId, randomUUID(), {
-      turnId: b.turnId,
-      entryId: b.answer!.id,
-    });
-    const headers = await f.store.getConversation(fork.session.sessionId);
-    expect(headers.turns.find((t) => t.turnId === c.turnId)?.uploads?.[0]).toMatchObject({
-      sessionId: fork.session.sessionId,
-      image: cImage,
-    });
-    expect(
-      await db.selectFrom("session_uploads").select("id").where("id", "=", upload.id).execute(),
-    ).toHaveLength(0);
-    const reader = new SessionImageReader(db, images);
-    const read = await reader.withImage(
-      f.tenantId,
-      fork.session.sessionId,
-      cImage.id,
-      async (_r, chunks) => {
-        const b = [];
-        for await (const c of chunks) b.push(c);
-        return Buffer.concat(b).toString();
-      },
-      new AbortController().signal,
-    );
-    expect(read).toBe("C image");
-    await reapUnreferencedEntryBodies(db, 1024);
-    await images.reap(0);
-    expect([...bytes.keys()].some((k) => k.endsWith(eImage.id))).toBe(false);
-    expect([...bytes.keys()].some((k) => k.endsWith(cImage.id))).toBe(true);
-    await new ConversationDeletionService({ database: db }).delete(
-      f.tenantId,
-      fork.session.sessionId,
-    );
-    await reapUnreferencedEntryBodies(db, 1024);
-    await images.reap(0);
-    expect([...bytes.keys()].some((k) => k.endsWith(cImage.id))).toBe(false);
-  }, 30000);
+      for (const [index, t] of [b, c].entries())
+        await db
+          .insertInto("session_terminal_events")
+          .values({
+            event_id: randomUUID(),
+            tenant_id: f.tenantId,
+            session_id: f.session.sessionId,
+            turn_id: t.turnId,
+            run_id: t.runId,
+            agent_id: "root",
+            schema_version: 1,
+            seq: index + 1,
+            type: "turn.completed",
+            payload: { stopReason: "stop" },
+            occurred_at: new Date(),
+          })
+          .execute();
+      const fork = await f.service.fork(f.tenantId, f.session.sessionId, randomUUID(), {
+        turnId: c.turnId,
+        entryId: c.answer!.id,
+      });
+      const e = await f.turn("E", "completed"),
+        eImage = await images.put({ tenantId: f.tenantId }, Buffer.from("E image"), "image/png");
+      await appendNativeFixture(
+        db,
+        { tenantId: f.tenantId, sessionId: f.session.sessionId, turnId: e.turnId, runId: e.runId },
+        [
+          {
+            kind: "pi.tool-result",
+            model: [
+              {
+                role: "toolResult",
+                toolCallId: "image-E",
+                toolName: "show_image",
+                isError: false,
+                timestamp: Date.now(),
+                content: [{ type: "pi_cloud_image_v1", attachment: eImage }],
+              },
+            ],
+          } as never,
+        ],
+      );
+      await f.service.prune(f.tenantId, f.session.sessionId, randomUUID(), {
+        turnId: b.turnId,
+        entryId: b.answer!.id,
+      });
+      const headers = await f.store.getConversation(fork.session.sessionId);
+      expect(headers.turns.find((t) => t.turnId === c.turnId)?.uploads?.[0]).toMatchObject({
+        sessionId: fork.session.sessionId,
+        ...(mimeType === "image/png"
+          ? { image: cImage }
+          : { original: { type: "pi_cloud_attachment_v1", attachment: cImage } }),
+      });
+      expect(
+        await db.selectFrom("session_uploads").select("id").where("id", "=", upload.id).execute(),
+      ).toHaveLength(0);
+      const reader = new SessionAttachmentReader(db, images);
+      const read = await reader.withAttachment(
+        f.tenantId,
+        fork.session.sessionId,
+        cImage.id,
+        async (_r, chunks) => {
+          const b = [];
+          for await (const c of chunks) b.push(c);
+          return Buffer.concat(b).toString();
+        },
+        new AbortController().signal,
+      );
+      expect(read).toBe("C original");
+      await reapUnreferencedEntryBodies(db, 1024);
+      await images.reap(0);
+      expect([...bytes.keys()].some((k) => k.endsWith(eImage.id))).toBe(false);
+      expect([...bytes.keys()].some((k) => k.endsWith(cImage.id))).toBe(true);
+      await new ConversationDeletionService({ database: db }).delete(
+        f.tenantId,
+        fork.session.sessionId,
+      );
+      await reapUnreferencedEntryBodies(db, 1024);
+      await images.reap(0);
+      expect([...bytes.keys()].some((k) => k.endsWith(cImage.id))).toBe(false);
+    },
+    30000,
+  );
 
   it("rolls back a failed cold cutover without altering either branch, then retries idempotently", async () => {
     const f = await fixture(),

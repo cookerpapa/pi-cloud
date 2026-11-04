@@ -1,5 +1,7 @@
 import { restoreReturnedInputs, type InputReturnRecovery } from "./returned-inputs.ts";
-import { UploadCards } from "./UploadCards.tsx";
+import { UploadCards, ComposerUploadCards } from "./UploadCards.tsx";
+import { useComposerUploads, type ComposerUpload } from "./useComposerUploads.ts";
+import { longPasteFile } from "./pasted-text.ts";
 import type { UserUpload } from "@pi-cloud/protocol";
 import {
   createContext,
@@ -16,10 +18,10 @@ import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "./api.ts";
 import { useI18n } from "./i18n.tsx";
 
 type Action =
-  | { action: "edit"; text: string }
+  | { action: "edit"; text: string; uploadIds?: string[] }
   | { action: "cancel" }
   | { action: "move"; direction: "up" | "down" }
-  | { action: "steer"; text?: string };
+  | { action: "steer"; text?: string; uploadIds?: string[] };
 
 export function InputQueueProvider({
   api,
@@ -46,6 +48,7 @@ export function InputQueueProvider({
     text: string,
     uploads: UserUpload[],
     returnedKeys?: readonly string[],
+    localAttachments?: readonly ComposerUpload[],
   ) => boolean | void;
 }) {
   const { t } = useI18n();
@@ -67,6 +70,15 @@ export function InputQueueProvider({
     initial: boolean;
   } | null>(null);
   const mounted = useRef(true);
+  const editorUploads = useComposerUploads(api, sessionId ?? undefined, sessionId ?? "");
+  const [preparing, setPreparing] = useState(false);
+  const prepareInFlight = useRef(false);
+  const currentEditing = useRef(editing);
+  currentEditing.current = editing;
+  useEffect(() => {
+    editorUploads.clear();
+    if (editing) editorUploads.restore(editing.uploads);
+  }, [editing?.inputId]);
   const sequence = useRef(0);
   const callbacks = useRef({ onSnapshot, onRestoreDraft, onInitialWithdrawn, t });
   callbacks.current = { onSnapshot, onRestoreDraft, onInitialWithdrawn, t };
@@ -261,6 +273,33 @@ export function InputQueueProvider({
     }
   }
 
+  async function saveEditor(action: "edit" | "steer") {
+    if (!editing || !sessionId || prepareInFlight.current || busy) return;
+    const snapshot = editing;
+    prepareInFlight.current = true;
+    setPreparing(true);
+    try {
+      const attachments = await editorUploads.ready(sessionId);
+      if (!mounted.current || currentEditing.current?.inputId !== snapshot.inputId) return;
+      setEditing((current) =>
+        current?.inputId === snapshot.inputId ? { ...current, uploads: attachments } : current,
+      );
+      if (
+        await perform(snapshot.inputId, {
+          action,
+          text: snapshot.text,
+          uploadIds: attachments.map((file) => file.id),
+        })
+      )
+        setEditing(null);
+    } catch {
+      if (mounted.current) setError("queue.actionError");
+    } finally {
+      prepareInFlight.current = false;
+      if (mounted.current) setPreparing(false);
+    }
+  }
+
   const [returnStatus, setReturnStatus] = useState<"idle" | "pending" | "failed">("idle");
   const [returnRetry, retryReturns] = useState(0);
   useEffect(() => {
@@ -321,6 +360,9 @@ export function InputQueueProvider({
     error,
     setError,
     editing,
+    editorUploads,
+    preparing,
+    saveEditor,
     setEditing,
     expanded,
     setExpanded,
@@ -330,14 +372,20 @@ export function InputQueueProvider({
     loadMore,
     returnStatus,
     retryReturns,
-    onRestoreDraft: (text: string, uploads: UserUpload[]) =>
-      callbacks.current.onRestoreDraft(text, uploads),
+    onRestoreDraft: (
+      text: string,
+      uploads: UserUpload[],
+      localAttachments?: readonly ComposerUpload[],
+    ) => callbacks.current.onRestoreDraft(text, uploads, undefined, localAttachments),
   };
   return <InputQueueContext.Provider value={model}>{children}</InputQueueContext.Provider>;
 }
 
 const InputQueueContext = createContext<InputQueueModel | null>(null);
 export type InputQueueModel = {
+  editorUploads: ReturnType<typeof useComposerUploads>;
+  preparing: boolean;
+  saveEditor: (action: "edit" | "steer") => Promise<void>;
   api: PiCloudApi;
   queue: InputQueueResource | null;
   canMutate: boolean;
@@ -354,7 +402,11 @@ export type InputQueueModel = {
   loadMore(): Promise<void>;
   returnStatus: "idle" | "pending" | "failed";
   retryReturns: (update: (n: number) => number) => void;
-  onRestoreDraft(text: string, uploads: UserUpload[]): boolean | void;
+  onRestoreDraft(
+    text: string,
+    uploads: UserUpload[],
+    localAttachments?: readonly ComposerUpload[],
+  ): boolean | void;
 };
 export const useInputQueue = () => useContext(InputQueueContext);
 
@@ -362,7 +414,18 @@ export function PendingInputEditor({ started = false }: { started?: boolean }) {
   const model = useInputQueue();
   const { t } = useI18n();
   if (!model) return null;
-  const { api, queue, editing, setEditing, canMutate, busy, perform, onRestoreDraft } = model;
+  const {
+    api,
+    queue,
+    editing,
+    editorUploads,
+    preparing,
+    saveEditor,
+    setEditing,
+    canMutate,
+    onRestoreDraft,
+  } = model;
+  const busy = preparing ? "attachments" : model.busy;
   const editingItem = editing && queue?.items.find((item) => item.inputId === editing.inputId);
   const editable = Boolean(editingItem) && !started;
   const editor = editing ? (
@@ -379,10 +442,8 @@ export function PendingInputEditor({ started = false }: { started?: boolean }) {
       }}
       onSubmit={(event) => {
         event.preventDefault();
-        if (editable && (editing.text.trim() || editing.uploads.length))
-          void perform(editing.inputId, { action: "edit", text: editing.text }).then((ok) => {
-            if (ok) setEditing(null);
-          });
+        if (editable && (editing.text.trim() || editorUploads.items.length))
+          void saveEditor("edit");
       }}
     >
       {!editable ? <p role="status">{t("queue.draftKept")}</p> : null}
@@ -394,8 +455,35 @@ export function PendingInputEditor({ started = false }: { started?: boolean }) {
         autoFocus
         disabled={busy !== null}
         onChange={(event) => setEditing({ ...editing, text: event.target.value })}
+        onPaste={(event) => {
+          if (busy !== null) return;
+          const files = [...event.clipboardData.files];
+          if (files.length) {
+            event.preventDefault();
+            editorUploads.add(files, { deferred: true });
+            return;
+          }
+          const pasted = longPasteFile(event.clipboardData.getData("text/plain"));
+          if (pasted) {
+            event.preventDefault();
+            editorUploads.add([pasted.file], { deferred: true, characters: pasted.characters });
+            const input = event.currentTarget;
+            setEditing({
+              ...editing,
+              text:
+                input.value.slice(0, input.selectionStart) + input.value.slice(input.selectionEnd),
+            });
+          }
+        }}
       />
-      <UploadCards api={api} uploads={editing.uploads} compact />
+      <ComposerUploadCards
+        api={api}
+        items={editorUploads.items}
+        disabled={busy !== null}
+        edit={editorUploads.edit}
+        remove={editorUploads.remove}
+        retry={editorUploads.retry}
+      />
       <div className="pending-input-editor-actions">
         <button
           type="submit"
@@ -403,7 +491,7 @@ export function PendingInputEditor({ started = false }: { started?: boolean }) {
             !editable ||
             !canMutate ||
             busy !== null ||
-            (!editing.text.trim() && !editing.uploads.length)
+            (!editing.text.trim() && !editorUploads.items.length)
           }
         >
           {t("queue.save")}
@@ -416,13 +504,9 @@ export function PendingInputEditor({ started = false }: { started?: boolean }) {
               !canMutate ||
               busy !== null ||
               !queue?.activeTurnId ||
-              (!editing.text.trim() && !editing.uploads.length)
+              (!editing.text.trim() && !editorUploads.items.length)
             }
-            onClick={() =>
-              void perform(editing.inputId, { action: "steer", text: editing.text }).then((ok) => {
-                if (ok) setEditing(null);
-              })
-            }
+            onClick={() => void saveEditor("steer")}
           >
             {t("queue.steer")}
           </button>
@@ -431,7 +515,7 @@ export function PendingInputEditor({ started = false }: { started?: boolean }) {
           <button
             type="button"
             onClick={() => {
-              if (onRestoreDraft(editing.text, editing.uploads) !== false) setEditing(null);
+              if (onRestoreDraft(editing.text, [], editorUploads.items) !== false) setEditing(null);
             }}
           >
             {t("queue.restoreDraft")}

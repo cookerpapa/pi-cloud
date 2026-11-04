@@ -3,8 +3,8 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
-it.each(["early", "workspace", "both", "source_error"])(
-  "settles both real upload transports without an unhandled stream error (%s)",
+it.each(["early", "workspace", "original", "source_error"])(
+  "settles the active original or placement transport without an unhandled stream error (%s)",
   async (mode) => {
     const result = await promisify(execFile)(
       process.execPath,

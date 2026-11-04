@@ -21,8 +21,8 @@ import {
   runUsage,
 } from "./lib/native-session-history.mjs";
 import {
-  S3ImageBlobStore,
-  PostgresImageAttachmentStore,
+  S3AttachmentBlobStore,
+  PostgresAttachmentStore,
 } from "../packages/session-attachments/src/index.ts";
 import { withChromePage } from "./lib/chrome-cdp.mjs";
 import { checkSubagentWorkspace } from "./lib/live-subagent-workspace.mjs";
@@ -40,7 +40,7 @@ const endpoint = new URL(
 );
 endpoint.hostname = serviceAddress("postgres");
 const db = createDatabase({ connectionString: endpoint.toString(), maxConnections: 2 });
-const blobs = new S3ImageBlobStore({
+const blobs = new S3AttachmentBlobStore({
   endpoint: `http://${serviceAddress("session-images")}:8333`,
   bucket: "pi-cloud-session-images",
   region: "us-east-1",
@@ -48,7 +48,7 @@ const blobs = new S3ImageBlobStore({
     await readFile(runtimeDirectory + "/secrets/session-image-s3-credentials.json", "utf8"),
   ),
 });
-const images = new PostgresImageAttachmentStore(db, blobs);
+const images = new PostgresAttachmentStore(db, blobs);
 const baseUrl = "http://127.0.0.1:" + runtimeEnvironment().PI_CLOUD_HTTP_PORT;
 const report = {
   at: new Date().toISOString(),

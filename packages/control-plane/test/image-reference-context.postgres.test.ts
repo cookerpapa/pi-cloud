@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { sql } from "kysely";
 import { nativeSubagentFixture } from "./native-subagent-fixture.ts";
 import { recentConversationImages } from "../src/ordinary-tools/image-tool.ts";
-import { SessionImageReader } from "../src/session-image-reader.ts";
+import { SessionAttachmentReader } from "../src/session-attachment-reader.ts";
 
 it("selects images at the issuing context boundary, excludes other lanes/new input, and authorizes retained assets", async () => {
   const f = await nativeSubagentFixture();
@@ -14,7 +14,7 @@ it("selects images at the issuing context boundary, excludes other lanes/new inp
         byteLength: 1,
         mimeType: "image/png" as const,
       };
-      await sql`insert into session_image_objects(tenant_id,id,source_run_id,state,sha256,byte_length,mime_type,write_completed_at)
+      await sql`insert into session_attachment_objects(tenant_id,id,source_run_id,state,sha256,byte_length,mime_type,write_completed_at)
         values(${f.scope.tenantId}::uuid,${ref.id}::uuid,${f.scope.runId}::uuid,'ready',${ref.sha256},1,'image/png',clock_timestamp())`.execute(
         f.database,
       );
@@ -62,7 +62,7 @@ it("selects images at the issuing context boundary, excludes other lanes/new inp
     await expect(
       recentConversationImages(f.database, command, 2, new AbortController().signal),
     ).rejects.toThrow("only 1");
-    const reader = new SessionImageReader(f.database, {
+    const reader = new SessionAttachmentReader(f.database, {
       async withStream(_tenant, ref, consume, signal) {
         expect(ref).toEqual(first);
         return consume(

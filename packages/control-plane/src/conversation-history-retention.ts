@@ -116,10 +116,10 @@ export async function replacePrunedHistory(
     .where("pi_session_id", "=", oldId)
     .execute();
   await sql`delete from session_uploads u where u.tenant_id=${tenantId}::uuid and u.pi_session_id=${target.sessionId}
-    and u.accepted_at is not null and u.image_id is not null and not exists(select 1 from session_image_references r
-      where r.tenant_id=u.tenant_id and r.session_id=u.pi_session_id and r.image_id=u.image_id)
-      and not exists(select 1 from pi_history_record_images r join pi_durable_writes w on w.tenant_id=r.tenant_id and w.retained_record_id=r.retained_record_id
-        where r.tenant_id=u.tenant_id and w.session_id=u.pi_session_id and r.image_id=u.image_id)`.execute(
+    and u.accepted_at is not null and u.attachment_id is not null and not exists(select 1 from session_attachment_references r
+      where r.tenant_id=u.tenant_id and r.session_id=u.pi_session_id and r.attachment_id=u.attachment_id)
+      and not exists(select 1 from pi_history_record_attachments r join pi_durable_writes w on w.tenant_id=r.tenant_id and w.retained_record_id=r.retained_record_id
+        where r.tenant_id=u.tenant_id and w.session_id=u.pi_session_id and r.attachment_id=u.attachment_id)`.execute(
     tx,
   );
   await deletePostgresPiSessionsInTransaction(tx, tenantId, [oldId]);

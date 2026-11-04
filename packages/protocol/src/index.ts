@@ -718,3 +718,4 @@ export * from "./fork-provenance.ts";
 export * from "./model-transport.ts";
 
 export * from "./skills.ts";
+export * from "./attachment-reference.ts";

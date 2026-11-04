@@ -5,7 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { readFile } from "node:fs/promises";
 import { parse } from "yaml";
 import { S3Client, CreateBucketCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
-import { S3ImageBlobStore } from "../../packages/session-attachments/src/s3.ts";
+import { S3AttachmentBlobStore } from "../../packages/session-attachments/src/s3.ts";
 
 const execute = promisify(execFile);
 
@@ -86,7 +86,7 @@ export async function testImageStore() {
         await delay(200);
       }
     }
-    blobs = new S3ImageBlobStore(options);
+    blobs = new S3AttachmentBlobStore(options);
     return {
       blobs,
       close,

@@ -13,7 +13,7 @@ Release names and historical measurements belong to reports, not the component m
 | [Stream durability](STREAM_DURABILITY.md) | Commit, projection, live coverage and crash contracts |
 | [Cube provider](CUBESANDBOX_PROVIDER.md) | Tool execution, lifecycle and transport boundaries |
 | [Subagents](SUBAGENTS.md) | Native children, shared ownership and Workspace choices |
-| [Attachments](CHAT_ATTACHMENTS.md) | Uploads, visual input and retained images |
+| [Attachments](CHAT_ATTACHMENTS.md) | Long paste, uploads, visual input and retained originals |
 | [Skills](SKILLS.md) | Cloud discovery, Agent publication, version selection and Sandbox resources |
 | [Schedules](SCHEDULES.md) | Scheduled input and ordinary Run admission |
 | [Threat model](THREAT_MODEL.md) | Trusted Runner and untrusted execution boundaries |
@@ -33,7 +33,7 @@ work from remaining proposals and unverified limits.
 | [Component release](COMPONENT_RELEASE.md) | Supported independent publication scopes |
 | [Evaluation](EVALUATION.md) | Deterministic, infrastructure and live-model verification |
 | [Observability](OBSERVABILITY.md) | Metrics, traces, logs and diagnostic limits |
-| [Asset recovery](ASSET_RECOVERY.md) | Conversation/image recovery and exclusions |
+| [Asset recovery](ASSET_RECOVERY.md) | Conversation/attachment recovery and exclusions |
 | [Distributed deployment](DISTRIBUTED_DEPLOYMENT.md) | Multi-machine deployment requirements |
 | [Private pilot](PRIVATE_PILOT.md) | Trial scope and acceptance |
 | [Optional modules](OPTIONAL_MODULES.md) | Optional integrations |

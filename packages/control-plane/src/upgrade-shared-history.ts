@@ -1,6 +1,9 @@
 import { sql, type Kysely } from "kysely";
 import type { Database } from "@pi-cloud/database";
-import { retainedImageReferences } from "@pi-cloud/session-attachments";
+import {
+  retainedAttachmentReferences,
+  retainedUploadReferences,
+} from "@pi-cloud/session-attachments";
 import { captureNativePresentation } from "@pi-cloud/runtime-core/frozen-history";
 import { appendPresentationBlock } from "@pi-cloud/runtime-core/presentation-directory";
 import { settleHistoryTurn } from "@pi-cloud/runtime-core/presentation-settlement";
@@ -33,9 +36,9 @@ export async function upgradeSharedHistory(database: Kysely<Database>): Promise<
     if (!rows.length) break;
     await database.transaction().execute(async (tx) => {
       for (const row of rows) {
-        const refs = row.body ? retainedImageReferences(JSON.parse(row.body)) : [];
+        const refs = row.body ? retainedAttachmentReferences(JSON.parse(row.body)) : [];
         if (refs.length)
-          await sql`insert into pi_history_record_images(tenant_id,retained_record_id,image_id)
+          await sql`insert into pi_history_record_attachments(tenant_id,retained_record_id,attachment_id)
           values ${sql.join(refs.map((r) => sql`(${row.tenant_id}::uuid,${row.id}::uuid,${r.id}::uuid)`))} on conflict do nothing`.execute(
             tx,
           );
@@ -60,13 +63,9 @@ export async function upgradeSharedHistory(database: Kysely<Database>): Promise<
     for (const row of rows)
       await database.transaction().execute(async (tx) => {
         const header = JSON.parse(row.payload_text);
-        const refs = (header.input_uploads ?? []).flatMap((u: { image?: unknown }) =>
-          u.image
-            ? retainedImageReferences({ type: "pi_cloud_image_v1", attachment: u.image })
-            : [],
-        );
+        const refs = retainedUploadReferences(header.input_uploads ?? []);
         if (refs.length)
-          await sql`insert into pi_history_header_images(tenant_id,body_id,image_id)
+          await sql`insert into pi_history_header_attachments(tenant_id,body_id,attachment_id)
         values ${sql.join(refs.map((r: { id: string }) => sql`(${row.tenant_id}::uuid,${row.header_body_id}::uuid,${r.id}::uuid)`))} on conflict do nothing`.execute(
             tx,
           );
@@ -81,19 +80,15 @@ export async function upgradeSharedHistory(database: Kysely<Database>): Promise<
             }>`select f.seq::text,f.ordinal,f.entry_record_id,h.payload_text
           from pi_history_frames f join pi_history_bodies h on h.tenant_id=f.tenant_id and h.id=f.body_id
           where f.tenant_id=${row.tenant_id}::uuid and f.block_id=${row.id}::uuid and f.entry_record_id is not null
-            and (f.seq,f.ordinal)>(${after.seq}::bigint,${after.ordinal}) and strpos(h.payload_text,'"image":')>0
+            and (f.seq,f.ordinal)>(${after.seq}::bigint,${after.ordinal}) and (strpos(h.payload_text,'"image":')>0 or strpos(h.payload_text,'"original":')>0)
           order by f.seq,f.ordinal limit 32`.execute(tx)
           ).rows;
           if (!frames.length) break;
           for (const frame of frames) {
             const value = JSON.parse(frame.payload_text);
-            const images = (value.human?.uploads ?? []).flatMap((u: { image?: unknown }) =>
-              u.image
-                ? retainedImageReferences({ type: "pi_cloud_image_v1", attachment: u.image })
-                : [],
-            );
+            const images = retainedUploadReferences(value.human?.uploads ?? []);
             if (images.length)
-              await sql`insert into pi_history_record_images(tenant_id,retained_record_id,image_id)
+              await sql`insert into pi_history_record_attachments(tenant_id,retained_record_id,attachment_id)
             values ${sql.join(images.map((r: { id: string }) => sql`(${row.tenant_id}::uuid,${frame.entry_record_id}::uuid,${r.id}::uuid)`))} on conflict do nothing`.execute(
                 tx,
               );

@@ -1,10 +1,11 @@
-# Conversation and image recovery
+# Conversation and attachment recovery
 
 [ADR-0237](adr/0237-private-pilot-asset-recovery.md) defines this cold operator
 procedure. It preserves retained native history, authoritative current input state
 and complete native live checkpoints, associated product/account metadata
-and immutable image attachments. Ordinary uploaded files belong to the Workspace;
-their bytes and running programs are not backed up here. Restored Sessions use
+and retained immutable attachments, including ordinary user files under ADR-0294.
+Mutable Workspace files and running programs are not backed up here. Historical
+Workspace-only uploads without retained originals are not reconstructed. Restored Sessions use
 fresh empty Workspaces. No old task, VM, Kafka queue or lease is resumed by restore.
 
 The operator needs Docker for the pinned PostgreSQL client image, access to PG/S3,
@@ -47,7 +48,7 @@ secrets and external provider credentials require the owner's separate secure co
 
    The tool refuses unsettled Runs, pending native tasks, open writers and
    unprojected seals. It locks the PG tables against mutation, uses one exported
-   PG snapshot, streams referenced images and checks every hash/length. An
+   PG snapshot, streams referenced originals and checks every hash/length. An
    incomplete directory is never published as a completed backup. Restore service
    replica counts after backup, including after a failed attempt.
 4. Copy the completed directory off this machine, retaining private permissions,
@@ -66,17 +67,17 @@ new installation. A database dump does not supply those external secrets.
 node --import tsx scripts/session-assets.mjs restore --config /private/target.json --directory /backups/pi-cloud-20261007
 ```
 
-The tool verifies local assets, copies and reads back image bytes, then streams
+The tool verifies local assets, copies and reads back attachment bytes, then streams
 `pg_restore` and the explicit authority reset through a single PG transaction.
 It clears operational queues, Worker leases, Cube bindings/capsules and Kafka
 offsets, and assigns fresh empty Workspaces. Canonical native log bytes, history
-and image references stay unchanged. The old Workspace rows are retained only
+and attachment references stay unchanged. The old Workspace rows are retained only
 for historical foreign keys, marked already purged in this new installation;
 no source VM/Volume is deleted or certified absent by this action.
 
 If restore fails, keep the target offline. SQL failure rolls back the database;
 an interrupted final receipt may still leave a committed restore, so the tool
-retains uploaded images for inspection. Recreate the **owned target** database
+retains uploaded originals for inspection. Recreate the **owned target** database
 and bucket before a clean retry. Never reset the source to retry restoration.
 
 After a successful report, initialize the new deployment's external configuration,

@@ -326,7 +326,7 @@ try {
       };
     });
     const { rows: sourceRows } =
-      await sql`select image_reference as image,path from session_uploads where id=${uploadId}::uuid`.execute(
+      await sql`select source_reference as image,path from session_uploads where id=${uploadId}::uuid`.execute(
         db,
       );
     const source = sourceRows[0];

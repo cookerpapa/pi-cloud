@@ -13,7 +13,7 @@ import {
   parseAcceptedConversationInputResource,
   uploadRelativePath,
 } from "@pi-cloud/protocol";
-import { PostgresImageAttachmentStore } from "@pi-cloud/session-attachments";
+import { PostgresAttachmentStore } from "@pi-cloud/session-attachments";
 import {
   createControlPlaneApplication,
   PostgresTenantApiAuthenticator,
@@ -47,9 +47,7 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
   let admin: ReturnType<typeof createDatabase>, db: ReturnType<typeof createDatabase>;
   let app: NestFastifyApplication, http: FastifyInstance;
   let tenant: Awaited<ReturnType<typeof createPrivateTenant>>, other: typeof tenant;
-  let store: ControlPlaneStore,
-    uploads: WorkspaceUploadService,
-    images: PostgresImageAttachmentStore;
+  let store: ControlPlaneStore, uploads: WorkspaceUploadService, images: PostgresAttachmentStore;
   const name = `input_uploads_${randomUUID().replaceAll("-", "")}`;
   const blobs = new Map<string, Buffer>();
   const placed = new Map<string, Buffer>();
@@ -83,7 +81,7 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
     });
     other = await createPrivateTenant(db, { slug: "other", ownerDisplayName: "Other" });
     store = new ControlPlaneStore({ database: db, ...tenant });
-    images = new PostgresImageAttachmentStore(db, {
+    images = new PostgresAttachmentStore(db, {
       async putStream(key, chunks) {
         blobs.set(key, await collect(chunks));
       },
@@ -204,6 +202,133 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
       large.length,
     );
   });
+  it("retains a full text original, keeps input metadata bounded, and reuses it after Workspace loss", async () => {
+    const sourceSession = await session(),
+      target = await session();
+    const bytes = Buffer.from("\ufeff  原始日志\r\n" + "中".repeat(50_000) + "\r\n\t ");
+    const original = await upload(sourceSession.sessionId, randomUUID(), bytes, "pasted.txt");
+    expect(original.original?.type).toBe("pi_cloud_attachment_v1");
+    expect(original.image).toBeUndefined();
+    const source = original.original!.attachment;
+    expect(blobs.get(`session-images/${tenant.tenantId}/${source.id}`)).toEqual(bytes);
+    expect(placed.get(original.id)).toEqual(bytes);
+    const accepted = await store.acceptTurn(sourceSession.sessionId, "pasted-original", {
+      prompt: "分析附件",
+      uploadIds: [original.id],
+    });
+    const row = await db
+      .selectFrom("runs")
+      .select(["input_text", "input_uploads"])
+      .where("turn_id", "=", accepted.turnId)
+      .executeTakeFirstOrThrow();
+    expect(JSON.stringify(row).length).toBeLessThan(2000);
+    expect(JSON.stringify(row)).not.toContain("中".repeat(100));
+    const queue = new QueuedInputService({ database: db });
+    const snapshot = await queue.list(tenant.tenantId, sourceSession.sessionId);
+    await queue.mutate(
+      tenant.tenantId,
+      sourceSession.sessionId,
+      accepted.turnId,
+      "finish-original-fixture",
+      { action: "cancel", revision: snapshot.revision },
+    );
+    placed.delete(original.id);
+    await db
+      .updateTable("workspaces")
+      .set({ deleted_at: new Date() })
+      .where("id", "=", sourceSession.workspaceId)
+      .execute();
+    const url = `/v1/sessions/${sourceSession.sessionId}/attachments/${source.id}`;
+    const read = await http.inject({
+      method: "GET",
+      url,
+      headers: { authorization: `Bearer ${tenant.credential.token}` },
+    });
+    expect(read.statusCode, read.body).toBe(200);
+    expect(read.rawPayload).toEqual(bytes);
+    expect(
+      (
+        await http.inject({
+          method: "GET",
+          url,
+          headers: { authorization: `Bearer ${other.credential.token}` },
+        })
+      ).statusCode,
+    ).toBe(404);
+    const before = blobs.size;
+    const id = randomUUID(),
+      reuseUrl = `/v1/sessions/${target.sessionId}/uploads/${id}/from-attachment`;
+    const send = () =>
+      http.inject({
+        method: "POST",
+        url: reuseUrl,
+        headers: { authorization: `Bearer ${tenant.credential.token}` },
+        payload: {
+          sourceSessionId: sourceSession.sessionId,
+          attachmentId: source.id,
+          name: original.name,
+        },
+      });
+    const reused = await send();
+    expect(reused.statusCode, reused.body).toBe(200);
+    expect(parseUserUpload(reused.json())).toMatchObject({
+      id,
+      sessionId: target.sessionId,
+      workspaceId: target.workspaceId,
+      original: original.original,
+    });
+    expect(placed.get(id)).toEqual(bytes);
+    expect(blobs.size).toBe(before);
+    expect((await send()).statusCode).toBe(200);
+    expect(blobs.size).toBe(before);
+  });
+
+  it("preserves an original when Workspace placement fails and never places bytes after archival failure", async () => {
+    const s = await session(),
+      id = randomUUID(),
+      bytes = Buffer.from("retained before placement");
+    place.mockRejectedValueOnce(new Error("Workspace unavailable"));
+    await expect(
+      uploads.upload(
+        tenant.tenantId,
+        tenant.ownerUserId,
+        s.sessionId,
+        id,
+        "log.txt",
+        content(bytes),
+      ),
+    ).rejects.toMatchObject({ code: "conflict" });
+    const row = await db
+      .selectFrom("session_uploads")
+      .selectAll()
+      .where("id", "=", id)
+      .executeTakeFirstOrThrow();
+    expect(row.state).toBe("failed");
+    expect(row.attachment_id).toBeTruthy();
+    expect(blobs.get(`session-images/${tenant.tenantId}/${row.attachment_id}`)).toEqual(bytes);
+    expect(placed.has(id)).toBe(false);
+    expect((await upload(s.sessionId, id, bytes, "log.txt")).original).toBeDefined();
+    const calls = place.mock.calls.length;
+    const put = vi
+      .spyOn(images.blobs, "putStream")
+      .mockRejectedValueOnce(new Error("Object storage unavailable"));
+    try {
+      await expect(
+        uploads.upload(
+          tenant.tenantId,
+          tenant.ownerUserId,
+          s.sessionId,
+          randomUUID(),
+          "log.txt",
+          content(bytes),
+        ),
+      ).rejects.toMatchObject({ code: "conflict" });
+      expect(place.mock.calls.length).toBe(calls);
+    } finally {
+      put.mockRestore();
+    }
+  });
+
   it("pins image-only input through queue editing, cancellation, Workspace changes and image GC", async () => {
     const s = await session(),
       image = await upload(s.sessionId);

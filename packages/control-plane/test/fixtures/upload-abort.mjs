@@ -3,9 +3,9 @@ import { createServer } from "node:http";
 import { once } from "node:events";
 import { PassThrough } from "node:stream";
 import { createHash } from "node:crypto";
-import { forkUpload, verifiedUpload } from "../../src/workspace-upload-stream.ts";
+import { verifiedUpload } from "../../src/workspace-upload-stream.ts";
 import { uploadHttp } from "../../../sandbox-control/src/upload-http.ts";
-import { S3ImageBlobStore } from "../../../session-attachments/src/s3.ts";
+import { S3AttachmentBlobStore } from "../../../session-attachments/src/s3.ts";
 
 const waiting = [Promise.withResolvers(), Promise.withResolvers()];
 const servers = waiting.map((signal) =>
@@ -20,7 +20,7 @@ for (const server of servers) {
   await once(server, "listening");
 }
 const endpoint = (index) => `http://127.0.0.1:${servers[index].address().port}`;
-const store = new S3ImageBlobStore({
+const store = new S3AttachmentBlobStore({
   endpoint: endpoint(1),
   region: "us-east-1",
   bucket: "fixture",
@@ -45,32 +45,34 @@ const content = {
   })(),
 };
 if (process.argv[2] === "source_error") content.chunks = ingress;
-const fork = forkUpload(verifiedUpload(content, abort.signal), abort.signal);
+const chunks = verifiedUpload(content, abort.signal);
 try {
+  const workspace = process.argv[2] === "workspace";
   const effects = [
-    uploadHttp({
-      url: endpoint(0),
-      token: "owned-fixture",
-      metadata: content,
-      chunks: fork.workspace,
-      signal: abort.signal,
-      receiptTimeoutMs: 10000,
-      read: async () => {
-        throw new Error("Partial upload must not produce a receipt");
-      },
-    }),
-    store.putStream(
-      "partial",
-      (async function* () {
-        for await (const chunk of fork.image) {
-          abort.signal.throwIfAborted();
-          yield chunk;
-        }
-      })(),
-      data.length,
-      "image/png",
-      abort.signal,
-    ),
+    workspace
+      ? uploadHttp({
+          url: endpoint(0),
+          token: "owned-fixture",
+          metadata: content,
+          chunks,
+          signal: abort.signal,
+          receiptTimeoutMs: 10000,
+          read: async () => {
+            throw new Error("Partial upload must not produce a receipt");
+          },
+        })
+      : store.putStream(
+          "partial",
+          (async function* () {
+            for await (const chunk of chunks) {
+              abort.signal.throwIfAborted();
+              yield chunk;
+            }
+          })(),
+          data.length,
+          "image/png",
+          abort.signal,
+        ),
   ];
   const settled = Promise.allSettled(
     effects.map((p) =>
@@ -83,7 +85,7 @@ try {
   if (process.argv[2] === "source_error") ingress.write(data.subarray(0, 65536));
   if (process.argv[2] === "early") await Promise.resolve();
   else if (process.argv[2] === "workspace") await waiting[0].promise;
-  else await Promise.all(waiting.map((p) => p.promise));
+  else await waiting[workspace ? 0 : 1].promise;
   if (process.argv[2] === "source_error") ingress.destroy(new Error("Owned upload input reset"));
   else abort.abort(new Error("Owned upload caller disconnected"));
   const outcomes = await settled;
@@ -93,7 +95,7 @@ try {
 } finally {
   abort.abort();
   ingress.destroy();
-  fork.close();
+  await chunks.return().catch(() => {});
   store.close();
   for (const server of servers) {
     server.closeAllConnections();

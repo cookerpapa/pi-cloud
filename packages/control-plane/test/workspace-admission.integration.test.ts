@@ -923,11 +923,11 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
       })
       .execute();
     const imageId = randomUUID();
-    await sql`insert into session_image_objects(tenant_id,id,state,sha256,byte_length,mime_type)
+    await sql`insert into session_attachment_objects(tenant_id,id,state,sha256,byte_length,mime_type)
       values(${scope.tenantId}::uuid,${imageId}::uuid,'ready',${"a".repeat(64)},1,'image/png')`.execute(
       database,
     );
-    await sql`insert into session_image_references(tenant_id,session_id,image_id)
+    await sql`insert into session_attachment_references(tenant_id,session_id,attachment_id)
       values(${scope.tenantId}::uuid,${session.sessionId},${imageId}::uuid),
         (${scope.tenantId}::uuid,${independentId},${imageId}::uuid)`.execute(database);
     await database
@@ -948,7 +948,7 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
         state: "uploading",
         claim_token: randomUUID(),
         lease_expires_at: new Date(Date.now() + 60000),
-        image_reference: null,
+        source_reference: null,
         accepted_at: null,
         expires_at: new Date(Date.now() + 60000),
       })
@@ -1015,7 +1015,7 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
       "pi_durable_records",
       "pi_durable_commits",
       "pi_durable_document_revisions",
-      "session_image_references",
+      "session_attachment_references",
     ] as const) {
       const rows =
         await sql`select 1 from ${sql.table(table)} where tenant_id=${scope.tenantId}::uuid
@@ -1053,7 +1053,7 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
     ).toEqual([entry]);
     expect(
       (
-        await sql`select 1 from session_image_references where image_id=${imageId}::uuid`.execute(
+        await sql`select 1 from session_attachment_references where attachment_id=${imageId}::uuid`.execute(
           database,
         )
       ).rows,

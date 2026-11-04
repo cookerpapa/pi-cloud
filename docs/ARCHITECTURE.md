@@ -2,7 +2,7 @@
 
 PiCloud hosts Pi Durable 1.0 in trusted Workers and runs untrusted file/shell
 operations in separate CubeSandbox KVM guests. The Control Plane never hosts
-the Pi Harness. Conversations and retained images outlive a particular Worker
+the Pi Harness. Conversations and retained attachments outlive a particular Worker
 or Workspace; Workspace files belong to persistent Cube Volumes.
 
 This document describes the current runtime, not its release chronology.
@@ -25,7 +25,7 @@ Cube / Control Tool completion -> Worker-boot Kafka replies -> original Pi Harne
 
 PG control mutation + Outbox -> same Session Kafka partition -> Projector
 Workspace bytes -> persistent Cube Volume
-Retained images -> private S3 objects; Kafka and PG carry references
+Retained attachment originals -> private S3 objects; Kafka and PG carry references
 ```
 
 1. The API admits an idempotent root Run in PG, freezing the conversation's model
@@ -368,6 +368,15 @@ Workspace selection, context inheritance and working directory are separate choi
 Ultra enables proactive delegation. Model permits are local and fair and are not
 held while waiting on another Agent or Tool. See [SUBAGENTS](SUBAGENTS.md).
 
+Long text pastes become editable browser file drafts. All new user uploads retain
+immutable originals in the existing S3/PG reference authority; Workspace files are
+mutable working copies. Upload confirmation requires original and placement
+completion, while input confirmation retains PG/Pi's existing admission boundary.
+History/Fork references preserve originals independently of Workspace deletion.
+Edited queue attachments and promotion to steer co-commit through Pi; reuse shares
+an original and creates a new Workspace placement. See
+[ADR-0294](adr/0294-retained-user-attachments.md).
+
 User image uploads enter Pi as visual content directly. Retained originals and
 canonical Tool images use private S3 objects, independent of mutable Workspace
 paths. `generate_image` and `show_image` use ordinary Tool dispatch and existing
@@ -411,7 +420,7 @@ or change cancellation/admission. See [OBSERVABILITY](OBSERVABILITY.md#worker-st
 | Workspace files and physical Volume references | Cube persistent Volume / node evidence |
 | Guest processes and elastic idle expiry | Cubelet and the guest |
 | Provider credentials, account selection and upstream continuation | CLIProxyAPI |
-| Retained conversation images | Private S3 objects with PG/native references |
+| Retained conversation attachments | Private S3 objects with PG/native references |
 
 Worker replicas add Session-family slots; Projector replicas divide Kafka
 partitions; Cube nodes add execution capacity. Cold Sessions do not require

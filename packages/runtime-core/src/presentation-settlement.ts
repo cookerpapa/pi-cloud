@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { sql, type Transaction } from "kysely";
 import type { Database } from "@pi-cloud/database";
-import { retainSessionImages, retainedImageReferences } from "@pi-cloud/session-attachments";
+import { retainSessionAttachments, retainedUploadReferences } from "@pi-cloud/session-attachments";
 import { appendPresentationBlock } from "./presentation-directory.ts";
 import type { HistoryHeader } from "./frozen-history.ts";
 
@@ -89,19 +89,14 @@ export async function settleHistoryTurn(
       nativeCoverage: row.native_coverage,
       acceptedAt: new Date(row.created_at).toISOString(),
     };
-    const images = (row.header.input_uploads ?? []).flatMap((value) => {
-      const upload = value as { image?: unknown };
-      return upload.image
-        ? retainedImageReferences({ type: "pi_cloud_image_v1", attachment: upload.image })
-        : [];
-    });
+    const images = retainedUploadReferences(row.header.input_uploads ?? []);
     if (images.length) {
-      await retainSessionImages(
+      await retainSessionAttachments(
         tx,
         { tenantId, sessionId: row.pi_session_id },
-        images.map((attachment) => ({ type: "pi_cloud_image_v1", attachment })),
+        images.map((attachment) => ({ type: "pi_cloud_attachment_v1", attachment })),
       );
-      await sql`insert into pi_history_header_images(tenant_id,body_id,image_id)
+      await sql`insert into pi_history_header_attachments(tenant_id,body_id,attachment_id)
         values ${sql.join(images.map((image) => sql`(${tenantId}::uuid,${body.id}::uuid,${image.id}::uuid)`))} on conflict do nothing`.execute(
         tx,
       );

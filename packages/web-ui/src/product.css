@@ -4987,3 +4987,87 @@ body.product-panel-resizing {
 .initial-input-message:has(.pending-input-editor) {
   width: min(640px, 100%);
 }
+.text-attachment-dialog {
+  box-sizing: border-box;
+  width: min(900px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  padding: 18px;
+  border: 1px solid #555;
+  border-radius: 14px;
+  color: #eee;
+  background: #262626;
+}
+.text-attachment-dialog::backdrop {
+  background: #0009;
+}
+.text-attachment-dialog header,
+.text-attachment-dialog footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.text-attachment-dialog header {
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.text-attachment-dialog header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.text-attachment-dialog textarea {
+  box-sizing: border-box;
+  width: 100%;
+  height: min(60dvh, 640px);
+  min-height: 180px;
+  padding: 12px;
+  resize: vertical;
+  border: 1px solid #484848;
+  border-radius: 6px;
+  background: #1d1d1d;
+  color: inherit;
+  font:
+    13px/1.6 ui-monospace,
+    monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.text-attachment-dialog footer {
+  margin-top: 12px;
+}
+.text-attachment-dialog footer small {
+  margin-right: auto;
+  color: #aaa;
+}
+.text-attachment-dialog button,
+.text-attachment-dialog a {
+  border: 1px solid #555;
+  border-radius: 6px;
+  padding: 5px 10px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-decoration: none;
+}
+.text-attachment-dialog button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.upload-card .attachment-name,
+.upload-chip .attachment-name {
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.upload-card .attachment-reuse {
+  align-self: flex-start;
+  font-size: 11px;
+  color: #aaa;
+}

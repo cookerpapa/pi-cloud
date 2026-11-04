@@ -22,7 +22,7 @@ export type NativeInputAction =
   | { action: "edit"; text: string; uploads?: UserUpload[] }
   | { action: "cancel" }
   | { action: "move"; direction: "up" | "down" }
-  | { action: "steer"; text?: string };
+  | { action: "steer"; text?: string; uploads?: UserUpload[] };
 export type NativeInputMutation = {
   operationId: string;
   fingerprint: string;
@@ -112,7 +112,14 @@ const change = Type.Union([
     },
     closed,
   ),
-  Type.Object({ action: Type.Literal("steer"), text: Type.Optional(text) }, closed),
+  Type.Object(
+    {
+      action: Type.Literal("steer"),
+      text: Type.Optional(text),
+      uploads: Type.Optional(UserUploadsSchema),
+    },
+    closed,
+  ),
 ]);
 const scope = {
   tenantId: UuidSchema,

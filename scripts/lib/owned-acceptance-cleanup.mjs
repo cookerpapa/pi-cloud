@@ -60,8 +60,8 @@ export async function purgeOwnedAcceptanceTenant(database, tenant, blobs) {
       (select count(*) from session_leases where tenant_id=${tenant.tenantId}::uuid and released_at is null)::int as writers,
       (select count(*) from workspaces where tenant_id=${tenant.tenantId}::uuid and (deleted_at is null or storage_purged_at is null))::int as workspaces,
       (select count(*) from outbox where tenant_id=${tenant.tenantId}::uuid and published_at is null)::int as controls,
-      (select count(*) from session_image_references where tenant_id=${tenant.tenantId}::uuid)::int as images,
-      (select count(*) from session_image_objects where tenant_id=${tenant.tenantId}::uuid and write_completed_at is null)::int as unfinished_image_writers,
+      (select count(*) from session_attachment_references where tenant_id=${tenant.tenantId}::uuid)::int as images,
+      (select count(*) from session_attachment_objects where tenant_id=${tenant.tenantId}::uuid and write_completed_at is null)::int as unfinished_image_writers,
       (select count(*) from skill_versions where tenant_id=${tenant.tenantId}::uuid and not published)::int as unfinished_skill_writers,
       (select count(*) from session_uploads where tenant_id=${tenant.tenantId}::uuid)::int as uploads`.execute(
       db,
@@ -73,7 +73,7 @@ export async function purgeOwnedAcceptanceTenant(database, tenant, blobs) {
   };
   await assertSettled(database);
   const { rows: images } =
-    await sql`select id from session_image_objects where tenant_id=${tenant.tenantId}::uuid`.execute(
+    await sql`select id from session_attachment_objects where tenant_id=${tenant.tenantId}::uuid`.execute(
       database,
     );
   const { rows: packages } =
@@ -99,8 +99,8 @@ export async function purgeOwnedAcceptanceTenant(database, tenant, blobs) {
       "pi_history_blocks",
       "pi_history_nodes",
       "pi_history_records",
-      "pi_history_header_images",
-      "session_image_objects",
+      "pi_history_header_attachments",
+      "session_attachment_objects",
       "outbox",
       "sandbox_http_services",
       "workspace_terminal_sessions",

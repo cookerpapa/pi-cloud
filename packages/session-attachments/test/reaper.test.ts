@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { ImageAttachmentReaper } from "../src/reaper.ts";
+import { AttachmentReaper } from "../src/reaper.ts";
 it("aborts an in-flight deletion during shutdown without starting another cleanup", async () => {
   const started = Promise.withResolvers<void>(),
     failed = vi.fn();
@@ -9,7 +9,7 @@ it("aborts an in-flight deletion during shutdown without starting another cleanu
       signal!.addEventListener("abort", () => reject(signal!.reason), { once: true }),
     );
   });
-  const reaper = new ImageAttachmentReaper({ reap }, failed, 5);
+  const reaper = new AttachmentReaper({ reap }, failed, 5);
   await started.promise;
   await reaper.close();
   expect(reap).toHaveBeenCalledTimes(1);

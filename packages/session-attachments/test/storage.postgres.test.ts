@@ -15,7 +15,7 @@ import type { EntryId } from "@earendil-works/pi-durable";
 import { PublicationNotSentError } from "@pi-cloud/protocol";
 import { encodeSessionImages } from "../src/configured.ts";
 import { ImageAttachmentCodec } from "../src/codec.ts";
-import { PostgresImageAttachmentStore, type ImageBlobStore } from "../src/store.ts";
+import { PostgresAttachmentStore, type AttachmentBlobStore } from "../src/store.ts";
 import { createPrivateTenant } from "../../control-plane/src/tenant-administration.ts";
 import { ControlPlaneStore } from "../../control-plane/src/control-plane-store.ts";
 
@@ -28,7 +28,7 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
   const bytes = new Map<string, Buffer>();
   let failPut = false,
     failDelete = false;
-  const blobs: ImageBlobStore = {
+  const blobs: AttachmentBlobStore = {
     async put(key, value, _mime, signal) {
       signal.throwIfAborted();
       if (failPut) throw new Error("upload failed");
@@ -44,7 +44,7 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
       bytes.delete(key);
     },
   };
-  let store: PostgresImageAttachmentStore, codec: ImageAttachmentCodec;
+  let store: PostgresAttachmentStore, codec: ImageAttachmentCodec;
   beforeAll(async () => {
     admin = createDatabase({ connectionString: integrationUrl!, maxConnections: 1 });
     await sql`create database ${sql.id(databaseName)}`.execute(admin);
@@ -63,7 +63,7 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
         { id: otherTenant, slug: otherTenant },
       ])
       .execute();
-    store = new PostgresImageAttachmentStore(db, blobs);
+    store = new PostgresAttachmentStore(db, blobs);
     codec = new ImageAttachmentCodec(store);
   });
   afterAll(async () => {
@@ -82,26 +82,26 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
     for (let i = 0; i < 3; i++)
       refs.push(await store.put({ tenantId }, Buffer.from(`cleanup-${i}`), "image/png"));
     const keys = refs.map((ref) => `session-images/${tenantId}/${ref.id}`);
-    const flaky = new PostgresImageAttachmentStore(db, {
+    const flaky = new PostgresAttachmentStore(db, {
       ...blobs,
       async delete(key, signal) {
         if (key === keys[0]) throw new Error("one object unavailable");
         await blobs.delete(key, signal);
       },
     });
-    await expect(flaky.reap(0)).rejects.toThrow("Image cleanup deferred");
+    await expect(flaky.reap(0)).rejects.toThrow("Attachment cleanup deferred");
     expect(keys.map((key) => bytes.has(key))).toEqual([true, false, false]);
     const {
       rows: [retry],
     } = await sql<{
       due: boolean;
       failures: number;
-    }>`select cleanup_available_at>clock_timestamp() as due,cleanup_failures as failures from session_image_objects where tenant_id=${tenantId}::uuid and id=${refs[0]!.id}::uuid`.execute(
+    }>`select cleanup_available_at>clock_timestamp() as due,cleanup_failures as failures from session_attachment_objects where tenant_id=${tenantId}::uuid and id=${refs[0]!.id}::uuid`.execute(
       db,
     );
     expect(retry).toEqual({ due: true, failures: 1 });
     expect(await flaky.reap(0)).toBe(0);
-    await sql`update session_image_objects set cleanup_available_at=clock_timestamp() where tenant_id=${tenantId}::uuid and id=${refs[0]!.id}::uuid`.execute(
+    await sql`update session_attachment_objects set cleanup_available_at=clock_timestamp() where tenant_id=${tenantId}::uuid and id=${refs[0]!.id}::uuid`.execute(
       db,
     );
     expect(await store.reap(0)).toBe(1);
@@ -184,7 +184,7 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
       expect(JSON.stringify(rows.rows)).toContain("pi_cloud_image_v1");
       const cold = await native(
         id,
-        new ImageAttachmentCodec(new PostgresImageAttachmentStore(db, blobs)),
+        new ImageAttachmentCodec(new PostgresAttachmentStore(db, blobs)),
       );
       expect(await cold.storage.entry(2 as EntryId, BACKGROUND_CONTEXT)).toEqual(entry);
       expect(await store.reap(0)).toBe(0);
@@ -265,7 +265,7 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
     let chunksRead = 0,
       closes = 0;
     let corrupt = false;
-    const streaming = new PostgresImageAttachmentStore(db, {
+    const streaming = new PostgresAttachmentStore(db, {
       ...blobs,
       async *readStream(_key, _length, signal) {
         try {
@@ -316,9 +316,9 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
   it("reaps only claimed tenant/object pairs when tenants share an object ID", async () => {
     const data = Buffer.from("same immutable bytes");
     const ref = await store.put({ tenantId }, data, "image/png");
-    await sql`update session_image_objects set created_at=clock_timestamp()-interval '2 days'
+    await sql`update session_attachment_objects set created_at=clock_timestamp()-interval '2 days'
       where tenant_id=${tenantId}::uuid and id=${ref.id}::uuid`.execute(db);
-    await sql`insert into session_image_objects(tenant_id,id,state,sha256,byte_length,mime_type,write_completed_at)
+    await sql`insert into session_attachment_objects(tenant_id,id,state,sha256,byte_length,mime_type,write_completed_at)
       values(${otherTenant}::uuid,${ref.id}::uuid,'ready',${ref.sha256},${ref.byteLength},${ref.mimeType},clock_timestamp())`.execute(
       db,
     );
@@ -346,8 +346,11 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
       data,
     });
     expect(
-      (await sql`select * from session_image_references where session_id=${sessionId}`.execute(db))
-        .rows,
+      (
+        await sql`select * from session_attachment_references where session_id=${sessionId}`.execute(
+          db,
+        )
+      ).rows,
     ).toHaveLength(0);
     await opened.storage.close(BACKGROUND_CONTEXT);
   });
@@ -365,7 +368,7 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
       sha256: string;
       byte_length: string;
       mime_type: string;
-    }>`select * from session_image_objects where state='uploading'`.execute(db);
+    }>`select * from session_attachment_objects where state='uploading'`.execute(db);
     expect(upload).toBeDefined();
     const sessionId = randomUUID();
     await native(sessionId);
@@ -382,26 +385,25 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
       new DurablePostgresProjection(db, { tenantId, sessionId }).apply(imageBatch(fake)),
     ).rejects.toThrow("unavailable");
     failDelete = true;
-    await expect(store.reap(0)).rejects.toThrow("Image cleanup deferred");
+    await expect(store.reap(0)).rejects.toThrow("Attachment cleanup deferred");
     failDelete = false;
-    await sql`update session_image_objects set cleanup_available_at=clock_timestamp() where state='deleting'`.execute(
+    await sql`update session_attachment_objects set cleanup_available_at=clock_timestamp() where state='deleting'`.execute(
       db,
     );
-    const retry = new PostgresImageAttachmentStore(db, blobs);
+    const retry = new PostgresAttachmentStore(db, blobs);
     expect(await retry.reap(0)).toBeGreaterThan(0);
-    const remaining = await sql`select id from session_image_objects where state!='ready'`.execute(
-      db,
-    );
+    const remaining =
+      await sql`select id from session_attachment_objects where state!='ready'`.execute(db);
     expect(remaining.rows).toEqual([{ id: upload!.id }]);
     // A dead API's unacknowledged PUT can still arrive after DELETE. Keep its
     // marker across a new reaper, remove the bytes again, never guess quiescence.
     const objectKey = `session-images/${tenantId}/${upload!.id}`;
     bytes.set(objectKey, Buffer.from("late"));
-    await sql`update session_image_objects set cleanup_available_at=clock_timestamp()
+    await sql`update session_attachment_objects set cleanup_available_at=clock_timestamp()
       where tenant_id=${tenantId}::uuid and id=${upload!.id}::uuid`.execute(db);
     expect(await retry.reap(0)).toBe(0);
     expect(bytes.has(objectKey)).toBe(false);
-    const marker = await sql`select id from session_image_objects where id=${upload!.id}::uuid
+    const marker = await sql`select id from session_attachment_objects where id=${upload!.id}::uuid
       and state='deleting' and write_completed_at is null`.execute(db);
     expect(marker.rows).toHaveLength(1);
   });
@@ -441,7 +443,7 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
     const ref = await store.put({ tenantId }, Buffer.from("claimed"), "image/png");
     const held = Promise.withResolvers<void>(),
       release = Promise.withResolvers<void>();
-    const delayed = new PostgresImageAttachmentStore(db, {
+    const delayed = new PostgresAttachmentStore(db, {
       ...blobs,
       async delete(key, signal) {
         held.resolve();

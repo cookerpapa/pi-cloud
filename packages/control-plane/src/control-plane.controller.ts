@@ -11,7 +11,7 @@ import { parseConversationHistoryQuery } from "@pi-cloud/protocol";
 import { parseCompactRequest, type ConversationCompactResource } from "@pi-cloud/protocol";
 import { ConversationCompactService } from "./conversation-compact-service.ts";
 import { RouteConfig } from "@nestjs/platform-fastify";
-import { parseUploadIdentity } from "@pi-cloud/protocol";
+import { parseUploadIdentity, parseReuseAttachmentRequest } from "@pi-cloud/protocol";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { Agent, fetch as internalFetch } from "undici";
@@ -102,7 +102,7 @@ import { TenantModelConfigurationService } from "./tenant-model-configuration.ts
 import { ConversationDeletionService } from "./conversation-deletion-service.ts";
 import { WorkspaceBrowserService } from "./workspace-browser-service.ts";
 import { WorkspaceUploadService } from "./workspace-upload-service.ts";
-import { SessionImageReader } from "./session-image-reader.ts";
+import { SessionAttachmentReader } from "./session-attachment-reader.ts";
 import { readWebSessionCookie, WebAuthenticationService } from "./web-authentication.ts";
 import { PlatformRuntimeSettingsService } from "./platform-runtime-settings.ts";
 import { QueuedInputService } from "./queued-input-service.ts";
@@ -145,7 +145,7 @@ export class ControlPlaneController {
     @Inject(SshAccessTicketService)
     private readonly sshAccessTickets: SshAccessTicketService,
     @Inject(SourceControlService) private readonly sourceControl: SourceControlService,
-    @Inject(SessionImageReader) private readonly sessionImages: SessionImageReader,
+    @Inject(SessionAttachmentReader) private readonly sessionAttachments: SessionAttachmentReader,
     @Inject(ExecutionTargetService) private readonly executionTargets: ExecutionTargetService,
   ) {}
 
@@ -1070,7 +1070,7 @@ export class ControlPlaneController {
     };
     reply.raw.on("close", closed);
     try {
-      await this.sessionImages.withImage(
+      await this.sessionAttachments.withImage(
         identity.tenantId,
         parseUuidPathParameter(sessionValue, "sessionId"),
         parseUuidPathParameter(imageValue, "imageId"),
@@ -1091,6 +1091,96 @@ export class ControlPlaneController {
         },
         abort.signal,
       );
+    } finally {
+      abort.abort();
+      reply.raw.removeListener("close", closed);
+    }
+  }
+
+  @Get("sessions/:sessionId/attachments/:attachmentId")
+  async readSessionAttachment(
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Param("sessionId") sessionValue: unknown,
+    @Param("attachmentId") attachmentValue: unknown,
+  ) {
+    const identity = this.tenantRequestContext.resolve(request);
+    const abort = new AbortController();
+    const closed = () => {
+      if (!reply.raw.writableEnded) abort.abort(new Error("Attachment caller disconnected"));
+    };
+    reply.raw.on("close", closed);
+    try {
+      await this.sessionAttachments.withAttachment(
+        identity.tenantId,
+        parseUuidPathParameter(sessionValue, "sessionId"),
+        parseUuidPathParameter(attachmentValue, "attachmentId"),
+        async (source, chunks, signal) => {
+          signal.throwIfAborted();
+          reply.hijack();
+          reply.raw.writeHead(200, {
+            "cache-control": "private, no-store",
+            "x-content-type-options": "nosniff",
+            "content-disposition": "attachment",
+            "content-type": source.mimeType,
+            "content-length": source.byteLength,
+          });
+          await pipeline(
+            Readable.from(chunks, { objectMode: false, highWaterMark: 65536 }),
+            reply.raw,
+            { signal },
+          );
+        },
+        abort.signal,
+      );
+    } finally {
+      abort.abort();
+      reply.raw.removeListener("close", closed);
+    }
+  }
+
+  @Post("sessions/:sessionId/uploads/:uploadId/from-attachment")
+  async reuseSessionAttachment(
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Param("sessionId") sessionValue: unknown,
+    @Param("uploadId") uploadValue: unknown,
+    @Body() body: unknown,
+  ) {
+    const identity = this.tenantRequestContext.requireMutation(request);
+    let input;
+    try {
+      input = parseReuseAttachmentRequest(body);
+    } catch {
+      throw new ControlPlaneApiValidationError("Invalid attachment reuse request");
+    }
+    const { name, sourceSessionId, attachmentId } = input;
+    const sessionId = parseUuidPathParameter(sessionValue, "sessionId"),
+      uploadId = parseUuidPathParameter(uploadValue, "uploadId");
+    const abort = new AbortController();
+    const closed = () => {
+      if (!reply.raw.writableEnded) abort.abort(new Error("Attachment caller disconnected"));
+    };
+    reply.raw.on("close", closed);
+    try {
+      const upload = await this.sessionAttachments.withAttachment(
+        identity.tenantId,
+        sourceSessionId,
+        attachmentId,
+        (source, chunks, signal) =>
+          this.workspaceUploads.upload(
+            identity.tenantId,
+            identity.userId,
+            sessionId,
+            uploadId,
+            name,
+            { byteLength: source.byteLength, sha256: source.sha256, chunks },
+            signal,
+            source,
+          ),
+        abort.signal,
+      );
+      await reply.code(200).send(upload);
     } finally {
       abort.abort();
       reply.raw.removeListener("close", closed);

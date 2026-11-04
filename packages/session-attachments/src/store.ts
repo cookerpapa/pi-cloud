@@ -1,11 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Database } from "@pi-cloud/database";
 import { withDatabaseReadSignal } from "@pi-cloud/database/client";
-import { parseImageAttachmentReference, type ImageAttachmentReference } from "@pi-cloud/protocol";
+import { parseAttachmentReference, type AttachmentReference } from "@pi-cloud/protocol";
 import { sql, type Kysely } from "kysely";
 import type { ImageAttachmentSource, ImageAttachmentStore, ImageScope } from "./codec.ts";
 
-export interface ImageBlobStore {
+export interface AttachmentBlobStore {
   /** One remote attempt per call. Failure ends local transmission; a completed
    * body with a lost receipt may still commit remotely. No partial objects. */
   put(key: string, bytes: Buffer, mimeType: string, signal: AbortSignal): Promise<void>;
@@ -29,7 +29,7 @@ type Inventory = {
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function key(tenantId: string, id: string): string {
-  if (!UUID.test(tenantId) || !UUID.test(id)) throw new Error("Invalid image attachment scope");
+  if (!UUID.test(tenantId) || !UUID.test(id)) throw new Error("Invalid attachment scope");
   return `session-images/${tenantId.toLowerCase()}/${id.toLowerCase()}`;
 }
 function deadline(signal?: AbortSignal) {
@@ -38,16 +38,16 @@ function deadline(signal?: AbortSignal) {
 }
 
 /** PG owns reachability, S3 owns bytes. Network I/O never holds a PG transaction. */
-export class PostgresImageAttachmentStore implements ImageAttachmentStore, ImageAttachmentSource {
+export class PostgresAttachmentStore implements ImageAttachmentStore, ImageAttachmentSource {
   #inFlightBytes = 0;
   readonly #capacityWaiters = new Set<() => void>();
   constructor(
     readonly database: Kysely<Database>,
-    readonly blobs: ImageBlobStore,
+    readonly blobs: AttachmentBlobStore,
     readonly readDatabase: Kysely<Database> = database,
   ) {}
   async #writeCompleted(tenantId: string, id: string, ready = true): Promise<boolean> {
-    const { rows } = await sql<{ state: string }>`update session_image_objects set
+    const { rows } = await sql<{ state: string }>`update session_attachment_objects set
       write_completed_at=clock_timestamp(),state=case when state='uploading' and ${ready} then 'ready' else state end
       where tenant_id=${tenantId}::uuid and id=${id}::uuid returning state`.execute(this.database);
     return rows[0]?.state === "ready";
@@ -78,25 +78,28 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
       for (const wake of [...this.#capacityWaiters]) wake();
     }
   }
-  async put(
+  async put<Mime extends string>(
     scope: ImageScope,
     bytes: Buffer,
-    mimeType: ImageAttachmentReference["mimeType"],
+    mimeType: Mime,
     signal?: AbortSignal,
-  ): Promise<ImageAttachmentReference> {
-    const ref = parseImageAttachmentReference({
-      id: randomUUID(),
-      sha256: createHash("sha256").update(bytes).digest("hex"),
-      byteLength: bytes.length,
+  ): Promise<AttachmentReference & { mimeType: Mime }> {
+    const ref = {
+      ...parseAttachmentReference({
+        id: randomUUID(),
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+        byteLength: bytes.length,
+        mimeType,
+      }),
       mimeType,
-    });
+    };
     const objectKey = key(scope.tenantId, ref.id);
     const abort = deadline(signal);
     abort.throwIfAborted();
     return this.#bounded(
       bytes.length,
       async () => {
-        await sql`insert into session_image_objects(tenant_id,id,source_run_id,state,sha256,byte_length,mime_type)
+        await sql`insert into session_attachment_objects(tenant_id,id,source_run_id,state,sha256,byte_length,mime_type)
         values(${scope.tenantId}::uuid,${ref.id}::uuid,${scope.runId ?? null}::uuid,'uploading',${ref.sha256},${ref.byteLength},${mimeType})`.execute(
           this.database,
         );
@@ -107,7 +110,7 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
         await this.blobs.put(objectKey, bytes, mimeType, abort);
         const ready = await this.#writeCompleted(scope.tenantId, ref.id);
         abort.throwIfAborted();
-        if (!ready) throw new Error("Image attachment upload lost its inventory identity");
+        if (!ready) throw new Error("Attachment upload lost its inventory identity");
         return ref;
       },
       abort,
@@ -116,12 +119,12 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
   async putStream(
     scope: { tenantId: string; uploadId: string; claimToken: string },
     content: import("@pi-cloud/protocol").UploadContent,
-    mimeType: ImageAttachmentReference["mimeType"],
+    mimeType: string,
     signal: AbortSignal,
-  ): Promise<ImageAttachmentReference> {
+  ): Promise<AttachmentReference> {
     if (!this.blobs.putStream)
       throw new Error("Attachment storage does not support streamed uploads");
-    const ref = parseImageAttachmentReference({
+    const ref = parseAttachmentReference({
       id: randomUUID(),
       sha256: content.sha256,
       byteLength: content.byteLength,
@@ -130,13 +133,13 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
     // Draft reachability begins before network I/O, so a long progressing upload
     // cannot be mistaken for a day-old orphan by the image reaper.
     await this.database.transaction().execute(async (tx) => {
-      await sql`insert into session_image_objects(tenant_id,id,source_run_id,state,sha256,byte_length,mime_type)
+      await sql`insert into session_attachment_objects(tenant_id,id,source_run_id,state,sha256,byte_length,mime_type)
       values(${scope.tenantId}::uuid,${ref.id}::uuid,null,'uploading',${ref.sha256},${ref.byteLength},${mimeType})`.execute(
         tx,
       );
       const claim = await tx
         .updateTable("session_uploads")
-        .set({ image_id: ref.id, image_reference: { ...ref } })
+        .set({ attachment_id: ref.id, source_reference: { ...ref } })
         .where("id", "=", scope.uploadId)
         .where("tenant_id", "=", scope.tenantId)
         .where("claim_token", "=", scope.claimToken)
@@ -144,7 +147,7 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
         .where("lease_expires_at", ">", sql<Date>`clock_timestamp()`)
         .returning("id")
         .executeTakeFirst();
-      if (!claim) throw new Error("Image upload lost its active claim");
+      if (!claim) throw new Error("Attachment upload lost its active claim");
     });
     let length = 0,
       complete = false;
@@ -153,12 +156,12 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
       for await (const chunk of content.chunks) {
         signal.throwIfAborted();
         length += chunk.byteLength;
-        if (length > ref.byteLength) throw new Error("Image upload length changed");
+        if (length > ref.byteLength) throw new Error("Attachment upload length changed");
         hash.update(chunk);
         yield chunk;
       }
       if (length !== ref.byteLength || hash.digest("hex") !== ref.sha256)
-        throw new Error("Image upload digest changed");
+        throw new Error("Attachment upload digest changed");
       complete = true;
     })();
     if (signal.aborted) {
@@ -182,14 +185,14 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
       throw error;
     }
     const ready = await this.#writeCompleted(scope.tenantId, ref.id, complete);
-    if (!complete) throw new Error("Image upload did not consume the complete stream");
+    if (!complete) throw new Error("Attachment upload did not consume the complete stream");
     signal.throwIfAborted();
-    if (!ready) throw new Error("Image upload lost its inventory identity");
+    if (!ready) throw new Error("Attachment upload lost its inventory identity");
     return ref;
   }
   async get(
     tenantId: string,
-    reference: ImageAttachmentReference,
+    reference: AttachmentReference,
     signal?: AbortSignal,
   ): Promise<Buffer> {
     const abort = deadline(signal);
@@ -211,17 +214,13 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
     );
   }
 
-  async #readReference(
-    tenantId: string,
-    reference: ImageAttachmentReference,
-    signal?: AbortSignal,
-  ) {
-    const ref = parseImageAttachmentReference(reference);
+  async #readReference(tenantId: string, reference: AttachmentReference, signal?: AbortSignal) {
+    const ref = parseAttachmentReference(reference);
     signal?.throwIfAborted();
     const {
       rows: [row],
     } = await withDatabaseReadSignal(signal, () =>
-      sql<Inventory>`select * from session_image_objects
+      sql<Inventory>`select * from session_attachment_objects
       where tenant_id=${tenantId}::uuid and id=${ref.id}::uuid`.execute(this.readDatabase),
     );
     if (
@@ -231,14 +230,14 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
       Number(row.byte_length) !== ref.byteLength ||
       row.mime_type !== ref.mimeType
     )
-      throw new Error("Image attachment is unavailable in this tenant");
+      throw new Error("Attachment is unavailable in this tenant");
     signal?.throwIfAborted();
     return ref;
   }
 
   async withStream<T>(
     tenantId: string,
-    reference: ImageAttachmentReference,
+    reference: AttachmentReference,
     consume: (chunks: AsyncIterable<Uint8Array>, signal: AbortSignal) => Promise<T>,
     signal?: AbortSignal,
   ): Promise<T> {
@@ -248,7 +247,7 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
 
   async #consume<T>(
     tenantId: string,
-    ref: ImageAttachmentReference,
+    ref: AttachmentReference,
     consume: (chunks: AsyncIterable<Uint8Array>, signal: AbortSignal) => Promise<T>,
     signal?: AbortSignal,
   ): Promise<T> {
@@ -263,20 +262,20 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
       for await (const chunk of source) {
         combined.throwIfAborted();
         length += chunk.byteLength;
-        if (length > ref.byteLength) throw new Error("Image attachment integrity check failed");
+        if (length > ref.byteLength) throw new Error("Attachment integrity check failed");
         hash.update(chunk);
         if (last) yield last;
         last = chunk;
       }
       if (length !== ref.byteLength || hash.digest("hex") !== ref.sha256)
-        throw new Error("Image attachment integrity check failed");
+        throw new Error("Attachment integrity check failed");
       complete = true;
       if (last) yield last;
     })();
     try {
       const value = await consume(verified, combined);
       combined.throwIfAborted();
-      if (!complete) throw new Error("Image consumer did not verify the complete source");
+      if (!complete) throw new Error("Attachment consumer did not verify the complete source");
       return value;
     } finally {
       controller.abort();
@@ -285,7 +284,7 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
   }
   async reap(graceMs = 24 * 60 * 60 * 1000, signal?: AbortSignal): Promise<number> {
     if (!Number.isSafeInteger(graceMs) || graceMs < 0)
-      throw new Error("Invalid image cleanup grace");
+      throw new Error("Invalid attachment cleanup grace");
     signal?.throwIfAborted();
     // Draft claims expire independently of Runs; accepted user input is retained
     // with its native Session even before Worker consumption/projection.
@@ -297,13 +296,13 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
     )`.execute(this.database);
     const rows = await this.database.transaction().execute(async (tx) => {
       const { rows: candidates } = await sql<{ tenant_id: string; id: string }>`
-        select tenant_id,id from session_image_objects o
+        select tenant_id,id from session_attachment_objects o
         where created_at < clock_timestamp() - ${graceMs} * interval '1 millisecond'
           and cleanup_available_at <= clock_timestamp()
-          and not exists(select 1 from session_image_references r where r.tenant_id=o.tenant_id and r.image_id=o.id)
-          and not exists(select 1 from pi_history_record_images r where r.tenant_id=o.tenant_id and r.image_id=o.id)
-          and not exists(select 1 from pi_history_header_images r where r.tenant_id=o.tenant_id and r.image_id=o.id)
-          and not exists(select 1 from session_uploads u where u.tenant_id=o.tenant_id and u.image_id=o.id)
+          and not exists(select 1 from session_attachment_references r where r.tenant_id=o.tenant_id and r.attachment_id=o.id)
+          and not exists(select 1 from pi_history_record_attachments r where r.tenant_id=o.tenant_id and r.attachment_id=o.id)
+          and not exists(select 1 from pi_history_header_attachments r where r.tenant_id=o.tenant_id and r.attachment_id=o.id)
+          and not exists(select 1 from session_uploads u where u.tenant_id=o.tenant_id and u.attachment_id=o.id)
           and not exists(select 1 from runs where id=o.source_run_id and output_sealed_at is null)
         order by cleanup_available_at,created_at limit 32 for update skip locked`.execute(tx);
       if (!candidates.length) return [];
@@ -312,12 +311,12 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
         tenant_id: string;
         id: string;
         write_completed_at: Date | null;
-      }>`update session_image_objects o set state='deleting'
+      }>`update session_attachment_objects o set state='deleting'
         where (tenant_id,id) in (${sql.join(candidates.map((r) => sql`(${r.tenant_id}::uuid,${r.id}::uuid)`))})
-          and not exists(select 1 from session_image_references r where r.tenant_id=o.tenant_id and r.image_id=o.id)
-          and not exists(select 1 from pi_history_record_images r where r.tenant_id=o.tenant_id and r.image_id=o.id)
-          and not exists(select 1 from pi_history_header_images r where r.tenant_id=o.tenant_id and r.image_id=o.id)
-          and not exists(select 1 from session_uploads u where u.tenant_id=o.tenant_id and u.image_id=o.id)
+          and not exists(select 1 from session_attachment_references r where r.tenant_id=o.tenant_id and r.attachment_id=o.id)
+          and not exists(select 1 from pi_history_record_attachments r where r.tenant_id=o.tenant_id and r.attachment_id=o.id)
+          and not exists(select 1 from pi_history_header_attachments r where r.tenant_id=o.tenant_id and r.attachment_id=o.id)
+          and not exists(select 1 from session_uploads u where u.tenant_id=o.tenant_id and u.attachment_id=o.id)
           and not exists(select 1 from runs where id=o.source_run_id and output_sealed_at is null)
         returning tenant_id,id,write_completed_at`.execute(tx);
       return rows;
@@ -333,19 +332,19 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
         // delete pass, even if its local callback has now recorded completion.
         if (row.write_completed_at !== null) {
           const removed =
-            await sql`delete from session_image_objects where tenant_id=${row.tenant_id}::uuid and id=${row.id}::uuid and state='deleting' and write_completed_at is not null returning id`.execute(
+            await sql`delete from session_attachment_objects where tenant_id=${row.tenant_id}::uuid and id=${row.id}::uuid and state='deleting' and write_completed_at is not null returning id`.execute(
               this.database,
             );
           deleted += removed.rows.length;
         } else {
-          await sql`update session_image_objects set cleanup_available_at=clock_timestamp()+interval '1 minute'
+          await sql`update session_attachment_objects set cleanup_available_at=clock_timestamp()+interval '1 minute'
             where tenant_id=${row.tenant_id}::uuid and id=${row.id}::uuid and state='deleting'`.execute(
             this.database,
           );
         }
       } catch (error) {
         signal?.throwIfAborted();
-        await sql`update session_image_objects set
+        await sql`update session_attachment_objects set
           cleanup_available_at=clock_timestamp()+least(300,power(2,least(cleanup_failures,8))) * interval '1 second',
           cleanup_failures=least(cleanup_failures+1,16)
           where tenant_id=${row.tenant_id}::uuid and id=${row.id}::uuid and state='deleting'`.execute(
@@ -355,7 +354,7 @@ export class PostgresImageAttachmentStore implements ImageAttachmentStore, Image
       }
     }
     if (failures.length)
-      throw new AggregateError(failures, "Image cleanup deferred failed objects");
+      throw new AggregateError(failures, "Attachment cleanup deferred failed objects");
     return deleted;
   }
 }

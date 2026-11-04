@@ -7,9 +7,9 @@ import {
   DeleteObjectCommand,
   HeadBucketCommand,
 } from "@aws-sdk/client-s3";
-import type { ImageBlobStore } from "./store.ts";
+import type { AttachmentBlobStore } from "./store.ts";
 
-export class S3ImageBlobStore implements ImageBlobStore {
+export class S3AttachmentBlobStore implements AttachmentBlobStore {
   readonly #client: S3Client;
   readonly #writes: S3Client;
   constructor(

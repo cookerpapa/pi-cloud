@@ -1,5 +1,20 @@
 # Maintained backlog
 
+## Retained user originals and long paste — source verified, publication pending
+
+- [x] Record approved storage ownership, protocol and UX decisions in
+      [ADR-0294](adr/0294-retained-user-attachments.md); open
+      [Issue #2](https://github.com/cookerpapa/pi-cloud/issues/2).
+- [x] Generalize retained originals and preserve streaming, claims and collection.
+- [x] Carry references through admission, native queue edits, history and Forks.
+- [x] Add automatic long-paste files, local text editing, original viewing and reuse.
+- [x] Verify failure/recovery, reference lifetimes and browser behavior; update
+      maintained documentation and record source/release acceptance separately.
+- [ ] Complete the authorized service resumption, matched publication and real
+      Cube/model acceptance with original asset preservation.
+
+[Source verification and publication status](reports/retained-user-attachments-20261104.md).
+
 ## Skill creation entry — deployed
 
 - [x] Remove the top-level Import button and its unused blank publisher state.

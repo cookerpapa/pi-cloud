@@ -1,8 +1,11 @@
-import { useEffect, useState } from "react";
-import type { UserUpload } from "@pi-cloud/protocol";
+import { useContext, useEffect, useState } from "react";
+import { userUploadSource, type UserUpload } from "@pi-cloud/protocol";
 import type { PiCloudApi } from "./api.ts";
 import { useI18n } from "./i18n.tsx";
 import type { ComposerUpload } from "./useComposerUploads.ts";
+import { TextAttachmentDialog } from "./TextAttachmentDialog.tsx";
+import { editableTextFile } from "./pasted-text.ts";
+import { AttachmentActionsContext } from "./AttachmentActions.tsx";
 
 function byteSize(size: number): string {
   return size >= 1024 * 1024
@@ -52,28 +55,63 @@ export function UploadCards({
   uploads?: readonly UserUpload[];
   compact?: boolean;
 }) {
+  const [opened, setOpened] = useState<UserUpload>();
+  const onReuse = useContext(AttachmentActionsContext);
+  const { language } = useI18n();
   if (!uploads?.length) return null;
   return (
-    <div className={compact ? "upload-chips" : "upload-cards"}>
-      {uploads.map((upload) => (
-        <figure
-          className={compact ? "upload-chip" : "upload-card"}
-          key={upload.id}
-          title={`${upload.name} · ${byteSize(upload.byteLength)} · ${upload.path}`}
-        >
-          {api && upload.image ? <UploadImage api={api} upload={upload} /> : null}
-          <figcaption>
-            <strong>{upload.name}</strong>
-            {compact ? null : (
-              <>
-                <small>{byteSize(upload.byteLength)}</small>
-                <code title={upload.path}>{upload.path}</code>
-              </>
-            )}
-          </figcaption>
-        </figure>
-      ))}
-    </div>
+    <>
+      <div className={compact ? "upload-chips" : "upload-cards"}>
+        {uploads.map((upload) => (
+          <figure
+            className={compact ? "upload-chip" : "upload-card"}
+            key={upload.id}
+            title={`${upload.name} · ${byteSize(upload.byteLength)} · ${upload.path}`}
+          >
+            {api && upload.image ? <UploadImage api={api} upload={upload} /> : null}
+            <figcaption>
+              {api && userUploadSource(upload) ? (
+                editableTextFile(upload.name, upload.mimeType) ? (
+                  <button
+                    type="button"
+                    className="attachment-name"
+                    onClick={() => setOpened(upload)}
+                  >
+                    {upload.name}
+                  </button>
+                ) : (
+                  <a href={api.attachmentDownloadUrl(upload)} download={upload.name}>
+                    {upload.name}
+                  </a>
+                )
+              ) : (
+                <strong>{upload.name}</strong>
+              )}
+              {compact ? null : (
+                <>
+                  <small>{byteSize(upload.byteLength)}</small>
+                  <code title={upload.path}>{upload.path}</code>
+                </>
+              )}
+            </figcaption>
+            {onReuse && userUploadSource(upload) && !compact ? (
+              <button type="button" className="attachment-reuse" onClick={() => onReuse(upload)}>
+                {language === "zh-CN" ? "重新使用" : "Reuse"}
+              </button>
+            ) : null}
+          </figure>
+        ))}
+      </div>
+      {opened ? (
+        <TextAttachmentDialog
+          name={opened.name}
+          upload={opened}
+          api={api}
+          onReuse={onReuse ? () => onReuse(opened) : undefined}
+          onClose={() => setOpened(undefined)}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -92,41 +130,79 @@ export function ComposerUploadCards({
   disabled,
   remove,
   retry,
+  edit,
+  api,
 }: {
   items: readonly ComposerUpload[];
   disabled: boolean;
   remove: (id: string) => void;
   retry: (id: string) => void;
+  edit?: (id: string, text: string) => void;
+  api?: PiCloudApi;
 }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
+  const [opened, setOpened] = useState<string>();
+  const editing = items.find((item) => item.id === opened);
   return (
-    <div className="upload-cards">
-      {items.map((item) => (
-        <div className="upload-card" key={item.id}>
-          {item.file && ["image/png", "image/jpeg", "image/webp"].includes(item.file.type) ? (
-            <LocalPreview file={item.file} />
-          ) : null}
-          <strong>{item.name}</strong>
-          <small>
-            {byteSize(item.size)} · {t(`upload.${item.status}`)}
-          </small>
-          <div>
-            {item.status === "failed" ? (
-              <button type="button" disabled={disabled} onClick={() => retry(item.id)}>
-                {t("common.retry")}
-              </button>
+    <>
+      <div className="upload-cards">
+        {items.map((item) => (
+          <div className="upload-card" key={item.id}>
+            {item.file && ["image/png", "image/jpeg", "image/webp"].includes(item.file.type) ? (
+              <LocalPreview file={item.file} />
             ) : null}
-            <button
-              type="button"
-              disabled={disabled}
-              aria-label={`${t("upload.remove")} ${item.name}`}
-              onClick={() => remove(item.id)}
-            >
-              ×
-            </button>
+            {edit &&
+            editableTextFile(
+              item.name,
+              item.file?.type ?? item.upload?.mimeType ?? item.source?.mimeType,
+            ) ? (
+              <button
+                type="button"
+                className="attachment-name"
+                disabled={disabled}
+                onClick={() => setOpened(item.id)}
+              >
+                {item.characters === undefined
+                  ? item.name
+                  : language === "zh-CN"
+                    ? `粘贴内容 · ${item.characters.toLocaleString()} 字符`
+                    : `Pasted text · ${item.characters.toLocaleString()} characters`}
+              </button>
+            ) : (
+              <strong>{item.name}</strong>
+            )}
+            <small>
+              {byteSize(item.size)}
+              {item.deferred && item.status === "pending" ? "" : ` · ${t(`upload.${item.status}`)}`}
+            </small>
+            <div>
+              {item.status === "failed" ? (
+                <button type="button" disabled={disabled} onClick={() => retry(item.id)}>
+                  {t("common.retry")}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                disabled={disabled}
+                aria-label={`${t("upload.remove")} ${item.name}`}
+                onClick={() => remove(item.id)}
+              >
+                ×
+              </button>
+            </div>
           </div>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+      {editing && edit ? (
+        <TextAttachmentDialog
+          name={editing.name}
+          file={editing.file}
+          upload={editing.upload ?? editing.source}
+          api={api}
+          onSave={disabled ? undefined : (text) => edit(editing.id, text)}
+          onClose={() => setOpened(undefined)}
+        />
+      ) : null}
+    </>
   );
 }

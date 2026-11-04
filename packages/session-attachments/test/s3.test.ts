@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, expect, it } from "vitest";
-import { S3ImageBlobStore } from "../src/s3.ts";
+import { S3AttachmentBlobStore } from "../src/s3.ts";
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -13,7 +13,7 @@ async function fixture(handler: (request: IncomingMessage, response: ServerRespo
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Missing test address");
-  const store = new S3ImageBlobStore({
+  const store = new S3AttachmentBlobStore({
     endpoint: `http://127.0.0.1:${address.port}`,
     region: "us-east-1",
     bucket: "review",

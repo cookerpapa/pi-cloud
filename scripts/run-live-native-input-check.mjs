@@ -9,7 +9,7 @@ import { checkNativeLiveProgress } from "./lib/live-native-progress.mjs";
 import { watchNativeRecoveryObservations } from "./lib/live-native-observations.mjs";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
-import { S3ImageBlobStore } from "../packages/session-attachments/src/s3.ts";
+import { S3AttachmentBlobStore } from "../packages/session-attachments/src/s3.ts";
 import {
   settleOwnedAcceptanceRuns,
   purgeOwnedAcceptanceTenant,
@@ -339,7 +339,7 @@ try {
     );
   if (tenant && errors.length === 0)
     await clean(async () => {
-      const blobs = new S3ImageBlobStore({
+      const blobs = new S3AttachmentBlobStore({
         endpoint: `http://${serviceAddress("session-images")}:8333`,
         region: "us-east-1",
         bucket: "pi-cloud-session-images",

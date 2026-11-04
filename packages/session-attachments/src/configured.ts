@@ -3,13 +3,13 @@ import type { Database } from "@pi-cloud/database";
 import { IMAGE_OPAQUE_FIELDS, type ImagePacked } from "@pi-cloud/protocol";
 import type { Kysely } from "kysely";
 import { ImageAttachmentCodec, type ImageScope, type ImageReadObserver } from "./codec.ts";
-import { PostgresImageAttachmentStore } from "./store.ts";
-import { S3ImageBlobStore } from "./s3.ts";
+import { PostgresAttachmentStore } from "./store.ts";
+import { S3AttachmentBlobStore } from "./s3.ts";
 
 export type ConfiguredImageAttachments = {
   codec: ImageAttachmentCodec;
-  store: PostgresImageAttachmentStore;
-  blobs: S3ImageBlobStore;
+  store: PostgresAttachmentStore;
+  blobs: S3AttachmentBlobStore;
 };
 export async function configuredImageAttachments(
   database: Kysely<Database>,
@@ -26,13 +26,13 @@ export async function configuredImageAttachments(
   };
   if (!credentials.accessKeyId || !credentials.secretAccessKey)
     throw new Error("Invalid image S3 credentials");
-  const blobs = new S3ImageBlobStore({
+  const blobs = new S3AttachmentBlobStore({
     endpoint,
     region: process.env.PI_CLOUD_IMAGE_S3_REGION ?? "us-east-1",
     bucket: process.env.PI_CLOUD_IMAGE_S3_BUCKET ?? "pi-cloud-session-images",
     ...credentials,
   });
-  const store = new PostgresImageAttachmentStore(database, blobs, readDatabase);
+  const store = new PostgresAttachmentStore(database, blobs, readDatabase);
   return { codec: new ImageAttachmentCodec(store, onImageReadStart), store, blobs };
 }
 

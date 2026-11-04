@@ -15,7 +15,7 @@ const { purgeOwnedAcceptanceTenant, settleOwnedAcceptanceRuns } = await load(
   "scripts/lib/owned-acceptance-cleanup.mjs",
 );
 const { nativeHistory } = await load("scripts/lib/native-session-history.mjs");
-const { S3ImageBlobStore } = await load("packages/session-attachments/src/s3.ts");
+const { S3AttachmentBlobStore } = await load("packages/session-attachments/src/s3.ts");
 const { DurablePostgresProjection, materializeNativeDocument } = await load(
   "packages/pi-session-postgres/src/durable/postgres-projection.ts",
 );
@@ -313,7 +313,7 @@ try {
     });
   if (tenant && errors.length === 0)
     await clean(async () => {
-      const blobs = new S3ImageBlobStore({
+      const blobs = new S3AttachmentBlobStore({
         endpoint: "http://" + serviceAddress("session-images") + ":8333",
         region: "us-east-1",
         bucket: "pi-cloud-session-images",

@@ -1,5 +1,6 @@
 import { Type } from "typebox";
 import { Value } from "typebox/value";
+import { parseAttachmentReference } from "./attachment-reference.ts";
 
 export const MAX_IMAGE_GUEST_RESPONSE_BYTES = 64 * 1024 * 1024;
 /** Pi treats these fields as opaque user/Tool JSON, never native image parts. */
@@ -62,6 +63,7 @@ export function validateImageReferencePayload(value: unknown): void {
   if (part.type === "image" && typeof part.data === "string")
     throw new Error("Inline image bytes are forbidden in Kafka records");
   if (part.type === "pi_cloud_image_v1") parseImageAttachmentReference(part.attachment);
+  if (part.type === "pi_cloud_attachment_v1") parseAttachmentReference(part.attachment);
   for (const [key, child] of Object.entries(part))
     if (!IMAGE_OPAQUE_FIELDS.has(key)) validateImageReferencePayload(child);
 }

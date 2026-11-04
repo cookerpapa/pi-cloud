@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { PassThrough, Readable } from "node:stream";
 import type { UploadContent } from "@pi-cloud/protocol";
 
 /** Peek only a signature, preserving the original bytes and backpressure. */
@@ -84,37 +83,4 @@ export async function* verifiedUpload(
   } finally {
     void iterator.return?.().catch(() => {});
   }
-}
-
-/** Both consumers exert backpressure; cancellation tears down the whole transfer. */
-export function forkUpload(chunks: AsyncIterable<Uint8Array>, signal: AbortSignal) {
-  const source = Readable.from(chunks, { objectMode: false, highWaterMark: 65536 });
-  const outputs = [
-    new PassThrough({ highWaterMark: 65536 }),
-    new PassThrough({ highWaterMark: 65536 }),
-  ] as const;
-  const fail = (cause: unknown) => {
-    const error = cause instanceof Error ? cause : new Error("Upload stream closed");
-    source.destroy(error);
-    for (const output of outputs) output.destroy(error);
-  };
-  source.on("error", (error) => {
-    for (const output of outputs) output.destroy(error);
-  });
-  for (const output of outputs) {
-    output.on("error", fail);
-    source.pipe(output);
-  }
-  const abort = () => fail(signal.reason);
-  signal.addEventListener("abort", abort, { once: true });
-  if (signal.aborted) abort();
-  return {
-    workspace: outputs[0],
-    image: outputs[1],
-    close: () => {
-      signal.removeEventListener("abort", abort);
-      source.destroy();
-      for (const output of outputs) output.destroy();
-    },
-  };
 }

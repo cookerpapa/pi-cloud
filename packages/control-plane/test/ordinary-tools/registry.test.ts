@@ -1,13 +1,13 @@
 import { expect, it } from "vitest";
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
-import { ImageAttachmentCodec, PostgresImageAttachmentStore } from "@pi-cloud/session-attachments";
-import type { ImageBlobStore } from "@pi-cloud/session-attachments";
+import { ImageAttachmentCodec, PostgresAttachmentStore } from "@pi-cloud/session-attachments";
+import type { AttachmentBlobStore } from "@pi-cloud/session-attachments";
 import { createOrdinaryToolRegistry } from "../../src/ordinary-tools/registry.ts";
 
 it("advertises only configured executable tools and preserves explicit enablement", () => {
   const database = {} as Kysely<Database>;
-  const store = new PostgresImageAttachmentStore(database, {} as ImageBlobStore);
+  const store = new PostgresAttachmentStore(database, {} as AttachmentBlobStore);
   const options = {
     database,
     imageIo: async () => {

@@ -5,7 +5,7 @@ import { assertIdleNativeSession } from "../idle-session-mutation.ts";
 import { DurablePostgresProjection } from "./postgres-projection.ts";
 import type { DurableScope } from "./types.ts";
 import { currentStateFingerprint, type CurrentStateRow } from "./current-state.ts";
-import { retainSessionImages } from "@pi-cloud/session-attachments";
+import { retainSessionAttachments } from "@pi-cloud/session-attachments";
 import { HistoryDirectory } from "./history-directory.ts";
 import { PostgresHistoryDirectory } from "./postgres-history-directory.ts";
 import { readSharedBase, sharedStateFingerprint } from "./shared-history-base.ts";
@@ -188,7 +188,7 @@ export async function retainIdleFamily(
       values ${sql.join(rows.map((r) => sql`(${target.tenantId}::uuid,${target.sessionId},${r.id}::bigint,${r.kind},${r.seq}::bigint,${r.ordinal},${r.body},${r.delta_count},${r.created_seq}::bigint,${r.retired_seq}::bigint,${r.cloud_origin ? JSON.stringify(r.cloud_origin) : null}::jsonb,true,${r.committed_at})`))}`.execute(
       tx,
     );
-    await retainSessionImages(
+    await retainSessionAttachments(
       tx,
       target,
       rows.map((r) => JSON.parse(r.body)),

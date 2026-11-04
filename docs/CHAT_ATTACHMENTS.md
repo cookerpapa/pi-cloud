@@ -1,4 +1,4 @@
-# Chat uploads and visual input
+# Chat attachments, long paste and visual input
 
 Accepted text and attachment metadata must fit the existing native Session Fact
 transport budget. Acceptance, queue edits and Steer share the same encoded-byte
@@ -8,10 +8,16 @@ is committed; user text is never truncated. Image normalization has a bounded
 code-owned hint allowance and the Runner verifies the final prepared input too
 ([ADR-0218](adr/0218-review-boundary-repairs.md)).
 
-The composer accepts file selection, drag/drop and pasted images. Files selected
+The composer accepts file selection, drag/drop, pasted images and automatic text
+attachments. A plain-text paste exceeding 4,000 Unicode code points becomes a
+UTF-8 file and a character-count card. Ordinary typing and shorter pastes remain
+text. Click a text card to view/edit it in the browser. Generated paste drafts
+and their edits remain local until Send. The editor opens UTF-8 text up to 8 MiB;
+larger files remain uploadable/downloadable without loading them into the editor.
+This view bound is not an upload quota. Files selected
 before a conversation exists remain in the browser until its Workspace is chosen.
-Uploads to an existing conversation begin immediately; sending waits for the
-selected files to finish. A failed upload can retry with the same identity.
+Manually selected uploads to an existing conversation begin immediately; sending
+waits for all selected files and their Workspace copies to finish. A failed upload can retry with the same identity.
 
 Each file is placed at `<working-directory>/uploads/<upload-id>/<filename>`.
 An existing, different file is never overwritten. Removing a draft card or
@@ -25,16 +31,22 @@ visibly before the first model call. Available storage, guest memory, S3 and
 model-provider capabilities remain real constraints. Generic files
 are described by filename, path, MIME type and size; the Agent decides which
 Tools to use to read them. This feature does not promise arbitrary document
-parsing or permanent archival of every uploaded file.
+parsing or automatic full-text context injection. Newly uploaded originals are
+retained independently of Workspace files under
+[ADR-0294](adr/0294-retained-user-attachments.md). Historical Workspace-only upload
+metadata does not invent a missing original; reupload the file to retain it.
 
 ## Data flow and ownership
 
-1. The authenticated API creates a bounded PG upload claim and streams raw bytes
-   through the sandbox-management module. An elastic Workspace uses the existing Cube Volume
-   Gateway; a dedicated machine uses a fixed guest helper under UID 1000. No
-   Agent Run or shell command is fabricated to upload a file.
-2. Image sources also receive an immutable copy in the existing private S3 image
-   store. PG upload metadata pins the source before transfer. Active uploads renew their
+1. The authenticated API creates a bounded PG upload claim and streams the
+   complete original into existing private S3. The inventory pins it before I/O;
+   length/digest verification and the object-store receipt precede placement.
+2. The original then streams through the sandbox-management upload port into
+   `<working-directory>/uploads/<upload-id>/<filename>`. Elastic Workspaces use
+   the existing Cube Volume Gateway; dedicated machines use the fixed guest
+   helper. This is a working copy: changing it never changes the original. There
+   is no whole-file Control Plane buffer, second file authority or two-way sync.
+   A failed placement keeps the original under its draft claim for retry. Active uploads renew their
    claim every 30 seconds; unused drafts expire after 24 hours;
    accepted attachments live with the native Session even if a queued input is
    cancelled or the mutable Workspace copy disappears.
@@ -58,8 +70,8 @@ parsing or permanent archival of every uploaded file.
 
 S3 connection and socket inactivity are bounded to five and sixty seconds.
 The idle budget includes waiting for a final PUT receipt and resets while bytes
-make progress; it does not cap total upload duration. Upload failure still cancels
-and joins both byte-placement branches before ending the claim (ADR-0216).
+make progress; it does not cap total upload duration. Failure cancels and joins the active original/placement operation before ending
+the claim. There are no concurrent upload branches to leave running.
 
 Additional native inputs and edits retain provisional upload pins until Pi
 acknowledges them. Definite non-delivery releases only that delivery's pins;
@@ -67,7 +79,7 @@ ambiguous responses are reconciled against native receipts or ordered writer
 closure. These rows contain attachment/operation references, never another input
 queue. Confirmed attachments still live with the Session after withdrawal.
 
-Image inventory also retains an unfinished PUT's cleanup identity. A late PUT
+Attachment inventory also retains an unfinished PUT's cleanup identity. A late PUT
 cannot recreate an untracked object after draft removal. Failed/uncertain writes
 may keep a small cleanup marker while periodic deletion removes any late bytes;
 absence or timeout does not establish writer quiescence. S3 writes use one
@@ -89,8 +101,21 @@ Busy staging is ordinary deferred maintenance, not a VM failure.
 The browser displays original user text separately from attachment cards. Its
 previews use an authenticated API; no object-store credentials or public bucket
 URLs are exposed. History, queue edits/reordering and promotion to steer retain
-attachments. Ordinary files remain Workspace assets; only images get immutable
-Session copies in this slice.
+attachments. A queued edit or edited Steer replaces attachment references in the
+same native Inbox transaction. Consumption races keep the edited local files so
+they can return to the composer. History originals are read-only. Reuse creates a
+new Workspace placement identity, sharing the retained original instead of
+uploading its bytes again. Changing Workspace preserves local composer files and
+re-prepares restored attachments against the current binding. No lifetime-history
+file restore is performed.
+
+Original access is authorized through current upload tickets or retained native/
+shared presentation references; it does not require the old Workspace. A Fork
+retains only its selected history and shares those references. Accepted originals
+retain the existing conservative Session lifetime, including after withdrawal;
+draft-only originals expire through the existing cleanup process. Deleting or
+pruning the last retained reference makes the object eligible for collection,
+subject to upload/uncertain-writer protection.
 Original previews stream with cancellation and backpressure. The final chunk is
 held until length/hash validation; a failed check cannot complete a full successful
 response. Removing an active draft cancels and joins its local upload work.
@@ -101,12 +126,14 @@ All paths require the ordinary tenant authentication and mutation authorization.
 
 | Request | Result |
 | --- | --- |
-| `PUT /v1/sessions/:sessionId/uploads/:uploadId?name=<encoded-filename>` | Binary `application/octet-stream` body with `Content-Length` and RFC 9530 `Content-Digest: sha-256=:BASE64:`; `200 UserUpload` after Workspace placement and image pinning |
+| `PUT /v1/sessions/:sessionId/uploads/:uploadId?name=<encoded-filename>` | Binary `application/octet-stream` body with `Content-Length` and RFC 9530 `Content-Digest: sha-256=:BASE64:`; `200 UserUpload` after original retention and Workspace placement |
 | `DELETE /v1/sessions/:sessionId/uploads/:uploadId` | `204`; remove an unaccepted draft reference, leaving Workspace bytes intact; accepted references remain |
 | `GET /v1/sessions/:sessionId/uploads/:uploadId/image` | Source image bytes, tenant scoped, private/no-store |
+| `GET /v1/sessions/:sessionId/attachments/:attachmentId` | Verified retained original, streamed with private/no-store and download disposition; no Workspace required |
+| `POST /v1/sessions/:sessionId/uploads/:uploadId/from-attachment` | `{sourceSessionId, attachmentId, name}`; authorize the original and place it in the current Workspace under the new caller UUID without duplicating the S3 object |
 | `POST /v1/sessions/:sessionId/turns` | Optional `uploadIds`; empty `prompt` requires an attachment. Idle: `kind:run` after PG acceptance; active: `kind:input` after native Kafka durability |
 | `POST /v1/sessions/:sessionId/turns` with `whenBusy:steer` | Optional `uploadIds`; empty `prompt` requires an attachment. Uses native steer when active, or ordinary PG Run admission when idle |
-| Queued input `edit` action | Optional `uploadIds` replaces attachments atomically; omission preserves them |
+| Queued input `edit` / `steer` action | Optional `uploadIds` replaces attachments atomically; omission preserves them |
 
 Upload IDs are UUIDs chosen by the caller. Retry uses the same ID, filename,
 source bytes, Session and Workspace. A conflicting reuse fails. A lost response
@@ -120,7 +147,10 @@ file under the same identity. Admission rejects unavailable, expired or differen
 scoped attachments.
 
 `UserUpload` contains `id`, `sessionId`, `workspaceId`, `name`, `path`, `mimeType`,
-`byteLength`, `sha256` and optional image reference. Conversation Turns and queued
+`byteLength`, `sha256` and an image reference for visual sources or an `original`
+reference tagged `pi_cloud_attachment_v1` for other sources. Both references carry
+object ID, digest, byte length and MIME type; they carry no file body. Source
+metadata must match the upload, and new input admission requires a retained source. Conversation Turns and queued
 inputs expose `uploads` when nonempty. The original prompt remains unchanged in
 the public DTO; generated file descriptions belong to the native user input.
 
@@ -147,8 +177,8 @@ with at most eight waiting requests and a 30-second queue wait. The existing
 Run/Cube authority, guest deadline and stop lifecycle apply. No result ledger,
 new event consumer, storage service or Pi loop patch is introduced.
 
-Deploy migrations through 194 and matched API, Worker, Cube runtime, Volume Gateway, Web and Cube
-guest builds. Preserve native history and existing image objects. The guest now
+Deploy migrations through 208 with matched API, Worker, Cube runtime, Volume Gateway, Web and
+guest artifacts. The fixed Workspace upload protocol remains version 2. Preserve native history and existing image objects. The guest now
 contains `envd-input-files.mjs`; an old template is not a supported fallback.
 The decision and acceptance scope are in
 [ADR-0200](adr/0200-workspace-uploads-and-user-image-input.md) and

@@ -28,6 +28,7 @@ import {
 import { blobContentDigest } from "./upload-digest.ts";
 import {
   parseUserUpload,
+  userUploadSource,
   type UserUpload,
   parseInputQueueResource,
   parseQueuedInputActionResult,
@@ -1002,6 +1003,51 @@ export class PiCloudApi {
       `/v1/sessions/${encodeURIComponent(upload.sessionId)}/images/${encodeURIComponent(upload.image!.id)}`,
       this.#authorizationToken,
       signal,
+    );
+  }
+
+  readInputAttachment(
+    upload: UserUpload,
+    signal?: AbortSignal,
+  ): Promise<{ bytes: Uint8Array; contentType: string }> {
+    const source = userUploadSource(upload);
+    if (!source) return Promise.reject(new Error("Attachment original is unavailable"));
+    return requestBytes(
+      this.#fetch,
+      `/v1/sessions/${encodeURIComponent(upload.sessionId)}/attachments/${encodeURIComponent(source.id)}`,
+      this.#authorizationToken,
+      signal,
+    );
+  }
+
+  attachmentDownloadUrl(upload: UserUpload): string {
+    const source = userUploadSource(upload);
+    if (!source) throw new Error("Attachment original is unavailable");
+    return `/v1/sessions/${encodeURIComponent(upload.sessionId)}/attachments/${encodeURIComponent(source.id)}`;
+  }
+
+  async reuseInputAttachment(
+    targetSessionId: string,
+    id: string,
+    upload: UserUpload,
+    signal?: AbortSignal,
+  ): Promise<UserUpload> {
+    const source = userUploadSource(upload);
+    if (!source) throw new Error("Attachment original is unavailable");
+    return parseUserUpload(
+      await request(
+        this.#fetch,
+        `/v1/sessions/${encodeURIComponent(targetSessionId)}/uploads/${encodeURIComponent(id)}/from-attachment`,
+        {
+          ...jsonRequest({
+            sourceSessionId: upload.sessionId,
+            attachmentId: source.id,
+            name: upload.name,
+          }),
+          signal: signal ?? null,
+        },
+        this.#authorizationToken,
+      ),
     );
   }
 

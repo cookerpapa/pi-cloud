@@ -39,6 +39,7 @@ export const QueuedInputActionSchema = Type.Union([
       action: Type.Literal("steer"),
       revision: Revision,
       text: Type.Optional(Text),
+      uploadIds: Type.Optional(UserUploadIdsSchema),
     },
     options,
   ),

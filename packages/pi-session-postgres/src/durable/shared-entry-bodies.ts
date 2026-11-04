@@ -5,7 +5,7 @@ import type { StorageWrite } from "@earendil-works/pi-durable";
 import type { DurableScope } from "./types.ts";
 import type { HistoryWriteRow } from "./current-state.ts";
 import { indexNative } from "./types.ts";
-import { retainedImageReferences } from "@pi-cloud/session-attachments";
+import { retainedAttachmentReferences } from "@pi-cloud/session-attachments";
 import { collectSharedHistory } from "./history-collection.ts";
 
 type EntryWrite = Extract<StorageWrite, { type: "entry" }>;
@@ -47,7 +47,7 @@ export async function writeRetainedHistory(
   const payloads = new Map<string, { id: string; text: string }>();
   for (const row of history) {
     const write = JSON.parse(row.body) as StorageWrite;
-    for (const ref of retainedImageReferences(write))
+    for (const ref of retainedAttachmentReferences(write))
       images.push({ ordinal: row.ordinal, imageId: ref.id });
     if (row.record_kind !== "entry") continue;
     const entry = splitEntry(write as EntryWrite);
@@ -90,8 +90,8 @@ export async function writeRetainedHistory(
     ), image_refs as (
       ${
         images.length
-          ? sql`insert into pi_history_record_images(tenant_id,retained_record_id,image_id)
-        select r.tenant_id,r.id,v.image_id from retained r join (values ${sql.join(images.map((v) => sql`(${v.ordinal}::int,${v.imageId}::uuid)`))}) v(ordinal,image_id) using(ordinal)
+          ? sql`insert into pi_history_record_attachments(tenant_id,retained_record_id,attachment_id)
+        select r.tenant_id,r.id,v.attachment_id from retained r join (values ${sql.join(images.map((v) => sql`(${v.ordinal}::int,${v.imageId}::uuid)`))}) v(ordinal,attachment_id) using(ordinal)
         on conflict do nothing`
           : sql`select 1`
       }

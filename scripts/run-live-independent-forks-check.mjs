@@ -25,7 +25,7 @@ import {
   purgeOwnedAcceptanceTenant,
   settleOwnedAcceptanceRuns,
 } from "./lib/owned-acceptance-cleanup.mjs";
-import { S3ImageBlobStore } from "../packages/session-attachments/src/s3.ts";
+import { S3AttachmentBlobStore } from "../packages/session-attachments/src/s3.ts";
 import { withChromePage } from "./lib/chrome-cdp.mjs";
 
 assert.equal(
@@ -42,7 +42,7 @@ const endpoint = new URL(
 );
 endpoint.hostname = serviceAddress("postgres");
 const db = createDatabase({ connectionString: endpoint.toString(), maxConnections: 3 });
-const blobs = new S3ImageBlobStore({
+const blobs = new S3AttachmentBlobStore({
   endpoint: `http://${serviceAddress("session-images")}:8333`,
   bucket: "pi-cloud-session-images",
   region: "us-east-1",

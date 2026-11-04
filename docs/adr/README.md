@@ -1,5 +1,10 @@
 # Current architecture decisions
 
+[ADR-0294](0294-retained-user-attachments.md) is implemented and source-verified:
+automatic editable long-paste attachments and retained user originals using the
+existing S3/PG reference authority. Matched publication is pending.
+[Issue #2](https://github.com/cookerpapa/pi-cloud/issues/2).
+
 [ADR-0293](0293-cloud-skill-runtime.md) is deployed as
 `cloud-skills-20261101-r5`: early catalog selection, native prompt sections,
 named activation, automatic resources and Agent publication. Real model, browser
