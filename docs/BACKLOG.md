@@ -1,5 +1,18 @@
 # Maintained backlog
 
+## Conversation UI direction — concepts awaiting selection
+
+- [x] Inspect the existing shell and compare official Codex, Claude, Lovable and
+      Manus interaction references.
+- [x] Produce three synthetic UI concept images with saved prompts and explicit
+      tradeoffs: quiet chat, dark workbench and preview studio.
+- [ ] Select the default layout/theme, then refine responsive and failure states.
+- [ ] Define and implement one approved presentation slice with browser acceptance.
+
+The [November 4 design study](design/ui-concepts-20261104/README.md) is a proposal.
+There is no application code, runtime, protocol or deployment change in this slice.
+Embedded preview and combined workspace panes remain unimplemented design ideas.
+
 ## Skill creation entry — deployed
 
 - [x] Remove the top-level Import button and its unused blank publisher state.

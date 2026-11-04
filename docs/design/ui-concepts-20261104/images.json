@@ -1,0 +1,28 @@
+{
+  "generation": "built-in image_gen",
+  "purpose": "design review only",
+  "syntheticContent": true,
+  "images": [
+    {
+      "file": "a-quiet-chat.png",
+      "width": 1568,
+      "height": 1003,
+      "bytes": 1233863,
+      "sha256": "667f50e45ac55e659ade9ae9874e97fc2a970383f96cc0543900017e116617db"
+    },
+    {
+      "file": "b-dark-workbench.png",
+      "width": 1568,
+      "height": 1003,
+      "bytes": 1499129,
+      "sha256": "79c0ba5d81cdc8fab989e9fe7fb4ec96de5713b9cc1a18b80615d7aa83993473"
+    },
+    {
+      "file": "c-preview-studio.png",
+      "width": 1568,
+      "height": 1003,
+      "bytes": 1984852,
+      "sha256": "8a3af9e5b45d5cf280d32b0abe5eb7cc93db2c253cc2073a1690dc2b434deca6"
+    }
+  ]
+}

@@ -41,6 +41,9 @@ work from remaining proposals and unverified limits.
 
 ## Decisions and evidence
 
+- [Conversation UI concepts, November 4](design/ui-concepts-20261104/README.md):
+  three visual alternatives and official-product references; awaiting selection,
+  with no application implementation or deployment.
 - [Full repository review, November 1](reports/repository-review-20261101.md):
   feature coverage, confirmed issues, architecture tradeoffs and validation limits.
 - [Current ADR index](adr/README.md): why the maintained design was chosen.
