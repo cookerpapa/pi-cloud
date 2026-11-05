@@ -59,6 +59,10 @@ export async function purgeOwnedAcceptanceTenant(database, tenant, blobs) {
       (select count(*) from pi_sessions where tenant_id=${tenant.tenantId}::uuid)::int as native_sessions,
       (select count(*) from session_leases where tenant_id=${tenant.tenantId}::uuid and released_at is null)::int as writers,
       (select count(*) from workspaces where tenant_id=${tenant.tenantId}::uuid and (deleted_at is null or storage_purged_at is null))::int as workspaces,
+      (select count(*) from development_environments where tenant_id=${tenant.tenantId}::uuid and
+        (state<>'released' or not allocation_closed or not allocation_absent or runtime_name is not null
+         or agent_activation_id is not null or terminal_active))::int as machines,
+      (select count(*) from workspace_file_transfers where tenant_id=${tenant.tenantId}::uuid)::int as transfers,
       (select count(*) from outbox where tenant_id=${tenant.tenantId}::uuid and published_at is null)::int as controls,
       (select count(*) from session_attachment_references where tenant_id=${tenant.tenantId}::uuid)::int as images,
       (select count(*) from session_attachment_objects where tenant_id=${tenant.tenantId}::uuid and write_completed_at is null)::int as unfinished_image_writers,
@@ -106,6 +110,8 @@ export async function purgeOwnedAcceptanceTenant(database, tenant, blobs) {
       "workspace_terminal_sessions",
       "workspace_runtimes",
       "workspace_delete_operations",
+      "development_environment_operations",
+      "development_environments",
       "environment_validations",
       "environment_versions",
       "workspaces",

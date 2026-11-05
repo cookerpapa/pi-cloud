@@ -56,6 +56,7 @@ const report = {
     driverRss: process.memoryUsage().rss,
     browserJsHeap: 0,
     browserProcessTreeRss: 0,
+    browserPrivateBytes: 0,
     controlPlaneRss: 0,
     samplingIntervalMs: 1000,
   },
@@ -67,6 +68,33 @@ let tenant, api, failure;
 const save = () => writeFile(output, JSON.stringify(report, null, 2) + "\n", { mode: 0o600 });
 const terminal = (state) => ["completed", "failed", "cancelled", "timed_out"].includes(state);
 const exec = promisify(execFile);
+async function browserMemory(page) {
+  const { stdout } = await exec("ps", ["-eo", "pid=,ppid=,rss="]);
+  const processes = stdout
+    .trim()
+    .split("\n")
+    .map((line) => line.trim().split(/\s+/).map(Number));
+  const descendants = new Set([page.browserPid]);
+  let size;
+  do {
+    size = descendants.size;
+    for (const [pid, parent] of processes) if (descendants.has(parent)) descendants.add(pid);
+  } while (size !== descendants.size);
+  const owned = processes.filter(([pid]) => descendants.has(pid));
+  const privateBytes = await Promise.all(
+    owned.map(async ([pid]) => {
+      const rollup = await readFile(`/proc/${pid}/smaps_rollup`, "utf8").catch(() => "");
+      return [...rollup.matchAll(/^Private_(?:Clean|Dirty):\s+(\d+)\s+kB/gm)].reduce(
+        (sum, match) => sum + Number(match[1]) * 1024,
+        0,
+      );
+    }),
+  );
+  return {
+    rss: owned.reduce((sum, [, , rss]) => sum + rss * 1024, 0),
+    privateBytes: privateBytes.reduce((a, b) => a + b, 0),
+  };
+}
 let readingMetrics = false;
 const metricsUrl = `http://${serviceAddress("control-plane")}:9464/metrics`;
 const metricsToken = (await readFile(`${runtimeDirectory}/secrets/metrics-token`, "utf8")).trim();
@@ -367,26 +395,16 @@ try {
               report.peaks.browserJsHeap,
               value.metrics.find((metric) => metric.name === "JSHeapUsedSize")?.value ?? 0,
             );
-            return exec("ps", ["-eo", "pid=,ppid=,rss="]);
+            return browserMemory(page);
           })
           .then((result) => {
-            const processes = result.stdout
-              .trim()
-              .split("\n")
-              .map((line) => line.trim().split(/\s+/).map(Number));
-            const descendants = new Set([page.browserPid]);
-            let size;
-            do {
-              size = descendants.size;
-              for (const [pid, parent] of processes)
-                if (descendants.has(parent)) descendants.add(pid);
-            } while (size !== descendants.size);
-            const bytes = processes
-              .filter(([pid]) => descendants.has(pid))
-              .reduce((sum, [, , rss]) => sum + rss * 1024, 0);
             report.peaks.browserProcessTreeRss = Math.max(
               report.peaks.browserProcessTreeRss,
-              bytes,
+              result.rss,
+            );
+            report.peaks.browserPrivateBytes = Math.max(
+              report.peaks.browserPrivateBytes,
+              result.privateBytes,
             );
           })
           .catch(() => undefined)
@@ -398,6 +416,7 @@ try {
       try {
         await page.navigate(base);
         await selectConversation(page, title);
+        report.browserBaseline = await browserMemory(page);
         await page.evaluate("document.querySelector('.product-composer textarea').focus()");
         await page.send("Input.insertText", {
           text: "Use bash exactly once to run sha256sum on the uploaded file. Return its digest. Do not edit files, search, or delegate.",
@@ -479,6 +498,62 @@ try {
         assert.equal(completed.state, "ready");
         assert.equal(completed.sha256, source.sha256);
         await noOriginals();
+        // File-panel uploads are independent of sending a message and keep the
+        // selected nested directory after their tree refresh.
+        await page.evaluate(
+          "[...document.querySelectorAll('.product-topbar button')].find(b=>['Workspace','工作区'].includes(b.textContent.trim())).click()",
+        );
+        await page.waitFor(
+          "document.querySelector('.workspace-upload-panel') && document.querySelector('.workspace-tree-directory')",
+        );
+        await page.evaluate(
+          "[...document.querySelectorAll('.workspace-tree-directory')].find(b=>b.textContent.includes('uploads')).click()",
+        );
+        await page.waitFor(
+          `document.querySelector('.workspace-upload-panel select option[value="uploads/${row.id}"]')`,
+        );
+        await page.evaluate(
+          `(()=>{const select=document.querySelector('.workspace-upload-panel select');select.value='uploads/${row.id}';select.dispatchEvent(new Event('change',{bubbles:true}));})()`,
+        );
+        const panelPath = join(directory, "panel.txt");
+        await writeFile(panelPath, "Workspace panel fixture\n");
+        await selectFile(page, ".workspace-upload-panel>input[type=file]", panelPath);
+        await page.waitFor("document.querySelector('.workspace-upload-panel .upload-card')");
+        await page.evaluate(
+          "[...document.querySelectorAll('.workspace-upload-panel>button')].find(b=>['Start upload','开始上传'].includes(b.textContent.trim())).click()",
+        );
+        const panel = await until(
+          () =>
+            db
+              .selectFrom("workspace_file_transfers")
+              .select(["relative_path", "state"])
+              .where("session_id", "=", session.sessionId)
+              .where("name", "=", "panel.txt")
+              .where("state", "=", "ready")
+              .executeTakeFirst(),
+          "File-panel upload",
+        );
+        assert.equal(panel.relative_path, `uploads/${row.id}/panel.txt`);
+        await page.waitFor(
+          `document.querySelector('.workspace-upload-panel select').value==='uploads/${row.id}'`,
+        );
+        await page.evaluate(
+          "[...document.querySelectorAll('.workspace-upload-panel>button')].find(b=>b.textContent.includes('panel.txt')).click()",
+        );
+        await page.waitFor(
+          `document.querySelector('.product-composer textarea').value.includes('/home/user/uploads/${row.id}/panel.txt')`,
+        );
+        assert.equal(
+          (
+            await db
+              .selectFrom("runs")
+              .select("id")
+              .where("session_id", "=", session.sessionId)
+              .execute()
+          ).length,
+          1,
+        );
+        report.filePanel = { nestedDirectoryRetained: true, referenceWithoutNewRun: true };
         report.transfers.push({
           kind: "machine-browser",
           byteLength: source.byteLength,

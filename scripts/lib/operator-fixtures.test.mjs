@@ -220,6 +220,84 @@ it("retains an owned tenant while its image writer has no completion proof", asy
   }
 });
 
+it("requires released machine evidence and deletes its metadata before environment versions", async () => {
+  const tenant = await createPrivateTenant(database, {
+    slug: `release-acceptance-machine-${randomUUID()}`,
+    ownerDisplayName: "Machine cleanup",
+  });
+  const store = new ControlPlaneStore({ database, ...tenant });
+  const project = await store.createProject({ name: "Owned machine", source: { kind: "empty" } });
+  const workspace = await database
+    .selectFrom("workspaces")
+    .selectAll()
+    .where("id", "=", project.workspaceId)
+    .executeTakeFirstOrThrow();
+  const version = await database
+    .selectFrom("environment_versions")
+    .select("id")
+    .where("project_id", "=", project.projectId)
+    .executeTakeFirstOrThrow();
+  const id = randomUUID();
+  await database
+    .insertInto("development_environments")
+    .values({
+      id,
+      tenant_id: tenant.tenantId,
+      owner_user_id: tenant.ownerUserId,
+      project_id: project.projectId,
+      workspace_id: project.workspaceId,
+      sandbox_domain_id: workspace.sandbox_domain_id,
+      environment_version_id: version.id,
+      owner_instance_id: null,
+      owner_base_url: null,
+      runtime_id: null,
+      runtime_name: null,
+      profile_key: "starter",
+      cpu_count: 1,
+      memory_mib: 2048,
+      system_disk_gib: 20,
+      state: "requested",
+      failure_code: null,
+      idempotency_key: "owned-machine",
+      request_sha256: "a".repeat(64),
+      released_at: null,
+    })
+    .execute();
+  // This is an isolated PG fixture; stand in for the product's physical cleanup
+  // receipt without introducing any real VM or deleting a user's resource.
+  await database
+    .updateTable("workspaces")
+    .set({ deleted_at: new Date(), storage_purged_at: new Date() })
+    .where("id", "=", project.workspaceId)
+    .execute();
+  const blobs = { delete: async () => {} };
+  await expect(purgeOwnedAcceptanceTenant(database, tenant, blobs)).rejects.toThrow(
+    "settled/purged",
+  );
+  await database
+    .updateTable("development_environments")
+    .set({
+      state: "released",
+      desired_state: "released",
+      intent_revision: sql`intent_revision + 1`,
+      allocation_closed: true,
+      allocation_absent: true,
+      released_at: new Date(),
+    })
+    .where("id", "=", id)
+    .execute();
+  expect(await purgeOwnedAcceptanceTenant(database, tenant, blobs)).toMatchObject({
+    tenantRemoved: true,
+  });
+  expect(
+    await database
+      .selectFrom("development_environments")
+      .select("id")
+      .where("id", "=", id)
+      .execute(),
+  ).toHaveLength(0);
+});
+
 it("removes only the settled fixture's retained image edges before its objects", async () => {
   const tenant = await createPrivateTenant(database, {
     slug: `release-acceptance-history-${randomUUID()}`,
