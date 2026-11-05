@@ -9,6 +9,9 @@ full browser contracts, then the owned
 [Workspace uploads](WORKSPACE_UPLOADS.md), retained-attachment acceptance and the
 native-input recovery gate. Source checks alone do not establish publication.
 
+The matched release and scoped Web follow-up passed these live gates on Helm 144;
+[delivery and preservation](reports/workspace-file-transfers-20261105.md).
+
 ADR-0294 requires schema 208 and matched Control Plane/Worker/Web publication.
 The existing object inventory and history reference indexes now cover ordinary
 uploaded originals as well as images; S3 keys and image codec remain unchanged.

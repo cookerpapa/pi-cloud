@@ -1,6 +1,7 @@
 # ADR-0295: Resumable Workspace files and explicit attachment retention
 
-Status: accepted for implementation, 2026-11-05.
+Status: implemented and deployed, 2026-11-05, schema 209 / Helm 144.
+[Source and live evidence](../reports/workspace-file-transfers-20261105.md).
 Tracking: https://github.com/cookerpapa/pi-cloud/issues/3 .
 
 ## Decision

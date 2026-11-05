@@ -1,6 +1,6 @@
 # Maintained backlog
 
-## Workspace-only files and resumable uploads — in progress
+## Workspace-only files and resumable uploads — deployed
 
 - [x] Confirm explicit retention in the composer and Workspace file panel; record
       [ADR-0295](adr/0295-workspace-file-transfers.md) and
@@ -13,12 +13,19 @@
       and existing-file references; retain failed drafts and native queue behavior.
 - [x] Complete source contracts, browser and retained-attachment regressions;
       all 391 deterministic fault cases pass after the maintenance contract update.
-- [ ] Complete actual 1 GiB/5 GiB Cube/browser/model transfer acceptance.
-- [ ] Publish matched artifacts, demonstrate live Cube/model behavior and preserve
+- [x] Complete actual 1 GiB/5 GiB Cube/browser/model transfer acceptance.
+- [x] Publish matched artifacts, demonstrate live Cube/model behavior and preserve
       original assets; push completed commits and record measured limits.
 
-Source details and remaining live checks:
+Matched `workspace-transfers-20261105`, schema 209, and the scoped Web follow-up
+are deployed on Helm 144. Real large-file continuation, browser recovery, file-panel
+reference, retained inputs and five native recovery scenarios passed. Original
+assets are unchanged; all owned fixtures were cleaned. Delivery and measured limits:
 [transfer delivery record](reports/workspace-file-transfers-20261105.md).
+
+Separate follow-ups: retained-original multipart continuation, and the explicit
+history-search/download-attachment Tool contract in Issue #3. Neither is part of
+the deployed Workspace-only transfer slice.
 
 ## Retained user originals and long paste — deployed
 

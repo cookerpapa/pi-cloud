@@ -1,0 +1,123 @@
+{
+  "feature": "Workspace-only uploads and browser draft recovery",
+  "date": "2026-11-05",
+  "schema": 209,
+  "backend": {
+    "version": "workspace-transfers-20261105",
+    "sourceRevision": "e0f2bc69a0ed24841e203bf8c2ada581777c797d",
+    "scannedArtifacts": 13
+  },
+  "web": {
+    "version": "workspace-transfer-web-20261105-r2",
+    "sourceRevision": "a94f762c3fc89af39c06dceffbb56c86463fd678",
+    "scannedArtifacts": 1
+  },
+  "helmRevision": 144,
+  "source": {
+    "typeChecksPassed": true,
+    "faults": {
+      "passed": 391,
+      "total": 391,
+      "dirtyWorktreeReported": true
+    },
+    "postgresKafkaTransportPassed": 9,
+    "initialWorkspaceRun": {
+      "passed": 2403,
+      "failed": 1,
+      "existingSkips": 11
+    },
+    "sandboxRecheck": {
+      "passed": 347,
+      "existingSkips": 2
+    },
+    "finalApiCasesPassed": 7,
+    "finalVolumeHttpCasesPassed": 4,
+    "releaseHelpersBaselinePassed": 133,
+    "updatedOperatorFixtureCasesPassed": 13,
+    "fullBrowserPassed": true,
+    "scopedWebGatePassed": true
+  },
+  "live": {
+    "model": "gpt-6-luna",
+    "elastic": {
+      "kind": "elastic",
+      "byteLength": 5368709120,
+      "resumedAt": 16777216,
+      "durationMs": 140221.918885,
+      "vmFreeUntilTool": true
+    },
+    "machineBrowser": {
+      "kind": "machine-browser",
+      "byteLength": 1073741824,
+      "browserReloadAt": 8388608,
+      "durationMs": 134744.641279
+    },
+    "canonicalBashDigestVerified": true,
+    "modelInputBytes": [189, 383],
+    "filePanel": {
+      "nestedDirectoryRetained": true,
+      "referenceWithoutNewRun": true
+    },
+    "retainedAttachmentRunsPassed": 5,
+    "nativeRecoveryCases": ["consume", "stop", "recover", "stream_stop", "stream_both_crash"],
+    "memorySamples": {
+      "intervalMs": 1000,
+      "elasticAndFirstBrowser": {
+        "driverRss": 242724864,
+        "browserJsHeap": 6599860,
+        "browserProcessTreeRss": 1038675968,
+        "controlPlaneRss": 487772160,
+        "samplingIntervalMs": 1000
+      },
+      "finalBrowserBaseline": {
+        "rss": 975634432,
+        "privateBytes": 184774656
+      },
+      "finalBrowserPeaks": {
+        "driverRss": 218292224,
+        "browserJsHeap": 7369916,
+        "browserProcessTreeRss": 1060282368,
+        "browserPrivateBytes": 274190336,
+        "controlPlaneRss": 415621120,
+        "samplingIntervalMs": 1000
+      },
+      "note": "RSS sums include shared pages repeatedly. Private bytes use Linux smaps_rollup; samples are not a universal peak or SLA."
+    }
+  },
+  "preservation": {
+    "relations": 17,
+    "workspaceFiles": 6006,
+    "originals": 154,
+    "credentialFiles": 27,
+    "changedRelations": 0,
+    "changedFiles": 0,
+    "changedCredentials": 0,
+    "rootsMatch": true
+  },
+  "cleanup": {
+    "initialIssue": "Released test-machine metadata had to be deleted before environment_versions. Fixed in the owned-fixture helper; initial failed evidence is retained privately.",
+    "initialRecoverySucceeded": true,
+    "finalDriverSucceeded": true,
+    "remainingTransferFixtures": 0
+  },
+  "finalState": {
+    "counts": {
+      "active_runs": 0,
+      "writers": 0,
+      "bindings": 0,
+      "elastic": 0,
+      "terminals": 0,
+      "transfer_fixtures": 0
+    },
+    "originalMachinesReady": 2,
+    "pods": {
+      "running": 26,
+      "ready": 26
+    }
+  },
+  "limits": [
+    "Resumable bytes currently apply to Workspace-only files; retained originals still retry the complete stream.",
+    "Local draft recovery requires browser storage and may require source reselection; it is not cross-device sync.",
+    "History search and download_attachment remain a separate future slice."
+  ]
+}

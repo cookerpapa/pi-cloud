@@ -1,6 +1,6 @@
 # Implementation roadmap
 
-## Workspace file transfers — in progress
+## Workspace file transfers — deployed
 
 [ADR-0295](adr/0295-workspace-file-transfers.md) separates upload entry points from
 retention. Composer and Workspace inspector can upload working files without an
@@ -8,6 +8,10 @@ S3 original, using standard tus continuation over existing Cube file adapters.
 Filesystem progress and bounded PG admission remain separate; native input and
 retained originals keep their existing semantics. Tracking:
 [Issue #3](https://github.com/cookerpapa/pi-cloud/issues/3).
+
+Matched schema 209 and the Web follow-up are live on Helm 144. Actual 5 GiB/1 GiB
+continuation, browser recovery, native/retained-input regressions and original-asset
+preservation passed. [Delivery](reports/workspace-file-transfers-20261105.md).
 
 ## Retained user originals and long paste — deployed
 

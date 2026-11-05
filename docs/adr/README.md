@@ -1,8 +1,9 @@
 # Current architecture decisions
 
-[ADR-0295](0295-workspace-file-transfers.md) is in implementation: explicit
+[ADR-0295](0295-workspace-file-transfers.md) is deployed on schema 209: explicit
 Workspace-only uploads from the composer/file panel, upstream tus transport and
 filesystem-owned continuation. Existing retained attachment semantics remain.
+Large-file/browser/model and recovery checks passed; [delivery](../reports/workspace-file-transfers-20261105.md).
 
 [ADR-0294](0294-retained-user-attachments.md) is deployed as `retained-attachments-20261104`:
 automatic editable long-paste attachments and retained user originals using the

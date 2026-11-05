@@ -1,7 +1,9 @@
 # Workspace file transfers — 2026-11-05
 
-Status: source implementation verified; matched publication and large-file live
-acceptance pending. This is not a claim that the new UI is already serving.
+Deployed: matched `workspace-transfers-20261105` from `e0f2bc69`, schema 209,
+then Web-only `workspace-transfer-web-20261105-r2` from `a94f762c`, Helm 144.
+Source checks, actual large-file/browser/model acceptance and final preservation
+checks passed. [Sanitized evidence](workspace-file-transfers-20261105.evidence.json).
 [ADR-0295](../adr/0295-workspace-file-transfers.md),
 [behavior/API](../WORKSPACE_UPLOADS.md),
 [Issue #3](https://github.com/cookerpapa/pi-cloud/issues/3).
@@ -64,13 +66,62 @@ that provenance explicitly. No production data was a source-test fixture.
 
 ## Publication and live evidence
 
-Pending matched schema-209 publication, owned 5 GiB elastic and 1 GiB dedicated
-browser uploads, canonical Luna Bash checksums, retained-attachment/native recovery
-regressions and preservation comparison. The live driver samples driver/Control
-Plane RSS, browser JS heap and summed Chrome-process RSS; it must not infer a peak
-from only the JS heap. Original accounts, configuration, conversations, images and
-Workspace bytes remain preservation targets.
+All 13 matched artifacts passed provenance/SBOM/vulnerability checks. The two
+original machines had no user application listeners; their recorded allocations
+were closed and physically confirmed absent before retirement. Both kept their
+Workspace and running intent, and recovered on new allocations after publication.
+
+- **5 GiB elastic upload:** paused at 16 MiB and resumed with the same identity;
+  completed in about 140 seconds. No VM, Run or retained original was created by
+  the upload. A subsequent real Luna Bash independently verified the digest.
+- **1 GiB dedicated browser upload:** actually navigated away after at least
+  8 MiB had arrived, reopened the conversation, restored its draft, reselected
+  the disk file and continued. Luna verified the canonical Bash digest. The final
+  browser scenario, including verification and file-panel checks, took about
+  135 seconds; this is not a pure network-throughput measurement.
+- **File panel:** uploaded into a nested directory, retained its displayed target
+  after refresh and inserted the path without creating another Run.
+- The large files produced only **189 / 383 bytes of user-input text** in the two
+  verification Runs. File bodies and object-store locations did not enter prompts.
+- Existing retained-attachment acceptance passed five real Runs: edited long paste,
+  original-versus-working-copy independence, Fork/reuse after Workspace loss,
+  edited/promoted native input and direct image vision.
+- Native consume, Stop, Worker replacement, streaming Stop and combined
+  Worker/Control Plane crash recovery all passed. The logged container connection
+  loss came from the deliberate fault, followed by verified recovery.
+
+The first live driver exposed a fixture-cleanup FK ordering error: the test
+machine was physically released, but its metadata preceded environment-version
+deletion. The helper now requires released/absent evidence and deletes dependent
+machine records first. An isolated regression and actual cleanup passed; the
+subsequent browser driver completed with successful cleanup. Initial failed
+cleanup evidence remains private rather than being erased from the record.
+
+The nested-directory presentation fix used a Web-only release from an isolated
+source slice. The combined development commit also changed an acceptance helper,
+so the original scope guard correctly refused it. No guard was relaxed. The
+isolated checkout needed its local Helm dependency packaged before preparation;
+the retry passed existing Web, browser, manifest and one-image scan gates. The
+release commit was merged into main. Backend images and machine lifetimes were
+not replaced by this Web publication.
+
+Memory was sampled every second. In the final 1 GiB browser run, summed private
+memory grew from about **176 MiB** to a sampled peak of **261 MiB**; JS heap peaked
+at about **7 MiB**. Summed Chrome-process RSS was about 1,011 MiB, already about
+930 MiB before upload because that sum counts shared mappings repeatedly. Control
+Plane RSS peaked at about **465 MiB** across the first large-file scenarios.
+These measurements do not establish arbitrary-size or fleet guarantees.
+
+Final checks preserved all **17 protected relations, 6,006 Workspace files,
+154 originals and 27 credential/configuration files**. All owned fixtures were
+cleaned; 26/26 running Pods and both original machines were ready, with no active
+Runs, writers, bindings, terminals or elastic test VMs remaining. Nine real
+PostgreSQL/Kafka transport tests also passed.
 
 The current 24-hour partial retention is not a promise that an unreachable/paused
 Guest can be cleaned immediately. Admission is revoked and cleanup is retried;
 missing transport replies never prove physical deletion or release VM quota.
+
+Byte-level continuation currently covers Workspace-only uploads. Retained-original
+uploads still retry the whole stream. Browser drafts are local, ordinary source
+files may need reselection, and history-search/download Tools remain deferred.
