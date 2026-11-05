@@ -1456,9 +1456,11 @@ describe("CubeSandbox Provider contract", () => {
     const original = runtime.runCommand.bind(runtime);
     vi.spyOn(runtime, "runCommand").mockImplementation(async (instance, input) => {
       if (input.command.includes("envd-input-files.mjs")) {
-        expect(runtime.requestForCommand(input)).toEqual({ mode: "reap_upload_staging" });
-        expect(input.command).toContain("--reuid 1000");
-        seen.push(instance.sandboxId);
+        const request = runtime.requestForCommand(input);
+        expect(["reap_upload_staging", "reap_upload_sources"]).toContain(request.mode);
+        if (request.mode === "reap_upload_staging") expect(input.command).toContain("--reuid 1000");
+        else expect(input.command).not.toContain("--reuid 1000");
+        seen.push(`${instance.sandboxId}:${request.mode}`);
         if (instance.sandboxId === handles[0]!.runtimeName)
           throw new Error("Cleanup channel unavailable");
         return {
@@ -1475,7 +1477,11 @@ describe("CubeSandbox Provider contract", () => {
     try {
       await expect(provider.reapUploadStaging(1)).rejects.toThrow("deferred");
       await expect(provider.reapUploadStaging(1)).resolves.toBeUndefined();
-      expect(seen).toEqual([handles[0]!.runtimeName, handles[1]!.runtimeName]);
+      expect(seen.sort()).toEqual(
+        [handles[0]!.runtimeName, handles[1]!.runtimeName]
+          .flatMap((id) => [`${id}:reap_upload_staging`, `${id}:reap_upload_sources`])
+          .sort(),
+      );
       expect(runtime.destroyed).toEqual([]);
       await expect(provider.inspect(handles[0]!)).resolves.toMatchObject({ state: "running" });
       expect(runtime.creates).toHaveLength(4);

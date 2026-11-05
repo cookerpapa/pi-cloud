@@ -1,4 +1,9 @@
 import { SkillMarketService } from "./skill-market-service.ts";
+import { WorkspaceFileTransferController } from "./workspace-file-transfer-controller.ts";
+import {
+  WorkspaceFileTransferService,
+  type WorkspaceFileTransferPort,
+} from "./workspace-file-transfer-service.ts";
 import { SkillMarketController } from "./skill-market-controller.ts";
 import { SessionScheduleService } from "./session-schedule-service.ts";
 import { ConversationCompactService } from "./conversation-compact-service.ts";
@@ -54,6 +59,7 @@ export type ControlPlaneModuleOptions = Omit<
   publicRegistration?: PublicTenantRegistrationConfiguration;
   workspaceBrowser?: TrustedWorkspaceBrowser;
   workspaceUploader?: WorkspaceUploader;
+  workspaceFileTransfers?: WorkspaceFileTransferPort;
   imageAttachmentStore?: ImageAttachmentStore & AttachmentUploadStore & AttachmentSource;
   webAuthentication?: WebAuthenticationService;
   platformOperatorTenantId?: string;
@@ -112,8 +118,15 @@ export class ControlPlaneModule {
       });
     return {
       module: ControlPlaneModule,
-      controllers: [ControlPlaneController, SkillMarketController],
+      controllers: [ControlPlaneController, SkillMarketController, WorkspaceFileTransferController],
       providers: [
+        {
+          provide: WorkspaceFileTransferService,
+          useValue: new WorkspaceFileTransferService(
+            options.database,
+            options.workspaceFileTransfers,
+          ),
+        },
         {
           provide: SkillMarketService,
           useValue: options.skills ?? new SkillMarketService({ database: options.database }),

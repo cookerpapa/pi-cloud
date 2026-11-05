@@ -12,6 +12,8 @@ async function withChromePage(options, operation) {
   if (process.env.PI_CLOUD_BROWSER_SCOPE === "tool-groups" && !options.toolGroups) return;
   if (process.env.PI_CLOUD_BROWSER_SCOPE === "message-actions" && !options.messageActions) return;
   if (process.env.PI_CLOUD_BROWSER_SCOPE === "attachments" && !options.attachments) return;
+  if (process.env.PI_CLOUD_BROWSER_SCOPE === "workspace-transfers" && !options.workspaceTransfers)
+    return;
   return openChromePage(options, async (page) => {
     const requests = new Map(),
       networkFailures = [];
@@ -123,6 +125,10 @@ function Panel() {
   return React.createElement("div", {id:"panel", "data-width":panel.width, onPointerDown:panel.beginResize}, "drag");
 }
 const root = createRoot(document.getElementById("root"));
+window.unmountChat = () => root.render(null);
+window.workspaceTransferReceipts = new Map();
+window.workspaceTransferCalls = [];
+window.persistedInputReceipts = new Set();
 const configuration={productUrl:location.origin,adminUrl:location.origin,
   managementUrls:{providerGateway:'https://models.example.test/management.html',grafana:'',prometheus:'',alertmanager:'',jaeger:''}};
 window.renderAnswerActions=mode=>{
@@ -294,6 +300,8 @@ window.renderRebind = (withMachine=true) => {
   })));
 };
 window.renderChat = (sessionState='idle', history=false, childViews=false, peerForks=false) => {
+  // Reset local drafts with the synthetic server, except explicit reopen cases.
+  if(!window.keepComposerDrafts)for(const key of Object.keys(localStorage))if(key.startsWith('picloud.composer-draft.v1:'))localStorage.removeItem(key);
   window.requestAnimationFrame = nativeRaf; window.cancelAnimationFrame = nativeCancelRaf;
   const sid = "10000000-0000-4000-8000-000000000001";
   const profileId = "20000000-0000-4000-8000-000000000001";
@@ -383,6 +391,25 @@ window.renderChat = (sessionState='idle', history=false, childViews=false, peerF
       window.originalUploads.set(id,new Uint8Array(await file.arrayBuffer()));
       window.uploadReceipts.push(upload);return upload;
     },
+    inputReceipt:async(_session,key)=>({status:window.persistedInputReceipts.has(key)?'accepted':'unconfirmed'}),
+    createWorkspaceFileTransfer:async(sessionId,id,input)=>{
+      window.workspaceTransferCalls.push({action:'create',id,input});
+      const previous=window.workspaceTransferReceipts.get(id);
+      if(previous&&previous.sha256!==input.sha256)throw Error('Source changed');
+      const value=previous??{id,sessionId,workspaceId:input.workspaceId,name:input.name,
+        path:'/workspace/'+(input.directory===undefined?'uploads/'+id+'/':input.directory?input.directory+'/':'')+input.name,
+        byteLength:input.byteLength,sha256:input.sha256,state:'uploading',offset:0,expiresAt:new Date(Date.now()+86400000).toISOString()};
+      window.workspaceTransferReceipts.set(id,value);return {...value};
+    },
+    workspaceFileTransfer:async(_session,id)=>{const value=window.workspaceTransferReceipts.get(id);if(!value)throw Error('Missing upload');return {...value};},
+    continueWorkspaceFileTransfer:async(transfer,file,signal,progress)=>{
+      const current=window.workspaceTransferReceipts.get(transfer.id);
+      window.workspaceTransferCalls.push({action:'continue',id:transfer.id,offset:current.offset});
+      if(window.holdWorkspaceTransfer){current.offset=Math.floor(file.size/2);progress(current.offset);
+        await new Promise((resolve,reject)=>{window.releaseWorkspaceTransfer=resolve;signal.addEventListener('abort',()=>reject(signal.reason),{once:true});});}
+      signal.throwIfAborted();current.offset=file.size;current.state='ready';progress(file.size);return {...current};
+    },
+    cancelWorkspaceFileTransfer:async(_session,id)=>{const value=window.workspaceTransferReceipts.get(id);if(value&&value.state!=='ready')value.state='cancelled';return value;},
     readInputAttachment:async(upload)=>({bytes:window.originalUploads.get(upload.original?.attachment.id??upload.image.id),contentType:upload.mimeType}),
     reuseInputAttachment:async(sessionId,id,upload)=>{
       const receipt={...upload,id,sessionId,workspaceId:session.workspaceId,path:'/workspace/uploads/'+id+'/'+upload.name};
@@ -527,7 +554,7 @@ window.renderChat = (sessionState='idle', history=false, childViews=false, peerF
         const receipt=prior??((window.admitAsInput??sessionState==='running')?{kind:'input',inputId:'input-'+crypto.randomUUID().replaceAll('-','').repeat(2),
           turnId:fixtureTurnId,runId:'60000000-0000-4000-8000-000000000011',sessionId:sid,delivery:'follow_up',state:'accepted',acceptedAt:new Date().toISOString()}:
           {kind:'run',turnId:crypto.randomUUID(),sessionId:sid,runId:crypto.randomUUID(),mailboxPosition:window.turnReceipts.size+1,state:'queued',acceptedAt:new Date().toISOString()});
-        if(!prior){window.turnReceipts.set(key,receipt);window.turnStates.set(receipt.inputId??receipt.runId,'queued');
+        if(!prior){window.persistedInputReceipts.add(key);window.turnReceipts.set(key,receipt);window.turnStates.set(receipt.inputId??receipt.runId,'queued');
           if(receipt.kind==='input'){window.fixtureQueue.revision++;window.fixtureQueue.items.push({inputId:receipt.inputId,runId:receipt.runId,text:submitted.prompt,
             uploads:(submitted.uploadIds??[]).map(id=>window.uploadReceipts.find(upload=>upload.id===id)),mailboxPosition:window.fixtureQueue.items.length+1,acceptedAt:receipt.acceptedAt,status:'queued'});}}
 
@@ -635,6 +662,113 @@ const server = await createServer({
 try {
   await server.listen();
   const port = server.httpServer.address().port;
+  await withChromePage({ workspaceTransfers: true, width: 1280, height: 900 }, async (page) => {
+    await page.navigate(`http://127.0.0.1:${port}/review.html`);
+    await page.waitFor("window.fixtureReady");
+    await page.evaluate("window.keepComposerDrafts=true");
+    const openChat = async () => {
+      await page.evaluate("renderChat('idle',true,true);window.acceptTurns=true");
+      await page.waitFor(
+        "document.querySelector('.product-conversation-row:not(.product-delegated-session)>button')",
+      );
+      await page.evaluate(
+        "document.querySelector('.product-conversation-row:not(.product-delegated-session)>button').click()",
+      );
+      await page.waitFor(
+        "document.querySelector('.product-composer textarea') && !document.querySelector('.product-composer textarea').disabled",
+      );
+    };
+    await openChat();
+    await page.evaluate("document.querySelector('.product-composer textarea').focus()");
+    await page.send("Input.insertText", { text: "Use the uploaded model" });
+    await page.evaluate(
+      "(()=>{const data=new DataTransfer();data.items.add(new File([new Uint8Array(262144).fill(65)],'model.bin'));document.querySelector('.product-composer').dispatchEvent(new DragEvent('drop',{dataTransfer:data,bubbles:true,cancelable:true}));})()",
+    );
+    await page.waitFor("document.querySelector('.product-composer-shell>.upload-cards select')");
+    await page.evaluate(
+      "(()=>{const select=document.querySelector('.product-composer-shell>.upload-cards select');select.value='workspace';select.dispatchEvent(new Event('change',{bubbles:true}));})()",
+    );
+    assert.deepEqual(
+      await page.evaluate("[uploadCalls.length,workspaceTransferCalls.length,turnRequests.length]"),
+      [0, 0, 0],
+    );
+    await page.evaluate(
+      "window.holdWorkspaceTransfer=true;document.querySelector('.product-send-button').click()",
+    );
+    await page.waitFor(
+      "workspaceTransferCalls.some(call=>call.action==='continue') && document.querySelector('.product-composer-shell>.upload-cards').textContent.includes('50%')",
+    );
+    assert.equal(await page.evaluate("turnRequests.length"), 0);
+    assert.equal(
+      await page.evaluate("!!document.querySelector('.composer-delivery.sending')"),
+      false,
+    );
+    const uploadId = await page.evaluate(
+      "workspaceTransferCalls.find(call=>call.action==='create').id",
+    );
+    await page.screenshot("/tmp/pi-cloud-workspace-transfer-uploading.png");
+    await page.evaluate("unmountChat()");
+    await page.waitFor("!document.querySelector('.product-composer textarea')");
+    await openChat();
+    await page.waitFor(
+      "document.querySelector('.product-composer textarea').value==='Use the uploaded model' && document.querySelector('.product-composer-shell>.upload-cards').textContent.includes('Select original file')",
+    );
+    assert.equal(
+      await page.evaluate("workspaceTransferCalls.filter(call=>call.action==='continue').length"),
+      1,
+      "Reopening must not send or resume automatically",
+    );
+    await page.screenshot("/tmp/pi-cloud-workspace-transfer-restored.png");
+    await page.evaluate(
+      "(()=>{const input=document.querySelector('.product-composer-shell>.upload-cards input[type=file]');const data=new DataTransfer();data.items.add(new File([new Uint8Array(262144).fill(66)],'model.bin'));input.files=data.files;input.dispatchEvent(new Event('change',{bubbles:true}));})()",
+    );
+    await page.evaluate("document.querySelector('.product-send-button').click()");
+    await page.waitFor(
+      "document.querySelector('.product-composer-shell>.upload-cards').textContent.includes('differs from the original')",
+    );
+    assert.equal(
+      await page.evaluate("workspaceTransferCalls.filter(call=>call.action==='continue').length"),
+      1,
+    );
+    // Reselecting a wrong local source must not replace the original content identity.
+    await page.evaluate(
+      "(()=>{const input=document.querySelector('.product-composer-shell>.upload-cards input[type=file]');if(input){const data=new DataTransfer();data.items.add(new File([new Uint8Array(262144).fill(65)],'model.bin'));input.files=data.files;input.dispatchEvent(new Event('change',{bubbles:true}));}})()",
+    );
+    await page.evaluate(
+      "window.holdWorkspaceTransfer=false;document.querySelector('.product-send-button').click()",
+    );
+    await page.waitFor(
+      "turnRequests.length===1 && document.querySelector('.product-composer textarea').value===''",
+    );
+    const resumed = await page.evaluate(
+      "workspaceTransferCalls.filter(call=>call.action==='continue')",
+    );
+    assert.equal(resumed[1].id, uploadId);
+    assert.equal(resumed[1].offset, 131072);
+    assert.equal(
+      await page.evaluate("uploadCalls.length"),
+      0,
+      "Workspace-only must not use retained-original upload",
+    );
+    assert.deepEqual(await page.evaluate("turnRequests[0].body.uploadIds??[]"), []);
+    assert.match(await page.evaluate("turnRequests[0].body.prompt"), /\/workspace\/uploads\//);
+    // A persisted accepted receipt clears its old draft without submitting again.
+    await page.evaluate("document.querySelector('.product-composer textarea').focus()");
+    await page.send("Input.insertText", { text: "Lost acknowledgement" });
+    await page.evaluate(
+      "window.loseTurnReply=true;document.querySelector('.product-send-button').click()",
+    );
+    await page.waitFor(
+      "turnRequests.length===2 && !document.querySelector('.product-send-button').disabled",
+    );
+    await page.evaluate("unmountChat()");
+    await page.waitFor("!document.querySelector('.product-composer textarea')");
+    await openChat();
+    await page.waitFor("document.querySelector('.product-composer textarea').value===''");
+    assert.equal(await page.evaluate("turnRequests.length"), 2);
+    assert.deepEqual(await page.evaluate("fixtureErrors"), []);
+    await page.screenshot("/tmp/pi-cloud-workspace-transfer-browser.png");
+  });
   await withChromePage({ attachments: true, width: 1280, height: 900 }, async (page) => {
     await page.navigate(`http://127.0.0.1:${port}/review.html`);
     await page.waitFor("window.fixtureReady");
@@ -2873,132 +3007,144 @@ try {
   });
   console.log(
     JSON.stringify(
-      process.env.PI_CLOUD_BROWSER_SCOPE === "attachments"
+      process.env.PI_CLOUD_BROWSER_SCOPE === "workspace-transfers"
         ? {
             accepted: true,
-            scope: "attachments",
-            localLongPaste: true,
-            exactEditedUpload: true,
-            uploadFailureKeepsDraft: true,
-            readOnlyOriginal: true,
-            atomicEditedSteer: true,
-            consumedInputKeepsEditedAttachment: true,
+            scope: "workspace-transfers",
+            retentionBeforeUpload: true,
+            localDraftAfterRemount: true,
+            reselectOriginalForResume: true,
+            wrongSourceRejected: true,
+            receiverOffsetUsed: true,
+            uploadBeforeInputAdmission: true,
+            lostReceiptReconciled: true,
           }
-        : process.env.PI_CLOUD_BROWSER_SCOPE === "message-actions"
+        : process.env.PI_CLOUD_BROWSER_SCOPE === "attachments"
           ? {
               accepted: true,
-              scope: "message-actions",
-              uniformAnswerCopies: true,
-              longAnswerCopy: true,
-              finalActionRow: true,
-              automaticNewerPaging: true,
-              historyRetry: true,
+              scope: "attachments",
+              localLongPaste: true,
+              exactEditedUpload: true,
+              uploadFailureKeepsDraft: true,
+              readOnlyOriginal: true,
+              atomicEditedSteer: true,
+              consumedInputKeepsEditedAttachment: true,
             }
-          : process.env.PI_CLOUD_BROWSER_SCOPE === "fork-workspace"
+          : process.env.PI_CLOUD_BROWSER_SCOPE === "message-actions"
             ? {
                 accepted: true,
-                scope: "fork-workspace",
-                preservedDirectory: true,
-                noElasticFallback: true,
-                machineStates: true,
+                scope: "message-actions",
+                uniformAnswerCopies: true,
+                longAnswerCopy: true,
+                finalActionRow: true,
+                automaticNewerPaging: true,
+                historyRetry: true,
               }
-            : process.env.PI_CLOUD_BROWSER_SCOPE === "peer-forks"
+            : process.env.PI_CLOUD_BROWSER_SCOPE === "fork-workspace"
               ? {
                   accepted: true,
-                  scope: "peer-forks",
-                  flatHumanRows: true,
-                  subagentsCollapsedByDefault: true,
-                  disclosureKeepsSelection: true,
-                  delegatedSourcesReadOnly: true,
-                  sourceNavigation: true,
-                  prunedSourcePointFallback: true,
-                  independentDelete: true,
-                  deletedSourceLabel: true,
-                  boundedViewport: true,
+                  scope: "fork-workspace",
+                  preservedDirectory: true,
+                  noElasticFallback: true,
+                  machineStates: true,
                 }
-              : process.env.PI_CLOUD_BROWSER_SCOPE === "tool-groups"
+              : process.env.PI_CLOUD_BROWSER_SCOPE === "peer-forks"
                 ? {
                     accepted: true,
-                    scope: "tool-groups",
-                    groupingOnly: true,
-                    individualDetailsPreserved: true,
-                    boundedWidth: true,
-                    previewReplacedByFinalResult: true,
-                    latePreviewDiscarded: true,
-                    errorMarkerOnlyOnFailedTool: true,
+                    scope: "peer-forks",
+                    flatHumanRows: true,
+                    subagentsCollapsedByDefault: true,
+                    disclosureKeepsSelection: true,
+                    delegatedSourcesReadOnly: true,
+                    sourceNavigation: true,
+                    prunedSourcePointFallback: true,
+                    independentDelete: true,
+                    deletedSourceLabel: true,
+                    boundedViewport: true,
                   }
-                : process.env.PI_CLOUD_BROWSER_SCOPE === "commands"
+                : process.env.PI_CLOUD_BROWSER_SCOPE === "tool-groups"
                   ? {
                       accepted: true,
-                      scope: "commands",
-                      slashUsageAndCompact: true,
-                      compactLostReplyAndDraftRetention: true,
-                      compactWaitsForPlacement: true,
-                    }
-                  : {
-                      accepted: true,
-                      scope: "all",
-                      slashUsageAndCompact: true,
-                      compactLostReplyAndDraftRetention: true,
-                      compactWaitsForPlacement: true,
-                      retainedSessionImageLoads: true,
-                      canonicalToolImagesOutsideCollapsedActivity: true,
-                      imageCaptionPlainTextAndDetailsNoDuplicate: true,
-                      previewUsesNamedAnswerLink: true,
-                      previewDetailsKeepPortAndResult: true,
-                      previewHasNoFallbackOrDuplicateCard: true,
+                      scope: "tool-groups",
+                      groupingOnly: true,
+                      individualDetailsPreserved: true,
+                      boundedWidth: true,
                       previewReplacedByFinalResult: true,
                       latePreviewDiscarded: true,
                       errorMarkerOnlyOnFailedTool: true,
-                      earlyRunNeverFabricatesUserInput: true,
-                      acceptanceDiscoveryRaceKeepsDraftAndStream: true,
-                      initialTranscriptPlacement: true,
-                      busyIdleReceiptPlacement: true,
-                      frozenPayloadRetryPreservesNewDraft: true,
-                      composerEnterPreference: true,
-                      composerButtonMatchesEnter: true,
-                      composerEmptyEnterSafe: true,
-                      composerImeAndShiftEnter: true,
-                      composerScopedEscapePreservesDraft: true,
-                      composerAccountIsolation: true,
-                      composerPreferencePersistenceFallback: true,
-                      directSteerRetryIdentity: true,
-                      ordinarySendRetryIdentity: true,
-                      initialImageSendRetryIdentity: true,
-                      directSteerPendingPresentation: true,
-                      machineWorkspaceRebind: true,
-                      rebindRetryUsesSameTargetAndKey: true,
-                      persistentRuntimeStatus: true,
-                      collapsedRuntimeDiagnostics: true,
-                      runtimeWarningsVisible: true,
-                      observationGenerationRecovery: true,
-                      separateActivityAndPath: true,
-                      firstImageOnlyMessage: true,
-                      uploadIdentityOnRetry: true,
-                      debuggerDisconnect: true,
-                      strictModeAnimation: true,
-                      commentaryAnimation: true,
-                      commentaryReconnectAndReducedMotion: true,
-                      outputLimitVisible: true,
-                      reconnectSnapshotImmediate: true,
-                      initialPanelWidth: true,
-                      resizeUnmountCleanup: true,
-                      pointerCancellation: true,
-                      composerSessionSettings: true,
-                      providerSwitchClearsFast: true,
-                      compositionAndPendingDraft: true,
-                      inspectorSelectionAndTerminalLifetime: true,
-                      logoutLifecycle: true,
-                      branchSelectionAndManualJump: true,
-                      childHistoryReadOnlyAndParentActions: true,
-                      pendingInputNavigation: true,
-                      childWorkspaceReadOnly: true,
-                      unavailableIdentityRetry: true,
-                      staleConversationListAfterDelete: true,
-                      terminalSocketIsolation: true,
-                      directoryPickerLifecycle: true,
-                      responsivePageScrolling: true,
-                    },
+                    }
+                  : process.env.PI_CLOUD_BROWSER_SCOPE === "commands"
+                    ? {
+                        accepted: true,
+                        scope: "commands",
+                        slashUsageAndCompact: true,
+                        compactLostReplyAndDraftRetention: true,
+                        compactWaitsForPlacement: true,
+                      }
+                    : {
+                        accepted: true,
+                        scope: "all",
+                        slashUsageAndCompact: true,
+                        compactLostReplyAndDraftRetention: true,
+                        compactWaitsForPlacement: true,
+                        retainedSessionImageLoads: true,
+                        canonicalToolImagesOutsideCollapsedActivity: true,
+                        imageCaptionPlainTextAndDetailsNoDuplicate: true,
+                        previewUsesNamedAnswerLink: true,
+                        previewDetailsKeepPortAndResult: true,
+                        previewHasNoFallbackOrDuplicateCard: true,
+                        previewReplacedByFinalResult: true,
+                        latePreviewDiscarded: true,
+                        errorMarkerOnlyOnFailedTool: true,
+                        earlyRunNeverFabricatesUserInput: true,
+                        acceptanceDiscoveryRaceKeepsDraftAndStream: true,
+                        initialTranscriptPlacement: true,
+                        busyIdleReceiptPlacement: true,
+                        frozenPayloadRetryPreservesNewDraft: true,
+                        composerEnterPreference: true,
+                        composerButtonMatchesEnter: true,
+                        composerEmptyEnterSafe: true,
+                        composerImeAndShiftEnter: true,
+                        composerScopedEscapePreservesDraft: true,
+                        composerAccountIsolation: true,
+                        composerPreferencePersistenceFallback: true,
+                        directSteerRetryIdentity: true,
+                        ordinarySendRetryIdentity: true,
+                        initialImageSendRetryIdentity: true,
+                        directSteerPendingPresentation: true,
+                        machineWorkspaceRebind: true,
+                        rebindRetryUsesSameTargetAndKey: true,
+                        persistentRuntimeStatus: true,
+                        collapsedRuntimeDiagnostics: true,
+                        runtimeWarningsVisible: true,
+                        observationGenerationRecovery: true,
+                        separateActivityAndPath: true,
+                        firstImageOnlyMessage: true,
+                        uploadIdentityOnRetry: true,
+                        debuggerDisconnect: true,
+                        strictModeAnimation: true,
+                        commentaryAnimation: true,
+                        commentaryReconnectAndReducedMotion: true,
+                        outputLimitVisible: true,
+                        reconnectSnapshotImmediate: true,
+                        initialPanelWidth: true,
+                        resizeUnmountCleanup: true,
+                        pointerCancellation: true,
+                        composerSessionSettings: true,
+                        providerSwitchClearsFast: true,
+                        compositionAndPendingDraft: true,
+                        inspectorSelectionAndTerminalLifetime: true,
+                        logoutLifecycle: true,
+                        branchSelectionAndManualJump: true,
+                        childHistoryReadOnlyAndParentActions: true,
+                        pendingInputNavigation: true,
+                        childWorkspaceReadOnly: true,
+                        unavailableIdentityRetry: true,
+                        staleConversationListAfterDelete: true,
+                        terminalSocketIsolation: true,
+                        directoryPickerLifecycle: true,
+                        responsivePageScrolling: true,
+                      },
     ),
   );
 } finally {

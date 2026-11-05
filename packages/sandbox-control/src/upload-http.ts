@@ -7,6 +7,8 @@ export async function uploadHttp<T>(input: {
   url: URL | string;
   token: string;
   metadata: { sha256: string; byteLength: number };
+  wireByteLength?: number;
+  omitDigest?: boolean;
   chunks: AsyncIterable<Uint8Array>;
   signal?: AbortSignal;
   receiptTimeoutMs: number;
@@ -47,8 +49,10 @@ export async function uploadHttp<T>(input: {
       headers: {
         authorization: `Bearer ${input.token}`,
         "content-type": "application/octet-stream",
-        "content-length": String(input.metadata.byteLength),
-        "content-digest": uploadContentDigest(input.metadata.sha256),
+        "content-length": String(input.wireByteLength ?? input.metadata.byteLength),
+        ...(input.omitDigest
+          ? {}
+          : { "content-digest": uploadContentDigest(input.metadata.sha256) }),
         "x-pi-cloud-upload": Buffer.from(JSON.stringify(input.metadata)).toString("base64url"),
       },
       body,

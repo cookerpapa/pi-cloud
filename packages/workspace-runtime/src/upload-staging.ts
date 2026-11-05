@@ -1,8 +1,18 @@
 import { constants } from "node:fs";
-import { lstat, mkdir, open, opendir, link, unlink, type FileHandle } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  open,
+  opendir,
+  link,
+  unlink,
+  rename,
+  type FileHandle,
+} from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join } from "node:path";
 import { acquireFileLock } from "./file-lock.ts";
+import { reapWorkspaceFileTransfer } from "./workspace-file-transfer.ts";
 
 const DIRECTORY = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
 const MARKER = "pi-cloud-upload-staging-v1\n";
@@ -115,20 +125,88 @@ export class UploadStagingArea {
   }
 
   async reap(maximum = 64): Promise<{ busy: boolean; files: number; bytes: number }> {
+    if (!Number.isSafeInteger(maximum) || maximum < 1)
+      throw new Error("Invalid cleanup batch size");
     const result = await this.exclusive(async (directory) => {
+      const cursorPath = at(directory, "reap-cursor");
+      const cursorFile = await open(
+        cursorPath,
+        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+      ).catch((error) => {
+        if (error.code === "ENOENT") return undefined;
+        throw error;
+      });
+      let saved = "";
+      if (cursorFile)
+        try {
+          const stat = await cursorFile.stat();
+          if (!stat.isFile() || stat.size > 2048) throw new Error("Invalid cleanup cursor");
+          const value: unknown = JSON.parse(await cursorFile.readFile("utf8"));
+          if (typeof value !== "string" || value.includes("/") || value.includes("\0"))
+            throw new Error("Invalid cleanup cursor");
+          saved = value;
+        } finally {
+          await cursorFile.close();
+        }
       let files = 0,
         bytes = 0,
         inspected = 0;
+      let after = saved === "",
+        last = "",
+        more = false;
       const entries = await opendir(`/proc/self/fd/${directory.fd}`);
-      for await (const entry of entries) {
-        if (partial.test(entry.name)) {
-          const stat = await lstat(at(directory, entry.name));
-          if (!stat.isFile()) throw new Error("Invalid upload staging file");
-          await unlink(at(directory, entry.name));
-          files++;
-          bytes += stat.size;
+      try {
+        for (let entry; (entry = await entries.read()) !== null;) {
+          if (entry.name === "reap-cursor") continue;
+          if (!after) {
+            if (entry.name === saved) after = true;
+            continue;
+          }
+          last = entry.name;
+          if (/^transfer-[0-9a-f-]{36}$/.test(entry.name)) {
+            const removed = await reapWorkspaceFileTransfer(directory, entry.name);
+            files += removed.files;
+            bytes += removed.bytes;
+          }
+          if (partial.test(entry.name)) {
+            const stat = await lstat(at(directory, entry.name));
+            if (!stat.isFile()) throw new Error("Invalid upload staging file");
+            await unlink(at(directory, entry.name));
+            files++;
+            bytes += stat.size;
+          }
+          if (++inspected >= maximum) {
+            more = (await entries.read()) !== null;
+            break;
+          }
         }
-        if (++inspected >= maximum) break;
+      } finally {
+        await entries.close();
+      }
+      // A persistent cursor rotates past paused/unexpired transfers. It is only
+      // a maintenance hint; missing/deleted cursor entries restart the next sweep.
+      if (more) {
+        const temporary = at(directory, `.part-${randomUUID()}`);
+        const file = await open(
+          temporary,
+          constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+          0o600,
+        );
+        try {
+          await file.writeFile(JSON.stringify(last));
+          await file.sync();
+        } finally {
+          await file.close();
+        }
+        try {
+          await rename(temporary, cursorPath);
+        } finally {
+          await unlink(temporary).catch(() => undefined);
+        }
+        await directory.sync();
+      } else if (cursorFile) {
+        await unlink(cursorPath);
+        await directory.sync();
       }
       if (files) await directory.sync();
       return { files, bytes };

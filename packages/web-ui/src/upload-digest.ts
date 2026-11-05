@@ -4,6 +4,9 @@ import { uploadContentDigest } from "@pi-cloud/protocol";
 
 /** Bounded slices avoid a second whole-file allocation in the browser. */
 export async function blobContentDigest(file: Blob, signal?: AbortSignal): Promise<string> {
+  return uploadContentDigest(await blobSha256(file, signal));
+}
+export async function blobSha256(file: Blob, signal?: AbortSignal): Promise<string> {
   const hash = sha256.create();
   try {
     for (let offset = 0; offset < file.size; offset += 256 * 1024) {
@@ -11,7 +14,7 @@ export async function blobContentDigest(file: Blob, signal?: AbortSignal): Promi
       hash.update(new Uint8Array(await file.slice(offset, offset + 256 * 1024).arrayBuffer()));
     }
     signal?.throwIfAborted();
-    return uploadContentDigest(bytesToHex(hash.digest()));
+    return bytesToHex(hash.digest());
   } finally {
     hash.destroy();
   }

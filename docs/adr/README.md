@@ -1,5 +1,9 @@
 # Current architecture decisions
 
+[ADR-0295](0295-workspace-file-transfers.md) is in implementation: explicit
+Workspace-only uploads from the composer/file panel, upstream tus transport and
+filesystem-owned continuation. Existing retained attachment semantics remain.
+
 [ADR-0294](0294-retained-user-attachments.md) is deployed as `retained-attachments-20261104`:
 automatic editable long-paste attachments and retained user originals using the
 existing S3/PG reference authority. Source and real Luna/Cube/browser/recovery checks passed.

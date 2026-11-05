@@ -55,6 +55,7 @@ export class ComposerSubmission {
     input: ComposerInput,
     operation: (key: string) => Promise<T>,
     options?: {
+      idempotencyKey?: string;
       placement?: ComposerPlacement;
       confirmed?(result: T, key: string): void;
     },
@@ -64,7 +65,7 @@ export class ComposerSubmission {
       this.#pending = {
         fingerprint,
         sessionId: input.sessionId,
-        key: newIdempotencyKey(input.kind),
+        key: options?.idempotencyKey ?? newIdempotencyKey(input.kind),
         placement: options?.placement ?? {
           placement: "timeline",
           afterMailboxPosition: 0,

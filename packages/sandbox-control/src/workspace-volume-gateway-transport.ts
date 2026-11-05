@@ -1,4 +1,12 @@
 import { Readable } from "node:stream";
+import {
+  installWorkspaceFileTransferRoute,
+  fileTransferHttp,
+} from "./workspace-file-transfer-http.ts";
+import {
+  WORKSPACE_FILE_TRANSFER_PATH,
+  type WorkspaceFileTransferRequest,
+} from "@pi-cloud/protocol";
 import { uploadHttp, readUploadReceipt } from "./upload-http.ts";
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
@@ -147,6 +155,16 @@ export class WorkspaceVolumeGatewayServer {
   }
 
   #routes(): void {
+    installWorkspaceFileTransferRoute(this.#server, {
+      authorized: (value) => this.#authorized(value),
+      signal: this.#shutdown.signal,
+      execute: (input, chunks, signal) =>
+        this.#run("upload_file", () => {
+          if (!this.#gateway.fileTransfer) throw new Error("Workspace transfers are unavailable");
+          return this.#gateway.fileTransfer(input, chunks, signal);
+        }),
+      failure: (reply, error) => this.#failure(reply, error),
+    });
     this.#server.addContentTypeParser("application/octet-stream", (_request, body, done) =>
       done(null, body),
     );
@@ -478,6 +496,19 @@ export type HttpWorkspaceVolumeGatewayOptions = Readonly<{
 }>;
 
 export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
+  fileTransfer(
+    input: WorkspaceFileTransferRequest,
+    chunks?: AsyncIterable<Uint8Array>,
+    signal?: AbortSignal,
+  ) {
+    return fileTransferHttp(
+      new URL(WORKSPACE_FILE_TRANSFER_PATH, this.#baseUrl),
+      this.#serviceToken,
+      input,
+      chunks,
+      signal,
+    );
+  }
   readonly #baseUrl: string;
   readonly #serviceToken: string;
   readonly #requestTimeoutMs: number;

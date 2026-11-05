@@ -396,6 +396,7 @@ export const migrationProvider: MigrationProvider = {
       "206_skill_market": skillMarket,
       "207_skill_runtime_metadata": skillRuntimeMetadata,
       "208_retained_user_attachments": retainedUserAttachments,
+      "209_workspace_file_transfers": workspaceFileTransfers,
     };
   },
 };
@@ -428,3 +429,4 @@ import * as sharedNativeHistoryBases from "./204_shared_native_history_bases.ts"
 import * as independentForkLifetimes from "./205_independent_fork_lifetimes.ts";
 
 import * as skillMarket from "./206_skill_market.ts";
+import * as workspaceFileTransfers from "./209_workspace_file_transfers.ts";

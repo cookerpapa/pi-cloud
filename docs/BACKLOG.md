@@ -1,5 +1,25 @@
 # Maintained backlog
 
+## Workspace-only files and resumable uploads — in progress
+
+- [x] Confirm explicit retention in the composer and Workspace file panel; record
+      [ADR-0295](adr/0295-workspace-file-transfers.md) and
+      [Issue #3](https://github.com/cookerpapa/pi-cloud/issues/3).
+- [x] Verify the official tus server/client restart and offset contract; pin
+      stable versions and retain existing filesystem ownership.
+- [x] Implement transfer admission, bounded streaming, source-owned progress,
+      publication receipts, cancellation and expiry through both Cube paths.
+- [x] Add upload-before-send selection, progress/pause/resume, Workspace upload
+      and existing-file references; retain failed drafts and native queue behavior.
+- [x] Complete source contracts, browser and retained-attachment regressions;
+      all 391 deterministic fault cases pass after the maintenance contract update.
+- [ ] Complete actual 1 GiB/5 GiB Cube/browser/model transfer acceptance.
+- [ ] Publish matched artifacts, demonstrate live Cube/model behavior and preserve
+      original assets; push completed commits and record measured limits.
+
+Source details and remaining live checks:
+[transfer delivery record](reports/workspace-file-transfers-20261105.md).
+
 ## Retained user originals and long paste — deployed
 
 - [x] Record approved storage ownership, protocol and UX decisions in

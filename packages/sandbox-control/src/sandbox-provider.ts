@@ -17,6 +17,10 @@ import type {
 } from "@pi-cloud/protocol";
 import type { Duplex } from "node:stream";
 import type { WorkspaceUploadRequest } from "@pi-cloud/protocol";
+import type {
+  WorkspaceFileTransferRequest,
+  WorkspaceFileTransferSnapshot,
+} from "@pi-cloud/protocol";
 import type { WorkspaceUploadReceipt } from "./workspace-volume-gateway-contract.ts";
 
 export class SandboxControlError extends Error {
@@ -268,6 +272,17 @@ export interface SandboxExecution {
 
 /** Current Workspace bytes and human file access. This port has no VM lifecycle authority. */
 export interface SandboxWorkspaceFiles {
+  workspaceFileTransfer?(
+    request: WorkspaceFileTransferRequest,
+    chunks?: AsyncIterable<Uint8Array>,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceFileTransferSnapshot>;
+  machineFileTransfer?(
+    handle: SandboxHandle,
+    request: WorkspaceFileTransferRequest,
+    chunks?: AsyncIterable<Uint8Array>,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceFileTransferSnapshot>;
   exportPackage?(
     handle: SandboxHandle,
     input: { cwd: string; path: string },

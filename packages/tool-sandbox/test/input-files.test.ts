@@ -22,6 +22,80 @@ async function source(bytes: Buffer) {
   return { sourcePath, byteLength: bytes.length };
 }
 
+it("resumes a dedicated Workspace file across fixed Guest helper calls", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "guest-transfer-"));
+  const bytes = Buffer.from("resumable Guest data");
+  const id = randomUUID();
+  const request = {
+    fileTransferProtocolVersion: 1,
+    type: "workspace.file_transfer",
+    requestId: randomUUID(),
+    uploadId: id,
+    claimToken: randomUUID(),
+    tenantId: randomUUID(),
+    workspaceId: randomUUID(),
+    sessionId: randomUUID(),
+    name: "weights.bin",
+    relativePath: "weights.bin",
+    rootPath: "",
+    byteLength: bytes.length,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+    createParents: false,
+    expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    action: "create",
+  };
+  const options = { registryDirectory: join(directory, "registry") };
+  try {
+    expect(
+      await prepareInputFile({ mode: "workspace_file_transfer", directory, request }, options),
+    ).toMatchObject({ offset: 0 });
+    const first = await source(bytes.subarray(0, 5));
+    expect(
+      await prepareInputFile(
+        {
+          mode: "workspace_file_transfer",
+          directory,
+          sourcePath: first.sourcePath,
+          request: { ...request, action: "append", offset: 0, chunkLength: 5 },
+        },
+        options,
+      ),
+    ).toMatchObject({ offset: 5 });
+    const second = await source(bytes.subarray(5));
+    expect(
+      await prepareInputFile(
+        {
+          mode: "workspace_file_transfer",
+          directory,
+          sourcePath: second.sourcePath,
+          request: { ...request, action: "append", offset: 5, chunkLength: bytes.length - 5 },
+        },
+        options,
+      ),
+    ).toMatchObject({ state: "ready" });
+    expect(await readFile(join(directory, "weights.bin"))).toEqual(bytes);
+    await expect(
+      prepareInputFile(
+        {
+          mode: "workspace_file_transfer",
+          directory,
+          sourcePath: first.sourcePath,
+          request: {
+            ...request,
+            uploadId: randomUUID(),
+            action: "append",
+            offset: 0,
+            chunkLength: 6,
+          },
+        },
+        options,
+      ),
+    ).rejects.toThrow("length changed");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 it("saves generated PNGs with alpha and reads references without overwriting an existing artifact", async () => {
   const directory = await mkdtemp(join(tmpdir(), "generated-images-"));
   const options = { registryDirectory: join(directory, "registry") };

@@ -6,6 +6,7 @@ import {
   WorkspaceVolumeGatewayServer,
 } from "./workspace-volume-gateway.ts";
 import { Pool } from "pg";
+import { workspaceFileTransferGrantQuery } from "./workspace-file-transfer-grant.ts";
 import { operationalLog, startServiceObservability } from "@pi-cloud/observability";
 import { FilesystemWorkspaceVolumeGatewayLock } from "./filesystem-workspace-volume-gateway-lock.ts";
 
@@ -62,6 +63,11 @@ const observability = await startServiceObservability({
 const gateway = new PersistentVolumeWorkspaceVolumeGateway({
   workspaceRoot: required("PI_CLOUD_WORKSPACE_POSIX_ROOT"),
   lock: new FilesystemWorkspaceVolumeGatewayLock(required("PI_CLOUD_WORKSPACE_POSIX_ROOT")),
+  authorizeFileTransfer: async (input) => {
+    const query = workspaceFileTransferGrantQuery(input);
+    const result = await database.query(query.text, query.values);
+    if (result.rowCount !== 1) throw new Error("Workspace transfer grant is no longer current");
+  },
   authorizeUpload: async (input, byteLength) => {
     const result = await database.query(
       `select u.id from session_uploads u

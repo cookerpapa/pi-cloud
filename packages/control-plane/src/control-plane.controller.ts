@@ -1273,6 +1273,20 @@ export class ControlPlaneController {
     );
   }
 
+  @Get("sessions/:sessionId/input-receipt")
+  inputReceipt(
+    @Req() request: FastifyRequest,
+    @Param("sessionId") session: unknown,
+    @Query("key") key: unknown,
+  ) {
+    const identity = this.tenantRequestContext.resolve(request);
+    return this.queuedInputs.receipt(
+      identity.tenantId,
+      parseUuidPathParameter(session, "sessionId"),
+      parseIdempotencyKey(key),
+    );
+  }
+
   @Post("sessions/:sessionId/turns/:turnId/cancellations")
   @HttpCode(202)
   async acceptTurnCancellation(

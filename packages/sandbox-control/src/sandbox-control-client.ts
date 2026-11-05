@@ -1,4 +1,9 @@
 import { uploadHttp, readUploadReceipt } from "./upload-http.ts";
+import { fileTransferHttp } from "./workspace-file-transfer-http.ts";
+import {
+  WORKSPACE_FILE_TRANSFER_PATH,
+  type WorkspaceFileTransferRequest,
+} from "@pi-cloud/protocol";
 import {
   TOOL_WORKFLOW_PATH,
   parseInternalServiceError,
@@ -408,42 +413,11 @@ export class SandboxControlClient {
     chunks: AsyncIterable<Uint8Array>,
     signal?: AbortSignal,
   ): Promise<WorkspaceUploadReceipt> {
-    let owner: SandboxControlClient = this;
-    for (let redirects = 0; ; redirects++) {
-      const response = await internalFetch(
-        new URL(SANDBOX_CONTROL_WORKSPACE_UPLOAD_PATH, owner.#baseUrl),
-        {
-          dispatcher: internalDispatcher,
-          redirect: "manual",
-          method: "HEAD",
-          headers: {
-            authorization: `Bearer ${this.#serviceToken}`,
-            "x-pi-cloud-upload": Buffer.from(JSON.stringify(request)).toString("base64url"),
-          },
-          signal: signal
-            ? AbortSignal.any([signal, AbortSignal.timeout(this.#requestTimeoutMs)])
-            : AbortSignal.timeout(this.#requestTimeoutMs),
-        },
-      );
-      await response.body?.cancel();
-      if (response.status === 307 && response.headers.get("location")) {
-        if (redirects >= 3) throw new Error("Workspace owner routing did not converge");
-        owner = new SandboxControlClient({
-          baseUrl: response.headers.get("location")!,
-          serviceToken: this.#serviceToken,
-          allowInsecureHttp: this.#allowInsecureHttp,
-          requestTimeoutMs: this.#requestTimeoutMs,
-        });
-        continue;
-      }
-      if (!response.ok)
-        throw new SandboxControlClientError(
-          "workspace_upload_failed",
-          "Workspace upload preflight failed",
-          response.status >= 500,
-        );
-      break;
-    }
+    const owner = await this.#workspaceUploadOwner(
+      SANDBOX_CONTROL_WORKSPACE_UPLOAD_PATH,
+      request,
+      signal,
+    );
     return uploadHttp({
       url: new URL(SANDBOX_CONTROL_WORKSPACE_UPLOAD_PATH, owner.#baseUrl),
       token: this.#serviceToken,
@@ -470,6 +444,61 @@ export class SandboxControlClient {
         return receipt;
       },
     });
+  }
+
+  async workspaceFileTransfer(
+    request: WorkspaceFileTransferRequest,
+    chunks?: AsyncIterable<Uint8Array>,
+    signal?: AbortSignal,
+  ) {
+    const owner = await this.#workspaceUploadOwner(WORKSPACE_FILE_TRANSFER_PATH, request, signal);
+    return fileTransferHttp(
+      new URL(WORKSPACE_FILE_TRANSFER_PATH, owner.#baseUrl),
+      this.#serviceToken,
+      request,
+      chunks,
+      signal,
+    );
+  }
+
+  async #workspaceUploadOwner(
+    path: string,
+    request: WorkspaceUploadRequest | WorkspaceFileTransferRequest,
+    signal?: AbortSignal,
+  ) {
+    let owner: SandboxControlClient = this;
+    for (let redirects = 0; ; redirects++) {
+      const response = await internalFetch(new URL(path, owner.#baseUrl), {
+        dispatcher: internalDispatcher,
+        redirect: "manual",
+        method: "HEAD",
+        headers: {
+          authorization: `Bearer ${this.#serviceToken}`,
+          "x-pi-cloud-upload": Buffer.from(JSON.stringify(request)).toString("base64url"),
+        },
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(this.#requestTimeoutMs)])
+          : AbortSignal.timeout(this.#requestTimeoutMs),
+      });
+      await response.body?.cancel();
+      if (response.status === 307 && response.headers.get("location")) {
+        if (redirects >= 3) throw new Error("Workspace owner routing did not converge");
+        owner = new SandboxControlClient({
+          baseUrl: response.headers.get("location")!,
+          serviceToken: this.#serviceToken,
+          allowInsecureHttp: this.#allowInsecureHttp,
+          requestTimeoutMs: this.#requestTimeoutMs,
+        });
+        continue;
+      }
+      if (!response.ok)
+        throw new SandboxControlClientError(
+          "workspace_upload_failed",
+          "Workspace upload preflight failed",
+          response.status >= 500,
+        );
+      return owner;
+    }
   }
 
   async readWorkspaceFile(
@@ -849,6 +878,14 @@ export class ReplicatedSandboxControlClient {
     signal?: AbortSignal,
   ): Promise<WorkspaceUploadReceipt> {
     return this.#nextReplica().uploadWorkspaceFile(request, chunks, signal);
+  }
+
+  workspaceFileTransfer(
+    request: WorkspaceFileTransferRequest,
+    chunks?: AsyncIterable<Uint8Array>,
+    signal?: AbortSignal,
+  ) {
+    return this.#nextReplica().workspaceFileTransfer(request, chunks, signal);
   }
 
   readWorkspaceFile(

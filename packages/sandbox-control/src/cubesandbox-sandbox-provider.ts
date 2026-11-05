@@ -44,6 +44,11 @@ import {
 import { workspaceVolumeId, type WorkspaceVolumeGateway } from "./workspace-volume-gateway.ts";
 import type { WorkspaceUploadRequest } from "@pi-cloud/protocol";
 import {
+  parseWorkspaceFileTransferSnapshot,
+  type WorkspaceFileTransferRequest,
+} from "@pi-cloud/protocol";
+import { WorkspaceFileTransferError } from "@pi-cloud/workspace-runtime";
+import {
   SandboxControlError,
   SandboxCreationError,
   type SandboxCreateSpec,
@@ -2021,6 +2026,63 @@ export class CubeSandboxProvider implements SandboxProvider {
     };
   }
 
+  async machineFileTransfer(
+    handle: SandboxHandle,
+    request: WorkspaceFileTransferRequest,
+    chunks?: AsyncIterable<Uint8Array>,
+    signal?: AbortSignal,
+  ) {
+    const activation = this.#dataOwned(handle);
+    const execute = (sourcePath?: string) =>
+      this.#guestJson(
+        activation.instance,
+        {
+          mode: "workspace_file_transfer",
+          directory: request.machine!.directory,
+          request,
+          ...(sourcePath ? { sourcePath } : {}),
+        },
+        {
+          program: "input",
+          runAsToolUser: true,
+          timeoutMs: 300_000,
+          ...(sourcePath ? { sourcePath } : {}),
+          ...(signal ? { signal } : {}),
+        },
+      );
+    const envelope = record(
+      request.action === "append"
+        ? await this.#withGuestUpload(
+            activation.instance,
+            chunks!,
+            request.chunkLength!,
+            signal,
+            execute,
+          )
+        : await execute(),
+      "Workspace transfer result",
+    );
+    if (envelope.ok !== true)
+      throw new WorkspaceFileTransferError(
+        typeof envelope.code === "string" ? envelope.code : "transfer_failed",
+        typeof envelope.message === "string" ? envelope.message : "Workspace file transfer failed",
+      );
+    return parseWorkspaceFileTransferSnapshot(envelope.result);
+  }
+
+  async workspaceFileTransfer(
+    request: WorkspaceFileTransferRequest,
+    chunks?: AsyncIterable<Uint8Array>,
+    signal?: AbortSignal,
+  ) {
+    if (!this.#workspaceVolumeGateway.fileTransfer)
+      throw new Error("Workspace transfers are unavailable");
+    // Only creation admits a new Volume. Late status/retry never recreates one.
+    if (request.action === "create")
+      await this.#client.ensureVolume(workspaceVolumeId(request), "picloud-posix");
+    return this.#workspaceVolumeGateway.fileTransfer(request, chunks, signal);
+  }
+
   async uploadMachineWorkspaceFile(
     handle: SandboxHandle,
     request: WorkspaceUploadRequest,
@@ -2439,28 +2501,35 @@ export class CubeSandboxProvider implements SandboxProvider {
     const errors: unknown[] = [];
     for (let n = 0; n < Math.min(maximumRuntimes, candidates.length); n++) {
       const activation = candidates[this.#uploadCleanupCursor++ % candidates.length]!;
-      try {
-        const response = record(
-          await this.#guestJson(
-            activation.instance,
-            { mode: "reap_upload_staging" },
-            {
-              program: "input",
-              runAsToolUser: true,
-              timeoutMs: 5000,
-              maximumOutputBytes: 4096,
-            },
-          ),
-          "Upload staging cleanup",
-        );
-        if (
-          response.ok !== true ||
-          record(response.result, "Upload staging cleanup result").deferred !== 0
-        )
-          throw new Error("Guest upload staging cleanup deferred");
-      } catch (error) {
-        errors.push(error);
-      }
+      // These independent fixed maintenance operations share no mutable bytes.
+      // Join both so a transit-cleanup failure cannot hide expired Workspace data.
+      const results = await Promise.allSettled(
+        [
+          { mode: "reap_upload_sources", runAsToolUser: false },
+          { mode: "reap_upload_staging", runAsToolUser: true },
+        ].map(async (operation) => {
+          const response = record(
+            await this.#guestJson(
+              activation.instance,
+              { mode: operation.mode },
+              {
+                program: "input",
+                runAsToolUser: operation.runAsToolUser,
+                timeoutMs: 5000,
+                maximumOutputBytes: 4096,
+              },
+            ),
+            "Upload staging cleanup",
+          );
+          if (
+            response.ok !== true ||
+            (operation.mode === "reap_upload_staging" &&
+              record(response.result, "Upload staging cleanup result").deferred !== 0)
+          )
+            throw new Error("Guest upload staging cleanup deferred");
+        }),
+      );
+      for (const result of results) if (result.status === "rejected") errors.push(result.reason);
     }
     if (errors.length) throw new AggregateError(errors, "Guest upload staging cleanup deferred");
   }

@@ -13,6 +13,9 @@ import {
   reapRegisteredUploads,
 } from "@pi-cloud/workspace-runtime";
 import { processImageSource } from "./image-processor.ts";
+import { parseWorkspaceFileTransferRequest } from "@pi-cloud/protocol/transfers";
+import { workspaceFileTransfer } from "@pi-cloud/workspace-runtime";
+import { reapUploadTransit } from "./upload-transit-cleanup.ts";
 
 export async function prepareInputFile(
   value: unknown,
@@ -21,6 +24,49 @@ export async function prepareInputFile(
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Invalid input file request");
   const input = value as Record<string, unknown>;
+  if (input.mode === "reap_upload_sources" && Object.keys(input).length === 1)
+    return reapUploadTransit();
+  if (input.mode === "workspace_file_transfer") {
+    const request = parseWorkspaceFileTransferRequest(input.request);
+    if (typeof input.directory !== "string" || !input.directory.startsWith("/"))
+      throw new Error("Invalid Workspace transfer directory");
+    const directory = await realpath(input.directory);
+    const root = await open(
+      directory,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    );
+    const staging = new UploadStagingArea(join(directory, UPLOAD_STAGING_NAME));
+    let source: Awaited<ReturnType<typeof open>> | undefined;
+    try {
+      if (request.action === "append") {
+        if (
+          typeof input.sourcePath !== "string" ||
+          !/^\/tmp\/pi-cloud-upload-[0-9a-f-]{36}$/.test(input.sourcePath)
+        )
+          throw new Error("Invalid Workspace transfer chunk");
+        source = await open(
+          input.sourcePath,
+          constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+        );
+        const stat = await source.stat();
+        if (!stat.isFile() || stat.size !== request.chunkLength)
+          throw new Error("Workspace transfer chunk length changed");
+      }
+      await staging.prepare();
+      const identity = await registerUploadStaging(
+        options.registryDirectory ?? "/home/user/.pi-cloud-upload-areas-v1",
+        staging.directory,
+      );
+      const owned = new UploadStagingArea(staging.directory, identity);
+      return await owned.use((files) =>
+        workspaceFileTransfer(root, files, request, source?.createReadStream({ autoClose: false })),
+      );
+    } finally {
+      await source?.close();
+      await root.close();
+      await staging.reap().catch(() => undefined);
+    }
+  }
   if (input.mode === "export_skill_package") {
     if (typeof input.directory !== "string" || typeof input.path !== "string")
       throw new Error("Invalid Skill export request");

@@ -61,6 +61,7 @@ COPY packages/protocol/src/development-environment-profile.ts \
   packages/protocol/src/tool-sandbox.ts \
   packages/protocol/src/workspace-seed.ts \
   packages/protocol/src/user-upload.ts \
+  packages/protocol/src/workspace-file-transfer.ts \
   packages/protocol/src/
 COPY packages/tool-sandbox/src packages/tool-sandbox/src
 COPY packages/workspace-runtime/src packages/workspace-runtime/src

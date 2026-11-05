@@ -152,6 +152,7 @@ export async function withChromePage(
       mobile: false,
     });
     const page = {
+      browserPid: chrome.pid,
       send: cdp.send,
       onNetworkEvent(listener) {
         const observe = (raw) => {

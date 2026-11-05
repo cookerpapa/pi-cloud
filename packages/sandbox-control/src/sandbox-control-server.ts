@@ -103,6 +103,8 @@ export type SandboxControlBackend = Pick<
       | "disconnectSourceCredential"
       | "uploadWorkspaceFile"
       | "prepareWorkspaceUpload"
+      | "workspaceFileTransfer"
+      | "prepareWorkspaceFileTransfer"
       | "prepareInputImages"
       | "imageIo"
       | "preparePackage"
@@ -830,6 +832,23 @@ export class SandboxControlServer {
       )
         return reply.code(401).send({ error: { code: "unauthorized", retryable: false } });
     });
+    installWorkspaceFileTransferRoute(this.#server, {
+      authorized: (value) => this.#workspaceServiceAuthorized(value),
+      preflight: async (request) => {
+        if (!this.#broker.prepareWorkspaceFileTransfer)
+          throw new Error("Workspace transfers are unavailable");
+        await this.#broker.prepareWorkspaceFileTransfer(request);
+      },
+      execute: (request, chunks, signal) => {
+        if (!this.#broker.workspaceFileTransfer)
+          throw new Error("Workspace transfers are unavailable");
+        return this.#broker.workspaceFileTransfer(request, chunks, signal);
+      },
+      failure: (reply, error) =>
+        error instanceof SandboxOwnerRedirectError
+          ? reply.code(307).header("location", error.ownerBaseUrl).send()
+          : this.#failure(reply, error),
+    });
     // Resolve ownership before streaming. A consumed stream is never replayed
     // automatically when the owner changes; the caller retries its upload ID.
     this.#server.head(SANDBOX_CONTROL_WORKSPACE_UPLOAD_PATH, async (request, reply) => {
@@ -1257,3 +1276,4 @@ export class SandboxControlServer {
     socket.once("error", () => void close());
   }
 }
+import { installWorkspaceFileTransferRoute } from "./workspace-file-transfer-http.ts";

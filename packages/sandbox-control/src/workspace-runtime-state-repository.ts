@@ -16,6 +16,9 @@ import {
 import type { DevelopmentEnvironmentProfileKey, SandboxPreviewTarget } from "@pi-cloud/protocol";
 import { DEVELOPMENT_ENVIRONMENT_PROFILES } from "@pi-cloud/protocol";
 import type { WorkspaceUploadRequest } from "@pi-cloud/protocol";
+import type { WorkspaceFileTransferRequest } from "@pi-cloud/protocol";
+import { CompiledQuery } from "kysely";
+import { workspaceFileTransferGrantQuery } from "./workspace-file-transfer-grant.ts";
 import {
   SANDBOX_CREATION_WINDOW_MS,
   type SandboxHandle,
@@ -173,6 +176,7 @@ export interface WorkspaceRuntimeStateRepository {
     excluded: readonly string[],
   ): Promise<readonly RecoverableWorkspaceRuntime[]>;
   authorizeWorkspaceUpload?(request: WorkspaceUploadRequest, byteLength: number): Promise<void>;
+  authorizeWorkspaceFileTransfer?(request: WorkspaceFileTransferRequest): Promise<void>;
   start(): Promise<void>;
   reconcileOwnership(): Promise<void>;
   checkHealth(): Promise<void>;
@@ -1917,6 +1921,19 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         "Workspace runtime ownership is no longer current",
       );
     }
+  }
+
+  async authorizeWorkspaceFileTransfer(request: WorkspaceFileTransferRequest): Promise<void> {
+    const query = workspaceFileTransferGrantQuery(request, {
+      instanceId: this.#instanceId,
+      sandboxDomainId: this.#sandboxDomainId,
+    });
+    const result = await this.#database.executeQuery(CompiledQuery.raw(query.text, query.values));
+    if (result.rows.length !== 1)
+      throw new WorkspaceRuntimeStateRepositoryError(
+        "ownership_lost",
+        "Workspace transfer grant is no longer current",
+      );
   }
 
   async authorizeWorkspaceUpload(

@@ -296,6 +296,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
   readonly #lock: WorkspaceVolumeGatewayLock;
   readonly #git: WorkspaceVolumeGitRunner;
   readonly #authorizeUpload: PersistentVolumeWorkspaceVolumeGatewayOptions["authorizeUpload"];
+  readonly #authorizeFileTransfer: PersistentVolumeWorkspaceVolumeGatewayOptions["authorizeFileTransfer"];
   #uploadCursor: Dir | undefined;
   #uploadSweep: Promise<{ files: number; bytes: number }> | undefined;
   #uploadTimer: NodeJS.Timeout | undefined;
@@ -306,6 +307,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     this.#lock = options.lock ?? new FilesystemWorkspaceVolumeGatewayLock(this.#workspaceRoot);
     this.#git = options.gitRunner ?? runTrustedWorkspaceGit;
     this.#authorizeUpload = options.authorizeUpload;
+    this.#authorizeFileTransfer = options.authorizeFileTransfer;
   }
 
   async checkHealth(): Promise<void> {
@@ -385,6 +387,34 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
         await handle.close();
       }
     }).catch(rethrowBrowseFailure);
+  }
+
+  async fileTransfer(
+    input: WorkspaceFileTransferRequest,
+    chunks?: AsyncIterable<Uint8Array>,
+    signal?: AbortSignal,
+  ) {
+    const identity = validatedIdentity({ ...input, volumeId: workspaceVolumeId(input) });
+    return this.#withVolumeLock(identity.volumeId, "shared", async () => {
+      signal?.throwIfAborted();
+      if (!this.#authorizeFileTransfer)
+        throw new Error("Workspace transfer authorization is unavailable");
+      await this.#authorizeFileTransfer(input);
+      const directory = await this.#validatedVolume(identity);
+      const target = await this.#browseTarget(directory, input.rootPath, "", true);
+      const root = await this.#openBrowseTarget(target, true);
+      const staging = new UploadStagingArea(
+        join(directory, VOLUME_METADATA_DIRECTORY, "uploads-v1"),
+      );
+      try {
+        await staging.prepare();
+        return await staging.use((files) =>
+          workspaceFileTransfer(root, files, input, chunks, signal),
+        );
+      } finally {
+        await root.close();
+      }
+    });
   }
 
   async uploadFile(
@@ -970,3 +1000,6 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     return { absolute, relative: path, root: selectedRoot };
   }
 }
+import { workspaceFileTransfer } from "@pi-cloud/workspace-runtime";
+import type { WorkspaceFileTransferRequest } from "@pi-cloud/protocol";
+import { workspaceVolumeId } from "./workspace-volume-gateway-contract.ts";

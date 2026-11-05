@@ -6,6 +6,10 @@ import type {
 } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
 import { isAbsolute, resolve } from "node:path";
+import type {
+  WorkspaceFileTransferRequest,
+  WorkspaceFileTransferSnapshot,
+} from "@pi-cloud/protocol";
 
 const VOLUME_ID_PATTERN = /^pcw-[0-9a-f]{48}$/;
 const OPAQUE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/;
@@ -113,6 +117,11 @@ export type WorkspaceVolumeGatewaySourceCredentialDisconnectInput = WorkspaceVol
   >;
 
 export interface WorkspaceVolumeGateway {
+  fileTransfer?(
+    input: WorkspaceFileTransferRequest,
+    chunks?: AsyncIterable<Uint8Array>,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceFileTransferSnapshot>;
   uploadFile?(
     input: WorkspaceVolumeGatewayUploadInput,
     chunks: AsyncIterable<Uint8Array>,
@@ -160,6 +169,7 @@ export interface WorkspaceVolumeGatewayLock {
 export type PersistentVolumeWorkspaceVolumeGatewayOptions = Readonly<{
   workspaceRoot: string;
   authorizeUpload?: (input: WorkspaceVolumeGatewayUploadInput, byteLength: number) => Promise<void>;
+  authorizeFileTransfer?: (input: WorkspaceFileTransferRequest) => Promise<void>;
   lock?: WorkspaceVolumeGatewayLock;
   gitRunner?: WorkspaceVolumeGitRunner;
 }>;

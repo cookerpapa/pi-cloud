@@ -1,4 +1,5 @@
 import type {
+  WorkspaceFileTransferRequest,
   SandboxControlListWorkspaceDirectoryRequest,
   SandboxControlListWorkspaceDirectoryResponse,
   SandboxControlReadWorkspaceFileRequest,
@@ -14,13 +15,15 @@ import {
 type MachineFileRequest =
   | SandboxControlListWorkspaceDirectoryRequest
   | SandboxControlReadWorkspaceFileRequest
-  | WorkspaceUploadRequest;
+  | WorkspaceUploadRequest
+  | WorkspaceFileTransferRequest;
 
 /** Ownership stays with SandboxController. File access receives only its
  * authorized handle, never the owner's allocation or destruction capabilities. */
 export type WorkspaceFileAdmission = {
   machine(request: MachineFileRequest): Promise<SandboxHandle>;
   upload(request: WorkspaceUploadRequest): Promise<SandboxHandle | undefined>;
+  transfer?(request: WorkspaceFileTransferRequest): Promise<SandboxHandle | undefined>;
 };
 
 export class WorkspaceFileAccess {
@@ -28,6 +31,22 @@ export class WorkspaceFileAccess {
     private readonly files: SandboxWorkspaceFiles,
     private readonly admission: WorkspaceFileAdmission,
   ) {}
+
+  async workspaceFileTransfer(
+    request: WorkspaceFileTransferRequest,
+    chunks?: AsyncIterable<Uint8Array>,
+    signal?: AbortSignal,
+  ) {
+    if (!this.admission.transfer) throw new Error("Workspace transfer admission is unavailable");
+    const handle = await this.admission.transfer(request);
+    if (handle) {
+      if (!this.files.machineFileTransfer)
+        throw new Error("Machine file transfers are unavailable");
+      return this.files.machineFileTransfer(handle, request, chunks, signal);
+    }
+    if (!this.files.workspaceFileTransfer) throw new Error("Workspace transfers are unavailable");
+    return this.files.workspaceFileTransfer(request, chunks, signal);
+  }
 
   async exportPackage(
     handle: SandboxHandle,

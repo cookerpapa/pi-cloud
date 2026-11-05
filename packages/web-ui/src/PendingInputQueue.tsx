@@ -280,6 +280,7 @@ export function InputQueueProvider({
     setPreparing(true);
     try {
       const attachments = await editorUploads.ready(sessionId);
+      const text = editorUploads.describe(snapshot.text);
       if (!mounted.current || currentEditing.current?.inputId !== snapshot.inputId) return;
       setEditing((current) =>
         current?.inputId === snapshot.inputId ? { ...current, uploads: attachments } : current,
@@ -287,7 +288,7 @@ export function InputQueueProvider({
       if (
         await perform(snapshot.inputId, {
           action,
-          text: snapshot.text,
+          text,
           uploadIds: attachments.map((file) => file.id),
         })
       )
@@ -483,6 +484,9 @@ export function PendingInputEditor({ started = false }: { started?: boolean }) {
         edit={editorUploads.edit}
         remove={editorUploads.remove}
         retry={editorUploads.retry}
+        setRetention={editorUploads.setRetention}
+        pause={editorUploads.pause}
+        reselect={editorUploads.reselect}
       />
       <div className="pending-input-editor-actions">
         <button

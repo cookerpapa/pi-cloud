@@ -26,6 +26,13 @@ import {
   type ConversationCompactResource,
 } from "@pi-cloud/protocol";
 import { blobContentDigest } from "./upload-digest.ts";
+import { Upload as TusUpload } from "tus-js-client";
+import {
+  parseWorkspaceFileTransfer,
+  WORKSPACE_TRANSFER_CHUNK_BYTES,
+  type CreateWorkspaceFileTransfer,
+  type WorkspaceFileTransfer,
+} from "@pi-cloud/protocol";
 import {
   parseUserUpload,
   userUploadSource,
@@ -983,6 +990,116 @@ export class PiCloudApi {
         this.#authorizationToken,
       ),
     );
+  }
+
+  async inputReceipt(
+    sessionId: string,
+    key: string,
+  ): Promise<{ status: "accepted" | "unconfirmed" }> {
+    const value = (await request(
+      this.#fetch,
+      `/v1/sessions/${encodeURIComponent(sessionId)}/input-receipt?key=${encodeURIComponent(key)}`,
+      { method: "GET" },
+      this.#authorizationToken,
+    )) as { status?: unknown };
+    if (value.status !== "accepted" && value.status !== "unconfirmed")
+      throw new Error("Invalid input receipt");
+    return { status: value.status };
+  }
+
+  async createWorkspaceFileTransfer(
+    sessionId: string,
+    id: string,
+    input: CreateWorkspaceFileTransfer,
+    signal?: AbortSignal,
+  ) {
+    return parseWorkspaceFileTransfer(
+      await request(
+        this.#fetch,
+        `/v1/sessions/${encodeURIComponent(sessionId)}/workspace-files/${encodeURIComponent(id)}`,
+        { ...jsonRequest(input), signal: signal ?? null },
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async workspaceFileTransfer(sessionId: string, id: string, signal?: AbortSignal) {
+    return parseWorkspaceFileTransfer(
+      await request(
+        this.#fetch,
+        `/v1/sessions/${encodeURIComponent(sessionId)}/workspace-files/${encodeURIComponent(id)}`,
+        { method: "GET", signal: signal ?? null },
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async cancelWorkspaceFileTransfer(sessionId: string, id: string) {
+    return parseWorkspaceFileTransfer(
+      await request(
+        this.#fetch,
+        `/v1/sessions/${encodeURIComponent(sessionId)}/workspace-files/${encodeURIComponent(id)}`,
+        { method: "DELETE" },
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async continueWorkspaceFileTransfer(
+    transfer: WorkspaceFileTransfer,
+    file: File,
+    signal: AbortSignal,
+    progress: (bytes: number) => void,
+  ): Promise<WorkspaceFileTransfer> {
+    signal.throwIfAborted();
+    if (transfer.state === "ready") return transfer;
+    const path = `/v1/sessions/${encodeURIComponent(transfer.sessionId)}/workspace-files/${encodeURIComponent(transfer.id)}/content`;
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const finish = (error?: unknown) => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener("abort", abort);
+        if (error) reject(error);
+        else resolve();
+      };
+      const upload = new TusUpload(file, {
+        uploadUrl: path,
+        chunkSize: WORKSPACE_TRANSFER_CHUNK_BYTES,
+        retryDelays: [0, 1000, 3000, 5000],
+        storeFingerprintForResuming: false,
+        headers: this.#authorizationToken
+          ? { authorization: `Bearer ${this.#authorizationToken}` }
+          : {},
+        onProgress: progress,
+        onSuccess: () => finish(),
+        onError: finish,
+        onShouldRetry: (error) => {
+          const status = error.originalResponse?.getStatus();
+          return (
+            !signal.aborted &&
+            (status === undefined ||
+              status === 0 ||
+              (status === 409 && error.originalResponse?.getBody().includes("offset") === true) ||
+              status >= 500)
+          );
+        },
+      });
+      const abort = () => {
+        void upload
+          .abort()
+          .then(
+            () => finish(signal.reason ?? new DOMException("Upload paused", "AbortError")),
+            finish,
+          );
+      };
+      signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) abort();
+      else upload.start();
+    });
+    const result = await this.workspaceFileTransfer(transfer.sessionId, transfer.id, signal);
+    if (result.state !== "ready") throw new Error("Workspace upload has not completed");
+    return result;
   }
 
   async removeDraftUpload(upload: UserUpload): Promise<void> {

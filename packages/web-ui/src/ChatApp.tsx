@@ -12,6 +12,12 @@ import { inputReturnRecovery, type InputReturnRecovery } from "./returned-inputs
 import { InheritedContext } from "./InheritedContext.tsx";
 import { useComposerUploads, type ComposerUpload } from "./useComposerUploads.ts";
 import { ComposerUploadCards } from "./UploadCards.tsx";
+import {
+  composerDraftKey,
+  readComposerDraft,
+  saveComposerDraft,
+  type PendingComposerDraft,
+} from "./composer-draft.ts";
 import { AttachmentActions } from "./AttachmentActions.tsx";
 import { longPasteFile } from "./pasted-text.ts";
 import { flushSync } from "react-dom";
@@ -238,6 +244,12 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const [sessionModel, setSessionModel] = useState<SessionModelResource | null>(null);
   const [conversationLoading, setConversationLoading] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
+  const draftKey = identity
+    ? composerDraftKey(identity.tenantId, identity.userId, state.session?.sessionId ?? "new")
+    : undefined;
+  const draftScope = useRef<string | undefined>(undefined);
+  const [draftSaveFailed, setDraftSaveFailed] = useState(false);
+  const recoveredSubmission = useRef<PendingComposerDraft | null>(null);
   const [commandMenuDismissed, setCommandMenuDismissed] = useState(false),
     [commandIndex, setCommandIndex] = useState(0);
   const commandSuggestions = commandMenuDismissed ? [] : composerCommandSuggestions(prompt);
@@ -257,6 +269,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     state.session
       ? `${state.session.sessionId}:${state.session.workspaceId}:${state.session.workingDirectory}`
       : "",
+    draftKey,
   );
   const [operation, setOperation] = useState<
     | "creating"
@@ -285,6 +298,58 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     composerSubmission.current.snapshot,
     composerSubmission.current.snapshot,
   );
+
+  useEffect(() => {
+    if (!draftKey) return;
+    if (draftScope.current !== draftKey) {
+      const saved = readComposerDraft(draftKey);
+      const previous = draftScope.current;
+      draftScope.current = draftKey;
+      recoveredSubmission.current = saved?.pending ?? null;
+      retrySubmission.current = null;
+      composerSubmission.current.reset();
+      if (saved) setPrompt(saved.text);
+      else if (previous?.endsWith(":new"))
+        setDraftSaveFailed(!saveComposerDraft(draftKey, { text: prompt }));
+      else if (previous && !previous.endsWith(":new")) setPrompt("");
+      return;
+    }
+    setDraftSaveFailed(!saveComposerDraft(draftKey, { text: prompt }));
+  }, [draftKey, prompt]);
+
+  useEffect(() => {
+    if (!draftKey) return;
+    const pending = readComposerDraft(draftKey)?.pending;
+    if (!pending || !state.session || pending.input.sessionId !== state.session.sessionId) return;
+    let stale = false;
+    const revision = draftRevision.current;
+    void api
+      .inputReceipt(pending.input.sessionId, pending.key)
+      .then((receipt) => {
+        if (stale || receipt.status !== "accepted") return;
+        const saved = readComposerDraft(draftKey);
+        if (saved?.pending?.key !== pending.key) return;
+        const unchanged = draftRevision.current === revision;
+        saveComposerDraft(draftKey, {
+          pending: null,
+          ...(unchanged && saved.text === pending.draftText ? { text: "" } : {}),
+          ...(unchanged
+            ? { items: saved.items.filter((item) => !pending.draftIds.includes(item.id)) }
+            : {}),
+        });
+        recoveredSubmission.current = null;
+        if (unchanged) {
+          uploads.clear(pending.draftIds);
+          setPrompt((current) => (current === pending.draftText ? "" : current));
+        }
+        setQueueRefreshGeneration((value) => value + 1);
+        setReconnectGeneration((value) => value + 1);
+      })
+      .catch(() => undefined); // Unknown receipt preserves the exact retry identity.
+    return () => {
+      stale = true;
+    };
+  }, [api, draftKey]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [expandedConversations, setExpandedConversations] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -922,7 +987,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
 
   function resetConversation(preserveDraft = false): void {
     if (!preserveDraft) {
-      uploads.clear();
+      uploads.detach();
       composerSubmission.current.reset();
     }
     currentStreamSession.current = null;
@@ -961,7 +1026,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     try {
       if (currentStreamSession.current !== sessionId) {
         setConversationTree(null);
-        uploads.clear();
+        uploads.detach();
       }
       currentStreamSession.current = sessionId;
       setStreamSessionId(sessionId);
@@ -1188,14 +1253,15 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
         refreshDevelopmentEnvironments(),
       ]);
       if (pendingInitialPrompt !== null) {
+        const fileIds = uploads.snapshot().map((file) => file.id);
         const attached = await uploads.ready(session.sessionId);
         await acceptComposerTurn(
           session.sessionId,
-          pendingInitialPrompt,
+          uploads.describe(pendingInitialPrompt, fileIds),
           attached,
           submittedRevision,
         );
-        uploads.clear(attached.map((file) => file.id));
+        uploads.clear(fileIds);
         setPrompt((current) => (draftRevision.current === submittedRevision ? "" : current));
       }
       setPendingInitialPrompt(null);
@@ -1367,6 +1433,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     attached: UserUpload[],
     revision: number,
   ) {
+    if (!identity) throw new Error("Sign in before sending a message");
     const input: ComposerInput = {
       kind: "turn",
       sessionId,
@@ -1375,19 +1442,44 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
       whenBusy: composerPreference.enterMode,
     };
     retrySubmission.current = { input, revision, attached };
+    const storageKey = composerDraftKey(identity.tenantId, identity.userId, sessionId);
+    const draftText = readComposerDraft(storageKey)?.text ?? prompt;
+    const draftIds = uploads.snapshot().map((file) => file.id);
     return composerSubmission.current.send(
       input,
-      (key) =>
-        api.acceptTurn(sessionId, text, key, undefined, [...input.uploadIds], input.whenBusy),
+      (key) => {
+        const pending = { key, input, attached, draftText, draftIds };
+        if (!saveComposerDraft(storageKey, { text: draftText, pending })) setDraftSaveFailed(true);
+        recoveredSubmission.current = pending;
+        return api.acceptTurn(
+          sessionId,
+          text,
+          key,
+          undefined,
+          [...input.uploadIds],
+          input.whenBusy,
+        );
+      },
       {
         placement: composerPlacement(renderedState.current, null, false),
-        confirmed: (accepted, key) => confirmComposerTurn(accepted, input, attached, key),
+        confirmed: (accepted, key) => {
+          confirmComposerTurn(accepted, input, attached, key);
+          const saved = readComposerDraft(storageKey);
+          if (saved?.pending?.key === key)
+            saveComposerDraft(storageKey, {
+              pending: null,
+              ...(draftRevision.current === revision && saved.text === draftText
+                ? { text: "" }
+                : {}),
+            });
+          recoveredSubmission.current = null;
+        },
       },
     );
   }
 
   async function submitTurn(retry = false): Promise<void> {
-    if (!canMutate || !canQueue || coldCompactActive || operation !== null) return;
+    if (!canMutate || !canQueue || coldCompactActive || operation !== null || !draftKey) return;
     const saved = retry ? retrySubmission.current : null;
     const text = saved?.input.text ?? prompt.trim();
     if (!saved && !text && !uploads.items.length) return;
@@ -1398,74 +1490,98 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     }
     const sessionId = session.sessionId;
     if (saved && saved.input.sessionId !== sessionId) return;
-    const submission = saved ?? {
-      input: {
-        kind: "turn" as const,
-        sessionId,
-        text,
-        uploadIds: uploads.items.map((file) => file.id),
-        whenBusy: composerPreference.enterMode,
-      },
-      revision: draftRevision.current,
-      attached: undefined as UserUpload[] | undefined,
-    };
-    retrySubmission.current = submission;
-    const { input, revision: submittedRevision } = submission;
+    const fileIds = uploads.snapshot().map((file) => file.id);
+    const revision = saved?.revision ?? draftRevision.current;
+    const localText = prompt;
+    const stored = recoveredSubmission.current;
+    const recovered =
+      !saved &&
+      stored?.input.sessionId === sessionId &&
+      stored.draftText.trim() === text &&
+      JSON.stringify(stored.draftIds) === JSON.stringify(fileIds)
+        ? stored
+        : null;
     setOperation("submitting");
     update({ type: "api.error.cleared" });
-    timelineControl.current?.latest();
     try {
-      const { attached } = await composerSubmission.current.send(
+      // No provisional timeline/Inbox item exists while files are still uploading.
+      if (session.executionMode === "development_environment") {
+        const environment = developmentEnvironments.find(
+          (value) => value.environmentId === session.developmentEnvironmentId,
+        );
+        if (environment?.state === "paused") {
+          const resumed = await api.developmentEnvironmentAction(
+            environment.environmentId,
+            "resume",
+            newIdempotencyKey("environment"),
+          );
+          setDevelopmentEnvironments((current) =>
+            current.map((value) =>
+              value.environmentId === resumed.environmentId ? resumed : value,
+            ),
+          );
+        }
+      }
+      const attached =
+        saved?.attached ?? recovered?.attached ?? (await uploads.ready(sessionId, fileIds));
+      if (renderedState.current.session?.sessionId !== sessionId) return;
+      const input: ComposerInput = saved?.input ??
+        recovered?.input ?? {
+          kind: "turn",
+          sessionId,
+          text: uploads.describe(text, fileIds),
+          uploadIds: attached.map((file) => file.id),
+          whenBusy: composerPreference.enterMode,
+        };
+      retrySubmission.current = { input, revision, attached };
+      timelineControl.current?.latest();
+      await composerSubmission.current.send(
         input,
         async (key) => {
-          if (session.executionMode === "development_environment") {
-            const environment = developmentEnvironments.find(
-              (candidate) => candidate.environmentId === session.developmentEnvironmentId,
-            );
-            if (environment?.state === "paused") {
-              const resumed = await api.developmentEnvironmentAction(
-                environment.environmentId,
-                "resume",
-                newIdempotencyKey("environment"),
-              );
-              setDevelopmentEnvironments((current) =>
-                current.map((candidate) =>
-                  candidate.environmentId === resumed.environmentId ? resumed : candidate,
-                ),
-              );
-            }
+          const pending = { key, input, attached, draftText: localText, draftIds: fileIds };
+          if (!saveComposerDraft(draftKey, { pending })) {
+            setDraftSaveFailed(true);
           }
-          const attached =
-            submission.attached ?? (await uploads.ready(sessionId, [...input.uploadIds]));
-          submission.attached = attached;
-          const accepted = await api.acceptTurn(
+          recoveredSubmission.current = pending;
+          return api.acceptTurn(
             sessionId,
             input.text,
             key,
             undefined,
-            attached.map((file) => file.id),
+            [...input.uploadIds],
             input.whenBusy,
           );
-          return { accepted, attached };
         },
         {
+          ...(recovered ? { idempotencyKey: recovered.key } : {}),
           placement: composerPlacement(
             renderedState.current,
             latestQueue.current?.sessionId === sessionId ? latestQueue.current : null,
             currentTurn !== undefined,
           ),
-          confirmed: ({ accepted, attached }, key) =>
-            confirmComposerTurn(accepted, input, attached, key),
+          confirmed: (accepted, key) => {
+            confirmComposerTurn(accepted, input, attached, key);
+            const persisted = readComposerDraft(draftKey);
+            if (persisted?.pending?.key === key)
+              saveComposerDraft(draftKey, {
+                pending: null,
+                ...(draftRevision.current === revision && persisted.text === localText
+                  ? { text: "" }
+                  : {}),
+              });
+            recoveredSubmission.current = null;
+          },
         },
       );
       if (renderedState.current.session?.sessionId !== sessionId) return;
-      uploads.clear(attached.map((file) => file.id));
+      uploads.clear(fileIds);
       timelineControl.current?.latest();
-      setPrompt((current) => (draftRevision.current === submittedRevision ? "" : current));
+      setPrompt((current) => (draftRevision.current === revision ? "" : current));
       void refreshConversations().catch(() => undefined);
     } catch (error: unknown) {
       if (renderedState.current.session?.sessionId === sessionId) {
-        update({ type: "api.error", message: errorMessage(error, t) });
+        if (!(error instanceof DOMException && error.name === "AbortError"))
+          update({ type: "api.error", message: errorMessage(error, t) });
         setQueueRefreshGeneration((generation) => generation + 1);
       }
     } finally {
@@ -1484,6 +1600,13 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
     if (!sessionId || currentStreamSession.current !== sessionId || !uploads.restore(attached))
       return false;
     composerSubmission.current.retireReturned(sessionId, returnedKeys);
+    const pending = recoveredSubmission.current;
+    if (pending?.input.sessionId === sessionId && returnedKeys.includes(pending.key)) {
+      recoveredSubmission.current = null;
+      retrySubmission.current = null;
+      if (draftKey && readComposerDraft(draftKey)?.pending?.key === pending.key)
+        saveComposerDraft(draftKey, { pending: null });
+    }
     uploads.restoreDrafts(localAttachments);
     draftRevision.current++;
     setPrompt((current) => (current.trim() ? `${current}\n\n${text}` : text));
@@ -2624,6 +2747,12 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
               {inspectorOpen ? (
                 <WorkspaceInspector
                   api={api}
+                  {...(draftKey ? { draftKey: `${draftKey}:workspace-files` } : {})}
+                  onReference={(path) => {
+                    draftRevision.current++;
+                    setPrompt((current) => `${current}${current ? "\n" : ""}${path}`);
+                    focusComposer();
+                  }}
                   onClose={() => setInspectorOpen(false)}
                   onError={(message) => update({ type: "api.error", message })}
                   refreshSignal={inspectorRefreshSignal}
@@ -2675,11 +2804,19 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
                   disabled={operation !== null}
                   remove={uploads.remove}
                   retry={uploads.retry}
+                  setRetention={uploads.setRetention}
+                  pause={uploads.pause}
+                  reselect={uploads.reselect}
                   edit={(id, text) => {
                     uploads.edit(id, text);
                     draftRevision.current++;
                   }}
                 />
+                {draftSaveFailed || uploads.persistenceError ? (
+                  <p role="alert" className="pending-input-error">
+                    {t("upload.draftSaveFailed")}
+                  </p>
+                ) : null}
                 {uploads.error ? (
                   <p role="alert" className="pending-input-error">
                     {t("upload.limit")}
@@ -2762,6 +2899,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
                           event.preventDefault();
                           draftRevision.current++;
                           uploads.add([pasted.file], {
+                            pastedText: event.clipboardData.getData("text/plain"),
                             deferred: true,
                             characters: pasted.characters,
                           });

@@ -3,6 +3,62 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "workspace-transfer-partial-stream",
+      "workspace": "@pi-cloud/workspace-runtime",
+      "file": "test/workspace-file-transfer.test.ts",
+      "test": "keeps partial progress after a stream interruption",
+      "invariant": "Receiver-owned durable length permits continuation after an interrupted stream without replaying earlier bytes."
+    },
+    {
+      "id": "workspace-transfer-published-retry",
+      "workspace": "@pi-cloud/workspace-runtime",
+      "file": "test/workspace-file-transfer.test.ts",
+      "test": "does not recreate or overwrite a completed user file on lost-receipt retries",
+      "invariant": "A completed transfer receipt never overwrites later modifications or recreates a deleted working file."
+    },
+    {
+      "id": "workspace-transfer-delayed-create",
+      "workspace": "@pi-cloud/workspace-runtime",
+      "file": "test/workspace-file-transfer.test.ts",
+      "test": "cancellation fences a delayed create and cleans only unfinished bytes",
+      "invariant": "Cancellation retains a finite tombstone and never deletes an already published file."
+    },
+    {
+      "id": "workspace-transfer-expiry-fairness",
+      "workspace": "@pi-cloud/workspace-runtime",
+      "file": "test/workspace-file-transfer.test.ts",
+      "test": "rotates cleanup past unexpired transfers instead of starving a later expired body",
+      "invariant": "Bounded maintenance must rotate past live metadata to reclaim expired large partials."
+    },
+    {
+      "id": "workspace-transfer-receiver-grant",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/workspace-file-transfers.test.ts",
+      "test": "keeps claim revocation effective at the receiving Volume",
+      "invariant": "The receiver checks transfer admission before consuming or publishing bytes."
+    },
+    {
+      "id": "workspace-transfer-api-restart",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/workspace-file-transfers.postgres.test.ts",
+      "test": "continues after replacing the API process without another authority for offset",
+      "invariant": "An API replacement recovers byte position from the existing filesystem owner, not a second PG offset."
+    },
+    {
+      "id": "workspace-transfer-read-only-receipt",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/workspace-file-transfers.postgres.test.ts",
+      "test": "queries acceptance without admitting an unconfirmed message",
+      "invariant": "Reopening a browser can query acceptance without submitting a new user input."
+    },
+    {
+      "id": "workspace-transfer-guest-transit-expiry",
+      "workspace": "@pi-cloud/tool-sandbox",
+      "file": "test/upload-transit-cleanup.test.ts",
+      "test": "expires only stale fixed upload transit sources, never live chunks or Tool envelopes",
+      "invariant": "Expired transport sources may be reclaimed without deleting ordinary Tool envelopes, processes or user files."
+    },
+    {
       "id": "image-tool-ordered-admission",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/control-tool-dispatcher.test.ts",

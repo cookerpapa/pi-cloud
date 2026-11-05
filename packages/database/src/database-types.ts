@@ -1007,6 +1007,26 @@ export interface SessionUploadTable {
   expires_at: Timestamp;
 }
 
+export interface WorkspaceFileTransferTable {
+  id: string;
+  tenant_id: string;
+  session_id: string;
+  workspace_id: string;
+  actor_user_id: string;
+  working_directory: string;
+  development_environment_id: string | null;
+  name: string;
+  relative_path: string;
+  create_parents: boolean;
+  byte_length: Int8;
+  sha256: string;
+  claim_token: string;
+  state: "uploading" | "ready" | "cancelled";
+  cleanup_confirmed_at: NullableTimestamp;
+  created_at: GeneratedTimestamp;
+  expires_at: Timestamp;
+}
+
 export interface SessionScheduleTable {
   id: string;
   tenant_id: string;
@@ -1032,6 +1052,7 @@ export interface SessionScheduleTable {
 export interface Database {
   session_schedules: SessionScheduleTable;
   session_uploads: SessionUploadTable;
+  workspace_file_transfers: WorkspaceFileTransferTable;
   accepted_fact_projection_offsets: { topic: string; partition: number; next_offset: Int8 };
   agent_definitions: AgentDefinitionTable;
   agent_revisions: AgentRevisionTable;

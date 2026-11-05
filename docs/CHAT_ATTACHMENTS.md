@@ -16,8 +16,13 @@ and their edits remain local until Send. The editor opens UTF-8 text up to 8 MiB
 larger files remain uploadable/downloadable without loading them into the editor.
 This view bound is not an upload quota. Files selected
 before a conversation exists remain in the browser until its Workspace is chosen.
-Manually selected uploads to an existing conversation begin immediately; sending
-waits for all selected files and their Workspace copies to finish. A failed upload can retry with the same identity.
+File cards allow retention selection before Send. Manually selected files remain
+local until sending, which waits for all selected files and their Workspace copies
+to finish. A failed retained-original upload retries with the same identity.
+Explicit Workspace-only files use the separate
+[resumable working-file path](WORKSPACE_UPLOADS.md); they do not create an original
+or masquerade as a retained UserUpload. Browser drafts and uncertain input receipts
+are described in that document.
 
 Each file is placed at `<working-directory>/uploads/<upload-id>/<filename>`.
 An existing, different file is never overwritten. Removing a draft card or
@@ -31,7 +36,7 @@ visibly before the first model call. Available storage, guest memory, S3 and
 model-provider capabilities remain real constraints. Generic files
 are described by filename, path, MIME type and size; the Agent decides which
 Tools to use to read them. This feature does not promise arbitrary document
-parsing or automatic full-text context injection. Newly uploaded originals are
+parsing or automatic full-text context injection. New conversation-attachment originals are
 retained independently of Workspace files under
 [ADR-0294](adr/0294-retained-user-attachments.md). Historical Workspace-only upload
 metadata does not invent a missing original; reupload the file to retain it.

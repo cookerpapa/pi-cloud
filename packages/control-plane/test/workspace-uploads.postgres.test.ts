@@ -447,6 +447,13 @@ describe.skipIf(!external).sequential("Workspace uploads and durable user attach
       expect(accepted.statusCode, accepted.body).toBe(202);
       const direct = parseAcceptedConversationInputResource(accepted.json());
       if (direct.kind !== "input") throw new Error("Expected active native input");
+      const receipt = await http.inject({
+        method: "GET",
+        url: `/v1/sessions/${s.sessionId}/input-receipt?key=direct-image`,
+        headers: { authorization: `Bearer ${tenant.credential.token}` },
+      });
+      expect(receipt.statusCode, receipt.body).toBe(200);
+      expect(receipt.json()).toEqual({ status: "accepted" });
       expect(direct).toMatchObject({
         kind: "input",
         state: "accepted",

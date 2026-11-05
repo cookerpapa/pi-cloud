@@ -8,6 +8,7 @@
     "./guest": "./src/guest.ts",
     "./workspace": "./src/workspace-seed.ts",
     "./uploads": "./src/user-upload.ts",
+    "./transfers": "./src/workspace-file-transfer.ts",
     "./skills": "./src/skills.ts"
   },
   "imports": {

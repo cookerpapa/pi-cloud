@@ -719,3 +719,4 @@ export * from "./model-transport.ts";
 
 export * from "./skills.ts";
 export * from "./attachment-reference.ts";
+export * from "./workspace-file-transfer.ts";

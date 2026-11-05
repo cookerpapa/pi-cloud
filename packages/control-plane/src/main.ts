@@ -725,6 +725,7 @@ export async function startControlPlane(): Promise<void> {
         uploadWorkspaceFile: (request, bytes, signal) =>
           workspaceBrowserClient.uploadWorkspaceFile(request, bytes, signal),
       },
+      workspaceFileTransfers: workspaceBrowserClient,
       ...(images ? { imageAttachmentStore: images.store } : {}),
       maintenance: {
         onActivity: (activity) =>

@@ -43,6 +43,7 @@ import type {
   SourceControlWorkspaceCredentialResponse,
 } from "@pi-cloud/protocol";
 import type { WorkspaceUploadRequest } from "@pi-cloud/protocol";
+import type { WorkspaceFileTransferRequest } from "@pi-cloud/protocol";
 import type { ImageAttachmentSource, ImageAttachmentStore } from "@pi-cloud/session-attachments";
 import { type SandboxControlRequest, type SandboxControlResponse } from "@pi-cloud/protocol";
 type InputImageRequest = Extract<
@@ -425,6 +426,7 @@ export class SandboxController {
     this.#workflows = options.provider;
     this.#credentials = options.provider;
     this.#workspaceFiles = new WorkspaceFileAccess(options.provider, {
+      transfer: (request) => this.#authorizeFileTransfer(request),
       machine: (request) => this.#machineBrowserHandle(request),
       upload: (request) => this.#authorizeUpload(request),
     });
@@ -3019,6 +3021,26 @@ export class SandboxController {
     await this.#authorizeUpload(request);
   }
 
+  async prepareWorkspaceFileTransfer(request: WorkspaceFileTransferRequest): Promise<void> {
+    await this.#authorizeFileTransfer(request);
+  }
+
+  async #authorizeFileTransfer(request: WorkspaceFileTransferRequest) {
+    this.#stateRepository.assertLocalOwnership();
+    if (!this.#stateRepository.authorizeWorkspaceFileTransfer)
+      throw new Error("Workspace transfer admission is unavailable");
+    await this.#stateRepository.authorizeWorkspaceFileTransfer(request);
+    return request.machine ? this.#machineBrowserHandle(request) : undefined;
+  }
+
+  workspaceFileTransfer(
+    request: WorkspaceFileTransferRequest,
+    chunks?: AsyncIterable<Uint8Array>,
+    signal?: AbortSignal,
+  ) {
+    return this.#workspaceFiles.workspaceFileTransfer(request, chunks, signal);
+  }
+
   async #authorizeUpload(request: WorkspaceUploadRequest) {
     this.#stateRepository.assertLocalOwnership();
     if (!this.#stateRepository.authorizeWorkspaceUpload)
@@ -3050,7 +3072,8 @@ export class SandboxController {
     request:
       | SandboxControlListWorkspaceDirectoryRequest
       | SandboxControlReadWorkspaceFileRequest
-      | WorkspaceUploadRequest,
+      | WorkspaceUploadRequest
+      | WorkspaceFileTransferRequest,
   ): Promise<SandboxHandle> {
     const target = request.machine!;
     const owner = await this.#stateRepository.developmentEnvironmentOwner(

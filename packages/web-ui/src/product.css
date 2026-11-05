@@ -4081,6 +4081,33 @@ body.product-panel-resizing {
   gap: 8px;
   padding: 6px 0;
 }
+.upload-card select {
+  max-width: 100%;
+  min-width: 0;
+  padding: 3px 5px;
+  font-size: 12px;
+}
+.upload-card > div {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.workspace-upload-panel {
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+}
+.workspace-upload-panel > select {
+  width: 100%;
+  min-width: 0;
+}
+.workspace-upload-panel .upload-cards {
+  flex-direction: column;
+}
+.workspace-upload-panel .upload-card {
+  width: auto;
+  max-width: 100%;
+}
 .upload-card {
   margin: 0;
   padding: 8px;

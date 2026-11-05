@@ -90,6 +90,38 @@ export class QueuedInputService {
     readonly options: { database: Kysely<Database>; backendFactory?: NativeInputBackendFactory },
   ) {}
 
+  /** Read-only reconciliation for a browser that lost an acceptance response.
+   * A missing projection is unconfirmed, never proof that the input was rejected. */
+  async receipt(
+    tenantId: string,
+    sessionId: string,
+    key: string,
+  ): Promise<{ status: "accepted" | "unconfirmed" }> {
+    const db = this.options.database;
+    const session = await this.#session(db, tenantId, sessionId);
+    const run = await db
+      .selectFrom("runs")
+      .select("id")
+      .where("tenant_id", "=", tenantId)
+      .where("session_id", "=", sessionId)
+      .where("idempotency_key", "=", key)
+      .executeTakeFirst();
+    if (run) return { status: "accepted" };
+    if (session.pi_conversation_id !== null) {
+      const submitted = await readNativeHumanSubmission(
+        db,
+        {
+          tenantId,
+          sessionId: session.pi_session_id,
+          conversationId: Number(session.pi_conversation_id),
+        },
+        nativeHumanInputId(tenantId, sessionId, key),
+      );
+      if (submitted?.runId) return { status: "accepted" };
+    }
+    return { status: "unconfirmed" };
+  }
+
   async #session(db: Kysely<Database>, tenantId: string, sessionId: string, lock = false) {
     const row = await db
       .selectFrom("sessions")

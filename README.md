@@ -33,6 +33,10 @@ scale or as a highly available production service.
 - **Attachments:** long text pastes become editable text files. Uploaded originals
   stay with the conversation in object storage; Workspace copies support normal
   file/shell tools. History originals can be viewed, downloaded and reused.
+- **Working files:** choose Workspace-only uploads in the composer or file panel.
+  Large working files resume from receiver-confirmed progress. Browser drafts
+  survive page reload without caching ordinary local file bodies; sending waits
+  for upload completion. [Storage and recovery](docs/WORKSPACE_UPLOADS.md).
 - **Images:** chat image uploads enter the model directly. `generate_image` creates or
   edits images using file/recent-image references; `show_image` displays Workspace
   images. Retained image objects stay available in conversation history.

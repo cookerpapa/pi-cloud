@@ -11,7 +11,7 @@ declare module "fastify" {
  * their bounded binary JSON envelope, including opaque Tool argument keys. */
 export function installBinaryBodyParser(server: FastifyInstance): void {
   server.addContentTypeParser(
-    "application/octet-stream",
+    ["application/octet-stream", "application/offset+octet-stream"],
     async (request: FastifyRequest, body: Readable) => {
       if (request.routeOptions.config.piCloudStreamUpload === true) return body;
       const chunks: Buffer[] = [];

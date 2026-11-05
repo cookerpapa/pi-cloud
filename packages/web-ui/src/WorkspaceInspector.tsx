@@ -2,6 +2,8 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { WorkspaceDirectoryEntryResource } from "@pi-cloud/protocol";
 import { PiCloudApi, PiCloudApiError } from "./api.ts";
 import { useI18n, type Translate } from "./i18n.tsx";
+import { useComposerUploads } from "./useComposerUploads.ts";
+import { ComposerUploadCards } from "./UploadCards.tsx";
 
 const WorkspaceTerminal = lazy(async () => {
   const module = await import("./WorkspaceTerminal.tsx");
@@ -70,6 +72,8 @@ export function WorkspaceInspector({
   workspaceName,
   developmentEnvironmentId,
   workingDirectory,
+  draftKey,
+  onReference,
 }: {
   api: PiCloudApi;
   onClose: () => void;
@@ -80,8 +84,19 @@ export function WorkspaceInspector({
   workspaceName: string | null;
   developmentEnvironmentId: string | null;
   workingDirectory: string;
+  draftKey?: string;
+  onReference?: (path: string) => void;
 }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
+  const uploadPicker = useRef<HTMLInputElement>(null);
+  const [uploadDirectory, setUploadDirectory] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const uploads = useComposerUploads(
+    api,
+    sessionId ?? undefined,
+    sessionId && workspaceId ? `${sessionId}:${workspaceId}:${workingDirectory}` : "",
+    draftKey,
+  );
   const [entriesByDirectory, setEntriesByDirectory] = useState<
     Readonly<Record<string, readonly WorkspaceDirectoryEntryResource[]>>
   >({});
@@ -257,7 +272,92 @@ export function WorkspaceInspector({
           <nav className="workspace-file-tree" aria-label={t("inspector.fileTree")}>
             <div className="workspace-root-row">
               <strong>{workingDirectory}</strong>
+              {sessionId ? (
+                <button
+                  type="button"
+                  onClick={() => uploadPicker.current?.click()}
+                  disabled={uploading}
+                >
+                  {language === "zh-CN" ? "上传文件" : "Upload files"}
+                </button>
+              ) : null}
             </div>
+            {sessionId ? (
+              <div className="workspace-upload-panel">
+                <input
+                  type="file"
+                  hidden
+                  multiple
+                  ref={uploadPicker}
+                  aria-label={language === "zh-CN" ? "工作区上传文件" : "Upload Workspace files"}
+                  onChange={(event) => {
+                    uploads.add([...(event.target.files ?? [])], {
+                      retention: "workspace",
+                      directory: uploadDirectory,
+                    });
+                    event.target.value = "";
+                  }}
+                />
+                <select
+                  aria-label={language === "zh-CN" ? "上传目录" : "Upload directory"}
+                  value={uploadDirectory}
+                  disabled={uploading}
+                  onChange={(event) => setUploadDirectory(event.target.value)}
+                >
+                  <option value="">{workingDirectory}</option>
+                  {visibleEntries
+                    .filter((entry) => entry.kind === "directory")
+                    .map((entry) => (
+                      <option key={entry.path} value={entry.path}>
+                        {entry.path}/
+                      </option>
+                    ))}
+                </select>
+                <ComposerUploadCards
+                  api={api}
+                  items={uploads.items}
+                  disabled={uploading}
+                  remove={uploads.remove}
+                  retry={uploads.retry}
+                  pause={uploads.pause}
+                  reselect={uploads.reselect}
+                />
+                {uploads.items.some((item) => item.status !== "ready") ? (
+                  <button
+                    type="button"
+                    disabled={uploading}
+                    onClick={() => {
+                      setUploading(true);
+                      void uploads
+                        .ready(sessionId)
+                        .then(() => refresh())
+                        .catch((error) => {
+                          if (!(error instanceof DOMException && error.name === "AbortError"))
+                            onError(message(error, t));
+                        })
+                        .finally(() => setUploading(false));
+                    }}
+                  >
+                    {language === "zh-CN" ? "开始上传" : "Start upload"}
+                  </button>
+                ) : null}
+                {uploads.items
+                  .filter((item) => item.transfer?.state === "ready")
+                  .map((item) => (
+                    <button
+                      type="button"
+                      key={item.id}
+                      onClick={() => onReference?.(item.transfer!.path)}
+                      disabled={!onReference}
+                    >
+                      {language === "zh-CN" ? "引用" : "Reference"} {item.name}
+                    </button>
+                  ))}
+                {uploads.persistenceError ? (
+                  <small role="alert">{t("upload.draftSaveFailed")}</small>
+                ) : null}
+              </div>
+            ) : null}
             {rootLoading ? (
               <div className="workspace-empty">{t("inspector.loadingDirectory")}</div>
             ) : visibleEntries.length === 0 ? (
@@ -321,6 +421,16 @@ export function WorkspaceInspector({
                 <header>
                   <strong>{selectedFile.path}</strong>
                   <span>{sizeLabel(selectedFile.sizeBytes ?? 0)}</span>
+                  {onReference ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onReference(`${workingDirectory.replace(/\/$/, "")}/${selectedFile.path}`)
+                      }
+                    >
+                      {language === "zh-CN" ? "插入路径" : "Insert path"}
+                    </button>
+                  ) : null}
                 </header>
                 {fileLoading ? (
                   <div className="workspace-preview-empty">{t("inspector.loadingFile")}</div>

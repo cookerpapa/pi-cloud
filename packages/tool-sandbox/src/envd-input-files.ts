@@ -2,6 +2,7 @@ import { SkillPackageExportError } from "./skill-package-export.ts";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { prepareInputFile } from "./input-files.ts";
+import { WorkspaceFileTransferError } from "@pi-cloud/workspace-runtime";
 
 async function main() {
   const path = process.argv[2];
@@ -25,7 +26,7 @@ void main().then(
   (cause) => {
     process.stdout.write(
       JSON.stringify(
-        cause instanceof SkillPackageExportError
+        cause instanceof SkillPackageExportError || cause instanceof WorkspaceFileTransferError
           ? { ok: false, code: cause.code, message: cause.message }
           : { ok: false, code: "input_file_preparation_failed" },
       ),

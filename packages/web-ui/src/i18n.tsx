@@ -98,7 +98,8 @@ const zhCN = {
 
   "upload.add": "添加附件",
   "upload.remove": "移除附件",
-  "upload.pending": "等待选择会话",
+  "upload.pending": "待上传",
+  "upload.draftSaveFailed": "无法保存本地草稿，关闭页面后可能需要重新填写。",
   "upload.uploading": "上传中…",
   "upload.ready": "已上传",
   "upload.failed": "上传失败",
@@ -656,7 +657,9 @@ const enUS: Record<UiTextKey, string> = {
 
   "upload.add": "Attach files",
   "upload.remove": "Remove attachment",
-  "upload.pending": "Waiting for a conversation",
+  "upload.pending": "Ready to upload",
+  "upload.draftSaveFailed":
+    "Cannot save the local draft. Closing this page may lose unsent content.",
   "upload.uploading": "Uploading…",
   "upload.ready": "Uploaded",
   "upload.failed": "Upload failed",

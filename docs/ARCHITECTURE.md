@@ -368,7 +368,7 @@ Workspace selection, context inheritance and working directory are separate choi
 Ultra enables proactive delegation. Model permits are local and fair and are not
 held while waiting on another Agent or Tool. See [SUBAGENTS](SUBAGENTS.md).
 
-Long text pastes become editable browser file drafts. All new user uploads retain
+Long text pastes become editable browser file drafts. Conversation attachments retain
 immutable originals in the existing S3/PG reference authority; Workspace files are
 mutable working copies. Upload confirmation requires original and placement
 completion, while input confirmation retains PG/Pi's existing admission boundary.
@@ -376,6 +376,15 @@ History/Fork references preserve originals independently of Workspace deletion.
 Edited queue attachments and promotion to steer co-commit through Pi; reuse shares
 an original and creates a new Workspace placement. See
 [ADR-0294](adr/0294-retained-user-attachments.md).
+
+Explicit Workspace-only uploads from the composer/file panel use tus continuation
+over existing file ports ([ADR-0295](adr/0295-workspace-file-transfers.md)). PG
+retains bounded transfer grants; the actual receiver owns byte offset, staging and
+publication. These files have no S3 original or native attachment reference.
+Browser drafts persist before sending; reconnect queries progress and existing
+input receipts without automatically resubmitting. Only completed files are
+described to the model. Historical paths are not implicitly restored after
+Workspace changes. See [working-file uploads](WORKSPACE_UPLOADS.md).
 
 User image uploads enter Pi as visual content directly. Retained originals and
 canonical Tool images use private S3 objects, independent of mutable Workspace

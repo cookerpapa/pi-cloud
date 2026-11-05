@@ -48,6 +48,7 @@ export type ControlPlaneApplicationOptions = Omit<
   publicRegistration?: PublicTenantRegistrationConfiguration;
   workspaceBrowser?: TrustedWorkspaceBrowser;
   workspaceUploader?: WorkspaceUploader;
+  workspaceFileTransfers?: import("./workspace-file-transfer-service.ts").WorkspaceFileTransferPort;
   imageAttachmentStore?: ImageAttachmentStore & AttachmentUploadStore & AttachmentSource;
   webAuthentication?: WebAuthenticationService;
   platformOperatorTenantId?: string;

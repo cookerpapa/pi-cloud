@@ -18,3 +18,4 @@ export {
 } from "./workspace-seed.ts";
 
 export { WorkspaceRuntimeError } from "./workspace-error.ts";
+export { workspaceFileTransfer, WorkspaceFileTransferError } from "./workspace-file-transfer.ts";
