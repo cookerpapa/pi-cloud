@@ -587,6 +587,22 @@ window.renderShownImage=(toolName='show_image',status='running')=>{
   })));
 };
 window.fixtureReady = true;
+window.renderTransferInspector = () => {
+  window.panelReferences=[];window.panelTransfers=[];
+  const files=new Map();
+  const api={
+    listWorkspaceDirectory:async(_session,path)=>({entries:path===''?[{name:'models',path:'models',kind:'directory'}]:path==='models'?[{name:'v1',path:'models/v1',kind:'directory'}]:[],truncated:false}),
+    createWorkspaceFileTransfer:async(sessionId,id,input)=>{const value={id,sessionId,workspaceId:'workspace-panel',name:input.name,path:'/workspace/'+input.directory+'/'+input.name,byteLength:input.byteLength,sha256:input.sha256,state:'uploading',offset:0,expiresAt:new Date(Date.now()+86400000).toISOString()};files.set(id,value);return value;},
+    continueWorkspaceFileTransfer:async(value,file,_signal,progress)=>{const result={...value,state:'ready',offset:file.size};files.set(value.id,result);window.panelTransfers.push(result);progress(file.size);return result;},
+    workspaceFileTransfer:async(_session,id)=>files.get(id),
+    cancelWorkspaceFileTransfer:async(_session,id)=>files.get(id),
+  };
+  root.render(React.createElement(I18nProvider,{initialLanguage:'en-US'},React.createElement(WorkspaceInspector,{
+    api,sessionId:'session-panel',workspaceId:'workspace-panel',workspaceName:'Panel fixture',developmentEnvironmentId:null,
+    workingDirectory:'/workspace',refreshSignal:0,onClose:()=>{},onError:message=>window.fixtureErrors.push(message),
+    onReference:path=>window.panelReferences.push(path)
+  })));
+};
 `;
 const server = await createServer({
   configFile: false,
@@ -768,6 +784,35 @@ try {
     assert.equal(await page.evaluate("turnRequests.length"), 2);
     assert.deepEqual(await page.evaluate("fixtureErrors"), []);
     await page.screenshot("/tmp/pi-cloud-workspace-transfer-browser.png");
+  });
+  await withChromePage({ workspaceTransfers: true, width: 1280, height: 900 }, async (page) => {
+    await page.navigate(`http://127.0.0.1:${port}/review.html`);
+    await page.waitFor("window.fixtureReady");
+    await page.evaluate("renderTransferInspector()");
+    await page.waitFor("document.querySelector('.workspace-tree-directory')");
+    await page.evaluate("document.querySelector('.workspace-tree-directory').click()");
+    await page.waitFor(
+      "[...document.querySelectorAll('select[aria-label=\"Upload directory\"] option')].some(o=>o.value==='models/v1')",
+    );
+    await page.evaluate(
+      "(()=>{const select=document.querySelector('select[aria-label=\"Upload directory\"]');select.value='models/v1';select.dispatchEvent(new Event('change',{bubbles:true}));const input=document.querySelector('.workspace-upload-panel input[type=file]');const data=new DataTransfer();data.items.add(new File(['panel upload'],'weights.bin'));input.files=data.files;input.dispatchEvent(new Event('change',{bubbles:true}));})()",
+    );
+    await page.waitFor("document.querySelector('.workspace-upload-panel .upload-card')");
+    await page.evaluate(
+      "[...document.querySelectorAll('.workspace-upload-panel>button')].find(b=>b.textContent==='Start upload').click()",
+    );
+    await page.waitFor(
+      "panelTransfers.length===1 && !document.querySelector('.workspace-empty')?.textContent.includes('Loading')",
+    );
+    assert.equal(await page.evaluate("panelTransfers[0].path"), "/workspace/models/v1/weights.bin");
+    await page.waitFor(
+      "document.querySelector('select[aria-label=\"Upload directory\"]').value==='models/v1'",
+    );
+    await page.evaluate(
+      "[...document.querySelectorAll('.workspace-upload-panel>button')].find(b=>b.textContent.includes('Reference')).click()",
+    );
+    assert.deepEqual(await page.evaluate("panelReferences"), ["/workspace/models/v1/weights.bin"]);
+    assert.deepEqual(await page.evaluate("fixtureErrors"), []);
   });
   await withChromePage({ attachments: true, width: 1280, height: 900 }, async (page) => {
     await page.navigate(`http://127.0.0.1:${port}/review.html`);

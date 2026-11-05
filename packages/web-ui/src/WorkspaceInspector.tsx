@@ -305,6 +305,12 @@ export function WorkspaceInspector({
                   onChange={(event) => setUploadDirectory(event.target.value)}
                 >
                   <option value="">{workingDirectory}</option>
+                  {uploadDirectory &&
+                  !visibleEntries.some(
+                    (entry) => entry.kind === "directory" && entry.path === uploadDirectory,
+                  ) ? (
+                    <option value={uploadDirectory}>{uploadDirectory}/</option>
+                  ) : null}
                   {visibleEntries
                     .filter((entry) => entry.kind === "directory")
                     .map((entry) => (
