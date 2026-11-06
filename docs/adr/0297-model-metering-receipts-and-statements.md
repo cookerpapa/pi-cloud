@@ -37,6 +37,15 @@ for this outbox. A separate file on the existing provider data volume avoids
 coupling receipts to a disposable cache or a change of OAuth directory. No new
 database service, broker, workflow engine or model scheduler is introduced.
 
+The evaluated MIT-licensed alternatives are fixed at
+[Keeper `aa687529`](https://github.com/Willxup/cpa-usage-keeper/tree/aa687529e392833e17ad0eb7ccfc4dec8eda0982)
+and [cliproxy-costs `abbca52e`](https://github.com/MelonSmasher/cliproxy-costs/tree/abbca52e089c00f1f5b87864bdbca88537b2f262).
+Keeper stores received usage for a dashboard; the cost plugin provides estimates,
+not a wallet or source admission journal. Both still depend on source delivery.
+Their persistence is useful downstream but cannot make CPA's pre-callback memory
+queue crash-durable. Replacing that bounded capture gap, rather than copying their
+reporting UI or adding another database service, is the reason for this adapter.
+
 The journal is a delivery buffer, not an independent balance or pricing authority.
 Completed deliveries are collected after PostgreSQL acknowledgement. The financial
 port is PiCloud-owned; vendor usage objects, credentials, request bodies, responses,

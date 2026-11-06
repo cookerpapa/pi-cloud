@@ -41,7 +41,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     && GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' go mod download \
     && GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' go test ./sdk/cliproxy/auth -run '^TestPiCloudImageAttemptGuard$' -count=1 \
     && GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' go test ./sdk/api/handlers/openai -run '^TestPiCloudModel' -count=1 \
-    && GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' go test ./internal/picloudmetering -count=1
+    && GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' go test ./internal/picloudmetering -count=1 \
     && GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' go test ./cmd/picloud-config -count=1 \
     && CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
       GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' \
