@@ -27,6 +27,8 @@ export const operatorSources = new Set([
   "scripts/run-live-interrupted-text-check.mjs",
   "scripts/configure-provider-websockets.mjs",
   "scripts/lib/provider-websocket-policy.mjs",
+  "scripts/lib/owned-acceptance-cleanup.mjs",
+  "scripts/run-live-workspace-transfer-check.mjs",
   "scripts/release-impact.mjs",
   "scripts/lib/release-impact.mjs",
 ]);

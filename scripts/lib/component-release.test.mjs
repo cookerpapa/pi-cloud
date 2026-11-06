@@ -67,6 +67,8 @@ it("accepts operator-only replacement repairs without relabeling the prepared ru
       "scripts/lib/control-plane-release.mjs",
       "scripts/lib/control-plane-release.test.mjs",
       "scripts/run-live-control-plane-release-check.mjs",
+      "scripts/lib/owned-acceptance-cleanup.mjs",
+      "scripts/run-live-workspace-transfer-check.mjs",
     ]),
   ).not.toThrow();
   expect(() =>
