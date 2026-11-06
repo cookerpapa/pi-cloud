@@ -7,15 +7,23 @@ import { readPrivateRuntimeFile } from "./runtime-file-policy.mjs";
 /** Pi owns sampling retries and tool declarations; leave credential routing intact. */
 export function applyProviderRuntimePolicy(source) {
   const document = parseDocument(source);
-  if (document.errors.length || !document.contents || !document.has("port"))
+  if (
+    document.errors.length ||
+    !document.contents ||
+    document.get("config-version") !== 8 ||
+    !document.hasIn(["server", "port"]) ||
+    document.has("port") ||
+    document.has("request-retry") ||
+    document.has("disable-image-generation")
+  )
     throw new Error("Provider Gateway configuration is invalid");
   if (
-    document.get("request-retry") === 0 &&
-    document.get("disable-image-generation") === "passthrough"
+    document.getIn(["routing", "retry", "request-retry"]) === 0 &&
+    document.getIn(["multimedia", "disable-image-generation"]) === "passthrough"
   )
     return source;
-  document.set("request-retry", 0);
-  document.set("disable-image-generation", "passthrough");
+  document.setIn(["routing", "retry", "request-retry"], 0);
+  document.setIn(["multimedia", "disable-image-generation"], "passthrough");
   return document.toString();
 }
 

@@ -25,7 +25,7 @@ export async function ensureProviderWebsocketAccounts({
     return response.json();
   };
   const list = async () => {
-    const result = await call("/v0/management/auth-files");
+    const result = await call("/v8/management/credentials");
     assert(Array.isArray(result.files), "Provider account inventory is unavailable");
     return result.files.filter((file) => (file.provider ?? file.type) === "codex");
   };
@@ -44,7 +44,7 @@ export async function ensureProviderWebsocketAccounts({
       "Provider account identity is missing",
     );
     if (account.websockets === true) continue;
-    await call("/v0/management/auth-files/fields", {
+    await call("/v8/management/credentials/fields", {
       name: account.name,
       ...(account.auth_index ? { auth_index: account.auth_index } : {}),
       websockets: true,

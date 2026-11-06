@@ -12,6 +12,61 @@ import { isDeepStrictEqual } from "node:util";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { parseAllDocuments } from "yaml";
+import ts from "typescript";
+
+/** The initializer also owns other infrastructure. Only its provider declaration
+ * and pinned provider import/asset may differ in a provider-only publication. */
+export function assertProviderInitializerChanges(before, after) {
+  const unrelated = (source) => {
+    const file = ts.createSourceFile(
+      "init-production.mjs",
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.JS,
+    );
+    return file.statements
+      .filter((node) => {
+        if (ts.isFunctionDeclaration(node) && node.name?.text === "ensureCliProxyRuntime")
+          return false;
+        if (
+          ts.isImportDeclaration(node) &&
+          node.moduleSpecifier.text === "./lib/provider-runtime-config.mjs"
+        )
+          return false;
+        if (
+          ts.isVariableStatement(node) &&
+          node.declarationList.declarations.length === 1 &&
+          node.declarationList.declarations[0].name.getText(file) === "cliProxyManagementAsset"
+        )
+          return false;
+        return true;
+      })
+      .map((node) => node.getText(file))
+      .join("\n");
+  };
+  assert.equal(
+    unrelated(before),
+    unrelated(after),
+    "Provider release changes unrelated initialization",
+  );
+}
+
+/** A provider release may expose its own Go/patch inputs, never broaden other
+ * build contexts or admit deployment secrets. The context probe still runs. */
+export function assertProviderBuildContextChanges(before, after) {
+  const unrelated = (source) =>
+    source
+      .trim()
+      .split(/\r?\n/)
+      .filter((line) => !/^!deploy\/provider-gateway\/[A-Za-z0-9_.-]+\.(go|patch)$/.test(line))
+      .join("\n");
+  assert.equal(
+    unrelated(before),
+    unrelated(after),
+    "Provider release changes unrelated build context",
+  );
+}
 
 export const digest = (value) =>
   createHash("sha256")

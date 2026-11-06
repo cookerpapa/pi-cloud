@@ -18,15 +18,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/klauspost/compress/zstd"
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/interfaces"
-	coreexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v7/sdk/translator"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
+	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
+	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 	log "github.com/sirupsen/logrus"
-	"github.com/tidwall/gjson"
 )
 
 const piCloudMiB = 1024 * 1024
@@ -207,21 +207,21 @@ func piCloudItemDigest(raw []byte) ([32]byte, error) {
 
 type piCloudRequest struct {
 	fields       map[string]json.RawMessage
-	input        []gjson.Result
+	input        []ojson.Result
 	parameters   [32]byte
 	fingerprints [][32]byte
 }
 
 func piCloudParseRequest(raw []byte) (*piCloudRequest, error) {
-	if !gjson.ValidBytes(raw) {
+	if !ojson.ValidBytes(raw) {
 		return nil, errors.New("invalid_request")
 	}
-	root := gjson.ParseBytes(raw)
+	root := ojson.ParseBytes(raw)
 	if !root.IsObject() || !root.Get("input").IsArray() || root.Get("model").String() == "" || !root.Get("stream").Bool() || root.Get("store").Bool() || root.Get("previous_response_id").Exists() {
 		return nil, errors.New("invalid_request")
 	}
 	r := &piCloudRequest{fields: make(map[string]json.RawMessage), input: root.Get("input").Array()}
-	root.ForEach(func(k, v gjson.Result) bool {
+	root.ForEach(func(k, v ojson.Result) bool {
 		if k.String() != "input" && k.String() != "stream" {
 			r.fields[k.String()] = json.RawMessage(v.Raw)
 		}
@@ -446,7 +446,7 @@ func (h *OpenAIResponsesAPIHandler) PiCloudResponses(c *gin.Context) {
 				keep = true
 				return
 			}
-			response := gjson.GetBytes(completion, "response")
+			response := ojson.GetBytes(completion, "response")
 			baseline := append([][32]byte(nil), r.fingerprints...)
 			for _, item := range response.Get("output").Array() {
 				digest, err := piCloudItemDigest([]byte(item.Raw))
@@ -512,15 +512,14 @@ func piCloudFailure(err error) *piCloudAttemptError {
 	if errors.As(err, &status) {
 		f.status = status.StatusCode()
 	}
-	code := gjson.Get(err.Error(), "error.code").String()
+	code := ojson.Get(err.Error(), "error.code").String()
 	if code == "" {
-		code = gjson.Get(err.Error(), "response.error.code").String()
+		code = ojson.Get(err.Error(), "response.error.code").String()
 	}
 	f.missing = coreexecutor.IsUpstreamWebsocketReplayRequired(err) || code == "previous_response_not_found"
 	var network net.Error
 	var closed *websocket.CloseError
-	var ownedSend interface{ IsPiCloudModelSendFailure() bool }
-	f.transport = errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &network) || errors.As(err, &closed) || (errors.As(err, &ownedSend) && ownedSend.IsPiCloudModelSendFailure())
+	f.transport = errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &network) || errors.As(err, &closed)
 	if f.status == 426 && !f.missing {
 		f.transport = true
 	}
@@ -542,9 +541,9 @@ func piCloudFailure(err error) *piCloudAttemptError {
 	// context-overflow/quota distinctions to compact or avoid futile retries.
 	if code != "" || (f.status >= 400 && f.status < 500) {
 		safe := responsesStreamErrorText(&interfaces.ErrorMessage{StatusCode: f.status, Error: err}, f.status)
-		message := gjson.Get(safe, "error.message").String()
+		message := ojson.Get(safe, "error.message").String()
 		if message == "" {
-			message = gjson.Get(safe, "message").String()
+			message = ojson.Get(safe, "message").String()
 		}
 		if message == "" && !json.Valid([]byte(safe)) {
 			message = safe
@@ -573,7 +572,7 @@ func (h *OpenAIResponsesAPIHandler) piCloudAttempt(c *gin.Context, p *piCloudMod
 	if incremental {
 		ctx = coreexecutor.WithRequiredUpstreamWebsocket(ctx)
 	}
-	model := gjson.GetBytes(payload, "model").String()
+	model := ojson.GetBytes(payload, "model").String()
 	metadata := map[string]any{coreexecutor.ExecutionSessionMetadataKey: s.id, coreexecutor.RequestedModelMetadataKey: model, coreexecutor.SelectedAuthCallbackMetadataKey: func(id string) { s.auth = id }}
 	if s.auth != "" {
 		metadata[coreexecutor.PinnedAuthMetadataKey] = s.auth
@@ -665,12 +664,12 @@ func (h *OpenAIResponsesAPIHandler) piCloudAttempt(c *gin.Context, p *piCloudMod
 			if !json.Valid(event) {
 				return nil, &piCloudAttemptError{status: 502, code: "provider_response_invalid"}
 			}
-			typeName := gjson.GetBytes(event, "type").String()
-			if incremental && typeName == "error" && gjson.GetBytes(event, "error.code").String() == "previous_response_not_found" {
+			typeName := ojson.GetBytes(event, "type").String()
+			if incremental && typeName == "error" && ojson.GetBytes(event, "error.code").String() == "previous_response_not_found" {
 				return nil, &piCloudAttemptError{status: 400, code: "previous_response_not_found", missing: true}
 			}
 			if typeName == "response.completed" {
-				r := gjson.GetBytes(event, "response")
+				r := ojson.GetBytes(event, "response")
 				if r.Get("status").String() != "completed" || r.Get("id").String() == "" || !r.Get("output").IsArray() {
 					return nil, &piCloudAttemptError{status: 502, code: "provider_response_invalid"}
 				}
@@ -692,7 +691,7 @@ func (h *OpenAIResponsesAPIHandler) piCloudAttempt(c *gin.Context, p *piCloudMod
 			}
 			c.Writer.Flush()
 			if typeName == "response.completed" {
-				r := gjson.GetBytes(event, "response")
+				r := ojson.GetBytes(event, "response")
 				if r.Get("status").String() != "completed" || r.Get("id").String() == "" || !r.Get("output").IsArray() {
 					return nil, &piCloudAttemptError{status: 502, code: "provider_response_invalid"}
 				}

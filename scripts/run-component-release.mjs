@@ -27,7 +27,18 @@ import {
   catalogSeed,
   imageReleaseTargets,
   dockerSourceInputs,
+  assertProviderInitializerChanges,
+  assertProviderBuildContextChanges,
 } from "./lib/component-release.mjs";
+import { providerConfigurationSources } from "./lib/release-impact.mjs";
+import {
+  prepareProviderConfiguration,
+  assertProviderConfigurationPlan,
+  applyProviderConfiguration,
+  providerConfigDigest,
+} from "./lib/provider-config-release.mjs";
+import { providerManagementAsset } from "./lib/provider-runtime-config.mjs";
+import { readPrivateRuntimeFile } from "./lib/runtime-file-policy.mjs";
 import {
   replaceControlPlane,
   createReplacementDatabase,
@@ -137,11 +148,16 @@ function inputs(scope) {
     ]).split("\n");
   if (scope === "provider") {
     const file = "deploy/provider-gateway/Dockerfile";
-    return dockerSourceInputs(
-      file,
-      capture("git", ["ls-files"]).split("\n"),
-      readFileSync(resolve(root, file), "utf8"),
-    );
+    return [
+      ...new Set([
+        ...dockerSourceInputs(
+          file,
+          capture("git", ["ls-files"]).split("\n"),
+          readFileSync(resolve(root, file), "utf8"),
+        ),
+        ...providerConfigurationSources,
+      ]),
+    ];
   }
   return [catalogSeed];
 }
@@ -161,6 +177,16 @@ if (action === "prepare") {
     .split("\n")
     .filter(Boolean);
   assertScopedSources(scope, changed);
+  if (scope === "provider") {
+    assertProviderBuildContextChanges(
+      capture("git", ["show", `${baseline.revision}:.dockerignore`]),
+      readFileSync(resolve(root, ".dockerignore"), "utf8"),
+    );
+    assertProviderInitializerChanges(
+      capture("git", ["show", `${baseline.revision}:scripts/init-production.mjs`]),
+      readFileSync(resolve(root, "scripts/init-production.mjs"), "utf8").trim(),
+    );
+  }
   const version =
     scope !== "catalog" ? input : `catalog-${revision.slice(0, 12)}-${Date.now().toString(36)}`;
   assert(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(version ?? ""), "Invalid release version");
@@ -257,6 +283,64 @@ if (action === "prepare") {
   writeFileSync(resolve(directory, "before.yaml"), live.manifest, { mode: 0o600 });
   writeFileSync(resolve(directory, "rendered.yaml"), rendered, { mode: 0o600 });
   save(resolve(directory, "baseline.json"), baseline);
+  let providerConfiguration;
+  if (scope === "provider") {
+    const source = await readPrivateRuntimeFile(
+      resolve(runtimeDirectory, "secrets/cli-proxy-config.yaml"),
+      1024 * 1024,
+      "Provider configuration",
+    );
+    const normalized = await prepareProviderConfiguration(source, (body) => {
+      try {
+        return execFileSync(
+          "docker",
+          [
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--read-only",
+            "-i",
+            "--entrypoint",
+            "/CLIProxyAPI/pi-cloud-config",
+            desired,
+          ],
+          {
+            input: body,
+            encoding: "utf8",
+            timeout: 30000,
+            maxBuffer: 2 * 1024 * 1024,
+            stdio: ["pipe", "pipe", "pipe"],
+          },
+        );
+      } catch {
+        throw new Error("Candidate provider rejected configuration conversion");
+      }
+    });
+    writeFileSync(resolve(directory, "provider-config.yaml"), normalized.body, { mode: 0o600 });
+    providerConfiguration = normalized.plan;
+    const panel = execFileSync(
+      "curl",
+      [
+        "--fail",
+        "--silent",
+        "--show-error",
+        "--location",
+        "--retry",
+        "3",
+        "--max-time",
+        "120",
+        providerManagementAsset.url,
+      ],
+      { maxBuffer: 8 * 1024 * 1024 },
+    );
+    assert.equal(
+      providerConfigDigest(panel),
+      providerManagementAsset.sha256,
+      "Provider management download differs from its pin",
+    );
+    writeFileSync(resolve(directory, "provider-management.html"), panel, { mode: 0o600 });
+  }
   save(resolve(directory, "candidate.json"), {
     formatVersion: 1,
     scope,
@@ -271,6 +355,7 @@ if (action === "prepare") {
     valuesDigest: digest(readFileSync(resolve(directory, "values.yaml"), "utf8")),
     beforeDigest: digest(live.manifest),
     renderedDigest: digest(rendered),
+    ...(providerConfiguration ? { providerConfiguration } : {}),
     ...(scope === "catalog"
       ? { probesDigest: digest(readFileSync(resolve(directory, "model-probes.json"), "utf8")) }
       : {}),
@@ -322,6 +407,34 @@ assertScopedManifests(
 );
 const baseline = readJson(resolve(directory, "baseline.json"));
 assert.equal(digest(baseline), candidate.baselineDigest);
+if (candidate.scope === "provider") {
+  assertProviderBuildContextChanges(
+    capture("git", ["show", `${baseline.revision}:.dockerignore`]),
+    readFileSync(resolve(root, ".dockerignore"), "utf8"),
+  );
+  assertProviderInitializerChanges(
+    capture("git", ["show", `${baseline.revision}:scripts/init-production.mjs`]),
+    readFileSync(resolve(root, "scripts/init-production.mjs"), "utf8").trim(),
+  );
+  assertProviderConfigurationPlan(
+    candidate.providerConfiguration,
+    await readPrivateRuntimeFile(
+      resolve(directory, "provider-config.yaml"),
+      1024 * 1024,
+      "Prepared provider configuration",
+    ),
+    await readPrivateRuntimeFile(
+      resolve(runtimeDirectory, "secrets/cli-proxy-config.yaml"),
+      1024 * 1024,
+      "Provider configuration",
+    ),
+  );
+  assert.equal(
+    providerConfigDigest(readFileSync(resolve(directory, "provider-management.html"))),
+    providerManagementAsset.sha256,
+    "Prepared provider management asset changed",
+  );
+}
 if (candidate.scope === "control-plane")
   assert.equal(
     baseline.contracts.controlPlaneReplacement,
@@ -616,6 +729,54 @@ if (candidate.scope !== "catalog") {
     );
     await delay(1000);
   }
+}
+if (candidate.scope === "provider") {
+  const baseUrl = `http://${serviceAddress("cli-proxy-api")}:8317`;
+  const result = await applyProviderConfiguration({
+    baseUrl,
+    managementKey: (
+      await readPrivateRuntimeFile(
+        resolve(runtimeDirectory, "secrets/cli-proxy-management-key"),
+        4096,
+        "Provider management key",
+      )
+    ).trim(),
+    plan: candidate.providerConfiguration,
+    body: await readPrivateRuntimeFile(
+      resolve(directory, "provider-config.yaml"),
+      1024 * 1024,
+      "Prepared provider configuration",
+    ),
+  });
+  const panel = readFileSync(resolve(directory, "provider-management.html"));
+  assert.equal(providerConfigDigest(panel), providerManagementAsset.sha256);
+  kubectl(
+    [
+      "exec",
+      "-i",
+      "statefulset/cli-proxy-api",
+      "--",
+      "sh",
+      "-c",
+      "set -e\numask 077\nmkdir -p /data/static\ncat > /data/static/management.html.next\nmv /data/static/management.html.next /data/static/management.html",
+    ],
+    { input: panel, timeout: 30000 },
+  );
+  const response = await fetch(new URL("/management.html", baseUrl), {
+    signal: AbortSignal.timeout(15000),
+  });
+  assert(response.ok, `Provider management page unavailable (HTTP ${response.status})`);
+  assert.equal(
+    providerConfigDigest(Buffer.from(await response.arrayBuffer())),
+    providerManagementAsset.sha256,
+    "Provider did not serve the prepared management asset",
+  );
+  save(resolve(directory, "provider-configuration-applied.json"), {
+    ...result,
+    digest: candidate.providerConfiguration.desiredDigest,
+    managementAssetDigest: providerManagementAsset.sha256,
+    at: new Date().toISOString(),
+  });
 }
 const after = installed(candidate.name);
 assert.equal(

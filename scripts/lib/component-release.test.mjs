@@ -1,6 +1,8 @@
 import { expect, it } from "vitest";
 import { stringify } from "yaml";
 import {
+  assertProviderInitializerChanges,
+  assertProviderBuildContextChanges,
   assertScopedSources,
   assertOperatorRevisionChanges,
   scopedHelmUpgradeArguments,
@@ -31,6 +33,33 @@ const other = {
   spec: { replicas: 2 },
 };
 const yaml = (...objects) => objects.map(stringify).join("\n---\n");
+
+it("allows only explicit provider Go and patch additions to the build context", () => {
+  const before = "**\n!packages/**\n!deploy/provider-gateway/model_sessions.go\n.env\n";
+  expect(() =>
+    assertProviderBuildContextChanges(before, before + "!deploy/provider-gateway/config_v8.go\n"),
+  ).not.toThrow();
+  expect(() =>
+    assertProviderBuildContextChanges(before, before + "!deploy/production/runtime/**\n"),
+  ).toThrow("unrelated build context");
+  expect(() => assertProviderBuildContextChanges(before, before.replace(".env\n", ""))).toThrow(
+    "unrelated build context",
+  );
+});
+
+it("allows only provider initialization to change in a provider release", () => {
+  const before =
+    'const shared = 1;\nconst cliProxyManagementAsset = {};\nasync function ensureCliProxyRuntime() { return "old"; }\nasync function postgres() { return shared; }';
+  const after =
+    'import { initialProviderConfiguration } from "./lib/provider-runtime-config.mjs";\nconst shared = 1;\nasync function ensureCliProxyRuntime() { return initialProviderConfiguration({}); }\nasync function postgres() { return shared; }';
+  expect(() => assertProviderInitializerChanges(before, after)).not.toThrow();
+  expect(() =>
+    assertProviderInitializerChanges(before, after.replace("shared = 1", "shared = 2")),
+  ).toThrow("unrelated initialization");
+  expect(() =>
+    assertProviderInitializerChanges(before, after.replace("return shared;", "throw new Error();")),
+  ).toThrow("unrelated initialization");
+});
 
 it("accepts operator-only replacement repairs without relabeling the prepared runtime", () => {
   expect(() =>

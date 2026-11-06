@@ -12,15 +12,21 @@ it("declares native DeepSeek reasoning including off/max without changing creden
   try {
     await mkdir(join(directory, "secrets"));
     const original = {
-      "api-keys": ["fixture-client-key"],
-      "openai-compatibility": [
-        {
-          name: "deepseek",
-          "wire-api": "responses",
-          "api-key-entries": [{ "api-key": "fixture-provider-key" }],
-          models: [{ name: "deepseek-v4-pro", alias: "deepseek-v4-pro" }, { name: "other-model" }],
-        },
-      ],
+      "config-version": 8,
+      access: { "api-keys": ["fixture-client-key"] },
+      "api-keys": {
+        "openai-compatibility": [
+          {
+            name: "deepseek",
+            "wire-api": "responses",
+            keys: [{ "api-key": "fixture-provider-key" }],
+            models: [
+              { name: "deepseek-v4-pro", alias: "deepseek-v4-pro" },
+              { name: "other-model" },
+            ],
+          },
+        ],
+      },
     };
     await writeFile(path, stringify(original), { mode: 0o600 });
     const run = () =>
@@ -29,16 +35,14 @@ it("declares native DeepSeek reasoning including off/max without changing creden
       });
     await run();
     const configured = parse(await readFile(path, "utf8"));
-    const provider = configured["openai-compatibility"][0];
+    const provider = configured["api-keys"]["openai-compatibility"][0];
     expect(provider.models[0].thinking).toEqual({
       "zero-allowed": true,
       levels: ["none", "low", "medium", "high", "max"],
     });
-    expect(provider.models[1]).toEqual(original["openai-compatibility"][0].models[1]);
-    expect(provider["api-key-entries"]).toEqual(
-      original["openai-compatibility"][0]["api-key-entries"],
-    );
-    expect(configured["api-keys"]).toEqual(original["api-keys"]);
+    expect(provider.models[1]).toEqual(original["api-keys"]["openai-compatibility"][0].models[1]);
+    expect(provider.keys).toEqual(original["api-keys"]["openai-compatibility"][0].keys);
+    expect(configured.access).toEqual(original.access);
     const bytes = await readFile(path, "utf8");
     expect(JSON.parse((await run()).stdout).changed).toBe(0);
     expect(await readFile(path, "utf8")).toBe(bytes);

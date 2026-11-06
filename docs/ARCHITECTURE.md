@@ -339,6 +339,13 @@ provider credentials/account selection and upstream transport. Run admission
 freezes the validated model catalog capabilities; discovery alone does not publish
 a selectable model. The native Harness owns semantic retry.
 
+The maintained provider adapter targets CLIProxyAPI v8. Its native compatibility
+extension preserves Responses messages and hosted-tool events; operator
+configuration and management use the v8 layout. One-time conversion and provider
+publication are specified by [ADR-0296](adr/0296-provider-v8-and-model-accounting-boundary.md).
+Upstream usage callbacks are not a PiCloud billing ledger: model metering and
+pricing remain a separate implementation slice, and sandbox billing is deferred.
+
 Under [ADR-0289](adr/0289-provider-owned-model-continuation.md), HTTP/SSE carries the
 full effective context inside the cluster. The provider adapter reuses a compatible
 upstream connection/response across Run and Worker changes and transmits only the

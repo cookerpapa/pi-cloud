@@ -86,6 +86,12 @@ Retained attachment originals -> private S3 objects; Kafka/PG carry references
 | CLIProxyAPI | Provider credentials, account selection and upstream model transport |
 | S3 / Cube Volumes | Immutable conversation attachments and Skill packages / mutable Workspace files |
 
+The provider adapter targets pinned CLIProxyAPI v8 with native Responses and
+cross-request continuation. Existing installations use the reviewed provider
+configuration conversion in the [component release procedure](docs/COMPONENT_RELEASE.md).
+Model metering and billing are tracked separately in
+[Issue #4](https://github.com/cookerpapa/pi-cloud/issues/4).
+
 The API, Projector and sandbox lifecycle controller share one Control Plane
 process. There is no independent Tool Broker. Ordinary control tools are registered
 on the execution side; their definitions reach Workers over the existing management

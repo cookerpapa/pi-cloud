@@ -8,8 +8,11 @@ it("enables native upstream transport without changing credentials, disabled sta
     { name: "three", provider: "deepseek" },
   ];
   const patches = [];
-  const fetchImplementation = async (_url, init) => {
+  const fetchImplementation = async (url, init) => {
     expect(init.headers.authorization).toBe("Bearer private-key");
+    expect(url.pathname).toBe(
+      init.method === "PATCH" ? "/v8/management/credentials/fields" : "/v8/management/credentials",
+    );
     if (init.method === "PATCH") {
       const body = JSON.parse(init.body);
       patches.push(body);

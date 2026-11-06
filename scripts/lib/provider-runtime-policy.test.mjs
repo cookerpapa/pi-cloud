@@ -13,14 +13,18 @@ describe("deployment-owned provider runtime policy", () => {
     const directory = await mkdtemp(join(tmpdir(), "pi-cloud-retry-policy-"));
     try {
       const path = join(directory, "config.yaml");
-      await writeFile(path, "port: 8317\nrequest-retry: 3\napi-keys: [fixture-key]\n", {
-        mode: 0o600,
-      });
+      await writeFile(
+        path,
+        "config-version: 8\nserver:\n  port: 8317\nrouting:\n  retry:\n    request-retry: 3\naccess:\n  api-keys: [fixture-key]\n",
+        {
+          mode: 0o600,
+        },
+      );
       expect(await updateProviderRuntimePolicyFile(path)).toBe(true);
       expect(await updateProviderRuntimePolicyFile(path)).toBe(false);
       expect(parse(await readFile(path, "utf8"))).toMatchObject({
-        "request-retry": 0,
-        "api-keys": ["fixture-key"],
+        routing: { retry: { "request-retry": 0 } },
+        access: { "api-keys": ["fixture-key"] },
       });
       expect((await stat(path)).mode & 0o777).toBe(0o600);
     } finally {
@@ -30,18 +34,25 @@ describe("deployment-owned provider runtime policy", () => {
 
   it("removes additional rounds without changing credentials, account routing or comments", () => {
     const source =
-      "# operator configuration\nport: 8317\nrequest-retry: 3\napi-keys: [fixture-key]\nrouting:\n  session-affinity: true\n";
+      "# operator configuration\nconfig-version: 8\nserver:\n  port: 8317\naccess:\n  api-keys: [fixture-key]\nrouting:\n  session-affinity: true\n  retry:\n    request-retry: 3\n";
     const changed = applyProviderRuntimePolicy(source);
     expect(parse(changed)).toEqual({
       ...parse(source),
-      "request-retry": 0,
-      "disable-image-generation": "passthrough",
+      routing: { "session-affinity": true, retry: { "request-retry": 0 } },
+      multimedia: { "disable-image-generation": "passthrough" },
     });
     expect(changed).toContain("# operator configuration");
     expect(applyProviderRuntimePolicy(changed)).toBe(changed);
   });
   it("fails safely on malformed configuration", () => {
     expect(() => applyProviderRuntimePolicy("private: [")).toThrow(
+      "Provider Gateway configuration is invalid",
+    );
+  });
+  it("rejects mixed layouts rather than claiming an ineffective legacy write succeeded", () => {
+    const source =
+      "config-version: 8\nserver:\n  port: 8317\nrequest-retry: 0\nrouting:\n  retry:\n    request-retry: 3\n";
+    expect(() => applyProviderRuntimePolicy(source)).toThrow(
       "Provider Gateway configuration is invalid",
     );
   });

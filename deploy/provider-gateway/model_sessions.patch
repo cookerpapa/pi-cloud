@@ -1,8 +1,8 @@
 diff --git a/internal/api/server_routes.go b/internal/api/server_routes.go
-index 815f6e3b..51400a7c 100644
+index e2b039a..0124e05 100644
 --- a/internal/api/server_routes.go
 +++ b/internal/api/server_routes.go
-@@ -76,6 +76,7 @@ func (s *Server) setupRoutes() {
+@@ -86,6 +86,7 @@ func (s *Server) setupRoutes() {
  		v1.POST("/messages/count_tokens", claudeCodeHandlers.ClaudeCountTokens)
  		v1.GET("/responses", openaiResponsesHandlers.ResponsesWebsocket)
  		v1.POST("/responses", openaiResponsesHandlers.Responses)
@@ -11,69 +11,37 @@ index 815f6e3b..51400a7c 100644
  		v1.POST("/alpha/search", s.codexAlphaSearch)
  		v1.POST("/live", s.codexLiveHandler.Handle)
 diff --git a/internal/runtime/executor/codex_websockets_session.go b/internal/runtime/executor/codex_websockets_session.go
-index 10219fc3..dcc82cc5 100644
+index e0a6340..d6a4d04 100644
 --- a/internal/runtime/executor/codex_websockets_session.go
 +++ b/internal/runtime/executor/codex_websockets_session.go
-@@ -549,7 +549,14 @@ func (e *CodexWebsocketsExecutor) readUpstreamLoop(sess *codexWebsocketSession,
+@@ -791,7 +791,13 @@ func (e *CodexWebsocketsExecutor) readUpstreamLoop(sess *codexWebsocketSession,
  		return
  	}
  	for {
 -		_ = conn.SetReadDeadline(time.Now().Add(codexResponsesWebsocketIdleTimeout))
 +		deadline := time.Now().Add(codexResponsesWebsocketIdleTimeout)
-+		// PiCloud's provider-owned sessions have an explicit bounded idle owner.
-+		// Active requests retain caller cancellation/event inactivity; a second
-+		// reader deadline must not retire an otherwise reusable idle session.
++		// The external adapter owns bounded idle expiry; active HTTP cancellation
++		// retains its current authority. Ordinary provider sessions are unchanged.
 +		if strings.HasPrefix(sess.sessionID, "picloud-model-") {
 +			deadline = time.Time{}
 +		}
 +		_ = conn.SetReadDeadline(deadline)
  		msgType, payload, errRead := conn.ReadMessage()
  		if errRead != nil {
- 			invalidate := func() {
-diff --git a/internal/runtime/executor/codex_websockets_stream.go b/internal/runtime/executor/codex_websockets_stream.go
-index 217d6e6a..9f6578dc 100644
---- a/internal/runtime/executor/codex_websockets_stream.go
-+++ b/internal/runtime/executor/codex_websockets_stream.go
-@@ -199,6 +199,12 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
- 		errSend = mapCodexWebsocketWriteError(sess, conn, errSend)
- 		helps.RecordAPIWebsocketError(ctx, e.cfg, "send", errSend)
- 		if sess != nil {
-+			if strings.HasPrefix(executionSessionID, "picloud-model-") {
-+				e.invalidateUpstreamConn(sess, conn, "send_error", errSend)
-+				sess.clearActive(conn, readCh)
-+				sess.reqMu.Unlock()
-+				return nil, piCloudModelSendError{cause: errSend}
-+			}
- 			if cliproxyexecutor.RequiredUpstreamWebsocket(ctx) {
- 				e.invalidateUpstreamConnWithoutDisconnectNotify(sess, conn, "send_error", errSend)
- 				sess.clearActive(conn, readCh)
-@@ -657,3 +663,13 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
- 
- 	return &cliproxyexecutor.StreamResult{Headers: upstreamHeaders, Chunks: out}, nil
- }
-+
-+// PiCloud owns pre-output HTTP fallback; neither this executor nor the auth
-+// manager may repeat its failed WebSocket business payload first.
-+type piCloudModelSendError struct{ cause error }
-+
-+func (e piCloudModelSendError) Error() string         { return e.cause.Error() }
-+func (e piCloudModelSendError) Unwrap() error         { return e.cause }
-+func (e piCloudModelSendError) IsRequestScoped() bool { return true }
-+
-+func (e piCloudModelSendError) IsPiCloudModelSendFailure() bool { return true }
+ 			sess.connMu.Lock()
 diff --git a/sdk/api/handlers/openai/openai_responses_handlers.go b/sdk/api/handlers/openai/openai_responses_handlers.go
-index 4a830afc..73ab42bb 100644
+index 6eb68e8..7fbf19c 100644
 --- a/sdk/api/handlers/openai/openai_responses_handlers.go
 +++ b/sdk/api/handlers/openai/openai_responses_handlers.go
-@@ -444,6 +444,7 @@ func responsesSSENeedsLineBreak(pending, chunk []byte) bool {
+@@ -817,6 +817,7 @@ func responsesSSEDataEndsInsideJSONString(chunk []byte) bool {
  // It holds a pool of clients to interact with the backend service.
  type OpenAIResponsesAPIHandler struct {
  	*handlers.BaseAPIHandler
-+	piCloud *piCloudModelSessions
++	piCloud       *piCloudModelSessions
+ 	AccessManager *sdkaccess.Manager
  }
  
- // NewOpenAIResponsesAPIHandler creates a new OpenAIResponses API handlers instance.
-@@ -457,6 +458,11 @@ type OpenAIResponsesAPIHandler struct {
+@@ -831,6 +832,11 @@ type OpenAIResponsesAPIHandler struct {
  func NewOpenAIResponsesAPIHandler(apiHandlers *handlers.BaseAPIHandler) *OpenAIResponsesAPIHandler {
  	return &OpenAIResponsesAPIHandler{
  		BaseAPIHandler: apiHandlers,

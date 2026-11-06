@@ -64,6 +64,22 @@ release probes.
 
 ## Provider image
 
+[ADR-0296](adr/0296-provider-v8-and-model-accounting-boundary.md) additionally
+covers the provider's v8 configuration conversion. Preparation uses the candidate
+image's native configuration parser and stores a private canonical document plus
+old/new hashes. The initialized configuration and management scripts have one v8
+layout; the scoped gate verifies that unrelated initializer declarations did not
+change. The pinned management page is part of the same private candidate.
+
+After the new provider image is ready, its `/v8/management/config.yaml` endpoint
+adopts that prepared document using `If-Match`. A lost response is checked against
+the on-disk configuration ETag before any repeat. Concurrent operator changes or
+unexpected bytes stop publication for reconciliation; they are never silently
+overwritten. A partially damaged file requires operator recovery from the verified
+private candidate before resuming. Do not downgrade a binary over v8-written state.
+The publication record is completed only after configuration and the pinned
+management page have been verified. Other workloads and Cube allocations remain.
+
 ADR-0289 also permits the explicitly listed provider adapter Go/patch files when
 they preserve the installed private model HTTP contract. Provider image inputs
 include every local Docker COPY source. The complete manifest check additionally

@@ -67,6 +67,10 @@ if (scope === "web") {
   process.exit(0);
 }
 const tests = [
+  "scripts/lib/provider-config-release.test.mjs",
+  "scripts/lib/provider-runtime-policy.test.mjs",
+  "scripts/lib/provider-websocket-policy.test.mjs",
+  "scripts/lib/deepseek-configuration.test.mjs",
   "scripts/lib/component-release.test.mjs",
   "scripts/lib/release-impact.test.mjs",
   "scripts/lib/matched-release.test.mjs",

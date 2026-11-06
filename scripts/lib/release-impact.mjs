@@ -32,7 +32,15 @@ export const operatorSources = new Set([
 ]);
 export const ordinaryControlToolSource = (file) =>
   /^packages\/control-plane\/src\/ordinary-tools\/.*\.ts$/.test(file);
+export const providerConfigurationSources = new Set([
+  "scripts/init-production.mjs",
+  "scripts/configure-deepseek-native-responses.mjs",
+  "scripts/lib/provider-runtime-config.mjs",
+  "scripts/lib/provider-runtime-policy.mjs",
+  "scripts/lib/provider-config-release.mjs",
+]);
 export const providerSources = new Set([
+  ".dockerignore",
   "deploy/provider-gateway/Dockerfile",
   "deploy/provider-gateway/model_sessions.go",
   "deploy/provider-gateway/model_sessions_test.go",
@@ -40,7 +48,10 @@ export const providerSources = new Set([
   "deploy/provider-gateway/image_request_policy.go",
   "deploy/provider-gateway/image_request_policy_test.go",
   "deploy/provider-gateway/image_request_policy.patch",
+  "deploy/provider-gateway/config_v8.go",
+  "deploy/provider-gateway/config_v8_test.go",
   "deploy/helm/pi-cloud-infrastructure/templates/provider.yaml",
+  ...providerConfigurationSources,
 ]);
 export const imageReleaseTargets = {
   provider: {

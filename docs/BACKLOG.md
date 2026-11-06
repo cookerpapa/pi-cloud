@@ -1,5 +1,22 @@
 # Maintained backlog
 
+## Provider v8 and model accounting — implementing
+
+- [x] Record isolated v8.0.57 compatibility evidence and phased
+      [Issue #4](https://github.com/cookerpapa/pi-cloud/issues/4).
+- [x] Record [ADR-0296](adr/0296-provider-v8-and-model-accounting-boundary.md).
+- [ ] Adapt the fixed provider and existing native Responses/continuation/image
+      behavior; migrate configuration and management calls to v8.
+- [ ] Complete source/build/live provider acceptance and the scoped publication
+      while preserving accounts, credentials and Workspace allocations.
+- [ ] Decide and implement recoverable model-metering admission/delivery and
+      attribution without using native chat history as the money ledger.
+- [ ] Add versioned model pricing, explicit unknown/unpriced amounts and queryable
+      model statements; verify duplicates, crashes, Fork and deletion.
+
+Sandbox/storage charging, payment collection and automatic top-up are subsequent
+work. The existing provider remains serving until the first slice passes gates.
+
 ## Workspace-only files and resumable uploads — deployed
 
 - [x] Confirm explicit retention in the composer and Workspace file panel; record

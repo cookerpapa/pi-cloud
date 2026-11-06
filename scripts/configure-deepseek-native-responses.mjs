@@ -33,7 +33,9 @@ const document = parseDocument(await readFile(configPath, "utf8"));
 if (document.errors.length > 0) {
   throw new Error(`CLIProxyAPI configuration is invalid: ${document.errors[0]?.message}`);
 }
-const providers = document.get("openai-compatibility", true);
+if (document.get("config-version") !== 8 || document.has("openai-compatibility"))
+  throw new Error("Provider configuration must use the canonical v8 layout");
+const providers = document.getIn(["api-keys", "openai-compatibility"], true);
 let matched = 0;
 let changed = 0;
 if (isSeq(providers)) {

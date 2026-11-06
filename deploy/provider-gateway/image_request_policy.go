@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
+	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 )
 
 // piCloudImageAttemptGuard is scoped to one non-streaming Images request.

@@ -16,16 +16,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/klauspost/compress/zstd"
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor"
-	"github.com/router-for-me/CLIProxyAPI/v7/sdk/api/handlers"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
-	"github.com/tidwall/gjson"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
+	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
+	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	coreusage "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
 )
 
 type piCloudTestRequest struct {
@@ -33,6 +34,7 @@ type piCloudTestRequest struct {
 	body       []byte
 }
 type piCloudModelFixture struct {
+	authID          string
 	handler         *OpenAIResponsesAPIHandler
 	server          *httptest.Server
 	received        chan piCloudTestRequest
@@ -44,6 +46,7 @@ type piCloudModelFixture struct {
 	closeFirst      atomic.Bool
 	closeBeforeRead atomic.Bool
 	httpBlock       atomic.Bool
+	terminalDone    atomic.Bool
 	httpCalls       atomic.Int64
 	peersMu         sync.Mutex
 	peers           []*websocket.Conn
@@ -67,7 +70,11 @@ func piCloudFixture(t *testing.T) *piCloudModelFixture {
 			}
 			w.Header().Set("Content-Type", "text/event-stream")
 			fmt.Fprint(w, "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_http\",\"status\":\"in_progress\"}}\n\n")
-			fmt.Fprint(w, "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_http\",\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n")
+			terminal := "response.completed"
+			if f.terminalDone.Load() {
+				terminal = "response.done"
+			}
+			fmt.Fprintf(w, "data: {\"type\":%q,\"response\":{\"id\":\"resp_http\",\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n", terminal)
 			return
 		}
 		conn, err := upgrade.Upgrade(w, r, nil)
@@ -91,7 +98,7 @@ func piCloudFixture(t *testing.T) *piCloudModelFixture {
 			if f.closeFirst.CompareAndSwap(true, false) {
 				return
 			}
-			if gjson.GetBytes(b, "previous_response_id").Exists() && f.missing.CompareAndSwap(true, false) {
+			if ojson.GetBytes(b, "previous_response_id").Exists() && f.missing.CompareAndSwap(true, false) {
 				conn.WriteJSON(map[string]any{"type": "error", "status": 400, "error": map[string]any{"code": "previous_response_not_found", "message": "expired"}})
 				continue
 			}
@@ -102,11 +109,15 @@ func piCloudFixture(t *testing.T) *piCloudModelFixture {
 			if f.tool.Load() && f.turns.Add(1) == 1 {
 				item = map[string]any{"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "read", "arguments": "{\"path\":\"a.png\"}", "status": "completed"}
 			}
+			terminal := "response.completed"
+			if f.terminalDone.Load() {
+				terminal = "response.done"
+			}
 			for _, frame := range []any{
 				map[string]any{"type": "response.created", "response": map[string]any{"id": "resp_ok", "status": "in_progress"}},
 				map[string]any{"type": "response.output_item.added", "output_index": 0, "item": item},
 				map[string]any{"type": "response.output_item.done", "output_index": 0, "item": item},
-				map[string]any{"type": "response.completed", "response": map[string]any{"id": "resp_ok", "status": "completed", "output": []any{item}, "usage": map[string]any{"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}},
+				map[string]any{"type": terminal, "response": map[string]any{"id": "resp_ok", "status": "completed", "output": []any{item}, "usage": map[string]any{"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}},
 			} {
 				if err := conn.WriteJSON(frame); err != nil {
 					return
@@ -118,6 +129,7 @@ func piCloudFixture(t *testing.T) *piCloudModelFixture {
 	cfg := &config.Config{SDKConfig: config.SDKConfig{DisableImageGeneration: config.DisableImageGenerationAll}}
 	manager.RegisterExecutor(executor.NewCodexAutoExecutor(cfg))
 	auth := &coreauth.Auth{ID: uuid.NewString(), Provider: "codex", Status: coreauth.StatusActive, Attributes: map[string]string{"api_key": "fixture-key", "base_url": upstream.URL, "websockets": "true"}}
+	f.authID = auth.ID
 	if _, err := manager.Register(context.Background(), auth); err != nil {
 		t.Fatal(err)
 	}
@@ -170,10 +182,10 @@ func TestPiCloudModelNativePi(t *testing.T) {
 	if first.connection != tool.connection || tool.connection != next.connection {
 		t.Fatal("native clients did not reuse upstream")
 	}
-	if gjson.GetBytes(tool.body, "previous_response_id").String() == "" || len(gjson.GetBytes(tool.body, "input").Array()) != 1 {
+	if ojson.GetBytes(tool.body, "previous_response_id").String() == "" || len(ojson.GetBytes(tool.body, "input").Array()) != 1 {
 		t.Fatal("Tool result did not use a delta")
 	}
-	if gjson.GetBytes(next.body, "previous_response_id").String() == "" || bytes.Contains(next.body, []byte("base64")) {
+	if ojson.GetBytes(next.body, "previous_response_id").String() == "" || bytes.Contains(next.body, []byte("base64")) {
 		t.Fatal("cold native client retransmitted images")
 	}
 }
@@ -224,13 +236,13 @@ func TestPiCloudModelCrossClientContinuation(t *testing.T) {
 	if a.connection != b.connection {
 		t.Fatal("completed client closed the upstream connection")
 	}
-	if gjson.GetBytes(b.body, "previous_response_id").String() != "resp_ok" || len(gjson.GetBytes(b.body, "input").Array()) != 1 {
+	if ojson.GetBytes(b.body, "previous_response_id").String() != "resp_ok" || len(ojson.GetBytes(b.body, "input").Array()) != 1 {
 		t.Fatalf("expected delta: %s", b.body)
 	}
 	// A shortened/edited context must not inherit a previously completed result.
 	f.send(t, first, key)
 	c := <-f.received
-	if c.connection == b.connection || gjson.GetBytes(c.body, "previous_response_id").Exists() {
+	if c.connection == b.connection || ojson.GetBytes(c.body, "previous_response_id").Exists() {
 		t.Fatal("context replacement used stale continuation")
 	}
 	// Another Conversation has its own connection and baseline.
@@ -238,6 +250,68 @@ func TestPiCloudModelCrossClientContinuation(t *testing.T) {
 	d := <-f.received
 	if d.connection == c.connection {
 		t.Fatal("Conversation scopes share a socket")
+	}
+}
+
+func TestPiCloudModelDoneTerminalUsesNativePiCompletion(t *testing.T) {
+	for _, httpFallback := range []bool{false, true} {
+		t.Run(fmt.Sprint(httpFallback), func(t *testing.T) {
+			f := piCloudFixture(t)
+			f.terminalDone.Store(true)
+			f.closeFirst.Store(httpFallback)
+			key := strings.Repeat("e", 64)
+			f.send(t, piCloudBody("["+piCloudUser+"]"), key)
+		})
+	}
+}
+
+type piCloudUsageCollector struct {
+	authID  string
+	records chan coreusage.Record
+}
+
+func (p *piCloudUsageCollector) HandleUsage(_ context.Context, record coreusage.Record) {
+	if record.AuthID != p.authID {
+		return
+	}
+	select {
+	case p.records <- record:
+	default:
+	}
+}
+
+func (f *piCloudModelFixture) collectUsage(t *testing.T) <-chan coreusage.Record {
+	t.Helper()
+	records := make(chan coreusage.Record, 8)
+	coreusage.RegisterNamedPlugin("picloud-model-contract", &piCloudUsageCollector{authID: f.authID, records: records})
+	t.Cleanup(func() {
+		coreusage.RegisterNamedPlugin("picloud-model-contract", &piCloudUsageCollector{records: records})
+	})
+	return records
+}
+
+func TestPiCloudModelUsageIdentifiesEachReusedConnectionRequest(t *testing.T) {
+	f := piCloudFixture(t)
+	records := f.collectUsage(t)
+	key := strings.Repeat("d", 64)
+	f.send(t, piCloudBody("["+piCloudUser+"]"), key)
+	a := <-f.received
+	f.send(t, piCloudBody("["+piCloudUser+","+piCloudAnswer+","+piCloudUser+"]"), key)
+	b := <-f.received
+	if a.connection != b.connection {
+		t.Fatal("fixture did not reuse upstream")
+	}
+	ids := make(map[string]bool)
+	for i := 0; i < 2; i++ {
+		select {
+		case record := <-records:
+			if record.RequestID == "" || ids[record.RequestID] || record.Failed || record.Detail.TotalTokens != 2 {
+				t.Fatalf("invalid per-request usage: id=%s failed=%v tokens=%d", record.RequestID, record.Failed, record.Detail.TotalTokens)
+			}
+			ids[record.RequestID] = true
+		case <-time.After(3 * time.Second):
+			t.Fatal("completed private request did not reach usage SDK")
+		}
 	}
 }
 
@@ -288,7 +362,7 @@ func TestPiCloudModelCancelAndExpiry(t *testing.T) {
 	p.mu.Unlock()
 	f.send(t, piCloudBody("["+piCloudUser+","+piCloudAnswer+","+piCloudUser+"]"), key)
 	third := <-f.received
-	if third.connection == second.connection || gjson.GetBytes(third.body, "previous_response_id").Exists() {
+	if third.connection == second.connection || ojson.GetBytes(third.body, "previous_response_id").Exists() {
 		t.Fatal("expired baseline reused")
 	}
 }
@@ -301,13 +375,14 @@ func TestPiCloudModelMissingResponseRebuildsOnce(t *testing.T) {
 	f.missing.Store(true)
 	f.send(t, piCloudBody("["+piCloudUser+","+piCloudAnswer+","+piCloudUser+"]"), key)
 	delta, rebuild := <-f.received, <-f.received
-	if first.connection != delta.connection || first.connection == rebuild.connection || gjson.GetBytes(rebuild.body, "previous_response_id").Exists() || len(gjson.GetBytes(rebuild.body, "input").Array()) != 3 {
+	if first.connection != delta.connection || first.connection == rebuild.connection || ojson.GetBytes(rebuild.body, "previous_response_id").Exists() || len(ojson.GetBytes(rebuild.body, "input").Array()) != 3 {
 		t.Fatal("missing continuation did not rebuild from complete caller context")
 	}
 }
 
 func TestPiCloudModelPreOutputHTTPFallback(t *testing.T) {
 	f := piCloudFixture(t)
+	records := f.collectUsage(t)
 	f.closeFirst.Store(true)
 	key := strings.Repeat("f", 64)
 	f.send(t, piCloudBody("["+piCloudUser+"]"), key)
@@ -317,8 +392,27 @@ func TestPiCloudModelPreOutputHTTPFallback(t *testing.T) {
 	}
 	f.send(t, piCloudBody("["+piCloudUser+"]"), key)
 	next := <-f.received
-	if next.connection != 0 || gjson.GetBytes(next.body, "previous_response_id").Exists() {
+	if next.connection != 0 || ojson.GetBytes(next.body, "previous_response_id").Exists() {
 		t.Fatal("fallback must send full input without retrying a known-broken websocket each step")
+	}
+	ids := make(map[string]bool)
+	failed := 0
+	for i := 0; i < 3; i++ {
+		select {
+		case record := <-records:
+			if record.RequestID == "" || ids[record.RequestID] {
+				t.Fatal("fallback reused a model-execution usage identity")
+			}
+			ids[record.RequestID] = true
+			if record.Failed {
+				failed++
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("fallback attempt is missing from usage")
+		}
+	}
+	if failed != 1 {
+		t.Fatalf("failed execution records=%d, want one", failed)
 	}
 }
 

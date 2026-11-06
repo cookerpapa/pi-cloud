@@ -24,6 +24,8 @@
 !deploy/provider-gateway/model_sessions.go
 !deploy/provider-gateway/model_sessions_test.go
 !deploy/provider-gateway/model_sessions.patch
+!deploy/provider-gateway/config_v8.go
+!deploy/provider-gateway/config_v8_test.go
 !deploy/cubesandbox/browser/package.json
 !deploy/cubesandbox/browser/package-lock.json
 !deploy/cubesandbox/browser/index.mjs

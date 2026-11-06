@@ -1,5 +1,12 @@
 # Implementation roadmap
 
+## Provider v8 and model accounting — implementing
+
+Implement [ADR-0296](adr/0296-provider-v8-and-model-accounting-boundary.md) and
+[Issue #4](https://github.com/cookerpapa/pi-cloud/issues/4) one vertical slice at a
+time: provider v8 adaptation/publication, recoverable model metering, then priced
+model statements. Do not couple this work to Cube idle expiry or sandbox billing.
+
 ## Workspace file transfers — deployed
 
 [ADR-0295](adr/0295-workspace-file-transfers.md) separates upload entry points from

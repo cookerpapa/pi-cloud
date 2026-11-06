@@ -1,11 +1,12 @@
 diff --git a/sdk/cliproxy/auth/conductor_execution.go b/sdk/cliproxy/auth/conductor_execution.go
+index adb9b4d..dd9b6c6 100644
 --- a/sdk/cliproxy/auth/conductor_execution.go
 +++ b/sdk/cliproxy/auth/conductor_execution.go
-@@ -120,6 +120,7 @@
- // Execute performs a non-streaming execution using the configured selector and executor.
- // It supports multiple providers for the same model and round-robins the starting provider per model.
+@@ -125,6 +125,7 @@ func isOpenAIImageExecutionOptions(opts cliproxyexecutor.Options) bool {
+ }
+ 
  func (m *Manager) Execute(ctx context.Context, providers []string, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
 +	opts = piCloudImageAttemptGuard(opts)
+ 	ctx = cliproxyexecutor.WithRequestProxyURL(ctx, opts.ProxyURL)
  	req, opts = cliproxysession.Enrich(req, opts)
- 	normalized := m.normalizeProviders(providers)
- 	if len(normalized) == 0 {
+ 	ctx = WithCodexClientRequest(ctx, isOpenAIImageExecutionOptions(opts) || IsCodexClientRequest(ctx, opts.Headers))

@@ -1,9 +1,9 @@
-ARG CLI_PROXY_BASE_IMAGE=eceasy/cli-proxy-api@sha256:238691ac26ce55e4d1c5219d72e3ad74838f81eda26359912eeb415e2820d163
+ARG CLI_PROXY_BASE_IMAGE=eceasy/cli-proxy-api@sha256:145188aacc0646b6e2a34cded1052b5b41575545d8b0341f3cc70449e51b5cf6
 
 FROM golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af AS builder
 
 ARG CLI_PROXY_SOURCE_REPOSITORY=https://github.com/cookerpapa/CLIProxyAPI.git
-ARG CLI_PROXY_SOURCE_REVISION=48549e65b86d17648029190331807b89e7fd65f4
+ARG CLI_PROXY_SOURCE_REVISION=7baeffb84befe97ad6af1f95249f293251000458
 
 WORKDIR /src
 RUN git -c http.version=HTTP/1.1 clone --no-checkout --filter=blob:none "${CLI_PROXY_SOURCE_REPOSITORY}" CLIProxyAPI \
@@ -27,6 +27,8 @@ COPY deploy/provider-gateway/model_sessions.go sdk/api/handlers/openai/picloud_m
 COPY deploy/provider-gateway/model_sessions_test.go sdk/api/handlers/openai/picloud_model_sessions_test.go
 COPY deploy/provider-gateway/model_sessions.patch /tmp/model_sessions.patch
 RUN git apply --check /tmp/model_sessions.patch && git apply /tmp/model_sessions.patch
+COPY deploy/provider-gateway/config_v8.go cmd/picloud-config/main.go
+COPY deploy/provider-gateway/config_v8_test.go cmd/picloud-config/main_test.go
 
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
@@ -35,10 +37,14 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     && GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' go mod download \
     && GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' go test ./sdk/cliproxy/auth -run '^TestPiCloudImageAttemptGuard$' -count=1 \
     && GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' go test ./sdk/api/handlers/openai -run '^TestPiCloudModel' -count=1 \
+    && GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' go test ./cmd/picloud-config -count=1 \
+    && CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
+      GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' \
+      go build -buildvcs=false -trimpath -o /out/pi-cloud-config ./cmd/picloud-config \
     && CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
       GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' \
       go build -buildvcs=false -trimpath \
-        -ldflags="-s -w -X 'main.Version=pi-cloud-native-responses' -X 'main.Commit=${CLI_PROXY_SOURCE_REVISION}' -X 'main.BuildDate=2026-09-01'" \
+        -ldflags="-s -w -X 'main.Version=v8.0.57-picloud' -X 'main.Commit=${CLI_PROXY_SOURCE_REVISION}' -X 'main.BuildDate=2026-11-06'" \
         -o /out/CLIProxyAPI ./cmd/server
 
 FROM ${CLI_PROXY_BASE_IMAGE}
@@ -50,7 +56,8 @@ RUN sh /tmp/install-node-os-security-updates.sh && rm /tmp/install-node-os-secur
       install --yes --no-install-recommends libssl3=3.0.22-1~deb12u2 openssl=3.0.22-1~deb12u2 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /out/CLIProxyAPI /CLIProxyAPI/CLIProxyAPI
-RUN chmod 0555 /CLIProxyAPI/CLIProxyAPI
+COPY --from=builder /out/pi-cloud-config /CLIProxyAPI/pi-cloud-config
+RUN chmod 0555 /CLIProxyAPI/CLIProxyAPI /CLIProxyAPI/pi-cloud-config
 
 # Release metadata must not invalidate pinned dependency/OS build layers.
 ARG PI_CLOUD_VERSION=development

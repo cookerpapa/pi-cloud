@@ -7,6 +7,10 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { validateProviderRelayProxy } from "./production-runtime-policy.mjs";
 import { updateProviderRuntimePolicyFile } from "./lib/provider-runtime-policy.mjs";
+import {
+  initialProviderConfiguration,
+  providerManagementAsset as cliProxyManagementAsset,
+} from "./lib/provider-runtime-config.mjs";
 import { ensureSessionImageConfig } from "./lib/session-image-config.mjs";
 import {
   readPrivateRuntimeFile,
@@ -20,10 +24,6 @@ const defaultRuntimeDirectory = resolve(repositoryRoot, "deploy/production/runti
 const deploymentVersion = 2;
 const maxRuntimeFileBytes = 64 * 1_024;
 const execFileAsync = promisify(execFile);
-const cliProxyManagementAsset = Object.freeze({
-  url: "https://github.com/router-for-me/Cli-Proxy-API-Management-Center/releases/download/v1.22.10/management.html",
-  sha256: "5894ceb927a7247f3576f11c0512a9a8d1207209614cc51335967d76a9c13654",
-});
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const apiTokenPattern =
   /^pck_([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.[A-Za-z0-9_-]{43,256}$/i;
@@ -305,38 +305,10 @@ async function ensureCliProxyRuntime(runtimeDirectory) {
     await assertPrivateRegularFile(configPath);
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
-    const config = [
-      'host: "0.0.0.0"',
-      "port: 8317",
-      "tls:",
-      "  enable: false",
-      "remote-management:",
-      "  allow-remote: true",
-      `  secret-key: "${managementKey.value}"`,
-      "  disable-control-panel: false",
-      "  disable-auto-update-panel: true",
-      '  panel-github-repository: "https://api.github.com/repos/router-for-me/Cli-Proxy-API-Management-Center/releases/tags/v1.22.10"',
-      'auth-dir: "/data/auth"',
-      "api-keys:",
-      `  - "${apiKey.value}"`,
-      "debug: false",
-      "logging-to-file: false",
-      "usage-statistics-enabled: true",
-      'proxy-url: "http://provider-egress-relay:3129"',
-      "request-retry: 0",
-      "max-retry-credentials: 0",
-      "max-retry-interval: 5",
-      "transient-error-cooldown-seconds: -1",
-      "routing:",
-      '  strategy: "round-robin"',
-      "  session-affinity: true",
-      '  session-affinity-ttl: "1h"',
-      "codex:",
-      "  identity-confuse: false",
-      "  disable-codex-cloaking: false",
-      "  stream-bootstrap-buffering: false",
-      "",
-    ].join("\n");
+    const config = initialProviderConfiguration({
+      apiKey: apiKey.value,
+      managementKey: managementKey.value,
+    });
     await writePrivateFile(configPath, config);
     const application = applicationIdentity();
     if (application.changeOwnership) await chown(configPath, application.uid, application.gid);
