@@ -89,7 +89,9 @@ Retained attachment originals -> private S3 objects; Kafka/PG carry references
 The provider adapter targets pinned CLIProxyAPI v8 with native Responses and
 cross-request continuation. Existing installations use the reviewed provider
 configuration conversion in the [component release procedure](docs/COMPONENT_RELEASE.md).
-Model metering and billing are tracked separately in
+[Model metering](docs/MODEL_BILLING.md) records request receipts separately from
+conversation history, with versioned prices and an informational Model costs page.
+Payments and Sandbox billing are not enabled. Delivery status is tracked in
 [Issue #4](https://github.com/cookerpapa/pi-cloud/issues/4).
 
 The API, Projector and sandbox lifecycle controller share one Control Plane

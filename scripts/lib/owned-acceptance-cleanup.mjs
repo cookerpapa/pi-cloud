@@ -92,9 +92,15 @@ export async function purgeOwnedAcceptanceTenant(database, tenant, blobs) {
     );
   await database.transaction().execute(async (tx) => {
     await assertSettled(tx);
+    // Financial records survive ordinary chat/tenant operations. These rows
+    // belong exclusively to the verified disposable acceptance account.
+    await sql`delete from model_metering_events where invocation_id in
+      (select id from model_invocations where tenant_id=${tenant.tenantId}::uuid)`.execute(tx);
     for (const table of [
       // All owned Sessions are gone. Remove the remaining graph in dependency
       // order instead of relying on the tenant's cascades or waiting for GC.
+      "model_invocations",
+      "model_rate_versions",
       "run_skill_catalogs",
       "skill_installations",
       "skill_versions",

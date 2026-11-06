@@ -1,3 +1,8 @@
+import {
+  parseModelBillingPage,
+  type ModelBillingPage,
+  type ModelBillingSummary,
+} from "@pi-cloud/protocol";
 import type {
   SkillImport,
   SkillMarket,
@@ -716,6 +721,27 @@ export class PiCloudApi {
   }
   conversationExportUrl(sessionId: string): string {
     return `/v1/conversations/${encodeURIComponent(sessionId)}/export`;
+  }
+  async modelBilling(query: URLSearchParams, signal?: AbortSignal): Promise<ModelBillingPage> {
+    return parseModelBillingPage(
+      await request(
+        this.#fetch,
+        `/v1/model-billing?${query}`,
+        { method: "GET", ...(signal ? { signal } : {}) },
+        this.#authorizationToken,
+      ),
+    );
+  }
+  async modelBillingSummary(
+    query: URLSearchParams,
+    signal?: AbortSignal,
+  ): Promise<ModelBillingSummary> {
+    return (await request(
+      this.#fetch,
+      `/v1/model-billing/summary?${query}`,
+      { method: "GET", ...(signal ? { signal } : {}) },
+      this.#authorizationToken,
+    )) as ModelBillingSummary;
   }
   async listSkills(
     projectId?: string,

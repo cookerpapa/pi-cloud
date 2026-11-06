@@ -1,5 +1,9 @@
 # Current architecture decisions
 
+[ADR-0297](0297-model-metering-receipts-and-statements.md) is accepted for
+implementation: provider-side recoverable receipts, PG usage/rate authority and
+informational model statements. No payment collection or sandbox billing is enabled.
+
 [ADR-0296](0296-provider-v8-and-model-accounting-boundary.md)'s provider slice is
 deployed as `provider-v8-20261106`: CLIProxyAPI v8, native protocol/continuation
 adaptation and canonical configuration publication. Model metering and pricing

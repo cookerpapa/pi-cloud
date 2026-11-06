@@ -1,0 +1,91 @@
+--- a/sdk/cliproxy/usage/manager.go
++++ b/sdk/cliproxy/usage/manager.go
+@@ -756,6 +756,9 @@
+ 		}
+ 	}
+ 	ctx = WithCapturedIdentity(ctx, record.APIKey, record.AccessProvider, record.IsNativeKey)
++	if capture := CaptureFromContext(ctx); capture != nil {
++		capture.Record(record)
++	}
+ 	// ensure worker is running even if Start was not called explicitly
+ 	m.Start(context.Background())
+ 	m.mu.Lock()
+--- a/internal/runtime/executor/helps/usage_helpers.go
++++ b/internal/runtime/executor/helps/usage_helpers.go
+@@ -152,6 +152,9 @@
+ 		reporter.authID = auth.ID
+ 		reporter.authIndex = auth.EnsureIndex()
+ 		reporter.accessTokenHash = authAccessTokenSHA256(auth)
++	}
++	if capture := usage.CaptureFromContext(ctx); capture != nil {
++		capture.AttemptStarted(reporter.requestID, reporter.requestedAt)
+ 	}
+ 	return reporter
+ }
+--- a/sdk/api/handlers/handlers.go
++++ b/sdk/api/handlers/handlers.go
+@@ -599,6 +599,7 @@
+ 
+ 	if requestCtx != nil {
+ 		parentCtx = httptransport.InheritDecorator(parentCtx, requestCtx)
++		parentCtx = coreusage.InheritCapture(parentCtx, requestCtx)
+ 	}
+ 	if requestCtx != nil && logging.GetRequestID(parentCtx) == "" {
+ 		if requestID := logging.GetRequestID(requestCtx); requestID != "" {
+--- a/internal/api/server.go
++++ b/internal/api/server.go
+@@ -9,6 +9,7 @@
+ 	"crypto/tls"
+ 	"errors"
+ 	"fmt"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/picloudmetering"
+ 	"net"
+ 	"net/http"
+ 	"os"
+@@ -40,7 +41,8 @@
+ // It encapsulates the Gin engine, HTTP server, handlers, and configuration.
+ type Server struct {
+ 	// engine is the Gin web framework engine instance.
+-	engine *gin.Engine
++	engine   *gin.Engine
++	metering *picloudmetering.Service
+ 
+ 	// server is the underlying HTTP server.
+ 	server *http.Server
+@@ -243,6 +245,7 @@
+ 	engine.Use(s.exampleAPIKeySafeModeMiddleware())
+ 
+ 	// Setup routes
++	s.metering = picloudmetering.NewFromEnvironment()
+ 	s.setupRoutes()
+ 
+ 	// Apply additional router configurators from options
+@@ -455,6 +458,7 @@
+ 	if s.codexLiveHandler != nil {
+ 		s.codexLiveHandler.Close()
+ 	}
++	s.metering.Close()
+ 	if errCloseServer != nil {
+ 		return fmt.Errorf("failed to shutdown HTTP server: %v", errCloseServer)
+ 	}
+--- a/internal/api/server_routes.go
++++ b/internal/api/server_routes.go
+@@ -44,6 +44,10 @@
+ // It defines the endpoints and associates them with their respective handlers.
+ func (s *Server) setupRoutes() {
+ 	healthzHandler := func(c *gin.Context) {
++		if !s.metering.Ready() {
++			c.Status(http.StatusServiceUnavailable)
++			return
++		}
+ 		if c.Request.Method == http.MethodHead {
+ 			c.Status(http.StatusOK)
+ 			return
+@@ -65,6 +69,7 @@
+ 	// OpenAI compatible API routes
+ 	v1 := s.engine.Group("/v1")
+ 	v1.Use(AuthMiddleware(s.accessManager))
++	v1.Use(s.metering.Middleware())
+ 	{
+ 		v1.GET("/models", s.unifiedModelsHandler(openaiHandlers, claudeCodeHandlers))
+ 		v1.GET("/models/*model", func(c *gin.Context) {

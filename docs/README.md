@@ -16,6 +16,7 @@ Release names and historical measurements belong to reports, not the component m
 | [Attachments](CHAT_ATTACHMENTS.md) | Long paste, uploads, visual input and retained originals |
 | [Workspace uploads](WORKSPACE_UPLOADS.md) | Working files, tus continuation, browser drafts and explicit retention |
 | [Skills](SKILLS.md) | Cloud discovery, Agent publication, version selection and Sandbox resources |
+| [Model billing](MODEL_BILLING.md) | Model receipts, price versions, statements and limits |
 | [Schedules](SCHEDULES.md) | Scheduled input and ordinary Run admission |
 | [Threat model](THREAT_MODEL.md) | Trusted Runner and untrusted execution boundaries |
 | [Network matrix](NETWORK_MATRIX.md) | Component connections and network ownership |

@@ -281,6 +281,28 @@ try {
     report.rounds[1].workerId,
     "Live acceptance requires distinct Worker processes",
   );
+  const usagePage = await until(async () => {
+    const value = await api.modelBilling(
+      new URLSearchParams({ sessionId: session.sessionId, limit: "200" }),
+    );
+    return (
+      value.items.length >= 6 &&
+      value.items.every((item) => item.state !== "pending" && item.usage.length > 0) &&
+      value
+    );
+  }, "Model receipt delivery");
+  assert.equal(new Set(usagePage.items.map((item) => item.context.runId)).size, 2);
+  assert(
+    usagePage.items.every(
+      (item) => item.context.tenantId === tenant.tenantId && item.context.purpose === "agent",
+    ),
+  );
+  report.modelMetering = {
+    invocations: usagePage.items.length,
+    executions: usagePage.items.reduce((n, item) => n + item.usage.length, 0),
+    distinctRuns: 2,
+    unconfirmedInvocations: usagePage.items.filter((item) => item.state === "unconfirmed").length,
+  };
   report.accepted = true;
 } catch (error) {
   failure = error;

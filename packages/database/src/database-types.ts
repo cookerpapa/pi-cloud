@@ -1050,6 +1050,41 @@ export interface SessionScheduleTable {
 }
 
 export interface Database {
+  model_rate_versions: {
+    id: string;
+    tenant_id: string;
+    kind: string;
+    provider: string;
+    model: string;
+    service_tier: string;
+    effective_at: Timestamp;
+    definition: JsonObject;
+    created_at: GeneratedTimestamp;
+  };
+  model_invocations: {
+    id: string;
+    tenant_id: string;
+    session_id: string;
+    run_id: string;
+    requested_at: Timestamp;
+    provider: string;
+    model: string;
+    purpose: string;
+    context: JsonObject;
+    context_hash: string;
+    received_at: GeneratedTimestamp;
+  };
+  model_metering_events: {
+    id: string;
+    invocation_id: string;
+    kind: string;
+    execution_id: string | null;
+    occurred_at: Timestamp;
+    payload: JsonObject;
+    payload_hash: string;
+    valuation: JsonValue;
+    received_at: GeneratedTimestamp;
+  };
   session_schedules: SessionScheduleTable;
   session_uploads: SessionUploadTable;
   workspace_file_transfers: WorkspaceFileTransferTable;

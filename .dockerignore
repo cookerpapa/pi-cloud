@@ -38,3 +38,9 @@
 **/.cache
 **/.git
 **/dist
+
+!deploy/provider-gateway/usage_capture.go
+!deploy/provider-gateway/metering.go
+!deploy/provider-gateway/metering_journal.go
+!deploy/provider-gateway/metering_test.go
+!deploy/provider-gateway/metering.patch

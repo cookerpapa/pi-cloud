@@ -720,3 +720,6 @@ export * from "./model-transport.ts";
 export * from "./skills.ts";
 export * from "./attachment-reference.ts";
 export * from "./workspace-file-transfer.ts";
+
+export * from "./model-metering.ts";
+export * from "./model-billing.ts";

@@ -27,6 +27,10 @@ COPY deploy/provider-gateway/model_sessions.go sdk/api/handlers/openai/picloud_m
 COPY deploy/provider-gateway/model_sessions_test.go sdk/api/handlers/openai/picloud_model_sessions_test.go
 COPY deploy/provider-gateway/model_sessions.patch /tmp/model_sessions.patch
 RUN git apply --check /tmp/model_sessions.patch && git apply /tmp/model_sessions.patch
+COPY deploy/provider-gateway/usage_capture.go sdk/cliproxy/usage/picloud_capture.go
+COPY deploy/provider-gateway/metering.go deploy/provider-gateway/metering_journal.go deploy/provider-gateway/metering_test.go internal/picloudmetering/
+COPY deploy/provider-gateway/metering.patch /tmp/metering.patch
+RUN git apply --check /tmp/metering.patch && git apply /tmp/metering.patch
 COPY deploy/provider-gateway/config_v8.go cmd/picloud-config/main.go
 COPY deploy/provider-gateway/config_v8_test.go cmd/picloud-config/main_test.go
 
@@ -37,6 +41,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     && GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' go mod download \
     && GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' go test ./sdk/cliproxy/auth -run '^TestPiCloudImageAttemptGuard$' -count=1 \
     && GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' go test ./sdk/api/handlers/openai -run '^TestPiCloudModel' -count=1 \
+    && GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' go test ./internal/picloudmetering -count=1
     && GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' go test ./cmd/picloud-config -count=1 \
     && CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
       GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' \

@@ -11,12 +11,17 @@
       while preserving accounts, credentials and Workspace allocations.
 - [ ] Decide and implement recoverable model-metering admission/delivery and
       attribution without using native chat history as the money ledger.
+      [ADR-0297](adr/0297-model-metering-receipts-and-statements.md) records the boundary.
 - [ ] Add versioned model pricing, explicit unknown/unpriced amounts and queryable
       model statements; verify duplicates, crashes, Fork and deletion.
 
 Provider `provider-v8-20261106` is deployed on infrastructure Helm 110; ordinary
 Luna/Flash/image and five native recovery cases pass.
 [Delivery and measured limits](reports/provider-v8-20261106.md).
+Source implementation now includes synchronous provider capture, bbolt receipt
+recovery, PG deduplication, exact versioned pricing and the Model costs page.
+Native provider/Go race, PostgreSQL, Worker caller and browser contracts pass;
+matched publication and live metering acceptance remain pending.
 Sandbox/storage charging, payment collection and automatic top-up are subsequent work.
 
 ## Workspace-only files and resumable uploads — deployed

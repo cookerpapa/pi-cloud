@@ -1,3 +1,5 @@
+import { ModelBillingController } from "./model-billing-controller.ts";
+import { ModelMeteringService } from "./model-metering-service.ts";
 import { SkillMarketService } from "./skill-market-service.ts";
 import { WorkspaceFileTransferController } from "./workspace-file-transfer-controller.ts";
 import {
@@ -118,8 +120,15 @@ export class ControlPlaneModule {
       });
     return {
       module: ControlPlaneModule,
-      controllers: [ControlPlaneController, SkillMarketController, WorkspaceFileTransferController],
+      controllers: [
+        ModelBillingController,
+        ControlPlaneController,
+        SkillMarketController,
+        WorkspaceFileTransferController,
+      ],
       providers: [
+        { provide: ModelMeteringService, useValue: new ModelMeteringService(options.database) },
+        { provide: "MODEL_BILLING_OPERATOR", useValue: options.platformOperatorTenantId ?? null },
         {
           provide: WorkspaceFileTransferService,
           useValue: new WorkspaceFileTransferService(

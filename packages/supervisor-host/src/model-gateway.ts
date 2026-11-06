@@ -1,6 +1,8 @@
 import { Agent, fetch as upstreamFetch } from "undici";
 import { resourceLimit, minimumResourceLimit } from "@pi-cloud/domain";
 import {
+  MODEL_METERING_HEADER,
+  type ModelMeteringContext,
   assertModelAdapter,
   parseModelRuntimeSnapshot,
   type ModelRuntimeSnapshot,
@@ -21,7 +23,7 @@ import {
   withSpan,
   type PiCloudMetrics,
 } from "@pi-cloud/observability";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { once } from "node:events";
@@ -803,11 +805,28 @@ export class TenantModelGateway {
       timing.upstreamStartMs = elapsed();
       upstreamAttempts = 1;
       const headers = upstreamHeaders(request, active, this.#providerGatewayApiKey);
+      const purpose = request.headers[MODEL_PURPOSE_HEADER] ?? "agent";
+      if (purpose !== "agent" && purpose !== "context_maintenance")
+        throw new SafeGatewayHttpError(400, "invalid_model_purpose", "Model purpose is invalid");
+      const metering: ModelMeteringContext = {
+        version: 1,
+        invocationId: randomUUID(),
+        requestedAt: new Date().toISOString(),
+        tenantId: active.tenantId,
+        sessionId: active.sessionId,
+        runId: active.runId,
+        piSessionId: active.piSessionId,
+        conversationId: active.conversationId,
+        provider: active.provider,
+        model: active.modelId,
+        purpose,
+      };
+      headers.set(
+        MODEL_METERING_HEADER,
+        Buffer.from(JSON.stringify(metering)).toString("base64url"),
+      );
       let providerPath: string = active.providerPath;
       if (active.provider === "openai-codex") {
-        const purpose = request.headers[MODEL_PURPOSE_HEADER] ?? "agent";
-        if (purpose !== "agent" && purpose !== "context_maintenance")
-          throw new SafeGatewayHttpError(400, "invalid_model_purpose", "Model purpose is invalid");
         headers.set(
           MODEL_SESSION_HEADER,
           await modelTransportKey({

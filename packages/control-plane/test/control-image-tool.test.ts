@@ -56,7 +56,13 @@ function fixture() {
     nativeCallId: "call",
     operationId: randomUUID(),
     bindingId: randomUUID(),
-    scope: { tenantId: randomUUID(), runId: randomUUID(), sessionId: randomUUID() },
+    conversationId: 1,
+    scope: {
+      tenantId: randomUUID(),
+      runId: randomUUID(),
+      sessionId: randomUUID(),
+      piSessionId: randomUUID(),
+    },
   } as AcceptedControlToolCommand;
   const execute = (args: Record<string, unknown>) =>
     registry.execute({ ...command, arguments: args }, () => true, new AbortController().signal);
@@ -75,6 +81,11 @@ it("advertises a non-replayable Tool with Codex's four arguments and returns a v
   expect(f.generate).toHaveBeenCalledWith(
     { prompt: "Create a character", images: [], transparent: true },
     expect.any(AbortSignal),
+    expect.objectContaining({
+      tenantId: expect.any(String),
+      runId: expect.any(String),
+      conversationId: expect.any(Number),
+    }),
   );
   expect(output.result.content.some((p) => p.type === "image")).toBe(true);
   expect(output.result.details).toMatchObject({

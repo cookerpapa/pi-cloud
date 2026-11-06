@@ -1,5 +1,14 @@
 # Matched release procedure
 
+ADR-0297 adds schema 210 and paired Worker/provider/API/Web model metering. The
+reviewed `prepare DIRECTORY VERSION --retain-sandbox-runtime` path keeps installed
+Cube/Guest artifacts only after verifying their original source and additive
+host-only accounting exports. It retains existing VM allocations and their
+original artifact provenance, while still draining Runs and Session writers.
+No general protocol compatibility is inferred. See [Model billing](MODEL_BILLING.md)
+for receipt, pricing and failure contracts; complete metering/native acceptance
+before declaring the publication finished.
+
 ADR-0295 requires schema 209 and matched API/Web/Guest/Volume Gateway publication.
 It adds Workspace-only file grants and upstream tus transport, source-owned
 continuation, browser draft/receipt recovery and managed staging cleanup. Preserve

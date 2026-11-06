@@ -709,6 +709,7 @@ export async function startControlPlane(): Promise<void> {
       platformOperatorTenantId: config.platformOperatorTenantId,
       platformModelSourceTenantId: config.platformModelSourceTenantId,
       cubeEgressConfigToken: config.cubeEgressConfigToken,
+      ...(config.modelMeteringToken ? { modelMeteringToken: config.modelMeteringToken } : {}),
       workspaceTerminalGateway,
       sandboxPreviewGateway,
       sourceControlService,

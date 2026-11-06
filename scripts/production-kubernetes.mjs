@@ -285,8 +285,9 @@ function installSecrets() {
   });
 }
 /** Internal release operation. Existing installations reach this only after the
- * matched operator's lock, artifact validation, writer drain and VM absence. */
-export async function deployPlatform({ images, deploymentEnvironment }) {
+ * matched operator's lock, artifact validation and writer drain. Cube replacement
+ * requires VM absence; ADR-0297 may retain source-verified Sandbox artifacts. */
+export async function deployPlatform({ images, deploymentEnvironment, retainedSandboxRuntime }) {
   const cubeNode = JSON.parse(kubectl(["get", "daemonset", "cube-node", "-o", "json"]));
   assertCubeWorkspaceContract(
     JSON.parse(kubectl(["get", "deployment", "cube-master", "-o", "json"])),
@@ -317,7 +318,7 @@ export async function deployPlatform({ images, deploymentEnvironment }) {
   );
   assertCubeCompletionVersion(
     installed,
-    await completionBuildIdentity(repositoryRoot),
+    retainedSandboxRuntime?.completionIdentity ?? (await completionBuildIdentity(repositoryRoot)),
     createHash("sha256").update(JSON.stringify(runtimeBuild)).digest("hex").slice(0, 16),
   );
   const { platform } = await values({ images, deploymentEnvironment });
@@ -372,7 +373,10 @@ export async function deployPlatform({ images, deploymentEnvironment }) {
     { stdio: "inherit" },
   );
   run(helm, ["dependency", "build", chart("platform")]);
-  run(process.execPath, ["scripts/configure-cube-completion.mjs"], { env: deploymentEnvironment });
+  if (!retainedSandboxRuntime)
+    run(process.execPath, ["scripts/configure-cube-completion.mjs"], {
+      env: deploymentEnvironment,
+    });
   helmRun([
     "upgrade",
     "--install",

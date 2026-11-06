@@ -5098,3 +5098,78 @@ body.product-panel-resizing {
   font-size: 11px;
   color: #aaa;
 }
+
+.product-billing-page {
+  padding: 28px;
+  overflow: auto;
+}
+.product-billing-page > header,
+.product-billing-page form,
+.product-billing-page footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.product-billing-page h1 {
+  margin: 0;
+  font-size: 22px;
+}
+.product-billing-page header > span,
+.product-billing-page small {
+  opacity: 0.65;
+  font-size: 12px;
+}
+.product-billing-page label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+.product-billing-page input,
+.product-billing-page button {
+  padding: 8px 12px;
+  border: 1px solid var(--border, #ddd);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+}
+.product-billing-page button {
+  cursor: pointer;
+}
+.product-billing-page button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.product-billing-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin-bottom: 18px;
+  font-size: 14px;
+}
+.product-billing-table {
+  overflow-x: auto;
+  margin-bottom: 24px;
+}
+.product-billing-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  text-align: left;
+}
+.product-billing-table th,
+.product-billing-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--border, #ddd);
+  white-space: nowrap;
+}
+.product-billing-table th {
+  font-weight: 500;
+  opacity: 0.7;
+}
+.product-billing-table small {
+  display: block;
+  margin-top: 4px;
+}

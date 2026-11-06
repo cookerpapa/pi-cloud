@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { MODEL_METERING_HEADER, type ModelMeteringContext } from "@pi-cloud/protocol";
 import { Agent, fetch as internalFetch } from "undici";
 
 export type GenerationImage = { data: string; mimeType: "image/png" | "image/jpeg" | "image/webp" };
@@ -105,6 +107,10 @@ export class ImageGenerationClient {
   async generate(
     input: { prompt: string; images: GenerationImage[]; transparent: boolean },
     signal: AbortSignal,
+    attribution?: Omit<
+      ModelMeteringContext,
+      "version" | "invocationId" | "requestedAt" | "provider" | "model" | "purpose"
+    >,
   ): Promise<GenerationImage> {
     signal.throwIfAborted();
     const request = {
@@ -139,6 +145,21 @@ export class ImageGenerationClient {
         headers: {
           authorization: `Bearer ${this.options.apiKey}`,
           "content-type": "application/json",
+          ...(attribution
+            ? {
+                [MODEL_METERING_HEADER]: Buffer.from(
+                  JSON.stringify({
+                    ...attribution,
+                    version: 1,
+                    invocationId: randomUUID(),
+                    requestedAt: new Date().toISOString(),
+                    provider: "openai-codex",
+                    model: this.options.model,
+                    purpose: "image",
+                  } satisfies ModelMeteringContext),
+                ).toString("base64url"),
+              }
+            : {}),
         },
         body: JSON.stringify(request),
         signal: AbortSignal.any([signal, AbortSignal.timeout(600_000)]),

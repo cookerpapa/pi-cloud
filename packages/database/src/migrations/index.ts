@@ -397,6 +397,7 @@ export const migrationProvider: MigrationProvider = {
       "207_skill_runtime_metadata": skillRuntimeMetadata,
       "208_retained_user_attachments": retainedUserAttachments,
       "209_workspace_file_transfers": workspaceFileTransfers,
+      "210_model_metering": modelMetering,
     };
   },
 };
@@ -430,3 +431,5 @@ import * as independentForkLifetimes from "./205_independent_fork_lifetimes.ts";
 
 import * as skillMarket from "./206_skill_market.ts";
 import * as workspaceFileTransfers from "./209_workspace_file_transfers.ts";
+
+import * as modelMetering from "./210_model_metering.ts";

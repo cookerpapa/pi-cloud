@@ -1,3 +1,4 @@
+import { ModelBilling } from "./ModelBilling.tsx";
 import { SkillMarket } from "./SkillMarket.tsx";
 import { SessionSchedules } from "./SessionSchedules.tsx";
 import { ConversationTimeline, type TimelineControl } from "./ConversationTimeline.tsx";
@@ -359,6 +360,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
   const [codeHostConnectionsOpen, setCodeHostConnectionsOpen] = useState(false);
   const [schedulesOpen, setSchedulesOpen] = useState(false);
+  const [billingOpen, setBillingOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [toolGroupDisplay, setToolGroupDisplay] = useState<{
     sessionId: string;
@@ -1866,6 +1868,14 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
       </Suspense>
     );
   }
+  if (billingOpen)
+    return (
+      <ModelBilling
+        api={api}
+        sessionId={state.session?.sessionId}
+        onClose={() => setBillingOpen(false)}
+      />
+    );
   if (skillsOpen)
     return (
       <SkillMarket
@@ -1988,6 +1998,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
           </nav>
           <footer className="product-account">
             <AccountMenu
+              onModelBilling={() => setBillingOpen(true)}
               label={identity.username ?? identity.displayName}
               onLogout={logout}
               placement="up"

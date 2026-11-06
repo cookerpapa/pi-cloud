@@ -343,8 +343,14 @@ The maintained provider adapter targets CLIProxyAPI v8. Its native compatibility
 extension preserves Responses messages and hosted-tool events; operator
 configuration and management use the v8 layout. One-time conversion and provider
 publication are specified by [ADR-0296](adr/0296-provider-v8-and-model-accounting-boundary.md).
-Upstream usage callbacks are not a PiCloud billing ledger: model metering and
-pricing remain a separate implementation slice, and sandbox billing is deferred.
+[ADR-0297](adr/0297-model-metering-receipts-and-statements.md) adds a provider-local
+receipt buffer before asynchronous usage callbacks. Worker/model and image callers
+supply per-invocation ownership; provider execution IDs distinguish attempts.
+Authenticated receipt batches commit to PG independently of native Session leases,
+Projector and chat history. PG owns deduplicated usage, immutable rate versions and
+simulated amounts. Model/Tool retry authority stays with the existing runtime.
+Missing receipts remain unconfirmed; unsupported tariffs remain unpriced. Neither
+payments nor Sandbox billing is enabled; see [Model billing](MODEL_BILLING.md).
 
 Under [ADR-0289](adr/0289-provider-owned-model-continuation.md), HTTP/SSE carries the
 full effective context inside the cluster. The provider adapter reuses a compatible

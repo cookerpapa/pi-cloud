@@ -259,6 +259,14 @@ export function createImageTool(
           generated = await options.client.generate(
             { prompt: args.prompt, images, transparent: args.transparent_background ?? false },
             signal,
+            {
+              tenantId: command.scope.tenantId,
+              sessionId: command.scope.sessionId,
+              runId: command.scope.runId,
+              piSessionId: command.scope.piSessionId,
+              conversationId: command.conversationId,
+              operationId: command.operationId,
+            },
           );
         } catch (error) {
           signal.throwIfAborted();

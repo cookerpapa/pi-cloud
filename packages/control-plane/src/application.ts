@@ -1,3 +1,4 @@
+import { ModelMeteringService, installModelMeteringIngress } from "./model-metering-service.ts";
 import { installBinaryBodyParser } from "./binary-body-parser.ts";
 import type { SessionPublicationService } from "./session-publication-service.ts";
 import "reflect-metadata";
@@ -54,6 +55,7 @@ export type ControlPlaneApplicationOptions = Omit<
   platformOperatorTenantId?: string;
   platformModelSourceTenantId?: string;
   cubeEgressConfigToken?: string;
+  modelMeteringToken?: string;
   platformRuntimeSettings?: PlatformRuntimeSettingsService;
   workspaceTerminalGateway?: WorkspaceTerminalGateway;
   developmentEnvironmentService?: DevelopmentEnvironmentService;
@@ -71,6 +73,12 @@ export async function createControlPlaneApplication(
   const adapter = new FastifyAdapter({ logger: false });
   installBinaryBodyParser(adapter.getInstance());
   options.productionHttpGateway?.install(adapter.getInstance());
+  if (options.modelMeteringToken)
+    installModelMeteringIngress(
+      adapter.getInstance(),
+      new ModelMeteringService(options.database),
+      options.modelMeteringToken,
+    );
   options.toolProgressIngress?.install(adapter.getInstance());
   options.runActivityIngress?.install(adapter.getInstance());
   options.sessionPublicationService?.install(adapter.getInstance());

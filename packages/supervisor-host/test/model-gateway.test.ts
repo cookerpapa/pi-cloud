@@ -183,8 +183,14 @@ function createGateway(
 
 it("keeps provider context identity across Run grants while retiring the old grant", async () => {
   const keys: string[] = [];
+  const attribution: import("@pi-cloud/protocol").ModelMeteringContext[] = [];
   const upstream = vi.fn<typeof fetch>(async (_url, init) => {
     keys.push(new Headers(init?.headers).get("x-picloud-model-session")!);
+    attribution.push(
+      JSON.parse(
+        Buffer.from(new Headers(init?.headers).get("x-picloud-metering")!, "base64url").toString(),
+      ),
+    );
     return new Response("ok");
   });
   const gateway = createGateway(upstream);
@@ -215,6 +221,23 @@ it("keeps provider context identity across Run grants while retiring the old gra
   expect(keys[1]).toBe(keys[0]);
   expect(await send(next.runtime.capability, "context_maintenance")).toBe(200);
   expect(keys[2]).not.toBe(keys[0]);
+  expect(new Set(attribution.map((a) => a.invocationId)).size).toBe(3);
+  expect(attribution.map((item) => item.runId)).toEqual([
+    a.payload.runId,
+    b.payload.runId,
+    b.payload.runId,
+  ]);
+  expect(attribution.map((item) => item.purpose)).toEqual([
+    "agent",
+    "agent",
+    "context_maintenance",
+  ]);
+  expect(attribution[0]).toMatchObject({
+    tenantId: a.payload.tenantId,
+    sessionId: a.payload.sessionId,
+    piSessionId: a.payload.piSession.id,
+    conversationId: a.payload.piSession.conversationId,
+  });
   next.release();
 });
 

@@ -1,3 +1,9 @@
+import {
+  verifyMeteringRetention,
+  retainSandboxProvenance,
+  retainedSandboxComponents,
+} from "./lib/model-metering-release.mjs";
+import { readFileSync } from "node:fs";
 import { configureBuildProxy } from "./lib/upstream-proxy.mjs";
 import { updateProviderRuntimePolicyFile } from "./lib/provider-runtime-policy.mjs";
 import { serializeRelease } from "./lib/release-lock.mjs";
@@ -24,10 +30,14 @@ import { sql } from "kysely";
 
 configureBuildProxy();
 
-const [action, path, version] = process.argv.slice(2);
+const [action, path, version, option] = process.argv.slice(2);
+assert(
+  option === undefined || option === "--retain-sandbox-runtime",
+  "Unknown matched publication option",
+);
 if (action === "--help") {
   console.log(
-    "Usage: node --import tsx scripts/run-matched-release.mjs prepare DIRECTORY VERSION | preflight DIRECTORY | apply DIRECTORY\nPrepare builds/scans locally without changing the serving catalog. Apply requires settled Runs and no native VMs, drains writers, then deploys matched app/Cube/guest artifacts. No data reset. See docs/MATCHED_RELEASE.md.",
+    "Usage: node --import tsx scripts/run-matched-release.mjs prepare DIRECTORY VERSION [--retain-sandbox-runtime] | preflight DIRECTORY | apply DIRECTORY\nPrepare builds/scans locally without changing the serving catalog. Apply drains settled Runs/writers, then deploys matched artifacts. ADR-0297 can retain verified unchanged Sandbox artifacts and VM allocations. No data reset. See docs/MATCHED_RELEASE.md.",
   );
   process.exit(0);
 }
@@ -117,6 +127,15 @@ if (action === "prepare") {
     JSON.stringify(
       {
         formatVersion: 1,
+        ...(option === "--retain-sandbox-runtime"
+          ? {
+              retainedDeploymentDigest: digest(
+                JSON.parse(
+                  await readFile(resolve(runtimeDirectory, "k3s/deployment.json"), "utf8"),
+                ),
+              ),
+            }
+          : {}),
         version,
         revision: capture("git", ["rev-parse", "HEAD"]),
         guestIdentity: await guestBuildIdentity(root),
@@ -132,6 +151,41 @@ const currentGuestTemplate = JSON.parse(
   await readFile(resolve(runtimeDirectory, "cubesandbox/template.json"), "utf8"),
 );
 const candidate = await verifyMatchedRelease({ directory, root, capture, currentGuestTemplate });
+const baseline = candidate.retainedDeploymentDigest
+  ? JSON.parse(await readFile(resolve(runtimeDirectory, "k3s/deployment.json"), "utf8"))
+  : null;
+const retainedSandboxRuntime = baseline
+  ? verifyMeteringRetention({
+      baseline,
+      candidate,
+      capture,
+      root,
+      readFile: (path) => readFileSync(path, "utf8"),
+      template: currentGuestTemplate,
+    })
+  : undefined;
+if (baseline) {
+  const objects = JSON.parse(
+    kubectl([
+      "get",
+      "deployment/cube-api",
+      "deployment/cube-master",
+      "daemonset/cube-node",
+      "deployment/pi-cloud-cube-api-authorizer",
+      "deployment/pi-cloud-cube-egress-gateway",
+      "-o",
+      "json",
+    ]),
+  );
+  const images = new Set(
+    objects.items.flatMap((o) => o.spec.template.spec.containers.map((c) => c.image)),
+  );
+  for (const name of retainedSandboxComponents.filter((n) => n !== "cubesandbox-tool"))
+    assert(
+      images.has(baseline.components[name].reference),
+      `Serving retained component changed: ${name}`,
+    );
+}
 phase("matched artifact preflight passed");
 if (action !== "apply") process.exit(0);
 
@@ -140,27 +194,29 @@ phase("Cube KVM device preflight passed");
 const env = environment(candidate.version);
 // Import content before touching live workloads. Existing tags/catalog stay intact.
 run("scripts/production-kubernetes.mjs", ["import-images"], env);
-const archive = resolve(directory, "native-images.tar");
-try {
-  execFileSync(
-    "docker",
-    [
-      "save",
-      "--output",
-      archive,
-      ...["cube-api", "cube-master", "cubelet", "cube-api-authorizer", "cube-egress-gateway"].map(
-        (name) => `pi-cloud/${name}:${candidate.version}`,
-      ),
-    ],
-    { stdio: "inherit" },
-  );
-  execFileSync(
-    "k3s",
-    ["ctr", "images", "import", "--label", "io.cri-containerd.pinned=pinned", archive],
-    { stdio: "inherit" },
-  );
-} finally {
-  await rm(archive, { force: true });
+if (!retainedSandboxRuntime) {
+  const archive = resolve(directory, "native-images.tar");
+  try {
+    execFileSync(
+      "docker",
+      [
+        "save",
+        "--output",
+        archive,
+        ...["cube-api", "cube-master", "cubelet", "cube-api-authorizer", "cube-egress-gateway"].map(
+          (name) => `pi-cloud/${name}:${candidate.version}`,
+        ),
+      ],
+      { stdio: "inherit" },
+    );
+    execFileSync(
+      "k3s",
+      ["ctr", "images", "import", "--label", "io.cri-containerd.pinned=pinned", archive],
+      { stdio: "inherit" },
+    );
+  } finally {
+    await rm(archive, { force: true });
+  }
 }
 
 const endpoint = new URL(
@@ -206,8 +262,10 @@ async function assertDrained(includeWriters) {
     .where("state", "!=", "released")
     .execute();
   assert(
-    Object.values(rest).every((n) => n === 0) &&
-      machines.every(matchedMachineDrained) &&
+    Object.entries(rest).every(
+      ([key, n]) => n === 0 || (retainedSandboxRuntime && key === "vms"),
+    ) &&
+      (retainedSandboxRuntime || machines.every(matchedMachineDrained)) &&
       (!includeWriters || (writers === 0 && bindings === 0)),
     "Drain Runs/seals, Tool bindings and native VM/terminal/machine lifetimes before matched replacement",
   );
@@ -238,8 +296,8 @@ try {
     scanned &&
       Number(scanned[1]) > 0 &&
       scanned[1] === scanned[2] &&
-      /SANDBOX_COUNT\s+0\b/.test(inventory),
-    "Native inventory must confirm no VM on every node before replacement",
+      (retainedSandboxRuntime || /SANDBOX_COUNT\s+0\b/.test(inventory)),
+    "Native inventory must cover every node; replacing Cube additionally requires zero VMs",
   );
   phase("drain application writers");
   for (const service of services.slice(0, 3)) await stop(service);
@@ -261,38 +319,43 @@ try {
   // deployment-owned provider policy before the matched provider Pod starts.
   await updateProviderRuntimePolicyFile(resolve(runtimeDirectory, "secrets/cli-proxy-config.yaml"));
   cutover = true;
-  kubectl([
-    "set",
-    "image",
-    "deployment/pi-cloud-cube-api-authorizer",
-    `authorizer=pi-cloud/cube-api-authorizer:${candidate.version}`,
-  ]);
-  kubectl(["rollout", "status", "deployment/pi-cloud-cube-api-authorizer", "--timeout=120s"], {
-    timeout: 125000,
-  });
-  run("scripts/configure-cube-completion.mjs", [], env);
-  run(
-    "scripts/register-cubesandbox-tool-template.mjs",
-    ["--prepared-image-id", candidate.guestImageId],
-    env,
-  );
+  if (!retainedSandboxRuntime) {
+    kubectl([
+      "set",
+      "image",
+      "deployment/pi-cloud-cube-api-authorizer",
+      `authorizer=pi-cloud/cube-api-authorizer:${candidate.version}`,
+    ]);
+    kubectl(["rollout", "status", "deployment/pi-cloud-cube-api-authorizer", "--timeout=120s"], {
+      timeout: 125000,
+    });
+    run("scripts/configure-cube-completion.mjs", [], env);
+    run(
+      "scripts/register-cubesandbox-tool-template.mjs",
+      ["--prepared-image-id", candidate.guestImageId],
+      env,
+    );
+  }
   const { deployPlatform } = await import("./production-kubernetes.mjs");
   await deployPlatform({
+    retainedSandboxRuntime,
     images: JSON.parse(await readFile(resolve(directory, "images.json"), "utf8")),
     deploymentEnvironment: { ...runtimeEnvironment(), ...env },
   });
   // The gateway needs the restarted Control Plane's configuration before it can
   // become Ready, so reconcile it after application readiness, before recording
   // successful matched publication. Its image was built/imported/scanned above.
-  kubectl([
-    "set",
-    "image",
-    "deployment/pi-cloud-cube-egress-gateway",
-    `gateway=pi-cloud/cube-egress-gateway:${candidate.version}`,
-  ]);
-  kubectl(["rollout", "status", "deployment/pi-cloud-cube-egress-gateway", "--timeout=120s"], {
-    timeout: 125000,
-  });
+  if (!retainedSandboxRuntime) {
+    kubectl([
+      "set",
+      "image",
+      "deployment/pi-cloud-cube-egress-gateway",
+      `gateway=pi-cloud/cube-egress-gateway:${candidate.version}`,
+    ]);
+    kubectl(["rollout", "status", "deployment/pi-cloud-cube-egress-gateway", "--timeout=120s"], {
+      timeout: 125000,
+    });
+  }
   const installed = resolve(runtimeDirectory, "k3s/images.json");
   await writeFile(installed + ".candidate", await readFile(resolve(directory, "images.json")), {
     mode: 0o600,
@@ -308,7 +371,7 @@ try {
   const schema = await sql`select name from kysely_migration order by name desc limit 1`.execute(
     database,
   );
-  const deployment = deploymentFromEvidence({
+  let deployment = deploymentFromEvidence({
     evidence: JSON.parse(await readFile(resolve(directory, "evidence/manifest.json"), "utf8")),
     evidenceDirectory: resolve(directory, "evidence"),
     revision: candidate.revision,
@@ -322,6 +385,7 @@ try {
       controlPlaneReplacement: 1,
     },
   });
+  if (baseline) deployment = retainSandboxProvenance(deployment, baseline);
   const deploymentPath = resolve(runtimeDirectory, "k3s/deployment.json");
   await writeFile(deploymentPath + ".next", JSON.stringify(deployment, null, 2) + "\n", {
     mode: 0o600,

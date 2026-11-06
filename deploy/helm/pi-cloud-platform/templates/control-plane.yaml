@@ -61,6 +61,9 @@ spec:
             - { name: metrics, containerPort: 9464 }
             - { name: sandbox, containerPort: 4300 }
           env:
+            {{- if or .Values.piWorkersEnabled .Values.controlPlane.imageGeneration.model }}
+            - { name: PI_CLOUD_MODEL_METERING_TOKEN_FILE, value: /run/pi-cloud-secrets/model-metering-key }
+            {{- end }}
             {{- if .Values.imageAttachments.endpoint }}
             - { name: PI_CLOUD_IMAGE_S3_ENDPOINT, value: {{ .Values.imageAttachments.endpoint | quote }} }
             - { name: PI_CLOUD_IMAGE_S3_REGION, value: {{ .Values.imageAttachments.region | quote }} }
@@ -184,6 +187,9 @@ spec:
             capabilities: { drop: [ALL] }
           resources: {{- toYaml .Values.controlPlane.resources | nindent 12 }}
           volumeMounts:
+            {{- if or .Values.piWorkersEnabled .Values.controlPlane.imageGeneration.model }}
+            - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/model-metering-key, subPath: {{ index .Values "pi-workers" "credentials" "providerGatewayApiKeyKey" }}, readOnly: true }
+            {{- end }}
             - { name: model-catalog, mountPath: /run/pi-cloud-models, readOnly: true }
             {{- if .Values.imageAttachments.endpoint }}
             - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/session-image-s3-credentials.json, subPath: {{ .Values.imageAttachments.credentialsSecretKey }}, readOnly: true }

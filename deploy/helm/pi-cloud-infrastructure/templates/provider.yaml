@@ -86,6 +86,9 @@ spec:
             - { name: HTTPS_PROXY, value: "http://provider-egress-relay:3129" }
             - { name: NO_PROXY, value: "127.0.0.1,localhost,.svc,.cluster.local" }
             - { name: MANAGEMENT_STATIC_PATH, value: /data/static }
+            - { name: PI_CLOUD_METERING_PATH, value: /data/model-metering.bolt }
+            - { name: PI_CLOUD_METERING_URL, value: {{ printf "http://control-plane.%s.svc.cluster.local:3000/internal/v1/model-metering" .Release.Namespace | quote }} }
+            - { name: PI_CLOUD_METERING_KEY_FILE, value: /run/pi-cloud-secrets/model-metering-key }
             - { name: PI_CLOUD_MODEL_REQUEST_MAX_BYTES, value: {{ .Values.provider.modelTransport.requestMaxBytes | int64 | quote }} }
             - { name: PI_CLOUD_MODEL_UPLOAD_MAX_BYTES, value: {{ .Values.provider.modelTransport.uploadMaxBytes | int64 | quote }} }
             - { name: PI_CLOUD_MODEL_SESSION_IDLE_SECONDS, value: {{ .Values.provider.modelTransport.idleSeconds | int64 | quote }} }
@@ -98,9 +101,12 @@ spec:
           volumeMounts:
             - { name: data, mountPath: /data }
             - { name: config, mountPath: /run/pi-cloud-secrets/cli-proxy-config.yaml }
+            - { name: metering-key, mountPath: /run/pi-cloud-secrets/model-metering-key, subPath: cli-proxy-api-key, readOnly: true }
             - { name: tmp, mountPath: /tmp }
       volumes:
         - { name: data, persistentVolumeClaim: { claimName: pi-cloud-provider } }
+        - name: metering-key
+          secret: { secretName: {{ .Values.existingSecret }}, defaultMode: 288 }
         - name: config
           hostPath: { path: {{ required "providerConfigPath is required" .Values.providerConfigPath | quote }}, type: File }
         - { name: tmp, emptyDir: {} }

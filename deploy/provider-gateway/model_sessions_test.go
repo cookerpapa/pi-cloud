@@ -33,7 +33,23 @@ type piCloudTestRequest struct {
 	connection int64
 	body       []byte
 }
+type piCloudCapturedUsage struct {
+	invocation string
+	record     coreusage.Record
+}
+type piCloudSourceCapture struct {
+	invocation string
+	records    chan piCloudCapturedUsage
+}
+
+func (c *piCloudSourceCapture) AttemptStarted(string, time.Time) {}
+func (c *piCloudSourceCapture) Record(r coreusage.Record) {
+	c.records <- piCloudCapturedUsage{c.invocation, r}
+}
+
 type piCloudModelFixture struct {
+	captureEnabled  atomic.Bool
+	captured        chan piCloudCapturedUsage
 	authID          string
 	handler         *OpenAIResponsesAPIHandler
 	server          *httptest.Server
@@ -54,7 +70,7 @@ type piCloudModelFixture struct {
 
 func piCloudFixture(t *testing.T) *piCloudModelFixture {
 	t.Helper()
-	f := &piCloudModelFixture{received: make(chan piCloudTestRequest, 32)}
+	f := &piCloudModelFixture{received: make(chan piCloudTestRequest, 32), captured: make(chan piCloudCapturedUsage, 16)}
 	upgrade := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !websocket.IsWebSocketUpgrade(r) {
@@ -137,6 +153,12 @@ func piCloudFixture(t *testing.T) *piCloudModelFixture {
 	f.handler = NewOpenAIResponsesAPIHandler(handlers.NewBaseAPIHandlers(&cfg.SDKConfig, manager))
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		if f.captureEnabled.Load() {
+			c.Request = c.Request.WithContext(coreusage.WithCapture(c.Request.Context(), &piCloudSourceCapture{uuid.NewString(), f.captured}))
+		}
+		c.Next()
+	})
 	router.POST("/v1/picloud/responses", f.handler.PiCloudResponses)
 	router.POST("/codex/responses", f.handler.PiCloudResponses)
 	f.server = httptest.NewServer(router)
@@ -567,4 +589,38 @@ func TestPiCloudModelConfigurationValidatedBeforeServing(t *testing.T) {
 	}()
 	NewOpenAIResponsesAPIHandler(nil)
 	t.Fatal("invalid environment reached the serving stage")
+}
+
+func TestPiCloudModelSynchronousAttributionAcrossReuseAndFallback(t *testing.T) {
+	f := piCloudFixture(t)
+	f.captureEnabled.Store(true)
+	key := strings.Repeat("9", 64)
+	f.send(t, piCloudBody("["+piCloudUser+"]"), key)
+	first := <-f.received
+	f.send(t, piCloudBody("["+piCloudUser+","+piCloudAnswer+","+piCloudUser+"]"), key)
+	second := <-f.received
+	if first.connection != second.connection {
+		t.Fatal("connection was not reused")
+	}
+	receive := func() piCloudCapturedUsage {
+		select {
+		case r := <-f.captured:
+			return r
+		case <-time.After(3 * time.Second):
+			t.Fatal("source capture missing")
+			return piCloudCapturedUsage{}
+		}
+	}
+	a, b := receive(), receive()
+	if a.invocation == b.invocation || a.record.RequestID == b.record.RequestID {
+		t.Fatal("reused request retained accounting identity")
+	}
+	f.closeFirst.Store(true)
+	f.send(t, piCloudBody("["+piCloudUser+"]"), strings.Repeat("8", 64))
+	<-f.received
+	<-f.received
+	failed, success := receive(), receive()
+	if failed.invocation != success.invocation || failed.record.RequestID == success.record.RequestID || !failed.record.Failed || success.record.Failed {
+		t.Fatal("fallback attempt ownership or failure changed")
+	}
 }

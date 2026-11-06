@@ -203,3 +203,40 @@ it("preserves Stop while reading a provider error body", async () => {
   expect(await pending).toMatchObject({ message: "User stopped generation" });
   expect(cancel).toHaveBeenCalledOnce();
 });
+
+it("attributes each image request to the current caller without putting ownership in model input", async () => {
+  const send = vi.fn(async () => Response.json({ data: [{ b64_json: png }] }));
+  const generator = client(send);
+  const context = {
+    tenantId: crypto.randomUUID(),
+    sessionId: crypto.randomUUID(),
+    runId: crypto.randomUUID(),
+    conversationId: 3,
+    piSessionId: "image-parent",
+    operationId: "tool-1",
+  };
+  await generator.generate(input, new AbortController().signal, context);
+  await generator.generate(input, new AbortController().signal, {
+    ...context,
+    runId: crypto.randomUUID(),
+  });
+  const requests = send.mock.calls as unknown as [
+    string,
+    { headers: Record<string, string>; body: string },
+  ][];
+  const first = JSON.parse(
+    Buffer.from(requests[0]![1].headers["x-picloud-metering"]!, "base64url").toString(),
+  );
+  const next = JSON.parse(
+    Buffer.from(requests[1]![1].headers["x-picloud-metering"]!, "base64url").toString(),
+  );
+  expect(first).toMatchObject({
+    ...context,
+    purpose: "image",
+    model: "gpt-image-2",
+    provider: "openai-codex",
+  });
+  expect(first.invocationId).not.toBe(next.invocationId);
+  expect(first.runId).not.toBe(next.runId);
+  expect(requests[0]![1].body).not.toContain(context.tenantId);
+});
