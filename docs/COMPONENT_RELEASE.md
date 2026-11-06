@@ -64,6 +64,12 @@ release probes.
 
 ## Provider image
 
+After ADR-0297's matched receipt installation, the explicitly listed metering
+adapter Go/patch files are provider inputs too. Corrections within the installed
+context/receipt protocol can use this scope. Changed financial admission,
+receipt schemas or durable ownership still require a matched decision/publication.
+Existing receipt contents are not rewritten by a provider update.
+
 [ADR-0296](adr/0296-provider-v8-and-model-accounting-boundary.md) additionally
 covers the provider's v8 configuration conversion. Preparation uses the candidate
 image's native configuration parser and stores a private canonical document plus

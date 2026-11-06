@@ -167,6 +167,15 @@ try {
     .select("payload")
     .where("invocation_id", "=", context.invocationId)
     .execute();
+  report.observedUsage = page.items[0].usage.map((e) => ({
+    executionId: e.executionId,
+    model: e.usage.model,
+    serviceTier: e.usage.serviceTier,
+    quality: e.usage.quality,
+    unsupportedDimensions: e.usage.unsupportedDimensions,
+    tokens: e.usage.tokens,
+    valuation: e.valuation,
+  }));
   assert(page.items[0].usage.length > 0);
   assert(
     page.items[0].usage.some((u) => u.valuation.customer.state === "priced"),

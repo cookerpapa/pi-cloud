@@ -257,8 +257,38 @@ func (r *requestCapture) Record(record usage.Record) {
 	f := &fact{Model: model, Provider: record.Provider, ServiceTier: tier, Failed: record.Failed, Quality: quality,
 		Tokens:     tokens{b.Input.UncachedTokens, b.Input.CacheReadTokens, b.Input.CacheWriteTokens, b.Output.NonReasoningTokens, b.Output.ReasoningTokens, b.UnclassifiedTokens, b.TotalTokens},
 		ImageCount: d.ImageCount, WebSearchRequests: d.WebSearchRequests,
-		UnsupportedDimensions: r.context.Purpose == "image" || (d.ImageCount != nil && *d.ImageCount > 0) || (d.WebSearchRequests != nil && *d.WebSearchRequests > 0) || d.MediaCounts != nil || d.ToolUsageDetails != nil || d.AudioInputTokens != nil || d.AudioOutputTokens != nil || d.VideoInputTokens != nil}
+		UnsupportedDimensions: r.context.Purpose == "image" || hasUnsupportedDimensions(d)}
 	r.append(event{Kind: "usage", Context: r.context, ExecutionID: record.RequestID, OccurredAt: timestamp(record.RequestedAt), Usage: f})
+}
+
+// Optional zero-valued fields are normal in provider text receipts. Only
+// actual additional quantities require an unsupported tariff. Ordinary local
+// function-call counters are not hosted service consumption.
+func hasUnsupportedDimensions(d usage.Detail) bool {
+	positive := func(v *int64) bool { return v != nil && *v > 0 }
+	for _, v := range []*int64{d.ImageCount, d.WebSearchRequests, d.AudioInputTokens, d.AudioOutputTokens, d.VideoInputTokens} {
+		if positive(v) {
+			return true
+		}
+	}
+	if m := d.MediaCounts; m != nil {
+		if positive(m.PromptMedia) || positive(m.CompletionMedia) || positive(m.PromptAudio) || (m.AudioSeconds != nil && *m.AudioSeconds > 0) {
+			return true
+		}
+	}
+	if t := d.ToolUsageDetails; t != nil {
+		for _, v := range []*int64{t.WebSearchCalls, t.WebSearchQueries, t.WebFetchCalls, t.NumSearchResults, t.NumSourcesUsed, t.NumServerSideToolsUsed, t.XSearchCalls, t.XPostsFetched, t.XUsersFetched, t.CodeExecutionCalls, t.FileSearchCalls, t.MCPCalls, t.DocumentSearchCalls, t.ImageGenerationCalls} {
+			if positive(v) {
+				return true
+			}
+		}
+		for _, v := range t.Extra {
+			if v > 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 func (s *Service) deliver(ctx context.Context, j *journal) {
 	ticker := time.NewTicker(time.Second)

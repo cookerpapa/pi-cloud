@@ -56,6 +56,11 @@ export const providerSources = new Set([
   "deploy/provider-gateway/image_request_policy.patch",
   "deploy/provider-gateway/config_v8.go",
   "deploy/provider-gateway/config_v8_test.go",
+  "deploy/provider-gateway/metering.go",
+  "deploy/provider-gateway/metering_journal.go",
+  "deploy/provider-gateway/metering_test.go",
+  "deploy/provider-gateway/usage_capture.go",
+  "deploy/provider-gateway/metering.patch",
   "deploy/helm/pi-cloud-infrastructure/templates/provider.yaml",
   ...providerConfigurationSources,
 ]);

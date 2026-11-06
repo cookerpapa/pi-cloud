@@ -246,3 +246,28 @@ func TestMeteringUncleanExit(t *testing.T) {
 		t.Fatal("lost incomplete admission")
 	}
 }
+
+func TestMeteringOptionalZeroDimensionsAreTextUsage(t *testing.T) {
+	zero, one := int64(0), int64(1)
+	seconds := float64(0)
+	detail := usage.Detail{InputTokens: 20, OutputTokens: 7, TotalTokens: 27, ImageCount: &zero, WebSearchRequests: &zero, AudioInputTokens: &zero, AudioOutputTokens: &zero, VideoInputTokens: &zero,
+		MediaCounts:      &usage.MediaCounts{PromptMedia: &zero, CompletionMedia: &zero, PromptAudio: &zero, AudioSeconds: &seconds},
+		ToolUsageDetails: &usage.ToolUsageDetails{WebSearchCalls: &zero, NumServerSideToolsUsed: &zero, ToolCallsRequested: &one, ToolCallsExecuted: &one, Extra: map[string]int64{"future_counter": 0}}}
+	if hasUnsupportedDimensions(detail) {
+		t.Fatal("zero metadata/local function call was billed as a hosted dimension")
+	}
+	detail.ToolUsageDetails.WebSearchCalls = &one
+	if !hasUnsupportedDimensions(detail) {
+		t.Fatal("hosted search needs an explicit tariff")
+	}
+	detail.ToolUsageDetails.WebSearchCalls = &zero
+	detail.ToolUsageDetails.Extra["future_counter"] = 1
+	if !hasUnsupportedDimensions(detail) {
+		t.Fatal("unknown nonzero hosted dimension must remain unpriced")
+	}
+	detail.ToolUsageDetails = nil
+	detail.MediaCounts.CompletionMedia = &one
+	if !hasUnsupportedDimensions(detail) {
+		t.Fatal("generated media needs an explicit tariff")
+	}
+}
