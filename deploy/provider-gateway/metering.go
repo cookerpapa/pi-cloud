@@ -263,7 +263,7 @@ func (r *requestCapture) Record(record usage.Record) {
 
 // Optional zero-valued fields are normal in provider text receipts. Only
 // actual additional quantities require an unsupported tariff. Ordinary local
-// function-call counters are not hosted service consumption.
+// function-call request counters are not hosted service consumption.
 func hasUnsupportedDimensions(d usage.Detail) bool {
 	positive := func(v *int64) bool { return v != nil && *v > 0 }
 	for _, v := range []*int64{d.ImageCount, d.WebSearchRequests, d.AudioInputTokens, d.AudioOutputTokens, d.VideoInputTokens} {
@@ -277,7 +277,7 @@ func hasUnsupportedDimensions(d usage.Detail) bool {
 		}
 	}
 	if t := d.ToolUsageDetails; t != nil {
-		for _, v := range []*int64{t.WebSearchCalls, t.WebSearchQueries, t.WebFetchCalls, t.NumSearchResults, t.NumSourcesUsed, t.NumServerSideToolsUsed, t.XSearchCalls, t.XPostsFetched, t.XUsersFetched, t.CodeExecutionCalls, t.FileSearchCalls, t.MCPCalls, t.DocumentSearchCalls, t.ImageGenerationCalls} {
+		for _, v := range []*int64{t.WebSearchCalls, t.WebSearchQueries, t.WebFetchCalls, t.NumSearchResults, t.NumSourcesUsed, t.NumServerSideToolsUsed, t.ToolCallsExecuted, t.XSearchCalls, t.XPostsFetched, t.XUsersFetched, t.CodeExecutionCalls, t.FileSearchCalls, t.MCPCalls, t.DocumentSearchCalls, t.ImageGenerationCalls} {
 			if positive(v) {
 				return true
 			}

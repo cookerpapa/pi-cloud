@@ -252,10 +252,15 @@ func TestMeteringOptionalZeroDimensionsAreTextUsage(t *testing.T) {
 	seconds := float64(0)
 	detail := usage.Detail{InputTokens: 20, OutputTokens: 7, TotalTokens: 27, ImageCount: &zero, WebSearchRequests: &zero, AudioInputTokens: &zero, AudioOutputTokens: &zero, VideoInputTokens: &zero,
 		MediaCounts:      &usage.MediaCounts{PromptMedia: &zero, CompletionMedia: &zero, PromptAudio: &zero, AudioSeconds: &seconds},
-		ToolUsageDetails: &usage.ToolUsageDetails{WebSearchCalls: &zero, NumServerSideToolsUsed: &zero, ToolCallsRequested: &one, ToolCallsExecuted: &one, Extra: map[string]int64{"future_counter": 0}}}
+		ToolUsageDetails: &usage.ToolUsageDetails{WebSearchCalls: &zero, NumServerSideToolsUsed: &zero, ToolCallsRequested: &one, ToolCallsExecuted: &zero, Extra: map[string]int64{"future_counter": 0}}}
 	if hasUnsupportedDimensions(detail) {
 		t.Fatal("zero metadata/local function call was billed as a hosted dimension")
 	}
+	detail.ToolUsageDetails.ToolCallsExecuted = &one
+	if !hasUnsupportedDimensions(detail) {
+		t.Fatal("provider-reported execution needs an explicit tariff")
+	}
+	detail.ToolUsageDetails.ToolCallsExecuted = &zero
 	detail.ToolUsageDetails.WebSearchCalls = &one
 	if !hasUnsupportedDimensions(detail) {
 		t.Fatal("hosted search needs an explicit tariff")
