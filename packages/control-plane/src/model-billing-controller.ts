@@ -13,7 +13,7 @@ import {
 import { Readable } from "node:stream";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { ControlPlaneApiValidationError, parseUuidPathParameter } from "@pi-cloud/protocol";
-import { ModelMeteringService, MeteringConflict } from "./model-metering-service.ts";
+import { ModelMeteringService, MeteringConflict } from "@pi-cloud/accounting";
 import { TenantRequestContext } from "./tenant-request-context.ts";
 
 export function modelBillingQuery(query: Record<string, unknown>) {

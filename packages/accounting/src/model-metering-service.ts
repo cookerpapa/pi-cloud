@@ -1,6 +1,6 @@
 import { priceModelUsage } from "./model-pricing.ts";
 import { parseModelRateInput, type ModelRate, type ModelValuation } from "@pi-cloud/protocol";
-import { createHash, timingSafeEqual, randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { sql, type Kysely } from "kysely";
 import type { Database } from "@pi-cloud/database";
 import {
@@ -9,7 +9,6 @@ import {
   type ModelMeteringEvent,
   type ModelMeteringContext,
 } from "@pi-cloud/protocol";
-import type { FastifyInstance } from "fastify";
 
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
@@ -291,29 +290,4 @@ export class ModelMeteringService {
       next: hasMore && last ? { time: last.requested_at.toISOString(), id: last.id } : null,
     };
   }
-}
-
-export function installModelMeteringIngress(
-  server: FastifyInstance,
-  service: ModelMeteringService,
-  token: string,
-): void {
-  const digest = createHash("sha256").update(`Bearer ${token}`).digest();
-  server.post("/internal/v1/model-metering", { bodyLimit: 1_048_576 }, async (req, reply) => {
-    const supplied = createHash("sha256")
-      .update(req.headers.authorization ?? "")
-      .digest();
-    if (!token || !timingSafeEqual(digest, supplied))
-      return reply.code(401).send({ error: "authentication_required" });
-    try {
-      return await service.ingest(req.body);
-    } catch (error) {
-      if (error instanceof TypeError)
-        return reply.code(400).send({ error: "invalid_model_receipt" });
-      if (error instanceof MeteringConflict)
-        return reply.code(409).send({ error: "model_receipt_conflict" });
-      // A receiver/database outage leaves the durable source buffer intact.
-      return reply.code(503).send({ error: "model_metering_unavailable" });
-    }
-  });
 }

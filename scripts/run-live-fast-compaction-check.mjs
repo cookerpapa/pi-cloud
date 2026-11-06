@@ -1,7 +1,7 @@
 import { fixtureModelRuntime } from "./lib/test-model-catalog.mjs";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
-import { ModelMeteringService } from "../packages/control-plane/src/model-metering-service.ts";
+import { ModelMeteringService } from "@pi-cloud/accounting";
 import { S3AttachmentBlobStore } from "../packages/session-attachments/src/s3.ts";
 import { purgeOwnedAcceptanceTenant } from "./lib/owned-acceptance-cleanup.mjs";
 // Real Luna + the production Models facade and native Durable compaction.

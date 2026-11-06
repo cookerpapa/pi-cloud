@@ -10,10 +10,8 @@ import {
 } from "@pi-cloud/protocol";
 import Fastify from "fastify";
 import { expect, it } from "vitest";
-import {
-  ModelMeteringService,
-  installModelMeteringIngress,
-} from "../src/model-metering-service.ts";
+import { ModelMeteringService } from "../src/model-metering-service.ts";
+import { installModelMeteringIngress } from "../src/http.ts";
 import { priceModelUsage, formatModelAmount } from "../src/model-pricing.ts";
 
 const usage: ModelUsageFact = {

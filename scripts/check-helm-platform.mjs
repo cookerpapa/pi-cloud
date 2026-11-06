@@ -42,6 +42,17 @@ const find = (kind, name) =>
   resources.find((resource) => resource.kind === kind && resource.metadata?.name === name);
 const controlPlane = find("Deployment", "pi-cloud-control-plane");
 assert(controlPlane);
+const metering = find("Deployment", "pi-cloud-metering");
+assert(metering);
+assert.deepEqual(metering.spec.template.spec.containers[0].args, [
+  "/app/packages/accounting/src/main.ts",
+]);
+assert(find("Service", "metering"));
+assert(
+  !controlPlane.spec.template.spec.containers[0].env.some(
+    (entry) => entry.name === "PI_CLOUD_MODEL_METERING_TOKEN_FILE",
+  ),
+);
 const withoutOrdinaryTools = parseAllDocuments(
   run(["template", "pi-cloud", chart, "--set-json", "controlPlane.enabledControlTools=[]"]),
 )

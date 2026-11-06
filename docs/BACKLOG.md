@@ -1,5 +1,23 @@
 # Maintained backlog
 
+## Runtime separation and resource accounting — in progress
+
+- [x] #5 source slice: extract model accounting receiver; ADR-0298 selects an
+      independent service over provider-side PG/pricing coupling. PG receipt,
+      restart/outage and Helm contracts pass; live release remains pending below.
+- [ ] #6: upgrade fixed Cube and adapt/delete existing patches; preserve physical
+      fences, Workspace data and address retained OS vulnerabilities.
+- [ ] #7: source-side compute usage, immutable prices and informational statements.
+- [ ] #8: real Workspace capacity enforcement and capacity-time statements.
+- [ ] #9: independent Session projection, Tool dispatch, observations and API/SSE.
+- [ ] #10: documented renewal/revocation choice and coherent implementation.
+- [ ] Consolidated source/failure checks, matched release and relevant live
+      acceptance, original-asset preservation, push and issue delivery evidence.
+
+See the [six-slice roadmap](ROADMAP.md#independent-runtime-and-resource-accounting--in-progress).
+Issues #5 and #10 require an explicit evaluation conclusion. Real money collection
+and invented production tariffs remain out of scope.
+
 ## Repository license — published
 
 - [x] Add the owner's selected MIT license, README link and first-party package

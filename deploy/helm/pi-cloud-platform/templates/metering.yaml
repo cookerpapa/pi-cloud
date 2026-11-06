@@ -1,0 +1,106 @@
+{{- if .Values.globalPlaneEnabled }}
+{{- $name := include "pi-cloud-platform.name" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-metering
+  labels:
+    {{- include "pi-cloud-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metering
+spec:
+  replicas: {{ .Values.metering.replicas }}
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: metering }
+  template:
+    metadata:
+      labels:
+        {{- include "pi-cloud-platform.labels" . | nindent 8 }}
+        app.kubernetes.io/component: metering
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.global.trustedNodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.global.trustedTolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: metering
+          image: {{ include "pi-cloud-platform.image" .Values.images.controlPlane | quote }}
+          imagePullPolicy: {{ .Values.images.controlPlane.pullPolicy }}
+          args: ["/app/packages/accounting/src/main.ts"]
+          ports: [{ name: http, containerPort: 3000 }]
+          env:
+            - { name: NODE_ENV, value: production }
+            - { name: HOST, value: 0.0.0.0 }
+            - { name: DATABASE_URL_FILE, value: /run/pi-cloud-secrets/database-url }
+            - { name: PI_CLOUD_MODEL_METERING_TOKEN_FILE, value: /run/pi-cloud-secrets/metering-key }
+          readinessProbe: { httpGet: { path: /health/ready, port: http }, periodSeconds: 5, timeoutSeconds: 3 }
+          livenessProbe: { httpGet: { path: /health/live, port: http }, periodSeconds: 10, timeoutSeconds: 3 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources: {{- toYaml .Values.metering.resources | nindent 12 }}
+          volumeMounts:
+            - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/database-url, subPath: {{ .Values.external.database.secretKey }}, readOnly: true }
+            - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/metering-key, subPath: {{ index .Values "pi-workers" "credentials" "providerGatewayApiKeyKey" }}, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: platform-secrets
+          secret: { secretName: {{ .Values.global.existingSecret }}, defaultMode: 288 }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata: { name: metering }
+spec:
+  selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: metering }
+  ports: [{ name: http, port: 3000, targetPort: http }]
+{{- if .Values.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: {{ $name }}-metering }
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: metering }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { {{ .Values.networkPolicy.trustedNamespaceLabel.key }}: {{ .Values.networkPolicy.trustedNamespaceLabel.value | quote }} }
+      ports: [{ protocol: TCP, port: 3000 }]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+          podSelector:
+            matchLabels: { k8s-app: kube-dns }
+      ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
+    - to:
+        - namespaceSelector:
+            matchLabels: { {{ .Values.networkPolicy.trustedNamespaceLabel.key }}: {{ .Values.networkPolicy.trustedNamespaceLabel.value | quote }} }
+      ports: [{ protocol: TCP, port: 5432 }]
+    {{- range .Values.networkPolicy.externalEgressCidrs }}
+    - to: [{ ipBlock: { cidr: {{ . | quote }} } }]
+      ports: [{ protocol: TCP, port: 5432 }]
+    {{- end }}
+{{- end }}
+{{- end }}

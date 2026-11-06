@@ -19,10 +19,11 @@ usage synchronously, before CPA's asynchronous plugin queue. Only identities,
 timing, model/tier, quality and quantities are retained; never model payloads,
 credentials, upstream URLs, error bodies or image bytes.
 
-The provider sends batches of at most 128 receipts to
+Under [ADR-0298](adr/0298-independent-metering-receiver.md), the provider sends
+batches of at most 128 receipts directly to the independent `metering` service at
 `POST /internal/v1/model-metering`, authenticated with the existing provider-service
 key. Acknowledgement follows the PG transaction. Lost acknowledgements resend the
-same identities; duplicate contents do not add consumption. A changed identity
+same identities; management availability is not required. Duplicate contents do not add consumption. A changed identity
 or payload conflicts and leaves the source receipts pending for investigation.
 Neither receiver downtime nor accounting recovery retries a model or Tool.
 
@@ -118,7 +119,9 @@ Sandbox billing require separate business decisions before enabling collection.
 
 ## Publication
 
-Schema 210 and Worker/provider/API/Web must publish together. The ADR-0297
+The deployed model-only baseline is schema 210. ADR-0298 receiver extraction is
+source-complete pending the consolidated matched runtime/accounting release.
+Worker/provider/API/Web must publish together for protocol changes. The ADR-0297
 `--retain-sandbox-runtime` option on the maintained matched operator proves that
 existing Cube/Guest inputs are unchanged except additive host accounting exports.
 It builds/scans the seven host images being published and retains the original
@@ -128,7 +131,9 @@ Guest template. Original Cube artifact provenance stays in `deployment.json`.
 Changed execution interfaces, native patches or Guest inputs reject this path.
 
 The provider needs `PI_CLOUD_METERING_PATH`, `PI_CLOUD_METERING_URL` and
-`PI_CLOUD_METERING_KEY_FILE`; the API uses `PI_CLOUD_MODEL_METERING_TOKEN_FILE`.
+`PI_CLOUD_METERING_KEY_FILE`; the receiver uses `DATABASE_URL_FILE` and
+`PI_CLOUD_MODEL_METERING_TOKEN_FILE`. It shares the host image but has a separate
+entry point, health probes and Deployment. The management API has no receipt route.
 Maintained Helm templates supply these from the existing provider credential.
 Delivery bypasses the public egress proxy. A missing/failed source journal refuses
 attributed model work before dispatch. Ordinary non-PiCloud CPA callers have no
@@ -144,8 +149,9 @@ PI_CLOUD_LIVE_FAST_COMPACTION_CHECK=1 node --import tsx scripts/run-live-fast-co
 ```
 
 The first live driver requires no unrelated active Runs, temporarily stops the
-Control Plane, performs one owned Luna request, replaces the provider while the
-receiver is down, restores it, and verifies the receipt, explicit fixture tariff,
+Control Plane and confirms one owned Luna request is already recorded in PG.
+It then separately stops the receiver, performs another owned request, replaces
+the provider, restores the receiver before management, and verifies the receipt, explicit fixture tariff,
 duplicate delivery, tenant API/export and browser. It restores services on errors.
 The continuation driver verifies ordinary Worker/Cube requests from two owners
 retain their own Run attribution. Fixture financial rows are purged only through

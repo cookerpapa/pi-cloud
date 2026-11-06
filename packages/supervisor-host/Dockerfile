@@ -10,6 +10,7 @@ COPY package.json package-lock.json ./
 COPY tsconfig.base.json ./
 COPY scripts/prepare-json-parser.mjs scripts/prepare-json-parser.mjs
 COPY scripts/retry-npm-command.sh scripts/retry-npm-command.sh
+COPY packages/accounting/package.json packages/accounting/package.json
 COPY packages/control-plane/package.json packages/control-plane/package.json
 COPY packages/control-plane/tsconfig.json packages/control-plane/tsconfig.json
 COPY packages/session-attachments/package.json packages/session-attachments/package.json
@@ -46,8 +47,10 @@ WORKDIR /app
 COPY --from=dependencies /app/node_modules /app/node_modules
 COPY package.json package-lock.json ./
 COPY tsconfig.base.json ./
+COPY packages/accounting/package.json packages/accounting/package.json
 COPY packages/control-plane/package.json packages/control-plane/package.json
 COPY packages/control-plane/tsconfig.json packages/control-plane/tsconfig.json
+COPY packages/accounting/src packages/accounting/src
 COPY packages/control-plane/src packages/control-plane/src
 COPY packages/session-attachments/package.json packages/session-attachments/package.json
 COPY packages/database/package.json packages/database/package.json

@@ -46,6 +46,7 @@ export function kubectlAsync(args, options = {}) {
   });
 }
 export const workloads = {
+  metering: "deployment/pi-cloud-metering",
   "control-plane": "deployment/pi-cloud-control-plane",
   web: "deployment/pi-cloud-web",
   "ssh-gateway": "deployment/pi-cloud-ssh-gateway",

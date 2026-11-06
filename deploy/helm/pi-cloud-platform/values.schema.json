@@ -654,6 +654,20 @@
     },
     "modelCatalogJson": {
       "type": "string"
+    },
+    "metering": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["replicas", "resources"],
+      "properties": {
+        "replicas": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "resources": {
+          "type": "object"
+        }
+      }
     }
   },
   "$defs": {
@@ -825,7 +839,12 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["model"],
-          "properties": { "model": { "type": "string", "maxLength": 200 } }
+          "properties": {
+            "model": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
         },
         "replicas": {
           "type": "integer",

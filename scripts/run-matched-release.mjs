@@ -232,11 +232,27 @@ const endpoint = new URL(
 );
 endpoint.hostname = serviceAddress("postgres");
 const database = createDatabase({ connectionString: endpoint.toString(), maxConnections: 2 });
-const services = ["web", "ssh-gateway", "pi-workers", "control-plane", "workspace-volume-gateway"];
+const services = [
+  "web",
+  "ssh-gateway",
+  "pi-workers",
+  "control-plane",
+  "workspace-volume-gateway",
+  "metering",
+];
 const original = new Map();
 let cutover = false;
 async function stop(service) {
-  const object = JSON.parse(kubectl(["get", workload(service), "-o", "json"]));
+  const observed = kubectl([
+    "get",
+    workload(service),
+    "-o",
+    "json",
+    ...(service === "metering" ? ["--ignore-not-found"] : []),
+  ]);
+  // A newly introduced stateless Deployment has nothing to drain on first install.
+  if (!observed.trim()) return;
+  const object = JSON.parse(observed);
   original.set(service, object.spec.replicas);
   kubectl(["scale", workload(service), "--replicas=0"]);
   const selector = Object.entries(object.spec.selector.matchLabels)

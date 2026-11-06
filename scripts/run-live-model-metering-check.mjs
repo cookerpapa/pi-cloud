@@ -7,7 +7,7 @@ import { resolve, dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
-import { ModelMeteringService } from "../packages/control-plane/src/model-metering-service.ts";
+import { ModelMeteringService } from "@pi-cloud/accounting";
 import { PiCloudApi } from "../packages/web-ui/src/api.ts";
 import { S3AttachmentBlobStore } from "../packages/session-attachments/src/s3.ts";
 import { purgeOwnedAcceptanceTenant } from "./lib/owned-acceptance-cleanup.mjs";
@@ -40,6 +40,7 @@ const origin = `http://127.0.0.1:${runtimeEnvironment().PI_CLOUD_HTTP_PORT}`;
 const report = { at: new Date().toISOString(), accepted: false, cleanupConfirmed: false };
 let tenant,
   stopped = false,
+  receiverStopped = false,
   failure;
 async function until(read, label, budget = 120_000) {
   const end = Date.now() + budget;
@@ -50,7 +51,14 @@ async function until(read, label, budget = 120_000) {
   }
   throw Error(`${label} timed out`);
 }
+async function restoreReceiver() {
+  if (!receiverStopped) return;
+  await kubectlAsync(["scale", workload("metering"), "--replicas=1"]);
+  await kubectlAsync(["rollout", "status", workload("metering"), "--timeout=180s"]);
+  receiverStopped = false;
+}
 async function restore() {
+  await restoreReceiver();
   if (!stopped) return;
   await kubectlAsync(["scale", workload("control-plane"), "--replicas=1"]);
   await kubectlAsync(["rollout", "status", workload("control-plane"), "--timeout=180s"]);
@@ -116,25 +124,52 @@ try {
   await until(() => Date.now() >= Date.parse(effective), "Fixture price activation", 5000);
   context.requestedAt = new Date().toISOString();
   assert(Date.parse(context.requestedAt) >= Date.parse(effective));
-  const response = await fetch(`http://${serviceAddress("cli-proxy-api")}:8317/v1/responses`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${key}`,
-      "content-type": "application/json",
-      "x-picloud-metering": Buffer.from(JSON.stringify(context)).toString("base64url"),
-    },
-    body: JSON.stringify({
-      model: "gpt-6-luna",
-      stream: true,
-      store: false,
-      instructions: "Be concise.",
-      input: [{ role: "user", content: "Reply with METER_OK only." }],
-      reasoning: { effort: "low" },
-    }),
-    signal: AbortSignal.timeout(180_000),
-  });
-  assert.equal(response.status, 200, "Luna request failed");
-  assert.match(await response.text(), /"response.completed"/, "Missing native completion");
+  const request = async () => {
+    const response = await fetch(`http://${serviceAddress("cli-proxy-api")}:8317/v1/responses`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${key}`,
+        "content-type": "application/json",
+        "x-picloud-metering": Buffer.from(JSON.stringify(context)).toString("base64url"),
+      },
+      body: JSON.stringify({
+        model: "gpt-6-luna",
+        stream: true,
+        store: false,
+        instructions: "Be concise.",
+        input: [{ role: "user", content: "Reply with METER_OK only." }],
+        reasoning: { effort: "low" },
+      }),
+      signal: AbortSignal.timeout(180_000),
+    });
+    assert.equal(response.status, 200, "Luna request failed");
+    assert.match(await response.text(), /"response.completed"/, "Missing native completion");
+  };
+  await request();
+  await until(async () => {
+    const p = await service.list(tenant.tenantId, {
+      from: new Date(Date.now() - 3600000).toISOString(),
+      to: new Date().toISOString(),
+      limit: 50,
+    });
+    return (
+      p.items.find((item) => item.context.invocationId === context.invocationId)?.state ===
+      "confirmed"
+    );
+  }, "Receipts while management is stopped");
+  report.managementIndependentIngestion = { invocationId: context.invocationId, confirmed: true };
+  const receiver = JSON.parse(kubectl(["get", workload("metering"), "-o", "json"]));
+  assert.equal(receiver.spec.replicas, 1, "Expected one receiver for the outage fixture");
+  const receiverSelector = Object.entries(receiver.spec.selector.matchLabels)
+    .map(([k, v]) => `${k}=${v}`)
+    .join(",");
+  receiverStopped = true;
+  await kubectlAsync(["scale", workload("metering"), "--replicas=0"]);
+  await kubectlAsync(["wait", "--for=delete", "pod", "-l", receiverSelector, "--timeout=180s"]);
+  context.invocationId = randomUUID();
+  context.requestedAt = new Date().toISOString();
+  report.invocationId = context.invocationId;
+  await request();
   const before = await db
     .selectFrom("model_invocations")
     .select("id")
@@ -154,7 +189,7 @@ try {
   ]);
   await kubectlAsync(["rollout", "status", "statefulset/cli-proxy-api", "--timeout=180s"]);
   report.providerReplacedWhileReceiverOffline = true;
-  await restore();
+  await restoreReceiver();
   const page = await until(async () => {
     const p = await service.list(tenant.tenantId, {
       from: new Date(Date.now() - 3600000).toISOString(),
@@ -184,7 +219,7 @@ try {
   );
   for (let repeat = 0; repeat < 2; repeat++) {
     const ack = await fetch(
-      `http://${serviceAddress("control-plane")}:3000/internal/v1/model-metering`,
+      `http://${serviceAddress("metering")}:3000/internal/v1/model-metering`,
       {
         method: "POST",
         headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
@@ -205,6 +240,7 @@ try {
     ).length,
     receipts.length,
   );
+  await restore();
   const api = new PiCloudApi(
     (url, init) => fetch(new URL(String(url), origin), init),
     tenant.credential.token,

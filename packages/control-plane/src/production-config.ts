@@ -26,7 +26,6 @@ export type ProductionControlPlaneConfig = {
   supervisorManagementToken: string;
   cubeEgressConfigToken: string;
   enabledControlTools?: readonly string[];
-  modelMeteringToken?: string;
   imageGeneration?: { baseUrl: string; apiKey: string; model: string };
   sandboxControlBaseUrls: readonly string[];
   workspaceServiceToken: string;
@@ -446,15 +445,6 @@ export async function loadProductionControlPlaneConfig(
               allowInlineSecrets,
             ),
           },
-        }
-      : {}),
-    ...(environment.PI_CLOUD_MODEL_METERING_TOKEN_FILE || environment.PI_CLOUD_MODEL_METERING_TOKEN
-      ? {
-          modelMeteringToken: await secret(
-            environment,
-            "PI_CLOUD_MODEL_METERING_TOKEN",
-            allowInlineSecrets,
-          ),
         }
       : {}),
     databaseUrl,

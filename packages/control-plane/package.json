@@ -21,6 +21,7 @@
     "@nestjs/common": "12.0.1",
     "@nestjs/core": "12.0.1",
     "@nestjs/platform-fastify": "12.1.2",
+    "@pi-cloud/accounting": "0.1.0",
     "@pi-cloud/database": "0.1.0",
     "@pi-cloud/domain": "0.1.0",
     "@pi-cloud/observability": "0.1.0",

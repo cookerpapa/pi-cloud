@@ -1,5 +1,9 @@
 # Current architecture decisions
 
+[ADR-0298](0298-independent-metering-receiver.md) selects an independent receipt
+receiver with shared PG accounting authority. Implementation is in progress in
+[Issue #5](https://github.com/cookerpapa/pi-cloud/issues/5).
+
 [ADR-0297](0297-model-metering-receipts-and-statements.md) is accepted for
 implementation: provider-side recoverable receipts, PG usage/rate authority and
 informational model statements. No payment collection or sandbox billing is enabled.

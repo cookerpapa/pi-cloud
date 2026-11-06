@@ -1,5 +1,5 @@
 import { ModelBillingController } from "./model-billing-controller.ts";
-import { ModelMeteringService } from "./model-metering-service.ts";
+import { ModelMeteringService } from "@pi-cloud/accounting";
 import { SkillMarketService } from "./skill-market-service.ts";
 import { WorkspaceFileTransferController } from "./workspace-file-transfer-controller.ts";
 import {

@@ -1,5 +1,26 @@
 # Implementation roadmap
 
+## Independent runtime and resource accounting — in progress
+
+The owner authorized the six linked slices on 2026-11-07. Implement one slice at
+a time, then consolidate expensive matched integration/live acceptance:
+
+1. [#5](https://github.com/cookerpapa/pi-cloud/issues/5): independent model receipt
+   receiver; evaluation in [ADR-0298](adr/0298-independent-metering-receiver.md).
+2. [#6](https://github.com/cookerpapa/pi-cloud/issues/6): fixed Cube upgrade and
+   extension/OS maintenance, preserving Workspace bytes and physical fencing.
+3. [#7](https://github.com/cookerpapa/pi-cloud/issues/7): source-side allocated
+   compute metering and informational statements.
+4. [#8](https://github.com/cookerpapa/pi-cloud/issues/8): enforced Workspace
+   capacity plans and storage-retention metering.
+5. [#9](https://github.com/cookerpapa/pi-cloud/issues/9): separate the Session
+   execution/read path from management, initially retaining current lease rules.
+6. [#10](https://github.com/cookerpapa/pi-cloud/issues/10): evaluate and simplify
+   renewal/revocation with failure tests across the separated topology.
+
+These are not deployed yet. Do not infer new lease or capacity semantics from
+the proposal; current behavior below remains authoritative until cutover.
+
 ## Provider v8 and model accounting — deployed
 
 [ADR-0296](adr/0296-provider-v8-and-model-accounting-boundary.md) and

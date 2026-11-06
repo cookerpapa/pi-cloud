@@ -61,6 +61,12 @@ bootstrap:
   maximumProjects: null
   maximumSessions: null
 
+metering:
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
 controlPlane:
   # null advertises every registered ordinary Tool; [] withdraws all ordinary Tools.
   enabledControlTools: null
