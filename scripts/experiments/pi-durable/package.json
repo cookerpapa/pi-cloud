@@ -1,5 +1,6 @@
 {
   "name": "pi-cloud-durable-contract-probe",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "scripts": {

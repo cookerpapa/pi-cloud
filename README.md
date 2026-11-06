@@ -214,3 +214,9 @@ are preserved; obsolete development compatibility paths are removed.
 [Documentation index](docs/README.md) ·
 [Distributed deployment](docs/DISTRIBUTED_DEPLOYMENT.md) ·
 [Conversation/attachment recovery](docs/ASSET_RECOVERY.md)
+
+## License
+
+PiCloud is licensed under the [MIT License](LICENSE).
+Third-party components and files with explicit license declarations retain their
+own terms; see [third-party notices](THIRD_PARTY_NOTICES.md).

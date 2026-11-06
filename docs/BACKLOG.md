@@ -1,5 +1,12 @@
 # Maintained backlog
 
+## Repository license — published
+
+- [x] Add the owner's selected MIT license, README link and first-party package
+      metadata. Preserve existing third-party and file-specific notices in
+      [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
+      This changes repository licensing declarations, not runtime behavior.
+
 ## Provider v8 and model accounting — deployed
 
 - [x] Record isolated v8.0.57 compatibility evidence and phased
