@@ -1,6 +1,6 @@
 # Maintained backlog
 
-## Provider v8 and model accounting — implementing
+## Provider v8 and model accounting — deployed
 
 - [x] Record isolated v8.0.57 compatibility evidence and phased
       [Issue #4](https://github.com/cookerpapa/pi-cloud/issues/4).
@@ -9,19 +9,20 @@
       behavior; migrate configuration and management calls to v8.
 - [x] Complete source/build/live provider acceptance and the scoped publication
       while preserving accounts, credentials and Workspace allocations.
-- [ ] Decide and implement recoverable model-metering admission/delivery and
+- [x] Decide and implement recoverable model-metering admission/delivery and
       attribution without using native chat history as the money ledger.
       [ADR-0297](adr/0297-model-metering-receipts-and-statements.md) records the boundary.
-- [ ] Add versioned model pricing, explicit unknown/unpriced amounts and queryable
+- [x] Add versioned model pricing, explicit unknown/unpriced amounts and queryable
       model statements; verify duplicates, crashes, Fork and deletion.
 
 Provider `provider-v8-20261106` is deployed on infrastructure Helm 110; ordinary
 Luna/Flash/image and five native recovery cases pass.
 [Delivery and measured limits](reports/provider-v8-20261106.md).
-Source implementation now includes synchronous provider capture, bbolt receipt
-recovery, PG deduplication, exact versioned pricing and the Model costs page.
-Native provider/Go race, PostgreSQL, Worker caller and browser contracts pass;
-matched publication and live metering acceptance remain pending.
+Model metering and statements are deployed on application Helm 145,
+infrastructure Helm 112, schema 210. Real receipt recovery/duplicate delivery,
+exact fixture pricing, cross-Worker attribution, child/image/compaction/Flash,
+public query/export/browser and five native recovery checks pass.
+[Delivery, failure samples and preservation](reports/model-accounting-20261106.md).
 Sandbox/storage charging, payment collection and automatic top-up are subsequent work.
 
 ## Retained Cube / Guest APT maintenance — open

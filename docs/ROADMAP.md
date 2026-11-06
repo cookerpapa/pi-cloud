@@ -1,13 +1,13 @@
 # Implementation roadmap
 
-## Provider v8 and model accounting — implementing
+## Provider v8 and model accounting — deployed
 
-Implement [ADR-0296](adr/0296-provider-v8-and-model-accounting-boundary.md) and
-[Issue #4](https://github.com/cookerpapa/pi-cloud/issues/4) one vertical slice at a
-time: provider v8 adaptation/publication, recoverable model metering, then priced
-model statements. [ADR-0297](adr/0297-model-metering-receipts-and-statements.md)
-now defines source receipts and informational pricing; implementation is in
-verification. Do not couple this work to Cube idle expiry or sandbox billing.
+[ADR-0296](adr/0296-provider-v8-and-model-accounting-boundary.md) and
+[ADR-0297](adr/0297-model-metering-receipts-and-statements.md) are delivered:
+provider v8, recoverable model receipts, versioned exact prices and informational
+statements. [Delivery and boundaries](reports/model-accounting-20261106.md).
+[Issue #4](https://github.com/cookerpapa/pi-cloud/issues/4) remains separate from
+Sandbox/storage billing and real payment collection. Cube idle expiry is unchanged.
 
 ## Workspace file transfers — deployed
 

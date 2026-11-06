@@ -1,5 +1,10 @@
 # Delivery and research evidence
 
+- [Model accounting](model-accounting-20261106.md): durable source receipts, exact
+  versioned prices, statements, preservation and successful live recovery checks.
+- [Provider upstream candidates](provider-upstream-candidates-20261106.md): separate
+  contribution assessment and existing PR status; no new upstream submission.
+
 - [CLIProxyAPI v8 provider](provider-v8-20261106.md): native Responses, continuation,
   configuration conversion, scoped publication and model/recovery acceptance.
 

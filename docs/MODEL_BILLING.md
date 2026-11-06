@@ -112,7 +112,8 @@ or Run to exist.
 This is a fixture, not a published model tariff. Match the model/tier actually
 reported by the provider. Backdated new changes are rejected. An identical retry, including after its
 effective time, returns the existing version; conflicting reuse is rejected. There is no edit/delete
-route for a historical rate or receipt. Payments, wallets, BYOK collection and
+route for a historical rate or receipt. The current failed-attempt rule uses provider-reported failure, not a claim that
+every platform-caused retry is automatically free. Payments, wallets, BYOK collection and
 Sandbox billing require separate business decisions before enabling collection.
 
 ## Publication
@@ -139,6 +140,7 @@ The owned acceptance drivers are:
 node scripts/run-model-billing-browser-check.mjs
 PI_CLOUD_LIVE_MODEL_METERING_CHECK=1 node --import tsx scripts/run-live-model-metering-check.mjs /private/metering.json
 PI_CLOUD_LIVE_MODEL_CONTINUATION_CHECK=1 node --import tsx scripts/run-live-model-continuation-check.mjs /private/continuation
+PI_CLOUD_LIVE_FAST_COMPACTION_CHECK=1 node --import tsx scripts/run-live-fast-compaction-check.mjs /private/compaction.json
 ```
 
 The first live driver requires no unrelated active Runs, temporarily stops the
@@ -148,3 +150,8 @@ duplicate delivery, tenant API/export and browser. It restores services on error
 The continuation driver verifies ordinary Worker/Cube requests from two owners
 retain their own Run attribution. Fixture financial rows are purged only through
 the restricted owned-fixture cleanup path.
+
+The compaction driver uses an owned tenant and native in-memory history with a
+small fixture window. Its real provider receipts distinguish maintenance from
+subsequent generation; it does not alter production model limits or claim a
+large-context benchmark.

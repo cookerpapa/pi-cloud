@@ -1,6 +1,6 @@
 # ADR-0297: Model metering receipts and priced statements
 
-Status: accepted for implementation after the deployed ADR-0296 provider slice.
+Status: accepted and implemented; [delivery and verification](../reports/model-accounting-20261106.md).
 Date: 2026-11-06. Tracking: [Issue #4](https://github.com/cookerpapa/pi-cloud/issues/4).
 
 ## Ownership and scope
