@@ -113,6 +113,7 @@ try {
   stopped = true;
   await kubectlAsync(["scale", workload("control-plane"), "--replicas=0"]);
   await kubectlAsync(["wait", "--for=delete", "pod", "-l", selector, "--timeout=180s"]);
+  await until(() => Date.now() >= Date.parse(effective), "Fixture price activation", 5000);
   context.requestedAt = new Date().toISOString();
   assert(Date.parse(context.requestedAt) >= Date.parse(effective));
   const response = await fetch(`http://${serviceAddress("cli-proxy-api")}:8317/v1/responses`, {
