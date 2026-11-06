@@ -10,7 +10,7 @@ const cacheDir = await mkdtemp(join(tmpdir(), "pi-billing-browser-"));
 const fixture = `
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { ModelBilling } from "/src/ModelBilling.tsx";
+import { UsageBilling } from "/src/UsageBilling.tsx";
 import { I18nProvider } from "/src/i18n.tsx";
 import "/src/product.css";
 const context={invocationId:"fixture",requestedAt:"2026-11-06T08:00:00.000Z",model:"gpt-6-luna",purpose:"agent"};
@@ -18,7 +18,9 @@ const usage={model:"gpt-6-luna",failed:false,tokens:{input:60,cacheRead:40,cache
 const row={context,state:"unconfirmed",missingAttempts:1,interrupted:true,usage:[{executionId:"a",occurredAt:context.requestedAt,usage,valuation:{customer:{state:"priced",currency:"USD",amountPico:"230000000"},upstream_estimate:{state:"unpriced"}}}]};
 window.queries=[];
 const api={async modelBilling(q){queries.push(q.toString());return q.has("beforeId")?{items:[{context:{...context,invocationId:"next",model:"next-page-model"},state:"pending",missingAttempts:0,interrupted:false,usage:[]}],next:null}:{items:[row],next:{time:context.requestedAt,id:"00000000-0000-4000-8000-000000000001"}}},async modelBillingSummary(){return {collectionEnabled:false,categories:[{kind:"customer",state:"priced",currency:"USD",amountPico:"230000000",count:"1"},{kind:"customer",state:"unpriced",currency:null,amountPico:null,count:"1"}]}}};
-createRoot(document.getElementById("root")).render(React.createElement(I18nProvider,null,React.createElement(ModelBilling,{api,sessionId:"00000000-0000-4000-8000-000000000002",onClose(){window.closedBilling=true}})));
+api.resourceBilling=async(q)=>{queries.push('resource:'+q.toString());return {items:[{resource:{kind:q.get('resourceKind'),resourceId:'owned-compute-resource',workspaceId:'owned-workspace'},firstAt:context.requestedAt,lastAt:context.requestedAt,confirmedMilliseconds:'3600000',unconfirmedMilliseconds:'30000',quantity:q.get('resourceKind')==='compute'?{kind:'compute',cpuMillis:2000,memoryBytes:4294967296}:{kind:'workspace',capacityBytes:34359738368},charges:[{kind:'customer',state:'priced',currency:'CNY',amountPico:'450000000000',count:'1'},{kind:'customer',state:'unconfirmed',currency:null,amountPico:null,count:'1'}]}],next:null}};
+api.resourceBillingSummary=async()=>({collectionEnabled:false,categories:[{resourceKind:'compute',kind:'customer',state:'priced',currency:'CNY',amountPico:'450000000000',count:'1'}]});
+createRoot(document.getElementById("root")).render(React.createElement(I18nProvider,null,React.createElement(UsageBilling,{api,sessionId:"00000000-0000-4000-8000-000000000002",onClose(){window.closedBilling=true}})));
 `;
 const server = await createServer({
   configFile: false,
@@ -72,6 +74,13 @@ try {
     await page.waitFor("queries.some(q=>q.includes('sessionId='))");
     assert.equal(await page.evaluate("document.querySelector('footer span').textContent"), "1");
     assert(await page.evaluate("document.querySelector('footer button:first-child').disabled"));
+    await page.evaluate("document.querySelectorAll('.product-billing-tabs button')[1].click()");
+    await page.waitFor("document.body.innerText.includes('2 vCPU')");
+    assert.match(await page.evaluate("document.body.innerText"), /CNY 0.45/);
+    assert(await page.evaluate("queries.some(q=>q.includes('resourceKind=compute'))"));
+    await page.evaluate("document.querySelectorAll('.product-billing-tabs button')[2].click()");
+    await page.waitFor("document.body.innerText.includes('32 GiB')");
+    assert.equal(await page.evaluate("document.querySelectorAll('tbody tr').length"), 1);
     await page.evaluate("document.querySelector('header button').click()");
     assert(await page.evaluate("window.closedBilling"));
   });

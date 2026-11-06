@@ -59,7 +59,7 @@ export class ModelBillingController {
   constructor(
     @Inject(ModelMeteringService) private readonly service: ModelMeteringService,
     @Inject(TenantRequestContext) private readonly identity: TenantRequestContext,
-    @Inject("MODEL_BILLING_OPERATOR") private readonly operator: string | null,
+    @Inject("BILLING_OPERATOR") private readonly operator: string | null,
   ) {}
   private tenant(request: FastifyRequest, selected?: unknown) {
     const actor = this.identity.resolve(request);

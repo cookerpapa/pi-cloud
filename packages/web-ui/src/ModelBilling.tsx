@@ -3,19 +3,13 @@ import type { ModelBillingPage, ModelBillingSummary, ModelPrice } from "@pi-clou
 import type { PiCloudApi } from "./api.ts";
 import { useI18n } from "./i18n.tsx";
 
-function amount(pico: string): string {
-  const n = BigInt(pico),
-    fraction = (n % 1_000_000_000_000n).toString().padStart(12, "0").replace(/0+$/, "");
-  return `${n / 1_000_000_000_000n}${fraction ? `.${fraction}` : ""}`;
-}
+import { billingAmount as amount } from "./billing-format.ts";
 export function ModelBilling({
   api,
   sessionId,
-  onClose,
 }: {
   api: PiCloudApi;
   sessionId?: string | undefined;
-  onClose(): void;
 }) {
   const { language } = useI18n(),
     say = (cn: string, en: string) => (language === "zh-CN" ? cn : en);
@@ -100,19 +94,7 @@ export function ModelBilling({
               ? `${p.currency} ${amount(p.amountPico)}`
               : "—";
   return (
-    <main className="product-resource-page product-billing-page">
-      <header>
-        <button type="button" className="product-secondary-button" onClick={onClose}>
-          ← {say("返回", "Back")}
-        </button>
-        <h1>{say("模型费用", "Model costs")}</h1>
-        <span>
-          {say(
-            "模拟账单 · 未扣款 · 不含沙箱费用",
-            "Statement only · No collection · Excludes sandbox costs",
-          )}
-        </span>
-      </header>
+    <section>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -256,6 +238,6 @@ export function ModelBilling({
           {say("下一页", "Next")}
         </button>
       </footer>
-    </main>
+    </section>
   );
 }

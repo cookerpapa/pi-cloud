@@ -94,6 +94,18 @@ export function cubeCompletionPatch(config) {
               name: "cubelet",
               env: [
                 {
+                  name: "PI_CLOUD_RESOURCE_METERING_URL",
+                  value: "http://metering:3000/internal/v1/resource-metering",
+                },
+                {
+                  name: "PI_CLOUD_RESOURCE_METERING_KEY_FILE",
+                  value: "/run/pi-cloud-completion/metering-ingest-token",
+                },
+                {
+                  name: "PI_CLOUD_RESOURCE_METERING_SOURCE_ID",
+                  valueFrom: { fieldRef: { fieldPath: "spec.nodeName" } },
+                },
+                {
                   name: "PI_CLOUD_DATABASE_URL_FILE",
                   value: "/run/pi-cloud-completion/database-url",
                 },

@@ -11,7 +11,7 @@ import {
 import Fastify from "fastify";
 import { expect, it } from "vitest";
 import { ModelMeteringService } from "../src/model-metering-service.ts";
-import { installModelMeteringIngress } from "../src/http.ts";
+import { installMeteringIngress } from "../src/http.ts";
 import { priceModelUsage, formatModelAmount } from "../src/model-pricing.ts";
 
 const usage: ModelUsageFact = {
@@ -50,7 +50,7 @@ it("deduplicates reordered/lost-ack deliveries, survives chat deletion, and fixe
   try {
     await runMigrations(db, "up");
     const service = new ModelMeteringService(db);
-    installModelMeteringIngress(server, service, "owned-fixture-key");
+    installMeteringIngress(server, service, "owned-fixture-key", "model");
     const base = Date.now() + 60_000,
       time = (offset: number) => new Date(base + offset).toISOString();
     const context: ModelMeteringContext = {

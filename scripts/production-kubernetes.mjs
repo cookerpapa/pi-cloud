@@ -253,6 +253,7 @@ function installSecrets() {
     "database-url",
     "api-token",
     "cli-proxy-api-key",
+    "metering-ingest-token",
     "supervisor-enrollment-token",
     "supervisor-management-token",
     "sandbox-control-token",

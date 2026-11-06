@@ -7,8 +7,9 @@ lower-security fallback.
 
 The integration is pinned to
 [`TencentCloud/CubeSandbox` v0.7.3](https://github.com/TencentCloud/CubeSandbox/tree/v0.7.3)
-at commit `4411c96ba8658a959de34693f54f4918db2a432f`, with the four responsibility-scoped
-patches pinned in `runtime-build.json`. The upgrade is pending the consolidated
+at commit `4411c96ba8658a959de34693f54f4918db2a432f`, with the responsibility-scoped
+patches pinned in `runtime-build.json`. The added resource-receipt adapter is
+separate from execution/lifecycle authority (ADR-0300). The upgrade is pending the consolidated
 matched release (ADR-0299). Cube is a separate
 CubeAPI/CubeMaster/Cubelet/CubeShim KVM control and execution plane, not a
 Kubernetes `RuntimeClass`.

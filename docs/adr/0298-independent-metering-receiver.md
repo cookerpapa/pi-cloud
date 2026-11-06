@@ -55,7 +55,7 @@ loss and absent upstream usage retain the declared unknown/unconfirmed limits.
 ## Acceptance
 
 - Model ingest is absent from the management API and reachable at the independent
-  service, using the same private credential and bounded receipt schema.
+  service, using the private receipt credential and bounded receipt schema.
 - Normal, child, compaction and image attribution and exact pricing remain valid.
 - Duplicate/conflict, lost acknowledgement, receiver restart and unavailable PG
   preserve the receipt contract.
@@ -63,3 +63,6 @@ loss and absent upstream usage retain the declared unknown/unconfirmed limits.
   demonstrate the provider receipt in PG before management restarts.
 - Preserve public statements/export; validate their independent route in Issue #9.
 - Match deployment, health, network policy and release evidence to the new topology.
+
+ADR-0300 introduces a dedicated receipt credential shared by model and resource
+sources. Cube does not acquire provider model-request credentials.

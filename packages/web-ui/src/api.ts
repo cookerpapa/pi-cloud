@@ -1,3 +1,4 @@
+import type { ResourceStatementPage, ResourceBillingSummary } from "@pi-cloud/protocol";
 import {
   parseModelBillingPage,
   type ModelBillingPage,
@@ -721,6 +722,28 @@ export class PiCloudApi {
   }
   conversationExportUrl(sessionId: string): string {
     return `/v1/conversations/${encodeURIComponent(sessionId)}/export`;
+  }
+  async resourceBilling(
+    query: URLSearchParams,
+    signal?: AbortSignal,
+  ): Promise<ResourceStatementPage> {
+    return (await request(
+      this.#fetch,
+      `/v1/resource-billing?${query}`,
+      { method: "GET", ...(signal ? { signal } : {}) },
+      this.#authorizationToken,
+    )) as ResourceStatementPage;
+  }
+  async resourceBillingSummary(
+    query: URLSearchParams,
+    signal?: AbortSignal,
+  ): Promise<ResourceBillingSummary> {
+    return (await request(
+      this.#fetch,
+      `/v1/resource-billing/summary?${query}`,
+      { method: "GET", ...(signal ? { signal } : {}) },
+      this.#authorizationToken,
+    )) as ResourceBillingSummary;
   }
   async modelBilling(query: URLSearchParams, signal?: AbortSignal): Promise<ModelBillingPage> {
     return parseModelBillingPage(

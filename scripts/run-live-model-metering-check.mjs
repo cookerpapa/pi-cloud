@@ -36,6 +36,9 @@ const endpoint = new URL(
 endpoint.hostname = serviceAddress("postgres");
 const db = createDatabase({ connectionString: endpoint.toString(), maxConnections: 2 });
 const key = (await readFile(`${runtimeDirectory}/secrets/cli-proxy-api-key`, "utf8")).trim();
+const meteringKey = (
+  await readFile(`${runtimeDirectory}/secrets/metering-ingest-token`, "utf8")
+).trim();
 const origin = `http://127.0.0.1:${runtimeEnvironment().PI_CLOUD_HTTP_PORT}`;
 const report = { at: new Date().toISOString(), accepted: false, cleanupConfirmed: false };
 let tenant,
@@ -222,7 +225,7 @@ try {
       `http://${serviceAddress("metering")}:3000/internal/v1/model-metering`,
       {
         method: "POST",
-        headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+        headers: { authorization: `Bearer ${meteringKey}`, "content-type": "application/json" },
         body: JSON.stringify({ events: receipts.map((r) => r.payload) }),
         signal: AbortSignal.timeout(15000),
       },
@@ -264,7 +267,7 @@ try {
     await browser.waitFor("document.querySelector('.product-account-menu-trigger')");
     await browser.evaluate("document.querySelector('.product-account-menu-trigger').click()");
     await browser.evaluate(
-      "[...document.querySelectorAll('button')].find(b=>['Model costs','模型费用'].includes(b.textContent.trim())).click()",
+      "[...document.querySelectorAll('button')].find(b=>['Usage and costs','用量与费用'].includes(b.textContent.trim())).click()",
     );
     await browser.waitFor("document.querySelector('.product-billing-table tbody tr')");
     await browser.screenshot(output + ".png");

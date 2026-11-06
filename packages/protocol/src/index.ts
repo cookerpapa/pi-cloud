@@ -723,3 +723,5 @@ export * from "./workspace-file-transfer.ts";
 
 export * from "./model-metering.ts";
 export * from "./model-billing.ts";
+
+export * from "./resource-metering.ts";

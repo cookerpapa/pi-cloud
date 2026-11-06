@@ -1061,6 +1061,43 @@ export interface Database {
     definition: JsonObject;
     created_at: GeneratedTimestamp;
   };
+  resource_metering_resources: {
+    id: string;
+    tenant_id: string;
+    workspace_id: string;
+    kind: string;
+    resource_id: string;
+    context: JsonObject;
+    context_hash: string;
+    received_at: GeneratedTimestamp;
+  };
+  resource_metering_events: {
+    id: string;
+    resource_key: string;
+    tenant_id: string;
+    workspace_id: string;
+    resource_kind: string;
+    from_at: Timestamp;
+    to_at: Timestamp;
+    quality: string;
+    payload: JsonObject;
+    payload_hash: string;
+    valuation: JSONColumnType<
+      Record<string, unknown>[],
+      Record<string, unknown>[],
+      Record<string, unknown>[]
+    >;
+    received_at: GeneratedTimestamp;
+  };
+  resource_rate_versions: {
+    id: string;
+    tenant_id: string;
+    kind: string;
+    resource_kind: string;
+    effective_at: Timestamp;
+    definition: JsonObject;
+    created_at: GeneratedTimestamp;
+  };
   model_invocations: {
     id: string;
     tenant_id: string;

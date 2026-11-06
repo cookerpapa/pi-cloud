@@ -1,6 +1,6 @@
 import { priceModelUsage } from "./model-pricing.ts";
 import { parseModelRateInput, type ModelRate, type ModelValuation } from "@pi-cloud/protocol";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { sql, type Kysely } from "kysely";
 import type { Database } from "@pi-cloud/database";
 import {
@@ -10,17 +10,7 @@ import {
   type ModelMeteringContext,
 } from "@pi-cloud/protocol";
 
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (value !== null && typeof value === "object")
-    return `{${Object.entries(value)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`)
-      .join(",")}}`;
-  return JSON.stringify(value);
-}
-const hash = (value: unknown) => createHash("sha256").update(canonical(value)).digest("hex");
-export class MeteringConflict extends Error {}
+import { receiptHash as hash, MeteringConflict } from "./receipt-identity.ts";
 
 export class ModelMeteringService {
   constructor(readonly database: Kysely<Database>) {}

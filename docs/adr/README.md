@@ -1,5 +1,8 @@
 # Current architecture decisions
 
+[ADR-0300](0300-resource-usage-receipts.md) selects allocated compute-time receipts
+from Cube and independent informational resource statements. Implementation in progress.
+
 [ADR-0299](0299-cube-073-resource-observation.md) fixes the Cube v0.7.3 upgrade
 target and separates disposable resource metrics from future usage accounting.
 Patch adaptation and matched validation are in progress.

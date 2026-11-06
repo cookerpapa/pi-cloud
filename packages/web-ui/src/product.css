@@ -5173,3 +5173,13 @@ body.product-panel-resizing {
   display: block;
   margin-top: 4px;
 }
+
+.product-billing-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0 20px;
+}
+.product-billing-tabs button[aria-pressed="true"] {
+  font-weight: 600;
+  border-color: currentColor;
+}

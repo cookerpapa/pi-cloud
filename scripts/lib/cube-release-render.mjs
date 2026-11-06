@@ -67,7 +67,16 @@ export function renderCubeRelease(yaml, input) {
     !input.sharedRootIdentity ||
     !input.pluginSource ||
     !input.cubeletConfig ||
-    !input.completionFiles
+    !input.completionFiles ||
+    ![
+      "database-url",
+      "metering-ingest-token",
+      "supervisor-management-token",
+      "session-image-s3-credentials.json",
+    ].every(
+      (name) =>
+        typeof input.completionFiles[name] === "string" && input.completionFiles[name].length > 0,
+    )
   )
     throw new Error("Invalid Cube render inputs");
   const resources = parseAllDocuments(yaml, { version: "1.1" })

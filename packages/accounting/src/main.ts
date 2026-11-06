@@ -13,7 +13,7 @@ async function secretFile(name: string): Promise<string> {
 
 export async function startMetering() {
   const databaseUrl = await secretFile("DATABASE_URL_FILE");
-  const token = await secretFile("PI_CLOUD_MODEL_METERING_TOKEN_FILE");
+  const token = await secretFile("PI_CLOUD_METERING_TOKEN_FILE");
   const database = createDatabase({
     connectionString: databaseUrl,
     maxConnections: 4,

@@ -49,7 +49,7 @@ spec:
             - { name: NODE_ENV, value: production }
             - { name: HOST, value: 0.0.0.0 }
             - { name: DATABASE_URL_FILE, value: /run/pi-cloud-secrets/database-url }
-            - { name: PI_CLOUD_MODEL_METERING_TOKEN_FILE, value: /run/pi-cloud-secrets/metering-key }
+            - { name: PI_CLOUD_METERING_TOKEN_FILE, value: /run/pi-cloud-secrets/metering-key }
           readinessProbe: { httpGet: { path: /health/ready, port: http }, periodSeconds: 5, timeoutSeconds: 3 }
           livenessProbe: { httpGet: { path: /health/live, port: http }, periodSeconds: 10, timeoutSeconds: 3 }
           securityContext:
@@ -59,7 +59,7 @@ spec:
           resources: {{- toYaml .Values.metering.resources | nindent 12 }}
           volumeMounts:
             - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/database-url, subPath: {{ .Values.external.database.secretKey }}, readOnly: true }
-            - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/metering-key, subPath: {{ index .Values "pi-workers" "credentials" "providerGatewayApiKeyKey" }}, readOnly: true }
+            - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/metering-key, subPath: metering-ingest-token, readOnly: true }
             - { name: tmp, mountPath: /tmp }
       volumes:
         - name: platform-secrets

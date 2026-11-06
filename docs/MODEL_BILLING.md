@@ -1,9 +1,9 @@
 # Model metering and statements
 
 [ADR-0297](adr/0297-model-metering-receipts-and-statements.md) adds an accounting
-port beside native execution. The account menu's **Model costs** page shows model
-usage and simulated amounts. It excludes Sandbox/storage costs and never collects
-payment. `/usage` still describes native conversation usage and context estimates.
+port beside native execution. The account menu's **Usage and costs** page shows model
+usage and simulated amounts in its Models tab. Compute and Storage use separate
+[resource statements](RESOURCE_BILLING.md); no tab collects payment. `/usage` still describes native conversation usage and context estimates.
 
 ## Flow and authority
 
@@ -21,7 +21,7 @@ credentials, upstream URLs, error bodies or image bytes.
 
 Under [ADR-0298](adr/0298-independent-metering-receiver.md), the provider sends
 batches of at most 128 receipts directly to the independent `metering` service at
-`POST /internal/v1/model-metering`, authenticated with the existing provider-service
+`POST /internal/v1/model-metering`, authenticated with the dedicated `metering-ingest-token`
 key. Acknowledgement follows the PG transaction. Lost acknowledgements resend the
 same identities; management availability is not required. Duplicate contents do not add consumption. A changed identity
 or payload conflicts and leaves the source receipts pending for investigation.
@@ -132,9 +132,9 @@ Changed execution interfaces, native patches or Guest inputs reject this path.
 
 The provider needs `PI_CLOUD_METERING_PATH`, `PI_CLOUD_METERING_URL` and
 `PI_CLOUD_METERING_KEY_FILE`; the receiver uses `DATABASE_URL_FILE` and
-`PI_CLOUD_MODEL_METERING_TOKEN_FILE`. It shares the host image but has a separate
+`PI_CLOUD_METERING_TOKEN_FILE`. It shares the host image but has a separate
 entry point, health probes and Deployment. The management API has no receipt route.
-Maintained Helm templates supply these from the existing provider credential.
+Maintained Helm templates supply these from the dedicated receipt credential.
 Delivery bypasses the public egress proxy. A missing/failed source journal refuses
 attributed model work before dispatch. Ordinary non-PiCloud CPA callers have no
 cloud attribution and do not enter the tenant statement.

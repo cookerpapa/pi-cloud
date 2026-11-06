@@ -6,12 +6,12 @@ import type { ComposerEnterMode } from "./useComposerEnterMode.tsx";
 export function AccountMenu({
   label,
   onLogout,
-  onModelBilling,
+  onUsageBilling,
   placement = "down",
   composer,
 }: {
   label: string;
-  onModelBilling?: () => void;
+  onUsageBilling?: () => void;
   onLogout: () => void | Promise<void>;
   placement?: "up" | "down";
   composer?: { enterMode: ComposerEnterMode; setEnterMode: (mode: ComposerEnterMode) => void };
@@ -100,16 +100,16 @@ export function AccountMenu({
             {error}
           </div>
         ) : null}
-        {onModelBilling ? (
+        {onUsageBilling ? (
           <button
             role="menuitem"
             type="button"
             onClick={() => {
               setOpen(false);
-              onModelBilling();
+              onUsageBilling();
             }}
           >
-            {language === "zh-CN" ? "模型费用" : "Model costs"}
+            {language === "zh-CN" ? "用量与费用" : "Usage and costs"}
           </button>
         ) : null}
         {composer ? (

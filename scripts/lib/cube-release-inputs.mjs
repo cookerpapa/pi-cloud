@@ -41,6 +41,7 @@ export async function prepareCubeRelease({
     const completionFiles = {};
     for (const name of [
       "database-url",
+      "metering-ingest-token",
       "supervisor-management-token",
       "session-image-s3-credentials.json",
     ])

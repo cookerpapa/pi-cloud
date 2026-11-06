@@ -1,4 +1,4 @@
-import { ModelBilling } from "./ModelBilling.tsx";
+import { UsageBilling } from "./UsageBilling.tsx";
 import { SkillMarket } from "./SkillMarket.tsx";
 import { SessionSchedules } from "./SessionSchedules.tsx";
 import { ConversationTimeline, type TimelineControl } from "./ConversationTimeline.tsx";
@@ -1870,7 +1870,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
   }
   if (billingOpen)
     return (
-      <ModelBilling
+      <UsageBilling
         api={api}
         sessionId={state.session?.sessionId}
         onClose={() => setBillingOpen(false)}
@@ -1998,7 +1998,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
           </nav>
           <footer className="product-account">
             <AccountMenu
-              onModelBilling={() => setBillingOpen(true)}
+              onUsageBilling={() => setBillingOpen(true)}
               label={identity.username ?? identity.displayName}
               onLogout={logout}
               placement="up"

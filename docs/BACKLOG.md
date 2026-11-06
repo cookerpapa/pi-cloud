@@ -8,7 +8,9 @@
 - [ ] #6: Cube v0.7.3 source adaptation is implemented in four cohesive patches;
       native admission, Tool/Volume/lifecycle contracts and Rust/Go compilation
       pass. Matched build/scans, full MySQL contracts and live preservation remain.
-- [ ] #7: source-side compute usage, immutable prices and informational statements.
+- [ ] #7: source collection/outbox, resource interval admission, price boundaries,
+      aggregate statements and UI are implemented. Source contracts pass; real
+      Cube metering, delivery-drain and preservation acceptance remain pending.
 - [ ] #8: real Workspace capacity enforcement and capacity-time statements.
 - [ ] #9: independent Session projection, Tool dispatch, observations and API/SSE.
 - [ ] #10: documented renewal/revocation choice and coherent implementation.

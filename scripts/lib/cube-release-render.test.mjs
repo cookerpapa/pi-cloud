@@ -29,9 +29,12 @@ const input = {
     no_prometheus = false
 `,
   completionFiles: Object.fromEntries(
-    ["database-url", "supervisor-management-token", "session-image-s3-credentials.json"].map(
-      (name) => [name, Buffer.from("fixture").toString("base64")],
-    ),
+    [
+      "database-url",
+      "metering-ingest-token",
+      "supervisor-management-token",
+      "session-image-s3-credentials.json",
+    ].map((name) => [name, Buffer.from("fixture").toString("base64")]),
   ),
 };
 function workload(kind, name, containers) {

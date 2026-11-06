@@ -1,5 +1,6 @@
 import { ModelBillingController } from "./model-billing-controller.ts";
-import { ModelMeteringService } from "@pi-cloud/accounting";
+import { ModelMeteringService, ResourceMeteringService } from "@pi-cloud/accounting";
+import { ResourceBillingController } from "./resource-billing-controller.ts";
 import { SkillMarketService } from "./skill-market-service.ts";
 import { WorkspaceFileTransferController } from "./workspace-file-transfer-controller.ts";
 import {
@@ -121,6 +122,7 @@ export class ControlPlaneModule {
     return {
       module: ControlPlaneModule,
       controllers: [
+        ResourceBillingController,
         ModelBillingController,
         ControlPlaneController,
         SkillMarketController,
@@ -128,7 +130,11 @@ export class ControlPlaneModule {
       ],
       providers: [
         { provide: ModelMeteringService, useValue: new ModelMeteringService(options.database) },
-        { provide: "MODEL_BILLING_OPERATOR", useValue: options.platformOperatorTenantId ?? null },
+        {
+          provide: ResourceMeteringService,
+          useValue: new ResourceMeteringService(options.database),
+        },
+        { provide: "BILLING_OPERATOR", useValue: options.platformOperatorTenantId ?? null },
         {
           provide: WorkspaceFileTransferService,
           useValue: new WorkspaceFileTransferService(
