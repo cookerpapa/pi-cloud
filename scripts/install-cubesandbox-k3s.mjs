@@ -17,8 +17,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const CUBE_COMMIT = "8721dd151971ce3c2966482bbd32904ad98f378e";
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
+const CUBE_COMMIT = JSON.parse(
+  await readFile(resolve(repositoryRoot, "deploy/cubesandbox/runtime-build.json"), "utf8"),
+).upstreamCommit;
 const kubeconfig = "/etc/rancher/k3s/k3s.yaml";
 const cubeRepository = resolve(
   repositoryRoot,

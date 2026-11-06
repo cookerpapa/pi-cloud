@@ -26,7 +26,7 @@ RUN sh scripts/retry-npm-command.sh ci --omit=dev --ignore-scripts \
 
 FROM ${CUBELET_BASE_IMAGE}
 ARG PI_CLOUD_COMPLETION_SOURCE_ID
-ARG PI_CLOUD_CUBE_PATCH_ID
+ARG PI_CLOUD_CUBE_VERSION
 ENV PI_CLOUD_COMPLETION_SOURCE_ID=${PI_CLOUD_COMPLETION_SOURCE_ID}
 LABEL pi-cloud.completion-source-id=${PI_CLOUD_COMPLETION_SOURCE_ID}
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
@@ -42,8 +42,8 @@ COPY packages/observability/src /opt/pi-cloud/packages/observability/src
 COPY packages/protocol/src /opt/pi-cloud/packages/protocol/src
 COPY packages/session-attachments/src /opt/pi-cloud/packages/session-attachments/src
 RUN test -n "$PI_CLOUD_COMPLETION_SOURCE_ID" \
-    && test -n "$PI_CLOUD_CUBE_PATCH_ID" \
-    && /usr/local/bin/node -e "const v=require('/opt/cube-image/Cubelet/version.json').components.cubelet.version;if(v!=='0.6.0-picloud-'+process.env.PI_CLOUD_CUBE_PATCH_ID)throw new Error('Cubelet base image differs from the pinned native patch set')" \
+    && test -n "$PI_CLOUD_CUBE_VERSION" \
+    && /usr/local/bin/node -e "const v=require('/opt/cube-image/Cubelet/version.json').components.cubelet.version;if(v!==process.env.PI_CLOUD_CUBE_VERSION)throw new Error('Cubelet base image differs from the pinned native patch set')" \
     && /usr/local/bin/node --version \
     && cd /opt/pi-cloud && node --input-type=module --eval "await import('@confluentinc/kafka-javascript')" \
     && test ! -e /opt/pi-cloud/packages/database/src/migrations \

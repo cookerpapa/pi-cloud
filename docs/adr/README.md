@@ -1,5 +1,9 @@
 # Current architecture decisions
 
+[ADR-0299](0299-cube-073-resource-observation.md) fixes the Cube v0.7.3 upgrade
+target and separates disposable resource metrics from future usage accounting.
+Patch adaptation and matched validation are in progress.
+
 [ADR-0298](0298-independent-metering-receiver.md) selects an independent receipt
 receiver with shared PG accounting authority. Implementation is in progress in
 [Issue #5](https://github.com/cookerpapa/pi-cloud/issues/5).

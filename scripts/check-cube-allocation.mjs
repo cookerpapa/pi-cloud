@@ -7,6 +7,7 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
+import { prepareCubeNetworkBindings } from "./lib/cube-network-bindings.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const testImages = JSON.parse(
@@ -51,6 +52,7 @@ try {
       throw new Error("Cube patch digest mismatch");
     await exec("git", ["apply", path], { cwd: directory });
   }
+  await prepareCubeNetworkBindings(directory, manifest, run);
   let dsn = process.env.PI_CLOUD_ALLOCATION_MYSQL_DSN;
   if (!dsn) {
     await exec("docker", [
@@ -158,7 +160,7 @@ try {
     "-count=1",
     "./services/cubebox",
     "-run",
-    "TestManagedCleanup|TestDestroyAuto|TestExecution|TestVolumeHolder",
+    "TestManagedCleanup|TestDestroyLifecycle|TestExecution|TestVolumeHolder",
   ]);
 } finally {
   if (container) await exec("docker", ["stop", "-t", "5", container]).catch(() => {});

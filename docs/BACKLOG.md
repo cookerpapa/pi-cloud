@@ -5,8 +5,9 @@
 - [x] #5 source slice: extract model accounting receiver; ADR-0298 selects an
       independent service over provider-side PG/pricing coupling. PG receipt,
       restart/outage and Helm contracts pass; live release remains pending below.
-- [ ] #6: upgrade fixed Cube and adapt/delete existing patches; preserve physical
-      fences, Workspace data and address retained OS vulnerabilities.
+- [ ] #6: Cube v0.7.3 source adaptation is implemented in four cohesive patches;
+      native admission, Tool/Volume/lifecycle contracts and Rust/Go compilation
+      pass. Matched build/scans, full MySQL contracts and live preservation remain.
 - [ ] #7: source-side compute usage, immutable prices and informational statements.
 - [ ] #8: real Workspace capacity enforcement and capacity-time statements.
 - [ ] #9: independent Session projection, Tool dispatch, observations and API/SSE.

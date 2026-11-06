@@ -6,8 +6,10 @@ browser user, tenant, model response or Tool Call cannot choose it or request a
 lower-security fallback.
 
 The integration is pinned to
-[`TencentCloud/CubeSandbox` v0.6.0](https://github.com/TencentCloud/CubeSandbox/tree/v0.6.0)
-at commit `8721dd151971ce3c2966482bbd32904ad98f378e`. Cube is a separate
+[`TencentCloud/CubeSandbox` v0.7.3](https://github.com/TencentCloud/CubeSandbox/tree/v0.7.3)
+at commit `4411c96ba8658a959de34693f54f4918db2a432f`, with the four responsibility-scoped
+patches pinned in `runtime-build.json`. The upgrade is pending the consolidated
+matched release (ADR-0299). Cube is a separate
 CubeAPI/CubeMaster/Cubelet/CubeShim KVM control and execution plane, not a
 Kubernetes `RuntimeClass`.
 
@@ -136,7 +138,7 @@ PI_CLOUD_CUBE_REGISTRY_ADDRESS="<private-registry-address>" \
 node scripts/register-cubesandbox-tool-template.mjs
 ```
 
-The CLI must be built from the pinned Cube v0.6.0 revision. The script invokes
+The CLI must be built from the pinned Cube v0.7.3 revision. The script invokes
 Cube's `tpl create-from-image`, `tpl watch` and `tpl list` contracts directly.
 It binds an ephemeral raw TCP relay to `127.0.0.1:5000` only while pushing the
 image, uses a temporary empty Docker client configuration because this private

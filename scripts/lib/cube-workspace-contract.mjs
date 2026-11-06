@@ -50,8 +50,8 @@ export function assertCubeWorkspaceContract(master, node, expectedHostRoot) {
     );
 }
 
-export function assertCubeCompletionVersion(probe, sourceId, patchId) {
-  if (probe?.source !== sourceId || probe?.version !== `0.6.0-picloud-${patchId}`)
+export function assertCubeCompletionVersion(probe, sourceId, expectedVersion) {
+  if (probe?.source !== sourceId || probe?.version !== expectedVersion)
     throw new Error(
       "Update Cubelet from the current pinned runtime and completion sources before deploying the platform",
     );

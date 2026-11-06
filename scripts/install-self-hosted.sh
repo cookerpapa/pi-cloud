@@ -10,10 +10,13 @@ readonly HELM_VERSION="v3.18.6"
 readonly HELM_ARCHIVE_SHA256="3f43c0aa57243852dd542493a0f54f1396c0bc8ec7296bbb2c01e802010819ce"
 readonly K3S_VERSION="v1.36.2+k3s1"
 readonly K3S_INSTALLER_SHA256="46177d4c99440b4c0311b67233823a8e8a2fc09693f6c89af1a7161e152fbfad"
-readonly CUBE_COMMIT="8721dd151971ce3c2966482bbd32904ad98f378e"
 readonly CUBE_REPOSITORY_URL="https://github.com/TencentCloud/CubeSandbox.git"
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# This read precedes Node bootstrap. Match the single checked-in JSON field and
+# reject an absent/ambiguous pin; runtime/build tools read the same manifest.
+readonly CUBE_COMMIT="$(sed -n 's/^[[:space:]]*"upstreamCommit": "\([0-9a-f]\{40\}\)",$/\1/p' "${repository_root}/deploy/cubesandbox/runtime-build.json")"
+[[ "${CUBE_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || { printf '%s\n' 'Invalid Cube source pin' >&2; exit 1; }
 runtime_directory="${repository_root}/deploy/production/runtime"
 cube_repository="${repository_root}/.cache/sources/CubeSandbox-${CUBE_COMMIT}"
 if [[ -d "${repository_root}/../CubeSandbox/.git" ]]; then

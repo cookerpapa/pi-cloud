@@ -23,6 +23,9 @@ import { isDurableAgentActivity } from "./lib/live-run-timing.mjs";
 import { ACCEPTED_FACT_TOPIC } from "../packages/event-log/src/index.ts";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
+const cubeBuild = JSON.parse(
+  await readFile(resolve(repositoryRoot, "deploy/cubesandbox/runtime-build.json"), "utf8"),
+);
 const testedRevision = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: repositoryRoot,
   encoding: "utf8",
@@ -100,7 +103,7 @@ if (
 
 if (
   cluster?.formatVersion !== 1 ||
-  cluster?.cubeCommit !== "8721dd151971ce3c2966482bbd32904ad98f378e" ||
+  cluster?.cubeCommit !== cubeBuild.upstreamCommit ||
   cluster?.podNetworkMtu !== 1_450 ||
   template?.formatVersion !== 2 ||
   template?.cubeCommit !== cluster.cubeCommit ||

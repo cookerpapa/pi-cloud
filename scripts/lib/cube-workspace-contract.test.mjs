@@ -68,26 +68,26 @@ test("detects a removed Cubelet config mount even when the Workspace host path i
 test("requires matching native Cubelet patches and completion protocol sources", () => {
   assert.doesNotThrow(() =>
     assertCubeCompletionVersion(
-      { source: "current", version: "0.6.0-picloud-expected" },
+      { source: "current", version: "0.7.3-picloud-expected" },
       "current",
-      "expected",
+      "0.7.3-picloud-expected",
     ),
   );
   assert.throws(
     () =>
       assertCubeCompletionVersion(
-        { source: "current", version: "0.6.0-picloud-old" },
+        { source: "current", version: "0.7.3-picloud-old" },
         "current",
-        "expected",
+        "0.7.3-picloud-expected",
       ),
     /Update Cubelet/,
   );
   assert.throws(
     () =>
       assertCubeCompletionVersion(
-        { source: "old", version: "0.6.0-picloud-expected" },
+        { source: "old", version: "0.7.3-picloud-expected" },
         "current",
-        "expected",
+        "0.7.3-picloud-expected",
       ),
     /Update Cubelet/,
   );

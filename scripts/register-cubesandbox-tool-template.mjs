@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { chmod, chown, mkdir, mkdtemp, open, rename, rm } from "node:fs/promises";
+import { chmod, chown, mkdir, mkdtemp, open, readFile, rename, rm } from "node:fs/promises";
 import { startRegistryForward } from "./lib/cube-registry-forward.mjs";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -14,8 +14,10 @@ import {
   selectCubeTemplatesForDeletion,
 } from "./cubesandbox-template-retention.mjs";
 
-const CUBE_COMMIT = "8721dd151971ce3c2966482bbd32904ad98f378e";
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
+const CUBE_COMMIT = JSON.parse(
+  await readFile(resolve(repositoryRoot, "deploy/cubesandbox/runtime-build.json"), "utf8"),
+).upstreamCommit;
 const runtimeDirectory = resolve(
   repositoryRoot,
   process.env.PI_CLOUD_RUNTIME_DIRECTORY ?? "deploy/production/runtime",

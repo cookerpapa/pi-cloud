@@ -76,7 +76,7 @@ try {
     if (ubuntuMirror) text = text.replaceAll("https://mirrors.aliyun.com/ubuntu", ubuntuMirror);
     const pins = new Map([
       ["golang:1.25-bookworm", manifest.buildImages.go],
-      ["rust:1.85-alpine", manifest.buildImages.rust],
+      ["rust:1.85.1-alpine", manifest.buildImages.rust],
       ["ubuntu:22.04", manifest.buildImages.ubuntu22],
       ["ubuntu:24.04", manifest.buildImages.ubuntu24],
       ["alpine:3.21", manifest.buildImages.alpine],
@@ -110,7 +110,7 @@ try {
       "--build-arg",
       `CUBE_BUILDER_IMAGE=${manifest.buildImages.cubeletBuilder}`,
       "--build-arg",
-      `CUBE_VERSION=0.6.0-picloud-${patchId}`,
+      `CUBE_VERSION=${manifest.upstreamVersion}-picloud-${patchId}`,
       "--build-arg",
       `CUBE_COMMIT=${manifest.upstreamCommit}+${patchId}`,
       ...(process.env.PI_CLOUD_GOPROXY
@@ -138,7 +138,7 @@ try {
     "--build-arg",
     `PI_CLOUD_COMPLETION_SOURCE_ID=${await completionBuildIdentity(root)}`,
     "--build-arg",
-    `PI_CLOUD_CUBE_PATCH_ID=${createHash("sha256").update(JSON.stringify(manifest)).digest("hex").slice(0, 16)}`,
+    `PI_CLOUD_CUBE_VERSION=${manifest.upstreamVersion}-picloud-${patchId}`,
     "--build-arg",
     `NPM_CONFIG_REGISTRY=${process.env.NPM_CONFIG_REGISTRY ?? "https://registry.npmjs.org"}`,
     "-f",

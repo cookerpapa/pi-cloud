@@ -96,6 +96,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       -e "s|http://archive.ubuntu.com/ubuntu|${PI_CLOUD_UBUNTU_MIRROR}|g" \
       -e "s|http://security.ubuntu.com/ubuntu|${PI_CLOUD_UBUNTU_MIRROR}|g" \
       /etc/apt/sources.list; \
+    apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=30 update; \
+    apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=30 install --yes --no-install-recommends apt=2.4.15ubuntu0.1 libapt-pkg6.0=2.4.15ubuntu0.1; \
     packages="bash ca-certificates git openjdk-17-jdk-headless util-linux libssl3=3.0.2-0ubuntu1.30 openssl=3.0.2-0ubuntu1.30 libbrotli1=1.0.9-2ubuntu0.1"; \
     installed=0; \
     attempt=1; \

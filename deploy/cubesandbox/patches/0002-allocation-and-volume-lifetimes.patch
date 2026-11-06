@@ -1,0 +1,4831 @@
+diff --git a/CubeMaster/pkg/allocation/store.go b/CubeMaster/pkg/allocation/store.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..c986637498a5e974a06ac7e4788ba60c7859bb39
+--- /dev/null
++++ b/CubeMaster/pkg/allocation/store.go
+@@ -0,0 +1,255 @@
++// Copyright (c) 2026 Tencent Inc.
++// SPDX-License-Identifier: Apache-2.0
++package allocation
++
++import (
++	"context"
++	"crypto/rand"
++	"encoding/hex"
++	"errors"
++	"github.com/tencentcloud/CubeSandbox/pkgs/cubedb/dao"
++	"gorm.io/gorm"
++	"gorm.io/gorm/clause"
++	"gorm.io/gorm/logger"
++	"regexp"
++	"strings"
++)
++
++const IDLabel = "picloud.allocation_id"
++const DeadlineLabel = "picloud.create_before"
++const IDAnnotation = "pi-cloud.allocation.id"
++const DigestAnnotation = "pi-cloud.allocation.digest"
++const DeadlineAnnotation = "pi-cloud.allocation.create-before"
++const FixedIDAnnotation = "pi-cloud.allocation.sandbox-id"
++const MaxPayload = 256 * 1024
++
++var idPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
++var ErrClosed = errors.New("allocation_closed")
++var ErrExpired = errors.New("allocation_expired")
++var ErrConflict = errors.New("allocation_parameters_changed")
++var ErrUnavailable = errors.New("allocation_catalog_unavailable")
++
++type Record struct {
++	RetainUntil     int64  `gorm:"-" json:"retainUntil,omitempty"`
++	RetentionWindow int64  `gorm:"-" json:"retentionWindowMs,omitempty"`
++	ID              string `gorm:"primaryKey;size:36" json:"allocationID"`
++	Digest          string `gorm:"size:64" json:"-"`
++	NotAfter        int64  `json:"createBefore"`
++	SandboxID       string `gorm:"size:32" json:"sandboxID"`
++	NodeID          string `gorm:"size:256" json:"nodeID,omitempty"`
++	NodeIP          string `gorm:"size:256" json:"-"`
++	NodeBoot        string `gorm:"size:64" json:"-"`
++	Phase           string `gorm:"size:16" json:"phase"`
++	Closed          bool   `json:"closed"`
++	Request         string `json:"-"`
++	NodeRequest     string `json:"-"`
++	Result          string `json:"-"`
++	TrafficToken    string `gorm:"size:64" json:"-"`
++}
++
++func (Record) TableName() string { return "t_pi_cloud_allocation" }
++
++type Store struct{ DB *gorm.DB }
++
++func Default() *Store {
++	db := dao.Default()
++	if db != nil {
++		db = db.Session(&gorm.Session{Logger: logger.Discard})
++	}
++	return &Store{DB: db}
++}
++func ValidID(id string) bool     { return idPattern.MatchString(id) }
++func SandboxID(id string) string { return strings.ReplaceAll(id, "-", "") }
++func (s *Store) Get(ctx context.Context, id string) (*Record, error) {
++	if !ValidID(id) {
++		return nil, ErrConflict
++	}
++	if s.DB == nil {
++		return nil, ErrUnavailable
++	}
++	var r Record
++	e := s.DB.WithContext(ctx).Where("id = ?", id).Take(&r).Error
++	if errors.Is(e, gorm.ErrRecordNotFound) {
++		return nil, nil
++	}
++	return &r, e
++}
++func now(tx *gorm.DB) (int64, error) {
++	var n, floor int64
++	q := "select cast(unix_timestamp(current_timestamp(3))*1000 as signed)"
++	if tx.Dialector.Name() == "postgres" {
++		q = "select (extract(epoch from clock_timestamp())*1000)::bigint"
++	}
++	if e := tx.Raw(q).Scan(&n).Error; e != nil {
++		return 0, e
++	}
++	if e := tx.Raw("select floor_ms from t_pi_cloud_allocation_clock where id=1 for share").Scan(&floor).Error; e != nil {
++		return 0, e
++	}
++	if floor > n {
++		n = floor
++	}
++	return n, nil
++}
++func (s *Store) lock(ctx context.Context, id string, initial Record, change func(*gorm.DB, *Record, int64) error) (*Record, error) {
++	if s.DB == nil {
++		return nil, ErrUnavailable
++	}
++	var r Record
++	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
++		n, e := now(tx)
++		if e != nil {
++			return e
++		}
++		if e = tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&initial).Error; e != nil {
++			return e
++		}
++		if e = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).Take(&r).Error; e != nil {
++			return e
++		}
++		if e = change(tx, &r, n); e != nil {
++			return e
++		}
++		return tx.Save(&r).Error
++	})
++	return &r, err
++}
++func (s *Store) Begin(ctx context.Context, id, digest string, deadline int64, request string) (*Record, error) {
++	if !ValidID(id) || len(digest) != 64 || deadline <= 0 || len(request) > MaxPayload {
++		return nil, ErrConflict
++	}
++	token := make([]byte, 32)
++	if _, e := rand.Read(token); e != nil {
++		return nil, e
++	}
++	return s.lock(ctx, id, Record{ID: id, Digest: digest, NotAfter: deadline, SandboxID: SandboxID(id), Phase: "pending", Request: request, TrafficToken: hex.EncodeToString(token)}, func(_ *gorm.DB, r *Record, n int64) error {
++		if r.Closed {
++			return ErrClosed
++		}
++		if r.Digest != digest || r.NotAfter != deadline {
++			return ErrConflict
++		}
++		if r.NodeID == "" && n >= deadline {
++			return ErrExpired
++		}
++		return nil
++	})
++}
++
++// Placement and the exact native request commit before the first node RPC.
++// Competing replicas reuse the winning target; ambiguity never reschedules it.
++func (s *Store) Place(ctx context.Context, id, node, ip, boot, request, resolved, referenceEpoch string) (*Record, error) {
++	if node == "" || ip == "" || boot == "" || len(boot) > 64 || len(node) > 256 || len(ip) > 256 || len(request) > MaxPayload || len(resolved) > MaxPayload {
++		return nil, ErrConflict
++	}
++	r, e := s.Get(ctx, id)
++	if e != nil || r == nil {
++		if e == nil {
++			e = ErrUnavailable
++		}
++		return nil, e
++	}
++	return s.lock(ctx, id, *r, func(tx *gorm.DB, r *Record, n int64) error {
++		if r.Closed {
++			return ErrClosed
++		}
++		if r.NodeID != "" {
++			return nil
++		}
++		if n >= r.NotAfter {
++			return ErrExpired
++		}
++		r.NodeID = node
++		r.NodeIP = ip
++		r.NodeBoot = boot
++		if e := reserveVolumes(tx, r, request, referenceEpoch); e != nil {
++			return e
++		}
++		r.NodeRequest = request
++		r.Request = resolved
++		r.Phase = "creating"
++		return nil
++	})
++}
++func (s *Store) Close(ctx context.Context, id string, deadline int64) (*Record, error) {
++	if !ValidID(id) || deadline <= 0 {
++		return nil, ErrConflict
++	}
++	return s.lock(ctx, id, Record{ID: id, NotAfter: deadline, SandboxID: SandboxID(id), Closed: true, Phase: "absent"}, func(_ *gorm.DB, r *Record, _ int64) error {
++		if r.NotAfter != deadline {
++			return ErrConflict
++		}
++		r.Closed = true
++		if r.NodeID == "" {
++			r.Phase = "absent"
++		} else if r.Phase != "absent" {
++			r.Phase = "closing"
++		}
++		return nil
++	})
++}
++func (s *Store) Finish(ctx context.Context, id, phase, result string) (*Record, error) {
++	if len(result) > MaxPayload || (phase != "ready" && phase != "failed" && phase != "absent") {
++		return nil, ErrConflict
++	}
++	r, e := s.Get(ctx, id)
++	if e != nil || r == nil {
++		if e == nil {
++			e = ErrUnavailable
++		}
++		return nil, e
++	}
++	return s.lock(ctx, id, *r, func(tx *gorm.DB, r *Record, _ int64) error {
++		if phase != "absent" && r.Closed {
++			return ErrClosed
++		}
++		if phase == "absent" {
++			if !r.Closed {
++				return ErrConflict
++			}
++			if err := tx.Where("allocation_id = ?", r.ID).Delete(&VolumeHold{}).Error; err != nil {
++				return err
++			}
++			r.Phase = "absent"
++			r.Request = ""
++			r.NodeRequest = ""
++			r.Result = ""
++			r.TrafficToken = ""
++			return nil
++		}
++		if r.Closed {
++			return ErrClosed
++		}
++		r.Phase = phase
++		r.Result = result
++		return nil
++	})
++}
++func (s *Store) Collect(ctx context.Context) error {
++	if s.DB == nil {
++		return ErrUnavailable
++	}
++	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
++		// An exclusive GC floor serializes expiry with admission and remains after
++		// terminal rows are removed. Backward DB clock steps cannot revive tokens.
++		var previous int64
++		if e := tx.Raw("select floor_ms from t_pi_cloud_allocation_clock where id=1 for update").Scan(&previous).Error; e != nil {
++			return e
++		}
++		n, e := now(tx)
++		if e != nil {
++			return e
++		}
++		var ids []string
++		if e = tx.Exec("update t_pi_cloud_allocation_clock set floor_ms=? where id=1", n).Error; e != nil {
++			return e
++		}
++		if e = tx.Model(&Record{}).Where("closed = ? and phase = ? and not_after < ?", true, "absent", n-3_600_000).Order("not_after").Limit(128).Pluck("id", &ids).Error; e != nil {
++			return e
++		}
++		if len(ids) == 0 {
++			return nil
++		}
++		return tx.Where("id in ? and closed = ? and phase = ?", ids, true, "absent").Delete(&Record{}).Error
++	})
++}
+diff --git a/CubeMaster/pkg/allocation/store_test.go b/CubeMaster/pkg/allocation/store_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..f21b9af6613aff381cfb4bb6ee9d68714a00d41e
+--- /dev/null
++++ b/CubeMaster/pkg/allocation/store_test.go
+@@ -0,0 +1,147 @@
++// Copyright (c) 2026 Tencent Inc.
++// SPDX-License-Identifier: Apache-2.0
++package allocation
++
++import (
++	"context"
++	"errors"
++	mysqldriver "github.com/go-sql-driver/mysql"
++	"github.com/google/uuid"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/db/models"
++	"gorm.io/driver/mysql"
++	"gorm.io/gorm"
++	"gorm.io/gorm/logger"
++	"os"
++	"strings"
++	"sync"
++	"testing"
++	"time"
++)
++
++var schemaOnce sync.Once
++var schemaError error
++
++func realStore(t *testing.T) *Store {
++	t.Helper()
++	dsn := os.Getenv("PI_CLOUD_ALLOCATION_MYSQL_DSN")
++	if dsn == "" {
++		t.Skip("explicit disposable MySQL required")
++	}
++	config, err := mysqldriver.ParseDSN(dsn)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if config.DBName != "allocation_test" && !strings.HasPrefix(config.DBName, "pi_cloud_allocation_") {
++		t.Fatal("allocation tests require a disposable database name")
++	}
++	db, e := gorm.Open(mysql.Open(dsn), &gorm.Config{Logger: logger.Discard})
++	if e != nil {
++		t.Fatal(e)
++	}
++	sqlDB, e := db.DB()
++	if e != nil {
++		t.Fatal(e)
++	}
++	t.Cleanup(func() { sqlDB.Close() })
++	schemaOnce.Do(func() {
++		if schemaError = db.AutoMigrate(&models.VolumeRecord{}); schemaError != nil {
++			return
++		}
++		for _, file := range []string{"20261004000000_pi_cloud_allocation.sql", "20261005000000_pi_cloud_volume_state.sql"} {
++			migration, err := os.ReadFile("../../../pkgs/cubedb/migrate/migrations/mysql/" + file)
++			if err != nil {
++				schemaError = err
++				return
++			}
++			if schemaError = db.Exec(strings.Split(string(migration), "-- +goose Down")[0]).Error; schemaError != nil {
++				return
++			}
++		}
++	})
++	if schemaError != nil {
++		t.Fatal(schemaError)
++	}
++	return &Store{DB: db}
++}
++func TestPersistentAllocationAdmissionAndClosure(t *testing.T) {
++	s := realStore(t)
++	ctx := context.Background()
++	id := uuid.NewString()
++	deadline := time.Now().Add(time.Minute).UnixMilli()
++	digest := strings.Repeat("a", 64)
++	var wg sync.WaitGroup
++	tokens := make(chan string, 12)
++	for n := 0; n < 12; n++ {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			r, e := s.Begin(ctx, id, digest, deadline, `{"spec":"same"}`)
++			if e != nil {
++				t.Error(e)
++				return
++			}
++			tokens <- r.TrafficToken
++		}()
++	}
++	wg.Wait()
++	close(tokens)
++	token := ""
++	for current := range tokens {
++		if token != "" && current != token {
++			t.Fatal("duplicate creation changed proxy credential")
++		}
++		token = current
++	}
++	if _, e := s.Begin(ctx, id, strings.Repeat("b", 64), deadline, "{}"); !errors.Is(e, ErrConflict) {
++		t.Fatal(e)
++	}
++	first, e := s.Place(ctx, id, "node-one", "127.0.0.1", "boot-one", `{"spec":"node-request"}`, "resolved-request", "")
++	if e != nil {
++		t.Fatal(e)
++	}
++	second, e := s.Place(ctx, id, "node-two", "127.0.0.2", "boot-two", "{}", "different", "")
++	if e != nil || second.NodeID != first.NodeID || second.NodeRequest != first.NodeRequest {
++		t.Fatal(e, second)
++	}
++	restarted := &Store{DB: s.DB}
++	r, e := restarted.Close(ctx, id, deadline)
++	if e != nil || !r.Closed || r.Phase != "closing" {
++		t.Fatal(e, r)
++	}
++	if _, e = s.Place(ctx, id, "node-three", "127.0.0.3", "boot-three", "{}", "late", ""); !errors.Is(e, ErrClosed) {
++		t.Fatal(e)
++	}
++	if _, e = s.Begin(ctx, id, digest, deadline, "{}"); !errors.Is(e, ErrClosed) {
++		t.Fatal(e)
++	}
++	if _, e = s.Finish(ctx, id, "ready", "{}"); !errors.Is(e, ErrClosed) {
++		t.Fatal(e)
++	}
++	r, e = s.Finish(ctx, id, "absent", "")
++	if e != nil || r.Phase != "absent" {
++		t.Fatal(e, r)
++	}
++}
++func TestCloseBeforeRegistrationAndExpiredReceipts(t *testing.T) {
++	s := realStore(t)
++	ctx := context.Background()
++	id := uuid.NewString()
++	deadline := time.Now().Add(-2 * time.Hour).UnixMilli()
++	r, e := s.Close(ctx, id, deadline)
++	if e != nil || r.Phase != "absent" || r.NodeID != "" {
++		t.Fatal(e, r)
++	}
++	if _, e = s.Begin(ctx, id, strings.Repeat("a", 64), deadline, "{}"); !errors.Is(e, ErrClosed) {
++		t.Fatal(e)
++	}
++	if e = s.Collect(ctx); e != nil {
++		t.Fatal(e)
++	}
++	r, e = s.Get(ctx, id)
++	if e != nil || r != nil {
++		t.Fatal(e, r)
++	}
++	if _, e = s.Begin(ctx, id, strings.Repeat("a", 64), deadline, "{}"); !errors.Is(e, ErrExpired) {
++		t.Fatal(e)
++	}
++}
+diff --git a/CubeMaster/pkg/allocation/volumes.go b/CubeMaster/pkg/allocation/volumes.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..4d9411bf821a8cb6da86a25bde9c0f736479c7fe
+--- /dev/null
++++ b/CubeMaster/pkg/allocation/volumes.go
+@@ -0,0 +1,298 @@
++package allocation
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/db/models"
++	"gorm.io/gorm"
++	"gorm.io/gorm/clause"
++	"sort"
++)
++
++var ErrVolumeHeld = errors.New("Volume references remain active or unconfirmed")
++var ErrVolumeClosing = errors.New("Volume attachment admission is closed")
++
++type VolumeGate struct {
++	VolumeID   string `gorm:"primaryKey;size:128"`
++	Generation uint64
++	Deleting   bool
++}
++
++func (VolumeGate) TableName() string { return "t_pi_cloud_volume_gate" }
++
++type VolumeHold struct {
++	AllocationID string `gorm:"primaryKey;size:36"`
++	VolumeID     string `gorm:"primaryKey;size:128"`
++	Generation   uint64
++	NodeID       string `gorm:"size:256"`
++}
++
++func (VolumeHold) TableName() string { return "t_pi_cloud_volume_hold" }
++
++type VolumeNode struct {
++	VolumeID   string `gorm:"primaryKey;size:128"`
++	NodeID     string `gorm:"primaryKey;size:256"`
++	Generation uint64
++	Epoch      string `gorm:"size:36"`
++	Revision   int64
++	Count      int64
++	Confirmed  bool
++}
++
++func (VolumeNode) TableName() string { return "t_pi_cloud_volume_node" }
++
++type VolumeState struct {
++	VolumeID  string `json:"volumeID"`
++	Epoch     string `json:"epoch"`
++	Revision  int64  `json:"revision"`
++	Count     int64  `json:"count"`
++	Confirmed bool   `json:"confirmed"`
++}
++
++func VolumeNames(wire string) ([]string, error) {
++	var req struct {
++		Annotations map[string]string `json:"annotations"`
++	}
++	if err := json.Unmarshal([]byte(wire), &req); err != nil {
++		return nil, err
++	}
++	var entries []struct {
++		Name string `json:"name"`
++	}
++	if raw := req.Annotations["plugin-volume-sources"]; raw != "" {
++		if err := json.Unmarshal([]byte(raw), &entries); err != nil {
++			return nil, err
++		}
++	}
++	if len(entries) > 64 {
++		return nil, ErrConflict
++	}
++	seen := map[string]bool{}
++	ids := []string{}
++	for _, e := range entries {
++		if e.Name == "" || len(e.Name) > 128 {
++			return nil, ErrConflict
++		}
++		if !seen[e.Name] {
++			ids = append(ids, e.Name)
++			seen[e.Name] = true
++		}
++	}
++	sort.Strings(ids)
++	return ids, nil
++}
++func lockVolume(tx *gorm.DB, id string) (models.VolumeRecord, error) {
++	var v models.VolumeRecord
++	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("volume_id = ?", id).Take(&v).Error
++	return v, err
++}
++func volumeGate(tx *gorm.DB, v models.VolumeRecord) (VolumeGate, error) {
++	var gate VolumeGate
++	err := tx.Where("volume_id = ?", v.VolumeID).Take(&gate).Error
++	if errors.Is(err, gorm.ErrRecordNotFound) {
++		// Historical untracked references are not evidence of zero usage.
++		if v.RefCount != 0 {
++			return gate, ErrVolumeHeld
++		}
++		gate = VolumeGate{VolumeID: v.VolumeID, Generation: uint64(v.ID)}
++		err = tx.Create(&gate).Error
++	}
++	if err == nil && gate.Generation != uint64(v.ID) {
++		err = ErrConflict
++	}
++	return gate, err
++}
++func reserveVolumes(tx *gorm.DB, r *Record, wire, epoch string) error {
++	ids, err := VolumeNames(wire)
++	if err != nil {
++		return err
++	}
++	if len(ids) > 0 && len(epoch) != 36 {
++		return ErrConflict
++	}
++	for _, id := range ids {
++		v, err := lockVolume(tx, id)
++		if err != nil {
++			return err
++		}
++		gate, err := volumeGate(tx, v)
++		if err != nil {
++			return err
++		}
++		if gate.Deleting {
++			return ErrVolumeClosing
++		}
++		node := VolumeNode{VolumeID: id, NodeID: r.NodeID, Generation: uint64(v.ID), Epoch: epoch, Revision: -1}
++		if err = tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&node).Error; err != nil {
++			return err
++		}
++		var stored VolumeNode
++		if err = tx.Where("volume_id = ? and node_id = ?", id, r.NodeID).Take(&stored).Error; err != nil {
++			return err
++		}
++		if stored.Generation != uint64(v.ID) || stored.Epoch != epoch {
++			return ErrVolumeHeld
++		}
++		hold := VolumeHold{AllocationID: r.ID, VolumeID: id, Generation: uint64(v.ID), NodeID: r.NodeID}
++		if err = tx.Create(&hold).Error; err != nil {
++			return err
++		}
++		if err = updateVolumeCount(tx, id); err != nil {
++			return err
++		}
++	}
++	return nil
++}
++func updateVolumeCount(tx *gorm.DB, id string) error {
++	var count int64
++	if err := tx.Model(&VolumeNode{}).Where("volume_id = ? and (count > 0 or confirmed = ?)", id, false).Count(&count).Error; err != nil {
++		return err
++	}
++	return tx.Model(&models.VolumeRecord{}).Where("volume_id = ?", id).Update("refcount", count).Error
++}
++func (s *Store) VolumeNodes(ctx context.Context, volumeID string) ([]VolumeNode, error) {
++	var nodes []VolumeNode
++	err := s.DB.WithContext(ctx).Where("volume_id = ?", volumeID).Order("node_id").Find(&nodes).Error
++	return nodes, err
++}
++func (s *Store) AllocationVolumeNodes(ctx context.Context, id string) ([]VolumeNode, error) {
++	var nodes []VolumeNode
++	err := s.DB.WithContext(ctx).Table("t_pi_cloud_volume_node n").Select("n.*").Joins("join t_pi_cloud_volume_hold h on h.volume_id=n.volume_id and h.node_id=n.node_id and h.generation=n.generation").Where("h.allocation_id = ?", id).Order("n.volume_id").Scan(&nodes).Error
++	return nodes, err
++}
++func (s *Store) ApplyVolumeState(ctx context.Context, target VolumeNode, state VolumeState) error {
++	if state.VolumeID != target.VolumeID || state.Epoch != target.Epoch || state.Revision < 0 || state.Count < 0 {
++		return ErrConflict
++	}
++	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
++		v, err := lockVolume(tx, target.VolumeID)
++		if err != nil {
++			return err
++		}
++		if uint64(v.ID) != target.Generation {
++			return ErrConflict
++		}
++		var stored VolumeNode
++		if err = tx.Where("volume_id = ? and node_id = ?", target.VolumeID, target.NodeID).Take(&stored).Error; err != nil {
++			return err
++		}
++		if stored.Generation != target.Generation || stored.Epoch != state.Epoch {
++			return ErrConflict
++		}
++		if state.Revision < stored.Revision {
++			return nil
++		}
++		if state.Revision == stored.Revision {
++			if state.Count != stored.Count || state.Confirmed != stored.Confirmed {
++				return ErrConflict
++			}
++			return nil
++		}
++		stored.Revision = state.Revision
++		stored.Count = state.Count
++		stored.Confirmed = state.Confirmed
++		if err = tx.Save(&stored).Error; err != nil {
++			return err
++		}
++		return updateVolumeCount(tx, target.VolumeID)
++	})
++}
++
++// The gate is committed before querying nodes. Every later managed placement
++// locks the same Volume row and refuses the irreversible deleting state.
++func (s *Store) BeginVolumeDeletion(ctx context.Context, id string) (models.VolumeRecord, error) {
++	var result models.VolumeRecord
++	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
++		v, e := lockVolume(tx, id)
++		if e != nil {
++			return e
++		}
++		result = v
++		gate, e := volumeGate(tx, v)
++		if e != nil {
++			return e
++		}
++		// An older allocation with no hold record cannot silently disappear at
++		// cutover. Its frozen original request remains evidence of possible use.
++		var old []Record
++		if e = tx.Where("phase <> ? and node_id <> ?", "absent", "").Where("not exists (select 1 from t_pi_cloud_volume_hold h where h.allocation_id=t_pi_cloud_allocation.id)").Find(&old).Error; e != nil {
++			return e
++		}
++		for _, r := range old {
++			ids, e := VolumeNames(r.NodeRequest)
++			if e != nil {
++				return ErrVolumeHeld
++			}
++			for _, name := range ids {
++				if name == id {
++					return ErrVolumeHeld
++				}
++			}
++		}
++		gate.Deleting = true
++		return tx.Save(&gate).Error
++	})
++	return result, err
++}
++func (s *Store) ConfirmVolumeDeletion(ctx context.Context, id string, generation uint64) error {
++	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
++		v, err := lockVolume(tx, id)
++		if err != nil {
++			return err
++		}
++		if uint64(v.ID) != generation {
++			return ErrConflict
++		}
++		var gate VolumeGate
++		if err = tx.Where("volume_id = ?", id).Take(&gate).Error; err != nil {
++			return err
++		}
++		if !gate.Deleting || gate.Generation != generation {
++			return ErrConflict
++		}
++		var held int64
++		if err = tx.Model(&VolumeHold{}).Where("volume_id = ?", id).Count(&held).Error; err != nil {
++			return err
++		}
++		if held != 0 || v.RefCount != 0 {
++			return ErrVolumeHeld
++		}
++		return nil
++	})
++}
++func (s *Store) FinishVolumeDeletion(ctx context.Context, id string, generation uint64) error {
++	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
++		v, err := lockVolume(tx, id)
++		if errors.Is(err, gorm.ErrRecordNotFound) {
++			return nil
++		}
++		if err != nil {
++			return err
++		}
++		if uint64(v.ID) != generation {
++			return ErrConflict
++		}
++		var gate VolumeGate
++		if err = tx.Where("volume_id = ?", id).Take(&gate).Error; err != nil {
++			return err
++		}
++		if !gate.Deleting || gate.Generation != generation {
++			return ErrConflict
++		}
++		var held int64
++		if err = tx.Model(&VolumeHold{}).Where("volume_id = ?", id).Count(&held).Error; err != nil {
++			return err
++		}
++		if held != 0 || v.RefCount != 0 {
++			return ErrVolumeHeld
++		}
++		if err = tx.Where("volume_id = ?", id).Delete(&VolumeNode{}).Error; err != nil {
++			return err
++		}
++		if err = tx.Where("volume_id = ?", id).Delete(&VolumeGate{}).Error; err != nil {
++			return err
++		}
++		return tx.Delete(&v).Error
++	})
++}
+diff --git a/CubeMaster/pkg/allocation/volumes_test.go b/CubeMaster/pkg/allocation/volumes_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..b6efed0a7f7fa64cb3fda7ba7bcc8ca6bea8f314
+--- /dev/null
++++ b/CubeMaster/pkg/allocation/volumes_test.go
+@@ -0,0 +1,204 @@
++package allocation
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"github.com/google/uuid"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/db/models"
++	"strings"
++	"testing"
++	"time"
++)
++
++func volumeFixture(t *testing.T) (*Store, models.VolumeRecord, string) {
++	t.Helper()
++	s := realStore(t)
++	id := uuid.NewString()
++	v := models.VolumeRecord{VolumeID: id, Name: id, Driver: "picloud-posix"}
++	if err := s.DB.Create(&v).Error; err != nil {
++		t.Fatal(err)
++	}
++	return s, v, uuid.NewString()
++}
++func placeWithVolume(t *testing.T, s *Store, v models.VolumeRecord, epoch string) (*Record, error) {
++	t.Helper()
++	ctx := context.Background()
++	id := uuid.NewString()
++	r, err := s.Begin(ctx, id, strings.Repeat("a", 64), time.Now().Add(time.Minute).UnixMilli(), "{}")
++	if err != nil {
++		t.Fatal(err)
++	}
++	entries, _ := json.Marshal([]map[string]string{{"name": v.VolumeID}})
++	raw, _ := json.Marshal(map[string]any{"annotations": map[string]string{"plugin-volume-sources": string(entries)}})
++	placed, err := s.Place(ctx, id, "node-volume", "127.0.0.1", "boot", string(raw), "{}", epoch)
++	if err != nil {
++		return r, err
++	}
++	return placed, nil
++}
++func finishAllocation(t *testing.T, s *Store, r *Record) {
++	t.Helper()
++	ctx := context.Background()
++	if _, err := s.Close(ctx, r.ID, r.NotAfter); err != nil {
++		t.Fatal(err)
++	}
++	// No cleanup receipt is required to reconcile Volume references.
++	if _, err := s.Finish(ctx, r.ID, "absent", ""); err != nil {
++		t.Fatal(err)
++	}
++}
++func TestVolumeStateRecoversLostCleanupReceiptAndSurvivesAllocationGC(t *testing.T) {
++	s, v, epoch := volumeFixture(t)
++	ctx := context.Background()
++	a, err := placeWithVolume(t, s, v, epoch)
++	if err != nil {
++		t.Fatal(err)
++	}
++	b, err := placeWithVolume(t, s, v, epoch)
++	if err != nil {
++		t.Fatal(err)
++	}
++	nodes, err := s.VolumeNodes(ctx, v.VolumeID)
++	if err != nil || len(nodes) != 1 {
++		t.Fatal(nodes, err)
++	}
++	target := nodes[0]
++	apply := func(revision, count int64, confirmed bool) {
++		t.Helper()
++		if err := s.ApplyVolumeState(ctx, target, VolumeState{VolumeID: v.VolumeID, Epoch: epoch, Revision: revision, Count: count, Confirmed: confirmed}); err != nil {
++			t.Fatal(err)
++		}
++	}
++	apply(10, 2, true)
++	apply(10, 2, true)
++	finishAllocation(t, s, a)
++	apply(11, 1, true)
++	if _, err = s.BeginVolumeDeletion(ctx, v.VolumeID); err != nil {
++		t.Fatal(err)
++	}
++	if err = s.ConfirmVolumeDeletion(ctx, v.VolumeID, uint64(v.ID)); !errors.Is(err, ErrVolumeHeld) {
++		t.Fatal(err)
++	}
++	if _, err = placeWithVolume(t, s, v, epoch); !errors.Is(err, ErrVolumeClosing) {
++		t.Fatal("late create", err)
++	}
++	// Physical VM absence can complete independently of a pending Volume detach.
++	finishAllocation(t, s, b)
++	apply(12, 0, false)
++	if err = s.ConfirmVolumeDeletion(ctx, v.VolumeID, uint64(v.ID)); !errors.Is(err, ErrVolumeHeld) {
++		t.Fatal(err)
++	}
++	apply(13, 0, true)
++	// Delayed creation/detach responses cannot regress the current state.
++	apply(10, 2, true)
++	apply(12, 0, false)
++	if err = s.ApplyVolumeState(ctx, target, VolumeState{VolumeID: v.VolumeID, Epoch: uuid.NewString(), Revision: 100, Confirmed: true}); !errors.Is(err, ErrConflict) {
++		t.Fatal("metadata loss accepted", err)
++	}
++	// Only test data's expiry is advanced to exercise the real collection query.
++	if err = s.DB.Model(&Record{}).Where("id in ?", []string{a.ID, b.ID}).Update("not_after", time.Now().Add(-2*time.Hour).UnixMilli()).Error; err != nil {
++		t.Fatal(err)
++	}
++	if err = s.Collect(ctx); err != nil {
++		t.Fatal(err)
++	}
++	if r, err := s.Get(ctx, a.ID); err != nil || r != nil {
++		t.Fatal(r, err)
++	}
++	nodes, err = s.VolumeNodes(ctx, v.VolumeID)
++	if err != nil || len(nodes) != 1 {
++		t.Fatal(nodes, err)
++	}
++	if err = s.ConfirmVolumeDeletion(ctx, v.VolumeID, uint64(v.ID)); err != nil {
++		t.Fatal(err)
++	}
++	if err = s.FinishVolumeDeletion(ctx, v.VolumeID, uint64(v.ID)); err != nil {
++		t.Fatal(err)
++	}
++	replacement := models.VolumeRecord{VolumeID: v.VolumeID, Name: v.Name, Driver: v.Driver}
++	if err = s.DB.Create(&replacement).Error; err != nil {
++		t.Fatal(err)
++	}
++	if err = s.ApplyVolumeState(ctx, target, VolumeState{VolumeID: v.VolumeID, Epoch: epoch, Revision: 100, Confirmed: true}); !errors.Is(err, ErrConflict) {
++		t.Fatal("old Volume lifetime changed replacement", err)
++	}
++}
++
++func TestPendingCreationHoldPreventsZeroSnapshotFromDeletingVolume(t *testing.T) {
++	s, v, epoch := volumeFixture(t)
++	ctx := context.Background()
++	r, err := placeWithVolume(t, s, v, epoch)
++	if err != nil {
++		t.Fatal(err)
++	}
++	nodes, err := s.VolumeNodes(ctx, v.VolumeID)
++	if err != nil {
++		t.Fatal(err)
++	}
++	// The node has not seen Create yet. Its valid zero state does not retract
++	// the durable Master placement which could still start it.
++	if err = s.ApplyVolumeState(ctx, nodes[0], VolumeState{VolumeID: v.VolumeID, Epoch: epoch, Revision: 0, Confirmed: true}); err != nil {
++		t.Fatal(err)
++	}
++	if _, err = s.BeginVolumeDeletion(ctx, v.VolumeID); err != nil {
++		t.Fatal(err)
++	}
++	if err = s.ConfirmVolumeDeletion(ctx, v.VolumeID, uint64(v.ID)); !errors.Is(err, ErrVolumeHeld) {
++		t.Fatal(err)
++	}
++	finishAllocation(t, s, r)
++	if err = s.ConfirmVolumeDeletion(ctx, v.VolumeID, uint64(v.ID)); err != nil {
++		t.Fatal(err)
++	}
++}
++
++func TestUntrackedHistoricalReferenceCannotBecomeZero(t *testing.T) {
++	s, v, _ := volumeFixture(t)
++	if err := s.DB.Model(&v).Update("refcount", 1).Error; err != nil {
++		t.Fatal(err)
++	}
++	if _, err := s.BeginVolumeDeletion(context.Background(), v.VolumeID); !errors.Is(err, ErrVolumeHeld) {
++		t.Fatal(err)
++	}
++}
++
++func TestConcurrentPlacementAndDeletionCannotBothAuthorizeEffects(t *testing.T) {
++	for i := 0; i < 8; i++ {
++		s, v, epoch := volumeFixture(t)
++		ctx := context.Background()
++		start := make(chan struct{})
++		placed := make(chan error, 1)
++		deleted := make(chan error, 1)
++		go func() { <-start; _, err := placeWithVolume(t, s, v, epoch); placed <- err }()
++		go func() {
++			<-start
++			_, err := s.BeginVolumeDeletion(ctx, v.VolumeID)
++			if err == nil {
++				var nodes []VolumeNode
++				nodes, err = s.VolumeNodes(ctx, v.VolumeID)
++				for _, node := range nodes {
++					if err != nil {
++						break
++					}
++					err = s.ApplyVolumeState(ctx, node, VolumeState{VolumeID: v.VolumeID, Epoch: epoch, Revision: 0, Confirmed: true})
++				}
++			}
++			if err == nil {
++				err = s.ConfirmVolumeDeletion(ctx, v.VolumeID, uint64(v.ID))
++			}
++			deleted <- err
++		}()
++		close(start)
++		admission, removal := <-placed, <-deleted
++		if admission == nil && removal == nil {
++			t.Fatal("creation and deletion both admitted")
++		}
++		if admission != nil && !errors.Is(admission, ErrVolumeClosing) {
++			t.Fatal(admission)
++		}
++		if removal != nil && !errors.Is(removal, ErrVolumeHeld) {
++			t.Fatal(removal)
++		}
++	}
++}
+diff --git a/CubeMaster/pkg/service/httpservice/cube/managed_allocation.go b/CubeMaster/pkg/service/httpservice/cube/managed_allocation.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..dda25f4c9a5f661c2fe625338975d8cc3c2f9be1
+--- /dev/null
++++ b/CubeMaster/pkg/service/httpservice/cube/managed_allocation.go
+@@ -0,0 +1,82 @@
++// Copyright (c) 2026 Tencent Inc.
++// SPDX-License-Identifier: Apache-2.0
++package cube
++
++import (
++	"context"
++	"encoding/json"
++	"github.com/gin-gonic/gin"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/allocation"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/constants"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/errorcode"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/service/sandbox"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/service/sandbox/types"
++	"net/http"
++)
++
++func resumeManagedCreate(ctx context.Context, r *allocation.Record) *types.CreateCubeSandboxRes {
++	record, err := sandbox.ReconcileAllocation(ctx, r.ID, false, r.NotAfter, true)
++	if err == nil && record != nil && record.Phase == "ready" && !record.Closed && record.Result != "" {
++		var response types.CreateCubeSandboxRes
++		if json.Unmarshal([]byte(record.Result), &response) == nil {
++			return &response
++		}
++	}
++	return &types.CreateCubeSandboxRes{RequestID: r.ID, Ret: &types.Ret{RetCode: int(errorcode.ErrorCode_ReqCubeAPIFailed), RetMsg: "allocation_creation_unconfirmed"}}
++}
++func handleManagedAllocation(c *gin.Context) {
++	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4096)
++	var input struct {
++		ID            string `json:"allocationID"`
++		NotAfter      int64  `json:"createBefore"`
++		ObservedAt    int64  `json:"observedAt"`
++		ExecutionBoot string `json:"executionBoot"`
++	}
++	if json.NewDecoder(c.Request.Body).Decode(&input) != nil || !allocation.ValidID(input.ID) || input.NotAfter <= 0 {
++		c.JSON(400, gin.H{"error": "invalid_allocation_request"})
++		return
++	}
++	action := c.Param("action")
++	if action == "renew" {
++		until, err := sandbox.RenewManagedAllocation(c.Request.Context(), input.ID, input.NotAfter, input.ExecutionBoot, input.ObservedAt)
++		if err != nil {
++			c.JSON(409, gin.H{"error": "retention_unconfirmed"})
++			return
++		}
++		c.JSON(200, gin.H{"allocationID": input.ID, "retainUntil": until})
++		return
++	}
++	if action != "get" && action != "close" {
++		c.JSON(404, gin.H{"error": "unknown_allocation_action"})
++		return
++	}
++	r, err := sandbox.ReconcileAllocation(c.Request.Context(), input.ID, action == "close", input.NotAfter, false)
++	if err != nil {
++		c.JSON(503, gin.H{"error": "allocation_unconfirmed"})
++		return
++	}
++	if r == nil {
++		c.JSON(200, gin.H{"allocationID": input.ID, "createBefore": input.NotAfter, "phase": "missing", "closed": false})
++		return
++	}
++	if r.NotAfter != input.NotAfter {
++		c.JSON(409, gin.H{"error": "allocation_parameters_changed"})
++		return
++	}
++	response := gin.H{"allocationID": r.ID, "createBefore": r.NotAfter, "sandboxID": r.SandboxID, "nodeID": r.NodeID, "phase": r.Phase, "closed": r.Closed}
++	if r.RetentionWindow > 0 {
++		response["retentionWindowMs"] = r.RetentionWindow
++		response["retainUntil"] = r.RetainUntil
++	}
++	if r.Phase == "ready" && !r.Closed && r.Result != "" {
++		var created types.CreateCubeSandboxRes
++		var original types.CreateCubeSandboxReq
++		if json.Unmarshal([]byte(r.Result), &created) != nil || json.Unmarshal([]byte(r.Request), &original) != nil {
++			c.JSON(503, gin.H{"error": "allocation_receipt_invalid"})
++			return
++		}
++		response["instance"] = gin.H{"sandboxID": r.SandboxID, "templateID": original.Annotations[constants.CubeAnnotationAppSnapshotTemplateID], "clientID": r.NodeID, "metadata": original.Labels, "trafficAccessToken": created.TrafficAccessToken}
++	}
++	c.JSON(200, response)
++	_ = allocation.Default().Collect(c.Request.Context())
++}
+diff --git a/CubeMaster/pkg/service/httpservice/cube/routes.go b/CubeMaster/pkg/service/httpservice/cube/routes.go
+index c3e031147ab00f215f836433284440f7fda47927..99db7410b1f4aa330069dd0454fbf103eb8884a7 100644
+--- a/CubeMaster/pkg/service/httpservice/cube/routes.go
++++ b/CubeMaster/pkg/service/httpservice/cube/routes.go
+@@ -18,6 +18,7 @@ import "github.com/gin-gonic/gin"
+ // (mux's POST /internal/fake_create is registered in the inner router, not here
+ // — see the inner package.)
+ func RegisterCubeRoutes(g *gin.RouterGroup) {
++	g.POST("/allocation/:action", handleManagedAllocation)
+ 	// Sandbox CRUD
+ 	g.POST(SandboxAction, createSandboxGinHandler)
+ 	g.DELETE(SandboxAction, deleteSandboxGinHandler)
+@@ -30,6 +31,7 @@ func RegisterCubeRoutes(g *gin.RouterGroup) {
+ 	g.POST(SandboxTimeoutAction, handleSandboxTimeoutAction)
+ 	g.POST(SandboxRefreshAction, handleSandboxRefreshAction)
+ 	g.POST(SandboxExecAction, handleExecAction)
++	g.POST("/sandbox/execution/:action", handleManagedExecution)
+ 	g.GET(SandboxInfoAction, handleInfoAction)
+ 	g.POST(SandboxInfoAction, handleInfoAction)
+ 	g.GET(SandboxListAction, handleListAction)
+diff --git a/CubeMaster/pkg/service/httpservice/cube/sandbox_create.go b/CubeMaster/pkg/service/httpservice/cube/sandbox_create.go
+index f1229a13743ec7da6b60cb99bc70a0d7637e7451..7c834cbd17b567b1346a6477028f56352f364a7b 100644
+--- a/CubeMaster/pkg/service/httpservice/cube/sandbox_create.go
++++ b/CubeMaster/pkg/service/httpservice/cube/sandbox_create.go
+@@ -52,6 +52,15 @@ func createSandbox(r *http.Request, rt *CubeLog.RequestTrace) interface{} {
+ 		"RequestId":    req.RequestID,
+ 		"InstanceType": req.InstanceType,
+ 	}))
++	managed, admissionErr := sandbox.BeginManagedAllocation(ctx, req)
++	if admissionErr != nil {
++		rsp.Ret.RetCode = int(errorcode.ErrorCode_Conflict)
++		rsp.Ret.RetMsg = "allocation_admission_refused"
++		return rsp
++	}
++	if managed != nil && managed.NodeID != "" {
++		return resumeManagedCreate(ctx, managed)
++	}
+ 	resolveResult := &templateResolveResult{}
+ 	ctx = withTemplateResolveResult(ctx, resolveResult)
+ 
+diff --git a/CubeMaster/pkg/service/httpservice/cube/volume.go b/CubeMaster/pkg/service/httpservice/cube/volume.go
+index 732045d2970dcd109e851cdc0dd3e2c196941893..55976d32ac295188b0d8ee4f16c298e4f988b9db 100644
+--- a/CubeMaster/pkg/service/httpservice/cube/volume.go
++++ b/CubeMaster/pkg/service/httpservice/cube/volume.go
+@@ -10,9 +10,11 @@ import (
+ 
+ 	"github.com/gin-gonic/gin"
+ 	"github.com/google/uuid"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/allocation"
+ 	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/db/models"
+ 	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/errorcode"
+ 	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/service/httpservice/common"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/service/sandbox"
+ 	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/service/sandbox/types"
+ 	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/volume/plugin"
+ 	CubeLog "github.com/tencentcloud/CubeSandbox/pkgs/CubeLog"
+@@ -285,6 +287,36 @@ func handleDeleteVolume(c *gin.Context) {
+ 		return
+ 	}
+ 
++	if record.Driver == "picloud-posix" {
++		store := &allocation.Store{DB: volumeDB()}
++		managed, err := store.BeginVolumeDeletion(c.Request.Context(), volumeID)
++		if err == nil {
++			err = sandbox.RefreshVolumeReferences(c.Request.Context(), store, volumeID)
++		}
++		if err == nil {
++			err = store.ConfirmVolumeDeletion(c.Request.Context(), volumeID, uint64(managed.ID))
++		}
++		if err != nil {
++			common.WriteAPI(c, &deleteVolumeRes{Ret: volErr(rt, errorcode.ErrorCode_Conflict, "Volume references are active or unconfirmed")})
++			return
++		}
++		p, ok := plugin.Get(record.Driver)
++		if !ok {
++			common.WriteAPI(c, &deleteVolumeRes{Ret: volErr(rt, errorcode.ErrorCode_MasterParamsError, "unknown Volume driver")})
++			return
++		}
++		if err = p.Destroy(c.Request.Context(), volumeID); err == nil {
++			err = store.FinishVolumeDeletion(c.Request.Context(), volumeID, uint64(managed.ID))
++		}
++		if err != nil {
++			common.WriteAPI(c, &deleteVolumeRes{Ret: volErr(rt, errorcode.ErrorCode_MasterInternalError, "Volume deletion is unconfirmed")})
++			return
++		}
++		rt.RetCode = 0
++		common.WriteAPI(c, &deleteVolumeRes{Ret: retOK(), VolumeID: volumeID})
++		return
++	}
++
+ 	// Refuse to delete a volume that is still attached on one or more nodes.
+ 	// RefCount is maintained from the node-level transitions Cubelet reports on
+ 	// sandbox create/destroy; a non-zero value means live sandboxes still use it.
+diff --git a/CubeMaster/pkg/service/sandbox/allocation.go b/CubeMaster/pkg/service/sandbox/allocation.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..61009f6e58e9f784158f58dc692e60696c768765
+--- /dev/null
++++ b/CubeMaster/pkg/service/sandbox/allocation.go
+@@ -0,0 +1,289 @@
++// Copyright (c) 2026 Tencent Inc.
++// SPDX-License-Identifier: Apache-2.0
++package sandbox
++
++import (
++	"context"
++	"crypto/sha256"
++	"encoding/hex"
++	"encoding/json"
++	"errors"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/allocation"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/constants"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/cubelet"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/cubelet/grpcconn"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/errorcode"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/localcache"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/sandboxspec"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/service/sandbox/types"
++	"github.com/tencentcloud/CubeSandbox/pkgs/proto/services/cubebox/v1"
++	cubeerror "github.com/tencentcloud/CubeSandbox/pkgs/proto/services/errorcode/v1"
++	"google.golang.org/protobuf/encoding/protojson"
++	"strconv"
++	"time"
++)
++
++type nodeAllocation struct {
++	RetainUntil     int64           `json:"retainUntil"`
++	RetentionWindow int64           `json:"retentionWindowMs"`
++	ID              string          `json:"allocationID"`
++	SandboxID       string          `json:"sandboxID"`
++	Digest          string          `json:"digest"`
++	NotAfter        int64           `json:"createBefore"`
++	Phase           string          `json:"phase"`
++	Closed          bool            `json:"closed"`
++	StartedBoot     string          `json:"startedBoot"`
++	Result          json.RawMessage `json:"result"`
++	CleanupResult   json.RawMessage `json:"cleanupResult"`
++}
++
++// Begin runs before template resolution, against the caller's stable parameters.
++func BeginManagedAllocation(ctx context.Context, req *types.CreateCubeSandboxReq) (*allocation.Record, error) {
++	id := req.Labels[allocation.IDLabel]
++	if id == "" {
++		if req.Labels["picloud.managed"] == "true" {
++			return nil, errors.New("managed allocation authorization required")
++		}
++		return nil, nil
++	}
++	deadline, err := strconv.ParseInt(req.Labels[allocation.DeadlineLabel], 10, 64)
++	if err != nil {
++		return nil, err
++	}
++	copy := *req
++	copy.Request = nil
++	raw, err := json.Marshal(copy)
++	if err != nil {
++		return nil, err
++	}
++	sum := sha256.Sum256(raw)
++	return allocation.Default().Begin(ctx, id, hex.EncodeToString(sum[:]), deadline, string(raw))
++}
++func (c *createSandboxContext) prepareAllocation() error {
++	if c.allocation == nil {
++		return nil
++	}
++	a := c.cubeletReq.Annotations
++	if a == nil {
++		a = map[string]string{}
++		c.cubeletReq.Annotations = a
++	}
++	a[allocation.IDAnnotation] = c.allocation.ID
++	a[allocation.DigestAnnotation] = c.allocation.Digest
++	a[allocation.DeadlineAnnotation] = strconv.FormatInt(c.allocation.NotAfter, 10)
++	a[allocation.FixedIDAnnotation] = c.allocation.SandboxID
++	conn, err := grpcconn.GetWorkerConn(c.ctx, cubelet.GetCubeletAddr(c.selectHost.HostIP()))
++	if err != nil {
++		return err
++	}
++	defer conn.Close()
++	capability, err := cubebox.NewCubeboxMgrClient(conn.Value()).ManageAllocation(c.ctx, &cubebox.AllocationRequest{})
++	if err != nil {
++		return err
++	}
++	var capabilityState struct {
++		ReferenceEpoch string `json:"referenceEpoch"`
++	}
++	if err = json.Unmarshal(capability.Record, &capabilityState); err != nil {
++		return err
++	}
++	if capability.BootId == "" {
++		return errors.New("allocation node boot unavailable")
++	}
++	a["pi-cloud.allocation.node-boot"] = capability.BootId
++	wire, err := protojson.Marshal(c.cubeletReq)
++	if err != nil {
++		return err
++	}
++	resolved, err := json.Marshal(createOriginRequestFromContext(c.ctx))
++	if err != nil {
++		return err
++	}
++	record, err := allocation.Default().Place(c.ctx, c.allocation.ID, c.selectHost.ID(), c.selectHost.HostIP(), capability.BootId, string(wire), string(resolved), capabilityState.ReferenceEpoch)
++	if err != nil {
++		return err
++	}
++	host, ok := localcache.GetNode(record.NodeID)
++	if !ok || !host.Healthy {
++		return errors.New("allocation node unavailable")
++	}
++	c.selectHost = host
++	c.directHost = true
++	c.reschedule = false
++	c.allocation = record
++	var canonical types.CreateCubeSandboxReq
++	if err = json.Unmarshal([]byte(record.Request), &canonical); err != nil {
++		return err
++	}
++	if origin := createOriginRequestFromContext(c.ctx); origin != nil {
++		*origin = canonical
++	}
++	return protojson.Unmarshal([]byte(record.NodeRequest), c.cubeletReq)
++}
++func (c *createSandboxContext) finishAllocation() error {
++	current, err := allocation.Default().Get(c.ctx, c.allocation.ID)
++	if err != nil {
++		return err
++	}
++	if current == nil {
++		return allocation.ErrUnavailable
++	}
++	if current.Closed {
++		return allocation.ErrClosed
++	}
++	// Proxy metadata uses the allocation's original token, including reply recovery.
++	if err = c.setProxyToRedis(); err != nil {
++		return err
++	}
++	origin := createOriginRequestFromContext(c.ctx)
++	if err = sandboxspec.Put(c.ctx, c.masterRsp.SandboxID, origin, sandboxspec.PutOptions{HostID: c.selectHost.ID(), HostIP: c.selectHost.HostIP()}); err != nil {
++		return err
++	}
++	c.masterRsp.Ret = &types.Ret{RetCode: int(errorcode.ErrorCode_Success)}
++	if v := origin.Annotations[constants.CubeAnnotationComponentEnvdVersion]; v != "" {
++		c.masterRsp.ExtInfo[constants.CubeAnnotationComponentEnvdVersion] = v
++	}
++	data, err := json.Marshal(c.masterRsp)
++	if err != nil {
++		return err
++	}
++	_, err = allocation.Default().Finish(c.ctx, c.allocation.ID, "ready", string(data))
++	if errors.Is(err, allocation.ErrClosed) {
++		_ = localcache.DeleteSandboxProxyMap(c.ctx, c.masterRsp.SandboxID)
++		localcache.DeleteSandboxCache(c.masterRsp.SandboxID)
++		_ = runAfterDestroySandboxSuccessHook(c.ctx, c.masterRsp.SandboxID)
++	}
++	if err == nil {
++		_ = RefreshAllocationVolumeReferences(c.ctx, c.allocation.ID)
++	}
++	return err
++}
++
++// Reconcile uses the fixed target and original wire request. A missing receipt
++// is not absence: only the node's idempotent Create may resume that exact request.
++func ReconcileAllocation(ctx context.Context, id string, close bool, deadline int64, resubmit bool) (*allocation.Record, error) {
++	store := allocation.Default()
++	var r *allocation.Record
++	var err error
++	if close {
++		r, err = store.Close(ctx, id, deadline)
++	} else {
++		r, err = store.Get(ctx, id)
++	}
++	if err != nil || r == nil {
++		return r, err
++	}
++	if r.Phase == "absent" && r.NodeID != "" {
++		if err = localcache.DeleteSandboxProxyMap(ctx, r.SandboxID); err != nil {
++			return r, err
++		}
++		localcache.DeleteSandboxCache(r.SandboxID)
++		if err = runAfterDestroySandboxSuccessHook(ctx, r.SandboxID); err != nil {
++			return r, err
++		}
++	}
++	if r.NodeID == "" || r.Phase == "absent" {
++		return r, nil
++	}
++	host, ok := localcache.GetNode(r.NodeID)
++	if !ok || !host.Healthy {
++		return r, errors.New("allocation node unavailable")
++	}
++	budget := 5 * time.Second
++	if r.Closed {
++		// The managed profile uses Cubelet's native 60s destroy policy.
++		// Keep transport time outside the physical cleanup lifetime.
++		budget = 65 * time.Second
++	}
++	bounded, cancel := context.WithTimeout(ctx, budget)
++	defer cancel()
++	conn, err := grpcconn.GetWorkerConn(bounded, cubelet.GetCubeletAddr(host.HostIP()))
++	if err != nil {
++		return r, err
++	}
++	defer conn.Close()
++	client := cubebox.NewCubeboxMgrClient(conn.Value())
++	response, err := client.ManageAllocation(bounded, &cubebox.AllocationRequest{AllocationId: r.ID, Digest: r.Digest, CreateBefore: r.NotAfter, Close: r.Closed, ExpectedBoot: r.NodeBoot})
++	if err != nil {
++		return r, err
++	}
++	if response.Failure == "allocation_not_recorded" && !r.Closed && response.BootId == r.NodeBoot {
++		if !resubmit {
++			return r, nil
++		}
++		var request cubebox.RunCubeSandboxRequest
++		if err = protojson.Unmarshal([]byte(r.NodeRequest), &request); err != nil {
++			return r, err
++		}
++		// Destination admission owns idempotency. Never choose another physical node.
++		_, _ = client.Create(bounded, &request)
++		return r, nil
++	}
++	if response.Failure != "" {
++		return r, errors.New("allocation outcome unconfirmed")
++	}
++	var observed nodeAllocation
++	if err = json.Unmarshal(response.Record, &observed); err != nil {
++		return r, err
++	}
++	if observed.ID != r.ID || observed.Digest != r.Digest || observed.NotAfter != r.NotAfter || observed.SandboxID != r.SandboxID || observed.StartedBoot != r.NodeBoot {
++		return r, errors.New("allocation identity changed")
++	}
++	if observed.Closed && !r.Closed {
++		r, err = store.Close(ctx, r.ID, r.NotAfter)
++		if err != nil {
++			return r, err
++		}
++	}
++	var created cubebox.RunCubeSandboxResponse
++	if len(observed.Result) > 0 {
++		if err = protojson.Unmarshal(observed.Result, &created); err != nil {
++			return r, err
++		}
++	}
++	if observed.Closed && observed.Phase == "absent" {
++		if err = localcache.DeleteSandboxProxyMap(ctx, r.SandboxID); err != nil {
++			return r, err
++		}
++		localcache.DeleteSandboxCache(r.SandboxID)
++		if err = runAfterDestroySandboxSuccessHook(ctx, r.SandboxID); err != nil {
++			return r, err
++		}
++		// Queryable node state does not depend on the cleanup reply journal.
++		// Failure leaves conservative Volume/node state for Volume GC retries;
++		// confirmed VM absence may still release its independent compute quota.
++		_ = RefreshAllocationVolumeReferences(ctx, r.ID)
++		return store.Finish(ctx, r.ID, "absent", "")
++	}
++	if r.Closed {
++		return r, nil
++	}
++	if observed.Phase == "failed" {
++		return store.Finish(ctx, r.ID, "failed", "")
++	}
++	if observed.Phase != "ready" {
++		return r, nil
++	}
++	if created.Ret == nil || created.Ret.RetCode != cubeerror.ErrorCode_Success {
++		return r, errors.New("invalid allocation completion")
++	}
++	if r.Phase == "ready" && r.Result != "" {
++		r.RetainUntil = observed.RetainUntil
++		r.RetentionWindow = observed.RetentionWindow
++		return r, nil
++	}
++	var origin types.CreateCubeSandboxReq
++	var request cubebox.RunCubeSandboxRequest
++	if err = json.Unmarshal([]byte(r.Request), &origin); err != nil {
++		return r, err
++	}
++	if err = protojson.Unmarshal([]byte(r.NodeRequest), &request); err != nil {
++		return r, err
++	}
++	c := &createSandboxContext{ctx: withCreateOriginRequest(ctx, &origin), allocation: r, selectHost: host, cubeletReq: &request, cubeletRsp: &created,
++		masterRsp: &types.CreateCubeSandboxRes{RequestID: origin.RequestID, Ret: &types.Ret{}, SandboxID: r.SandboxID, SandboxIP: created.SandboxIP, HostID: r.NodeID, HostIP: host.HostIP(), ExtInfo: map[string]string{}}}
++	if err = c.finishAllocation(); err != nil {
++		return r, err
++	}
++	return store.Get(ctx, r.ID)
++}
+diff --git a/CubeMaster/pkg/service/sandbox/allocation_retention.go b/CubeMaster/pkg/service/sandbox/allocation_retention.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..2131e0df5bd374b5a60bc61ceab9192452b4a237
+--- /dev/null
++++ b/CubeMaster/pkg/service/sandbox/allocation_retention.go
+@@ -0,0 +1,52 @@
++package sandbox
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/allocation"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/cubelet"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/cubelet/grpcconn"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/localcache"
++	cubebox "github.com/tencentcloud/CubeSandbox/pkgs/proto/services/cubebox/v1"
++)
++
++// Forward to the recorded node and return only its durable acknowledgement.
++// Master/Redis receipt times never become a new retention deadline.
++func RenewManagedAllocation(ctx context.Context, id string, deadline int64, executionBoot string, observedAt int64) (int64, error) {
++	r, err := allocation.Default().Get(ctx, id)
++	if err != nil {
++		return 0, err
++	}
++	if r == nil || r.Closed || r.Phase != "ready" || r.NotAfter != deadline || observedAt <= 0 || executionBoot == "" {
++		return 0, errors.New("allocation not renewable")
++	}
++	host, ok := localcache.GetNode(r.NodeID)
++	if !ok || !host.Healthy {
++		return 0, errors.New("allocation node unavailable")
++	}
++	conn, err := grpcconn.GetWorkerConn(ctx, cubelet.GetCubeletAddr(host.HostIP()))
++	if err != nil {
++		return 0, err
++	}
++	defer conn.Close()
++	reply, err := cubebox.NewCubeboxMgrClient(conn.Value()).ManageAllocation(ctx, &cubebox.AllocationRequest{AllocationId: r.ID, Digest: r.Digest, CreateBefore: r.NotAfter, ExpectedBoot: r.NodeBoot, ObservedAt: observedAt, ExecutionBoot: executionBoot})
++	if err != nil {
++		return 0, err
++	}
++	if reply.Failure != "" {
++		return 0, errors.New(reply.Failure)
++	}
++	var state struct {
++		ID     string `json:"allocationID"`
++		Closed bool   `json:"closed"`
++		Until  int64  `json:"retainUntil"`
++	}
++	if err = json.Unmarshal(reply.Record, &state); err != nil {
++		return 0, err
++	}
++	if state.ID != id || state.Closed || state.Until <= observedAt {
++		return 0, errors.New("retention acknowledgement invalid")
++	}
++	return state.Until, nil
++}
+diff --git a/CubeMaster/pkg/service/sandbox/sandbox_info.go b/CubeMaster/pkg/service/sandbox/sandbox_info.go
+index e696f5090138c8715d83456b495109ff32802208..f59d8da8da170ae8744bca3f96a453d563c8dd25 100644
+--- a/CubeMaster/pkg/service/sandbox/sandbox_info.go
++++ b/CubeMaster/pkg/service/sandbox/sandbox_info.go
+@@ -19,6 +19,7 @@ import (
+ 	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/errorcode"
+ 	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/localcache"
+ 	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/pausesnap"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/sandboxid"
+ 	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/sandboxspec"
+ 	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/service/sandbox/types"
+ 	"github.com/tencentcloud/CubeSandbox/pkgs/CubeLog"
+@@ -37,12 +38,18 @@ func SandboxInfo(ctx context.Context, req *types.GetCubeSandboxReq) (rsp *types.
+ 		},
+ 	}
+ 	log.G(ctx).Infof("GetSandboxInfo:%+v", utils.InterfaceToString(req))
+-	if req.SandboxID != "" {
++	// A recorded node plus a full ID is an exact lookup, including when the
++	// master's routing cache is missing. Do not turn a partial cluster scan into
++	// an absence assertion for this node.
++	if req.SandboxID != "" && !(req.HostID != "" && sandboxid.IsFullID(req.SandboxID)) {
+ 		if ret := normalizeSandboxIDInReq(ctx, &req.SandboxID); ret != nil {
+ 			rsp.Ret = ret
+ 			return
+ 		}
+ 	}
++	if req.HostID != "" && sandboxid.IsFullID(req.SandboxID) {
++		req.SandboxID = strings.ToLower(req.SandboxID)
++	}
+ 	defer func() {
+ 		if log.IsDebug() {
+ 			log.G(ctx).Debugf("GetSandboxInfo_rsp:%+v", utils.InterfaceToString(rsp))
+diff --git a/CubeMaster/pkg/service/sandbox/sandbox_remove.go b/CubeMaster/pkg/service/sandbox/sandbox_remove.go
+index 87413806eb10bf9a608318a42b0b335402b19ef4..78ec30cb92de8f1fe0afe5b13e126955a1d182d7 100644
+--- a/CubeMaster/pkg/service/sandbox/sandbox_remove.go
++++ b/CubeMaster/pkg/service/sandbox/sandbox_remove.go
+@@ -6,6 +6,8 @@ package sandbox
+ 
+ import (
+ 	"context"
++	"github.com/google/uuid"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/allocation"
+ 	"strconv"
+ 	"strings"
+ 	"time"
+@@ -49,6 +51,24 @@ func DestroySandbox(ctx context.Context, req *types.DeleteCubeSandboxReq) (rsp *
+ 		return
+ 	}
+ 	rsp.SandboxID = req.SandboxID
++	if id, err := uuid.Parse(req.SandboxID); err == nil && allocation.SandboxID(id.String()) == req.SandboxID {
++		record, err := allocation.Default().Get(ctx, id.String())
++		if err != nil {
++			rsp.Ret.RetCode = int(errorcode.ErrorCode_DBError)
++			rsp.Ret.RetMsg = "allocation_catalog_unavailable"
++			return
++		}
++		if record != nil {
++			record, err = ReconcileAllocation(ctx, record.ID, true, record.NotAfter, false)
++			if err != nil || record == nil || record.Phase != "absent" {
++				rsp.Ret.RetCode = int(errorcode.ErrorCode_ReqCubeAPIFailed)
++				rsp.Ret.RetMsg = "allocation_closure_unconfirmed"
++				return
++			}
++			rsp.Ret.RetCode = int(errorcode.ErrorCode_Success)
++			return
++		}
++	}
+ 
+ 	destroyReq := &cubebox.DestroyCubeSandboxRequest{
+ 		RequestID:   req.RequestID,
+diff --git a/CubeMaster/pkg/service/sandbox/sandbox_run.go b/CubeMaster/pkg/service/sandbox/sandbox_run.go
+index 18275f2d7d2c00061dd943a3c28f5b172ab593c0..1f790c874f4dd8a5b6023b6ad4483be7bbde8f55 100644
+--- a/CubeMaster/pkg/service/sandbox/sandbox_run.go
++++ b/CubeMaster/pkg/service/sandbox/sandbox_run.go
+@@ -20,6 +20,7 @@ import (
+ 	"github.com/google/uuid"
+ 	"golang.org/x/sync/errgroup"
+ 
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/allocation"
+ 	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/config"
+ 	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/constants"
+ 	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/log"
+@@ -45,6 +46,7 @@ var setSandboxProxyMapFn = localcache.SetSandboxProxyMap
+ var getSandboxProxyMapFn = localcache.GetSandboxProxyMap
+ 
+ type createSandboxContext struct {
++	allocation       *allocation.Record
+ 	selctx           *selctx.SelectorCtx
+ 	directHost       bool
+ 	selectHost       *node.Node
+@@ -276,6 +278,10 @@ func admitSelectedHost(selected *node.Node, getNode func(string) (*node.Node, bo
+ }
+ 
+ func (c *createSandboxContext) callCubelet() bool {
++	if err := c.prepareAllocation(); err != nil {
++		c.cubeletRsp = &cubebox.RunCubeSandboxResponse{Ret: &cubeleterrorcode.Ret{RetCode: cubeleterrorcode.ErrorCode_Unknown, RetMsg: "allocation_admission_unconfirmed"}}
++		return false
++	}
+ 
+ 	localcache.IncrNodeConcurrent(c.selectHost)
+ 	defer func() {
+@@ -292,8 +298,15 @@ func (c *createSandboxContext) callCubelet() bool {
+ 	c.cubeletStartTime = time.Now()
+ 	c.cubeletRsp, err = cubelet.Create(c.ctx, calleeEndpoint, c.cubeletReq)
+ 	if err != nil {
++		if c.allocation != nil {
++			c.cubeletRsp = &cubebox.RunCubeSandboxResponse{Ret: &cubeleterrorcode.Ret{RetCode: cubeleterrorcode.ErrorCode_Unknown, RetMsg: "allocation_creation_unconfirmed"}}
++			return false
++		}
+ 		return c.errRetry(err)
+ 	}
++	if c.allocation != nil {
++		return false
++	}
+ 	return c.errorCodeRetry()
+ }
+ 
+@@ -313,7 +326,9 @@ func (c *createSandboxContext) dealSuccResult() {
+ 		}
+ 		// Apply any node-level volume ref-count transitions (0→1) reported by
+ 		// Cubelet so the volume DB knows how many nodes reference each volume.
+-		volrefcount.ApplyFromExtInfo(c.ctx, c.cubeletRsp.GetExtInfo())
++		if c.allocation == nil {
++			volrefcount.ApplyFromExtInfo(c.ctx, c.cubeletRsp.GetExtInfo())
++		}
+ 		if config.GetConfig().CubeletConf.EnableExposedPort {
+ 			if c.cubeletRsp.GetPortMappings() != nil {
+ 				c.cubeletRspPorts = make(map[string]string)
+@@ -325,6 +340,12 @@ func (c *createSandboxContext) dealSuccResult() {
+ 				log.G(c.ctx).Warnf("no port mapping in response")
+ 			}
+ 		}
++		if c.allocation != nil {
++			if err := c.finishAllocation(); err != nil {
++				c.setMasterRsp(int(errorcode.ErrorCode_DBError), "allocation_completion_unconfirmed")
++			}
++			return
++		}
+ 		// Run the post-create writes (proxy redis HSET + sandbox_spec
+ 		// MySQL UPSERT) in parallel since they have no data dependency.
+ 		// The wall-clock cost collapses to max(redis, spec) instead of
+@@ -376,6 +397,9 @@ func (c *createSandboxContext) persistSandboxSpec() {
+ }
+ 
+ func (c *createSandboxContext) failover() {
++	if c.allocation != nil {
++		return
++	} // Allocation Close owns managed recovery.
+ 
+ 	if c.masterRsp.Ret.RetCode != int(errorcode.ErrorCode_Success) && c.masterRsp.SandboxID != "" {
+ 		rt := CubeLog.GetTraceInfo(c.ctx).DeepCopy()
+@@ -590,8 +614,12 @@ func (c *createSandboxContext) setProxyToRedis() error {
+ 		}
+ 		var token string
+ 		if !allowPublic {
+-			sum := sha256.Sum256([]byte(uuid.NewString()))
+-			token = hex.EncodeToString(sum[:])
++			if c.allocation != nil {
++				token = c.allocation.TrafficToken
++			} else {
++				sum := sha256.Sum256([]byte(uuid.NewString()))
++				token = hex.EncodeToString(sum[:])
++			}
+ 		}
+ 
+ 		proxy := &proxytypes.SandboxProxyMap{
+@@ -622,6 +650,19 @@ func (c *createSandboxContext) setProxyToRedis() error {
+ }
+ 
+ func (c *createSandboxContext) newContext(ctx context.Context, req *types.CreateCubeSandboxReq) error {
++	if id := req.Labels[allocation.IDLabel]; id != "" {
++		var err error
++		c.allocation, err = allocation.Default().Get(ctx, id)
++		if err != nil {
++			return err
++		}
++		if c.allocation == nil {
++			return allocation.ErrUnavailable
++		}
++		if c.allocation.Closed {
++			return allocation.ErrClosed
++		}
++	}
+ 	c.selctx = selctx.New(config.GetConfig().Scheduler.LeastSelectName)
+ 	c.selctx.InstanceType = req.InstanceType
+ 
+diff --git a/CubeMaster/pkg/service/sandbox/util.go b/CubeMaster/pkg/service/sandbox/util.go
+index 9381a5ae8993b5c8af2878466e3b4514de924c97..ebd302ca3624c052b5aa6ef60b50842889d7f87d 100644
+--- a/CubeMaster/pkg/service/sandbox/util.go
++++ b/CubeMaster/pkg/service/sandbox/util.go
+@@ -819,6 +819,9 @@ func checkAndGetVolumes(req *types.CreateCubeSandboxReq, out *cubebox.RunCubeSan
+ 				if err != nil {
+ 					return fmt.Errorf("volume [%s]: %w", e.Name, err)
+ 				}
++				if record.Driver == "picloud-posix" && req.Labels["picloud.allocation_id"] == "" {
++					return fmt.Errorf("PiCloud Volume requires managed allocation admission")
++				}
+ 				if err := appendPluginVolumeSourceAnnotation(req, e.Name, record.Driver, record.PrivateData); err != nil {
+ 					return fmt.Errorf("volume [%s]: annotation: %w", e.Name, err)
+ 				}
+diff --git a/CubeMaster/pkg/service/sandbox/volume_references.go b/CubeMaster/pkg/service/sandbox/volume_references.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..8d2d55e968806765b2a3ed41d9533b4778a4f1c3
+--- /dev/null
++++ b/CubeMaster/pkg/service/sandbox/volume_references.go
+@@ -0,0 +1,64 @@
++package sandbox
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/allocation"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/cubelet"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/cubelet/grpcconn"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/localcache"
++	"github.com/tencentcloud/CubeSandbox/pkgs/proto/services/cubebox/v1"
++	"time"
++)
++
++func refreshVolumeNode(ctx context.Context, store *allocation.Store, target allocation.VolumeNode) error {
++	host, ok := localcache.GetNode(target.NodeID)
++	if !ok || !host.Healthy {
++		return errors.New("recorded Volume node unavailable")
++	}
++	bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
++	defer cancel()
++	conn, err := grpcconn.GetWorkerConn(bounded, cubelet.GetCubeletAddr(host.HostIP()))
++	if err != nil {
++		return err
++	}
++	defer conn.Close()
++	response, err := cubebox.NewCubeboxMgrClient(conn.Value()).ObserveVolumeReferences(bounded, &cubebox.VolumeReferenceRequest{Namespace: "default", VolumeIds: []string{target.VolumeID}})
++	if err != nil {
++		return err
++	}
++	var states []allocation.VolumeState
++	if err = json.Unmarshal(response.State, &states); err != nil {
++		return err
++	}
++	if len(states) != 1 {
++		return errors.New("Volume reference response changed")
++	}
++	return store.ApplyVolumeState(ctx, target, states[0])
++}
++func RefreshAllocationVolumeReferences(ctx context.Context, id string) error {
++	store := allocation.Default()
++	nodes, err := store.AllocationVolumeNodes(ctx, id)
++	if err != nil {
++		return err
++	}
++	for _, node := range nodes {
++		if err = refreshVolumeNode(ctx, store, node); err != nil {
++			return err
++		}
++	}
++	return nil
++}
++func RefreshVolumeReferences(ctx context.Context, store *allocation.Store, id string) error {
++	nodes, err := store.VolumeNodes(ctx, id)
++	if err != nil {
++		return err
++	}
++	for _, node := range nodes {
++		if err = refreshVolumeNode(ctx, store, node); err != nil {
++			return err
++		}
++	}
++	return nil
++}
+diff --git a/Cubelet/pkg/allocation/manager.go b/Cubelet/pkg/allocation/manager.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..00a1c35d60204ac8d5cfbecd9b07c80661b6bfa0
+--- /dev/null
++++ b/Cubelet/pkg/allocation/manager.go
+@@ -0,0 +1,169 @@
++// Copyright (c) 2026 Tencent Inc.
++// SPDX-License-Identifier: Apache-2.0
++package allocation
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/utils"
++	"regexp"
++	"strings"
++	"time"
++)
++
++var idPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
++var digestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
++var ErrExpired = errors.New("allocation creation authorization expired")
++var ErrConflict = errors.New("allocation request identity changed")
++var ErrClosed = errors.New("allocation is closed")
++
++type Identity struct {
++	ID              string
++	Digest          string
++	NotAfter        int64
++	BootID          string
++	RetentionWindow int64
++}
++
++func SandboxID(id string) string { return strings.ReplaceAll(id, "-", "") }
++func (i Identity) Validate() error {
++	if !idPattern.MatchString(i.ID) || !digestPattern.MatchString(i.Digest) || i.NotAfter <= 0 || i.NotAfter > 1<<53 || i.BootID == "" || len(i.BootID) > 64 || i.RetentionWindow < 0 || i.RetentionWindow > 86400000 {
++		return errors.New("invalid allocation identity")
++	}
++	return nil
++}
++
++type Manager struct {
++	Store  *Store
++	BootID string
++	locks  *utils.ResourceLocks
++}
++
++func NewManager(store *Store, boot string) *Manager {
++	return &Manager{Store: store, BootID: boot, locks: utils.NewResourceLocks()}
++}
++
++type Create func(context.Context) (json.RawMessage, bool, error)
++type Cleanup func(context.Context, Record) (json.RawMessage, bool, error)
++
++// One native creation may execute for an allocation. Its lifetime is independent
++// of a caller's HTTP/gRPC response connection, but bounded by Cube's native deadline.
++func (m *Manager) Create(ctx context.Context, i Identity, budget time.Duration, create Create) (*Record, error) {
++	if err := i.Validate(); err != nil {
++		return nil, err
++	}
++	unlock, err := m.locks.LockContext(ctx, i.ID)
++	if err != nil {
++		return nil, err
++	}
++	defer unlock()
++	start := false
++	r, err := m.Store.Update(i.ID, func(r *Record, now int64) (*Record, error) {
++		if r != nil {
++			if r.Closed {
++				return nil, ErrClosed
++			}
++			if r.Digest != i.Digest || r.NotAfter != i.NotAfter || (r.StartedBoot != "" && r.StartedBoot != i.BootID) {
++				return nil, ErrConflict
++			}
++			return r, nil // includes an uncertain creation from a previous node boot
++		}
++		if now >= i.NotAfter {
++			return nil, ErrExpired
++		}
++		if i.BootID != m.BootID {
++			return nil, errors.New("allocation node boot changed")
++		}
++		start = true
++		r = &Record{ID: i.ID, SandboxID: SandboxID(i.ID), Digest: i.Digest, NotAfter: i.NotAfter, Phase: "creating", StartedBoot: m.BootID, RetentionWindow: i.RetentionWindow}
++		if i.RetentionWindow > 0 {
++			r.RetainUntil = now + i.RetentionWindow
++		}
++		return r, nil
++	})
++	if err != nil || !start {
++		return r, err
++	}
++	run, cancel := context.WithTimeout(context.WithoutCancel(ctx), budget)
++	defer cancel()
++	result, success, cause := create(run)
++	r, err = m.Store.Update(i.ID, func(r *Record, _ int64) (*Record, error) {
++		if r == nil {
++			return nil, ErrMissing
++		}
++		r.Result = result
++		r.CreateFinished = true
++		if r.Closed {
++			r.Phase = "closing"
++		} else if success && cause == nil {
++			r.Phase = "ready"
++		} else {
++			r.Phase = "failed"
++		}
++		return r, nil
++	})
++	if err != nil {
++		return nil, err
++	}
++	return r, nil
++}
++
++// Close's durable admission precedes its wait for the original creation. A late
++// Create can never reopen this identity, even while physical cleanup is blocked.
++func (m *Manager) Close(ctx context.Context, i Identity, budget time.Duration, cleanup Cleanup) (*Record, error) {
++	if err := i.Validate(); err != nil {
++		return nil, err
++	}
++	r, err := m.Store.Update(i.ID, func(r *Record, _ int64) (*Record, error) {
++		if r == nil {
++			phase := "absent"
++			if i.BootID != m.BootID {
++				phase = "closing"
++			}
++			return &Record{ID: i.ID, SandboxID: SandboxID(i.ID), Digest: i.Digest, NotAfter: i.NotAfter, Closed: true, Phase: phase, StartedBoot: i.BootID}, nil
++		}
++		if r.Digest != i.Digest || r.NotAfter != i.NotAfter || (r.StartedBoot != "" && r.StartedBoot != i.BootID) {
++			return nil, ErrConflict
++		}
++		r.Closed = true
++		if r.Phase != "absent" {
++			r.Phase = "closing"
++		}
++		return r, nil
++	})
++	if err != nil || r.Phase == "absent" {
++		return r, err
++	}
++	unlock, err := m.locks.LockContext(ctx, i.ID)
++	if err != nil {
++		return r, nil
++	}
++	defer unlock()
++	r, err = m.Store.Get(i.ID)
++	if err != nil {
++		return nil, err
++	}
++	if r == nil {
++		return nil, ErrMissing
++	}
++	if r.Phase == "absent" {
++		return r, nil
++	}
++	// Admission is irreversible. Once physical cleanup starts its lifetime is
++	// owned by Cube, bounded by the native destroy policy, not the RPC caller.
++	run, cancel := context.WithTimeout(context.WithoutCancel(ctx), budget)
++	defer cancel()
++	result, absent, err := cleanup(run, *r)
++	if err != nil || !absent {
++		return r, err
++	}
++	return m.Store.Update(i.ID, func(r *Record, _ int64) (*Record, error) {
++		if r == nil {
++			return nil, ErrMissing
++		}
++		r.Phase = "absent"
++		r.CleanupResult = result
++		return r, nil
++	})
++}
+diff --git a/Cubelet/pkg/allocation/manager_test.go b/Cubelet/pkg/allocation/manager_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..d191d8fb0b4ec4db1b364c3a280863b74527d076
+--- /dev/null
++++ b/Cubelet/pkg/allocation/manager_test.go
+@@ -0,0 +1,237 @@
++// Copyright (c) 2026 Tencent Inc.
++// SPDX-License-Identifier: Apache-2.0
++package allocation
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	bolt "go.etcd.io/bbolt"
++	"path/filepath"
++	"strings"
++	"sync"
++	"sync/atomic"
++	"testing"
++	"time"
++)
++
++func fixture(t *testing.T) (*Manager, *bolt.DB, *atomic.Int64) {
++	t.Helper()
++	db, e := bolt.Open(filepath.Join(t.TempDir(), "meta.db"), 0600, nil)
++	if e != nil {
++		t.Fatal(e)
++	}
++	t.Cleanup(func() { db.Close() })
++	now := &atomic.Int64{}
++	now.Store(1_000_000)
++	s, e := NewStore(db, func() time.Time { return time.UnixMilli(now.Load()) })
++	if e != nil {
++		t.Fatal(e)
++	}
++	return NewManager(s, "boot-one"), db, now
++}
++func identity() Identity {
++	return Identity{ID: "12345678-1234-1234-1234-123456789abc", Digest: strings.Repeat("a", 64), NotAfter: 1_300_000, BootID: "boot-one"}
++}
++func success(context.Context) (json.RawMessage, bool, error) {
++	return json.RawMessage(`{"result":"created"}`), true, nil
++}
++func absent(context.Context, Record) (json.RawMessage, bool, error) { return nil, true, nil }
++
++func TestConcurrentCreateAndLostResponseKeepOneNativeExecution(t *testing.T) {
++	m, _, _ := fixture(t)
++	i := identity()
++	var calls atomic.Int32
++	var wg sync.WaitGroup
++	for n := 0; n < 20; n++ {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			r, e := m.Create(context.Background(), i, time.Second, func(c context.Context) (json.RawMessage, bool, error) {
++				calls.Add(1)
++				time.Sleep(time.Millisecond)
++				return success(c)
++			})
++			if e != nil || r.Phase != "ready" {
++				t.Errorf("create: %v %+v", e, r)
++			}
++		}()
++	}
++	wg.Wait()
++	if calls.Load() != 1 {
++		t.Fatalf("%d effects", calls.Load())
++	}
++	// A new process can return the saved reply, without repeating physical work.
++	next := NewManager(m.Store, "boot-two")
++	r, e := next.Create(context.Background(), i, time.Second, func(context.Context) (json.RawMessage, bool, error) {
++		t.Fatal("replayed effect")
++		return nil, false, nil
++	})
++	if e != nil || r.Phase != "ready" {
++		t.Fatalf("restore: %v %+v", e, r)
++	}
++	changed := i
++	changed.Digest = strings.Repeat("b", 64)
++	if _, e = m.Create(context.Background(), changed, time.Second, success); !errors.Is(e, ErrConflict) {
++		t.Fatalf("changed input: %v", e)
++	}
++}
++func TestCloseBeforeCreateRejectsDelayedRequestAcrossRestartAndGC(t *testing.T) {
++	m, _, now := fixture(t)
++	i := identity()
++	r, e := m.Close(context.Background(), i, time.Second, absent)
++	if e != nil || r.Phase != "absent" {
++		t.Fatal(e, r)
++	}
++	next := NewManager(m.Store, "boot-two")
++	if _, e = next.Create(context.Background(), i, time.Second, success); !errors.Is(e, ErrClosed) {
++		t.Fatal(e)
++	}
++	now.Store(i.NotAfter + retention + 1)
++	if e = m.Store.Collect(); e != nil {
++		t.Fatal(e)
++	}
++	r, e = m.Store.Get(i.ID)
++	if e != nil || r != nil {
++		t.Fatal(e, r)
++	}
++	now.Store(1)
++	if _, e = next.Create(context.Background(), i, time.Second, success); !errors.Is(e, ErrExpired) {
++		t.Fatalf("clock rollback admitted old request: %v", e)
++	}
++}
++func TestCloseDuringCreateCannotConfirmAbsenceBeforeCreationJoins(t *testing.T) {
++	m, _, _ := fixture(t)
++	i := identity()
++	entered, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
++	go func() {
++		defer close(done)
++		_, e := m.Create(context.Background(), i, time.Second, func(c context.Context) (json.RawMessage, bool, error) { close(entered); <-release; return success(c) })
++		if e != nil {
++			t.Error(e)
++		}
++	}()
++	<-entered
++	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
++	defer cancel()
++	var clean atomic.Int32
++	cleanup := func(context.Context, Record) (json.RawMessage, bool, error) { clean.Add(1); return nil, true, nil }
++	r, e := m.Close(ctx, i, time.Second, cleanup)
++	if e != nil || r.Phase != "closing" || clean.Load() != 0 {
++		t.Fatal(e, r, clean.Load())
++	}
++	// Another allocation is independent of this slow creator.
++	other := i
++	other.ID = "22345678-1234-1234-1234-123456789abc"
++	if r, e = m.Create(context.Background(), other, time.Second, success); e != nil || r.Phase != "ready" {
++		t.Fatal(e, r)
++	}
++	close(release)
++	<-done
++	r, e = m.Close(context.Background(), i, time.Second, cleanup)
++	if e != nil || r.Phase != "absent" || clean.Load() != 1 {
++		t.Fatal(e, r, clean.Load())
++	}
++	if _, e = m.Create(context.Background(), i, time.Second, success); !errors.Is(e, ErrClosed) {
++		t.Fatal(e)
++	}
++}
++func TestNativeCreationOutlivesResponseCancellationButNotItsOwnDeadline(t *testing.T) {
++	m, _, _ := fixture(t)
++	ctx, cancel := context.WithCancel(context.Background())
++	r, e := m.Create(ctx, identity(), time.Second, func(c context.Context) (json.RawMessage, bool, error) {
++		cancel()
++		if c.Err() != nil {
++			t.Fatal("response cancellation ended native creation")
++		}
++		return success(c)
++	})
++	if e != nil || r.Phase != "ready" {
++		t.Fatal(e, r)
++	}
++}
++
++func TestCleanupOutlivesCallerButHonorsNativeBudget(t *testing.T) {
++	m, _, _ := fixture(t)
++	i := identity()
++	if _, err := m.Create(context.Background(), i, time.Second, success); err != nil {
++		t.Fatal(err)
++	}
++	ctx, cancel := context.WithCancel(context.Background())
++	r, err := m.Close(ctx, i, 25*time.Millisecond, func(c context.Context, _ Record) (json.RawMessage, bool, error) {
++		cancel()
++		if c.Err() != nil {
++			t.Fatal("caller cancelled accepted cleanup")
++		}
++		<-c.Done()
++		return nil, false, c.Err()
++	})
++	if !errors.Is(err, context.DeadlineExceeded) || r.Phase != "closing" || !r.Closed {
++		t.Fatal(r, err)
++	}
++	// Retry the original identity; no new creation or lost terminal result.
++	r, err = m.Close(context.Background(), i, time.Second, absent)
++	if err != nil || r.Phase != "absent" {
++		t.Fatal(r, err)
++	}
++	_, err = m.Close(context.Background(), i, time.Second, func(context.Context, Record) (json.RawMessage, bool, error) {
++		t.Fatal("repeated completed cleanup")
++		return nil, false, nil
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++}
++
++func TestMissingNodeJournalCannotAdmitAnOldBootCreate(t *testing.T) {
++	m, _, _ := fixture(t)
++	i := identity()
++	i.BootID = "departed"
++	if _, err := m.Create(context.Background(), i, time.Second, success); err == nil {
++		t.Fatal("old boot created a VM")
++	}
++	r, err := m.Close(context.Background(), i, time.Second, func(_ context.Context, r Record) (json.RawMessage, bool, error) {
++		if r.StartedBoot != "departed" || r.CreateFinished {
++			t.Fatal("lost creation identity", r)
++		}
++		return nil, false, errors.New("physical absence unconfirmed")
++	})
++	if err == nil || r.Phase != "closing" {
++		t.Fatal(err, r)
++	}
++}
++func TestInterruptedNativeCreationIsNotReexecutedAndUncertainCleanupRetainsEvidence(t *testing.T) {
++	m, _, now := fixture(t)
++	i := identity()
++	_, e := m.Store.Update(i.ID, func(*Record, int64) (*Record, error) {
++		return &Record{ID: i.ID, Digest: i.Digest, SandboxID: SandboxID(i.ID), NotAfter: i.NotAfter, Phase: "creating", StartedBoot: "departed"}, nil
++	})
++	i.BootID = "departed"
++	if e != nil {
++		t.Fatal(e)
++	}
++	r, e := m.Create(context.Background(), i, time.Second, func(context.Context) (json.RawMessage, bool, error) {
++		t.Fatal("replayed incomplete creation")
++		return nil, false, nil
++	})
++	if e != nil || r.Phase != "creating" {
++		t.Fatal(e, r)
++	}
++	r, e = m.Close(context.Background(), i, time.Second, func(_ context.Context, r Record) (json.RawMessage, bool, error) {
++		if r.CreateFinished || r.StartedBoot != "departed" {
++			t.Fatal(r)
++		}
++		return nil, false, errors.New("physical state unconfirmed")
++	})
++	if e == nil || r.Phase != "closing" {
++		t.Fatal(e, r)
++	}
++	now.Store(i.NotAfter + retention + 1)
++	if e = m.Store.Collect(); e != nil {
++		t.Fatal(e)
++	}
++	r, e = m.Store.Get(i.ID)
++	if e != nil || r == nil || !r.Closed {
++		t.Fatal(e, r)
++	}
++}
+diff --git a/Cubelet/pkg/allocation/receipt_recovery_test.go b/Cubelet/pkg/allocation/receipt_recovery_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ba382c62b372e052bb354a03af37787c977809c
+--- /dev/null
++++ b/Cubelet/pkg/allocation/receipt_recovery_test.go
+@@ -0,0 +1,83 @@
++package allocation
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/plugins/volume/refcount"
++	bolt "go.etcd.io/bbolt"
++	"path/filepath"
++	"strings"
++	"testing"
++	"time"
++)
++
++type reviewFailOnceDB struct {
++	*bolt.DB
++	fail bool
++}
++
++func (d *reviewFailOnceDB) Update(fn func(*bolt.Tx) error) error {
++	if d.fail {
++		d.fail = false
++		return errors.New("review: node receipt write unavailable")
++	}
++	return d.DB.Update(fn)
++}
++
++// Allocation and Volume metadata have independent durable lifetimes.
++func TestCleanupReceiptLossRetainsQueryableVolumeState(t *testing.T) {
++	raw, err := bolt.Open(filepath.Join(t.TempDir(), "metadata.db"), 0600, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer raw.Close()
++	db := &reviewFailOnceDB{DB: raw}
++	store, err := NewStore(db, time.Now)
++	if err != nil {
++		t.Fatal(err)
++	}
++	manager := NewManager(store, "review-boot")
++	id := Identity{ID: "a1000000-0000-4000-8000-000000000001", Digest: strings.Repeat("a", 64), NotAfter: time.Now().Add(time.Minute).UnixMilli(), BootID: "review-boot"}
++	if _, err = manager.Create(context.Background(), id, time.Second, func(context.Context) (json.RawMessage, bool, error) {
++		return json.RawMessage(`{"created":true}`), true, nil
++	}); err != nil {
++		t.Fatal(err)
++	}
++	refs, err := refcount.New(raw)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if _, err = refs.Acquire("default", "volume", id.ID, "test"); err != nil {
++		t.Fatal(err)
++	}
++	physicalDeletes := 0
++	_, err = manager.Close(context.Background(), id, time.Second, func(context.Context, Record) (json.RawMessage, bool, error) {
++		physicalDeletes++
++		if _, err = refs.BeginDetach("default", "volume", id.ID, nil); err != nil {
++			t.Fatal(err)
++		}
++		if err = refs.CompleteDetach("default", "volume", id.ID); err != nil {
++			t.Fatal(err)
++		}
++		db.fail = true
++		return json.RawMessage(`{"volumeReference":0}`), true, nil
++	})
++	if err == nil {
++		t.Fatal("receipt write failure was not injected")
++	}
++	// The actual cleanup adapter takes this branch when exact node Observe sees
++	// absence: return r.CleanupResult, true, nil. The first reply was never stored.
++	r, err := manager.Close(context.Background(), id, time.Second, func(_ context.Context, r Record) (json.RawMessage, bool, error) { return r.CleanupResult, true, nil })
++	if err != nil {
++		t.Fatal(err)
++	}
++	if r.Phase != "absent" || !r.Closed || len(r.CleanupResult) != 0 || physicalDeletes != 1 {
++		t.Fatalf("unexpected baseline: %+v deletes=%d", r, physicalDeletes)
++	}
++	state, err := refs.State("default", "volume")
++	if err != nil || state.Count != 0 || !state.Confirmed {
++		t.Fatal(state, err)
++	}
++	t.Log("Physical absence and current Volume state survive loss of the allocation cleanup result")
++}
+diff --git a/Cubelet/pkg/allocation/retention.go b/Cubelet/pkg/allocation/retention.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..232ed35484c2fab2093fc712f397b3efc1eec7a0
+--- /dev/null
++++ b/Cubelet/pkg/allocation/retention.go
+@@ -0,0 +1,126 @@
++// Copyright (c) 2026 Tencent Inc.
++// SPDX-License-Identifier: Apache-2.0
++package allocation
++
++import (
++	"encoding/binary"
++	"errors"
++	bolt "go.etcd.io/bbolt"
++)
++
++var ErrStaleActivity = errors.New("retention activity is stale")
++
++func idleKey(r *Record) []byte {
++	k := make([]byte, 8+len(r.ID))
++	binary.BigEndian.PutUint64(k, uint64(r.RetainUntil))
++	copy(k[8:], r.ID)
++	return k
++}
++
++// The existing synchronous allocation journal is the sole retention clock.
++// Replays retain their original time and cannot renew a later incarnation.
++func (m *Manager) Renew(i Identity, observedAt int64) (*Record, error) {
++	if err := i.Validate(); err != nil {
++		return nil, err
++	}
++	return m.Store.Update(i.ID, func(r *Record, now int64) (*Record, error) {
++		if r == nil {
++			return nil, ErrMissing
++		}
++		if r.Closed {
++			return nil, ErrClosed
++		}
++		if i.BootID != m.BootID || r.StartedBoot != i.BootID || r.Digest != i.Digest || r.NotAfter != i.NotAfter {
++			return nil, ErrConflict
++		}
++		if r.RetentionWindow <= 0 || r.Phase != "ready" {
++			return nil, ErrConflict
++		}
++		if observedAt <= 0 || observedAt > now+5000 || now-observedAt > 45000 {
++			return nil, ErrStaleActivity
++		}
++		until := observedAt + r.RetentionWindow
++		if until > r.RetainUntil {
++			r.RetainUntil = until
++		}
++		return r, nil
++	})
++}
++
++// Real accepted Tool activity uses the node's clock. Diagnostic probes never call it.
++func (s *Store) Touch(id string) error {
++	_, err := s.Update(id, func(r *Record, now int64) (*Record, error) {
++		if r == nil {
++			return nil, ErrMissing
++		}
++		if r.Closed {
++			return nil, ErrClosed
++		}
++		if r.RetentionWindow > 0 && now+r.RetentionWindow > r.RetainUntil {
++			r.RetainUntil = now + r.RetentionWindow
++		}
++		return r, nil
++	})
++	return err
++}
++
++func (s *Store) Due(limit int) ([]Record, error) {
++	if limit < 1 || limit > 1024 {
++		return nil, errors.New("invalid retention page")
++	}
++	var result []Record
++	err := s.db.View(func(tx *bolt.Tx) error {
++		b := tx.Bucket(bucket)
++		now := s.now().UnixMilli()
++		if v := b.Get(floor); len(v) == 8 && int64(binary.BigEndian.Uint64(v)) > now {
++			now = int64(binary.BigEndian.Uint64(v))
++		}
++		c := b.Bucket(idleExpiry).Cursor()
++		for k, id := c.First(); k != nil && len(result) < limit; k, id = c.Next() {
++			if int64(binary.BigEndian.Uint64(k[:8])) > now {
++				break
++			}
++			r, err := decode(b.Bucket(records).Get(id))
++			if err != nil {
++				return err
++			}
++			if r != nil {
++				result = append(result, *r)
++			}
++		}
++		return nil
++	})
++	return result, err
++}
++
++// Caller holds the Tool-admission mutex. Only this atomic recheck closes an
++// expired allocation; a previously enumerated deadline is never sufficient.
++func (s *Store) BeginExpiry(id string) (bool, error) {
++	closed := false
++	_, err := s.Update(id, func(r *Record, now int64) (*Record, error) {
++		if r == nil {
++			return nil, ErrMissing
++		}
++		if r.RetentionWindow > 0 && r.RetainUntil <= now && r.Phase != "absent" {
++			r.Closed = true
++			r.Phase = "closing"
++			closed = true
++		}
++		return r, nil
++	})
++	return closed, err
++}
++
++// Keep one failed physical cleanup from starving later expired allocations.
++func (s *Store) DeferExpiry(id string) error {
++	_, err := s.Update(id, func(r *Record, now int64) (*Record, error) {
++		if r == nil {
++			return nil, ErrMissing
++		}
++		if r.Closed && r.Phase != "absent" {
++			r.RetainUntil = now + 10000
++		}
++		return r, nil
++	})
++	return err
++}
+diff --git a/Cubelet/pkg/allocation/retention_test.go b/Cubelet/pkg/allocation/retention_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..bbc78b1f6df1642b0d421a00c14a2cc929148e14
+--- /dev/null
++++ b/Cubelet/pkg/allocation/retention_test.go
+@@ -0,0 +1,122 @@
++package allocation
++
++import (
++	"context"
++	"errors"
++	bolt "go.etcd.io/bbolt"
++	"testing"
++	"time"
++)
++
++type failedRetentionDB struct{ Database }
++
++func (f failedRetentionDB) Update(func(*bolt.Tx) error) error {
++	return errors.New("metadata fsync failed")
++}
++func TestRetentionDoesNotAcknowledgeFailedPersistence(t *testing.T) {
++	m, _, now := fixture(t)
++	i := identity()
++	i.RetentionWindow = 900000
++	r, e := m.Create(context.Background(), i, time.Second, success)
++	if e != nil {
++		t.Fatal(e)
++	}
++	deadline := r.RetainUntil
++	original := m.Store.db
++	m.Store.db = failedRetentionDB{original}
++	now.Add(15000)
++	if _, e = m.Renew(i, now.Load()); e == nil {
++		t.Fatal("failed update acknowledged")
++	}
++	m.Store.db = original
++	r, e = m.Store.Get(i.ID)
++	if e != nil || r.RetainUntil != deadline {
++		t.Fatal(r, e)
++	}
++}
++
++func TestRetentionOriginalTimeAndClosedIdentity(t *testing.T) {
++	m, _, now := fixture(t)
++	i := identity()
++	i.RetentionWindow = 900000
++	r, e := m.Create(context.Background(), i, time.Second, success)
++	if e != nil {
++		t.Fatal(e)
++	}
++	first := r.RetainUntil
++	now.Add(30000)
++	r, e = m.Renew(i, now.Load())
++	if e != nil || r.RetainUntil != first+30000 {
++		t.Fatal(r, e)
++	}
++	r, e = m.Renew(i, now.Load()-20000)
++	if e != nil || r.RetainUntil != first+30000 {
++		t.Fatal(r, e)
++	}
++	now.Add(50000)
++	if _, e = m.Renew(i, now.Load()-50000); !errors.Is(e, ErrStaleActivity) {
++		t.Fatal(e)
++	}
++	now.Store(r.RetainUntil)
++	due, e := m.Store.Due(1)
++	if e != nil || len(due) != 1 {
++		t.Fatal(due, e)
++	}
++	closed, e := m.Store.BeginExpiry(i.ID)
++	if !closed || e != nil {
++		t.Fatal(closed, e)
++	}
++	if _, e = m.Renew(i, now.Load()); !errors.Is(e, ErrClosed) {
++		t.Fatal(e)
++	}
++	r, e = m.Close(context.Background(), i, time.Second, absent)
++	if e != nil || r.Phase != "absent" {
++		t.Fatal(r, e)
++	}
++	due, e = m.Store.Due(1)
++	if e != nil || len(due) != 0 {
++		t.Fatal(due, e)
++	}
++}
++func TestRetentionRechecksRenewalAndSurvivesManagerRestart(t *testing.T) {
++	m, _, now := fixture(t)
++	i := identity()
++	i.RetentionWindow = 900000
++	r, e := m.Create(context.Background(), i, time.Second, success)
++	if e != nil {
++		t.Fatal(e)
++	}
++	now.Store(r.RetainUntil)
++	if rows, e := m.Store.Due(1); e != nil || len(rows) != 1 {
++		t.Fatal(rows, e)
++	}
++	if _, e = m.Renew(i, now.Load()); e != nil {
++		t.Fatal(e)
++	}
++	if closed, e := m.Store.BeginExpiry(i.ID); e != nil || closed {
++		t.Fatal(closed, e)
++	}
++	next := NewManager(m.Store, "boot-two")
++	if _, e = next.Renew(i, now.Load()); !errors.Is(e, ErrConflict) {
++		t.Fatal(e)
++	}
++	now.Add(900000)
++	if closed, e := next.Store.BeginExpiry(i.ID); e != nil || !closed {
++		t.Fatal(closed, e)
++	}
++}
++func TestDedicatedAllocationNeverAcquiresFiniteRetention(t *testing.T) {
++	m, _, now := fixture(t)
++	i := identity()
++	r, e := m.Create(context.Background(), i, time.Second, success)
++	if e != nil || r.RetainUntil != 0 {
++		t.Fatal(r, e)
++	}
++	if _, e = m.Renew(i, now.Load()); !errors.Is(e, ErrConflict) {
++		t.Fatal(e)
++	}
++	now.Add(86400000)
++	if rows, e := m.Store.Due(1); e != nil || len(rows) != 0 {
++		t.Fatal(rows, e)
++	}
++}
+diff --git a/Cubelet/pkg/allocation/store.go b/Cubelet/pkg/allocation/store.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..4b5e1c7c5df6be21340ada3934b698ad35024e16
+--- /dev/null
++++ b/Cubelet/pkg/allocation/store.go
+@@ -0,0 +1,201 @@
++// Copyright (c) 2026 Tencent Inc.
++// SPDX-License-Identifier: Apache-2.0
++package allocation
++
++import (
++	"encoding/binary"
++	"encoding/json"
++	"errors"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/plugins/volume/refcount"
++	bolt "go.etcd.io/bbolt"
++	"time"
++)
++
++// Reuse Cubelet's synchronous metadata database. No separate node database,
++// in-memory lifetime tombstone set, or external scheduler is introduced.
++type Database interface {
++	Update(func(*bolt.Tx) error) error
++	View(func(*bolt.Tx) error) error
++}
++type Record struct {
++	ID              string          `json:"allocationID"`
++	SandboxID       string          `json:"sandboxID"`
++	Digest          string          `json:"digest"`
++	NotAfter        int64           `json:"createBefore"`
++	Phase           string          `json:"phase"`
++	Closed          bool            `json:"closed"`
++	StartedBoot     string          `json:"startedBoot,omitempty"`
++	CreateFinished  bool            `json:"createFinished"`
++	Result          json.RawMessage `json:"result,omitempty"`
++	CleanupResult   json.RawMessage `json:"cleanupResult,omitempty"`
++	RetentionWindow int64           `json:"retentionWindowMs,omitempty"`
++	RetainUntil     int64           `json:"retainUntil,omitempty"`
++}
++type Store struct {
++	db  Database
++	now func() time.Time
++}
++
++var bucket = []byte("pi-cloud.allocations.v1")
++var records = []byte("records")
++var expiry = []byte("expiry")
++var floor = []byte("clock-floor")
++var idleExpiry = []byte("idle-expiry")
++
++const retention = int64(time.Hour / time.Millisecond)
++
++var ErrMissing = errors.New("allocation not recorded")
++
++func NewStore(db Database, now func() time.Time) (*Store, error) {
++	if db == nil {
++		return nil, errors.New("allocation metadata unavailable")
++	}
++	if now == nil {
++		now = time.Now
++	}
++	s := &Store{db: db, now: now}
++	err := db.Update(func(tx *bolt.Tx) error {
++		if tx.DB().NoSync {
++			return errors.New("allocation receipts require synchronous node metadata")
++		}
++		b, e := tx.CreateBucketIfNotExists(bucket)
++		if e != nil {
++			return e
++		}
++		if _, e = b.CreateBucketIfNotExists(records); e != nil {
++			return e
++		}
++		if _, e = b.CreateBucketIfNotExists(expiry); e != nil {
++			return e
++		}
++		_, e = b.CreateBucketIfNotExists(idleExpiry)
++		return e
++	})
++	return s, err
++}
++func decode(v []byte) (*Record, error) {
++	if v == nil {
++		return nil, nil
++	}
++	var r Record
++	err := json.Unmarshal(v, &r)
++	return &r, err
++}
++func (s *Store) Get(id string) (*Record, error) {
++	var r *Record
++	err := s.db.View(func(tx *bolt.Tx) error {
++		var e error
++		r, e = decode(tx.Bucket(bucket).Bucket(records).Get([]byte(id)))
++		return e
++	})
++	return r, err
++}
++func clock(b *bolt.Bucket, now int64) (int64, error) {
++	if v := b.Get(floor); len(v) == 8 && int64(binary.BigEndian.Uint64(v)) > now {
++		now = int64(binary.BigEndian.Uint64(v))
++	}
++	v := make([]byte, 8)
++	binary.BigEndian.PutUint64(v, uint64(now))
++	return now, b.Put(floor, v)
++}
++func expiryKey(r *Record) []byte {
++	k := make([]byte, 8+len(r.ID))
++	binary.BigEndian.PutUint64(k, uint64(r.NotAfter+retention))
++	copy(k[8:], r.ID)
++	return k
++}
++func (s *Store) Update(id string, change func(*Record, int64) (*Record, error)) (*Record, error) {
++	var result *Record
++	err := s.db.Update(func(tx *bolt.Tx) error {
++		b := tx.Bucket(bucket)
++		now, e := clock(b, s.now().UnixMilli())
++		if e != nil {
++			return e
++		}
++		current, e := decode(b.Bucket(records).Get([]byte(id)))
++		if e != nil {
++			return e
++		}
++		if current != nil && current.RetainUntil > 0 {
++			if e = b.Bucket(idleExpiry).Delete(idleKey(current)); e != nil {
++				return e
++			}
++		}
++		result, e = change(current, now)
++		if e != nil {
++			return e
++		}
++		if result == nil {
++			return errors.New("missing allocation mutation")
++		}
++		data, e := json.Marshal(result)
++		if e != nil {
++			return e
++		}
++		if len(data) > 256*1024 {
++			return errors.New("allocation receipt too large")
++		}
++		if e = b.Bucket(records).Put([]byte(id), data); e != nil {
++			return e
++		}
++		if result.RetainUntil > 0 && result.Phase != "absent" {
++			if e = b.Bucket(idleExpiry).Put(idleKey(result), []byte(id)); e != nil {
++				return e
++			}
++		}
++		if result.Closed && result.Phase == "absent" {
++			return b.Bucket(expiry).Put(expiryKey(result), []byte(id))
++		}
++		return nil
++	})
++	return result, err
++}
++
++// Only confirmed closed receipts expire. The durable clock floor prevents a
++// subsequent clock rollback from making their old Create authorization valid.
++func (s *Store) Collect() error {
++	return s.db.Update(func(tx *bolt.Tx) error {
++		b := tx.Bucket(bucket)
++		now, e := clock(b, s.now().UnixMilli())
++		if e != nil {
++			return e
++		}
++		c := b.Bucket(expiry).Cursor()
++		held, e := refcount.ReferencedSandboxes(tx)
++		if e != nil {
++			return e
++		}
++		var postponed [][]byte
++		k, id := c.First()
++		for n := 0; n < 128; n++ {
++			if k == nil || int64(binary.BigEndian.Uint64(k[:8])) > now {
++				break
++			}
++			r, e := decode(b.Bucket(records).Get(id))
++			if e != nil {
++				return e
++			}
++			if r != nil && r.Closed && r.Phase == "absent" && r.NotAfter+retention <= now {
++				if _, referenced := held[r.SandboxID]; referenced {
++					postponed = append(postponed, append([]byte(nil), id...))
++				} else if e = b.Bucket(records).Delete(id); e != nil {
++					return e
++				}
++			}
++			if e = c.Delete(); e != nil {
++				return e
++			}
++			k, id = c.Next()
++		}
++		// Do not let retained holders starve unrelated expired receipts.
++		for _, id := range postponed {
++			k := make([]byte, 8+len(id))
++			binary.BigEndian.PutUint64(k, uint64(now+int64(time.Minute/time.Millisecond)))
++			copy(k[8:], id)
++			if e = b.Bucket(expiry).Put(k, id); e != nil {
++				return e
++			}
++		}
++		return nil
++	})
++}
+diff --git a/Cubelet/pkg/allocation/volume_evidence_test.go b/Cubelet/pkg/allocation/volume_evidence_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..af0b97aea255f064895209c19706571d45c7d5f8
+--- /dev/null
++++ b/Cubelet/pkg/allocation/volume_evidence_test.go
+@@ -0,0 +1,76 @@
++package allocation
++
++import (
++	"context"
++	"fmt"
++	"testing"
++	"time"
++
++	"github.com/tencentcloud/CubeSandbox/Cubelet/plugins/volume/refcount"
++)
++
++func TestVolumeEvidenceOutlivesReceiptTTLWithoutBlockingUnrelatedCollection(t *testing.T) {
++	m, db, now := fixture(t)
++	refs, err := refcount.New(db)
++	if err != nil {
++		t.Fatal(err)
++	}
++	ctx := context.Background()
++	ids := make([]Identity, 0, 130)
++	for n := 0; n < 130; n++ {
++		i := identity()
++		i.ID = fmt.Sprintf("12345678-1234-1234-1234-%012x", n)
++		if _, err = m.Create(ctx, i, time.Second, success); err != nil {
++			t.Fatal(err)
++		}
++		if n < 129 {
++			if _, err = refs.Acquire("default", fmt.Sprintf("v%d", n), SandboxID(i.ID), "picloud-posix"); err != nil {
++				t.Fatal(err)
++			}
++		}
++		if _, err = m.Close(ctx, i, time.Second, absent); err != nil {
++			t.Fatal(err)
++		}
++		ids = append(ids, i)
++	}
++	if _, err = refs.RecoverRefCounts(nil); err != nil {
++		t.Fatal(err)
++	}
++	now.Store(identity().NotAfter + retention + 1)
++	// Each invocation scans at most 128 receipts. Retained evidence is postponed
++	// so unrelated expired allocation 129 can be reclaimed on the next pass.
++	for n := 0; n < 2; n++ {
++		if err = m.Store.Collect(); err != nil {
++			t.Fatal(err)
++		}
++	}
++	if r, e := m.Store.Get(ids[129].ID); e != nil || r != nil {
++		t.Fatal(r, e)
++	}
++	if r, e := m.Store.Get(ids[0].ID); e != nil || r == nil {
++		t.Fatal("lost stale holder evidence", r, e)
++	}
++	if _, err = refs.BeginDetach("default", "v0", SandboxID(ids[0].ID), nil); err != nil {
++		t.Fatal(err)
++	}
++	now.Add(60001)
++	if err = m.Store.Collect(); err != nil {
++		t.Fatal(err)
++	}
++	if r, e := m.Store.Get(ids[0].ID); e != nil || r == nil {
++		t.Fatal("lost pending detach evidence", r, e)
++	}
++	if err = refs.CompleteDetach("default", "v0", SandboxID(ids[0].ID)); err != nil {
++		t.Fatal(err)
++	}
++	now.Add(60001)
++	if err = m.Store.Collect(); err != nil {
++		t.Fatal(err)
++	}
++	if r, e := m.Store.Get(ids[0].ID); e != nil || r != nil {
++		t.Fatal(r, e)
++	}
++	if _, err = m.Create(ctx, ids[0], time.Second, success); err != ErrExpired {
++		t.Fatal("late create admitted", err)
++	}
++}
+diff --git a/Cubelet/plugins/cube/internals/createid/managed_resume_test.go b/Cubelet/plugins/cube/internals/createid/managed_resume_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..483092edfb36bef4fc266638f30a5760a7b18358
+--- /dev/null
++++ b/Cubelet/plugins/cube/internals/createid/managed_resume_test.go
+@@ -0,0 +1,39 @@
++// Copyright (c) 2026 PiCloud contributors.
++// SPDX-License-Identifier: Apache-2.0
++package createid
++
++import (
++	"context"
++	"testing"
++
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/allocation"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/constants"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/plugins/workflow"
++	cubebox "github.com/tencentcloud/CubeSandbox/pkgs/proto/services/cubebox/v1"
++)
++
++func TestManagedAllocationAndNativeResumeKeepTheirIdentity(t *testing.T) {
++	id := "00000000-0000-4000-8000-000000000111"
++	fixed := allocation.SandboxID(id)
++	for _, desired := range []string{"", fixed, "a-different-sandbox"} {
++		opts := &workflow.CreateContext{ReqInfo: &cubebox.RunCubeSandboxRequest{Annotations: map[string]string{
++			"pi-cloud.allocation.id":                   id,
++			"pi-cloud.allocation.sandbox-id":           fixed,
++			constants.MasterAnnotationDesiredSandboxID: desired,
++		}}}
++		err := (&local{}).Create(context.Background(), opts)
++		if desired == "a-different-sandbox" {
++			if err == nil || opts.SandboxID != "" {
++				t.Fatal("resume changed a managed allocation identity")
++			}
++		} else if err != nil || opts.SandboxID != fixed {
++			t.Fatalf("managed identity was not retained: %s %v", opts.SandboxID, err)
++		}
++	}
++	native := &workflow.CreateContext{ReqInfo: &cubebox.RunCubeSandboxRequest{Annotations: map[string]string{
++		constants.MasterAnnotationDesiredSandboxID: "native-resume-id",
++	}}}
++	if err := (&local{}).Create(context.Background(), native); err != nil || native.SandboxID != "native-resume-id" {
++		t.Fatalf("native resume changed: %s %v", native.SandboxID, err)
++	}
++}
+diff --git a/Cubelet/plugins/cube/internals/createid/plugin.go b/Cubelet/plugins/cube/internals/createid/plugin.go
+index 47487a74229b378cd1ba1e8168d0f93c16456e0c..9f5200aaf4c5d8b7d2fdff9efb75beec5e16ec5b 100644
+--- a/Cubelet/plugins/cube/internals/createid/plugin.go
++++ b/Cubelet/plugins/cube/internals/createid/plugin.go
+@@ -6,6 +6,7 @@ package createid
+ 
+ import (
+ 	"context"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/allocation"
+ 
+ 	"github.com/containerd/plugin"
+ 	"github.com/containerd/plugin/registry"
+@@ -45,14 +46,22 @@ func (l *local) Create(ctx context.Context, opts *workflow.CreateContext) error
+ 	if opts == nil {
+ 		return ret.Err(errorcode.ErrorCode_InvalidParamFormat, "opts nil")
+ 	}
+-
+-	// Resume-from-pause (and other same-ID recreate paths) pass an explicit
+-	// sandbox ID via annotation so the new shim/task reuses the caller's ID.
++	if id := opts.ReqInfo.GetAnnotations()["pi-cloud.allocation.id"]; id != "" {
++		fixed := opts.ReqInfo.GetAnnotations()["pi-cloud.allocation.sandbox-id"]
++		if fixed != allocation.SandboxID(id) || opts.IsCreateSnapshot() {
++			return ret.Err(errorcode.ErrorCode_InvalidParamFormat, "invalid managed allocation identity")
++		}
++		if desired := desiredSandboxID(opts); desired != "" && desired != fixed {
++			return ret.Err(errorcode.ErrorCode_InvalidParamFormat, "managed allocation resume identity changed")
++		}
++		opts.SandboxID = fixed
++		return nil
++	}
++	// Native resume keeps its ID; managed allocations validate theirs first.
+ 	if desired := desiredSandboxID(opts); desired != "" {
+ 		opts.SandboxID = desired
+ 		return nil
+ 	}
+-
+ 	opts.SandboxID = utils.GenerateID()
+ 
+ 	if opts.IsCreateSnapshot() {
+diff --git a/Cubelet/plugins/volume/interface.go b/Cubelet/plugins/volume/interface.go
+index 052d47e3f5b8c67a20f67ad938e57aa4d81bd11b..ecbf7199fc1128c82ec04c3f62b23fce277db5ac 100644
+--- a/Cubelet/plugins/volume/interface.go
++++ b/Cubelet/plugins/volume/interface.go
+@@ -55,7 +55,8 @@ type VolumePlugin interface {
+ 
+ 	// Detach tears down the volume attachment for sandboxID.
+ 	// req.Metadata is the exact map returned by the corresponding Attach call
+-	// so the plugin can locate its resources.
++	// so the plugin can locate its resources. Failed Attach recovery has no
++	// success metadata; only a driver which can confirm that cleanup may succeed.
+ 	//
+ 	// req.RefCount is the post-detach count (0 = last detach).
+ 	Detach(ctx context.Context, req *DetachRequest) error
+diff --git a/Cubelet/plugins/volume/manager.go b/Cubelet/plugins/volume/manager.go
+index 6e8ae88d926d63ec03f6ec730e118a9b93f462c0..8d788c587d8839986002b24b78132d5d302e30ef 100644
+--- a/Cubelet/plugins/volume/manager.go
++++ b/Cubelet/plugins/volume/manager.go
+@@ -5,9 +5,11 @@ package volume
+ 
+ import (
+ 	"context"
++	"errors"
+ 	"fmt"
+ 	"sync"
+ 
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/utils"
+ 	"github.com/tencentcloud/CubeSandbox/Cubelet/plugins/volume/refcount"
+ )
+ 
+@@ -25,11 +27,11 @@ import (
+ //
+ // A plugin volume can be concurrently shared by multiple sandboxes.  Manager
+ // maintains a persistent RefCountStore; every Attach call does an Acquire and
+-// every Detach call does a Release before forwarding to the plugin.  The
++// every Detach persists pending cleanup before forwarding to the plugin. The
+ // resulting RefCount is embedded in AttachRequest / DetachRequest so that
+ // plugins can decide:
+ //
+-//   - Attach: RefCount == 1 → first attach, perform host-level setup.
++//   - Attach: RefCount == 0 → first attach, perform host-level setup.
+ //   - Detach: RefCount == 0 → last detach, safe to tear down host resources.
+ //
+ // # Concurrency
+@@ -50,7 +52,7 @@ type Manager struct {
+ 	rcStore *refcount.Store
+ 
+ 	// volMu serialises Attach/Detach calls that share the same volumeID.
+-	volMu sync.Map // map[string]*sync.Mutex
++	volMu *utils.ResourceLocks
+ }
+ 
+ var globalManager = &Manager{byName: make(map[string]VolumePlugin)}
+@@ -117,7 +119,7 @@ func (m *Manager) InitAll(ctx context.Context, configs map[string]PluginConfig)
+ // The ref-count is incremented BEFORE calling the plugin so that concurrent
+ // Destroy calls on other sandboxes see the correct count.
+ //
+-// If the plugin returns an error the ref-count is rolled back (Release).
++// Failed Attach leaves durable pending cleanup, even without success metadata.
+ func (m *Manager) Attach(ctx context.Context, req *AttachRequest) (*AttachResult, error) {
+ 	p, err := m.lookup(req.Driver)
+ 	if err != nil {
+@@ -127,8 +129,19 @@ func (m *Manager) Attach(ctx context.Context, req *AttachRequest) (*AttachResult
+ 	// Serialise Attach/Detach for the same volumeID to prevent concurrent
+ 	// first-attach races and interleaved attach/detach on the host mount.
+ 	volID := req.VolumeID
+-	unlock := m.lockVolume(volID)
++	unlock, err := m.lockVolume(ctx, volID)
++	if err != nil {
++		return nil, err
++	}
+ 	defer unlock()
++	if err := m.finishPendingDetach(ctx, req.Namespace, volID); err != nil {
++		return nil, err
++	}
++	if rec, _, err := m.rcStore.GetRecord(req.Namespace, volID); err != nil {
++		return nil, err
++	} else if len(rec.StaleSandboxIDs) != 0 {
++		return nil, fmt.Errorf("Volume holders require physical reconciliation")
++	}
+ 
+ 	// Acquire ref-count and pass the BEFORE value to the plugin.
+ 	// before == 0 means this is the first sandbox to attach the volume.
+@@ -144,12 +157,12 @@ func (m *Manager) Attach(ctx context.Context, req *AttachRequest) (*AttachResult
+ 
+ 	res, pluginErr := p.Attach(ctx, req)
+ 	if pluginErr != nil {
+-		// Roll back the ref-count on plugin failure. The transition is undone,
+-		// so the caller must not report a 0→1 event to CubeMaster.
++		// No successful attachment can be reported. Reconciliation must complete
++		// the persisted plugin cleanup before confirming the reference state.
+ 		req.NodeRefFirstAttach = false
+ 		if rc := m.rcStore; rc != nil {
+-			if _, rbErr := rc.Release(req.Namespace, volID, req.SandboxID); rbErr != nil {
+-				_ = rbErr
++			if _, cleanupErr := rc.BeginDetach(req.Namespace, volID, req.SandboxID, nil); cleanupErr != nil {
++				return nil, errors.Join(pluginErr, fmt.Errorf("record failed Attach cleanup: %w", cleanupErr))
+ 			}
+ 		}
+ 		return nil, pluginErr
+@@ -160,55 +173,112 @@ func (m *Manager) Attach(ctx context.Context, req *AttachRequest) (*AttachResult
+ // Detach decrements the ref-count for (namespace, volumeName), fills in
+ // req.RefCount with the count AFTER decrement, then calls the plugin.
+ //
+-// If no matching plugin is found the call is a no-op (safe for rollback).
+-//
+-// If the plugin Detach fails, the local ref-count is rolled back (re-Acquire)
+-// and NodeRefLastDetach is cleared so callers must NOT report a 1→0 event to
+-// CubeMaster. A later successful Detach retry can then emit the transition.
++// A missing plugin, failed hook or failed completion write leaves cleanup
++// unconfirmed. Retry the same pending identity before accepting another Attach.
+ func (m *Manager) Detach(ctx context.Context, req *DetachRequest) error {
+ 	p, err := m.lookup(req.Driver)
+ 	if err != nil {
+-		// Unknown driver during Detach: release ref-count and continue.
+-		if rc := m.rcStore; rc != nil {
+-			rr, _ := rc.Release(req.Namespace, req.VolumeID, req.SandboxID)
+-			req.NodeRefLastDetach = rr.After == 0 && !rr.NotHeld
+-		}
+-		return nil
++		return err
++	}
++	unlock, err := m.lockVolume(ctx, req.VolumeID)
++	if err != nil {
++		return err
+ 	}
+-
+-	// Serialise Attach/Detach for the same volumeID.
+-	volID := req.VolumeID
+-	unlock := m.lockVolume(volID)
+ 	defer unlock()
+-
+-	// Release ref-count and pass the AFTER value to the plugin.
+-	// after == 0 means this was the last sandbox; host cleanup is appropriate.
+-	released := false
++	if err := m.finishPendingDetach(ctx, req.Namespace, req.VolumeID); err != nil {
++		return err
++	}
+ 	if rc := m.rcStore; rc != nil {
+-		rr, err := rc.Release(req.Namespace, volID, req.SandboxID)
++		rr, err := rc.BeginDetach(req.Namespace, req.VolumeID, req.SandboxID, req.Metadata)
+ 		if err != nil {
+-			_ = err // non-fatal; don't block Destroy
+-		} else if !rr.NotHeld {
+-			released = true
++			return err
++		}
++		req.RefCount = rr.After
++		if rr.NotHeld {
++			return nil
+ 		}
+-		req.RefCount = rr.After // 0 = last detach
+-		// 1 → 0 on this node: last sandbox here stopped referencing the volume.
+-		req.NodeRefLastDetach = rr.After == 0 && !rr.NotHeld
++		if err := p.Detach(ctx, req); err != nil {
++			return err
++		}
++		if err := rc.CompleteDetach(req.Namespace, req.VolumeID, req.SandboxID); err != nil {
++			return err
++		}
++		req.NodeRefLastDetach = rr.After == 0
++		return nil
++	}
++	return p.Detach(ctx, req)
++}
++
++// finishPendingDetach executes only a previously persisted Volume cleanup,
++// under the same lock as Attach. A failed hook/receipt cannot expose false zero.
++func (m *Manager) finishPendingDetach(ctx context.Context, namespace, volumeID string) error {
++	if m.rcStore == nil {
++		return fmt.Errorf("Volume reference metadata unavailable")
+ 	}
++	rec, exists, err := m.rcStore.GetRecord(namespace, volumeID)
++	if err != nil {
++		return err
++	}
++	if !exists {
++		return nil
++	}
++	if rec.Unknown {
++		return fmt.Errorf("Volume physical references require recovery")
++	}
++	if rec.Pending == nil {
++		return nil
++	}
++	p, err := m.lookup(rec.Driver)
++	if err != nil {
++		return err
++	}
++	req := &DetachRequest{SandboxID: rec.Pending.SandboxID, Namespace: namespace, VolumeID: volumeID, Driver: rec.Driver, Metadata: rec.Pending.Metadata, RefCount: rec.Count}
++	if err := p.Detach(ctx, req); err != nil {
++		return err
++	}
++	return m.rcStore.CompleteDetach(namespace, volumeID, req.SandboxID)
++}
++
++func (m *Manager) ObserveReference(ctx context.Context, namespace, volumeID string) (refcount.State, error) {
++	return m.ReconcileReference(ctx, namespace, volumeID, nil)
++}
+ 
+-	if pluginErr := p.Detach(ctx, req); pluginErr != nil {
+-		// Plugin failed: restore the local reference and suppress 1→0 reporting.
+-		if released {
+-			if rc := m.rcStore; rc != nil {
+-				if _, rbErr := rc.Acquire(req.Namespace, volID, req.SandboxID, req.Driver); rbErr != nil {
+-					_ = rbErr
++// The proof port only observes closed allocation/physical evidence. It must
++// never acquire an allocation lifecycle lock or initiate VM destruction here.
++func (m *Manager) ReconcileReference(ctx context.Context, namespace, volumeID string, absent func(context.Context, string) (bool, error)) (refcount.State, error) {
++	unlock, err := m.lockVolume(ctx, volumeID)
++	if err != nil {
++		return refcount.State{}, err
++	}
++	defer unlock()
++	if m.rcStore == nil {
++		return refcount.State{}, fmt.Errorf("Volume reference metadata unavailable")
++	}
++	// A failed reconciliation is still queryable as unconfirmed. Missing
++	// probes/metadata never turn it into a zero reference count.
++	if err := m.finishPendingDetach(ctx, namespace, volumeID); err == nil && absent != nil {
++		rec, _, err := m.rcStore.GetRecord(namespace, volumeID)
++		if err != nil {
++			return refcount.State{}, err
++		}
++		// The fixed POSIX detach requires no successful Attach metadata.
++		// Other plugins cannot inherit that guarantee.
++		if rec.Driver == "picloud-posix" && !rec.Unknown {
++			for sandboxID := range rec.StaleSandboxIDs {
++				proven, err := absent(ctx, sandboxID)
++				if err != nil || !proven {
++					continue
++				}
++				if _, err := m.rcStore.BeginDetach(namespace, volumeID, sandboxID, nil); err != nil {
++					break
++				}
++				if err := m.finishPendingDetach(ctx, namespace, volumeID); err != nil {
++					break
+ 				}
+ 			}
+ 		}
+-		req.NodeRefLastDetach = false
+-		return pluginErr
+ 	}
+-	return nil
++	return m.rcStore.State(namespace, volumeID)
+ }
+ 
+ // Has reports whether a plugin with the given driver name is registered.
+@@ -240,14 +310,15 @@ func (m *Manager) ListDrivers() []string {
+ 	return names
+ }
+ 
+-// lockVolume acquires the per-volume mutex for volumeID and returns an unlock
+-// function.  The lock is lazily created on first use and never deleted (the
+-// number of distinct volumeIDs is small).
+-func (m *Manager) lockVolume(volumeID string) func() {
+-	v, _ := m.volMu.LoadOrStore(volumeID, &sync.Mutex{})
+-	mu := v.(*sync.Mutex)
+-	mu.Lock()
+-	return mu.Unlock
++// Active holders/waiters retain the lock; a retired Volume leaves no lock entry.
++func (m *Manager) lockVolume(ctx context.Context, volumeID string) (func(), error) {
++	m.mu.Lock()
++	if m.volMu == nil {
++		m.volMu = utils.NewResourceLocks()
++	}
++	locks := m.volMu
++	m.mu.Unlock()
++	return locks.LockContext(ctx, volumeID)
+ }
+ 
+ func (m *Manager) lookup(driver string) (VolumePlugin, error) {
+diff --git a/Cubelet/plugins/volume/posix_recovery_test.go b/Cubelet/plugins/volume/posix_recovery_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..c459c8f5c3907a038e196d6becc44b105cc08303
+--- /dev/null
++++ b/Cubelet/plugins/volume/posix_recovery_test.go
+@@ -0,0 +1,149 @@
++package volume_test
++
++import (
++	"context"
++	"crypto/rand"
++	"encoding/hex"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"testing"
++
++	"github.com/tencentcloud/CubeSandbox/Cubelet/plugins/volume"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/plugins/volume/binary"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/plugins/volume/refcount"
++	bolt "go.etcd.io/bbolt"
++)
++
++type interruptedAttach struct {
++	volume.VolumePlugin
++	next bool
++}
++
++func (p *interruptedAttach) Attach(ctx context.Context, r *volume.AttachRequest) (*volume.AttachResult, error) {
++	if p.next {
++		p.next = false
++		cancelled, stop := context.WithCancel(ctx)
++		stop()
++		ctx = cancelled
++	}
++	return p.VolumePlugin.Attach(ctx, r)
++}
++
++// The acceptance runner mounts the exact supported script into a disposable
++// container. No operator Workspace or host storage is mounted into this test.
++func TestPosixFailedAttachRecoversWithoutSuccessMetadata(t *testing.T) {
++	pluginPath := os.Getenv("PI_CLOUD_POSIX_PLUGIN")
++	if pluginPath == "" {
++		t.Skip("run scripts/check-cube-allocation.mjs for the actual POSIX contract")
++	}
++	for _, shared := range []bool{false, true} {
++		t.Run(map[bool]string{false: "only-holder", true: "shared-holder"}[shared], func(t *testing.T) {
++			ctx := context.Background()
++			random := make([]byte, 24)
++			if _, err := rand.Read(random); err != nil {
++				t.Fatal(err)
++			}
++			id := "pcw-" + hex.EncodeToString(random)
++			const base = "/data/cube-shared/volume"
++			if err := os.MkdirAll(base, 0755); err != nil {
++				t.Fatal(err)
++			}
++			path := filepath.Join(base, "picloud-posix-"+id)
++			defer os.RemoveAll(path)
++			if output, err := exec.Command(pluginPath, "--op", "create", "--volume-id", id).CombinedOutput(); err != nil {
++				t.Fatalf("create: %v %s", err, output)
++			}
++			keep := filepath.Join(path, "workspace", "keep.txt")
++			if err := os.WriteFile(keep, []byte("owned fixture bytes"), 0600); err != nil {
++				t.Fatal(err)
++			}
++			binaryPlugin := binary.New(id)
++			if err := binaryPlugin.Init(ctx, volume.PluginConfig{BinaryPath: pluginPath}); err != nil {
++				t.Fatal(err)
++			}
++			p := &interruptedAttach{VolumePlugin: binaryPlugin}
++			m := volume.Global()
++			m.Register(p)
++			dbPath := filepath.Join(t.TempDir(), "refs.db")
++			db, err := bolt.Open(dbPath, 0600, nil)
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer func() { db.Close() }()
++			refs, err := refcount.New(db)
++			if err != nil {
++				t.Fatal(err)
++			}
++			m.SetRefCountStore(refs)
++			request := func(sandbox string) *volume.AttachRequest {
++				return &volume.AttachRequest{Namespace: "default", VolumeID: id, SandboxID: sandbox, Driver: p.Name(), VolumeBaseDir: base}
++			}
++			var held *volume.AttachResult
++			if shared {
++				held, err = m.Attach(ctx, request("other-vm"))
++				if err != nil {
++					t.Fatal(err)
++				}
++			}
++			p.next = true
++			if _, err = m.Attach(ctx, request("failed-vm")); err == nil {
++				t.Fatal("Attach should fail after holder registration")
++			}
++			pending, ok, err := refs.GetRecord("default", id)
++			if err != nil || !ok || pending.Pending == nil || len(pending.Pending.Metadata) != 0 {
++				t.Fatal(pending, ok, err)
++			}
++			before, err := refs.State("default", id)
++			if err != nil || before.Confirmed {
++				t.Fatal(before, err)
++			}
++			if err = db.Close(); err != nil {
++				t.Fatal(err)
++			}
++			db, err = bolt.Open(dbPath, 0600, nil)
++			if err != nil {
++				t.Fatal(err)
++			}
++			refs, err = refcount.New(db)
++			if err != nil {
++				t.Fatal(err)
++			}
++			m.SetRefCountStore(refs)
++			state, err := m.ObserveReference(ctx, "default", id)
++			expected := int64(0)
++			if shared {
++				expected = 1
++			}
++			if err != nil || !state.Confirmed || state.Count != expected || state.Epoch != before.Epoch || state.Revision <= before.Revision {
++				t.Fatal(state, err)
++			}
++			next, err := m.Attach(ctx, request("next-vm"))
++			if err != nil {
++				t.Fatal(err)
++			}
++			detach := func(sandbox string, metadata map[string]string) {
++				t.Helper()
++				if err := m.Detach(ctx, &volume.DetachRequest{Namespace: "default", VolumeID: id, SandboxID: sandbox, Driver: p.Name(), Metadata: metadata}); err != nil {
++					t.Fatal(err)
++				}
++			}
++			detach("next-vm", next.Metadata)
++			if shared {
++				state, err = m.ObserveReference(ctx, "default", id)
++				if err != nil || !state.Confirmed || state.Count != 1 {
++					t.Fatal(state, err)
++				}
++				detach("other-vm", held.Metadata)
++			}
++			state, err = m.ObserveReference(ctx, "default", id)
++			if err != nil || !state.Confirmed || state.Count != 0 {
++				t.Fatal(state, err)
++			}
++			bytes, err := os.ReadFile(keep)
++			if err != nil || string(bytes) != "owned fixture bytes" {
++				t.Fatal("Workspace bytes changed", err)
++			}
++		})
++	}
++}
+diff --git a/Cubelet/plugins/volume/refcount/state.go b/Cubelet/plugins/volume/refcount/state.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..7764b2d0a957aded0d53630b5dab269e65afdf8a
+--- /dev/null
++++ b/Cubelet/plugins/volume/refcount/state.go
+@@ -0,0 +1,113 @@
++package refcount
++
++import (
++	"encoding/binary"
++	"fmt"
++	"github.com/google/uuid"
++	bolt "go.etcd.io/bbolt"
++)
++
++var stateBucket = []byte("volume_reference_state")
++var epochKey = []byte("epoch")
++var revisionKey = []byte("revision")
++
++// One persistent incarnation and monotonic clock survive collection of zero
++// records. A recreated/lost metadata file has a different incarnation.
++func initializeState(tx *bolt.Tx) error {
++	b, err := tx.CreateBucketIfNotExists(stateBucket)
++	if err != nil {
++		return err
++	}
++	if b.Get(epochKey) == nil {
++		return b.Put(epochKey, []byte(uuid.NewString()))
++	}
++	return nil
++}
++func advanceState(tx *bolt.Tx) error {
++	b := tx.Bucket(stateBucket)
++	var n uint64
++	if v := b.Get(revisionKey); len(v) == 8 {
++		n = binary.BigEndian.Uint64(v)
++	}
++	if n >= 1<<63-1 {
++		return fmt.Errorf("Volume reference revision exhausted")
++	}
++	data := make([]byte, 8)
++	binary.BigEndian.PutUint64(data, n+1)
++	return b.Put(revisionKey, data)
++}
++
++type State struct {
++	VolumeID  string `json:"volumeID"`
++	Epoch     string `json:"epoch"`
++	Revision  uint64 `json:"revision"`
++	Count     int64  `json:"count"`
++	Confirmed bool   `json:"confirmed"`
++}
++
++func (s *Store) State(namespace, volumeID string) (State, error) {
++	result := State{VolumeID: volumeID}
++	err := s.db.View(func(tx *bolt.Tx) error {
++		b := tx.Bucket(stateBucket)
++		if b == nil {
++			return fmt.Errorf("Volume reference incarnation unavailable")
++		}
++		result.Epoch = string(b.Get(epochKey))
++		if v := b.Get(revisionKey); len(v) == 8 {
++			result.Revision = binary.BigEndian.Uint64(v)
++		}
++		rec, err := getRecord(tx.Bucket([]byte(BucketName)), key(namespace, volumeID))
++		if err != nil {
++			return err
++		}
++		result.Count = rec.Count
++		result.Confirmed = !rec.Unknown && rec.Pending == nil && len(rec.StaleSandboxIDs) == 0
++		return nil
++	})
++	return result, err
++}
++
++// Allocation receipt collection shares this Bolt transaction. Preserve the
++// original evidence until every Volume holder/pending detach has released it.
++func ReferencedSandboxes(tx *bolt.Tx) (map[string]struct{}, error) {
++	result := make(map[string]struct{})
++	b := tx.Bucket([]byte(BucketName))
++	if b == nil {
++		return result, nil
++	}
++	err := b.ForEach(func(k, _ []byte) error {
++		rec, err := getRecord(b, k)
++		if err != nil {
++			return err
++		}
++		for id := range rec.SandboxIDs {
++			result[id] = struct{}{}
++		}
++		if rec.Pending != nil {
++			result[rec.Pending.SandboxID] = struct{}{}
++		}
++		return nil
++	})
++	return result, err
++}
++func (s *Store) CompleteDetach(namespace, volumeID, sandboxID string) error {
++	return s.db.Update(func(tx *bolt.Tx) error {
++		b := tx.Bucket([]byte(BucketName))
++		k := key(namespace, volumeID)
++		rec, err := getRecord(b, k)
++		if err != nil {
++			return err
++		}
++		if rec.Pending == nil || rec.Pending.SandboxID != sandboxID {
++			return fmt.Errorf("Volume detach identity changed")
++		}
++		rec.Pending = nil
++		if rec.Count == 0 && !rec.Unknown {
++			if err := advanceState(tx); err != nil {
++				return err
++			}
++			return b.Delete(k)
++		}
++		return putRecord(b, k, rec)
++	})
++}
+diff --git a/Cubelet/plugins/volume/refcount/store.go b/Cubelet/plugins/volume/refcount/store.go
+index 7923ee0816a64c61d71fa7c5f1928eb4a3398f8a..16109dc0b1b272f1024245a1960d3d68ae448642 100644
+--- a/Cubelet/plugins/volume/refcount/store.go
++++ b/Cubelet/plugins/volume/refcount/store.go
+@@ -40,9 +40,8 @@
+ //
+ // Call RecoverRefCounts with all StorageInfo records loaded from the sandbox
+ // DB on startup to reconcile any mismatch between persisted ref-counts and
+-// the actual set of live sandboxes.  Sandboxes that are no longer present
+-// (host reboot, crash, …) are removed from every record; records that reach
+-// zero are deleted.
++// the recovered StorageInfo set. Missing holders retain their identity until
++// closed allocation admission and physical absence permit an exact detach.
+ package refcount
+ 
+ import (
+@@ -62,7 +61,14 @@ const (
+ )
+ 
+ // RefCountRecord is the value stored per volume.
++type PendingDetach struct {
++	SandboxID string            `json:"sandbox_id"`
++	Metadata  map[string]string `json:"metadata,omitempty"`
++}
+ type RefCountRecord struct {
++	Pending         *PendingDetach      `json:"pending_detach,omitempty"`
++	Unknown         bool                `json:"unknown,omitempty"`
++	StaleSandboxIDs map[string]struct{} `json:"stale_sandbox_ids,omitempty"`
+ 	// Count is the number of live sandbox references.
+ 	Count int64 `json:"count"`
+ 
+@@ -76,16 +82,23 @@ type RefCountRecord struct {
+ 
+ // Store is a persistent reference-count store backed by a bbolt database.
+ // Obtain one via New; share a single instance across the whole cubelet process.
+-type Store struct {
+-	db *bolt.DB
++type Database interface {
++	Update(func(*bolt.Tx) error) error
++	View(func(*bolt.Tx) error) error
+ }
++type Store struct{ db Database }
+ 
+ // New opens (or creates) the bbolt bucket inside the given *bolt.DB.
+ // The caller owns the DB lifetime; close the DB externally on shutdown.
+-func New(db *bolt.DB) (*Store, error) {
++func New(db Database) (*Store, error) {
+ 	if err := db.Update(func(tx *bolt.Tx) error {
+-		_, err := tx.CreateBucketIfNotExists([]byte(BucketName))
+-		return err
++		if tx.DB().NoSync {
++			return fmt.Errorf("Volume reference metadata requires synchronous writes")
++		}
++		if _, err := tx.CreateBucketIfNotExists([]byte(BucketName)); err != nil {
++			return err
++		}
++		return initializeState(tx)
+ 	}); err != nil {
+ 		return nil, fmt.Errorf("refcount: create bucket: %w", err)
+ 	}
+@@ -119,6 +132,9 @@ func putRecord(b *bolt.Bucket, k []byte, rec RefCountRecord) error {
+ 	if err != nil {
+ 		return fmt.Errorf("refcount: marshal: %w", err)
+ 	}
++	if err := advanceState(b.Tx()); err != nil {
++		return err
++	}
+ 	return b.Put(k, data)
+ }
+ 
+@@ -168,7 +184,7 @@ func (s *Store) Acquire(namespace, volumeID, sandboxID, driver string) (AcquireR
+ 	return res, err
+ }
+ 
+-// ReleaseResult is returned by Release.
++// ReleaseResult is returned by BeginDetach; zero is not a cleanup receipt.
+ type ReleaseResult struct {
+ 	// After is the ref-count AFTER this sandbox was removed (≥ 0).
+ 	// 0 means this was the last sandbox; host-level cleanup is appropriate.
+@@ -177,14 +193,8 @@ type ReleaseResult struct {
+ 	NotHeld bool
+ }
+ 
+-// Release removes sandboxID from the holder set of (namespace, volumeID).
+-// It is idempotent: calling Release for an unknown sandboxID returns
+-// NotHeld=true and the unchanged count.
+-//
+-// When After reaches 0 the record is deleted from the store.
+-// The caller should pass After to the plugin as UnmountRequest.RefCount so
+-// the plugin can detect last-detach (After == 0).
+-func (s *Store) Release(namespace, volumeID, sandboxID string) (ReleaseResult, error) {
++// BeginDetach records the exact cleanup before the plugin can perform it.
++func (s *Store) BeginDetach(namespace, volumeID, sandboxID string, metadata map[string]string) (ReleaseResult, error) {
+ 
+ 	var res ReleaseResult
+ 	err := s.db.Update(func(tx *bolt.Tx) error {
+@@ -203,12 +213,11 @@ func (s *Store) Release(namespace, volumeID, sandboxID string) (ReleaseResult, e
+ 		}
+ 
+ 		delete(rec.SandboxIDs, sandboxID)
++		delete(rec.StaleSandboxIDs, sandboxID)
+ 		rec.Count = int64(len(rec.SandboxIDs))
+ 		res.After = rec.Count
+ 
+-		if rec.Count == 0 {
+-			return b.Delete(k)
+-		}
++		rec.Pending = &PendingDetach{SandboxID: sandboxID, Metadata: metadata}
+ 		return putRecord(b, k, rec)
+ 	})
+ 	return res, err
+@@ -302,17 +311,16 @@ func (s *Store) ListForSandbox(sandboxID string) ([]SandboxRecord, error) {
+ 
+ // RecoverResult is a summary of what RecoverRefCounts did.
+ type RecoverResult struct {
+-	RecordsScanned   int
+-	StaleRefsRemoved int
+-	RecordsDeleted   int
++	RecordsScanned  int
++	StaleRefsMarked int
+ }
+ 
+ // RecoverRefCounts reconciles the persisted ref-count store against the set of
+ // actually-live sandbox IDs.  Call this once on cubelet startup, after loading
+ // all StorageInfo records from the sandbox DB.
+ //
+-// Any sandboxID that appears in the store but is absent from liveSandboxIDs is
+-// treated as dead and removed.  Records that reach 0 refs are deleted.
++// StorageInfo absence alone is not physical absence. Keep missing holders and
++// mark them for evidence-based reconciliation; never fabricate confirmed zero.
+ func (s *Store) RecoverRefCounts(liveSandboxIDs map[string]struct{}) (RecoverResult, error) {
+ 
+ 	var res RecoverResult
+@@ -351,24 +359,22 @@ func (s *Store) RecoverRefCounts(liveSandboxIDs map[string]struct{}) (RecoverRes
+ 			changed := false
+ 			for sid := range rec.SandboxIDs {
+ 				if _, live := liveSandboxIDs[sid]; !live {
+-					delete(rec.SandboxIDs, sid)
+-					res.StaleRefsRemoved++
+-					changed = true
++					if _, marked := rec.StaleSandboxIDs[sid]; !marked {
++						if rec.StaleSandboxIDs == nil {
++							rec.StaleSandboxIDs = make(map[string]struct{})
++						}
++						rec.StaleSandboxIDs[sid] = struct{}{}
++						res.StaleRefsMarked++
++						changed = true
++					}
+ 				}
+ 			}
+ 			if !changed {
+ 				continue
+ 			}
+ 			rec.Count = int64(len(rec.SandboxIDs))
+-			if rec.Count == 0 {
+-				if err := b.Delete(item.k); err != nil {
+-					return err
+-				}
+-				res.RecordsDeleted++
+-			} else {
+-				if err := putRecord(b, item.k, rec); err != nil {
+-					return err
+-				}
++			if err := putRecord(b, item.k, rec); err != nil {
++				return err
+ 			}
+ 		}
+ 		return nil
+diff --git a/Cubelet/plugins/volume/reference_recovery_test.go b/Cubelet/plugins/volume/reference_recovery_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..2de73b50909f6427890a9e3d880ef37358216113
+--- /dev/null
++++ b/Cubelet/plugins/volume/reference_recovery_test.go
+@@ -0,0 +1,190 @@
++package volume
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/plugins/volume/refcount"
++	bolt "go.etcd.io/bbolt"
++	"path/filepath"
++	"testing"
++	"time"
++)
++
++type failReceiptDB struct {
++	*bolt.DB
++	fail bool
++}
++
++func (d *failReceiptDB) Update(f func(*bolt.Tx) error) error {
++	if d.fail {
++		d.fail = false
++		return errors.New("injected receipt failure")
++	}
++	return d.DB.Update(f)
++}
++
++type referencePlugin struct {
++	onAttach func() error
++	onDetach func(*DetachRequest)
++	detaches int
++}
++
++func (*referencePlugin) Name() string                             { return "test" }
++func (*referencePlugin) PluginType() PluginType                   { return PluginTypeBuiltin }
++func (*referencePlugin) Init(context.Context, PluginConfig) error { return nil }
++func (*referencePlugin) Close() error                             { return nil }
++func (p *referencePlugin) Attach(_ context.Context, r *AttachRequest) (*AttachResult, error) {
++	if p.onAttach != nil {
++		if err := p.onAttach(); err != nil {
++			return nil, err
++		}
++	}
++	return &AttachResult{VolumeID: r.VolumeID, HostPath: "/test", Metadata: map[string]string{"path": "/test"}}, nil
++}
++
++func TestFailedAttachCleanupWriteFailureRemainsVisibleAndHeld(t *testing.T) {
++	raw, err := bolt.Open(filepath.Join(t.TempDir(), "refs.db"), 0600, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer raw.Close()
++	db := &failReceiptDB{DB: raw}
++	store, err := refcount.New(db)
++	if err != nil {
++		t.Fatal(err)
++	}
++	attachFailure := errors.New("Attach failed")
++	p := &referencePlugin{onAttach: func() error { db.fail = true; return attachFailure }}
++	m := &Manager{byName: map[string]VolumePlugin{"test": p}, rcStore: store}
++	_, err = m.Attach(context.Background(), &AttachRequest{Namespace: "default", VolumeID: "held", SandboxID: "a", Driver: "test"})
++	if !errors.Is(err, attachFailure) || err.Error() == attachFailure.Error() {
++		t.Fatal("lost cleanup write failure", err)
++	}
++	state, err := store.State("default", "held")
++	if err != nil || state.Count != 1 {
++		t.Fatal("lost conservative holder", state, err)
++	}
++}
++
++func TestVolumeLockWaitHonorsCancellationAndRetiresIdleLocks(t *testing.T) {
++	raw, err := bolt.Open(filepath.Join(t.TempDir(), "refs.db"), 0600, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer raw.Close()
++	store, err := refcount.New(raw)
++	if err != nil {
++		t.Fatal(err)
++	}
++	m := &Manager{rcStore: store}
++	ctx := context.Background()
++	unlock, err := m.lockVolume(ctx, "blocked")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer func() {
++		if unlock != nil {
++			unlock()
++		}
++	}()
++	waiting, cancel := context.WithTimeout(ctx, 30*time.Millisecond)
++	defer cancel()
++	if _, err = m.ObserveReference(waiting, "default", "blocked"); !errors.Is(err, context.DeadlineExceeded) {
++		t.Fatal(err)
++	}
++	for i := 0; i < 1000; i++ {
++		if _, err = m.ObserveReference(ctx, "default", fmt.Sprintf("retired-%d", i)); err != nil {
++			t.Fatal(err)
++		}
++	}
++	if m.volMu.Len() != 1 {
++		t.Fatal("historical queries retained locks", m.volMu.Len())
++	}
++	unlock()
++	unlock = nil
++	if m.volMu.Len() != 0 {
++		t.Fatal("active lock was not released")
++	}
++}
++func (p *referencePlugin) Detach(_ context.Context, r *DetachRequest) error {
++	p.detaches++
++	if p.onDetach != nil {
++		p.onDetach(r)
++	}
++	return nil
++}
++
++func TestReferenceReconstructionAfterFirstReceiptWriteFails(t *testing.T) {
++	path := filepath.Join(t.TempDir(), "references.db")
++	raw, err := bolt.Open(path, 0600, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	db := &failReceiptDB{DB: raw}
++	store, err := refcount.New(db)
++	if err != nil {
++		t.Fatal(err)
++	}
++	p := &referencePlugin{}
++	m := &Manager{byName: map[string]VolumePlugin{"test": p}, rcStore: store}
++	ctx := context.Background()
++	for _, id := range []string{"a", "b"} {
++		if _, err = m.Attach(ctx, &AttachRequest{Namespace: "default", VolumeID: "shared", SandboxID: id, Driver: "test"}); err != nil {
++			t.Fatal(err)
++		}
++	}
++	if err = m.Detach(ctx, &DetachRequest{Namespace: "default", VolumeID: "shared", SandboxID: "a", Driver: "test", Metadata: map[string]string{"path": "/test"}}); err != nil {
++		t.Fatal(err)
++	}
++	state, err := m.ObserveReference(ctx, "default", "shared")
++	if err != nil || state.Count != 1 || !state.Confirmed {
++		t.Fatal(state, err)
++	}
++	epoch := state.Epoch
++	p.onDetach = func(r *DetachRequest) {
++		if r.RefCount != 0 || r.Metadata["path"] != "/test" {
++			t.Fatal(r)
++		}
++		db.fail = true
++		p.onDetach = nil
++	}
++	if err = m.Detach(ctx, &DetachRequest{Namespace: "default", VolumeID: "shared", SandboxID: "b", Driver: "test", Metadata: map[string]string{"path": "/test"}}); err == nil {
++		t.Fatal("missing fault")
++	}
++	pending, err := store.State("default", "shared")
++	if err != nil || pending.Count != 0 || pending.Confirmed {
++		t.Fatal(pending, err)
++	}
++	if err = raw.Close(); err != nil {
++		t.Fatal(err)
++	}
++	raw, err = bolt.Open(path, 0600, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer raw.Close()
++	store, err = refcount.New(raw)
++	if err != nil {
++		t.Fatal(err)
++	}
++	m.rcStore = store
++	state, err = m.ObserveReference(ctx, "default", "shared")
++	if err != nil || state.Count != 0 || !state.Confirmed || state.Epoch != epoch || state.Revision <= pending.Revision {
++		t.Fatal(state, err)
++	}
++	if p.detaches != 3 {
++		t.Fatal("expected one idempotent pending cleanup retry", p.detaches)
++	}
++	// The zero row is collected; the persistent clock still fences old replies.
++	if _, present, err := store.GetRecord("default", "shared"); err != nil || present {
++		t.Fatal(present, err)
++	}
++	if _, err = m.Attach(ctx, &AttachRequest{Namespace: "default", VolumeID: "shared", SandboxID: "c", Driver: "test"}); err != nil {
++		t.Fatal(err)
++	}
++	next, err := m.ObserveReference(ctx, "default", "shared")
++	if err != nil || next.Count != 1 || next.Revision <= state.Revision {
++		t.Fatal(next, err)
++	}
++}
+diff --git a/Cubelet/plugins/volume/stale_reference_test.go b/Cubelet/plugins/volume/stale_reference_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..7b043743cae4fb93c75547904e520ef509ba2199
+--- /dev/null
++++ b/Cubelet/plugins/volume/stale_reference_test.go
+@@ -0,0 +1,229 @@
++package volume
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"path/filepath"
++	"testing"
++	"time"
++
++	"github.com/tencentcloud/CubeSandbox/Cubelet/plugins/volume/refcount"
++	bolt "go.etcd.io/bbolt"
++)
++
++func TestMissingHistoricalHolderIdentityRemainsUnknown(t *testing.T) {
++	raw, err := bolt.Open(filepath.Join(t.TempDir(), "refs.db"), 0600, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer raw.Close()
++	store, err := refcount.New(raw)
++	if err != nil {
++		t.Fatal(err)
++	}
++	err = raw.Update(func(tx *bolt.Tx) error {
++		data, e := json.Marshal(refcount.RefCountRecord{Unknown: true, Driver: "picloud-posix"})
++		if e != nil {
++			return e
++		}
++		return tx.Bucket([]byte(refcount.BucketName)).Put([]byte("default\x00lost"), data)
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	p := &referencePlugin{}
++	m := &Manager{byName: map[string]VolumePlugin{"picloud-posix": p}, rcStore: store}
++	for n := 0; n < 3; n++ {
++		if _, err = store.RecoverRefCounts(nil); err != nil {
++			t.Fatal(err)
++		}
++		state, e := m.ReconcileReference(context.Background(), "default", "lost", func(context.Context, string) (bool, error) { t.Fatal("invented lost identity"); return true, nil })
++		if e != nil || state.Confirmed || p.detaches != 0 {
++			t.Fatal(state, e)
++		}
++	}
++}
++
++func TestStaleHolderEvidenceSurvivesRestartAndDetachFailure(t *testing.T) {
++	for _, shared := range []bool{false, true} {
++		for _, loseReceipt := range []bool{false, true} {
++			t.Run(fmtCase(shared, loseReceipt), func(t *testing.T) {
++				raw, err := bolt.Open(filepath.Join(t.TempDir(), "refs.db"), 0600, nil)
++				if err != nil {
++					t.Fatal(err)
++				}
++				defer raw.Close()
++				db := &failReceiptDB{DB: raw}
++				store, err := refcount.New(db)
++				if err != nil {
++					t.Fatal(err)
++				}
++				p := &referencePlugin{}
++				m := &Manager{byName: map[string]VolumePlugin{"picloud-posix": p}, rcStore: store}
++				ctx := context.Background()
++				attach := func(id, vol string) error {
++					_, err := m.Attach(ctx, &AttachRequest{Namespace: "default", VolumeID: vol, SandboxID: id, Driver: "picloud-posix"})
++					return err
++				}
++				if err := attach("lost", "shared"); err != nil {
++					t.Fatal(err)
++				}
++				live := map[string]struct{}{}
++				if shared {
++					if err := attach("survivor", "shared"); err != nil {
++						t.Fatal(err)
++					}
++					live["survivor"] = struct{}{}
++				}
++				before, _ := store.State("default", "shared")
++				recovery, err := store.RecoverRefCounts(live)
++				if err != nil || recovery.StaleRefsMarked != 1 {
++					t.Fatal(recovery, err)
++				}
++				rec, _, _ := store.GetRecord("default", "shared")
++				if len(rec.StaleSandboxIDs) != 1 || len(rec.SandboxIDs) != len(live)+1 || rec.Unknown {
++					t.Fatal(rec)
++				}
++				if recovery, err = store.RecoverRefCounts(live); err != nil || recovery.StaleRefsMarked != 0 {
++					t.Fatal(recovery, err)
++				}
++				if err := attach("late", "shared"); err == nil {
++					t.Fatal("late attachment admitted")
++				}
++				if err := attach("other", "unrelated"); err != nil {
++					t.Fatal(err)
++				}
++				uncertain, err := m.ReconcileReference(ctx, "default", "shared", func(context.Context, string) (bool, error) { return false, errors.New("node evidence unavailable") })
++				if err != nil || uncertain.Confirmed || uncertain.Epoch != before.Epoch || uncertain.Revision <= before.Revision {
++					t.Fatal(uncertain, err)
++				}
++				if p.detaches != 0 {
++					t.Fatal("detached without evidence")
++				}
++				if loseReceipt {
++					p.onDetach = func(*DetachRequest) { db.fail = true; p.onDetach = nil }
++				}
++				prove := func(_ context.Context, id string) (bool, error) {
++					if id != "lost" {
++						t.Fatal("surviving holder probed as stale", id)
++					}
++					return true, nil
++				}
++				state, err := m.ReconcileReference(ctx, "default", "shared", prove)
++				if err != nil {
++					t.Fatal(err)
++				}
++				if loseReceipt {
++					if state.Confirmed {
++						t.Fatal("lost receipt was confirmed")
++					}
++					// A new Store/Manager models a node restart after the hook.
++					store, err = refcount.New(db)
++					if err != nil {
++						t.Fatal(err)
++					}
++					m = &Manager{byName: map[string]VolumePlugin{"picloud-posix": p}, rcStore: store}
++					state, err = m.ObserveReference(ctx, "default", "shared")
++				}
++				if err != nil || !state.Confirmed || state.Count != int64(len(live)) {
++					t.Fatal(state, err)
++				}
++				if shared {
++					if err = m.Detach(ctx, &DetachRequest{Namespace: "default", VolumeID: "shared", SandboxID: "survivor", Driver: "picloud-posix"}); err != nil {
++						t.Fatal(err)
++					}
++				}
++				state, err = m.ObserveReference(ctx, "default", "shared")
++				if err != nil || !state.Confirmed || state.Count != 0 {
++					t.Fatal(state, err)
++				}
++				if state.Epoch != before.Epoch || state.Revision <= uncertain.Revision {
++					t.Fatal("nonmonotonic reference state")
++				}
++			})
++		}
++	}
++}
++
++func fmtCase(shared, receipt bool) string {
++	if shared {
++		if receipt {
++			return "shared-lost-receipt"
++		}
++		return "shared"
++	}
++	if receipt {
++		return "last-lost-receipt"
++	}
++	return "last"
++}
++
++func TestStaleHolderAllowsSurvivorDetachButNotUnprovenOrForeignRecovery(t *testing.T) {
++	raw, err := bolt.Open(filepath.Join(t.TempDir(), "refs.db"), 0600, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer raw.Close()
++	store, err := refcount.New(raw)
++	if err != nil {
++		t.Fatal(err)
++	}
++	p := &referencePlugin{}
++	m := &Manager{byName: map[string]VolumePlugin{"test": p}, rcStore: store}
++	for _, id := range []string{"lost", "survivor"} {
++		_, err = m.Attach(context.Background(), &AttachRequest{Namespace: "default", VolumeID: "v", SandboxID: id, Driver: "test"})
++		if err != nil {
++			t.Fatal(err)
++		}
++	}
++	if _, err = store.RecoverRefCounts(map[string]struct{}{"survivor": {}}); err != nil {
++		t.Fatal(err)
++	}
++	if err = m.Detach(context.Background(), &DetachRequest{Namespace: "default", VolumeID: "v", SandboxID: "survivor", Driver: "test"}); err != nil {
++		t.Fatal(err)
++	}
++	state, err := m.ReconcileReference(context.Background(), "default", "v", func(context.Context, string) (bool, error) { t.Fatal("foreign plugin recovery"); return true, nil })
++	if err != nil || state.Confirmed || state.Count != 1 || p.detaches != 1 {
++		t.Fatal(state, err, p.detaches)
++	}
++}
++
++func TestStaleHolderReconciliationSerializesLateAttachment(t *testing.T) {
++	raw, err := bolt.Open(filepath.Join(t.TempDir(), "refs.db"), 0600, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer raw.Close()
++	store, err := refcount.New(raw)
++	if err != nil {
++		t.Fatal(err)
++	}
++	p := &referencePlugin{}
++	m := &Manager{byName: map[string]VolumePlugin{"picloud-posix": p}, rcStore: store}
++	_, err = m.Attach(context.Background(), &AttachRequest{Namespace: "default", VolumeID: "v", SandboxID: "lost", Driver: "picloud-posix"})
++	if err != nil {
++		t.Fatal(err)
++	}
++	store.RecoverRefCounts(nil)
++	entered, release, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
++	go func() {
++		_, err := m.ReconcileReference(context.Background(), "default", "v", func(context.Context, string) (bool, error) { close(entered); <-release; return true, nil })
++		done <- err
++	}()
++	<-entered
++	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
++	defer cancel()
++	_, err = m.Attach(ctx, &AttachRequest{Namespace: "default", VolumeID: "v", SandboxID: "new", Driver: "picloud-posix"})
++	if !errors.Is(err, context.DeadlineExceeded) {
++		t.Fatal(err)
++	}
++	close(release)
++	if err = <-done; err != nil {
++		t.Fatal(err)
++	}
++	_, err = m.Attach(context.Background(), &AttachRequest{Namespace: "default", VolumeID: "v", SandboxID: "new", Driver: "picloud-posix"})
++	if err != nil {
++		t.Fatal(err)
++	}
++}
+diff --git a/Cubelet/services/cubebox/allocation.go b/Cubelet/services/cubebox/allocation.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..22bf739709823454d3220b5cef46e96d1d8ae594
+--- /dev/null
++++ b/Cubelet/services/cubebox/allocation.go
+@@ -0,0 +1,241 @@
++// Copyright (c) 2026 Tencent Inc.
++// SPDX-License-Identifier: Apache-2.0
++package cubebox
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"github.com/google/uuid"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/allocation"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/utils"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/plugins/volume"
++	"github.com/tencentcloud/CubeSandbox/pkgs/proto/services/cubebox/v1"
++	"github.com/tencentcloud/CubeSandbox/pkgs/proto/services/errorcode/v1"
++	"google.golang.org/protobuf/encoding/protojson"
++	"strconv"
++	"strings"
++)
++
++const allocationIDAnnotation = "pi-cloud.allocation.id"
++const allocationDeadlineAnnotation = "pi-cloud.allocation.create-before"
++const allocationDigestAnnotation = "pi-cloud.allocation.digest"
++
++func (s *service) createAllocation(ctx context.Context, req *cubebox.RunCubeSandboxRequest) (*cubebox.RunCubeSandboxResponse, error) {
++	if s.allocations == nil {
++		return nil, errors.New("allocation metadata unavailable")
++	}
++	a := req.GetAnnotations()
++	deadline, e := strconv.ParseInt(a[allocationDeadlineAnnotation], 10, 64)
++	if e != nil {
++		return nil, e
++	}
++	identity := allocation.Identity{ID: a[allocationIDAnnotation], Digest: a[allocationDigestAnnotation], NotAfter: deadline, BootID: a["pi-cloud.allocation.node-boot"]}
++	if value := req.Labels["picloud.retention_window_ms"]; value != "" {
++		identity.RetentionWindow, e = strconv.ParseInt(value, 10, 64)
++		if e != nil || identity.RetentionWindow < 1000 || identity.RetentionWindow > 86400000 {
++			return nil, errors.New("invalid retention policy")
++		}
++	}
++	record, e := s.allocations.Create(ctx, identity, s.config.createDeadline, func(ctx context.Context) (json.RawMessage, bool, error) {
++		reply, err := s.createNative(ctx, req)
++		if err != nil {
++			return nil, false, err
++		}
++		result, err := protojson.Marshal(reply)
++		return result, reply.GetRet().GetRetCode() == errorcode.ErrorCode_Success, err
++	})
++	if e != nil {
++		return nil, e
++	}
++	if record.Closed {
++		return nil, allocation.ErrClosed
++	}
++	if len(record.Result) == 0 {
++		return nil, errors.New("allocation creation outcome unconfirmed")
++	}
++	var reply cubebox.RunCubeSandboxResponse
++	if e = protojson.Unmarshal(record.Result, &reply); e != nil {
++		return nil, e
++	}
++	return &reply, nil
++}
++func (s *service) cleanupAllocation(ctx context.Context, r allocation.Record) (json.RawMessage, bool, error) {
++	_, err := s.cubeboxMgr.cubeboxManger.Observe(ctx, r.SandboxID)
++	if errors.Is(err, utils.ErrorKeyNotFound) {
++		if !r.CreateFinished && r.StartedBoot != "" && r.StartedBoot != s.allocations.BootID {
++			return nil, false, errors.New("unfinished previous-boot creation requires physical recovery")
++		}
++		return r.CleanupResult, true, nil
++	}
++	if err != nil {
++		return nil, false, err
++	}
++	reply, err := s.destroyNative(ctx, &cubebox.DestroyCubeSandboxRequest{RequestID: uuid.NewString(), SandboxID: r.SandboxID})
++	if err != nil {
++		return nil, false, err
++	}
++	if reply.GetRet().GetRetCode() != errorcode.ErrorCode_Success {
++		return nil, false, errors.New("allocation physical cleanup unconfirmed")
++	}
++	result, err := protojson.Marshal(reply)
++	if err != nil {
++		return nil, false, err
++	}
++	_, err = s.cubeboxMgr.cubeboxManger.Observe(ctx, r.SandboxID)
++	if errors.Is(err, utils.ErrorKeyNotFound) {
++		return result, true, nil
++	}
++	return nil, false, err
++}
++func (s *service) ManageAllocation(ctx context.Context, req *cubebox.AllocationRequest) (*cubebox.AllocationResponse, error) {
++	if s.allocations == nil {
++		return nil, errors.New("allocation metadata unavailable")
++	}
++	if req.AllocationId == "" && !req.Close {
++		rc := volume.Global().RefCountStore()
++		if rc == nil {
++			return nil, errors.New("Volume reference metadata unavailable")
++		}
++		state, err := rc.State("default", "")
++		if err != nil {
++			return nil, err
++		}
++		raw, err := json.Marshal(map[string]string{"referenceEpoch": state.Epoch})
++		return &cubebox.AllocationResponse{BootId: s.allocations.BootID, Record: raw}, err
++	}
++	i := allocation.Identity{ID: req.AllocationId, Digest: req.Digest, NotAfter: req.CreateBefore, BootID: req.ExpectedBoot}
++	if e := i.Validate(); e != nil {
++		return nil, e
++	}
++	var r *allocation.Record
++	var e error
++	if req.ObservedAt > 0 {
++		if s.executions == nil || req.ExecutionBoot != s.executions.BootID {
++			return &cubebox.AllocationResponse{Failure: "executor_replaced"}, nil
++		}
++		r, e = s.allocations.Renew(i, req.ObservedAt)
++	} else if req.Close {
++		r, e = s.allocations.Close(ctx, i, s.config.destroyDeadline, s.cleanupAllocation)
++	} else {
++		r, e = s.allocations.Store.Get(i.ID)
++	}
++	if e != nil {
++		return &cubebox.AllocationResponse{Failure: "allocation_unconfirmed"}, nil
++	}
++	if r == nil {
++		return &cubebox.AllocationResponse{Failure: "allocation_not_recorded", BootId: s.allocations.BootID}, nil
++	}
++	if r.Digest != i.Digest || r.NotAfter != i.NotAfter {
++		return nil, allocation.ErrConflict
++	}
++	data, e := json.Marshal(r)
++	if e != nil {
++		return nil, e
++	}
++	return &cubebox.AllocationResponse{Record: data, BootId: s.allocations.BootID}, nil
++}
++
++func (s *service) recordRuntimeActivity(sandbox string) error {
++	id, err := uuid.Parse(sandbox)
++	if err != nil {
++		return nil
++	}
++	r, err := s.allocations.Store.Get(id.String())
++	if err != nil {
++		return err
++	}
++	if r == nil {
++		return nil
++	}
++	if r.Closed {
++		return allocation.ErrClosed
++	}
++	if r.RetentionWindow == 0 {
++		return nil
++	}
++	return s.allocations.Store.Touch(r.ID)
++}
++
++// Reuse Cubelet's existing maintenance tick and allocation Close journal.
++func (s *service) expireIdleAllocations(ctx context.Context) {
++	if s.allocations == nil {
++		return
++	}
++	// Receipt collection belongs to maintenance, not every renewal request.
++	_ = s.allocations.Store.Collect()
++	rows, err := s.allocations.Store.Due(128)
++	if err != nil {
++		return
++	}
++	for _, r := range rows {
++		s.retentionMu.Lock()
++		if s.retentionClosing || len(s.retentionCleaning) >= 4 {
++			s.retentionMu.Unlock()
++			break
++		}
++		if s.retentionCleaning[r.ID] {
++			s.retentionMu.Unlock()
++			continue
++		}
++		if s.retentionCleaning == nil {
++			s.retentionCleaning = make(map[string]bool)
++		}
++		s.retentionCleaning[r.ID] = true
++		s.retentionWG.Add(1)
++		s.retentionMu.Unlock()
++		go func(r allocation.Record) {
++			defer func() {
++				s.retentionMu.Lock()
++				delete(s.retentionCleaning, r.ID)
++				s.retentionMu.Unlock()
++				s.retentionWG.Done()
++			}()
++			begin := func() (bool, error) { return s.allocations.Store.BeginExpiry(r.ID) }
++			var closed bool
++			var err error
++			if s.executions != nil {
++				closed, err = s.executions.RetireIdleRuntime(r.SandboxID, begin)
++			} else {
++				closed, err = begin()
++			}
++			if err != nil || !closed {
++				return
++			}
++			result, err := s.allocations.Close(ctx, allocation.Identity{ID: r.ID, Digest: r.Digest, NotAfter: r.NotAfter, BootID: r.StartedBoot}, s.config.destroyDeadline, s.cleanupAllocation)
++			if err != nil || result == nil || result.Phase != "absent" {
++				_ = s.allocations.Store.DeferExpiry(r.ID)
++			}
++		}(r)
++	}
++}
++
++// Existing native lifecycle deletion must also retire a managed allocation.
++func (s *service) destroyAllocation(ctx context.Context, req *cubebox.DestroyCubeSandboxRequest) (*cubebox.DestroyCubeSandboxResponse, bool, error) {
++	id, err := uuid.Parse(req.SandboxID)
++	if err != nil || strings.ReplaceAll(id.String(), "-", "") != req.SandboxID {
++		return nil, false, nil
++	}
++	r, err := s.allocations.Store.Get(id.String())
++	if err != nil {
++		return nil, true, err
++	}
++	if r == nil {
++		return nil, false, nil
++	}
++	r, err = s.allocations.Close(ctx, allocation.Identity{ID: r.ID, Digest: r.Digest, NotAfter: r.NotAfter, BootID: r.StartedBoot}, s.config.destroyDeadline, s.cleanupAllocation)
++	if err != nil {
++		return nil, true, err
++	}
++	if r.Phase != "absent" {
++		return nil, true, errors.New("allocation closure pending")
++	}
++	if len(r.CleanupResult) > 0 {
++		var reply cubebox.DestroyCubeSandboxResponse
++		if err = protojson.Unmarshal(r.CleanupResult, &reply); err != nil {
++			return nil, true, err
++		}
++		return &reply, true, nil
++	}
++	return &cubebox.DestroyCubeSandboxResponse{SandboxID: r.SandboxID, RequestID: req.RequestID, Ret: &errorcode.Ret{RetCode: errorcode.ErrorCode_Success}}, true, nil
++}
+diff --git a/Cubelet/services/cubebox/allocation_cleanup_test.go b/Cubelet/services/cubebox/allocation_cleanup_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..a778cb0bec315e0a318339984ae3b6e3d0d1569d
+--- /dev/null
++++ b/Cubelet/services/cubebox/allocation_cleanup_test.go
+@@ -0,0 +1,44 @@
++package cubebox
++
++import (
++	"context"
++	"encoding/json"
++	"path/filepath"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/stretchr/testify/require"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/allocation"
++	cubeboxstore "github.com/tencentcloud/CubeSandbox/Cubelet/pkg/store/cubebox"
++	"github.com/tencentcloud/CubeSandbox/pkgs/proto/services/cubebox/v1"
++	"github.com/tencentcloud/CubeSandbox/pkgs/proto/services/errorcode/v1"
++	bolt "go.etcd.io/bbolt"
++)
++
++func TestManagedCleanupGivesPausedDestroyItsNativeBudget(t *testing.T) {
++	sb := newCubeboxWithStatusForTest("paused-managed-delete", cubeboxstore.Status{PausedAt: time.Now().Add(-time.Minute).UnixNano()})
++	sb.FirstContainer().Container = &fakeDestroyContainer{task: &fakeDestroyTask{}}
++	s, _, flow := newDestroyLifecycleServiceForTest(sb)
++	db, err := bolt.Open(filepath.Join(t.TempDir(), "meta.db"), 0600, nil)
++	require.NoError(t, err)
++	defer db.Close()
++	store, err := allocation.NewStore(db, time.Now)
++	require.NoError(t, err)
++	m := allocation.NewManager(store, "test-boot")
++	i := allocation.Identity{ID: "12345678-1234-1234-1234-123456789abc", Digest: strings.Repeat("a", 64), NotAfter: time.Now().Add(time.Minute).UnixMilli(), BootID: "test-boot"}
++	_, err = m.Create(context.Background(), i, time.Second, func(context.Context) (json.RawMessage, bool, error) { return nil, true, nil })
++	require.NoError(t, err)
++	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
++	defer cancel()
++	r, err := m.Close(ctx, i, s.config.destroyDeadline, func(c context.Context, _ allocation.Record) (json.RawMessage, bool, error) {
++		reply, e := s.destroyNative(c, &cubebox.DestroyCubeSandboxRequest{SandboxID: sb.ID, RequestID: "managed-close"})
++		require.NoError(t, e)
++		require.Equal(t, errorcode.ErrorCode_Success, reply.Ret.RetCode)
++		return nil, true, nil
++	})
++	require.NoError(t, err)
++	require.Equal(t, "absent", r.Phase)
++	require.Equal(t, 1, flow.destroyCalls)
++	require.Greater(t, time.Until(flow.destroyDeadline), 20*time.Second)
++}
+diff --git a/Cubelet/services/cubebox/resume_reconcile_test.go b/Cubelet/services/cubebox/resume_reconcile_test.go
+index 35dca3b976d548deeae4f4ba32b3ddd2c46e6aac..f998a345f4df54edb8ed4fd7626f6433752d159a 100644
+--- a/Cubelet/services/cubebox/resume_reconcile_test.go
++++ b/Cubelet/services/cubebox/resume_reconcile_test.go
+@@ -14,6 +14,7 @@ import (
+ 	"github.com/stretchr/testify/require"
+ 	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/constants"
+ 	cubeboxstore "github.com/tencentcloud/CubeSandbox/Cubelet/pkg/store/cubebox"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/utils"
+ 	"github.com/tencentcloud/CubeSandbox/Cubelet/plugins/cube/internals/cubes"
+ )
+ 
+@@ -51,6 +52,14 @@ func (f *fakeCubeboxAPI) Get(ctx context.Context, id string) (*cubeboxstore.Cube
+ 	return nil, nil
+ }
+ 
++func (f *fakeCubeboxAPI) Observe(ctx context.Context, id string) (*cubeboxstore.CubeBox, error) {
++	box, err := f.Get(ctx, id)
++	if box == nil && err == nil {
++		return nil, utils.ErrorKeyNotFound
++	}
++	return box, err
++}
++
+ func (f *fakeCubeboxAPI) FindContainerOfCubebox(ctx context.Context, id string) (*cubeboxstore.Container, *cubeboxstore.CubeBox, error) {
+ 	if f.cb == nil {
+ 		return nil, nil, nil
+diff --git a/Cubelet/services/cubebox/service.go b/Cubelet/services/cubebox/service.go
+index 85fa259d500e6b401f0abd2226b30e2bc26f7f4a..881d9430b0d7caea013877c6b15d69ca95e2b845 100644
+--- a/Cubelet/services/cubebox/service.go
++++ b/Cubelet/services/cubebox/service.go
+@@ -9,19 +9,24 @@ import (
+ 	"errors"
+ 	"fmt"
+ 	"maps"
++	"path/filepath"
+ 	"runtime/debug"
+ 	"sort"
+ 	"strconv"
+ 	"strings"
++	"sync"
+ 	"time"
+ 
+ 	containerd "github.com/containerd/containerd/v2/client"
+ 	"github.com/containerd/containerd/v2/core/events/exchange"
++	containermetadata "github.com/containerd/containerd/v2/core/metadata"
+ 	"github.com/containerd/containerd/v2/pkg/namespaces"
+ 	"github.com/containerd/containerd/v2/plugins"
+ 	"github.com/containerd/plugin"
+ 	"github.com/containerd/plugin/registry"
++	"github.com/google/uuid"
+ 	jsoniter "github.com/json-iterator/go"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/allocation"
+ 	"google.golang.org/grpc"
+ 	"google.golang.org/grpc/metadata"
+ 	"k8s.io/utils/clock"
+@@ -29,6 +34,7 @@ import (
+ 	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/constants"
+ 	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/container/runc"
+ 	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/cubelet/resourcesource"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/execution"
+ 	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/log"
+ 	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/recov"
+ 	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/ret"
+@@ -49,8 +55,9 @@ const (
+ var _ cubebox.CubeboxMgrServer = &service{}
+ 
+ type ServicesConfig struct {
+-	CreateDeadlineStr string `toml:"create_dead_line"`
+-	createDeadline    time.Duration
++	ExecutionCompletionCommand []string `toml:"execution_completion_command"`
++	CreateDeadlineStr          string   `toml:"create_dead_line"`
++	createDeadline             time.Duration
+ 
+ 	DestroyDeadlineStr string `toml:"destroy_dead_line"`
+ 	destroyDeadline    time.Duration
+@@ -128,6 +135,7 @@ func init() {
+ 		ID:     constants.CubeboxServiceID.ID(),
+ 		Config: defaultServiceConfig(),
+ 		Requires: []plugin.Type{
++			plugins.MetadataPlugin,
+ 			constants.InternalPlugin,
+ 			constants.WorkflowPlugin,
+ 			plugins.EventPlugin,
+@@ -219,6 +227,27 @@ func init() {
+ 			// allocated-resource metrics so the cubelet heartbeat loop can
+ 			// pick it up without taking a hard dependency on this package.
+ 			resourcesource.Set(cb)
++			metadataPlugin, err := ic.GetSingle(plugins.MetadataPlugin)
++			if err != nil {
++				return nil, err
++			}
++			allocationStore, err := allocation.NewStore(metadataPlugin.(*containermetadata.DB), nil)
++			if err != nil {
++				return nil, err
++			}
++			s.allocations = allocation.NewManager(allocationStore, uuid.NewString())
++			if len(config.ExecutionCompletionCommand) != 0 {
++				delivery := execution.NewProcessDelivery(config.ExecutionCompletionCommand)
++				// Result transport readiness must not take VM management down.
++				go func() {
++					if err := delivery.Start(); err != nil {
++						CubeLog.Warn("Execution completion adapter unavailable; Tool admission remains disabled")
++					}
++				}()
++				s.executions = execution.New(&execution.ContainerdDriver{Resolve: s.resolveExecutionTask, RuntimePresent: s.hasExecutionRuntime, FIFODirectory: filepath.Join(cb.config.StatePath, "fifo", "pi-cloud-execution")}, delivery)
++				s.executions.RuntimeActivity = s.recordRuntimeActivity
++				s.completions = delivery
++			}
+ 
+ 			go func() {
+ 				CubeLog.Info("Start subscribing containerd event")
+@@ -243,12 +272,19 @@ func init() {
+ }
+ 
+ type service struct {
+-	config       *ServicesConfig
+-	cubeboxMgr   *local
+-	cleaner      *deadContainerCleaner
+-	eventMonitor *eventMonitor
+-	engine       *workflow.Engine
+-	events       *exchange.Exchange
++	retentionMu       sync.Mutex
++	retentionWG       sync.WaitGroup
++	retentionCleaning map[string]bool
++	retentionClosing  bool
++	allocations       *allocation.Manager
++	executions        *execution.Manager
++	completions       *execution.ProcessDelivery
++	config            *ServicesConfig
++	cubeboxMgr        *local
++	cleaner           *deadContainerCleaner
++	eventMonitor      *eventMonitor
++	engine            *workflow.Engine
++	events            *exchange.Exchange
+ 	cubebox.UnimplementedCubeboxMgrServer
+ 	numaNodeIndex         uint32
+ 	sandboxLifecycleLocks *utils.ResourceLocks
+@@ -327,6 +363,13 @@ func (s *service) gatePausedReplace(ctx context.Context, req *cubebox.RunCubeSan
+ }
+ 
+ func (s *service) Create(ctx context.Context, req *cubebox.RunCubeSandboxRequest) (*cubebox.RunCubeSandboxResponse, error) {
++	if req.GetAnnotations()[allocationIDAnnotation] != "" {
++		return s.createAllocation(ctx, req)
++	}
++	return s.createNative(ctx, req)
++}
++
++func (s *service) createNative(ctx context.Context, req *cubebox.RunCubeSandboxRequest) (*cubebox.RunCubeSandboxResponse, error) {
+ 	rsp := &cubebox.RunCubeSandboxResponse{
+ 		RequestID: req.RequestID,
+ 		Ret:       &errorcode.Ret{RetCode: errorcode.ErrorCode_Success},
+@@ -376,7 +419,7 @@ func (s *service) Create(ctx context.Context, req *cubebox.RunCubeSandboxRequest
+ 	start := time.Now()
+ 	createInfo := &workflow.CreateContext{
+ 		ReqInfo:  req,
+-		Failover: true,
++		Failover: req.GetAnnotations()[allocationIDAnnotation] == "",
+ 	}
+ 	ctx = setDefaultContext(ctx, req, createInfo)
+ 
+@@ -647,6 +690,15 @@ func getAllocatedPort(createInfo *workflow.CreateContext) []*cubebox.PortMapping
+ }
+ 
+ func (s *service) Destroy(ctx context.Context, req *cubebox.DestroyCubeSandboxRequest) (*cubebox.DestroyCubeSandboxResponse, error) {
++	if s.allocations != nil {
++		if result, handled, err := s.destroyAllocation(ctx, req); handled {
++			return result, err
++		}
++	}
++	return s.destroyNative(ctx, req)
++}
++
++func (s *service) destroyNative(ctx context.Context, req *cubebox.DestroyCubeSandboxRequest) (*cubebox.DestroyCubeSandboxResponse, error) {
+ 	rsp := &cubebox.DestroyCubeSandboxResponse{
+ 		RequestID: req.RequestID,
+ 		SandboxID: req.SandboxID,
+@@ -957,6 +1009,20 @@ func (s *service) List(ctx context.Context, req *cubebox.ListCubeSandboxRequest)
+ 		retErr = fmt.Errorf("internal error")
+ 	})
+ 	res = &cubebox.ListCubeSandboxResponse{}
++	if id := req.GetId(); id != "" {
++		box, err := s.cubeboxMgr.cubeboxManger.Observe(ctx, id)
++		if errors.Is(err, utils.ErrorKeyNotFound) {
++			if s.executions != nil {
++				s.executions.ForgetRuntime(id)
++			}
++			return res, nil
++		}
++		if err != nil {
++			return nil, err
++		}
++		res.Items = []*cubebox.CubeSandbox{toGRPCCubeBox(box, req.GetOption())}
++		return res, nil
++	}
+ 
+ 	cubeboxInStore := s.cubeboxMgr.cubeboxManger.List()
+ 	if len(cubeboxInStore) > maxListCubebox {
+@@ -1034,14 +1100,6 @@ func (s *service) filterGRPCContainer(sbs []*cubebox.CubeSandbox, req *cubebox.L
+ 		return sbs
+ 	}
+ 
+-	if req.GetId() != "" {
+-		sb, err := s.cubeboxMgr.cubeboxManger.Get(context.Background(), req.GetId())
+-		if err != nil {
+-			return nil
+-		}
+-		return []*cubebox.CubeSandbox{toGRPCCubeBox(sb, req.GetOption())}
+-	}
+-
+ 	return applyCubeSandboxFilter(sbs, req.GetFilter())
+ }
+ 
+@@ -1160,6 +1218,7 @@ func (s *service) destroyDeadContainers() {
+ 	ctx := CubeLog.WithRequestTrace(context.Background(), rt)
+ 	ctx = log.WithLogger(ctx, log.NewWrapperLogEntry(log.AuditLogger.WithContext(ctx)))
+ 	for range s.cleaner.heartbeat.C() {
++		s.expireIdleAllocations(ctx)
+ 		dc := s.cubeboxMgr.cubeboxManger.List()
+ 		if len(dc) == 0 {
+ 			continue
+diff --git a/Cubelet/services/cubebox/volume_holder_evidence_test.go b/Cubelet/services/cubebox/volume_holder_evidence_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..32c20164fe72d4603ddf0d14311a8ed16238eaf8
+--- /dev/null
++++ b/Cubelet/services/cubebox/volume_holder_evidence_test.go
+@@ -0,0 +1,67 @@
++package cubebox
++
++import (
++	"context"
++	"errors"
++	"path/filepath"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/allocation"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/utils"
++	bolt "go.etcd.io/bbolt"
++)
++
++func TestVolumeHolderRequiresClosedAllocationAndExactPhysicalAbsence(t *testing.T) {
++	db, err := bolt.Open(filepath.Join(t.TempDir(), "metadata.db"), 0600, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer db.Close()
++	store, err := allocation.NewStore(db, time.Now)
++	if err != nil {
++		t.Fatal(err)
++	}
++	manager := allocation.NewManager(store, "boot")
++	catalog := &observationCatalog{failure: utils.ErrorKeyNotFound}
++	s := &service{allocations: manager, cubeboxMgr: &local{cubeboxManger: catalog}}
++	id := "12345678-1234-1234-1234-123456789abc"
++	sandbox := allocation.SandboxID(id)
++	proof := func(want bool) {
++		t.Helper()
++		got, _ := s.closedVolumeHolderAbsent(context.Background(), sandbox)
++		if got != want {
++			t.Fatalf("got proof %v, want %v", got, want)
++		}
++	}
++	proof(false)
++	_, err = store.Update(id, func(*allocation.Record, int64) (*allocation.Record, error) {
++		return &allocation.Record{ID: id, SandboxID: sandbox, Digest: strings.Repeat("a", 64), NotAfter: time.Now().UnixMilli() + 60000, StartedBoot: "boot", Phase: "ready", CreateFinished: true}, nil
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	proof(false)
++	_, err = store.Update(id, func(r *allocation.Record, _ int64) (*allocation.Record, error) {
++		r.Closed = true
++		r.Phase = "closing"
++		return r, nil
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	proof(false)
++	_, err = store.Update(id, func(r *allocation.Record, _ int64) (*allocation.Record, error) { r.Phase = "absent"; return r, nil })
++	if err != nil {
++		t.Fatal(err)
++	}
++	proof(true)
++	catalog.failure = errors.New("runtime recovery incomplete")
++	proof(false)
++	catalog.failure = nil
++	proof(false)
++	if ok, _ := s.closedVolumeHolderAbsent(context.Background(), "1234"); ok {
++		t.Fatal("partial sandbox identity accepted")
++	}
++}
+diff --git a/Cubelet/services/cubebox/volume_references.go b/Cubelet/services/cubebox/volume_references.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2cb0d78ea28f4f1ff652d64017c1f8fe9770e1d
+--- /dev/null
++++ b/Cubelet/services/cubebox/volume_references.go
+@@ -0,0 +1,55 @@
++package cubebox
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"github.com/google/uuid"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/allocation"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/utils"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/plugins/volume"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/plugins/volume/refcount"
++	"github.com/tencentcloud/CubeSandbox/pkgs/proto/services/cubebox/v1"
++	"strings"
++)
++
++func (s *service) ObserveVolumeReferences(ctx context.Context, r *cubebox.VolumeReferenceRequest) (*cubebox.VolumeReferenceResponse, error) {
++	if r.Namespace != "default" || len(r.VolumeIds) > 64 {
++		return nil, errors.New("invalid Volume reference query")
++	}
++	states := make([]refcount.State, 0, len(r.VolumeIds))
++	for _, id := range r.VolumeIds {
++		if id == "" || len(id) > 128 || strings.ContainsRune(id, 0) {
++			return nil, errors.New("invalid Volume identity")
++		}
++		state, err := volume.Global().ReconcileReference(ctx, r.Namespace, id, s.closedVolumeHolderAbsent)
++		if err != nil {
++			return nil, err
++		}
++		states = append(states, state)
++	}
++	raw, err := json.Marshal(states)
++	return &cubebox.VolumeReferenceResponse{State: raw}, err
++}
++
++func (s *service) closedVolumeHolderAbsent(ctx context.Context, sandboxID string) (bool, error) {
++	if s.allocations == nil {
++		return false, errors.New("allocation metadata unavailable")
++	}
++	id, err := uuid.Parse(sandboxID)
++	if err != nil || allocation.SandboxID(id.String()) != sandboxID {
++		return false, nil
++	}
++	record, err := s.allocations.Store.Get(id.String())
++	if err != nil {
++		return false, err
++	}
++	if record == nil || record.SandboxID != sandboxID || !record.Closed || record.Phase != "absent" {
++		return false, nil
++	}
++	_, err = s.cubeboxMgr.cubeboxManger.Observe(ctx, sandboxID)
++	if errors.Is(err, utils.ErrorKeyNotFound) {
++		return true, nil
++	}
++	return false, err
++}
+diff --git a/Cubelet/storage/local.go b/Cubelet/storage/local.go
+index 7890a12e03c8018d71401ab04b388f56fc028d0f..42cd216663dea938ef4c1056b2de876630364fd5 100644
+--- a/Cubelet/storage/local.go
++++ b/Cubelet/storage/local.go
+@@ -34,7 +34,6 @@ import (
+ 	bolt "go.etcd.io/bbolt"
+ 	"k8s.io/apimachinery/pkg/api/resource"
+ 
+-	"github.com/tencentcloud/CubeSandbox/Cubelet/api/services/multimetadb/v1"
+ 	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/constants"
+ 	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/container/disk"
+ 	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/log"
+@@ -47,6 +46,7 @@ import (
+ 	CubeLog "github.com/tencentcloud/CubeSandbox/pkgs/CubeLog"
+ 	"github.com/tencentcloud/CubeSandbox/pkgs/proto/services/cubebox/v1"
+ 	"github.com/tencentcloud/CubeSandbox/pkgs/proto/services/errorcode/v1"
++	"github.com/tencentcloud/CubeSandbox/Cubelet/api/services/multimetadb/v1"
+ )
+ 
+ type local struct {
+@@ -642,7 +642,9 @@ func (l *local) initDb() error {
+ 	// This is separate from the sharded CubeStore so we can use bbolt
+ 	// transactions directly.
+ 	rcDBPath := filepath.Join(basePath, "volume_refcount.db")
+-	l.rcDB, err = bolt.Open(rcDBPath, 0644, utils.MakeBoltDBOption())
++	referenceOptions := utils.MakeBoltDBOption()
++	referenceOptions.NoSync = false
++	l.rcDB, err = bolt.Open(rcDBPath, 0644, referenceOptions)
+ 	if err != nil {
+ 		return fmt.Errorf("open volume refcount db %s: %w", rcDBPath, err)
+ 	}
+diff --git a/Cubelet/storage/plugin.go b/Cubelet/storage/plugin.go
+index 6b6d891c577618368eb34da825c2607eec7698fb..941942c62b1d9212174438c00ae9e14f6d43c1f1 100644
+--- a/Cubelet/storage/plugin.go
++++ b/Cubelet/storage/plugin.go
+@@ -570,8 +570,8 @@ func initVolumePlugins(ctx context.Context, cfg *Config) error {
+ 			if err != nil {
+ 				CubeLog.Warnf("[plugin_volume] refcount recovery: %v", err)
+ 			} else {
+-				CubeLog.Infof("[plugin_volume] refcount recovery: scanned=%d stale_removed=%d records_deleted=%d",
+-					res.RecordsScanned, res.StaleRefsRemoved, res.RecordsDeleted)
++				CubeLog.Infof("[plugin_volume] refcount recovery: scanned=%d stale_marked=%d",
++					res.RecordsScanned, res.StaleRefsMarked)
+ 			}
+ 		}
+ 	}
+diff --git a/pkgs/cubedb/migrate/migrations/mysql/20261004000000_pi_cloud_allocation.sql b/pkgs/cubedb/migrate/migrations/mysql/20261004000000_pi_cloud_allocation.sql
+new file mode 100644
+index 0000000000000000000000000000000000000000..e7d0670a9b0fe92badbf9f8aa26823a188ff1da1
+--- /dev/null
++++ b/pkgs/cubedb/migrate/migrations/mysql/20261004000000_pi_cloud_allocation.sql
+@@ -0,0 +1,24 @@
++-- +goose Up
++CREATE TABLE IF NOT EXISTS t_pi_cloud_allocation_clock (id smallint PRIMARY KEY, floor_ms bigint NOT NULL);
++INSERT IGNORE INTO t_pi_cloud_allocation_clock VALUES (1,0);
++CREATE TABLE IF NOT EXISTS t_pi_cloud_allocation (
++ id varchar(36) NOT NULL PRIMARY KEY,
++ digest varchar(64) NOT NULL DEFAULT '',
++ not_after bigint NOT NULL,
++ sandbox_id varchar(32) NOT NULL,
++ node_id varchar(256) NOT NULL DEFAULT '',
++ node_ip varchar(256) NOT NULL DEFAULT '',
++ node_boot varchar(64) NOT NULL DEFAULT '',
++ phase varchar(16) NOT NULL,
++ closed boolean NOT NULL DEFAULT false,
++ request mediumtext NOT NULL,
++ node_request mediumtext NOT NULL,
++ result mediumtext NOT NULL,
++ traffic_token varchar(64) NOT NULL DEFAULT '',
++ create_refs_applied boolean NOT NULL DEFAULT false,
++ close_refs_applied boolean NOT NULL DEFAULT false,
++ INDEX pi_cloud_allocation_gc (closed, phase, not_after)
++);
++-- +goose Down
++DROP TABLE t_pi_cloud_allocation;
++DROP TABLE t_pi_cloud_allocation_clock;
+diff --git a/pkgs/cubedb/migrate/migrations/mysql/20261005000000_pi_cloud_volume_state.sql b/pkgs/cubedb/migrate/migrations/mysql/20261005000000_pi_cloud_volume_state.sql
+new file mode 100644
+index 0000000000000000000000000000000000000000..5562f59c08df8ddc5ef2de2297a84f181ca1f182
+--- /dev/null
++++ b/pkgs/cubedb/migrate/migrations/mysql/20261005000000_pi_cloud_volume_state.sql
+@@ -0,0 +1,22 @@
++-- +goose Up
++CREATE TABLE t_pi_cloud_volume_gate (
++ volume_id varchar(128) PRIMARY KEY, generation bigint NOT NULL, deleting boolean NOT NULL DEFAULT false
++);
++CREATE TABLE t_pi_cloud_volume_node (
++ volume_id varchar(128) NOT NULL, node_id varchar(256) NOT NULL, generation bigint NOT NULL,
++ epoch varchar(36) NOT NULL, revision bigint NOT NULL DEFAULT -1, count bigint NOT NULL DEFAULT 0,
++ confirmed boolean NOT NULL DEFAULT false, PRIMARY KEY(volume_id,node_id)
++);
++CREATE TABLE t_pi_cloud_volume_hold (
++ allocation_id varchar(36) NOT NULL, volume_id varchar(128) NOT NULL, generation bigint NOT NULL,
++ node_id varchar(256) NOT NULL, PRIMARY KEY(allocation_id,volume_id)
++);
++CREATE INDEX pi_cloud_volume_hold_lookup ON t_pi_cloud_volume_hold(volume_id,generation);
++ALTER TABLE t_pi_cloud_allocation DROP COLUMN create_refs_applied;
++ALTER TABLE t_pi_cloud_allocation DROP COLUMN close_refs_applied;
++-- +goose Down
++ALTER TABLE t_pi_cloud_allocation ADD COLUMN create_refs_applied boolean NOT NULL DEFAULT false;
++ALTER TABLE t_pi_cloud_allocation ADD COLUMN close_refs_applied boolean NOT NULL DEFAULT false;
++DROP TABLE t_pi_cloud_volume_hold;
++DROP TABLE t_pi_cloud_volume_node;
++DROP TABLE t_pi_cloud_volume_gate;
+diff --git a/pkgs/cubedb/migrate/migrations/postgres/20261004000000_pi_cloud_allocation.sql b/pkgs/cubedb/migrate/migrations/postgres/20261004000000_pi_cloud_allocation.sql
+new file mode 100644
+index 0000000000000000000000000000000000000000..550280b5ea28f33134d52cabe1858423b6087307
+--- /dev/null
++++ b/pkgs/cubedb/migrate/migrations/postgres/20261004000000_pi_cloud_allocation.sql
+@@ -0,0 +1,24 @@
++-- +goose Up
++CREATE TABLE IF NOT EXISTS t_pi_cloud_allocation_clock (id smallint PRIMARY KEY, floor_ms bigint NOT NULL);
++INSERT INTO t_pi_cloud_allocation_clock VALUES (1,0) ON CONFLICT DO NOTHING;
++CREATE TABLE IF NOT EXISTS t_pi_cloud_allocation (
++ id varchar(36) NOT NULL PRIMARY KEY,
++ digest varchar(64) NOT NULL DEFAULT '',
++ not_after bigint NOT NULL,
++ sandbox_id varchar(32) NOT NULL,
++ node_id varchar(256) NOT NULL DEFAULT '',
++ node_ip varchar(256) NOT NULL DEFAULT '',
++ node_boot varchar(64) NOT NULL DEFAULT '',
++ phase varchar(16) NOT NULL,
++ closed boolean NOT NULL DEFAULT false,
++ request text NOT NULL DEFAULT '',
++ node_request text NOT NULL DEFAULT '',
++ result text NOT NULL DEFAULT '',
++ traffic_token varchar(64) NOT NULL DEFAULT '',
++ create_refs_applied boolean NOT NULL DEFAULT false,
++ close_refs_applied boolean NOT NULL DEFAULT false
++);
++CREATE INDEX IF NOT EXISTS pi_cloud_allocation_gc ON t_pi_cloud_allocation(closed,phase,not_after);
++-- +goose Down
++DROP TABLE t_pi_cloud_allocation;
++DROP TABLE t_pi_cloud_allocation_clock;
+diff --git a/pkgs/cubedb/migrate/migrations/postgres/20261005000000_pi_cloud_volume_state.sql b/pkgs/cubedb/migrate/migrations/postgres/20261005000000_pi_cloud_volume_state.sql
+new file mode 100644
+index 0000000000000000000000000000000000000000..5562f59c08df8ddc5ef2de2297a84f181ca1f182
+--- /dev/null
++++ b/pkgs/cubedb/migrate/migrations/postgres/20261005000000_pi_cloud_volume_state.sql
+@@ -0,0 +1,22 @@
++-- +goose Up
++CREATE TABLE t_pi_cloud_volume_gate (
++ volume_id varchar(128) PRIMARY KEY, generation bigint NOT NULL, deleting boolean NOT NULL DEFAULT false
++);
++CREATE TABLE t_pi_cloud_volume_node (
++ volume_id varchar(128) NOT NULL, node_id varchar(256) NOT NULL, generation bigint NOT NULL,
++ epoch varchar(36) NOT NULL, revision bigint NOT NULL DEFAULT -1, count bigint NOT NULL DEFAULT 0,
++ confirmed boolean NOT NULL DEFAULT false, PRIMARY KEY(volume_id,node_id)
++);
++CREATE TABLE t_pi_cloud_volume_hold (
++ allocation_id varchar(36) NOT NULL, volume_id varchar(128) NOT NULL, generation bigint NOT NULL,
++ node_id varchar(256) NOT NULL, PRIMARY KEY(allocation_id,volume_id)
++);
++CREATE INDEX pi_cloud_volume_hold_lookup ON t_pi_cloud_volume_hold(volume_id,generation);
++ALTER TABLE t_pi_cloud_allocation DROP COLUMN create_refs_applied;
++ALTER TABLE t_pi_cloud_allocation DROP COLUMN close_refs_applied;
++-- +goose Down
++ALTER TABLE t_pi_cloud_allocation ADD COLUMN create_refs_applied boolean NOT NULL DEFAULT false;
++ALTER TABLE t_pi_cloud_allocation ADD COLUMN close_refs_applied boolean NOT NULL DEFAULT false;
++DROP TABLE t_pi_cloud_volume_hold;
++DROP TABLE t_pi_cloud_volume_node;
++DROP TABLE t_pi_cloud_volume_gate;

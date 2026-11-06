@@ -319,7 +319,7 @@ export async function deployPlatform({ images, deploymentEnvironment, retainedSa
   assertCubeCompletionVersion(
     installed,
     retainedSandboxRuntime?.completionIdentity ?? (await completionBuildIdentity(repositoryRoot)),
-    createHash("sha256").update(JSON.stringify(runtimeBuild)).digest("hex").slice(0, 16),
+    `${runtimeBuild.upstreamVersion}-picloud-${createHash("sha256").update(JSON.stringify(runtimeBuild)).digest("hex").slice(0, 16)}`,
   );
   const { platform } = await values({ images, deploymentEnvironment });
   installSecrets();

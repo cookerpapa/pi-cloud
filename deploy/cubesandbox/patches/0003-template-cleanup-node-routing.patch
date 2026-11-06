@@ -1,17 +1,17 @@
 diff --git a/CubeMaster/pkg/templatecenter/artifact_lifecycle.go b/CubeMaster/pkg/templatecenter/artifact_lifecycle.go
-index c89a209..3ab0a0f 100644
+index 19e142c0388c3520035423eea7958f90d1dff5c5..0b3fc38c4a620f9ec75a724c9cfbb152ba7a7c77 100644
 --- a/CubeMaster/pkg/templatecenter/artifact_lifecycle.go
 +++ b/CubeMaster/pkg/templatecenter/artifact_lifecycle.go
-@@ -14,7 +14,6 @@ import (
+@@ -16,7 +16,6 @@ import (
  	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/db/models"
  	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/log"
  	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/node"
 -	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/localcache"
+ 	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/tcclient"
  	"gorm.io/gorm"
  	"gorm.io/gorm/clause"
- )
-@@ -233,21 +232,12 @@ func cleanupMasterLocalArtifactForFinalDelete(artifact models.RootfsArtifact, re
- 	return true, nil
+@@ -289,21 +288,12 @@ func notifyTemplateCenterArtifactDelete(ctx context.Context, artifactID string)
+ 	}
  }
  
 -// placementToNode resolves a placement row to a node with a usable host ip,
@@ -38,7 +38,7 @@ index c89a209..3ab0a0f 100644
  }
 diff --git a/CubeMaster/pkg/templatecenter/cleanup_node_routing_mysql_test.go b/CubeMaster/pkg/templatecenter/cleanup_node_routing_mysql_test.go
 new file mode 100644
-index 0000000..33fa084
+index 0000000000000000000000000000000000000000..86c2f1858238d4eacaed1cc18a9c2d32e5a9801f
 --- /dev/null
 +++ b/CubeMaster/pkg/templatecenter/cleanup_node_routing_mysql_test.go
 @@ -0,0 +1,118 @@
@@ -50,10 +50,10 @@ index 0000000..33fa084
 +	"os"
 +	"testing"
 +
-+	errorcodev1 "github.com/tencentcloud/CubeSandbox/CubeMaster/api/services/errorcode/v1"
-+	imagev1 "github.com/tencentcloud/CubeSandbox/CubeMaster/api/services/images/v1"
 +	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/db/models"
 +	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/node"
++	errorcodev1 "github.com/tencentcloud/CubeSandbox/pkgs/proto/services/errorcode/v1"
++	imagev1 "github.com/tencentcloud/CubeSandbox/pkgs/proto/services/images/v1"
 +	"gorm.io/driver/mysql"
 +	"gorm.io/gorm"
 +	"gorm.io/gorm/logger"
@@ -73,16 +73,16 @@ index 0000000..33fa084
 +		t.Fatal(err)
 +	}
 +	t.Cleanup(func() { conn.Close() })
-+	oldDB, oldDestroy, oldLocal, oldAddr := store.db, deleteImageOnCubelet, cleanupLocalRootfsArtifactForLifecycle, getCubeletAddrForDelete
++	oldDB, oldDestroy, oldLocal, oldAddr := store.db, deleteImageOnCubelet, requestTemplateCenterArtifactDelete, getCubeletAddrForDelete
 +	t.Cleanup(func() {
 +		store.db = oldDB
 +		deleteImageOnCubelet = oldDestroy
-+		cleanupLocalRootfsArtifactForLifecycle = oldLocal
++		requestTemplateCenterArtifactDelete = oldLocal
 +		getCubeletAddrForDelete = oldAddr
 +	})
 +	store.db = db
 +	getCubeletAddrForDelete = func(ip string) string { return ip + ":9999" }
-+	tables := []any{&models.RootfsArtifact{}, &models.ArtifactNodePlacement{}, &models.TemplateDefinition{}, &models.TemplateReplica{}, &models.TemplateImageJob{}}
++	tables := []any{&models.RootfsArtifact{}, &models.ArtifactNodePlacement{}, &models.TemplateDefinition{}, &models.TemplateReplica{}, &models.TemplateImageJob{}, &models.SnapshotRecord{}}
 +	if err := db.AutoMigrate(tables...); err != nil {
 +		t.Fatal(err)
 +	}
@@ -111,7 +111,7 @@ index 0000000..33fa084
 +					t.Fatal(err)
 +				}
 +			}
-+			remoteCalls, localCalls := 0, 0
++			remoteCalls, notifyCalls := 0, 0
 +			deleteImageOnCubelet = func(ctx context.Context, addr string, req *imagev1.DestroyImageRequest) (*imagev1.DestroyImageResponse, error) {
 +				remoteCalls++
 +				if addr != "10.0.0.9:9999" {
@@ -125,12 +125,12 @@ index 0000000..33fa084
 +				}
 +				return &imagev1.DestroyImageResponse{Ret: &errorcodev1.Ret{RetCode: errorcodev1.ErrorCode_Success}}, nil
 +			}
-+			cleanupLocalRootfsArtifactForLifecycle = func(id, path string) error {
-+				localCalls++
++			requestTemplateCenterArtifactDelete = func(ctx context.Context, id string) error {
++				notifyCalls++
 +				if id != artifact.ArtifactID {
 +					t.Fatal("wrong artifact")
 +				}
-+				return nil
++				return db.Where("artifact_id = ?", id).Unscoped().Delete(&models.RootfsArtifact{}).Error
 +			}
 +			if err := cleanupArtifactFully(context.Background(), artifact.ArtifactID, "cubebox", ""); err != nil {
 +				t.Fatal(err)
@@ -142,8 +142,8 @@ index 0000000..33fa084
 +				t.Fatal(err)
 +			}
 +			if scenario == "current-address" {
-+				if !errors.Is(err, gorm.ErrRecordNotFound) || placements != 0 || remoteCalls != 1 || localCalls != 1 {
-+					t.Fatalf("successful cleanup did not converge: err=%v placements=%d remote=%d local=%d", err, placements, remoteCalls, localCalls)
++				if !errors.Is(err, gorm.ErrRecordNotFound) || placements != 0 || remoteCalls != 1 || notifyCalls != 1 {
++					t.Fatalf("successful cleanup did not converge: err=%v placements=%d remote=%d local=%d", err, placements, remoteCalls, notifyCalls)
 +				}
 +				return
 +			}
@@ -151,8 +151,8 @@ index 0000000..33fa084
 +			if scenario == "shared-reference" {
 +				expected = ArtifactStatusReady
 +			}
-+			if err != nil || remaining.Status != expected || placements != 1 || localCalls != 0 {
-+				t.Fatalf("unconfirmed/in-use artifact lost evidence: err=%v status=%s placements=%d local=%d", err, remaining.Status, placements, localCalls)
++			if err != nil || remaining.Status != expected || placements != 1 || notifyCalls != 0 {
++				t.Fatalf("unconfirmed/in-use artifact lost evidence: err=%v status=%s placements=%d local=%d", err, remaining.Status, placements, notifyCalls)
 +			}
 +			if (scenario == "missing-node" || scenario == "shared-reference") && remoteCalls != 0 {
 +				t.Fatalf("unexpected remote destruction: %d", remoteCalls)
@@ -162,7 +162,7 @@ index 0000000..33fa084
 +}
 diff --git a/CubeMaster/pkg/templatecenter/cleanup_node_routing_test.go b/CubeMaster/pkg/templatecenter/cleanup_node_routing_test.go
 new file mode 100644
-index 0000000..dd78e0d
+index 0000000000000000000000000000000000000000..53c1d586ff88dc68dccbe24ffd46992aced73713
 --- /dev/null
 +++ b/CubeMaster/pkg/templatecenter/cleanup_node_routing_test.go
 @@ -0,0 +1,155 @@
@@ -175,11 +175,11 @@ index 0000000..dd78e0d
 +	"testing"
 +
 +	"github.com/agiledragon/gomonkey/v2"
-+	cubeboxv1 "github.com/tencentcloud/CubeSandbox/CubeMaster/api/services/cubebox/v1"
-+	errorcodev1 "github.com/tencentcloud/CubeSandbox/CubeMaster/api/services/errorcode/v1"
 +	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/db/models"
 +	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/node"
 +	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/localcache"
++	cubeboxv1 "github.com/tencentcloud/CubeSandbox/pkgs/proto/services/cubebox/v1"
++	errorcodev1 "github.com/tencentcloud/CubeSandbox/pkgs/proto/services/errorcode/v1"
 +)
 +
 +func installCleanupNodes(t *testing.T, nodes map[string]*node.Node) {
@@ -208,7 +208,7 @@ index 0000000..dd78e0d
 +func TestTemplateCleanupUsesCurrentNodeAfterAddressChange(t *testing.T) {
 +	installCleanupNodes(t, map[string]*node.Node{"node-a": {InsID: "node-a", IP: "10.0.0.9"}})
 +	calls := captureCleanupCalls(t)
-+	if err := cleanupTemplateReplicasWithLocators(context.Background(), "tpl-owned", []templateCleanupLocator{{NodeID: "node-a", NodeIP: "10.0.0.1"}}); err != nil {
++	if err := cleanupTemplateReplicasWithLocators(context.Background(), "tpl-owned", []templateCleanupLocator{{NodeID: "node-a", NodeIP: "10.0.0.1"}}, ""); err != nil {
 +		t.Fatal(err)
 +	}
 +	if !reflect.DeepEqual(*calls, []string{"10.0.0.9:9999"}) {
@@ -220,7 +220,7 @@ index 0000000..dd78e0d
 +	installCleanupNodes(t, map[string]*node.Node{"node-a": {InsID: "node-a", IP: "10.0.0.8"}, "node-b": {InsID: "node-b", IP: "10.0.0.9"}})
 +	calls := captureCleanupCalls(t)
 +	locators := []templateCleanupLocator{{NodeID: "node-a", NodeIP: "10.0.0.1"}, {NodeID: "node-a", NodeIP: "10.0.0.2"}, {NodeID: "node-b", NodeIP: "10.0.0.1"}}
-+	if err := cleanupTemplateReplicasWithLocators(context.Background(), "tpl-owned", locators); err != nil {
++	if err := cleanupTemplateReplicasWithLocators(context.Background(), "tpl-owned", locators, ""); err != nil {
 +		t.Fatal(err)
 +	}
 +	if !reflect.DeepEqual(*calls, []string{"10.0.0.8:9999", "10.0.0.9:9999"}) {
@@ -259,7 +259,7 @@ index 0000000..dd78e0d
 +			runArtifactCleanup = func(context.Context, string, *templateCleanupTargets) error { laterCalls++; return nil }
 +			runMetadataCleanup = func(context.Context, string) error { laterCalls++; return nil }
 +			runTemplateJobCleanup = func(context.Context, string) error { laterCalls++; return nil }
-+			err := deleteTemplateWithTargets(context.Background(), "tpl-owned", &templateCleanupTargets{Jobs: []models.TemplateImageJob{{TemplateID: "tpl-owned"}}, Locators: []templateCleanupLocator{tt.locator}})
++			err := deleteTemplateWithTargets(context.Background(), "tpl-owned", &templateCleanupTargets{Jobs: []models.TemplateImageJob{{TemplateID: "tpl-owned"}}, Locators: []templateCleanupLocator{tt.locator}}, DeleteTemplateOptions{})
 +			if err == nil || len(*calls) != 0 || laterCalls != 0 {
 +				t.Fatalf("unresolved target advanced cleanup: err=%v calls=%v later=%d", err, *calls, laterCalls)
 +			}
@@ -278,7 +278,7 @@ index 0000000..dd78e0d
 +				}
 +				return nil, cause
 +			}
-+			err := cleanupTemplateReplicasWithLocators(context.Background(), "tpl-owned", []templateCleanupLocator{{NodeID: "node-a", NodeIP: "10.0.0.1"}})
++			err := cleanupTemplateReplicasWithLocators(context.Background(), "tpl-owned", []templateCleanupLocator{{NodeID: "node-a", NodeIP: "10.0.0.1"}}, "")
 +			if !errors.Is(err, cause) {
 +				t.Fatalf("lost cleanup failure: %v", err)
 +			}
@@ -302,7 +302,7 @@ index 0000000..dd78e0d
 +func TestReplicaCleanupFilterDoesNotFollowReusedAddress(t *testing.T) {
 +	installCleanupNodes(t, map[string]*node.Node{"node-a": {InsID: "node-a", IP: "10.0.0.8"}, "node-b": {InsID: "node-b", IP: "10.0.0.9"}})
 +	calls := captureCleanupCalls(t)
-+	err := cleanupTemplateReplicasOnNodes(context.Background(), "tpl-owned", []models.TemplateReplica{{NodeID: "node-a", NodeIP: "10.0.0.1"}, {NodeID: "node-b", NodeIP: "10.0.0.8"}}, []*node.Node{{InsID: "node-a", IP: "10.0.0.8"}})
++	err := cleanupTemplateReplicasOnNodes(context.Background(), "tpl-owned", []models.TemplateReplica{{NodeID: "node-a", NodeIP: "10.0.0.1"}, {NodeID: "node-b", NodeIP: "10.0.0.8"}}, []*node.Node{{InsID: "node-a", IP: "10.0.0.8"}}, "")
 +	if err != nil {
 +		t.Fatal(err)
 +	}
@@ -316,25 +316,25 @@ index 0000000..dd78e0d
 +	patches := gomonkey.NewPatches()
 +	patches.ApplyFunc(isTemplateInUse, func(context.Context, string, string) (bool, error) { return true, nil })
 +	t.Cleanup(patches.Reset)
-+	err := deleteTemplateWithTargets(context.Background(), "tpl-owned", &templateCleanupTargets{Definition: &models.TemplateDefinition{TemplateID: "tpl-owned", Status: StatusReady}, Locators: []templateCleanupLocator{{NodeID: "node-a", NodeIP: "10.0.0.1"}}})
++	err := deleteTemplateWithTargets(context.Background(), "tpl-owned", &templateCleanupTargets{Definition: &models.TemplateDefinition{TemplateID: "tpl-owned", Status: StatusReady}, Locators: []templateCleanupLocator{{NodeID: "node-a", NodeIP: "10.0.0.1"}}}, DeleteTemplateOptions{})
 +	if !errors.Is(err, ErrTemplateInUse) || len(*calls) != 0 {
 +		t.Fatalf("in-use template reached physical cleanup: %v, %v", err, *calls)
 +	}
 +}
 diff --git a/CubeMaster/pkg/templatecenter/delete.go b/CubeMaster/pkg/templatecenter/delete.go
-index feb1a76..6d22721 100644
+index 77c389f5ff2c6ea4ded44b23061cb81489d39a03..46716228aea7194427a0239c2ca13f57e46bbc6c 100644
 --- a/CubeMaster/pkg/templatecenter/delete.go
 +++ b/CubeMaster/pkg/templatecenter/delete.go
-@@ -15,6 +15,7 @@ import (
- 	cubeboxv1 "github.com/tencentcloud/CubeSandbox/CubeMaster/api/services/cubebox/v1"
+@@ -16,6 +16,7 @@ import (
  	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/constants"
  	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/db/models"
+ 	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/log"
 +	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/node"
  	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/cubelet"
  	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/errorcode"
  	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/localcache"
-@@ -37,16 +38,10 @@ var (
- 	runTemplateJobCleanup    = cleanupTemplateJobs
+@@ -45,16 +46,10 @@ var (
+ 	runFailActiveWork = failActiveTemplateWork
  )
  
 -// templateCleanupLocator identifies a single cubelet that may hold artifacts
@@ -354,7 +354,7 @@ index feb1a76..6d22721 100644
  type templateCleanupLocator struct {
  	NodeID string
  	NodeIP string
-@@ -61,14 +56,26 @@ type templateCleanupTargets struct {
+@@ -70,14 +65,26 @@ type templateCleanupTargets struct {
  	InstanceType string
  }
  
@@ -387,10 +387,10 @@ index feb1a76..6d22721 100644
 +	return current
  }
  
- func DeleteTemplate(ctx context.Context, templateID, instanceType string) error {
-@@ -298,21 +305,22 @@ func cleanupTemplateReplicas(ctx context.Context, templateID string) error {
- 
- func cleanupTemplateReplicasWithLocators(ctx context.Context, templateID string, locators []templateCleanupLocator) error {
+ // DeleteTemplateOptions carries the non-identifying knobs of a delete.
+@@ -451,21 +458,22 @@ func cleanupTemplateReplicas(ctx context.Context, templateID string) error {
+ func cleanupTemplateReplicasWithLocators(ctx context.Context, templateID string, locators []templateCleanupLocator, backend string) error {
+ 	backend = pinnedCleanupBackend(backend)
  	var cleanupErr error
 +	seen := make(map[string]struct{}, len(locators))
  	for _, locator := range locators {
@@ -418,22 +418,22 @@ index feb1a76..6d22721 100644
 +		rsp, err := cleanupTemplateOnCubelet(ctx, getCubeletAddrForDelete(current.HostIP()), &cubeboxv1.CleanupTemplateRequest{
  			RequestID:  uuid.NewString(),
  			TemplateID: templateID,
- 		})
+ 			Backend:    backend,
 diff --git a/CubeMaster/pkg/templatecenter/delete_test.go b/CubeMaster/pkg/templatecenter/delete_test.go
-index 95a097d..3d7e881 100644
+index a2abe1a63cddfe5b5ce7174147b51904ca63951f..df847fe1499d9b090d04f72829459283aedd713c 100644
 --- a/CubeMaster/pkg/templatecenter/delete_test.go
 +++ b/CubeMaster/pkg/templatecenter/delete_test.go
-@@ -13,6 +13,7 @@ import (
- 	cubeboxv1 "github.com/tencentcloud/CubeSandbox/CubeMaster/api/services/cubebox/v1"
- 	errorcodev1 "github.com/tencentcloud/CubeSandbox/CubeMaster/api/services/errorcode/v1"
+@@ -11,6 +11,7 @@ import (
+ 
+ 	"github.com/agiledragon/gomonkey/v2"
  	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/db/models"
 +	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/node"
- )
- 
- func TestDeleteTemplateWithTargetsAllowsJobOnlyCleanup(t *testing.T) {
-@@ -30,9 +31,8 @@ func TestDeleteTemplateWithTargetsAllowsJobOnlyCleanup(t *testing.T) {
+ 	sandboxtypes "github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/service/sandbox/types"
+ 	cubeboxv1 "github.com/tencentcloud/CubeSandbox/pkgs/proto/services/cubebox/v1"
+ 	errorcodev1 "github.com/tencentcloud/CubeSandbox/pkgs/proto/services/errorcode/v1"
+@@ -32,9 +33,8 @@ func TestDeleteTemplateWithTargetsAllowsJobOnlyCleanup(t *testing.T) {
  	var replicaCalled, artifactCalled, metadataCalled, jobCalled bool
- 	runReplicaCleanup = func(ctx context.Context, templateID string, locators []templateCleanupLocator) error {
+ 	runReplicaCleanup = func(ctx context.Context, templateID string, locators []templateCleanupLocator, _ string) error {
  		replicaCalled = true
 -		// v4: locators are deduplicated by (NodeID|NodeIP); SnapshotPath is
 -		// no longer part of the identity or the cleanup payload.
@@ -443,7 +443,7 @@ index 95a097d..3d7e881 100644
  			t.Fatalf("unexpected locators: %+v", locators)
  		}
  		// v5: SnapshotPath / Objects no longer exist on templateCleanupLocator —
-@@ -67,13 +67,14 @@ func TestDeleteTemplateWithTargetsAllowsJobOnlyCleanup(t *testing.T) {
+@@ -69,13 +69,14 @@ func TestDeleteTemplateWithTargetsAllowsJobOnlyCleanup(t *testing.T) {
  		Jobs: []models.TemplateImageJob{
  			{
  				TemplateID:   "tpl-job-only",
@@ -458,8 +458,17 @@ index 95a097d..3d7e881 100644
 +			{NodeID: "node-a", NodeIP: "10.0.0.8"},
  		},
  		ArtifactIDs: map[string]struct{}{"artifact-1": {}},
- 	})
-@@ -332,6 +333,7 @@ func TestDeleteTemplateWithTargetsPreservesMetadataAfterArtifactFailure(t *testi
+ 	}, DeleteTemplateOptions{})
+@@ -262,7 +263,7 @@ func TestDeleteTemplateWithTargetsPreservesJobsAfterPartialFailure(t *testing.T)
+ 
+ 	err := deleteTemplateWithTargets(context.Background(), "tpl-partial", &templateCleanupTargets{
+ 		Jobs:         []models.TemplateImageJob{{TemplateID: "tpl-partial"}},
+-		Locators:     []templateCleanupLocator{{NodeIP: "10.0.0.8"}},
++		Locators:     []templateCleanupLocator{{NodeID: "node-a", NodeIP: "10.0.0.8"}},
+ 		ArtifactIDs:  map[string]struct{}{},
+ 		InstanceType: cubeboxv1.InstanceType_cubebox.String(),
+ 	}, DeleteTemplateOptions{})
+@@ -334,6 +335,7 @@ func TestDeleteTemplateWithTargetsPreservesMetadataAfterArtifactFailure(t *testi
  }
  
  func TestCleanupTemplateReplicasWithLocatorsIgnoresNotFound(t *testing.T) {
@@ -467,17 +476,39 @@ index 95a097d..3d7e881 100644
  	origCleanupTemplateOnCubelet := cleanupTemplateOnCubelet
  	origGetCubeletAddrForDelete := getCubeletAddrForDelete
  	t.Cleanup(func() {
-@@ -357,7 +359,7 @@ func TestCleanupTemplateReplicasWithLocatorsIgnoresNotFound(t *testing.T) {
+@@ -362,12 +364,13 @@ func TestCleanupTemplateReplicasWithLocatorsIgnoresNotFound(t *testing.T) {
  		}, nil
  	}
  
--	if err := cleanupTemplateReplicasWithLocators(context.Background(), "tpl-1", []templateCleanupLocator{{NodeIP: "10.0.0.8"}}); err != nil {
-+	if err := cleanupTemplateReplicasWithLocators(context.Background(), "tpl-1", []templateCleanupLocator{{NodeID: "node-a", NodeIP: "10.0.0.8"}}); err != nil {
+-	if err := cleanupTemplateReplicasWithLocators(context.Background(), "tpl-1", []templateCleanupLocator{{NodeIP: "10.0.0.8"}}, ""); err != nil {
++	if err := cleanupTemplateReplicasWithLocators(context.Background(), "tpl-1", []templateCleanupLocator{{NodeID: "node-a", NodeIP: "10.0.0.8"}}, ""); err != nil {
  		t.Fatalf("expected not-found cleanup to be ignored, got %v", err)
  	}
  }
+ 
+ func TestCleanupTemplateReplicasWithLocatorsForwardsPinnedBackend(t *testing.T) {
++	installCleanupNodes(t, map[string]*node.Node{"node-a": {InsID: "node-a", IP: "10.0.0.8"}})
+ 	origCleanupTemplateOnCubelet := cleanupTemplateOnCubelet
+ 	origGetCubeletAddrForDelete := getCubeletAddrForDelete
+ 	t.Cleanup(func() {
+@@ -384,13 +387,13 @@ func TestCleanupTemplateReplicasWithLocatorsForwardsPinnedBackend(t *testing.T)
+ 		}, nil
+ 	}
+ 
+-	if err := cleanupTemplateReplicasWithLocators(context.Background(), "tpl-s3", []templateCleanupLocator{{NodeIP: "10.0.0.8"}}, "s3"); err != nil {
++	if err := cleanupTemplateReplicasWithLocators(context.Background(), "tpl-s3", []templateCleanupLocator{{NodeID: "node-a", NodeIP: "10.0.0.8"}}, "s3"); err != nil {
+ 		t.Fatalf("cleanup: %v", err)
+ 	}
+ 	if gotBackend != "s3" {
+ 		t.Fatalf("cleanup backend=%q, want s3", gotBackend)
+ 	}
+-	if err := cleanupTemplateReplicasWithLocators(context.Background(), "tpl-legacy", []templateCleanupLocator{{NodeIP: "10.0.0.8"}}, "cubecow"); err != nil {
++	if err := cleanupTemplateReplicasWithLocators(context.Background(), "tpl-legacy", []templateCleanupLocator{{NodeID: "node-a", NodeIP: "10.0.0.8"}}, "cubecow"); err != nil {
+ 		t.Fatalf("legacy cleanup: %v", err)
+ 	}
+ 	if gotBackend != "" {
 diff --git a/CubeMaster/pkg/templatecenter/distribution.go b/CubeMaster/pkg/templatecenter/distribution.go
-index a6a5e3f..d169e42 100644
+index 2fde9d65fd9128a5e6f1e1799d4e081fa9055582..f53efe504cc0c4bcb1a69695e421b2a8f53ccdd0 100644
 --- a/CubeMaster/pkg/templatecenter/distribution.go
 +++ b/CubeMaster/pkg/templatecenter/distribution.go
 @@ -111,22 +111,17 @@ func cleanupTemplateReplicasOnNodes(ctx context.Context, templateID string, repl
