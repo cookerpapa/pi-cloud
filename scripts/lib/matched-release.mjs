@@ -44,8 +44,13 @@ export async function verifyMatchedRelease({ directory, root, capture, currentGu
   assert.equal(evidence.imageVersion, candidate.version);
   assert.equal(
     evidence.images.length,
-    13,
+    candidate.retainedDeploymentDigest ? 7 : 13,
     "Matched release requires seven apps, three native images, Cube authorizer/egress and one guest",
+  );
+  assert.equal(
+    evidence.scope,
+    candidate.retainedDeploymentDigest ? "host" : "all",
+    "Release evidence scope differs from publication",
   );
   const checksums = (await readFile(resolve(directory, "evidence/SHA256SUMS"), "utf8"))
     .trim()
@@ -94,20 +99,31 @@ export async function verifyMatchedRelease({ directory, root, capture, currentGu
   );
   for (const reference of [
     ...Object.values(catalog),
-    ...["cube-api", "cube-master", "cubelet", "cube-api-authorizer", "cube-egress-gateway"].map(
-      (name) => `pi-cloud/${name}:${candidate.version}`,
-    ),
-    `localhost:5000/pi-cloud/cubesandbox-tool:${candidate.guestIdentity}`,
+    ...(candidate.retainedDeploymentDigest
+      ? []
+      : [
+          ...[
+            "cube-api",
+            "cube-master",
+            "cubelet",
+            "cube-api-authorizer",
+            "cube-egress-gateway",
+          ].map((name) => `pi-cloud/${name}:${candidate.version}`),
+          `localhost:5000/pi-cloud/cubesandbox-tool:${candidate.guestIdentity}`,
+        ]),
   ])
     assert(references.has(reference), "Unscanned image in release catalog");
   const guest = evidence.images.find(
     (image) =>
       image.reference === `localhost:5000/pi-cloud/cubesandbox-tool:${candidate.guestIdentity}`,
   );
-  if (currentGuestTemplate?.imageRevision === candidate.guestIdentity)
+  if (
+    !candidate.retainedDeploymentDigest &&
+    currentGuestTemplate?.imageRevision === candidate.guestIdentity
+  )
     assert(
       guest.repoDigests?.some((ref) => ref.endsWith(`@${currentGuestTemplate.imageDigest}`)),
       "Scanned guest does not match the template selected for reuse",
     );
-  return { ...candidate, guestImageId: guest.imageId };
+  return { ...candidate, guestImageId: guest?.imageId };
 }

@@ -110,7 +110,8 @@ or Run to exist.
 ```
 
 This is a fixture, not a published model tariff. Match the model/tier actually
-reported by the provider. Backdated changes are rejected. There is no edit/delete
+reported by the provider. Backdated new changes are rejected. An identical retry, including after its
+effective time, returns the existing version; conflicting reuse is rejected. There is no edit/delete
 route for a historical rate or receipt. Payments, wallets, BYOK collection and
 Sandbox billing require separate business decisions before enabling collection.
 
@@ -119,7 +120,9 @@ Sandbox billing require separate business decisions before enabling collection.
 Schema 210 and Worker/provider/API/Web must publish together. The ADR-0297
 `--retain-sandbox-runtime` option on the maintained matched operator proves that
 existing Cube/Guest inputs are unchanged except additive host accounting exports.
-It still drains Runs and Session writers; it does not destroy VMs or change the
+It builds/scans the seven host images being published and retains the original
+evidence for six unchanged Sandbox artifacts. It still drains Runs and Session
+writers; it does not destroy VMs or change the
 Guest template. Original Cube artifact provenance stays in `deployment.json`.
 Changed execution interfaces, native patches or Guest inputs reject this path.
 

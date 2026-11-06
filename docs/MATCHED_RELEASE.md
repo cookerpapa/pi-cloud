@@ -5,7 +5,9 @@ reviewed `prepare DIRECTORY VERSION --retain-sandbox-runtime` path keeps install
 Cube/Guest artifacts only after verifying their original source and additive
 host-only accounting exports. It retains existing VM allocations and their
 original artifact provenance, while still draining Runs and Session writers.
-No general protocol compatibility is inferred. See [Model billing](MODEL_BILLING.md)
+Seven host/application images are built and scanned in this mode; six unchanged
+Sandbox artifacts retain their original provenance. No general protocol
+compatibility is inferred. See [Model billing](MODEL_BILLING.md)
 for receipt, pricing and failure contracts; complete metering/native acceptance
 before declaring the publication finished.
 

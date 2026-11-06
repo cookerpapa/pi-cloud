@@ -24,6 +24,17 @@ Native provider/Go race, PostgreSQL, Worker caller and browser contracts pass;
 matched publication and live metering acceptance remain pending.
 Sandbox/storage charging, payment collection and automatic top-up are subsequent work.
 
+## Retained Cube / Guest APT maintenance — open
+
+- [ ] Patch APT in retained Cube/Guest Ubuntu artifacts for
+      [CVE-2026-109518](https://ubuntu.com/security/CVE-2026-109518): Ubuntu 22.04
+      needs 2.4.15ubuntu0.1 and 24.04 needs 2.8.4ubuntu0.1. The model-accounting
+      scan exposed this pre-existing dependency issue. New Debian host images
+      install 2.6.2; no vulnerability ignore was added. Schedule Cube/Guest
+      maintenance with explicit allocation/Workspace preservation and its own
+      artifact/physical recovery acceptance. Billing publication retains those
+      unchanged artifacts; it does not claim they received this update.
+
 ## Workspace-only files and resumable uploads — deployed
 
 - [x] Confirm explicit retention in the composer and Workspace file panel; record

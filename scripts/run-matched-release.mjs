@@ -85,41 +85,49 @@ if (action === "prepare") {
   const env = environment(version);
   phase("check declared Docker build inputs");
   run("scripts/check-docker-build-context.mjs");
-  phase("build guest (no registration)");
-  run("scripts/build-cube-tool-image.mjs", [], env);
-  phase("build native Cube");
-  run("scripts/build-cubesandbox-runtime.mjs", [], env);
-  phase("build matched Cube API authorization callback and egress gateway");
-  for (const component of ["cube-api-authorizer", "cube-egress-gateway"])
-    execFileSync(
-      "docker",
-      [
-        "build",
-        "--file",
-        `packages/${component}/Dockerfile`,
-        "--network=host",
-        "--build-arg",
-        "HTTP_PROXY",
-        "--build-arg",
-        "HTTPS_PROXY",
-        "--build-arg",
-        "NO_PROXY",
-        "--build-arg",
-        `PI_CLOUD_VERSION=${version}`,
-        "--build-arg",
-        `PI_CLOUD_REVISION=${capture("git", ["rev-parse", "HEAD"])}`,
-        "--tag",
-        `pi-cloud/${component}:${version}`,
-        ".",
-      ],
-      { cwd: root, stdio: "inherit", env },
-    );
+  if (option !== "--retain-sandbox-runtime") {
+    phase("build guest (no registration)");
+    run("scripts/build-cube-tool-image.mjs", [], env);
+    phase("build native Cube");
+    run("scripts/build-cubesandbox-runtime.mjs", [], env);
+    phase("build matched Cube API authorization callback and egress gateway");
+    for (const component of ["cube-api-authorizer", "cube-egress-gateway"])
+      execFileSync(
+        "docker",
+        [
+          "build",
+          "--file",
+          `packages/${component}/Dockerfile`,
+          "--network=host",
+          "--build-arg",
+          "HTTP_PROXY",
+          "--build-arg",
+          "HTTPS_PROXY",
+          "--build-arg",
+          "NO_PROXY",
+          "--build-arg",
+          `PI_CLOUD_VERSION=${version}`,
+          "--build-arg",
+          `PI_CLOUD_REVISION=${capture("git", ["rev-parse", "HEAD"])}`,
+          "--tag",
+          `pi-cloud/${component}:${version}`,
+          ".",
+        ],
+        { cwd: root, stdio: "inherit", env },
+      );
+  }
   phase("build application candidate");
   run("scripts/production-kubernetes.mjs", ["build"], env);
   phase("scan matched artifacts");
   run(
     "scripts/generate-release-evidence.mjs",
-    ["--image-version", version, "--output-dir", resolve(directory, "evidence")],
+    [
+      "--image-version",
+      version,
+      "--output-dir",
+      resolve(directory, "evidence"),
+      ...(option === "--retain-sandbox-runtime" ? ["--component", "host"] : []),
+    ],
     env,
   );
   await writeFile(

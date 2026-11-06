@@ -24,7 +24,10 @@ const hostOnlyProtocol = new Set([
 export function assertMeteringRetainedInputs({ before, after, changed, copied }) {
   for (const file of changed) {
     if (file === ".dockerignore") {
-      assertProviderBuildContextChanges(before(file), after(file));
+      assertProviderBuildContextChanges(
+        before(file),
+        after(file).replace(/^!scripts\/install-host-os-security-updates\.sh\r?\n/gm, ""),
+      );
       continue;
     }
     if (!copied.has(file)) continue;

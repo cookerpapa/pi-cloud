@@ -14,7 +14,7 @@ it("retains Cube only when its existing copied source and exports are unchanged"
     ...old,
     "packages/protocol/src/index.ts": `${old["packages/protocol/src/index.ts"]}\nexport * from "./model-metering.ts";\nexport * from "./model-billing.ts";\n`,
     "packages/protocol/src/model-metering.ts": "new host port",
-    ".dockerignore": `${old[".dockerignore"]}!deploy/provider-gateway/metering.go\n`,
+    ".dockerignore": `${old[".dockerignore"]}!scripts/install-host-os-security-updates.sh\n!deploy/provider-gateway/metering.go\n`,
   };
   const copied = new Set([
     ...Object.keys(next),

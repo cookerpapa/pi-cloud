@@ -8,11 +8,12 @@ import {
   Req,
   Res,
   ForbiddenException,
+  ConflictException,
 } from "@nestjs/common";
 import { Readable } from "node:stream";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { ControlPlaneApiValidationError, parseUuidPathParameter } from "@pi-cloud/protocol";
-import { ModelMeteringService } from "./model-metering-service.ts";
+import { ModelMeteringService, MeteringConflict } from "./model-metering-service.ts";
 import { TenantRequestContext } from "./tenant-request-context.ts";
 
 export function modelBillingQuery(query: Record<string, unknown>) {
@@ -91,6 +92,7 @@ export class ModelBillingController {
     try {
       return await this.service.createRate(this.tenant(request, tenantId), body);
     } catch (error) {
+      if (error instanceof MeteringConflict) throw new ConflictException(error.message);
       if (error instanceof TypeError) throw new ControlPlaneApiValidationError(error.message);
       throw error;
     }

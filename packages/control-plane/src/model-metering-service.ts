@@ -124,26 +124,53 @@ export class ModelMeteringService {
 
   async createRate(tenantId: string, value: unknown) {
     const definition = parseModelRateInput(value);
-    const now = await sql<{ now: Date }>`select clock_timestamp() as now`.execute(this.database);
-    if (Date.parse(definition.effectiveAt) < now.rows[0]!.now.getTime())
-      throw new TypeError(
-        "New prices must take effect in the future; recorded amounts are immutable",
-      );
-    const id = randomUUID();
-    await this.database
-      .insertInto("model_rate_versions")
-      .values({
-        id,
-        tenant_id: tenantId,
-        kind: definition.kind,
-        provider: definition.provider,
-        model: definition.model,
-        service_tier: definition.serviceTier,
-        effective_at: definition.effectiveAt,
-        definition,
-      })
-      .execute();
-    return { id, ...definition };
+    return this.database.transaction().execute(async (tx) => {
+      const read = () =>
+        tx
+          .selectFrom("model_rate_versions")
+          .select(["id", "definition"])
+          .where("tenant_id", "=", tenantId)
+          .where("kind", "=", definition.kind)
+          .where("provider", "=", definition.provider)
+          .where("model", "=", definition.model)
+          .where("service_tier", "=", definition.serviceTier)
+          .where("effective_at", "=", new Date(definition.effectiveAt))
+          .executeTakeFirst();
+      const acknowledge = (row: { id: string; definition: Record<string, unknown> }) => {
+        if (hash(row.definition) !== hash(definition))
+          throw new MeteringConflict("This price version already has a different definition");
+        return { id: row.id, ...definition };
+      };
+      const previous = await read();
+      // A lost response can be retried after the effective time. The immutable
+      // natural key identifies the already committed version, never a new price.
+      if (previous) return acknowledge(previous);
+      const now = await sql<{ now: Date }>`select clock_timestamp() as now`.execute(tx);
+      if (Date.parse(definition.effectiveAt) < now.rows[0]!.now.getTime())
+        throw new TypeError(
+          "New prices must take effect in the future; recorded amounts are immutable",
+        );
+      const inserted = await tx
+        .insertInto("model_rate_versions")
+        .values({
+          id: randomUUID(),
+          tenant_id: tenantId,
+          kind: definition.kind,
+          provider: definition.provider,
+          model: definition.model,
+          service_tier: definition.serviceTier,
+          effective_at: definition.effectiveAt,
+          definition,
+        })
+        .onConflict((oc) =>
+          oc
+            .columns(["tenant_id", "kind", "provider", "model", "service_tier", "effective_at"])
+            .doNothing(),
+        )
+        .returning(["id", "definition"])
+        .executeTakeFirst();
+      return acknowledge(inserted ?? (await read())!);
+    });
   }
   async rates(tenantId: string) {
     const rows = await this.database

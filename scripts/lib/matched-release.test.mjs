@@ -66,6 +66,7 @@ it("checks scanned image identity before any mutation and rejects catalog substi
     const report = { path: "report.json" };
     const manifest = {
       format: "pi-cloud.release-evidence.v1",
+      scope: "all",
       git: { revision, dirty: false },
       imageVersion: version,
       rootSbom: report,
@@ -139,6 +140,49 @@ it("checks scanned image identity before any mutation and rejects catalog substi
     );
     await expect(verifyMatchedRelease({ directory: root, root, capture })).rejects.toThrow(
       "Unscanned image",
+    );
+    // Retained Sandbox publication scans exactly the seven images it deploys;
+    // it still rejects an omitted image or a fixable finding in any new image.
+    await writeFile(join(root, "images.json"), JSON.stringify(catalog));
+    await writeFile(
+      join(root, "candidate.json"),
+      JSON.stringify({
+        formatVersion: 1,
+        revision,
+        version,
+        guestIdentity,
+        completionIdentity,
+        retainedDeploymentDigest: "c".repeat(64),
+      }),
+    );
+    const host = { ...manifest, scope: "host", images: manifest.images.slice(0, 7) };
+    const saveHost = async () => {
+      await writeFile(join(root, "evidence/manifest.json"), JSON.stringify(host));
+      const lines = [];
+      for (const file of ["report.json", "manifest.json"])
+        lines.push(
+          createHash("sha256")
+            .update(await readFile(join(root, "evidence", file)))
+            .digest("hex") +
+            "  " +
+            file,
+        );
+      await writeFile(join(root, "evidence/SHA256SUMS"), lines.join("\n"));
+    };
+    await saveHost();
+    expect(
+      (await verifyMatchedRelease({ directory: root, root, capture })).guestImageId,
+    ).toBeUndefined();
+    host.images[0].policyVulnerabilities.HIGH.fixable = 1;
+    await saveHost();
+    await expect(verifyMatchedRelease({ directory: root, root, capture })).rejects.toThrow(
+      "security gate failed",
+    );
+    host.images[0].policyVulnerabilities.HIGH.fixable = 0;
+    host.images.pop();
+    await saveHost();
+    await expect(verifyMatchedRelease({ directory: root, root, capture })).rejects.toThrow(
+      "Matched release requires",
     );
     expect(new Set(calls)).toEqual(new Set(["git", "docker"]));
   } finally {

@@ -6,6 +6,7 @@
 !scripts/prepare-json-parser.mjs
 !scripts/retry-npm-command.sh
 !scripts/install-node-os-security-updates.sh
+!scripts/install-host-os-security-updates.sh
 !packages/*/package.json
 !packages/*/tsconfig.json
 !packages/*/src/**

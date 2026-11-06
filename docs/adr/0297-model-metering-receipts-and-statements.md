@@ -119,12 +119,24 @@ would include the new host-only accounting schemas despite not using them. The
 matched operator therefore checks the installed artifacts' source revisions: every
 existing copied file stays identical; only the two new accounting modules and
 their additive index exports are allowed. Changed Tool, completion, native Cube
-patches, dependencies or Guest inputs reject this path. The operator still builds
-and scans the matched candidate, drains Runs and all Session writers, and publishes
+patches, dependencies or Guest inputs reject this path. The operator builds and
+scans all seven host/application images that it will publish, retaining the six original Cube/Guest artifacts and their own evidence.
+The zero-fixable-HIGH/CRITICAL gate remains mandatory for every new image. It drains
+Runs and all Session writers, and publishes
 API/Worker/provider/Web/schema together. It neither reconciles Cube nor registers
 a new template. Deployment evidence retains the original Cube/Guest image and
 source identities, rather than falsely attributing them to the new host build.
-This is a reviewed accounting-only publication, not a general compatibility mode.
+The retained artifact checks allow one explicit new host-only OS patch input
+in the Docker allowlist; retained Cube Dockerfiles never copy it. This is a reviewed
+accounting-only publication, not a general compatibility mode.
+
+The first full-candidate scan discovered
+[APT CVE-2026-109518](https://security-tracker.debian.org/tracker/CVE-2026-109518).
+New Debian host images install the fixed APT 2.6.2 before other package changes.
+The unchanged Cube/Guest Ubuntu images still need their separate maintenance
+update; that finding is retained in the backlog and scan evidence. They are not
+relabelled as freshly scanned/patched artifacts. No vulnerability exception is
+added to make the new host images pass.
 Existing VM allocations and Workspace bytes must be checked before and after it.
 
 Verify correlation on cached connections, native children, compaction and the

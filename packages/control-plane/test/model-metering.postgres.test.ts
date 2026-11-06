@@ -72,6 +72,36 @@ it("deduplicates reordered/lost-ack deliveries, survives chat deletion, and fixe
       ...definition,
       effectiveAt: time(0),
     });
+    const repeated = await Promise.all(
+      Array.from({ length: 3 }, () =>
+        service.createRate(context.tenantId, { ...definition, effectiveAt: time(0) }),
+      ),
+    );
+    expect(repeated.map((r) => r.id)).toEqual([first.id, first.id, first.id]);
+    await expect(
+      service.createRate(context.tenantId, {
+        ...definition,
+        effectiveAt: time(0),
+        currency: "CNY",
+      }),
+    ).rejects.toThrow("different definition");
+    const historical = { ...definition, effectiveAt: "2020-01-01T00:00:00.000Z" },
+      historicalId = randomUUID();
+    await db
+      .insertInto("model_rate_versions")
+      .values({
+        id: historicalId,
+        tenant_id: context.tenantId,
+        kind: historical.kind,
+        provider: historical.provider,
+        model: historical.model,
+        service_tier: historical.serviceTier,
+        effective_at: historical.effectiveAt,
+        definition: historical,
+        created_at: historical.effectiveAt,
+      })
+      .execute();
+    expect((await service.createRate(context.tenantId, historical)).id).toBe(historicalId);
     const second = await service.createRate(context.tenantId, {
       ...definition,
       effectiveAt: time(2000),
