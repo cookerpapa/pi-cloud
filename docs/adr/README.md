@@ -1,9 +1,9 @@
 # Current architecture decisions
 
-[ADR-0296](0296-provider-v8-and-model-accounting-boundary.md) is accepted for
-implementation: migrate the fixed CLIProxyAPI adapter and configuration to v8,
-then implement model metering and pricing as separate verified slices. Sandbox
-billing and payment collection remain outside the first delivery.
+[ADR-0296](0296-provider-v8-and-model-accounting-boundary.md)'s provider slice is
+deployed as `provider-v8-20261106`: CLIProxyAPI v8, native protocol/continuation
+adaptation and canonical configuration publication. Model metering and pricing
+remain subsequent slices; sandbox billing and payment collection are deferred.
 
 [ADR-0295](0295-workspace-file-transfers.md) is deployed on schema 209: explicit
 Workspace-only uploads from the composer/file panel, upstream tus transport and

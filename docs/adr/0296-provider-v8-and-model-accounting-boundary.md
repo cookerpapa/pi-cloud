@@ -1,7 +1,9 @@
 # ADR-0296: Provider v8 and the model-accounting boundary
 
-Status: accepted for implementation; provider migration first, model accounting
-after its acceptance. No billing or production upgrade is implied by this ADR.
+Status: provider slice deployed as `provider-v8-20261106`, infrastructure Helm 110.
+Source, image and live model/recovery checks passed; see the
+[delivery record](../reports/provider-v8-20261106.md). Model accounting remains
+the next slice, with no billing enabled by this provider publication.
 Date: 2026-11-06.
 Tracking: [Issue #4](https://github.com/cookerpapa/pi-cloud/issues/4).
 

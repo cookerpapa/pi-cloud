@@ -1,5 +1,8 @@
 # Delivery and research evidence
 
+- [CLIProxyAPI v8 provider](provider-v8-20261106.md): native Responses, continuation,
+  configuration conversion, scoped publication and model/recovery acceptance.
+
 - [Retained user attachments](retained-user-attachments-20261104.md): long paste,
   immutable originals, queue editing, Fork/recovery and source/publication status.
 
