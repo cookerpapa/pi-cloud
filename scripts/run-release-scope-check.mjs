@@ -68,6 +68,7 @@ if (scope === "web") {
 }
 const tests = [
   "scripts/lib/provider-config-release.test.mjs",
+  "scripts/lib/model-continuation-traffic.test.mjs",
   "scripts/lib/operator-fixtures.test.mjs",
   "scripts/lib/provider-runtime-policy.test.mjs",
   "scripts/lib/provider-websocket-policy.test.mjs",

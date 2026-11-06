@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import sharp from "sharp";
 import { readWorkerModelTimings } from "./lib/live-run-timing.mjs";
+import { assertContinuationTraffic } from "./lib/model-continuation-traffic.mjs";
 import { ensureProviderWebsocketAccounts } from "./lib/provider-websocket-policy.mjs";
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
@@ -218,15 +219,24 @@ try {
       "Provider process changed during measurement",
     );
     const providerBytesSent = trafficAfter.sent - trafficBefore.sent;
-    if (round === 1)
-      assert(
-        providerBytesSent > completed[0].decodedRequestBytes * 0.8,
-        "Measure real initial provider upload",
-      );
-    assert(
-      providerBytesSent < completed[0].decodedRequestBytes * (round === 1 ? 1.6 : 0.4),
-      "Actual provider network retransmitted historical images",
-    );
+    (report.trafficSamples ??= []).push({
+      round,
+      runId: run.runId,
+      trafficBefore,
+      trafficAfter,
+      providerBytesSent,
+      imageBytes: png.length,
+      decodedRequestBytes: completed[0].decodedRequestBytes,
+    });
+    await writeFile(resolve(directory, "report.json"), JSON.stringify(report, null, 2), {
+      mode: 0o600,
+    });
+    assertContinuationTraffic({
+      cold: round === 1,
+      imageBytes: png.length,
+      decodedRequestBytes: completed[0].decodedRequestBytes,
+      sentBytes: providerBytesSent,
+    });
     report.rounds.push({
       runId: run.runId,
       workerId: settled.workerId,
