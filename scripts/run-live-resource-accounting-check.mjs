@@ -985,10 +985,12 @@ try {
     report.cleanupErrors = errors;
     failure ??= new Error("Owned cleanup remains incomplete");
   }
-  await blobs?.close().catch((error) => {
+  try {
+    await blobs?.close();
+  } catch (error) {
     report.blobCloseFailure = safeFailure(error);
     failure ??= error;
-  });
+  }
   await db?.destroy();
   process.removeListener("SIGINT", interrupted);
   process.removeListener("SIGTERM", interrupted);
