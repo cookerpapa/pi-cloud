@@ -8,6 +8,8 @@
 // owned identities in the private report for explicit API cleanup.
 import assert from "node:assert/strict";
 import { randomUUID, createHash } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -949,6 +951,44 @@ try {
         "Owned Volume and kernel quota cleanup",
         180000,
       );
+      // A stopped VM may still have a native pause-snapshot binding. Check the
+      // complete native inventory before removing the fixture's ownership rows.
+      if (report.allocation?.runtime_name) {
+        const cluster = JSON.parse(
+          await readFile(`${runtimeDirectory}/cubesandbox/cluster.json`, "utf8"),
+        );
+        const direct = Object.fromEntries(
+          Object.entries(process.env).filter(([name]) => !/^(all|https?|no)_proxy$/i.test(name)),
+        );
+        await until(
+          async () => {
+            const { stdout } = await promisify(execFile)(
+              `${runtimeDirectory}/cubesandbox/cubemastercli`,
+              [
+                "--address",
+                cluster.master.host,
+                "--port",
+                String(cluster.master.port),
+                "list",
+                "--all",
+                "--wide",
+              ],
+              { env: direct, timeout: 15_000, maxBuffer: 16 * 1024 * 1024 },
+            );
+            const scanned = /NODES_SCANNED\s+(\d+)\/(\d+)/.exec(stdout);
+            assert(
+              scanned && Number(scanned[1]) > 0 && scanned[1] === scanned[2],
+              "Incomplete native cleanup inventory",
+            );
+            return !stdout
+              .split(/\r?\n/)
+              .some((line) => line.trim().split(/\s+/)[0] === report.allocation.runtime_name);
+          },
+          "Owned running or paused native artifact cleanup",
+          60_000,
+        );
+        report.nativeArtifactCleanup = { sandboxId: report.allocation.runtime_name, absent: true };
+      }
     });
     if (!errors.length)
       await clean(async () => {

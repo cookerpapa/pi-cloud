@@ -10,7 +10,7 @@
     },
     {
       "file": "0002-allocation-and-volume-lifetimes.patch",
-      "sha256": "097a2ba966999084c159ac1daea19f4beaec993f543ac877926d2e6dd4bef25f"
+      "sha256": "9137cee21e01a457bd0f5b6ede73a0115a529a647be254cf049db1cb2f56c7ae"
     },
     {
       "file": "0003-template-cleanup-node-routing.patch",

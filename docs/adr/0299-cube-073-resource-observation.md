@@ -45,6 +45,11 @@ or Cube's optional cubecow backend storage statistics.
 - Allocation closure prevents delayed creates from reopening old identities.
   Verified old absence precedes replacement. Ordinary Tool failure does not
   authorize VM destruction.
+- Closure also joins native pause-snapshot cleanup before reporting completion.
+  A paused VM has no running process but retains a recoverable package and Master
+  binding. Use upstream pause deletion on the allocation's recorded node, resolving
+  its current address by stable node ID. Failure keeps cleanup pending; it never
+  permits dropping ownership or silently accepting an orphan snapshot.
 - Versioned Volume references and deletion admission protect shared Workspace
   bytes across lost replies and node replacement.
 - Cubelet alone owns finite elastic idle expiry. Dedicated machines do not expire;

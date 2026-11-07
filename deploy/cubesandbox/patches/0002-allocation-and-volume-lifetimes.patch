@@ -1109,10 +1109,10 @@ index 732045d2970dcd109e851cdc0dd3e2c196941893..55976d32ac295188b0d8ee4f16c298e4
  	// sandbox create/destroy; a non-zero value means live sandboxes still use it.
 diff --git a/CubeMaster/pkg/service/sandbox/allocation.go b/CubeMaster/pkg/service/sandbox/allocation.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..61009f6e58e9f784158f58dc692e60696c768765
+index 0000000..e3cc4e5
 --- /dev/null
 +++ b/CubeMaster/pkg/service/sandbox/allocation.go
-@@ -0,0 +1,289 @@
+@@ -0,0 +1,331 @@
 +// Copyright (c) 2026 Tencent Inc.
 +// SPDX-License-Identifier: Apache-2.0
 +package sandbox
@@ -1129,6 +1129,8 @@ index 0000000000000000000000000000000000000000..61009f6e58e9f784158f58dc692e6069
 +	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/cubelet/grpcconn"
 +	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/errorcode"
 +	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/localcache"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/pausesnap"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/sandboxlock"
 +	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/sandboxspec"
 +	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/service/sandbox/types"
 +	"github.com/tencentcloud/CubeSandbox/pkgs/proto/services/cubebox/v1"
@@ -1289,6 +1291,9 @@ index 0000000000000000000000000000000000000000..61009f6e58e9f784158f58dc692e6069
 +		return r, err
 +	}
 +	if r.Phase == "absent" && r.NodeID != "" {
++		if err = cleanupManagedPauseSnapshot(ctx, r); err != nil {
++			return r, err
++		}
 +		if err = localcache.DeleteSandboxProxyMap(ctx, r.SandboxID); err != nil {
 +			return r, err
 +		}
@@ -1357,6 +1362,9 @@ index 0000000000000000000000000000000000000000..61009f6e58e9f784158f58dc692e6069
 +		}
 +	}
 +	if observed.Closed && observed.Phase == "absent" {
++		if err = cleanupManagedPauseSnapshot(ctx, r); err != nil {
++			return r, err
++		}
 +		if err = localcache.DeleteSandboxProxyMap(ctx, r.SandboxID); err != nil {
 +			return r, err
 +		}
@@ -1401,6 +1409,40 @@ index 0000000000000000000000000000000000000000..61009f6e58e9f784158f58dc692e6069
 +		return r, err
 +	}
 +	return store.Get(ctx, r.ID)
++}
++
++// A reaped VM may still have a recoverable pause package. Join that source-owned
++// cleanup before publishing allocation absence to the Control Plane.
++func cleanupManagedPauseSnapshot(ctx context.Context, r *allocation.Record) error {
++	return sandboxlock.WithLock(ctx, r.SandboxID, sandboxlock.Options{
++		Value: "allocation-close", TTL: sandboxlock.DeleteTTL,
++	}, func(ctx context.Context) error {
++		paused, err := pausesnap.GetBySandbox(ctx, r.SandboxID)
++		if errors.Is(err, pausesnap.ErrNotFound) {
++			return nil
++		}
++		if err != nil {
++			return err
++		}
++		if !r.Closed || paused == nil || paused.SnapshotID == "" || r.NodeID == "" || paused.NodeID != r.NodeID {
++			return errors.New("managed pause cleanup identity is unconfirmed")
++		}
++		host, ok := localcache.GetNode(r.NodeID)
++		if !ok || host == nil || host.ID() != r.NodeID || !host.Healthy || host.HostIP() == "" {
++			return errors.New("managed pause cleanup node is unavailable")
++		}
++		if _, err = pausesnap.TryDeletePausedOnNode(ctx, r.ID, r.SandboxID, r.NodeID, host.HostIP()); err != nil {
++			return err
++		}
++		_, err = pausesnap.GetBySandbox(ctx, r.SandboxID)
++		if errors.Is(err, pausesnap.ErrNotFound) {
++			return nil
++		}
++		if err != nil {
++			return err
++		}
++		return errors.New("managed pause snapshot cleanup remains unconfirmed")
++	})
 +}
 diff --git a/CubeMaster/pkg/service/sandbox/allocation_retention.go b/CubeMaster/pkg/service/sandbox/allocation_retention.go
 new file mode 100644
@@ -4829,3 +4871,197 @@ index 0000000000000000000000000000000000000000..5562f59c08df8ddc5ef2de2297a84f18
 +DROP TABLE t_pi_cloud_volume_hold;
 +DROP TABLE t_pi_cloud_volume_node;
 +DROP TABLE t_pi_cloud_volume_gate;
+diff --git a/CubeMaster/pkg/pausesnap/delete_paused.go b/CubeMaster/pkg/pausesnap/delete_paused.go
+index c34050d..3c19ec0 100644
+--- a/CubeMaster/pkg/pausesnap/delete_paused.go
++++ b/CubeMaster/pkg/pausesnap/delete_paused.go
+@@ -38,6 +38,20 @@ var (
+ //
+ // Returns handled=false when there is no pause binding (caller should Destroy).
+ func TryDeletePaused(ctx context.Context, requestID, sandboxID, hostIP string) (handled bool, err error) {
++	return tryDeletePaused(ctx, requestID, sandboxID, hostIP, "")
++}
++
++// TryDeletePausedOnNode is used after managed allocation closure has confirmed
++// process absence on its immutable node. Only that node's current address may
++// replace the pause binding's old Pod IP. Cleanup errors retain the binding.
++func TryDeletePausedOnNode(ctx context.Context, requestID, sandboxID, nodeID, currentIP string) (bool, error) {
++	if strings.TrimSpace(nodeID) == "" || strings.TrimSpace(currentIP) == "" {
++		return false, errors.New("pause cleanup requires a recorded node and current address")
++	}
++	return tryDeletePaused(ctx, requestID, sandboxID, currentIP, nodeID)
++}
++
++func tryDeletePaused(ctx context.Context, requestID, sandboxID, hostIP, expectedNodeID string) (handled bool, err error) {
+ 	sandboxID = strings.TrimSpace(sandboxID)
+ 	hostIP = strings.TrimSpace(hostIP)
+ 	if sandboxID == "" {
+@@ -53,7 +67,10 @@ func TryDeletePaused(ctx context.Context, requestID, sandboxID, hostIP string) (
+ 	if rec == nil || strings.TrimSpace(rec.SnapshotID) == "" {
+ 		return false, nil
+ 	}
+-	if ip := strings.TrimSpace(rec.NodeIP); ip != "" {
++	if expectedNodeID != "" && rec.NodeID != expectedNodeID {
++		return true, errors.New("pause snapshot node identity changed")
++	}
++	if ip := strings.TrimSpace(rec.NodeIP); expectedNodeID == "" && ip != "" {
+ 		hostIP = ip
+ 	}
+ 	if hostIP == "" {
+@@ -77,6 +94,9 @@ func TryDeletePaused(ctx context.Context, requestID, sandboxID, hostIP string) (
+ 		return true, err
+ 	}
+ 	if err := Delete(ctx, rec.SnapshotID); err != nil {
++		if expectedNodeID != "" {
++			return true, err
++		}
+ 		log.G(ctx).Warnf("delete pause snap meta %s after cleanup: %v", rec.SnapshotID, err)
+ 	}
+ 	return true, nil
+diff --git a/CubeMaster/pkg/pausesnap/delete_paused_test.go b/CubeMaster/pkg/pausesnap/delete_paused_test.go
+index e75240b..a9f2245 100644
+--- a/CubeMaster/pkg/pausesnap/delete_paused_test.go
++++ b/CubeMaster/pkg/pausesnap/delete_paused_test.go
+@@ -140,6 +140,52 @@ func TestTryDeletePausedNoBinding(t *testing.T) {
+ 	require.Empty(t, *cleans)
+ }
+ 
++func TestManagedPauseDeleteUsesCurrentAddressOfRecordedNode(t *testing.T) {
++	db := setupPauseDeleteTest(t)
++	seedPauseBinding(t, db, "sb-managed", "snap-managed000000000000001", statusReady, "10.0.0.8")
++	destroys, cleans := mockCubeletOK(t)
++	handled, err := TryDeletePausedOnNode(context.Background(), "req", "sb-managed", "node-1", "10.0.0.9")
++	require.NoError(t, err)
++	require.True(t, handled)
++	require.Len(t, *destroys, 1)
++	require.Len(t, *cleans, 1)
++	require.Equal(t, "10.0.0.9:50051", (*destroys)[0].addr)
++	require.Equal(t, "10.0.0.9:50051", (*cleans)[0].addr)
++	_, err = GetBySandbox(context.Background(), "sb-managed")
++	require.ErrorIs(t, err, ErrNotFound)
++}
++
++func TestManagedPauseDeleteRejectsDifferentNode(t *testing.T) {
++	db := setupPauseDeleteTest(t)
++	seedPauseBinding(t, db, "sb-managed", "snap-managed000000000000001", statusReady, "10.0.0.8")
++	destroys, cleans := mockCubeletOK(t)
++	_, err := TryDeletePausedOnNode(context.Background(), "req", "sb-managed", "node-other", "10.0.0.9")
++	require.ErrorContains(t, err, "node identity changed")
++	require.Empty(t, *destroys)
++	require.Empty(t, *cleans)
++	_, err = GetBySandbox(context.Background(), "sb-managed")
++	require.NoError(t, err)
++}
++
++func TestManagedPauseDeleteRetainsBindingUntilPackageCleanupSucceeds(t *testing.T) {
++	db := setupPauseDeleteTest(t)
++	seedPauseBinding(t, db, "sb-managed", "snap-managed000000000000001", statusReady, "10.0.0.8")
++	mockCubeletOK(t)
++	cleanupTemplateOnCubelet = func(context.Context, string, *cubebox.CleanupTemplateRequest) (*cubebox.CleanupTemplateResponse, error) {
++		return nil, errors.New("package cleanup unavailable")
++	}
++	_, err := TryDeletePausedOnNode(context.Background(), "req", "sb-managed", "node-1", "10.0.0.9")
++	require.ErrorContains(t, err, "package cleanup unavailable")
++	rec, err := GetBySandbox(context.Background(), "sb-managed")
++	require.NoError(t, err)
++	require.Equal(t, statusDeleteFailed, rec.Status)
++	mockCubeletOK(t)
++	_, err = TryDeletePausedOnNode(context.Background(), "req-retry", "sb-managed", "node-1", "10.0.0.9")
++	require.NoError(t, err)
++	_, err = GetBySandbox(context.Background(), "sb-managed")
++	require.ErrorIs(t, err, ErrNotFound)
++}
++
+ func TestTryDeletePausedReadyUsesTombstone(t *testing.T) {
+ 	db := setupPauseDeleteTest(t)
+ 	seedPauseBinding(t, db, "sb-ready", "snap-ready000000000000000001", statusReady, "10.0.0.8")
+diff --git a/CubeMaster/pkg/service/sandbox/allocation_pause_test.go b/CubeMaster/pkg/service/sandbox/allocation_pause_test.go
+new file mode 100644
+index 0000000..4890511
+--- /dev/null
++++ b/CubeMaster/pkg/service/sandbox/allocation_pause_test.go
+@@ -0,0 +1,84 @@
++// Copyright (c) 2026 Tencent Inc.
++// SPDX-License-Identifier: Apache-2.0
++package sandbox
++
++import (
++	"context"
++	"errors"
++	"reflect"
++	"testing"
++
++	"github.com/agiledragon/gomonkey/v2"
++	"github.com/stretchr/testify/require"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/allocation"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/base/node"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/localcache"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/pausesnap"
++	"github.com/tencentcloud/CubeSandbox/CubeMaster/pkg/sandboxlock"
++)
++
++func pauseClosureFixture(t *testing.T) (*gomonkey.Patches, *allocation.Record) {
++	t.Helper()
++	p := gomonkey.NewPatches()
++	t.Cleanup(p.Reset)
++	p.ApplyFunc(sandboxlock.WithLock, func(ctx context.Context, _ string, _ sandboxlock.Options, fn func(context.Context) error) error {
++		return fn(ctx)
++	})
++	r := &allocation.Record{ID: "10000000-0000-4000-8000-000000000001", SandboxID: "10000000000040008000000000000001", NodeID: "node-1", NodeIP: "10.0.0.8", Closed: true, Phase: "absent"}
++	return p, r
++}
++
++func TestManagedAbsenceCleansPauseOnRecordedNodeCurrentAddress(t *testing.T) {
++	p, r := pauseClosureFixture(t)
++	removed := false
++	p.ApplyFunc(pausesnap.GetBySandbox, func(context.Context, string) (*pausesnap.Record, error) {
++		if removed {
++			return nil, pausesnap.ErrNotFound
++		}
++		return &pausesnap.Record{NodeID: r.NodeID, SnapshotID: "snap-owned"}, nil
++	})
++	p.ApplyFunc(localcache.GetNode, func(id string) (*node.Node, bool) {
++		require.Equal(t, r.NodeID, id)
++		return &node.Node{InsID: r.NodeID, IP: "10.0.0.9", Healthy: true}, true
++	})
++	p.ApplyFunc(pausesnap.TryDeletePausedOnNode, func(_ context.Context, _ string, sandbox, nodeID, address string) (bool, error) {
++		require.Equal(t, r.SandboxID, sandbox)
++		require.Equal(t, r.NodeID, nodeID)
++		require.Equal(t, "10.0.0.9", address)
++		removed = true
++		return true, nil
++	})
++	require.NoError(t, cleanupManagedPauseSnapshot(context.Background(), r))
++	require.True(t, removed)
++}
++
++func TestManagedAbsenceDoesNotFollowAnotherNode(t *testing.T) {
++	p, r := pauseClosureFixture(t)
++	p.ApplyFunc(pausesnap.GetBySandbox, func(context.Context, string) (*pausesnap.Record, error) {
++		return &pausesnap.Record{NodeID: "different", SnapshotID: "snap-owned"}, nil
++	})
++	p.ApplyFunc(pausesnap.TryDeletePausedOnNode, func(context.Context, string, string, string, string) (bool, error) {
++		t.Fatal("wrong node cleanup attempted")
++		return false, nil
++	})
++	require.ErrorContains(t, cleanupManagedPauseSnapshot(context.Background(), r), "identity is unconfirmed")
++}
++
++func TestPreviouslyAbsentManagedReceiptStillFailsWhilePauseCleanupIsPending(t *testing.T) {
++	p, r := pauseClosureFixture(t)
++	failure := errors.New("pause cleanup unavailable")
++	p.ApplyFunc(allocation.Default, func() *allocation.Store { return &allocation.Store{} })
++	p.ApplyMethod(reflect.TypeOf(&allocation.Store{}), "Get", func(*allocation.Store, context.Context, string) (*allocation.Record, error) { return r, nil })
++	p.ApplyFunc(cleanupManagedPauseSnapshot, func(context.Context, *allocation.Record) error { return failure })
++	p.ApplyFunc(localcache.DeleteSandboxProxyMap, func(context.Context, string) error { t.Fatal("cleanup hooks ran before pause completion"); return nil })
++	got, err := ReconcileAllocation(context.Background(), r.ID, false, 0, false)
++	require.Same(t, r, got)
++	require.ErrorIs(t, err, failure)
++}
++
++func TestManagedAbsenceWithoutPauseNeedsNoNodeContact(t *testing.T) {
++	p, r := pauseClosureFixture(t)
++	p.ApplyFunc(pausesnap.GetBySandbox, func(context.Context, string) (*pausesnap.Record, error) { return nil, pausesnap.ErrNotFound })
++	p.ApplyFunc(localcache.GetNode, func(string) (*node.Node, bool) { t.Fatal("unneeded node lookup"); return nil, false })
++	require.NoError(t, cleanupManagedPauseSnapshot(context.Background(), r))
++}

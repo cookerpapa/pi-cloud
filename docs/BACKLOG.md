@@ -2,6 +2,14 @@
 
 ## Runtime separation and resource accounting — in progress
 
+- [ ] Live pause/delete acceptance exposed an uncollected native pause-snapshot
+      binding after managed allocation closure. Join the upstream snapshot cleanup
+      before declaring closure complete, then verify no owned paused record or
+      package remains before purging the fixture's ownership and financial rows.
+      The native fix and node-identity/error regressions pass; all five patches
+      reproduce the tested source. Matched publication and stronger live cleanup
+      verification remain pending.
+
 - [x] #5 source slice: extract model accounting receiver; ADR-0298 selects an
       independent service over provider-side PG/pricing coupling. PG receipt,
       restart/outage and Helm contracts pass; live release remains pending below.
