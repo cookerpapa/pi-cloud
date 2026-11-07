@@ -76,6 +76,15 @@ try {
     const original = join(temporary, file),
       dockerfile = join(temporary, `${name}.Dockerfile`);
     let text = await readFile(original, "utf8");
+    if (name === "cube-api") {
+      const packages = "RUN apk add --no-cache ca-certificates curl tzdata";
+      if (!text.includes(packages))
+        throw new Error("Cube API runtime package installation changed");
+      text = text.replace(
+        packages,
+        "RUN apk upgrade --no-cache \\\n    && apk add --no-cache ca-certificates curl tzdata",
+      );
+    }
     if (name === "cube-templatecenter") {
       // Template Center imports the patched Master from this same export. Its
       // upstream runtime stage needs the same reviewed Ubuntu package fixes.

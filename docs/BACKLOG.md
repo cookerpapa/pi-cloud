@@ -45,6 +45,10 @@ The filesystem helper build stages use the maintained Go mirror policy with
 unchanged pinned modules after an actual default-proxy download failure.
 The Web runtime uses Alpine's signed official repository after a mirror index
 advertised an unavailable security-update package; the upgrade gate remains.
+The first complete fourteen-image scan found additional fixable HIGH dependencies:
+Go x/net, TemplateCenter containerd, Cube API Alpine libraries and the two
+Cube gateways' APT runtime. Their pinned upgrades retain the existing gate;
+artifact and live acceptance remain pending.
 These source changes await the consolidated gates and matched live acceptance.
 
 ## Repository license — published

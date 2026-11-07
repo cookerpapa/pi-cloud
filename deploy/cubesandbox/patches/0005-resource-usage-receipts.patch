@@ -1,5 +1,5 @@
 diff --git a/Cubelet/Dockerfile b/Cubelet/Dockerfile
-index 6e3ee70a8062a93a289e0c226a264766b1644968..5d61350abf2658e3a50b36d5585e3cc06b1d763a 100644
+index 6e3ee70..5d61350 100644
 --- a/Cubelet/Dockerfile
 +++ b/Cubelet/Dockerfile
 @@ -32,6 +32,7 @@ WORKDIR /workspace
@@ -11,7 +11,7 @@ index 6e3ee70a8062a93a289e0c226a264766b1644968..5d61350abf2658e3a50b36d5585e3cc0
  COPY Cubelet/ /workspace/Cubelet/
  COPY examples/volume/s3/ /workspace/volume-s3/
 diff --git a/Cubelet/Dockerfile.dockerignore b/Cubelet/Dockerfile.dockerignore
-index e4b5b795e7e32cf8ed1a1e5517633cd90a68d46c..79e0c1883461c250a55378e73d31f862c8760a36 100644
+index e4b5b79..79e0c18 100644
 --- a/Cubelet/Dockerfile.dockerignore
 +++ b/Cubelet/Dockerfile.dockerignore
 @@ -32,3 +32,9 @@
@@ -25,7 +25,7 @@ index e4b5b795e7e32cf8ed1a1e5517633cd90a68d46c..79e0c1883461c250a55378e73d31f862
 +!PiCloud/resource-metering
 +!PiCloud/resource-metering/**
 diff --git a/Cubelet/go.mod b/Cubelet/go.mod
-index 64957b4fcaed026689b6d2da30e42f1d503b89e1..e9bab8cc2d3d497f3f6b1bad1d3e2ab3141a8e90 100644
+index 5d5f445..340c5aa 100644
 --- a/Cubelet/go.mod
 +++ b/Cubelet/go.mod
 @@ -185,6 +185,7 @@ require (
@@ -44,7 +44,7 @@ index 64957b4fcaed026689b6d2da30e42f1d503b89e1..e9bab8cc2d3d497f3f6b1bad1d3e2ab3
 +replace github.com/cookerpapa/pi-cloud/resource-metering => ../PiCloud/resource-metering
 diff --git a/Cubelet/services/cubebox/resource_metering.go b/Cubelet/services/cubebox/resource_metering.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..232527a03f996d85ef8ea0074ef544eca23eae4e
+index 0000000..232527a
 --- /dev/null
 +++ b/Cubelet/services/cubebox/resource_metering.go
 @@ -0,0 +1,311 @@
@@ -361,7 +361,7 @@ index 0000000000000000000000000000000000000000..232527a03f996d85ef8ea0074ef544ec
 +}
 diff --git a/Cubelet/services/cubebox/resource_metering_test.go b/Cubelet/services/cubebox/resource_metering_test.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..d285a4ca45b72459805e1de10589e009a617d695
+index 0000000..d285a4c
 --- /dev/null
 +++ b/Cubelet/services/cubebox/resource_metering_test.go
 @@ -0,0 +1,42 @@
@@ -408,7 +408,7 @@ index 0000000000000000000000000000000000000000..d285a4ca45b72459805e1de10589e009
 +	}
 +}
 diff --git a/Cubelet/services/cubebox/service.go b/Cubelet/services/cubebox/service.go
-index 881d9430b0d7caea013877c6b15d69ca95e2b845..6c911d19890410f7a053f00113dd8c28f5aab0bd 100644
+index 881d943..6c911d1 100644
 --- a/Cubelet/services/cubebox/service.go
 +++ b/Cubelet/services/cubebox/service.go
 @@ -236,6 +236,9 @@ func init() {
