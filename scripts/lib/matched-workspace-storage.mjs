@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFile, chmod, open, rename, rm } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { readPrivateRuntimeFile } from "./runtime-file-policy.mjs";
 import { workspaceVolumeId } from "../../packages/sandbox-control/src/workspace-volume-gateway-contract.ts";
 
@@ -89,17 +90,24 @@ export async function nativeStorageMaintenancePending(directory) {
 
 /** Called only after native all-node absence and the PG retirement receipts.
  * Keep a private resume record; a failed filesystem handoff stays offline. */
-export async function stopNativeStorageConsumers({ directory, kubectl }) {
+export async function stopNativeStorageConsumers({ directory, kubectl, delay = sleep }) {
   const live = JSON.parse(
     kubectl([
       "get",
       "deployment/cube-api",
       "deployment/cube-master",
       "daemonset/cube-node",
+      "daemonset/cube-node-bootstrap",
+      "--ignore-not-found",
       "-o",
       "json",
     ]),
   ).items;
+  for (const name of ["cube-api", "cube-master", "cube-node"])
+    assert(
+      live.some((item) => item.metadata.name === name),
+      `Missing native workload ${name}`,
+    );
   let state;
   try {
     state = JSON.parse(await readFile(recordedPath(directory), "utf8"));
@@ -150,6 +158,24 @@ export async function stopNativeStorageConsumers({ directory, kubectl }) {
       kubectl(["wait", "--for=delete", "pod", "-l", selector, "--timeout=180s"], {
         timeout: 185_000,
       });
+    if (saved.kind === "DaemonSet") {
+      const deadline = performance.now() + 180_000;
+      for (;;) {
+        const object = JSON.parse(kubectl(["get", target, "-o", "json"]));
+        assert.equal(object.metadata.uid, saved.uid, "Native storage workload identity changed");
+        assert.equal(object.spec.template.spec.nodeSelector[maintenanceLabel], state.id);
+        const pods = JSON.parse(kubectl(["get", "pods", "-l", selector, "-o", "json"])).items;
+        if (
+          object.status?.observedGeneration >= object.metadata.generation &&
+          object.status.desiredNumberScheduled === 0 &&
+          object.status.currentNumberScheduled === 0 &&
+          pods.length === 0
+        )
+          break;
+        assert(performance.now() < deadline, "Native storage DaemonSet has not stopped");
+        await delay(250);
+      }
+    }
   }
   return async () => {
     for (const saved of state.resources) {

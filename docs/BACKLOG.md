@@ -5,7 +5,7 @@
 - [x] #5 source slice: extract model accounting receiver; ADR-0298 selects an
       independent service over provider-side PG/pricing coupling. PG receipt,
       restart/outage and Helm contracts pass; live release remains pending below.
-- [ ] #6: Cube v0.7.3 source adaptation is implemented in four cohesive patches;
+- [ ] #6: Cube v0.7.3 source adaptation is implemented in five cohesive patches;
       native admission, Tool/Volume/lifecycle contracts and Rust/Go compilation
       pass, including real MySQL allocation/template contracts. Matched build,
       artifact scans and live preservation remain.
@@ -53,6 +53,10 @@ Auxiliary preparation reuses complete local ref/platform/digest evidence and
 pulls only confirmed missing images; daemon errors and incomplete entries remain
 fatal. This avoids unrelated credential-helper calls for already prepared bytes.
 These source changes await the consolidated gates and matched live acceptance.
+The first live storage handoff exposed two operator omissions: the host-mounted
+node bootstrap must stop with Cube, and XFS inheritance must be checked from its
+numeric flags rather than a display label. Both now have regression coverage;
+the original Workspace copy/checksum and physical-absence guards remain required.
 
 ## Repository license — published
 

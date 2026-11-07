@@ -99,6 +99,7 @@ async function fixture(count = 2) {
     failAfter,
     wrongUUID = false,
     wrongProject = false,
+    projectFlags = "0x200 [--------P--------]",
     refuseStop = false,
     corruptData = false;
   const fsDirectory = join(root, "filesystem"),
@@ -204,7 +205,7 @@ async function fixture(count = 2) {
       }
     } else if (command === "xfs_io") {
       const id = args.at(-1).match(/picloud-posix-(pcw-[0-9a-f]{48})/)[1];
-      stdout = `fsxattr.projid = ${wrongProject ? 999 : projects.get(id).projectId}\nfsxattr.xflags = 0x200 [proj-inherit]\n`;
+      stdout = `fsxattr.projid = ${wrongProject ? 999 : projects.get(id).projectId}\nfsxattr.xflags = ${projectFlags}\n`;
     } else if (command === "rm") {
       expect(helperAlive).toBe(false);
       expect(mounts.has(paths.canonical)).toBe(true);
@@ -290,6 +291,9 @@ async function fixture(count = 2) {
     },
     wrongProject: () => {
       wrongProject = true;
+    },
+    projectFlags: (value) => {
+      projectFlags = value;
     },
     refuseStop: () => {
       refuseStop = true;
@@ -435,6 +439,30 @@ it("cannot move the source while its temporary helper is still running", async (
 it("refuses mismatched upload/Workspace project IDs before copying any original bytes", async () => {
   const f = await fixture();
   f.wrongProject();
+  await expect(prepareWorkspaceStoragePool(f.options, f.deps)).rejects.toThrow(
+    "share the enforced project",
+  );
+  expect(f.commands.some((c) => c.command === "rsync" && !c.args.includes("--dry-run"))).toBe(
+    false,
+  );
+  expect(await exists(f.paths.canonical)).toBeDefined();
+});
+
+it("accepts the numeric inheritance bit alongside other XFS flags", async () => {
+  const f = await fixture();
+  f.projectFlags("0x80000200 [--------P--------]");
+  expect((await prepareWorkspaceStoragePool(f.options, f.deps)).state).toBe("complete");
+});
+
+it.each([
+  "0x0 [proj-inherit]",
+  "0x80000000 [--------P--------]",
+  "missing",
+  "0x200INVALID",
+  "0x100000200",
+])("rejects missing or invalid numeric inheritance flags %s before copying", async (value) => {
+  const f = await fixture();
+  f.projectFlags(value);
   await expect(prepareWorkspaceStoragePool(f.options, f.deps)).rejects.toThrow(
     "share the enforced project",
   );

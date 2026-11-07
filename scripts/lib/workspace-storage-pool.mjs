@@ -663,9 +663,13 @@ async function quotaRoots(root, entry, run, filesystemId) {
     throw new Error("Quota generation marker changed");
   for (const suffix of ["workspace", ".pi-cloud-runtime/uploads-v1/files"]) {
     const info = (await run("xfs_io", ["-r", "-c", "stat", join(base, suffix)])).stdout;
+    const flags = Number(info.match(/fsxattr\.xflags\s*=\s*(0x[0-9a-f]+)(?:\s|$)/i)?.[1]);
     if (
       Number(info.match(/fsxattr\.projid\s*=\s*(\d+)/)?.[1]) !== marker.projectId ||
-      !info.includes("proj-inherit")
+      !Number.isInteger(flags) ||
+      flags < 0 ||
+      flags > 0xffffffff ||
+      (flags & 0x200) === 0
     )
       throw new Error("Workspace and upload files do not share the enforced project");
   }
