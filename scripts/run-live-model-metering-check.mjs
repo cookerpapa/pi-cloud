@@ -58,6 +58,23 @@ async function restoreReceiver() {
   if (!receiverStopped) return;
   await kubectlAsync(["scale", workload("metering"), "--replicas=1"]);
   await kubectlAsync(["rollout", "status", workload("metering"), "--timeout=180s"]);
+  // Pod readiness can precede the host's ClusterIP route update after replacement.
+  const receiverUrl = `http://${serviceAddress("metering")}:3000`;
+  await until(
+    async () => {
+      try {
+        const response = await fetch(`${receiverUrl}/health/ready`, {
+          signal: AbortSignal.timeout(3000),
+        });
+        await response.body?.cancel();
+        return response.status === 200;
+      } catch {
+        return false;
+      }
+    },
+    "Receiver host route after restart",
+    30_000,
+  );
   receiverStopped = false;
 }
 async function restore() {
@@ -255,10 +272,19 @@ try {
     signal: AbortSignal.timeout(15000),
   });
   assert.equal(exported.status, 200);
-  assert.equal(
-    JSON.parse((await exported.text()).trim()).context.invocationId,
+  const exportedItems = (await exported.text())
+    .trim()
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  for (const invocationId of [
     context.invocationId,
-  );
+    report.managementIndependentIngestion.invocationId,
+  ])
+    assert(
+      exportedItems.some((item) => item.context.invocationId === invocationId),
+      "NDJSON export omitted an observed model invocation",
+    );
   await withChromePage({}, async (browser) => {
     await browser.send("Network.setExtraHTTPHeaders", {
       headers: { Authorization: `Bearer ${tenant.credential.token}` },
