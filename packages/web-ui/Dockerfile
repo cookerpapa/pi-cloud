@@ -56,7 +56,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 
 FROM alpine:3.23.5@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
 
-ARG PI_CLOUD_ALPINE_MIRROR=https://mirrors.aliyun.com/alpine
+ARG PI_CLOUD_ALPINE_MIRROR=https://dl-cdn.alpinelinux.org/alpine
 RUN sed -i "s|https://dl-cdn.alpinelinux.org/alpine|${PI_CLOUD_ALPINE_MIRROR}|g" \
     /etc/apk/repositories \
     && upgraded=0 \
