@@ -57,6 +57,12 @@ The first live storage handoff exposed two operator omissions: the host-mounted
 node bootstrap must stop with Cube, and XFS inheritance must be checked from its
 numeric flags rather than a display label. Both now have regression coverage;
 the original Workspace copy/checksum and physical-absence guards remain required.
+Live rollout also caught a Session execution bootstrap/readiness cycle and the
+registry policy's missing TemplateCenter caller. Listener setup now precedes
+execution readiness; the matched operator reconciles the same registry manifest
+as installation before requesting templates. Thirty-two focused regressions,
+both affected package typechecks and an isolated full Session-runtime startup
+in the actual cluster pass. The next matched candidate and live gates remain.
 
 ## Repository license — published
 

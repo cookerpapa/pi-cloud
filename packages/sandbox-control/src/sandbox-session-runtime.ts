@@ -239,7 +239,7 @@ export async function createSandboxSessionRuntime(options: {
       maximumActiveSandboxes: null,
       cleanPrewarmCount: 0,
       checkHealth: async () => {
-        if (!started || closing) throw new Error("Session execution is unavailable");
+        if (closing) throw new Error("Session execution is unavailable");
       },
       close: () => execution.close(),
       create: managementRequired,
@@ -293,6 +293,7 @@ export async function createSandboxSessionRuntime(options: {
         ? { workspaceServiceToken: config.workspaceServiceToken }
         : {}),
       broker: backend,
+      readiness: () => started && !closing,
       metrics,
       routeBinding: waitBinding,
     });
@@ -421,6 +422,7 @@ export async function createSandboxSessionRuntime(options: {
         return started && !closing;
       },
       start: async () => {
+        if (closing) throw new Error("Session execution is closing");
         started = true;
       },
       close,

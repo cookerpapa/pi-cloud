@@ -1,4 +1,6 @@
 import { expect, it } from "vitest";
+import { readFile } from "node:fs/promises";
+import { parseAllDocuments } from "yaml";
 import {
   cubeReleaseValues,
   pinCubeReleaseValues,
@@ -7,6 +9,28 @@ import {
   cubeNewCredentialData,
   assertCubeCredentialsRetained,
 } from "./cube-release-policy.mjs";
+
+it("lets the fixed TemplateCenter resolve image layers from the private registry", async () => {
+  const resources = parseAllDocuments(
+    await readFile(
+      new URL("../../deploy/cubesandbox/template-registry.yaml", import.meta.url),
+      "utf8",
+    ),
+  ).map((document) => document.toJS());
+  const policy = resources.find((resource) => resource.kind === "NetworkPolicy");
+  const peers = policy.spec.ingress.flatMap((rule) => rule.from);
+  for (const component of ["master", "templatecenter"])
+    expect(peers).toContainEqual({
+      podSelector: { matchLabels: { "app.kubernetes.io/component": component } },
+    });
+  expect(
+    policy.spec.ingress.every(
+      (rule) =>
+        rule.ports.length === 1 && rule.ports[0].port === 5000 && rule.ports[0].protocol === "TCP",
+    ),
+  ).toBe(true);
+  expect(policy.spec.egress).toEqual([]);
+});
 
 it("adopts v0.7.3 defaults without losing explicit configuration or adding a second store", () => {
   const old = {

@@ -57,6 +57,8 @@ export type SandboxControlServerOptions = {
   workspaceServiceToken?: string;
   terminalToken?: string;
   broker: SandboxControlBackend;
+  /** Listener setup may precede Projector bootstrap and execution readiness. */
+  readiness?(): boolean;
   logDelivery?: {
     instanceId: string;
     token: string;
@@ -203,6 +205,7 @@ export class SandboxControlServer {
   readonly #workspaceServiceDigest: Buffer | undefined;
   readonly #terminalDigest: Buffer | undefined;
   readonly #broker: SandboxControlBackend;
+  readonly #readiness: SandboxControlServerOptions["readiness"];
   readonly #logDelivery: SandboxControlServerOptions["logDelivery"];
   readonly #deliveryDigest: Buffer | undefined;
   readonly #server: FastifyInstance;
@@ -231,6 +234,7 @@ export class SandboxControlServer {
         ? undefined
         : digest(validServiceToken(options.terminalToken));
     this.#broker = options.broker;
+    this.#readiness = options.readiness;
     this.#logDelivery = options.logDelivery;
     this.#deliveryDigest =
       options.logDelivery && digest(validServiceToken(options.logDelivery.token));
@@ -637,8 +641,11 @@ export class SandboxControlServer {
       let healthy = this.#ready;
       if (healthy) {
         try {
-          await this.#broker.checkHealth();
-          this.#logDelivery?.checkHealth();
+          healthy = this.#readiness?.() !== false;
+          if (healthy) {
+            await this.#broker.checkHealth();
+            this.#logDelivery?.checkHealth();
+          }
         } catch {
           healthy = false;
         }

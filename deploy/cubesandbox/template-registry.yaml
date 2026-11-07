@@ -150,6 +150,9 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/component: master
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: templatecenter
       ports:
         - protocol: TCP
           port: 5000

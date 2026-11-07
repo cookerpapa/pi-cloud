@@ -459,6 +459,7 @@ try {
       timeout: 125000,
     });
     run("scripts/configure-cube-completion.mjs", [], env);
+    kubectl(["apply", "-f", "deploy/cubesandbox/template-registry.yaml"]);
     run(
       "scripts/register-cubesandbox-tool-template.mjs",
       ["--prepared-image-id", candidate.guestImageId],

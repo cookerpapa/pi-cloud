@@ -23,6 +23,10 @@ single Session Projector group, public authentication/API/history/statements,
 HTTP observations/SSE, Worker registration/catalog transport, ordered control
 publication, native child/control Tools and execution on admitted Cube bindings.
 Its readiness depends on its own PG/Kafka paths, not management uptime.
+The execution listener binds during initialization so partition recovery can
+reach it. Its readiness stays false until Session startup completes; opening
+the listener must not require that later readiness transition. Closing withdraws
+readiness immediately and cannot be reversed by a late start call.
 Worker membership remains beside execution; this slice leaves lease predicates
 and renewal/revocation timing unchanged (Issue #10 evaluates them separately).
 
