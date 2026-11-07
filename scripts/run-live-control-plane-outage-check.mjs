@@ -31,6 +31,7 @@ assert.equal(
 const output = resolve(process.argv[2] ?? "/tmp/pi-cloud-control-plane-outage.json");
 const unavailableMs = Number(process.env.PI_CLOUD_CONTROL_PLANE_OUTAGE_MS ?? 60000);
 assert(Number.isSafeInteger(unavailableMs) && unavailableMs >= 45000 && unavailableMs <= 90000);
+const firstBashSeconds = Math.max(75, Math.ceil(unavailableMs / 1000) + 5);
 const pg = new URL(
   (await readFile(resolve(runtimeDirectory, "secrets/database-url"), "utf8")).trim(),
 );
@@ -56,6 +57,7 @@ const report = {
   checkedAt: new Date().toISOString(),
   model: "gpt-6-luna",
   unavailableMs,
+  firstBashSeconds,
   accepted: false,
   samples: [],
 };
@@ -195,7 +197,8 @@ async function leaseSample() {
     rows: [row],
   } =
     await sql`select r.state,r.worker_id,l.lease_id,l.fencing_token::text,l.renewed_at,l.valid_until,
-    l.valid_until>clock_timestamp() as valid,l.released_at,l.writer_failed_at,l.writer_sealed_at,
+    l.valid_until>clock_timestamp() as valid,clock_timestamp() as observed_at,
+    l.released_at,l.writer_failed_at,l.writer_sealed_at,
     w.supervisor_id as pod,w.boot_id,
     (select max(c.seq)::text from pi_durable_commits c where c.tenant_id=r.tenant_id and c.session_id=l.pi_session_id) as projected_seq,
     l.pi_session_id,p.session_hash % ${partitionCount} as partition
@@ -319,7 +322,7 @@ try {
   phase("start two-step owned Bash fixture");
   root = await api.acceptTurn(
     sessions[0].sessionId,
-    "Use bash exactly twice, sequentially. First command: printf 'FIRST_STARTED\\n' >> outage-once.txt; sleep 30; printf 'FIRST_DONE\\n' >> outage-once.txt; printf FIRST_DONE. Set timeout to 120 seconds and wait for the result. Only after that result, call bash with: printf 'SECOND_DONE\\n' >> outage-once.txt; printf OUTAGE_SURVIVED. Do not combine the two calls, delegate, search, or use other tools. Finally reply OUTAGE_SURVIVED.",
+    `Use bash exactly twice, sequentially. First command: printf 'FIRST_STARTED\\n' >> outage-once.txt; sleep ${firstBashSeconds}; printf 'FIRST_DONE\\n' >> outage-once.txt; printf FIRST_DONE. Set timeout to 120 seconds and wait for the result. Only after that result, call bash with: printf 'SECOND_DONE\\n' >> outage-once.txt; printf OUTAGE_SURVIVED. Do not combine the two calls, delegate, search, or use other tools. Finally reply OUTAGE_SURVIVED.`,
     newIdempotencyKey("outage-root"),
     "low",
   );
@@ -437,7 +440,8 @@ try {
       retryFailure = error;
       report.newRequest.failure = { name: error.name, code: error.code, status: error.status };
     });
-    while (Date.now() - absentAt < unavailableMs) {
+    let completedWithoutManagement = false;
+    while (Date.now() - absentAt < unavailableMs || !completedWithoutManagement) {
       const sample = await leaseSample();
       assert.equal(sample.lease_id, report.before.lease_id);
       assert.equal(sample.fencing_token, report.before.fencing_token);
@@ -451,6 +455,7 @@ try {
           "Active Worker lost its PG lease during management outage",
         );
       else assert.equal(sample.state, "completed", "Owned Run failed while management was absent");
+      completedWithoutManagement = terminal(sample);
       assert(Number(sample.projected_seq) >= Number(report.atAbsence.projected_seq));
       await api.getConversation(sessions[0].sessionId);
       assert.equal(await ready(), false, "Control Plane unexpectedly returned during the blackout");
@@ -459,9 +464,16 @@ try {
         renewedAt: sample.renewed_at,
         validUntil: sample.valid_until,
         projectedSeq: sample.projected_seq,
+        observedAt: sample.observed_at,
+        activePastInitialDeadline:
+          !terminal(sample) && new Date(sample.observed_at) > new Date(report.before.valid_until),
       });
-      await delay(Math.min(10000, Math.max(1, unavailableMs - (Date.now() - absentAt))));
+      await delay(Math.min(10000, Math.max(1000, unavailableMs - (Date.now() - absentAt))));
     }
+    assert(
+      report.samples.some((sample) => sample.activePastInitialDeadline),
+      "The active Run did not outlive its pre-outage confirmed lease deadline",
+    );
     assert(
       new Date(report.samples.at(-1).renewedAt) > new Date(report.before.renewed_at),
       "Worker did not renew while Control Plane was absent",

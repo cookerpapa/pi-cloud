@@ -45,6 +45,9 @@ must pass the owned `PI_CLOUD_LIVE_CONTROL_PLANE_OUTAGE_CHECK=1` driver with
 continued PG projection, both sequential Bash calls, authenticated history/cost
 reads and SSE while management Pods are absent. Retain native recovery and bound
 workflow/image/Skill/preview contracts; a source diff is not live acceptance.
+The owned outage fixture keeps its Run active past the pre-outage confirmed
+lease deadline, using PG time, and requires new model/compute/storage receipts
+before management returns. An early-settled Run does not prove lease continuity.
 
 The schema-209→210 retention exception belonged to the earlier model-metering
 cutover and is removed. Scoped provider/catalog/Web/ordinary-tool publication
