@@ -41,6 +41,8 @@ and invented production tariffs remain out of scope.
 Native v0.7.3 closure additionally includes patched TemplateCenter, separate
 upstream dependency digest evidence, complete private chart preflight before
 drain, preserved filesystem/Pod-network topology and a refreshed operator CLI.
+The filesystem helper build stages use the maintained Go mirror policy with
+unchanged pinned modules after an actual default-proxy download failure.
 These source changes await the consolidated gates and matched live acceptance.
 
 ## Repository license — published

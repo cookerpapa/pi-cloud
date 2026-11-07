@@ -5,6 +5,8 @@ ARG GO_BASE_IMAGE=golang:1.26.10-alpine3.23@sha256:107301490755aa2ea1b0b43788b6e
 ARG ENVD_COMMIT=6392356aaab9ed07e2f7df0c84c8d9ad8bac1327
 
 FROM ${GO_BASE_IMAGE} AS file-exchange-builder
+ARG PI_CLOUD_GOPROXY=https://goproxy.cn|https://proxy.golang.org|direct
+ENV GOPROXY=${PI_CLOUD_GOPROXY}
 WORKDIR /source
 COPY deploy/file-exchange /source
 RUN CGO_ENABLED=0 GOTOOLCHAIN=local go build -trimpath -ldflags '-s -w' -o /out/file-exchange .
