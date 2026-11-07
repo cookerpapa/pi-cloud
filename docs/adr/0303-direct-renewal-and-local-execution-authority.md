@@ -1,7 +1,7 @@
 # ADR-0303: Direct renewal and local execution authority
 
-Status: accepted for implementation, 2026-11-07. Source and live acceptance are
-pending. This is the evaluation and implementation decision for Issue #10.
+Status: accepted; deployed and verified on 2026-11-07.
+This is the evaluation and implementation decision for Issue #10.
 
 ## Evaluation
 
@@ -102,3 +102,5 @@ Root validation runs serially on the constrained build host. A drained matched
 release and relevant live outage/recovery acceptance are required; source tests
 alone do not establish deployment or physical-resource preservation. Rollback
 uses a drained matched application set, with existing PG/Kafka/Volume authorities.
+
+[Matched delivery and validation limits](../reports/runtime-accounting-20261107.md).

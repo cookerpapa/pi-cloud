@@ -119,16 +119,14 @@ Sandbox billing require separate business decisions before enabling collection.
 
 ## Publication
 
-The deployed model-only baseline is schema 210. ADR-0298 receiver extraction is
-source-complete pending the consolidated matched runtime/accounting release.
-Worker/provider/API/Web must publish together for protocol changes. The ADR-0297
-`--retain-sandbox-runtime` option on the maintained matched operator proves that
-existing Cube/Guest inputs are unchanged except additive host accounting exports.
-It builds/scans the seven host images being published and retains the original
-evidence for six unchanged Sandbox artifacts. It still drains Runs and Session
-writers; it does not destroy VMs or change the
-Guest template. Original Cube artifact provenance stays in `deployment.json`.
-Changed execution interfaces, native patches or Guest inputs reject this path.
+The independent receiver and resource-accounting topology are deployed on schema
+212; see the [matched delivery](reports/runtime-accounting-20261107.md).
+Protocol, storage and ownership changes use the maintained full matched procedure,
+including fourteen custom artifacts, separately pinned native dependencies,
+writer closure and confirmed compute retirement with Workspace preservation.
+The historical schema-209→210 retained-runtime exception has been removed.
+Supported provider/catalog/Web/ordinary-tool changes use their documented scoped
+release paths; see [publication procedures](COMPONENT_RELEASE.md).
 
 The provider needs `PI_CLOUD_METERING_PATH`, `PI_CLOUD_METERING_URL` and
 `PI_CLOUD_METERING_KEY_FILE`; the receiver uses `DATABASE_URL_FILE` and

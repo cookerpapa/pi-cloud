@@ -175,6 +175,9 @@ The repository contains native SDK contract tests, PostgreSQL/Kafka integration
 checks, browser layout tests, deterministic fault scenarios and opt-in live
 model/Cube acceptance. [Evaluation](docs/EVALUATION.md) describes their scope;
 individual delivery reports retain both successes and unresolved failures.
+The [runtime and resource-accounting delivery](docs/reports/runtime-accounting-20261107.md)
+records real quota growth, receipt recovery, an 86-second management outage,
+native crash recovery and image preservation on the maintained single-host setup.
 
 - The provider-owned continuation implementation uses full HTTP/SSE input inside
   the cluster and reuses compatible OpenAI upstream context across Run/Worker

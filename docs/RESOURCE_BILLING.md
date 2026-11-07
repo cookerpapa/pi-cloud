@@ -1,8 +1,9 @@
 # Resource usage and statements
 
 [ADR-0300](adr/0300-resource-usage-receipts.md) defines source resource receipts.
-This implementation is pending the consolidated matched release. It provides
-informational statements, not real payment collection or a published tariff.
+The [matched release and live acceptance](reports/runtime-accounting-20261107.md)
+are complete. It provides informational statements, not real payment collection
+or a published tariff.
 
 ## Compute
 

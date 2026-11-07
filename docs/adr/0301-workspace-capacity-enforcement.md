@@ -1,6 +1,6 @@
 # ADR-0301: Persistent Workspace capacity with kernel enforcement
 
-Status: accepted; implementation in progress.
+Status: accepted; deployed and verified on 2026-11-07.
 Date: 2026-11-07. Tracking: [Issue #8](https://github.com/cookerpapa/pi-cloud/issues/8).
 
 ## Product and authority
@@ -148,3 +148,5 @@ two slots before publishing the first canonical value. Terminal
 transfers and existing staging collection reclaim it. This also covers the fixed
 guest receiver without changing its filesystem/receiver identity or adding another
 upload route. Unchanged status reads do not rewrite metadata.
+
+[Matched delivery and validation limits](../reports/runtime-accounting-20261107.md).

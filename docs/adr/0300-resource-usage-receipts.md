@@ -1,6 +1,6 @@
 # ADR-0300: Source resource receipts and informational statements
 
-Status: accepted; implementation in progress.
+Status: accepted; deployed and verified on 2026-11-07.
 Date: 2026-11-07. Tracking: [Issue #7](https://github.com/cookerpapa/pi-cloud/issues/7).
 
 ## Pricing boundary
@@ -88,3 +88,5 @@ stream-exportable. Per-segment arithmetic truncates below 10^-12 currency; no
 actual collection policy is inferred from that display/accounting precision.
 Very short lifetimes lost before first observation and node-metadata loss remain
 completeness limits; they are not silently reconstructed from management intent.
+
+[Matched delivery and validation limits](../reports/runtime-accounting-20261107.md).

@@ -1,6 +1,6 @@
 # ADR-0298: Independent usage receipt receiver
 
-Status: accepted; implementation in progress.
+Status: accepted; deployed and verified on 2026-11-07.
 Date: 2026-11-07. Tracking: [Issue #5](https://github.com/cookerpapa/pi-cloud/issues/5).
 
 ## Decision
@@ -66,3 +66,5 @@ loss and absent upstream usage retain the declared unknown/unconfirmed limits.
 
 ADR-0300 introduces a dedicated receipt credential shared by model and resource
 sources. Cube does not acquire provider model-request credentials.
+
+[Matched delivery and validation limits](../reports/runtime-accounting-20261107.md).

@@ -1,31 +1,28 @@
 # Implementation roadmap
 
-## Independent runtime and resource accounting — in progress
+## Independent runtime and resource accounting — deployed
 
-The owner authorized the six linked slices on 2026-11-07. Implement one slice at
-a time, then consolidate expensive matched integration/live acceptance:
+The six authorized slices are implemented and published as
+`runtime-accounting-20261107-r11` on schema 212:
 
-1. [#5](https://github.com/cookerpapa/pi-cloud/issues/5): independent model receipt
-   receiver; evaluation in [ADR-0298](adr/0298-independent-metering-receiver.md).
-2. [#6](https://github.com/cookerpapa/pi-cloud/issues/6): fixed Cube upgrade and
-   extension/OS maintenance, preserving Workspace bytes and physical fencing.
-3. [#7](https://github.com/cookerpapa/pi-cloud/issues/7): source-side allocated
-   compute metering and informational statements.
+1. [#5](https://github.com/cookerpapa/pi-cloud/issues/5): independent receipt
+   receiver and PG valuation, as selected in [ADR-0298](adr/0298-independent-metering-receiver.md).
+2. [#6](https://github.com/cookerpapa/pi-cloud/issues/6): fixed Cube v0.7.3 with
+   complete extension/release closure and preserved Workspace bytes.
+3. [#7](https://github.com/cookerpapa/pi-cloud/issues/7): periodic source compute
+   receipts and informational statements with explicit uncertainty.
 4. [#8](https://github.com/cookerpapa/pi-cloud/issues/8): enforced Workspace
-   capacity plans and storage-retention metering.
-5. [#9](https://github.com/cookerpapa/pi-cloud/issues/9): separate the Session
-   execution/read path from management, initially retaining current lease rules.
-   [ADR-0302](adr/0302-session-runtime-and-resource-management.md) now has separate
-   source compositions and written outage/failure gates; validation is pending.
-6. [#10](https://github.com/cookerpapa/pi-cloud/issues/10): evaluate and simplify
-   renewal/revocation with failure tests across the separated topology.
-   [ADR-0303](adr/0303-direct-renewal-and-local-execution-authority.md) selects direct
-   PG renewal and local expiry, removes observer polling and the obsolete socket
-   renewal path, and aborts families on known Kafka failure. Source implementation
-   is prepared; serial validation and matched live acceptance remain pending.
+   capacity, growth and persistent storage-retention metering.
+5. [#9](https://github.com/cookerpapa/pi-cloud/issues/9): separate Session
+   execution/read paths from resource management; one Projector group remains.
+6. [#10](https://github.com/cookerpapa/pi-cloud/issues/10): retain direct PG
+   renewal/local expiry, remove duplicate observation/renewal paths, and propagate
+   known writer failure to the entire native family.
 
-These are not deployed yet. Do not infer new lease or capacity semantics from
-the proposal; current behavior below remains authoritative until cutover.
+[Delivery and evaluation](reports/runtime-accounting-20261107.md) records actual
+quota growth, receipt recovery/deduplication, an 86-second management outage,
+native Stop/crash recovery, images, preservation and the remaining limits.
+Real payment collection and production tariffs remain separate work.
 
 ## Provider v8 and model accounting — deployed
 

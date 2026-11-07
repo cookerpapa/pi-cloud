@@ -1,6 +1,6 @@
 # ADR-0304: Cold compute retirement for matched maintenance
 
-Status: accepted; source implementation awaiting matched verification.
+Status: accepted; deployed and verified on 2026-11-07.
 Date: 2026-11-07. Scope: Issues #6 and #8.
 
 ## Decision
@@ -79,3 +79,5 @@ maintained operator has inspect/apply entry points and emits only bounded identi
 and progress information; capsules and credentials are never logged. PG/native
 and live preservation verification are serialized by the release owner. This
 source change does not claim that a production retirement or upgrade has occurred.
+
+[Matched delivery and validation limits](../reports/runtime-accounting-20261107.md).

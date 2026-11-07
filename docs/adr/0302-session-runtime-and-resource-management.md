@@ -1,7 +1,7 @@
 # ADR-0302: Separate Session runtime from resource management
 
 Date: 2026-11-07
-Status: Accepted for implementation; matched acceptance pending
+Status: accepted; deployed and verified on 2026-11-07.
 
 ## Context and acceptance
 
@@ -91,3 +91,5 @@ and old Session Pod absence, never the unrelated resource-owner lease.
 Tests must cover route/capability refusal, closed bindings, data-only restart,
 management-off execution/read availability, cancellation and partition changes.
 Source checks and live evidence are recorded separately in the backlog.
+
+[Matched delivery and validation limits](../reports/runtime-accounting-20261107.md).

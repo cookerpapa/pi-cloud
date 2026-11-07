@@ -1,6 +1,6 @@
 # ADR-0299: Cube v0.7.3 and source resource observations
 
-Status: accepted; adaptation in progress.
+Status: accepted; deployed and verified on 2026-11-07.
 Date: 2026-11-07. Tracking: [Issue #6](https://github.com/cookerpapa/pi-cloud/issues/6).
 
 ## Version and scope
@@ -71,9 +71,10 @@ References: [release](https://github.com/TencentCloud/CubeSandbox/releases/tag/v
 
 ## Source adaptation record
 
-The previous 15-file patch series is consolidated into four responsibility groups:
+The previous 15-file patch series is consolidated into responsibility groups:
 observations/whole Tools, allocation/Volume lifetimes, node-routed template cleanup,
-and pinned build/dependency maintenance. Shared protocol additions now live once
+and pinned build/dependency maintenance. The fifth maintained patch adds source
+resource receipts using the shared PiCloud-owned journal module. Shared protocol additions now live once
 in upstream `pkgs/proto`; custom migrations use `pkgs/cubedb`. Old per-component
 protocol copies and the old CubeDB/cubelog package dependencies are removed.
 
@@ -87,9 +88,9 @@ same-ID resume, with a regression for mismatched resume IDs.
 Source checks have passed on the isolated port: native admission/race contracts,
 allocation and Volume tests, selected composed Cubelet lifecycle tests, CubeMaster
 compilation and node-routed cleanup tests, shared protocol compilation, and the
-Rust observation regression. The four patches reproduce all 91 modified files
-from a clean pinned upstream export. This is source evidence, not a deployed
-upgrade or a passed full artifact/live acceptance.
+Rust observation regression. The five maintained patches reproduce the tested
+source from a clean pinned upstream export. Subsequent matched/live acceptance,
+including the pause-cleanup finding, is recorded in the delivery report.
 
 ## Complete native release closure
 
@@ -122,3 +123,5 @@ operator CLI from the matching pinned CLI image after its Pod becomes Ready; do
 not relabel an old binary by merely updating cluster metadata. Retain ordinary
 writer drain, confirmed physical absence and both original Workspace/machine
 intents throughout the matched update.
+
+[Matched delivery and validation limits](../reports/runtime-accounting-20261107.md).

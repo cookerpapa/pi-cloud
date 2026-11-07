@@ -1,76 +1,39 @@
 # Maintained backlog
 
-## Runtime separation and resource accounting — in progress
+## Runtime separation and resource accounting — deployed
 
-- [ ] Live pause/delete acceptance exposed an uncollected native pause-snapshot
-      binding after managed allocation closure. Join the upstream snapshot cleanup
-      before declaring closure complete, then verify no owned paused record or
-      package remains before purging the fixture's ownership and financial rows.
-      The native fix and node-identity/error regressions pass; all five patches
-      reproduce the tested source. Matched publication and stronger live cleanup
-      verification remain pending.
+- [x] #5: independent model receipt ingestion and valuation; management outage,
+      receiver outage/provider replacement, deduplication, export and costs UI pass.
+- [x] #6: fixed Cube v0.7.3, five maintained patch groups, complete native image/CLI
+      closure, physical fencing and preserved Workspace/machine intent. Managed
+      closure now removes pause packages before reporting completion.
+- [x] #7: source-side allocated compute intervals, explicit uncertain gaps,
+      versioned prices, statements/export and independent receipt delivery.
+- [x] #8: XFS Workspace/upload quotas, grow-only capacity intent, storage-retention
+      receipts, verified original-byte migration and actual 1→2 GiB acceptance.
+- [x] #9: independent Session API/Projector and management processes. Bound work,
+      PG/history/SSE and all three receipt types continued during an 86-second
+      management outage; original machine state and Worker membership were retained.
+- [x] #10: direct PG renewal/local expiry, removal of duplicate observer/socket
+      renewal paths, family-wide known-writer-failure propagation and recovery gates.
+- [x] Consolidated source/failure, Go/provider/native, PG/Kafka, kernel quota,
+      browser, Helm/install and artifact gates; final serial live recovery/image
+      acceptance and original-asset preservation.
 
-- [x] #5 source slice: extract model accounting receiver; ADR-0298 selects an
-      independent service over provider-side PG/pricing coupling. PG receipt,
-      restart/outage and Helm contracts pass; live release remains pending below.
-- [ ] #6: Cube v0.7.3 source adaptation is implemented in five cohesive patches;
-      native admission, Tool/Volume/lifecycle contracts and Rust/Go compilation
-      pass, including real MySQL allocation/template contracts. Matched build,
-      artifact scans and live preservation remain.
-      Cold compute retirement now preserves machine intent under [ADR-0304](adr/0304-compute-retirement-for-maintenance.md); its PG and recovery contracts pass; live preservation remains.
-- [ ] #7: source collection/outbox, resource interval admission, price boundaries,
-      aggregate statements and UI are implemented. Source contracts pass; real
-      Cube metering, delivery-drain and preservation acceptance remain pending.
-- [ ] #8: real XFS Workspace capacity enforcement, grow-only PG intent and
-      capacity-time statements are implemented. Kernel exhaustion/growth, upload
-      cancellation/resumption and remount identity pass the owned XFS fixture.
-      The [cold storage operator](WORKSPACE_STORAGE_POOL.md) and fault cases are implemented;
-      operator/host-reboot contracts pass; original-byte migration and live release remain pending.
-- [ ] #9: separate `session-runtime` and resource-management `control-plane`
-      compositions under [ADR-0302](adr/0302-session-runtime-and-resource-management.md).
-      Bound Tool execution, retention, authenticated history/statements and SSE stay
-      with the Session runtime. Scoped tool publication preserves management/metering.
-      Source/failure contracts pass, including real Kafka handoff. Matched live acceptance remains.
-- [ ] #10: [ADR-0303](adr/0303-direct-renewal-and-local-execution-authority.md)
-      retains direct PG renewal/local expiry, removes active observer polling
-      and socket family renewal, and propagates Kafka failure to every native
-      model grant. Source/failure checks and real Kafka handoff pass;
-      prolonged management-outage and matched live acceptance remain pending.
-- [x] Consolidated source/failure, Go/provider, PG/Kafka, kernel quota, browser,
-      Helm/install/docs and dependency gates pass. Old schema fixtures use frozen
-      SQL; no production compatibility branch was added.
-- [ ] Matched release and relevant live
-      acceptance, original-asset preservation, push and issue delivery evidence.
+Matched release `runtime-accounting-20261107-r11`, application Helm 148 /
+infrastructure 115 / schema 212, is deployed. [Delivery, both evaluation conclusions,
+failed attempts and validation limits](reports/runtime-accounting-20261107.md).
+No real tariffs, payment collection or wallet were enabled.
 
-See the [six-slice roadmap](ROADMAP.md#independent-runtime-and-resource-accounting--in-progress).
-Issues #5 and #10 require an explicit evaluation conclusion. Real money collection
-and invented production tariffs remain out of scope.
+Operational follow-ups from this release:
 
-Native v0.7.3 closure additionally includes patched TemplateCenter, separate
-upstream dependency digest evidence, complete private chart preflight before
-drain, preserved filesystem/Pod-network topology and a refreshed operator CLI.
-The filesystem helper build stages use the maintained Go mirror policy with
-unchanged pinned modules after an actual default-proxy download failure.
-The Web runtime uses Alpine's signed official repository after a mirror index
-advertised an unavailable security-update package; the upgrade gate remains.
-The first complete fourteen-image scan found additional fixable HIGH dependencies:
-Go x/net, TemplateCenter containerd, Cube API Alpine libraries and the two
-Cube gateways' APT runtime. Their pinned upgrades retain the existing gate;
-artifact and live acceptance remain pending.
-Auxiliary preparation reuses complete local ref/platform/digest evidence and
-pulls only confirmed missing images; daemon errors and incomplete entries remain
-fatal. This avoids unrelated credential-helper calls for already prepared bytes.
-These source changes await the consolidated gates and matched live acceptance.
-The first live storage handoff exposed two operator omissions: the host-mounted
-node bootstrap must stop with Cube, and XFS inheritance must be checked from its
-numeric flags rather than a display label. Both now have regression coverage;
-the original Workspace copy/checksum and physical-absence guards remain required.
-Live rollout also caught a Session execution bootstrap/readiness cycle and the
-registry policy's missing TemplateCenter caller. Listener setup now precedes
-execution readiness; the matched operator reconciles the same registry manifest
-as installation before requesting templates. Thirty-two focused regressions,
-both affected package typechecks and an isolated full Session-runtime startup
-in the actual cluster pass. The next matched candidate and live gates remain.
+- [ ] Surface native server-validation/immutable-object failures before writer
+      drain, with bounded structural diagnostics that omit rendered Secrets.
+- [ ] Reduce repeated full artifact work for operator-only changes using verified
+      component inputs; preserve provenance, fencing and the existing scan gate.
+- [ ] Retire unreferenced release image pins after checking desired workloads and
+      runtime containers. Accumulated K3s cache entries required explicit cleanup;
+      this is image-cache maintenance, not permission to remove Volumes or accounts.
 
 ## Repository license — published
 
@@ -102,18 +65,17 @@ infrastructure Helm 112, schema 210. Real receipt recovery/duplicate delivery,
 exact fixture pricing, cross-Worker attribution, child/image/compaction/Flash,
 public query/export/browser and five native recovery checks pass.
 [Delivery, failure samples and preservation](reports/model-accounting-20261106.md).
-Sandbox/storage charging, payment collection and automatic top-up are subsequent work.
+Production tariffs, payment collection and automatic top-up remain separate work.
 
-## Retained Cube / Guest APT maintenance — open
+## Cube / Guest APT maintenance — deployed
 
-- [ ] Patch APT in retained Cube/Guest Ubuntu artifacts for
+- [x] Patch APT in retained Cube/Guest Ubuntu artifacts for
       [CVE-2026-109518](https://ubuntu.com/security/CVE-2026-109518): Ubuntu 22.04
       needs 2.4.15ubuntu0.1 and 24.04 needs 2.8.4ubuntu0.1. The model-accounting
-      scan exposed this pre-existing dependency issue. New Debian host images
-      install 2.6.2; no vulnerability ignore was added. Schedule Cube/Guest
-      maintenance with explicit allocation/Workspace preservation and its own
-      artifact/physical recovery acceptance. Billing publication retains those
-      unchanged artifacts; it does not claim they received this update.
+      scan exposed this pre-existing dependency issue. Debian host images use
+      2.6.2. The subsequent full Cube/resource-accounting release rebuilt and
+      scanned the affected artifacts with preserved Workspace/machine intent;
+      no vulnerability ignore was added. [Delivery](reports/runtime-accounting-20261107.md).
 
 ## Workspace-only files and resumable uploads — deployed
 

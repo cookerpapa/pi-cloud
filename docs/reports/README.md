@@ -1,5 +1,9 @@
 # Delivery and research evidence
 
+- [Independent runtime and resource accounting](runtime-accounting-20261107.md):
+  Cube v0.7.3, independent receipt ingestion, kernel quotas, management-outage
+  continuity, native recovery, images and original-asset preservation.
+
 - [Model accounting](model-accounting-20261106.md): durable source receipts, exact
   versioned prices, statements, preservation and successful live recovery checks.
 - [Provider upstream candidates](provider-upstream-candidates-20261106.md): separate
