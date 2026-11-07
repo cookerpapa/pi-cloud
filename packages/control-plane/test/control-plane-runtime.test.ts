@@ -333,6 +333,7 @@ describe.sequential("remote control-plane runtime composition", () => {
     const activities: SupervisorMaintenanceActivity[] = [];
     const sandboxPreviewGateway = new SandboxPreviewGateway({
       database,
+      executionBaseUrl: "http://session-runtime.test:4300",
       previewToken: `preview-${"p".repeat(48)}`,
       publicOriginBaseUrl: "http://preview.localhost:8080",
       allowInsecureInternalHttp: true,

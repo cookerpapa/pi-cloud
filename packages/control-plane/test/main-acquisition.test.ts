@@ -21,8 +21,10 @@ vi.mock("@pi-cloud/observability", async (original) => ({
 vi.mock("../src/production-config.ts", () => ({ loadProductionControlPlaneConfig: calls.config }));
 vi.mock("../src/subagent-controller.ts", () => ({ SubagentController: calls.subagents }));
 vi.mock("@pi-cloud/runtime-core/session-projector", () => ({ SessionProjector: calls.projector }));
-vi.mock("@pi-cloud/sandbox-control/runtime", () => ({ createSandboxControl: calls.sandbox }));
-import { startControlPlane } from "../src/main.ts";
+vi.mock("@pi-cloud/sandbox-control/session-runtime", () => ({
+  createSandboxSessionRuntime: calls.sandbox,
+}));
+import { startSessionRuntime as startControlPlane } from "../src/session-runtime-main.ts";
 import { SkillMarketService } from "../src/skill-market-service.ts";
 
 beforeEach(() => {
@@ -38,7 +40,11 @@ beforeEach(() => {
     subagentTreePolicy: { maximumDepth: null, maximumNodes: null },
   });
   calls.sandboxClose.mockResolvedValue(undefined);
-  calls.sandbox.mockResolvedValue({ close: calls.sandboxClose, dispatcher: {} });
+  calls.sandbox.mockResolvedValue({
+    close: calls.sandboxClose,
+    dispatcher: {},
+    quiescence: () => ({ active: 0, unsettled: 0 }),
+  });
 });
 afterEach(() => vi.restoreAllMocks());
 

@@ -177,6 +177,12 @@ export class DirectSessionKafkaBus implements AcceptedFactBus {
     const entry = this.#writers.get(this.#key(scope));
     return entry?.publication.scope.writerId === scope.writerId ? entry.writer.failure : undefined;
   }
+  publicationFailureSignal(scope: AcceptedFactScope): AbortSignal | undefined {
+    const entry = this.#writers.get(this.#key(scope));
+    return entry?.publication.scope.writerId === scope.writerId
+      ? entry.writer.failureSignal
+      : undefined;
+  }
   async publicationAvailability() {
     await this.checkHealth();
     return {

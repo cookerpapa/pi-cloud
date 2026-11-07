@@ -176,7 +176,7 @@ export function renderCubeRelease(yaml, input) {
   });
   const completion = cubeCompletionPatch({
     kafkaBrokers: ["kafka-1:9092", "kafka-2:9092", "kafka-3:9092"],
-    controlPlaneUrl: "http://control-plane:3000",
+    controlPlaneUrl: "http://session-runtime:3000",
     imageEndpoint: "http://session-images:8333",
     secretDigest: hash(JSON.stringify(input.completionFiles)),
   }).spec.template;

@@ -1,4 +1,4 @@
-import { replacePod, serviceAddress } from "./lib/production-kubernetes.mjs";
+import { replacePod, serviceAddress, kubectl } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
@@ -212,12 +212,19 @@ try {
         "-d",
         "pi_cloud",
         "-Atc",
-        "select id from runs where state in ('queued','running','cancelling') order by id",
+        "select id from runs where state not in ('completed','failed','cancelled','timed_out') or recovery_requested_at is not null or (output_seal_id is not null and output_sealed_at is null) order by id",
       ]);
       assert.equal(stdout.trim(), active.runId, "Refuse process fault while other Runs are active");
       const before = snapshots;
+      assert.equal(
+        JSON.parse(kubectl(["get", "deployment/pi-cloud-session-runtime", "-o", "json"])).spec
+          .replicas,
+        1,
+        "This progress fault requires one Session Projector so the owned partition is actually replaced",
+      );
+      report.faultRole = "session-runtime";
       const restartStarted = Date.now();
-      await replacePod("control-plane");
+      await replacePod("session-runtime");
       report.replacementCommandMs = Date.now() - restartStarted;
       // Replace the Projector process, not the Worker or the running Tool.
       // Pod rollout can return before publication ownership/SSE recovers. The

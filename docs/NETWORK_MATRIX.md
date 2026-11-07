@@ -5,18 +5,24 @@ firewall denial. Enforce deployment isolation with the configured networks/CNI.
 
 | Source | Destination | Runtime access / policy | Purpose |
 | --- | --- | --- | --- |
-| Browser | Web/Control Plane | yes | product API and SSE |
-| Control Plane | PostgreSQL | yes | product/Run authority, resource ownership and bounded binding metadata |
+| Browser | Web/Session runtime | yes | authenticated product API, history/statements and SSE |
+| Session runtime | PostgreSQL | yes | Run admission, projection, scoped reads and binding/control publication |
+| Control Plane | PostgreSQL | yes | resource ownership, lifecycle and management admission |
 | Pi Worker | PostgreSQL | yes | queue, Session and lifecycle state |
-| Pi Worker | Control Plane | yes | binding APIs, boot registration, management heartbeat and native input control |
+| Pi Worker | Session runtime | yes | boot registration, membership/catalog transport, bound input preparation and observations |
+| Pi Worker | Control Plane | yes | new Cube binding/resource activation |
 | Pi Worker | Kafka | yes | direct transactional Session publication and consumption of its boot's Tool replies |
 | Pi Worker | provider proxy/model provider | yes | model requests |
-| Control Plane / Session Projector | Kafka | yes | ordered data/seal publication and one consumer group for native history, live views and Tool routing |
-| Control Plane | Cube API | yes | bounded native Tool handoff, VM lifecycle and interactive transport |
+| Session runtime / Projector | Kafka | yes | ordered seal/control publication and one group for native history, live views and Tool routing |
+| Control Plane | Session runtime | yes | PG-authorized control publication; never native appends |
+| Session runtime | Cube execution/data endpoints | yes | fixed Tool dispatch, workflow/image/Skill/preview data and retention |
+| Control Plane | Cube API | yes | VM lifecycle and resource recovery |
 | Cubelet trusted completion adapter | Kafka | yes | native final replies to original Worker boot |
 | Cubelet trusted completion adapter | PostgreSQL / private S3 | yes | image inventory and immutable bytes |
-| Cubelet trusted completion adapter | Control Plane | yes | disposable progress HTTP observations |
-| Volume gateway | PostgreSQL/RWX Workspace storage | yes | revision/Volume coordination |
+| Cubelet trusted completion adapter | Session runtime | yes | disposable progress HTTP observations |
+| Volume gateway | PostgreSQL / Workspace storage / quota helper | yes | revision/Volume coordination and initial capacity enforcement |
+| CLIProxyAPI / Cubelet / Workspace quota helper | Metering receiver | yes | durable source receipts, independently of management |
+| Metering receiver | PostgreSQL | yes | idempotent accounting ledger and immutable price versions |
 | Cube guest | egress proxy | optional | governed public HTTP/HTTPS |
 | Cube guest | configured company CIDRs | optional | direct debugging/service access |
 | Cube guest | other platform services/internal/metadata | no | no route/credential |

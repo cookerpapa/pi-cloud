@@ -769,6 +769,10 @@ export class PiCloudTurnRunner {
                     credentialBindingVersion: p.model.credentialBindingVersion,
                     purpose: native.purpose,
                   });
+                  // Permit waits and context preparation may outlive a confirmed
+                  // lease, including when its expiry timer has not run yet.
+                  await owner.authority.assertCurrent();
+                  requestSignal.throwIfAborted();
                   if (
                     native.purpose === "agent" ||
                     p.input.kind === "compact" ||

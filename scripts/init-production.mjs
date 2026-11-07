@@ -1,3 +1,4 @@
+import { ensureMeteringSecret } from "./lib/metering-secret.mjs";
 import { execFile } from "node:child_process";
 import { createHash, generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
@@ -298,7 +299,7 @@ async function ensureCliProxyRuntime(runtimeDirectory) {
   await ensurePrivateStateDirectory(staticDirectory);
 
   const apiKey = await ensureCliProxySecret(runtimeDirectory, "cli-proxy-api-key");
-  await ensureCliProxySecret(runtimeDirectory, "metering-ingest-token");
+  await ensureMeteringSecret(runtimeDirectory);
   const managementKey = await ensureCliProxySecret(runtimeDirectory, "cli-proxy-management-key");
   const configPath = resolve(runtimeDirectory, "secrets/cli-proxy-config.yaml");
   let configCreated = false;

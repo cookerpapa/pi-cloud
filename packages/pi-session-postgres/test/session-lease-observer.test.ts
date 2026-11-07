@@ -1,5 +1,5 @@
 import type { Database } from "@pi-cloud/database";
-import type { Kysely } from "kysely";
+import type { Kysely, Transaction } from "kysely";
 import type { SupervisorHeartbeatMessage, SupervisorHeartbeatAckMessage } from "@pi-cloud/protocol";
 import { afterEach, expect, it, vi } from "vitest";
 import { PostgresSessionLeaseObserver } from "../src/postgres-session-lease-observer.ts";
@@ -36,8 +36,9 @@ function fixture() {
     }),
     execute: lookup,
   };
+  const database = { selectFrom: () => query } as unknown as Kysely<Database>;
   const observer = new PostgresSessionLeaseObserver({
-    database: { selectFrom: () => query } as unknown as Kysely<Database>,
+    database,
     monotonicNow: () => now,
   });
   observers.push(observer);
@@ -47,6 +48,7 @@ function fixture() {
     authority,
     lookup,
     query,
+    transaction: database as Transaction<Database>,
     advance: (value: number) => {
       now = value;
     },
@@ -120,7 +122,7 @@ it("does not use wall-clock jumps to expire a cached observation", async () => {
   expect(f.lookup).toHaveBeenCalledTimes(1);
 });
 
-it("coalesces cold opens and one-second watches into one query per Worker", async () => {
+it("coalesces cold opens and uses only direct renewals throughout a long management outage", async () => {
   vi.useFakeTimers();
   const f = fixture(),
     second = f.observer.open(identity("second")),
@@ -134,34 +136,36 @@ it("coalesces cold opens and one-second watches into one query per Worker", asyn
   expect(f.lookup).toHaveBeenCalledTimes(1);
   expect(f.query.where).toHaveBeenCalledWith("lease_id", "in", ["lease", "second", "third"]);
   for (const a of [f.authority, second, third]) a.start();
-  f.advance(2000);
-  await vi.advanceTimersByTimeAsync(1000);
-  expect(f.lookup).toHaveBeenCalledTimes(2);
-  f.lookup.mockResolvedValue([row("lease", "10000"), row("third", "10000")]);
-  f.advance(3000);
-  await vi.advanceTimersByTimeAsync(1000);
-  expect(second.signal.aborted).toBe(true);
+  const ids = [identity(), identity("second"), identity("third")];
+  renewal(f, 1000, ids);
+  // Five minutes without registration/management traffic. PG renewals are the
+  // only new authority evidence; the observer performs no one-second SELECTs.
+  for (let now = 21000; now <= 301000; now += 20000) {
+    f.advance(now);
+    await vi.advanceTimersByTimeAsync(20000);
+    renewal(f, now, ids);
+    for (const a of [f.authority, second, third]) a.assertActive();
+  }
   expect(f.authority.signal.aborted).toBe(false);
+  expect(second.signal.aborted).toBe(false);
   expect(third.signal.aborted).toBe(false);
-  expect(f.lookup).toHaveBeenCalledTimes(3);
+  expect(f.lookup).toHaveBeenCalledTimes(1);
 });
 
-it("shares fresh renewal evidence without extending the one-second revocation window", async () => {
+it("learns silent PG revocation at the next direct renewal without an independent polling path", async () => {
   vi.useFakeTimers();
   const f = fixture();
   await f.authority.assertCurrent();
   f.authority.start();
-  f.advance(1500);
-  await vi.advanceTimersByTimeAsync(500);
-  renewal(f, 1500);
+  renewal(f, 1000);
   f.lookup.mockResolvedValue([]);
-  f.advance(2000);
-  await vi.advanceTimersByTimeAsync(500);
+  f.advance(20000);
+  await vi.advanceTimersByTimeAsync(19000);
+  f.authority.assertActive();
   expect(f.lookup).toHaveBeenCalledTimes(1);
-  f.advance(2500);
-  await vi.advanceTimersByTimeAsync(500);
-  expect(f.lookup).toHaveBeenCalledTimes(2);
+  renewal(f, 21000, [identity()], []);
   expect(f.authority.signal.aborted).toBe(true);
+  expect(f.lookup).toHaveBeenCalledTimes(1);
 });
 
 it("a newer committed heartbeat wins over an older in-flight negative read", async () => {
@@ -247,7 +251,19 @@ it("does not apply a late query to a closed or newly opened observer", async () 
   expect(f.lookup).toHaveBeenCalledTimes(2);
 });
 
-it("expires active authority independently of a stalled observation and releases its callers", async () => {
+it("does not seed a reopened handle from a renewal requested before that handle existed", async () => {
+  const f = fixture();
+  await f.authority.assertCurrent();
+  await f.authority.close();
+  f.advance(2000);
+  const replacement = f.observer.open(identity());
+  renewal(f, 1100);
+  f.lookup.mockResolvedValue([]);
+  await expect(replacement.assertCurrent()).rejects.toThrow("stale ExecutionReference");
+  expect(f.lookup).toHaveBeenCalledTimes(2);
+});
+
+it("expires active authority while PG is stalled and rejects late renewal revival", async () => {
   vi.useFakeTimers();
   const f = fixture();
   f.lookup.mockResolvedValueOnce([row("lease", "3000")]);
@@ -256,11 +272,13 @@ it("expires active authority independently of a stalled observation and releases
   const response = Promise.withResolvers<unknown[]>();
   f.lookup.mockImplementation(() => response.promise);
   f.advance(2000);
-  await vi.advanceTimersByTimeAsync(1000);
+  const pending = f.authority.assertCurrent(f.transaction);
+  const rejected = expect(pending).rejects.toThrow("lifetime expired");
   expect(f.lookup).toHaveBeenCalledTimes(2);
   // Last confirmation at 1000 + 3000. A busy read cannot hold this deadline.
   f.advance(4000);
-  await vi.advanceTimersByTimeAsync(2000);
+  await vi.advanceTimersByTimeAsync(3000);
+  await rejected;
   expect(f.authority.signal.aborted).toBe(true);
   await expect(f.authority.assertCurrent()).rejects.toThrow("lifetime expired");
   renewal(f, 4500);
@@ -276,6 +294,7 @@ it("synchronously expires an active owner after event-loop delay rather than ref
   await f.authority.assertCurrent();
   f.authority.start();
   f.advance(2500);
+  expect(() => f.authority.assertActive()).toThrow("lifetime expired");
   await expect(f.authority.assertCurrent()).rejects.toThrow("lifetime expired");
   expect(f.lookup).toHaveBeenCalledTimes(1);
 });
@@ -289,16 +308,35 @@ it("a fresh renewal moves the deadline without letting an old pending read revok
   const response = Promise.withResolvers<unknown[]>();
   f.lookup.mockImplementation(() => response.promise);
   f.advance(2000);
-  await vi.advanceTimersByTimeAsync(1000);
+  const pending = f.authority.assertCurrent(f.transaction);
   f.advance(2500);
   renewal(f, 2500);
   f.advance(7000);
   await vi.advanceTimersByTimeAsync(5000);
   expect(f.authority.signal.aborted).toBe(false);
   response.resolve([]);
-  await Promise.resolve();
+  await pending;
   await f.authority.assertCurrent();
   expect(f.authority.signal.aborted).toBe(false);
+});
+
+it("cold admission never refreshes or revokes an unrelated active owner", async () => {
+  const f = fixture();
+  await f.authority.assertCurrent();
+  f.authority.start();
+  const cold = f.observer.open(identity("new"));
+  f.lookup.mockResolvedValue([row("new")]);
+  await cold.assertCurrent();
+  expect(f.query.where).toHaveBeenLastCalledWith("writer_sealed_at", "is", null);
+  expect(f.query.where).toHaveBeenCalledWith("lease_id", "in", ["new"]);
+  f.authority.assertActive();
+  expect(() => cold.assertActive()).toThrow("not active");
+});
+
+it("requires fresh PG confirmation before activating a cold owner", () => {
+  const f = fixture();
+  expect(() => f.authority.start()).toThrow("no confirmed lease");
+  expect(() => f.authority.assertActive()).toThrow("not active");
 });
 
 it("deferral neither revokes an eligible owner nor extends its confirmed lifetime", async () => {

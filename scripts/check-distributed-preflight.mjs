@@ -18,6 +18,7 @@ const defaultKeys = [
   "database-notification-url",
   "database-url",
   "metrics-token",
+  "metering-ingest-token",
   "cli-proxy-api-key",
   "sandbox-control-token",
   "workspace-service-token",
@@ -251,6 +252,7 @@ if(args[0]!=='upgrade'){
         values.sshGateway = { enabled: false };
         values.bootstrap = { enabled: false };
         values.controlPlane = { autoscaling: { enabled: false } };
+        values.sessionRuntime = { autoscaling: { enabled: false } };
         values.web = { autoscaling: { enabled: false } };
       },
       fixture: {
@@ -269,6 +271,7 @@ if(args[0]!=='upgrade'){
             "workspace-service-token",
             "workspace-terminal-token",
             "metrics-token",
+            "metering-ingest-token",
           ],
         },
       },

@@ -41,6 +41,6 @@ it("retains fail-closed schema, manifest and required-capability checks", () => 
     validateLiveContract({ ...input, requiredContracts: { modelRuntimeSnapshot: 2 } }),
   ).toThrow("Required live contract changed");
   expect(() =>
-    validateLiveContract({ ...input, requiredContracts: { controlPlaneReplacement: 1 } }),
+    validateLiveContract({ ...input, requiredContracts: { sessionRuntimeReplacement: 1 } }),
   ).toThrow("Required live contract changed");
 });

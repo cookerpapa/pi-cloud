@@ -138,7 +138,6 @@ export {
   SessionLeaseCoordinator,
   SessionLeaseCoordinatorError,
   type SessionLeaseCoordinatorOptions,
-  type SupervisorConnectionGuard,
   type SupervisorHeartbeatIdentity,
 } from "@pi-cloud/runtime-core/session-lease-coordinator";
 export {

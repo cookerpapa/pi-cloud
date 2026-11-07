@@ -1,3 +1,4 @@
+import { insertHistoricalProject } from "./fixtures/historical-project.ts";
 import { historicalNative } from "./fixtures/historical-native.ts";
 import { insertHistoricalPrompt, insertHistoricalSession } from "./fixtures/historical-turn.ts";
 import { randomUUID } from "node:crypto";
@@ -7,7 +8,6 @@ import { expect, it } from "vitest";
 import { createDatabase } from "../src/index.ts";
 import { migrationProvider } from "../src/migrations/index.ts";
 import { createPrivateTenant } from "../../control-plane/src/tenant-administration.ts";
-import { ControlPlaneStore } from "../../control-plane/src/control-plane-store.ts";
 
 const endpoint = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 
@@ -33,10 +33,9 @@ it.skipIf(!endpoint)(
         slug: "indexed-log",
         ownerDisplayName: "Storage contract",
       });
-      const control = new ControlPlaneStore({ database: db, ...tenant });
-      const project = await control.createProject({
+      const project = await insertHistoricalProject(db, {
+        tenantId: tenant.tenantId,
         name: "indexed-log",
-        source: { kind: "empty" },
       });
       const session = await insertHistoricalSession(db, { ...tenant, ...project });
       const turn = await insertHistoricalPrompt(db, {

@@ -1,3 +1,4 @@
+import { materializeCubeOwnedSources } from "./lib/cube-owned-sources.mjs";
 import { configureBuildProxy } from "./lib/upstream-proxy.mjs";
 import { completionBuildIdentity } from "./lib/guest-build-identity.mjs";
 import { execFileSync, spawn } from "node:child_process";
@@ -64,6 +65,7 @@ try {
     await run("git", ["apply", "--check", path], temporary);
     await run("git", ["apply", path], temporary);
   }
+  await materializeCubeOwnedSources(root, temporary, manifest);
   const patchId = createHash("sha256").update(JSON.stringify(manifest)).digest("hex").slice(0, 16);
   for (const [name, file, context] of [
     ["cube-api", "CubeAPI/Dockerfile", "CubeAPI"],

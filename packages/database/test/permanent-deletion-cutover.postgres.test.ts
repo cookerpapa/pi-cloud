@@ -1,3 +1,4 @@
+import { insertHistoricalProject } from "./fixtures/historical-project.ts";
 import { randomUUID } from "node:crypto";
 import { Migrator } from "kysely/migration";
 import { sql } from "kysely";
@@ -5,7 +6,6 @@ import { expect, it } from "vitest";
 import { createDatabase } from "../src/index.ts";
 import { migrationProvider } from "../src/migrations/index.ts";
 import { createPrivateTenant } from "../../control-plane/src/tenant-administration.ts";
-import { ControlPlaneStore } from "../../control-plane/src/control-plane-store.ts";
 import { insertHistoricalPrompt, insertHistoricalSession } from "./fixtures/historical-turn.ts";
 
 const endpoint = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
@@ -31,10 +31,9 @@ it.skipIf(!endpoint)(
         slug: "delete-cutover",
         ownerDisplayName: "Cutover",
       });
-      const store = new ControlPlaneStore({ database: db, ...tenant });
-      const project = await store.createProject({
+      const project = await insertHistoricalProject(db, {
+        tenantId: tenant.tenantId,
         name: "retained files",
-        source: { kind: "empty" },
       });
       const hidden = await insertHistoricalSession(db, { ...tenant, ...project });
       const visible = await insertHistoricalSession(db, { ...tenant, ...project });

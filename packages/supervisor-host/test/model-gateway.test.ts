@@ -1,6 +1,7 @@
 import { fixtureModelRuntime } from "../../../scripts/lib/test-model-catalog.mjs";
 import {
   createExecutionReference,
+  parseExecutionReference,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
   DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
@@ -12,6 +13,9 @@ import { request as httpRequest, type ClientRequest } from "node:http";
 import { PiCloudMetrics } from "@pi-cloud/observability";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TenantModelGateway } from "../src/index.ts";
+import { PostgresSessionLeaseObserver } from "@pi-cloud/pi-session-postgres";
+import type { Database } from "@pi-cloud/database";
+import type { Kysely } from "kysely";
 
 const PROVIDER_GATEWAY_KEY = `cpa_${"k".repeat(48)}`;
 let sequence = 0;
@@ -101,6 +105,146 @@ function command(
 
 const gateways: TenantModelGateway[] = [];
 
+async function localLease() {
+  const accepted = command();
+  const identity = parseExecutionReference(accepted.payload.executionReference);
+  accepted.payload.runId = identity.runId;
+  accepted.payload.piSession.writerId = identity.leaseId;
+  let monotonic = 1000;
+  const lookup = vi.fn(async () => [
+    {
+      tenant_id: accepted.payload.tenantId,
+      pi_session_id: accepted.payload.piSession.id,
+      lease_id: identity.leaseId,
+      fencing_token: String(identity.fencingToken),
+      remaining_ms: "60000",
+    },
+  ]);
+  const query = {
+    select() {
+      return this;
+    },
+    where() {
+      return this;
+    },
+    execute: lookup,
+  };
+  const observer = new PostgresSessionLeaseObserver({
+    database: { selectFrom: () => query } as unknown as Kysely<Database>,
+    monotonicNow: () => monotonic,
+  });
+  const authority = observer.open({
+    tenantId: accepted.payload.tenantId,
+    piSessionId: accepted.payload.piSession.id,
+    leaseId: identity.leaseId,
+    writerId: identity.leaseId,
+    fencingToken: identity.fencingToken,
+  });
+  await authority.assertCurrent();
+  authority.start();
+  return {
+    accepted,
+    authority,
+    observer,
+    lookup,
+    expireWithoutTimer: () => {
+      monotonic = 61000;
+    },
+    assertExecutionCurrent: (reference: string) => {
+      if (reference !== accepted.payload.executionReference) throw new Error("Wrong local owner");
+      authority.assertActive();
+    },
+  };
+}
+
+it("rechecks the Session deadline before provider fetch after event-loop delay without querying PG", async () => {
+  const owner = await localLease();
+  const upstream = vi.fn<typeof fetch>(async () => new Response("ok"));
+  const gateway = createGateway(upstream, 8, {
+    assertExecutionCurrent: owner.assertExecutionCurrent,
+  });
+  await gateway.start();
+  const lease = gateway.issue(owner.accepted, owner.authority.signal);
+  try {
+    owner.expireWithoutTimer();
+    expect(owner.authority.signal.aborted).toBe(false);
+    const response = await fetch(`http://127.0.0.1:${gateway.listeningPort}/v1/responses`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${lease.runtime.capability}`, ...samplingHeaders() },
+      body: JSON.stringify({ model: "deepseek-v4-flash", stream: true, input: [] }),
+    });
+    expect(response.status).toBe(401);
+    await response.text();
+    expect(owner.authority.signal.aborted).toBe(true);
+    expect(upstream).not.toHaveBeenCalled();
+    expect(owner.lookup).toHaveBeenCalledOnce();
+  } finally {
+    await owner.observer.close();
+  }
+});
+
+it("revokes every in-flight native child model transport while retaining that three requests were already accepted", async () => {
+  const owner = await localLease();
+  const acceptedSignals: AbortSignal[] = [];
+  const upstream = vi.fn<typeof fetch>(async (_url, init) => {
+    acceptedSignals.push(init!.signal!);
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('data: {"type":"response.created"}\n\n'));
+          init!.signal!.addEventListener(
+            "abort",
+            () => controller.error(new Error("upstream cancelled")),
+            { once: true },
+          );
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    );
+  });
+  const gateway = createGateway(upstream, 8, {
+    assertExecutionCurrent: owner.assertExecutionCurrent,
+  });
+  await gateway.start();
+  const leases = [1, 2, 3].map((conversationId) =>
+    gateway.issue(
+      {
+        ...owner.accepted,
+        payload: {
+          ...owner.accepted.payload,
+          sessionId: crypto.randomUUID(),
+          turnId: crypto.randomUUID(),
+          piSession: { ...owner.accepted.payload.piSession, conversationId },
+        },
+      },
+      owner.authority.signal,
+    ),
+  );
+  const send = (capability: string) =>
+    fetch(`http://127.0.0.1:${gateway.listeningPort}/v1/responses`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${capability}`, ...samplingHeaders() },
+      body: JSON.stringify({ model: "deepseek-v4-flash", stream: true, input: [] }),
+    });
+  try {
+    const responses = await Promise.all(leases.map((lease) => send(lease.runtime.capability)));
+    expect(responses.map((response) => response.status)).toEqual([200, 200, 200]);
+    const bodies = responses.map((response) => response.text());
+    owner.expireWithoutTimer();
+    const refused = await send(leases[0]!.runtime.capability);
+    expect(refused.status).toBe(401);
+    await refused.text();
+    expect(acceptedSignals).toHaveLength(3);
+    expect(acceptedSignals.every((signal) => signal.aborted)).toBe(true);
+    expect(upstream).toHaveBeenCalledTimes(3);
+    expect(
+      (await Promise.all(bodies)).every((body) => body.includes("provider_gateway_unavailable")),
+    ).toBe(true);
+  } finally {
+    await owner.observer.close();
+  }
+});
+
 it("uses a frozen capability snapshot for a model unknown to the Worker build", async () => {
   const upstream = vi.fn<typeof fetch>(async () => new Response("ok"));
   const gateway = createGateway(upstream);
@@ -165,6 +309,7 @@ function createGateway(
     metrics?: PiCloudMetrics;
     maximumRequestBytes?: number;
     maximumUploadBytes?: number;
+    assertExecutionCurrent?: (reference: string) => void;
   } = {},
 ) {
   const gateway = new TenantModelGateway({
@@ -173,6 +318,7 @@ function createGateway(
     advertisedBaseUrl: "http://pi-worker:4200",
     providerGatewayBaseUrl: "http://provider-gateway:8317",
     providerGatewayApiKey: PROVIDER_GATEWAY_KEY,
+    assertExecutionCurrent: () => {},
     maximumRequestsPerTurn,
     ...timeouts,
     fetchImplementation,
@@ -901,6 +1047,7 @@ it("allows more than 128 model requests on one unlimited Run capability", async 
     providerGatewayBaseUrl: "http://provider-gateway:8317",
     providerGatewayApiKey: PROVIDER_GATEWAY_KEY,
     maximumRequestsPerTurn: null,
+    assertExecutionCurrent: () => {},
     fetchImplementation: upstream,
   });
   gateways.push(gateway);

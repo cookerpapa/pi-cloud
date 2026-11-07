@@ -32,6 +32,14 @@
 !deploy/provider-gateway/metering_journal.go
 !deploy/provider-gateway/metering_test.go
 !deploy/provider-gateway/metering.patch
+!deploy/resource-metering/*.go
+!deploy/resource-metering/go.mod
+!deploy/resource-metering/go.sum
+!deploy/resource-metering/LICENSE
+!deploy/workspace-quota/*.go
+!deploy/workspace-quota/go.mod
+!deploy/workspace-quota/go.sum
+!deploy/workspace-quota/cmd/workspace-quota/*.go
 !deploy/cubesandbox/browser/package.json
 !deploy/cubesandbox/browser/package-lock.json
 !deploy/cubesandbox/browser/index.mjs
@@ -44,3 +52,11 @@
 **/.cache
 **/.git
 **/dist
+
+!deploy/file-exchange/*.go
+!deploy/file-exchange/go.mod
+!deploy/file-exchange/go.sum
+!deploy/workspace-quota/Dockerfile.contract
+
+!deploy/provider-gateway/usage_capture_stream.go
+!deploy/provider-gateway/usage_capture_stream_test.go

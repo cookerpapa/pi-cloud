@@ -22,30 +22,22 @@ const key = (identity: Identity) =>
     identity.fencingToken,
   ]);
 
-/** One Worker-local read batch. PG remains authority; observations cannot renew it. */
+/** Cold PG authorization and committed direct-renewal evidence share one local
+ * deadline. Active owners do not poll PG in parallel with their renewer. */
 export class PostgresSessionLeaseObserver {
   readonly #database: Kysely<Database>;
   readonly #now: () => number;
-  readonly #interval: number;
   readonly #owners = new Map<string, Observation>();
   #pending: Promise<void> | undefined;
-  #timer: NodeJS.Timeout | undefined;
   #deadlineTimer: NodeJS.Timeout | undefined;
   #closed = false;
 
-  constructor(options: {
-    database: Kysely<Database>;
-    monotonicNow?: () => number;
-    pollIntervalMs?: number;
-  }) {
+  constructor(options: { database: Kysely<Database>; monotonicNow?: () => number }) {
     this.#database = options.database;
     this.#now = options.monotonicNow ?? (() => performance.now());
-    this.#interval = options.pollIntervalMs ?? 1_000;
-    if (!Number.isSafeInteger(this.#interval) || this.#interval < 1)
-      throw new TypeError("pollIntervalMs must be a positive safe integer");
   }
 
-  open(identity: Identity): ActiveExecutionAuthority & { start(): void } {
+  open(identity: Identity): ActiveExecutionAuthority & { start(): void; assertActive(): void } {
     if (this.#closed) throw new Error("Session lease observer is closed");
     const id = key(identity);
     if (this.#owners.has(id)) throw new Error("Session lease already has an observer");
@@ -54,11 +46,19 @@ export class PostgresSessionLeaseObserver {
       abort: new AbortController(),
       watching: false,
       revision: 0,
-      observedAt: -Infinity,
+      // A late renewal requested before this local handle existed cannot seed
+      // a reopened handle with an earlier incarnation's cached observation.
+      observedAt: this.#now(),
     };
     this.#owners.set(id, owner);
     return {
       signal: owner.abort.signal,
+      assertActive: () => {
+        this.#expire(owner);
+        owner.abort.signal.throwIfAborted();
+        if (!owner.watching || owner.deadline === undefined)
+          throw new NativeSessionError("storage", "Pi Session execution authority is not active");
+      },
       assertCurrent: async (transaction?: Transaction<Database>) => {
         this.#expire(owner);
         owner.abort.signal.throwIfAborted();
@@ -75,11 +75,12 @@ export class PostgresSessionLeaseObserver {
       },
       start: () => {
         owner.abort.signal.throwIfAborted();
+        if (owner.deadline === undefined)
+          throw new NativeSessionError("storage", "Pi Session has no confirmed lease lifetime");
         owner.watching = true;
         this.#expire(owner);
         owner.abort.signal.throwIfAborted();
         this.#scheduleDeadline();
-        this.#schedule();
       },
       close: async () => {
         owner.abort.abort(
@@ -87,10 +88,6 @@ export class PostgresSessionLeaseObserver {
         );
         if (this.#owners.get(id) === owner) this.#owners.delete(id);
         this.#scheduleDeadline();
-        if (![...this.#owners.values()].some((o) => o.watching && !o.abort.signal.aborted)) {
-          clearTimeout(this.#timer);
-          this.#timer = undefined;
-        }
       },
     };
   }
@@ -195,11 +192,12 @@ export class PostgresSessionLeaseObserver {
 
   #refresh(): Promise<void> {
     if (!this.#pending) {
-      // Coalesce same-tick cold opens as well as periodic observations.
+      // Coalesce cold opens without rereading unrelated active owners. Their
+      // direct renewals already validate every lease revocation predicate.
       const pending = Promise.resolve()
         .then(() =>
           this.#read(
-            [...this.#owners.values()].filter((o) => !o.abort.signal.aborted),
+            [...this.#owners.values()].filter((o) => !o.watching && !o.abort.signal.aborted),
             this.#database,
           ),
         )
@@ -264,31 +262,9 @@ export class PostgresSessionLeaseObserver {
     }
   }
 
-  #schedule(): void {
-    const active = [...this.#owners.values()].filter((o) => o.watching && !o.abort.signal.aborted);
-    if (this.#closed || this.#timer || !active.length) return;
-    const delay = Math.max(
-      0,
-      Math.min(this.#interval, ...active.map((o) => o.observedAt + this.#interval - this.#now())),
-    );
-    this.#timer = setTimeout(() => {
-      this.#timer = undefined;
-      const due = [...this.#owners.values()].some(
-        (o) =>
-          o.watching && !o.abort.signal.aborted && this.#now() - o.observedAt >= this.#interval,
-      );
-      void (due ? this.#refresh() : Promise.resolve())
-        .catch(() => {})
-        .finally(() => this.#schedule());
-    }, delay);
-    this.#timer.unref();
-  }
-
   async close(): Promise<void> {
     this.#closed = true;
-    clearTimeout(this.#timer);
     clearTimeout(this.#deadlineTimer);
-    this.#timer = undefined;
     for (const owner of this.#owners.values())
       owner.abort.abort(new NativeSessionError("storage", "Session lease observer closed"));
     this.#owners.clear();

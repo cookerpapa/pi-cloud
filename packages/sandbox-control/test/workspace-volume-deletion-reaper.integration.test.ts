@@ -1,3 +1,4 @@
+import { TestQuotaVolumeGateway } from "./fixtures/volume-quota.ts";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
@@ -6,11 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPluginVolumeFixture } from "./fixtures/plugin-volume.ts";
 import { describe, expect, it, vi } from "vitest";
-import {
-  PersistentVolumeWorkspaceVolumeGateway,
-  WorkspaceVolumeDeletionReaper,
-  workspaceVolumeId,
-} from "../src/index.ts";
+import { WorkspaceVolumeDeletionReaper, workspaceVolumeId } from "../src/index.ts";
 
 const IDS = {
   tenant: "10000000-0000-4000-8000-000000000001",
@@ -70,7 +67,7 @@ describe("WorkspaceVolumeDeletionReaper", () => {
         .execute();
 
       const volumeId = workspaceVolumeId({ tenantId: IDS.tenant, workspaceId: IDS.workspace });
-      const gateway = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+      const gateway = new TestQuotaVolumeGateway({ workspaceRoot });
       await createPluginVolumeFixture(workspaceRoot, { volumeId });
       await gateway.verify({
         tenantId: IDS.tenant,

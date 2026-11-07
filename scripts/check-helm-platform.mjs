@@ -40,7 +40,16 @@ const resources = parseAllDocuments(rendered)
   .filter(Boolean);
 const find = (kind, name) =>
   resources.find((resource) => resource.kind === kind && resource.metadata?.name === name);
-const controlPlane = find("Deployment", "pi-cloud-control-plane");
+const management = find("Deployment", "pi-cloud-control-plane");
+assert(management);
+assert.deepEqual(management.spec.template.spec.containers[0].args, [
+  "/app/packages/control-plane/src/main.ts",
+]);
+const controlPlane = find("Deployment", "pi-cloud-session-runtime");
+assert(find("Service", "session-runtime"));
+assert.deepEqual(controlPlane.spec.template.spec.containers[0].args, [
+  "/app/packages/control-plane/src/session-runtime-main.ts",
+]);
 assert(controlPlane);
 const metering = find("Deployment", "pi-cloud-metering");
 assert(metering);
@@ -59,7 +68,7 @@ const withoutOrdinaryTools = parseAllDocuments(
   .map((document) => document.toJSON())
   .find(
     (resource) =>
-      resource?.kind === "Deployment" && resource.metadata?.name === "pi-cloud-control-plane",
+      resource?.kind === "Deployment" && resource.metadata?.name === "pi-cloud-session-runtime",
   );
 assert.equal(
   withoutOrdinaryTools.spec.template.spec.containers[0].env.find(
@@ -100,8 +109,8 @@ assert(web);
 const webEnvironment = Object.fromEntries(
   web.spec.template.spec.containers[0].env?.map((entry) => [entry.name, entry.value]) ?? [],
 );
-assert.equal(webEnvironment.PI_CLOUD_CONTROL_PLANE_UPSTREAM, "control-plane:3000");
-assert.equal(webEnvironment.PI_CLOUD_PREVIEW_UPSTREAM, "control-plane:3001");
+assert.equal(webEnvironment.PI_CLOUD_CONTROL_PLANE_UPSTREAM, "session-runtime:3000");
+assert.equal(webEnvironment.PI_CLOUD_PREVIEW_UPSTREAM, "session-runtime:3001");
 assert.equal(
   webEnvironment.PI_CLOUD_PUBLIC_ORIGIN_BASE_URL,
   environment.PI_CLOUD_PUBLIC_ORIGIN_BASE_URL,
@@ -150,7 +159,7 @@ assert(customWeb);
 const customWebEnvironment = Object.fromEntries(
   customWeb.spec.template.spec.containers[0].env.map((entry) => [entry.name, entry.value]),
 );
-assert.equal(customWebEnvironment.PI_CLOUD_CONTROL_PLANE_UPSTREAM, "control-plane:3000");
+assert.equal(customWebEnvironment.PI_CLOUD_CONTROL_PLANE_UPSTREAM, "session-runtime:3000");
 assert.equal(customWebEnvironment.PI_CLOUD_ADMIN_ORIGIN_BASE_URL, "https://ops.company.test");
 assert.equal(customWebEnvironment.PI_CLOUD_GRAFANA_URL, "https://metrics.company.test/grafana/");
 const customDatabaseKeys = parseAllDocuments(

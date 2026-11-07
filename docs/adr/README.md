@@ -1,5 +1,21 @@
 # Current architecture decisions
 
+[ADR-0304](0304-compute-retirement-for-maintenance.md) preserves machine intent and
+Workspace bytes during verified compute retirement for a matched upgrade.
+
+[ADR-0303](0303-direct-renewal-and-local-execution-authority.md) retains direct Worker
+PG renewal and local expiry, removes duplicate polling, and propagates known Kafka
+publication failure to the whole native family.
+
+[ADR-0301](0301-workspace-capacity-enforcement.md) selects XFS enforcement for
+persistent Workspace capacity, with separate user intent and physical receipts.
+Implementation and the verified storage handoff are in progress.
+
+[ADR-0302](0302-session-runtime-and-resource-management.md) separates the
+Session execution/API/Projector process from resource management, preserving one
+PG authority, one Projector group and existing lease semantics. Source implementation
+and written outage/failure contracts await consolidated validation and release.
+
 [ADR-0300](0300-resource-usage-receipts.md) selects allocated compute-time receipts
 from Cube and independent informational resource statements. Implementation in progress.
 

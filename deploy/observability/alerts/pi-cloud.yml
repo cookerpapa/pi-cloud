@@ -21,9 +21,9 @@ groups:
 
       - alert: PiCloudOperationalSamplerMissing
         expr: |
-          (up{job="pi-cloud-control-plane"} == 1
+          (up{job="pi-cloud-session-runtime"} == 1
             unless on(job, instance) pi_cloud_operational_sample_timestamp_seconds{source="postgresql"})
-          or (up{job="pi-cloud-control-plane"} == 1
+          or (up{job="pi-cloud-session-runtime"} == 1
             unless on(job, instance) pi_cloud_operational_sample_timestamp_seconds{source="kafka"})
         for: 2m
         labels:

@@ -415,6 +415,10 @@ export class PiWorkerRuntime {
       advertisedBaseUrl: this.#config.modelGatewayAdvertisedBaseUrl,
       providerGatewayBaseUrl: this.#config.providerGatewayBaseUrl,
       providerGatewayApiKey: this.#config.providerGatewayApiKey,
+      assertExecutionCurrent: (reference) => {
+        if (!this.#nativeSessions) throw new Error("Native Session owner is unavailable");
+        this.#nativeSessions.assertExecutionCurrent(reference);
+      },
       maximumRequestsPerTurn: this.#config.modelGatewayMaximumRequestsPerTurn,
       maximumRequestBytes: this.#config.modelRequestMaxBytes,
       maximumUploadBytes: this.#config.modelUploadMaxBytes,

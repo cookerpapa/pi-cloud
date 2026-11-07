@@ -17,11 +17,19 @@ export class KafkaSessionWriter {
   #producer: Producer | undefined;
   #opening: Promise<void> | undefined;
   #tail: Promise<void> = Promise.resolve();
-  #failure: unknown;
+  readonly #failed = new AbortController();
   #closed = false;
   #closing: Promise<void> | undefined;
   get failure(): unknown {
-    return this.#failure;
+    return this.#failed.signal.reason;
+  }
+  get failureSignal(): AbortSignal {
+    return this.#failed.signal;
+  }
+  #fail(error: unknown): void {
+    // AbortController latches the first reason and synchronously notifies the
+    // current owner. There is no independently mutable failure cache.
+    this.#failed.abort(error);
   }
   constructor(
     readonly options: {
@@ -41,7 +49,7 @@ export class KafkaSessionWriter {
     if (this.#closed)
       return Promise.reject(new PublicationNotSentError("Session producer is closed"));
     return (this.#opening ??= this.#open().catch((error) => {
-      this.#failure = error;
+      this.#fail(error);
       throw error;
     }));
   }
@@ -70,7 +78,9 @@ export class KafkaSessionWriter {
       "allow.auto.create.topics": false,
     });
     producer.on("event.error", () => {
-      /* send/commit owns error classification */
+      // The pinned native callback does not preserve fatal/code metadata for
+      // these observations. Send/commit (including existing probes) classifies
+      // failure; never infer fencing from an error message or missing reply.
     });
     try {
       await new Promise<void>((resolve, reject) =>
@@ -94,10 +104,10 @@ export class KafkaSessionWriter {
     }
   }
   append(record: KafkaPublicationRecord): Promise<{ factId: string; durable: true }> {
-    if (this.#closed || this.#failure || !this.#producer || !this.options.current())
+    if (this.#closed || this.#failed.signal.aborted || !this.#producer || !this.options.current())
       return Promise.reject(new PublicationNotSentError("Session producer is not admitted"));
     const pending = this.#tail.then(async () => {
-      if (this.#failure || this.#closed || !this.options.current())
+      if (this.#failed.signal.aborted || this.#closed || !this.options.current())
         throw new PublicationNotSentError("Session producer retired before send");
       const producer = this.#producer!;
       try {
@@ -124,7 +134,8 @@ export class KafkaSessionWriter {
         }
         return { factId: record.factId, durable: true as const };
       } catch (error) {
-        this.#failure = error;
+        // Notify the family before bounded Kafka cleanup can wait on the peer.
+        this.#fail(error);
         await new Promise<void>((resolve) => producer.abortTransaction(3000, () => resolve()));
         throw error;
       }

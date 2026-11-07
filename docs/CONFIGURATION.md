@@ -1,5 +1,15 @@
 # Configuration
 
+`session-runtime:3000` is the API/publication/observation and Worker membership
+endpoint; `session-runtime:4300` serves existing-binding data channels.
+`control-plane:4300` admits and manages resources. `PI_CLOUD_SESSION_EXECUTION_URL`
+(Helm `sessionRuntime.executionBaseUrl`) sets the execution address returned with
+a new binding; remote resource domains point it at the global Session runtime.
+Management readiness is
+not an API readiness dependency. Helm has independent `images.sessionRuntime`,
+`images.controlPlane` and `images.metering` values even when they reference the
+same built host artifact; `sessionRuntime` owns its own replica/HPA/resources.
+
 ## Image generation and display
 
 ADR-0275 adds `show_image({path, caption?})` whenever Session image storage is
@@ -17,7 +27,7 @@ ADR-0274 adds the ordinary `generate_image` Tool. Set
 `controlPlane.imageGeneration.model` to an available Images model; an empty
 string disables it. The self-hosted profile defaults to `gpt-image-2`, overridable
 with `PI_CLOUD_IMAGE_GENERATION_MODEL`. Chat-model selection remains independent.
-The Control Plane uses the configured Worker provider-gateway URL and existing
+The Session runtime uses the configured Worker provider-gateway URL and existing
 gateway API-key Secret; upstream subscription credentials stay in CLIProxyAPI.
 Direct process configuration uses `PI_CLOUD_IMAGE_GENERATION_MODEL`,
 `PI_CLOUD_IMAGE_GENERATION_URL`, and `PI_CLOUD_IMAGE_GENERATION_API_KEY_FILE`.
@@ -46,7 +56,7 @@ implementation; `[]` withdraws all ordinary tools; `["preview"]` selects preview
 The rendered `PI_CLOUD_CONTROL_TOOLS_ENABLED` is a JSON name array. Unknown names
 fail startup. This selects installed handlers and never loads executable plugins
 or changes fixed Pi file/shell grants and native coordination adapters.
-Changes take effect after a compatible Control Plane restart and Worker catalog
+Changes take effect after a compatible Session-runtime restart and Worker catalog
 delivery; an existing Agent loop sees them on its next prepared model request.
 See [ADR-0269](adr/0269-execution-owned-control-tool-catalog.md) and the
 [delivery record](reports/runtime-capabilities-delivery-20261021.md) for current
@@ -89,7 +99,7 @@ New conversations use the default model and reasoning declared by the reviewed
 catalog, with Fast off. Users change selections through the composer while no Run
 is active. The seed is `deploy/helm/pi-cloud-platform/files/model-catalog.json`;
 Helm's `modelCatalogJson` can supply a complete deployment override. The Control
-Plane reads `PI_CLOUD_MODEL_CATALOG_FILE` (mounted at
+Plane API in Session runtime reads `PI_CLOUD_MODEL_CATALOG_FILE` (mounted at
 `/run/pi-cloud-models/model-catalog.json`), validates the whole document and keeps
 one in-memory view. [Independent catalog publication](COMPONENT_RELEASE.md) waits
 for serving instances to acknowledge its digest. A new provider protocol still
@@ -729,3 +739,17 @@ compaction and `/compact` remain unchanged. Larger requests require memory/load
 validation and remain subject to provider/network limits. Local telemetry reports
 compressed/decoded input and selected upstream payload size; cache tokens alone
 are not evidence of reduced uploads.
+
+## Persistent Workspace capacity
+
+`PI_CLOUD_DEFAULT_WORKSPACE_CAPACITY_GIB` defaults to 32 for new Workspaces.
+The disposable VM system-disk profile is separate. Workspace capacity grows
+through `/v1/workspaces/:id/capacity`; existing files are never shrunk to fit a
+new default. The storage endpoint must run on XFS with project accounting and
+enforcement. The local operator provisions a dedicated persistent XFS pool and
+orders that mount before K3s; an unsupported mount fails closed.
+
+`workspace-quota:4510` is a private typed quota/source-receipt endpoint. It has
+only the Workspace mount and receipt/service credentials. Ordinary file gateways
+remain unprivileged. The helper uses XFS's persistent filesystem UUID, so a
+changed loop-device number after reboot does not change Volume ownership.

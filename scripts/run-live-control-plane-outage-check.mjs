@@ -13,7 +13,7 @@ import { createPrivateTenant } from "../packages/control-plane/src/tenant-admini
 import { S3AttachmentBlobStore } from "../packages/session-attachments/src/s3.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { purgeOwnedAcceptanceTenant } from "./lib/owned-acceptance-cleanup.mjs";
-import { armControlPlaneRestore } from "./lib/owned-control-plane-outage.mjs";
+import { armRuntimeRestore } from "./lib/owned-runtime-outage.mjs";
 import {
   execIn,
   kubectl,
@@ -42,6 +42,7 @@ const db = createDatabase({
 });
 const baseUrl = "http://127.0.0.1:" + runtimeEnvironment().PI_CLOUD_HTTP_PORT;
 const controlUrl = "http://" + serviceAddress("control-plane") + ":3000/health/ready";
+const sessionUrl = "http://" + serviceAddress("session-runtime") + ":3000/health/ready";
 const deployment = JSON.parse(kubectl(["get", "deployment/pi-cloud-control-plane", "-o", "json"]));
 const partitionCount = Number(
   deployment.spec.template.spec.containers[0].env.find(
@@ -159,7 +160,9 @@ async function ownedOnly() {
   const { rows } = await sql`select
     (select count(*) from runs where tenant_id<>${tenant.tenantId}::uuid and state not in ('completed','failed','cancelled','timed_out'))::int as runs,
     (select count(*) from workspace_runtimes where tenant_id<>${tenant.tenantId}::uuid and state<>'released')::int as vms,
-    (select count(*) from development_environments where state<>'released')::int as machines,
+    (select count(*) from development_environments where state<>'released' and
+       (agent_activation_id is not null or terminal_active or
+        (desired_state='running' and state<>'ready')))::int as machines,
     (select count(*) from workspace_terminal_sessions where state<>'released')::int as terminals`.execute(
     db,
   );
@@ -168,6 +171,25 @@ async function ownedOnly() {
     "Unrelated active work; refusing Control Plane outage",
   );
 }
+async function unrelatedMachines() {
+  let query = db
+    .selectFrom("development_environments")
+    .select([
+      "id",
+      "workspace_id",
+      "desired_state",
+      "allocation_id",
+      "runtime_id",
+      "runtime_name",
+      "allocation_closed",
+      "allocation_absent",
+    ])
+    .where("state", "!=", "released")
+    .orderBy("id");
+  if (tenant) query = query.where("tenant_id", "!=", tenant.tenantId);
+  return query.execute();
+}
+
 async function leaseSample() {
   const {
     rows: [row],
@@ -246,12 +268,25 @@ try {
   assert(await ready(), "Control Plane is not initially ready");
   report.contract = await assertLiveContract(db, runtimeDirectory, {
     modelRuntimeSnapshot: 1,
-    controlPlaneReplacement: 1,
+    sessionRuntimeReplacement: 1,
   });
   report.controlPlaneImage = deployment.spec.template.spec.containers[0].image;
   report.beforePods = workerPods();
   report.initialInventory = await inventory();
-  assert.equal(report.initialInventory.count, 0, "Refuse outage with pre-existing VMs");
+  report.preservedMachinesBefore = await unrelatedMachines();
+  const recorded = new Set(
+    report.preservedMachinesBefore.map((row) => row.runtime_name).filter(Boolean),
+  );
+  assert.equal(
+    report.initialInventory.count,
+    recorded.size,
+    "Refuse outage with unowned native VM inventory",
+  );
+  for (const runtimeName of recorded)
+    assert(
+      (await inventory(runtimeName)).targetPresent,
+      "Recorded pre-existing machine is not observable",
+    );
   tenant = await createPrivateTenant(db, {
     slug: "release-acceptance-outage-" + randomUUID(),
     ownerDisplayName: "Control Plane outage acceptance",
@@ -315,7 +350,7 @@ try {
     "Acceptance needs an idle Worker as well as the busy Worker",
   );
   await ownedOnly();
-  fault = await armControlPlaneRestore(output + ".restore.json", Date.now() + 240000);
+  fault = await armRuntimeRestore("control-plane", output + ".restore.json", Date.now() + 240000);
   const stopAt = Date.now();
   phase("stop every Control Plane replica");
   try {
@@ -335,7 +370,27 @@ try {
     report.stoppedAfterMs = Date.now() - stopAt;
     report.unavailableAt = new Date().toISOString();
     const absentAt = Date.now();
-    phase("Control Plane absent; observe PG leases and retain one retry identity");
+    phase("Management absent; require execution, projection, API and SSE to continue");
+    assert(
+      (await fetch(sessionUrl, { signal: AbortSignal.timeout(2000) })).ok,
+      "Session runtime became unready with management stopped",
+    );
+    const live = await fetch(new URL(`/v1/sessions/${sessions[0].sessionId}/events`, baseUrl), {
+      headers: { authorization: `Bearer ${tenant.credential.token}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    assert(
+      live.ok && live.headers.get("content-type")?.includes("text/event-stream"),
+      "SSE unavailable without management",
+    );
+    const liveReader = live.body.getReader();
+    const firstFrame = await liveReader.read();
+    assert(!firstFrame.done && firstFrame.value.byteLength > 0, "SSE produced no initial frame");
+    await liveReader.cancel();
+    await api.getConversation(sessions[0].sessionId);
+    await api.modelBilling(new URLSearchParams());
+    await api.resourceBilling(new URLSearchParams());
+    report.authenticatedReadsAndSseWithoutManagement = true;
     report.atAbsence = await leaseSample();
     const retryKey = newIdempotencyKey("outage-new-root");
     report.newRequest = { attempts: 0, failedAttempts: 0, sameIdempotencyKey: true };
@@ -386,15 +441,17 @@ try {
       assert.equal(sample.lease_id, report.before.lease_id);
       assert.equal(sample.fencing_token, report.before.fencing_token);
       assert.equal(sample.worker_id, report.before.worker_id);
-      assert(
-        sample.valid && !sample.released_at && !sample.writer_failed_at && !sample.writer_sealed_at,
-        "Active Worker lost its PG lease during control outage",
-      );
-      assert.equal(
-        sample.projected_seq,
-        report.atAbsence.projected_seq,
-        "Projection advanced without a Control Plane",
-      );
+      if (!terminal(sample))
+        assert(
+          sample.valid &&
+            !sample.released_at &&
+            !sample.writer_failed_at &&
+            !sample.writer_sealed_at,
+          "Active Worker lost its PG lease during management outage",
+        );
+      else assert.equal(sample.state, "completed", "Owned Run failed while management was absent");
+      assert(Number(sample.projected_seq) >= Number(report.atAbsence.projected_seq));
+      await api.getConversation(sessions[0].sessionId);
       assert.equal(await ready(), false, "Control Plane unexpectedly returned during the blackout");
       report.samples.push({
         at: new Date().toISOString(),
@@ -420,14 +477,29 @@ try {
     assert.equal(
       report.kafkaWhileAbsent.toolIntents.length,
       2,
-      "Next Tool intent was not buffered in Kafka",
+      "Expected both sequential Tool intents during management outage",
     );
     report.inventoryWhileAbsent = await inventory(report.vmBefore.runtime_name);
     assert(
-      report.inventoryWhileAbsent.targetPresent && report.inventoryWhileAbsent.count === 1,
+      report.inventoryWhileAbsent.targetPresent &&
+        report.inventoryWhileAbsent.count === report.initialInventory.count + 1,
       "Original native Cube sandbox is not present during outage",
     );
-    assert.equal(newRun, undefined, "New request was accepted with no Control Plane");
+    await retrying;
+    if (retryFailure) throw retryFailure;
+    assert(newRun, "Public API did not accept new Run intent while management was absent");
+    report.outcomeWithoutManagement = await finished(root.runId);
+    assert.equal(report.outcomeWithoutManagement.state, "completed");
+    assert(
+      Number((await leaseSample()).projected_seq) > Number(report.atAbsence.projected_seq),
+      "PG projection did not advance while management was absent",
+    );
+    assert.equal(
+      Buffer.from(
+        (await api.readWorkspaceFile(sessions[0].sessionId, "outage-once.txt")).bytes,
+      ).toString(),
+      "FIRST_STARTED\nFIRST_DONE\nSECOND_DONE\n",
+    );
     report.actualUnavailableMs = Date.now() - absentAt;
   } finally {
     report.restoreRequestedAt = new Date().toISOString();
@@ -439,7 +511,7 @@ try {
   report.restoreToReadyMs = Date.parse(report.readyAt) - Date.parse(report.restoreRequestedAt);
   await retrying;
   if (retryFailure) throw retryFailure;
-  assert(newRun && newRun.kind === "run" && report.newRequest.failedAttempts > 0);
+  assert(newRun && newRun.kind === "run");
   const repeated = await api.acceptTurn(
     sessions[1].sessionId,
     "Do not use tools. Reply NEW_RUN_AFTER_CP_OUTAGE.",
@@ -475,7 +547,8 @@ try {
   assert.equal(report.vmAfter.runtime_name, report.vmBefore.runtime_name);
   report.inventoryAfter = await inventory(report.vmBefore.runtime_name);
   assert(
-    report.inventoryAfter.targetPresent && report.inventoryAfter.count === 1,
+    report.inventoryAfter.targetPresent &&
+      report.inventoryAfter.count === report.initialInventory.count + 1,
     "Original native Cube sandbox is not present after recovery",
   );
   report.afterPods = workerPods();
@@ -489,22 +562,15 @@ try {
       `Worker ${oldPod.name} restarted during Control Plane outage`,
     );
   }
-  report.connectionsAfter = await until(async () => {
-    const connections = await workerConnections();
-    return (
-      connections.length === report.connectionsBefore.length &&
-      connections.every((c) => {
-        const old = report.connectionsBefore.find((b) => b.workerId === c.workerId);
-        return (
-          old &&
-          c.bootId === old.bootId &&
-          c.connectionId !== old.connectionId &&
-          new Date(c.registeredAt).valueOf() >= Date.parse(report.restoreRequestedAt)
-        );
-      }) &&
-      connections
+  report.connectionsAfter = await workerConnections();
+  assert.equal(report.connectionsAfter.length, report.connectionsBefore.length);
+  for (const current of report.connectionsAfter) {
+    const before = report.connectionsBefore.find((row) => row.workerId === current.workerId);
+    assert(
+      before && current.bootId === before.bootId && current.connectionId === before.connectionId,
+      "Management outage changed execution-side Worker membership",
     );
-  }, "all original Worker Boots re-registered");
+  }
   const retired = await db
     .selectFrom("worker_retirements")
     .select("worker_id")
@@ -528,17 +594,18 @@ try {
     .select(["registered_at", "last_heartbeat_at", "state", "boot_id"])
     .where("worker_id", "=", report.before.worker_id)
     .where("boot_id", "=", report.before.boot_id)
-    .where("registered_at", ">=", new Date(report.restoreRequestedAt))
     .orderBy("registered_at", "desc")
     .executeTakeFirstOrThrow();
-  assert.equal(
-    connection.state,
-    "active",
-    "Original Worker did not reconnect its management channel",
-  );
-  report.managementReconnect = connection;
+  assert.equal(connection.state, "active", "Original Worker execution membership was not retained");
+  report.executionMembership = connection;
   report.accepted = true;
   report.sameWorkerAndLease = true;
+  report.preservedMachinesAfter = await unrelatedMachines();
+  assert.deepEqual(
+    report.preservedMachinesAfter,
+    report.preservedMachinesBefore,
+    "Management outage changed an unrelated machine's allocation or user intent",
+  );
   report.samePhysicalVm = true;
   report.eachBashExecutedOnce = true;
 } catch (error) {

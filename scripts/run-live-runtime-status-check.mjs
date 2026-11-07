@@ -1,6 +1,7 @@
 import {
   serviceAddress,
   kubectlAsync,
+  kubectl,
   signalService,
   replacePod,
 } from "./lib/production-kubernetes.mjs";
@@ -199,7 +200,14 @@ try {
     );
     const before = await logCount();
     await alone();
-    paused = signalService("control-plane", "SIGSTOP");
+    assert.equal(
+      JSON.parse(kubectl(["get", "deployment/pi-cloud-session-runtime", "-o", "json"])).spec
+        .replicas,
+      1,
+      "This observation pause requires one Session Projector so the owned partition is actually paused",
+    );
+    report.projectorFaultRole = "session-runtime";
+    paused = signalService("session-runtime", "SIGSTOP");
     try {
       await page.waitFor(
         `document.querySelector(${JSON.stringify(selector)})?.textContent.includes('状态更新延迟')`,
@@ -219,9 +227,9 @@ try {
     report.delayedStatusVisible = true;
     report.leaseSurvivedProjectorPause = true;
     const oldSnapshots = snapshots;
-    signalService("control-plane", "SIGCONT", paused);
+    signalService("session-runtime", "SIGCONT", paused);
     paused = false;
-    await replacePod("control-plane");
+    await replacePod("session-runtime");
     const recoveredAt = Date.now();
     await until(
       () =>
@@ -324,7 +332,7 @@ try {
       errors.push(error);
     }
   };
-  if (paused) await cleanup(() => signalService("control-plane", "SIGCONT", paused));
+  if (paused) await cleanup(() => signalService("session-runtime", "SIGCONT", paused));
   await cleanup(async () => {
     if (api && active && !terminal((await api.getRun(active.runId)).state)) {
       await api.cancelTurn(session.sessionId, active.turnId, newIdempotencyKey("cleanup"));

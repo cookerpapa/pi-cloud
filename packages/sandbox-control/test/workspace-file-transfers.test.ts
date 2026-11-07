@@ -1,3 +1,4 @@
+import { TestQuotaVolumeGateway } from "./fixtures/volume-quota.ts";
 import { afterEach, expect, it } from "vitest";
 import { randomUUID, createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -7,7 +8,6 @@ import { type WorkspaceFileTransferRequest } from "@pi-cloud/protocol";
 import { WorkspaceFileTransferError } from "@pi-cloud/workspace-runtime";
 import {
   HttpWorkspaceVolumeGateway,
-  PersistentVolumeWorkspaceVolumeGateway,
   WorkspaceVolumeGatewayServer,
   workspaceVolumeId,
 } from "../src/workspace-volume-gateway.ts";
@@ -45,7 +45,7 @@ async function fixture() {
   await createPluginVolumeFixture(root, { volumeId });
   let allowed = true;
   let unavailable = false;
-  const gateway = new PersistentVolumeWorkspaceVolumeGateway({
+  const gateway = new TestQuotaVolumeGateway({
     workspaceRoot: root,
     authorizeFileTransfer: async (input) => {
       if (unavailable)

@@ -1,3 +1,4 @@
+import { insertHistoricalProject } from "./fixtures/historical-project.ts";
 import { randomUUID } from "node:crypto";
 import { sql } from "kysely";
 import { Migrator } from "kysely/migration";
@@ -5,7 +6,6 @@ import { expect, it } from "vitest";
 import { createDatabase } from "../src/index.ts";
 import { migrationProvider } from "../src/migrations/index.ts";
 import { createPrivateTenant } from "../../control-plane/src/tenant-administration.ts";
-import { ControlPlaneStore } from "../../control-plane/src/control-plane-store.ts";
 import {
   insertHistoricalPrompt,
   insertHistoricalDurableSession,
@@ -35,8 +35,10 @@ it("requires drained ownership, consolidates frozen input and preserves tenant/F
       slug: randomUUID(),
       ownerDisplayName: "Cutover",
     });
-    const store = new ControlPlaneStore({ database: db, ...tenant });
-    const project = await store.createProject({ name: "Cutover", source: { kind: "empty" } });
+    const project = await insertHistoricalProject(db, {
+      tenantId: tenant.tenantId,
+      name: "Cutover",
+    });
     const session = await insertHistoricalDurableSession(db, { ...tenant, ...project });
     const old = await insertHistoricalPrompt(db, {
       ...tenant,

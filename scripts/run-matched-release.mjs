@@ -1,17 +1,13 @@
-import {
-  verifyMeteringRetention,
-  retainSandboxProvenance,
-  retainedSandboxComponents,
-} from "./lib/model-metering-release.mjs";
-import { readFileSync } from "node:fs";
+import { ensureMeteringSecret } from "./lib/metering-secret.mjs";
 import { configureBuildProxy } from "./lib/upstream-proxy.mjs";
 import { updateProviderRuntimePolicyFile } from "./lib/provider-runtime-policy.mjs";
 import { serializeRelease } from "./lib/release-lock.mjs";
 import { deploymentFromEvidence, digest } from "./lib/component-release.mjs";
 import { parseModelCatalogConfiguration } from "../packages/protocol/src/model-catalog.ts";
 import assert from "node:assert/strict";
+import { constants } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { mkdir, readFile, writeFile, rename, rm, statfs } from "node:fs/promises";
+import { mkdir, readFile, writeFile, rename, rm, statfs, access } from "node:fs/promises";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { guestBuildIdentity, completionBuildIdentity } from "./lib/guest-build-identity.mjs";
@@ -25,19 +21,30 @@ import {
   workload,
   serviceAddress,
 } from "./lib/production-kubernetes.mjs";
-import { createDatabase } from "../packages/database/src/index.ts";
+import { createDatabase, runMigrations } from "../packages/database/src/index.ts";
+import { OfficialCubeSandboxRuntimeClient } from "../packages/sandbox-control/src/cubesandbox-runtime-client.ts";
+import { CubePersistentCapsuleCodec } from "../packages/sandbox-control/src/cube-persistent-capsule.ts";
+import { createComputeRetirementRepository } from "./lib/compute-retirement-postgres.mjs";
+import {
+  assertRetirementProcessesStopped,
+  awaitComputeRetirementQuiescence,
+  retireComputeForMaintenance,
+} from "./lib/compute-retirement.mjs";
+import {
+  nativeStorageMaintenancePending,
+  resumeColdMatchedStorage,
+  stopNativeStorageConsumers,
+  prepareMatchedWorkspaceStorage,
+} from "./lib/matched-workspace-storage.mjs";
 import { sql } from "kysely";
 
 configureBuildProxy();
 
 const [action, path, version, option] = process.argv.slice(2);
-assert(
-  option === undefined || option === "--retain-sandbox-runtime",
-  "Unknown matched publication option",
-);
+assert(option === undefined, "Unknown matched publication option");
 if (action === "--help") {
   console.log(
-    "Usage: node --import tsx scripts/run-matched-release.mjs prepare DIRECTORY VERSION [--retain-sandbox-runtime] | preflight DIRECTORY | apply DIRECTORY\nPrepare builds/scans locally without changing the serving catalog. Apply drains settled Runs/writers, then deploys matched artifacts. ADR-0297 can retain verified unchanged Sandbox artifacts and VM allocations. No data reset. See docs/MATCHED_RELEASE.md.",
+    "Usage: node --import tsx scripts/run-matched-release.mjs prepare DIRECTORY VERSION | preflight DIRECTORY | apply DIRECTORY\nPrepare builds/scans locally without changing the serving catalog. Apply drains settled Runs/writers, then deploys matched artifacts. Compute is retired with confirmed absence; stable machine intent and Workspace files are preserved. See docs/MATCHED_RELEASE.md.",
   );
   process.exit(0);
 }
@@ -85,7 +92,7 @@ if (action === "prepare") {
   const env = environment(version);
   phase("check declared Docker build inputs");
   run("scripts/check-docker-build-context.mjs");
-  if (option !== "--retain-sandbox-runtime") {
+  {
     phase("build guest (no registration)");
     run("scripts/build-cube-tool-image.mjs", [], env);
     phase("build native Cube");
@@ -121,13 +128,7 @@ if (action === "prepare") {
   phase("scan matched artifacts");
   run(
     "scripts/generate-release-evidence.mjs",
-    [
-      "--image-version",
-      version,
-      "--output-dir",
-      resolve(directory, "evidence"),
-      ...(option === "--retain-sandbox-runtime" ? ["--component", "host"] : []),
-    ],
+    ["--image-version", version, "--output-dir", resolve(directory, "evidence")],
     env,
   );
   await writeFile(
@@ -135,15 +136,6 @@ if (action === "prepare") {
     JSON.stringify(
       {
         formatVersion: 1,
-        ...(option === "--retain-sandbox-runtime"
-          ? {
-              retainedDeploymentDigest: digest(
-                JSON.parse(
-                  await readFile(resolve(runtimeDirectory, "k3s/deployment.json"), "utf8"),
-                ),
-              ),
-            }
-          : {}),
         version,
         revision: capture("git", ["rev-parse", "HEAD"]),
         guestIdentity: await guestBuildIdentity(root),
@@ -159,50 +151,24 @@ const currentGuestTemplate = JSON.parse(
   await readFile(resolve(runtimeDirectory, "cubesandbox/template.json"), "utf8"),
 );
 const candidate = await verifyMatchedRelease({ directory, root, capture, currentGuestTemplate });
-const baseline = candidate.retainedDeploymentDigest
-  ? JSON.parse(await readFile(resolve(runtimeDirectory, "k3s/deployment.json"), "utf8"))
-  : null;
-const retainedSandboxRuntime = baseline
-  ? verifyMeteringRetention({
-      baseline,
-      candidate,
-      capture,
-      root,
-      readFile: (path) => readFileSync(path, "utf8"),
-      template: currentGuestTemplate,
-    })
-  : undefined;
-if (baseline) {
-  const objects = JSON.parse(
-    kubectl([
-      "get",
-      "deployment/cube-api",
-      "deployment/cube-master",
-      "daemonset/cube-node",
-      "deployment/pi-cloud-cube-api-authorizer",
-      "deployment/pi-cloud-cube-egress-gateway",
-      "-o",
-      "json",
-    ]),
-  );
-  const images = new Set(
-    objects.items.flatMap((o) => o.spec.template.spec.containers.map((c) => c.image)),
-  );
-  for (const name of retainedSandboxComponents.filter((n) => n !== "cubesandbox-tool"))
-    assert(
-      images.has(baseline.components[name].reference),
-      `Serving retained component changed: ${name}`,
-    );
-}
 phase("matched artifact preflight passed");
 if (action !== "apply") process.exit(0);
 
-assertCubeKvmAvailable({ kubectl });
-phase("Cube KVM device preflight passed");
+const storageWasStopped = await nativeStorageMaintenancePending(directory);
+if (storageWasStopped) {
+  // Cube Pods are deliberately absent during a resumed storage handoff. Check
+  // the local maintained host now and recheck the restored Cube Pod below.
+  await access("/dev/kvm", constants.R_OK | constants.W_OK);
+  phase("cold storage resume: host KVM available");
+} else {
+  assertCubeKvmAvailable({ kubectl });
+  phase("Cube KVM device preflight passed");
+}
+await resumeColdMatchedStorage({ directory, runtimeDirectory, root, kubectl });
 const env = environment(candidate.version);
 // Import content before touching live workloads. Existing tags/catalog stay intact.
 run("scripts/production-kubernetes.mjs", ["import-images"], env);
-if (!retainedSandboxRuntime) {
+{
   const archive = resolve(directory, "native-images.tar");
   try {
     execFileSync(
@@ -236,9 +202,11 @@ const services = [
   "web",
   "ssh-gateway",
   "pi-workers",
+  "session-runtime",
   "control-plane",
   "workspace-volume-gateway",
   "metering",
+  "workspace-quota",
 ];
 const original = new Map();
 let cutover = false;
@@ -248,7 +216,9 @@ async function stop(service) {
     workload(service),
     "-o",
     "json",
-    ...(service === "metering" ? ["--ignore-not-found"] : []),
+    ...(["session-runtime", "metering", "workspace-quota"].includes(service)
+      ? ["--ignore-not-found"]
+      : []),
   ]);
   // A newly introduced stateless Deployment has nothing to drain on first install.
   if (!observed.trim()) return;
@@ -263,13 +233,17 @@ async function stop(service) {
       timeout: 125_000,
     });
 }
-async function assertDrained(includeWriters) {
+async function assertDrained(includeWriters, includeCompute = true) {
   const { rows } = await sql`select
     (select count(*) from runs where state not in ('completed','failed','cancelled','timed_out') or recovery_requested_at is not null or (output_seal_id is not null and output_sealed_at is null))::int as runs,
     (select count(*) from workspace_runtimes where state<>'released')::int as vms,
     (select count(*) from workspace_terminal_sessions where state<>'released')::int as terminals,
     (select count(*) from session_leases where released_at is null)::int as writers,
-    (select count(*) from sandbox_tool_bindings)::int as bindings`.execute(database);
+    (select count(*) from sandbox_tool_bindings)::int as bindings,
+    (select count(*) from workspace_file_transfers where state='uploading')::int as workspace_uploads,
+    (select count(*) from session_uploads where state='uploading')::int as retained_uploads`.execute(
+    database,
+  );
   const { writers, bindings, ...rest } = rows[0];
   // Keep failed machine/Workspace records without confusing them with a live
   // compute lifetime. Native inventory below still independently proves absence.
@@ -278,6 +252,8 @@ async function assertDrained(includeWriters) {
     .select([
       "state",
       "allocation_closed",
+      "allocation_absent",
+      "runtime_capsule",
       "runtime_id",
       "runtime_name",
       "agent_activation_id",
@@ -286,49 +262,50 @@ async function assertDrained(includeWriters) {
     .where("state", "!=", "released")
     .execute();
   assert(
-    Object.entries(rest).every(
-      ([key, n]) => n === 0 || (retainedSandboxRuntime && key === "vms"),
-    ) &&
-      (retainedSandboxRuntime || machines.every(matchedMachineDrained)) &&
+    Object.entries(rest).every(([key, n]) => n === 0 || (!includeCompute && key === "vms")) &&
+      (!includeCompute || machines.every(matchedMachineDrained)) &&
       (!includeWriters || (writers === 0 && bindings === 0)),
     "Drain Runs/seals, Tool bindings and native VM/terminal/machine lifetimes before matched replacement",
   );
 }
 try {
-  await assertDrained(false);
+  await assertDrained(false, false);
   const cluster = JSON.parse(
     await readFile(resolve(runtimeDirectory, "cubesandbox/cluster.json"), "utf8"),
   );
   const directEnv = Object.fromEntries(
     Object.entries(process.env).filter(([key]) => !/^(all|https?|no)_proxy$/i.test(key)),
   );
-  const inventory = execFileSync(
-    resolve(runtimeDirectory, "cubesandbox/cubemastercli"),
-    [
-      "--address",
-      cluster.master.host,
-      "--port",
-      String(cluster.master.port),
-      "list",
-      "--all",
-      "--wide",
-    ],
-    { env: directEnv, encoding: "utf8", timeout: 30_000 },
-  );
-  const scanned = /NODES_SCANNED\s+(\d+)\/(\d+)/.exec(inventory);
-  assert(
-    scanned &&
-      Number(scanned[1]) > 0 &&
-      scanned[1] === scanned[2] &&
-      (retainedSandboxRuntime || /SANDBOX_COUNT\s+0\b/.test(inventory)),
-    "Native inventory must cover every node; replacing Cube additionally requires zero VMs",
-  );
+  const assertNativeInventory = (requireAbsent) => {
+    const inventory = execFileSync(
+      resolve(runtimeDirectory, "cubesandbox/cubemastercli"),
+      [
+        "--address",
+        cluster.master.host,
+        "--port",
+        String(cluster.master.port),
+        "list",
+        "--all",
+        "--wide",
+      ],
+      { env: directEnv, encoding: "utf8", timeout: 30_000 },
+    );
+    const scanned = /NODES_SCANNED\s+(\d+)\/(\d+)/.exec(inventory);
+    assert(
+      scanned &&
+        Number(scanned[1]) > 0 &&
+        scanned[1] === scanned[2] &&
+        (!requireAbsent || /SANDBOX_COUNT\s+0\b/.test(inventory)),
+      "Native inventory must cover every node and prove compute absence before storage handoff",
+    );
+  };
+  if (!storageWasStopped) assertNativeInventory(false);
   phase("drain application writers");
   for (const service of services.slice(0, 3)) await stop(service);
   const deadline = performance.now() + 120_000;
   for (;;) {
     try {
-      await assertDrained(true);
+      await assertDrained(true, false);
       break;
     } catch (error) {
       if (performance.now() > deadline) throw error;
@@ -336,14 +313,82 @@ try {
     }
   }
   for (const service of services.slice(3)) await stop(service);
-  // Close the admission race after all writers have actually exited.
+  // Close admission before physical retirement. Existing intent/Workspace
+  // identities stay in PG; no normal VM shutdown is mistaken for user Release.
+  await assertDrained(true, false);
+  await ensureMeteringSecret(runtimeDirectory);
+  {
+    const repository = createComputeRetirementRepository(database);
+    const assertProcessesStopped = async () =>
+      assertRetirementProcessesStopped({
+        workloads: JSON.parse(kubectl(["get", "deployments,statefulsets", "-o", "json"])).items,
+        pods: JSON.parse(kubectl(["get", "pods", "-o", "json"])).items,
+      });
+    await awaitComputeRetirementQuiescence({ repository, assertProcessesStopped });
+    if (!storageWasStopped) {
+      const codec = new CubePersistentCapsuleCodec(
+        Buffer.from(
+          (
+            await readFile(resolve(runtimeDirectory, "secrets/cube-persistent-state-key"), "utf8")
+          ).trim(),
+          "base64url",
+        ),
+      );
+      const native = new OfficialCubeSandboxRuntimeClient({
+        apiUrl: `http://${cluster.api.host}:${cluster.api.port}`,
+        apiKey: (
+          await readFile(resolve(runtimeDirectory, "secrets/cubesandbox-api-key"), "utf8")
+        ).trim(),
+        proxyNodeIp: cluster.proxy.host,
+        proxyPort: cluster.proxy.port,
+        proxyScheme: "http",
+        sandboxDomain: cluster.sandboxDomain,
+        egressProxyIp: "10.255.255.254",
+      });
+      try {
+        phase("retire compute while retaining Workspaces and machine intent");
+        await retireComputeForMaintenance({
+          repository,
+          native,
+          assertProcessesStopped,
+          openCapsule: (value) => codec.open(value),
+          progress: (value) => console.log(JSON.stringify(value)),
+        });
+      } finally {
+        await native.close();
+      }
+      assertNativeInventory(true);
+    } else
+      assert.equal(
+        (await repository.listTargets()).length,
+        0,
+        "Interrupted storage handoff lacks complete retirement evidence",
+      );
+    await assertDrained(true);
+    // A filesystem/protocol handoff cannot automatically restore an old stack.
+    cutover = true;
+    await runMigrations(database, "up");
+    phase("preserve and verify Workspace storage with kernel capacity enforcement");
+    const restoreNative = await stopNativeStorageConsumers({ directory, kubectl });
+    await prepareMatchedWorkspaceStorage({
+      database,
+      directory,
+      runtimeDirectory,
+      root,
+      domainId: runtimeEnvironment().PI_CLOUD_SANDBOX_DOMAIN_ID ?? "sandbox-domain-0001",
+      image: JSON.parse(await readFile(resolve(directory, "images.json"), "utf8")).volumeGateway,
+    });
+    await restoreNative();
+    assertCubeKvmAvailable({ kubectl });
+  }
   await assertDrained(true);
   phase("matched Cube, template and application cutover");
   // Existing installations do not rerun init-production. Reconcile the same
   // deployment-owned provider policy before the matched provider Pod starts.
+  await ensureMeteringSecret(runtimeDirectory);
   await updateProviderRuntimePolicyFile(resolve(runtimeDirectory, "secrets/cli-proxy-config.yaml"));
   cutover = true;
-  if (!retainedSandboxRuntime) {
+  {
     kubectl([
       "set",
       "image",
@@ -362,14 +407,13 @@ try {
   }
   const { deployPlatform } = await import("./production-kubernetes.mjs");
   await deployPlatform({
-    retainedSandboxRuntime,
     images: JSON.parse(await readFile(resolve(directory, "images.json"), "utf8")),
     deploymentEnvironment: { ...runtimeEnvironment(), ...env },
   });
   // The gateway needs the restarted Control Plane's configuration before it can
   // become Ready, so reconcile it after application readiness, before recording
   // successful matched publication. Its image was built/imported/scanned above.
-  if (!retainedSandboxRuntime) {
+  {
     kubectl([
       "set",
       "image",
@@ -395,7 +439,7 @@ try {
   const schema = await sql`select name from kysely_migration order by name desc limit 1`.execute(
     database,
   );
-  let deployment = deploymentFromEvidence({
+  const deployment = deploymentFromEvidence({
     evidence: JSON.parse(await readFile(resolve(directory, "evidence/manifest.json"), "utf8")),
     evidenceDirectory: resolve(directory, "evidence"),
     revision: candidate.revision,
@@ -406,10 +450,9 @@ try {
       guestIdentity: candidate.guestIdentity,
       completionIdentity: candidate.completionIdentity,
       modelRuntimeSnapshot: 1,
-      controlPlaneReplacement: 1,
+      sessionRuntimeReplacement: 1,
     },
   });
-  if (baseline) deployment = retainSandboxProvenance(deployment, baseline);
   const deploymentPath = resolve(runtimeDirectory, "k3s/deployment.json");
   await writeFile(deploymentPath + ".next", JSON.stringify(deployment, null, 2) + "\n", {
     mode: 0o600,
@@ -420,8 +463,32 @@ try {
 } catch (error) {
   // Pre-cutover failures restore exactly the observed replica counts. A partial
   // protocol cutover stays offline for repair, never automatic mixed rollback.
-  for (const [service, replicas] of original)
-    kubectl(["scale", workload(service), `--replicas=${cutover ? 0 : replicas}`]);
+  const failures = [];
+  if (cutover) {
+    // A first matched rollout can create roles absent from the old inventory.
+    // Stop those too; never leave the new API/Workers running after a partial cutover.
+    for (const service of services) {
+      try {
+        const existing = kubectl(["get", workload(service), "-o", "name", "--ignore-not-found"]);
+        if (existing.trim()) await stop(service);
+      } catch (failure) {
+        failures.push(failure);
+      }
+    }
+  } else {
+    for (const [service, replicas] of original) {
+      try {
+        kubectl(["scale", workload(service), `--replicas=${replicas}`]);
+      } catch (failure) {
+        failures.push(failure);
+      }
+    }
+  }
+  if (failures.length)
+    throw new AggregateError(
+      [error, ...failures],
+      "Matched publication failed; some workload shutdowns remain unconfirmed",
+    );
   throw error;
 } finally {
   await database.destroy();

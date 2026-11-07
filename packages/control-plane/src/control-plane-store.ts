@@ -1,3 +1,4 @@
+import { defaultWorkspaceCapacityBytes } from "./workspace-capacity-service.ts";
 import { parseScheduledOrigin, type ScheduledOrigin } from "@pi-cloud/protocol";
 import { readExecutionTargetGrants } from "@pi-cloud/runtime-core/execution-target-grants";
 import { searchConversationPage } from "./conversation-history-service.ts";
@@ -334,6 +335,7 @@ export class ControlPlaneStore {
             tenant_id: this.#tenantId,
             project_id: project.id,
             sandbox_domain_id: sandboxDomain.id,
+            capacity_bytes: defaultWorkspaceCapacityBytes(),
             seed_kind: source.kind,
           })
           .executeTakeFirstOrThrow();

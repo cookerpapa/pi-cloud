@@ -80,7 +80,7 @@ try {
   );
   sessions.push(fork.session.sessionId);
   const historyCheck = JSON.parse(
-    execIn("control-plane", [
+    execIn("session-runtime", [
       "node",
       "--input-type=module",
       "-e",

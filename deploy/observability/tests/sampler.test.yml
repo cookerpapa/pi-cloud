@@ -5,11 +5,11 @@ tests:
   - name: fresh samples do not alert
     interval: 1m
     input_series:
-      - series: 'up{job="pi-cloud-control-plane",instance="a"}'
+      - series: 'up{job="pi-cloud-session-runtime",instance="a"}'
         values: 1+0x5
-      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-control-plane",instance="a",source="postgresql"}'
+      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-session-runtime",instance="a",source="postgresql"}'
         values: 0+60x5
-      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-control-plane",instance="a",source="kafka"}'
+      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-session-runtime",instance="a",source="kafka"}'
         values: 0+60x5
     alert_rule_test:
       - eval_time: 5m
@@ -22,24 +22,24 @@ tests:
   - name: healthy replica cannot mask a stale sibling
     interval: 1m
     input_series:
-      - series: 'up{job="pi-cloud-control-plane",instance="a"}'
+      - series: 'up{job="pi-cloud-session-runtime",instance="a"}'
         values: 1+0x5
-      - series: 'up{job="pi-cloud-control-plane",instance="b"}'
+      - series: 'up{job="pi-cloud-session-runtime",instance="b"}'
         values: 1+0x5
-      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-control-plane",instance="a",source="postgresql"}'
+      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-session-runtime",instance="a",source="postgresql"}'
         values: 0+60x5
-      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-control-plane",instance="b",source="postgresql"}'
+      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-session-runtime",instance="b",source="postgresql"}'
         values: 0+0x5
-      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-control-plane",instance="a",source="kafka"}'
+      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-session-runtime",instance="a",source="kafka"}'
         values: 0+60x5
-      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-control-plane",instance="b",source="kafka"}'
+      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-session-runtime",instance="b",source="kafka"}'
         values: 0+60x5
     alert_rule_test:
       - eval_time: 5m
         alertname: PiCloudOperationalSamplerStale
         exp_alerts:
           - exp_labels:
-              job: pi-cloud-control-plane
+              job: pi-cloud-session-runtime
               instance: b
               source: postgresql
               severity: critical
@@ -53,21 +53,21 @@ tests:
   - name: a reachable replica must publish both samplers
     interval: 1m
     input_series:
-      - series: 'up{job="pi-cloud-control-plane",instance="a"}'
+      - series: 'up{job="pi-cloud-session-runtime",instance="a"}'
         values: 1+0x5
-      - series: 'up{job="pi-cloud-control-plane",instance="b"}'
+      - series: 'up{job="pi-cloud-session-runtime",instance="b"}'
         values: 1+0x5
-      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-control-plane",instance="a",source="postgresql"}'
+      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-session-runtime",instance="a",source="postgresql"}'
         values: 0+60x5
-      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-control-plane",instance="a",source="kafka"}'
+      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-session-runtime",instance="a",source="kafka"}'
         values: 0+60x5
-      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-control-plane",instance="b",source="kafka"}'
+      - series: 'pi_cloud_operational_sample_timestamp_seconds{job="pi-cloud-session-runtime",instance="b",source="kafka"}'
         values: 0+60x5
     alert_rule_test:
       - eval_time: 5m
         alertname: PiCloudOperationalSamplerMissing
         exp_alerts:
-          - exp_labels: { job: pi-cloud-control-plane, instance: b, severity: critical }
+          - exp_labels: { job: pi-cloud-session-runtime, instance: b, severity: critical }
             exp_annotations:
               summary: PiCloud operational state sampling has no successful sample
               description: The Control Plane replica has not published both PostgreSQL and local Session Projector samples.
@@ -78,7 +78,7 @@ tests:
   - name: unreachable targets use the target-down alert
     interval: 1m
     input_series:
-      - series: 'up{job="pi-cloud-control-plane",instance="a"}'
+      - series: 'up{job="pi-cloud-session-runtime",instance="a"}'
         values: 0+0x5
     alert_rule_test:
       - eval_time: 5m
@@ -87,7 +87,7 @@ tests:
       - eval_time: 5m
         alertname: PiCloudMetricsTargetDown
         exp_alerts:
-          - exp_labels: { job: pi-cloud-control-plane, instance: a, severity: critical }
+          - exp_labels: { job: pi-cloud-session-runtime, instance: a, severity: critical }
             exp_annotations:
               summary: PiCloud metrics target is unavailable
-              description: Prometheus cannot scrape pi-cloud-control-plane at a.
+              description: Prometheus cannot scrape pi-cloud-session-runtime at a.

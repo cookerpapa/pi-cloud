@@ -415,17 +415,24 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
         }),
       );
     const activeFamily = family;
+    const failed = new AbortController();
+    const producerFailure = this.bus.publicationFailureSignal?.(permit.scope);
+    const failureSignal = producerFailure
+      ? AbortSignal.any([failed.signal, producerFailure])
+      : failed.signal;
     // Admission installs soft state only. The first real append establishes
     // the Projector's recovery floor; opening adds no native/Kafka record.
     let closing = false,
-      failure: unknown,
       tail = Promise.resolve(),
       published = false,
       nativeSequence = 0,
       acknowledgedThroughSeq = request.nextEventSeq - 1;
     let finishing: { terminal: string; promise: Promise<void> } | undefined;
+    const fail = (cause: unknown): void => {
+      failed.abort(cause);
+    };
     const publish = (candidate: CandidateFact, view = permit.scope): Promise<void> => {
-      if (failure) return Promise.reject(failure);
+      if (failureSignal.aborted) return Promise.reject(failureSignal.reason);
       if (closing)
         return Promise.reject(
           new PublicationNotSentError("Execution writer closed before enqueue"),
@@ -454,11 +461,17 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       const pending = tail
         .then(async () => {
           if ((fact.kind === "path_probe" || fact.kind === "runtime_keepalive") && closing) return;
-          if (failure) throw failure;
+          failureSignal.throwIfAborted();
           const receipt = await this.bus.append(fact);
           if (!receipt.durable || receipt.factId !== fact.factId)
             throw new Error("Kafka acknowledgement did not match the appended record");
           if (fact.kind !== "path_probe" && fact.kind !== "runtime_keepalive") published = true;
+        })
+        .catch((error) => {
+          // Probes/keepalives use the same physical producer. A known uncertain
+          // send stops all native siblings even when no native write is pending.
+          if (!(error instanceof PublicationNotSentError)) fail(error);
+          throw error;
         })
         .finally(() => {
           this.#queuedBytes -= bytes;
@@ -468,15 +481,14 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       // Kafka producer, but its receipt is not another semantic commit barrier.
       // A lost probe ACK must not pin native writes or Run drain indefinitely.
       if (fact.kind !== "path_probe" && fact.kind !== "runtime_keepalive")
-        tail = pending.catch((error) => {
-          if (!(error instanceof PublicationNotSentError)) failure = error;
-        });
+        tail = pending.catch(() => {});
       return pending;
     };
     const writer: ExecutionLogWriter = {
+      failureSignal,
       assertHealthy: () => {
         if (closing) throw new PublicationNotSentError("Execution writer is closing");
-        const cause = failure ?? this.bus.publicationFailure?.(permit.scope);
+        const cause = failureSignal.reason ?? this.bus.publicationFailure?.(permit.scope);
         if (cause)
           throw Object.assign(new Error("Session producer stopped"), {
             code: "writer_publication_failed",
@@ -522,8 +534,9 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       drain: async () => {
         closing = true;
         await tail;
-        if (failure)
-          throw Object.assign(new Error("Session writer publication failed", { cause: failure }), {
+        const cause = failureSignal.reason;
+        if (cause)
+          throw Object.assign(new Error("Session writer publication failed", { cause }), {
             code: "writer_publication_failed",
             retryable: true,
           });
@@ -555,7 +568,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
             if (!receipt.durable || receipt.factId !== fact.factId)
               throw new Error("Work completion ACK changed");
           } catch (cause) {
-            failure = cause;
+            fail(cause);
             throw Object.assign(
               new Error("Work completion publication is unconfirmed", { cause }),
               { code: "writer_publication_failed", retryable: true },
@@ -579,14 +592,14 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
         this.#conversationFactories.delete(request.executionReference);
         this.#conversationWriters.delete(request.executionReference);
         await this.bus.forget?.(permit.scope);
-        if (failure) throw failure;
+        failureSignal.throwIfAborted();
       },
     };
     const conversationAcknowledgements = new Map<string, (seq: number) => void>();
     const conversations = new Map<number, ExecutionLogWriter>();
     this.#conversationWriters.set(request.executionReference, conversations);
     this.#conversationFactories.set(request.executionReference, (address) => {
-      if (closing || failure) throw new Error("Root Session writer is closing");
+      if (closing || failureSignal.aborted) throw new Error("Root Session writer is closing");
       if (conversations.has(address.conversationId))
         throw new Error("Conversation writer already open");
       const scope = {
@@ -640,7 +653,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
           this.#runtimeBindings.get(bindingKey)?.pending?.abort();
           this.#runtimeBindings.get(bindingKey)?.check?.controller.abort();
           this.#runtimeBindings.delete(bindingKey);
-          if (failure) throw failure;
+          failureSignal.throwIfAborted();
         },
       };
       conversations.set(address.conversationId, view);
@@ -656,7 +669,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
         acknowledgedThroughSeq = Math.max(acknowledgedThroughSeq, seq);
       },
       retain: async (resources) => {
-        if (closing || failure || !published) return;
+        if (closing || failureSignal.aborted || !published) return;
         for (let offset = 0; offset < resources.length; offset += 64)
           await publish({
             kind: "runtime_keepalive",
@@ -665,7 +678,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
             resources: resources.slice(offset, offset + 64),
           });
       },
-      ready: () => !closing && !failure && published,
+      ready: () => !closing && !failureSignal.aborted && published,
       due: () =>
         !!this.#probeTransport &&
         !!runtimeBinding.bindingId &&
@@ -673,7 +686,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
         Date.now() - runtimeBinding.successAt >= this.probeIntervalMs,
       send: async (requested) => {
         // Probes never establish a recovery floor or consume native/display sequence.
-        if (closing || failure || !published) return;
+        if (closing || failureSignal.aborted || !published) return;
         if (requested) {
           await publish({ kind: "path_probe", ...requested });
           return;

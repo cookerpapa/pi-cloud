@@ -5,7 +5,7 @@ import { readPrivateRuntimeFile as readPrivate } from "./lib/runtime-file-policy
 import { mkdir, writeFile } from "node:fs/promises";
 import { readPreviewDocument } from "./lib/preview-client.mjs";
 import { resolve, dirname } from "node:path";
-import { armControlPlaneRestore } from "./lib/owned-control-plane-outage.mjs";
+import { armRuntimeRestore } from "./lib/owned-runtime-outage.mjs";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
 import ssh2 from "ssh2";
@@ -154,7 +154,7 @@ async function replaceControlPlane() {
       `.${Date.now()}.restore.json`,
   );
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const stopped = await armControlPlaneRestore(path, Date.now() + 180_000);
+  const stopped = await armRuntimeRestore("control-plane", path, Date.now() + 180_000);
   try {
     kubectl(["scale", "deployment/pi-cloud-control-plane", "--current-replicas=1", "--replicas=0"]);
     kubectl(["wait", "--for=delete", "pod", "-l", stopped.selector, "--timeout=120s"], {

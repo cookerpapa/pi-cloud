@@ -70,9 +70,10 @@
  	}
 --- a/internal/api/server_routes.go
 +++ b/internal/api/server_routes.go
-@@ -44,6 +44,10 @@
+@@ -44,6 +44,11 @@
  // It defines the endpoints and associates them with their respective handlers.
  func (s *Server) setupRoutes() {
++	s.engine.GET("/internal/picloud/metering/delivery", s.metering.Delivery())
  	healthzHandler := func(c *gin.Context) {
 +		if !s.metering.Ready() {
 +			c.Status(http.StatusServiceUnavailable)
@@ -81,7 +82,7 @@
  		if c.Request.Method == http.MethodHead {
  			c.Status(http.StatusOK)
  			return
-@@ -65,6 +69,7 @@
+@@ -65,6 +70,7 @@
  	// OpenAI compatible API routes
  	v1 := s.engine.Group("/v1")
  	v1.Use(AuthMiddleware(s.accessManager))
@@ -89,3 +90,61 @@
  	{
  		v1.GET("/models", s.unifiedModelsHandler(openaiHandlers, claudeCodeHandlers))
  		v1.GET("/models/*model", func(c *gin.Context) {
+--- a/sdk/cliproxy/auth/conductor_stream.go
++++ b/sdk/cliproxy/auth/conductor_stream.go
+@@ -438,7 +438,7 @@
+ 		ctx = syncMetadataSessionToContext(ctx, execOpts.Metadata)
+ 		executionSeq := m.nextExecutionSeq()
+ 		startStream := time.Now()
+-		streamResult, errStream := executor.ExecuteStream(ctx, auth, execReq, execOpts)
++		streamResult, errStream := piCloudCaptureStream(ctx, executor, auth, execReq, execOpts)
+ 		errStream = markUpstreamExecutionAttemptFromContext(ctx, errStream)
+ 		if hasUpstreamExecutionAttempt(errStream) {
+ 			upstreamErr = errStream
+@@ -460,7 +460,7 @@
+ 					ctx = syncMetadataSessionToContext(ctx, execOpts.Metadata)
+ 					executionSeq = m.nextExecutionSeq()
+ 					startRetry := time.Now()
+-					streamResult, errStream = executor.ExecuteStream(ctx, auth, execReq, execOpts)
++					streamResult, errStream = piCloudCaptureStream(ctx, executor, auth, execReq, execOpts)
+ 					errStream = markUpstreamExecutionAttemptFromContext(ctx, errStream)
+ 					if hasUpstreamExecutionAttempt(errStream) {
+ 						upstreamErr = errStream
+@@ -541,7 +541,7 @@
+ 					ctx = newUpstreamAttemptContext(ctx)
+ 					executionSeq = m.nextExecutionSeq()
+ 					startRetry := time.Now()
+-					retryStream, retryErr := executor.ExecuteStream(ctx, auth, execReq, execOpts)
++					retryStream, retryErr := piCloudCaptureStream(ctx, executor, auth, execReq, execOpts)
+ 					retryErr = markUpstreamExecutionAttemptFromContext(ctx, retryErr)
+ 					retryStream, retryErr = validateStreamResult(retryStream, retryErr)
+ 					retryErr = markUpstreamExecutionAttemptFromContext(ctx, retryErr)
+--- a/sdk/cliproxy/auth/conductor_execution.go
++++ b/sdk/cliproxy/auth/conductor_execution.go
+@@ -2305,7 +2305,7 @@
+ 	credVersion := auth.CredentialVersion
+ 	regEpoch := auth.RegistrationEpoch
+ 
+-	streamRes, errStream := executor.ExecuteStream(execCtx, auth, req, opts)
++	streamRes, errStream := piCloudCaptureStream(execCtx, executor, auth, req, opts)
+ 	if errStream != nil {
+ 		rerr := resultErrorFromError(errStream)
+ 		if rerr != nil && rerr.HTTPStatus == http.StatusNotImplemented {
+--- a/internal/runtime/executor/antigravity_executor_stream.go
++++ b/internal/runtime/executor/antigravity_executor_stream.go
+@@ -205,6 +205,7 @@
+ 	replayAccumulator := newAntigravityReasoningReplayAccumulator(replayScope, replayRequestPayload)
+ 	out := make(chan cliproxyexecutor.StreamChunk)
+ 	stopDeliverySupport := usage.SupportStreamDelivery(ctx)
++	releaseCapture := usage.RetainProducer(ctx)
+ 	go func(resp *http.Response) {
+ 		defer func() {
+ 			if errClose := resp.Body.Close(); errClose != nil {
+@@ -230,6 +231,7 @@
+ 		defer func() {
++			defer releaseCapture()
+ 			defer stopDeliverySupport()
+ 			if helps.ApplyPatchTranslationError(param) != nil {
+ 				streamErr = statusErr{code: http.StatusBadGateway, msg: helps.ApplyPatchUpstreamErrorMessage}
+ 				stopDeliverySupport()
+ 			}

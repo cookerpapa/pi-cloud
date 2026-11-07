@@ -15,8 +15,14 @@ a time, then consolidate expensive matched integration/live acceptance:
    capacity plans and storage-retention metering.
 5. [#9](https://github.com/cookerpapa/pi-cloud/issues/9): separate the Session
    execution/read path from management, initially retaining current lease rules.
+   [ADR-0302](adr/0302-session-runtime-and-resource-management.md) now has separate
+   source compositions and written outage/failure gates; validation is pending.
 6. [#10](https://github.com/cookerpapa/pi-cloud/issues/10): evaluate and simplify
    renewal/revocation with failure tests across the separated topology.
+   [ADR-0303](adr/0303-direct-renewal-and-local-execution-authority.md) selects direct
+   PG renewal and local expiry, removes observer polling and the obsolete socket
+   renewal path, and aborts families on known Kafka failure. Source implementation
+   is prepared; serial validation and matched live acceptance remain pending.
 
 These are not deployed yet. Do not infer new lease or capacity semantics from
 the proposal; current behavior below remains authoritative until cutover.

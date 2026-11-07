@@ -8,7 +8,7 @@
 
 	@preview expression "{http.request.host}.matches('^p-[0-9a-f]{24}[.].+$')"
 	handle @preview {
-		reverse_proxy {$PI_CLOUD_PREVIEW_UPSTREAM:control-plane:3001}
+		reverse_proxy {$PI_CLOUD_PREVIEW_UPSTREAM:session-runtime:3001}
 	}
 
 	handle /healthz {
@@ -41,7 +41,7 @@
 	}
 
 	handle /v1/* {
-		reverse_proxy {$PI_CLOUD_CONTROL_PLANE_UPSTREAM:control-plane:3000}
+		reverse_proxy {$PI_CLOUD_CONTROL_PLANE_UPSTREAM:session-runtime:3000}
 	}
 
 	handle {

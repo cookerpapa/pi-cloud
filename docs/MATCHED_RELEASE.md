@@ -1,15 +1,43 @@
 # Matched release procedure
 
-ADR-0297 adds schema 210 and paired Worker/provider/API/Web model metering. The
-reviewed `prepare DIRECTORY VERSION --retain-sandbox-runtime` path keeps installed
-Cube/Guest artifacts only after verifying their original source and additive
-host-only accounting exports. It retains existing VM allocations and their
-original artifact provenance, while still draining Runs and Session writers.
-Seven host/application images are built and scanned in this mode; six unchanged
-Sandbox artifacts retain their original provenance. No general protocol
-compatibility is inferred. See [Model billing](MODEL_BILLING.md)
-for receipt, pricing and failure contracts; complete metering/native acceptance
-before declaring the publication finished.
+ADRs 0298–0304 introduce Cube v0.7.3, the independent receipt receiver, kernel
+Workspace capacity and Session/runtime separation. Use the full matched path:
+the old schema-209 model-metering retention exception does not cover this change.
+The operator first drains Runs/writers/terminal holders, stops application roles,
+waits for existing owner leases to expire, and closes compute through Cube's
+maintained allocation API. It preserves stable machine/Workspace identity and
+running/paused intent, and requires confirmed physical absence on the recorded
+node before clearing runtime handles. Unknown closure keeps its cleanup target.
+
+The storage handoff runs only with API/Workers/management, file gateways and
+native Cube storage consumers stopped. It installs schema 212, prepares and
+checksums a quota-enabled XFS copy, and orders the persistent pool mount before
+K3s. Original files are removed from the retired staging directory only after
+verified cutover. The fixed root-only pool operator rechecks PG retirement and
+actual Kubernetes process inventory; a plan file alone cannot authorize movement.
+The private release directory retains `native-storage-maintenance.json` and the
+pool's private journal retains its exact resume state. On a partial storage or
+protocol change, keep writers offline and resume the recorded operation; do not
+restore a mixed old/new stack or format an unrecognized existing backing file.
+Running machine intent is reconciled to a fresh allocation after publication;
+paused intent stays paused. This is compute maintenance, not user Workspace deletion.
+
+
+ADR-0302 splits the API/Projector `session-runtime` from resource-management
+`control-plane`. Deploy both entrypoints and update Web, Worker, Cube observation
+and publication addresses together after the existing writer drain. The one built
+Control Plane image supplies both roles and metering, with separate Helm image
+values so scoped execution-tool updates only replace Session runtime. Preserve
+all allocation/Volume ownership and encrypted data capsules. Management outages
+must pass the owned `PI_CLOUD_LIVE_CONTROL_PLANE_OUTAGE_CHECK=1` driver with
+continued PG projection, both sequential Bash calls, authenticated history/cost
+reads and SSE while management Pods are absent. Retain native recovery and bound
+workflow/image/Skill/preview contracts; a source diff is not live acceptance.
+
+The schema-209→210 retention exception belonged to the earlier model-metering
+cutover and is removed. Scoped provider/catalog/Web/ordinary-tool publication
+uses the maintained [component release](COMPONENT_RELEASE.md) boundaries.
+Ownership, protocol and storage changes require all 13 matched artifacts.
 
 ADR-0295 requires schema 209 and matched API/Web/Guest/Volume Gateway publication.
 It adds Workspace-only file grants and upstream tus transport, source-owned
@@ -551,9 +579,9 @@ For a compatible Control Plane handoff, hold Worker/Pi/Cube and all contracts fi
 and run the owned rolling-replacement checks individually:
 
 ```sh
-PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_CHECK=1 PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_MODE=rolling node --import tsx scripts/run-live-cube-handoff-restart-check.mjs /private/rolling-cube.json
-PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_CHECK=1 PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_MODE=rolling PI_CLOUD_LIVE_HANDOFF_SCENARIO=child node --import tsx scripts/run-live-cube-handoff-restart-check.mjs /private/rolling-child.json
-PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_CHECK=1 PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_MODE=rolling PI_CLOUD_LIVE_HANDOFF_SCENARIO=stream-image node --import tsx scripts/run-live-cube-handoff-restart-check.mjs /private/rolling-stream-image.json
+PI_CLOUD_LIVE_SESSION_RUNTIME_RESTART_CHECK=1 PI_CLOUD_LIVE_SESSION_RUNTIME_RESTART_MODE=rolling node --import tsx scripts/run-live-cube-handoff-restart-check.mjs /private/rolling-cube.json
+PI_CLOUD_LIVE_SESSION_RUNTIME_RESTART_CHECK=1 PI_CLOUD_LIVE_SESSION_RUNTIME_RESTART_MODE=rolling PI_CLOUD_LIVE_HANDOFF_SCENARIO=child node --import tsx scripts/run-live-cube-handoff-restart-check.mjs /private/rolling-child.json
+PI_CLOUD_LIVE_SESSION_RUNTIME_RESTART_CHECK=1 PI_CLOUD_LIVE_SESSION_RUNTIME_RESTART_MODE=rolling PI_CLOUD_LIVE_HANDOFF_SCENARIO=stream-image node --import tsx scripts/run-live-cube-handoff-restart-check.mjs /private/rolling-stream-image.json
 ```
 
 These use the same image on overlapping old/new Control Plane Pods. They measure

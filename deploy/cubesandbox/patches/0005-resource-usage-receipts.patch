@@ -1,583 +1,53 @@
-diff --git a/Cubelet/pkg/resourceusage/delivery.go b/Cubelet/pkg/resourceusage/delivery.go
-new file mode 100644
-index 0000000000000000000000000000000000000000..ef580f0c3ae3b9374370f04a25e5d389b71c610a
---- /dev/null
-+++ b/Cubelet/pkg/resourceusage/delivery.go
-@@ -0,0 +1,52 @@
-+// Copyright (c) 2026 PiCloud contributors.
-+// SPDX-License-Identifier: Apache-2.0
-+package resourceusage
+diff --git a/Cubelet/Dockerfile b/Cubelet/Dockerfile
+index 6e3ee70a8062a93a289e0c226a264766b1644968..5d61350abf2658e3a50b36d5585e3cc06b1d763a 100644
+--- a/Cubelet/Dockerfile
++++ b/Cubelet/Dockerfile
+@@ -32,6 +32,7 @@ WORKDIR /workspace
+ COPY cubecow/ /workspace/cubecow/
+ COPY pkgs/CubeLog/ /workspace/pkgs/CubeLog/
+ COPY pkgs/proto/ /workspace/pkgs/proto/
++COPY PiCloud/resource-metering/ /workspace/PiCloud/resource-metering/
+ COPY CubeNet/ /workspace/CubeNet/
+ COPY Cubelet/ /workspace/Cubelet/
+ COPY examples/volume/s3/ /workspace/volume-s3/
+diff --git a/Cubelet/Dockerfile.dockerignore b/Cubelet/Dockerfile.dockerignore
+index e4b5b795e7e32cf8ed1a1e5517633cd90a68d46c..79e0c1883461c250a55378e73d31f862c8760a36 100644
+--- a/Cubelet/Dockerfile.dockerignore
++++ b/Cubelet/Dockerfile.dockerignore
+@@ -32,3 +32,9 @@
+ !examples/volume/s3
+ !examples/volume/s3/**
+ examples/volume/s3/bin
 +
-+import (
-+	"bytes"
-+	"context"
-+	"encoding/json"
-+	"errors"
-+	"io"
-+	"net/http"
-+	"time"
-+)
++!pkgs/proto
++!pkgs/proto/**
++!PiCloud
++!PiCloud/resource-metering
++!PiCloud/resource-metering/**
+diff --git a/Cubelet/go.mod b/Cubelet/go.mod
+index 64957b4fcaed026689b6d2da30e42f1d503b89e1..e9bab8cc2d3d497f3f6b1bad1d3e2ab3141a8e90 100644
+--- a/Cubelet/go.mod
++++ b/Cubelet/go.mod
+@@ -185,6 +185,7 @@ require (
+ 	github.com/containerd/platforms v1.0.0-rc.2
+ 	github.com/containerd/plugin v1.0.0
+ 	github.com/containerd/typeurl/v2 v2.2.3
++	github.com/cookerpapa/pi-cloud/resource-metering v0.0.0
+ 	github.com/distribution/reference v0.6.0
+ 	github.com/gin-gonic/gin v1.11.0
+ 	github.com/go-logr/logr v1.4.3
+@@ -216,3 +217,5 @@ replace (
+ )
+ 
+ replace github.com/tencentcloud/CubeSandbox/CubeNet/cubevs => ../CubeNet/cubevs
 +
-+var receiptHTTPClient = &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-+
-+func (j *Journal) Deliver(ctx context.Context, endpoint, token string) error {
-+	rows, err := j.Batch(128)
-+	if err != nil || len(rows) == 0 {
-+		return err
-+	}
-+	events := make([]json.RawMessage, len(rows))
-+	for i, row := range rows {
-+		events[i] = row.Body
-+	}
-+	body, err := json.Marshal(struct {
-+		Events []json.RawMessage `json:"events"`
-+	}{events})
-+	if err != nil {
-+		return err
-+	}
-+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-+	if err != nil {
-+		return err
-+	}
-+	request.Header.Set("Authorization", "Bearer "+token)
-+	request.Header.Set("Content-Type", "application/json")
-+	// This is private infrastructure delivery, never a public model proxy route.
-+
-+	response, err := receiptHTTPClient.Do(request)
-+	if err != nil {
-+		return errors.New("resource receiver unavailable")
-+	}
-+	defer response.Body.Close()
-+	var ack struct {
-+		Accepted int `json:"accepted"`
-+	}
-+	if response.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(response.Body, 8192)).Decode(&ack) != nil || ack.Accepted != len(rows) {
-+		return errors.New("resource batch not acknowledged")
-+	}
-+	return j.Acknowledge(rows)
-+}
-diff --git a/Cubelet/pkg/resourceusage/journal.go b/Cubelet/pkg/resourceusage/journal.go
-new file mode 100644
-index 0000000000000000000000000000000000000000..3156b46e6060c9534d2f2284a7375b868a4abc19
---- /dev/null
-+++ b/Cubelet/pkg/resourceusage/journal.go
-@@ -0,0 +1,303 @@
-+// Copyright (c) 2026 PiCloud contributors.
-+// SPDX-License-Identifier: Apache-2.0
-+package resourceusage
-+
-+import (
-+	"encoding/binary"
-+	"encoding/json"
-+	"errors"
-+	"time"
-+
-+	"github.com/google/uuid"
-+	bolt "go.etcd.io/bbolt"
-+)
-+
-+type Database interface {
-+	Update(func(*bolt.Tx) error) error
-+	View(func(*bolt.Tx) error) error
-+}
-+type Identity struct {
-+	Kind        string `json:"kind"`
-+	ResourceID  string `json:"resourceId"`
-+	TenantID    string `json:"tenantId"`
-+	WorkspaceID string `json:"workspaceId"`
-+}
-+type Quantity struct {
-+	Kind          string `json:"kind"`
-+	CPUMillis     int64  `json:"cpuMillis,omitempty"`
-+	MemoryBytes   int64  `json:"memoryBytes,omitempty"`
-+	CapacityBytes int64  `json:"capacityBytes,omitempty"`
-+}
-+type Event struct {
-+	Version      int      `json:"version"`
-+	EventID      string   `json:"eventId"`
-+	Resource     Identity `json:"resource"`
-+	SourceID     string   `json:"sourceId"`
-+	SourceBootID string   `json:"sourceBootId"`
-+	Incarnation  string   `json:"incarnation"`
-+	From         string   `json:"from"`
-+	To           string   `json:"to"`
-+	Quality      string   `json:"quality"`
-+	Reason       string   `json:"reason,omitempty"`
-+	State        string   `json:"state"`
-+	Quantity     Quantity `json:"quantity"`
-+}
-+type Sample struct {
-+	Resource    Identity
-+	Quantity    Quantity
-+	Incarnation string
-+	State       string
-+	At          int64
-+	// Native physical timestamps are optional evidence, not inferred deadlines.
-+	StartedAt       int64
-+	EndedAt         int64
-+	UncertainReason string
-+}
-+type Cursor struct {
-+	Resource    Identity `json:"resource"`
-+	Quantity    Quantity `json:"quantity"`
-+	Incarnation string   `json:"incarnation"`
-+	State       string   `json:"state"`
-+	At          int64    `json:"at"`
-+	BootID      string   `json:"bootId"`
-+}
-+type Journal struct {
-+	db               Database
-+	SourceID, BootID string
-+	BootAt           int64
-+}
-+
-+var root = []byte("pi-cloud.resource-usage.v1")
-+var cursors = []byte("cursors")
-+var pending = []byte("pending")
-+var pendingCount = []byte("pending-count")
-+var ErrFull = errors.New("resource receipt buffer is full")
-+
-+const MaxPending = 65536
-+const MaximumObservedInterval = 90 * time.Second
-+
-+func New(db Database, sourceID, bootID string, now time.Time) (*Journal, error) {
-+	if db == nil || sourceID == "" || bootID == "" {
-+		return nil, errors.New("resource metering configuration missing")
-+	}
-+	j := &Journal{db: db, SourceID: sourceID, BootID: bootID, BootAt: now.UnixMilli()}
-+	err := db.Update(func(tx *bolt.Tx) error {
-+		if tx.DB().NoSync {
-+			return errors.New("resource receipts require synchronous metadata")
-+		}
-+		b, err := tx.CreateBucketIfNotExists(root)
-+		if err != nil {
-+			return err
-+		}
-+		if _, err = b.CreateBucketIfNotExists(cursors); err != nil {
-+			return err
-+		}
-+		pb, err := b.CreateBucketIfNotExists(pending)
-+		if err != nil {
-+			return err
-+		}
-+		if b.Get(pendingCount) == nil {
-+			if pb.Stats().KeyN != 0 {
-+				return errors.New("resource counter missing")
-+			}
-+			return b.Put(pendingCount, make([]byte, 8))
-+		}
-+		return nil
-+	})
-+	return j, err
-+}
-+func key(r Identity) []byte     { return []byte(r.Kind + ":" + r.ResourceID) }
-+func timestamp(ms int64) string { return time.UnixMilli(ms).UTC().Format("2006-01-02T15:04:05.000Z") }
-+func (j *Journal) Cursors() ([]Cursor, error) {
-+	rows := []Cursor{}
-+	err := j.db.View(func(tx *bolt.Tx) error {
-+		return tx.Bucket(root).Bucket(cursors).ForEach(func(_, v []byte) error {
-+			var c Cursor
-+			if err := json.Unmarshal(v, &c); err != nil {
-+				return err
-+			}
-+			rows = append(rows, c)
-+			return nil
-+		})
-+	})
-+	return rows, err
-+}
-+func active(state string) bool { return state == "running" || state == "retained" }
-+func (j *Journal) Capture(s Sample) error {
-+	if s.Resource.ResourceID == "" || s.Incarnation == "" || s.At <= 0 || s.Resource.Kind != s.Quantity.Kind {
-+		return errors.New("invalid resource observation")
-+	}
-+	if _, err := uuid.Parse(s.Resource.TenantID); err != nil {
-+		return err
-+	}
-+	if _, err := uuid.Parse(s.Resource.WorkspaceID); err != nil {
-+		return err
-+	}
-+	return j.db.Update(func(tx *bolt.Tx) error {
-+		b := tx.Bucket(root)
-+		cb, pb := b.Bucket(cursors), b.Bucket(pending)
-+		var old Cursor
-+		raw := cb.Get(key(s.Resource))
-+		if raw != nil {
-+			if err := json.Unmarshal(raw, &old); err != nil {
-+				return err
-+			}
-+			if old.Resource != s.Resource {
-+				return errors.New("resource owner changed")
-+			}
-+		}
-+		next := Cursor{Resource: s.Resource, Quantity: s.Quantity, Incarnation: s.Incarnation, State: s.State, At: s.At, BootID: j.BootID}
-+		from, to := s.At, s.At
-+		quality, reason := "confirmed", ""
-+		emit := false
-+		if raw == nil {
-+			if !active(s.State) {
-+				return nil
-+			}
-+			// Start at first capture. No retrospective charge for pre-existing VMs.
-+			emit = true
-+		} else {
-+			from = old.At
-+			to = max(s.At, old.At)
-+			next.At = to
-+			switch {
-+			case s.At < old.At:
-+				quality, reason, emit = "unconfirmed", "clock_changed", true
-+			case s.UncertainReason != "":
-+				quality, reason, emit = "unconfirmed", s.UncertainReason, true
-+			case old.BootID != j.BootID:
-+				quality, reason, emit = "unconfirmed", "source_restarted", to > from
-+			case s.Incarnation != old.Incarnation:
-+				// A verified native resume from a known paused state can start
-+				// at the new physical timestamp. Other replacements leave a gap.
-+				if old.State == "paused" && active(s.State) && s.StartedAt >= old.At && s.StartedAt <= s.At {
-+					from = s.StartedAt
-+					emit = to > from
-+				} else {
-+					quality, reason, emit = "unconfirmed", "instance_changed", to > from
-+				}
-+			case s.Quantity != old.Quantity:
-+				quality, reason, emit = "unconfirmed", "observation_unavailable", to > from
-+			case active(old.State) && active(s.State) && to-from <= MaximumObservedInterval.Milliseconds():
-+				emit = to > from
-+			case active(old.State) && (s.State == "paused" || s.State == "absent") && s.EndedAt >= from && s.EndedAt <= to:
-+				to = s.EndedAt
-+				emit = to > from
-+			case old.State == s.State && !active(s.State) && s.State != "unknown":
-+				// Confirmed paused/absent resources consume no compute time.
-+			default:
-+				quality, reason, emit = "unconfirmed", "observation_unavailable", to > from
-+			}
-+		}
-+		if emit {
-+			countRaw := b.Get(pendingCount)
-+			if len(countRaw) != 8 {
-+				return errors.New("resource counter invalid")
-+			}
-+			count := binary.BigEndian.Uint64(countRaw)
-+			if count >= MaxPending {
-+				return ErrFull
-+			}
-+			event := Event{Version: 1, EventID: uuid.NewString(), Resource: s.Resource, SourceID: j.SourceID, SourceBootID: j.BootID,
-+				Incarnation: s.Incarnation, From: timestamp(from), To: timestamp(to), Quality: quality, Reason: reason, State: s.State, Quantity: s.Quantity}
-+			body, err := json.Marshal(event)
-+			if err != nil {
-+				return err
-+			}
-+			seq, err := pb.NextSequence()
-+			if err != nil {
-+				return err
-+			}
-+			k := make([]byte, 8)
-+			binary.BigEndian.PutUint64(k, seq)
-+			if err = pb.Put(k, body); err != nil {
-+				return err
-+			}
-+			n := make([]byte, 8)
-+			binary.BigEndian.PutUint64(n, count+1)
-+			if err = b.Put(pendingCount, n); err != nil {
-+				return err
-+			}
-+		}
-+		body, err := json.Marshal(next)
-+		if err != nil {
-+			return err
-+		}
-+		return cb.Put(key(s.Resource), body)
-+	})
-+}
-+
-+type Pending struct {
-+	Key  []byte
-+	Body []byte
-+}
-+
-+func (j *Journal) Batch(limit int) ([]Pending, error) {
-+	rows := []Pending{}
-+	err := j.db.View(func(tx *bolt.Tx) error {
-+		c := tx.Bucket(root).Bucket(pending).Cursor()
-+		for k, v := c.First(); k != nil && len(rows) < limit; k, v = c.Next() {
-+			rows = append(rows, Pending{Key: append([]byte(nil), k...), Body: append([]byte(nil), v...)})
-+		}
-+		return nil
-+	})
-+	return rows, err
-+}
-+
-+func (j *Journal) PendingCount() (uint64, error) {
-+	var count uint64
-+	err := j.db.View(func(tx *bolt.Tx) error {
-+		raw := tx.Bucket(root).Get(pendingCount)
-+		if len(raw) != 8 {
-+			return errors.New("resource counter invalid")
-+		}
-+		count = binary.BigEndian.Uint64(raw)
-+		return nil
-+	})
-+	return count, err
-+}
-+func (j *Journal) Acknowledge(rows []Pending) error {
-+	return j.db.Update(func(tx *bolt.Tx) error {
-+		b := tx.Bucket(root)
-+		pb := b.Bucket(pending)
-+		raw := b.Get(pendingCount)
-+		if len(raw) != 8 {
-+			return errors.New("resource counter invalid")
-+		}
-+		count := binary.BigEndian.Uint64(raw)
-+		for _, r := range rows {
-+			if raw := pb.Get(r.Key); raw != nil {
-+				if string(raw) != string(r.Body) {
-+					return errors.New("resource acknowledgement changed")
-+				}
-+				if count == 0 {
-+					return errors.New("resource counter underflow")
-+				}
-+				if err := pb.Delete(r.Key); err != nil {
-+					return err
-+				}
-+				count--
-+			}
-+		}
-+		// Closed cursors are tiny and are retained while any delivery remains.
-+		// This never collects allocation/Volume ownership or permits replay.
-+		if count == 0 {
-+			cb := tx.Bucket(root).Bucket(cursors)
-+			c := cb.Cursor()
-+			for k, v := c.First(); k != nil; k, v = c.Next() {
-+				var row Cursor
-+				if err := json.Unmarshal(v, &row); err != nil {
-+					return err
-+				}
-+				if row.State == "absent" {
-+					if err := c.Delete(); err != nil {
-+						return err
-+					}
-+				}
-+			}
-+		}
-+		n := make([]byte, 8)
-+		binary.BigEndian.PutUint64(n, count)
-+		return b.Put(pendingCount, n)
-+	})
-+}
-diff --git a/Cubelet/pkg/resourceusage/journal_test.go b/Cubelet/pkg/resourceusage/journal_test.go
-new file mode 100644
-index 0000000000000000000000000000000000000000..b5806256e157d0e6937fffdf347950fb5eccb0c2
---- /dev/null
-+++ b/Cubelet/pkg/resourceusage/journal_test.go
-@@ -0,0 +1,201 @@
-+// Copyright (c) 2026 PiCloud contributors.
-+// SPDX-License-Identifier: Apache-2.0
-+package resourceusage
-+
-+import (
-+	"context"
-+	"encoding/json"
-+	"net/http"
-+	"net/http/httptest"
-+	"path/filepath"
-+	"testing"
-+	"time"
-+
-+	"github.com/google/uuid"
-+	bolt "go.etcd.io/bbolt"
-+)
-+
-+func fixture(t *testing.T) (*Journal, *bolt.DB, Sample) {
-+	t.Helper()
-+	db, err := bolt.Open(filepath.Join(t.TempDir(), "meter.db"), 0600, nil)
-+	if err != nil {
-+		t.Fatal(err)
-+	}
-+	t.Cleanup(func() { db.Close() })
-+	journal, err := New(db, "node-owned", "boot-a", time.Now())
-+	if err != nil {
-+		t.Fatal(err)
-+	}
-+	return journal, db, Sample{Resource: Identity{Kind: "compute", ResourceID: uuid.NewString(), TenantID: uuid.NewString(), WorkspaceID: uuid.NewString()}, Quantity: Quantity{Kind: "compute", CPUMillis: 2000, MemoryBytes: 2 << 30}, Incarnation: "vm-1", State: "running", At: 1_800_000_000_000}
-+}
-+func events(t *testing.T, j *Journal) []Event {
-+	t.Helper()
-+	rows, err := j.Batch(128)
-+	if err != nil {
-+		t.Fatal(err)
-+	}
-+	result := []Event{}
-+	for _, row := range rows {
-+		var event Event
-+		if err = json.Unmarshal(row.Body, &event); err != nil {
-+			t.Fatal(err)
-+		}
-+		result = append(result, event)
-+	}
-+	return result
-+}
-+func capture(t *testing.T, j *Journal, s Sample) {
-+	t.Helper()
-+	if err := j.Capture(s); err != nil {
-+		t.Fatal(err)
-+	}
-+}
-+
-+func TestPauseResumeAndRestartDoNotChargeUnknownIntervals(t *testing.T) {
-+	j, db, s := fixture(t)
-+	capture(t, j, s)
-+	s.At += 30_000
-+	capture(t, j, s)
-+	s.EndedAt = s.At + 5_000
-+	s.At += 10_000
-+	s.State = "paused"
-+	capture(t, j, s)
-+	s.At += 30_000
-+	capture(t, j, s)
-+	s.Incarnation = "vm-2"
-+	s.State = "running"
-+	s.StartedAt = s.At + 5_000
-+	s.At += 10_000
-+	capture(t, j, s)
-+	rows := events(t, j)
-+	if len(rows) != 4 {
-+		t.Fatalf("unexpected paid intervals: %+v", rows)
-+	}
-+	durations := []time.Duration{0, 30 * time.Second, 5 * time.Second, 5 * time.Second}
-+	for i, row := range rows {
-+		a, _ := time.Parse(time.RFC3339Nano, row.From)
-+		b, _ := time.Parse(time.RFC3339Nano, row.To)
-+		if row.Quality != "confirmed" || b.Sub(a) != durations[i] {
-+			t.Fatalf("wrong interval: %+v", row)
-+		}
-+	}
-+	restored, err := New(db, "node-owned", "boot-b", time.Now())
-+	if err != nil {
-+		t.Fatal(err)
-+	}
-+	s.At += 30_000
-+	capture(t, restored, s)
-+	rows = events(t, restored)
-+	if rows[4].Quality != "unconfirmed" || rows[4].Reason != "source_restarted" {
-+		t.Fatalf("restart guessed duration: %+v", rows[4])
-+	}
-+	s.At += 30_000
-+	capture(t, restored, s)
-+	if got := events(t, restored)[5]; got.Quality != "confirmed" {
-+		t.Fatalf("fresh observation did not resume accounting: %+v", got)
-+	}
-+}
-+
-+func TestDelayedObservationAndChangedInstancePreserveGaps(t *testing.T) {
-+	j, _, s := fixture(t)
-+	capture(t, j, s)
-+	s.At += 120_000
-+	capture(t, j, s)
-+	s.At += 1000
-+	s.Incarnation = "replaced"
-+	capture(t, j, s)
-+	s.At -= 10_000
-+	capture(t, j, s)
-+	rows := events(t, j)
-+	for _, row := range rows[1:] {
-+		if row.Quality != "unconfirmed" {
-+			t.Fatalf("guessed gap: %+v", row)
-+		}
-+	}
-+	cursors, err := j.Cursors()
-+	if err != nil {
-+		t.Fatal(err)
-+	}
-+	if cursors[0].At < s.At {
-+		t.Fatal("clock floor moved backwards")
-+	}
-+	changed := s
-+	changed.Resource.TenantID = uuid.NewString()
-+	if j.Capture(changed) == nil {
-+		t.Fatal("changed resource ownership accepted")
-+	}
-+}
-+
-+func TestDeliveryKeepsLostAcknowledgementsAndNeverFollowsRedirects(t *testing.T) {
-+	j, _, s := fixture(t)
-+	capture(t, j, s)
-+	s.At += 30_000
-+	capture(t, j, s)
-+	original, _ := j.Batch(128)
-+	accepted := false
-+	attempts := 0
-+	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-+		attempts++
-+		if r.Header.Get("Authorization") != "Bearer owned-key" {
-+			t.Error("missing source credential")
-+		}
-+		if !accepted {
-+			w.WriteHeader(503)
-+			return
-+		}
-+		w.Header().Set("Content-Type", "application/json")
-+		json.NewEncoder(w).Encode(map[string]int{"accepted": 2})
-+	}))
-+	defer receiver.Close()
-+	if j.Deliver(context.Background(), receiver.URL, "owned-key") == nil {
-+		t.Fatal("outage acknowledged")
-+	}
-+	pending, _ := j.Batch(128)
-+	if string(pending[0].Body) != string(original[0].Body) {
-+		t.Fatal("retry receipt changed")
-+	}
-+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, receiver.URL, 307) }))
-+	defer redirect.Close()
-+	if j.Deliver(context.Background(), redirect.URL, "owned-key") == nil || attempts != 1 {
-+		t.Fatal("receipt credential followed a redirect")
-+	}
-+	accepted = true
-+	if err := j.Deliver(context.Background(), receiver.URL, "owned-key"); err != nil {
-+		t.Fatal(err)
-+	}
-+	pending, _ = j.Batch(128)
-+	if len(pending) != 0 {
-+		t.Fatal("acknowledged receipts not collected")
-+	}
-+	// ACK loss can repeat local collection too; it must not underflow the count.
-+	if err := j.Acknowledge(original); err != nil {
-+		t.Fatal(err)
-+	}
-+}
-+
-+func TestUnknownClosureDoesNotInventAStopTime(t *testing.T) {
-+	j, _, s := fixture(t)
-+	capture(t, j, s)
-+	s.At += 30_000
-+	capture(t, j, s)
-+	s.At += 15_000
-+	s.State = "absent"
-+	capture(t, j, s)
-+	rows := events(t, j)
-+	if rows[2].Quality != "unconfirmed" {
-+		t.Fatal("absence invented exact usage")
-+	}
-+	batch, _ := j.Batch(128)
-+	if err := j.Acknowledge(batch); err != nil {
-+		t.Fatal(err)
-+	}
-+	cursors, _ := j.Cursors()
-+	if len(cursors) != 0 {
-+		t.Fatal("closed accounting cursor retained after delivery")
-+	}
-+	// A remaining inactive native catalog entry cannot create endless zero rows.
-+	capture(t, j, s)
-+	if len(events(t, j)) != 0 {
-+		t.Fatal("inactive catalog recreated billing")
-+	}
-+}
++replace github.com/cookerpapa/pi-cloud/resource-metering => ../PiCloud/resource-metering
 diff --git a/Cubelet/services/cubebox/resource_metering.go b/Cubelet/services/cubebox/resource_metering.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..e003e58730b5d010d8b7edf4932b6d9e97d65f7c
+index 0000000000000000000000000000000000000000..232527a03f996d85ef8ea0074ef544eca23eae4e
 --- /dev/null
 +++ b/Cubelet/services/cubebox/resource_metering.go
-@@ -0,0 +1,264 @@
+@@ -0,0 +1,311 @@
 +// Copyright (c) 2026 PiCloud contributors.
 +// SPDX-License-Identifier: Apache-2.0
 +package cubebox
@@ -596,15 +66,16 @@ index 0000000000000000000000000000000000000000..e003e58730b5d010d8b7edf4932b6d9e
 +
 +	containerd "github.com/containerd/containerd/v2/client"
 +	"github.com/containerd/containerd/v2/pkg/namespaces"
++	"github.com/cookerpapa/pi-cloud/resource-metering"
 +	"github.com/google/uuid"
 +	"github.com/prometheus/client_golang/prometheus"
 +	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/allocation"
-+	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/resourceusage"
 +	cubeboxstore "github.com/tencentcloud/CubeSandbox/Cubelet/pkg/store/cubebox"
 +	"github.com/tencentcloud/CubeSandbox/Cubelet/pkg/utils"
 +	"github.com/tencentcloud/CubeSandbox/Cubelet/plugins/cube/internals/cubes"
 +	"github.com/tencentcloud/CubeSandbox/pkgs/CubeLog"
 +	cubebox "github.com/tencentcloud/CubeSandbox/pkgs/proto/services/cubebox/v1"
++	"k8s.io/apimachinery/pkg/api/resource"
 +)
 +
 +type resourceMetering struct {
@@ -614,9 +85,10 @@ index 0000000000000000000000000000000000000000..e003e58730b5d010d8b7edf4932b6d9e
 +	wake            chan struct{}
 +	mu              sync.Mutex
 +	lifecycle       map[string]string
-+	last            map[string]time.Time
-+	failed          map[string]bool
 +	captureFailures atomic.Uint64
++	collectionMu    sync.Mutex
++	completedCycles atomic.Uint64
++	collectionReady bool
 +}
 +
 +func (s *service) startResourceMetering(ctx context.Context, db resourceusage.Database) error {
@@ -642,7 +114,7 @@ index 0000000000000000000000000000000000000000..e003e58730b5d010d8b7edf4932b6d9e
 +	if err != nil {
 +		return err
 +	}
-+	meter := &resourceMetering{service: s, journal: journal, endpoint: endpoint, token: token, wake: make(chan struct{}, 1), lifecycle: map[string]string{}, last: map[string]time.Time{}, failed: map[string]bool{}}
++	meter := &resourceMetering{service: s, journal: journal, endpoint: endpoint, token: token, wake: make(chan struct{}, 1), lifecycle: map[string]string{}}
 +	s.resourceMetering = meter
 +	for _, metric := range []prometheus.Collector{
 +		prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "picloud_resource_metering_pending", Help: "Durable resource receipts awaiting accounting acknowledgement."}, func() float64 {
@@ -653,6 +125,8 @@ index 0000000000000000000000000000000000000000..e003e58730b5d010d8b7edf4932b6d9e
 +			return float64(n)
 +		}),
 +		prometheus.NewCounterFunc(prometheus.CounterOpts{Name: "picloud_resource_metering_capture_failures_total", Help: "Resource observation capture failures; never VM liveness authority."}, func() float64 { return float64(meter.captureFailures.Load()) }),
++		prometheus.NewCounterFunc(prometheus.CounterOpts{Name: "picloud_resource_metering_collection_cycles_total", Help: "Completed resource sweeps with available observations and durable capture.", ConstLabels: prometheus.Labels{"source_id": source, "boot_id": journal.BootID}}, func() float64 { return float64(meter.completedCycles.Load()) }),
++		prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "picloud_resource_metering_delivery_barrier", Help: "Completed source cycles at a coherent empty-outbox boundary; NaN while busy or unconfirmed. Accounting delivery evidence only.", ConstLabels: prometheus.Labels{"source_id": source, "boot_id": journal.BootID}}, meter.deliveryBarrier),
 +	} {
 +		if err := prometheus.Register(metric); err != nil {
 +			CubeLog.Warn("Resource metering metric registration unavailable")
@@ -677,7 +151,9 @@ index 0000000000000000000000000000000000000000..e003e58730b5d010d8b7edf4932b6d9e
 +	if !managed {
 +		return nil
 +	}
-+	status := event.Cubebox.MainStatus().Get()
++	mainStatus := event.Cubebox.MainStatus()
++	if mainStatus == nil { return nil }
++	status := mainStatus.Get()
 +	signature := fmt.Sprintf("%d/%d/%d/%d/%d", status.State(), status.StartedAt, status.FinishedAt, status.PausedAt, status.PausingAt)
 +	m.mu.Lock()
 +	previous := m.lifecycle[event.Cubebox.ID]
@@ -692,18 +168,37 @@ index 0000000000000000000000000000000000000000..e003e58730b5d010d8b7edf4932b6d9e
 +	return nil
 +}
 +
++// Meter the accepted workload allocation, excluding host/VMM overhead and
++// snapshot rounding. Actual physical running evidence is sampled separately.
++func declaredComputeQuantity(box *cubeboxstore.CubeBox) (resourceusage.Quantity, bool) {
++	result := resourceusage.Quantity{Kind: "compute"}
++	for _, container := range box.AllContainers() {
++		container.MetaLock.Lock()
++		requested := container.Config.GetResources()
++		cpu, cpuErr := resource.ParseQuantity(requested.GetCpu())
++		memory, memErr := resource.ParseQuantity(requested.GetMem())
++		container.MetaLock.Unlock()
++		if cpuErr != nil || memErr != nil || cpu.Sign() <= 0 || memory.Sign() <= 0 {
++			return result, false
++		}
++		cores, bytes := cpu.MilliValue(), memory.Value()
++		if cores <= 0 || bytes <= 0 || cores > math.MaxInt64-result.CPUMillis || bytes > math.MaxInt64-result.MemoryBytes {
++			return result, false
++		}
++		result.CPUMillis += cores
++		result.MemoryBytes += bytes
++	}
++	return result, result.CPUMillis > 0 && result.MemoryBytes > 0
++}
++
 +func (m *resourceMetering) sample(ctx context.Context, box *cubeboxstore.CubeBox, now time.Time) (resourceusage.Sample, bool) {
 +	box.MetaLock.Lock()
 +	labels := box.Labels
 +	identity := resourceusage.Identity{Kind: "compute", ResourceID: box.Annotations["pi-cloud.allocation.id"], TenantID: labels["picloud.tenant_id"], WorkspaceID: labels["picloud.workspace_id"]}
 +	managed := labels["picloud.managed"] == "true"
-+	quantity := resourceusage.Quantity{Kind: "compute"}
-+	if q := box.ResourceWithOverHead; q != nil {
-+		quantity.CPUMillis = q.VmCpuQ.MilliValue()
-+		quantity.MemoryBytes = q.VmMemQ.Value()
-+	}
 +	box.MetaLock.Unlock()
-+	if !managed || identity.ResourceID == "" || allocation.SandboxID(identity.ResourceID) != box.ID || identity.TenantID == "" || identity.WorkspaceID == "" || quantity.CPUMillis <= 0 || quantity.MemoryBytes <= 0 || box.MainStatus() == nil {
++	quantity, validQuantity := declaredComputeQuantity(box)
++	if !validQuantity || !managed || identity.ResourceID == "" || allocation.SandboxID(identity.ResourceID) != box.ID || identity.TenantID == "" || identity.WorkspaceID == "" || quantity.CPUMillis <= 0 || quantity.MemoryBytes <= 0 || box.MainStatus() == nil {
 +		return resourceusage.Sample{}, false
 +	}
 +	status := box.MainStatus().Get()
@@ -727,18 +222,22 @@ index 0000000000000000000000000000000000000000..e003e58730b5d010d8b7edf4932b6d9e
 +		}
 +	case cubebox.ContainerState_CONTAINER_PAUSED:
 +		observation.State = "paused"
-+		observation.EndedAt = status.PausedAt / int64(time.Millisecond)
-+		if status.FinishedAt > 0 && status.FinishedAt < status.PausedAt {
-+			observation.EndedAt = status.FinishedAt / int64(time.Millisecond)
-+		}
++		// PausedAt is written after snapshot packaging; the VM stopped earlier.
++		// Without the exact physical stop time, the trailing interval is unknown.
++		// Later paused samples consume no compute time.
++
 +	case cubebox.ContainerState_CONTAINER_EXITED:
 +		observation.State = "absent"
-+		observation.EndedAt = status.FinishedAt / int64(time.Millisecond)
++		// FinishedAt also contains recovery/TaskOOM observation times. It has
++		// no provenance proving the actual exit instant, so keep the tail unknown.
 +	}
 +	return observation, true
 +}
 +
 +func (m *resourceMetering) collect(ctx context.Context) {
++	m.collectionMu.Lock()
++	defer m.collectionMu.Unlock()
++	m.collectionReady = false
 +	now := time.Now()
 +	known, err := m.journal.Cursors()
 +	if err != nil {
@@ -748,11 +247,19 @@ index 0000000000000000000000000000000000000000..e003e58730b5d010d8b7edf4932b6d9e
 +	}
 +	observed := map[string]resourceusage.Sample{}
 +	present := map[string]bool{}
++	complete := true
 +	for _, box := range m.service.cubeboxMgr.cubeboxManger.List() {
 +		present[box.ID] = true
 +		sample, ok := m.sample(ctx, box, now)
 +		if ok {
 +			observed[sample.Resource.ResourceID] = sample
++		} else {
++			box.MetaLock.Lock()
++			managed := box.Labels["picloud.managed"] == "true" && box.Annotations["pi-cloud.allocation.id"] != ""
++			box.MetaLock.Unlock()
++			if managed {
++				complete = false
++			}
 +		}
 +	}
 +	m.mu.Lock()
@@ -780,25 +287,15 @@ index 0000000000000000000000000000000000000000..e003e58730b5d010d8b7edf4932b6d9e
 +	}
 +	failed := false
 +	for id, sample := range observed {
-+		if previous, ok := m.last[id]; ok {
-+			wall := now.UnixMilli() - previous.UnixMilli()
-+			elapsed := now.Sub(previous).Milliseconds()
-+			if wall-elapsed > 1000 || elapsed-wall > 1000 {
-+				sample.UncertainReason = "clock_changed"
-+			}
++		if sample.State == "unknown" {
++			complete = false
 +		}
-+		if m.failed[id] {
-+			sample.UncertainReason = "collection_unavailable"
-+		}
++		sample.Clock = now
 +		if err := m.journal.Capture(sample); err != nil {
-+			m.failed[id] = true
 +			failed = true
 +			continue
 +		}
-+		delete(m.failed, id)
-+		m.last[id] = now
 +		if sample.State == "absent" {
-+			delete(m.last, id)
 +			m.mu.Lock()
 +			delete(m.lifecycle, allocation.SandboxID(id))
 +			m.mu.Unlock()
@@ -807,7 +304,27 @@ index 0000000000000000000000000000000000000000..e003e58730b5d010d8b7edf4932b6d9e
 +	if failed {
 +		m.captureFailures.Add(1)
 +		CubeLog.Warn("Resource metering capture deferred; lifecycle cleanup remains available")
++	} else if complete {
++		m.completedCycles.Add(1)
++		m.collectionReady = true
 +	}
++}
++
++func (m *resourceMetering) deliveryBarrier() float64 {
++	// A scrape never delays the collector. Holding this lock only while reading
++	// the durable count prevents pairing an old pending=0 with a newer cycle.
++	if !m.collectionMu.TryLock() {
++		return math.NaN()
++	}
++	defer m.collectionMu.Unlock()
++	if !m.collectionReady {
++		return math.NaN()
++	}
++	pending, err := m.journal.PendingCount()
++	if err != nil || pending != 0 {
++		return math.NaN()
++	}
++	return float64(m.completedCycles.Load())
 +}
 +
 +func (m *resourceMetering) collectLoop(ctx context.Context) {
@@ -840,6 +357,54 @@ index 0000000000000000000000000000000000000000..e003e58730b5d010d8b7edf4932b6d9e
 +			CubeLog.Warn("Resource receipt delivery pending")
 +			lastWarning = time.Now()
 +		}
++	}
++}
+diff --git a/Cubelet/services/cubebox/resource_metering_test.go b/Cubelet/services/cubebox/resource_metering_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..d285a4ca45b72459805e1de10589e009a617d695
+--- /dev/null
++++ b/Cubelet/services/cubebox/resource_metering_test.go
+@@ -0,0 +1,42 @@
++// Copyright (c) 2026 PiCloud contributors.
++// SPDX-License-Identifier: MIT
++package cubebox
++
++import (
++	"context"
++	cubeboxstore "github.com/tencentcloud/CubeSandbox/Cubelet/pkg/store/cubebox"
++	protocol "github.com/tencentcloud/CubeSandbox/pkgs/proto/services/cubebox/v1"
++	"k8s.io/apimachinery/pkg/api/resource"
++	"testing"
++	"time"
++)
++
++func TestMeteringUsesAcceptedCapacityWithoutPlatformOverhead(t *testing.T) {
++	box := &cubeboxstore.CubeBox{Metadata: cubeboxstore.Metadata{ResourceWithOverHead: &cubeboxstore.ResourceWithOverHead{VmCpuQ: resource.MustParse("3"), VmMemQ: resource.MustParse("3Gi")}}}
++	box.AddContainer(&cubeboxstore.Container{Metadata: cubeboxstore.Metadata{ID: "user", Config: &protocol.ContainerConfig{Resources: &protocol.Resource{Cpu: "2", Mem: "2Gi"}}}})
++	got, ok := declaredComputeQuantity(box)
++	if !ok || got.CPUMillis != 2000 || got.MemoryBytes != 2<<30 {
++		t.Fatalf("overhead entered user metering: %+v %v", got, ok)
++	}
++	box.AddContainer(&cubeboxstore.Container{Metadata: cubeboxstore.Metadata{ID: "other", Config: &protocol.ContainerConfig{Resources: &protocol.Resource{Cpu: "500m", Mem: "256Mi"}}}})
++	got, ok = declaredComputeQuantity(box)
++	if !ok || got.CPUMillis != 2500 || got.MemoryBytes != 2<<30+256<<20 {
++		t.Fatalf("accepted allocations were not summed: %+v %v", got, ok)
++	}
++	box.AddContainer(&cubeboxstore.Container{Metadata: cubeboxstore.Metadata{ID: "broken"}})
++	if _, ok := declaredComputeQuantity(box); ok {
++		t.Fatal("missing accepted resource metadata was treated as zero")
++	}
++}
++
++func TestMeteringDoesNotBillPausePackagingAsRunningTime(t *testing.T) {
++	now := time.Now()
++	allocation := "11111111-1111-4111-8111-111111111111"
++	sandbox := "11111111111141118111111111111111"
++	box := &cubeboxstore.CubeBox{Metadata: cubeboxstore.Metadata{ID: sandbox, Annotations: map[string]string{"pi-cloud.allocation.id": allocation}, Labels: map[string]string{"picloud.managed": "true", "picloud.tenant_id": "22222222-2222-4222-8222-222222222222", "picloud.workspace_id": "33333333-3333-4333-8333-333333333333"}}}
++	box.AddContainer(&cubeboxstore.Container{IsPod: true, Metadata: cubeboxstore.Metadata{ID: sandbox, Config: &protocol.ContainerConfig{Resources: &protocol.Resource{Cpu: "2", Mem: "2Gi"}}}, Status: cubeboxstore.StoreStatus(cubeboxstore.Status{StartedAt: now.Add(-time.Minute).UnixNano(), PausedAt: now.UnixNano()})})
++	sample, ok := (&resourceMetering{}).sample(context.Background(), box, now)
++	if !ok || sample.State != "paused" || sample.EndedAt != 0 {
++		t.Fatalf("logical pause timestamp became physical stop evidence: %+v %v", sample, ok)
 +	}
 +}
 diff --git a/Cubelet/services/cubebox/service.go b/Cubelet/services/cubebox/service.go

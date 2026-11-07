@@ -265,7 +265,7 @@ the trusted listing API and releases the machine.
 ```bash
 npm run eval:load
 PI_CLOUD_LIVE_MULTI_TENANT_LOAD=1 npm run production:multi-tenant-model-load
-PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_CHECK=1 npm run production:control-plane-restart-check
+PI_CLOUD_LIVE_SESSION_RUNTIME_RESTART_CHECK=1 npm run production:session-runtime-restart-check
 PI_CLOUD_LIVE_DEVELOPMENT_ENVIRONMENT_CHECK=1 npm run production:development-environment-check
 ```
 
@@ -398,7 +398,7 @@ refuses to pause infrastructure while any unrelated Run is active and always
 resumes the container before cleanup.
 
 The controller restart gate accepts
-`PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_MODE=process` for a local containerd-task SIGKILL and
+`PI_CLOUD_LIVE_SESSION_RUNTIME_RESTART_MODE=process` for a local containerd-task SIGKILL and
 checks exit code 137, an increased container restart count and readiness. Its default `pod`
 mode tests Pod replacement; force deletion alone is not proof of SIGKILL.
 Upload acceptance uses the starter fixture profile by default;

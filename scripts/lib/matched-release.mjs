@@ -8,8 +8,10 @@ import { guestBuildIdentity, completionBuildIdentity } from "./guest-build-ident
 /** A failed control record can retain its Workspace after confirmed compute retirement. */
 export function matchedMachineDrained(machine) {
   return (
-    machine.state === "failed" &&
+    ["failed", "reconciling"].includes(machine.state) &&
     machine.allocation_closed === true &&
+    machine.allocation_absent === true &&
+    machine.runtime_capsule === null &&
     machine.runtime_id === null &&
     machine.runtime_name === null &&
     machine.agent_activation_id === null &&
@@ -22,6 +24,10 @@ export async function verifyMatchedRelease({ directory, root, capture, currentGu
   const candidate = JSON.parse(await readFile(resolve(directory, "candidate.json"), "utf8"));
   const evidence = JSON.parse(await readFile(resolve(directory, "evidence/manifest.json"), "utf8"));
   assert.equal(candidate.formatVersion, 1, "Unsupported release candidate");
+  assert(
+    !Object.hasOwn(candidate, "retainedDeploymentDigest"),
+    "Obsolete retained-runtime candidate; prepare a full matched release",
+  );
   assert.equal(
     (await capture("git", ["rev-parse", "HEAD"])).trim(),
     candidate.revision,
@@ -44,14 +50,10 @@ export async function verifyMatchedRelease({ directory, root, capture, currentGu
   assert.equal(evidence.imageVersion, candidate.version);
   assert.equal(
     evidence.images.length,
-    candidate.retainedDeploymentDigest ? 7 : 13,
+    13,
     "Matched release requires seven apps, three native images, Cube authorizer/egress and one guest",
   );
-  assert.equal(
-    evidence.scope,
-    candidate.retainedDeploymentDigest ? "host" : "all",
-    "Release evidence scope differs from publication",
-  );
+  assert.equal(evidence.scope, "all", "Release evidence scope differs from publication");
   const checksums = (await readFile(resolve(directory, "evidence/SHA256SUMS"), "utf8"))
     .trim()
     .split("\n");
@@ -95,32 +97,21 @@ export async function verifyMatchedRelease({ directory, root, capture, currentGu
   const catalog = JSON.parse(await readFile(resolve(directory, "images.json"), "utf8"));
   assert.equal(
     Object.keys(catalog).sort().join(","),
-    "controlPlane,provider,relay,sshGateway,volumeGateway,web,worker",
+    "controlPlane,metering,provider,relay,sessionRuntime,sshGateway,volumeGateway,web,worker",
   );
   for (const reference of [
     ...Object.values(catalog),
-    ...(candidate.retainedDeploymentDigest
-      ? []
-      : [
-          ...[
-            "cube-api",
-            "cube-master",
-            "cubelet",
-            "cube-api-authorizer",
-            "cube-egress-gateway",
-          ].map((name) => `pi-cloud/${name}:${candidate.version}`),
-          `localhost:5000/pi-cloud/cubesandbox-tool:${candidate.guestIdentity}`,
-        ]),
+    ...["cube-api", "cube-master", "cubelet", "cube-api-authorizer", "cube-egress-gateway"].map(
+      (name) => `pi-cloud/${name}:${candidate.version}`,
+    ),
+    `localhost:5000/pi-cloud/cubesandbox-tool:${candidate.guestIdentity}`,
   ])
     assert(references.has(reference), "Unscanned image in release catalog");
   const guest = evidence.images.find(
     (image) =>
       image.reference === `localhost:5000/pi-cloud/cubesandbox-tool:${candidate.guestIdentity}`,
   );
-  if (
-    !candidate.retainedDeploymentDigest &&
-    currentGuestTemplate?.imageRevision === candidate.guestIdentity
-  )
+  if (currentGuestTemplate?.imageRevision === candidate.guestIdentity)
     assert(
       guest.repoDigests?.some((ref) => ref.endsWith(`@${currentGuestTemplate.imageDigest}`)),
       "Scanned guest does not match the template selected for reuse",

@@ -8,6 +8,9 @@ import {
   scopedHelmUpgradeArguments,
   assertScopedManifests,
   composeScopedDeployment,
+  deploymentFromEvidence,
+  scopedImageValues,
+  assertServingComponents,
   scopedApplyState,
   dockerSourceInputs,
 } from "./component-release.mjs";
@@ -64,9 +67,9 @@ it("allows only provider initialization to change in a provider release", () => 
 it("accepts operator-only replacement repairs without relabeling the prepared runtime", () => {
   expect(() =>
     assertOperatorRevisionChanges([
-      "scripts/lib/control-plane-release.mjs",
-      "scripts/lib/control-plane-release.test.mjs",
-      "scripts/run-live-control-plane-release-check.mjs",
+      "scripts/lib/session-runtime-release.mjs",
+      "scripts/lib/session-runtime-release.test.mjs",
+      "scripts/run-live-session-runtime-release-check.mjs",
       "scripts/lib/owned-acceptance-cleanup.mjs",
       "scripts/run-live-workspace-transfer-check.mjs",
     ]),
@@ -101,15 +104,17 @@ it("keeps presentation acceptance helpers outside the deployed runtime boundary"
     expect(() => assertScopedSources("web", [file])).toThrow("matched release");
 });
 
-it("limits Control Plane scope to ordinary tool implementations and one unchanged deployment template", () => {
+it("limits Session runtime scope to ordinary tool implementations and one unchanged deployment template", () => {
   expect(() =>
-    assertScopedSources("control-plane", [
+    assertScopedSources("session-runtime", [
       "packages/control-plane/src/ordinary-tools/new-tool.ts",
       "packages/control-plane/src/ordinary-tools/registry.ts",
     ]),
   ).not.toThrow();
   for (const file of [
     "packages/control-plane/src/main.ts",
+    "packages/control-plane/src/session-runtime-main.ts",
+    "packages/sandbox-control/src/sandbox-session-runtime.ts",
     "packages/control-plane/src/control-tool-dispatcher.ts",
     "packages/control-plane/src/control-plane.controller.ts",
     "packages/runtime-core/src/session-projector.ts",
@@ -118,19 +123,19 @@ it("limits Control Plane scope to ordinary tool implementations and one unchange
     "deploy/provider-gateway/Dockerfile",
     "deploy/helm/pi-cloud-platform/files/model-catalog.json",
   ])
-    expect(() => assertScopedSources("control-plane", [file])).toThrow("matched release");
+    expect(() => assertScopedSources("session-runtime", [file])).toThrow("matched release");
   const before = structuredClone(provider);
   before.kind = "Deployment";
-  before.metadata.name = "pi-cloud-control-plane";
-  before.spec.template.spec.containers[0].name = "control-plane";
+  before.metadata.name = "pi-cloud-session-runtime";
+  before.spec.template.spec.containers[0].name = "session-runtime";
   const next = structuredClone(before);
   next.spec.template.spec.containers[0].image = "new";
   expect(() =>
-    assertScopedManifests("control-plane", yaml(before, other), yaml(next, other), "new"),
+    assertScopedManifests("session-runtime", yaml(before, other), yaml(next, other), "new"),
   ).not.toThrow();
   next.spec.replicas = 0;
   expect(() =>
-    assertScopedManifests("control-plane", yaml(before, other), yaml(next, other), "new"),
+    assertScopedManifests("session-runtime", yaml(before, other), yaml(next, other), "new"),
   ).toThrow();
 });
 
@@ -153,13 +158,27 @@ it("fingerprints actual image COPY inputs including shared dependencies", () => 
   ).toThrow("Untracked");
 });
 
-it("records one new Control Plane artifact and retains Worker/Cube provenance", () => {
+it("records a new Session-runtime role from one host artifact and retains management, metering and Worker/Cube provenance", () => {
   const baseline = {
     formatVersion: 1,
     revision: "old",
-    contracts: { controlPlaneReplacement: 1 },
+    contracts: { sessionRuntimeReplacement: 1 },
     components: {
-      "control-plane": { imageId: "old" },
+      "control-plane": {
+        imageId: "old",
+        sourceRevision: "management-source",
+        reference: "pi-cloud/control-plane:old",
+      },
+      "session-runtime": {
+        imageId: "old",
+        sourceRevision: "runtime-source",
+        reference: "pi-cloud/control-plane:old",
+      },
+      metering: {
+        imageId: "old",
+        sourceRevision: "metering-source",
+        reference: "pi-cloud/control-plane:old",
+      },
       "supervisor-host": { sourceRevision: "worker", imageId: "worker" },
       cubelet: { sourceRevision: "cube", imageId: "cube" },
     },
@@ -176,7 +195,7 @@ it("records one new Control Plane artifact and retains Worker/Cube provenance", 
     ],
   };
   const next = composeScopedDeployment(baseline, {
-    scope: "control-plane",
+    scope: "session-runtime",
     revision: "new",
     version: "new",
     evidence,
@@ -184,8 +203,22 @@ it("records one new Control Plane artifact and retains Worker/Cube provenance", 
   });
   expect(next.components["supervisor-host"]).toEqual(baseline.components["supervisor-host"]);
   expect(next.components.cubelet).toEqual(baseline.components.cubelet);
-  expect(next.components["control-plane"].imageId).toBe("new");
+  expect(next.components["session-runtime"].imageId).toBe("new");
+  expect(next.components["session-runtime"].sourceRevision).toBe("new");
+  expect(next.components["control-plane"]).toEqual(baseline.components["control-plane"]);
+  expect(next.components.metering).toEqual(baseline.components.metering);
   expect(next.contracts).toEqual(baseline.contracts);
+  const incomplete = structuredClone(baseline);
+  delete incomplete.components.metering;
+  expect(() =>
+    composeScopedDeployment(incomplete, {
+      scope: "session-runtime",
+      revision: "new",
+      version: "new",
+      evidence,
+      evidenceDirectory: "evidence",
+    }),
+  ).toThrow("matched role manifest");
 });
 
 it("accepts only the provider image difference and rejects side effects on data or other workloads", () => {
@@ -461,4 +494,157 @@ it("passes two Helm positional arguments and preserves paths as individual argv 
   expect(() =>
     scopedHelmUpgradeArguments({ ...input, namespace: () => "accidental function" }),
   ).toThrow("arguments");
+});
+
+function sharedHostDeployment(role, image = "pi-cloud/control-plane:old") {
+  return {
+    apiVersion: "apps/v1",
+    kind: "Deployment",
+    metadata: { name: `pi-cloud-${role}` },
+    spec: {
+      replicas: 1,
+      template: {
+        spec: {
+          containers: [
+            {
+              name: role,
+              image,
+              args: [
+                `/app/packages/${role === "metering" ? "accounting/src/main" : `control-plane/src/${role === "session-runtime" ? "session-runtime-main" : "main"}`}.ts`,
+              ],
+            },
+          ],
+        },
+      },
+    },
+  };
+}
+
+it("changes only images.sessionRuntime even when three roles share the same built image", () => {
+  const values = {
+    images: {
+      controlPlane: {
+        repository: "pi-cloud/control-plane",
+        tag: "old",
+        pullPolicy: "IfNotPresent",
+      },
+      sessionRuntime: {
+        repository: "pi-cloud/control-plane",
+        tag: "old",
+        digest: "sha256:old",
+        pullPolicy: "IfNotPresent",
+      },
+      metering: { repository: "pi-cloud/control-plane", tag: "old", pullPolicy: "IfNotPresent" },
+    },
+  };
+  const next = scopedImageValues("session-runtime", values, "pi-cloud/control-plane:new", "new");
+  expect(next.images.sessionRuntime).toEqual({
+    repository: "pi-cloud/control-plane",
+    tag: "new",
+    pullPolicy: "IfNotPresent",
+  });
+  expect(next.images.controlPlane).toEqual(values.images.controlPlane);
+  expect(next.images.metering).toEqual(values.images.metering);
+  expect(values.images.sessionRuntime.tag).toBe("old");
+  expect(() =>
+    scopedImageValues("control-plane", values, "pi-cloud/control-plane:new", "new"),
+  ).toThrow("Unknown");
+  expect(() => assertScopedSources("control-plane", [])).toThrow("Unknown");
+});
+
+it("requires the Session API/Projector Deployment as the only manifest target", () => {
+  const management = sharedHostDeployment("control-plane"),
+    runtime = sharedHostDeployment("session-runtime"),
+    metering = sharedHostDeployment("metering");
+  const next = structuredClone(runtime);
+  next.spec.template.spec.containers[0].image = "pi-cloud/control-plane:new";
+  expect(() =>
+    assertScopedManifests(
+      "session-runtime",
+      yaml(management, runtime, metering),
+      yaml(management, next, metering),
+      "pi-cloud/control-plane:new",
+    ),
+  ).not.toThrow();
+  for (const role of ["control-plane", "metering"]) {
+    const changed = sharedHostDeployment(role, "pi-cloud/control-plane:new");
+    expect(() =>
+      assertScopedManifests(
+        "session-runtime",
+        yaml(management, runtime, metering),
+        yaml(
+          role === "control-plane" ? changed : management,
+          next,
+          role === "metering" ? changed : metering,
+        ),
+        "pi-cloud/control-plane:new",
+      ),
+    ).toThrow("Unexpected resource change");
+  }
+  const startup = structuredClone(next);
+  startup.spec.template.spec.containers[0].args = ["/app/packages/control-plane/src/main.ts"];
+  expect(() =>
+    assertScopedManifests(
+      "session-runtime",
+      yaml(management, runtime, metering),
+      yaml(management, startup, metering),
+      "pi-cloud/control-plane:new",
+    ),
+  ).toThrow();
+});
+
+it("expands one scanned artifact to independent role provenance without extra builds", () => {
+  const evidence = {
+    images: [
+      {
+        reference: "pi-cloud/control-plane:full",
+        imageId: "sha256:one",
+        repoDigests: ["pi-cloud/control-plane@sha256:one"],
+        provenance: { sourceRevision: "source" },
+      },
+    ],
+  };
+  const record = deploymentFromEvidence({
+    evidence,
+    evidenceDirectory: "evidence",
+    revision: "source",
+    version: "full",
+  });
+  expect(Object.keys(record.components).sort()).toEqual([
+    "control-plane",
+    "metering",
+    "session-runtime",
+  ]);
+  for (const component of Object.values(record.components))
+    expect(component).toMatchObject({
+      imageId: "sha256:one",
+      sourceRevision: "source",
+      reference: "pi-cloud/control-plane:full",
+    });
+  expect(evidence.images).toHaveLength(1);
+});
+
+it("detects live management/metering drift even when the expected shared image is still present elsewhere", () => {
+  const deployment = {
+    components: Object.fromEntries(
+      ["control-plane", "session-runtime", "metering"].map((role) => [
+        role,
+        { reference: "pi-cloud/control-plane:old" },
+      ]),
+    ),
+  };
+  const alternative = { name: "session-runtime", reference: "pi-cloud/control-plane:new" };
+  const resources = [
+    sharedHostDeployment("control-plane"),
+    sharedHostDeployment("session-runtime", alternative.reference),
+    sharedHostDeployment("metering"),
+  ];
+  expect(() => assertServingComponents(deployment, resources, alternative)).not.toThrow();
+  for (const index of [0, 2]) {
+    const changed = structuredClone(resources);
+    changed[index].spec.template.spec.containers[0].image = alternative.reference;
+    expect(() => assertServingComponents(deployment, changed, alternative)).toThrow(
+      "Serving role differs",
+    );
+  }
 });

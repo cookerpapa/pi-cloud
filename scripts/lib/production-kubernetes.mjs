@@ -46,8 +46,10 @@ export function kubectlAsync(args, options = {}) {
   });
 }
 export const workloads = {
+  "workspace-quota": "deployment/pi-cloud-workspace-quota",
   metering: "deployment/pi-cloud-metering",
   "control-plane": "deployment/pi-cloud-control-plane",
+  "session-runtime": "deployment/pi-cloud-session-runtime",
   web: "deployment/pi-cloud-web",
   "ssh-gateway": "deployment/pi-cloud-ssh-gateway",
   "workspace-volume-gateway": "deployment/pi-cloud-workspace-volume-gateway",
@@ -106,8 +108,14 @@ export function signalService(service, signal, prior) {
   const file =
     service === "control-plane"
       ? "/app/packages/control-plane/src/main.ts"
-      : "/app/packages/supervisor-host/src/main.ts";
-  if (service !== "control-plane" && !/^pi-cloud-pi-worker-primary-v1-\d+$/.test(service))
+      : service === "session-runtime"
+        ? "/app/packages/control-plane/src/session-runtime-main.ts"
+        : "/app/packages/supervisor-host/src/main.ts";
+  if (
+    service !== "control-plane" &&
+    service !== "session-runtime" &&
+    !/^pi-cloud-pi-worker-primary-v1-\d+$/.test(service)
+  )
     throw new Error("Unknown test process");
   const pod = prior?.pod ?? podFor(service);
   const script = prior

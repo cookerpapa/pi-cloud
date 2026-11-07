@@ -13,6 +13,7 @@ import { WorkerExecutionLog } from "../../runtime-core/src/worker-execution-log.
 import { AgentRunExecutionBackend } from "../../supervisor-host/src/agent-run-execution-backend.ts";
 import { AgentRunSupervisor, PiTurnCancelledError } from "@pi-cloud/sandbox-supervisor";
 import type { SupervisorHeartbeatMessage } from "@pi-cloud/protocol";
+import { PostgresSessionLeaseObserver } from "../../pi-session-postgres/src/postgres-session-lease-observer.ts";
 
 const endpoint = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 describe.skipIf(!endpoint)("Worker lease renewal boundaries", () => {
@@ -167,6 +168,157 @@ describe.skipIf(!endpoint)("Worker lease renewal boundaries", () => {
           p95Ms: samples[9],
         }) + "\n",
       );
+    }
+  });
+  it("renews directly across expired registration transport and rejects socket-based family renewal", async () => {
+    const f = await fixture(2);
+    const registration = await registerTestWorker(db, f.workerId);
+    const connectionId = registration.registration.payload.connectionId;
+    const report = f.heartbeat();
+    await expect(
+      registration.manager.heartbeat(
+        {
+          ...report,
+          payload: { ...report.payload, connectionId },
+        },
+        registration.authority,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_heartbeat", retryable: false });
+    await db
+      .updateTable("supervisor_connections")
+      .set({
+        last_heartbeat_at: sql<Date>`last_heartbeat_at - interval '2 hours'`,
+        expires_at: sql<Date>`expires_at - interval '2 hours'`,
+      })
+      .where("connection_id", "=", connectionId)
+      .execute();
+    const before = await db
+      .selectFrom("supervisor_connections")
+      .selectAll()
+      .where("connection_id", "=", connectionId)
+      .executeTakeFirstOrThrow();
+    for (let n = 0; n < 3; n++) {
+      const ack = await f.coordinator.renewFromHeartbeat(f.heartbeat());
+      expect(ack.payload.familyLeaseRenewals).toHaveLength(2);
+    }
+    expect((await registration.manager.expireConnections()).expiredConnectionIds).toContain(
+      connectionId,
+    );
+    const after = await db
+      .selectFrom("supervisor_connections")
+      .selectAll()
+      .where("connection_id", "=", connectionId)
+      .executeTakeFirstOrThrow();
+    expect(after.state).toBe("expired");
+    expect(after.last_heartbeat_at).toEqual(before.last_heartbeat_at);
+    expect(after.expires_at).toEqual(before.expires_at);
+    expect(
+      (await f.coordinator.renewFromHeartbeat(f.heartbeat())).payload.familyLeaseRenewals,
+    ).toHaveLength(2);
+    expect(
+      await db
+        .selectFrom("worker_retirements")
+        .select("worker_id")
+        .where("worker_id", "=", f.workerId)
+        .execute(),
+    ).toEqual([]);
+  });
+
+  it("direct renewal reports PG writer revocation and aborts only that local family", async () => {
+    const f = await fixture(2);
+    const observer = new PostgresSessionLeaseObserver({ database: db });
+    const owners = f.families.map((family) => observer.open(family));
+    try {
+      await Promise.all(owners.map((owner) => owner.assertCurrent()));
+      owners.forEach((owner) => owner.start());
+      await db
+        .updateTable("session_leases")
+        .set({ writer_failed_at: sql<Date>`clock_timestamp()` })
+        .where("lease_id", "=", f.families[0]!.leaseId)
+        .execute();
+      const heartbeat = f.heartbeat() as SupervisorHeartbeatMessage;
+      const requestedAt = performance.now();
+      const ack = await f.coordinator.renewFromHeartbeat(heartbeat);
+      observer.observeRenewals(heartbeat, ack, requestedAt);
+      expect(ack.payload.familyLeaseRenewals.map((family) => family.leaseId)).toEqual([
+        f.families[1]!.leaseId,
+      ]);
+      expect(owners[0]!.signal.aborted).toBe(true);
+      expect(owners[1]!.signal.aborted).toBe(false);
+    } finally {
+      await observer.close();
+    }
+  });
+
+  it("revokes a fenced family during provider silence before another heartbeat or Worker quarantine", async () => {
+    const f = await fixture(0);
+    await registerTestWorker(db, f.workerId);
+    const session = await f.store.createSession(
+      f.project.projectId,
+      f.project.workspaceId,
+      "Producer fence",
+      "elastic",
+    );
+    const producerFailure = new AbortController();
+    const renewed = Promise.withResolvers<void>();
+    let runnerSignal: AbortSignal | undefined;
+    const supervisor = new AgentRunSupervisor({
+      maxConcurrentSessions: 8,
+      runner: {
+        async run(_command, _publish, signal) {
+          runnerSignal = signal;
+          await new Promise<void>((resolve) => {
+            if (signal.aborted) resolve();
+            else signal.addEventListener("abort", () => resolve(), { once: true });
+          });
+          throw new PiTurnCancelledError("session_lease_revoked", false);
+        },
+      },
+    });
+    const renewal = vi.spyOn(f.coordinator, "renewFromHeartbeat");
+    const quarantine = vi.spyOn(f.coordinator, "quarantineWorker");
+    const logs = new WorkerExecutionLog({
+      append: async (fact) => ({ factId: fact.factId, durable: true }),
+      publicationFailureSignal: () => producerFailure.signal,
+      checkHealth: async () => {},
+    });
+    const backend = new AgentRunExecutionBackend({
+      supervisor,
+      leaseCoordinator: f.coordinator,
+      executionLogs: logs,
+      heartbeatIntervalMs: 60000,
+      onLeaseRenewal: () => renewed.resolve(),
+    });
+    const executor = new RunExecutor({
+      database: db,
+      workerId: f.workerId,
+      executionAuthority: f.coordinator,
+      backend,
+    });
+    const accepted = await f.store.acceptTurn(session.sessionId, randomUUID(), {
+      prompt: "Wait for provider",
+    });
+    const completion = executor.dispatchRun(accepted.runId).catch((error) => ({ error }));
+    try {
+      await Promise.race([
+        renewed.promise,
+        completion.then(() => {
+          throw new Error("Execution ended before its first renewal");
+        }),
+      ]);
+      expect(runnerSignal?.aborted).toBe(false);
+      const calls = renewal.mock.calls.length;
+      producerFailure.abort(new Error("Kafka producer fenced"));
+      expect(runnerSignal?.aborted).toBe(true);
+      expect(renewal).toHaveBeenCalledTimes(calls);
+      expect(quarantine).not.toHaveBeenCalled();
+      await completion;
+    } finally {
+      producerFailure.abort();
+      await completion;
+      await logs.close();
+      renewal.mockRestore();
+      quarantine.mockRestore();
     }
   });
   it.each([false, true])(

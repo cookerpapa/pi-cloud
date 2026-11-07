@@ -14,7 +14,7 @@
     },
     {
       "file": "0003-template-cleanup-node-routing.patch",
-      "sha256": "7c7b6288e62aa4da291fdf02a88cf7e1ed12205a7bece14e091ea71d431a9424"
+      "sha256": "79269cc2d8bddcb6f9b466856214cb5981a41aa31cee576449be38fee9675c91"
     },
     {
       "file": "0004-release-dependencies.patch",
@@ -22,7 +22,7 @@
     },
     {
       "file": "0005-resource-usage-receipts.patch",
-      "sha256": "9ced49176d769454e915f8d7da15e857f1b9fd33b1e0b9e42e137b79ae4a8c22"
+      "sha256": "8d173f70e6ab34f65c9fbd5d2eb032ffb5524715b3fcfa27f87b84ecfec51bb3"
     }
   ],
   "buildImages": {
@@ -34,5 +34,13 @@
     "alpine": "alpine:3.21@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507"
   },
   "upstreamVersion": "0.7.3",
-  "resourceMeteringVersion": 1
+  "resourceMeteringVersion": 1,
+  "ownedSources": [
+    {
+      "directory": "deploy/resource-metering",
+      "target": "PiCloud/resource-metering",
+      "files": ["LICENSE", "delivery.go", "go.mod", "go.sum", "journal.go", "journal_test.go"],
+      "sha256": "005ad1abe3a8843255a1f115abe7a8c98f509a9c1cde37a7b3d879b2096d7db8"
+    }
+  ]
 }

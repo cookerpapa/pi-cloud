@@ -56,7 +56,6 @@ export async function registerTestWorker(database: Kysely<Database>, workerId: s
     },
     heartbeatIntervalMs: 60_000,
     heartbeatTimeoutMs: 3_600_000,
-    leaseDurationMs: 3_600_000,
   });
   const authority = {
     supervisorId: worker.supervisor_id,

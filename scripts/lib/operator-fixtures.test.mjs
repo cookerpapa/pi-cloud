@@ -6,7 +6,7 @@ import { createPrivateTenant } from "../../packages/control-plane/src/tenant-adm
 import { PlatformRuntimeSettingsService } from "../../packages/control-plane/src/platform-runtime-settings.ts";
 import { withCubeProxyFixture, restoreCubeProxyFixture } from "./cube-proxy-fixture.mjs";
 import {
-  purgeOwnedAcceptanceTenant,
+  purgeOwnedAcceptanceTenant as purgeDeployedAcceptanceTenant,
   settleOwnedAcceptanceRuns,
 } from "./owned-acceptance-cleanup.mjs";
 import { ControlPlaneStore } from "../../packages/control-plane/src/control-plane-store.ts";
@@ -14,8 +14,99 @@ import { createHash, randomUUID } from "node:crypto";
 import { sql } from "kysely";
 import { DurablePostgresProjection } from "../../packages/pi-session-postgres/src/durable/index.ts";
 import { PostgresAttachmentStore } from "../../packages/session-attachments/src/store.ts";
+import { ResourceMeteringService } from "../../packages/accounting/src/resource-metering-service.ts";
+
+// These DB fixtures launch no provider/compute sources. They explicitly inject
+// their delivery boundary; maintained operators use the real source reader.
+const purgeOwnedAcceptanceTenant = (db, tenant, blobs, options = {}) =>
+  purgeDeployedAcceptanceTenant(db, tenant, blobs, {
+    awaitReceiptDelivery: async ({ tenantId }) => ({ verified: true, tenantId }),
+    ...options,
+  });
 
 let pg, database, api, settings, actor;
+
+it("retains financial rows until the injected source delivery boundary completes", async () => {
+  const tenant = await createPrivateTenant(database, {
+    slug: `release-acceptance-receipts-${randomUUID()}`,
+    ownerDisplayName: "Owned receipt fixture",
+  });
+  const eventId = randomUUID();
+  await new ResourceMeteringService(database).ingest({
+    events: [
+      {
+        version: 1,
+        eventId,
+        resource: {
+          kind: "workspace",
+          resourceId: `owned-${randomUUID()}`,
+          tenantId: tenant.tenantId,
+          workspaceId: randomUUID(),
+        },
+        sourceId: "owned-source",
+        sourceBootId: randomUUID(),
+        incarnation: randomUUID(),
+        from: "2026-11-07T00:00:00.000Z",
+        to: "2026-11-07T00:00:01.000Z",
+        quality: "confirmed",
+        state: "retained",
+        quantity: { kind: "workspace", capacityBytes: 32 * 1024 ** 3 },
+      },
+    ],
+  });
+  const blobs = {
+    async delete() {
+      throw new Error("No blob exists in this fixture");
+    },
+  };
+  await expect(
+    purgeOwnedAcceptanceTenant(database, tenant, blobs, {
+      awaitReceiptDelivery: async () => {
+        throw new Error("source still has pending receipts");
+      },
+    }),
+  ).rejects.toThrow("pending receipts");
+  expect(
+    await database
+      .selectFrom("resource_metering_events")
+      .select("id")
+      .where("id", "=", eventId)
+      .execute(),
+  ).toHaveLength(1);
+  const entered = Promise.withResolvers(),
+    delivered = Promise.withResolvers();
+  const purging = purgeOwnedAcceptanceTenant(database, tenant, blobs, {
+    awaitReceiptDelivery: async ({ tenantId }) => {
+      expect(tenantId).toBe(tenant.tenantId);
+      entered.resolve();
+      await delivered.promise;
+      return { verified: true, tenantId };
+    },
+  });
+  try {
+    await entered.promise;
+    expect(
+      await database.selectFrom("tenants").select("id").where("id", "=", tenant.tenantId).execute(),
+    ).toHaveLength(1);
+    expect(
+      await database
+        .selectFrom("resource_metering_events")
+        .select("id")
+        .where("id", "=", eventId)
+        .execute(),
+    ).toHaveLength(1);
+  } finally {
+    delivered.resolve();
+  }
+  expect(await purging).toMatchObject({ tenantRemoved: true });
+  expect(
+    await database
+      .selectFrom("resource_metering_events")
+      .select("id")
+      .where("id", "=", eventId)
+      .execute(),
+  ).toEqual([]);
+});
 it("refreshes siblings withdrawn by Stop and uses the queue revision for still-queued cleanup", async () => {
   const runs = new Map([
     ["active", { state: "running" }],

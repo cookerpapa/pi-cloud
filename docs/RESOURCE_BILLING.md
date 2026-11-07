@@ -6,7 +6,8 @@ informational statements, not real payment collection or a published tariff.
 
 ## Compute
 
-Cubelet records allocated guest CPU and memory over verified running intervals.
+Cubelet records the accepted workload CPU and memory allocation over verified running intervals.
+Host/VMM overhead and snapshot rounding are excluded from the billed quantity.
 It reads native lifecycle/resource metadata and confirms running state against
 the existing local task interface. The source does not query PiCloud PG, invoke
 the management API or depend on a particular Session/Run. A VM shared by several
@@ -23,25 +24,41 @@ Collector restart, instance replacement, clock discontinuity, collection failure
 and unavailable observations leave explicit unconfirmed gaps. An observation
 interval longer than 90 seconds cannot be assumed continuously verified. This
 changes accounting confidence, not the permitted lifetime of an Agent or VM.
-Paused resources do not accumulate compute time. A known native pause/exit time
-can settle the verified prefix; mere absence cannot invent an exact stop time.
+Paused resources do not accumulate compute time. Cube's pause/exit status timestamps
+mix physical events with later snapshot/recovery bookkeeping. The adapter therefore
+keeps the final unsampled interval unconfirmed rather than billing cleanup time.
 Metering begins at first verified capture, without retroactive charges for an
 existing machine. Very short lifetimes lost before the first source observation
 and loss of the node metadata store are limits on completeness.
 
 The existing `/v1/metrics` endpoint exposes
 `picloud_resource_metering_pending` and
-`picloud_resource_metering_capture_failures_total`. These are delivery diagnostics,
+`picloud_resource_metering_capture_failures_total`, completed collection cycles and
+a coherent delivery barrier (NaN when capture/delivery is unconfirmed). These are delivery diagnostics,
 not authority for VM destruction, quota release or replay. Upstream
 `/v1/metrics/resource` retains actual CPU/memory observations separately.
 
 ## Storage boundary
 
 Storage receipts use provisioned persistent Workspace capacity and retention time.
-The VM's disposable system disk is a different resource. The storage source and
-real capacity enforcement are the separate [Issue #8](https://github.com/cookerpapa/pi-cloud/issues/8)
-slice; defining the receipt dimension does not claim that an unenforced directory
-already has a capacity guarantee.
+The VM's disposable system disk is a different resource. [ADR-0301](adr/0301-workspace-capacity-enforcement.md)
+uses kernel XFS project quotas for Workspace bytes and upload staging, including
+writes through Bash or a terminal. The initial default is 32 GiB; requested growth
+has a PG revision and is reconciled to the storage endpoint. A quota is a capacity
+ceiling, not a reservation of physical blocks in the backing pool.
+
+A separate trusted `workspace-quota` process shares the persistent Volume mount,
+reads enforced capacity and writes source receipts through the same bounded journal.
+VM pause/expiry does not stop storage retention. Directory absence and zero kernel
+references precede quota removal; missing VM heartbeats never do. The source keeps
+accounting/control metadata outside the user's project quota, so a full Workspace
+can still be cancelled, expanded or deleted.
+
+`GET /v1/workspaces/:id/capacity` reads the current desired capacity/revision;
+`PUT` accepts `{ "minimumGiB": 64 }`. Repeating an older minimum never shrinks a
+newer setting. `pending` means the storage endpoint has not yet acknowledged that
+revision; it is not an observed disk-usage value. The account's storage statement
+meters the actually enforced capacity, not an unfulfilled request.
 
 ## Ledger and prices
 

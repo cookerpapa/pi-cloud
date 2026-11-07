@@ -4,6 +4,11 @@ ARG NODE_BASE_IMAGE=node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e
 ARG GO_BASE_IMAGE=golang:1.26.10-alpine3.23@sha256:107301490755aa2ea1b0b43788b6e62cff2faae45a538028b193becc06aaffba
 ARG ENVD_COMMIT=6392356aaab9ed07e2f7df0c84c8d9ad8bac1327
 
+FROM ${GO_BASE_IMAGE} AS file-exchange-builder
+WORKDIR /source
+COPY deploy/file-exchange /source
+RUN CGO_ENABLED=0 GOTOOLCHAIN=local go build -trimpath -ldflags '-s -w' -o /out/file-exchange .
+
 FROM ${GO_BASE_IMAGE} AS envd-builder
 ARG ENVD_COMMIT
 ARG PI_CLOUD_ALPINE_MIRROR=https://mirrors.aliyun.com/alpine
@@ -200,6 +205,7 @@ RUN sh scripts/retry-npm-command.sh install --global npm@12.0.2 \
 
 # Keep Go-only rebuilds independent of the browser/OS dependency layers.
 # Retain Cube's entrypoint contract with the fixed source-pinned envd binary.
+COPY --from=file-exchange-builder /out/file-exchange /opt/pi-cloud/bin/file-exchange
 COPY --from=envd-builder /out/envd /usr/bin/envd
 COPY --from=tool-worker-builder /out/envd-tool-exec.mjs /opt/pi-cloud/bin/envd-tool-exec.mjs
 COPY --from=tool-worker-builder /out/cube-tool-scope.mjs /opt/pi-cloud/bin/cube-tool-scope.mjs

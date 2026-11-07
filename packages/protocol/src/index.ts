@@ -725,3 +725,5 @@ export * from "./model-metering.ts";
 export * from "./model-billing.ts";
 
 export * from "./resource-metering.ts";
+
+export * from "./workspace-capacity.ts";

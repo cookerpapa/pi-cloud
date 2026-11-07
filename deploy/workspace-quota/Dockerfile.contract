@@ -1,0 +1,7 @@
+FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS node
+FROM golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY scripts/install-host-os-security-updates.sh /tmp/install-host-os-security-updates.sh
+RUN sh /tmp/install-host-os-security-updates.sh \
+    && apt-get update && apt-get install -y --no-install-recommends xfsprogs=6.1.0-1 xfslibs-dev=6.1.0-1 uuid-dev \
+    && rm -rf /var/lib/apt/lists/* /tmp/install-host-os-security-updates.sh

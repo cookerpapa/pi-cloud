@@ -1,3 +1,4 @@
+import { insertHistoricalProject } from "./fixtures/historical-project.ts";
 import { randomUUID } from "node:crypto";
 import { Migrator } from "kysely/migration";
 import { sql } from "kysely";
@@ -6,7 +7,6 @@ import { createDatabase } from "../src/index.ts";
 import { migrationProvider } from "../src/migrations/index.ts";
 import { createPrivateTenant } from "../../control-plane/src/tenant-administration.ts";
 import { insertHistoricalSession } from "./fixtures/historical-turn.ts";
-import { ControlPlaneStore } from "../../control-plane/src/control-plane-store.ts";
 
 const endpoint = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 it.skipIf(!endpoint)(
@@ -31,8 +31,10 @@ it.skipIf(!endpoint)(
         slug: "lifecycle",
         ownerDisplayName: "Fixture",
       });
-      const store = new ControlPlaneStore({ database: db, ...tenant });
-      const project = await store.createProject({ name: "retained", source: { kind: "empty" } });
+      const project = await insertHistoricalProject(db, {
+        tenantId: tenant.tenantId,
+        name: "retained",
+      });
       const session = await insertHistoricalSession(db, { ...tenant, ...project });
       const migrateLifecycle = async () => {
         const result = await new Migrator({

@@ -1,3 +1,4 @@
+import { exchangeUploadMetadata } from "./metadata-exchange.ts";
 import { constants } from "node:fs";
 import {
   open,
@@ -23,6 +24,8 @@ const DIR = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
 const READ = constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK;
 const at = (fd: FileHandle, name: string) => `/proc/self/fd/${fd.fd}/${name}`;
 const transferName = /^transfer-[0-9a-f-]{36}$/;
+const RECOVERY_SPACES = ["recovery-a", "recovery-b"] as const;
+const RECOVERY_BYTES = 64 * 1024;
 type Metadata = {
   identity: string;
   root: string;
@@ -74,7 +77,7 @@ async function readMetadata(directory: FileHandle): Promise<Metadata | undefined
   if (!file) return;
   try {
     const stat = await file.stat();
-    if (!stat.isFile() || stat.size > 32 * 1024)
+    if (!stat.isFile() || stat.size > RECOVERY_BYTES)
       fail("transfer_identity", "Transfer metadata is invalid");
     const value = JSON.parse(await file.readFile("utf8")) as Metadata;
     if (
@@ -90,7 +93,7 @@ async function readMetadata(directory: FileHandle): Promise<Metadata | undefined
     await file.close();
   }
 }
-async function writeMetadata(directory: FileHandle, value: Metadata) {
+async function writeMetadataOnce(directory: FileHandle, value: Metadata) {
   const path = at(directory, `.part-${randomUUID()}`);
   const file = await open(
     path,
@@ -99,7 +102,12 @@ async function writeMetadata(directory: FileHandle, value: Metadata) {
   );
   try {
     try {
-      await file.writeFile(JSON.stringify(value));
+      const body = Buffer.from(JSON.stringify(value));
+      if (body.byteLength > RECOVERY_BYTES)
+        fail("transfer_identity", "Upload metadata is too large");
+      const padded = Buffer.alloc(RECOVERY_BYTES, 32);
+      body.copy(padded);
+      await file.writeFile(padded);
       await file.sync();
     } finally {
       await file.close();
@@ -108,6 +116,138 @@ async function writeMetadata(directory: FileHandle, value: Metadata) {
     await directory.sync();
   } finally {
     await unlink(path).catch(() => undefined);
+  }
+}
+
+async function releaseRecoverySpace(directory: FileHandle): Promise<void> {
+  for (const name of RECOVERY_SPACES) {
+    const path = at(directory, name);
+    const stat = await lstat(path).catch((error) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    });
+    if (!stat) continue;
+    if (!stat.isFile() || stat.size > RECOVERY_BYTES)
+      fail("transfer_identity", "Invalid upload recovery allocation");
+    await unlink(path);
+  }
+  await directory.sync();
+}
+async function ensureRecoverySpace(directory: FileHandle, initial = false): Promise<void> {
+  if (!initial) {
+    for (const name of RECOVERY_SPACES) {
+      const existing = await lstat(at(directory, name)).catch((error) => {
+        if (error.code === "ENOENT") return undefined;
+        throw error;
+      });
+      if (
+        existing?.isFile() &&
+        existing.size === RECOVERY_BYTES &&
+        existing.blocks * 512 >= RECOVERY_BYTES
+      )
+        return;
+    }
+  }
+  for (const name of RECOVERY_SPACES) {
+    const path = at(directory, name);
+    const file = await open(
+      path,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+      0o600,
+    ).catch((error) => {
+      if (error.code === "EEXIST") return undefined;
+      throw error;
+    });
+    if (!file) {
+      const previous = await open(
+        path,
+        constants.O_RDWR | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+      );
+      try {
+        const stat = await previous.stat();
+        if (!stat.isFile() || stat.size > RECOVERY_BYTES)
+          fail("transfer_identity", "Invalid upload recovery allocation");
+        if (stat.size !== RECOVERY_BYTES || stat.blocks * 512 < RECOVERY_BYTES) {
+          await previous.writeFile(Buffer.alloc(RECOVERY_BYTES, 32));
+          await previous.sync();
+        }
+      } finally {
+        await previous.close();
+      }
+      continue;
+    }
+    try {
+      // These are allocated blocks. Emergency metadata replaces one of these
+      // files directly, so a concurrent writer cannot take released space.
+      await file.writeFile(Buffer.alloc(RECOVERY_BYTES, 32));
+      await file.sync();
+      await directory.sync();
+    } catch (error) {
+      await unlink(path).catch(() => undefined);
+      throw error;
+    } finally {
+      await file.close();
+    }
+  }
+}
+async function emergencyMetadata(
+  directory: FileHandle,
+  value: Metadata,
+  lock: FileHandle,
+): Promise<boolean> {
+  const body = Buffer.from(JSON.stringify(value));
+  if (body.byteLength > RECOVERY_BYTES)
+    fail("transfer_identity", "Upload metadata exceeds its recovery allocation");
+  for (const name of RECOVERY_SPACES) {
+    const path = at(directory, name);
+    const file = await open(
+      path,
+      constants.O_RDWR | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    ).catch((error) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    });
+    if (!file) continue;
+    try {
+      const stat = await file.stat();
+      if (!stat.isFile() || stat.size > RECOVERY_BYTES)
+        fail("transfer_identity", "Invalid upload recovery allocation");
+      if (stat.size !== RECOVERY_BYTES || stat.blocks * 512 < RECOVERY_BYTES) continue;
+      const padded = Buffer.alloc(RECOVERY_BYTES, 32);
+      body.copy(padded);
+      await file.writeFile(padded);
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+    const canonical = await lstat(at(directory, "metadata")).catch((error) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    });
+    if (!canonical) await rename(path, at(directory, "metadata"));
+    else {
+      if (!canonical.isFile() || canonical.size !== RECOVERY_BYTES)
+        fail("transfer_identity", "Invalid canonical upload metadata allocation");
+      await exchangeUploadMetadata(directory, lock, name);
+    }
+    await directory.sync();
+    return true;
+  }
+  return false;
+}
+async function writeMetadata(
+  directory: FileHandle,
+  value: Metadata,
+  lock: FileHandle,
+): Promise<void> {
+  try {
+    await writeMetadataOnce(directory, value);
+  } catch (error) {
+    if (
+      !["EDQUOT", "ENOSPC"].includes((error as NodeJS.ErrnoException).code ?? "") ||
+      !(await emergencyMetadata(directory, value, lock))
+    )
+      throw error;
   }
 }
 async function destination(
@@ -187,6 +327,14 @@ export async function workspaceFileTransfer(
     if (meta && meta.identity !== identity(input))
       fail("transfer_identity", "Workspace upload identity changed");
     if (input.action === "cancel") {
+      if (meta?.state === "cancelled") {
+        await unlink(at(directory, "body")).catch((error) => {
+          if (error.code !== "ENOENT") throw error;
+        });
+        await releaseRecoverySpace(directory);
+        await directory.sync();
+        return { state: "cancelled", offset: 0, relativePath: input.relativePath };
+      }
       if (meta?.state === "ready")
         return { state: "ready", offset: input.byteLength, relativePath: input.relativePath };
       // Retain a tombstone: an already-admitted, delayed create cannot resurrect it.
@@ -197,11 +345,12 @@ export async function workspaceFileTransfer(
         expiresAt: Math.max(meta?.expiresAt ?? 0, Date.now() + WORKSPACE_TRANSFER_TTL_MS),
         state: "cancelled",
       };
-      await writeMetadata(directory, meta);
+      await writeMetadata(directory, meta, lock);
       await unlink(at(directory, "body")).catch((error) => {
         if (error.code !== "ENOENT") throw error;
       });
       await directory.sync();
+      await releaseRecoverySpace(directory);
       return { state: "cancelled", offset: 0, relativePath: input.relativePath };
     }
     if (meta?.state === "cancelled") fail("transfer_cancelled", "Workspace upload was cancelled");
@@ -227,12 +376,18 @@ export async function workspaceFileTransfer(
         expiresAt: Date.parse(input.expiresAt),
         state: "uploading",
       };
-      await writeMetadata(directory, meta);
+      await ensureRecoverySpace(directory, true);
+      await writeMetadata(directory, meta, lock);
     }
     if (meta.root !== rootIdentity || meta.parent !== parentIdentity)
       fail("transfer_path", "Upload destination directory changed");
-    meta.expiresAt = Math.max(meta.expiresAt, Date.parse(input.expiresAt));
-    await writeMetadata(directory, meta);
+    if (input.action === "append" || input.action === "create")
+      await ensureRecoverySpace(directory);
+    const expiresAt = Math.max(meta.expiresAt, Date.parse(input.expiresAt));
+    if (expiresAt !== meta.expiresAt) {
+      meta.expiresAt = expiresAt;
+      await writeMetadata(directory, meta, lock);
+    }
     file = await open(
       at(directory, "body"),
       constants.O_RDWR |
@@ -292,19 +447,19 @@ export async function workspaceFileTransfer(
     } else {
       if ((await digest(file, input.byteLength, signal)) !== input.sha256) {
         meta.state = "failed";
-        await writeMetadata(directory, meta);
+        await writeMetadata(directory, meta, lock);
         fail("transfer_content", "Workspace file checksum does not match the selected source");
       }
       signal?.throwIfAborted();
       meta.state = "publishing";
       meta.inode = await inode(file);
-      await writeMetadata(directory, meta);
+      await writeMetadata(directory, meta, lock);
       try {
         await link(at(directory, "body"), target);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "EEXIST") {
           meta.state = "failed";
-          await writeMetadata(directory, meta);
+          await writeMetadata(directory, meta, lock);
           fail("transfer_conflict", "A file already exists at the destination");
         }
         throw error;
@@ -312,8 +467,9 @@ export async function workspaceFileTransfer(
     }
     await parent.sync();
     meta.state = "ready";
-    await writeMetadata(directory, meta);
+    await writeMetadata(directory, meta, lock);
     await unlink(at(directory, "body"));
+    await releaseRecoverySpace(directory);
     await directory.sync();
     return { state: "ready", offset: input.byteLength, relativePath: input.relativePath };
   } finally {
@@ -340,7 +496,7 @@ export async function reapWorkspaceFileTransfer(
     const entries = await opendir(`/proc/self/fd/${directory.fd}`);
     for await (const entry of entries) {
       if (
-        !["metadata", "lock", "body"].includes(entry.name) &&
+        !["metadata", "lock", "body", ...RECOVERY_SPACES].includes(entry.name) &&
         !/^\.part-[0-9a-f-]{36}$/.test(entry.name)
       )
         fail("transfer_identity", "Unexpected upload staging content");

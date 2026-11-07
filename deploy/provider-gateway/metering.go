@@ -5,6 +5,8 @@ package picloudmetering
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"errors"
 	"io"
 	"net/http"
@@ -115,6 +117,7 @@ type Service struct {
 	closed  bool
 	cancel  context.CancelFunc
 	done    chan struct{}
+	bootID  string
 }
 
 func New(options Options) *Service {
@@ -126,7 +129,7 @@ func New(options Options) *Service {
 		transport.Proxy = nil
 		options.Client = &http.Client{Transport: transport, Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	}
-	return &Service{options: options}
+	return &Service{options: options, bootID: uuid.NewString()}
 }
 func NewFromEnvironment() *Service {
 	path := os.Getenv("PI_CLOUD_METERING_PATH")
@@ -166,6 +169,37 @@ func (s *Service) Ready() bool {
 	}
 	_, err := s.open()
 	return err == nil
+}
+
+// Delivery reports only accounting delivery evidence. It neither initializes
+// source state nor creates/cancels model work, and uses the existing receipt key.
+func (s *Service) Delivery() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if s == nil {
+			c.AbortWithStatusJSON(503, gin.H{"error": "model_metering_unavailable"})
+			return
+		}
+		expected := sha256.Sum256([]byte("Bearer " + s.options.Token))
+		candidate := sha256.Sum256([]byte(c.GetHeader("Authorization")))
+		if s.options.Token == "" || subtle.ConstantTimeCompare(expected[:], candidate[:]) != 1 {
+			c.AbortWithStatusJSON(401, gin.H{"error": "authentication_required"})
+			return
+		}
+		s.mu.Lock()
+		j, closed := s.journal, s.closed
+		s.mu.Unlock()
+		if j == nil || closed {
+			c.AbortWithStatusJSON(503, gin.H{"error": "model_metering_unavailable"})
+			return
+		}
+		state, err := j.deliveryState()
+		if err != nil {
+			c.AbortWithStatusJSON(503, gin.H{"error": "model_metering_unavailable"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"version": 1, "bootId": s.bootID,
+			"pending": state.pending, "active": state.active, "captureFailures": j.captureFailures.Load()})
+	}
 }
 func (s *Service) Close() {
 	if s == nil {
@@ -214,26 +248,81 @@ func (s *Service) Middleware() gin.HandlerFunc {
 		c.Request = c.Request.WithContext(usage.WithCapture(c.Request.Context(), capture))
 		defer func() {
 			cancelled := c.Request.Context().Err() != nil
-			capture.append(event{Kind: "finished", Context: a, OccurredAt: timestamp(time.Now()), StatusCode: c.Writer.Status(), Cancelled: &cancelled})
+			capture.finish(event{Kind: "finished", Context: a, OccurredAt: timestamp(time.Now()), StatusCode: c.Writer.Status(), Cancelled: &cancelled})
 		}()
 		c.Next()
 	}
 }
 
 type requestCapture struct {
-	journal *journal
-	context attribution
+	journal   *journal
+	context   attribution
+	mu        sync.Mutex
+	producers uint64
+	finished  *event
+	settled   bool
 }
 
-func (r *requestCapture) append(e event) {
-	if err := r.journal.append(e); err != nil {
+func (r *requestCapture) append(e event) error {
+	err := r.journal.append(e)
+	if err != nil {
+		r.journal.captureFailures.Add(1)
 		log.WithField("invocationId", r.context.InvocationID).Error("picloud.metering.capture_failed")
+	}
+	return err
+}
+
+func (r *requestCapture) finish(e event) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.finished == nil {
+		r.finished = &e
+	}
+	r.settle()
+}
+
+// Caller holds mu. Delaying this bounded receipt does not delay HTTP completion.
+// The existing active journal survives a crash until every publisher has closed.
+func (r *requestCapture) settle() {
+	if !r.settled && r.finished != nil && r.producers == 0 {
+		r.settled = r.append(*r.finished) == nil
+	}
+}
+
+func (r *requestCapture) RetainProducer() func() {
+	r.mu.Lock()
+	r.journal.producers.Add(1)
+	if r.settled {
+		// This violates the pinned producer-lifetime contract. Keep late usage,
+		// restore the original accounting admission and refuse delivery evidence
+		// across the failure; never replay or fail the model operation itself.
+		r.journal.captureFailures.Add(1)
+		if err := r.journal.admit(r.context); err != nil {
+			log.WithField("invocationId", r.context.InvocationID).Error("picloud.metering.capture_failed")
+		}
+		r.settled = false
+	}
+	r.producers++
+	r.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			r.producers--
+			r.settle()
+			r.journal.producers.Add(-1)
+		})
 	}
 }
 func (r *requestCapture) AttemptStarted(id string, at time.Time) {
+	release := r.RetainProducer()
+	defer release()
 	r.append(event{Kind: "attempt", Context: r.context, ExecutionID: id, OccurredAt: timestamp(at)})
 }
 func (r *requestCapture) Record(record usage.Record) {
+	release := r.RetainProducer()
+	defer release()
 	d := usage.EnsureTokenBreakdownForProvider(record.Detail, record.Provider, record.ExecutorType)
 	b := d.TokenBreakdown
 	model := record.ResponseModel

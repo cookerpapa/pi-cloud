@@ -12,6 +12,7 @@ import {
   withAbortSignal,
 } from "@earendil-works/chord/context";
 import { FakeModelServer, FAKE_MODEL_API_KEY } from "@pi-cloud/fake-model-server";
+import { NativeSessionError } from "@pi-cloud/pi-session-postgres";
 import { type EventPublishMessage, parseControlToSupervisorMessage } from "@pi-cloud/protocol";
 import { PiCloudTurnRunner } from "../src/pi-cloud-turn-runner.ts";
 import { AgentRunSupervisor } from "../src/agent-run-supervisor.ts";
@@ -32,6 +33,7 @@ import { command } from "./fixtures/durable-command.ts";
 it.each([
   "complete",
   "request_too_large",
+  "lease_expired_after_prepare",
   "stop_on_resume",
   "stop_before_setup",
   "long_work",
@@ -139,7 +141,8 @@ it.each([
       });
     let step = 0,
       acquired = 0,
-      released = 0;
+      released = 0,
+      leaseExpired = false;
     const handle: DurableSessionHandle = {
       ...textDisplay,
       binding: {
@@ -158,7 +161,14 @@ it.each([
       storage,
       authority: {
         signal: controller.signal,
-        assertCurrent: async () => {},
+        assertCurrent: async () => {
+          if (leaseExpired) {
+            const expired = new NativeSessionError("storage", "Confirmed lease lifetime expired");
+            controller.abort(expired);
+            throw expired;
+          }
+          controller.signal.throwIfAborted();
+        },
         close: async () => {},
       },
       runtime: (factory) => (runtime ??= factory()) as ReturnType<typeof factory>,
@@ -225,6 +235,9 @@ it.each([
               modelMessages: capture.modelMessages,
             };
           });
+          // Simulate elapsed monotonic lifetime while the expiry timer is still
+          // queued. A signal-only check cannot detect this until admission.
+          if (mode === "lease_expired_after_prepare") leaseExpired = true;
           return { messages: [...messages], headers: headers ?? {} };
         },
       }),
@@ -358,6 +371,13 @@ it.each([
             userStop.signal,
           );
       void executing.catch(() => {});
+      if (mode === "lease_expired_after_prepare") {
+        await expect(executing).rejects.toMatchObject({ code: "session_lease_revoked" });
+        expect(acquired).toBe(1);
+        expect(released).toBe(1);
+        expect(fake.observations).toEqual([]);
+        return;
+      }
       if (mode === "request_too_large") {
         await expect(executing).rejects.toMatchObject({ code: "model_request_too_large" });
         expect(acquired).toBe(1);

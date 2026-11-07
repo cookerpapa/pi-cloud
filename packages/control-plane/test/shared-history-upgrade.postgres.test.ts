@@ -1,3 +1,4 @@
+import { insertHistoricalProject } from "../../database/test/fixtures/historical-project.ts";
 import { PostgresAttachmentStore } from "@pi-cloud/session-attachments";
 import { SessionAttachmentReader } from "../src/session-attachment-reader.ts";
 import { randomUUID, createHash } from "node:crypto";
@@ -38,7 +39,10 @@ it("converts schema-203 native bodies and frozen presentation once without chang
       ownerDisplayName: "Upgrade fixture",
     });
     const store = new ControlPlaneStore({ database: db, ...tenant });
-    const project = await store.createProject({ name: "Upgrade", source: { kind: "empty" } });
+    const project = await insertHistoricalProject(db, {
+      tenantId: tenant.tenantId,
+      name: "Upgrade",
+    });
     const owner = await store.createSession(
       project.projectId,
       project.workspaceId,

@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(209);
+      expect(firstMigrationPass.rows).toHaveLength(212);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("209_workspace_file_transfers");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("212_workspace_capacity");
       const terminalColumns = await sql<{ column_name: string }>`select column_name
         from information_schema.columns where table_name='workspace_terminal_sessions'`.execute(
         database,
@@ -121,6 +121,14 @@ describe("current PiCloud schema", () => {
         "session_attachment_objects",
         "session_attachment_references",
         "workspace_file_transfers",
+        // Source receipts and rate versions replace neither native history nor
+        // the explicitly retired dormant reservation tables listed above.
+        "model_invocations",
+        "model_metering_events",
+        "model_rate_versions",
+        "resource_metering_resources",
+        "resource_metering_events",
+        "resource_rate_versions",
       ]) {
         expect(names.has(required), `missing current table ${required}`).toBe(true);
       }
@@ -185,6 +193,9 @@ describe("current PiCloud schema", () => {
       const keys = new Set(columns.rows.map((row) => `${row.table_name}.${row.column_name}`));
       expect(keys.has("subagent_executions.result_entry_id")).toBe(false);
       expect(keys.has("workspaces.seed_kind")).toBe(true);
+      expect(keys.has("workspaces.capacity_bytes")).toBe(true);
+      expect(keys.has("workspaces.capacity_revision")).toBe(true);
+      expect(keys.has("workspaces.capacity_pending")).toBe(true);
       expect(keys.has("workspaces.object_snapshot_key")).toBe(false);
       expect(keys.has("workspaces.parent_workspace_id")).toBe(false);
       expect(keys.has("runs.source_set_snapshot")).toBe(false);

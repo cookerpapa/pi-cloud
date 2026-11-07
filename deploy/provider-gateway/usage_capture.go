@@ -2,6 +2,7 @@ package usage
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
@@ -11,6 +12,29 @@ import (
 type Capture interface {
 	AttemptStarted(id string, at time.Time)
 	Record(record Record)
+}
+
+// ProducerCapture optionally retains accounting admission while an executor
+// can still publish usage after its HTTP consumer or output channel has ended.
+// The returned release is invoked only after the final synchronous callback.
+type ProducerCapture interface {
+	RetainProducer() func()
+}
+
+func RetainProducer(ctx context.Context) func() {
+	observer, ok := CaptureFromContext(ctx).(ProducerCapture)
+	if !ok {
+		return func() {}
+	}
+	release := observer.RetainProducer()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			if release != nil {
+				release()
+			}
+		})
+	}
 }
 
 type captureKey struct{}

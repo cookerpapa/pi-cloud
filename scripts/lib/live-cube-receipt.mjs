@@ -1,3 +1,4 @@
+import { materializeCubeOwnedSources } from "./cube-owned-sources.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -73,6 +74,7 @@ export async function checkOwnedGuestReceipt({ tenantId, workspaceId }) {
       );
       await run("git", ["apply", path], { cwd: temporary });
     }
+    await materializeCubeOwnedSources(repositoryRoot, temporary, manifest);
     const source = join(repositoryRoot, "scripts/fixtures/live-cube-receipt.go");
     const binary = join(temporary, "receipt-check");
     await run("go", ["build", "-mod=readonly", "-o", binary, source], {

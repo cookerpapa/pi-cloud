@@ -712,11 +712,7 @@ export class SandboxControlClient {
         true,
       );
     }
-    if (
-      path === SANDBOX_CONTROL_WORKSPACE_BROWSER_PATH &&
-      response.status === 307 &&
-      response.headers.get("location")
-    ) {
+    if (response.status === 307 && response.headers.get("location")) {
       await response.body?.cancel();
       if (redirects >= 3)
         throw new SandboxControlClientError(
@@ -724,8 +720,15 @@ export class SandboxControlClient {
           "Workspace owner routing did not converge",
           false,
         );
+      const location = new URL(response.headers.get("location")!);
+      if (location.username || location.password || location.search || location.hash)
+        throw new SandboxControlClientError(
+          "tool_broker_redirect_invalid",
+          "Invalid execution owner route",
+          false,
+        );
       const owner = new SandboxControlClient({
-        baseUrl: response.headers.get("location")!,
+        baseUrl: location.origin,
         serviceToken: this.#serviceToken,
         allowInsecureHttp: this.#allowInsecureHttp,
         requestTimeoutMs: this.#requestTimeoutMs,

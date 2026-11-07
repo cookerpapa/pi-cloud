@@ -8,6 +8,7 @@
     ".": "./src/index.ts",
     "./client": "./src/sandbox-control-client.ts",
     "./runtime": "./src/sandbox-control-runtime.ts",
+    "./session-runtime": "./src/sandbox-session-runtime.ts",
     "./dispatch": "./src/tool-command-dispatcher.ts",
     "./bindings": "./src/sandbox-bindings.ts"
   },

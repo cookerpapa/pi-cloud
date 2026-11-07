@@ -187,6 +187,12 @@ async function build() {
       { env: environment },
     );
   }
+  // One artifact supplies three independent process roles. A scoped build only
+  // changes its private candidate; the scoped operator selects the published role.
+  if (!selected) {
+    images.sessionRuntime = images.controlPlane;
+    images.metering = images.controlPlane;
+  }
   writeFileSync(imageCatalogPath, JSON.stringify(images, null, 2) + "\n", {
     mode: 0o600,
   });
@@ -287,8 +293,8 @@ function installSecrets() {
 }
 /** Internal release operation. Existing installations reach this only after the
  * matched operator's lock, artifact validation and writer drain. Cube replacement
- * requires VM absence; ADR-0297 may retain source-verified Sandbox artifacts. */
-export async function deployPlatform({ images, deploymentEnvironment, retainedSandboxRuntime }) {
+ * requires verified VM absence while preserving Workspace bytes and machine intent. */
+export async function deployPlatform({ images, deploymentEnvironment }) {
   const cubeNode = JSON.parse(kubectl(["get", "daemonset", "cube-node", "-o", "json"]));
   assertCubeWorkspaceContract(
     JSON.parse(kubectl(["get", "deployment", "cube-master", "-o", "json"])),
@@ -319,7 +325,7 @@ export async function deployPlatform({ images, deploymentEnvironment, retainedSa
   );
   assertCubeCompletionVersion(
     installed,
-    retainedSandboxRuntime?.completionIdentity ?? (await completionBuildIdentity(repositoryRoot)),
+    await completionBuildIdentity(repositoryRoot),
     `${runtimeBuild.upstreamVersion}-picloud-${createHash("sha256").update(JSON.stringify(runtimeBuild)).digest("hex").slice(0, 16)}`,
   );
   const { platform } = await values({ images, deploymentEnvironment });
@@ -374,10 +380,7 @@ export async function deployPlatform({ images, deploymentEnvironment, retainedSa
     { stdio: "inherit" },
   );
   run(helm, ["dependency", "build", chart("platform")]);
-  if (!retainedSandboxRuntime)
-    run(process.execPath, ["scripts/configure-cube-completion.mjs"], {
-      env: deploymentEnvironment,
-    });
+  run(process.execPath, ["scripts/configure-cube-completion.mjs"], { env: deploymentEnvironment });
   helmRun([
     "upgrade",
     "--install",
@@ -388,7 +391,7 @@ export async function deployPlatform({ images, deploymentEnvironment, retainedSa
     "--timeout",
     "15m",
   ]);
-  const endpoint = JSON.parse(kubectl(["get", "service", "control-plane", "-o", "json"])).spec
+  const endpoint = JSON.parse(kubectl(["get", "service", "session-runtime", "-o", "json"])).spec
     .clusterIP;
   const token = readFileSync(
     resolve(runtimeDirectory, "secrets/supervisor-management-token"),

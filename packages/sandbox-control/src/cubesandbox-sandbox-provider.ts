@@ -998,6 +998,9 @@ export class CubeSandboxProvider implements SandboxProvider {
       version: 2,
       target: activation.executionTarget,
       attachment: this.#toolAttachment(activation, bindingId, toolRoot),
+      ...(this.#persistentCapsules
+        ? { dataCapsule: (await this.persistentCapsule(handle)).capsule }
+        : {}),
     };
   }
 
@@ -1421,6 +1424,106 @@ export class CubeSandboxProvider implements SandboxProvider {
         continuityId: activation.continuityId,
       }),
     };
+  }
+
+  readonly #executionData = new Set<string>();
+
+  /** Open only the recorded data channel. No Cube control API, resource adoption,
+   * VM create/resume or resource-owner lease participates in this path. */
+  attachExecutionData(descriptor: SandboxExecutionDescriptor): SandboxHandle {
+    if (!this.#persistentCapsules || !descriptor.dataCapsule)
+      throw new SandboxControlError(
+        "execution_data_unavailable",
+        "Binding data transport is unavailable",
+        false,
+      );
+    const raw = record(
+      this.#persistentCapsules.open(descriptor.dataCapsule),
+      "Execution data capsule",
+    );
+    const handle = raw.handle as SandboxHandle;
+    const instance = raw.instance as CubeSandboxInstance;
+    const target = raw.executionTarget as SandboxExecutionTarget;
+    const evidence = parseEvidence(raw.evidence);
+    if (
+      raw.version !== 2 ||
+      !handle ||
+      !instance ||
+      !target ||
+      typeof instance.trafficAccessToken !== "string" ||
+      instance.trafficAccessToken.length < 16 ||
+      !["running", "idle"].includes(String(raw.state)) ||
+      typeof raw.bindingSha256 !== "string" ||
+      !/^[0-9a-f]{64}$/.test(raw.bindingSha256) ||
+      !Number.isSafeInteger(raw.authorityEpoch) ||
+      (raw.authorityEpoch as number) < 1 ||
+      typeof raw.volumeId !== "string" ||
+      typeof raw.toolRoot !== "string" ||
+      (raw.lifetime !== "elastic" && raw.lifetime !== "development_environment") ||
+      target.apiUrl !== descriptor.target.apiUrl ||
+      target.nodeId !== descriptor.target.nodeId ||
+      target.sandboxId !== descriptor.target.sandboxId ||
+      target.bootId !== descriptor.target.bootId ||
+      target.sandboxId !== instance.sandboxId ||
+      target.sandboxId !== handle.runtimeName ||
+      target.nodeId !== handle.runtimeNodeId ||
+      evidence.imageRevision !== handle.environment?.imageRevision ||
+      raw.imageRevision !== evidence.imageRevision
+    )
+      throw new SandboxControlError(
+        "execution_data_invalid",
+        "Binding data identity changed",
+        false,
+      );
+    this.#assertHandle(handle);
+    const old = this.#activations.get(handle.activationId);
+    if (old && executionTargetId(old.executionTarget) !== executionTargetId(target))
+      throw new SandboxControlError(
+        "execution_data_invalid",
+        "Binding physical identity changed",
+        false,
+      );
+    if (!old) {
+      if (this.#executionData.size >= 4096) {
+        const expired = this.#executionData.values().next().value!;
+        this.#executionData.delete(expired);
+        this.#activations.delete(expired);
+      }
+      this.#executionData.add(handle.activationId);
+      this.#activations.set(handle.activationId, {
+        executionTarget: target,
+        instance,
+        handle,
+        evidence,
+        toolchain: raw.toolchain as EnvironmentToolchainReport,
+        bindingSha256: raw.bindingSha256,
+        authorityEpoch: raw.authorityEpoch as number,
+        state: raw.state as "running" | "idle",
+        volumeId: raw.volumeId,
+        lifetime: raw.lifetime,
+        toolRoot: raw.toolRoot,
+      });
+    }
+    return handle;
+  }
+
+  /** PG-authorized human data access uses the same immutable allocation capsule. */
+  openDataCapsule(capsule: string): SandboxHandle {
+    if (!this.#persistentCapsules) throw new Error("Execution data key is unavailable");
+    const raw = record(this.#persistentCapsules.open(capsule), "Execution data capsule");
+    const handle = raw.handle as SandboxHandle;
+    return this.attachExecutionData({
+      version: 2,
+      target: raw.executionTarget as SandboxExecutionTarget,
+      attachment: { activationId: handle.activationId, toolRoot: handle.workspaceRoot },
+      dataCapsule: capsule,
+    });
+  }
+
+  /** Drop disposable execution handles when Projector membership changes. */
+  clearExecutionData(): void {
+    for (const id of this.#executionData) this.#activations.delete(id);
+    this.#executionData.clear();
   }
 
   async adoptPersistentCapsule(capsule: string): Promise<SandboxHandle> {

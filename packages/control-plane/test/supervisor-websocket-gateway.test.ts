@@ -108,7 +108,6 @@ async function startGateway(options: {
       }),
     heartbeatIntervalMs: 250,
     heartbeatTimeoutMs: 2_000,
-    leaseDurationMs: 3_000,
     retirementClaimDurationMs: 5_000,
     retirementRetryDelayMs: 100,
     clock,

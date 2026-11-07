@@ -1,3 +1,4 @@
+import { insertHistoricalProject } from "../../database/test/fixtures/historical-project.ts";
 import { insertHistoricalSession } from "../../database/test/fixtures/historical-turn.ts";
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
@@ -50,8 +51,12 @@ describe.skipIf(!endpoint)("unlimited product quotas", () => {
         .onConflict((c) => c.column("id").doNothing())
         .execute();
       const store = new ControlPlaneStore({ database: db, ...tenant });
-      const first = await store.createProject({ name: "first", source: { kind: "empty" } });
+      const first = await insertHistoricalProject(db, {
+        tenantId: tenant.tenantId,
+        name: "first",
+      });
       await insertHistoricalSession(db, { ...tenant, ...first });
+      // This rejection reads the old quota and returns before any current-schema INSERT.
       await expect(
         store.createProject({ name: "blocked", source: { kind: "empty" } }),
       ).rejects.toMatchObject({ code: "tenant_quota_exceeded" });
@@ -72,7 +77,10 @@ describe.skipIf(!endpoint)("unlimited product quotas", () => {
             .executeTakeFirstOrThrow()
         ).maximum_active_sandboxes,
       ).toBeNull();
-      const second = await store.createProject({ name: "second", source: { kind: "empty" } });
+      const second = await insertHistoricalProject(db, {
+        tenantId: tenant.tenantId,
+        name: "second",
+      });
       const { sessionId } = await insertHistoricalSession(db, { ...tenant, ...second });
       expect(
         (

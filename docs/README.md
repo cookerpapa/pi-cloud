@@ -31,6 +31,7 @@ work from remaining proposals and unverified limits.
 | Document | Purpose |
 | --- | --- |
 | [Configuration](CONFIGURATION.md) | Maintained configuration authorities |
+| [Workspace storage pool](WORKSPACE_STORAGE_POOL.md) | XFS capacity, migration, mount recovery and growth |
 | [Deployment](PRODUCTION_DEPLOYMENT.md) | Self-hosted runtime operations |
 | [Matched release](MATCHED_RELEASE.md) | Coordinated changes, draining and artifact checks |
 | [Component release](COMPONENT_RELEASE.md) | Supported independent publication scopes |

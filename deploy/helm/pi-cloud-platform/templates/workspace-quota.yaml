@@ -1,0 +1,102 @@
+{{- if .Values.sandboxPlaneEnabled }}
+{{- $name := include "pi-cloud-platform.name" . -}}
+apiVersion: v1
+kind: Service
+metadata: { name: workspace-quota }
+spec:
+  selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: workspace-quota }
+  ports: [{ name: quota, port: 4510, targetPort: quota }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-workspace-quota
+  labels:
+    {{- include "pi-cloud-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: workspace-quota
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: workspace-quota }
+  template:
+    metadata:
+      labels:
+        {{- include "pi-cloud-platform.labels" . | nindent 8 }}
+        app.kubernetes.io/component: workspace-quota
+        pi-cloud.io/sandbox-domain: {{ .Values.sandboxPlane.domainId | quote }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.sandboxPlane.workspace.quotaNodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- else }}
+      {{- with .Values.global.trustedNodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- end }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: workspace-quota
+          image: {{ include "pi-cloud-platform.image" .Values.images.workspaceVolumeGateway | quote }}
+          imagePullPolicy: {{ .Values.images.workspaceVolumeGateway.pullPolicy }}
+          command: [/app/bin/workspace-quota]
+          ports: [{ name: quota, containerPort: 4510 }]
+          env:
+            - { name: PI_CLOUD_WORKSPACE_POSIX_ROOT, value: /data/workspaces }
+            - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-volume-gateway-token }
+            - { name: PI_CLOUD_METERING_TOKEN_FILE, value: /run/pi-cloud-secrets/metering-ingest-token }
+            - { name: PI_CLOUD_RESOURCE_METERING_URL, value: "http://metering:3000/internal/v1/resource-metering" }
+            - { name: PI_CLOUD_RESOURCE_METERING_SOURCE_ID, value: {{ printf "workspace:%s" .Values.sandboxPlane.domainId | quote }} }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL], add: [SYS_ADMIN, DAC_OVERRIDE, CHOWN, FOWNER] }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+          startupProbe: { httpGet: { path: /health/ready, port: quota }, periodSeconds: 5, failureThreshold: 24 }
+          readinessProbe: { httpGet: { path: /health/ready, port: quota }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /health/live, port: quota }, periodSeconds: 10 }
+          volumeMounts:
+            - { name: workspace, mountPath: /data/workspaces }
+            - { name: secrets, mountPath: /run/pi-cloud-secrets/workspace-volume-gateway-token, subPath: workspace-volume-gateway-token, readOnly: true }
+            - { name: secrets, mountPath: /run/pi-cloud-secrets/metering-ingest-token, subPath: metering-ingest-token, readOnly: true }
+      volumes:
+        - name: workspace
+          persistentVolumeClaim: { claimName: {{ .Values.sandboxPlane.workspace.quotaExistingClaim | default .Values.sandboxPlane.workspace.existingClaim | quote }} }
+        - name: secrets
+          secret: { secretName: {{ .Values.global.existingSecret }}, defaultMode: 288 }
+{{- if .Values.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: {{ $name }}-workspace-quota }
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: workspace-quota }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { {{ .Values.networkPolicy.trustedNamespaceLabel.key }}: {{ .Values.networkPolicy.trustedNamespaceLabel.value | quote }} }
+      ports: [{ protocol: TCP, port: 4510 }]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+          podSelector:
+            matchLabels: { k8s-app: kube-dns }
+      ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
+    - to:
+        - namespaceSelector:
+            matchLabels: { {{ .Values.networkPolicy.trustedNamespaceLabel.key }}: {{ .Values.networkPolicy.trustedNamespaceLabel.value | quote }} }
+      ports: [{ protocol: TCP, port: 3000 }]
+{{- end }}
+{{- end }}

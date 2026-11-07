@@ -4,7 +4,6 @@ import { execFileSync } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { sql } from "kysely";
 import { getCurrentSystemMessage, getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { controlToolCatalog } from "../../packages/control-plane/src/control-tool-registry.ts";
 import { previewToolDefinition } from "../../packages/control-plane/src/ordinary-tools/preview-tool.ts";
@@ -19,7 +18,7 @@ import {
 } from "./production-kubernetes.mjs";
 import { scopedHelmUpgradeArguments } from "./component-release.mjs";
 import { withChromePage } from "./chrome-cdp.mjs";
-import { armControlPlaneRestore } from "./owned-control-plane-outage.mjs";
+import { armRuntimeRestore } from "./owned-runtime-outage.mjs";
 
 const terminal = (state) => ["completed", "failed", "cancelled", "timed_out"].includes(state);
 const pause = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -311,41 +310,39 @@ export async function runtimeCapabilityAcceptance({
       JSON.stringify(receipt, null, 2),
       { mode: 0o600 },
     );
-    const restorePath = resolve(directory, `catalog-control-plane-${randomUUID()}.restore.json`);
-    const oldOwners = await db
-      .selectFrom("sandbox_control_instances")
-      .select("instance_id")
-      .where("sandbox_domain_id", "=", values.sandboxPlane.domainId)
-      .where("state", "=", "ready")
-      .where("lease_expires_at", ">", sql`clock_timestamp()`)
-      .execute();
-    const deployment = JSON.parse(kubectl(["get", workload("control-plane"), "-o", "json"]));
-    assert.equal(deployment.spec.replicas, 1, "This fixture uses single-Control-Plane replacement");
-    const stopped = await armControlPlaneRestore(restorePath, Date.now() + 180_000);
+    const restorePath = resolve(directory, `catalog-session-runtime-${randomUUID()}.restore.json`);
+    const unrelatedPods = () =>
+      JSON.parse(
+        kubectl([
+          "get",
+          "pods",
+          "-l",
+          "app.kubernetes.io/component in (control-plane,metering)",
+          "-o",
+          "json",
+        ]),
+      )
+        .items.filter((pod) => !pod.metadata.deletionTimestamp)
+        .map((pod) => ({
+          name: pod.metadata.name,
+          uid: pod.metadata.uid,
+          images: pod.spec.containers.map((container) => container.image),
+          restarts: pod.status.containerStatuses?.map((container) => container.restartCount),
+        }))
+        .sort((left, right) => left.name.localeCompare(right.name));
+    const managementAndMetering = unrelatedPods();
+    const deployment = JSON.parse(kubectl(["get", workload("session-runtime"), "-o", "json"]));
+    assert.equal(
+      deployment.spec.replicas,
+      1,
+      "This fixture uses single-Session-runtime replacement",
+    );
+    const stopped = await armRuntimeRestore("session-runtime", restorePath, Date.now() + 180_000);
     try {
-      kubectl(["scale", workload("control-plane"), "--current-replicas=1", "--replicas=0"]);
+      kubectl(["scale", workload("session-runtime"), "--current-replicas=1", "--replicas=0"]);
       kubectl(["wait", "--for=delete", "pod", "-l", stopped.selector, "--timeout=120s"], {
         timeout: 125_000,
       });
-      await until(
-        async () => {
-          if (!oldOwners.length) return true;
-          const live = await db
-            .selectFrom("sandbox_control_instances")
-            .select("instance_id")
-            .where(
-              "instance_id",
-              "in",
-              oldOwners.map((owner) => owner.instance_id),
-            )
-            .where("state", "=", "ready")
-            .where("lease_expires_at", ">", sql`clock_timestamp()`)
-            .execute();
-          return live.length === 0;
-        },
-        "Previous sandbox-owner lease closure",
-        30_000,
-      );
       execFileSync(
         process.env.PI_CLOUD_HELM_BIN ?? "helm",
         scopedHelmUpgradeArguments({
@@ -358,7 +355,7 @@ export async function runtimeCapabilityAcceptance({
         { stdio: "pipe", timeout: 330_000 },
       );
     } finally {
-      const current = JSON.parse(kubectl(["get", workload("control-plane"), "-o", "json"]));
+      const current = JSON.parse(kubectl(["get", workload("session-runtime"), "-o", "json"]));
       assert.equal(current.metadata.uid, stopped.receipt.uid);
       if (current.spec.replicas === 0) await stopped.restore();
       else assert.equal(current.spec.replicas, stopped.receipt.replicas);
@@ -370,6 +367,11 @@ export async function runtimeCapabilityAcceptance({
       });
     }
     expected = enabled;
+    assert.deepEqual(
+      unrelatedPods(),
+      managementAndMetering,
+      "Catalog change replaced management or metering",
+    );
     assert.deepEqual(workerPods(), workers, "Catalog change replaced a Worker");
     const revision = controlToolCatalog(
       enabled?.length === 0 ? [] : [previewToolDefinition],
@@ -415,8 +417,8 @@ export async function runtimeCapabilityAcceptance({
         .where("runtime.tenant_id", "=", tenant.tenantId)
         .where("runtime.workspace_id", "=", session.workspaceId)
         .execute(),
-      currentControlPlanePods: JSON.parse(
-        kubectl(["get", "pods", "-l", "app.kubernetes.io/component=control-plane", "-o", "json"]),
+      currentSessionRuntimePods: JSON.parse(
+        kubectl(["get", "pods", "-l", "app.kubernetes.io/component=session-runtime", "-o", "json"]),
       ).items.map((pod) => ({
         name: pod.metadata.name,
         ip: pod.status.podIP,
@@ -452,7 +454,7 @@ export async function runtimeCapabilityAcceptance({
                 .join("\n")
                 .slice(0, 1500),
             })),
-          sandboxErrors: kubectl(["logs", workload("control-plane"), "--since=2m", "--tail=1000"])
+          runtimeErrors: kubectl(["logs", workload("session-runtime"), "--since=2m", "--tail=1000"])
             .split("\n")
             .flatMap((line) => {
               try {
@@ -489,12 +491,12 @@ export async function runtimeCapabilityAcceptance({
             .where("runtime.tenant_id", "=", tenant.tenantId)
             .where("runtime.workspace_id", "=", session.workspaceId)
             .execute(),
-          currentControlPlanePods: JSON.parse(
+          currentSessionRuntimePods: JSON.parse(
             kubectl([
               "get",
               "pods",
               "-l",
-              "app.kubernetes.io/component=control-plane",
+              "app.kubernetes.io/component=session-runtime",
               "-o",
               "json",
             ]),

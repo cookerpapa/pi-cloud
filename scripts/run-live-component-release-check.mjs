@@ -20,7 +20,7 @@ import {
   purgeOwnedAcceptanceTenant,
 } from "./lib/owned-acceptance-cleanup.mjs";
 import { S3AttachmentBlobStore } from "../packages/session-attachments/src/s3.ts";
-import { digest } from "./lib/component-release.mjs";
+import { digest, assertServingComponents } from "./lib/component-release.mjs";
 
 assert.equal(
   process.env.PI_CLOUD_LIVE_COMPONENT_RELEASE_CHECK,
@@ -49,6 +49,13 @@ const config = () =>
       ],
     ),
   );
+const installedDeployment = JSON.parse(
+  await readFile(resolve(runtimeDirectory, "k3s/deployment.json"), "utf8"),
+);
+assertServingComponents(
+  installedDeployment,
+  JSON.parse(kubectl(["get", "deployment,statefulset,daemonset", "-o", "json"])).items,
+);
 const original = config();
 await save("original-catalog.json", original);
 const changed = structuredClone(original),

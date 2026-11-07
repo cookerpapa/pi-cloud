@@ -1,3 +1,7 @@
+import {
+  WORKSPACE_VOLUME_GATEWAY_RECONCILE_QUOTA_PATH,
+  type WorkspaceVolumeQuotaReconcileInput,
+} from "./workspace-volume-gateway-contract.ts";
 import { Readable } from "node:stream";
 import {
   installWorkspaceFileTransferRoute,
@@ -223,6 +227,15 @@ export class WorkspaceVolumeGatewayServer {
       if (request.url.startsWith("/health/")) return;
       if (!this.#authorized(request.headers.authorization)) {
         return reply.code(401).send({ error: { code: "unauthorized", retryable: false } });
+      }
+    });
+    this.#server.post(WORKSPACE_VOLUME_GATEWAY_RECONCILE_QUOTA_PATH, async (request, reply) => {
+      try {
+        return await this.#run("verify", () =>
+          this.#gateway.reconcileQuota(request.body as WorkspaceVolumeQuotaReconcileInput),
+        );
+      } catch (error) {
+        return this.#failure(reply, error);
       }
     });
     this.#server.post(WORKSPACE_VOLUME_GATEWAY_VERIFY_PATH, async (request, reply) => {
@@ -547,6 +560,19 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
     }
   }
 
+  async reconcileQuota(
+    input: WorkspaceVolumeQuotaReconcileInput,
+    signal?: AbortSignal,
+  ): Promise<{ applied: boolean }> {
+    const response = await this.#request(
+      WORKSPACE_VOLUME_GATEWAY_RECONCILE_QUOTA_PATH,
+      input,
+      signal,
+    );
+    if (!isRecord(response) || typeof response.applied !== "boolean")
+      throw new Error("Invalid quota reconciliation receipt");
+    return { applied: response.applied };
+  }
   async verify(input: WorkspaceVolumeGatewayVerifyInput): Promise<{ verified: true }> {
     const response = await this.#request(WORKSPACE_VOLUME_GATEWAY_VERIFY_PATH, input);
     if (!isRecord(response) || response.verified !== true) {
@@ -856,7 +882,7 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
 
   async close(): Promise<void> {}
 
-  async #request(path: string, body: unknown): Promise<unknown> {
+  async #request(path: string, body: unknown, signal?: AbortSignal): Promise<unknown> {
     const response = await fetch(`${this.#baseUrl}${path}`, {
       dispatcher: internalDispatcher,
       redirect: "error",
@@ -866,7 +892,9 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
         "content-type": "application/json",
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(this.#requestTimeoutMs),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(this.#requestTimeoutMs)])
+        : AbortSignal.timeout(this.#requestTimeoutMs),
     });
     if (!response.ok) {
       let upstream: unknown;

@@ -63,6 +63,7 @@ spec:
             - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_MAXIMUM_QUEUED_OPERATIONS, value: {{ .Values.sandboxPlane.volumeGatewayMaximumQueuedOperations | quote }} }
             - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_QUEUE_WAIT_TIMEOUT_MS, value: {{ .Values.sandboxPlane.volumeGatewayQueueWaitTimeoutMs | quote }} }
             - { name: PI_CLOUD_WORKSPACE_POSIX_ROOT, value: /data/workspaces }
+            - { name: PI_CLOUD_WORKSPACE_QUOTA_URL, value: "http://workspace-quota:4510" }
             - { name: PI_CLOUD_METRICS_HOST, value: 0.0.0.0 }
             - { name: PI_CLOUD_METRICS_PORT, value: "9469" }
             - { name: PI_CLOUD_METRICS_TOKEN_FILE, value: /run/pi-cloud-secrets/metrics-token }

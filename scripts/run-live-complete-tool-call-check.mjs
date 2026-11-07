@@ -75,7 +75,9 @@ try {
       console.log(JSON.stringify(metrics));
     } finally {await db.end();}
   `;
-  const metrics = JSON.parse(execIn("control-plane", ["node", "--input-type=module", "-e", code]));
+  const metrics = JSON.parse(
+    execIn("session-runtime", ["node", "--input-type=module", "-e", code]),
+  );
   assert(metrics.documentWrites > 0, "Probe inspected no native documents");
   assert.equal(metrics.toolCallsInDocuments, 0, "Tool draft reached a native document");
   assert(metrics.completeToolCalls >= 2 && metrics.executeCheckpoints >= 2);

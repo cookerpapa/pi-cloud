@@ -4,63 +4,70 @@
 catalog and presentation-only Web operations. Install its initial schema 196 / Worker contract with the
 [matched procedure](MATCHED_RELEASE.md) first. Accounts and credentials survive.
 
-## Ordinary Control Plane tools
+## Ordinary Session runtime tools
 
-[ADR-0276](adr/0276-scoped-control-plane-releases.md) adds the `control-plane`
-scope after its initial matched installation. The current slice accepts ordinary
-Tool code under `packages/control-plane/src/ordinary-tools/`, including its
-registration module. A new tool on the existing transport needs no Worker edit.
-Changes to shared protocols, dependencies, ownership, lifecycle, schema, startup
-or public API contracts still require a matched release. Source classification
-does not replace reviewing semantic compatibility. No browser update notification
-is added.
+[ADR-0302](adr/0302-session-runtime-and-resource-management.md) moves the scoped
+replacement contract to `session-runtime`. Install the matched split and
+`sessionRuntimeReplacement: 1` contract first. The old `control-plane` release
+scope is removed. Resource management and metering are independent roles, even
+though all three use the same built `pi-cloud/control-plane` artifact.
+
+The scope accepts ordinary Tool code under
+`packages/control-plane/src/ordinary-tools/`, including its registration module.
+A new tool on the existing transport needs no Worker edit. Shared protocol,
+dependency, ownership, lifecycle, schema, startup and public API changes require
+a matched release. Source classification does not replace semantic review.
 
 ```sh
-npm run release:component -- prepare control-plane /private/releases/control-1 control-1
-npm run release:component -- preflight /private/releases/control-1
-npm run release:component -- apply /private/releases/control-1
+npm run release:component -- prepare session-runtime /private/releases/tools-1 tools-1
+npm run release:component -- preflight /private/releases/tools-1
+npm run release:component -- apply /private/releases/tools-1
 ```
 
-Preparation runs Control Plane types and the ordinary Tool/catalog/dispatch/
-replacement contracts, including new tests under
-`packages/control-plane/test/ordinary-tools/`, then builds/scans one image. The
-full rendered-manifest comparison permits only that container image to change;
-the operator retains all other artifact provenance. Apply imports the image,
-then uses the existing private publication listener to request quiescence. It
-waits for executing control handlers and native settlement of non-replayable
-effects while projection continues. Repeatable child waits and Cube commands do
-not require their parent Run to finish. At a safe record boundary, subsequent
-projection/recovery admission is held before PG writes and dispatch commits.
+Preparation runs the ordinary Tool/catalog/dispatch/replacement contracts and
+builds/scans one Control Plane host artifact. It changes only
+`images.sessionRuntime`, the `pi-cloud-session-runtime` Deployment container and
+the `session-runtime` provenance record. `images.controlPlane`, `images.metering`
+and their role records retain their original image identities, source revisions
+and evidence. Full manifest comparison rejects changes to every other resource,
+and live-role checks reject an image merely found in a different workload.
 
-The first supported topology is one Control Plane without an HPA. The operator
-stops its old Pod, waits for its existing PG sandbox-owner lease, then installs
-the new image with Helm hooks disabled. Workers, provider, Cube and VM allocations
-remain running. Workers reconnect; Kafka replay and Pi's next request pick up
-the current catalog. New requests/Tool dispatch and SSE can pause during the
-outage; keeping the existing lease requires recovery within its normal budget.
+Apply requests quiescence through the Session runtime's private publication
+listener. It waits for executing control handlers, bound workflow/image/Skill
+operations and required native settlement while projection continues. Accepted
+fixed Cube commands can remain running. Once a safe boundary is held, new
+projection/recovery admission pauses before PG writes and dispatch commits.
 
-The local hold expires after 30 seconds without renewal. A busy-drain timeout
-leaves the old release serving. SIGTERM repeats the quiescence check at actual
-termination, protecting against a delayed scale request after hold expiry. The
-existing 720-second Pod termination grace remains the outer crash boundary.
-`control-plane-replacement.json` records phases before replica changes. Failure
-before Helm restores the observed old template when its identity still matches.
-After Helm starts, rerun the same candidate to reconcile actual state and finish
-the deployment record. An unresolved Helm `pending-upgrade` still needs inspection;
-there is no blind rollback or old-protocol fallback.
+The supported scoped topology is one Session runtime without an HPA. The
+operator waits for its old Pod to exit before Helm installs the new image with
+hooks disabled. It does not acquire, stop or wait on a Sandbox management lease.
+Management, metering, Workers, provider, Cube and VM allocations remain running.
+Kafka retains the sole Projector group and fences assignment changes. Workers
+reconnect to execution membership; the next model request receives the current
+catalog. New requests, dispatch and SSE can pause during this runtime replacement.
+Management-only outages have their own acceptance and do not pause those paths.
+
+The hold expires after 30 seconds without renewal. A busy-drain timeout leaves
+the old release serving. SIGTERM repeats quiescence at termination, and the
+existing 720-second Pod grace remains the outer crash boundary.
+`session-runtime-replacement.json` records the exact role, Deployment/template,
+Pod and process identities before replica changes. A pre-Helm failure restores
+only that unchanged old template. After Helm starts, rerun the same candidate to
+reconcile actual state and finish the deployment record. An unresolved Helm
+`pending-upgrade` needs inspection; there is no blind rollback or legacy scope.
 
 The live driver requires a prepared candidate containing a reviewed ordinary
-Preview description change. It holds a real Luna Bash in Cube, replaces the
-Control Plane, verifies unchanged unrelated Pods/Worker boots/Session lease/VM,
-then unblocks the same command and checks the updated catalog within that Run:
+Preview description change. It holds a real Luna Bash in Cube, replaces only
+Session runtime, verifies the unchanged Worker/Session lease/VM plus management
+and metering Pods/provenance, then unblocks the command and checks the new catalog
+within the same Run:
 
 ```sh
-PI_CLOUD_LIVE_CONTROL_RELEASE_CHECK=1 node --import tsx scripts/run-live-control-plane-release-check.mjs /private/releases/control-1 /private/evidence/control-1
+PI_CLOUD_LIVE_SESSION_RUNTIME_RELEASE_CHECK=1 node --import tsx scripts/run-live-session-runtime-release-check.mjs /private/releases/tools-1 /private/evidence/tools-1
 ```
 
-It uses an owned fixture, confirms the command executed once and performs physical
-VM/Volume cleanup before removing its tenant. User conversations are not used as
-release probes.
+The owned fixture confirms one Bash execution and physical VM/Volume cleanup
+before tenant removal. User conversations are not release probes.
 
 ## Provider image
 
@@ -162,11 +169,11 @@ npm run release:component -- apply /private/releases/catalog-1
 ```
 
 Only the catalog ConfigMap body may change. Helm hooks are disabled and no Pod
-template changes. Its volume uses no subPath. Control Plane checks the file at
+template changes. Its volume uses no subPath. Session runtime checks the file at
 most once per second when read, validates a whole candidate, then swaps memory.
 Invalid startup fails; invalid reload preserves the last valid catalog and
 reports `reloadFailed`. Kubernetes projection is eventual; apply waits for all
-serving Control Planes to report the expected digest. Refresh an open browser.
+serving Session runtimes to report the expected digest. Refresh an open browser.
 
 Run admission freezes complete capabilities and the catalog digest in PG. Worker
 dispatch/recovery, native children and follow-up image checks use that snapshot.
@@ -176,7 +183,9 @@ before retiring routes. Accepted Runs still need their original provider route.
 
 ## Records and failure handling
 
-`runtime/k3s/deployment.json` records the full component combination. Unchanged
+`runtime/k3s/deployment.json` records the full role combination. Full evidence
+expands the one Control Plane host artifact into independent management, Session
+runtime and metering records without building or scanning it three times. Unchanged
 images retain their original source commits, immutable identities and scan
 evidence; they are not rebuilt or described as freshly scanned. Full upgrades
 record a new combination and preserve an installed catalog override.
@@ -200,7 +209,7 @@ and publish the previous compatible provider pin/catalog with a new record.
 Credential-format/protocol changes require separate assessment. No automatic
 mixed schema rollback or silent model alias is supported.
 
-`npm run release:check -- provider|catalog` runs the relevant deterministic tests.
+`npm run release:check -- provider|catalog|session-runtime` runs the relevant deterministic tests.
 Real acceptance still covers text, native Tool round trips, affected image/search
 features and interrupted requests. GPT/native drivers default to Luna; their
 explicit model can be any reviewed entry in `PI_CLOUD_MODEL_CATALOG_FILE`. Retain

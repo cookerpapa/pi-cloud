@@ -13,7 +13,7 @@ limits. Historical migrations and reports are not alternate production modes.
 ## One message
 
 ```text
-Browser -> Control Plane -> PG Run admission -> Pi Worker
+Browser -> Session runtime API -> PG Run admission -> Pi Worker
 Pi Worker <-> local Model Gateway <-> CLIProxyAPI <-> model provider
 
 Pi Worker -> transactional Session producer -> Kafka -> Session Projector
@@ -49,9 +49,22 @@ Retained attachment originals -> private S3 objects; Kafka and PG carry referenc
    idle owner. Forced replacement first closes the old writer; recovery uses a
    newly authorized Session lease, with no RunAttempt or automatic unsafe replay.
 
-The API, Projector and sandbox lifecycle controller share one Control Plane
-process. There is no independent Broker, Worker append HTTP ingress or second
-canonical/live/Tool consumer group. See [RUN_LIFECYCLE](RUN_LIFECYCLE.md).
+The `session-runtime` process owns the authenticated API, history and cost reads,
+HTTP observations/SSE, Worker membership/catalog delivery and this single Projector
+group. The `control-plane` process owns resource admission, recovery, lifecycle
+reconciliation and management timers. It has no Session Kafka consumer or Tool
+dispatcher. Both entrypoints use the same built image with independently selected
+Helm image values. See [ADR-0302](adr/0302-session-runtime-and-resource-management.md).
+
+With PG, Kafka, the Worker and its existing Cube binding available, stopping
+management leaves commits, projection, bound Tools and reads running. Workflow
+host calls and image/Skill/preview data access use recorded physical data channels
+at the Session partition owner. They do not adopt resource ownership. New VM
+activation, pause/release and physical recovery require management. The API can
+persist new Run/configuration intent while that work waits; admission is not a
+promise that execution resources exist. There is no independent Broker, Worker
+append HTTP ingress or second canonical/live/Tool group.
+See [RUN_LIFECYCLE](RUN_LIFECYCLE.md).
 
 ## Durable input and scheduling
 
@@ -136,6 +149,18 @@ state; replay for presentation never reissues committed external effects.
 Worker cold reads and lease/control publication have separate bounded pools.
 A stalled Session can still block another Session on the same Kafka partition;
 other partition handlers can proceed. This is an explicit tradeoff.
+
+Workers renew Session leases directly in PG, independently of registration and
+resource management. Cold admission reads PG; active local authority advances
+only from committed renewal acknowledgements, with no parallel periodic SELECT.
+An independent monotonic deadline and synchronous model-admission check prevent
+late timers or acknowledgements from extending an expired owner. Silent PG
+revocation is learned at the next renewal, normally twenty seconds; a stalled
+renewal cannot exceed the last confirmed lifetime, normally sixty seconds.
+Known Kafka publication failure immediately aborts the whole native family and
+its model transports. An unobserved broker fence is discovered by subsequent
+publication, including existing quiet-Session probes. Already accepted provider
+requests may still finish or bill. See [ADR-0303](adr/0303-direct-renewal-and-local-execution-authority.md).
 
 After Worker loss, PG authorizes closure, the old writer is sealed through Kafka,
 and Projector confirms native closure before a replacement becomes eligible.
@@ -261,20 +286,23 @@ The provider boundary is divided by responsibility:
 | `SandboxWorkflows` | Fixed guest workflow transport |
 | `SandboxSourceCredentials` | Workspace-scoped Git credential operations |
 
-`SandboxProvider` composes these ports at construction. One Cube implementation
-can supply all of them; no additional process, RPC hop or durable state is created.
+`SandboxProvider` composes these ports at construction. Management receives lifecycle
+consumers. Session execution receives only existing-binding data consumers and
+direct native Tool/retention transport. Encrypted immutable data capsules stay in
+private PG binding metadata and disposable provider caches; they are never a new
+allocation journal, VM owner or native history body.
 `WorkspaceFileAccess` receives only file operations and callbacks to the existing
 owner's admission checks. It cannot allocate or destroy VMs through its interface.
 These are code-dependency boundaries, not separate security principals. Optional
 capabilities retain explicit unsupported errors, not silent runtime fallbacks.
 
-The controller retains resource ownership and closure coordination. Native SDK
+The management controller retains resource ownership and closure coordination. Native SDK
 objects and management credentials do not cross to Workers. Source-side bounded
 reads, output truncation, image normalization and attachment handling remain in
 their existing locations. See [CUBESANDBOX_PROVIDER](CUBESANDBOX_PROVIDER.md).
 
-Permanently lost controller ownership withdraws aggregate readiness and retires
-the process within a bounded cleanup window. Kubernetes restarts it and existing
+Permanently lost controller ownership withdraws management readiness and retires
+that process within a bounded cleanup window. Session-runtime readiness is independent. Kubernetes restarts it and existing
 PG ownership recovery applies. Transient renewal errors before the confirmed
 deadline remain retryable; an expired local owner cannot revive itself. This
 failure never constitutes physical VM absence or permission to delete a Volume.
@@ -482,3 +510,20 @@ Other runtime changes use the [matched release](MATCHED_RELEASE.md): build and
 scan immutable artifacts, drain writers, confirm physical cleanup where required,
 then verify native recovery and relevant real Luna/Cube behavior. Accounts,
 configuration, credentials and retained Workspace assets are preserved.
+
+## Independent usage accounting
+
+Provider model receipts, Cubelet compute allocation intervals and enforced
+Workspace capacity intervals reach the independent receipt receiver directly.
+They are financial facts, separate from Session Kafka projection and from the
+Control Plane's desired resource state. PG has the one long-term accounting
+ledger; bounded source journals retry immutable receipts until acknowledgement.
+Unverified intervals remain unconfirmed and do not produce an amount. Model,
+compute and storage share account/price rules while keeping separate source
+identities. See [resource accounting](RESOURCE_BILLING.md) and
+[Workspace capacity](adr/0301-workspace-capacity-enforcement.md).
+
+Workspace bytes stay in persistent Cube Volumes. PG capacity/revision/pending
+fields represent requested grow-only policy; the storage helper acknowledges
+kernel enforcement. Ordinary Bash/file writes consult neither PG nor another
+quota service. The VM's disposable system disk is not the Workspace capacity.

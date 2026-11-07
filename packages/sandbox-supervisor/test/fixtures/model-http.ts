@@ -125,6 +125,7 @@ export async function modelHttpFixture(
     advertisedBaseUrl: "http://127.0.0.1",
     providerGatewayBaseUrl: "http://unused.invalid",
     providerGatewayApiKey: "fixture-".padEnd(48, "x"),
+    assertExecutionCurrent: () => owner.signal.throwIfAborted(),
     connectTimeoutMs: 1000,
     metrics,
     ...(options.maximumRequests === undefined

@@ -6,15 +6,20 @@ import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { kubectl } from "./production-kubernetes.mjs";
 
-const target = "deployment/pi-cloud-control-plane";
+const targetFor = (role) => {
+  assert(["control-plane", "session-runtime"].includes(role), "Unknown outage role");
+  return `deployment/pi-cloud-${role}`;
+};
 const templateHash = (value) =>
   createHash("sha256").update(JSON.stringify(value.spec.template)).digest("hex");
 
-export function outageReceipt(deployment, restoreAt) {
+export function outageReceipt(role, deployment, restoreAt) {
+  targetFor(role);
   assert.equal(deployment.kind, "Deployment");
-  assert.equal(deployment.metadata.name, "pi-cloud-control-plane");
-  assert(deployment.spec.replicas > 0, "Control Plane was already stopped");
+  assert.equal(deployment.metadata.name, `pi-cloud-${role}`);
+  assert(deployment.spec.replicas > 0, "Runtime role was already stopped");
   return {
+    role,
     uid: deployment.metadata.uid,
     replicas: deployment.spec.replicas,
     template: templateHash(deployment),
@@ -24,10 +29,12 @@ export function outageReceipt(deployment, restoreAt) {
 }
 
 /** Restores only the stopped deployment observed by this owned fault. */
-export function restoreControlPlane(receipt, invoke = kubectl) {
+export function restoreRuntimeRole(receipt, invoke = kubectl) {
+  const target = targetFor(receipt.role);
   const current = JSON.parse(invoke(["get", target, "-o", "json"]));
-  assert.equal(current.metadata.uid, receipt.uid, "Control Plane identity changed");
-  assert.equal(templateHash(current), receipt.template, "Control Plane template changed");
+  assert.equal(current.metadata.name, `pi-cloud-${receipt.role}`, "Runtime role target changed");
+  assert.equal(current.metadata.uid, receipt.uid, "Runtime role identity changed");
+  assert.equal(templateHash(current), receipt.template, "Runtime role template changed");
   if (current.spec.replicas === receipt.replicas) return;
   assert.equal(current.spec.replicas, 0, "Another operator changed the replica count");
   invoke(
@@ -36,14 +43,15 @@ export function restoreControlPlane(receipt, invoke = kubectl) {
   );
 }
 
-export async function armControlPlaneRestore(path, restoreAt) {
+export async function armRuntimeRestore(role, path, restoreAt) {
+  const target = targetFor(role);
   const deployment = JSON.parse(kubectl(["get", target, "-o", "json"]));
   const autoscalers = JSON.parse(kubectl(["get", "hpa", "-o", "json"])).items;
   assert(
     !autoscalers.some((item) => item.spec.scaleTargetRef.name === deployment.metadata.name),
     "An autoscaler controls this deployment; refusing the replica fault",
   );
-  const receipt = outageReceipt(deployment, restoreAt);
+  const receipt = outageReceipt(role, deployment, restoreAt);
   await writeFile(path, JSON.stringify(receipt), { mode: 0o600, flag: "wx" });
   const watchdog = spawn(process.execPath, [fileURLToPath(import.meta.url), "--watch", path], {
     detached: true,
@@ -61,7 +69,7 @@ export async function armControlPlaneRestore(path, restoreAt) {
       .map(([key, value]) => `${key}=${value}`)
       .join(","),
     async restore() {
-      restoreControlPlane(receipt);
+      restoreRuntimeRole(receipt);
       await writeFile(path, JSON.stringify({ ...receipt, restored: true }), { mode: 0o600 });
     },
   };
@@ -74,7 +82,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv[2] === "-
     const receipt = JSON.parse(await readFile(path, "utf8"));
     if (receipt.restored) break;
     if (Date.now() >= receipt.restoreAt) {
-      restoreControlPlane(receipt);
+      restoreRuntimeRole(receipt);
       await writeFile(path, JSON.stringify({ ...receipt, restored: true, watchdog: true }), {
         mode: 0o600,
       });

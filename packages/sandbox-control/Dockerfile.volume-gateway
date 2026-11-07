@@ -1,3 +1,16 @@
+FROM golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af AS quota-builder
+COPY scripts/install-host-os-security-updates.sh /tmp/install-host-os-security-updates.sh
+RUN sh /tmp/install-host-os-security-updates.sh \
+    && apt-get update && apt-get install -y --no-install-recommends xfslibs-dev=6.1.0-1 uuid-dev \
+    && rm -rf /var/lib/apt/lists/* /tmp/install-host-os-security-updates.sh
+WORKDIR /source
+COPY deploy/resource-metering /source/resource-metering
+COPY deploy/workspace-quota /source/workspace-quota
+COPY deploy/file-exchange /source/file-exchange
+WORKDIR /source/workspace-quota
+RUN CGO_ENABLED=1 GOTOOLCHAIN=local go build -trimpath -ldflags '-s -w' -o /out/workspace-quota ./cmd/workspace-quota \
+    && CGO_ENABLED=0 GOTOOLCHAIN=local go -C /source/file-exchange build -trimpath -ldflags '-s -w' -o /out/file-exchange .
+
 FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS os-base
 COPY scripts/install-node-os-security-updates.sh scripts/install-host-os-security-updates.sh /tmp/
 RUN sh /tmp/install-host-os-security-updates.sh && sh /tmp/install-node-os-security-updates.sh \
@@ -62,6 +75,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     test "$installed" = 1
 WORKDIR /app
 COPY --from=dependencies /app/node_modules /app/node_modules
+COPY --from=quota-builder /out/workspace-quota /app/bin/workspace-quota
+COPY --from=quota-builder /out/file-exchange /opt/pi-cloud/bin/file-exchange
 COPY package.json package-lock.json ./
 COPY tsconfig.base.json ./
 COPY packages/session-attachments/package.json packages/session-attachments/package.json

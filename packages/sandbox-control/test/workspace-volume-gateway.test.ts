@@ -1,3 +1,4 @@
+import { TestQuotaVolumeGateway } from "./fixtures/volume-quota.ts";
 import { createPluginVolumeFixture } from "./fixtures/plugin-volume.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
@@ -31,7 +32,6 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 });
 import {
   HttpWorkspaceVolumeGateway,
-  PersistentVolumeWorkspaceVolumeGateway,
   WorkspaceVolumeGatewayServer,
   workspaceVolumeId,
   runTrustedWorkspaceGit,
@@ -64,13 +64,13 @@ function identity(sessionId: string) {
   };
 }
 
-describe("PersistentVolumeWorkspaceVolumeGateway", () => {
+describe("TestQuotaVolumeGateway", () => {
   it("reaps private upload staging without PG claims and rotates past a live writer", async () => {
     const workspaceRoot = await root(),
       authorizeUpload = vi.fn(async () => {
         throw new Error("No live upload claim");
       });
-    const gateway = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot, authorizeUpload });
+    const gateway = new TestQuotaVolumeGateway({ workspaceRoot, authorizeUpload });
     const areas: UploadStagingArea[] = [];
     for (let n = 0; n < 3; n++) {
       const scope = { tenantId: "cleanup-tenant", workspaceId: `cleanup-${n}` },
@@ -121,7 +121,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
   });
   it("rejects another Volume's identity even at the requested storage path", async () => {
     const workspaceRoot = await root();
-    const gateway = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const gateway = new TestQuotaVolumeGateway({ workspaceRoot });
     const input = identity("swapped-volume");
     const other = { ...input, workspaceId: "other-workspace" };
     other.volumeId = workspaceVolumeId(other);
@@ -137,7 +137,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
 
   it("never creates or repairs storage while verifying an unpublished plugin identity", async () => {
     const workspaceRoot = await root();
-    const gateway = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const gateway = new TestQuotaVolumeGateway({ workspaceRoot });
     const input = identity("verification-only");
     await expect(gateway.verify(input)).rejects.toMatchObject({
       code: "workspace_volume_identity_unavailable",
@@ -162,7 +162,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     const blocked = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const mover = new PersistentVolumeWorkspaceVolumeGateway({
+    const mover = new TestQuotaVolumeGateway({
       workspaceRoot,
       gitRunner: async () => {
         entered();
@@ -207,7 +207,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
 
   it("enforces the read limit if a regular file grows after its stat", async () => {
     const workspaceRoot = await root();
-    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const mover = new TestQuotaVolumeGateway({ workspaceRoot });
     const scope = identity("growing-file");
     await createPluginVolumeFixture(workspaceRoot, scope);
     await mover.verify(scope);
@@ -239,7 +239,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
   it("rejects a parent-directory swap between path validation and opening a file", async () => {
     const workspaceRoot = await root(),
       outside = await root();
-    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const mover = new TestQuotaVolumeGateway({ workspaceRoot });
     const scope = identity("file-parent-race");
     await createPluginVolumeFixture(workspaceRoot, scope);
     await mover.verify(scope);
@@ -273,7 +273,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
   it("lists the opened directory, not a replacement symlink installed during readdir", async () => {
     const workspaceRoot = await root(),
       outside = await root();
-    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const mover = new TestQuotaVolumeGateway({ workspaceRoot });
     const scope = identity("directory-parent-race");
     await createPluginVolumeFixture(workspaceRoot, scope);
     await mover.verify(scope);
@@ -320,7 +320,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     await new Promise<void>((resolve) => http.listen(0, "127.0.0.1", resolve));
     const address = http.address() as { port: number };
     const origin = `http://127.0.0.1:${address.port}`;
-    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const mover = new TestQuotaVolumeGateway({ workspaceRoot });
     const scope = identity("untrusted-git-config");
     try {
       await createPluginVolumeFixture(workspaceRoot, scope);
@@ -362,7 +362,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
   it("does not follow a Workspace credential symlink outside its volume", async () => {
     const workspaceRoot = await root(),
       outside = await root();
-    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const mover = new TestQuotaVolumeGateway({ workspaceRoot });
     const scope = identity("credential-symlink");
     await createPluginVolumeFixture(workspaceRoot, scope);
     await mover.verify(scope);
@@ -382,7 +382,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
 
   it("does not fail the whole directory when a concurrently deleted file disappears", async () => {
     const workspaceRoot = await root();
-    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const mover = new TestQuotaVolumeGateway({ workspaceRoot });
     const scope = identity("directory-race");
     await createPluginVolumeFixture(workspaceRoot, scope);
     await mover.verify(scope);
@@ -409,7 +409,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
   });
   it("browses an unmaterialized root without creating storage", async () => {
     const workspaceRoot = await root();
-    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const mover = new TestQuotaVolumeGateway({ workspaceRoot });
     await expect(
       mover.listDirectory({ ...identity("empty"), rootPath: "", path: "" }),
     ).resolves.toEqual({ entries: [], truncated: false });
@@ -428,7 +428,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     const workspaceRoot = await root(),
       outside = await root();
     const scope = identity("subagent-directory");
-    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const mover = new TestQuotaVolumeGateway({ workspaceRoot });
     await createPluginVolumeFixture(workspaceRoot, scope);
     await mover.verify(scope);
     const workspace = join(workspaceRoot, `picloud-posix-${scope.volumeId}`, "workspace");
@@ -465,7 +465,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
 
   it("reattaches current files without a per-Run settlement", async () => {
     const workspaceRoot = await root();
-    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const mover = new TestQuotaVolumeGateway({ workspaceRoot });
     const first = identity("session-a");
 
     await createPluginVolumeFixture(workspaceRoot, first);
@@ -476,7 +476,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     await writeFile(join(workspace, "src", "answer.txt"), "one\n");
     await writeFile(join(workspace, "src", "answer.txt"), "two\n");
 
-    const replacement = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const replacement = new TestQuotaVolumeGateway({ workspaceRoot });
     const second = identity("session-b");
     await expect(replacement.verify(second)).resolves.toEqual({ verified: true });
     const expectedSha256 = createHash("sha256").update("two\n").digest("hex");
@@ -504,7 +504,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
 
   it("verifies the identity and directory created by the Cube Volume Plugin", async () => {
     const workspaceRoot = await root();
-    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const mover = new TestQuotaVolumeGateway({ workspaceRoot });
     const first = identity("session-plugin-created");
     const volumeRoot = join(workspaceRoot, `picloud-posix-${first.volumeId}`);
     await mkdir(join(volumeRoot, "workspace"), { recursive: true, mode: 0o700 });
@@ -517,7 +517,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
   it("hides platform and Git metadata and rejects a symlink escape", async () => {
     const workspaceRoot = await root();
     const outside = await root();
-    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const mover = new TestQuotaVolumeGateway({ workspaceRoot });
     const first = identity("session-browser-boundary");
     await createPluginVolumeFixture(workspaceRoot, first);
     await mover.verify(first);
@@ -548,7 +548,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
 
   it("rejects an unbound Cube workspace that already contains user bytes", async () => {
     const workspaceRoot = await root();
-    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const mover = new TestQuotaVolumeGateway({ workspaceRoot });
     const first = identity("session-plugin-nonempty");
     const workspace = join(workspaceRoot, `picloud-posix-${first.volumeId}`, "workspace");
     await mkdir(workspace, { recursive: true, mode: 0o700 });
@@ -561,7 +561,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
 
   it("rejects a volume identity from another tenant", async () => {
     const workspaceRoot = await root();
-    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const mover = new TestQuotaVolumeGateway({ workspaceRoot });
     const first = identity("session-a");
     await createPluginVolumeFixture(workspaceRoot, first);
     await mover.verify(first);
@@ -572,7 +572,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
 
   it("deletes only the persistently bound Workspace volume and is idempotent", async () => {
     const workspaceRoot = await root();
-    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const mover = new TestQuotaVolumeGateway({ workspaceRoot });
     const first = identity("session-delete");
     await createPluginVolumeFixture(workspaceRoot, first);
     await mover.verify(first);
@@ -598,7 +598,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
 
   it("finishes a metadata-retirement crash without recreating a deleted Volume", async () => {
     const workspaceRoot = await root();
-    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const mover = new TestQuotaVolumeGateway({ workspaceRoot });
     const input = identity("retired-metadata");
     const directory = join(workspaceRoot, `picloud-posix-${input.volumeId}`);
     await createPluginVolumeFixture(workspaceRoot, input);
@@ -634,7 +634,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
 
     const observedTokens: string[] = [];
     const observedVerificationUrls: string[] = [];
-    const mover = new PersistentVolumeWorkspaceVolumeGateway({
+    const mover = new TestQuotaVolumeGateway({
       workspaceRoot,
       gitRunner: (args, options) => {
         if (options.credential !== undefined) observedTokens.push(options.credential.accessToken);
@@ -750,7 +750,7 @@ describe("HttpWorkspaceVolumeGateway", () => {
     const authorizeUpload = vi.fn(async () => {
       if (!allowed) throw new Error("Expired upload");
     });
-    const gateway = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot, authorizeUpload });
+    const gateway = new TestQuotaVolumeGateway({ workspaceRoot, authorizeUpload });
     const serviceToken = "u".repeat(48),
       server = new WorkspaceVolumeGatewayServer({
         host: "127.0.0.1",
@@ -822,6 +822,9 @@ describe("HttpWorkspaceVolumeGateway", () => {
       executable: false,
     }));
     const gateway: WorkspaceVolumeGateway = {
+      async reconcileQuota() {
+        return { applied: true };
+      },
       async checkHealth() {},
       async verify() {
         return { verified: true };

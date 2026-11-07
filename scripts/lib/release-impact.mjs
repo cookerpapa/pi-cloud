@@ -1,9 +1,11 @@
 export const catalogSeed = "deploy/helm/pi-cloud-platform/files/model-catalog.json";
 export const operatorSources = new Set([
+  "scripts/lib/source-delivery-barrier.mjs",
+  "scripts/lib/source-delivery-barrier.test.mjs",
+  "scripts/lib/source-delivery-observation.mjs",
   "scripts/run-component-release.mjs",
   "scripts/check-helm-self-hosted.mjs",
   "scripts/run-matched-release.mjs",
-  "scripts/lib/model-metering-release.mjs",
   "scripts/run-live-model-metering-check.mjs",
   "scripts/run-live-fast-compaction-check.mjs",
   "scripts/run-model-billing-browser-check.mjs",
@@ -19,8 +21,11 @@ export const operatorSources = new Set([
   "scripts/lib/model-catalog-probe.mjs",
   "scripts/generate-release-evidence.mjs",
   "scripts/lib/release-image-evidence.mjs",
-  "scripts/lib/control-plane-release.mjs",
-  "scripts/run-live-control-plane-release-check.mjs",
+  "scripts/lib/session-runtime-release.mjs",
+  "scripts/lib/owned-runtime-outage.mjs",
+  "scripts/lib/runtime-capability-acceptance.mjs",
+  "scripts/run-live-session-runtime-release-check.mjs",
+  "scripts/run-live-development-environment-check.mjs",
   "scripts/run-live-android-check.mjs",
   "scripts/run-live-schedules-check.mjs",
   "scripts/run-history-layout-check.mjs",
@@ -47,6 +52,8 @@ export const providerConfigurationSources = new Set([
   "scripts/lib/provider-config-release.mjs",
 ]);
 export const providerSources = new Set([
+  "deploy/provider-gateway/usage_capture_stream.go",
+  "deploy/provider-gateway/usage_capture_stream_test.go",
   ".dockerignore",
   "deploy/provider-gateway/Dockerfile",
   "deploy/provider-gateway/model_sessions.go",
@@ -78,15 +85,19 @@ export const imageReleaseTargets = {
     workload: "deployment/pi-cloud-web",
     container: "web",
   },
-  "control-plane": {
+  "session-runtime": {
     imageName: "control-plane",
-    catalogKey: "controlPlane",
-    workload: "deployment/pi-cloud-control-plane",
-    container: "control-plane",
+    buildScope: "control-plane",
+    buildCatalogKey: "controlPlane",
+    catalogKey: "sessionRuntime",
+    componentName: "session-runtime",
+    workload: "deployment/pi-cloud-session-runtime",
+    container: "session-runtime",
   },
 };
 export const modelTests = new Set([
-  "scripts/lib/control-plane-release.test.mjs",
+  "scripts/lib/session-runtime-release.test.mjs",
+  "scripts/lib/owned-runtime-outage.test.mjs",
   "scripts/lib/component-release.test.mjs",
   "scripts/lib/model-catalog-probe.test.mjs",
   "scripts/lib/release-impact.test.mjs",
@@ -130,7 +141,7 @@ export function releaseImpact(files) {
         /^scripts\/lib\/.*\.test\.mjs$/.test(file),
     )
   )
-    return { scope: "control-plane", matrix: { include: [fullImages[0]] }, buildImages: true };
+    return { scope: "session-runtime", matrix: { include: [fullImages[0]] }, buildImages: true };
   if (
     files.some(
       (file) =>

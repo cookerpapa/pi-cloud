@@ -16,9 +16,9 @@ import {
 } from "../packages/web-ui/src/session-view.ts";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { sql } from "kysely";
-if (process.env.PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_CHECK !== "1")
+if (process.env.PI_CLOUD_LIVE_SESSION_RUNTIME_RESTART_CHECK !== "1")
   throw new Error(
-    "Set PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_CHECK=1 for a disposable Luna/Cube Run and control-plane replacement",
+    "Set PI_CLOUD_LIVE_SESSION_RUNTIME_RESTART_CHECK=1 for a disposable Luna/Cube Run and Session-runtime Projector replacement",
   );
 const root = fileURLToPath(new URL("..", import.meta.url));
 const runtime = resolve(
@@ -76,15 +76,31 @@ async function nativeQuery(query) {
     await db.destroy();
   }
 }
-const faultMode = process.env.PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_MODE ?? "pod";
+const faultMode = process.env.PI_CLOUD_LIVE_SESSION_RUNTIME_RESTART_MODE ?? "pod";
 assert(["pod", "process", "rolling"].includes(faultMode));
 const report = {
   checkedAt: new Date().toISOString(),
   model: "gpt-6-luna",
   faultMode,
+  faultRole: "session-runtime",
   scenario,
   accepted: false,
 };
+const managementPods = () =>
+  JSON.parse(
+    kubectl(["get", "pods", "-l", "app.kubernetes.io/component=control-plane", "-o", "json"]),
+  )
+    .items.filter((pod) => !pod.metadata.deletionTimestamp)
+    .map((pod) => ({
+      uid: pod.metadata.uid,
+      containers: pod.status.containerStatuses?.map((container) => ({
+        name: container.name,
+        id: container.containerID,
+        ready: container.ready,
+        restarts: container.restartCount,
+      })),
+    }))
+    .sort((left, right) => left.uid.localeCompare(right.uid));
 async function assertOnlyOwnedRun() {
   const url = new URL((await readFile(runtime + "/secrets/database-url", "utf8")).trim());
   url.hostname = serviceAddress("postgres");
@@ -229,14 +245,31 @@ try {
   const before = await api.getRun(turn.runId);
   report.workerId = before.workerId;
   await assertOnlyOwnedRun();
-  const targetPod = podFor("control-plane");
-  console.log(JSON.stringify({ phase: "replace-control-plane", scenario }));
+  const managementBefore = managementPods();
+  assert(
+    managementBefore.length &&
+      managementBefore.every((pod) => pod.containers?.every((container) => container.ready)),
+    "Management must be ready before the isolated Projector fault",
+  );
+  if (faultMode !== "rolling")
+    assert.equal(
+      JSON.parse(kubectl(["get", "deployment/pi-cloud-session-runtime", "-o", "json"])).spec
+        .replicas,
+      1,
+      "A single-Pod fault requires one Session Projector so the owned partition is actually replaced",
+    );
+  const targetPod = podFor("session-runtime");
+  console.log(JSON.stringify({ phase: "replace-session-runtime", scenario }));
   const faultStartedAt = Date.now();
   const charactersBeforeRoll = observedText.length;
   if (faultMode === "process") {
     const beforePod = JSON.parse(kubectl(["get", "pod", targetPod, "-o", "json"]));
-    const count = beforePod.status.containerStatuses[0].restartCount;
-    const containerId = beforePod.status.containerStatuses[0].containerID;
+    const beforeContainer = beforePod.status.containerStatuses.find(
+      (container) => container.name === "session-runtime",
+    );
+    assert(beforeContainer, "The fault target is not the Session-runtime container");
+    const count = beforeContainer.restartCount;
+    const containerId = beforeContainer.containerID;
     assert(
       /^containerd:\/\/[0-9a-f]{64}$/.test(containerId),
       "Expected the local K3s containerd task",
@@ -253,9 +286,11 @@ try {
     ]);
     await waitFor(
       async () => {
-        const status = JSON.parse(kubectl(["get", "pod", targetPod, "-o", "json"])).status
-          .containerStatuses[0];
-        if (!(status.restartCount > count && status.ready && status.state.running)) return false;
+        const status = JSON.parse(
+          kubectl(["get", "pod", targetPod, "-o", "json"]),
+        ).status.containerStatuses.find((container) => container.name === "session-runtime");
+        if (!status || !(status.restartCount > count && status.ready && status.state.running))
+          return false;
         assert.equal(
           status.lastState?.terminated?.exitCode,
           137,
@@ -270,27 +305,27 @@ try {
     );
   } else if (faultMode === "rolling") {
     const beforeDeployment = JSON.parse(
-      kubectl(["get", "deployment/pi-cloud-control-plane", "-o", "json"]),
+      kubectl(["get", "deployment/pi-cloud-session-runtime", "-o", "json"]),
     );
     assert.equal(beforeDeployment.spec.strategy.type, "RollingUpdate");
     const images = beforeDeployment.spec.template.spec.containers.map(
       (container) => container.image,
     );
-    await kubectlAsync(["rollout", "restart", "deployment/pi-cloud-control-plane"]);
+    await kubectlAsync(["rollout", "restart", "deployment/pi-cloud-session-runtime"]);
     await kubectlAsync([
       "rollout",
       "status",
-      "deployment/pi-cloud-control-plane",
+      "deployment/pi-cloud-session-runtime",
       "--timeout=180s",
     ]);
     const afterDeployment = JSON.parse(
-      kubectl(["get", "deployment/pi-cloud-control-plane", "-o", "json"]),
+      kubectl(["get", "deployment/pi-cloud-session-runtime", "-o", "json"]),
     );
     assert.deepEqual(
       afterDeployment.spec.template.spec.containers.map((container) => container.image),
       images,
     );
-    assert.notEqual(podFor("control-plane"), targetPod);
+    assert.notEqual(podFor("session-runtime"), targetPod);
     report.compatibleRollingReplacement = true;
     report.artifactsUnchanged = true;
   } else {
@@ -298,11 +333,17 @@ try {
     await kubectlAsync([
       "rollout",
       "status",
-      "deployment/pi-cloud-control-plane",
+      "deployment/pi-cloud-session-runtime",
       "--timeout=180s",
     ]);
   }
   report.replacementMs = Date.now() - faultStartedAt;
+  assert.deepEqual(
+    managementPods(),
+    managementBefore,
+    "Projector fault changed a management process",
+  );
+  report.managementPreserved = true;
   report.charactersBeforeRoll = charactersBeforeRoll;
   report.charactersAtReady = observedText.length;
   const readyAt = Date.now();

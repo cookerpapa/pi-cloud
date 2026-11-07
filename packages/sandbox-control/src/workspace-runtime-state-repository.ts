@@ -2272,6 +2272,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
             where r.sandbox_domain_id=${this.#sandboxDomainId} and o.state in ('lost','stopped')
               and r.state in (${sql.join(states)})
               ${capsule ? sql`and r.runtime_capsule is null` : sql``}
+              ${table === "development_environments" ? sql`and not (r.allocation_closed and r.allocation_absent)` : sql``}
             order by r.updated_at,r.${sql.ref(key)} limit 128 for update of r skip locked
           ) update ${sql.table(table)} as r set state=${table === "development_environments" ? "reconciling" : "unknown"},
             failure_code=case when c.owner_state='stopped' then 'tool_broker_stopped' else 'tool_broker_owner_lost' end,

@@ -113,6 +113,7 @@ const toolchain = {
 function fakeWorkspaceVolumeGateway(): WorkspaceVolumeGateway {
   const volumes = new Set<string>();
   return {
+    reconcileQuota: vi.fn(async () => ({ applied: true })),
     checkHealth: vi.fn(async () => undefined),
     verify: vi.fn(async ({ volumeId }) => {
       volumes.add(volumeId);
@@ -706,6 +707,56 @@ describe("CubeSandbox Provider contract", () => {
     inspect.mockRestore();
     await provider.destroy(handle);
     await provider.close();
+  });
+  it("reopens the recorded data channel after runtime restart without Cube management reads or adoption", async () => {
+    const runtime = new FakeCubeRuntimeClient(),
+      volume = fakeWorkspaceVolumeGateway();
+    const options = {
+      templateId: "pi-cloud-tool-v1",
+      imageRevision: "development",
+      webProxy: WEB_PROXY,
+      runtimeClient: runtime,
+      workspaceVolumeGateway: volume,
+    };
+    const management = testCubeProvider(options);
+    const handle = await management.create(
+      {
+        activationId: ACTIVATION_ID,
+        assignment,
+        environment,
+        workspaceSeed: { kind: "sample_java" },
+        policy: management.defaultPolicy,
+      },
+      creationAuthorization,
+    );
+    const descriptor = await management.describeExecution(handle, ACTIVATION_ID, "/workspace");
+    const read = vi.spyOn(runtime, "read").mockRejectedValue(new Error("management unavailable"));
+    const execution = testCubeProvider(options);
+    try {
+      expect(execution.attachExecutionData(descriptor)).toMatchObject({
+        activationId: ACTIVATION_ID,
+      });
+      const stream = await execution.openPreviewConnection(handle, 3000);
+      stream.destroy();
+      expect(read).not.toHaveBeenCalled();
+      expect(runtime.creates).toHaveLength(1);
+      expect(runtime.destroyed).toHaveLength(0);
+      expect(() =>
+        execution.attachExecutionData({
+          ...descriptor,
+          target: { ...descriptor.target, bootId: "bbbbbbbb-1111-4444-8888-aaaaaaaaaaaa" },
+        }),
+      ).toThrow("identity changed");
+      execution.clearExecutionData();
+      expect(execution.attachExecutionData(descriptor)).toMatchObject({
+        runtimeId: handle.runtimeId,
+      });
+    } finally {
+      read.mockRestore();
+      await execution.close();
+      await management.close();
+    }
+    expect(runtime.destroyed).toHaveLength(0);
   });
   it.each(["paused", "pausing", "stopped", "error", "unknown"] as const)(
     "preserves observed %s without probing the guest or deciding to destroy its VM",

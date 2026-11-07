@@ -1,3 +1,5 @@
+import { WorkspaceCapacityController } from "./workspace-capacity-controller.ts";
+import { WorkspaceCapacityService } from "./workspace-capacity-service.ts";
 import { ModelBillingController } from "./model-billing-controller.ts";
 import { ModelMeteringService, ResourceMeteringService } from "@pi-cloud/accounting";
 import { ResourceBillingController } from "./resource-billing-controller.ts";
@@ -122,6 +124,7 @@ export class ControlPlaneModule {
     return {
       module: ControlPlaneModule,
       controllers: [
+        WorkspaceCapacityController,
         ResourceBillingController,
         ModelBillingController,
         ControlPlaneController,
@@ -129,6 +132,10 @@ export class ControlPlaneModule {
         WorkspaceFileTransferController,
       ],
       providers: [
+        {
+          provide: WorkspaceCapacityService,
+          useValue: new WorkspaceCapacityService(options.database),
+        },
         { provide: ModelMeteringService, useValue: new ModelMeteringService(options.database) },
         {
           provide: ResourceMeteringService,

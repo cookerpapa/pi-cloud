@@ -4,6 +4,8 @@ import { sql } from "kysely";
 import { createDatabase } from "@pi-cloud/database";
 import type { ConversationWorkView } from "@pi-cloud/protocol";
 import { PostgresDurableSessionHost } from "@pi-cloud/pi-session-postgres/durable";
+import { SessionLeaseCoordinator } from "../../runtime-core/src/session-lease-coordinator.ts";
+import type { SupervisorHeartbeatMessage } from "@pi-cloud/protocol";
 import { nativeSubagentFixture } from "./native-subagent-fixture.ts";
 
 it("revokes an owner while its cold head is still blocked and preserves the recovery classification", async () => {
@@ -58,6 +60,43 @@ it("revokes an owner while its cold head is still blocked and preserves the reco
       .set({ writer_failed_at: new Date() })
       .where("lease_id", "=", f.scope.writerId)
       .execute();
+    // Direct renewal carries committed revocation into the local owner. There
+    // is intentionally no second periodic PG observer alongside the renewer.
+    const lease = await f.database
+      .selectFrom("session_leases")
+      .select("worker_id")
+      .where("lease_id", "=", f.scope.writerId)
+      .executeTakeFirstOrThrow();
+    const coordinator = new SessionLeaseCoordinator({
+      database: f.database,
+      workerId: lease.worker_id,
+    });
+    const heartbeat: SupervisorHeartbeatMessage = {
+      protocolVersion: 1,
+      messageId: randomUUID(),
+      sentAt: new Date().toISOString(),
+      type: "supervisor.heartbeat",
+      payload: {
+        ...(await coordinator.heartbeatIdentity()),
+        maxConcurrentSessions: 1,
+        acceptingAssignments: true,
+        families: [
+          {
+            tenantId: f.scope.tenantId,
+            piSessionId: f.scope.piSessionId,
+            leaseId: f.scope.writerId,
+            writerId: f.scope.writerId,
+            fencingToken: f.scope.fencingToken,
+          },
+        ],
+      },
+    };
+    const requestedAt = performance.now();
+    host.observeLeaseRenewals(
+      heartbeat,
+      await coordinator.renewFromHeartbeat(heartbeat),
+      requestedAt,
+    );
     await rejected;
     expect(host.hasExecution(f.reference)).toBe(false);
     await vi.waitFor(

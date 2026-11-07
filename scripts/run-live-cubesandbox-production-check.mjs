@@ -36,9 +36,15 @@ if (process.env.PI_CLOUD_LIVE_CUBESANDBOX_CHECK !== "1") {
   );
 }
 const writeReport = process.env.PI_CLOUD_LIVE_CUBESANDBOX_REPORT !== "0";
-const deployedControlPlaneImage = JSON.parse(
-  kubectl(["get", "pod", podFor("control-plane"), "-o", "json"]),
-).status.containerStatuses[0].imageID;
+const deployedRoleImage = (role) => {
+  const pod = JSON.parse(kubectl(["get", "pod", podFor(role), "-o", "json"]));
+  const container = pod.status.containerStatuses.find((container) => container.name === role);
+  assert(container?.ready && container.imageID, `Missing ready ${role} image evidence`);
+  return container.imageID;
+};
+// API/projection and lifecycle can now carry independent artifact revisions.
+const deployedSessionRuntimeImage = deployedRoleImage("session-runtime");
+const deployedControlPlaneImage = deployedRoleImage("control-plane");
 
 const runtimeDirectory = resolve(
   repositoryRoot,
@@ -466,6 +472,7 @@ async function logicalSandboxIdForRun(runId) {
   return value;
 }
 
+// Assignment inventory is management-owned; it is not the Session Tool dispatcher.
 async function listLogicalSandboxAssignments(logicalSandboxId) {
   const source = `
     import { readFileSync } from "node:fs";
@@ -1239,9 +1246,10 @@ try {
     },
     piCloudRevision: testedRevision,
     deployedControlPlaneImage,
+    deployedSessionRuntimeImage,
     testRevision: testedRevision,
     checkedAt: new Date().toISOString(),
-    upstream: "TencentCloud/CubeSandbox@v0.6.0",
+    upstream: "TencentCloud/CubeSandbox@v0.7.3",
     model: { provider: model.provider, modelId: model.modelId },
     pureChat: {
       acceptedMs: chat.acceptedMs,

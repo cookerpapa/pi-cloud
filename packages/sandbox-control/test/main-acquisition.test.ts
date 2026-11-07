@@ -13,6 +13,7 @@ const fixture = vi.hoisted(() => ({
 vi.mock("../src/sandbox-control-config.ts", () => ({
   loadSandboxControlConfig: async () => ({
     databaseUrl: "unused",
+    sessionExecutionBaseUrl: "http://session-runtime:4300",
     cubeSandbox: { directPrivateCidrs: [] },
   }),
 }));
@@ -176,8 +177,6 @@ async function start() {
     instanceId: "test-controller",
     managementToken: "m".repeat(64),
     publishBindingChanges: async () => {},
-    partitionFor: () => 0,
-    partitionCount: 1,
     onOwnershipLost: () => fixture.call("ownership.retire"),
     metrics: {} as any,
   });
@@ -217,17 +216,12 @@ it("preserves startup and cleanup errors without closing the shared database", a
 });
 const closed = [
   "reaper.close",
-  "dispatcher.close",
-  "workflow-client.close",
   "server.close",
   "broker.close",
   "provider.close",
   "volume.close",
   "cube.close",
   "ownership.close",
-  "commands.close",
-  "progress.close",
-  "replies.close",
   "cleanup-wake.close",
 ];
 it("unwinds every owned layer after listener failure", async () => {
@@ -240,9 +234,9 @@ it("joins one shutdown and continues releasing independent resources after error
   const before = [process.listenerCount("SIGTERM"), process.listenerCount("SIGINT")];
   const runtime = await start();
   const first = new Error("reaper failed"),
-    second = new Error("command close failed");
+    second = new Error("cleanup wake close failed");
   fixture.errors.set("reaper.close", first);
-  fixture.errors.set("commands.close", second);
+  fixture.errors.set("cleanup-wake.close", second);
   const closing = runtime.close();
   expect(runtime.close()).toBe(closing);
   await expect(closing).rejects.toMatchObject({ errors: [first, second], cause: first });

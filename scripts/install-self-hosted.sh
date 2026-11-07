@@ -127,9 +127,10 @@ PiCloud self-hosted deployment plan
   4. Install/reuse single-node K3s ${K3S_VERSION}.
   5. Check out CubeSandbox at ${CUBE_COMMIT}.
   6. Initialize private PiCloud/Cube runtime material.
-  7. Reconcile Cube's KVM plane and register the Tool template.
-  8. Build/start PiCloud and the selected Pi Worker Pool.
-  9. Verify Web, Compose services and Worker Pool status.
+  7. Prepare the persistent XFS Workspace capacity pool and K3s mount dependency.
+  8. Reconcile Cube's KVM plane and register the Tool template.
+  9. Build/start PiCloud and the selected Pi Worker Pool.
+  10. Verify Web, K3s services and Worker Pool status.
 
 No model credential or administrator password is read by this installer.
 EOF
@@ -255,7 +256,7 @@ distribution_codename="${VERSION_CODENAME:-}"
 print_plan
 if [[ "${assume_yes}" != "true" ]]; then
   [[ -t 0 ]] || fail "non-interactive installation requires --yes"
-  printf '\nThis installs host services and allocates a 25 GiB Cube XFS image. Continue? [y/N] '
+  printf '\nThis installs host services and allocates a 25 GiB Cube image plus a sparse 256 GiB Workspace capacity pool. Continue? [y/N] '
   read -r answer
   [[ "${answer}" == "y" || "${answer}" == "Y" ]] || { note "Cancelled without host changes."; exit 0; }
 fi
@@ -265,8 +266,8 @@ current_phase="privilege acquisition"
 command -v sudo >/dev/null 2>&1 || fail "sudo is required"
 sudo -v
 
-base_commands=(curl git openssl tar xz sha256sum findmnt mountpoint ip awk sed)
-base_packages=(ca-certificates curl git jq openssl tar gzip xz-utils coreutils util-linux iproute2 iptables xfsprogs e2fsprogs conntrack socat)
+base_commands=(curl git openssl tar xz sha256sum findmnt mountpoint ip awk sed rsync mkfs.xfs xfs_growfs losetup blkid systemd-run systemd-escape)
+base_packages=(ca-certificates curl git jq openssl tar gzip xz-utils coreutils util-linux iproute2 iptables xfsprogs e2fsprogs conntrack socat rsync)
 
 install_base_packages() {
   current_phase="base package installation"
@@ -546,6 +547,12 @@ if [[ "${http_port_explicit}" == "true" && "${configured_http_port}" != "${http_
 fi
 bind_address="${configured_bind_address:-${bind_address}}"
 http_port="${configured_http_port:-${http_port}}"
+
+current_phase="persistent Workspace capacity pool"
+log "Preparing the persistent XFS Workspace pool"
+workspace_pool_plan="${temporary_directory}/workspace-storage.json"
+node --input-type=module -e 'import {writeFileSync} from "node:fs";writeFileSync(process.argv[1],JSON.stringify({runtimeDirectory:process.argv[2],kubeconfig:"/etc/rancher/k3s/k3s.yaml",fresh:true,workspaces:[]})+"\n",{mode:0o600});' "${workspace_pool_plan}" "${runtime_directory}"
+run_root_node --import "${repository_root}/node_modules/tsx/dist/loader.mjs" "${repository_root}/scripts/run-workspace-storage-pool.mjs" prepare --plan "${workspace_pool_plan}"
 
 current_phase="CubeSandbox cluster reconciliation"
 log "Reconciling CubeSandbox's KVM execution plane"

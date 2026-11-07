@@ -18,6 +18,8 @@ export type SandboxExecutionDescriptor = Readonly<{
   version: 2;
   target: SandboxExecutionTarget;
   attachment: ToolExecutionAttachment;
+  /** Encrypted immutable data-channel state; never VM lifecycle ownership. */
+  dataCapsule?: string;
 }>;
 
 export type SandboxBindingSnapshot = Readonly<{

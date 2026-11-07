@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { createExecutionReference } from "@pi-cloud/protocol";
+import { createExecutionReference, PublicationNotSentError } from "@pi-cloud/protocol";
 import type {
   AcceptedFact,
   AcceptedFactReceipt,
@@ -228,6 +228,7 @@ it.each(["lost_reply", "lost_publication_ack", "changed_binding", "stop", "closi
       if (fault === "closing_writer") await a.writer.close();
       await vi.advanceTimersByTimeAsync(10_000);
       expect(await ready).toBe(false);
+      expect(a.writer.failureSignal?.aborted).toBe(false);
       expect(confirm).not.toHaveBeenCalled();
       const probe = facts.find(
         (f): f is Extract<AcceptedFact, { kind: "path_probe" }> => f.kind === "path_probe",
@@ -288,6 +289,55 @@ it("probes a quiet physical Session once across Lanes and never opens or sequenc
     const length = facts.length;
     await vi.advanceTimersByTimeAsync(60_000);
     expect(facts).toHaveLength(length);
+  } finally {
+    await f.log.close();
+  }
+});
+
+it.each(["path_probe", "runtime_keepalive"] as const)(
+  "a known failed %s publication immediately revokes every local Conversation writer",
+  async (kind) => {
+    vi.useFakeTimers();
+    const failure = new Error("Session transaction outcome is unknown");
+    const f = fixture(async (fact) => {
+      if (fact.kind === kind) throw failure;
+      return { factId: fact.factId, durable: true };
+    });
+    const root = await f.open(f.base);
+    const child = f.log.openConversation(root.executionReference, {
+      sessionId: crypto.randomUUID(),
+      turnId: crypto.randomUUID(),
+      conversationId: 2,
+      nextEventSeq: 1,
+    });
+    try {
+      if (kind === "runtime_keepalive")
+        f.log.bindRetention(root.executionReference, 1, { workspaceId: crypto.randomUUID() });
+      await root.publish();
+      await vi.advanceTimersByTimeAsync(15001);
+      expect(root.writer.failureSignal?.reason).toBe(failure);
+      expect(child.failureSignal).toBe(root.writer.failureSignal);
+      expect(() => child.assertHealthy!()).toThrow("producer stopped");
+      await expect(root.publish()).rejects.toBe(failure);
+    } finally {
+      await child.close().catch(() => {});
+      await f.log.close();
+    }
+  },
+);
+
+it("a definite pre-enqueue probe rejection leaves the Session authority intact", async () => {
+  vi.useFakeTimers();
+  const f = fixture(async (fact) => {
+    if (fact.kind === "path_probe") throw new PublicationNotSentError("bounded queue is full");
+    return { factId: fact.factId, durable: true };
+  });
+  try {
+    const root = await f.open(f.base);
+    await root.publish();
+    await vi.advanceTimersByTimeAsync(15001);
+    expect(root.writer.failureSignal?.aborted).toBe(false);
+    await expect(root.publish()).resolves.toBeUndefined();
   } finally {
     await f.log.close();
   }

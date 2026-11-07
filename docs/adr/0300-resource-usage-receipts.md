@@ -5,7 +5,8 @@ Date: 2026-11-07. Tracking: [Issue #7](https://github.com/cookerpapa/pi-cloud/is
 
 ## Pricing boundary
 
-Compute pricing uses allocated guest CPU and memory multiplied by confirmed
+Compute pricing uses the accepted workload CPU and memory allocation (excluding
+host/VMM overhead and snapshot rounding) multiplied by confirmed
 running time. Actual CPU-seconds and sampled memory use remain operational
 measurements. Do not add guest and host/VMM scopes or charge a shared VM again
 for each Session using it. The allocation UUID identifies the physical purchase;

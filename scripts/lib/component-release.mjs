@@ -138,11 +138,14 @@ export function scopedApplyState({ baseline, next, current, helmRevision, before
 
 /** Source classifications are deliberately small; protocol changes use matched release. */
 export function assertScopedSources(scope, files) {
-  assert(["provider", "catalog", "web", "control-plane"].includes(scope), "Unknown release scope");
+  assert(
+    ["provider", "catalog", "web", "session-runtime"].includes(scope),
+    "Unknown release scope",
+  );
   for (const file of files) {
     assert(
       operatorSources.has(file) ||
-        (scope === "control-plane" && ordinaryControlToolSource(file)) ||
+        (scope === "session-runtime" && ordinaryControlToolSource(file)) ||
         (scope === "web" &&
           (/^packages\/web-ui\/src\/.*\.(tsx|css)$/.test(file) ||
             [
@@ -176,6 +179,32 @@ export function assertScopedSources(scope, files) {
       `Change requires a matched release: ${file}`,
     );
   }
+}
+
+/** A built artifact can serve several roles; only the requested role value changes. */
+export function scopedImageValues(scope, values, desired, version) {
+  const target = imageReleaseTargets[scope];
+  assert(target, "Unknown image release scope");
+  assert.equal(
+    desired,
+    `pi-cloud/${target.imageName}:${version}`,
+    "Scoped artifact identity changed",
+  );
+  const next = structuredClone(values);
+  if (scope === "provider") next.provider.image = desired;
+  else {
+    assert(
+      next.images?.[target.catalogKey],
+      "Install independent role image values before a scoped release",
+    );
+    next.images[target.catalogKey] = {
+      ...next.images[target.catalogKey],
+      repository: `pi-cloud/${target.imageName}`,
+      tag: version,
+    };
+    delete next.images[target.catalogKey].digest;
+  }
+  return next;
 }
 
 function manifests(text) {
@@ -256,7 +285,7 @@ export function assertScopedManifests(scope, before, after, desired) {
       }
       targets++;
     } else if (
-      ["web", "control-plane"].includes(scope) &&
+      ["web", "session-runtime"].includes(scope) &&
       old.kind === "Deployment" &&
       old.metadata.name === imageReleaseTargets[scope].workload.split("/")[1]
     ) {
@@ -290,6 +319,48 @@ export function assertScopedManifests(scope, before, after, desired) {
   assert.equal(targets, 1, "Expected exactly one scoped target");
 }
 
+export const sharedHostRoles = {
+  "control-plane": { workload: "pi-cloud-control-plane", container: "control-plane" },
+  "session-runtime": { workload: "pi-cloud-session-runtime", container: "session-runtime" },
+  metering: { workload: "pi-cloud-metering", container: "metering" },
+};
+
+export function assertServingComponents(deployment, resources, alternative) {
+  for (const role of Object.keys(sharedHostRoles))
+    assert(
+      deployment.components[role],
+      "Install the matched role manifest before a scoped release",
+    );
+  const images = new Set(
+    resources.flatMap((resource) =>
+      resource.spec.template.spec.containers.map((container) => container.image),
+    ),
+  );
+  for (const [name, component] of Object.entries(deployment.components)) {
+    if (name === "cubesandbox-tool") continue;
+    const role = sharedHostRoles[name];
+    if (role) {
+      const workload = resources.find(
+        (resource) => resource.kind === "Deployment" && resource.metadata.name === role.workload,
+      );
+      const container = workload?.spec.template.spec.containers.find(
+        (candidate) => candidate.name === role.container,
+      );
+      assert(container, `Missing serving role: ${name}`);
+      assert(
+        container.image === component.reference ||
+          (name === alternative?.name && container.image === alternative.reference),
+        `Serving role differs from its record: ${name}`,
+      );
+    } else
+      assert(
+        images.has(component.reference) ||
+          (name === alternative?.name && images.has(alternative.reference)),
+        `Serving component differs from its record: ${name}`,
+      );
+  }
+}
+
 export function deploymentFromEvidence({
   evidence,
   evidenceDirectory,
@@ -302,13 +373,19 @@ export function deploymentFromEvidence({
   for (const image of evidence.images) {
     const name = image.reference.split("/").at(-1).split(":")[0];
     assert(!components[name], "Duplicate component provenance");
-    components[name] = {
+    const component = {
       reference: image.reference,
       imageId: image.imageId,
       repoDigests: image.repoDigests,
       sourceRevision: image.provenance.sourceRevision,
       evidence: { directory: evidenceDirectory, manifestSha256: digest(evidence) },
     };
+    for (const role of name === "control-plane"
+      ? ["control-plane", "session-runtime", "metering"]
+      : [name]) {
+      assert(!components[role], "Duplicate role provenance");
+      components[role] = structuredClone(component);
+    }
   }
   return { formatVersion: 1, revision, version, catalogRevision, contracts, components };
 }
@@ -324,7 +401,16 @@ export function composeScopedDeployment(
   if (scope === "catalog") result.catalogRevision = catalogRevision;
   else {
     assert(imageReleaseTargets[scope], "Unknown image release scope");
-    const name = imageReleaseTargets[scope].imageName;
+    const target = imageReleaseTargets[scope];
+    const name = target.imageName;
+    const role = target.componentName ?? name;
+    if (scope === "session-runtime")
+      for (const shared of Object.keys(sharedHostRoles))
+        assert(
+          baseline.components[shared],
+          "Install the matched role manifest before a scoped release",
+        );
+    assert(baseline.components[role], "Install the matched role manifest before a scoped release");
     assert.equal(evidence.images.length, 1, "Component evidence must cover one image");
     const image = evidence.images[0];
     assert(image.reference.startsWith(`pi-cloud/${name}:`));
@@ -333,12 +419,12 @@ export function composeScopedDeployment(
       0,
       "Component image scan failed",
     );
-    result.components[name] = deploymentFromEvidence({
+    result.components[role] = deploymentFromEvidence({
       evidence,
       evidenceDirectory,
       revision,
       version,
-    }).components[name];
+    }).components[role];
   }
   return result;
 }

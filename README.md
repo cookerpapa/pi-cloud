@@ -60,7 +60,7 @@ and execution files are prepared in the current Tool Sandbox only when used.
 ## Architecture
 
 ```text
-Browser -> Control Plane -> PostgreSQL (Run queue/control) -> Pi Worker
+Browser -> Session runtime API -> PostgreSQL (Run queue/control) -> Pi Worker
 Pi Worker <-> Worker-local Model Gateway <-> CLIProxyAPI <-> Model
 
 Pi Worker -> Session Kafka producer -> Kafka -> Session Projector
@@ -74,6 +74,7 @@ Cube/control Tool completion -> boot-scoped Kafka replies -> original Pi Worker
 
 Workspace files -> persistent Cube Volumes
 Retained attachment originals -> private S3 objects; Kafka/PG carry references
+Model / Cube / storage receipts -> independent Metering service -> PG ledger
 ```
 
 | Component | Responsibility |
@@ -81,7 +82,8 @@ Retained attachment originals -> private S3 objects; Kafka/PG carry references
 | PostgreSQL | Session configuration, Run admission, leases and control authority; materialized native history and current state |
 | Pi Worker | The pinned native Harness, context preparation, model requests and canonical Tool Result settlement |
 | Kafka | Acknowledged ordered Session commits and control propagation; separate Worker-boot reply transport |
-| Session Projector | Native-state materialization, live views and dispatch of committed tool intents |
+| Session runtime | Authenticated API/history/statements/SSE, Worker membership and the sole Projector for native projection and Tool dispatch |
+| Control Plane | VM allocation, lifecycle recovery, resource maintenance and scheduled/SCM admission |
 | CubeSandbox | KVM isolation, fixed native file/shell tools and completion delivery |
 | CLIProxyAPI | Provider credentials, account selection and upstream model transport |
 | S3 / Cube Volumes | Immutable conversation attachments and Skill packages / mutable Workspace files |
@@ -91,12 +93,17 @@ cross-request continuation. Existing installations use the reviewed provider
 configuration conversion in the [component release procedure](docs/COMPONENT_RELEASE.md).
 [Model metering](docs/MODEL_BILLING.md) records request receipts separately from
 conversation history, with versioned prices and an informational Model costs page.
-Payments and Sandbox billing are not enabled. Delivery status is tracked in
-[Issue #4](https://github.com/cookerpapa/pi-cloud/issues/4).
+An independent receipt service also records compute allocation time and persistent
+Workspace capacity time; [resource statements](docs/RESOURCE_BILLING.md) preserve
+unconfirmed gaps. Payment collection and production tariffs are not enabled.
 
-The API, Projector and sandbox lifecycle controller share one Control Plane
-process. There is no independent Tool Broker. Ordinary control tools are registered
-on the execution side; their definitions reach Workers over the existing management
+The `session-runtime` process serves the authenticated API, history/statements,
+SSE, Worker membership and the sole Session Projector group. The separate
+`control-plane` process owns VM admission, recovery and resource lifecycle.
+Already-owned Sessions with active Cube bindings keep committing, dispatching
+Tools and serving reads while management is stopped. New VM activation and
+physical recovery wait for management. There is no independent Tool Broker. Ordinary control tools are registered
+on the execution side; their definitions reach Workers over the existing membership
 connection and take effect at the next model request.
 
 Sandbox integration uses focused lifecycle, execution, file, image, terminal,
@@ -181,8 +188,9 @@ individual delivery reports retain both successes and unresolved failures.
   may leave Volume references unconfirmed; cleanup waits for positive evidence.
 - Arbitrary shell commands and remote effects do not have exactly-once guarantees.
   Recovery preserves uncertainty instead of silently executing them again.
-- Self-hosted defaults have no product quotas on conversations, concurrency or
-  uploads. Physical capacity and transport/provider bounds still apply.
+- Self-hosted defaults have no product quotas on conversations or concurrency.
+  Workspace storage has an explicit, growable capacity enforced by the filesystem;
+  physical pool capacity and transport/provider bounds still apply.
 - Shared native/presentation roots and safe reclamation are implemented under
   [ADR-0287](docs/adr/0287-single-path-shared-forks.md). A measured 1 GiB Fork takes
   about 0.8 seconds; ordinary complete-message writes cost about 8 ms more in the

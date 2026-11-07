@@ -5183,3 +5183,21 @@ body.product-panel-resizing {
   font-weight: 600;
   border-color: currentColor;
 }
+
+.workspace-capacity-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.workspace-capacity-control form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.workspace-capacity-control input {
+  width: 90px;
+}

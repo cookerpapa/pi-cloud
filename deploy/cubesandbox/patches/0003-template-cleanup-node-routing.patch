@@ -537,3 +537,16 @@ index 2fde9d65fd9128a5e6f1e1799d4e081fa9055582..f53efe504cc0c4bcb1a69695e421b2a8
  		}
  		locators = append(locators, templateCleanupLocator{
  			NodeID: replica.NodeID,
+diff --git a/CubeMaster/pkg/templatecenter/snapshot_reconciler_test.go b/CubeMaster/pkg/templatecenter/snapshot_reconciler_test.go
+index 14ddc10159672f9e769570ad694617a66c4f6b46..207a87c692325aa3cabc2c6c755e924c8ecc3741 100644
+--- a/CubeMaster/pkg/templatecenter/snapshot_reconciler_test.go
++++ b/CubeMaster/pkg/templatecenter/snapshot_reconciler_test.go
+@@ -206,7 +206,7 @@ func stubReconcilerDB(t *testing.T, rec models.SnapshotRecord, replica models.Te
+ 	db, err := gorm.Open(gormmysql.New(gormmysql.Config{
+ 		Conn:                      sqlDB,
+ 		SkipInitializeWithVersion: true,
+-	}), &gorm.Config{DryRun: true, DisableAutomaticPing: true})
++	}), &gorm.Config{DryRun: true, DisableAutomaticPing: true, SkipDefaultTransaction: true})
+ 	require.NoError(t, err)
+ 
+ 	require.NoError(t, db.Callback().Query().Replace("gorm:query", func(tx *gorm.DB) {

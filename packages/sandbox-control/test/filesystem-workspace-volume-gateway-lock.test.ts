@@ -1,3 +1,4 @@
+import { TestQuotaVolumeGateway } from "./fixtures/volume-quota.ts";
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID, createHash } from "node:crypto";
 import {
@@ -17,7 +18,6 @@ import { Pool } from "pg";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   FilesystemWorkspaceVolumeGatewayLock,
-  PersistentVolumeWorkspaceVolumeGateway,
   workspaceVolumeId,
   type WorkspaceVolumeLockScope,
 } from "../src/index.ts";
@@ -208,7 +208,7 @@ it("permits actual browsing, another upload and credential updates during an upl
     release = Promise.withResolvers<void>(),
     began = Promise.withResolvers<void>();
   const gateway = () =>
-    new PersistentVolumeWorkspaceVolumeGateway({
+    new TestQuotaVolumeGateway({
       workspaceRoot: f.root,
       lock: f.lock(),
       authorizeUpload: async () => {},
@@ -290,7 +290,7 @@ it("publishes identical concurrent uploads once and rejects conflicting content 
   const f = await fixture();
   const gateways = [0, 1].map(
     () =>
-      new PersistentVolumeWorkspaceVolumeGateway({
+      new TestQuotaVolumeGateway({
         workspaceRoot: f.root,
         authorizeUpload: async () => {},
       }),
@@ -331,7 +331,7 @@ it("publishes identical concurrent uploads once and rejects conflicting content 
 
 it("does not initialize absent/unpublished Volumes and keeps deletion retryable", async () => {
   const f = await fixture(),
-    gateway = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot: f.root, lock: f.lock() });
+    gateway = new TestQuotaVolumeGateway({ workspaceRoot: f.root, lock: f.lock() });
   await rm(f.path, { recursive: true });
   await expect(gateway.verify(f.scope)).rejects.toMatchObject({
     code: "workspace_volume_identity_unavailable",
@@ -349,7 +349,7 @@ it("serializes actual credential updates across Gateways and removes locks with 
   const f = await fixture(),
     gateways = Array.from(
       { length: 2 },
-      () => new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot: f.root, lock: f.lock() }),
+      () => new TestQuotaVolumeGateway({ workspaceRoot: f.root, lock: f.lock() }),
     );
   await Promise.all(
     Array.from({ length: 8 }, (_, i) =>

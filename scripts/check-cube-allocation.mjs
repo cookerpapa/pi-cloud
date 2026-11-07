@@ -1,3 +1,4 @@
+import { materializeCubeOwnedSources } from "./lib/cube-owned-sources.mjs";
 // Exercise the maintained allocation patch with real node metadata and MySQL.
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
@@ -52,6 +53,7 @@ try {
       throw new Error("Cube patch digest mismatch");
     await exec("git", ["apply", path], { cwd: directory });
   }
+  await materializeCubeOwnedSources(root, directory, manifest);
   await prepareCubeNetworkBindings(directory, manifest, run);
   let dsn = process.env.PI_CLOUD_ALLOCATION_MYSQL_DSN;
   if (!dsn) {

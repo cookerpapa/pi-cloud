@@ -108,7 +108,7 @@ pi-workers:
     digest: ""
     pullPolicy: IfNotPresent
   services:
-    controlPlaneUrl: http://control-plane:3000
+    controlPlaneUrl: http://session-runtime:3000
     sandboxControlUrls:
       - http://control-plane:4300
     providerProxyUrl: https://provider-proxy.example.com:3129

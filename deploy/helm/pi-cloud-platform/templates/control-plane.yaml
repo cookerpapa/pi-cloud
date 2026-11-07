@@ -55,9 +55,9 @@ spec:
         - name: control-plane
           image: {{ include "pi-cloud-platform.image" .Values.images.controlPlane | quote }}
           imagePullPolicy: {{ .Values.images.controlPlane.pullPolicy }}
+          args: [/app/packages/control-plane/src/main.ts]
           ports:
             - { name: http, containerPort: 3000 }
-            - { name: preview, containerPort: 3001 }
             - { name: metrics, containerPort: 9464 }
             - { name: sandbox, containerPort: 4300 }
           env:
@@ -68,11 +68,6 @@ spec:
             - { name: PI_CLOUD_IMAGE_S3_CREDENTIALS_FILE, value: /run/pi-cloud-secrets/session-image-s3-credentials.json }
             {{- end }}
             - { name: NODE_ENV, value: production }
-            {{- if .Values.controlPlane.imageGeneration.model }}
-            - { name: PI_CLOUD_IMAGE_GENERATION_MODEL, value: {{ .Values.controlPlane.imageGeneration.model | quote }} }
-            - { name: PI_CLOUD_IMAGE_GENERATION_URL, value: {{ index .Values "pi-workers" "services" "providerGatewayUrl" | quote }} }
-            - { name: PI_CLOUD_IMAGE_GENERATION_API_KEY_FILE, value: /run/pi-cloud-secrets/image-generation-api-key }
-            {{- end }}
             - { name: PI_CLOUD_MODEL_CATALOG_FILE, value: /run/pi-cloud-models/model-catalog.json }
             - { name: HOST, value: 0.0.0.0 }
             - name: POD_IP
@@ -86,7 +81,8 @@ spec:
             - { name: PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES, value: {{ .Values.sandboxPlane.maximumActivePerReplica | default "unlimited" | quote }} }
             - { name: PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS, value: {{ .Values.sandboxPlane.maximumActiveCommands | quote }} }
             - { name: PI_CLOUD_SANDBOX_CONTROL_TOKEN_FILE, value: /run/pi-cloud-secrets/sandbox-control-token }
-            - { name: PI_CLOUD_CONTROL_PLANE_URL, value: "http://control-plane:3000" }
+            - { name: PI_CLOUD_CONTROL_PLANE_URL, value: {{ index .Values "pi-workers" "services" "controlPlaneUrl" | quote }} }
+            - { name: PI_CLOUD_SESSION_EXECUTION_URL, value: {{ .Values.sessionRuntime.executionBaseUrl | quote }} }
             - { name: PI_CLOUD_CUBE_PERSISTENT_STATE_KEY_FILE, value: /run/pi-cloud-secrets/cube-persistent-state-key }
             - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_URL, value: {{ .Values.sandboxPlane.volumeGatewayUrl | quote }} }
             - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-volume-gateway-token }
@@ -109,9 +105,6 @@ spec:
             - { name: PI_CLOUD_CUBE_EXECUTION_ENDPOINTS_FILE, value: /run/pi-cloud-config/cube-execution-endpoints.json }
             {{- end }}
             - { name: PORT, value: "3000" }
-            {{- if kindIs "slice" .Values.controlPlane.enabledControlTools }}
-            - { name: PI_CLOUD_CONTROL_TOOLS_ENABLED, value: {{ toJson .Values.controlPlane.enabledControlTools | quote }} }
-            {{- end }}
             - { name: DATABASE_URL_FILE, value: /run/pi-cloud-secrets/database-url }
             - { name: DATABASE_NOTIFICATION_URL_FILE, value: /run/pi-cloud-secrets/database-notification-url }
             - { name: PI_CLOUD_KAFKA_BROKERS, value: {{ join "," .Values.global.kafka.brokers | quote }} }
@@ -195,9 +188,6 @@ spec:
             - { name: platform-secrets, mountPath: {{ printf "/run/pi-cloud-secrets/%s" .apiKeySecretKey | quote }}, subPath: {{ .apiKeySecretKey }}, readOnly: true }
             {{- end }}
             {{- end }}
-            {{- if .Values.controlPlane.imageGeneration.model }}
-            - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/image-generation-api-key, subPath: {{ index .Values "pi-workers" "credentials" "providerGatewayApiKeyKey" }}, readOnly: true }
-            {{- end }}
             - { name: tmp, mountPath: /tmp }
       volumes:
         - name: model-catalog
@@ -234,7 +224,6 @@ spec:
   selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: control-plane }
   ports:
     - { name: http, port: 3000, targetPort: http }
-    - { name: preview, port: 3001, targetPort: preview }
     - { name: metrics, port: 9464, targetPort: metrics }
     - { name: sandbox, port: 4300, targetPort: sandbox }
 ---

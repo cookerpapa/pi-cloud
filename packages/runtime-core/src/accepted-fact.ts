@@ -143,6 +143,7 @@ export class AcceptedFactCapacityError extends PublicationNotSentError {
 
 export interface AcceptedFactBus {
   publicationFailure?(scope: AcceptedFactScope): unknown;
+  publicationFailureSignal?(scope: AcceptedFactScope): AbortSignal | undefined;
   publicationAvailability?(): Promise<import("@pi-cloud/protocol").PublicationAvailability>;
   open?(publication: ExecutionPublication, signal?: AbortSignal): Promise<void>;
   forget?(scope: AcceptedFactScope): void | Promise<void>;

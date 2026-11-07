@@ -1,3 +1,5 @@
+import { defaultWorkspaceCapacityBytes } from "./workspace-capacity-service.ts";
+import { workspaceCapacityBytes } from "@pi-cloud/protocol";
 import { createHash, randomUUID } from "node:crypto";
 import type { Database, DevelopmentEnvironmentState } from "@pi-cloud/database";
 import { environmentForImage } from "@pi-cloud/database";
@@ -448,6 +450,10 @@ export class DevelopmentEnvironmentService {
           sandbox_domain_id: domain.id,
           seed_kind: "empty",
           workspace_kind: "development_environment",
+          capacity_bytes:
+            request.workspaceCapacityGiB === undefined
+              ? defaultWorkspaceCapacityBytes()
+              : workspaceCapacityBytes(request.workspaceCapacityGiB),
         })
         .executeTakeFirstOrThrow();
       await transaction

@@ -73,7 +73,7 @@ COPY packages/subagent-control/package.json packages/subagent-control/package.js
 COPY packages/subagent-control/src packages/subagent-control/src
 COPY packages/workspace-runtime/package.json packages/workspace-runtime/package.json
 COPY packages/workspace-runtime/src packages/workspace-runtime/src
-RUN node --import tsx --input-type=module --eval "await import('@pi-cloud/sandbox-control/runtime'); await import('@pi-cloud/runtime-core/session-projector')" \
+RUN node --import tsx --input-type=module --eval "await import('@pi-cloud/sandbox-control/runtime'); await import('@pi-cloud/sandbox-control/session-runtime'); await import('@pi-cloud/runtime-core/session-projector')" \
     && rm -rf /usr/local/lib/node_modules/npm \
     && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 

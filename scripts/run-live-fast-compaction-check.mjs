@@ -42,6 +42,11 @@ let purpose = "agent",
   runtime,
   events;
 const gateway = new TenantModelGateway({
+  // This isolated Harness fixture has no cloud Session lease. Its explicitly
+  // owned capability is released in finally; production uses the Session host.
+  assertExecutionCurrent: () => {
+    if (!lease) throw new Error("Standalone compaction model grant is inactive");
+  },
   host: "127.0.0.1",
   port: 0,
   advertisedBaseUrl: "http://127.0.0.1",

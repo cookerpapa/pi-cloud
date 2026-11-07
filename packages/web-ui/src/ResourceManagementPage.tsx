@@ -1,3 +1,4 @@
+import { WorkspaceCapacity } from "./WorkspaceCapacity.tsx";
 import { useEffect, useState } from "react";
 import type {
   ConversationSummaryResource,
@@ -47,8 +48,10 @@ export function ResourceManagementPage({
   onRefresh,
   profiles,
   workspaces,
+  canGrow = false,
 }: {
   api: PiCloudApi;
+  canGrow?: boolean;
   conversations: readonly ConversationSummaryResource[];
   environments: readonly DevelopmentEnvironmentResource[];
   initialTab?: "workspaces" | "environments" | "source-control";
@@ -57,10 +60,11 @@ export function ResourceManagementPage({
   profiles: DevelopmentEnvironmentListResource["profiles"];
   workspaces: readonly WorkspaceSummaryResource[];
 }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [tab, setTab] = useState<"workspaces" | "environments" | "source-control">(initialTab);
   const [profileKey, setProfileKey] = useState<DevelopmentEnvironmentProfileKey>("standard");
   const [machineName, setMachineName] = useState("");
+  const [storageGiB, setStorageGiB] = useState(32);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [issueJobs, setIssueJobs] = useState<readonly SourceControlIssueJobResource[]>([]);
@@ -238,6 +242,12 @@ export function ResourceManagementPage({
                           {active ? t("resource.inUse") : t("common.available")}
                         </span>
                       </header>
+                      <WorkspaceCapacity
+                        defer
+                        api={api}
+                        workspaceId={workspace.workspaceId}
+                        canGrow={canGrow}
+                      />
                       <dl className="product-resource-metadata">
                         <div>
                           <dt>{t("resource.latestProfile")}</dt>
@@ -246,7 +256,7 @@ export function ResourceManagementPage({
                               ? "—"
                               : `${String(workspaceProfile.cpuCount)}C · ${String(
                                   workspaceProfile.memoryMiB / 1024,
-                                )}G · ${String(workspaceProfile.systemDiskGiB)}G`}
+                                )}G`}
                           </dd>
                         </div>
                         <div>
@@ -400,6 +410,7 @@ export function ResourceManagementPage({
                         name,
                         profileKey,
                         newIdempotencyKey("environment"),
+                        storageGiB,
                       )
                       .then((result) => {
                         setMachineName("");
@@ -453,21 +464,15 @@ export function ResourceManagementPage({
                   </select>
                 </label>
                 <label>
-                  <span>{t("resource.systemDisk")}</span>
-                  <select
-                    onChange={(event) => {
-                      const disk = Number(event.target.value);
-                      const candidate = profiles.find((profile) => profile.systemDiskGiB === disk);
-                      if (candidate !== undefined) setProfileKey(candidate.key);
-                    }}
-                    value={selectedProfile?.systemDiskGiB ?? 8}
-                  >
-                    {profiles.map((profile) => (
-                      <option key={profile.key} value={profile.systemDiskGiB}>
-                        {String(profile.systemDiskGiB)} GB
-                      </option>
-                    ))}
-                  </select>
+                  <span>{language === "zh-CN" ? "工作区容量" : "Workspace capacity"}</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={storageGiB}
+                    onChange={(event) => setStorageGiB(Number(event.target.value))}
+                  />
+                  <small>GiB</small>
                 </label>
                 <button
                   className="product-primary-button"
@@ -500,8 +505,7 @@ export function ResourceManagementPage({
                             <h3>{environment.workspaceName}</h3>
                             <span>
                               {String(environment.cpuCount)}C ·{" "}
-                              {String(environment.memoryMiB / 1024)}G ·{" "}
-                              {String(environment.systemDiskGiB)}G
+                              {String(environment.memoryMiB / 1024)}G
                             </span>
                           </div>
                         </div>
@@ -509,6 +513,12 @@ export function ResourceManagementPage({
                           {t(`resource.state.${environment.state}` as const)}
                         </span>
                       </header>
+                      <WorkspaceCapacity
+                        defer
+                        api={api}
+                        workspaceId={environment.workspaceId}
+                        canGrow={canGrow}
+                      />
                       <dl className="product-resource-metadata">
                         <div>
                           <dt>{t("resource.ip")}</dt>

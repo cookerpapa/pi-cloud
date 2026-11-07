@@ -1,3 +1,4 @@
+import { validateQuotaEnforcement } from "./workspace-quota-client.ts";
 import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { constants, type Dir } from "node:fs";
@@ -292,6 +293,7 @@ export function runTrustedWorkspaceGit(
 
 /** Trusted direct access to Cube's durable POSIX Workspace volumes. */
 export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
+  readonly #quota: import("./workspace-volume-gateway-contract.ts").WorkspaceQuotaPolicy;
   readonly #workspaceRoot: string;
   readonly #lock: WorkspaceVolumeGatewayLock;
   readonly #git: WorkspaceVolumeGitRunner;
@@ -303,6 +305,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
   #closed = false;
 
   constructor(options: PersistentVolumeWorkspaceVolumeGatewayOptions) {
+    this.#quota = options.quota;
     this.#workspaceRoot = validatedAbsoluteDirectory(options.workspaceRoot, "workspaceRoot");
     this.#lock = options.lock ?? new FilesystemWorkspaceVolumeGatewayLock(this.#workspaceRoot);
     this.#git = options.gitRunner ?? runTrustedWorkspaceGit;
@@ -324,9 +327,76 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
   async verify(input: WorkspaceVolumeGatewayVerifyInput): Promise<{ verified: true }> {
     const identity = validatedIdentity(input);
     return this.#withVolumeLock(identity.volumeId, "shared", async () => {
-      await this.#validatedVolume(identity);
+      const directory = await this.#validatedVolume(identity);
+      await this.#ensureQuota(identity, directory);
       return { verified: true };
     });
+  }
+
+  async reconcileQuota(
+    input: import("./workspace-volume-gateway-contract.ts").WorkspaceVolumeQuotaReconcileInput,
+  ): Promise<{ applied: boolean }> {
+    const identity = validatedVolumeIdentity(input);
+    if (!Number.isSafeInteger(input.revision) || input.revision < 1)
+      throw new TypeError("Invalid capacity revision");
+    const directory = this.#volumeDirectory(identity.volumeId);
+    const present = await lstat(directory).catch((error) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    });
+    if (!present) {
+      await this.#quota.defer(identity, input.revision);
+      return { applied: false };
+    }
+    return this.#withVolumeLock(identity.volumeId, "shared", async () => {
+      await this.#assertNotDeleting(directory);
+      const stored = await this.#readVolumeIdentity(directory);
+      if (stored.volumeId !== identity.volumeId)
+        throw new Error("Workspace Volume changed identity");
+      await this.#ensureQuota(identity, directory, true);
+      return { applied: true };
+    });
+  }
+
+  async #ensureQuota(
+    identity: import("./workspace-volume-gateway-contract.ts").WorkspaceVolumeGatewayVolumeIdentity,
+    directory: string,
+    refresh = false,
+  ): Promise<void> {
+    const stored = await this.#readVolumeIdentity(directory),
+      scope = {
+        tenantId: identity.tenantId,
+        workspaceId: identity.workspaceId,
+        volumeId: identity.volumeId,
+        generation: stored.generation,
+      };
+    const read = async () => {
+      const file = await open(
+        join(directory, VOLUME_METADATA_DIRECTORY, "quota-enforced-v1"),
+        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+      );
+      try {
+        const stat = await file.stat();
+        if (!stat.isFile() || stat.size > 4096)
+          throw new Error("Invalid Workspace enforcement marker");
+        validateQuotaEnforcement(
+          JSON.parse((await readAtMost(file, 4097)).toString("utf8")),
+          scope,
+        );
+      } finally {
+        await file.close();
+      }
+    };
+    if (!refresh) {
+      try {
+        await read();
+        return;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+    await this.#quota.ensure(scope);
+    await read();
   }
 
   async listDirectory(input: WorkspaceVolumeGatewayPathInput): Promise<{
@@ -401,6 +471,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
         throw new Error("Workspace transfer authorization is unavailable");
       await this.#authorizeFileTransfer(input);
       const directory = await this.#validatedVolume(identity);
+      if (input.action === "create") await this.#ensureQuota(identity, directory);
       const target = await this.#browseTarget(directory, input.rootPath, "", true);
       const root = await this.#openBrowseTarget(target, true);
       const staging = new UploadStagingArea(
@@ -428,6 +499,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
       if (!this.#authorizeUpload) throw new Error("Workspace upload authorization is unavailable");
       await this.#authorizeUpload(input, input.byteLength);
       const directory = await this.#validatedVolume(identity);
+      await this.#ensureQuota(identity, directory);
       const target = await this.#browseTarget(directory, input.rootPath, "", true);
       const root = await this.#openBrowseTarget(target, true);
       const staging = new UploadStagingArea(
@@ -708,7 +780,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
       });
       return { deleted: false };
     };
-    return this.#withVolumeLock(
+    const result = await this.#withVolumeLock(
       identity.volumeId,
       "exclusive",
       async () => {
@@ -752,6 +824,8 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
       },
       absent,
     );
+    await this.#quota.release(identity);
+    return result;
   }
 
   async #assertNotDeleting(directory: string): Promise<void> {

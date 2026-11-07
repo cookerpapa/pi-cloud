@@ -18,10 +18,23 @@ const environment = Object.fromEntries(
   ].map((k) => [`PI_CLOUD_${k}`, id]),
 );
 const images = Object.fromEntries(
-  ["controlPlane", "worker", "web", "volumeGateway", "sshGateway", "relay", "provider"].map(
-    (key) => [key, `pi-cloud/${key.toLowerCase()}:fixture`],
-  ),
+  [
+    "controlPlane",
+    "sessionRuntime",
+    "metering",
+    "worker",
+    "web",
+    "volumeGateway",
+    "sshGateway",
+    "relay",
+    "provider",
+  ].map((key) => [key, `pi-cloud/${key.toLowerCase()}:fixture`]),
 );
+Object.assign(images, {
+  controlPlane: "pi-cloud/control-plane:management-fixture",
+  sessionRuntime: "pi-cloud/control-plane:runtime-fixture",
+  metering: "pi-cloud/control-plane:metering-fixture",
+});
 const template = {
   imageRevision: "a".repeat(40),
   agent: { templateId: "tpl-" + "a".repeat(24) },
@@ -76,6 +89,8 @@ try {
     "kafka-3",
     "session-images",
     "control-plane",
+    "session-runtime",
+    "metering",
   ])
     assert(Object.keys(find("Service", name).spec.selector).length > 0);
   assert.equal(objects.filter((o) => o.kind === "EndpointSlice").length, 0);
@@ -122,7 +137,18 @@ try {
         `${resource.metadata.name} must not impose a hard resource quota`,
       );
   }
-  const cp = find("Deployment", "pi-cloud-control-plane");
+  const management = find("Deployment", "pi-cloud-control-plane");
+  const cp = find("Deployment", "pi-cloud-session-runtime");
+  const metering = find("Deployment", "pi-cloud-metering");
+  assert.equal(management.spec.template.spec.containers[0].image, images.controlPlane);
+  assert.equal(cp.spec.template.spec.containers[0].image, images.sessionRuntime);
+  assert.equal(metering.spec.template.spec.containers[0].image, images.metering);
+  assert.deepEqual(management.spec.template.spec.containers[0].args, [
+    "/app/packages/control-plane/src/main.ts",
+  ]);
+  assert.deepEqual(cp.spec.template.spec.containers[0].args, [
+    "/app/packages/control-plane/src/session-runtime-main.ts",
+  ]);
   const env = Object.fromEntries(
     cp.spec.template.spec.containers[0].env.map((x) => [x.name, x.value]),
   );

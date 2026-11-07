@@ -1,3 +1,4 @@
+import type { WorkspaceCapacitySnapshot } from "@pi-cloud/protocol";
 import type { ResourceStatementPage, ResourceBillingSummary } from "@pi-cloud/protocol";
 import {
   parseModelBillingPage,
@@ -545,16 +546,46 @@ export class PiCloudApi {
     );
   }
 
+  async workspaceCapacity(
+    workspaceId: string,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceCapacitySnapshot> {
+    return (await request(
+      this.#fetch,
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/capacity`,
+      { method: "GET", ...(signal ? { signal } : {}) },
+      this.#authorizationToken,
+    )) as WorkspaceCapacitySnapshot;
+  }
+  async growWorkspaceCapacity(
+    workspaceId: string,
+    minimumGiB: number,
+  ): Promise<WorkspaceCapacitySnapshot> {
+    return (await request(
+      this.#fetch,
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/capacity`,
+      { ...jsonRequest({ minimumGiB }), method: "PUT" },
+      this.#authorizationToken,
+    )) as WorkspaceCapacitySnapshot;
+  }
   async createDevelopmentEnvironment(
     name: string,
     profileKey: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey,
     idempotencyKey: string,
+    workspaceCapacityGiB?: number,
   ): Promise<DevelopmentEnvironmentResource> {
     return parseDevelopmentEnvironmentResource(
       await request(
         this.#fetch,
         "/v1/development-environments",
-        jsonRequest({ name, profileKey }, idempotencyKey),
+        jsonRequest(
+          {
+            name,
+            profileKey,
+            ...(workspaceCapacityGiB === undefined ? {} : { workspaceCapacityGiB }),
+          },
+          idempotencyKey,
+        ),
         this.#authorizationToken,
       ),
     );

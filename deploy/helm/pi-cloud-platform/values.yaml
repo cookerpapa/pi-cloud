@@ -32,6 +32,14 @@ global:
     acceptedFactRetentionMs: 7200000
 
 images:
+  sessionRuntime:
+    repository: pi-cloud/control-plane
+    tag: production
+    pullPolicy: IfNotPresent
+  metering:
+    repository: pi-cloud/control-plane
+    tag: production
+    pullPolicy: IfNotPresent
   controlPlane:
     repository: pi-cloud/control-plane
     tag: production
@@ -65,9 +73,20 @@ metering:
   replicas: 1
   resources:
     requests: { cpu: 50m, memory: 128Mi }
-    limits: { memory: 512Mi }
+
+sessionRuntime:
+  executionBaseUrl: http://session-runtime:4300
+  replicas: 3
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 12
+    targetCpuUtilization: 65
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
 
 controlPlane:
+  defaultWorkspaceCapacityGiB: 32
   # null advertises every registered ordinary Tool; [] withdraws all ordinary Tools.
   enabledControlTools: null
   imageGeneration:
@@ -161,7 +180,8 @@ networkPolicy:
   trustedNamespaceLabel:
     key: pi-cloud.io/trusted-plane
     value: "true"
-  trustedTcpPorts: [8333, 443, 3000, 3129, 4100, 4300, 4318, 4500, 5432, 9092, 9464, 9465, 9466]
+  trustedTcpPorts:
+    [4510, 8333, 443, 3000, 3129, 4100, 4300, 4318, 4500, 5432, 9092, 9464, 9465, 9466]
   # Add explicit CIDRs for PostgreSQL/PgBouncer, provider proxy,
   # Cube API and OTLP endpoints. Never use 0.0.0.0/0 here.
   externalEgressCidrs: []
@@ -180,6 +200,8 @@ sandboxPlane:
   maximumActiveCommands: 32
   elasticRetentionMs: 900000
   workspace:
+    quotaExistingClaim: ""
+    quotaNodeSelector: {}
     existingClaim: pi-cloud-workspaces-rwx
   cube:
     # All Projector replicas need the endpoints of every served Cube cluster.
@@ -224,7 +246,7 @@ pi-workers:
     digest: ""
     pullPolicy: IfNotPresent
   services:
-    controlPlaneUrl: http://control-plane:3000
+    controlPlaneUrl: http://session-runtime:3000
     sandboxControlUrls:
       - http://control-plane:4300
     providerProxyUrl: https://provider-proxy.example.com:3129

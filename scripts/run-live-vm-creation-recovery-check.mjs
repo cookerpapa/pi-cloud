@@ -5,7 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { sql } from "kysely";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
-import { serviceAddress, kubectl, podFor } from "./lib/production-kubernetes.mjs";
+import { serviceAddress, kubectl } from "./lib/production-kubernetes.mjs";
 
 if (process.env.PI_CLOUD_LIVE_CREATION_RECOVERY_CHECK !== "1")
   throw Error(
@@ -22,7 +22,12 @@ const api = new PiCloudApi(
 const pg = new URL((await readFile(`${runtime}/secrets/database-url`, "utf8")).trim());
 pg.hostname = serviceAddress("postgres");
 const database = createDatabase({ connectionString: pg.toString(), maxConnections: 2 });
-const report = { checkedAt: new Date().toISOString(), model: "gpt-6-luna", accepted: false };
+const report = {
+  checkedAt: new Date().toISOString(),
+  model: "gpt-6-luna",
+  faultRole: "control-plane",
+  accepted: false,
+};
 let project, session, failure;
 const turns = [];
 const terminal = (r) => ["completed", "failed", "cancelled", "timed_out"].includes(r.state);
@@ -53,6 +58,21 @@ async function settled(turn) {
     return terminal(r) && r;
   }, "Run settlement");
 }
+const sessionRuntimePods = () =>
+  JSON.parse(
+    kubectl(["get", "pods", "-l", "app.kubernetes.io/component=session-runtime", "-o", "json"]),
+  )
+    .items.filter((pod) => !pod.metadata.deletionTimestamp)
+    .map((pod) => ({
+      uid: pod.metadata.uid,
+      containers: pod.status.containerStatuses?.map((container) => ({
+        name: container.name,
+        id: container.containerID,
+        ready: container.ready,
+        restarts: container.restartCount,
+      })),
+    }))
+    .sort((left, right) => left.uid.localeCompare(right.uid));
 try {
   const { rows: foreign } =
     await sql`select count(*)::int n from runs where state not in ('completed','failed','cancelled','timed_out')`.execute(
@@ -74,13 +94,20 @@ try {
     "/workspace",
     { provider: "openai-codex", modelId: report.model, thinkingLevel: "low", fastMode: false },
   );
+  const executionBefore = sessionRuntimePods();
+  assert(
+    executionBefore.length &&
+      executionBefore.every((pod) => pod.containers?.every((container) => container.ready)),
+    "Session runtime must be ready before the management creation fault",
+  );
   const first = await run(
     "只调用一次 bash：printf 'first\n' >> allocation-first.txt。不要重试工具。工具失败则说明失败，然后结束。",
   );
   const allocation = await until(async () => {
     const { rows } =
-      await sql`select workspace_runtime_id,creation_not_after,runtime_capsule,allocation_closed from workspace_runtimes
-      where workspace_id=${project.workspaceId}::uuid and creation_not_after is not null order by created_at desc limit 1`.execute(
+      await sql`select runtime.workspace_runtime_id,runtime.creation_not_after,runtime.runtime_capsule,runtime.allocation_closed,
+      owner.owner_base_url from workspace_runtimes runtime join sandbox_control_instances owner on owner.instance_id=runtime.owner_instance_id
+      where runtime.workspace_id=${project.workspaceId}::uuid and runtime.creation_not_after is not null order by runtime.created_at desc limit 1`.execute(
         database,
       );
     return rows[0];
@@ -91,11 +118,14 @@ try {
     "Creation completed before the crash window was reached",
   );
   assert.equal(allocation.allocation_closed, false);
-  const pod = podFor("control-plane");
-  const before = JSON.parse(kubectl(["get", "pod", pod, "-o", "json"]));
-  const container =
-    before.status.containerStatuses.find((c) => c.name === "control-plane") ??
-    before.status.containerStatuses[0];
+  const ownerHost = new URL(allocation.owner_base_url).hostname.replace(/^\[|\]$/g, "");
+  const before = JSON.parse(
+    kubectl(["get", "pods", "-l", "app.kubernetes.io/component=control-plane", "-o", "json"]),
+  ).items.find((pod) => !pod.metadata.deletionTimestamp && pod.status.podIP === ownerHost);
+  assert(before, "The recorded creation owner has no current management Pod");
+  const pod = before.metadata.name;
+  const container = before.status.containerStatuses.find((c) => c.name === "control-plane");
+  assert(container, "VM creation recovery must target the management container");
   const id = container.containerID.replace(/^containerd:\/\//, "");
   assert(/^[a-f0-9]{64}$/.test(id));
   const { rows: guard } =
@@ -124,6 +154,12 @@ try {
     );
   }, "Control Plane restart");
   report.processExit137 = true;
+  assert.deepEqual(
+    sessionRuntimePods(),
+    executionBefore,
+    "VM creation recovery restarted the Session runtime",
+  );
+  report.sessionRuntimePreserved = true;
   const restored = await until(async () => {
     const { rows } =
       await sql`select workspace_runtime_id,runtime_id,runtime_capsule,state,allocation_closed,creation_not_after from workspace_runtimes

@@ -1,3 +1,4 @@
+import { WorkspaceQuotaClient } from "./workspace-quota-client.ts";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { isAbsolute } from "node:path";
@@ -60,7 +61,41 @@ const observability = await startServiceObservability({
   serviceName: "pi-cloud-workspace-volume-gateway",
   defaultMetricsPort: 9_469,
 });
+const quota = new WorkspaceQuotaClient(
+  required("PI_CLOUD_WORKSPACE_QUOTA_URL"),
+  await secret(required("PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE")),
+);
 const gateway = new PersistentVolumeWorkspaceVolumeGateway({
+  quota: {
+    ensure: async (identity) => {
+      const current = await database.query<{ capacity_bytes: string; capacity_revision: string }>(
+        "select capacity_bytes,capacity_revision from workspaces where id=$1::uuid and tenant_id=$2::uuid and deleted_at is null",
+        [identity.workspaceId, identity.tenantId],
+      );
+      const row = current.rows[0];
+      if (!row) throw new Error("Workspace capacity intent is no longer current");
+      const revision = Number(row.capacity_revision),
+        capacityBytes = Number(row.capacity_bytes);
+      const receipt = await quota.ensure(identity, revision, capacityBytes);
+      if (
+        receipt.state !== "ready" ||
+        receipt.revision !== revision ||
+        receipt.capacityBytes !== capacityBytes
+      )
+        throw new Error("Workspace capacity is not confirmed");
+      await database.query(
+        "update workspaces set capacity_pending=false where id=$1::uuid and tenant_id=$2::uuid and capacity_revision=$3 and deleted_at is null",
+        [identity.workspaceId, identity.tenantId, revision],
+      );
+    },
+    defer: async (identity, revision) => {
+      await database.query(
+        "update workspaces set capacity_pending=false where id=$1::uuid and tenant_id=$2::uuid and capacity_revision=$3 and deleted_at is null",
+        [identity.workspaceId, identity.tenantId, revision],
+      );
+    },
+    release: (identity) => quota.release(identity),
+  },
   workspaceRoot: required("PI_CLOUD_WORKSPACE_POSIX_ROOT"),
   lock: new FilesystemWorkspaceVolumeGatewayLock(required("PI_CLOUD_WORKSPACE_POSIX_ROOT")),
   authorizeFileTransfer: async (input) => {

@@ -60,6 +60,7 @@ type ActiveCapabilityFields = {
   sessionId: string;
   turnId: string;
   runId: string;
+  executionReference: string;
   piSessionId: string;
   conversationId: number;
   credentialBindingId: string;
@@ -82,6 +83,8 @@ export type TenantModelGatewayOptions = {
   advertisedBaseUrl: string;
   providerGatewayBaseUrl: string;
   providerGatewayApiKey: string;
+  /** The existing local Session authority; synchronous and without network IO. */
+  assertExecutionCurrent(reference: string): void;
   maximumRequestBytes?: number;
   maximumUploadBytes?: number;
   maximumRequestsPerTurn?: number | null;
@@ -392,6 +395,7 @@ export class TenantModelGateway {
   readonly #eventIdleTimeoutMs: number;
   readonly #dispatcher: Agent | undefined;
   readonly #fetch: typeof fetch;
+  readonly #assertExecutionCurrent: (reference: string) => void;
   readonly #randomBytes: (size: number) => Buffer;
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #server: Server;
@@ -404,6 +408,7 @@ export class TenantModelGateway {
   #closing: Promise<void> | undefined;
 
   constructor(options: TenantModelGatewayOptions) {
+    this.#assertExecutionCurrent = options.assertExecutionCurrent;
     this.#host = options.host;
     this.#maximumRequestBytes = positiveInteger(
       options.maximumRequestBytes ?? DEFAULT_MODEL_REQUEST_MAX_BYTES,
@@ -549,6 +554,13 @@ export class TenantModelGateway {
 
   #admit(active: ActiveCapability, signal: AbortSignal): void {
     this.#requireCapability(active);
+    try {
+      this.#assertExecutionCurrent(active.executionReference);
+    } catch {
+      this.#revoke(active);
+      throw new SafeGatewayHttpError(401, "invalid_capability", "Model execution authority ended");
+    }
+    this.#requireCapability(active);
     signal.throwIfAborted();
     if (active.budget.maximum !== null && active.budget.started >= active.budget.maximum)
       throw new SafeGatewayHttpError(
@@ -651,6 +663,7 @@ export class TenantModelGateway {
       sessionId: command.payload.sessionId,
       turnId: command.payload.turnId,
       runId: command.payload.runId,
+      executionReference: command.payload.executionReference,
       piSessionId: command.payload.piSession.id,
       conversationId: command.payload.piSession.conversationId,
       credentialBindingId: command.payload.model.credentialBindingId,

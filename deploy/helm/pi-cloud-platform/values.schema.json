@@ -137,11 +137,20 @@
     "images": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["controlPlane", "web", "workspaceVolumeGateway", "sshGateway"],
+      "required": [
+        "controlPlane",
+        "sessionRuntime",
+        "metering",
+        "web",
+        "workspaceVolumeGateway",
+        "sshGateway"
+      ],
       "properties": {
         "controlPlane": {
           "$ref": "#/$defs/image"
         },
+        "sessionRuntime": { "$ref": "#/$defs/image" },
+        "metering": { "$ref": "#/$defs/image" },
         "web": {
           "$ref": "#/$defs/image"
         },
@@ -203,6 +212,17 @@
     },
     "controlPlane": {
       "$ref": "#/$defs/controlPlane"
+    },
+    "sessionRuntime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executionBaseUrl", "replicas", "autoscaling", "resources"],
+      "properties": {
+        "executionBaseUrl": { "$ref": "#/$defs/httpUrl" },
+        "replicas": { "type": "integer", "minimum": 1 },
+        "autoscaling": { "$ref": "#/$defs/autoscaling" },
+        "resources": { "type": "object" }
+      }
     },
     "sshGateway": {
       "type": "object",
@@ -507,6 +527,15 @@
           "properties": {
             "existingClaim": {
               "$ref": "#/$defs/dnsLabel"
+            },
+            "quotaExistingClaim": {
+              "type": "string"
+            },
+            "quotaNodeSelector": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
             }
           }
         },
@@ -954,6 +983,11 @@
         },
         "noProxy": {
           "type": "string"
+        },
+        "defaultWorkspaceCapacityGiB": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8388607
         }
       }
     },

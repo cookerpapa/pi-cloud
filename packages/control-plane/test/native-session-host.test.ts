@@ -151,6 +151,8 @@ it("shares one root grant across Conversation views, closes concurrent handles o
         return handle;
       };
       const root = await open(1, parent.sessionId, request.turnId);
+      expect(() => host.assertExecutionCurrent(reference)).not.toThrow();
+      expect(() => host.assertExecutionCurrent("unowned-incarnation")).toThrow("unavailable");
       const runtime = await root.runtime(async () => {
         constructors++;
         const session = await Harness.open(
@@ -219,6 +221,7 @@ it("shares one root grant across Conversation views, closes concurrent handles o
       await Promise.all([root.close(), leaf.close()]);
       expect(closures).toBe(1);
       expect(host.hasExecution(reference)).toBe(false);
+      expect(() => host.assertExecutionCurrent(reference)).toThrow("unavailable");
       return { stopReason: "stop" };
     },
   });

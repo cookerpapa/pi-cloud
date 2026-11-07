@@ -399,6 +399,7 @@ export const migrationProvider: MigrationProvider = {
       "209_workspace_file_transfers": workspaceFileTransfers,
       "210_model_metering": modelMetering,
       "211_resource_metering": resourceMetering,
+      "212_workspace_capacity": workspaceCapacity,
     };
   },
 };
@@ -436,3 +437,5 @@ import * as workspaceFileTransfers from "./209_workspace_file_transfers.ts";
 import * as modelMetering from "./210_model_metering.ts";
 
 import * as resourceMetering from "./211_resource_metering.ts";
+
+import * as workspaceCapacity from "./212_workspace_capacity.ts";

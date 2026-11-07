@@ -21,6 +21,8 @@ import {
   scopedHelmUpgradeArguments,
   assertScopedManifests,
   composeScopedDeployment,
+  scopedImageValues,
+  assertServingComponents,
   scopedApplyState,
   manifestDigest,
   digest,
@@ -39,12 +41,7 @@ import {
 } from "./lib/provider-config-release.mjs";
 import { providerManagementAsset } from "./lib/provider-runtime-config.mjs";
 import { readPrivateRuntimeFile } from "./lib/runtime-file-policy.mjs";
-import {
-  replaceControlPlane,
-  createReplacementDatabase,
-  controlPlaneSnapshot,
-  readControlPlaneDomain,
-} from "./lib/control-plane-release.mjs";
+import { replaceSessionRuntime, sessionRuntimeSnapshot } from "./lib/session-runtime-release.mjs";
 import { serializeRelease } from "./lib/release-lock.mjs";
 
 configureBuildProxy();
@@ -52,7 +49,7 @@ configureBuildProxy();
 const [action, scopeOrPath, candidatePath, input] = process.argv.slice(2);
 if (action === "--help") {
   console.log(
-    "prepare provider|web|control-plane DIRECTORY VERSION | prepare catalog DIRECTORY CATALOG_JSON | preflight DIRECTORY | apply DIRECTORY\nScoped releases preserve unrelated workloads. See docs/COMPONENT_RELEASE.md.",
+    "prepare provider|web|session-runtime DIRECTORY VERSION | prepare catalog DIRECTORY CATALOG_JSON | preflight DIRECTORY | apply DIRECTORY\nScoped releases preserve unrelated workloads. See docs/COMPONENT_RELEASE.md.",
   );
   process.exit(0);
 }
@@ -102,17 +99,7 @@ function assertServingCombination(deployment, imageAlternative, catalogAlternati
   const resources = JSON.parse(
     kubectl(["get", "deployment,statefulset,daemonset", "-o", "json"]),
   ).items;
-  const images = new Set(
-    resources.flatMap((r) => r.spec.template.spec.containers.map((c) => c.image)),
-  );
-  for (const [name, component] of Object.entries(deployment.components)) {
-    if (name === "cubesandbox-tool") continue;
-    assert(
-      images.has(component.reference) ||
-        (name === imageAlternative?.name && images.has(imageAlternative.reference)),
-      `Serving component differs from its record: ${name}`,
-    );
-  }
+  assertServingComponents(deployment, resources, imageAlternative);
   const catalog = parseModelCatalogConfiguration(
     JSON.parse(
       JSON.parse(kubectl(["get", "configmap", "pi-cloud-model-catalog", "-o", "json"])).data[
@@ -126,7 +113,7 @@ function assertServingCombination(deployment, imageAlternative, catalogAlternati
   );
 }
 function inputs(scope) {
-  if (scope === "control-plane") {
+  if (scope === "session-runtime") {
     const file = "packages/control-plane/Dockerfile";
     return dockerSourceInputs(
       file,
@@ -164,13 +151,13 @@ function inputs(scope) {
 
 if (action === "prepare") {
   const scope = scopeOrPath;
-  assert(["provider", "catalog", "web", "control-plane"].includes(scope));
+  assert(["provider", "catalog", "web", "session-runtime"].includes(scope));
   const baseline = readJson(deploymentPath);
-  if (scope === "control-plane")
+  if (scope === "session-runtime")
     assert.equal(
-      baseline.contracts.controlPlaneReplacement,
+      baseline.contracts.sessionRuntimeReplacement,
       1,
-      "Install ADR-0276's matched replacement contract before a Control Plane component release",
+      "Install ADR-0302's matched Session-runtime replacement contract first",
     );
   assertServingCombination(baseline);
   const changed = capture("git", ["diff", "--name-only", `${baseline.revision}..${revision}`])
@@ -208,7 +195,7 @@ if (action === "prepare") {
   );
   mkdirSync(directory, { mode: 0o700 });
   run("scripts/run-release-scope-check.mjs", [scope]);
-  const values = structuredClone(live.values);
+  let values = structuredClone(live.values);
   let desired,
     catalogRevision = baseline.catalogRevision;
   if (scope !== "catalog") {
@@ -218,7 +205,11 @@ if (action === "prepare") {
       PI_CLOUD_IMAGE_CATALOG: resolve(directory, "images.json"),
     };
     run("scripts/check-docker-build-context.mjs");
-    run("scripts/production-kubernetes.mjs", ["build", scope], env);
+    run(
+      "scripts/production-kubernetes.mjs",
+      ["build", imageReleaseTargets[scope].buildScope ?? scope],
+      env,
+    );
     run(
       "scripts/generate-release-evidence.mjs",
       [
@@ -231,16 +222,11 @@ if (action === "prepare") {
       ],
       env,
     );
-    desired = readJson(resolve(directory, "images.json"))[imageReleaseTargets[scope].catalogKey];
-    if (scope === "provider") values.provider.image = desired;
-    else {
-      const target = imageReleaseTargets[scope];
-      values.images[target.catalogKey] = {
-        ...values.images[target.catalogKey],
-        repository: `pi-cloud/${target.imageName}`,
-        tag: version,
-      };
-    }
+    const target = imageReleaseTargets[scope];
+    desired = readJson(resolve(directory, "images.json"))[
+      target.buildCatalogKey ?? target.catalogKey
+    ];
+    values = scopedImageValues(scope, values, desired, version);
   } else {
     const config = parseModelCatalogConfiguration(readJson(resolve(input)));
     const previous = parseModelCatalogConfiguration(
@@ -435,11 +421,11 @@ if (candidate.scope === "provider") {
     "Prepared provider management asset changed",
   );
 }
-if (candidate.scope === "control-plane")
+if (candidate.scope === "session-runtime")
   assert.equal(
-    baseline.contracts.controlPlaneReplacement,
+    baseline.contracts.sessionRuntimeReplacement,
     1,
-    "The installed release lacks the Control Plane replacement contract",
+    "The installed release lacks the Session runtime replacement contract",
   );
 if (candidate.scope === "catalog") {
   assert.equal(
@@ -501,7 +487,9 @@ assertServingCombination(
   baseline,
   candidate.scope !== "catalog"
     ? {
-        name: imageReleaseTargets[candidate.scope].imageName,
+        name:
+          imageReleaseTargets[candidate.scope].componentName ??
+          imageReleaseTargets[candidate.scope].imageName,
         reference: candidate.desired,
       }
     : undefined,
@@ -518,23 +506,20 @@ const alreadyApplied =
     desired: readFileSync(resolve(directory, "rendered.yaml"), "utf8"),
     live,
   }) === "verify";
-const replacementDomain =
-  candidate.scope === "control-plane"
-    ? readControlPlaneDomain(helmCapture, candidate.name)
-    : undefined;
-if (candidate.scope === "control-plane") {
+if (candidate.scope === "session-runtime") {
   const deployment = JSON.parse(
-    kubectl(["get", imageReleaseTargets["control-plane"].workload, "-o", "json"]),
+    kubectl(["get", imageReleaseTargets["session-runtime"].workload, "-o", "json"]),
   );
-  const receiptPath = resolve(directory, "control-plane-replacement.json");
+  const receiptPath = resolve(directory, "session-runtime-replacement.json");
   if (deployment.spec.replicas === 0) {
-    assert(existsSync(receiptPath), "Stopped Control Plane has no candidate replacement receipt");
+    assert(existsSync(receiptPath), "Stopped Session runtime has no candidate replacement receipt");
     const receipt = readJson(receiptPath);
+    assert.equal(receipt.role, "session-runtime");
     assert.equal(receipt.uid, deployment.metadata.uid);
     assert.equal(receipt.version, candidate.version);
     assert(["stopping", "stopped", "applying"].includes(receipt.phase));
   } else {
-    const snapshot = controlPlaneSnapshot(
+    const snapshot = sessionRuntimeSnapshot(
       deployment,
       JSON.parse(kubectl(["get", "hpa", "-o", "json"])).items,
       JSON.parse(
@@ -542,7 +527,7 @@ if (candidate.scope === "control-plane") {
           "get",
           "pods",
           "-l",
-          "app.kubernetes.io/component=control-plane,app.kubernetes.io/instance=pi-cloud",
+          "app.kubernetes.io/component=session-runtime,app.kubernetes.io/instance=pi-cloud",
           "-o",
           "json",
         ]),
@@ -556,7 +541,10 @@ if (candidate.scope === "control-plane") {
       `http://${snapshot.podIp}:3000/internal/v1/session-publication/replacement`,
       { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5000) },
     );
-    assert(response.ok, `Control Plane replacement contract unavailable (HTTP ${response.status})`);
+    assert(
+      response.ok,
+      `Session runtime replacement contract unavailable (HTTP ${response.status})`,
+    );
     assert.equal((await response.json()).version, 1);
   }
 }
@@ -606,19 +594,15 @@ const applyHelm = async () => {
     { cwd: root, stdio: "inherit" },
   );
 };
-if (candidate.scope === "control-plane" && !alreadyApplied) {
-  const url = new URL(
-    readFileSync(resolve(runtimeDirectory, "secrets/database-url"), "utf8").trim(),
-  );
-  url.hostname = serviceAddress("postgres");
-  const database = await createReplacementDatabase(url.toString());
-  const target = imageReleaseTargets["control-plane"].workload;
-  const receiptPath = resolve(directory, "control-plane-replacement.json");
+if (candidate.scope === "session-runtime" && !alreadyApplied) {
+  const target = imageReleaseTargets["session-runtime"].workload;
+  const receiptPath = resolve(directory, "session-runtime-replacement.json");
   const token = readFileSync(
     resolve(runtimeDirectory, "secrets/supervisor-management-token"),
     "utf8",
   ).trim();
-  const selector = "app.kubernetes.io/component=control-plane,app.kubernetes.io/instance=pi-cloud";
+  const selector =
+    "app.kubernetes.io/component=session-runtime,app.kubernetes.io/instance=pi-cloud";
   const request = async (receipt, action) => {
     const response = await fetch(
       `http://${receipt.podIp}:3000/internal/v1/session-publication/replacement`,
@@ -626,75 +610,40 @@ if (candidate.scope === "control-plane" && !alreadyApplied) {
         method: "POST",
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
         body: JSON.stringify({ id: receipt.id, action }),
-        signal: AbortSignal.timeout(5_000),
+        signal: AbortSignal.timeout(5000),
       },
     );
-    assert(response.ok, `Control Plane replacement admission failed (HTTP ${response.status})`);
+    assert(response.ok, `Session runtime replacement admission failed (HTTP ${response.status})`);
     return response.json();
   };
-  const { sql } = await import("kysely");
-  const owners = async () => {
-    const rows = await database
-      .selectFrom("sandbox_control_instances")
-      .select("instance_id")
-      .where("sandbox_domain_id", "=", replacementDomain)
-      .where("state", "=", "ready")
-      .where("lease_expires_at", ">", sql`clock_timestamp()`)
-      .execute();
-    assert.equal(rows.length, 1, "Expected exactly one live Sandbox owner before replacement");
-    return rows.map((row) => row.instance_id);
-  };
-  try {
-    await replaceControlPlane(
-      {
-        observe: async () => ({
-          deployment: JSON.parse(kubectl(["get", target, "-o", "json"])),
-          autoscalers: JSON.parse(kubectl(["get", "hpa", "-o", "json"])).items,
-          pods: JSON.parse(kubectl(["get", "pods", "-l", selector, "-o", "json"])).items,
-        }),
-        owners,
-        request,
-        save: async (receipt) => {
-          save(receiptPath + ".next", receipt);
-          renameSync(receiptPath + ".next", receiptPath);
-        },
-        stop: async () => kubectl(["scale", target, "--current-replicas=1", "--replicas=0"]),
-        waitAbsent: async () => {
-          if (JSON.parse(kubectl(["get", "pods", "-l", selector, "-o", "json"])).items.length)
-            kubectl(["wait", "--for=delete", "pod", "-l", selector, "--timeout=740s"], {
-              timeout: 745_000,
-            });
-        },
-        waitOwners: async (ids) => {
-          const end = Date.now() + 30_000;
-          while (
-            ids.length &&
-            (
-              await database
-                .selectFrom("sandbox_control_instances")
-                .select("instance_id")
-                .where("instance_id", "in", ids)
-                .where("state", "=", "ready")
-                .where("lease_expires_at", ">", sql`clock_timestamp()`)
-                .execute()
-            ).length
-          ) {
-            assert(Date.now() < end, "Old sandbox-owner lease has not closed");
-            await delay(250);
-          }
-        },
-        restore: async () => {
-          kubectl(["scale", target, "--current-replicas=0", "--replicas=1"]);
-          kubectl(["rollout", "status", target, "--timeout=180s"], { timeout: 185_000 });
-        },
-        apply: applyHelm,
+  await replaceSessionRuntime(
+    {
+      observe: async () => ({
+        deployment: JSON.parse(kubectl(["get", target, "-o", "json"])),
+        autoscalers: JSON.parse(kubectl(["get", "hpa", "-o", "json"])).items,
+        pods: JSON.parse(kubectl(["get", "pods", "-l", selector, "-o", "json"])).items,
+      }),
+      request,
+      save: async (receipt) => {
+        save(receiptPath + ".next", receipt);
+        renameSync(receiptPath + ".next", receiptPath);
       },
-      existsSync(receiptPath) ? readJson(receiptPath) : undefined,
-      candidate.version,
-    );
-  } finally {
-    await database.destroy();
-  }
+      stop: async () => kubectl(["scale", target, "--current-replicas=1", "--replicas=0"]),
+      waitAbsent: async () => {
+        if (JSON.parse(kubectl(["get", "pods", "-l", selector, "-o", "json"])).items.length)
+          kubectl(["wait", "--for=delete", "pod", "-l", selector, "--timeout=740s"], {
+            timeout: 745_000,
+          });
+      },
+      restore: async () => {
+        kubectl(["scale", target, "--current-replicas=0", "--replicas=1"]);
+        kubectl(["rollout", "status", target, "--timeout=180s"], { timeout: 185_000 });
+      },
+      apply: applyHelm,
+    },
+    existsSync(receiptPath) ? readJson(receiptPath) : undefined,
+    candidate.version,
+  );
 } else if (!alreadyApplied || live.status.info.status !== "deployed") await applyHelm();
 if (candidate.scope !== "catalog") {
   const workload = imageReleaseTargets[candidate.scope].workload;
@@ -706,7 +655,7 @@ if (candidate.scope !== "catalog") {
   const deadline = Date.now() + 180_000;
   for (;;) {
     const pods = JSON.parse(
-      kubectl(["get", "pods", "-l", "app.kubernetes.io/component=control-plane", "-o", "json"]),
+      kubectl(["get", "pods", "-l", "app.kubernetes.io/component=session-runtime", "-o", "json"]),
     ).items.filter((p) => !p.metadata.deletionTimestamp);
     const statuses = await Promise.all(
       pods.map(async (p) => {
@@ -779,6 +728,7 @@ if (candidate.scope === "provider") {
   });
 }
 const after = installed(candidate.name);
+assertServingCombination(next);
 assert.equal(
   manifestDigest(after.manifest),
   manifestDigest(readFileSync(resolve(directory, "rendered.yaml"), "utf8")),

@@ -3,43 +3,24 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { digest } from "./component-release.mjs";
 
-export async function createReplacementDatabase(connectionString) {
-  const { createDatabase } = await import("../../packages/database/src/index.ts");
-  // The operator only reads owner metadata. The database client deliberately
-  // treats read and transaction-checkout budgets as mutually exclusive modes.
-  return createDatabase({ connectionString, maxConnections: 1, readTimeoutMs: 5_000 });
-}
-
-export function readControlPlaneDomain(readHelm, releaseName) {
-  // Overrides alone omit chart defaults. Keep overrides for rendering, but
-  // resolve the owner's domain from the installed chart's computed values.
-  const values = JSON.parse(readHelm(["get", "values", releaseName, "--all", "--output", "json"]));
-  const domain = values.sandboxPlane?.domainId;
-  assert(
-    typeof domain === "string" && domain.trim().length > 0,
-    "The effective sandbox domain is missing",
-  );
-  return domain;
-}
-
-export function controlPlaneSnapshot(deployment, autoscalers, pods) {
-  assert.equal(deployment.metadata.name, "pi-cloud-control-plane");
+export function sessionRuntimeSnapshot(deployment, autoscalers, pods) {
+  assert.equal(deployment.metadata.name, "pi-cloud-session-runtime");
   assert.equal(
     deployment.spec.replicas,
     1,
-    "Scoped Control Plane release requires one serving replica",
+    "Scoped Session runtime release requires one serving replica",
   );
   assert(
     !autoscalers.some((h) => h.spec.scaleTargetRef.name === deployment.metadata.name),
-    "Scoped Control Plane release does not support an autoscaler",
+    "Scoped Session runtime release does not support an autoscaler",
   );
-  assert.equal(pods.length, 1, "Control Plane Pods are not settled");
+  assert.equal(pods.length, 1, "Session runtime Pods are not settled");
   const pod = pods[0];
   assert(
     !pod.metadata.deletionTimestamp &&
       pod.status.podIP &&
       pod.status.containerStatuses?.every((c) => c.ready),
-    "Control Plane Pod is not ready",
+    "Session runtime Pod is not ready",
   );
   return {
     uid: deployment.metadata.uid,
@@ -50,18 +31,21 @@ export function controlPlaneSnapshot(deployment, autoscalers, pods) {
   };
 }
 
-export function sameControlPlane(receipt, deployment) {
-  assert.equal(deployment.metadata.uid, receipt.uid, "Control Plane Deployment identity changed");
+export function sameSessionRuntime(receipt, deployment) {
+  assert.equal(deployment.metadata.name, "pi-cloud-session-runtime");
+  assert.equal(deployment.metadata.uid, receipt.uid, "Session runtime Deployment identity changed");
   assert.equal(
     digest(deployment.spec.template),
     receipt.template,
-    "Control Plane template changed",
+    "Session runtime template changed",
   );
 }
 
 /** Operator journal only. Helm/PG/Kafka keep their original authorities. */
-export async function replaceControlPlane(port, prior, version, budgetMs = 300_000) {
+export async function replaceSessionRuntime(port, prior, version, budgetMs = 300_000) {
   let receipt = prior;
+  if (receipt)
+    assert.equal(receipt.role, "session-runtime", "Replacement receipt targets another role");
   const save = async (phase) => {
     const next = { ...receipt, phase };
     await port.save(next);
@@ -71,10 +55,11 @@ export async function replaceControlPlane(port, prior, version, budgetMs = 300_0
     if (receipt?.phase === "applying" || receipt?.phase === "applied") {
       assert.equal(receipt.version, version);
       const current = await port.observe();
+      assert.equal(current.deployment.metadata.name, "pi-cloud-session-runtime");
       assert.equal(
         current.deployment.metadata.uid,
         receipt.uid,
-        "Control Plane Deployment identity changed",
+        "Session runtime Deployment identity changed",
       );
       assert(
         !current.autoscalers.some(
@@ -91,10 +76,10 @@ export async function replaceControlPlane(port, prior, version, budgetMs = 300_0
     const state = await port.observe();
     if (state.deployment.spec.replicas === 1) {
       receipt = {
-        ...controlPlaneSnapshot(state.deployment, state.autoscalers, state.pods),
+        ...sessionRuntimeSnapshot(state.deployment, state.autoscalers, state.pods),
         version,
         id: randomUUID(),
-        owners: await port.owners(),
+        role: "session-runtime",
         phase: "holding",
         startedAt: new Date().toISOString(),
       };
@@ -109,33 +94,35 @@ export async function replaceControlPlane(port, prior, version, budgetMs = 300_0
         assert.equal(
           status.instanceId,
           receipt.instanceId,
-          "Control Plane restarted while draining",
+          "Session runtime restarted while draining",
         );
         if (status.phase === "held") break;
         assert.equal(status.phase, "waiting");
-        assert(Date.now() < end, "Control Tools did not settle; keep the current version serving");
+        assert(
+          Date.now() < end,
+          "Bound operations and control Tools did not settle; keep the current version serving",
+        );
         await (port.pause ?? delay)(250);
       }
       const fresh = await port.observe();
-      sameControlPlane(receipt, fresh.deployment);
+      sameSessionRuntime(receipt, fresh.deployment);
       assert.equal(
-        controlPlaneSnapshot(fresh.deployment, fresh.autoscalers, fresh.pods).podUid,
+        sessionRuntimeSnapshot(fresh.deployment, fresh.autoscalers, fresh.pods).podUid,
         receipt.podUid,
-        "Control Plane Pod changed before replacement",
+        "Session runtime Pod changed before replacement",
       );
       await save("stopping");
       await port.stop();
     } else {
       assert(
         receipt && ["stopping", "stopped"].includes(receipt.phase),
-        "Control Plane is stopped without this candidate's replacement receipt",
+        "Session runtime is stopped without this candidate's replacement receipt",
       );
       assert.equal(receipt.version, version);
-      sameControlPlane(receipt, state.deployment);
+      sameSessionRuntime(receipt, state.deployment);
       assert.equal(state.deployment.spec.replicas, 0);
     }
     await port.waitAbsent();
-    await port.waitOwners(receipt.owners);
     await save("stopped");
     await save("applying"); // Persist before Helm can mutate the template.
     await port.apply();
@@ -145,10 +132,9 @@ export async function replaceControlPlane(port, prior, version, budgetMs = 300_0
     if (receipt && !["applying", "applied"].includes(receipt.phase)) {
       await port.request(receipt, "cancel").catch(() => {});
       const current = await port.observe();
-      sameControlPlane(receipt, current.deployment);
+      sameSessionRuntime(receipt, current.deployment);
       if (current.deployment.spec.replicas === 0) {
         await port.waitAbsent();
-        await port.waitOwners(receipt.owners);
         await port.restore();
       } else assert.equal(current.deployment.spec.replicas, receipt.replicas);
       await save("restored");

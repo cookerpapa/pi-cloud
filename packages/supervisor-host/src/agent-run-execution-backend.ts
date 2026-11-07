@@ -66,6 +66,7 @@ type TrackedExecution = {
   writer: ExecutionLogWriter;
   writerClosing?: Promise<void>;
   failure?: TurnExecutionBackendError;
+  detachFailure?: () => void;
 };
 
 function positiveInteger(value: number, name: string): number {
@@ -621,6 +622,13 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       return tracked;
     }
     this.#trackedExecutions.set(sessionId, tracked);
+    const failed = writer.failureSignal;
+    if (failed) {
+      const revoke = () => this.#revokeWriter(tracked, failed.reason);
+      failed.addEventListener("abort", revoke, { once: true });
+      tracked.detachFailure = () => failed.removeEventListener("abort", revoke);
+      if (failed.aborted) revoke();
+    }
     if (this.#heartbeatFailure !== undefined) {
       tracked.failure = this.#heartbeatFailure;
       prepared.revokeExecution();
@@ -645,12 +653,21 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
   }
 
   async #unregisterExecution(sessionId: string, tracked: TrackedExecution): Promise<void> {
+    tracked.detachFailure?.();
     if (this.#trackedExecutions.get(sessionId) === tracked) {
       this.#trackedExecutions.delete(sessionId);
     }
     if (this.#trackedExecutions.size !== 0) return;
     this.#heartbeatAbort?.abort();
     await this.#heartbeatTask;
+  }
+
+  #revokeWriter(tracked: TrackedExecution, cause: unknown): void {
+    tracked.failure ??= Object.assign(
+      new TurnExecutionBackendError("writer_publication_failed", "Session producer stopped", true),
+      { cause },
+    );
+    tracked.prepared.revokeExecution();
   }
 
   #startHeartbeatTask(): void {
@@ -677,15 +694,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           try {
             tracked.writer.assertHealthy?.();
           } catch (cause) {
-            tracked.failure ??= Object.assign(
-              new TurnExecutionBackendError(
-                "writer_publication_failed",
-                "Session producer stopped",
-                true,
-              ),
-              { cause },
-            );
-            tracked.prepared.revokeExecution();
+            this.#revokeWriter(tracked, cause);
           }
         }
         const requestedAt = performance.now();

@@ -29,6 +29,7 @@ export const MAXIMUM_REQUEST_BYTES = 32 * 1_024;
 export const MAXIMUM_RESPONSE_BYTES = 8 * 1_024 * 1_024;
 
 export const WORKSPACE_VOLUME_GATEWAY_VERIFY_PATH = "/v1/workspaces/verify";
+export const WORKSPACE_VOLUME_GATEWAY_RECONCILE_QUOTA_PATH = "/v1/workspaces/quota/reconcile";
 export const WORKSPACE_VOLUME_GATEWAY_LIST_DIRECTORY_PATH = "/v1/workspaces/list-directory";
 export const WORKSPACE_VOLUME_GATEWAY_READ_FILE_PATH = "/v1/workspaces/read-file";
 export const WORKSPACE_VOLUME_GATEWAY_UPLOAD_FILE_PATH = "/v1/workspaces/upload-file";
@@ -55,6 +56,14 @@ export type WorkspaceVolumeGatewayIdentity = WorkspaceVolumeGatewayVolumeIdentit
   }>;
 
 export type WorkspaceVolumeGatewayVerifyInput = WorkspaceVolumeGatewayIdentity;
+export type WorkspaceVolumeQuotaReconcileInput = WorkspaceVolumeGatewayVolumeIdentity & {
+  revision: number;
+};
+export type WorkspaceQuotaPolicy = {
+  ensure(identity: WorkspaceVolumeGatewayVolumeIdentity & { generation: string }): Promise<void>;
+  defer(identity: WorkspaceVolumeGatewayVolumeIdentity, revision: number): Promise<void>;
+  release(identity: WorkspaceVolumeGatewayVolumeIdentity): Promise<void>;
+};
 
 export type WorkspaceVolumeGatewayPathInput = WorkspaceVolumeGatewayIdentity &
   Readonly<{
@@ -117,6 +126,10 @@ export type WorkspaceVolumeGatewaySourceCredentialDisconnectInput = WorkspaceVol
   >;
 
 export interface WorkspaceVolumeGateway {
+  reconcileQuota(
+    input: WorkspaceVolumeQuotaReconcileInput,
+    signal?: AbortSignal,
+  ): Promise<{ applied: boolean }>;
   fileTransfer?(
     input: WorkspaceFileTransferRequest,
     chunks?: AsyncIterable<Uint8Array>,
@@ -168,6 +181,7 @@ export interface WorkspaceVolumeGatewayLock {
 
 export type PersistentVolumeWorkspaceVolumeGatewayOptions = Readonly<{
   workspaceRoot: string;
+  quota: WorkspaceQuotaPolicy;
   authorizeUpload?: (input: WorkspaceVolumeGatewayUploadInput, byteLength: number) => Promise<void>;
   authorizeFileTransfer?: (input: WorkspaceFileTransferRequest) => Promise<void>;
   lock?: WorkspaceVolumeGatewayLock;

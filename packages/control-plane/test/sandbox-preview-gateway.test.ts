@@ -177,6 +177,7 @@ async function fixture(
   };
   const gateway = new SandboxPreviewGateway({
     database: database as never,
+    executionBaseUrl: `http://127.0.0.1:${(broker.address() as import("node:net").AddressInfo).port}`,
     previewToken: secret,
     publicOriginBaseUrl: "http://preview.test:8080",
     allowInsecureInternalHttp: true,

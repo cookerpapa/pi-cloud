@@ -56,6 +56,8 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
       },
       images: {
         controlPlane: image("controlPlane"),
+        sessionRuntime: image("sessionRuntime"),
+        metering: image("metering"),
         web: image("web"),
         workspaceVolumeGateway: image("volumeGateway"),
         sshGateway: image("sshGateway"),
@@ -70,8 +72,10 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
         maximumProjects: quota("PI_CLOUD_TENANT_MAXIMUM_PROJECTS"),
         maximumSessions: quota("PI_CLOUD_TENANT_MAXIMUM_SESSIONS"),
       },
+      sessionRuntime: { replicas: 1, autoscaling: { enabled: false } },
       controlPlane: {
         replicas: 1,
+        defaultWorkspaceCapacityGiB: n("PI_CLOUD_DEFAULT_WORKSPACE_CAPACITY_GIB", 32),
         imageGeneration: { model: e.PI_CLOUD_IMAGE_GENERATION_MODEL ?? "gpt-image-2" },
         autoscaling: { enabled: false },
         supervisorIdPrefix: "pi-cloud-pi-worker-",
@@ -83,7 +87,7 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
           `http://preview.localhost:${n("PI_CLOUD_HTTP_PORT", 8080)}`,
         cookieSecure: b("PI_CLOUD_WEB_SESSION_COOKIE_SECURE", false),
         noProxy:
-          "127.0.0.1,localhost,postgres,session-images,control-plane,workspace-volume-gateway,cube-api,cube-proxy,cli-proxy-api,gitlab.internal,.svc,.cluster.local,10.42.0.0/16,10.43.0.0/16,10.255.255.254",
+          "127.0.0.1,localhost,postgres,session-images,control-plane,session-runtime,metering,workspace-quota,workspace-volume-gateway,cube-api,cube-proxy,cli-proxy-api,gitlab.internal,.svc,.cluster.local,10.42.0.0/16,10.43.0.0/16,10.255.255.254",
         publicRegistration: {
           enabled: b("PI_CLOUD_PUBLIC_REGISTRATION_ENABLED", true),
           maximumTenants: quota("PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS"),
@@ -143,8 +147,8 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
       // Cube's direct node APIs and local provider relay keep their existing private-node boundary.
       networkPolicy: {
         trustedTcpPorts: [
-          80, 8333, 8317, 443, 3000, 3001, 3129, 4100, 4300, 4318, 4500, 5432, 9092, 9464, 9465,
-          9466, 8089, 12345, 12346,
+          80, 8333, 8317, 443, 3000, 3001, 3129, 4100, 4300, 4318, 4500, 4510, 5432, 9092, 9464,
+          9465, 9466, 8089, 12345, 12346,
         ],
         externalEgressCidrs: [`${cluster.nodeAddress ?? "10.255.255.254"}/32`],
       },
@@ -181,7 +185,7 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
         services: {
           otlpTracesEndpoint:
             e.PI_CLOUD_OBSERVABILITY_ENABLED === "1" ? "http://jaeger:4318/v1/traces" : "",
-          controlPlaneUrl: "http://control-plane:3000",
+          controlPlaneUrl: "http://session-runtime:3000",
           providerProxyUrl: "http://provider-egress-relay:3129",
           providerGatewayUrl: "http://cli-proxy-api:8317",
         },

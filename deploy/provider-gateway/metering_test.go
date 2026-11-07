@@ -39,6 +39,85 @@ func readEvents(t *testing.T, j *journal) []event {
 	}
 	return events
 }
+
+func TestDeliveryEvidenceIsAuthenticatedReadOnlyAndRetainsPendingWork(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "delivery.bolt")
+	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer receiver.Close()
+	s := New(Options{Path: path, Endpoint: receiver.URL, Token: "owned-delivery-key"})
+	defer s.Close()
+	router := gin.New()
+	router.GET("/internal/picloud/metering/delivery", s.Delivery())
+	read := func(token string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodGet, "/internal/picloud/metering/delivery", nil)
+		request.Header.Set("Authorization", "Bearer "+token)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		return response
+	}
+	if response := read("wrong"); response.Code != http.StatusUnauthorized {
+		t.Fatal("delivery evidence exposed without source credential", response.Code)
+	}
+	if response := read("owned-delivery-key"); response.Code != http.StatusServiceUnavailable {
+		t.Fatal("uninitialized source reported delivery completion", response.Code)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("read-only evidence initialized the source journal", err)
+	}
+	if !s.Ready() {
+		t.Fatal("owned source did not initialize")
+	}
+	var state struct {
+		Version         int    `json:"version"`
+		BootID          string `json:"bootId"`
+		Pending         int    `json:"pending"`
+		Active          int    `json:"active"`
+		CaptureFailures uint64 `json:"captureFailures"`
+	}
+	check := func(pending, active int) {
+		t.Helper()
+		response := read("owned-delivery-key")
+		if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &state) != nil {
+			t.Fatal("delivery state unavailable", response.Code)
+		}
+		if state.Version != 1 || state.BootID != s.bootID || state.Pending != pending || state.Active != active {
+			t.Fatalf("incorrect bounded delivery state: %+v", state)
+		}
+		if strings.Contains(response.Body.String(), "owned-delivery-key") {
+			t.Fatal("delivery state exposed credentials")
+		}
+	}
+	check(0, 0)
+	a := testAttribution()
+	if err := s.journal.admit(a); err != nil {
+		t.Fatal(err)
+	}
+	check(1, 1)
+	if err := s.journal.append(event{Kind: "finished", Context: a, OccurredAt: timestamp(time.Now())}); err != nil {
+		t.Fatal(err)
+	}
+	check(2, 0)
+	batch, err := s.journal.batch()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.journal.acknowledge(batch); err != nil {
+		t.Fatal(err)
+	}
+	check(0, 0)
+	if err := s.journal.db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	(&requestCapture{journal: s.journal, context: a}).append(event{Kind: "usage", Context: a})
+	if s.journal.captureFailures.Load() != 1 {
+		t.Fatal("capture failure was not exposed to delivery evidence")
+	}
+	if response := read("owned-delivery-key"); response.Code != http.StatusServiceUnavailable {
+		t.Fatal("closed journal reported successful delivery", response.Code)
+	}
+}
 func TestMeteringRecoveryAndCapacity(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "receipts.bolt")
 	j, err := openJournal(path, 65536)
@@ -52,7 +131,7 @@ func TestMeteringRecoveryAndCapacity(t *testing.T) {
 	if err = j.admit(testAttribution()); err != errCapacity {
 		t.Fatalf("expected admission backpressure: %v", err)
 	}
-	c := &requestCapture{j, a}
+	c := &requestCapture{journal: j, context: a}
 	c.AttemptStarted(uuid.NewString(), time.Now())
 	if err = j.db.Close(); err != nil {
 		t.Fatal(err)
@@ -137,7 +216,11 @@ func TestMeteringCapturesBeforeAsyncQueueAndCopiesRequestIdentity(t *testing.T) 
 	router := gin.New()
 	router.Use(s.Middleware())
 	var saved context.Context
+	var releaseSaved func()
 	router.POST("/v1/responses", func(c *gin.Context) {
+		if releaseSaved != nil {
+			releaseSaved()
+		}
 		if c.GetHeader(Header) != "" {
 			t.Error("internal attribution forwarded")
 		}
@@ -156,6 +239,7 @@ func TestMeteringCapturesBeforeAsyncQueueAndCopiesRequestIdentity(t *testing.T) 
 			t.Error("source capture deferred until asynchronous dispatch")
 		}
 		saved = ctx
+		releaseSaved = usage.RetainProducer(ctx)
 		c.Status(200)
 	})
 	a, b := testAttribution(), testAttribution()
@@ -173,6 +257,7 @@ func TestMeteringCapturesBeforeAsyncQueueAndCopiesRequestIdentity(t *testing.T) 
 	}
 	// A callback after Gin has released its request still uses the copied context.
 	usage.CaptureFromContext(saved).Record(usage.Record{RequestID: uuid.NewString(), Provider: "codex", Model: "gpt-6-luna", RequestedAt: time.Now(), Failed: true, APIKey: "SECRET", Fail: usage.Failure{Body: "PRIVATE PROMPT"}, Detail: usage.Detail{InputTokens: 5, TotalTokens: 5}})
+	releaseSaved()
 	j, _ := s.open()
 	events := readEvents(t, j)
 	counts := map[string]int{}
@@ -190,6 +275,89 @@ func TestMeteringCapturesBeforeAsyncQueueAndCopiesRequestIdentity(t *testing.T) 
 	raw, _ := json.Marshal(events)
 	if strings.Contains(string(raw), "SECRET") || strings.Contains(string(raw), "PRIVATE PROMPT") {
 		t.Fatal("secret captured")
+	}
+}
+
+func TestMeteringFinishedWaitsForLateMainAndAdditionalUsage(t *testing.T) {
+	j, err := openJournal(filepath.Join(t.TempDir(), "late.bolt"), 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer j.db.Close()
+	a := testAttribution()
+	if err := j.admit(a); err != nil {
+		t.Fatal(err)
+	}
+	capture := &requestCapture{journal: j, context: a}
+	ctx := usage.WithCapture(context.Background(), capture)
+	release := usage.RetainProducer(ctx)
+	reporter := helps.NewUsageReporter(ctx, "codex", a.Model, nil)
+	cancelled := true
+	capture.finish(event{Kind: "finished", Context: a, OccurredAt: timestamp(time.Now()), StatusCode: 200, Cancelled: &cancelled})
+	for _, e := range readEvents(t, j) {
+		if e.Kind == "finished" {
+			t.Fatal("HTTP completion released a still-publishing invocation")
+		}
+	}
+	reporter.Publish(ctx, usage.Detail{InputTokens: 10, OutputTokens: 2, TotalTokens: 12})
+	state, err := j.deliveryState()
+	if err != nil || state.active == 0 {
+		t.Fatal("main usage falsely closed additional publication", err)
+	}
+	reporter.PublishAdditionalModel(ctx, "owned-secondary", usage.Detail{InputTokens: 3, OutputTokens: 1, TotalTokens: 4})
+	release()
+	release()
+	state, err = j.deliveryState()
+	if err != nil || state.active != 0 || state.pending == 0 {
+		t.Fatalf("late capture did not settle: %+v %v", state, err)
+	}
+	counts := map[string]int{}
+	for _, e := range readEvents(t, j) {
+		counts[e.Kind]++
+	}
+	if counts["usage"] != 2 || counts["finished"] != 1 || j.captureFailures.Load() != 0 {
+		t.Fatalf("late source facts were dropped, duplicated or misclassified: %v", counts)
+	}
+	batch, err := j.batch()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := j.acknowledge(batch); err != nil {
+		t.Fatal(err)
+	}
+	state, err = j.deliveryState()
+	if err != nil || state.active != 0 || state.pending != 0 {
+		t.Fatal("acknowledged source did not drain", err)
+	}
+}
+
+func TestMeteringPublisherCrashKeepsExistingActiveJournal(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "publisher-crash.bolt")
+	j, err := openJournal(path, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := testAttribution()
+	if err := j.admit(a); err != nil {
+		t.Fatal(err)
+	}
+	capture := &requestCapture{journal: j, context: a}
+	_ = capture.RetainProducer() // Lost with this source process.
+	capture.finish(event{Kind: "finished", Context: a, OccurredAt: timestamp(time.Now()), StatusCode: 200})
+	if err := j.db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := openJournal(path, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.db.Close()
+	counts := map[string]int{}
+	for _, e := range readEvents(t, restored) {
+		counts[e.Kind]++
+	}
+	if counts["started"] != 1 || counts["interrupted"] != 1 || counts["finished"] != 0 {
+		t.Fatalf("publisher crash invented completion or replay: %v", counts)
 	}
 }
 func TestMeteringUnavailableRejectsBeforeModelExecution(t *testing.T) {
@@ -219,7 +387,7 @@ func TestMeteringUncleanExit(t *testing.T) {
 		if j.admit(a) != nil {
 			os.Exit(75)
 		}
-		(&requestCapture{j, a}).AttemptStarted(uuid.NewString(), time.Now())
+		(&requestCapture{journal: j, context: a}).AttemptStarted(uuid.NewString(), time.Now())
 		os.Exit(73) // Deliberately bypass Close and all deferred cleanup after fsync.
 	}
 	path := filepath.Join(t.TempDir(), "unclean.bolt")

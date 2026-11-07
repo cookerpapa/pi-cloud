@@ -4,7 +4,9 @@
 
 CubeSandbox KVM is the only untrusted Tool runtime. Pi and provider credentials
 stay in the trusted Worker. The Control Plane owns VM lifecycle and immutable
-Run bindings; Cubelet owns native execution and final delivery.
+Run bindings; the separate Session runtime dispatches existing bindings and
+serves workflow/image/Skill/preview data without that controller. Cubelet owns
+native execution and final delivery. [Boundary](adr/0302-session-runtime-and-resource-management.md).
 
 ```text
 Pi Tool -> validation/prepare in Worker -> publication ingress -> Kafka
@@ -71,7 +73,7 @@ Cubelet copies. Actual-image streaming/backpressure is a separate future change.
 
 Chat image preparation uses the same processor through fixed `envd-input-files.mjs`
 under the current Run binding. It reads immutable source references, normalizes in
-Cube and returns references through the control-plane management API, without fabricating an Agent Tool
+Cube and returns references through the Session execution API, without fabricating an Agent Tool
 or changing Kafka dispatch semantics. The same fixed helper writes dedicated-machine
 uploads under UID 1000; elastic uploads use the existing Volume Gateway. See
 [chat uploads](CHAT_ATTACHMENTS.md) for limits and claims.

@@ -1,3 +1,4 @@
+import { WorkspaceCapacityGiBSchema } from "./workspace-capacity.ts";
 import { ScheduledOriginSchema } from "./scheduled-origin.ts";
 import { CompactStateSchema } from "./conversation-commands.ts";
 import { MAX_AGENT_INPUT_CHARACTERS, assertUserInputBudget } from "./agent-input-budget.ts";
@@ -620,6 +621,7 @@ export const CreateDevelopmentEnvironmentRequestSchema = Type.Object(
       pattern: "^(?!\\s)(?!.*\\s$)[^\\u0000-\\u001f\\u007f]+$",
     }),
     profileKey: DevelopmentEnvironmentProfileKeySchema,
+    workspaceCapacityGiB: Type.Optional(WorkspaceCapacityGiBSchema),
   },
   { additionalProperties: false },
 );

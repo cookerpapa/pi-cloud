@@ -19,6 +19,7 @@ const routeKey = (tenant: string, run: string, binding: string) => `${tenant}:${
  * a control change, never as an implicit fallback on Tool/probe lookup. */
 export class SandboxBindingView implements SandboxBindingReader {
   readonly #entries = new Map<string, Entry>();
+  readonly #bindings = new Map<string, Entry>();
   #partitions = new Set<number>();
   #generation = 0;
   #ready = false;
@@ -41,6 +42,7 @@ export class SandboxBindingView implements SandboxBindingReader {
     this.#ready = false;
     this.#partitions.clear();
     this.#entries.clear();
+    this.#bindings.clear();
     this.#bytes = 0;
   }
   async load(partitions: readonly number[], current: () => boolean): Promise<void> {
@@ -93,8 +95,13 @@ export class SandboxBindingView implements SandboxBindingReader {
     entry.bytes = routeBytes;
     entry.version = version > entry.version ? version : entry.version;
     entry.closed ||= !route || route.dispatchClosed;
-    if (route) entry.route = structuredClone(route);
-    else delete entry.route;
+    if (route) {
+      entry.route = structuredClone(route);
+      this.#bindings.set(route.bindingId, entry);
+    } else {
+      if (entry.route) this.#bindings.delete(entry.route.bindingId);
+      delete entry.route;
+    }
   }
   async #change(
     change: SandboxBindingChange,
@@ -159,6 +166,11 @@ export class SandboxBindingView implements SandboxBindingReader {
     if (!scope.tenantId) throw new Error("Sandbox binding scope has no tenant");
     const route = this.#entries.get(routeKey(scope.tenantId, scope.runId, bindingId))?.route;
     return route?.writerId === scope.writerId ? route : undefined;
+  }
+  /** Execution-side HTTP attachments share the same prepared partition view. */
+  binding(bindingId: string): SandboxBindingRecord | undefined {
+    if (!this.#ready) throw new Error("Sandbox binding view has not recovered");
+    return this.#bindings.get(bindingId)?.route;
   }
   closeWriter(...args: Parameters<SandboxBindingReader["closeWriter"]>): Promise<void> {
     return this.options.source.closeWriter(...args);

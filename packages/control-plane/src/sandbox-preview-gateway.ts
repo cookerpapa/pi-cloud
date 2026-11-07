@@ -22,6 +22,7 @@ export const PREVIEW_COOKIE = "pi_cloud_preview";
 export const PREVIEW_BOOTSTRAP_PATH = "/__pi_cloud_preview_auth";
 export type SandboxPreviewGatewayOptions = Readonly<{
   database: Kysely<Database>;
+  executionBaseUrl: string;
   previewToken: string;
   publicOriginBaseUrl: string;
   allowInsecureInternalHttp: boolean;
@@ -120,6 +121,7 @@ function fail(response: ServerResponse, status: number, message: string): void {
 
 export class SandboxPreviewGateway {
   readonly #database: Kysely<Database>;
+  readonly #executionBaseUrl: string;
   readonly #previewToken: string;
   readonly #publicOriginBaseUrl: URL;
   readonly #allowInsecureInternalHttp: boolean;
@@ -141,6 +143,7 @@ export class SandboxPreviewGateway {
   constructor(options: SandboxPreviewGatewayOptions) {
     this.#options = options;
     this.#database = options.database;
+    this.#executionBaseUrl = options.executionBaseUrl;
     this.#previewToken = options.previewToken;
     this.#publicOriginBaseUrl = new URL(options.publicOriginBaseUrl);
     this.#allowInsecureInternalHttp = options.allowInsecureInternalHttp;
@@ -296,7 +299,7 @@ export class SandboxPreviewGateway {
       scope.target,
     );
     if (binding.workspaceId !== scope.workspaceId) throw new Error("Preview workspace changed");
-    return binding.baseUrl;
+    return this.#executionBaseUrl;
   }
   #prepare(request: IncomingMessage, scope: SandboxPreviewConnectionRequest): void {
     const origin = this.#origin(request);
@@ -473,16 +476,11 @@ export class SandboxPreviewGateway {
     tenantId: string,
     userId: string,
     target: SandboxPreviewTarget,
-  ): Promise<{ workspaceId: string; baseUrl: string }> {
+  ): Promise<{ workspaceId: string }> {
     if (target.kind === "development_environment") {
       const row = await this.#database
         .selectFrom("development_environments as development")
-        .innerJoin("sandbox_domains as domain", "domain.id", "development.sandbox_domain_id")
-        .select([
-          "development.workspace_id as workspaceId",
-          "development.owner_base_url as ownerBaseUrl",
-          "domain.sandbox_control_base_url as fallbackBaseUrl",
-        ])
+        .select("development.workspace_id as workspaceId")
         .where("development.tenant_id", "=", tenantId)
         .where("development.owner_user_id", "=", userId)
         .where("development.id", "=", target.environmentId)
@@ -490,7 +488,7 @@ export class SandboxPreviewGateway {
         .where("development.desired_state", "=", "running")
         .executeTakeFirst();
       if (row === undefined) throw new Error("Development environment preview is unavailable");
-      return { workspaceId: row.workspaceId, baseUrl: row.ownerBaseUrl ?? row.fallbackBaseUrl };
+      return { workspaceId: row.workspaceId };
     }
     const row = await this.#database
       .selectFrom("sessions as session_row")
@@ -499,7 +497,6 @@ export class SandboxPreviewGateway {
           .onRef("workspace.tenant_id", "=", "session_row.tenant_id")
           .onRef("workspace.id", "=", "session_row.workspace_id"),
       )
-      .innerJoin("sandbox_domains as domain", "domain.id", "workspace.sandbox_domain_id")
       .leftJoin("sandbox_http_services as service", (join) =>
         join
           .onRef("service.tenant_id", "=", "session_row.tenant_id")
@@ -514,11 +511,7 @@ export class SandboxPreviewGateway {
           .onRef("runtime.runtime_id", "=", "service.runtime_id")
           .on("runtime.state", "in", ["materializing", "allocated", "cleaning"]),
       )
-      .select([
-        "session_row.workspace_id as workspaceId",
-        "runtime.owner_base_url as ownerBaseUrl",
-        "domain.sandbox_control_base_url as fallbackBaseUrl",
-      ])
+      .select("session_row.workspace_id as workspaceId")
       .where("session_row.tenant_id", "=", tenantId)
       .where("session_row.id", "=", target.sessionId)
       .where("session_row.pruned_at", "is", null)
@@ -527,6 +520,6 @@ export class SandboxPreviewGateway {
       .orderBy("service.last_seen_at", "desc")
       .executeTakeFirst();
     if (row === undefined) throw new Error("Conversation preview is unavailable");
-    return { workspaceId: row.workspaceId, baseUrl: row.ownerBaseUrl ?? row.fallbackBaseUrl };
+    return { workspaceId: row.workspaceId };
   }
 }

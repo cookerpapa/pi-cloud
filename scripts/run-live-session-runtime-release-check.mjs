@@ -5,7 +5,6 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
-import { sql } from "kysely";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
 import { previewToolDefinition } from "../packages/control-plane/src/ordinary-tools/preview-tool.ts";
@@ -25,17 +24,17 @@ import {
 } from "./lib/owned-acceptance-cleanup.mjs";
 
 assert.equal(
-  process.env.PI_CLOUD_LIVE_CONTROL_RELEASE_CHECK,
+  process.env.PI_CLOUD_LIVE_SESSION_RUNTIME_RELEASE_CHECK,
   "1",
-  "Authorize the prepared Control Plane release and owned Luna/Cube fixture",
+  "Authorize the prepared Session runtime release and owned Luna/Cube fixture",
 );
 const [candidatePath, reportPath] = process.argv.slice(2);
-assert(candidatePath && reportPath, "Pass CONTROL_PLANE_CANDIDATE PRIVATE_REPORT_DIRECTORY");
+assert(candidatePath && reportPath, "Pass SESSION_RUNTIME_CANDIDATE PRIVATE_REPORT_DIRECTORY");
 const candidate = resolve(candidatePath),
   directory = resolve(reportPath);
 assert.equal(
   JSON.parse(await readFile(resolve(candidate, "candidate.json"), "utf8")).scope,
-  "control-plane",
+  "session-runtime",
 );
 // Reject stale source/artifacts/topology before creating a paid model fixture.
 execFileSync(
@@ -117,7 +116,8 @@ function pods() {
     .map((p) => ({
       name: p.metadata.name,
       uid: p.metadata.uid,
-      control: p.spec.containers.some((c) => c.name === "control-plane"),
+      sessionRuntime: p.spec.containers.some((c) => c.name === "session-runtime"),
+      roles: p.spec.containers.map((container) => container.name),
       images: p.spec.containers.map((c) => c.image),
       restarts: p.status.containerStatuses?.map((c) => c.restartCount),
     }))
@@ -137,14 +137,14 @@ try {
   );
   tenant = await createPrivateTenant(db, {
     slug: "release-acceptance-control-" + randomUUID(),
-    ownerDisplayName: "Control Plane release acceptance",
+    ownerDisplayName: "Session runtime release acceptance",
     initialModel: { provider: "openai-codex", modelId: "gpt-6-luna" },
   });
   api = new PiCloudApi(
     (path, init) => fetch(new URL(String(path), base), init),
     tenant.credential.token,
   );
-  project = await api.createProject("Control Plane release acceptance");
+  project = await api.createProject("Session runtime release acceptance");
   session = await api.createSession(
     project.projectId,
     project.workspaceId,
@@ -208,12 +208,20 @@ cat '${path}'; echo CONTROL_RELEASE_TOOL_DONE`;
       return false;
     }
   }, "Running original Cube command");
+  const beforeDeployment = JSON.parse(
+    await readFile(resolve(runtimeDirectory, "k3s/deployment.json"), "utf8"),
+  );
   const beforeRun = await runIdentity(run.runId),
     beforeWorkers = await workers(),
     beforeVms = await vms(),
     beforePods = pods(),
     beforeMachines = await machines();
   assert(beforeVms.length === 1 && beforeVms[0].runtime_id);
+  for (const role of ["control-plane", "session-runtime", "metering"])
+    assert(
+      beforePods.some((pod) => pod.roles.includes(role)),
+      `Required role Pod is missing: ${role}`,
+    );
   assert.equal(beforeRun.state, "running");
   const beforeTools = getCurrentTools(
     nativeMessages(await nativeHistory(db, { runId: run.runId })),
@@ -233,7 +241,7 @@ cat '${path}'; echo CONTROL_RELEASE_TOOL_DONE`;
     machines: beforeMachines,
   };
   await save();
-  phase("replace only Control Plane while original Bash waits in the same VM");
+  phase("replace only Session runtime while original Bash waits in the same VM");
   const started = Date.now();
   execFileSync(
     process.execPath,
@@ -241,38 +249,47 @@ cat '${path}'; echo CONTROL_RELEASE_TOOL_DONE`;
     { stdio: "inherit", timeout: 1_200_000 },
   );
   report.replacementMs = Date.now() - started;
+  const afterDeployment = JSON.parse(
+    await readFile(resolve(runtimeDirectory, "k3s/deployment.json"), "utf8"),
+  );
+  for (const role of ["control-plane", "metering"])
+    assert.deepEqual(
+      afterDeployment.components[role],
+      beforeDeployment.components[role],
+      `${role} artifact provenance changed`,
+    );
+  assert.notEqual(
+    afterDeployment.components["session-runtime"].reference,
+    beforeDeployment.components["session-runtime"].reference,
+    "Session runtime artifact did not change",
+  );
   const receipt = JSON.parse(
-    await readFile(resolve(candidate, "control-plane-replacement.json"), "utf8"),
+    await readFile(resolve(candidate, "session-runtime-replacement.json"), "utf8"),
   );
   assert.equal(receipt.phase, "applied");
-  assert.equal(receipt.owners.length, 1, "Replacement must observe a positive old-owner identity");
-  assert.equal(
-    (
-      await db
-        .selectFrom("sandbox_control_instances")
-        .select("instance_id")
-        .where("instance_id", "in", receipt.owners)
-        .where("state", "=", "ready")
-        .where("lease_expires_at", ">", sql`clock_timestamp()`)
-        .execute()
-    ).length,
-    0,
-    "Old Sandbox owner is still authorized after replacement",
+  assert.equal(receipt.role, "session-runtime");
+  assert(
+    beforePods.some((pod) => pod.sessionRuntime && pod.uid === receipt.podUid),
+    "Replacement receipt did not identify the original Session process",
   );
-  report.oldOwnerClosureVerified = true;
+  assert(
+    !pods().some((pod) => pod.uid === receipt.podUid),
+    "Old Session-runtime Pod is still present",
+  );
+  report.oldSessionProcessAbsentVerified = true;
   assert.deepEqual(await runIdentity(run.runId), beforeRun, "Original Run ownership changed");
   assert.deepEqual(await workers(), beforeWorkers, "A Worker boot changed");
   assert.deepEqual(await vms(), beforeVms, "The active VM allocation changed");
   assert.deepEqual(await machines(), beforeMachines, "An existing development machine changed");
   const afterPods = pods();
   assert.deepEqual(
-    afterPods.filter((p) => !p.control),
-    beforePods.filter((p) => !p.control),
+    afterPods.filter((p) => !p.sessionRuntime),
+    beforePods.filter((p) => !p.sessionRuntime),
     "Another workload restarted",
   );
   assert.notDeepEqual(
-    afterPods.filter((p) => p.control).map((p) => p.uid),
-    beforePods.filter((p) => p.control).map((p) => p.uid),
+    afterPods.filter((p) => p.sessionRuntime).map((p) => p.uid),
+    beforePods.filter((p) => p.sessionRuntime).map((p) => p.uid),
   );
   report.preserved = {
     workerBoots: true,
@@ -280,6 +297,8 @@ cat '${path}'; echo CONTROL_RELEASE_TOOL_DONE`;
     fencingToken: true,
     cube: true,
     otherPods: true,
+    management: true,
+    metering: true,
     existingDevelopmentMachines: true,
   };
   await save();
@@ -395,7 +414,7 @@ cat '${path}'; echo CONTROL_RELEASE_TOOL_DONE`;
     }),
   );
   if (failure)
-    throw new Error("Control Plane release acceptance failed; inspect private evidence", {
+    throw new Error("Session runtime release acceptance failed; inspect private evidence", {
       cause: failure,
     });
 }

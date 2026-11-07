@@ -17,6 +17,7 @@ export type SandboxControlConfig = {
   ownershipHeartbeatMs: number;
   serviceToken: string;
   controlPlaneUrl: string;
+  sessionExecutionBaseUrl: string;
   workspaceServiceToken?: string;
   terminalToken: string;
   persistentStateKey: Uint8Array;
@@ -276,6 +277,10 @@ export async function loadSandboxControlConfig(
     controlPlaneUrl: serviceUrl(
       required(environment, "PI_CLOUD_CONTROL_PLANE_URL"),
       "controlPlaneUrl",
+    ),
+    sessionExecutionBaseUrl: serviceUrl(
+      environment.PI_CLOUD_SESSION_EXECUTION_URL ?? "http://session-runtime:4300",
+      "sessionExecutionBaseUrl",
     ),
     terminalToken: await readSecret(
       required(environment, "PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE"),

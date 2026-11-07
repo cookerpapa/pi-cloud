@@ -63,6 +63,11 @@ export type SandboxControlServerOptions = {
     receive(delivery: ToolLogDelivery): void | Promise<void>;
     checkHealth(): void;
   };
+  /** Management returns execution-side binding addresses and refuses data operations. */
+  executionBaseUrl?: string;
+  managementOnly?: boolean;
+  /** Called only for authenticated bound service requests and workflow attachments. */
+  routeBinding?(bindingId: string, reference: string): Promise<string | undefined>;
   bodyLimit?: number;
   metrics?: PiCloudMetrics;
 };
@@ -202,6 +207,7 @@ export class SandboxControlServer {
   readonly #deliveryDigest: Buffer | undefined;
   readonly #server: FastifyInstance;
   readonly #metrics: PiCloudMetrics | undefined;
+  readonly #executionBaseUrl: string | undefined;
   readonly #capacityMetrics: NodeJS.Timeout;
   #address: string | undefined;
   #ready = false;
@@ -229,6 +235,7 @@ export class SandboxControlServer {
     this.#deliveryDigest =
       options.logDelivery && digest(validServiceToken(options.logDelivery.token));
     this.#metrics = options.metrics;
+    this.#executionBaseUrl = options.executionBaseUrl;
     this.#server = Fastify({
       logger: false,
       bodyLimit: options.bodyLimit ?? DEFAULT_BODY_LIMIT,
@@ -239,7 +246,57 @@ export class SandboxControlServer {
     // Its onResponse then owns closing a refused upgrade's detached socket.
     this.#server.addHook("preValidation", async (request, reply) => {
       if (!this.#ready && request.url !== SANDBOX_CONTROL_LIVE_PATH)
-        await reply.code(503).send({ error: "sandbox_control_unavailable" });
+        return reply.code(503).send({ error: "sandbox_control_unavailable" });
+      const path = request.url.split("?", 1)[0];
+      const body = request.body as
+        | { type?: string; activationId?: string; assignment?: { executionReference?: string } }
+        | undefined;
+      const workflow = path === TOOL_WORKFLOW_PATH;
+      const bound =
+        path === SANDBOX_CONTROL_SERVICE_PATH &&
+        body?.activationId &&
+        body.type !== "tool_sandbox.release";
+      if (options.managementOnly && (workflow || bound))
+        return reply.code(409).send({
+          error: {
+            code: "execution_endpoint_required",
+            message: "Use the Session execution endpoint",
+            retryable: false,
+          },
+        });
+      try {
+        // A forwarded attachment gets one hop. A moving partition fails closed
+        // instead of opening an unbounded chain of duplex relays.
+        const attachment = request.query as { local?: string; activationId?: string };
+        if (
+          workflow &&
+          attachment.local === "1" &&
+          attachment.activationId &&
+          options.routeBinding
+        ) {
+          const reference = bearer(request.headers.authorization);
+          if (!reference || (await options.routeBinding(attachment.activationId, reference)))
+            return reply.code(409).send({ error: "workflow_owner_changed" });
+        }
+        if (
+          options.routeBinding &&
+          bound &&
+          this.#serviceAuthorized(request.headers.authorization)
+        ) {
+          const id = body?.activationId;
+          const reference = body?.assignment?.executionReference;
+          if (id && reference) {
+            const owner = await options.routeBinding(id, reference);
+            if (owner)
+              return reply
+                .code(307)
+                .header("location", new URL(request.url, owner).toString())
+                .send();
+          }
+        }
+      } catch (error) {
+        return this.#failure(reply, error);
+      }
     });
     this.#server.register(fastifyWebsocket, {
       options: {
@@ -385,6 +442,10 @@ export class SandboxControlServer {
     return token !== undefined && timingSafeEqual(this.#serviceDigest, candidate);
   }
 
+  #serviceAuthorized(value: string | undefined): boolean {
+    const credential = bearer(value);
+    return credential !== undefined && timingSafeEqual(digest(credential), this.#serviceDigest);
+  }
   #workspaceServiceAuthorized(value: string | undefined): boolean {
     const token = bearer(value);
     const candidate = token === undefined ? Buffer.alloc(32) : digest(token);
@@ -704,7 +765,13 @@ export class SandboxControlServer {
               { provider: this.#broker.providerId },
               this.#broker.cleanPrewarmCount,
             );
-            await reply.code(200).send(reserved);
+            await reply
+              .code(200)
+              .send(
+                this.#executionBaseUrl
+                  ? { ...reserved, ownerBaseUrl: this.#executionBaseUrl }
+                  : reserved,
+              );
             return;
           }
           if (message.type === "tool_sandbox.export_package") {

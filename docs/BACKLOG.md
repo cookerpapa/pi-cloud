@@ -7,14 +7,31 @@
       restart/outage and Helm contracts pass; live release remains pending below.
 - [ ] #6: Cube v0.7.3 source adaptation is implemented in four cohesive patches;
       native admission, Tool/Volume/lifecycle contracts and Rust/Go compilation
-      pass. Matched build/scans, full MySQL contracts and live preservation remain.
+      pass, including real MySQL allocation/template contracts. Matched build,
+      artifact scans and live preservation remain.
+      Cold compute retirement now preserves machine intent under [ADR-0304](adr/0304-compute-retirement-for-maintenance.md); its PG and recovery contracts pass; live preservation remains.
 - [ ] #7: source collection/outbox, resource interval admission, price boundaries,
       aggregate statements and UI are implemented. Source contracts pass; real
       Cube metering, delivery-drain and preservation acceptance remain pending.
-- [ ] #8: real Workspace capacity enforcement and capacity-time statements.
-- [ ] #9: independent Session projection, Tool dispatch, observations and API/SSE.
-- [ ] #10: documented renewal/revocation choice and coherent implementation.
-- [ ] Consolidated source/failure checks, matched release and relevant live
+- [ ] #8: real XFS Workspace capacity enforcement, grow-only PG intent and
+      capacity-time statements are implemented. Kernel exhaustion/growth, upload
+      cancellation/resumption and remount identity pass the owned XFS fixture.
+      The [cold storage operator](WORKSPACE_STORAGE_POOL.md) and fault cases are implemented;
+      operator/host-reboot contracts pass; original-byte migration and live release remain pending.
+- [ ] #9: separate `session-runtime` and resource-management `control-plane`
+      compositions under [ADR-0302](adr/0302-session-runtime-and-resource-management.md).
+      Bound Tool execution, retention, authenticated history/statements and SSE stay
+      with the Session runtime. Scoped tool publication preserves management/metering.
+      Source/failure contracts pass, including real Kafka handoff. Matched live acceptance remains.
+- [ ] #10: [ADR-0303](adr/0303-direct-renewal-and-local-execution-authority.md)
+      retains direct PG renewal/local expiry, removes active observer polling
+      and socket family renewal, and propagates Kafka failure to every native
+      model grant. Source/failure checks and real Kafka handoff pass;
+      prolonged management-outage and matched live acceptance remain pending.
+- [x] Consolidated source/failure, Go/provider, PG/Kafka, kernel quota, browser,
+      Helm/install/docs and dependency gates pass. Old schema fixtures use frozen
+      SQL; no production compatibility branch was added.
+- [ ] Matched release and relevant live
       acceptance, original-asset preservation, push and issue delivery evidence.
 
 See the [six-slice roadmap](ROADMAP.md#independent-runtime-and-resource-accounting--in-progress).

@@ -1,36 +1,12 @@
 import { expect, it, vi } from "vitest";
-import {
-  controlPlaneSnapshot,
-  replaceControlPlane,
-  createReplacementDatabase,
-  readControlPlaneDomain,
-} from "./control-plane-release.mjs";
-
-it("uses computed Helm values for an inherited sandbox domain and refuses a missing domain", () => {
-  const helm = vi.fn((args) =>
-    JSON.stringify({
-      sandboxPlane: args.includes("--all") ? { domainId: "inherited-domain" } : {},
-    }),
-  );
-  expect(readControlPlaneDomain(helm, "pi-cloud")).toBe("inherited-domain");
-  expect(helm.mock.calls[0][0]).toContain("--all");
-  expect(() => readControlPlaneDomain(() => '{"sandboxPlane":{}}', "pi-cloud")).toThrow(
-    "domain is missing",
-  );
-});
-
-it("constructs the actual bounded metadata client without incompatible budget modes", async () => {
-  const database = await createReplacementDatabase("postgresql://unused:unused@127.0.0.1:9/unused");
-  // Construction and disposal require no connection or runtime mutation.
-  await database.destroy();
-});
+import { sessionRuntimeSnapshot, replaceSessionRuntime } from "./session-runtime-release.mjs";
 
 function fixture() {
   const deployment = {
-    metadata: { name: "pi-cloud-control-plane", uid: "deployment" },
+    metadata: { name: "pi-cloud-session-runtime", uid: "deployment" },
     spec: {
       replicas: 1,
-      template: { spec: { containers: [{ name: "control-plane", image: "old" }] } },
+      template: { spec: { containers: [{ name: "session-runtime", image: "old" }] } },
     },
   };
   const oldPod = {
@@ -43,7 +19,9 @@ function fixture() {
   let receipt;
   const port = {
     observe: vi.fn(async () => structuredClone(state)),
-    owners: vi.fn(async () => ["owner"]),
+    owners: vi.fn(async () => {
+      throw new Error("Runtime replacement must not query management leases");
+    }),
     request: vi.fn(async (r, action) => {
       actions.push(action);
       return { version: 1, requestId: r.id, instanceId: "process", phase: "held" };
@@ -61,7 +39,7 @@ function fixture() {
       actions.push("absent");
     }),
     waitOwners: vi.fn(async () => {
-      actions.push("owners-closed");
+      throw new Error("Management ownership must remain independent");
     }),
     restore: vi.fn(async () => {
       actions.push("restore");
@@ -78,12 +56,14 @@ function fixture() {
   return { state, port, phases, actions, receipt: () => receipt };
 }
 
-it("orders the local hold, old Pod exit and PG owner boundary before Helm", async () => {
+it("orders local execution quiescence and old Pod absence before Helm without touching resource ownership", async () => {
   const f = fixture();
-  await replaceControlPlane(f.port, undefined, "v2");
-  expect(f.actions).toEqual(["prepare", "stop", "absent", "owners-closed", "helm"]);
+  await replaceSessionRuntime(f.port, undefined, "v2");
+  expect(f.actions).toEqual(["prepare", "stop", "absent", "helm"]);
   expect(f.phases).toEqual(["holding", "stopping", "stopped", "applying", "applied"]);
   expect(f.port.restore).not.toHaveBeenCalled();
+  expect(f.port.owners).not.toHaveBeenCalled();
+  expect(f.port.waitOwners).not.toHaveBeenCalled();
 });
 it("a busy Tool timeout cancels the hold and leaves the old process in service", async () => {
   const f = fixture();
@@ -93,7 +73,9 @@ it("a busy Tool timeout cancels the hold and leaves the old process in service",
     instanceId: "process",
     phase: action === "prepare" ? "waiting" : "open",
   }));
-  await expect(replaceControlPlane(f.port, undefined, "v2", -1)).rejects.toThrow("did not settle");
+  await expect(replaceSessionRuntime(f.port, undefined, "v2", -1)).rejects.toThrow(
+    "did not settle",
+  );
   expect(f.port.stop).not.toHaveBeenCalled();
   expect(f.port.apply).not.toHaveBeenCalled();
   expect(f.port.request.mock.calls.at(-1)[1]).toBe("cancel");
@@ -101,8 +83,10 @@ it("a busy Tool timeout cancels the hold and leaves the old process in service",
 });
 it("restores the exact old template after a pre-Helm failure", async () => {
   const f = fixture();
-  f.port.waitOwners.mockRejectedValueOnce(new Error("temporary PG outage"));
-  await expect(replaceControlPlane(f.port, undefined, "v2")).rejects.toThrow("PG outage");
+  f.port.waitAbsent.mockRejectedValueOnce(new Error("Pod absence unconfirmed"));
+  await expect(replaceSessionRuntime(f.port, undefined, "v2")).rejects.toThrow(
+    "Pod absence unconfirmed",
+  );
   expect(f.port.restore).toHaveBeenCalledTimes(1);
   expect(f.state.deployment.spec.replicas).toBe(1);
   expect(f.state.deployment.spec.template.spec.containers[0].image).toBe("old");
@@ -114,25 +98,25 @@ it("does not roll back an uncertain Helm mutation and resumes its same candidate
     await apply();
     throw new Error("lost Helm reply");
   });
-  await expect(replaceControlPlane(f.port, undefined, "v2")).rejects.toThrow("lost Helm reply");
+  await expect(replaceSessionRuntime(f.port, undefined, "v2")).rejects.toThrow("lost Helm reply");
   expect(f.port.restore).not.toHaveBeenCalled();
   expect(f.receipt().phase).toBe("applying");
   const prepareCalls = f.port.request.mock.calls.length;
-  await replaceControlPlane(f.port, f.receipt(), "v2");
+  await replaceSessionRuntime(f.port, f.receipt(), "v2");
   expect(f.port.request.mock.calls.length).toBe(prepareCalls);
   expect(f.receipt().phase).toBe("applied");
 });
 it("can resume after operator loss with zero replicas, but cannot adopt somebody else's stop", async () => {
   const f = fixture();
-  const snapshot = controlPlaneSnapshot(f.state.deployment, [], f.state.pods);
+  const snapshot = sessionRuntimeSnapshot(f.state.deployment, [], f.state.pods);
   f.state.deployment.spec.replicas = 0;
   f.state.pods = [];
-  await expect(replaceControlPlane(f.port, undefined, "v2")).rejects.toThrow(
+  await expect(replaceSessionRuntime(f.port, undefined, "v2")).rejects.toThrow(
     "without this candidate",
   );
-  await replaceControlPlane(
+  await replaceSessionRuntime(
     f.port,
-    { ...snapshot, id: "request", version: "v2", phase: "stopping", owners: ["owner"] },
+    { ...snapshot, id: "request", version: "v2", phase: "stopping", role: "session-runtime" },
     "v2",
   );
   expect(f.port.request).not.toHaveBeenCalled();
@@ -141,16 +125,28 @@ it("can resume after operator loss with zero replicas, but cannot adopt somebody
 it("rejects autoscaling, overlap and an unready Pod before touching the deployment", async () => {
   const f = fixture();
   expect(() =>
-    controlPlaneSnapshot(
+    sessionRuntimeSnapshot(
       f.state.deployment,
-      [{ spec: { scaleTargetRef: { name: "pi-cloud-control-plane" } } }],
+      [{ spec: { scaleTargetRef: { name: "pi-cloud-session-runtime" } } }],
       f.state.pods,
     ),
   ).toThrow("autoscaler");
   expect(() =>
-    controlPlaneSnapshot(f.state.deployment, [], [...f.state.pods, ...f.state.pods]),
+    sessionRuntimeSnapshot(f.state.deployment, [], [...f.state.pods, ...f.state.pods]),
   ).toThrow("settled");
   f.state.pods[0].status.containerStatuses[0].ready = false;
-  await expect(replaceControlPlane(f.port, undefined, "v2")).rejects.toThrow("not ready");
+  await expect(replaceSessionRuntime(f.port, undefined, "v2")).rejects.toThrow("not ready");
   expect(f.port.stop).not.toHaveBeenCalled();
+});
+
+it("refuses another role's Deployment or replacement receipt", async () => {
+  const f = fixture();
+  const management = structuredClone(f.state.deployment);
+  management.metadata.name = "pi-cloud-control-plane";
+  expect(() => sessionRuntimeSnapshot(management, [], f.state.pods)).toThrow();
+  await expect(replaceSessionRuntime(f.port, { role: "control-plane" }, "v2")).rejects.toThrow(
+    "another role",
+  );
+  expect(f.port.stop).not.toHaveBeenCalled();
+  expect(f.port.apply).not.toHaveBeenCalled();
 });

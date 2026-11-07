@@ -1,4 +1,4 @@
-import { replacePod, kubectlAsync } from "./lib/production-kubernetes.mjs";
+import { replacePod, kubectlAsync, kubectl } from "./lib/production-kubernetes.mjs";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
@@ -27,6 +27,7 @@ const report = {
   revision: (await exec("git", ["rev-parse", "HEAD"])).stdout.trim(),
   model: "gpt-6-luna",
   accepted: false,
+  faultRole: "session-runtime",
 };
 const deploymentCommand = (args) =>
   exec(process.execPath, ["scripts/production-kubernetes.mjs", ...args], {
@@ -214,9 +215,14 @@ try {
     "SELECT count(*)::int FROM runs WHERE state NOT IN ('completed','failed','cancelled','timed_out')",
   );
   assert.equal(count, 1, "Another Run started; refusing an unrelated restart");
+  assert.equal(
+    JSON.parse(kubectl(["get", "deployment/pi-cloud-session-runtime", "-o", "json"])).spec.replicas,
+    1,
+    "This invocation fault requires one Session Projector so the owned partition is actually replaced",
+  );
   report.restartStartedAt = new Date().toISOString();
   restartNeeded = true;
-  await replacePod("control-plane");
+  await replacePod("session-runtime");
   restartNeeded = false;
   report.restartCompletedAt = new Date().toISOString();
   const run = await waitRun(active.runId);
@@ -249,7 +255,7 @@ try {
       await kubectlAsync([
         "rollout",
         "status",
-        "deployment/pi-cloud-control-plane",
+        "deployment/pi-cloud-session-runtime",
         "--timeout=180s",
       ]);
     } catch (error) {

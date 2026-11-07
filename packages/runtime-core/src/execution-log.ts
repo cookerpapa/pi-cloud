@@ -14,6 +14,8 @@ export type ExecutionLogOpenRequest = Readonly<{
 export interface ExecutionLogWriter extends AcceptedFactWriter {
   /** Local transport evidence only; no lease or network query. */
   assertHealthy?(): void;
+  /** Latched, known publication failure; unrelated to missing physical probes. */
+  readonly failureSignal?: AbortSignal;
   readonly acknowledgedThroughSeq: number;
   ingest(value: unknown): Promise<EventAckMessage>;
   drain(): Promise<void>;

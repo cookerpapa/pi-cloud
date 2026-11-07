@@ -1,3 +1,4 @@
+import { insertHistoricalProject } from "./fixtures/historical-project.ts";
 import { randomUUID } from "node:crypto";
 import { sql } from "kysely";
 import { Migrator } from "kysely/migration";
@@ -5,7 +6,6 @@ import { expect, it } from "vitest";
 import { createDatabase } from "../src/index.ts";
 import { migrationProvider } from "../src/migrations/index.ts";
 import { createPrivateTenant } from "../../control-plane/src/tenant-administration.ts";
-import { ControlPlaneStore } from "../../control-plane/src/control-plane-store.ts";
 import {
   insertHistoricalDurableSession,
   insertHistoricalDurableRun,
@@ -35,10 +35,9 @@ it("requires drained owners and preserves Worker identities, fences and credenti
       slug: randomUUID(),
       ownerDisplayName: "Worker cutover",
     });
-    const store = new ControlPlaneStore({ database: db, ...tenant });
-    const project = await store.createProject({
+    const project = await insertHistoricalProject(db, {
+      tenantId: tenant.tenantId,
       name: "Worker cutover",
-      source: { kind: "empty" },
     });
     const session = await insertHistoricalDurableSession(db, { ...tenant, ...project });
     const run = await insertHistoricalDurableRun(db, {

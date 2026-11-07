@@ -531,6 +531,9 @@ export interface EnvironmentValidationTable {
 }
 
 export interface WorkspaceTable {
+  capacity_bytes: GeneratedInt8;
+  capacity_revision: GeneratedInt8;
+  capacity_pending: Generated<boolean>;
   id: string;
   tenant_id: string;
   project_id: string;

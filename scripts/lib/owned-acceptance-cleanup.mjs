@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { sql } from "kysely";
+import { waitForOwnedReceiptDelivery } from "./source-delivery-barrier.mjs";
 
 /** Stop can atomically withdraw sibling queued inputs. Refresh each Run rather
  * than applying cancellation to the pre-Stop snapshot; queued inputs use their
@@ -35,7 +36,12 @@ export async function settleOwnedAcceptanceRuns(api, sessionId, rows, settled) {
 
 /** Only newly created acceptance tenants. Physical deletion must have completed
  * through the product API first; this never deletes a VM or releases quota. */
-export async function purgeOwnedAcceptanceTenant(database, tenant, blobs) {
+export async function purgeOwnedAcceptanceTenant(
+  database,
+  tenant,
+  blobs,
+  { awaitReceiptDelivery = waitForOwnedReceiptDelivery, signal } = {},
+) {
   assert(
     ["release-acceptance-", "native-input-", "cube-check-"].some((prefix) =>
       tenant.tenantSlug.startsWith(prefix),
@@ -76,6 +82,12 @@ export async function purgeOwnedAcceptanceTenant(database, tenant, blobs) {
     );
   };
   await assertSettled(database);
+  const delivered = await awaitReceiptDelivery({ tenantId: tenant.tenantId, signal });
+  assert(
+    delivered?.verified === true && delivered.tenantId === tenant.tenantId,
+    "Acceptance receipt delivery is not verified for this tenant",
+  );
+  signal?.throwIfAborted();
   const { rows: images } =
     await sql`select id from session_attachment_objects where tenant_id=${tenant.tenantId}::uuid`.execute(
       database,

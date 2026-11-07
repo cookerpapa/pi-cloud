@@ -82,11 +82,20 @@ Harness and serial writer. Its main and child Agent Loops can run concurrently.
 Model permits are separate, fair Worker-local capacity and are released while
 waiting for Tools/children. Children keep native task/input/cancellation identity.
 
-The Worker renews the family lease directly in PG. One Worker-local observer
-batches authority reads and consumes renewal evidence; ordinary commits do not
-perform another PG lease lookup. Management reconnect does not replace a healthy
-Session producer. Lease loss interrupts the family and requires ordered closure
-before a replacement owner can proceed.
+The Worker is the sole family-lease renewer and talks directly to PG. One local
+authority batches cold authorization reads and consumes committed renewal
+evidence; active owners do not poll PG separately. Registration heartbeats carry
+no families and cannot renew leases. Management reconnect does not replace a
+healthy Session producer.
+
+The last confirmed monotonic lifetime bounds all native Conversations, including
+model admission after preparation and immediately before Gateway forwarding.
+Silent PG revocation is observed at the next direct renewal (normally twenty
+seconds), while local expiry and known Kafka publication failure interrupt the
+whole family. A stalled renewal or delayed expiry timer cannot revive authority.
+Several child requests may already be accepted upstream; transport cancellation
+cannot undo provider work or cost. Lease loss still requires ordered closure
+before replacement. See [ADR-0303](adr/0303-direct-renewal-and-local-execution-authority.md).
 
 ## Opening Pi and executing Tools
 

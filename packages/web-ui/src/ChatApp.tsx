@@ -1902,6 +1902,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
       <Suspense fallback={<main className="product-loading-page" />}>
         <ResourceManagementPage
           api={api}
+          canGrow={identity.role !== "viewer"}
           conversations={conversations}
           environments={developmentEnvironments}
           initialTab={initialResourceTab}
@@ -2360,9 +2361,6 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
                               </strong>
                               {profile.recommended ? <em>{t("chat.create.recommended")}</em> : null}
                             </span>
-                            <small>
-                              {t("chat.create.systemDisk", { size: profile.systemDiskGiB })}
-                            </small>
                           </button>
                         ))}
                       </div>
@@ -2758,6 +2756,7 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
               {inspectorOpen ? (
                 <WorkspaceInspector
                   api={api}
+                  canGrow={identity.role !== "viewer"}
                   {...(draftKey ? { draftKey: `${draftKey}:workspace-files` } : {})}
                   onReference={(path) => {
                     draftRevision.current++;

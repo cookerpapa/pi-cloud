@@ -174,7 +174,7 @@ try {
   ).trim();
   await until(async () => {
     const r = await fetch(
-      `http://${serviceAddress("control-plane")}:3000/internal/v1/session-publication/health`,
+      `http://${serviceAddress("session-runtime")}:3000/internal/v1/session-publication/health`,
       { headers: { authorization: `Bearer ${management}` }, signal: AbortSignal.timeout(3000) },
     );
     return (

@@ -1,15 +1,17 @@
 import { expect, it } from "vitest";
-import { releaseImpact, catalogSeed } from "./release-impact.mjs";
-it("builds only the Control Plane for ordinary tools and rejects mixed runtime changes", () => {
+import { releaseImpact, catalogSeed, imageReleaseTargets } from "./release-impact.mjs";
+it("builds one shared host artifact for the Session-runtime-only ordinary-tool scope and rejects mixed runtime changes", () => {
   const tool = "packages/control-plane/src/ordinary-tools/registry.ts";
   expect(
     releaseImpact([tool, "packages/control-plane/test/new-tool.test.ts"]).matrix.include.map(
       (i) => i.image,
     ),
   ).toEqual(["control-plane"]);
-  expect(releaseImpact([tool]).scope).toBe("control-plane");
+  expect(releaseImpact([tool]).scope).toBe("session-runtime");
   for (const changed of [
     "packages/control-plane/src/main.ts",
+    "packages/control-plane/src/session-runtime-main.ts",
+    "packages/sandbox-control/src/sandbox-session-runtime.ts",
     "packages/control-plane/src/control-tool-dispatcher.ts",
     "packages/protocol/src/index.ts",
     "package-lock.json",
@@ -51,4 +53,17 @@ it("keeps missing history and runtime/schema/dependency/workflow changes on full
     expect(result.matrix.include).toHaveLength(10);
   }
   expect(releaseImpact(["docs/README.md"]).scope).toBe("docs");
+});
+
+it("maps the public Session-runtime scope to one shared artifact and one independent installed role", () => {
+  expect(imageReleaseTargets["session-runtime"]).toEqual({
+    imageName: "control-plane",
+    buildScope: "control-plane",
+    buildCatalogKey: "controlPlane",
+    catalogKey: "sessionRuntime",
+    componentName: "session-runtime",
+    workload: "deployment/pi-cloud-session-runtime",
+    container: "session-runtime",
+  });
+  expect(imageReleaseTargets["control-plane"]).toBeUndefined();
 });

@@ -41,8 +41,8 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: metering
-          image: {{ include "pi-cloud-platform.image" .Values.images.controlPlane | quote }}
-          imagePullPolicy: {{ .Values.images.controlPlane.pullPolicy }}
+          image: {{ include "pi-cloud-platform.image" .Values.images.metering | quote }}
+          imagePullPolicy: {{ .Values.images.metering.pullPolicy }}
           args: ["/app/packages/accounting/src/main.ts"]
           ports: [{ name: http, containerPort: 3000 }]
           env:

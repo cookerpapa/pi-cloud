@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"encoding/json"
@@ -20,8 +21,24 @@ var sizeKey = []byte("pending-bytes")
 var errCapacity = errors.New("metering buffer at admission capacity")
 
 type journal struct {
-	db       *bolt.DB
-	capacity int64
+	db              *bolt.DB
+	capacity        int64
+	captureFailures atomic.Uint64
+	producers       atomic.Int64
+}
+
+type deliveryState struct {
+	pending, active int
+}
+
+func (j *journal) deliveryState() (deliveryState, error) {
+	var state deliveryState
+	err := j.db.View(func(tx *bolt.Tx) error {
+		state.pending = tx.Bucket(pendingBucket).Stats().KeyN
+		state.active = tx.Bucket(activeBucket).Stats().KeyN + int(j.producers.Load())
+		return nil
+	})
+	return state, err
 }
 
 func openJournal(path string, capacity int64) (*journal, error) {

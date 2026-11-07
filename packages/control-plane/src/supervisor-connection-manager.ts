@@ -19,18 +19,12 @@ import { sql, type Kysely, type Transaction } from "kysely";
 import { databaseTime } from "@pi-cloud/database";
 import { maintenanceLockBusy, SessionExpiryReconciler } from "./session-expiry-reconciler.ts";
 import type { WorkerRetirementResult } from "./assignment-reconciler.ts";
-import {
-  SessionLeaseCoordinator,
-  SessionLeaseCoordinatorError,
-  type SupervisorConnectionGuard,
-} from "@pi-cloud/runtime-core/session-lease-coordinator";
 
 const DEFAULT_SUPERVISOR_VERSION = "0.1.0";
 const DEFAULT_PI_PACKAGE_NAME = "@earendil-works/pi-durable";
 const DEFAULT_REQUIRED_CAPABILITIES = ["pi.sdk"] as const;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 10_000;
 const DEFAULT_HEARTBEAT_TIMEOUT_MS = 30_000;
-const DEFAULT_LEASE_DURATION_MS = 60_000;
 const DEFAULT_RETIREMENT_RETRY_DELAY_MS = 5_000;
 const DEFAULT_RETIREMENT_CLAIM_DURATION_MS = 120_000;
 const DEFAULT_SWEEP_LIMIT = 100;
@@ -75,7 +69,6 @@ export type SupervisorConnectionManagerOptions = {
   requiredCapabilities?: readonly string[];
   heartbeatIntervalMs?: number;
   heartbeatTimeoutMs?: number;
-  leaseDurationMs?: number;
   retirementRetryDelayMs?: number;
   retirementClaimDurationMs?: number;
 };
@@ -260,7 +253,6 @@ export class SupervisorConnectionManager {
   readonly #requiredCapabilities: readonly string[];
   readonly #heartbeatIntervalMs: number;
   readonly #heartbeatTimeoutMs: number;
-  readonly #leaseDurationMs: number;
   readonly #retirementRetryDelayMs: number;
   readonly #retirementClaimDurationMs: number;
 
@@ -303,10 +295,6 @@ export class SupervisorConnectionManager {
       options.heartbeatTimeoutMs ?? DEFAULT_HEARTBEAT_TIMEOUT_MS,
       "heartbeatTimeoutMs",
     );
-    this.#leaseDurationMs = positiveInteger(
-      options.leaseDurationMs ?? DEFAULT_LEASE_DURATION_MS,
-      "leaseDurationMs",
-    );
     this.#retirementRetryDelayMs = positiveInteger(
       options.retirementRetryDelayMs ?? DEFAULT_RETIREMENT_RETRY_DELAY_MS,
       "retirementRetryDelayMs",
@@ -317,9 +305,6 @@ export class SupervisorConnectionManager {
     );
     if (this.#heartbeatTimeoutMs <= this.#heartbeatIntervalMs) {
       throw new TypeError("heartbeatTimeoutMs must be greater than heartbeatIntervalMs");
-    }
-    if (this.#leaseDurationMs < this.#heartbeatTimeoutMs) {
-      throw new TypeError("leaseDurationMs must be at least heartbeatTimeoutMs");
     }
   }
 
@@ -622,74 +607,60 @@ export class SupervisorConnectionManager {
       );
     }
     this.#validateAuthority(authority, parsed.payload);
-    if (parsed.payload.families.length === 0) {
-      const updated = await this.#database.transaction().execute(async (tx) => {
-        await tx
-          .selectFrom("supervisor_connections")
-          .select("connection_id")
-          .where("connection_id", "=", parsed.payload.connectionId)
-          .forNoKeyUpdate()
-          .execute();
-        return tx
-          .updateTable("supervisor_connections")
-          .set({
-            accepting_assignments: parsed.payload.acceptingAssignments,
-            last_heartbeat_at: sql<Date>`clock_timestamp()`,
-            expires_at: sql<Date>`clock_timestamp() + ${this.#heartbeatTimeoutMs} * interval '1 millisecond'`,
-          })
-          .where("connection_id", "=", parsed.payload.connectionId)
-          .where("worker_id", "=", authority.sandboxId)
-          .where("supervisor_id", "=", authority.supervisorId)
-          .where("boot_id", "=", authority.bootId)
-          .where("transport_id", "=", authority.transportId)
-          .where("control_plane_instance_id", "=", this.#controlPlaneInstanceId)
-          .where("state", "=", "active")
-          .where("expires_at", ">", sql<Date>`clock_timestamp()`)
-          .returning("last_heartbeat_at")
-          .executeTakeFirst();
-      });
-      if (!updated) {
-        throw await this.#staleConnection(parsed.payload.connectionId, authority);
-      }
-      const acknowledgement = parseControlToSupervisorMessage({
-        protocolVersion: 1,
-        messageId: this.#idGenerator(),
-        sentAt: updated.last_heartbeat_at.toISOString(),
-        type: "supervisor.heartbeat.ack",
-        payload: {
-          acknowledgedMessageId: parsed.messageId,
-          connectionId: parsed.payload.connectionId,
-          familyLeaseRenewals: [],
-          familyLeaseDeferrals: [],
-        },
-      });
-      if (acknowledgement.type !== "supervisor.heartbeat.ack") {
-        throw new SupervisorConnectionManagerError(
-          "heartbeat_ack_invariant",
-          "Supervisor heartbeat acknowledgement was invalid",
-          false,
-        );
-      }
-      return acknowledgement;
+    if (parsed.payload.families.length !== 0)
+      throw new SupervisorConnectionManagerError(
+        "invalid_heartbeat",
+        "Session leases renew directly from the Worker, not over registration transport",
+        false,
+      );
+    const updated = await this.#database.transaction().execute(async (tx) => {
+      await tx
+        .selectFrom("supervisor_connections")
+        .select("connection_id")
+        .where("connection_id", "=", parsed.payload.connectionId)
+        .forNoKeyUpdate()
+        .execute();
+      return tx
+        .updateTable("supervisor_connections")
+        .set({
+          accepting_assignments: parsed.payload.acceptingAssignments,
+          last_heartbeat_at: sql<Date>`clock_timestamp()`,
+          expires_at: sql<Date>`clock_timestamp() + ${this.#heartbeatTimeoutMs} * interval '1 millisecond'`,
+        })
+        .where("connection_id", "=", parsed.payload.connectionId)
+        .where("worker_id", "=", authority.sandboxId)
+        .where("supervisor_id", "=", authority.supervisorId)
+        .where("boot_id", "=", authority.bootId)
+        .where("transport_id", "=", authority.transportId)
+        .where("control_plane_instance_id", "=", this.#controlPlaneInstanceId)
+        .where("state", "=", "active")
+        .where("expires_at", ">", sql<Date>`clock_timestamp()`)
+        .returning("last_heartbeat_at")
+        .executeTakeFirst();
+    });
+    if (!updated) {
+      throw await this.#staleConnection(parsed.payload.connectionId, authority);
     }
-    const coordinator = await this.executionReferenceCoordinator(
-      parsed.payload.connectionId,
-      authority,
-    );
-    try {
-      return await coordinator.renewFromHeartbeat(parsed);
-    } catch (error: unknown) {
-      if (error instanceof SessionLeaseCoordinatorError) {
-        if (error.code === "stale_connection")
-          throw await this.#staleConnection(parsed.payload.connectionId, authority);
-        throw new SupervisorConnectionManagerError(
-          error.code,
-          "Supervisor heartbeat was rejected",
-          error.retryable,
-        );
-      }
-      throw error;
+    const acknowledgement = parseControlToSupervisorMessage({
+      protocolVersion: 1,
+      messageId: this.#idGenerator(),
+      sentAt: updated.last_heartbeat_at.toISOString(),
+      type: "supervisor.heartbeat.ack",
+      payload: {
+        acknowledgedMessageId: parsed.messageId,
+        connectionId: parsed.payload.connectionId,
+        familyLeaseRenewals: [],
+        familyLeaseDeferrals: [],
+      },
+    });
+    if (acknowledgement.type !== "supervisor.heartbeat.ack") {
+      throw new SupervisorConnectionManagerError(
+        "heartbeat_ack_invariant",
+        "Supervisor heartbeat acknowledgement was invalid",
+        false,
+      );
     }
+    return acknowledgement;
   }
 
   async assertCurrentConnection(
@@ -699,31 +670,10 @@ export class SupervisorConnectionManager {
     await this.#currentConnection(connectionId, authority);
   }
 
-  async executionReferenceCoordinator(
-    connectionId: string,
-    authority: SupervisorTransportAuthority,
-  ): Promise<SessionLeaseCoordinator> {
-    const connection = await this.#currentConnection(connectionId, authority);
-    const guard: SupervisorConnectionGuard = {
-      controlPlaneInstanceId: this.#controlPlaneInstanceId,
-      transportId: authority.transportId,
-      heartbeatTimeoutMs: connection.heartbeat_timeout_ms,
-    };
-    return new SessionLeaseCoordinator({
-      database: this.#database,
-      workerId: authority.sandboxId,
-      clock: this.#clock,
-      idGenerator: this.#idGenerator,
-      leaseDurationMs: this.#leaseDurationMs,
-      heartbeatConnectionId: connectionId,
-      connectionGuard: guard,
-    });
-  }
-
   async #currentConnection(
     connectionId: string,
     authority: SupervisorTransportAuthority,
-  ): Promise<{ heartbeat_timeout_ms: number }> {
+  ): Promise<void> {
     requireUuid(connectionId, "connectionId");
     this.#validateAuthorityShape(authority);
     const connection = await this.#database
@@ -734,7 +684,6 @@ export class SupervisorConnectionManager {
         "boot_id",
         "transport_id",
         "control_plane_instance_id",
-        "heartbeat_timeout_ms",
         "state",
         "expires_at",
       ])
@@ -752,7 +701,6 @@ export class SupervisorConnectionManager {
     ) {
       throw await this.#staleConnection(connectionId, authority);
     }
-    return connection;
   }
 
   async expireConnections(limit = DEFAULT_SWEEP_LIMIT): Promise<SupervisorConnectionSweepResult> {

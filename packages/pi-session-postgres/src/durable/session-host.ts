@@ -75,7 +75,7 @@ export type ManagedNativeRuntime = {
   }): Promise<number>;
 };
 type Owner = {
-  authority: ActiveExecutionAuthority & { start(): void };
+  authority: ActiveExecutionAuthority & { start(): void; assertActive(): void };
   storage: Promise<PublishedDurableStorage>;
   runs: Map<number, DurableSessionOpen>;
   bindings: Map<number, DurableRunBinding>;
@@ -123,6 +123,13 @@ export class PostgresDurableSessionHost {
   }
   hasExecution(reference: string): boolean {
     return this.#executions.has(reference);
+  }
+  /** Synchronous provider admission check: event-loop delay cannot extend a
+   * confirmed deadline while its timer is still queued. This never queries PG. */
+  assertExecutionCurrent(reference: string): void {
+    const owner = this.#executions.get(reference);
+    if (!owner) throw new NativeSessionError("storage", "Native Session owner is unavailable");
+    owner.authority.assertActive();
   }
   runtimeFor(reference: string): Promise<ManagedNativeRuntime> | undefined {
     return this.#executions.get(reference)?.runtime;
@@ -422,6 +429,11 @@ export class PostgresDurableSessionHost {
           input.signal?.throwIfAborted();
           interruption.signal.throwIfAborted();
           await lease.assertCurrent();
+        },
+        assertActive: () => {
+          input.signal?.throwIfAborted();
+          interruption.signal.throwIfAborted();
+          lease.assertActive();
         },
         start: () => lease.start(),
         close: () => lease.close(),

@@ -1,3 +1,4 @@
+import { insertHistoricalProject } from "./fixtures/historical-project.ts";
 import { Migrator } from "kysely/migration";
 import { migrationProvider } from "../src/migrations/index.ts";
 import { historicalNative } from "./fixtures/historical-native.ts";
@@ -42,8 +43,11 @@ describe.skipIf(!endpoint)("one-Run identity cutover", () => {
     });
     tenantId = tenant.tenantId;
     store = new ControlPlaneStore({ database: db, ...tenant });
-    const p = await store.createProject({ name: "retained", source: { kind: "empty" } }),
-      s = await insertHistoricalSession(db, { ...tenant, ...p });
+    const p = await insertHistoricalProject(db, {
+      tenantId: tenant.tenantId,
+      name: "retained",
+    });
+    const s = await insertHistoricalSession(db, { ...tenant, ...p });
     sessionId = s.sessionId;
     const entry = {
       id: randomUUID(),

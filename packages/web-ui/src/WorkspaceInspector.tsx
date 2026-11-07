@@ -1,3 +1,4 @@
+import { WorkspaceCapacity } from "./WorkspaceCapacity.tsx";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WorkspaceDirectoryEntryResource } from "@pi-cloud/protocol";
 import { PiCloudApi, PiCloudApiError } from "./api.ts";
@@ -74,8 +75,10 @@ export function WorkspaceInspector({
   workingDirectory,
   draftKey,
   onReference,
+  canGrow = false,
 }: {
   api: PiCloudApi;
+  canGrow?: boolean;
   onClose: () => void;
   onError: (message: string) => void;
   refreshSignal: number;
@@ -238,6 +241,9 @@ export function WorkspaceInspector({
           </button>
         </div>
       </header>
+      {workspaceId ? (
+        <WorkspaceCapacity api={api} workspaceId={workspaceId} canGrow={canGrow} />
+      ) : null}
       <div className="workspace-view-tabs" role="tablist" aria-label={t("inspector.views")}>
         <button
           aria-selected={view === "files"}

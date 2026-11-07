@@ -1081,3 +1081,67 @@ it("resolves the upload owner before consuming bytes and never replays a consume
   });
   expect(received).toBe(bytes.length);
 });
+
+it("routes an authenticated bound request to the Session partition owner without management", async () => {
+  const ownerBackend = backend();
+  const invoked = vi.fn(async () => {});
+  ownerBackend.refreshServices = invoked;
+  const owner = new SandboxControlServer({
+    host: "127.0.0.1",
+    port: 0,
+    serviceToken: SERVICE_TOKEN,
+    broker: ownerBackend,
+  });
+  servers.push(owner);
+  const ownerUrl = await owner.listen();
+  const route = vi.fn(async (id: string, reference: string) => {
+    expect(id).toBe(ACTIVATION_ID);
+    expect(reference).toBe(assignment.executionReference);
+    return ownerUrl;
+  });
+  const ingressBackend = backend();
+  ingressBackend.refreshServices = vi.fn(async () => {
+    throw new Error("Wrong partition executed a data request");
+  });
+  const ingress = new SandboxControlServer({
+    host: "127.0.0.1",
+    port: 0,
+    serviceToken: SERVICE_TOKEN,
+    broker: ingressBackend,
+    routeBinding: route,
+  });
+  servers.push(ingress);
+  const client = new SandboxControlClient({
+    baseUrl: await ingress.listen(),
+    serviceToken: SERVICE_TOKEN,
+    allowInsecureHttp: true,
+  });
+  await client.refreshServices(ACTIVATION_ID, assignment);
+  expect(route).toHaveBeenCalledOnce();
+  expect(invoked).toHaveBeenCalledWith(ACTIVATION_ID, assignment);
+  expect(ingressBackend.refreshServices).not.toHaveBeenCalled();
+});
+
+it("management refuses existing-binding execution instead of providing a combined-runtime fallback", async () => {
+  const broker = backend();
+  broker.refreshServices = vi.fn(async () => {});
+  const server = new SandboxControlServer({
+    host: "127.0.0.1",
+    port: 0,
+    serviceToken: SERVICE_TOKEN,
+    broker,
+    managementOnly: true,
+    executionBaseUrl: "http://session-runtime:4300",
+  });
+  servers.push(server);
+  const client = new SandboxControlClient({
+    baseUrl: await server.listen(),
+    serviceToken: SERVICE_TOKEN,
+    allowInsecureHttp: true,
+  });
+  await expect(client.refreshServices(ACTIVATION_ID, assignment)).rejects.toMatchObject({
+    code: "execution_endpoint_required",
+    retryable: false,
+  });
+  expect(broker.refreshServices).not.toHaveBeenCalled();
+});

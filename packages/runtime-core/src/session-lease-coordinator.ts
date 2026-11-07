@@ -24,15 +24,7 @@ export type SessionLeaseCoordinatorOptions = {
   clock?: () => Date;
   idGenerator?: () => string;
   leaseDurationMs?: number;
-  heartbeatConnectionId?: string;
-  connectionGuard?: SupervisorConnectionGuard;
   renewalDatabase?: Kysely<Database>;
-};
-
-export type SupervisorConnectionGuard = {
-  controlPlaneInstanceId: string;
-  transportId: string;
-  heartbeatTimeoutMs: number;
 };
 
 export type SupervisorHeartbeatIdentity = {
@@ -80,13 +72,6 @@ function safeInteger(value: string | number | bigint, name: string): number {
   return parsed;
 }
 
-function requireUuid(value: string, name: string): string {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
-    throw new TypeError(`${name} must be a UUID`);
-  }
-  return value;
-}
-
 type CurrentAssignmentRequest = Pick<
   TurnExecutionRequest,
   "tenantId" | "projectId" | "workspaceId" | "sessionId" | "runId" | "turnId"
@@ -100,7 +85,6 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
   readonly #idGenerator: () => string;
   readonly #leaseDurationMs: number;
   readonly #heartbeatConnectionId: string;
-  readonly #connectionGuard: SupervisorConnectionGuard | undefined;
 
   constructor(options: SessionLeaseCoordinatorOptions) {
     this.#database = options.database;
@@ -112,27 +96,9 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
       options.leaseDurationMs ?? DEFAULT_LEASE_DURATION_MS,
       "leaseDurationMs",
     );
-    this.#heartbeatConnectionId = requireUuid(
-      options.heartbeatConnectionId ?? globalThis.crypto.randomUUID(),
-      "heartbeatConnectionId",
-    );
-    this.#connectionGuard =
-      options.connectionGuard === undefined
-        ? undefined
-        : {
-            controlPlaneInstanceId: requireUuid(
-              options.connectionGuard.controlPlaneInstanceId,
-              "connectionGuard.controlPlaneInstanceId",
-            ),
-            transportId: requireUuid(
-              options.connectionGuard.transportId,
-              "connectionGuard.transportId",
-            ),
-            heartbeatTimeoutMs: positiveInteger(
-              options.connectionGuard.heartbeatTimeoutMs,
-              "connectionGuard.heartbeatTimeoutMs",
-            ),
-          };
+    // This correlation identity belongs to the direct Worker renewer, never to
+    // a registration socket. Transport reconnect cannot renew or revoke leases.
+    this.#heartbeatConnectionId = globalThis.crypto.randomUUID();
   }
 
   get heartbeatIntervalMs(): number {
@@ -193,11 +159,6 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
             "Worker heartbeat identity is stale",
             false,
           );
-        const connection = await this.#currentRegisteredConnection(
-          tx,
-          { supervisorId: worker.supervisor_id, bootId: worker.boot_id },
-          false,
-        );
         // One update per physical Session. Task progress/timeouts are not owner liveness.
         const families = heartbeat.payload.families;
         const locked = families.length
@@ -216,25 +177,6 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
               .skipLocked()
               .execute()
           : [];
-        if (connection) {
-          const renewed = await tx
-            .updateTable("supervisor_connections")
-            .set({
-              accepting_assignments: heartbeat.payload.acceptingAssignments,
-              last_heartbeat_at: sql<Date>`clock_timestamp()`,
-              expires_at: sql<Date>`clock_timestamp() + ${this.#connectionGuard!.heartbeatTimeoutMs} * interval '1 millisecond'`,
-            })
-            .where("connection_id", "=", this.#heartbeatConnectionId)
-            .where("state", "=", "active")
-            .where("expires_at", ">", sql<Date>`clock_timestamp()`)
-            .executeTakeFirst();
-          if (renewed.numUpdatedRows !== 1n)
-            throw new SessionLeaseCoordinatorError(
-              "stale_connection",
-              "Worker connection expired during renewal",
-              false,
-            );
-        }
         const rows =
           families.length === 0
             ? []
@@ -366,12 +308,6 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
     if (!worker || worker.state !== "ready")
       throw new SessionLeaseCoordinatorError("sandbox_unavailable", "Worker is unavailable", true);
     mark("lease_worker_lock");
-    await this.#currentRegisteredConnection(
-      tx,
-      { supervisorId: worker.supervisor_id, bootId: worker.boot_id },
-      true,
-    );
-    mark("lease_connection");
     let lease = await tx
       .selectFrom("session_leases")
       .selectAll()
@@ -570,53 +506,5 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
       );
     }
     return grant;
-  }
-
-  async #currentRegisteredConnection(
-    transaction: Transaction<Database>,
-    identity: { supervisorId: string; bootId: string },
-    requireAcceptingAssignments: boolean,
-  ): Promise<{ acceptingAssignments: boolean } | undefined> {
-    if (this.#connectionGuard === undefined) return undefined;
-    const connection = await transaction
-      .selectFrom("supervisor_connections")
-      .select([
-        "worker_id",
-        "supervisor_id",
-        "boot_id",
-        "control_plane_instance_id",
-        "transport_id",
-        "state",
-        "accepting_assignments",
-        "expires_at",
-      ])
-      .where("connection_id", "=", this.#heartbeatConnectionId)
-      .forUpdate()
-      .executeTakeFirst();
-    const now = await databaseTime(transaction);
-    if (
-      connection === undefined ||
-      connection.worker_id !== this.#workerId ||
-      connection.supervisor_id !== identity.supervisorId ||
-      connection.boot_id !== identity.bootId ||
-      connection.control_plane_instance_id !== this.#connectionGuard.controlPlaneInstanceId ||
-      connection.transport_id !== this.#connectionGuard.transportId ||
-      connection.state !== "active" ||
-      new Date(connection.expires_at).valueOf() <= now.valueOf()
-    ) {
-      throw new SessionLeaseCoordinatorError(
-        "stale_connection",
-        "Supervisor connection is stale",
-        false,
-      );
-    }
-    if (requireAcceptingAssignments && !connection.accepting_assignments) {
-      throw new SessionLeaseCoordinatorError(
-        "connection_not_accepting",
-        "Supervisor connection is not accepting assignments",
-        true,
-      );
-    }
-    return { acceptingAssignments: connection.accepting_assignments };
   }
 }

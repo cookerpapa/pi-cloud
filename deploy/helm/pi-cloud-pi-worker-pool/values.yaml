@@ -40,7 +40,7 @@ image:
   pullPolicy: IfNotPresent
 
 services:
-  controlPlaneUrl: http://control-plane.pi-cloud-system.svc.cluster.local:3000
+  controlPlaneUrl: http://session-runtime.pi-cloud-system.svc.cluster.local:3000
   sandboxControlUrls:
     - http://sandbox-control.pi-cloud-system.svc.cluster.local:4300
   providerProxyUrl: http://provider-egress-relay.pi-cloud-system.svc.cluster.local:3129

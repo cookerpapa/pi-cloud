@@ -4,10 +4,10 @@ import { fileURLToPath } from "node:url";
 
 const [scope] = process.argv.slice(2);
 assert(
-  ["provider", "catalog", "web", "control-plane"].includes(scope),
-  "Use provider, catalog, web or control-plane; protocol changes require full checks",
+  ["provider", "catalog", "web", "session-runtime"].includes(scope),
+  "Use provider, catalog, web or session-runtime; protocol changes require full checks",
 );
-if (scope === "control-plane") {
+if (scope === "session-runtime") {
   const options = { cwd: fileURLToPath(new URL("..", import.meta.url)), stdio: "inherit" };
   execFileSync("npm", ["run", "typecheck", "--workspace", "@pi-cloud/control-plane"], options);
   execFileSync(
@@ -32,7 +32,8 @@ if (scope === "control-plane") {
       "packages/supervisor-host/test/worker-tool-runtime.test.ts",
       "packages/sandbox-supervisor/test/trusted-remote-tools.test.ts",
       "scripts/lib/component-release.test.mjs",
-      "scripts/lib/control-plane-release.test.mjs",
+      "scripts/lib/session-runtime-release.test.mjs",
+      "scripts/lib/owned-runtime-outage.test.mjs",
       "scripts/lib/release-impact.test.mjs",
       "scripts/lib/release-image-evidence.test.mjs",
       "--maxWorkers=1",

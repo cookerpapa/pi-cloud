@@ -1,3 +1,4 @@
+import { insertHistoricalProject } from "./fixtures/historical-project.ts";
 import { Migrator } from "kysely/migration";
 import { migrationProvider } from "../src/migrations/index.ts";
 import { historicalNative } from "./fixtures/historical-native.ts";
@@ -7,13 +8,12 @@ import { sql, type Kysely } from "kysely";
 import { beforeAll, beforeEach, afterEach, afterAll, describe, expect, it } from "vitest";
 import { createDatabase, runMigrations, type Database } from "../src/index.ts";
 import { createPrivateTenant } from "../../control-plane/src/tenant-administration.ts";
-import { ControlPlaneStore } from "../../control-plane/src/control-plane-store.ts";
 
 const endpoint = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 describe.skipIf(!endpoint)("dormant accounting retirement", () => {
   let admin: Kysely<Database>, db: Kysely<Database>, name: string;
   let tenant: Awaited<ReturnType<typeof createPrivateTenant>>;
-  let project: Awaited<ReturnType<ControlPlaneStore["createProject"]>>;
+  let project: Awaited<ReturnType<typeof insertHistoricalProject>>;
   let session: Awaited<ReturnType<typeof insertHistoricalSession>>;
   let accepted: Awaited<ReturnType<typeof insertHistoricalPrompt>>;
   beforeAll(() => {
@@ -37,8 +37,10 @@ describe.skipIf(!endpoint)("dormant accounting retirement", () => {
       slug: "retirement",
       ownerDisplayName: "Retirement fixture",
     });
-    const store = new ControlPlaneStore({ database: db, ...tenant });
-    project = await store.createProject({ name: "preserve", source: { kind: "empty" } });
+    project = await insertHistoricalProject(db, {
+      tenantId: tenant.tenantId,
+      name: "preserve",
+    });
     session = await insertHistoricalSession(db, { ...tenant, ...project });
     const entry = {
       id: randomUUID(),

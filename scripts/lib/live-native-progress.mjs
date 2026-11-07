@@ -24,27 +24,27 @@ async function crashBoth(database, tenantId, runId, until) {
     0,
     "Other tenants have unfinished work; refusing Control Plane fault",
   );
-  const pod = podFor("control-plane");
+  const pod = podFor("session-runtime");
   const state = () =>
     JSON.parse(kubectl(["get", "pod", pod, "-o", "json"])).status.containerStatuses.find(
-      (container) => container.name === "control-plane",
+      (container) => container.name === "session-runtime",
     );
   const before = state();
   assert(before, "Expected the maintained Control Plane container");
-  const paused = signalService("control-plane", "SIGSTOP");
+  const paused = signalService("session-runtime", "SIGSTOP");
   let worker;
   try {
     // Prevent closure materialization before both processes have lost their memory.
     worker = await crashOwnedWorker(database, tenantId, runId);
     try {
-      signalService("control-plane", "SIGKILL", paused);
+      signalService("session-runtime", "SIGKILL", paused);
     } catch {
       /* Kubelet evidence below decides. */
     }
   } finally {
     // A failed injection must not leave the serving process suspended.
     try {
-      signalService("control-plane", "SIGCONT", paused);
+      signalService("session-runtime", "SIGCONT", paused);
     } catch {
       /* A killed PID is already absent. */
     }
@@ -64,7 +64,7 @@ async function crashBoth(database, tenantId, runId, until) {
     "Control Plane crash evidence",
     90000,
   );
-  const address = serviceAddress("control-plane");
+  const address = serviceAddress("session-runtime");
   await until(async () => {
     try {
       return (

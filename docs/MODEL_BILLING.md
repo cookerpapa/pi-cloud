@@ -161,3 +161,21 @@ The compaction driver uses an owned tenant and native in-memory history with a
 small fixture window. Its real provider receipts distinguish maintenance from
 subsequent generation; it does not alter production model limits or claim a
 large-context benchmark.
+
+## Receipt completion and maintenance
+
+HTTP response completion does not necessarily end a provider's usage publisher.
+The source adapter retains the existing request admission until the shared
+executor stream and any supported post-stream usage publisher have both settled.
+Client cancellation still returns immediately; the observer drains the existing
+producer without retrying model work. Process loss follows the existing
+interrupted-admission recovery, preserving uncertainty rather than inventing usage.
+The optional SDK capture lifetime port and the pinned post-EOF publisher contract
+are checked during provider upgrades.
+
+The private `/internal/picloud/metering/delivery` endpoint reports only bounded
+source delivery state and requires the receipt credential. Disposable acceptance
+accounts are purged only after physical cleanup and verified source delivery;
+ordinary account/history operations do not delete financial records. Compute
+collection and Workspace closure have their own delivery evidence. These checks
+never authorize VM destruction or replace a Session execution lease.
