@@ -38,6 +38,7 @@ const PRODUCTION_IMAGE_NAMES = [
 const CUBE_PLATFORM_IMAGES = [
   "cube-api",
   "cube-master",
+  "cube-templatecenter",
   "cubelet",
   "cube-api-authorizer",
   "cube-egress-gateway",

@@ -23,9 +23,10 @@ it("selects a live Cubelet container during a DaemonSet replacement", () => {
 it("selects all native images as one release without replacing retained configuration", () => {
   expect(cubeNativeImageArguments(undefined)).toEqual([]);
   const selected = cubeNativeImageArguments("review-v7");
-  for (const component of ["api", "master", "cubelet"])
+  for (const component of ["api", "master", "templateCenter", "cubelet"])
     expect(selected).toContain(`images.${component}.tag=review-v7`);
   expect(selected).toContain("images.master.repository=pi-cloud/cube-master");
+  expect(selected).toContain("images.templateCenter.repository=pi-cloud/cube-templatecenter");
   expect(selected).toContain("images.cubelet.repository=pi-cloud/cubelet");
   expect(() => cubeNativeImageArguments("v7,other=bad")).toThrow("Invalid");
 });

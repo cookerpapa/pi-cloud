@@ -38,6 +38,11 @@ See the [six-slice roadmap](ROADMAP.md#independent-runtime-and-resource-accounti
 Issues #5 and #10 require an explicit evaluation conclusion. Real money collection
 and invented production tariffs remain out of scope.
 
+Native v0.7.3 closure additionally includes patched TemplateCenter, separate
+upstream dependency digest evidence, complete private chart preflight before
+drain, preserved filesystem/Pod-network topology and a refreshed operator CLI.
+These source changes await the consolidated gates and matched live acceptance.
+
 ## Repository license — published
 
 - [x] Add the owner's selected MIT license, README link and first-party package

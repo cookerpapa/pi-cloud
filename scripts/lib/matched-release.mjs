@@ -50,8 +50,8 @@ export async function verifyMatchedRelease({ directory, root, capture, currentGu
   assert.equal(evidence.imageVersion, candidate.version);
   assert.equal(
     evidence.images.length,
-    13,
-    "Matched release requires seven apps, three native images, Cube authorizer/egress and one guest",
+    14,
+    "Matched release requires seven apps, four native images, Cube authorizer/egress and one guest",
   );
   assert.equal(evidence.scope, "all", "Release evidence scope differs from publication");
   const checksums = (await readFile(resolve(directory, "evidence/SHA256SUMS"), "utf8"))
@@ -99,13 +99,22 @@ export async function verifyMatchedRelease({ directory, root, capture, currentGu
     Object.keys(catalog).sort().join(","),
     "controlPlane,metering,provider,relay,sessionRuntime,sshGateway,volumeGateway,web,worker",
   );
-  for (const reference of [
+  const requiredReferences = new Set([
     ...Object.values(catalog),
-    ...["cube-api", "cube-master", "cubelet", "cube-api-authorizer", "cube-egress-gateway"].map(
-      (name) => `pi-cloud/${name}:${candidate.version}`,
-    ),
+    ...[
+      "cube-api",
+      "cube-master",
+      "cube-templatecenter",
+      "cubelet",
+      "cube-api-authorizer",
+      "cube-egress-gateway",
+    ].map((name) => `pi-cloud/${name}:${candidate.version}`),
     `localhost:5000/pi-cloud/cubesandbox-tool:${candidate.guestIdentity}`,
-  ])
+  ]);
+  // Official chart auxiliaries have their own pinned inventory. They cannot
+  // fill a missing custom artifact or compensate for an aliased application.
+  assert.equal(requiredReferences.size, 14, "Matched release requires 14 unique custom artifacts");
+  for (const reference of requiredReferences)
     assert(references.has(reference), "Unscanned image in release catalog");
   const guest = evidence.images.find(
     (image) =>

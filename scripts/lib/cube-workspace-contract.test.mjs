@@ -50,14 +50,14 @@ function fixture(names) {
 }
 test("accepts a single Workspace byte authority and detects chart-restored default mounts", () => {
   const master = fixture(["cube-master"]),
-    node = fixture(["cubelet", "network-agent"]);
+    node = fixture(["cubelet"]);
   assert.doesNotThrow(() => assertCubeWorkspaceContract(master, node, root));
   node.spec.template.spec.volumes[0].hostPath.path = "/data/cube-shared";
   assert.throws(() => assertCubeWorkspaceContract(master, node, root), /Workspace mount drifted/);
 });
 test("detects a removed Cubelet config mount even when the Workspace host path is intact", () => {
   const master = fixture(["cube-master"]),
-    node = fixture(["cubelet", "network-agent"]);
+    node = fixture(["cubelet"]);
   node.spec.template.spec.containers[0].volumeMounts.pop();
   assert.throws(
     () => assertCubeWorkspaceContract(master, node, root),
@@ -95,7 +95,7 @@ test("requires matching native Cubelet patches and completion protocol sources",
 
 test("refuses a missing executable even when the same ConfigMap still provides the config", () => {
   const master = fixture(["cube-master"]),
-    node = fixture(["cubelet", "network-agent"]);
+    node = fixture(["cubelet"]);
   const container = node.spec.template.spec.containers[0];
   container.volumeMounts = container.volumeMounts.filter(
     (m) => m.subPath !== "cube-volume-picloud-posix",

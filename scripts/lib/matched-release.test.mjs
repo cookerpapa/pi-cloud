@@ -59,9 +59,14 @@ it("checks scanned image identity before any mutation and rejects catalog substi
     catalog.metering = catalog.controlPlane;
     const references = [
       ...new Set(Object.values(catalog)),
-      ...["cube-api", "cube-master", "cubelet", "cube-api-authorizer", "cube-egress-gateway"].map(
-        (name) => `pi-cloud/${name}:${version}`,
-      ),
+      ...[
+        "cube-api",
+        "cube-master",
+        "cube-templatecenter",
+        "cubelet",
+        "cube-api-authorizer",
+        "cube-egress-gateway",
+      ].map((name) => `pi-cloud/${name}:${version}`),
       `localhost:5000/pi-cloud/cubesandbox-tool:${guestIdentity}`,
     ];
     await mkdir(join(root, "evidence"));
@@ -89,17 +94,20 @@ it("checks scanned image identity before any mutation and rejects catalog substi
       })),
     };
     await writeFile(join(root, "evidence/report.json"), "{}");
-    await writeFile(join(root, "evidence/manifest.json"), JSON.stringify(manifest));
-    const checksums = [];
-    for (const file of ["report.json", "manifest.json"])
-      checksums.push(
-        createHash("sha256")
-          .update(await readFile(join(root, "evidence", file)))
-          .digest("hex") +
-          "  " +
-          file,
-      );
-    await writeFile(join(root, "evidence/SHA256SUMS"), checksums.join("\n"));
+    const writeEvidence = async () => {
+      await writeFile(join(root, "evidence/manifest.json"), JSON.stringify(manifest));
+      const checksums = [];
+      for (const file of ["report.json", "manifest.json"])
+        checksums.push(
+          createHash("sha256")
+            .update(await readFile(join(root, "evidence", file)))
+            .digest("hex") +
+            "  " +
+            file,
+        );
+      await writeFile(join(root, "evidence/SHA256SUMS"), checksums.join("\n"));
+    };
+    await writeEvidence();
     const calls = [];
     let replaced = false;
     const capture = async (cmd, args) => {
@@ -112,6 +120,40 @@ it("checks scanned image identity before any mutation and rejects catalog substi
     expect((await verifyMatchedRelease({ directory: root, root, capture })).revision).toBe(
       revision,
     );
+    expect(references).toHaveLength(14);
+    const templateIndex = manifest.images.findIndex(
+      (image) => image.reference === `pi-cloud/cube-templatecenter:${version}`,
+    );
+    const template = manifest.images[templateIndex];
+    manifest.images.splice(templateIndex, 1);
+    await writeEvidence();
+    await expect(verifyMatchedRelease({ directory: root, root, capture })).rejects.toThrow(
+      "four native images",
+    );
+    manifest.images.splice(templateIndex, 0, {
+      ...template,
+      reference: "registry.example/official/cube-templatecenter:0.7.3",
+    });
+    await writeEvidence();
+    await expect(verifyMatchedRelease({ directory: root, root, capture })).rejects.toThrow(
+      "Unscanned image",
+    );
+    manifest.images[templateIndex] = template;
+    await writeEvidence();
+    const webIndex = manifest.images.findIndex((image) => image.reference === catalog.web);
+    const web = manifest.images[webIndex];
+    manifest.images[webIndex] = {
+      ...web,
+      reference: "registry.example/official/chart-helper:0.7.3",
+    };
+    await writeFile(join(root, "images.json"), JSON.stringify({ ...catalog, web: catalog.worker }));
+    await writeEvidence();
+    await expect(verifyMatchedRelease({ directory: root, root, capture })).rejects.toThrow(
+      "14 unique custom artifacts",
+    );
+    manifest.images[webIndex] = web;
+    await writeFile(join(root, "images.json"), JSON.stringify(catalog));
+    await writeEvidence();
     expect(
       (
         await verifyMatchedRelease({
@@ -174,17 +216,7 @@ it("checks scanned image identity before any mutation and rejects catalog substi
       }),
     );
     manifest.images[0].policyVulnerabilities.HIGH.fixable = 1;
-    await writeFile(join(root, "evidence/manifest.json"), JSON.stringify(manifest));
-    const updatedChecksums = [];
-    for (const file of ["report.json", "manifest.json"])
-      updatedChecksums.push(
-        createHash("sha256")
-          .update(await readFile(join(root, "evidence", file)))
-          .digest("hex") +
-          "  " +
-          file,
-      );
-    await writeFile(join(root, "evidence/SHA256SUMS"), updatedChecksums.join("\n"));
+    await writeEvidence();
     await expect(verifyMatchedRelease({ directory: root, root, capture })).rejects.toThrow(
       "security gate failed",
     );

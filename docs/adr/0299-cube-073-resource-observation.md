@@ -85,3 +85,35 @@ compilation and node-routed cleanup tests, shared protocol compilation, and the
 Rust observation regression. The four patches reproduce all 91 modified files
 from a clean pinned upstream export. This is source evidence, not a deployed
 upgrade or a passed full artifact/live acceptance.
+
+## Complete native release closure
+
+The v0.7.3 chart introduces mandatory CubeTemplateCenter. It imports the patched
+CubeMaster library, builds rootfs artifacts and owns artifact data deletion after
+Master's reference/node cleanup. Build it from the same patched export and fixed
+Go/Ubuntu/APT inputs as Master; the matched custom-artifact set is fourteen.
+The same chart requires CubeOps for Cubelet node registration. Enable that
+upstream internal component while keeping its WebUI disabled and its optional
+component warehouse unconfigured. It adds no PiCloud execution or storage
+authority and requires no new object store.
+Official Cube bootstrap/runtime dependencies remain separately inventoried by
+version, immutable registry digest and local image identity. The fourteen custom
+image scans do not stand in for that upstream dependency inventory.
+
+Reconciliation starts from the new pinned chart defaults and preserves explicit
+installed values, then applies the maintained native policy. Never carry forward
+old chart defaults with `--reuse-values`. Keep the current Pod network, existing
+Master artifact volume and persistent Workspace host root. Disable newly defaulted
+MinIO and unused S3lvol; TemplateCenter uses the shared filesystem backend and is
+colocated with Master. The removed network-agent container is not retained as a
+compatibility path; Cubelet remains the host Workspace consumer.
+
+Render the full pinned chart, including its new keys, against the explicit
+installed values and private post-render inputs during preparation and verify it
+again before draining any writer/VM. Save manifests only inside the private
+candidate. Pin each upstream image to its resolved digest in the post-rendered
+manifest and import those verified identities before native cutover. Refresh the
+operator CLI from the matching pinned CLI image after its Pod becomes Ready; do
+not relabel an old binary by merely updating cluster metadata. Retain ordinary
+writer drain, confirmed physical absence and both original Workspace/machine
+intents throughout the matched update.

@@ -18,7 +18,7 @@
     },
     {
       "file": "0004-release-dependencies.patch",
-      "sha256": "455557f45348d6d1ffd7eaa0b29a679c45b1cb0a18c4f83e9e0969717bfc8c87"
+      "sha256": "93bc74d7578d20dc0c78cf0ed7ce498f6cc5acdc61c3f189a22ec23af99ef917"
     },
     {
       "file": "0005-resource-usage-receipts.patch",

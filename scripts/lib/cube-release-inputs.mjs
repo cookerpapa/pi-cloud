@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, readFile, writeFile, stat, rm } from "node:fs/promises";
@@ -11,6 +12,7 @@ export async function prepareCubeRelease({
   cubeRepository,
   runtimeDirectory,
   validation,
+  renderOverrides = {},
 }) {
   const manifest = JSON.parse(
     await readFile(resolve(repositoryRoot, "deploy/cubesandbox/runtime-build.json"), "utf8"),
@@ -58,12 +60,16 @@ export async function prepareCubeRelease({
         "utf8",
       ),
       completionFiles,
-      ...(validation ? { validation } : {}),
     };
+    const inputIdentity = createHash("sha256").update(JSON.stringify(input)).digest("hex");
+    Object.assign(input, renderOverrides, ...(validation ? [{ validation }] : []));
     const inputPath = join(directory, "render-inputs.json");
     await writeFile(inputPath, JSON.stringify(input), { mode: 0o600 });
     return {
       chart: join(directory, "deploy/kubernetes/chart"),
+      inputIdentity,
+      sharedRoot,
+      sharedRootIdentity: input.sharedRootIdentity,
       rendererArgs: [
         "--post-renderer",
         resolve(repositoryRoot, "scripts/render-cube-release.mjs"),

@@ -1,6 +1,16 @@
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import {
+  cubeReleaseValues,
+  pinCubeReleaseValues,
+  cubeResources,
+  cubeCredentialData,
+  assertCubeReleaseManifest,
+} from "./lib/cube-release-policy.mjs";
+import { refreshCubeMasterCli } from "./lib/cube-upgrade-plan.mjs";
+import { ensureMeteringSecret } from "./lib/metering-secret.mjs";
 import { prepareCubeRelease, cubeAdoptionFlags } from "./lib/cube-release-inputs.mjs";
 import { execFile, spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   chmod,
   chown,
@@ -32,7 +42,6 @@ const runtimeDirectory = resolve(
 );
 const credentialPath = resolve(runtimeDirectory, "secrets/cubesandbox-api-key");
 const secretValuesPath = resolve(runtimeDirectory, "cubesandbox/secret-values.yaml");
-const cubeMasterCliPath = resolve(runtimeDirectory, "cubesandbox/cubemastercli");
 const authorizerImageRepository = "pi-cloud/cube-api-authorizer";
 const cubeEgressGatewayImageRepository = "pi-cloud/cube-egress-gateway";
 const cubeEgressConfigTokenPath = resolve(runtimeDirectory, "secrets/cube-egress-config-token");
@@ -891,7 +900,9 @@ await run(process.execPath, ["scripts/build-cubesandbox-runtime.mjs"], {
 await stagePinnedK3sImages("pi-cloud-cube-platform-local.tar", [
   authorizerImage,
   cubeEgressGatewayImage,
-  ...["cube-api", "cube-master", "cubelet"].map((name) => `pi-cloud/${name}:${piCloudRevision}`),
+  ...["cube-api", "cube-master", "cube-templatecenter", "cubelet"].map(
+    (name) => `pi-cloud/${name}:${piCloudRevision}`,
+  ),
 ]);
 // `kubectl apply` owns the namespace declaratively without printing any
 // credential. Generate the Secret JSON in memory and stream it to apply.
@@ -959,13 +970,143 @@ await runKubectl([
 await waitForRunningPod("app.kubernetes.io/name=pi-cloud-cube-egress-gateway", 180_000);
 
 await preparePosixVolumeRoot();
-const cubeRelease = await prepareCubeRelease({
+await ensureMeteringSecret(runtimeDirectory);
+let cubeRelease = await prepareCubeRelease({
   repositoryRoot,
   cubeRepository,
   runtimeDirectory,
   validation: { binary: kubectlCommand, prefix: kubectlPrefix, kubeconfig },
 });
+let installedNativeManifest;
+const nativeDirectory = await mkdtemp(resolve(runtimeDirectory, "cubesandbox/.initial-native-"));
 try {
+  const merge = (left, right) => {
+    const result = structuredClone(left);
+    for (const [key, value] of Object.entries(right))
+      result[key] =
+        value &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        result[key] &&
+        typeof result[key] === "object" &&
+        !Array.isArray(result[key])
+          ? merge(result[key], value)
+          : value;
+    return result;
+  };
+  const build = JSON.parse(
+    await readFile(resolve(repositoryRoot, "deploy/cubesandbox/runtime-build.json"), "utf8"),
+  );
+  const explicit = merge(
+    merge(
+      parseYaml(await readFile(join(cubeRelease.chart, "values-single-node.yaml"), "utf8")),
+      parseYaml(
+        await readFile(
+          resolve(repositoryRoot, "deploy/cubesandbox/values-pi-cloud-single-node.yaml"),
+          "utf8",
+        ),
+      ),
+    ),
+    parseYaml(await readFile(secretValuesPath, "utf8")),
+  );
+  let nativeValues = cubeReleaseValues(explicit, build.upstreamVersion, piCloudRevision);
+  const existingSecret = JSON.parse(
+    (await captureKubectl([
+      "-n",
+      "cube-system",
+      "get",
+      "secret",
+      "cube-secret",
+      "--ignore-not-found",
+      "-o",
+      "json",
+    ])) || "null",
+  );
+  nativeValues.lifecycleManager ??= {};
+  nativeValues.lifecycleManager.adminToken ||= existingSecret?.data?.["cube-admin-token"]
+    ? Buffer.from(existingSecret.data["cube-admin-token"], "base64").toString()
+    : randomBytes(32).toString("base64url");
+  const nativeValuesPath = join(nativeDirectory, "values.yaml"),
+    manifestPath = join(nativeDirectory, "manifest.yaml"),
+    evidencePath = join(nativeDirectory, "upstream-images.json");
+  await writeFile(
+    nativeValuesPath,
+    stringifyYaml(nativeValues, { version: "1.1", directives: false }),
+    { mode: 0o600 },
+  );
+  const renderInitial = async () => {
+    try {
+      return await capture(
+        "helm",
+        [
+          "template",
+          "cube",
+          cubeRelease.chart,
+          "--namespace",
+          "cube-system",
+          "--kubeconfig",
+          kubeconfig,
+          "--dry-run=server",
+          "--values",
+          nativeValuesPath,
+          ...cubeRelease.rendererArgs,
+        ],
+        180000,
+      );
+    } catch {
+      throw new Error("Private initial native chart preflight failed");
+    }
+  };
+  const unpinned = await renderInitial();
+  assertCubeReleaseManifest(cubeResources(unpinned), {
+    sharedRoot: resolve(runtimeDirectory, "state/cube-shared"),
+    tag: piCloudRevision,
+  });
+  await writeFile(manifestPath, unpinned, { mode: 0o600 });
+  await run(process.execPath, [
+    "scripts/prefetch-cubesandbox-images.mjs",
+    "--manifest",
+    manifestPath,
+    "--evidence",
+    evidencePath,
+    "--prepare-only",
+  ]);
+  const dependencyEvidence = JSON.parse(await readFile(evidencePath, "utf8"));
+  nativeValues = pinCubeReleaseValues(
+    nativeValues,
+    parseYaml(await readFile(join(cubeRelease.chart, "values.yaml"), "utf8")),
+    dependencyEvidence,
+  );
+  await writeFile(
+    nativeValuesPath,
+    stringifyYaml(nativeValues, { version: "1.1", directives: false }),
+    { mode: 0o600 },
+  );
+  const credentialAdditions = cubeCredentialData(cubeResources(unpinned));
+  const upstreamImagePins = Object.fromEntries(
+    dependencyEvidence.images.map((image) => [image.reference, image.pinnedReference]),
+  );
+  await cubeRelease.close();
+  cubeRelease = await prepareCubeRelease({
+    repositoryRoot,
+    cubeRepository,
+    runtimeDirectory,
+    validation: { binary: kubectlCommand, prefix: kubectlPrefix, kubeconfig },
+    renderOverrides: { credentialAdditions, upstreamImagePins },
+  });
+  installedNativeManifest = await renderInitial();
+  await run(process.execPath, [
+    "scripts/prefetch-cubesandbox-images.mjs",
+    "--manifest",
+    manifestPath,
+    "--evidence",
+    evidencePath,
+  ]);
+  await writeFile(
+    resolve(runtimeDirectory, "cubesandbox/upstream-images.json"),
+    JSON.stringify(dependencyEvidence, null, 2) + "\n",
+    { mode: 0o600 },
+  );
   const objects = JSON.parse(
     await captureKubectl([
       "-n",
@@ -986,24 +1127,9 @@ try {
     cubeRelease.chart,
     "--namespace",
     "cube-system",
+    "--reset-then-reuse-values",
     "--values",
-    join(cubeRelease.chart, "values-single-node.yaml"),
-    "--values",
-    resolve(repositoryRoot, "deploy/cubesandbox/values-pi-cloud-single-node.yaml"),
-    "--values",
-    secretValuesPath,
-    "--set",
-    "images.api.repository=pi-cloud/cube-api",
-    "--set",
-    `images.api.tag=${piCloudRevision}`,
-    "--set",
-    "images.master.repository=pi-cloud/cube-master",
-    "--set",
-    `images.master.tag=${piCloudRevision}`,
-    "--set",
-    "images.cubelet.repository=pi-cloud/cubelet",
-    "--set",
-    `images.cubelet.tag=${piCloudRevision}`,
+    nativeValuesPath,
     ...cubeRelease.rendererArgs,
     ...adoption,
     "--wait",
@@ -1012,6 +1138,7 @@ try {
   ]);
 } finally {
   await cubeRelease.close();
+  await rm(nativeDirectory, { recursive: true, force: true });
 }
 await ensureCubeletLoopbackCapacity();
 if (nodeNetwork.changed) {
@@ -1063,44 +1190,8 @@ await writeFile(evidencePath, `${JSON.stringify(cluster, null, 2)}\n`, { mode: 0
 const credentialOwner = await stat(credentialPath);
 await chown(evidencePath, credentialOwner.uid, credentialOwner.gid);
 await chmod(evidencePath, 0o600);
-const cliPod = await captureKubectl([
-  "-n",
-  "cube-system",
-  "get",
-  "pods",
-  "-l",
-  "app.kubernetes.io/component=cubemastercli",
-  "-o",
-  "jsonpath={.items[0].metadata.name}",
-]);
-if (!/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/.test(cliPod)) {
-  throw new Error("CubeMaster CLI Pod identity is invalid");
-}
-const cliTemporaryDirectory = await mkdtemp(
-  resolve(runtimeDirectory, "cubesandbox/.cubemastercli-"),
+await refreshCubeMasterCli(
+  { repositoryRoot, runtimeDirectory, kubeconfig },
+  installedNativeManifest,
 );
-const cliTemporaryPath = join(cliTemporaryDirectory, "cubemastercli");
-try {
-  await runKubectl([
-    "-n",
-    "cube-system",
-    "cp",
-    `${cliPod}:/usr/local/bin/cubemastercli`,
-    cliTemporaryPath,
-  ]);
-  const cliMetadata = await lstat(cliTemporaryPath);
-  if (
-    !cliMetadata.isFile() ||
-    cliMetadata.isSymbolicLink() ||
-    cliMetadata.size < 1_000_000 ||
-    cliMetadata.size > 128 * 1024 * 1024
-  ) {
-    throw new Error("Pinned CubeMaster CLI is not a bounded regular executable");
-  }
-  await chown(cliTemporaryPath, credentialOwner.uid, credentialOwner.gid);
-  await chmod(cliTemporaryPath, 0o700);
-  await rename(cliTemporaryPath, cubeMasterCliPath);
-} finally {
-  await rm(cliTemporaryDirectory, { recursive: true, force: true });
-}
 process.stdout.write(`${JSON.stringify({ installed: true, evidencePath, ...cluster })}\n`);

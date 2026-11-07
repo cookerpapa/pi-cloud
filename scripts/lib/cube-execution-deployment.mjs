@@ -7,9 +7,14 @@ export function cubeNativeImageArguments(tag) {
   if (tag === undefined) return [];
   if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(tag))
     throw new Error("Invalid native Cube image tag");
-  return ["api", "master", "cubelet"].flatMap((component) => [
+  return [
+    ["api", "cube-api"],
+    ["master", "cube-master"],
+    ["cubelet", "cubelet"],
+    ["templateCenter", "cube-templatecenter"],
+  ].flatMap(([component, image]) => [
     "--set",
-    `images.${component}.repository=pi-cloud/${component === "cubelet" ? "cubelet" : `cube-${component}`}`,
+    `images.${component}.repository=pi-cloud/${image}`,
     "--set",
     `images.${component}.tag=${tag}`,
   ]);

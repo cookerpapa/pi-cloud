@@ -1,3 +1,4 @@
+<!-- Current native publication closure is ADR-0299; dated acceptance below retains its original versions. -->
 # CubeSandbox primary execution plane
 
 This directory is the operator path for PiCloud's ordinary Tool runtime.
@@ -127,7 +128,11 @@ sudo --preserve-env=PATH \
 ```
 
 The standard installer records the private CubeMaster and registry endpoints,
-and stores the pinned `cubemastercli` beside the cluster evidence. A subsequent
+and stores the verified digest-pinned v0.7.3 `cubemastercli` beside the cluster evidence.
+The matched upgrade refreshes this binary too. CubeTemplateCenter is built with
+the same patched source and security pins as Master; it shares the retained
+artifact filesystem, with MinIO/S3lvol disabled. Official helper/runtime images
+are separately inventoried and digest-pinned from the complete rendered chart. A subsequent
 non-root production deploy therefore uses Cube's official CLI without receiving
 Kubernetes administrator credentials. An operator can still override all three
 values explicitly:

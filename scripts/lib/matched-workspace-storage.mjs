@@ -8,7 +8,7 @@ import { workspaceVolumeId } from "../../packages/sandbox-control/src/workspace-
 
 const maintenanceLabel = "pi-cloud.io/workspace-storage-maintenance";
 const recordedPath = (directory) => resolve(directory, "native-storage-maintenance.json");
-function rootCommand(command, args, root) {
+export function rootCommand(command, args, root) {
   const options = { cwd: root, stdio: "inherit" };
   if (process.geteuid() === 0) return execFileSync(command, args, options);
   if (process.env.WSL_DISTRO_NAME)

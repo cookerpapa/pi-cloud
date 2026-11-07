@@ -12,7 +12,6 @@ export function assertCubeWorkspaceContract(master, node, expectedHostRoot) {
   };
   requiredMount(master, "cube-master", "/data/cube-shared", expectedHostRoot);
   requiredMount(node, "cubelet", "/data/cube-shared", expectedHostRoot);
-  requiredMount(node, "network-agent", "/data/cube-shared", expectedHostRoot);
   for (const [resource, containerName, mountPath] of [
     [
       master,

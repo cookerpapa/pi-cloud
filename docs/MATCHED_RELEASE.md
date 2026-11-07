@@ -1,5 +1,17 @@
 # Matched release procedure
 
+Cube v0.7.3 preparation first dry-renders the complete pinned upstream chart
+against the installed explicit values. The private candidate retains the full
+manifest and stable credential additions; no Secret content is printed. New
+defaults are adopted with `--reset-then-reuse-values`, while Pod networking, the
+Master artifact volume and Workspace backing root are preserved. MinIO and
+S3lvol stay disabled; patched TemplateCenter uses the shared filesystem backend.
+Official bootstrap/runtime/CLI images have separate immutable digest and local
+image-ID evidence; they are not counted as part of the fourteen custom scans.
+All chart/image/input checks repeat before writer or VM drain. Native cutover
+refreshes the operator CLI from the matching Ready digest-pinned CLI Pod before
+updating cluster source metadata or registering templates.
+
 ADRs 0298–0304 introduce Cube v0.7.3, the independent receipt receiver, kernel
 Workspace capacity and Session/runtime separation. Use the full matched path:
 the old schema-209 model-metering retention exception does not cover this change.
@@ -37,7 +49,7 @@ workflow/image/Skill/preview contracts; a source diff is not live acceptance.
 The schema-209→210 retention exception belonged to the earlier model-metering
 cutover and is removed. Scoped provider/catalog/Web/ordinary-tool publication
 uses the maintained [component release](COMPONENT_RELEASE.md) boundaries.
-Ownership, protocol and storage changes require all 13 matched artifacts.
+Ownership, protocol and storage changes require all 14 matched custom artifacts plus the separately recorded, digest-pinned upstream chart dependencies.
 
 ADR-0295 requires schema 209 and matched API/Web/Guest/Volume Gateway publication.
 It adds Workspace-only file grants and upstream tus transport, source-owned
@@ -226,7 +238,7 @@ node --import tsx scripts/run-matched-release.mjs preflight /private/releases/ca
 ```
 
 Preparation builds the guest without registering/pruning templates, builds the
-three pinned native Cube images, its authorization callback/egress gateway and seven application images, then runs the
+four pinned native Cube images (including TemplateCenter), its authorization callback/egress gateway and seven application images, then runs the
 existing provenance/SBOM/vulnerability gate. The application catalog goes into
 the candidate directory; `runtime/k3s/images.json`, Helm and serving Pods remain
 unchanged. The candidate manifest is written only after successful scans.

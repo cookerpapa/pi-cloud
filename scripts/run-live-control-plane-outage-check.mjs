@@ -370,6 +370,7 @@ try {
     report.stoppedAfterMs = Date.now() - stopAt;
     report.unavailableAt = new Date().toISOString();
     const absentAt = Date.now();
+    const receiptBoundary = (await sql`select clock_timestamp() as at`.execute(db)).rows[0].at;
     phase("Management absent; require execution, projection, API and SSE to continue");
     assert(
       (await fetch(sessionUrl, { signal: AbortSignal.timeout(2000) })).ok,
@@ -500,6 +501,41 @@ try {
       ).toString(),
       "FIRST_STARTED\nFIRST_DONE\nSECOND_DONE\n",
     );
+    report.receiptsWithoutManagement = await until(
+      async () => {
+        assert.equal(await ready(), false, "Management returned before receipt verification");
+        const model = await db
+          .selectFrom("model_metering_events as e")
+          .innerJoin("model_invocations as i", "i.id", "e.invocation_id")
+          .select(["e.id", "e.invocation_id", "e.received_at", "i.requested_at"])
+          .where("i.tenant_id", "=", tenant.tenantId)
+          .where("i.requested_at", ">=", receiptBoundary)
+          .where("e.received_at", ">=", receiptBoundary)
+          .where("e.kind", "=", "usage")
+          .execute();
+        const resources = await db
+          .selectFrom("resource_metering_events")
+          .select(["id", "resource_kind", "from_at", "to_at", "received_at"])
+          .where("tenant_id", "=", tenant.tenantId)
+          .where("quality", "=", "confirmed")
+          .where("to_at", ">", receiptBoundary)
+          .where("received_at", ">=", receiptBoundary)
+          .execute();
+        const kinds = new Set(resources.map((row) => row.resource_kind));
+        return model.length && kinds.has("compute") && kinds.has("workspace")
+          ? { boundary: receiptBoundary, model, resources }
+          : false;
+      },
+      "New model and resource receipts committed while management is absent",
+      45_000,
+    );
+    assert.equal(
+      JSON.parse(kubectl(["get", "pods", "-l", fault.selector, "-o", "json"])).items.length,
+      0,
+      "Management Pods returned before receipt verification completed",
+    );
+    await api.modelBilling(new URLSearchParams());
+    await api.resourceBilling(new URLSearchParams());
     report.actualUnavailableMs = Date.now() - absentAt;
   } finally {
     report.restoreRequestedAt = new Date().toISOString();

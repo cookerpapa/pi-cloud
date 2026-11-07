@@ -380,7 +380,9 @@ export async function deployPlatform({ images, deploymentEnvironment }) {
     { stdio: "inherit" },
   );
   run(helm, ["dependency", "build", chart("platform")]);
-  run(process.execPath, ["scripts/configure-cube-completion.mjs"], { env: deploymentEnvironment });
+  // Native configuration was already applied by the complete fresh installer
+  // or matched operator. The mount/source checks above gate this application
+  // rollout; never perform a second unplanned Cube upgrade from here.
   helmRun([
     "upgrade",
     "--install",

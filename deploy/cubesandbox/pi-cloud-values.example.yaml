@@ -1,7 +1,7 @@
 # Merge this file after CubeSandbox's runtime-values.yaml. This file contains
 # no credential value; create the referenced Secret out of band.
 #
-# The PiCloud Provider is intentionally pinned to CubeSandbox v0.6.0. Review
+# The PiCloud Provider is intentionally pinned to CubeSandbox v0.7.3. Review
 # upstream release notes and rerun the live gate before changing chart images.
 
 controlPlane:

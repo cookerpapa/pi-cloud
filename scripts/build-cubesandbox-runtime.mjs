@@ -70,11 +70,24 @@ try {
   for (const [name, file, context] of [
     ["cube-api", "CubeAPI/Dockerfile", "CubeAPI"],
     ["cube-master", "CubeMaster/docker/Dockerfile", "."],
+    ["cube-templatecenter", "CubeTemplateCenter/docker/Dockerfile", "."],
     ["cubelet-base", "Cubelet/Dockerfile", "."],
   ]) {
     const original = join(temporary, file),
       dockerfile = join(temporary, `${name}.Dockerfile`);
     let text = await readFile(original, "utf8");
+    if (name === "cube-templatecenter") {
+      // Template Center imports the patched Master from this same export. Its
+      // upstream runtime stage needs the same reviewed Ubuntu package fixes.
+      const packages =
+        "RUN apt-get update \\\n    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \\\n";
+      if (!text.includes(packages))
+        throw new Error("Template Center runtime package installation changed");
+      text = text.replace(
+        packages,
+        "RUN apt-get -o Acquire::Retries=0 update \\\n    && apt-get -o Acquire::Retries=0 install -y --no-install-recommends apt=2.8.4ubuntu0.1 libapt-pkg6.0t64=2.8.4ubuntu0.1 \\\n    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \\\n        libbrotli1=1.1.0-2ubuntu0.1 \\\n",
+      );
+    }
     if (ubuntuMirror) text = text.replaceAll("https://mirrors.aliyun.com/ubuntu", ubuntuMirror);
     const pins = new Map([
       ["golang:1.25-bookworm", manifest.buildImages.go],
@@ -89,7 +102,10 @@ try {
     );
     text = text.replace(
       "ARG CUBE_BUILD_TIME=unknown",
-      "ARG CUBE_BUILD_TIME=unknown\nARG PI_CLOUD_GOPROXY=https://goproxy.cn|https://proxy.golang.org|direct\nENV GOPROXY=${PI_CLOUD_GOPROXY}",
+      "ARG CUBE_BUILD_TIME=unknown\nARG PI_CLOUD_GOPROXY=https://goproxy.cn|https://proxy.golang.org|direct\nENV GOPROXY=${PI_CLOUD_GOPROXY}" +
+        (["cube-master", "cube-templatecenter"].includes(name)
+          ? "\nENV GOTOOLCHAIN=local\nENV GOFLAGS=-mod=readonly"
+          : ""),
     );
     text = text.replace(
       "cargo build --release -p cubecow",

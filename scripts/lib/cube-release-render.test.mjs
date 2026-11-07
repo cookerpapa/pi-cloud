@@ -53,7 +53,6 @@ function fixture() {
         image: "pi-cloud/cubelet:pinned",
         env: [{ name: "CUBE_NODE_IP", valueFrom: { fieldRef: { fieldPath: "status.hostIP" } } }],
       },
-      { name: "network-agent", image: "upstream:fixed" },
     ]),
     workload("Deployment", "cube-master", [
       { name: "cube-master", image: "pi-cloud/cube-master:pinned" },
@@ -88,8 +87,7 @@ it("renders a complete, idempotent Cube release before deployment while retainin
   const node = find(resources, "DaemonSet", "cube-node"),
     master = find(resources, "Deployment", "cube-master");
   assertCubeWorkspaceContract(master, node, input.sharedRoot);
-  const cubelet = node.spec.template.spec.containers[0],
-    network = node.spec.template.spec.containers[1];
+  const cubelet = node.spec.template.spec.containers[0];
   expect(cubelet.image).toBe("pi-cloud/cubelet:pinned");
   expect(master.spec.template.spec.containers[0].image).toBe("pi-cloud/cube-master:pinned");
   expect(cubelet.env.find((e) => e.name === "CUBE_NODE_IP").valueFrom.fieldRef.fieldPath).toBe(
@@ -98,7 +96,6 @@ it("renders a complete, idempotent Cube release before deployment while retainin
   expect(cubelet.env.find((e) => e.name === "PI_CLOUD_KAFKA_BROKERS").value).toBe(
     "kafka-1:9092,kafka-2:9092,kafka-3:9092",
   );
-  expect(network.volumeMounts.some((v) => v.name === "pi-cloud-completion")).toBe(false);
   expect(
     cubelet.volumeMounts
       .filter((v) => v.name === "picloud-posix-volume-plugin")

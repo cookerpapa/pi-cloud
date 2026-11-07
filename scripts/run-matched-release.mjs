@@ -20,6 +20,7 @@ import {
   kubectl,
   workload,
   serviceAddress,
+  kubeconfig,
 } from "./lib/production-kubernetes.mjs";
 import { createDatabase, runMigrations } from "../packages/database/src/index.ts";
 import { OfficialCubeSandboxRuntimeClient } from "../packages/sandbox-control/src/cubesandbox-runtime-client.ts";
@@ -31,12 +32,18 @@ import {
   retireComputeForMaintenance,
 } from "./lib/compute-retirement.mjs";
 import {
+  rootCommand,
   nativeStorageMaintenancePending,
   resumeColdMatchedStorage,
   stopNativeStorageConsumers,
   prepareMatchedWorkspaceStorage,
 } from "./lib/matched-workspace-storage.mjs";
 import { sql } from "kysely";
+import {
+  prepareCubeUpgradePlan,
+  finalizeCubeUpgradePlan,
+  verifyCubeUpgradePlan,
+} from "./lib/cube-upgrade-plan.mjs";
 
 configureBuildProxy();
 
@@ -69,8 +76,25 @@ const environment = (tag) => ({
   PI_CLOUD_BUILD_TAG: tag,
   PI_CLOUD_CUBE_IMAGE_VERSION: tag,
   PI_CLOUD_IMAGE_CATALOG: resolve(directory, "images.json"),
+  PI_CLOUD_CUBE_RELEASE_DIRECTORY: directory,
 });
 const phase = (name) => console.log(JSON.stringify({ phase: name }));
+const cubeOptions = (tag) => ({
+  repositoryRoot: root,
+  runtimeDirectory,
+  directory,
+  tag,
+  kubeconfig,
+  cubeRepository: resolve(
+    process.env.PI_CLOUD_CUBESANDBOX_REPOSITORY ?? resolve(root, "../CubeSandbox"),
+  ),
+});
+const upstreamArgs = [
+  "--manifest",
+  resolve(directory, "cube-chart.rendered.yaml"),
+  "--evidence",
+  resolve(directory, "cube-upstream-images.json"),
+];
 if (action === "prepare") {
   assert(
     /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(version ?? ""),
@@ -90,6 +114,12 @@ if (action === "prepare") {
   assert(disk.bavail / disk.blocks >= 0.15, "Reclaim build cache before preparing the release");
   await mkdir(directory, { mode: 0o700 });
   const env = environment(version);
+  await ensureMeteringSecret(runtimeDirectory);
+  phase("render complete pinned Cube chart against preserved installed overrides");
+  await prepareCubeUpgradePlan(cubeOptions(version));
+  phase("capture immutable upstream Cube dependency images");
+  run("scripts/prefetch-cubesandbox-images.mjs", [...upstreamArgs, "--prepare-only"], env);
+  const cubeReleasePlanDigest = await finalizeCubeUpgradePlan(cubeOptions(version));
   phase("check declared Docker build inputs");
   run("scripts/check-docker-build-context.mjs");
   {
@@ -140,6 +170,7 @@ if (action === "prepare") {
         revision: capture("git", ["rev-parse", "HEAD"]),
         guestIdentity: await guestBuildIdentity(root),
         completionIdentity: await completionBuildIdentity(root),
+        cubeReleasePlanDigest,
       },
       null,
       2,
@@ -151,10 +182,24 @@ const currentGuestTemplate = JSON.parse(
   await readFile(resolve(runtimeDirectory, "cubesandbox/template.json"), "utf8"),
 );
 const candidate = await verifyMatchedRelease({ directory, root, capture, currentGuestTemplate });
-phase("matched artifact preflight passed");
-if (action !== "apply") process.exit(0);
-
+assert.match(
+  candidate.cubeReleasePlanDigest ?? "",
+  /^[0-9a-f]{64}$/,
+  "Prepare the complete native chart/image release plan",
+);
 const storageWasStopped = await nativeStorageMaintenancePending(directory);
+if (action !== "apply") {
+  assert(
+    !storageWasStopped,
+    "Resume the recorded cold storage operation with apply before native preflight",
+  );
+  await verifyCubeUpgradePlan({
+    ...cubeOptions(candidate.version),
+    expectedDigest: candidate.cubeReleasePlanDigest,
+  });
+  phase("matched artifact and full native chart preflight passed");
+  process.exit(0);
+}
 if (storageWasStopped) {
   // Cube Pods are deliberately absent during a resumed storage handoff. Check
   // the local maintained host now and recheck the restored Cube Pod below.
@@ -165,7 +210,17 @@ if (storageWasStopped) {
   phase("Cube KVM device preflight passed");
 }
 await resumeColdMatchedStorage({ directory, runtimeDirectory, root, kubectl });
+await verifyCubeUpgradePlan({
+  ...cubeOptions(candidate.version),
+  expectedDigest: candidate.cubeReleasePlanDigest,
+});
+phase("matched artifact and full native chart preflight passed before writer/VM drain");
 const env = environment(candidate.version);
+rootCommand(
+  process.execPath,
+  [resolve(root, "scripts/prefetch-cubesandbox-images.mjs"), ...upstreamArgs],
+  root,
+);
 // Import content before touching live workloads. Existing tags/catalog stay intact.
 run("scripts/production-kubernetes.mjs", ["import-images"], env);
 {
@@ -177,9 +232,14 @@ run("scripts/production-kubernetes.mjs", ["import-images"], env);
         "save",
         "--output",
         archive,
-        ...["cube-api", "cube-master", "cubelet", "cube-api-authorizer", "cube-egress-gateway"].map(
-          (name) => `pi-cloud/${name}:${candidate.version}`,
-        ),
+        ...[
+          "cube-api",
+          "cube-master",
+          "cube-templatecenter",
+          "cubelet",
+          "cube-api-authorizer",
+          "cube-egress-gateway",
+        ].map((name) => `pi-cloud/${name}:${candidate.version}`),
       ],
       { stdio: "inherit" },
     );
@@ -453,6 +513,9 @@ try {
       sessionRuntimeReplacement: 1,
     },
   });
+  deployment.nativeDependencies = JSON.parse(
+    await readFile(resolve(directory, "cube-upstream-images.json"), "utf8"),
+  );
   const deploymentPath = resolve(runtimeDirectory, "k3s/deployment.json");
   await writeFile(deploymentPath + ".next", JSON.stringify(deployment, null, 2) + "\n", {
     mode: 0o600,

@@ -1,161 +1,208 @@
+import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { mkdir, rename, rm } from "node:fs/promises";
+import { constants } from "node:fs";
+import { open, mkdir, mkdtemp, link, unlink, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
+import {
+  cubeUpstreamImageClosure,
+  createCubeUpstreamEvidence,
+  verifyCubeUpstreamEvidence,
+  assertUpstreamArchiveClosure,
+  assertImportedUpstreamImages,
+} from "./lib/cube-upstream-images.mjs";
 
-const containerdAddress = "/run/k3s/containerd/containerd.sock";
-const k3sImageDirectory = "/var/lib/rancher/k3s/agent/images";
-const archivePath = `${k3sImageDirectory}/pi-cloud-cubesandbox-v0.6.0.tar`;
-const partialArchivePath = `${archivePath}.partial`;
-const images = [
-  "busybox:1.36",
-  // K3s v1.36.2 local-path PVC helper, needed before Worker boot claims can bind.
-  "rancher/mirrored-library-busybox:1.37.0",
-  "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/alpine-k8s:1.28.15",
-  "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-api:v0.6.0",
-  "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-egress-net:v0.6.0",
-  "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-egress:v0.6.0",
-  "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-guest:v0.6.0",
-  "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-kernel:v0.6.0",
-  "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-lifecycle-manager:v0.6.0",
-  "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-master:v0.6.0",
-  "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-node-init:v0.6.0",
-  "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-proxy:v0.6.0",
-  "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-shim:v0.6.0",
-  "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-wait-node-prep:v0.6.0",
-  "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cubelet:v0.6.0",
-  "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cubemastercli:v0.6.0",
-  "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/network-agent:v0.6.0",
-  "curlimages/curl:8.10.1",
-  "mysql:8.0",
-  "redis:7-alpine",
-  "registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373",
-];
-
-function canonicalImageReference(image) {
-  const [name, digest] = image.split("@", 2);
-  const segments = name.split("/");
-  const qualified =
-    segments.length === 1
-      ? `docker.io/library/${name}`
-      : !segments[0].includes(".") && !segments[0].includes(":") && segments[0] !== "localhost"
-        ? `docker.io/${name}`
-        : name;
-  return digest === undefined ? qualified : `${qualified}@${digest}`;
+const root = fileURLToPath(new URL("..", import.meta.url));
+const arguments_ = process.argv.slice(2);
+let manifestPath,
+  evidencePath,
+  prepareOnly = false;
+for (let i = 0; i < arguments_.length; i++) {
+  const option = arguments_[i];
+  if (option === "--prepare-only" && !prepareOnly) prepareOnly = true;
+  else if (option === "--manifest" && !manifestPath && arguments_[i + 1])
+    manifestPath = resolve(arguments_[++i]);
+  else if (option === "--evidence" && !evidencePath && arguments_[i + 1])
+    evidencePath = resolve(arguments_[++i]);
+  else
+    throw new Error(
+      "Usage: node scripts/prefetch-cubesandbox-images.mjs --manifest PATH --evidence PATH [--prepare-only]",
+    );
 }
+assert(
+  manifestPath && evidencePath && manifestPath !== evidencePath,
+  "Provide separate candidate manifest and upstream image evidence paths",
+);
 
-if (process.getuid?.() !== 0) {
-  throw new Error("CubeSandbox image prefetch must run as root to access K3s containerd");
+async function boundedFile(path, maximum, privateFile = false) {
+  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const stat = await handle.stat();
+    assert(
+      stat.isFile() && stat.size <= maximum && (!privateFile || (stat.mode & 0o077) === 0),
+      "Candidate evidence must be a bounded private regular file",
+    );
+    return await handle.readFile("utf8");
+  } finally {
+    await handle.close();
+  }
 }
-
 function capture(command, args, timeout = 30_000) {
-  return new Promise((resolvePromise, rejectPromise) => {
+  return new Promise((resolvePromise, reject) =>
     execFile(
       command,
       args,
-      { encoding: "utf8", maxBuffer: 16 * 1_024 * 1_024, timeout },
-      (error, stdout, stderr) => {
-        if (error) rejectPromise(new Error(`${command} failed: ${stderr.trim() || error.message}`));
-        else resolvePromise(stdout.trim());
-      },
-    );
-  });
+      { cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 ** 2, timeout },
+      (error, stdout) =>
+        error
+          ? reject(new Error(`${command} image operation failed (${error.code ?? "unavailable"})`))
+          : resolvePromise(stdout),
+    ),
+  );
 }
-
 function run(command, args) {
-  return new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(command, args, { stdio: "inherit" });
-    child.once("error", rejectPromise);
-    child.once("exit", (code, signal) => {
-      if (code === 0) resolvePromise();
-      else {
-        rejectPromise(
-          new Error(`${command} failed (code=${String(code)}, signal=${String(signal)})`),
-        );
-      }
-    });
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(command, args, { cwd: root, stdio: "inherit" });
+    child.once("error", () => reject(new Error(`${command} image operation could not start`)));
+    child.once("exit", (code) =>
+      code === 0
+        ? resolvePromise()
+        : reject(new Error(`${command} image operation failed (${code})`)),
+    );
   });
 }
-
-async function pullWithRetry(image) {
-  let lastError;
-  for (let attempt = 1; attempt <= 5; attempt += 1) {
+async function inspect(reference) {
+  const values = JSON.parse(await capture("docker", ["image", "inspect", reference]));
+  assert(Array.isArray(values) && values.length === 1, "Expected one prepared local image");
+  return values[0];
+}
+async function inspectAll(references) {
+  const result = new Map();
+  for (const reference of references) result.set(reference, await inspect(reference));
+  return result;
+}
+async function publishEvidence(value) {
+  await mkdir(dirname(evidencePath), { recursive: true, mode: 0o700 });
+  const temporary = `${evidencePath}.${randomUUID()}.partial`;
+  const handle = await open(
+    temporary,
+    constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+    0o600,
+  );
+  try {
+    await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`);
+    await handle.sync();
+    await handle.close();
+    await link(temporary, evidencePath);
+    const directory = await open(dirname(evidencePath), constants.O_RDONLY | constants.O_DIRECTORY);
     try {
-      await run("docker", ["pull", image]);
-      return;
-    } catch (error) {
-      lastError = error;
-      if (attempt < 5) {
-        process.stdout.write(`pull retry ${String(attempt)}/5 for ${image}\n`);
-        await new Promise((resolvePromise) => setTimeout(resolvePromise, attempt * 1_000));
-      }
+      await directory.sync();
+    } finally {
+      await directory.close();
     }
+  } finally {
+    await handle.close().catch(() => undefined);
+    await unlink(temporary).catch(() => undefined);
   }
-  throw lastError;
 }
 
-async function dockerImageExists(image) {
-  return capture("docker", ["image", "inspect", image])
-    .then(() => true)
-    .catch(() => false);
+const manifest = await boundedFile(manifestPath, 20 * 1024 ** 2, true);
+const runtimeBuild = JSON.parse(
+  await boundedFile(resolve(root, "deploy/cubesandbox/runtime-build.json"), 1024 ** 2),
+);
+const closure = cubeUpstreamImageClosure(manifest, runtimeBuild);
+let evidence;
+try {
+  evidence = JSON.parse(await boundedFile(evidencePath, 1024 ** 2, true));
+} catch (error) {
+  if (error.code !== "ENOENT")
+    throw new Error("Existing upstream image evidence is invalid or unavailable");
 }
 
-async function waitForImportedImages(timeoutMs = 10 * 60_000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const imported = new Set(
-      (
-        await capture("ctr", [
-          "--address",
-          containerdAddress,
-          "--namespace",
-          "k8s.io",
-          "images",
-          "list",
-          "--quiet",
-        ])
-      ).split(/\r?\n/),
+if (prepareOnly) {
+  if (!evidence) {
+    for (const reference of closure.references) {
+      process.stdout.write(`Preparing upstream image ${reference}\n`);
+      await run("docker", ["pull", "--platform", "linux/amd64", reference]);
+    }
+    evidence = createCubeUpstreamEvidence(
+      manifest,
+      runtimeBuild,
+      await inspectAll(closure.references),
     );
-    if (images.every((image) => imported.has(canonicalImageReference(image)))) return;
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, 1_000));
+    await publishEvidence(evidence);
+  } else {
+    verifyCubeUpstreamEvidence(
+      manifest,
+      runtimeBuild,
+      evidence,
+      await inspectAll(closure.references),
+    );
   }
-  throw new Error("K3s did not finish importing the pinned CubeSandbox image archive");
-}
-
-const existing = new Set(
-  (
-    await capture("ctr", [
+  process.stdout.write(
+    `${JSON.stringify({ prepared: true, images: evidence.images.length, manifestSha256: evidence.manifestSha256 })}\n`,
+  );
+} else {
+  assert(evidence, "Prepare upstream image evidence before importing the candidate");
+  const images = verifyCubeUpstreamEvidence(
+    manifest,
+    runtimeBuild,
+    evidence,
+    await inspectAll(closure.references),
+  );
+  assert(
+    process.getuid?.() === 0,
+    "K3s image import requires root; preparation only needs Docker access",
+  );
+  for (const image of images)
+    assert.equal(
+      (await inspect(image.pinnedReference)).Id,
+      image.imageId,
+      "Prepared digest now resolves to different image bytes",
+    );
+  const scratch = await mkdtemp(join(tmpdir(), "pi-cloud-upstream-images-"));
+  try {
+    const archive = join(scratch, "images.tar");
+    const ctr = [
       "--address",
-      containerdAddress,
+      "/run/k3s/containerd/containerd.sock",
       "--namespace",
       "k8s.io",
       "images",
-      "list",
-      "--quiet",
-    ])
-  ).split(/\r?\n/),
-);
-const results = [];
-try {
-  for (const [index, image] of images.entries()) {
-    const local = await dockerImageExists(image);
-    if (!local) {
-      process.stdout.write(`[${index + 1}/${images.length}] pulling ${image}\n`);
-      await pullWithRetry(image);
-    } else {
-      process.stdout.write(`[${index + 1}/${images.length}] available locally ${image}\n`);
+    ];
+    for (const image of new Map(images.map((item) => [item.pinnedReference, item])).values()) {
+      await run("docker", ["image", "save", "--output", archive, image.pinnedReference]);
+      // A legacy Docker export can rewrite registry manifests. Refuse that
+      // archive; never manufacture a registry-digest alias for different bytes.
+      assertUpstreamArchiveClosure(await capture("tar", ["-tf", archive], 60_000), [image]);
+      // Digest-only Docker exports have no repository tag. Give ctr the original
+      // repository so it does not invent an import-date name for the same digest.
+      await capture(
+        "ctr",
+        [
+          ...ctr,
+          "import",
+          "--base-name",
+          image.pinnedReference.slice(0, image.pinnedReference.lastIndexOf("@")),
+          "--digests",
+          "--label",
+          "io.cri-containerd.pinned=pinned",
+          "--platform",
+          "linux/amd64",
+          archive,
+        ],
+        10 * 60_000,
+      );
+      assertImportedUpstreamImages(await capture("ctr", [...ctr, "list"]), [image]);
+      await rm(archive);
     }
-    results.push({
-      image,
-      imported: true,
-      reused: existing.has(canonicalImageReference(image)),
-    });
+    assertImportedUpstreamImages(await capture("ctr", [...ctr, "list"]), images);
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
   }
-  await mkdir(k3sImageDirectory, { recursive: true, mode: 0o700 });
-  await rm(partialArchivePath, { force: true });
-  await run("docker", ["image", "save", "--output", partialArchivePath, ...images]);
-  await rename(partialArchivePath, archivePath);
-  await waitForImportedImages();
-} finally {
-  await rm(partialArchivePath, { force: true });
+  process.stdout.write(
+    `${JSON.stringify({ imported: true, images: images.length, manifestSha256: evidence.manifestSha256 })}\n`,
+  );
 }
-
-process.stdout.write(`${JSON.stringify({ images: results, pinnedArchive: archivePath })}\n`);

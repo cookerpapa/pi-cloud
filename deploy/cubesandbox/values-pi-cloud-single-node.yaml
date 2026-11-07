@@ -1,11 +1,25 @@
-# PiCloud local K3s validation profile for CubeSandbox v0.6.0.
+# PiCloud local K3s validation profile for CubeSandbox v0.7.3.
 # Merge after upstream values-single-node.yaml and a private secret-values file.
 # This profile deliberately does not install/boot a PVM host kernel.
 
 persistence:
   storageClassName: local-path
 
+minio:
+  enabled: false
+cubeS3lvol:
+  enabled: false
+
 controlPlane:
+  artifactStore:
+    backend: fs
+    s3Backed: false
+  templateCenter:
+    replicas: 1
+    colocateWithMaster: true
+    env:
+      - name: SSL_CERT_FILE
+        value: /etc/cube/ca/cube-root-ca.crt
   master:
     env:
       # The private template-build registry certificate is signed by the
@@ -26,7 +40,7 @@ webui:
   enabled: false
 
 cubeOps:
-  enabled: false
+  enabled: true
 
 cubeProxy:
   domain: cube.app
@@ -52,6 +66,7 @@ cubeEgress:
     limits: null
 
 cubeNode:
+  hostNetwork: false
   pvmGuestKernel:
     enabled: false
   network:

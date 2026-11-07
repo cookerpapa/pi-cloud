@@ -160,8 +160,7 @@ export function renderCubeRelease(yaml, input) {
     name: "data-cube-shared",
     hostPath: { path: input.sharedRoot, type: "Directory" },
   });
-  for (const name of ["cubelet", "network-agent"])
-    mount(nodePod, name, { name: "data-cube-shared", mountPath: "/data/cube-shared" });
+  mount(nodePod, "cubelet", { name: "data-cube-shared", mountPath: "/data/cube-shared" });
   mount(nodePod, "cubelet", {
     name: pluginVolume.name,
     mountPath: "/opt/cube-image/Cubelet/plugin/cube-volume-picloud-posix",
@@ -208,6 +207,26 @@ export function renderCubeRelease(yaml, input) {
     );
     if (prior < 0) resources.push(resource);
     else resources[prior] = resource;
+  }
+  // Candidate-owned upstream digests and newly introduced native credentials
+  // are frozen before cutover. Existing credentials are separately compared.
+  const pinImages = (value) => {
+    if (!value || typeof value !== "object") return;
+    if (typeof value.image === "string" && input.upstreamImagePins?.[value.image]) {
+      const pinned = input.upstreamImagePins[value.image];
+      if (!/^.+@sha256:[0-9a-f]{64}$/.test(pinned)) throw new Error("Invalid upstream image pin");
+      value.image = pinned;
+    }
+    for (const child of Object.values(value)) pinImages(child);
+  };
+  for (const resource of resources) {
+    pinImages(resource);
+    const added = input.credentialAdditions?.[resource.metadata?.name];
+    if (resource.kind === "Secret" && added) {
+      resource.data = { ...resource.data, ...added };
+      if (resource.stringData)
+        for (const key of Object.keys(added)) delete resource.stringData[key];
+    }
   }
   // Kubernetes' YAML decoder uses YAML 1.1 (off/on and octal literals). JSON
   // documents retain exact scalar types across Helm and that decoder.
