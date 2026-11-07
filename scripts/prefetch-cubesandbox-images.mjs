@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import {
   cubeUpstreamImageClosure,
   createCubeUpstreamEvidence,
+  prepareCubeUpstreamImages,
   verifyCubeUpstreamEvidence,
   assertUpstreamArchiveClosure,
   assertImportedUpstreamImages,
@@ -49,16 +50,26 @@ async function boundedFile(path, maximum, privateFile = false) {
     await handle.close();
   }
 }
-function capture(command, args, timeout = 30_000) {
+function capture(command, args, timeout = 30_000, allowMissingImage = false) {
   return new Promise((resolvePromise, reject) =>
     execFile(
       command,
       args,
       { cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 ** 2, timeout },
-      (error, stdout) =>
-        error
-          ? reject(new Error(`${command} image operation failed (${error.code ?? "unavailable"})`))
-          : resolvePromise(stdout),
+      (error, stdout, stderr) => {
+        if (
+          error?.code === 1 &&
+          allowMissingImage &&
+          command === "docker" &&
+          args[0] === "image" &&
+          args[1] === "inspect" &&
+          stderr.trim() === `Error response from daemon: No such image: ${args[2]}`
+        )
+          return resolvePromise(null);
+        if (error)
+          reject(new Error(`${command} image operation failed (${error.code ?? "unavailable"})`));
+        else resolvePromise(stdout);
+      },
     ),
   );
 }
@@ -73,8 +84,10 @@ function run(command, args) {
     );
   });
 }
-async function inspect(reference) {
-  const values = JSON.parse(await capture("docker", ["image", "inspect", reference]));
+async function inspect(reference, allowMissing = false) {
+  const raw = await capture("docker", ["image", "inspect", reference], 30_000, allowMissing);
+  if (raw === null) return null;
+  const values = JSON.parse(raw);
   assert(Array.isArray(values) && values.length === 1, "Expected one prepared local image");
   return values[0];
 }
@@ -123,15 +136,14 @@ try {
 
 if (prepareOnly) {
   if (!evidence) {
-    for (const reference of closure.references) {
-      process.stdout.write(`Preparing upstream image ${reference}\n`);
-      await run("docker", ["pull", "--platform", "linux/amd64", reference]);
-    }
-    evidence = createCubeUpstreamEvidence(
-      manifest,
-      runtimeBuild,
-      await inspectAll(closure.references),
-    );
+    const inspected = await prepareCubeUpstreamImages(closure.references, {
+      inspect: (reference) => inspect(reference, true),
+      pull: async (reference) => {
+        process.stdout.write(`Preparing missing upstream image ${reference}\n`);
+        await run("docker", ["pull", "--platform", "linux/amd64", reference]);
+      },
+    });
+    evidence = createCubeUpstreamEvidence(manifest, runtimeBuild, inspected);
     await publishEvidence(evidence);
   } else {
     verifyCubeUpstreamEvidence(

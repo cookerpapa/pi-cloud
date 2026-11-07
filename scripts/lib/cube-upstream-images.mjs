@@ -199,6 +199,22 @@ export function createCubeUpstreamEvidence(manifest, runtimeBuild, inspected) {
   };
 }
 
+/** Preparation pins already verified local bytes; only a confirmed cache miss
+ * needs the registry. An inspection failure or invalid local image is fatal. */
+export async function prepareCubeUpstreamImages(references, { inspect, pull }) {
+  const images = new Map();
+  for (const reference of references) {
+    let value = await inspect(reference);
+    if (value === null) {
+      await pull(reference);
+      value = await inspect(reference);
+    }
+    inspectCubeUpstreamImage(reference, value);
+    images.set(reference, value);
+  }
+  return images;
+}
+
 export function verifyCubeUpstreamEvidence(manifest, runtimeBuild, evidence, inspected) {
   const closure = cubeUpstreamImageClosure(manifest, runtimeBuild);
   assert(

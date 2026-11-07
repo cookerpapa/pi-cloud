@@ -49,6 +49,9 @@ The first complete fourteen-image scan found additional fixable HIGH dependencie
 Go x/net, TemplateCenter containerd, Cube API Alpine libraries and the two
 Cube gateways' APT runtime. Their pinned upgrades retain the existing gate;
 artifact and live acceptance remain pending.
+Auxiliary preparation reuses complete local ref/platform/digest evidence and
+pulls only confirmed missing images; daemon errors and incomplete entries remain
+fatal. This avoids unrelated credential-helper calls for already prepared bytes.
 These source changes await the consolidated gates and matched live acceptance.
 
 ## Repository license — published

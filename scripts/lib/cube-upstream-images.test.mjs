@@ -5,6 +5,7 @@ import {
   cubeUpstreamImageClosure,
   inspectCubeUpstreamImage,
   createCubeUpstreamEvidence,
+  prepareCubeUpstreamImages,
   verifyCubeUpstreamEvidence,
   assertUpstreamArchiveClosure,
   assertImportedUpstreamImages,
@@ -246,6 +247,62 @@ it("requires original registry manifest blobs and matching imported digest targe
     "K3s did not confirm",
   );
   expect(() => assertImportedUpstreamImages("", evidence.images)).toThrow("K3s did not confirm");
+});
+
+it("reuses validated local registry identities without pulling floating tags again", async () => {
+  const { inspected } = fixture();
+  const references = [...inspected.keys()];
+  let pulls = 0;
+  const prepared = await prepareCubeUpstreamImages(references, {
+    inspect: async (reference) => inspected.get(reference),
+    pull: async () => {
+      pulls++;
+    },
+  });
+  expect(prepared).toEqual(inspected);
+  expect(pulls).toBe(0);
+});
+
+it("pulls only a confirmed missing image and validates the resulting bytes", async () => {
+  const { inspected } = fixture();
+  const references = [...inspected.keys()],
+    missing = references[0];
+  const cached = new Map(inspected);
+  cached.delete(missing);
+  const pulls = [];
+  const prepared = await prepareCubeUpstreamImages(references, {
+    inspect: async (reference) => cached.get(reference) ?? null,
+    pull: async (reference) => {
+      pulls.push(reference);
+      cached.set(reference, inspected.get(reference));
+    },
+  });
+  expect(pulls).toEqual([missing]);
+  expect(prepared).toEqual(inspected);
+});
+
+it("does not reinterpret inspection failures or incomplete cache entries as misses", async () => {
+  const { inspected } = fixture();
+  const reference = [...inspected.keys()][0];
+  let pulls = 0;
+  const pull = async () => {
+    pulls++;
+  };
+  await expect(
+    prepareCubeUpstreamImages([reference], {
+      inspect: async () => {
+        throw new Error("Docker unavailable");
+      },
+      pull,
+    }),
+  ).rejects.toThrow("Docker unavailable");
+  await expect(
+    prepareCubeUpstreamImages([reference], {
+      inspect: async () => ({ ...inspected.get(reference), RepoDigests: [] }),
+      pull,
+    }),
+  ).rejects.toThrow("immutable registry digest");
+  expect(pulls).toBe(0);
 });
 
 it("suppresses private YAML parse details", () => {
