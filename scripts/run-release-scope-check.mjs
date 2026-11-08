@@ -31,6 +31,7 @@ if (scope === "session-decoder") {
 }
 if (scope === "tool-host") {
   const options = { cwd: fileURLToPath(new URL("..", import.meta.url)), stdio: "inherit" };
+  execFileSync(process.execPath, ["scripts/check-helm-platform.mjs"], options);
   execFileSync("npm", ["run", "typecheck", "--workspace", "@pi-cloud/control-plane"], options);
   execFileSync(
     process.execPath,

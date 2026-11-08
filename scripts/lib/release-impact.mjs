@@ -5,6 +5,7 @@ export const operatorSources = new Set([
   "scripts/lib/source-delivery-observation.mjs",
   "scripts/run-component-release.mjs",
   "scripts/check-helm-self-hosted.mjs",
+  "scripts/check-helm-platform.mjs",
   "scripts/run-matched-release.mjs",
   "scripts/lib/matched-release.mjs",
   "scripts/lib/cube-node-readiness.mjs",

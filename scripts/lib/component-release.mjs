@@ -154,6 +154,8 @@ export function assertScopedSources(scope, files) {
     assert(
       operatorSources.has(file) ||
         (scope === "tool-host" && ordinaryControlToolSource(file)) ||
+        (scope === "tool-host" &&
+          file === "deploy/helm/pi-cloud-platform/templates/network-policy.yaml") ||
         (scope === "session-decoder" && file === sessionDecoderSource) ||
         (scope === "web" &&
           (/^packages\/web-ui\/src\/.*\.(tsx|css)$/.test(file) ||
@@ -293,6 +295,28 @@ export function assertScopedManifests(scope, before, after, desired) {
           env.value = other.value;
       }
       targets++;
+    } else if (
+      scope === "tool-host" &&
+      old.kind === "NetworkPolicy" &&
+      old.metadata.name === "pi-cloud-session-runtime"
+    ) {
+      const labels = old.spec.podSelector.matchLabels;
+      assert.equal(labels["app.kubernetes.io/component"], "session-runtime");
+      const rule = {
+        to: [
+          {
+            podSelector: {
+              matchLabels: {
+                "app.kubernetes.io/instance": labels["app.kubernetes.io/instance"],
+                "app.kubernetes.io/component": "tool-host",
+              },
+            },
+          },
+        ],
+        ports: [{ protocol: "TCP", port: 4310 }],
+      };
+      if (!expected.spec.egress.some((item) => isDeepStrictEqual(item, rule)))
+        expected.spec.egress.unshift(rule);
     } else if (
       ["web", "tool-host", "session-decoder"].includes(scope) &&
       old.kind === "Deployment" &&

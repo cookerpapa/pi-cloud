@@ -76,6 +76,10 @@ spec:
       ports: [{ protocol: TCP, port: 3000 }, { protocol: TCP, port: 3001 }, { protocol: TCP, port: 4300 }, { protocol: TCP, port: 9464 }]
   egress:
     - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: tool-host }
+      ports: [{ protocol: TCP, port: 4310 }]
+    - to:
         - namespaceSelector:
             matchLabels: { kubernetes.io/metadata.name: kube-system }
           podSelector:

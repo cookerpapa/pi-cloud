@@ -46,7 +46,7 @@ import {
   runtimeComponentSnapshot,
   runtimeReplacementTargets,
 } from "./lib/runtime-component-release.mjs";
-import { activateToolHost } from "./lib/tool-host-activation.mjs";
+import { activateToolHost, verifyToolHostRouteInCluster } from "./lib/tool-host-activation.mjs";
 import { serializeRelease } from "./lib/release-lock.mjs";
 
 configureBuildProxy();
@@ -656,7 +656,7 @@ if (candidate.scope === "tool-host") {
   const expectedImage = deployment.spec.template.spec.containers.find(
     (c) => c.name === target.container,
   ).image;
-  await activateToolHost({
+  const activation = await activateToolHost({
     expectedImage,
     token: readFileSync(
       resolve(runtimeDirectory, "secrets/supervisor-management-token"),
@@ -667,6 +667,7 @@ if (candidate.scope === "tool-host") {
         kubectl(["get", "pods", "-l", "app.kubernetes.io/component=tool-host", "-o", "json"]),
       ).items,
   });
+  await verifyToolHostRouteInCluster({ kubectl, releaseId: activation.releaseId });
 }
 if (candidate.scope !== "catalog") {
   const workload = imageReleaseTargets[candidate.scope].workload;

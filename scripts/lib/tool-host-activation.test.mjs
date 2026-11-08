@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { activateToolHost } from "./tool-host-activation.mjs";
+import { activateToolHost, verifyToolHostRouteInCluster } from "./tool-host-activation.mjs";
 
 const pod = (image = "new", uid = "new") => ({
   metadata: { uid },
@@ -62,3 +62,22 @@ it("reconciles a lost activation acknowledgement from the next manifest", async 
   expect(value.generation).toBe(2);
   expect(JSON.parse(request.mock.calls[3][1].body).expectedGeneration).toBe(2);
 });
+
+it.each(["reachable", "blocked", "wrong-release"])(
+  "checks the route from each actual Session runtime (%s)",
+  async (mode) => {
+    const kubectl = vi.fn(async (args) => {
+      if (args[0] === "get")
+        return JSON.stringify({
+          items: [{ metadata: { name: "session-pod" }, status: { phase: "Running" } }],
+        });
+      expect(args.slice(0, 4)).toEqual(["exec", "session-pod", "-c", "session-runtime"]);
+      if (mode === "blocked") throw Error("ECONNREFUSED");
+      return JSON.stringify({ releaseId: mode === "wrong-release" ? "old" : "new", generation: 2 });
+    });
+    const result = verifyToolHostRouteInCluster({ kubectl, releaseId: "new" });
+    if (mode === "reachable")
+      await expect(result).resolves.toEqual({ verified: true, sessionRuntimes: 1 });
+    else await expect(result).rejects.toThrow(mode === "blocked" ? "ECONNREFUSED" : "another Tool");
+  },
+);

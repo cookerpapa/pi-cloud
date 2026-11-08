@@ -122,6 +122,14 @@ loader or general-purpose RPC framework.
 
 ## Acceptance and release
 
+Tool-host publication may also repair the declared Session-runtime → tool-host
+TCP 4310 route. The manifest gate permits only adding that exact same-namespace,
+same-release Pod-selector egress rule to the Session-runtime NetworkPolicy; it
+rejects unrelated policy, Service or workload changes. This installs the already
+selected topology, not a new external trust boundary. Verify authenticated
+manifest access from the Session runtime Pod after activation, not just operator
+access to the tool-host Pod. NetworkPolicy changes remain on full hosted CI.
+
 An implementation repair that accepts already-declared fields of the installed
 Session envelope can use the bounded `session-decoder` publication scope. Its
 only runtime source is `session-log-envelope.ts`; changes to wire meaning,

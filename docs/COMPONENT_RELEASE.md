@@ -17,6 +17,11 @@ The scope accepts implementation/registration changes under
 edit. Protocol, dependency, ownership, lifecycle, schema, startup or public API
 changes still require a matched release.
 
+The one deployment correction allowed here is the already declared Session-runtime
+egress to the same release's tool-host Pods on TCP 4310. Whole-manifest comparison
+allows only that exact rule; no other NetworkPolicy/Service changes qualify.
+Publication checks the authenticated manifest from Session runtime after activation.
+
 ```sh
 npm run release:component -- prepare tool-host /private/releases/tools-1 tools-1
 npm run release:component -- preflight /private/releases/tools-1

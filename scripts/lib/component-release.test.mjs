@@ -707,3 +707,55 @@ it("limits decoder repair to the installed envelope and only the Session runtime
   for (const key of ["controlPlane", "toolHost", "metering"])
     expect(updated.images[key]).toEqual(values.images[key]);
 });
+
+it("repairs only the declared Session runtime to Tool-host egress edge", () => {
+  const workload = sharedHostDeployment("tool-host"),
+    next = sharedHostDeployment("tool-host", "new");
+  const policy = {
+    apiVersion: "networking.k8s.io/v1",
+    kind: "NetworkPolicy",
+    metadata: { name: "pi-cloud-session-runtime" },
+    spec: {
+      podSelector: {
+        matchLabels: {
+          "app.kubernetes.io/instance": "pi-cloud",
+          "app.kubernetes.io/component": "session-runtime",
+        },
+      },
+      policyTypes: ["Ingress", "Egress"],
+      egress: [],
+    },
+  };
+  const rule = {
+    to: [
+      {
+        podSelector: {
+          matchLabels: {
+            "app.kubernetes.io/instance": "pi-cloud",
+            "app.kubernetes.io/component": "tool-host",
+          },
+        },
+      },
+    ],
+    ports: [{ protocol: "TCP", port: 4310 }],
+  };
+  const repaired = structuredClone(policy);
+  repaired.spec.egress.push(rule);
+  assertScopedSources("tool-host", ["deploy/helm/pi-cloud-platform/templates/network-policy.yaml"]);
+  assertScopedManifests("tool-host", yaml(workload, policy), yaml(next, repaired), "new");
+  assertScopedManifests("tool-host", yaml(workload, repaired), yaml(next, repaired), "new");
+  for (const change of [
+    (p) => (p.spec.egress[0].ports[0].port = 5432),
+    (p) => (p.spec.egress[0].to = [{}]),
+    (p) =>
+      (p.spec.egress[0].to[0].podSelector.matchLabels["app.kubernetes.io/component"] =
+        "control-plane"),
+    (p) => (p.spec.ingress = [{}]),
+  ]) {
+    const bad = structuredClone(repaired);
+    change(bad);
+    expect(() =>
+      assertScopedManifests("tool-host", yaml(workload, policy), yaml(next, bad), "new"),
+    ).toThrow("Unexpected resource change");
+  }
+});

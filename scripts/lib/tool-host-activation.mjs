@@ -1,6 +1,50 @@
 import assert from "node:assert/strict";
 import { setTimeout as delay } from "node:timers/promises";
 
+/** Check the actual caller route; Pod readiness and operator access miss egress policy failures. */
+export async function verifyToolHostRouteInCluster({ kubectl, release = "pi-cloud", releaseId }) {
+  const pods = JSON.parse(
+    await kubectl([
+      "get",
+      "pods",
+      "-l",
+      `app.kubernetes.io/instance=${release},app.kubernetes.io/component=session-runtime`,
+      "-o",
+      "json",
+    ]),
+  ).items.filter((p) => !p.metadata.deletionTimestamp && p.status.phase === "Running");
+  assert(pods.length, "No Session runtime can verify the ordinary Tool route");
+  for (const pod of pods) {
+    const code = `import {readFileSync} from 'node:fs';import {Agent,fetch} from 'undici';
+const dispatcher=new Agent();try {
+const token=readFileSync(process.env.PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE,'utf8').trim();
+const r=await fetch('http://tool-host:4310/internal/v1/tools/manifest',{dispatcher,headers:{authorization:'Bearer '+token},signal:AbortSignal.timeout(5000)});
+if(!r.ok)throw Error('Tool route unavailable');const m=await r.json();
+console.log(JSON.stringify({releaseId:m.releaseId,generation:m.selected?.generation,revision:m.catalog?.revision}));
+}finally{await dispatcher.close();}`;
+    const result = JSON.parse(
+      await kubectl([
+        "exec",
+        pod.metadata.name,
+        "-c",
+        "session-runtime",
+        "--",
+        "node",
+        "--input-type=module",
+        "-e",
+        code,
+      ]),
+    );
+    assert.equal(
+      result.releaseId,
+      releaseId,
+      "Session runtime reached another Tool implementation",
+    );
+    assert(Number.isSafeInteger(result.generation) && result.generation > 0);
+  }
+  return { verified: true, sessionRuntimes: pods.length };
+}
+
 /** Activation is an explicit deploy step, not an old executable electing itself.
  * A lost HTTP reply is reconciled against the selected release/generation. */
 export async function activateToolHost({

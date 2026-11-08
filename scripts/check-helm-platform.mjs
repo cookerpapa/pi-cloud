@@ -63,6 +63,19 @@ assert.deepEqual(toolHost.spec.template.spec.containers[0].args, [
   "/app/packages/control-plane/src/tool-host-main.ts",
 ]);
 assert.equal(find("Service", "tool-host").spec.publishNotReadyAddresses, true);
+assert.deepEqual(find("NetworkPolicy", "pi-cloud-session-runtime").spec.egress[0], {
+  to: [
+    {
+      podSelector: {
+        matchLabels: {
+          "app.kubernetes.io/instance": "pi-cloud",
+          "app.kubernetes.io/component": "tool-host",
+        },
+      },
+    },
+  ],
+  ports: [{ protocol: "TCP", port: 4310 }],
+});
 assert.equal(
   controlPlane.spec.template.spec.containers[0].env.some(
     (e) => e.name === "PI_CLOUD_IMAGE_GENERATION_API_KEY_FILE",
