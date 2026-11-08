@@ -11,6 +11,11 @@ for workload readiness. Distributed publication activates from inside the chosen
 Pod, keeping management credentials inside the cluster. Do not use blind atomic
 Helm rollback across the catalog/schema boundary; reconcile the same candidate.
 
+Before registering templates, the operator also waits for CubeOps to report
+healthy, ready nodes at the current Cubelet Pod addresses with post-start
+heartbeats. Kubernetes Pod readiness alone does not establish this. The gate is
+read-only and bounded; it never rewrites health or retries an uncertain create.
+
 Prepared matched artifacts can be verified by a later operator-only commit.
 Only the existing explicit release-operator/test/documentation allowlist may
 differ from the ancestor artifact revision. All original input, checksum, scan

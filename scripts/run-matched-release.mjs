@@ -461,6 +461,8 @@ try {
     });
     run("scripts/configure-cube-completion.mjs", [], env);
     kubectl(["apply", "-f", "deploy/cubesandbox/template-registry.yaml"]);
+    phase("wait for native Cube node registration after Pod rollout");
+    await waitForCubeNodeReadiness({ kubectl });
     run(
       "scripts/register-cubesandbox-tool-template.mjs",
       ["--prepared-image-id", candidate.guestImageId],
@@ -561,3 +563,4 @@ try {
 } finally {
   await database.destroy();
 }
+import { waitForCubeNodeReadiness } from "./lib/cube-node-readiness.mjs";
