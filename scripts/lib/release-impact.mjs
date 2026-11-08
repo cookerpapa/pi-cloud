@@ -17,6 +17,7 @@ export const operatorSources = new Set([
   "scripts/run-live-model-runtime-check.mjs",
   "scripts/run-live-control-plane-outage-check.mjs",
   "scripts/run-live-native-input-check.mjs",
+  "scripts/run-live-user-upload-check.mjs",
   "scripts/run-release-scope-check.mjs",
   "scripts/run-live-component-release-check.mjs",
   "scripts/lib/component-release.mjs",

@@ -70,6 +70,7 @@ it("accepts operator-only replacement repairs without relabeling the prepared ru
       "scripts/lib/tool-host-release.mjs",
       "scripts/lib/tool-host-release.test.mjs",
       "scripts/run-live-tool-host-release-check.mjs",
+      "scripts/run-live-user-upload-check.mjs",
       "scripts/lib/owned-acceptance-cleanup.mjs",
       "scripts/run-live-workspace-transfer-check.mjs",
     ]),
