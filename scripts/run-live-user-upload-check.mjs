@@ -12,6 +12,7 @@ import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { withChromePage } from "./lib/chrome-cdp.mjs";
+import { uploadRelativePath } from "../packages/protocol/src/user-upload.ts";
 
 if (process.env.PI_CLOUD_LIVE_USER_UPLOAD_CHECK !== "1")
   throw new Error(
@@ -108,9 +109,13 @@ async function queuedImageScenario() {
     new Blob([png]),
     "queued.png",
   );
+  const gateId = randomUUID(),
+    gateName = "queue-edit-ready.txt";
+  const gate = `/workspace/${uploadRelativePath(gateId, gateName)}`;
+  const command = `while [ ! -f '${gate}' ]; do sleep 0.1; done; printf WAIT_DONE`;
   active = await api.acceptTurn(
     session.sessionId,
-    "先用 bash 执行 sleep 12，完成后只回复 WAIT_DONE。",
+    `先用 bash 原样执行以下命令，timeout 为 180 秒，完成后只回复 WAIT_DONE。测试器会上传放行文件，不要自行创建它：${JSON.stringify(command)}`,
     newIdempotencyKey("turn"),
     "low",
   );
@@ -149,6 +154,9 @@ async function queuedImageScenario() {
     { action: "steer", revision: queue.revision },
     newIdempotencyKey("turn"),
   );
+  // Hold a real Tool boundary until both edits commit; a fixed sleep can expire
+  // while model transport or input preparation is slow, correctly rejecting the edit.
+  await api.uploadWorkspaceFile(session.sessionId, gateId, new Blob(["ready"]), gateName);
   const result = await completed(running);
   assert(result.text.includes(code));
   assert.deepEqual(
