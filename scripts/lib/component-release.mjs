@@ -3,6 +3,7 @@ import {
   operatorSources,
   modelTests,
   ordinaryControlToolSource,
+  sessionDecoderSource,
   imageReleaseTargets,
   providerSources,
 } from "./release-impact.mjs";
@@ -145,11 +146,15 @@ export function scopedApplyState({ baseline, next, current, helmRevision, before
 
 /** Source classifications are deliberately small; protocol changes use matched release. */
 export function assertScopedSources(scope, files) {
-  assert(["provider", "catalog", "web", "tool-host"].includes(scope), "Unknown release scope");
+  assert(
+    ["provider", "catalog", "web", "tool-host", "session-decoder"].includes(scope),
+    "Unknown release scope",
+  );
   for (const file of files) {
     assert(
       operatorSources.has(file) ||
         (scope === "tool-host" && ordinaryControlToolSource(file)) ||
+        (scope === "session-decoder" && file === sessionDecoderSource) ||
         (scope === "web" &&
           (/^packages\/web-ui\/src\/.*\.(tsx|css)$/.test(file) ||
             [
@@ -289,7 +294,7 @@ export function assertScopedManifests(scope, before, after, desired) {
       }
       targets++;
     } else if (
-      ["web", "tool-host"].includes(scope) &&
+      ["web", "tool-host", "session-decoder"].includes(scope) &&
       old.kind === "Deployment" &&
       old.metadata.name === imageReleaseTargets[scope].workload.split("/")[1]
     ) {
@@ -413,7 +418,7 @@ export function composeScopedDeployment(
     const target = imageReleaseTargets[scope];
     const name = target.imageName;
     const role = target.componentName ?? name;
-    if (scope === "tool-host")
+    if (["tool-host", "session-decoder"].includes(scope))
       for (const shared of Object.keys(sharedHostRoles))
         assert(
           baseline.components[shared],

@@ -41,7 +41,11 @@ import {
 } from "./lib/provider-config-release.mjs";
 import { providerManagementAsset } from "./lib/provider-runtime-config.mjs";
 import { readPrivateRuntimeFile } from "./lib/runtime-file-policy.mjs";
-import { replaceToolHost, toolHostSnapshot } from "./lib/tool-host-release.mjs";
+import {
+  replaceRuntimeComponent,
+  runtimeComponentSnapshot,
+  runtimeReplacementTargets,
+} from "./lib/runtime-component-release.mjs";
 import { activateToolHost } from "./lib/tool-host-activation.mjs";
 import { serializeRelease } from "./lib/release-lock.mjs";
 
@@ -50,7 +54,7 @@ configureBuildProxy();
 const [action, scopeOrPath, candidatePath, input] = process.argv.slice(2);
 if (action === "--help") {
   console.log(
-    "prepare provider|web|tool-host DIRECTORY VERSION | prepare catalog DIRECTORY CATALOG_JSON | preflight DIRECTORY | apply DIRECTORY\nScoped releases preserve unrelated workloads. See docs/COMPONENT_RELEASE.md.",
+    "prepare provider|web|tool-host|session-decoder DIRECTORY VERSION | prepare catalog DIRECTORY CATALOG_JSON | preflight DIRECTORY | apply DIRECTORY\nScoped releases preserve unrelated workloads. See docs/COMPONENT_RELEASE.md.",
   );
   process.exit(0);
 }
@@ -114,7 +118,7 @@ function assertServingCombination(deployment, imageAlternative, catalogAlternati
   );
 }
 function inputs(scope) {
-  if (scope === "tool-host") {
+  if (runtimeReplacementTargets[scope]) {
     const file = "packages/control-plane/Dockerfile";
     return dockerSourceInputs(
       file,
@@ -152,13 +156,13 @@ function inputs(scope) {
 
 if (action === "prepare") {
   const scope = scopeOrPath;
-  assert(["provider", "catalog", "web", "tool-host"].includes(scope));
+  assert(["provider", "catalog", "web", "tool-host", "session-decoder"].includes(scope));
   const baseline = readJson(deploymentPath);
-  if (scope === "tool-host")
+  if (runtimeReplacementTargets[scope])
     assert.equal(
-      baseline.contracts.toolHostReplacement,
+      baseline.contracts[runtimeReplacementTargets[scope].contract],
       1,
-      "Install ADR-0302's matched Session-runtime replacement contract first",
+      "Install the matched runtime replacement contract first",
     );
   assertServingCombination(baseline);
   const changed = capture("git", ["diff", "--name-only", `${baseline.revision}..${revision}`])
@@ -422,11 +426,12 @@ if (candidate.scope === "provider") {
     "Prepared provider management asset changed",
   );
 }
-if (candidate.scope === "tool-host")
+const replacement = runtimeReplacementTargets[candidate.scope];
+if (replacement)
   assert.equal(
-    baseline.contracts.toolHostReplacement,
+    baseline.contracts[replacement.contract],
     1,
-    "The installed release lacks the Tool host replacement contract",
+    "The installed release lacks the runtime replacement contract",
   );
 if (candidate.scope === "catalog") {
   assert.equal(
@@ -507,20 +512,21 @@ const alreadyApplied =
     desired: readFileSync(resolve(directory, "rendered.yaml"), "utf8"),
     live,
   }) === "verify";
-if (candidate.scope === "tool-host" && !alreadyApplied) {
+if (replacement && !alreadyApplied) {
   const deployment = JSON.parse(
-    kubectl(["get", imageReleaseTargets["tool-host"].workload, "-o", "json"]),
+    kubectl(["get", imageReleaseTargets[candidate.scope].workload, "-o", "json"]),
   );
-  const receiptPath = resolve(directory, "tool-host-replacement.json");
+  const receiptPath = resolve(directory, `${replacement.role}-replacement.json`);
   if (deployment.spec.replicas === 0) {
-    assert(existsSync(receiptPath), "Stopped Tool host has no candidate replacement receipt");
+    assert(existsSync(receiptPath), "Stopped runtime has no candidate replacement receipt");
     const receipt = readJson(receiptPath);
-    assert.equal(receipt.role, "tool-host");
+    assert.equal(receipt.role, replacement.role);
     assert.equal(receipt.uid, deployment.metadata.uid);
     assert.equal(receipt.version, candidate.version);
     assert(["stopping", "stopped", "applying"].includes(receipt.phase));
   } else {
-    const snapshot = toolHostSnapshot(
+    const snapshot = runtimeComponentSnapshot(
+      replacement.role,
       deployment,
       JSON.parse(kubectl(["get", "hpa", "-o", "json"])).items,
       JSON.parse(
@@ -528,7 +534,7 @@ if (candidate.scope === "tool-host" && !alreadyApplied) {
           "get",
           "pods",
           "-l",
-          "app.kubernetes.io/component=tool-host,app.kubernetes.io/instance=pi-cloud",
+          `app.kubernetes.io/component=${replacement.role},app.kubernetes.io/instance=pi-cloud`,
           "-o",
           "json",
         ]),
@@ -538,11 +544,14 @@ if (candidate.scope === "tool-host" && !alreadyApplied) {
       resolve(runtimeDirectory, "secrets/supervisor-management-token"),
       "utf8",
     ).trim();
-    const response = await fetch(`http://${snapshot.podIp}:4310/internal/v1/tools/drain`, {
-      headers: { authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(5000),
-    });
-    assert(response.ok, `Tool host replacement contract unavailable (HTTP ${response.status})`);
+    const response = await fetch(
+      `http://${snapshot.podIp}:${replacement.port}${replacement.path}`,
+      {
+        headers: { authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(5000),
+      },
+    );
+    assert(response.ok, `Runtime replacement contract unavailable (HTTP ${response.status})`);
     assert.equal((await response.json()).version, 1);
   }
 }
@@ -593,25 +602,26 @@ const applyHelm = async () => {
     { cwd: root, stdio: "inherit" },
   );
 };
-if (candidate.scope === "tool-host" && !alreadyApplied) {
-  const target = imageReleaseTargets["tool-host"].workload;
-  const receiptPath = resolve(directory, "tool-host-replacement.json");
+if (replacement && !alreadyApplied) {
+  const target = imageReleaseTargets[candidate.scope].workload;
+  const receiptPath = resolve(directory, `${replacement.role}-replacement.json`);
   const token = readFileSync(
     resolve(runtimeDirectory, "secrets/supervisor-management-token"),
     "utf8",
   ).trim();
-  const selector = "app.kubernetes.io/component=tool-host,app.kubernetes.io/instance=pi-cloud";
+  const selector = `app.kubernetes.io/component=${replacement.role},app.kubernetes.io/instance=pi-cloud`;
   const request = async (receipt, action) => {
-    const response = await fetch(`http://${receipt.podIp}:4310/internal/v1/tools/drain`, {
+    const response = await fetch(`http://${receipt.podIp}:${replacement.port}${replacement.path}`, {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify({ id: receipt.id, action }),
       signal: AbortSignal.timeout(5000),
     });
-    assert(response.ok, `Tool host replacement admission failed (HTTP ${response.status})`);
+    assert(response.ok, `Runtime replacement admission failed (HTTP ${response.status})`);
     return response.json();
   };
-  await replaceToolHost(
+  await replaceRuntimeComponent(
+    replacement.role,
     {
       observe: async () => ({
         deployment: JSON.parse(kubectl(["get", target, "-o", "json"])),

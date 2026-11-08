@@ -7,7 +7,8 @@ Keep Pi in Workers; execution coordinates logical environment preparation and
 binding closure. One Projector remains; ordinary tools gain independent code
 publication and Kafka catalog snapshots. BoxLite is an isolated evaluation only.
 Complete source/protocol/documentation before combined serial verification and
-live acceptance. Current production remains the previous release until cutover.
+live acceptance. The matched base is deployed; live Tool acceptance exposed a
+strict envelope-decoder field omission. Repair and final live checks remain.
 
 ## Independent runtime and resource accounting — deployed
 

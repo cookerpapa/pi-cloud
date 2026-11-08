@@ -122,6 +122,16 @@ loader or general-purpose RPC framework.
 
 ## Acceptance and release
 
+An implementation repair that accepts already-declared fields of the installed
+Session envelope can use the bounded `session-decoder` publication scope. Its
+only runtime source is `session-log-envelope.ts`; changes to wire meaning,
+ownership, storage or producer behavior still require matched publication. It
+reuses the installed Session-runtime quiescence/replacement contract, preserving
+Workers and dispatch offsets. This allows a rejected but undispatched intent to
+be decoded after repair without discarding the log or forcing unsafe Tool replay.
+Ordinary tool releases remain `tool-host` only. One common process replacement
+helper implements both existing quiescence endpoints and records the exact role.
+
 A later operator-only correction may verify/apply an existing matched candidate
 using the same explicit operator/test/documentation allowlist as scoped releases.
 The candidate must remain an ancestor, the checkout must be clean, guest and

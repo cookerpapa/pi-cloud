@@ -4,9 +4,31 @@ import { fileURLToPath } from "node:url";
 
 const [scope] = process.argv.slice(2);
 assert(
-  ["provider", "catalog", "web", "tool-host"].includes(scope),
-  "Use provider, catalog, web or tool-host; protocol changes require full checks",
+  ["provider", "catalog", "web", "tool-host", "session-decoder"].includes(scope),
+  "Use provider, catalog, web, tool-host or session-decoder; protocol changes require full checks",
 );
+if (scope === "session-decoder") {
+  const options = { cwd: fileURLToPath(new URL("..", import.meta.url)), stdio: "inherit" };
+  execFileSync("npm", ["run", "typecheck", "--workspace", "@pi-cloud/runtime-core"], options);
+  execFileSync(
+    process.execPath,
+    [
+      "node_modules/vitest/vitest.mjs",
+      "run",
+      "packages/runtime-core/test/session-log-envelope.test.ts",
+      "packages/runtime-core/test/session-projector-handoffs.test.ts",
+      "packages/control-plane/test/control-plane-quiescence.test.ts",
+      "scripts/lib/runtime-component-release.test.mjs",
+      "scripts/lib/component-release.test.mjs",
+      "scripts/lib/release-impact.test.mjs",
+      "scripts/lib/release-image-evidence.test.mjs",
+      "--maxWorkers=1",
+    ],
+    options,
+  );
+  console.log(JSON.stringify({ scope, passed: true }));
+  process.exit(0);
+}
 if (scope === "tool-host") {
   const options = { cwd: fileURLToPath(new URL("..", import.meta.url)), stdio: "inherit" };
   execFileSync("npm", ["run", "typecheck", "--workspace", "@pi-cloud/control-plane"], options);
@@ -32,7 +54,7 @@ if (scope === "tool-host") {
       "packages/supervisor-host/test/worker-tool-runtime.test.ts",
       "packages/sandbox-supervisor/test/trusted-remote-tools.test.ts",
       "scripts/lib/component-release.test.mjs",
-      "scripts/lib/tool-host-release.test.mjs",
+      "scripts/lib/runtime-component-release.test.mjs",
       "scripts/lib/tool-host-activation.test.mjs",
       "packages/control-plane/test/tool-host-client.test.ts",
       "packages/event-log/test/tool-catalog.test.ts",

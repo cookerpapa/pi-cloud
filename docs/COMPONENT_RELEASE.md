@@ -58,6 +58,28 @@ Owned fixture cleanup confirms VM/Volume absence before tenant removal. User
 conversations are not release probes. The initial matched cutover is required;
 this scope does not install a missing tool-host into an old runtime.
 
+## Installed Session decoder repair
+
+The explicit `session-decoder` scope only accepts runtime changes in
+`packages/runtime-core/src/session-log-envelope.ts` to correct decoding of the
+already installed envelope contract. Changes to wire meaning, producer behavior,
+ownership or storage still require matched publication. Hosted CI retains its
+full gate for this file; this is an operator-selected repair scope.
+
+```sh
+npm run release:component -- prepare session-decoder /private/releases/decoder-1 decoder-1
+npm run release:component -- preflight /private/releases/decoder-1
+npm run release:component -- apply /private/releases/decoder-1
+```
+
+It requires the installed `sessionRuntimeReplacement: 1` contract, waits for local
+projection and admitted handlers to settle, then replaces only Session runtime.
+API/SSE connections reconnect normally. Workers retain their PG leases; management,
+tool-host and Cube stay online. It neither rewinds dispatch admission nor skips a
+rejected record. The next consumer decodes from the retained Kafka position.
+One role-checked replacement helper serves both this repair and ordinary Tool
+publication, including unchanged-template restoration before Helm mutation.
+
 ## Provider image
 
 After ADR-0297's matched receipt installation, the explicitly listed metering

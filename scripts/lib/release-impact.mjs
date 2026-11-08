@@ -23,7 +23,8 @@ export const operatorSources = new Set([
   "scripts/lib/model-catalog-probe.mjs",
   "scripts/generate-release-evidence.mjs",
   "scripts/lib/release-image-evidence.mjs",
-  "scripts/lib/tool-host-release.mjs",
+  "scripts/lib/tool-host-release.mjs", // Removed by the common helper; allow its deletion in old baselines.
+  "scripts/lib/runtime-component-release.mjs",
   "scripts/lib/tool-host-activation.mjs",
   "scripts/lib/owned-runtime-outage.mjs",
   "scripts/lib/runtime-capability-acceptance.mjs",
@@ -75,7 +76,17 @@ export const providerSources = new Set([
   "deploy/helm/pi-cloud-infrastructure/templates/provider.yaml",
   ...providerConfigurationSources,
 ]);
+export const sessionDecoderSource = "packages/runtime-core/src/session-log-envelope.ts";
 export const imageReleaseTargets = {
+  "session-decoder": {
+    imageName: "control-plane",
+    buildScope: "control-plane",
+    buildCatalogKey: "controlPlane",
+    catalogKey: "sessionRuntime",
+    componentName: "session-runtime",
+    workload: "deployment/pi-cloud-session-runtime",
+    container: "session-runtime",
+  },
   provider: {
     imageName: "cli-proxy-api",
     catalogKey: "provider",
@@ -100,6 +111,7 @@ export const imageReleaseTargets = {
 };
 export const modelTests = new Set([
   "scripts/lib/tool-host-release.test.mjs",
+  "scripts/lib/runtime-component-release.test.mjs",
   "scripts/lib/owned-runtime-outage.test.mjs",
   "scripts/lib/component-release.test.mjs",
   "scripts/lib/model-catalog-probe.test.mjs",

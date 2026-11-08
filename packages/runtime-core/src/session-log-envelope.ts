@@ -187,6 +187,8 @@ export function expandSessionLogEnvelope(input: unknown): SessionLogFact {
             "toolName",
             "contextAnchor",
             "bindingId",
+            "environment",
+            "implementation",
             "sourceDocumentId",
             "recovery",
             "replyMode",
@@ -197,7 +199,15 @@ export function expandSessionLogEnvelope(input: unknown): SessionLogFact {
           return { ...reference, scope: scope(root, address), replyTopic };
         }
         if (tool.target !== "cube") throw new Error("Unknown Tool dispatch target");
-        keys(tool, ["target", "taskId", "request", "occurredAt", "traceContext", "view"]);
+        keys(tool, [
+          "target",
+          "taskId",
+          "request",
+          "occurredAt",
+          "traceContext",
+          "view",
+          "environment",
+        ]);
         const { view: address, ...reference } = tool;
         const request = object(tool.request);
         if ("type" in request || "toolBrokerProtocolVersion" in request)

@@ -64,7 +64,7 @@ function parseArguments(argv) {
       if (argument === "--cache-dir") result.cacheDirectory = resolve(repositoryRoot, value);
       if (argument === "--image-version") result.imageVersion = value;
       if (argument === "--component") {
-        if (!["all", "host", "provider", "web", "session-runtime", "android"].includes(value))
+        if (!["all", "host", "android", ...Object.keys(imageReleaseTargets)].includes(value))
           throw new Error("Unsupported evidence scope");
         result.component = value;
       }
@@ -77,7 +77,7 @@ function parseArguments(argv) {
     }
     if (argument === "--help") {
       process.stdout.write(
-        "Usage: npm run release:evidence -- [--output-dir EMPTY_PATH] [--cache-dir PATH] [--image-version VERSION] [--component all|host|provider|web|session-runtime|android] [--allow-dirty]\n",
+        "Usage: npm run release:evidence -- [--output-dir EMPTY_PATH] [--cache-dir PATH] [--image-version VERSION] [--component all|host|provider|web|tool-host|session-decoder|android] [--allow-dirty]\n",
       );
       process.exit(0);
     }

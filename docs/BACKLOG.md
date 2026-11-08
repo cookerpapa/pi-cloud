@@ -15,7 +15,12 @@
 
 [ADR-0305](adr/0305-execution-owned-tools-and-bindings.md) records the boundaries.
 The owner requested finishing source/documentation work before combined serial
-verification and matched deployment. No new behavior is deployed yet. Existing
+verification and matched deployment. Source and consolidated deterministic gates
+are complete; matched `execution-tools-20261108-r1` is deployed on schema 214.
+Pure chat passes without VM activation. Live Tool acceptance found the Session
+envelope decoder omitted the new logical environment/implementation fields;
+repair and real execution/recovery/publication acceptance remain in progress.
+Existing
 [#11](https://github.com/cookerpapa/pi-cloud/issues/11) PG maintenance/HA assessment
 remains separate from this batch.
 

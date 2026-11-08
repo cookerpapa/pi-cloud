@@ -3,24 +3,43 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { digest } from "./component-release.mjs";
 
-export function toolHostSnapshot(deployment, autoscalers, pods) {
-  assert.equal(deployment.metadata.name, "pi-cloud-tool-host");
+export const runtimeReplacementTargets = {
+  "tool-host": {
+    role: "tool-host",
+    contract: "toolHostReplacement",
+    port: 4310,
+    path: "/internal/v1/tools/drain",
+  },
+  "session-decoder": {
+    role: "session-runtime",
+    contract: "sessionRuntimeReplacement",
+    port: 3000,
+    path: "/internal/v1/session-publication/replacement",
+  },
+};
+function assertRole(role) {
+  assert(["tool-host", "session-runtime"].includes(role), "Unsupported runtime replacement role");
+}
+
+export function runtimeComponentSnapshot(role, deployment, autoscalers, pods) {
+  assertRole(role);
+  assert.equal(deployment.metadata.name, `pi-cloud-${role}`);
   assert.equal(
     deployment.spec.replicas,
     1,
-    "Scoped Tool host release requires one serving replica",
+    "Scoped Runtime component release requires one serving replica",
   );
   assert(
     !autoscalers.some((h) => h.spec.scaleTargetRef.name === deployment.metadata.name),
-    "Scoped Tool host release does not support an autoscaler",
+    "Scoped Runtime component release does not support an autoscaler",
   );
-  assert.equal(pods.length, 1, "Tool host Pods are not settled");
+  assert.equal(pods.length, 1, "Runtime component Pods are not settled");
   const pod = pods[0];
   assert(
     !pod.metadata.deletionTimestamp &&
       pod.status.podIP &&
       pod.status.containerStatuses?.every((c) => c.ready),
-    "Tool host Pod is not ready",
+    "Runtime component Pod is not ready",
   );
   return {
     uid: deployment.metadata.uid,
@@ -31,16 +50,26 @@ export function toolHostSnapshot(deployment, autoscalers, pods) {
   };
 }
 
-export function sameToolHost(receipt, deployment) {
-  assert.equal(deployment.metadata.name, "pi-cloud-tool-host");
-  assert.equal(deployment.metadata.uid, receipt.uid, "Tool host Deployment identity changed");
-  assert.equal(digest(deployment.spec.template), receipt.template, "Tool host template changed");
+export function sameRuntimeComponent(role, receipt, deployment) {
+  assertRole(role);
+  assert.equal(deployment.metadata.name, `pi-cloud-${role}`);
+  assert.equal(
+    deployment.metadata.uid,
+    receipt.uid,
+    "Runtime component Deployment identity changed",
+  );
+  assert.equal(
+    digest(deployment.spec.template),
+    receipt.template,
+    "Runtime component template changed",
+  );
 }
 
 /** Operator journal only. Helm/PG/Kafka keep their original authorities. */
-export async function replaceToolHost(port, prior, version, budgetMs = 300_000) {
+export async function replaceRuntimeComponent(role, port, prior, version, budgetMs = 300_000) {
+  assertRole(role);
   let receipt = prior;
-  if (receipt) assert.equal(receipt.role, "tool-host", "Replacement receipt targets another role");
+  if (receipt) assert.equal(receipt.role, role, "Replacement receipt targets another role");
   const save = async (phase) => {
     const next = { ...receipt, phase };
     await port.save(next);
@@ -50,11 +79,11 @@ export async function replaceToolHost(port, prior, version, budgetMs = 300_000) 
     if (receipt?.phase === "applying" || receipt?.phase === "applied") {
       assert.equal(receipt.version, version);
       const current = await port.observe();
-      assert.equal(current.deployment.metadata.name, "pi-cloud-tool-host");
+      assert.equal(current.deployment.metadata.name, `pi-cloud-${role}`);
       assert.equal(
         current.deployment.metadata.uid,
         receipt.uid,
-        "Tool host Deployment identity changed",
+        "Runtime component Deployment identity changed",
       );
       assert(
         !current.autoscalers.some(
@@ -71,10 +100,10 @@ export async function replaceToolHost(port, prior, version, budgetMs = 300_000) 
     const state = await port.observe();
     if (state.deployment.spec.replicas === 1) {
       receipt = {
-        ...toolHostSnapshot(state.deployment, state.autoscalers, state.pods),
+        ...runtimeComponentSnapshot(role, state.deployment, state.autoscalers, state.pods),
         version,
         id: randomUUID(),
-        role: "tool-host",
+        role,
         phase: "holding",
         startedAt: new Date().toISOString(),
       };
@@ -86,7 +115,11 @@ export async function replaceToolHost(port, prior, version, budgetMs = 300_000) 
         assert.equal(status.requestId, receipt.id);
         assert(typeof status.instanceId === "string" && status.instanceId.length > 0);
         receipt.instanceId ??= status.instanceId;
-        assert.equal(status.instanceId, receipt.instanceId, "Tool host restarted while draining");
+        assert.equal(
+          status.instanceId,
+          receipt.instanceId,
+          "Runtime component restarted while draining",
+        );
         if (status.phase === "held") break;
         assert.equal(status.phase, "waiting");
         assert(
@@ -96,21 +129,21 @@ export async function replaceToolHost(port, prior, version, budgetMs = 300_000) 
         await (port.pause ?? delay)(250);
       }
       const fresh = await port.observe();
-      sameToolHost(receipt, fresh.deployment);
+      sameRuntimeComponent(role, receipt, fresh.deployment);
       assert.equal(
         fresh.pods.find((pod) => !pod.metadata.deletionTimestamp)?.metadata.uid,
         receipt.podUid,
-        "Tool host Pod changed before replacement",
+        "Runtime component Pod changed before replacement",
       );
       await save("stopping");
       await port.stop();
     } else {
       assert(
         receipt && ["stopping", "stopped"].includes(receipt.phase),
-        "Tool host is stopped without this candidate's replacement receipt",
+        "Runtime component is stopped without this candidate's replacement receipt",
       );
       assert.equal(receipt.version, version);
-      sameToolHost(receipt, state.deployment);
+      sameRuntimeComponent(role, receipt, state.deployment);
       assert.equal(state.deployment.spec.replicas, 0);
     }
     await port.waitAbsent();
@@ -123,7 +156,7 @@ export async function replaceToolHost(port, prior, version, budgetMs = 300_000) 
     if (receipt && !["applying", "applied"].includes(receipt.phase)) {
       await port.request(receipt, "cancel").catch(() => {});
       const current = await port.observe();
-      sameToolHost(receipt, current.deployment);
+      sameRuntimeComponent(role, receipt, current.deployment);
       if (current.deployment.spec.replicas === 0) {
         await port.waitAbsent();
         await port.restore();

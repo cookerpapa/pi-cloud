@@ -661,3 +661,49 @@ it("detects live management/metering drift even when the expected shared image i
     );
   }
 });
+
+it("limits decoder repair to the installed envelope and only the Session runtime image", () => {
+  assertScopedSources("session-decoder", ["packages/runtime-core/src/session-log-envelope.ts"]);
+  for (const file of [
+    "packages/protocol/src/tool-broker.ts",
+    "packages/runtime-core/src/session-projector.ts",
+    "packages/control-plane/src/session-runtime-main.ts",
+    "packages/control-plane/src/ordinary-tools/registry.ts",
+    "packages/database/src/schema.ts",
+  ])
+    expect(() => assertScopedSources("session-decoder", [file])).toThrow("matched release");
+  expect(() =>
+    assertScopedSources("tool-host", ["packages/runtime-core/src/session-log-envelope.ts"]),
+  ).toThrow("matched release");
+  const roles = ["control-plane", "session-runtime", "tool-host", "metering"];
+  const old = roles.map((role) => sharedHostDeployment(role));
+  const next = old.map((r) => structuredClone(r));
+  next[1].spec.template.spec.containers[0].image = "pi-cloud/control-plane:new";
+  assertScopedManifests(
+    "session-decoder",
+    yaml(...old),
+    yaml(...next),
+    "pi-cloud/control-plane:new",
+  );
+  next[2].spec.template.spec.containers[0].image = "pi-cloud/control-plane:new";
+  expect(() =>
+    assertScopedManifests(
+      "session-decoder",
+      yaml(...old),
+      yaml(...next),
+      "pi-cloud/control-plane:new",
+    ),
+  ).toThrow("Unexpected resource change");
+  const values = {
+    images: Object.fromEntries(
+      ["controlPlane", "sessionRuntime", "toolHost", "metering"].map((key) => [
+        key,
+        { repository: "pi-cloud/control-plane", tag: "old" },
+      ]),
+    ),
+  };
+  const updated = scopedImageValues("session-decoder", values, "pi-cloud/control-plane:new", "new");
+  expect(updated.images.sessionRuntime.tag).toBe("new");
+  for (const key of ["controlPlane", "toolHost", "metering"])
+    expect(updated.images[key]).toEqual(values.images[key]);
+});

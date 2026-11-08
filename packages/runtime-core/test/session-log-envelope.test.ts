@@ -1,6 +1,95 @@
 import { expect, it } from "vitest";
 import { decodeSessionLogFact, encodeSessionLogFact } from "../src/kafka-accepted-fact.ts";
 import { toolInvocationFixture } from "./tool-invocation-fixture.ts";
+import {
+  createExecutionReference,
+  type ToolEnvironmentRequest,
+  DEFAULT_PROJECT_ENVIRONMENT_PROFILE_KEY,
+  DEFAULT_PROJECT_ENVIRONMENT_PROFILE_VERSION,
+  DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
+  DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+  DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+} from "@pi-cloud/protocol";
+
+function logicalEnvironment(f: ReturnType<typeof toolInvocationFixture>): ToolEnvironmentRequest {
+  const s = f.fact.scope;
+  return {
+    toolBrokerProtocolVersion: 1,
+    type: "tool_environment",
+    requestId: f.command.request.activationId,
+    piSessionId: s.piSessionId,
+    conversationId: 1,
+    workspaceSeedKind: "empty",
+    executionMode: "elastic",
+    sandboxProfileKey: "standard",
+    toolRoot: "/workspace",
+    allowedTools: ["read", "write", "edit", "bash"],
+    turnContextSha256: "a".repeat(64),
+    executionContextSha256: "b".repeat(64),
+    assignment: {
+      tenantId: s.tenantId,
+      projectId: crypto.randomUUID(),
+      workspaceId: crypto.randomUUID(),
+      sessionId: s.sessionId,
+      runId: s.runId,
+      turnId: s.turnId,
+      supervisorId: "fixture",
+      sandboxId: crypto.randomUUID(),
+      bootId: crypto.randomUUID(),
+      executionReference: createExecutionReference(s.writerId, s.runId, s.fencingToken),
+    },
+    environment: {
+      environmentVersionId: crypto.randomUUID(),
+      versionNumber: 1,
+      profileKey: DEFAULT_PROJECT_ENVIRONMENT_PROFILE_KEY,
+      profileVersion: DEFAULT_PROJECT_ENVIRONMENT_PROFILE_VERSION,
+      imageRevision: "development",
+      specSha256: DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
+      recipe: DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+      recipeSha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+    },
+  };
+}
+
+it("round-trips the actual logical environment on complete fixed Tool intents", () => {
+  const f = toolInvocationFixture(),
+    environment = logicalEnvironment(f);
+  f.fact.tools[0] = { ...f.fact.tools[0]!, environment };
+  const decoded = decodeSessionLogFact(encodeSessionLogFact(f.fact));
+  expect(decoded.fact).toEqual(f.fact);
+  expect(decoded.tools[0]).toMatchObject({
+    environment,
+    request: { args: { path: "large.txt", content: "hello" } },
+  });
+  const invalid = JSON.parse(encodeSessionLogFact(f.fact));
+  invalid.tools[0].environment.requestId = crypto.randomUUID();
+  expect(() => decodeSessionLogFact(JSON.stringify(invalid))).toThrow("binding identity");
+});
+
+it("round-trips ordinary Tool environment and frozen implementation without duplicating arguments", () => {
+  const f = toolInvocationFixture(),
+    environment = logicalEnvironment(f);
+  const tool = {
+    target: "control" as const,
+    scope: f.fact.scope,
+    taskId: 4,
+    conversationId: 1,
+    operationId: crypto.randomUUID(),
+    toolName: "preview",
+    contextAnchor: null,
+    replyTopic: "reply-worker-boot",
+    bindingId: environment.requestId,
+    environment,
+    implementation: { releaseId: "release-1", generation: 1, replay: "safe" as const },
+  };
+  const fact = { ...f.fact, tools: [tool] };
+  const wire = encodeSessionLogFact(fact);
+  expect(JSON.parse(wire).tools[0]).not.toHaveProperty("arguments");
+  expect(decodeSessionLogFact(wire).fact).toEqual(fact);
+  const invalid = JSON.parse(wire);
+  invalid.tools[0].implementation.generation = 0;
+  expect(() => decodeSessionLogFact(JSON.stringify(invalid))).toThrow("implementation");
+});
 
 it("round-trips compact ownership, child views and the original reply identity", () => {
   const { fact, command } = toolInvocationFixture("NUL \u0000 lone \ud800");
