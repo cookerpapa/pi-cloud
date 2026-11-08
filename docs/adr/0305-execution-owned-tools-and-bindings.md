@@ -122,6 +122,14 @@ loader or general-purpose RPC framework.
 
 ## Acceptance and release
 
+A later operator-only correction may verify/apply an existing matched candidate
+using the same explicit operator/test/documentation allowlist as scoped releases.
+The candidate must remain an ancestor, the checkout must be clean, guest and
+completion input digests must match, and every original scan/checksum/image-ID
+check still applies. Runtime, chart, dependency and build-input edits require a
+new candidate. Keep the original artifact source revision and separately record
+the applying operator revision; never relabel scanned bytes as rebuilt code.
+
 Verify native execution/Stop/recovery, lost request/reply ACKs, shared Workspace
 and child scopes, binding closure/rebalance, catalog bootstrap/stale publishers,
 and tool-host replacement with Session API/Projector/Worker/VM identities intact.

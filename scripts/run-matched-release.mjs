@@ -520,6 +520,7 @@ try {
   deployment.nativeDependencies = JSON.parse(
     await readFile(resolve(directory, "cube-upstream-images.json"), "utf8"),
   );
+  deployment.operatorRevision = candidate.operatorRevision;
   const deploymentPath = resolve(runtimeDirectory, "k3s/deployment.json");
   await writeFile(deploymentPath + ".next", JSON.stringify(deployment, null, 2) + "\n", {
     mode: 0o600,

@@ -11,6 +11,13 @@ for workload readiness. Distributed publication activates from inside the chosen
 Pod, keeping management credentials inside the cluster. Do not use blind atomic
 Helm rollback across the catalog/schema boundary; reconcile the same candidate.
 
+Prepared matched artifacts can be verified by a later operator-only commit.
+Only the existing explicit release-operator/test/documentation allowlist may
+differ from the ancestor artifact revision. All original input, checksum, scan
+and Docker image-ID checks still run. Publication keeps the artifact source
+revision and records `operatorRevision` separately. Runtime, dependency or chart
+changes require a new candidate; this does not authorize rewriting old evidence.
+
 
 Cube v0.7.3 preparation first dry-renders the complete pinned upstream chart
 against the installed explicit values. The private candidate retains the full

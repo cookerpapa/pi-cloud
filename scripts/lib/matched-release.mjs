@@ -4,6 +4,7 @@ import { createReadStream } from "node:fs";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { guestBuildIdentity, completionBuildIdentity } from "./guest-build-identity.mjs";
+import { assertOperatorRevisionChanges } from "./component-release.mjs";
 
 /** A failed control record can retain its Workspace after confirmed compute retirement. */
 export function matchedMachineDrained(machine) {
@@ -28,11 +29,24 @@ export async function verifyMatchedRelease({ directory, root, capture, currentGu
     !Object.hasOwn(candidate, "retainedDeploymentDigest"),
     "Obsolete retained-runtime candidate; prepare a full matched release",
   );
-  assert.equal(
-    (await capture("git", ["rev-parse", "HEAD"])).trim(),
-    candidate.revision,
-    "Release source changed",
-  );
+  const operatorRevision = (await capture("git", ["rev-parse", "HEAD"])).trim();
+  assert.match(candidate.revision, /^[0-9a-f]{40}$/, "Invalid artifact source revision");
+  assert.match(operatorRevision, /^[0-9a-f]{40}$/, "Invalid operator source revision");
+  if (operatorRevision !== candidate.revision) {
+    await capture("git", ["merge-base", "--is-ancestor", candidate.revision, operatorRevision]);
+    assertOperatorRevisionChanges(
+      (
+        await capture("git", [
+          "diff",
+          "--no-renames",
+          "--name-only",
+          `${candidate.revision}..${operatorRevision}`,
+        ])
+      )
+        .split("\n")
+        .filter(Boolean),
+    );
+  }
   assert.equal(
     (await capture("git", ["status", "--porcelain", "--untracked-files=all"])).trim(),
     "",
@@ -97,8 +111,14 @@ export async function verifyMatchedRelease({ directory, root, capture, currentGu
   const catalog = JSON.parse(await readFile(resolve(directory, "images.json"), "utf8"));
   assert.equal(
     Object.keys(catalog).sort().join(","),
-    "controlPlane,metering,provider,relay,sessionRuntime,sshGateway,volumeGateway,web,worker",
+    "controlPlane,metering,provider,relay,sessionRuntime,sshGateway,toolHost,volumeGateway,web,worker",
   );
+  for (const role of ["sessionRuntime", "metering", "toolHost"])
+    assert.equal(
+      catalog[role],
+      catalog.controlPlane,
+      `Matched ${role} must use the scanned shared host artifact`,
+    );
   const requiredReferences = new Set([
     ...Object.values(catalog),
     ...[
@@ -125,5 +145,5 @@ export async function verifyMatchedRelease({ directory, root, capture, currentGu
       guest.repoDigests?.some((ref) => ref.endsWith(`@${currentGuestTemplate.imageDigest}`)),
       "Scanned guest does not match the template selected for reuse",
     );
-  return { ...candidate, guestImageId: guest?.imageId };
+  return { ...candidate, operatorRevision, guestImageId: guest?.imageId };
 }

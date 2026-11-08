@@ -57,6 +57,7 @@ it("checks scanned image identity before any mutation and rejects catalog substi
     );
     catalog.sessionRuntime = catalog.controlPlane;
     catalog.metering = catalog.controlPlane;
+    catalog.toolHost = catalog.controlPlane;
     const references = [
       ...new Set(Object.values(catalog)),
       ...[
@@ -110,9 +111,18 @@ it("checks scanned image identity before any mutation and rejects catalog substi
     await writeEvidence();
     const calls = [];
     let replaced = false;
+    let operatorRevision = revision;
+    let changedFiles = [];
     const capture = async (cmd, args) => {
       calls.push(cmd);
-      if (cmd === "git") return args[0] === "rev-parse" ? revision : "";
+      if (cmd === "git") {
+        if (args[0] === "diff") expect(args).toContain("--no-renames");
+        return args[0] === "rev-parse"
+          ? operatorRevision
+          : args[0] === "diff"
+            ? changedFiles.join("\n")
+            : "";
+      }
       if (cmd === "docker")
         return JSON.stringify([{ Id: "sha256:" + (replaced ? "c" : "b").repeat(64) }]);
       throw new Error("Preflight attempted a cluster mutation");
@@ -121,6 +131,29 @@ it("checks scanned image identity before any mutation and rejects catalog substi
       revision,
     );
     expect(references).toHaveLength(14);
+    await writeFile(
+      join(root, "images.json"),
+      JSON.stringify({ ...catalog, toolHost: catalog.worker }),
+    );
+    await expect(verifyMatchedRelease({ directory: root, root, capture })).rejects.toThrow(
+      "shared host artifact",
+    );
+    await writeFile(join(root, "images.json"), JSON.stringify(catalog));
+    operatorRevision = "d".repeat(40);
+    changedFiles = [
+      "scripts/lib/matched-release.mjs",
+      "scripts/lib/matched-release.test.mjs",
+      "docs/adr/0305-execution-owned-tools-and-bindings.md",
+    ];
+    const adopted = await verifyMatchedRelease({ directory: root, root, capture });
+    expect(adopted.revision).toBe(revision);
+    expect(adopted.operatorRevision).toBe(operatorRevision);
+    changedFiles = ["packages/control-plane/src/tool-host-main.ts"];
+    await expect(verifyMatchedRelease({ directory: root, root, capture })).rejects.toThrow(
+      "runtime inputs changed",
+    );
+    operatorRevision = revision;
+    changedFiles = [];
     const templateIndex = manifest.images.findIndex(
       (image) => image.reference === `pi-cloud/cube-templatecenter:${version}`,
     );
