@@ -136,6 +136,13 @@ async function queuedImageScenario() {
     image.id,
   ]);
   let queue = await api.getInputQueue(session.sessionId);
+  report.initialQueueContainsInput = queue.items.some((i) => i.inputId === queued.inputId);
+  // Acceptance waits for native Kafka durability; the PG-backed queue read may
+  // still be older. Edit only after the acknowledged input appears in that view.
+  queue = await until(async () => {
+    const latest = await api.getInputQueue(session.sessionId);
+    return latest.items.some((i) => i.inputId === queued.inputId) && latest;
+  }, "Queued image projection");
   const edited = await api.mutateQueuedInput(
     session.sessionId,
     queued.inputId,
