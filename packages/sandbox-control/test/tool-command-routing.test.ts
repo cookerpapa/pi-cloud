@@ -2,13 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { createExecutionReference, type AcceptedToolCommand } from "@pi-cloud/protocol";
 import { ToolCommandDispatcher, toolDeliveryFact } from "../src/tool-command-dispatcher.ts";
+import { CubeSandboxToolExecutor } from "../src/cubesandbox-tool-executor.ts";
 import {
   CubeExecutionRejected,
   CubeRuntimeTransportError,
   CubeRuntimeClientError,
   type CubeSandboxRuntimeClient,
 } from "../src/cubesandbox-runtime-client.ts";
-import type { SandboxBinding } from "../src/sandbox-bindings.ts";
+import type { SandboxBinding, SandboxBindingReader } from "../src/sandbox-bindings.ts";
 import { SandboxBindingView } from "../src/sandbox-binding-view.ts";
 
 function fixture() {
@@ -76,7 +77,7 @@ function fixture() {
       sandboxProfileKey: "standard",
     },
   };
-  const get = vi.fn(async () => route as SandboxBinding | undefined);
+  const get = vi.fn<SandboxBindingReader["get"]>(async () => route);
   const closeWriter = vi.fn(async () => {
     get.mockResolvedValue({ ...route, dispatchClosed: true });
   });
@@ -91,7 +92,7 @@ function fixture() {
     quarantine = vi.fn(async () => {});
   const options = {
     routes: { get, closeWriter, isAlive: async () => true },
-    cube,
+    executor: new CubeSandboxToolExecutor(cube),
     workflow,
     publishReply,
     quarantine,
@@ -110,6 +111,289 @@ function fixture() {
   };
 }
 const record = (fact: any, offset = 0n) => ({ fact, topic: "session-log", partition: 0, offset });
+
+it("preserves VM position order across distinct bindings of a shared Workspace", async () => {
+  const f = fixture(),
+    ready = Promise.withResolvers<void>();
+  const other = { ...f.route, bindingId: randomUUID() };
+  f.get.mockImplementation(async (_scope, id) => (id === other.bindingId ? other : f.route));
+  const router = new ToolCommandDispatcher({
+    ...f.options,
+    environments: {
+      ensure: async (_scope, environment) => {
+        if (environment.requestId === f.route.bindingId) await ready.promise;
+        return environment.requestId === other.bindingId ? other : f.route;
+      },
+      retireWriter: vi.fn(),
+    },
+  });
+  const send = (route: SandboxBinding, offset: bigint) =>
+    router.consume(
+      record(
+        {
+          ...f.command,
+          environment: { requestId: route.bindingId, assignment: route.snapshot.assignment },
+          request: {
+            ...f.command.request,
+            activationId: route.bindingId,
+            operationId: randomUUID(),
+          },
+        },
+        offset,
+      ),
+      () => true,
+    );
+  try {
+    await send(f.route, 10n);
+    await send(other, 11n);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    ready.resolve();
+    await vi.waitFor(() => expect(f.cube.submitTool).toHaveBeenCalledTimes(2));
+    expect(f.cube.submitTool.mock.calls.map((call) => call[1].source.offset)).toEqual(["10", "11"]);
+  } finally {
+    ready.resolve();
+    await router.close();
+  }
+});
+
+it("keeps a later cancellation behind pending handoffs without blocking Kafka consumption", async () => {
+  const f = fixture(),
+    ready = Promise.withResolvers<void>();
+  const order: string[] = [];
+  f.cube.submitTool.mockImplementation(async (_target, request) => {
+    order.push(request.source.offset);
+  });
+  f.cube.cancelTool.mockImplementation(async (_target, request) => {
+    order.push(request.source.offset);
+  });
+  const router = new ToolCommandDispatcher({
+    ...f.options,
+    environments: {
+      ensure: async () => {
+        await ready.promise;
+        return f.route;
+      },
+      retireWriter: vi.fn(),
+    },
+  });
+  try {
+    await router.consume(
+      record(
+        {
+          ...f.command,
+          environment: {
+            requestId: f.route.bindingId,
+            assignment: f.route.snapshot.assignment,
+          },
+        },
+        10n,
+      ),
+      () => true,
+    );
+    await router.consume(
+      record(
+        {
+          kind: "tool_cancel",
+          scope: f.command.scope,
+          request: { activationId: f.route.bindingId, operationId: randomUUID() },
+        },
+        12n,
+      ),
+      () => true,
+    );
+    ready.resolve();
+    await vi.waitFor(() => expect(order).toHaveLength(2));
+    expect(order).toEqual(["10", "12"]);
+  } finally {
+    ready.resolve();
+    await router.close();
+  }
+});
+
+it("lets another Workspace hand off while a cold Workspace is still preparing", async () => {
+  const f = fixture(),
+    ready = Promise.withResolvers<void>();
+  const other = {
+    ...f.route,
+    bindingId: randomUUID(),
+    snapshot: {
+      ...f.route.snapshot,
+      assignment: { ...f.route.snapshot.assignment, workspaceId: randomUUID() },
+    },
+    descriptor: {
+      ...f.route.descriptor,
+      target: { ...f.route.descriptor.target, sandboxId: "b".repeat(32) },
+    },
+  };
+  f.get.mockImplementation(async (_scope, id) => (id === other.bindingId ? other : f.route));
+  const router = new ToolCommandDispatcher({
+    ...f.options,
+    environments: {
+      ensure: async (_scope, environment) => {
+        if (environment.requestId === f.route.bindingId) await ready.promise;
+        return environment.requestId === other.bindingId ? other : f.route;
+      },
+      retireWriter: vi.fn(),
+    },
+  });
+  try {
+    for (const [route, offset] of [
+      [f.route, 10n],
+      [other, 11n],
+    ] as const)
+      await router.consume(
+        record(
+          {
+            ...f.command,
+            environment: { requestId: route.bindingId, assignment: route.snapshot.assignment },
+            request: {
+              ...f.command.request,
+              activationId: route.bindingId,
+              operationId: randomUUID(),
+            },
+          },
+          offset,
+        ),
+        () => true,
+      );
+    await vi.waitFor(() => expect(f.cube.submitTool).toHaveBeenCalledOnce());
+    expect(f.cube.submitTool.mock.calls[0]![0]).toEqual(other.descriptor.target);
+  } finally {
+    ready.resolve();
+    await router.close();
+  }
+});
+
+it("orders retained cleanup for a deleted binding before future handoffs", async () => {
+  const f = fixture(),
+    ready = Promise.withResolvers<void>();
+  const deleted = randomUUID(),
+    order: string[] = [];
+  f.get.mockImplementation(async (_scope, id) => (id === deleted ? undefined : f.route));
+  f.cube.submitTool.mockImplementation(async (_target, request) => {
+    order.push(request.source.offset);
+  });
+  f.cube.cancelTool.mockImplementation(async (_target, request) => {
+    order.push(request.source.offset);
+  });
+  const router = new ToolCommandDispatcher({
+    ...f.options,
+    environments: {
+      ensure: async () => {
+        await ready.promise;
+        return f.route;
+      },
+      retireWriter: vi.fn(),
+    },
+  });
+  const send = (offset: bigint) =>
+    router.consume(
+      record(
+        {
+          ...f.command,
+          environment: { requestId: f.route.bindingId, assignment: f.route.snapshot.assignment },
+          request: { ...f.command.request, operationId: randomUUID() },
+        },
+        offset,
+      ),
+      () => true,
+    );
+  try {
+    await send(10n);
+    await router.cancelRetiredBinding(
+      {
+        kind: "control_change",
+        entity: "sandbox_binding",
+        factId: randomUUID(),
+        scope: { tenantId: f.command.scope.tenantId, piSessionId: f.command.scope.piSessionId },
+        entityId: deleted,
+        runId: f.command.scope.runId,
+        version: "1",
+        closed: true,
+        occurredAt: new Date().toISOString(),
+        cancelTarget: { ...f.route.descriptor.target, writerId: f.command.scope.writerId },
+      },
+      { topic: "session-log", partition: 0, offset: "12" },
+      () => true,
+    );
+    await send(13n);
+    ready.resolve();
+    await vi.waitFor(() => expect(order).toHaveLength(3));
+    expect(order).toEqual(["10", "12", "13"]);
+  } finally {
+    ready.resolve();
+    await router.close();
+  }
+});
+
+it("does not block the partition on lazy preparation and consumes cancellation before handoff", async () => {
+  const f = fixture();
+  const prepared = Promise.withResolvers<void>();
+  const ensure = vi.fn(async () => {
+    await prepared.promise;
+    return f.route;
+  });
+  const router = new ToolCommandDispatcher({
+    ...f.options,
+    environments: { ensure, retireWriter: vi.fn() },
+  });
+  await router.consume(
+    record(
+      {
+        ...f.command,
+        environment: { requestId: f.route.bindingId, assignment: f.route.snapshot.assignment },
+      },
+      10n,
+    ),
+    () => true,
+  );
+  expect(f.cube.submitTool).not.toHaveBeenCalled();
+  await router.consume(
+    record(
+      {
+        kind: "tool_cancel",
+        scope: f.command.scope,
+        request: { operationId: f.command.request.operationId, activationId: f.route.bindingId },
+      },
+      11n,
+    ),
+    () => true,
+  );
+  prepared.resolve();
+  await router.close();
+  expect(f.cube.submitTool).not.toHaveBeenCalled();
+});
+
+it("retains source ordering for several pending calls sharing one binding", async () => {
+  const f = fixture(),
+    prepared = Promise.withResolvers<void>();
+  const router = new ToolCommandDispatcher({
+    ...f.options,
+    environments: {
+      ensure: async () => {
+        await prepared.promise;
+        return f.route;
+      },
+      retireWriter: vi.fn(),
+    },
+  });
+  for (const offset of [10n, 11n])
+    await router.consume(
+      record(
+        {
+          ...f.command,
+          environment: { requestId: f.route.bindingId, assignment: f.route.snapshot.assignment },
+          request: { ...f.command.request, operationId: randomUUID() },
+        },
+        offset,
+      ),
+      () => true,
+    );
+  prepared.resolve();
+  await vi.waitFor(() => expect(f.cube.submitTool).toHaveBeenCalledTimes(2));
+  expect(f.cube.submitTool.mock.calls.map((call) => call[1].source.offset)).toEqual(["10", "11"]);
+  await router.close();
+});
 
 describe("Projector native Cube handoff", () => {
   it.each([
@@ -190,7 +474,9 @@ describe("Projector native Cube handoff", () => {
       executionScopeId: f.route.bindingId,
       writerId: f.command.scope.writerId,
     });
-    expect(f.get).not.toHaveBeenCalled();
+    // Memory is consulted only to choose the shared-resource order. The saved
+    // target still works when its binding has already been removed.
+    expect(f.get).toHaveBeenCalledOnce();
   });
   it("dispatches repeated fixed Tools from the binding view without a per-Tool lookup", async () => {
     const f = fixture();
@@ -251,14 +537,14 @@ describe("Projector native Cube handoff", () => {
     await f.router.consume(
       record({ ...f.command, request: { ...f.command.request, operationId: randomUUID() } }, 2n),
     );
-    expect(f.get).toHaveBeenCalledTimes(2);
+    expect(f.get).toHaveBeenCalledTimes(4); // grouping and admission recheck; both memory reads
   });
   it("reconstructs transport metadata after dispatcher replacement", async () => {
     const f = fixture();
     await new ToolCommandDispatcher(f.options).consume(record(f.command));
     const next = { ...f.command, request: { ...f.command.request, operationId: randomUUID() } };
     await new ToolCommandDispatcher(f.options).consume(record(next, 1n));
-    expect(f.get).toHaveBeenCalledTimes(2);
+    expect(f.get).toHaveBeenCalledTimes(4);
     expect(f.cube.submitTool.mock.calls.map((args) => args[0])).toEqual([
       f.route.descriptor.target,
       f.route.descriptor.target,

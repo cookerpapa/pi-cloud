@@ -65,3 +65,5 @@ The remaining product/contributor guides are [Web direction](WEB_UI_DIRECTION.md
 Latest delivery: [Independent runtime and resource accounting](reports/runtime-accounting-20261107.md).
 Related assessment: [CLIProxyAPI upstream candidates](reports/provider-upstream-candidates-20261106.md)
 (the community contribution assessment is separate from the implementation issue).
+
+Execution-boundary research: [Pi / OpenMA / BoxLite comparison](research/execution-boundaries-20261108.md), with [ADR-0305](adr/0305-execution-owned-tools-and-bindings.md).

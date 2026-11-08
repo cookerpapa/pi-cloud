@@ -25,6 +25,7 @@ export type SandboxExecutionDescriptor = Readonly<{
 export type SandboxBindingSnapshot = Readonly<{
   assignment: import("@pi-cloud/protocol").ToolSandboxAssignment;
   physicalActivationId: string;
+  continuity?: "cold_restore" | "warm_reuse";
   turnContextSha256: string;
   executionContextSha256: string;
   allowedTools: readonly import("@pi-cloud/protocol").CloudToolName[];

@@ -57,6 +57,18 @@ assert.deepEqual(metering.spec.template.spec.containers[0].args, [
   "/app/packages/accounting/src/main.ts",
 ]);
 assert(find("Service", "metering"));
+const toolHost = find("Deployment", "pi-cloud-tool-host");
+assert(toolHost);
+assert.deepEqual(toolHost.spec.template.spec.containers[0].args, [
+  "/app/packages/control-plane/src/tool-host-main.ts",
+]);
+assert.equal(find("Service", "tool-host").spec.publishNotReadyAddresses, true);
+assert.equal(
+  controlPlane.spec.template.spec.containers[0].env.some(
+    (e) => e.name === "PI_CLOUD_IMAGE_GENERATION_API_KEY_FILE",
+  ),
+  false,
+);
 assert(
   !controlPlane.spec.template.spec.containers[0].env.some(
     (entry) => entry.name === "PI_CLOUD_MODEL_METERING_TOKEN_FILE",
@@ -68,7 +80,7 @@ const withoutOrdinaryTools = parseAllDocuments(
   .map((document) => document.toJSON())
   .find(
     (resource) =>
-      resource?.kind === "Deployment" && resource.metadata?.name === "pi-cloud-session-runtime",
+      resource?.kind === "Deployment" && resource.metadata?.name === "pi-cloud-tool-host",
   );
 assert.equal(
   withoutOrdinaryTools.spec.template.spec.containers[0].env.find(

@@ -19,7 +19,7 @@ Pi Worker <-> local Model Gateway <-> CLIProxyAPI <-> model provider
 Pi Worker -> transactional Session producer -> Kafka -> Session Projector
                                                         +-> PG native state/history
                                                         +-> live view / browser SSE
-                                                        +-> Control Tool handlers
+                                                        +-> independent ordinary Tool host (HTTP)
                                                         `-> Cube execution endpoint
 Cube / Control Tool completion -> Worker-boot Kafka replies -> original Pi Harness
 
@@ -50,7 +50,7 @@ Retained attachment originals -> private S3 objects; Kafka and PG carry referenc
    newly authorized Session lease, with no RunAttempt or automatic unsafe replay.
 
 The `session-runtime` process owns the authenticated API, history and cost reads,
-HTTP observations/SSE, Worker membership/catalog delivery and this single Projector
+HTTP observations/SSE, Worker membership and this single Projector
 group. The `control-plane` process owns resource admission, recovery, lifecycle
 reconciliation and management timers. It has no Session Kafka consumer or Tool
 dispatcher. Both entrypoints use the same built image with independently selected
@@ -114,8 +114,9 @@ writer recovers only through ordered closure. An uncertain producer is never
 automatically reinitialized to retry arbitrary effects.
 
 Control changes commit PG state plus immutable Outbox references and use the same
-Session partition. Binding revocation also closes local effect admission before
-publication; a delayed Kafka close is not the sole revocation guard. Projector
+Session partition. Binding close consumption acknowledges stopped dispatch in
+the Outbox before management can perform physical retirement. PG admission gates
+also prevent late binding registration. Projector
 membership and the partition publication queue retain their transaction guards.
 
 Native sequence preserves batch/write identity and replay validation; Kafka
@@ -133,6 +134,46 @@ acknowledgement retires the whole Session writer. Kafka acknowledgement, PG
 projection and native result settlement are separate boundaries.
 See [ADR-0247](adr/0247-session-work-and-tool-dispatch.md) and
 [STREAM_DURABILITY](STREAM_DURABILITY.md).
+
+## Logical tool environments and resource closure
+
+`GET /v1/conversations/:sessionId/environment` is a tenant-scoped, bounded resource
+read. It returns Workspace/directory, stable development-machine selection and the
+current writer's immutable Tool binding/allocation, or `binding: null`. Open/closed
+means routing admission; neither it nor an absent binding diagnoses VM health or
+checks whether a directory still exists. No provider endpoint or credential is
+exposed. Physical observations remain disposable and separate from this read.
+
+The Worker uses public Pi Tool hooks to prepare a reply waiter and an immutable
+logical environment (Workspace, compute scope, requested binding ID and execution
+identity). Native intent and dispatch share one Session commit. The execution
+partition owner prepares an absent binding through the resource management API,
+outside the Kafka consumer callback. The callback remains free to consume its
+later binding change, cancellation or writer closure. Already-bound routing uses
+memory; ordinary tool resource calls carry the frozen assignment, not another
+binding SQL lookup. Whole-tool provider submit/cancel and failure classification
+are behind `SandboxToolExecutor`.
+
+On writer retirement, `session_leases.tool_bindings_closed_at` permanently closes
+new binding registration for that incarnation, in the same PG transaction as its
+existing binding closures. A delayed VM creation must recheck that gate and physical
+allocation admission before registering. Each binding remains tied to one physical
+allocation; a rejected late registration never redirects the original Tool.
+
+Physical retirement first closes PG resource/binding admission and publishes the
+existing Outbox change. The Session owner consumes it, closes its memory view,
+retires pending dispatch and acknowledges `outbox.applied_at`. Management waits for
+that acknowledgement before calling Cube. The ACK proves stopped routing admission,
+not process exit; quota still requires verified physical absence. If Projector or
+Kafka is unavailable, resource retirement stays pending. At native work_finished
+or seal, the consumer closes its own view and the PG writer gate directly, without
+waiting for a later message on its own partition. Reassignment bootstraps closed
+PG state before admitting effects. No per-tool operation ledger is added.
+
+Input-image preparation uses an execution-side logical-resource endpoint. It
+shares the coordinator and returns observed continuity; the Worker never creates
+or releases a VM. Images, fixed-tool replies and ordinary tool replies update
+WorldState only at the next clean native sampling boundary.
 
 ## Unified projection and recovery
 
@@ -393,10 +434,16 @@ repeated failed WebSocket uploads. Transport and decoded-size budgets are distin
 from context-token compaction and physical memory capacity.
 
 Ordinary Control Tool definitions and handlers have one execution-side registry.
-Credential-free snapshots reach Workers over existing management connections;
-Pi applies changed definitions/selection to later requests in the same loop.
+The independent `tool-host` process publishes complete credential-free snapshots
+to `pi-cloud.tool-catalog.v1` (compacted, one partition, RF=3). Each Worker has its
+own boot consumer group and restores the PG-selected generation before claiming
+work. Generation and digest checks reject stale/conflicting updates; Kafka fences
+old catalog publishers. Deployment activation, not process startup, selects a new
+release. Pi applies changed definitions to later model requests in the same loop.
+The management WebSocket no longer sends a second catalog. Ordinary Tool RPCs
+fix the selected implementation release and do not retry uncertain effects.
 Fixed guest Tools retain the matched protocol. See
-[ADR-0269](adr/0269-execution-owned-control-tool-catalog.md).
+[ADR-0305](adr/0305-execution-owned-tools-and-bindings.md).
 
 Worker Tool availability and Skill requirements use the same effective-capability
 resolver, including child grants, depth, roles and accepted device targets.

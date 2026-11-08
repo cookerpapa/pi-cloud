@@ -37,7 +37,6 @@ export {
   TenantModelGatewayError,
   type TenantModelGatewayOptions,
 } from "./model-gateway.ts";
-export { resolveWorkspaceSeed } from "./workspace-seed.ts";
 export {
   PostgresPiWorker,
   type PostgresPiWorkerOptions,

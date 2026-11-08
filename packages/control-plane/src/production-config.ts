@@ -369,6 +369,67 @@ async function privatePem(path: string): Promise<string> {
   }
 }
 
+/** The tool host needs neither user-login configuration nor VM management credentials. */
+export async function loadToolHostConfig(
+  environment: ProductionControlPlaneEnvironment = process.env,
+) {
+  const inline = booleanValue(environment, "PI_CLOUD_ALLOW_INLINE_SECRETS");
+  const enabled: unknown =
+    environment.PI_CLOUD_CONTROL_TOOLS_ENABLED === undefined
+      ? undefined
+      : JSON.parse(environment.PI_CLOUD_CONTROL_TOOLS_ENABLED);
+  if (
+    enabled !== undefined &&
+    (!Array.isArray(enabled) ||
+      enabled.some((name) => typeof name !== "string" || !/^[a-z][a-z0-9_-]{0,63}$/.test(name)) ||
+      new Set(enabled).size !== enabled.length)
+  )
+    throw new Error("Invalid enabled Tool names");
+  return {
+    databaseUrl: await loadProductionDatabaseUrl(environment),
+    kafkaBrokers: boundedList(
+      required(environment, "PI_CLOUD_KAFKA_BROKERS"),
+      "PI_CLOUD_KAFKA_BROKERS",
+    ),
+    kafkaReplicas: integerValue(environment, "PI_CLOUD_KAFKA_REPLICAS", 3, 1, 5),
+    supervisorManagementToken: await secret(
+      environment,
+      "PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN",
+      inline,
+    ),
+    sandboxControlToken: await readSecretFile(
+      required(environment, "PI_CLOUD_SANDBOX_CONTROL_TOKEN_FILE"),
+      "PI_CLOUD_SANDBOX_CONTROL_TOKEN",
+    ),
+    host: bounded(environment.HOST ?? "127.0.0.1", "HOST"),
+    environmentImageRevision: bounded(
+      required(environment, "PI_CLOUD_IMAGE_REVISION"),
+      "PI_CLOUD_IMAGE_REVISION",
+      128,
+    ),
+    subagentTreePolicy: {
+      maximumDepth: resourceLimit(
+        environment.PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH,
+        "PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH",
+      ),
+    },
+    ...(enabled ? { enabledControlTools: enabled as string[] } : {}),
+    ...(environment.PI_CLOUD_IMAGE_GENERATION_MODEL
+      ? {
+          imageGeneration: {
+            model: bounded(
+              environment.PI_CLOUD_IMAGE_GENERATION_MODEL,
+              "PI_CLOUD_IMAGE_GENERATION_MODEL",
+              200,
+            ),
+            baseUrl: managementUrl(required(environment, "PI_CLOUD_IMAGE_GENERATION_URL"), true),
+            apiKey: await secret(environment, "PI_CLOUD_IMAGE_GENERATION_API_KEY", inline),
+          },
+        }
+      : {}),
+  };
+}
+
 export async function loadProductionControlPlaneConfig(
   environment: ProductionControlPlaneEnvironment = process.env,
 ): Promise<ProductionControlPlaneConfig> {

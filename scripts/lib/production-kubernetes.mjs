@@ -48,6 +48,7 @@ export function kubectlAsync(args, options = {}) {
 export const workloads = {
   "workspace-quota": "deployment/pi-cloud-workspace-quota",
   metering: "deployment/pi-cloud-metering",
+  "tool-host": "deployment/pi-cloud-tool-host",
   "control-plane": "deployment/pi-cloud-control-plane",
   "session-runtime": "deployment/pi-cloud-session-runtime",
   web: "deployment/pi-cloud-web",

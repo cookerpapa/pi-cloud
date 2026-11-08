@@ -3,7 +3,6 @@ import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { AgentRunSupervisor } from "@pi-cloud/sandbox-supervisor";
 import { DirectSessionKafkaBus } from "@pi-cloud/runtime-core/direct-session-kafka";
-import { ControlToolRegistry } from "@pi-cloud/control-plane";
 import {
   PostgresSupervisorCredentialAuthorizer,
   SupervisorBootProvisioner,
@@ -11,6 +10,7 @@ import {
   SupervisorWebSocketGateway,
 } from "@pi-cloud/control-plane";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Fastify from "fastify";
@@ -30,6 +30,22 @@ vi.mock("@pi-cloud/event-log", async (original) => ({
     async wait() {
       throw new Error("Unused Tool reply in Worker lifecycle test");
     }
+  },
+  KafkaToolCatalogConsumer: class {
+    constructor(readonly options: { onSnapshot(value: unknown): void }) {}
+    get ready() {
+      return replies.ready;
+    }
+    async start() {
+      this.options.onSnapshot({
+        catalog: {
+          version: 4,
+          tools: [],
+          revision: createHash("sha256").update("[]").digest("hex"),
+        },
+      });
+    }
+    async close() {}
   },
 }));
 
@@ -149,7 +165,6 @@ describe("PiWorkerRuntime", () => {
       heartbeatTimeoutMs: 30000,
     });
     const gateway = new SupervisorWebSocketGateway({
-      toolCatalog: new ControlToolRegistry(),
       manager,
       authorizer: new PostgresSupervisorCredentialAuthorizer({ database }),
     });
@@ -213,6 +228,7 @@ describe("PiWorkerRuntime", () => {
       modelConcurrency: 4,
       familyModelConcurrency: 4,
       sandboxControlBaseUrls: ["http://sandbox-control.test:4300/"],
+      sessionExecutionBaseUrl: "http://session-runtime.test:4300/",
       sandboxControlRequestTimeoutMs: 300_000,
       trustedWorkspaceDirectory: root,
       bootStateDirectory: join(root, "boot"),

@@ -9,6 +9,7 @@ const calls = vi.hoisted(() => ({
   projector: vi.fn(),
   sandbox: vi.fn(),
   sandboxClose: vi.fn(),
+  catalogClose: vi.fn(),
 }));
 vi.mock("@pi-cloud/database", async (original) => ({
   ...(await original<typeof import("@pi-cloud/database")>()),
@@ -17,6 +18,16 @@ vi.mock("@pi-cloud/database", async (original) => ({
 vi.mock("@pi-cloud/observability", async (original) => ({
   ...(await original<typeof import("@pi-cloud/observability")>()),
   startServiceObservability: calls.observability,
+}));
+vi.mock("@pi-cloud/event-log", async (original) => ({
+  ...(await original<typeof import("@pi-cloud/event-log")>()),
+  KafkaToolCatalogConsumer: class {
+    view = { read: () => ({ version: 4, tools: [], revision: "a".repeat(64) }) };
+    async start() {}
+    async close() {
+      await calls.catalogClose();
+    }
+  },
 }));
 vi.mock("../src/production-config.ts", () => ({ loadProductionControlPlaneConfig: calls.config }));
 vi.mock("../src/subagent-controller.ts", () => ({ SubagentController: calls.subagents }));
@@ -138,6 +149,7 @@ it("closes a constructed Subagent controller when Projector ownership was never 
   });
   await expect(startControlPlane()).rejects.toBe(failure);
   expect(subagentClose).toHaveBeenCalledOnce();
+  expect(calls.catalogClose).toHaveBeenCalledOnce();
   expect(calls.sandboxClose).toHaveBeenCalledOnce();
   expect(destroy).toHaveBeenCalledOnce();
   expect(destroyMaintenance).toHaveBeenCalledOnce();

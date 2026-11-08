@@ -63,6 +63,7 @@ export class PostgresSandboxBindings implements SandboxBindings {
     readonly instanceId: string,
     readonly baseUrl: string,
     readonly publishChanges: (ids: readonly string[]) => Promise<void>,
+    readonly confirmChanges: (ids: readonly string[]) => Promise<void>,
   ) {}
 
   async register(
@@ -71,19 +72,75 @@ export class PostgresSandboxBindings implements SandboxBindings {
     snapshot: SandboxBindingSnapshot,
   ): Promise<void> {
     const identity = parseExecutionReference(snapshot.assignment.executionReference);
-    await this.database
-      .insertInto("sandbox_tool_bindings")
-      .values({
-        binding_id: bindingId,
-        tenant_id: snapshot.assignment.tenantId,
-        run_id: identity.runId,
-        writer_id: identity.leaseId,
-        sandbox_domain_id: this.sandboxDomainId,
-        owner_instance_id: this.instanceId,
-        descriptor,
-        snapshot,
-      })
-      .executeTakeFirstOrThrow();
+    await this.database.transaction().execute(async (tx) => {
+      // Lock physical admission before the lease. Lifecycle closes this same row;
+      // writer retirement closes the lease gate. No lock spans VM creation or Kafka.
+      const physical = snapshot.physicalActivationId;
+      const runtime = await tx
+        .selectFrom("workspace_runtimes")
+        .select(["state", "allocation_closed"])
+        .where("workspace_runtime_id", "=", physical)
+        .where("tenant_id", "=", snapshot.assignment.tenantId)
+        .where("owner_instance_id", "=", this.instanceId)
+        .forUpdate()
+        .executeTakeFirst();
+      const machine = runtime
+        ? undefined
+        : await tx
+            .selectFrom("development_environments")
+            .select(["state", "desired_state", "allocation_closed", "allocation_absent"])
+            .where("allocation_id", "=", physical)
+            .where("tenant_id", "=", snapshot.assignment.tenantId)
+            .where("owner_instance_id", "=", this.instanceId)
+            .forUpdate()
+            .executeTakeFirst();
+      if (
+        !(
+          runtime &&
+          !runtime.allocation_closed &&
+          ["reserved", "materializing", "allocated"].includes(runtime.state)
+        ) &&
+        !(
+          machine &&
+          !machine.allocation_closed &&
+          !machine.allocation_absent &&
+          machine.state === "ready" &&
+          machine.desired_state === "running"
+        )
+      )
+        throw new Error("Physical allocation closed before binding registration");
+      const lease = await tx
+        .selectFrom("session_leases")
+        .select(["tool_bindings_closed_at", "released_at"])
+        .where("lease_id", "=", identity.leaseId)
+        .where("tenant_id", "=", snapshot.assignment.tenantId)
+        .forUpdate()
+        .executeTakeFirst();
+      const authority = await tx
+        .selectFrom("active_execution_scopes")
+        .select("lease_id")
+        .where("lease_id", "=", identity.leaseId)
+        .where("run_id", "=", identity.runId)
+        .where("fencing_token", "=", String(identity.fencingToken))
+        .where("accepting_effects", "=", true)
+        .where("valid_until", ">", sql<Date>`clock_timestamp()`)
+        .executeTakeFirst();
+      if (!lease || lease.released_at || lease.tool_bindings_closed_at || !authority)
+        throw new Error("Writer retired before binding registration");
+      await tx
+        .insertInto("sandbox_tool_bindings")
+        .values({
+          binding_id: bindingId,
+          tenant_id: snapshot.assignment.tenantId,
+          run_id: identity.runId,
+          writer_id: identity.leaseId,
+          sandbox_domain_id: this.sandboxDomainId,
+          owner_instance_id: this.instanceId,
+          descriptor,
+          snapshot,
+        })
+        .executeTakeFirstOrThrow();
+    });
     await this.publishChanges([bindingId]);
   }
   async release(bindingId: string, assignment: ToolSandboxAssignment): Promise<void> {
@@ -175,17 +232,24 @@ export class PostgresSandboxBindings implements SandboxBindings {
       .executeTakeFirst()) as unknown as SandboxBinding | undefined;
   }
   async closeWriter(scope: ToolLogFact["scope"], cancelOutstanding = false): Promise<void> {
-    const query = this.database
-      .updateTable("sandbox_tool_bindings")
-      .set({
-        dispatch_closed: true,
-        cancel_outstanding: sql`cancel_outstanding or ${cancelOutstanding}`,
-      })
-      .where("tenant_id", "=", scope.tenantId!);
-    const closed = await query
-      .where("writer_id", "=", scope.writerId)
-      .returning("binding_id")
-      .execute();
+    const closed = await this.database.transaction().execute(async (tx) => {
+      await tx
+        .updateTable("session_leases")
+        .set({
+          tool_bindings_closed_at: sql<Date>`coalesce(tool_bindings_closed_at,clock_timestamp())`,
+        })
+        .where("tenant_id", "=", scope.tenantId!)
+        .where("lease_id", "=", scope.writerId)
+        .execute();
+      const query = tx
+        .updateTable("sandbox_tool_bindings")
+        .set({
+          dispatch_closed: true,
+          cancel_outstanding: sql`cancel_outstanding or ${cancelOutstanding}`,
+        })
+        .where("tenant_id", "=", scope.tenantId!);
+      return query.where("writer_id", "=", scope.writerId).returning("binding_id").execute();
+    });
     try {
       // Installs routing revocation before the seal. Abnormal retirement keeps
       // its cancellation address in the Outbox, without a process-stop receipt.
@@ -206,6 +270,7 @@ export class PostgresSandboxBindings implements SandboxBindings {
     if (closed.some((row) => !row.dispatch_closed))
       throw new Error("Physical binding closure has not committed");
     await this.publishChanges(closed.map((r) => r.binding_id));
+    await this.confirmChanges(closed.map((r) => r.binding_id));
   }
   async adopt(
     physicalActivationId: string,

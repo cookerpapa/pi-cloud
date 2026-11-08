@@ -21,6 +21,7 @@ export async function createSandboxControl(options: {
   metrics: PiCloudMetrics;
   images?: ConfiguredImageAttachments;
   publishBindingChanges(ids: readonly string[]): Promise<void>;
+  confirmBindingClosure(ids: readonly string[]): Promise<void>;
   onOwnershipLost(): void;
 }) {
   const config = await loadSandboxControlConfig();
@@ -80,6 +81,7 @@ export async function createSandboxControl(options: {
       instanceId,
       config.advertisedBaseUrl,
       options.publishBindingChanges,
+      options.confirmBindingClosure,
     );
     const controller = new SandboxController({
       elasticRetentionMs: config.elasticRetentionMs,

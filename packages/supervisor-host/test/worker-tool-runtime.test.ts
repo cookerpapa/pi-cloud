@@ -32,6 +32,7 @@ function fixture(codec?: ImageAttachmentCodec) {
     }),
   };
   const runtime = new WorkerToolRuntime({
+    implementation: () => ({ releaseId: "test-v1", generation: 1, replay: "never" }),
     catalog: (() => {
       const catalog = new ControlToolRegistry();
       catalog.register({
@@ -64,7 +65,7 @@ it("prepares a control invocation and returns its reply without executing its bu
     prepareWorkflow: async () => {
       throw Error("No script");
     },
-    prepareEnvironment: async () => {
+    environment: () => {
       throw Error("Delegation must not activate Cube");
     },
   });
@@ -118,7 +119,7 @@ it("recovers a delegation with its original effect and a fresh callback identity
   );
   const bindings = await f.runtime.create({
     command,
-    prepareEnvironment: async () => {
+    environment: () => {
       throw new Error("No VM for delegation");
     },
     prepareWorkflow: async () => {
@@ -183,7 +184,8 @@ it("retains a control Tool's receipt when restoring its image fails", async () =
   const f = fixture(codec);
   const bindings = await f.runtime.create({
     command,
-    prepareEnvironment: async () => "binding",
+    environment: () =>
+      ({ requestId: "binding" }) as import("@pi-cloud/protocol").ToolEnvironmentRequest,
     prepareWorkflow: async () => {
       throw Error("No script");
     },
@@ -234,7 +236,8 @@ it("publishes one dynamic run request for a workflow key and isolates reused pro
   let callback: Parameters<WorkflowPreparer>[2] | undefined;
   const bindings = await f.runtime.create({
     command,
-    prepareEnvironment: async () => "unused",
+    environment: () =>
+      ({ requestId: "unused" }) as import("@pi-cloud/protocol").ToolEnvironmentRequest,
     prepareWorkflow: async (_id, _script, call) => {
       callback = call;
       return {
@@ -269,24 +272,26 @@ it("publishes one dynamic run request for a workflow key and isolates reused pro
 
 it("derives tool exposure from native ancestry and prepares environment only for preview", async () => {
   const f = fixture(),
-    prepareEnvironment = vi.fn(async () => "binding");
+    environment = vi.fn(
+      () => ({ requestId: "binding" }) as import("@pi-cloud/protocol").ToolEnvironmentRequest,
+    );
   const bindings = await f.runtime.create({
     command: { ...command, payload: { ...command.payload, sessionKind: "subagent" } },
-    prepareEnvironment,
+    environment,
     prepareWorkflow: async () => {
       throw Error("No script");
     },
   });
   expect(bindings.current().find((b) => b.tool.name === "subagent")!.offered).toBe(false);
   expect(bindings.current().find((b) => b.tool.name === "contact_supervisor")!.offered).toBe(true);
-  expect(prepareEnvironment).not.toHaveBeenCalled();
+  expect(environment).not.toHaveBeenCalled();
   const preview = bindings.current().find((b) => b.tool.name === "preview")!
     .tool as PreparedAgentTool;
   const prepared = await withToolInvocation({ id: "task:6", nativeToolCallId: "preview" }, () =>
     preview.prepareExecution!("preview", { port: 3000 }),
   );
   expect(prepared.command).toMatchObject({ bindingId: "binding", toolName: "preview" });
-  expect(prepareEnvironment).toHaveBeenCalledOnce();
+  expect(environment).toHaveBeenCalledOnce();
   prepared.dispose();
   f.mailbox.close();
 });
@@ -302,7 +307,8 @@ it("cancels outstanding workflow host calls and rejects late callbacks after dis
   });
   const bindings = await f.runtime.create({
     command,
-    prepareEnvironment: async () => "unused",
+    environment: () =>
+      ({ requestId: "unused" }) as import("@pi-cloud/protocol").ToolEnvironmentRequest,
     prepareWorkflow: async (_id, _script, call) => {
       callback = call;
       return {
@@ -339,6 +345,7 @@ it("offers phone capabilities only to the granted root and lazily prepares its o
   const mailbox = new ToolReplyMailbox();
   const prepareTarget = vi.fn(async () => crypto.randomUUID());
   const runtime = new WorkerToolRuntime({
+    implementation: () => ({ releaseId: "test-v1", generation: 1, replay: "never" }),
     catalog,
     prepareTarget,
     maximumDepth: null,
@@ -374,12 +381,12 @@ it("offers phone capabilities only to the granted root and lazily prepares its o
       ],
     },
   };
-  const prepareEnvironment = vi.fn(async () => {
+  const environment = vi.fn(() => {
     throw Error("Phone tools must not allocate Cube");
   });
   const context = {
     command: granted,
-    prepareEnvironment,
+    environment,
     prepareWorkflow: async () => {
       throw Error("No workflow");
     },
@@ -410,7 +417,7 @@ it("offers phone capabilities only to the granted root and lazily prepares its o
   );
   expect(prepared.command).toMatchObject({ target: "executor", toolName: "android_observe" });
   expect(prepareTarget).toHaveBeenCalledTimes(1);
-  expect(prepareEnvironment).not.toHaveBeenCalled();
+  expect(environment).not.toHaveBeenCalled();
   if (!("operationId" in prepared.command)) throw Error("Wrong target");
   mailbox.accept({
     kind: "tool_result",
@@ -440,7 +447,10 @@ it("offers phone capabilities only to the granted root and lazily prepares its o
 it("withholds every workspace Tool from a workspace-null child and rejects stale invocation", async () => {
   const f = fixture();
   f.runtime.options.maximumDepth = null;
-  const prepareEnvironment = vi.fn(async () => "must-not-be-created");
+  const environment = vi.fn(
+    () =>
+      ({ requestId: "must-not-be-created" }) as import("@pi-cloud/protocol").ToolEnvironmentRequest,
+  );
   const prepareWorkflow = vi.fn(async () => {
     throw Error("must-not-run");
   });
@@ -449,7 +459,7 @@ it("withholds every workspace Tool from a workspace-null child and rejects stale
       ...command,
       payload: { ...command.payload, sessionKind: "subagent", toolCapabilities: [] },
     },
-    prepareEnvironment,
+    environment,
     prepareWorkflow,
   });
   expect(bindings.current().find((b) => b.tool.name === "preview")?.offered).toBe(false);
@@ -470,7 +480,7 @@ it("withholds every workspace Tool from a workspace-null child and rejects stale
   expect(bindings.current().find((b) => b.tool.name === "late_workspace_tool")?.offered).toBe(
     false,
   );
-  expect(prepareEnvironment).not.toHaveBeenCalled();
+  expect(environment).not.toHaveBeenCalled();
   expect(prepareWorkflow).not.toHaveBeenCalled();
   f.mailbox.close();
 });
@@ -478,7 +488,7 @@ it("withholds every workspace Tool from a workspace-null child and rejects stale
 it("refreshes root-only catalog tools without treating native Conversation 1 as an authority", async () => {
   const f = fixture();
   const prepare = {
-    prepareEnvironment: async () => {
+    environment: () => {
       throw Error("No Workspace is needed");
     },
     prepareWorkflow: async () => {
@@ -562,13 +572,15 @@ it("resolves Skill activation from the frozen manifest and only prepares a Works
     name: "script",
     runtimeMetadata: { ...text.runtimeMetadata, requiresWorkspaceFiles: true },
   };
-  const prepare = vi.fn(async () => "binding");
+  const prepare = vi.fn(
+    () => ({ requestId: "binding" }) as import("@pi-cloud/protocol").ToolEnvironmentRequest,
+  );
   const bindings = await f.runtime.create({
     command: { ...command, payload: { ...command.payload, skillCatalog: [text, script] } },
     prepareWorkflow: async () => {
       throw Error("No workflow");
     },
-    prepareEnvironment: prepare,
+    environment: prepare,
   });
   const tool = bindings.current().find((t) => t.tool.name === "read_skill")!
     .tool as PreparedAgentTool;

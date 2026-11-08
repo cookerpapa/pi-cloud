@@ -55,7 +55,6 @@ type RemoteOperationInput<T = ToolSandboxOperationRequest> = T extends unknown
 
 export type TrustedRemoteToolsRuntimeConfiguration = {
   observeToolDuration?: (seconds: number, outcome: "completed" | "failed") => void;
-  onToolCancellationUnconfirmed?: () => void;
   waitForToolReply?: (
     request: ToolSandboxOperationRequest,
     signals: { receipt: AbortSignal; lifetime: AbortSignal },
@@ -66,8 +65,18 @@ export type TrustedRemoteToolsRuntimeConfiguration = {
   workflowUrl?: string;
   activationId?: string;
   resolveOperationTarget?: () =>
-    | Promise<Readonly<{ workflowUrl: string; activationId: string }>>
-    | Readonly<{ workflowUrl: string; activationId: string }>;
+    | Promise<
+        Readonly<{
+          workflowUrl: string;
+          activationId: string;
+          environment?: import("@pi-cloud/protocol").ToolEnvironmentRequest;
+        }>
+      >
+    | Readonly<{
+        workflowUrl: string;
+        activationId: string;
+        environment?: import("@pi-cloud/protocol").ToolEnvironmentRequest;
+      }>;
   executionReference: string;
   turnContextSha256: string;
   executionContextSha256: string;
@@ -105,13 +114,24 @@ type ValidatedRemoteToolsRuntimeConfiguration = Omit<
   TrustedRemoteToolsRuntimeConfiguration,
   "workflowUrl" | "activationId" | "resolveOperationTarget"
 > & {
-  resolveOperationTarget(): Promise<Readonly<{ workflowUrl: string; activationId: string }>>;
+  resolveOperationTarget(): Promise<
+    Readonly<{
+      workflowUrl: string;
+      activationId: string;
+      environment?: import("@pi-cloud/protocol").ToolEnvironmentRequest;
+    }>
+  >;
 };
 
 function validateOperationTarget(target: {
   workflowUrl: string;
   activationId: string;
-}): Readonly<{ workflowUrl: string; activationId: string }> {
+  environment?: import("@pi-cloud/protocol").ToolEnvironmentRequest;
+}): Readonly<{
+  workflowUrl: string;
+  activationId: string;
+  environment?: import("@pi-cloud/protocol").ToolEnvironmentRequest;
+}> {
   const parsed = new URL(target.workflowUrl);
   if (
     (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
@@ -125,7 +145,11 @@ function validateOperationTarget(target: {
   ) {
     throw new Error("Trusted Tool Sandbox operation target is invalid");
   }
-  return { workflowUrl: parsed.toString(), activationId: target.activationId };
+  return {
+    workflowUrl: parsed.toString(),
+    activationId: target.activationId,
+    ...(target.environment ? { environment: target.environment } : {}),
+  };
 }
 
 function validateRuntimeConfiguration(
@@ -187,9 +211,6 @@ function validateRuntimeConfiguration(
     throw new Error("Trusted trace state is invalid");
   }
   return {
-    ...(candidate.onToolCancellationUnconfirmed
-      ? { onToolCancellationUnconfirmed: candidate.onToolCancellationUnconfirmed }
-      : {}),
     ...(candidate.observeToolDuration
       ? { observeToolDuration: candidate.observeToolDuration }
       : {}),
@@ -298,19 +319,11 @@ export function createTrustedRemoteAgentTools(
       { receipt: replySignal, lifetime },
       toolCallId,
     );
-    let cancellationUnconfirmed = false;
-    const markCancellationUnconfirmed = () => {
-      if (cancellationUnconfirmed) return;
-      cancellationUnconfirmed = true;
-      runtime.onToolCancellationUnconfirmed?.();
-    };
     // The image-decoding adapter adds a Promise above the mailbox. Observe that
     // Promise now: failure/cancellation can precede the command's Kafka ACK.
     void pending.result.catch(() => {});
     const failTransport = async (error: unknown): Promise<never> => {
       if (signal?.aborted) {
-        if (!pending.executionSettled() && !confirmsNoToolEffect(error))
-          markCancellationUnconfirmed();
         throw confirmsNoToolEffect(error) ? error : signal.reason;
       }
       // The native preparation wrapper records the precise Run interruption.
@@ -361,6 +374,7 @@ export function createTrustedRemoteAgentTools(
     };
     return {
       command: {
+        ...(target.environment ? { environment: target.environment } : {}),
         executionReference: runtime.executionReference,
         toolCallId: invocationId,
         request: candidate,
@@ -376,7 +390,6 @@ export function createTrustedRemoteAgentTools(
       },
       completed: pending.executionSettled,
       dispose: () => {
-        if (signal?.aborted && !pending.executionSettled()) markCancellationUnconfirmed();
         pendingAbort.abort(new Error("Tool reply wait closed"));
       },
       result: async () => {

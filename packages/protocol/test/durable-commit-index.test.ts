@@ -13,7 +13,7 @@ it("shares lookup across a batch without losing the order of repeated native wri
       kind: "pi.tool",
       abortRequested: false,
       input: { callId: `call-${id}` },
-      state: { checkpoint: { phase: "execute", arguments: { command } } },
+      state: { status: "running", checkpoint: { phase: "execute", arguments: { command } } },
     },
   });
   const commit: DurableSessionCommit = {

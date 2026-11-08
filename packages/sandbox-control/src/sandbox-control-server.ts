@@ -1,5 +1,7 @@
 import { Readable } from "node:stream";
 import {
+  PREPARE_ENVIRONMENT_IMAGES_PATH,
+  parseEnvironmentImagesRequest,
   SANDBOX_CONTROL_DEVELOPMENT_ENVIRONMENT_PATH,
   SANDBOX_CONTROL_DEVELOPMENT_ENVIRONMENT_TERMINAL_PATH,
   MAX_WORKSPACE_TERMINAL_FRAME_BYTES,
@@ -51,6 +53,13 @@ const MAXIMUM_TERMINAL_PENDING_INPUT_FRAMES = 128;
 export { SANDBOX_CONTROL_TERMINAL_PATH };
 
 export type SandboxControlServerOptions = {
+  environmentImages?: {
+    route(sessionId: string): Promise<string | undefined>;
+    prepare(
+      request: import("@pi-cloud/protocol").EnvironmentImagesRequest,
+      signal: AbortSignal,
+    ): Promise<import("@pi-cloud/protocol").EnvironmentImagesResponse>;
+  };
   host: string;
   port: number;
   serviceToken: string;
@@ -311,6 +320,29 @@ export class SandboxControlServer {
     this.#capacityMetrics = setInterval(() => this.#recordCapacityMetrics(), 1_000);
     this.#capacityMetrics.unref();
     this.#installRoutes();
+    if (options.environmentImages)
+      this.#server.post(PREPARE_ENVIRONMENT_IMAGES_PATH, async (request, reply) => {
+        if (!this.#serviceAuthorized(request.headers.authorization)) return reply.code(401).send();
+        const abort = new AbortController();
+        const closed = () => {
+          if (!reply.raw.writableEnded) abort.abort(new Error("Input preparation disconnected"));
+        };
+        reply.raw.on("close", closed);
+        try {
+          const body = parseEnvironmentImagesRequest(request.body);
+          const owner = await options.environmentImages!.route(body.environment.piSessionId);
+          if (owner)
+            return reply
+              .code(307)
+              .header("location", new URL(PREPARE_ENVIRONMENT_IMAGES_PATH, owner).toString())
+              .send();
+          return reply.send(await options.environmentImages!.prepare(body, abort.signal));
+        } catch (error) {
+          return this.#failure(reply, error);
+        } finally {
+          reply.raw.removeListener("close", closed);
+        }
+      });
     this.#server.server.on("connect", (request, socket, head) => {
       socket.on("error", () => socket.destroy());
       const connectionAbort = new AbortController();

@@ -21,10 +21,11 @@ export const operatorSources = new Set([
   "scripts/lib/model-catalog-probe.mjs",
   "scripts/generate-release-evidence.mjs",
   "scripts/lib/release-image-evidence.mjs",
-  "scripts/lib/session-runtime-release.mjs",
+  "scripts/lib/tool-host-release.mjs",
+  "scripts/lib/tool-host-activation.mjs",
   "scripts/lib/owned-runtime-outage.mjs",
   "scripts/lib/runtime-capability-acceptance.mjs",
-  "scripts/run-live-session-runtime-release-check.mjs",
+  "scripts/run-live-tool-host-release-check.mjs",
   "scripts/run-live-development-environment-check.mjs",
   "scripts/run-live-android-check.mjs",
   "scripts/run-live-schedules-check.mjs",
@@ -85,18 +86,18 @@ export const imageReleaseTargets = {
     workload: "deployment/pi-cloud-web",
     container: "web",
   },
-  "session-runtime": {
+  "tool-host": {
     imageName: "control-plane",
     buildScope: "control-plane",
     buildCatalogKey: "controlPlane",
-    catalogKey: "sessionRuntime",
-    componentName: "session-runtime",
-    workload: "deployment/pi-cloud-session-runtime",
-    container: "session-runtime",
+    catalogKey: "toolHost",
+    componentName: "tool-host",
+    workload: "deployment/pi-cloud-tool-host",
+    container: "tool-host",
   },
 };
 export const modelTests = new Set([
-  "scripts/lib/session-runtime-release.test.mjs",
+  "scripts/lib/tool-host-release.test.mjs",
   "scripts/lib/owned-runtime-outage.test.mjs",
   "scripts/lib/component-release.test.mjs",
   "scripts/lib/model-catalog-probe.test.mjs",
@@ -141,7 +142,7 @@ export function releaseImpact(files) {
         /^scripts\/lib\/.*\.test\.mjs$/.test(file),
     )
   )
-    return { scope: "session-runtime", matrix: { include: [fullImages[0]] }, buildImages: true };
+    return { scope: "tool-host", matrix: { include: [fullImages[0]] }, buildImages: true };
   if (
     files.some(
       (file) =>

@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
+import { setTimeout as delay } from "node:timers/promises";
 import type { Database } from "@pi-cloud/database";
 import { sql, type Kysely } from "kysely";
 import {
@@ -31,6 +32,27 @@ export class SessionControlOutbox {
     readonly database: Kysely<Database>,
     readonly publisher: SessionControlPublisher,
   ) {}
+
+  /** Confirms routing closure, never process exit or physical absence. */
+  async confirmBindingClosures(ids: readonly string[], timeoutMs = 30_000): Promise<void> {
+    if (!ids.length) return;
+    const until = Date.now() + timeoutMs;
+    for (;;) {
+      const pending = await this.database
+        .selectFrom("outbox")
+        .select("id")
+        .where("topic", "=", SESSION_CONTROL_OUTBOX_TOPIC)
+        .where("aggregate_id", "in", [...ids])
+        .where(sql<string>`payload->>'entity'`, "=", "sandbox_binding")
+        .where(sql<string>`payload->>'closed'`, "=", "true")
+        .where("applied_at", "is", null)
+        .limit(1)
+        .executeTakeFirst();
+      if (!pending) return;
+      if (Date.now() >= until) throw new Error("Execution-side binding closure is pending");
+      await delay(100);
+    }
+  }
 
   async flushEntities(
     entity: SessionControlChange["entity"],

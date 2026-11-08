@@ -45,6 +45,12 @@ export class SandboxBindingView implements SandboxBindingReader {
     this.#bindings.clear();
     this.#bytes = 0;
   }
+  owner(sessionId: string): (() => boolean) | undefined {
+    const generation = this.#generation;
+    const partition = this.options.partitionFor(sessionId);
+    if (!this.#ready || !this.#partitions.has(partition)) return;
+    return () => this.#ready && generation === this.#generation && this.#partitions.has(partition);
+  }
   async load(partitions: readonly number[], current: () => boolean): Promise<void> {
     this.reset();
     const generation = this.#generation;
@@ -103,11 +109,7 @@ export class SandboxBindingView implements SandboxBindingReader {
       delete entry.route;
     }
   }
-  async #change(
-    change: SandboxBindingChange,
-    current: () => boolean,
-    closureOnly: boolean,
-  ): Promise<void> {
+  async #change(change: SandboxBindingChange, current: () => boolean): Promise<void> {
     if (
       !current() ||
       !this.#ready ||
@@ -116,30 +118,20 @@ export class SandboxBindingView implements SandboxBindingReader {
       throw new Error("Sandbox binding view owner is unavailable");
     const generation = this.#generation;
     const entry = this.#entry(routeKey(change.scope.tenantId, change.runId, change.entityId));
-    // Publication admission checks current PG closure even for an old retry:
-    // an earlier unsent open notification must not hide a newer revocation.
-    if (!closureOnly && BigInt(change.version) <= entry.version) return;
+    if (BigInt(change.version) <= entry.version) return;
     entry.readers++;
     try {
       const row = await this.options.source.readChange(change);
       if (!current() || generation !== this.#generation) return;
       if (row && BigInt(row.revision) < BigInt(change.version))
         throw new Error("Sandbox binding state is behind its committed change");
-      if (!closureOnly || !row || row.dispatchClosed)
-        this.#apply(entry, row, row ? BigInt(row.revision) : BigInt(change.version));
+      this.#apply(entry, row, row ? BigInt(row.revision) : BigInt(change.version));
     } finally {
       entry.readers--;
     }
   }
-  prepare(change: SessionControlChange, current: () => boolean): Promise<void> {
-    return change.entity === "sandbox_binding"
-      ? this.#change(change, current, true)
-      : Promise.resolve();
-  }
   consume(change: SessionControlChange, current: () => boolean): Promise<void> {
-    return change.entity === "sandbox_binding"
-      ? this.#change(change, current, false)
-      : Promise.resolve();
+    return change.entity === "sandbox_binding" ? this.#change(change, current) : Promise.resolve();
   }
   closure(change: SandboxBindingChange, current: () => boolean): SandboxBindingRecord | undefined {
     if (
@@ -149,8 +141,8 @@ export class SandboxBindingView implements SandboxBindingReader {
       !this.#partitions.has(this.options.partitionFor(change.scope.piSessionId))
     )
       return;
-    // prepare() may already have installed this revision. The closed fact still
-    // needs its ordered effect, including during replay after a lost ACK.
+    // Bootstrap may already have installed this revision. The ordered fact still
+    // needs its side effects and acknowledgement after a lost publication reply.
     const row = this.#entries.get(
       routeKey(change.scope.tenantId, change.runId, change.entityId),
     )?.route;
@@ -172,8 +164,16 @@ export class SandboxBindingView implements SandboxBindingReader {
     if (!this.#ready) throw new Error("Sandbox binding view has not recovered");
     return this.#bindings.get(bindingId)?.route;
   }
-  closeWriter(...args: Parameters<SandboxBindingReader["closeWriter"]>): Promise<void> {
-    return this.options.source.closeWriter(...args);
+  async closeWriter(...args: Parameters<SandboxBindingReader["closeWriter"]>): Promise<void> {
+    // Called at the currently consumed work_finished/seal boundary. Do not wait
+    // for our own future Kafka close notification while consuming this record.
+    for (const entry of this.#entries.values()) {
+      if (entry.route?.writerId === args[0].writerId && entry.route.tenantId === args[0].tenantId) {
+        entry.closed = true;
+        entry.route = { ...entry.route, dispatchClosed: true };
+      }
+    }
+    await this.options.source.closeWriter(...args);
   }
   isAlive(instanceId: string): Promise<boolean> {
     return this.options.source.isAlive(instanceId);

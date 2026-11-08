@@ -173,7 +173,8 @@
         "sandboxControlUrls",
         "providerProxyUrl",
         "providerGatewayUrl",
-        "otlpTracesEndpoint"
+        "otlpTracesEndpoint",
+        "sessionExecutionUrl"
       ],
       "properties": {
         "controlPlaneUrl": {
@@ -196,6 +197,9 @@
         },
         "otlpTracesEndpoint": {
           "$ref": "#/$defs/optionalHttpUrl"
+        },
+        "sessionExecutionUrl": {
+          "$ref": "#/$defs/httpUrl"
         }
       }
     },

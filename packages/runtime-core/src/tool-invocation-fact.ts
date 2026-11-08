@@ -7,6 +7,7 @@ import {
   parseExecutorToolDispatch,
   type AcceptedExecutorToolCommand,
   parseToolSandboxOperationRequest,
+  parseToolEnvironmentRequest,
   type AcceptedToolCommand,
 } from "@pi-cloud/protocol";
 import type { AcceptedFact } from "./accepted-fact.ts";
@@ -39,6 +40,11 @@ export function toolCommandsForFact(
         ];
       }
       const { taskId, target: _target, ...command } = tool;
+      if (command.environment) {
+        parseToolEnvironmentRequest(command.environment);
+        if (command.environment.requestId !== command.request.activationId)
+          throw new Error("Tool logical binding identity changed");
+      }
       const intent = durableToolIntent(fact.commit, taskId, index);
       if (
         "args" in command.request ||

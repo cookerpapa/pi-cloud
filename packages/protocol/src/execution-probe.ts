@@ -16,6 +16,10 @@ export const ExecutionEvidenceSchema = Type.Object(
     targetId: id,
     bootId: id,
     observedAt: timestamp,
+    continuityId: Type.Optional(id),
+    continuity: Type.Optional(
+      Type.Union([Type.Literal("cold_restore"), Type.Literal("warm_reuse")]),
+    ),
   },
   { additionalProperties: false },
 );

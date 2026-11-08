@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -24,17 +24,17 @@ import {
 } from "./lib/owned-acceptance-cleanup.mjs";
 
 assert.equal(
-  process.env.PI_CLOUD_LIVE_SESSION_RUNTIME_RELEASE_CHECK,
+  process.env.PI_CLOUD_LIVE_TOOL_HOST_RELEASE_CHECK,
   "1",
-  "Authorize the prepared Session runtime release and owned Luna/Cube fixture",
+  "Authorize the prepared Tool host release and owned Luna/Cube fixture",
 );
 const [candidatePath, reportPath] = process.argv.slice(2);
-assert(candidatePath && reportPath, "Pass SESSION_RUNTIME_CANDIDATE PRIVATE_REPORT_DIRECTORY");
+assert(candidatePath && reportPath, "Pass TOOL_HOST_CANDIDATE PRIVATE_REPORT_DIRECTORY");
 const candidate = resolve(candidatePath),
   directory = resolve(reportPath);
 assert.equal(
   JSON.parse(await readFile(resolve(candidate, "candidate.json"), "utf8")).scope,
-  "session-runtime",
+  "tool-host",
 );
 // Reject stale source/artifacts/topology before creating a paid model fixture.
 execFileSync(
@@ -116,7 +116,7 @@ function pods() {
     .map((p) => ({
       name: p.metadata.name,
       uid: p.metadata.uid,
-      sessionRuntime: p.spec.containers.some((c) => c.name === "session-runtime"),
+      toolHost: p.spec.containers.some((c) => c.name === "tool-host"),
       roles: p.spec.containers.map((container) => container.name),
       images: p.spec.containers.map((c) => c.image),
       restarts: p.status.containerStatuses?.map((c) => c.restartCount),
@@ -137,14 +137,14 @@ try {
   );
   tenant = await createPrivateTenant(db, {
     slug: "release-acceptance-control-" + randomUUID(),
-    ownerDisplayName: "Session runtime release acceptance",
+    ownerDisplayName: "Tool host release acceptance",
     initialModel: { provider: "openai-codex", modelId: "gpt-6-luna" },
   });
   api = new PiCloudApi(
     (path, init) => fetch(new URL(String(path), base), init),
     tenant.credential.token,
   );
-  project = await api.createProject("Session runtime release acceptance");
+  project = await api.createProject("Tool host release acceptance");
   session = await api.createSession(
     project.projectId,
     project.workspaceId,
@@ -217,7 +217,7 @@ cat '${path}'; echo CONTROL_RELEASE_TOOL_DONE`;
     beforePods = pods(),
     beforeMachines = await machines();
   assert(beforeVms.length === 1 && beforeVms[0].runtime_id);
-  for (const role of ["control-plane", "session-runtime", "metering"])
+  for (const role of ["control-plane", "session-runtime", "tool-host", "metering"])
     assert(
       beforePods.some((pod) => pod.roles.includes(role)),
       `Required role Pod is missing: ${role}`,
@@ -241,55 +241,84 @@ cat '${path}'; echo CONTROL_RELEASE_TOOL_DONE`;
     machines: beforeMachines,
   };
   await save();
-  phase("replace only Session runtime while original Bash waits in the same VM");
+  phase("replace only Tool host while original Bash waits in the same VM");
   const started = Date.now();
-  execFileSync(
+  let released = false;
+  const child = spawn(
     process.execPath,
     ["--import", "tsx", "scripts/run-component-release.mjs", "apply", candidate],
     { stdio: "inherit", timeout: 1_200_000 },
   );
+  const replacement = new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code) =>
+      code === 0 ? resolve() : reject(new Error(`Tool release exited ${code}`)),
+    );
+  }).finally(() => {
+    released = true;
+  });
+  void replacement.catch(() => {});
+  const apiSamples = [];
+  // Exercise actual Session reads and durable input admission while the Tool
+  // process is replaced; this runs concurrently with release, not another test.
+  while (!released) {
+    const at = Date.now();
+    await api.getRun(run.runId);
+    apiSamples.push(Date.now() - at);
+    if (apiSamples.length === 1) {
+      const queued = await api.acceptTurn(
+        session.sessionId,
+        "After the current work, acknowledge TOOL_HOST_API_STAYED_ONLINE.",
+        newIdempotencyKey("tool-host-concurrent-input"),
+        "low",
+        undefined,
+        "follow_up",
+      );
+      report.concurrentInput = queued;
+    }
+    await delay(300);
+  }
+  await replacement;
+  report.apiDuringReplacement = { requests: apiSamples.length, maximumMs: Math.max(...apiSamples) };
   report.replacementMs = Date.now() - started;
   const afterDeployment = JSON.parse(
     await readFile(resolve(runtimeDirectory, "k3s/deployment.json"), "utf8"),
   );
-  for (const role of ["control-plane", "metering"])
+  for (const role of ["control-plane", "session-runtime", "metering"])
     assert.deepEqual(
       afterDeployment.components[role],
       beforeDeployment.components[role],
       `${role} artifact provenance changed`,
     );
   assert.notEqual(
-    afterDeployment.components["session-runtime"].reference,
-    beforeDeployment.components["session-runtime"].reference,
-    "Session runtime artifact did not change",
+    afterDeployment.components["tool-host"].reference,
+    beforeDeployment.components["tool-host"].reference,
+    "Tool host artifact did not change",
   );
   const receipt = JSON.parse(
-    await readFile(resolve(candidate, "session-runtime-replacement.json"), "utf8"),
+    await readFile(resolve(candidate, "tool-host-replacement.json"), "utf8"),
   );
   assert.equal(receipt.phase, "applied");
-  assert.equal(receipt.role, "session-runtime");
+  assert.equal(receipt.role, "tool-host");
   assert(
-    beforePods.some((pod) => pod.sessionRuntime && pod.uid === receipt.podUid),
+    beforePods.some((pod) => pod.toolHost && pod.uid === receipt.podUid),
     "Replacement receipt did not identify the original Session process",
   );
-  assert(
-    !pods().some((pod) => pod.uid === receipt.podUid),
-    "Old Session-runtime Pod is still present",
-  );
-  report.oldSessionProcessAbsentVerified = true;
+  assert(!pods().some((pod) => pod.uid === receipt.podUid), "Old Tool-host Pod is still present");
+  report.oldToolProcessAbsentVerified = true;
   assert.deepEqual(await runIdentity(run.runId), beforeRun, "Original Run ownership changed");
   assert.deepEqual(await workers(), beforeWorkers, "A Worker boot changed");
   assert.deepEqual(await vms(), beforeVms, "The active VM allocation changed");
   assert.deepEqual(await machines(), beforeMachines, "An existing development machine changed");
   const afterPods = pods();
   assert.deepEqual(
-    afterPods.filter((p) => !p.sessionRuntime),
-    beforePods.filter((p) => !p.sessionRuntime),
+    afterPods.filter((p) => !p.toolHost),
+    beforePods.filter((p) => !p.toolHost),
     "Another workload restarted",
   );
   assert.notDeepEqual(
-    afterPods.filter((p) => p.sessionRuntime).map((p) => p.uid),
-    beforePods.filter((p) => p.sessionRuntime).map((p) => p.uid),
+    afterPods.filter((p) => p.toolHost).map((p) => p.uid),
+    beforePods.filter((p) => p.toolHost).map((p) => p.uid),
   );
   report.preserved = {
     workerBoots: true,
@@ -414,7 +443,7 @@ cat '${path}'; echo CONTROL_RELEASE_TOOL_DONE`;
     }),
   );
   if (failure)
-    throw new Error("Session runtime release acceptance failed; inspect private evidence", {
+    throw new Error("Tool host release acceptance failed; inspect private evidence", {
       cause: failure,
     });
 }

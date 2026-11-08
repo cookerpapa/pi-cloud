@@ -8,7 +8,7 @@ import { RunCancellationExecutor } from "@pi-cloud/runtime-core/run-cancellation
 import type { ExecutionLogFactory } from "@pi-cloud/runtime-core/execution-log";
 import { WorkerExecutionLog } from "@pi-cloud/runtime-core/worker-execution-log";
 import { kafkaProducerLane } from "@pi-cloud/runtime-core/kafka-accepted-fact";
-import { KafkaToolReplyMailbox } from "@pi-cloud/event-log";
+import { KafkaToolReplyMailbox, KafkaToolCatalogConsumer } from "@pi-cloud/event-log";
 import { DurableSessionPublisher } from "@pi-cloud/runtime-core/durable-session-publisher";
 import { type ActiveExecutionLogResolver } from "@pi-cloud/runtime-core/accepted-fact";
 import { AgentRunExecutionBackend } from "./agent-run-execution-backend.ts";
@@ -18,7 +18,7 @@ import { createDatabase, type Database } from "@pi-cloud/database";
 import { operationalLog, type PiCloudMetrics } from "@pi-cloud/observability";
 import { PostgresDurableSessionHost } from "@pi-cloud/pi-session-postgres/durable";
 import type { SupervisorBootProvisionRequest } from "@pi-cloud/protocol";
-import { ReplicatedSandboxControlClient } from "@pi-cloud/sandbox-control";
+import { ReplicatedSandboxControlClient, SandboxControlClient } from "@pi-cloud/sandbox-control";
 import {
   AgentRunSupervisor,
   RemoteToolSandboxTurnRunner,
@@ -46,7 +46,6 @@ import {
   type PostgresPiWorkerState,
 } from "./postgres-pi-worker.ts";
 import { SupervisorProvisioningClient } from "./provisioning-client.ts";
-import { resolveWorkspaceSeed } from "./workspace-seed.ts";
 import { findRetiredRuns } from "./retired-runs.ts";
 import { RunActivityPublisher } from "./run-activity-publisher.ts";
 import { parseExecutionReference } from "@pi-cloud/protocol";
@@ -175,6 +174,7 @@ export class PiWorkerRuntime {
   #modelPermits: FamilyModelPermits | undefined;
   #activity: RunActivityPublisher | undefined;
   readonly #toolCatalog = new WorkerToolCatalog();
+  #catalogConsumer: KafkaToolCatalogConsumer | undefined;
   #publicEgress: import("@pi-cloud/protocol").GuestPublicEgress = {
     revision: 0,
     status: "unknown",
@@ -453,6 +453,27 @@ export class PiWorkerRuntime {
     this.#toolReplies = toolReplies;
     await toolReplies.start();
     this.#assertStarting();
+    this.#catalogConsumer = new KafkaToolCatalogConsumer({
+      brokers: this.#config.kafka.brokers,
+      replicas: this.#config.kafka.replicas,
+      instanceId: identity.bootId,
+      minimumGeneration: async () => {
+        const { rows } = await sql<{ generation: string }>`select generation::text
+          from tool_catalog_publication where scope='platform'`.execute(this.#readDatabase);
+        return Number(rows[0]?.generation ?? 1);
+      },
+      onSnapshot: ({ catalog }) => {
+        this.#toolCatalog.update(catalog);
+        operationalLog({
+          service: "pi-cloud-pi-worker",
+          level: "info",
+          event: "runtime.tool_catalog_changed",
+          attributes: { revision: catalog.revision, tools: catalog.tools.length },
+        });
+      },
+    });
+    await this.#catalogConsumer.start();
+    this.#assertStarting();
     const images = await configuredImageAttachments(this.#database, this.#readDatabase, () =>
       capturePreparationWork("image_read"),
     );
@@ -497,6 +518,16 @@ export class PiWorkerRuntime {
     );
     this.#executionTargets = executionTargets;
     const trustedTools = new WorkerToolRuntime({
+      implementation: (name) => {
+        const snapshot = this.#catalogConsumer?.view.snapshot;
+        return snapshot
+          ? {
+              releaseId: snapshot.releaseId,
+              generation: snapshot.generation,
+              replay: snapshot.replayable.includes(name) ? "safe" : "never",
+            }
+          : undefined;
+      },
       catalog: this.#toolCatalog,
       nativeConversations: nativeSessions,
       control: this.#subagentControl,
@@ -528,8 +559,10 @@ export class PiWorkerRuntime {
       report: (delivery) => activity.execution(delivery),
       confirm: (delivery, signal) => activity.confirmExecution(delivery, signal),
     });
-    toolReplies.onExecutionEvidence = (id, evidence) =>
+    toolReplies.onExecutionEvidence = (id, evidence) => {
       workerLog?.recordExecutionEvidence(id, evidence);
+      this.#agentRunner?.observeExecution(evidence);
+    };
     const runner = new RemoteToolSandboxTurnRunner({
       publicEgress: () => this.#publicEgress,
       onRuntimeBinding: (reference, bindingId, conversationId) =>
@@ -598,7 +631,12 @@ export class PiWorkerRuntime {
         void result.catch(() => {});
         return { result, executionSettled: restored.executionSettled };
       },
-      broker: this.#sandboxControl,
+      broker: new SandboxControlClient({
+        baseUrl: this.#config.sessionExecutionBaseUrl,
+        serviceToken: this.#config.sandboxControlServiceToken,
+        allowInsecureHttp: this.#config.allowInsecureInternalHttp,
+        requestTimeoutMs: this.#config.sandboxControlRequestTimeoutMs,
+      }),
       conversations: nativeSessions,
       openConversationLog: (command) => {
         const p = command.payload;
@@ -637,7 +675,6 @@ export class PiWorkerRuntime {
         }),
       createTrustedTools: (command, context) => trustedTools.create({ command, ...context }),
       modelRuntimeLeaseResolver: (command, signal) => modelGateway.issue(command, signal),
-      workspaceSeedResolver: resolveWorkspaceSeed,
       ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
     });
     this.#agentRunner = runner;
@@ -649,26 +686,6 @@ export class PiWorkerRuntime {
     });
     this.#runSupervisor = runSupervisor;
     client = new ReconnectingSupervisorWebSocketClient({
-      onToolCatalog: (catalog) => {
-        try {
-          const previous = this.#toolCatalog.ready ? this.#toolCatalog.read().revision : undefined;
-          this.#toolCatalog.update(catalog);
-          if (previous !== catalog.revision)
-            operationalLog({
-              service: "pi-cloud-pi-worker",
-              level: "info",
-              event: "runtime.tool_catalog_changed",
-              attributes: { revision: catalog.revision, tools: catalog.tools.length },
-            });
-        } catch {
-          operationalLog({
-            service: "pi-cloud-pi-worker",
-            level: "error",
-            event: "runtime.tool_catalog_rejected",
-            attributes: { revision: catalog.revision },
-          });
-        }
-      },
       onRuntimeConfiguration: ({ publicEgress }) => {
         if (
           this.#publicEgress.status === "unknown" ||
@@ -838,7 +855,11 @@ export class PiWorkerRuntime {
     if (this.#starting && !this.#startupFinished) {
       // Registration can wait for reconnect indefinitely. Interrupt existing
       // startup waiters, then join acquisition before disposing its resources.
-      for (const stop of [() => this.#client?.stop(), () => this.#runWorker?.stop()]) {
+      for (const stop of [
+        () => this.#client?.stop(),
+        () => this.#runWorker?.stop(),
+        () => this.#catalogConsumer?.close(),
+      ]) {
         try {
           await stop();
         } catch (error) {
@@ -864,6 +885,7 @@ export class PiWorkerRuntime {
       () => this.#modelPermits?.close(),
       () => this.#activity?.close(),
       () => this.#nativeSessions?.close(),
+      () => this.#catalogConsumer?.close(),
       () => this.#toolReplies?.shutdown(),
       () => this.#images?.blobs.close(),
       () => this.#subagentControl?.close(),

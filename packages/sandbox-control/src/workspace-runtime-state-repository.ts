@@ -689,6 +689,10 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         ])
         .where("lease_id", "=", execution.leaseId)
         .where("accepting_effects", "=", true)
+        .where(
+          sql<boolean>`exists(select 1 from session_leases l where l.lease_id=${execution.leaseId}::uuid
+          and l.tool_bindings_closed_at is null)`,
+        )
         .where("run_id", "=", execution.runId)
         .where("fencing_token", "=", String(execution.fencingToken))
         .where("valid_until", ">", sql<Date>`clock_timestamp()`)

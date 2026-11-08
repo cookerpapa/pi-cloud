@@ -143,14 +143,19 @@
         "metering",
         "web",
         "workspaceVolumeGateway",
-        "sshGateway"
+        "sshGateway",
+        "toolHost"
       ],
       "properties": {
         "controlPlane": {
           "$ref": "#/$defs/image"
         },
-        "sessionRuntime": { "$ref": "#/$defs/image" },
-        "metering": { "$ref": "#/$defs/image" },
+        "sessionRuntime": {
+          "$ref": "#/$defs/image"
+        },
+        "metering": {
+          "$ref": "#/$defs/image"
+        },
         "web": {
           "$ref": "#/$defs/image"
         },
@@ -158,6 +163,9 @@
           "$ref": "#/$defs/image"
         },
         "workspaceVolumeGateway": {
+          "$ref": "#/$defs/image"
+        },
+        "toolHost": {
           "$ref": "#/$defs/image"
         }
       }
@@ -218,10 +226,19 @@
       "additionalProperties": false,
       "required": ["executionBaseUrl", "replicas", "autoscaling", "resources"],
       "properties": {
-        "executionBaseUrl": { "$ref": "#/$defs/httpUrl" },
-        "replicas": { "type": "integer", "minimum": 1 },
-        "autoscaling": { "$ref": "#/$defs/autoscaling" },
-        "resources": { "type": "object" }
+        "executionBaseUrl": {
+          "$ref": "#/$defs/httpUrl"
+        },
+        "replicas": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "autoscaling": {
+          "$ref": "#/$defs/autoscaling"
+        },
+        "resources": {
+          "type": "object"
+        }
       }
     },
     "sshGateway": {
@@ -692,6 +709,20 @@
         "replicas": {
           "type": "integer",
           "minimum": 1
+        },
+        "resources": {
+          "type": "object"
+        }
+      }
+    },
+    "toolHost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["replicas", "resources"],
+      "properties": {
+        "replicas": {
+          "type": "integer",
+          "const": 1
         },
         "resources": {
           "type": "object"

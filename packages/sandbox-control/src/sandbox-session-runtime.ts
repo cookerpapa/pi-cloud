@@ -5,7 +5,7 @@ import {
   encodeSessionImages,
   type ConfiguredImageAttachments,
 } from "@pi-cloud/session-attachments";
-import { parseExecutionReference, type AcceptedToolCommand } from "@pi-cloud/protocol";
+import { parseExecutionReference } from "@pi-cloud/protocol";
 import type { Kysely } from "kysely";
 import { setTimeout as delay } from "node:timers/promises";
 import { loadSandboxControlConfig } from "./sandbox-control-config.ts";
@@ -14,11 +14,15 @@ import { PostgresSandboxBindings } from "./sandbox-bindings.ts";
 import { SandboxBindingView } from "./sandbox-binding-view.ts";
 import { SessionBindingExecution } from "./session-binding-execution.ts";
 import { SessionResourceAccess } from "./session-resource-access.ts";
+import { executionTargetId } from "./sandbox-execution.ts";
 import { SandboxControlServer, type SandboxControlBackend } from "./sandbox-control-server.ts";
 import { SandboxControlError } from "./sandbox-provider.ts";
 import { PostgresSandboxHttpServiceRegistry } from "./sandbox-http-service-registry.ts";
 import { WorkflowCommandDispatcher } from "./workflow-command-dispatcher.ts";
 import { ToolCommandDispatcher, type ToolLogDelivery } from "./tool-command-dispatcher.ts";
+import { CubeSandboxToolExecutor } from "./cubesandbox-tool-executor.ts";
+import { ToolEnvironmentCoordinator } from "./tool-environment-coordinator.ts";
+import { SandboxControlClient } from "./sandbox-control-client.ts";
 import { ExecutionPathProbes } from "./execution-path-probes.ts";
 import { RuntimeRetention } from "./runtime-retention.ts";
 import { quarantineExecutionTarget } from "./runtime-quarantine.ts";
@@ -30,6 +34,7 @@ export async function createSandboxSessionRuntime(options: {
   publicationDatabase: Kysely<Database>;
   instanceId: string;
   managementToken: string;
+  managementBaseUrls?: readonly string[];
   metrics: PiCloudMetrics;
   images?: ConfiguredImageAttachments;
   publishBindingChanges(ids: readonly string[]): Promise<void>;
@@ -65,6 +70,9 @@ export async function createSandboxSessionRuntime(options: {
       instanceId,
       config.advertisedBaseUrl,
       options.publishBindingChanges,
+      async () => {
+        throw new Error("Physical closure belongs to resource management");
+      },
     );
     const bindingView = new SandboxBindingView({
       source: bindings,
@@ -79,6 +87,24 @@ export async function createSandboxSessionRuntime(options: {
       ...(options.images ? { images: options.images } : {}),
     });
     cleanup.push(() => execution.close());
+    let nextManagement = 0;
+    const environments = new ToolEnvironmentCoordinator({
+      bindings: bindingView,
+      management: {
+        create: (request, signal) => {
+          const urls = options.managementBaseUrls ?? [];
+          if (!urls.length) throw new Error("Sandbox management endpoint is unavailable");
+          const client = new SandboxControlClient({
+            baseUrl: urls[nextManagement++ % urls.length]!,
+            serviceToken: config.serviceToken,
+            allowInsecureHttp: true,
+            requestTimeoutMs: 360_000,
+          });
+          return client.create(request, signal);
+        },
+      },
+    });
+    cleanup.push(() => environments.reset());
     const resources = new SessionResourceAccess(database, provider);
     const replies = new KafkaToolReplyPublisher(
       config.kafkaBrokers,
@@ -172,7 +198,8 @@ export async function createSandboxSessionRuntime(options: {
     cleanup.push(() => retention.close());
     const dispatcher = new ToolCommandDispatcher({
       routes: bindingView,
-      cube: client,
+      executor: new CubeSandboxToolExecutor(client),
+      environments,
       metrics,
       onDispatch: (command, route) => probes.rememberTool(command, route),
       workflow: (_route, delivery) => receive(delivery),
@@ -206,7 +233,13 @@ export async function createSandboxSessionRuntime(options: {
         .executeTakeFirst();
       const snapshot = row?.snapshot as unknown as
         import("./sandbox-execution.ts").SandboxBindingSnapshot | undefined;
-      if (!row || row.dispatch_closed || snapshot?.assignment.executionReference !== reference)
+      if (!row)
+        throw new SandboxControlError(
+          "tool_binding_pending",
+          "Logical environment is not prepared yet",
+          true,
+        );
+      if (row.dispatch_closed || snapshot?.assignment.executionReference !== reference)
         throw new SandboxControlError("tool_binding_closed", "Tool binding is unavailable", false);
       const owner = await options.ownerForPartition(options.partitionFor(row.pi_session_id));
       if (!owner) return;
@@ -214,14 +247,24 @@ export async function createSandboxSessionRuntime(options: {
       url.port = String(config.port);
       return url.toString();
     };
-    const waitBinding = async (id: string, reference: string, signal?: AbortSignal) => {
-      const until = Date.now() + 5000;
+    const waitBinding = async (
+      id: string,
+      reference: string,
+      signal?: AbortSignal,
+      timeoutMs = 5000,
+    ) => {
+      const until = Date.now() + timeoutMs;
       for (;;) {
-        const owner = await routeBinding(id, reference);
-        if (owner) return owner;
-        if (bindingView.binding(id)) return;
+        try {
+          const owner = await routeBinding(id, reference);
+          if (owner) return owner;
+          if (bindingView.binding(id)) return;
+        } catch (error) {
+          if (!(error instanceof SandboxControlError) || error.code !== "tool_binding_pending")
+            throw error;
+        }
         if (Date.now() >= until) throw new Error("Binding publication is pending");
-        await delay(10, undefined, { signal });
+        await delay(100, undefined, { signal });
       }
     };
     const managementRequired = async (): Promise<never> => {
@@ -271,7 +314,7 @@ export async function createSandboxSessionRuntime(options: {
         };
       },
       attachWorkflow: async (id, operation, reference, send, signal) => {
-        const owner = await waitBinding(id, reference, signal);
+        const owner = await waitBinding(id, reference, signal, 360_000);
         return owner
           ? relayWorkflowAttachment({
               baseUrl: owner,
@@ -296,94 +339,68 @@ export async function createSandboxSessionRuntime(options: {
       readiness: () => started && !closing,
       metrics,
       routeBinding: waitBinding,
+      environmentImages: {
+        route: async (id) => {
+          if (bindingView.owner(id)) return;
+          const owner = await options.ownerForPartition(options.partitionFor(id));
+          if (!owner) throw new Error("Session partition is unavailable");
+          const url = new URL(owner);
+          url.port = String(config.port);
+          return url.toString();
+        },
+        prepare: async ({ environment, images }, signal) => {
+          const current = bindingView.owner(environment.piSessionId);
+          if (!current) throw new Error("Session partition owner changed");
+          const assignment = environment.assignment;
+          const identity = parseExecutionReference(assignment.executionReference);
+          const scope = {
+            tenantId: assignment.tenantId,
+            sessionId: assignment.sessionId,
+            turnId: assignment.turnId,
+            runId: identity.runId,
+            writerId: identity.leaseId,
+            fencingToken: identity.fencingToken,
+            piSessionId: environment.piSessionId,
+          };
+          const binding = await environments.ensure(scope, environment, current, signal);
+          signal.throwIfAborted();
+          if (!current()) throw new Error("Input preparation owner changed");
+          const prepared = await execution.prepareInputImages(
+            {
+              toolBrokerProtocolVersion: 1,
+              type: "tool_sandbox.prepare_input_images",
+              requestId: crypto.randomUUID(),
+              activationId: binding.bindingId,
+              assignment,
+              images,
+            },
+            signal,
+          );
+          return {
+            images: prepared.images,
+            execution: {
+              bindingId: binding.bindingId,
+              targetId: executionTargetId(binding.descriptor.target),
+              bootId: binding.descriptor.target.bootId,
+              continuityId: binding.snapshot.physicalActivationId,
+              ...(binding.snapshot.continuity ? { continuity: binding.snapshot.continuity } : {}),
+              observedAt: Date.now(),
+            },
+          };
+        },
+      },
     });
     cleanup.push(() => server.close());
     await server.listen();
-    const route = async (scope: AcceptedToolCommand["scope"], id: string) => {
-      const binding = await bindingView.get(scope, id);
-      if (!binding || binding.dispatchClosed) throw new Error("Tool binding is unavailable");
-      return binding;
-    };
     return {
       retention,
       dispatcher,
       probes,
       bindingView,
       resources,
+      environments,
       publishReply: (topic: string, reply: import("@pi-cloud/event-log").ToolReply) =>
         replies.publish(topic, reply),
-      exportToolPackage: async (
-        scope: AcceptedToolCommand["scope"],
-        id: string,
-        operationId: string,
-        path: string,
-        signal?: AbortSignal,
-      ) => {
-        const binding = await route(scope, id);
-        return execution.exportPackage(
-          {
-            toolBrokerProtocolVersion: 1,
-            type: "tool_sandbox.export_package",
-            requestId: crypto.randomUUID(),
-            activationId: id,
-            assignment: binding.snapshot.assignment,
-            operationId,
-            path,
-          },
-          signal,
-        );
-      },
-      prepareToolPackage: async (
-        scope: AcceptedToolCommand["scope"],
-        id: string,
-        operationId: string,
-        content: import("@pi-cloud/protocol").SkillPackageContent,
-        digest: string,
-        signal?: AbortSignal,
-      ) => {
-        const binding = await route(scope, id);
-        return execution.preparePackage(
-          {
-            toolBrokerProtocolVersion: 1,
-            type: "tool_sandbox.prepare_package",
-            requestId: crypto.randomUUID(),
-            activationId: id,
-            assignment: binding.snapshot.assignment,
-            operationId,
-            content,
-            digest,
-          },
-          signal,
-        );
-      },
-      toolImageIo: async (
-        scope: AcceptedToolCommand["scope"],
-        id: string,
-        operationId: string,
-        action: Extract<
-          import("@pi-cloud/protocol").SandboxControlRequest,
-          { type: "tool_sandbox.image_io" }
-        >["action"],
-        signal?: AbortSignal,
-      ) => {
-        const binding = await route(scope, id);
-        return execution.imageIo(
-          {
-            toolBrokerProtocolVersion: 1,
-            type: "tool_sandbox.image_io",
-            requestId: crypto.randomUUID(),
-            activationId: id,
-            assignment: binding.snapshot.assignment,
-            operationId,
-            action,
-          },
-          signal,
-        );
-      },
-      refreshToolServices: async (scope: AcceptedToolCommand["scope"], id: string) => {
-        const binding = await route(scope, id);
-        return execution.refreshServices(id, binding.snapshot.assignment);
-      },
       consumeBindingChange: async (
         change: import("@pi-cloud/protocol").SessionControlChange,
         current: () => boolean,

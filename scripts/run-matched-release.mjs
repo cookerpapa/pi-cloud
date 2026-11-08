@@ -263,6 +263,7 @@ const services = [
   "ssh-gateway",
   "pi-workers",
   "session-runtime",
+  "tool-host",
   "control-plane",
   "workspace-volume-gateway",
   "metering",
@@ -276,7 +277,7 @@ async function stop(service) {
     workload(service),
     "-o",
     "json",
-    ...(["session-runtime", "metering", "workspace-quota"].includes(service)
+    ...(["session-runtime", "tool-host", "metering", "workspace-quota"].includes(service)
       ? ["--ignore-not-found"]
       : []),
   ]);
@@ -512,6 +513,8 @@ try {
       completionIdentity: candidate.completionIdentity,
       modelRuntimeSnapshot: 1,
       sessionRuntimeReplacement: 1,
+      toolHostReplacement: 1,
+      toolCatalogPublication: 1,
     },
   });
   deployment.nativeDependencies = JSON.parse(

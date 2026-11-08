@@ -1,0 +1,109 @@
+{{- if .Values.globalPlaneEnabled }}
+{{- $name := include "pi-cloud-platform.name" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-tool-host
+  labels:
+    {{- include "pi-cloud-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tool-host
+spec:
+  replicas: {{ .Values.toolHost.replicas }}
+  revisionHistoryLimit: 3
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: tool-host }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: tool-host
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.global.trustedNodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.global.trustedTolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 720
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: tool-host
+          image: {{ include "pi-cloud-platform.image" .Values.images.toolHost | quote }}
+          imagePullPolicy: {{ .Values.images.toolHost.pullPolicy }}
+          args: [/app/packages/control-plane/src/tool-host-main.ts]
+          ports: [{ name: http, containerPort: 4310 }, { name: metrics, containerPort: 9476 }]
+          env:
+            - { name: NODE_ENV, value: production }
+            - { name: HOST, value: 0.0.0.0 }
+            - { name: DATABASE_URL_FILE, value: /run/pi-cloud-secrets/database-url }
+            - { name: PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE, value: /run/pi-cloud-secrets/supervisor-management-token }
+            - { name: PI_CLOUD_SANDBOX_CONTROL_TOKEN_FILE, value: /run/pi-cloud-secrets/sandbox-control-token }
+            - { name: PI_CLOUD_SESSION_EXECUTION_BASE_URL, value: {{ .Values.sessionRuntime.executionBaseUrl | quote }} }
+            - { name: PI_CLOUD_KAFKA_BROKERS, value: {{ join "," .Values.global.kafka.brokers | quote }} }
+            - { name: PI_CLOUD_KAFKA_REPLICAS, value: {{ .Values.global.kafka.replicas | quote }} }
+            - { name: PI_CLOUD_IMAGE_REVISION, value: {{ .Values.global.imageRevision | quote }} }
+            - { name: PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH, value: {{ (index .Values "pi-workers").runtime.subagents.maximumDepth | default "unlimited" | quote }} }
+            - { name: NODE_USE_ENV_PROXY, value: "1" }
+            - { name: NO_PROXY, value: {{ .Values.controlPlane.noProxy | quote }} }
+            - { name: HTTPS_PROXY, value: {{ .Values.external.providerProxyUrl | quote }} }
+            - { name: HTTP_PROXY, value: {{ .Values.external.providerProxyUrl | quote }} }
+            - { name: PI_CLOUD_METRICS_HOST, value: 0.0.0.0 }
+            - { name: PI_CLOUD_METRICS_PORT, value: "9476" }
+            {{- if kindIs "slice" .Values.controlPlane.enabledControlTools }}
+            - { name: PI_CLOUD_CONTROL_TOOLS_ENABLED, value: {{ .Values.controlPlane.enabledControlTools | toJson | quote }} }
+            {{- end }}
+            {{- if .Values.imageAttachments.endpoint }}
+            - { name: PI_CLOUD_IMAGE_S3_ENDPOINT, value: {{ .Values.imageAttachments.endpoint | quote }} }
+            - { name: PI_CLOUD_IMAGE_S3_REGION, value: {{ .Values.imageAttachments.region | quote }} }
+            - { name: PI_CLOUD_IMAGE_S3_BUCKET, value: {{ .Values.imageAttachments.bucket | quote }} }
+            - { name: PI_CLOUD_IMAGE_S3_CREDENTIALS_FILE, value: /run/pi-cloud-secrets/session-image-s3-credentials.json }
+            {{- end }}
+            {{- if .Values.controlPlane.imageGeneration.model }}
+            - { name: PI_CLOUD_IMAGE_GENERATION_MODEL, value: {{ .Values.controlPlane.imageGeneration.model | quote }} }
+            - { name: PI_CLOUD_IMAGE_GENERATION_URL, value: {{ index .Values "pi-workers" "services" "providerGatewayUrl" | quote }} }
+            - { name: PI_CLOUD_IMAGE_GENERATION_API_KEY_FILE, value: /run/pi-cloud-secrets/image-generation-api-key }
+            {{- end }}
+          readinessProbe: { httpGet: { path: /health/ready, port: http }, periodSeconds: 5, timeoutSeconds: 3 }
+          livenessProbe: { httpGet: { path: /health/live, port: http }, periodSeconds: 10, timeoutSeconds: 3 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources: {{- toYaml .Values.toolHost.resources | nindent 12 }}
+          volumeMounts:
+            - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/database-url, subPath: {{ .Values.external.database.secretKey }}, readOnly: true }
+            - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/supervisor-management-token, subPath: supervisor-management-token, readOnly: true }
+            - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/sandbox-control-token, subPath: sandbox-control-token, readOnly: true }
+            {{- if .Values.imageAttachments.endpoint }}
+            - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/session-image-s3-credentials.json, subPath: {{ .Values.imageAttachments.credentialsSecretKey }}, readOnly: true }
+            {{- end }}
+            {{- if .Values.controlPlane.imageGeneration.model }}
+            - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/image-generation-api-key, subPath: {{ index .Values "pi-workers" "credentials" "providerGatewayApiKeyKey" }}, readOnly: true }
+            {{- end }}
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: platform-secrets
+          secret: { secretName: {{ .Values.global.existingSecret }}, defaultMode: 288 }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata: { name: tool-host }
+spec:
+  # The authenticated activation endpoint must be reachable before catalog readiness.
+  publishNotReadyAddresses: true
+  selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: tool-host }
+  ports: [{ name: http, port: 4310, targetPort: http }]
+{{- end }}

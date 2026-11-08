@@ -96,7 +96,8 @@ try {
     join(temporary, "kubectl"),
     `#!/usr/bin/env node
 const fs = require('node:fs'), path = require('node:path');
-const directory = process.env.PREFLIGHT_FIXTURE, args = process.argv.slice(2);
+const directory = process.env.PREFLIGHT_FIXTURE, raw = process.argv.slice(2);
+const args = raw[0]==='--namespace' ? raw.slice(2) : raw;
 fs.appendFileSync(path.join(directory,'calls.jsonl'),JSON.stringify(['kubectl',...args])+'\\n');
 const fixture = JSON.parse(fs.readFileSync(path.join(directory,'fixture.json'),'utf8'));
 function json(value){process.stdout.write(JSON.stringify(value));}
@@ -108,8 +109,10 @@ if(args[0]==='get'){
     const keys=fixture.secrets[name]; if(!keys){process.stderr.write('Unexpected Secret '+name);process.exit(1);}
     json({data:Object.fromEntries(keys.map(key=>[key,'c3ludGhldGlj']))});
   }else if(kind==='pvc')json({spec:{accessModes:['ReadWriteMany']}});
+  else if(kind==='deployment/pi-cloud-tool-host')json({spec:{template:{spec:{containers:[{name:'tool-host',image:'pi-cloud/control-plane:production'}]}}}});
+  else if(kind==='pods')json({items:[{metadata:{name:'tool-host-fixture'},status:{phase:'Running'},spec:{containers:[{name:'tool-host',image:'pi-cloud/control-plane:production'}]}}]});
   else json({metadata:{name}});
-}
+}else if(args[0]==='exec' && args[1]==='tool-host-fixture')json({generation:1,revision:'fixture'});
 `,
     { mode: 0o700 },
   );
@@ -323,16 +326,29 @@ if(args[0]!=='upgrade'){
     (result, calls) => {
       success(result);
       assert.deepEqual(
-        mutations(calls).map((call) => call.slice(0, 2)),
+        mutations(calls)
+          .slice(0, 2)
+          .map((call) => call.slice(0, 2)),
         [
           ["kubectl", "label"],
           ["helm", "upgrade"],
         ],
       );
+      const afterApply = mutations(calls).slice(2);
+      assert.equal(afterApply[0]?.[1], "exec", "Catalog activation precedes readiness waits");
+      assert(afterApply.slice(1).every((call) => call[1] === "rollout" && call[2] === "status"));
       const labelIndex = calls.findIndex((call) => call[1] === "label");
       assert(calls[labelIndex].includes("company.test/platform=allowed"));
       assert(calls[labelIndex].includes("company.test/workers=allowed"));
-      assert(calls.slice(labelIndex).every((call) => call[1] !== "get"));
+      assert(
+        calls
+          .slice(labelIndex)
+          .every(
+            (call) =>
+              call[1] !== "get" || ["deployment/pi-cloud-tool-host", "pods"].includes(call[2]),
+          ),
+        "Only post-apply activation reads may follow mutation; dependency preflight remains first",
+      );
     },
   );
   scenario(

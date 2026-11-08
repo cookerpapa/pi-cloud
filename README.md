@@ -66,7 +66,7 @@ Pi Worker <-> Worker-local Model Gateway <-> CLIProxyAPI <-> Model
 Pi Worker -> Session Kafka producer -> Kafka -> Session Projector
                                                +-> PostgreSQL (native state/history)
                                                +-> Browser (SSE)
-                                               +-> Control Tool handlers
+                                               +-> Ordinary Tool host (HTTP)
                                                `-> Cube native execution endpoint
 
 Control changes -> PostgreSQL + Outbox -> same Session Kafka partition
@@ -81,8 +81,9 @@ Model / Cube / storage receipts -> independent Metering service -> PG ledger
 | --- | --- |
 | PostgreSQL | Session configuration, Run admission, leases and control authority; materialized native history and current state |
 | Pi Worker | The pinned native Harness, context preparation, model requests and canonical Tool Result settlement |
-| Kafka | Acknowledged ordered Session commits and control propagation; separate Worker-boot reply transport |
+| Kafka | Ordered Session commits/control propagation, Worker-boot replies and a separate compacted Tool catalog |
 | Session runtime | Authenticated API/history/statements/SSE, Worker membership and the sole Projector for native projection and Tool dispatch |
+| Tool host | Independently published trusted ordinary Tool implementations; no Pi or Session consumer |
 | Control Plane | VM allocation, lifecycle recovery, resource maintenance and scheduled/SCM admission |
 | CubeSandbox | KVM isolation, fixed native file/shell tools and completion delivery |
 | CLIProxyAPI | Provider credentials, account selection and upstream model transport |
@@ -102,13 +103,16 @@ SSE, Worker membership and the sole Session Projector group. The separate
 `control-plane` process owns VM admission, recovery and resource lifecycle.
 Already-owned Sessions with active Cube bindings keep committing, dispatching
 Tools and serving reads while management is stopped. New VM activation and
-physical recovery wait for management. There is no independent Tool Broker. Ordinary control tools are registered
-on the execution side; their definitions reach Workers over the existing membership
-connection and take effect at the next model request.
+physical recovery wait for management. There is no independent Tool Broker. Ordinary control tools run in a separate `tool-host` process. Complete versioned
+definitions reach every Worker through a compacted Kafka configuration topic and
+take effect at the next model request. Updating these tools does not replace the
+Session API or Projector. The initial matched cutover is tracked in
+[the backlog](docs/BACKLOG.md#execution-owned-tools-and-bindings--implementation-in-progress).
 
 Sandbox integration uses focused lifecycle, execution, file, image, terminal,
 preview, workflow and credential interfaces over the same Cube implementation.
-The resource owner keeps admission and recovery; file access adds no lifecycle
+Workers describe logical targets; the Session execution side prepares bindings
+when needed. The resource owner keeps physical admission and recovery; file access adds no lifecycle
 authority or extra network hop. See the [provider boundaries](docs/ARCHITECTURE.md#tools-and-cube).
 
 One physical Pi Session has one renewable execution lease, one writer and one

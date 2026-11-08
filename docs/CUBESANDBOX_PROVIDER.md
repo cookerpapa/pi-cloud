@@ -9,8 +9,9 @@ serves workflow/image/Skill/preview data without that controller. Cubelet owns
 native execution and final delivery. [Boundary](adr/0302-session-runtime-and-resource-management.md).
 
 ```text
-Pi Tool -> validation/prepare in Worker -> publication ingress -> Kafka
-  -> Projector dispatch commit -> Cube API/Master -> Cubelet native exec
+Pi Tool -> Worker validates and commits through its Session producer -> Kafka
+  -> Projector dispatch commit -> execution-side binding preparation
+  -> Cube executor adapter -> Cube API/Master -> Cubelet native exec
   -> fixed guest Tool -> trusted Cube completion adapter -> Kafka reply
   -> original Worker callback -> Pi after-Tool hooks -> canonical Session append
 ```
@@ -32,8 +33,10 @@ without a per-command PG lease query. Domain-independent Projector ownership
 uses a deployment-owned Cube endpoint registry; metadata cannot select an
 unconfigured credential destination.
 
-PG binding revocation is installed at publication admission; its closed reference
-follows the same Kafka Session queue. Normal cancellation carries an operation ID
+PG closes resource/new-binding admission first; its closed reference follows the
+same Kafka Session queue. The partition owner consumes it and records stopped
+routing admission in the existing Outbox before management can retire the VM
+(ADR-0305). Kafka publication alone is not that acknowledgement. Normal cancellation carries an operation ID
 and position through that path to Cube. Cube acknowledges only signal acceptance;
 the fixed guest delivers cancellation to its Tool AbortController. Native Durable
 abort may settle before physical completion and discard the original waiter.
@@ -78,7 +81,7 @@ or changing Kafka dispatch semantics. The same fixed helper writes dedicated-mac
 uploads under UID 1000; elastic uploads use the existing Volume Gateway. See
 [chat uploads](CHAT_ATTACHMENTS.md) for limits and claims.
 
-The current matched guest/Tool Worker protocol is 5 (ADR-0249). Fixed file/Bash
+The current matched guest/Tool Worker protocol is 7 (see the build manifest). Fixed file/Bash
 requests carry binding/operation identity, arguments, timeout and output budget;
 workflow requests retain their Turn/Step context checks. No old guest decoder is
 kept. Guest input protocol 4 introduced `reap_upload_staging`, retained through the existing
@@ -86,7 +89,7 @@ fixed input helper for owned, running development machines. It takes guest-local
 filesystem exclusion and consults derived staging locators. Elastic uploads are
 maintained by the Volume Gateway; this operation does not allocate/wake a VM or
 contribute health/deletion evidence. The current native Tool Worker reply protocol
-is 5; managed Cube execution protocol remains 7. See
+is 7; managed Cube execution protocol is 8. See
 [ADR-0235](adr/0235-upload-staging-recovery.md) for staging layout and
 [ADR-0249](adr/0249-compact-projector-publication.md) for the current matched cutover.
 
@@ -139,10 +142,12 @@ never a conversation or Workspace durability dependency. User-owned development
 machines use the separate pause/resume/release lifecycle and never enter the
 elastic warm pool.
 
-Cube's absolute timeout is disabled for controller-managed runtimes. The
-Control Plane owns elastic lifecycle: active Tool bindings keep their Workspace Cube;
-an idle elastic runtime is destroyed
-after `PI_CLOUD_SANDBOX_WARM_TTL_MS`. A user owns an exclusive machine's
+Cubelet owns finite elastic retention in its allocation journal (ADR-0272).
+Ordered typed keepalive intents renew that deadline during Agent activity,
+including model thinking. Missing pulses eventually permit Cubelet idle expiry;
+Control Plane has no competing warm-cache deadline scanner. Management reconciles
+physical absence before releasing allocation/quota records.
+A user owns an exclusive machine's
 lifecycle through authenticated pause/resume/release operations. Controller
 restart adopts both elastic and user-owned VMs without changing their physical
 state. Destruction is an explicit lifecycle action and is followed by an exact
@@ -216,7 +221,7 @@ Pi Session records.
 
 ## Reconciliation and evidence
 
-Managed protocol 7 retains recoverable allocations (ADR-0223) and adds queryable
+Managed protocol 8 retains recoverable allocations (ADR-0223) and adds queryable
 Volume reference state (ADR-0226), alongside v2 boot replies. `SandboxProvider`
 receives an immutable PG-issued creation deadline alongside the physical identity.
 Cube creation carries that identity and deadline, and queries/closure use the

@@ -11,6 +11,7 @@ import {
   isExecutorToolCommand,
   isNamedToolCommand,
   parseDurableDisplayDescription,
+  parseToolEnvironmentRequest,
   type DurableCommitPublication,
   type DurableCommitPublisher,
   type AcceptedToolCancellation,
@@ -83,6 +84,15 @@ export class DurableSessionPublisher {
           };
           const index = new DurableCommitIndex(publication.commit);
           const tools: DurableToolDispatch[] = publication.tools.map(({ taskId, command }) => {
+            if ("environment" in command && command.environment) {
+              const environment = parseToolEnvironmentRequest(command.environment);
+              if (
+                environment.assignment.executionReference !== command.executionReference ||
+                environment.requestId !==
+                  ("target" in command ? command.bindingId : command.request.activationId)
+              )
+                throw new Error("Tool changed its logical environment identity");
+            }
             const sourceTask = index.task(taskId);
             const identity = resolve(
               command.executionReference,
@@ -144,6 +154,8 @@ export class DurableSessionPublisher {
                 contextAnchor: command.contextAnchor,
                 ...(recovery ? { recovery } : {}),
                 ...(command.bindingId ? { bindingId: command.bindingId } : {}),
+                ...(command.environment ? { environment: command.environment } : {}),
+                ...(command.implementation ? { implementation: command.implementation } : {}),
                 ...(command.sourceDocumentId ? { sourceDocumentId: command.sourceDocumentId } : {}),
                 ...(command.replyMode ? { replyMode: command.replyMode } : {}),
                 ...(command.workflowKey ? { workflowKey: command.workflowKey } : {}),
@@ -166,6 +178,7 @@ export class DurableSessionPublisher {
                 : (({ script: _script, toolCallId: _callId, ...rest }) => rest)(command.request);
             return {
               target: "cube",
+              ...(command.environment ? { environment: command.environment } : {}),
               occurredAt: command.occurredAt,
               ...(command.traceContext ? { traceContext: command.traceContext } : {}),
               request,

@@ -92,7 +92,7 @@ jobs:
           PI_CLOUD_POSTGRES_INTEGRATION_URL: postgresql://pi_conformance:pi_conformance@127.0.0.1:5432/pi_conformance
 
       - name: Run scoped component contracts
-        if: needs.impact.outputs.scope == 'provider' || needs.impact.outputs.scope == 'catalog' || needs.impact.outputs.scope == 'session-runtime'
+        if: needs.impact.outputs.scope == 'provider' || needs.impact.outputs.scope == 'catalog' || needs.impact.outputs.scope == 'tool-host'
         run: npm run dependencies:harden && npm run format:check && npm run docs:check && npm run release:check -- "$RELEASE_SCOPE"
         env:
           RELEASE_SCOPE: ${{ needs.impact.outputs.scope }}

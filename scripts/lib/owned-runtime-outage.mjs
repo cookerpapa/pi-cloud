@@ -7,7 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { kubectl } from "./production-kubernetes.mjs";
 
 const targetFor = (role) => {
-  assert(["control-plane", "session-runtime"].includes(role), "Unknown outage role");
+  assert(["control-plane", "session-runtime", "tool-host"].includes(role), "Unknown outage role");
   return `deployment/pi-cloud-${role}`;
 };
 const templateHash = (value) =>

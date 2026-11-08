@@ -1,3 +1,4 @@
+import { activateToolHostInCluster } from "./tool-host-activation.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -310,14 +311,14 @@ export async function runtimeCapabilityAcceptance({
       JSON.stringify(receipt, null, 2),
       { mode: 0o600 },
     );
-    const restorePath = resolve(directory, `catalog-session-runtime-${randomUUID()}.restore.json`);
+    const restorePath = resolve(directory, `catalog-tool-host-${randomUUID()}.restore.json`);
     const unrelatedPods = () =>
       JSON.parse(
         kubectl([
           "get",
           "pods",
           "-l",
-          "app.kubernetes.io/component in (control-plane,metering)",
+          "app.kubernetes.io/component in (control-plane,session-runtime,metering)",
           "-o",
           "json",
         ]),
@@ -331,15 +332,11 @@ export async function runtimeCapabilityAcceptance({
         }))
         .sort((left, right) => left.name.localeCompare(right.name));
     const managementAndMetering = unrelatedPods();
-    const deployment = JSON.parse(kubectl(["get", workload("session-runtime"), "-o", "json"]));
-    assert.equal(
-      deployment.spec.replicas,
-      1,
-      "This fixture uses single-Session-runtime replacement",
-    );
-    const stopped = await armRuntimeRestore("session-runtime", restorePath, Date.now() + 180_000);
+    const deployment = JSON.parse(kubectl(["get", workload("tool-host"), "-o", "json"]));
+    assert.equal(deployment.spec.replicas, 1, "This fixture uses single-Tool-host replacement");
+    const stopped = await armRuntimeRestore("tool-host", restorePath, Date.now() + 180_000);
     try {
-      kubectl(["scale", workload("session-runtime"), "--current-replicas=1", "--replicas=0"]);
+      kubectl(["scale", workload("tool-host"), "--current-replicas=1", "--replicas=0"]);
       kubectl(["wait", "--for=delete", "pod", "-l", stopped.selector, "--timeout=120s"], {
         timeout: 125_000,
       });
@@ -351,11 +348,14 @@ export async function runtimeCapabilityAcceptance({
           values: file,
           kubeconfig,
           namespace,
+          wait: false,
         }),
         { stdio: "pipe", timeout: 330_000 },
       );
+      await activateToolHostInCluster({ kubectl: (args) => kubectl(args), release: "pi-cloud" });
+      kubectl(["rollout", "status", workload("tool-host"), "--timeout=180s"], { timeout: 185_000 });
     } finally {
-      const current = JSON.parse(kubectl(["get", workload("session-runtime"), "-o", "json"]));
+      const current = JSON.parse(kubectl(["get", workload("tool-host"), "-o", "json"]));
       assert.equal(current.metadata.uid, stopped.receipt.uid);
       if (current.spec.replicas === 0) await stopped.restore();
       else assert.equal(current.spec.replicas, stopped.receipt.replicas);

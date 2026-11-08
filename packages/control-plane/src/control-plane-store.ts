@@ -1,4 +1,5 @@
 import { defaultWorkspaceCapacityBytes } from "./workspace-capacity-service.ts";
+import { readConversationEnvironment } from "./conversation-environment.ts";
 import { parseScheduledOrigin, type ScheduledOrigin } from "@pi-cloud/protocol";
 import { readExecutionTargetGrants } from "@pi-cloud/runtime-core/execution-target-grants";
 import { searchConversationPage } from "./conversation-history-service.ts";
@@ -685,6 +686,9 @@ export class ControlPlaneStore {
 
   async getSessionModel(sessionId: string): Promise<SessionModelResource> {
     return this.#sessionModelResource(this.#database, sessionId);
+  }
+  getConversationEnvironment(sessionId: string) {
+    return readConversationEnvironment(this.#database, this.#tenantId, sessionId);
   }
 
   async updateSessionModel(

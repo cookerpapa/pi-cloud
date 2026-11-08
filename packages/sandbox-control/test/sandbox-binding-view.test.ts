@@ -85,11 +85,11 @@ it("bootstraps once and serves repeated Run and writer lookups without storage r
   expect(await f.view.get(f.scope, randomUUID())).toBeUndefined();
 });
 
-it("closes dispatch before log consumption and cannot reopen through delayed open changes", async () => {
+it("closes dispatch at log consumption and cannot reopen through delayed open changes", async () => {
   const f = fixture();
   await f.view.load([0], () => true);
   f.set({ ...f.original, revision: "3", dispatchClosed: true });
-  await f.view.prepare(f.change("3", true), () => true);
+  await f.view.consume(f.change("3", true), () => true);
   expect((await f.view.get(f.scope, f.original.bindingId))?.dispatchClosed).toBe(true);
   await f.view.consume(f.change("2"), () => true);
   await f.view.consume(f.change("3", true), () => true);
@@ -102,12 +102,11 @@ it("keeps new bindings out of the view until their ordered change is consumed", 
   f.set(undefined);
   await f.view.load([0], () => true);
   f.set(f.original);
-  await f.view.prepare(f.change("1"), () => true);
   expect(await f.view.get(f.scope, f.original.bindingId)).toBeUndefined();
-  expect(f.source.readChange).toHaveBeenCalledOnce();
+  expect(f.source.readChange).not.toHaveBeenCalled();
   await f.view.consume(f.change("1"), () => true);
   expect(await f.view.get(f.scope, f.original.bindingId)).toEqual(f.original);
-  expect(f.source.readChange).toHaveBeenCalledTimes(2);
+  expect(f.source.readChange).toHaveBeenCalledOnce();
 });
 
 it("does not resurrect a deleted route after an older read completes", async () => {
@@ -117,7 +116,7 @@ it("does not resurrect a deleted route after an older read completes", async () 
   f.source.readChange.mockImplementationOnce(() => old.promise);
   const reading = f.view.consume(f.change("2"), () => true);
   f.set(undefined);
-  await f.view.prepare(f.change("3", true), () => true);
+  await f.view.consume(f.change("3", true), () => true);
   old.resolve({ ...f.original, revision: "2" });
   await reading;
   expect(await f.view.get(f.scope, f.original.bindingId)).toBeUndefined();
@@ -144,7 +143,7 @@ it("discards both delayed bootstrap and event reads after assignment replacement
   expect(await f.view.get(f.scope, f.original.bindingId)).toBeUndefined();
 });
 
-it("an old publication retry still installs current deletion before its Kafka send", async () => {
+it("an ordered deletion defeats an earlier in-flight view read", async () => {
   const f = fixture();
   f.set({ ...f.original, revision: "10" });
   await f.view.load([0], () => true);
@@ -152,7 +151,7 @@ it("an old publication retry still installs current deletion before its Kafka se
   f.source.readChange.mockImplementationOnce(() => old.promise);
   const reading = f.view.consume(f.change("11"), () => true);
   f.set(undefined);
-  await f.view.prepare(f.change("8"), () => true);
+  await f.view.consume(f.change("12", true), () => true);
   old.resolve({ ...f.original, revision: "11" });
   await reading;
   expect(await f.view.get(f.scope, f.original.bindingId)).toBeUndefined();
@@ -166,7 +165,7 @@ it("keeps native Conversation bindings distinct within the same root work", asyn
   expect(await f.view.get(f.scope, f.original.bindingId)).toEqual(f.original);
   expect(await f.view.get(f.scope, child.bindingId)).toEqual(child);
   f.set({ ...f.original, revision: "2", dispatchClosed: true });
-  await f.view.prepare(f.change("2", true), () => true);
+  await f.view.consume(f.change("2", true), () => true);
   expect((await f.view.get(f.scope, f.original.bindingId))?.dispatchClosed).toBe(true);
   expect((await f.view.get(f.scope, child.bindingId))?.dispatchClosed).toBe(false);
 });
@@ -222,7 +221,7 @@ it("closes workflow channels only for the closed fact, even if an older referenc
     closed = f.change("3", true);
   if (open.entity !== "sandbox_binding" || closed.entity !== "sandbox_binding")
     throw new Error("fixture");
-  await f.view.prepare(open, () => true);
+  await f.view.consume(open, () => true);
   await f.view.consume(open, () => true);
   expect(f.view.closure(open, () => true)).toBeUndefined();
   for (let n = 0; n < 2; n++) {

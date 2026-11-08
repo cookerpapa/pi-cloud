@@ -58,6 +58,7 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
         controlPlane: image("controlPlane"),
         sessionRuntime: image("sessionRuntime"),
         metering: image("metering"),
+        toolHost: image("toolHost"),
         web: image("web"),
         workspaceVolumeGateway: image("volumeGateway"),
         sshGateway: image("sshGateway"),
@@ -87,7 +88,7 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
           `http://preview.localhost:${n("PI_CLOUD_HTTP_PORT", 8080)}`,
         cookieSecure: b("PI_CLOUD_WEB_SESSION_COOKIE_SECURE", false),
         noProxy:
-          "127.0.0.1,localhost,postgres,session-images,control-plane,session-runtime,metering,workspace-quota,workspace-volume-gateway,cube-api,cube-proxy,cli-proxy-api,gitlab.internal,.svc,.cluster.local,10.42.0.0/16,10.43.0.0/16,10.255.255.254",
+          "127.0.0.1,localhost,postgres,session-images,control-plane,session-runtime,tool-host,metering,workspace-quota,workspace-volume-gateway,cube-api,cube-proxy,cli-proxy-api,gitlab.internal,.svc,.cluster.local,10.42.0.0/16,10.43.0.0/16,10.255.255.254",
         publicRegistration: {
           enabled: b("PI_CLOUD_PUBLIC_REGISTRATION_ENABLED", true),
           maximumTenants: quota("PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS"),
@@ -186,6 +187,7 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
           otlpTracesEndpoint:
             e.PI_CLOUD_OBSERVABILITY_ENABLED === "1" ? "http://jaeger:4318/v1/traces" : "",
           controlPlaneUrl: "http://session-runtime:3000",
+          sessionExecutionUrl: "http://session-runtime:4300",
           providerProxyUrl: "http://provider-egress-relay:3129",
           providerGatewayUrl: "http://cli-proxy-api:8317",
         },

@@ -244,12 +244,29 @@ if (action === "deploy") {
       namespace,
       "--values",
       valuesPath,
-      "--atomic",
-      "--wait",
       "--timeout",
       "30m",
     ],
     { inherit: true },
   );
+  if (resources.some((r) => r.kind === "Deployment" && r.metadata.name === `${release}-tool-host`))
+    await activateToolHostInCluster({
+      release,
+      kubectl: (args) => run("kubectl", ["--namespace", namespace, ...args]),
+    });
+  for (const resource of resources.filter((r) => ["Deployment", "StatefulSet"].includes(r.kind)))
+    run(
+      "kubectl",
+      [
+        "--namespace",
+        namespace,
+        "rollout",
+        "status",
+        `${resource.kind.toLowerCase()}/${resource.metadata.name}`,
+        "--timeout=30m",
+      ],
+      { inherit: true },
+    );
   process.stdout.write(`PiCloud distributed release ${release} is ready.\n`);
 }
+import { activateToolHostInCluster } from "./lib/tool-host-activation.mjs";

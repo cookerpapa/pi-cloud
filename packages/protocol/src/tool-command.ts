@@ -21,6 +21,7 @@ export function isControlToolCommand(
 }
 
 export type CandidateToolCommand = Readonly<{
+  environment?: import("./tool-environment.ts").ToolEnvironmentRequest;
   executionReference: string;
   /** Cloud invocation identity (native result Entry ID); request retains the Pi call ID. */
   toolCallId: string;
@@ -33,6 +34,7 @@ export type CandidateToolCommand = Readonly<{
 }>;
 
 export type AcceptedToolCommand = Readonly<{
+  environment?: import("./tool-environment.ts").ToolEnvironmentRequest;
   kind: "tool_command";
   toolCallId: string;
   replyTopic?: string;

@@ -273,6 +273,8 @@ it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)(
       async (ids) => {
         expect(ids).toEqual([]);
       },
+
+      async () => {},
     );
     const phases: string[] = [],
       queries: string[] = [];
@@ -334,7 +336,13 @@ it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL)(
       } finally {
         spy.mockRestore();
       }
-      expect(queries).toHaveLength(6);
+      // The close transaction serializes late registration with lease-gate
+      // mutation before closing binding rows. This is per retirement, not per Tool.
+      expect(queries).toHaveLength(9);
+      const gate = queries.findIndex((q) => q.startsWith('update "session_leases"'));
+      const bindingClose = queries.findIndex((q) => q.startsWith('update "sandbox_tool_bindings"'));
+      expect(gate).toBeGreaterThanOrEqual(0);
+      expect(bindingClose).toBeGreaterThan(gate);
       expect(phases).toEqual(["close-routing", "initialize", "commit", "dispose"]);
       process.stdout.write(
         JSON.stringify({
@@ -374,6 +382,8 @@ it.skipIf(!process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL).each(["authority", "bi
       randomUUID(),
       "http://unused",
       publish,
+
+      async () => {},
     );
     const control = new PostgresPublicationControl({
       database,

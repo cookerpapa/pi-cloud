@@ -40,6 +40,7 @@ LABEL org.opencontainers.image.title="PiCloud production control plane" \
       org.opencontainers.image.revision="${PI_CLOUD_REVISION}"
 
 ENV NODE_ENV=production
+ENV PI_CLOUD_TOOL_RELEASE_ID=${PI_CLOUD_REVISION}:${PI_CLOUD_VERSION}
 WORKDIR /app
 COPY --from=dependencies /app/node_modules /app/node_modules
 COPY --from=dependencies /app/packages /app/packages

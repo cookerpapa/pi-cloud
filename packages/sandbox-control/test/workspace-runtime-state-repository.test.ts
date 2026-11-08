@@ -1,3 +1,4 @@
+import { insertTestBinding } from "./fixtures/binding.ts";
 import { SandboxBindingView } from "../src/sandbox-binding-view.ts";
 import { kafkaProducerLane } from "../../runtime-core/src/kafka-accepted-fact.ts";
 import { ConversationDeletionService } from "../../control-plane/src/conversation-deletion-service.ts";
@@ -516,6 +517,8 @@ describe("PostgreSQL Sandbox control ownership", () => {
       instanceId,
       "http://bindings.test",
       async () => {},
+
+      async () => {},
     );
     const view = new SandboxBindingView({
       source,
@@ -616,9 +619,12 @@ describe("PostgreSQL Sandbox control ownership", () => {
       instanceId,
       "http://quarantine.test",
       async () => {},
+
+      async () => {},
     );
     const register = async (bindingId: string, sandboxId: string) =>
-      bindings.register(
+      insertTestBinding(
+        bindings,
         bindingId,
         {
           version: 2,
@@ -1296,6 +1302,8 @@ describe("PostgreSQL Sandbox control ownership", () => {
       "20000000-0000-4000-8000-000000000004",
       "http://owner.test",
       async () => {},
+
+      async () => {},
     );
     const descriptor = {
       version: 2 as const,
@@ -1393,6 +1401,8 @@ describe("PostgreSQL Sandbox control ownership", () => {
       async () => {
         throw new Error("publication unavailable");
       },
+
+      async () => {},
     );
     await expect(unavailable.confirmPhysicalClosure(activation.activationId)).rejects.toThrow(
       "publication unavailable",
@@ -1737,6 +1747,8 @@ async function orderedClosureFixture() {
     instanceId,
     "http://ordered.test",
     async () => {},
+
+    async () => {},
   );
   const bindingId = randomUUID(),
     physicalId = randomUUID();
@@ -1761,7 +1773,8 @@ async function orderedClosureFixture() {
       runId: run.runId,
       executionReference: createExecutionReference(writerId, run.runId, 1),
     };
-    await bindings.register(
+    await insertTestBinding(
+      bindings,
       bindingId,
       {
         version: 2,
@@ -1993,6 +2006,8 @@ it("adopts a binding through durable Outbox metadata while publication is unavai
     replacementId,
     "http://adoption.test",
     publish,
+
+    async () => {},
   );
   const before = (await first.row()).revision;
   const rows = await adopted.adopt(f.physicalId);

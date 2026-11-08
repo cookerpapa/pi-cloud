@@ -90,6 +90,44 @@ export function parseDurableSessionCommit(value: unknown): DurableSessionCommit 
   return value as DurableSessionCommit;
 }
 
+/** The one private adapter for pinned Pi ToolTask state. Ordinary Tool code
+ * never reads checkpoint fields. Native Storage writes remain unchanged. */
+export function durableToolState(value: unknown):
+  | {
+      id: number;
+      conversationId: number;
+      aborted: boolean;
+      terminal: boolean;
+      running: boolean;
+      intent?: { callId: string; arguments: Record<string, unknown> };
+    }
+  | undefined {
+  const task = value as Record<string, unknown> | undefined;
+  if (task?.kind !== "pi.tool") return;
+  const state = task.state as
+    { status?: string; checkpoint?: { phase?: string; arguments?: unknown } } | undefined;
+  const input = task.input as { callId?: unknown } | undefined;
+  const args = state?.checkpoint?.arguments;
+  const admitted =
+    !task.abortRequested &&
+    state?.status === "running" &&
+    state?.checkpoint?.phase === "execute" &&
+    typeof input?.callId === "string" &&
+    args &&
+    typeof args === "object" &&
+    !Array.isArray(args);
+  return {
+    id: task.id as number,
+    conversationId: task.conversationId as number,
+    aborted: task.abortRequested === true,
+    terminal: state?.status === "terminal",
+    running: state?.status === "running",
+    ...(admitted
+      ? { intent: { callId: input!.callId as string, arguments: args as Record<string, unknown> } }
+      : {}),
+  };
+}
+
 /** A physical handoff must use the arguments in the very same durable intent. */
 export function durableToolIntent(
   commit: DurableSessionCommit,
@@ -100,21 +138,9 @@ export function durableToolIntent(
   arguments: Record<string, unknown>;
 } {
   if (index.commit !== commit) throw new Error("Native intent index belongs to another commit");
-  const task = index.task(taskId);
-  const state = task?.state as Record<string, unknown> | undefined;
-  const checkpoint = state?.checkpoint as Record<string, unknown> | undefined;
-  const input = task?.input as Record<string, unknown> | undefined;
-  if (
-    task?.kind !== "pi.tool" ||
-    task.abortRequested ||
-    checkpoint?.phase !== "execute" ||
-    typeof input?.callId !== "string" ||
-    !checkpoint.arguments ||
-    typeof checkpoint.arguments !== "object" ||
-    Array.isArray(checkpoint.arguments)
-  )
-    throw new Error("Tool handoff requires its admitted native execution intent");
-  return { callId: input.callId, arguments: checkpoint.arguments as Record<string, unknown> };
+  const intent = durableToolState(index.task(taskId))?.intent;
+  if (!intent) throw new Error("Tool handoff requires its admitted native execution intent");
+  return intent;
 }
 
 /** Dynamic workflow host calls are task-owned native documents. Their input

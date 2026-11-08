@@ -108,3 +108,4 @@ export {
   type ExecutorTransport,
   type ExecutorStatus,
 } from "./executor-transport.ts";
+export { executionTargetId } from "./sandbox-execution.ts";

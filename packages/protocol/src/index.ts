@@ -621,11 +621,14 @@ export * from "./tool-result.ts";
 export * from "./control-tools.ts";
 export * from "./control-tool-command.ts";
 export { durableControlIntent } from "./durable-session.ts";
+export { durableToolState } from "./durable-session.ts";
 export { isControlToolCommand, type CandidateToolEffect } from "./tool-command.ts";
 export * from "./tool-progress.ts";
 export * from "./tool-preview.ts";
 export * from "./run-observation.ts";
 export * from "./control-tool-catalog.ts";
+export * from "./tool-catalog-publication.ts";
+export * from "./tool-environment.ts";
 export * from "./queued-inputs.ts";
 export {
   MAX_AGENT_INPUT_CHARACTERS,
@@ -727,3 +730,5 @@ export * from "./model-billing.ts";
 export * from "./resource-metering.ts";
 
 export * from "./workspace-capacity.ts";
+export * from "./session-environment.ts";
+export type { ToolImplementation } from "./control-tool-command.ts";

@@ -1,5 +1,14 @@
 # Implementation roadmap
 
+## Execution-owned tools and independent publication — in progress
+
+Issues #12–#16 follow [ADR-0305](adr/0305-execution-owned-tools-and-bindings.md).
+Keep Pi in Workers; execution coordinates logical environment preparation and
+binding closure. One Projector remains; ordinary tools gain independent code
+publication and Kafka catalog snapshots. BoxLite is an isolated evaluation only.
+Complete source/protocol/documentation before combined serial verification and
+live acceptance. Current production remains the previous release until cutover.
+
 ## Independent runtime and resource accounting — deployed
 
 The six authorized slices are implemented and published as

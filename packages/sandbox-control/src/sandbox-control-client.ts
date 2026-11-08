@@ -1,6 +1,9 @@
 import { uploadHttp, readUploadReceipt } from "./upload-http.ts";
 import { fileTransferHttp } from "./workspace-file-transfer-http.ts";
 import {
+  PREPARE_ENVIRONMENT_IMAGES_PATH,
+  parseEnvironmentImagesRequest,
+  parseEnvironmentImagesResponse,
   WORKSPACE_FILE_TRANSFER_PATH,
   type WorkspaceFileTransferRequest,
 } from "@pi-cloud/protocol";
@@ -171,6 +174,28 @@ export class SandboxControlClient {
 
   workflowUrlFor(_activationId: string): string {
     return this.workflowUrl;
+  }
+
+  async prepareEnvironmentImages(
+    environment: import("@pi-cloud/protocol").ToolEnvironmentRequest,
+    images: import("@pi-cloud/protocol").ImageAttachmentReference[],
+    signal?: AbortSignal,
+  ) {
+    const response = parseEnvironmentImagesResponse(
+      await this.#request(
+        PREPARE_ENVIRONMENT_IMAGES_PATH,
+        this.#serviceToken,
+        parseEnvironmentImagesRequest({ environment, images }),
+        signal,
+      ),
+    );
+    if (
+      response.execution.bindingId !== environment.requestId ||
+      response.images.length !== images.length ||
+      response.images.some((item, index) => item.sourceId !== images[index]!.id)
+    )
+      throw new Error("Prepared input image identity changed");
+    return response;
   }
 
   async checkHealth(): Promise<void> {

@@ -41,6 +41,7 @@ export type SupervisorHostConfig = {
   modelConcurrency: number | null;
   familyModelConcurrency: number | null;
   sandboxControlBaseUrls: readonly string[];
+  sessionExecutionBaseUrl: string;
   sandboxControlRequestTimeoutMs: number;
   trustedWorkspaceDirectory: string;
   bootStateDirectory: string;
@@ -414,6 +415,11 @@ export async function loadSupervisorHostConfig(
       "PI_CLOUD_SANDBOX_CONTROL_URLS",
     ),
     sandboxControlRequestTimeoutMs,
+    sessionExecutionBaseUrl: internalServiceBaseUrls(
+      required(environment, "PI_CLOUD_SESSION_EXECUTION_URL"),
+      allowInsecureInternalHttp,
+      "PI_CLOUD_SESSION_EXECUTION_URL",
+    )[0]!,
     trustedWorkspaceDirectory: required(environment, "PI_CLOUD_TRUSTED_WORKSPACE_DIRECTORY"),
     bootStateDirectory: required(environment, "PI_CLOUD_BOOT_STATE_DIRECTORY"),
     modelGatewayHost: bounded(

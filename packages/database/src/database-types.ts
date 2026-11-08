@@ -816,6 +816,7 @@ export interface ActiveExecutionScopeTable {
 }
 
 export interface SessionLeaseTable {
+  tool_bindings_closed_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
   tenant_id: string;
   pi_session_id: string;
   lease_id: string;
@@ -945,6 +946,7 @@ export interface GitLabIssueNoteSyncTable {
 }
 
 export interface OutboxTable {
+  applied_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
   control_transaction: GeneratedNullable<string>;
   id: string;
   tenant_id: string;

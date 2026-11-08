@@ -18,12 +18,11 @@ import {
   parseExecutionReference,
   interruptionReasonForFailureCode,
   type ToolSandboxAssignment,
-  type ToolSandboxCreateRequest,
-  type ToolSandboxCreateResponse,
+  type ToolEnvironmentRequest,
+  type ExecutionEvidence,
   type ConversationWorkView,
   type ConversationStartRequest,
 } from "@pi-cloud/protocol";
-import { encodeWorkspaceBlob } from "@pi-cloud/workspace-runtime";
 import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { SupervisorTurnRunner } from "./agent-run-supervisor.ts";
@@ -36,7 +35,6 @@ import {
 import { settlementGatePolicyFromCommand } from "./pi-settlement-gate.ts";
 import { validateSandboxRuntimeIdentity, type SandboxRuntimeIdentity } from "@pi-cloud/protocol";
 import type {
-  AgentWorkspaceSeedResolver,
   TrustedAgentTool,
   TrustedAgentToolSet,
   TrustedModelRuntimeLease,
@@ -53,29 +51,12 @@ import {
 } from "./cloud-context.ts";
 
 export interface SandboxControlBoundary {
-  prepareInputImages?(
-    activationId: string,
-    assignment: ToolSandboxAssignment,
+  prepareEnvironmentImages?(
+    environment: ToolEnvironmentRequest,
     images: import("@pi-cloud/protocol").ImageAttachmentReference[],
     signal?: AbortSignal,
-  ): Promise<
-    {
-      sourceId: string;
-      image: import("@pi-cloud/protocol").ImageAttachmentReference;
-      hints: string[];
-    }[]
-  >;
-  refreshServices(activationId: string, assignment: ToolSandboxAssignment): Promise<void>;
-  create(
-    request: ToolSandboxCreateRequest,
-    signal?: AbortSignal,
-  ): Promise<ToolSandboxCreateResponse>;
-  release(
-    activationId: string,
-    assignment: ToolSandboxAssignment,
-    disposition: { kind: "detach" | "keep_warm" | "destroy"; cancelOutstanding?: true },
-  ): Promise<{ retained: boolean }>;
-  workflowUrlFor(activationId: string): string;
+  ): Promise<import("@pi-cloud/protocol").EnvironmentImagesResponse>;
+  workflowUrlFor(bindingId: string): string;
 }
 
 export type RemoteToolSandboxTurnRunnerOptions = {
@@ -122,7 +103,6 @@ export type RemoteToolSandboxTurnRunnerOptions = {
   runtimeIdentity: SandboxRuntimeIdentity;
   trustedWorkspaceDirectory: string;
   modelRuntimeLeaseResolver: TrustedModelRuntimeLeaseResolver;
-  workspaceSeedResolver?: AgentWorkspaceSeedResolver;
   openAgentSession: (
     command: ExecuteTurnCommandMessage,
     readSignal?: AbortSignal,
@@ -137,7 +117,7 @@ export type RemoteToolSandboxTurnRunnerOptions = {
     command: ExecuteTurnCommandMessage,
     context: Readonly<{
       prepareWorkflow: WorkflowPreparer;
-      prepareEnvironment(): Promise<string>;
+      environment(): ToolEnvironmentRequest;
       onExecutionUnavailable(failure: { code: string; message: string }): void;
     }>,
   ) => Promise<TrustedAgentToolSet> | TrustedAgentToolSet;
@@ -186,6 +166,11 @@ async function releaseModelRuntimeLease(lease: TrustedModelRuntimeLease): Promis
 }
 
 export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
+  readonly #environmentObservers = new Map<string, (evidence: ExecutionEvidence) => void>();
+  observeExecution(evidence: ExecutionEvidence): void {
+    this.#environmentObservers.get(evidence.bindingId)?.(evidence);
+  }
+
   readonly #conversationHost: RemoteToolSandboxTurnRunnerOptions["conversations"];
   readonly #openConversationLog: RemoteToolSandboxTurnRunnerOptions["openConversationLog"];
   readonly #families = new Map<
@@ -210,7 +195,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   readonly #runtimeIdentity: SandboxRuntimeIdentity;
   readonly #trustedWorkspaceDirectory: string;
   readonly #modelRuntimeLeaseResolver: TrustedModelRuntimeLeaseResolver;
-  readonly #workspaceSeedResolver: AgentWorkspaceSeedResolver | undefined;
   readonly #openAgentSession: RemoteToolSandboxTurnRunnerOptions["openAgentSession"];
   readonly #waitForToolReply: RemoteToolSandboxTurnRunnerOptions["waitForToolReply"];
   readonly #confirmExecution: RemoteToolSandboxTurnRunnerOptions["confirmExecution"];
@@ -243,7 +227,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     this.#runtimeIdentity = validateSandboxRuntimeIdentity(options.runtimeIdentity);
     this.#trustedWorkspaceDirectory = resolve(options.trustedWorkspaceDirectory);
     this.#modelRuntimeLeaseResolver = options.modelRuntimeLeaseResolver;
-    this.#workspaceSeedResolver = options.workspaceSeedResolver;
     this.#openAgentSession = options.openAgentSession;
     this.#waitForToolReply = options.waitForToolReply;
     this.#confirmExecution = options.confirmExecution;
@@ -563,22 +546,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     }
 
     const workspaceAvailable = hasConversationWorkspace(command.payload);
-    let workspaceSeed: Uint8Array | undefined;
-    if (
-      workspaceAvailable &&
-      command.payload.input.kind !== "compact" &&
-      this.#workspaceSeedResolver !== undefined
-    ) {
-      try {
-        workspaceSeed = await this.#workspaceSeedResolver(command);
-      } catch (error: unknown) {
-        throw safePiError(
-          error,
-          "workspace_seed_unavailable",
-          "Workspace source could not be provisioned",
-        );
-      }
-    }
     const cloudTurn = createCloudTurnContext(command);
 
     const modelGrant = new AbortController();
@@ -613,9 +580,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       runtimeIdentity: this.#runtimeIdentity,
       turnContextSha256: cloudTurn.sha256,
     });
-    const createRequest: ToolSandboxCreateRequest = {
+    const environment: ToolEnvironmentRequest = {
       toolBrokerProtocolVersion: 1,
-      type: "tool_sandbox.create",
+      type: "tool_environment",
+      piSessionId: command.payload.piSession.id,
+      conversationId: command.payload.piSession.conversationId,
       requestId: this.#idGenerator(),
       assignment: toolAssignment,
       turnContextSha256: cloudTurn.sha256,
@@ -628,69 +597,39 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       sandboxProfileKey: command.payload.sandboxProfileKey,
       toolRoot: command.payload.workingDirectory,
       environment: command.payload.environment,
-      workspaceSeed:
-        workspaceSeed === undefined
-          ? { kind: "sample_java" }
-          : { kind: "bundle", bundle: encodeWorkspaceBlob(workspaceSeed) },
+      workspaceSeedKind: command.payload.workspaceSeedKind,
     };
     const inputPreparationAbort = new AbortController();
     const inputPreparations = new Set<Promise<unknown>>();
-    let activation: ToolSandboxCreateResponse | undefined;
-    let activationPromise: Promise<ToolSandboxCreateResponse> | undefined;
     let executionError: unknown;
     let toolRuntimeFailure: PiTurnError | undefined;
-    let cancelOutstanding = false;
-    const ensureActivation = async (): Promise<ToolSandboxCreateResponse> => {
+    let continuity: { continuityId: string; continuity: "cold_restore" | "warm_reuse" } | undefined;
+    let recordContinuity: (() => Promise<void>) | undefined;
+    const noteEnvironment = () => {
       if (!workspaceAvailable)
         throw new PiTurnError(
           "workspace_unavailable",
-          "This child has no Linux workspace access",
+          "This conversation has no Linux workspace access",
           false,
         );
-      if (signal.aborted) throw signal.reason;
-      if (toolRuntimeFailure !== undefined) throw toolRuntimeFailure;
-      if (activation !== undefined) return activation;
-      activationPromise ??= (async () => {
-        const createStartedAt = performance.now();
-        try {
-          const created = await this.#broker.create(createRequest, signal);
-          activation = created;
-          try {
-            this.#onRuntimeBinding?.(
-              command.payload.executionReference,
-              created.activationId,
-              command.payload.piSession.conversationId,
-            );
-          } catch {
-            /* Observation only. */
-          }
-          this.#metrics?.sandboxDuration.observe(
-            { operation: "reserve", outcome: "completed" },
-            (performance.now() - createStartedAt) / 1_000,
-          );
-          if (signal.aborted) {
-            throw signal.reason;
-          }
-          return created;
-        } catch (error: unknown) {
-          this.#metrics?.sandboxDuration.observe(
-            { operation: "reserve", outcome: "failed" },
-            (performance.now() - createStartedAt) / 1_000,
-          );
-          throw safePiError(
-            error,
-            "tool_sandbox_reservation_failed",
-            "Tool Sandbox authority could not be reserved",
-          );
-        }
-      })();
-      return activationPromise;
+      signal.throwIfAborted();
+      if (toolRuntimeFailure) throw toolRuntimeFailure;
+      this.#onRuntimeBinding?.(
+        command.payload.executionReference,
+        environment.requestId,
+        command.payload.piSession.conversationId,
+      );
+      return environment;
     };
+    this.#environmentObservers.set(environment.requestId, (evidence) => {
+      if (!evidence.continuityId || !evidence.continuity) return;
+      continuity = { continuityId: evidence.continuityId, continuity: evidence.continuity };
+      void recordContinuity?.();
+    });
 
     try {
-      // Both execution modes bind on the first actual Sandbox Tool. A pure
-      // chat must not reserve machine authority or depend on Broker uptime.
-      // recordActive receives the actual binding before the next clean Step.
+      // Worker describes a logical environment. The partition owner prepares it
+      // after accepting the durable Tool intent; pure chat creates no binding.
 
       const resolveModelRuntime: PiCloudTurnRunnerOptions["resolveModelRuntime"] = () => ({
         provider: modelRuntimeLease.runtime.provider,
@@ -725,7 +664,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           if (!prepareWorkflow) throw new Error("Remote workflow runtime is not ready");
           return prepareWorkflow(...args);
         },
-        prepareEnvironment: async () => (await ensureActivation()).activationId,
+        environment: noteEnvironment,
         onExecutionUnavailable: (failure) => {
           toolRuntimeFailure ??= new PiTurnError(failure.code, failure.message, false);
         },
@@ -778,9 +717,9 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
         sandboxContinuity: {
           continuityId:
-            activation?.continuityId ??
+            continuity?.continuityId ??
             parseExecutionReference(command.payload.executionReference).runId,
-          continuity: activation?.continuity ?? "cold_restore",
+          continuity: continuity?.continuity ?? "cold_restore",
           environmentSha256: cloudTurn.environmentSha256,
           workspaceBindingSha256: cloudTurn.workspaceBindingSha256,
           toolPolicySha256: cloudTurn.toolPolicySha256,
@@ -792,7 +731,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             }
           : { modelEventIdleTimeoutMs: this.#modelEventIdleTimeoutMs }),
       };
-      let recordPreparedInput: (() => Promise<void>) | undefined;
       const runner = new PiCloudTurnRunner({
         beforeEffect: async (effectSignal) => {
           if (toolRuntimeFailure) throw toolRuntimeFailure;
@@ -826,7 +764,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             if (!sources.length) return { images: [], hints: [] };
             if (
               !modelRuntimeLease.runtime.inputModalities.includes("image") ||
-              !this.#broker.prepareInputImages ||
+              !this.#broker.prepareEnvironmentImages ||
               !this.#decodeInputImages
             )
               throw new PiTurnError(
@@ -840,24 +778,22 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
               ...(inputSignal ? [inputSignal] : []),
             ]);
             combined.throwIfAborted();
-            const active = await ensureActivation();
-            combined.throwIfAborted();
-            const prepared = await this.#broker.prepareInputImages(
-              active.activationId,
-              toolAssignment,
+            const prepared = await this.#broker.prepareEnvironmentImages(
+              noteEnvironment(),
               sources,
               combined,
             );
             const images = await this.#decodeInputImages(
-              prepared.map((item) => item.image),
+              prepared.images.map((item) => item.image),
               { tenantId: command.payload.tenantId, runId: command.payload.runId },
               combined,
             );
             combined.throwIfAborted();
-            await recordPreparedInput?.();
+            this.observeExecution(prepared.execution);
+            await recordContinuity?.();
             return {
               images,
-              hints: prepared.flatMap((item, index) =>
+              hints: prepared.images.flatMap((item, index) =>
                 item.hints.map((hint) => `Image ${index + 1}: ${hint}`),
               ),
             };
@@ -883,22 +819,15 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           toolRuntimeFailure ??= new PiTurnError(error.code, error.message, false);
         },
         createAgentTools: ({ stepWorldState, captureSamplingStep }) => {
-          recordPreparedInput = () => stepWorldState.recordActive(activation);
+          recordContinuity = () => stepWorldState.recordActive(continuity);
           const remoteTools = createTrustedRemoteAgentTools({
-            onToolCancellationUnconfirmed: () => {
-              cancelOutstanding = true;
-            },
             observeToolDuration: (seconds, outcome) =>
               this.#metrics?.toolDuration.observe({ tool: "tool.execute", outcome }, seconds),
             supportsImages: modelRuntimeLease.runtime.inputModalities.includes("image"),
             ...(this.#confirmExecution
               ? {
                   confirmExecution: async (bindingId: string, toolSignal: AbortSignal) => {
-                    if (
-                      !activeSession ||
-                      toolRuntimeFailure ||
-                      activation?.activationId !== bindingId
-                    )
+                    if (!activeSession || toolRuntimeFailure || environment.requestId !== bindingId)
                       return false;
                     const active = AbortSignal.any([
                       signal,
@@ -910,7 +839,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                     const ready = await this.#confirmExecution!(command, bindingId, active);
                     active.throwIfAborted();
                     await activeSession.authority.assertCurrent();
-                    return ready && !toolRuntimeFailure && activation?.activationId === bindingId;
+                    return ready && !toolRuntimeFailure && environment.requestId === bindingId;
                   },
                 }
               : {}),
@@ -924,10 +853,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                 }
               : {}),
             resolveOperationTarget: async () => {
-              const active = await ensureActivation();
+              const logical = noteEnvironment();
               return {
-                activationId: active.activationId,
-                workflowUrl: this.#broker.workflowUrlFor(active.activationId),
+                activationId: logical.requestId,
+                environment: logical,
+                workflowUrl: this.#broker.workflowUrlFor(logical.requestId),
               };
             },
             executionReference: toolAssignment.executionReference,
@@ -952,9 +882,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                 },
                 { publishEvent: purpose === "agent" },
               ),
-            onToolOperationStarted: () => stepWorldState.recordActive(activation),
             onToolOperationUnavailable: async (failure) => {
-              cancelOutstanding = true;
               toolRuntimeFailure ??= new PiTurnError(failure.code, failure.message, false);
               await stepWorldState.recordUnavailable();
             },
@@ -1009,8 +937,8 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       executionError = nativeTermination ? error : (toolRuntimeFailure ?? error);
       throw executionError;
     } finally {
-      // A steer can still be preparing pixels when the native operation closes.
-      // Join its reservation before deciding which Cube binding to release.
+      // Close preparation waiters. The ordered Session boundary retires bindings;
+      // the Worker never releases physical resources.
       modelGrant.abort();
       detachModelOwner?.();
       let cleanupError: unknown;
@@ -1034,22 +962,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       } catch {
         /* Observation only. */
       }
-      if (activation !== undefined) {
-        // Tool callbacks have settled or recorded UNKNOWN. Preserve unconfirmed
-        // cleanup intent when retiring metadata; VM lifetime remains separate.
-        await this.#broker
-          .release(activation.activationId, toolAssignment, {
-            ...(cancelOutstanding ? { cancelOutstanding: true } : {}),
-            kind:
-              command.payload.executionMode === "development_environment" &&
-              command.payload.computeSessionId === undefined
-                ? "detach"
-                : "keep_warm",
-          })
-          .catch((error: unknown) => {
-            cleanupError = error;
-          });
-      }
+      this.#environmentObservers.delete(environment.requestId);
       if (cleanupError !== undefined && executionError !== undefined) {
         operationalLog({
           service: "pi-cloud-trusted-runner",

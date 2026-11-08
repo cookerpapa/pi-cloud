@@ -1,5 +1,24 @@
 # Maintained backlog
 
+## Execution-owned tools and bindings — implementation in progress
+
+- [ ] #12: simplify the public Pi remote Tool boundary after evaluating native
+      intent, cancellation, publication costs and unsafe recovery.
+- [ ] #13: execution-side environment preparation/binding coordination and
+      ordered closure completion before physical retirement.
+- [ ] #14: provider-neutral whole-tool execution/cancellation and portable
+      completion assessment without duplicate execution authority.
+- [ ] #15: BoxLite v0.12.0 compatibility/cost evaluation and isolated checks;
+      no alternate runtime is enabled in production.
+- [ ] #16: independent ordinary-tool publication and Kafka catalog delivery to
+      Workers while Session API and Projector remain online.
+
+[ADR-0305](adr/0305-execution-owned-tools-and-bindings.md) records the boundaries.
+The owner requested finishing source/documentation work before combined serial
+verification and matched deployment. No new behavior is deployed yet. Existing
+[#11](https://github.com/cookerpapa/pi-cloud/issues/11) PG maintenance/HA assessment
+remains separate from this batch.
+
 ## Runtime separation and resource accounting — deployed
 
 - [x] #5: independent model receipt ingestion and valuation; management outage,

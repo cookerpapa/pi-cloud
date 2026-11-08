@@ -1,3 +1,4 @@
+import { insertTestBinding } from "../../sandbox-control/test/fixtures/binding.ts";
 import { DirectSessionKafkaBus } from "../../runtime-core/src/direct-session-kafka.ts";
 import { randomUUID } from "node:crypto";
 import { Admin } from "@platformatic/kafka";
@@ -15,6 +16,7 @@ import { SessionControlOutbox } from "../../runtime-core/src/session-control-out
 import { PostgresSandboxBindings } from "../../sandbox-control/src/sandbox-bindings.ts";
 import { SandboxBindingView } from "../../sandbox-control/src/sandbox-binding-view.ts";
 import { ToolCommandDispatcher } from "../../sandbox-control/src/tool-command-dispatcher.ts";
+import { CubeSandboxToolExecutor } from "../../sandbox-control/src/cubesandbox-tool-executor.ts";
 import { PostgresWorkspaceRuntimeStateRepository } from "../../sandbox-control/src/workspace-runtime-state-repository.ts";
 import { ControlPlaneStore, createPrivateTenant } from "../src/index.ts";
 import { createTestWorker } from "./admit-test-execution.ts";
@@ -76,6 +78,8 @@ it.skipIf(!postgres || !brokers)(
         ownerId,
         "http://127.0.0.1:9",
         (ids) => changes.flushEntities("sandbox_binding", ids),
+
+        async () => {},
       );
       const view = new SandboxBindingView({
         source: bindings,
@@ -90,7 +94,7 @@ it.skipIf(!postgres || !brokers)(
       const dispatcher = new ToolCommandDispatcher({
         routes: view,
         // Cube receives no stop RPC. Run settlement depends only on routing revocation.
-        cube: { submitTool: submit, cancelTool: cancel },
+        executor: new CubeSandboxToolExecutor({ submitTool: submit, cancelTool: cancel }),
         workflow: async () => {},
         publishReply: async () => {},
         quarantine: async () => {
@@ -113,7 +117,7 @@ it.skipIf(!postgres || !brokers)(
         controlChanges: {
           load: (p, c) => view.load(p, c),
           reset: () => view.reset(),
-          prepare: (change, c) => view.prepare(change, c),
+          prepare: async () => {},
           consume: async (change, current, position) => {
             await view.consume(change, current);
             if (change.entity === "sandbox_binding")
@@ -166,7 +170,8 @@ it.skipIf(!postgres || !brokers)(
         runId: accepted.runId,
         executionReference: admission.executionReference,
       };
-      await bindings.register(
+      await insertTestBinding(
+        bindings,
         bindingId,
         {
           version: 2,

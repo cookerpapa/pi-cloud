@@ -157,6 +157,8 @@ spec:
               value: /run/pi-cloud-secrets/sandbox-control-token
             - name: PI_CLOUD_SANDBOX_CONTROL_URLS
               value: {{ join "," .Values.services.sandboxControlUrls | quote }}
+            - name: PI_CLOUD_SESSION_EXECUTION_URL
+              value: {{ .Values.services.sessionExecutionUrl | quote }}
             - name: PI_CLOUD_SANDBOX_CONTROL_REQUEST_TIMEOUT_MS
               value: {{ .Values.runtime.timeouts.sandboxControlRequestMs | quote }}
             - name: PI_CLOUD_PROVIDER_GATEWAY_URL

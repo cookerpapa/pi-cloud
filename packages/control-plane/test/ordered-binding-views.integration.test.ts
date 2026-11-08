@@ -1,3 +1,4 @@
+import { insertTestBinding } from "../../sandbox-control/test/fixtures/binding.ts";
 import { installBinaryBodyParser } from "../src/binary-body-parser.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
@@ -120,6 +121,8 @@ it.skipIf(!postgres || !brokers)(
         owner,
         url,
         (ids) => outbox.flushEntities("sandbox_binding", ids),
+
+        async () => {},
       );
       let view: SandboxBindingView;
       let inputView: InputQueueView;
@@ -154,8 +157,8 @@ it.skipIf(!postgres || !brokers)(
               view.reset();
               inputView.reset();
             },
-            prepare: async (change, current) => {
-              await view.prepare(change, current);
+            prepare: async (change) => {
+              /* Binding closure is installed by consume, then acknowledged in PG. */
               if (change.entity === "sandbox_binding" && change.closed)
                 await closedAdmissionGate?.promise;
             },
@@ -186,7 +189,8 @@ it.skipIf(!postgres || !brokers)(
       };
       // No VM or Agent runs here. This fixture specifically exercises control
       // publication without a native writer; Tool transport has separate tests.
-      await bindings.register(
+      await insertTestBinding(
+        bindings,
         binding,
         {
           version: 2,
@@ -292,12 +296,14 @@ it.skipIf(!postgres || !brokers)(
       await vi.waitFor(() => expect(controlRequests).toBeGreaterThan(previousRequests), {
         timeout: 10000,
       });
+      // Publication admission no longer mutates the binding view. Closure is
+      // applied and acknowledged only by ordered consumption.
+      expect((await view!.get(scope, binding))?.dispatchClosed).toBe(false);
+      closedAdmissionGate.resolve();
+      await expect(closing).rejects.toThrow();
       await vi.waitFor(async () =>
         expect((await view!.get(scope, binding))?.dispatchClosed).toBe(true),
       );
-      closedAdmissionGate.resolve();
-      await expect(closing).rejects.toThrow();
-      expect((await view!.get(scope, binding))?.dispatchClosed).toBe(true);
       await bindings.closeWriter(scope, false);
       await projector.close();
       projector = create();

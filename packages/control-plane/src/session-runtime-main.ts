@@ -5,13 +5,13 @@ import { SessionPublicationService } from "./session-publication-service.ts";
 import { SubagentController } from "./subagent-controller.ts";
 import { PlatformRuntimeSettingsService } from "./platform-runtime-settings.ts";
 import { ControlToolDispatcher } from "./control-tool-dispatcher.ts";
-import { createOrdinaryToolRegistry } from "./ordinary-tools/registry.ts";
+import { ToolHostClient } from "./tool-host-client.ts";
+import { ToolCatalogAuthority } from "./tool-catalog-authority.ts";
+import { KafkaToolCatalogConsumer } from "@pi-cloud/event-log";
 import { ExecutionTargetService, ExecutionBindingView } from "./execution-target-service.ts";
 import { ExecutionTargetIngress } from "./execution-target-ingress.ts";
 import { ExecutorDispatcher } from "./executor-dispatcher.ts";
-import { executionToolCatalog } from "./execution-tool-catalog.ts";
-import { HttpExecutorTransport } from "@pi-cloud/sandbox-control";
-import { ImageGenerationClient } from "./ordinary-tools/image-generation-client.ts";
+import { HttpExecutorTransport, executionTargetId } from "@pi-cloud/sandbox-control";
 import { isControlToolName } from "@pi-cloud/protocol";
 import { createDatabase } from "@pi-cloud/database";
 import { operationalLog, startServiceObservability } from "@pi-cloud/observability";
@@ -96,7 +96,8 @@ export async function startSessionRuntime(): Promise<void> {
   let developmentEnvironmentService: DevelopmentEnvironmentService | undefined;
   let operationalMetrics: OperationalMetricsSampler | undefined;
   let images: ConfiguredImageAttachments | undefined;
-  let imageGeneration: ImageGenerationClient | undefined;
+  let toolHost: ToolHostClient | undefined;
+  let catalogConsumer: KafkaToolCatalogConsumer | undefined;
   let queueDatabase: ReturnType<typeof createDatabase> | undefined;
   let conversationDatabase: ReturnType<typeof createDatabase> | undefined;
   let executorTransport: HttpExecutorTransport | undefined;
@@ -126,7 +127,8 @@ export async function startSessionRuntime(): Promise<void> {
       () => sandboxControl?.close(),
       () => unattachedSubagents?.close(),
       () => unattachedControlTools?.close(),
-      () => imageGeneration?.close(),
+      () => toolHost?.close(),
+      () => catalogConsumer?.close(),
       () => sourceControlDispatcher?.close(),
       () => ownedSourceControlServices?.close(),
       () => images?.blobs.close(),
@@ -178,6 +180,7 @@ export async function startSessionRuntime(): Promise<void> {
       publicationDatabase,
       instanceId: controlPlaneInstanceId,
       managementToken: config.supervisorManagementToken,
+      managementBaseUrls: config.sandboxControlBaseUrls,
       metrics: observability.metrics,
       publishBindingChanges: (ids) => controlChanges.flushEntities("sandbox_binding", ids),
       partitionFor: (sessionId) => kafkaProducerLane(sessionId, config.kafkaPartitions),
@@ -230,10 +233,20 @@ export async function startSessionRuntime(): Promise<void> {
       },
     });
     unattachedSubagents = subagents;
-    if (config.imageGeneration) {
-      if (!images) throw new Error("Image generation requires Session attachment storage");
-      imageGeneration = new ImageGenerationClient(config.imageGeneration);
-    }
+    const catalogAuthority = new ToolCatalogAuthority(database);
+    catalogConsumer = new KafkaToolCatalogConsumer({
+      brokers: config.kafkaBrokers,
+      replicas: config.kafkaReplicas,
+      instanceId: controlPlaneInstanceId,
+      minimumGeneration: async () => (await catalogAuthority.read())?.generation ?? 1,
+    });
+    await catalogConsumer.start();
+    const toolCatalog = catalogConsumer.view;
+    toolHost = new ToolHostClient({
+      baseUrl: process.env.PI_CLOUD_TOOL_HOST_URL ?? "http://tool-host:4310",
+      token: config.supervisorManagementToken,
+      catalog: () => toolCatalog.snapshot,
+    });
     const schedules = new SessionScheduleService({
       database,
       admissionDatabase: maintenanceDatabase,
@@ -253,47 +266,53 @@ export async function startSessionRuntime(): Promise<void> {
         })) as unknown as typeof fetch,
     });
     await skills.initialize();
-    const ordinaryTools = createOrdinaryToolRegistry({
-      skills,
-      exportSkill: (call, path, signal) =>
-        sandboxControl!.exportToolPackage(
-          call.scope,
-          call.bindingId!,
-          call.operationId,
-          path,
-          signal,
-        ),
-      prepareSkill: (call, content, digest, signal) =>
-        sandboxControl!.prepareToolPackage(
-          call.scope,
-          call.bindingId!,
-          call.operationId,
-          content,
-          digest,
-          signal,
-        ),
-      database,
-      schedules,
-      ...(config.enabledControlTools ? { enabled: config.enabledControlTools } : {}),
-      ...(images ? { images } : {}),
-      ...(imageGeneration ? { imageGeneration } : {}),
-      imageIo: (call, action, signal) =>
-        sandboxControl!.toolImageIo(call.scope, call.bindingId!, call.operationId, action, signal),
-      refreshServices: (call) => sandboxControl!.refreshToolServices(call.scope, call.bindingId!),
-    });
-    const toolCatalog = executionToolCatalog(ordinaryTools);
     const controlTools = new ControlToolDispatcher({
       database,
       partitions: config.kafkaPartitions,
       ...(images ? { images: images.codec } : {}),
       ownsPartition: (partition) => agentEvents?.ownsPartition(partition) === true,
       publish: (topic, reply) => sandboxControl!.publishReply(topic, reply),
-      replayable: (name) => isControlToolName(name) || ordinaryTools.replayable(name),
+      replayable: (name) => isControlToolName(name),
       canStart: () => !quiescence.held,
       execute: async (call, current, signal) => {
-        return isControlToolName(call.toolName)
+        let execution: import("@pi-cloud/protocol").ExecutionEvidence | undefined;
+        if (call.environment) {
+          const binding = await sandboxControl!.environments
+            .ensure(call.scope, call.environment, current, signal)
+            .catch((error) => {
+              if (signal?.aborted || !current()) throw error;
+              return undefined;
+            });
+          if (!binding)
+            return {
+              isError: true,
+              result: {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: "tool_execution_not_started: The workspace environment could not be prepared. This tool was not submitted to its handler.",
+                  },
+                ],
+                details: {
+                  failure: { code: "tool_environment_unavailable", effect: "not_started" },
+                },
+              },
+            };
+          if (!current())
+            throw new Error("Tool execution owner changed during environment preparation");
+          execution = {
+            bindingId: binding.bindingId,
+            targetId: executionTargetId(binding.descriptor.target),
+            bootId: binding.descriptor.target.bootId,
+            observedAt: Date.now(),
+            continuityId: binding.snapshot.physicalActivationId,
+            ...(binding.snapshot.continuity ? { continuity: binding.snapshot.continuity } : {}),
+          };
+        }
+        const outcome = await (isControlToolName(call.toolName)
           ? subagents.executeTool(call, current)
-          : ordinaryTools.execute(call, current, signal);
+          : toolHost!.execute(call, current, signal));
+        return { ...outcome, ...(execution ? { execution } : {}) };
       },
       onError: () =>
         operationalLog({
@@ -394,9 +413,10 @@ export async function startSessionRuntime(): Promise<void> {
           inputQueues.reset();
           subagents.reset();
           controlTools.reset();
+          sandboxControl!.environments.reset();
+          sandboxControl!.dispatcher.reset();
         },
         prepare: async (change, current) => {
-          await bindingView.prepare(change, current);
           await executionBindings.prepare(change, current);
         },
         consume: async (change, current, position) => {
@@ -559,7 +579,6 @@ export async function startSessionRuntime(): Promise<void> {
       conversationReadDatabase: conversationDatabase,
       platformRuntimeSettings,
       gateway: {
-        toolCatalog,
         runtimeConfiguration: async () => ({
           publicEgress: await platformRuntimeSettings.publicEgress(),
         }),

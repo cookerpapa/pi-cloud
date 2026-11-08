@@ -218,7 +218,20 @@ export class SessionProjector {
               offset: raw.offset.toString(),
             });
             if (current?.() !== false)
-              await options.database.transaction().execute((tx) => recordFactProjection(tx, raw));
+              await options.database.transaction().execute(async (tx) => {
+                await recordFactProjection(tx, raw);
+                if (
+                  raw.fact.kind === "control_change" &&
+                  raw.fact.entity === "sandbox_binding" &&
+                  raw.fact.closed
+                )
+                  await tx
+                    .updateTable("outbox")
+                    .set({ applied_at: new Date() })
+                    .where("id", "=", raw.fact.factId)
+                    .where("applied_at", "is", null)
+                    .execute();
+              });
             return;
           }
           const record = raw as KafkaAcceptedFactRecord;

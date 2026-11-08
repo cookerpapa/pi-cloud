@@ -8,6 +8,7 @@ import {
 import type { Context } from "@earendil-works/chord";
 import {
   durableToolIntent,
+  durableToolState,
   DurableCommitIndex,
   isControlToolCommand,
   isExecutorToolCommand,
@@ -144,17 +145,12 @@ export class DurableRemoteTools {
     const index = new DurableCommitIndex(commit);
     for (const write of commit.writes) {
       if (write.type !== "task") continue;
-      const task = write.value as {
-        id: number;
-        conversationId: number;
-        kind: string;
-        abortRequested: boolean;
-        state: { status: string; checkpoint?: { phase: string } };
-      };
+      const task = durableToolState(write.value);
+      if (!task) continue;
       const pending = this.#pending.get(task.id);
-      if (!pending || task.kind !== "pi.tool") continue;
+      if (!pending) continue;
       if (
-        task.abortRequested &&
+        task.aborted &&
         pending.dispatched &&
         !pending.cancelled &&
         !pending.prepared.completed()
@@ -177,11 +173,7 @@ export class DurableRemoteTools {
           });
         cancelling.push(pending);
       }
-      if (
-        !task.abortRequested &&
-        task.state.checkpoint?.phase === "execute" &&
-        !pending.dispatched
-      ) {
+      if (task.intent && !pending.dispatched) {
         const intent = durableToolIntent(commit, task.id, index),
           command = pending.prepared.command;
         const matches = isNamedToolCommand(command)
@@ -197,7 +189,7 @@ export class DurableRemoteTools {
           );
         tools.push({ taskId: task.id, command });
       }
-      if (task.state.status === "terminal") terminal.push(task.id);
+      if (task.terminal) terminal.push(task.id);
     }
     return {
       tools,

@@ -16,3 +16,6 @@
 {{- if lt (len .Values.sandboxDomains) 1 -}}
 {{- fail "sandboxDomains must contain at least one Sandbox Domain" -}}
 {{- end -}}
+{{- if ne (int .Values.toolHost.replicas) 1 -}}
+{{- fail "The independently published tool host currently requires one replica" -}}
+{{- end -}}

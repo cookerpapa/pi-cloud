@@ -6,6 +6,7 @@ import {
   durableControlRecovery,
   parseControlToolDispatch,
   parseToolResultPayload,
+  parsePackedToolResultPayload,
   type ToolResultData,
   type ToolResultPayload,
   type ImagePacked,
@@ -28,11 +29,15 @@ type Pending = {
   replyBytes: number;
   execution: "repeatable" | "once" | "unknown";
   controller: AbortController;
-  outcome?: Extract<ControlToolOutcome, { result: unknown }>;
+  outcome?: Exclude<ControlToolOutcome, { waiting: true }>;
+  evidence?: import("@pi-cloud/protocol").ExecutionEvidence;
   done?: boolean;
 };
-export type ControlToolOutcome =
-  { waiting: true; until?: number } | { result: ToolResultData; isError?: boolean };
+export type ControlToolOutcome = (
+  | { waiting: true; until?: number }
+  | { result: ToolResultData; isError?: boolean }
+  | { packed: ImagePacked<ToolResultPayload> }
+) & { execution?: import("@pi-cloud/protocol").ExecutionEvidence };
 type Cursor = { tenant: string; session: string; seq: string; operation: string };
 
 /** Reconciles repeatable control effects from native history. Pending memory
@@ -104,7 +109,9 @@ export class ControlToolDispatcher {
     let admitted: boolean | undefined;
     for (const reference of fact.tools) {
       if (reference.target !== "control") continue;
-      const repeatable = this.options.replayable?.(reference.toolName) !== false;
+      const repeatable = reference.implementation
+        ? reference.implementation.replay === "safe"
+        : this.options.replayable?.(reference.toolName) !== false;
       if (!repeatable && admitted === undefined) admitted = (await commitBeforeEffect?.()) ?? false;
       if (!current()) return;
       this.#remember(
@@ -246,7 +253,13 @@ export class ControlToolDispatcher {
           row.dispatch,
           Number(row.seq),
           row.partition,
-          this.options.replayable?.(row.dispatch.toolName) === false ? "unknown" : "repeatable",
+          (
+            row.dispatch.implementation
+              ? row.dispatch.implementation.replay === "never"
+              : this.options.replayable?.(row.dispatch.toolName) === false
+          )
+            ? "unknown"
+            : "repeatable",
         );
       }
       this.#drain();
@@ -421,20 +434,27 @@ export class ControlToolDispatcher {
         return;
       }
       pending.outcome = outcome;
-      const result = parseToolResultPayload({
-        toolName: command.replyMode === "hostcall" ? "subagent-control" : command.toolName,
-        toolCallId: command.nativeCallId,
-        isError: outcome.isError ?? false,
-        result: outcome.result,
-      });
-      const encoded = await encodeSessionImages(
-        this.options.images,
-        {
-          tenantId: command.scope.tenantId,
-          runId: command.scope.runId,
-        },
-        result,
-      );
+      if (outcome.execution) pending.evidence = outcome.execution;
+      const result =
+        "packed" in outcome
+          ? undefined
+          : parseToolResultPayload({
+              toolName: command.replyMode === "hostcall" ? "subagent-control" : command.toolName,
+              toolCallId: command.nativeCallId,
+              isError: outcome.isError ?? false,
+              result: outcome.result,
+            });
+      const encoded =
+        "packed" in outcome
+          ? parsePackedToolResultPayload(outcome.packed)
+          : await encodeSessionImages(
+              this.options.images,
+              {
+                tenantId: command.scope.tenantId,
+                runId: command.scope.runId,
+              },
+              result!,
+            );
       if (!current()) return;
       pending.reply = encoded;
       delete pending.outcome;
@@ -446,6 +466,7 @@ export class ControlToolDispatcher {
       operationId: command.operationId,
       sequence: 1,
       result: pending.reply,
+      ...(pending.evidence ? { execution: pending.evidence } : {}),
     });
     if (current()) {
       if (pending.execution === "repeatable") this.#remove(key);

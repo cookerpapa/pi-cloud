@@ -31,7 +31,7 @@ afterAll(async () => {
 });
 
 function value(outcome: ControlToolOutcome) {
-  if ("waiting" in outcome) throw new Error("Expected a settled reply");
+  if ("waiting" in outcome || "packed" in outcome) throw new Error("Expected a settled reply");
   return JSON.parse(
     outcome.result.content
       .filter((p) => p.type === "text")

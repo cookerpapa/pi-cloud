@@ -565,6 +565,7 @@ export class SandboxController {
     capsule?: string,
   ): Promise<void> {
     const intent = await this.#stateRepository.closeAllocation(id, kind);
+    if (kind !== "terminal") await this.#bindings.confirmPhysicalClosure(id);
     if (intent.status === "never_issued" && !handle && !capsule) return;
     if (intent.status !== "authorized")
       throw new SandboxControlError(
@@ -871,6 +872,7 @@ export class SandboxController {
           "Wait for active machine users before pausing",
           true,
         );
+      await this.#bindings.confirmPhysicalClosure(identity.allocationId);
       await this.#provider.pause!(environment.handle);
       environment.observedState = "paused";
       environment.observedAt = this.#clock();
@@ -886,9 +888,6 @@ export class SandboxController {
     handle?: SandboxHandle,
     capsule?: string,
   ): Promise<void> {
-    // Close admission first. The PG trigger revokes every old physical binding.
-    await this.#stateRepository.closeAllocation(identity.allocationId, "development_environment");
-    await this.#bindings.confirmPhysicalClosure(identity.allocationId);
     if (!identity.allocationAbsent)
       await this.#closePhysical(
         identity.allocationId,
@@ -897,6 +896,10 @@ export class SandboxController {
         handle,
         capsule,
       );
+    else {
+      await this.#stateRepository.closeAllocation(identity.allocationId, "development_environment");
+      await this.#bindings.confirmPhysicalClosure(identity.allocationId);
+    }
     await this.#bindings.releaseAfterPhysicalAbsence(identity.allocationId);
     if (handle) await this.#serviceRegistry?.endRuntime(handle.runtimeId);
     if (!identity.allocationAbsent)
@@ -1825,6 +1828,7 @@ export class SandboxController {
         await this.#bindings.register(response.activationId, descriptor, {
           assignment: request.assignment,
           physicalActivationId: activation.reservation.activationId,
+          continuity: response.continuity,
           turnContextSha256: request.turnContextSha256,
           executionContextSha256: request.executionContextSha256,
           allowedTools: [...activation.allowedTools],

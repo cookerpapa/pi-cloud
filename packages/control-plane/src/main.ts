@@ -72,6 +72,7 @@ export async function startControlPlane(): Promise<void> {
       managementToken: config.supervisorManagementToken,
       metrics: observability.metrics,
       publishBindingChanges: (ids) => changes.flushEntities("sandbox_binding", ids),
+      confirmBindingClosure: (ids) => changes.confirmBindingClosures(ids),
       onOwnershipLost: retire,
       ...(images ? { images } : {}),
     });

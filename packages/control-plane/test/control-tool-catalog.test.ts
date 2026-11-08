@@ -92,6 +92,7 @@ it("adds and withdraws an unknown Tool within one native submission while retain
     },
   } as import("@pi-cloud/protocol").ExecuteTurnCommandMessage;
   const tools = new WorkerToolRuntime({
+    implementation: () => ({ releaseId: "test-v1", generation: 1, replay: "never" }),
     catalog: worker,
     maximumDepth: null,
     nativeConversations: {
@@ -113,7 +114,7 @@ it("adds and withdraws an unknown Tool within one native submission while retain
   });
   const bindings = await tools.create({
     command,
-    prepareEnvironment: async () => {
+    environment: () => {
       throw new Error("No guest required");
     },
     prepareWorkflow: async () => {

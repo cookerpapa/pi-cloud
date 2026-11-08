@@ -18,7 +18,6 @@ import { PiCloudTurnRunner } from "../src/pi-cloud-turn-runner.ts";
 import { AgentRunSupervisor } from "../src/agent-run-supervisor.ts";
 import type { TrustedModelRuntimeLease } from "../src/agent-turn-runtime.ts";
 import { RemoteToolSandboxTurnRunner } from "../src/remote-tool-sandbox-turn-runner.ts";
-import { resolveWorkspaceSeed } from "../../supervisor-host/src/workspace-seed.ts";
 import {
   createCloudTurnContext,
   createCloudExecutionContext,
@@ -247,7 +246,6 @@ it.each([
       throw new Error("Cancelled bootstrap must not activate Cube");
     });
     const leaseReleased = vi.fn();
-    const seedResolver = vi.fn(resolveWorkspaceSeed);
     const selectedCommand =
       mode === "stop_before_setup"
         ? {
@@ -273,16 +271,13 @@ it.each([
       if (mode === "stop_before_setup" || mode.startsWith("cold_compact")) {
         runner = new RemoteToolSandboxTurnRunner({
           broker: {
-            create: activate,
-            refreshServices: async () => {},
-            release: async () => ({ retained: false }),
+            prepareEnvironmentImages: activate,
             workflowUrlFor: () => {
               throw new Error("No Workflow expected");
             },
           },
           runtimeIdentity: { supervisorId: "s", bootId: crypto.randomUUID(), sandboxId: "worker" },
           trustedWorkspaceDirectory: directory,
-          workspaceSeedResolver: seedResolver,
           openAgentSession: async () => handle,
           modelRuntimeLeaseResolver: () => ({
             runtime: {
@@ -416,7 +411,6 @@ it.each([
             reason: "user_request",
           });
           expect(activate).not.toHaveBeenCalled();
-          expect(seedResolver).not.toHaveBeenCalled();
           expect(fake.observations).toEqual([]);
           return;
         }
@@ -459,7 +453,6 @@ it.each([
         expect(acquired).toBe(mode === "cold_compact" ? 0 : 1);
         expect(released).toBe(acquired);
         expect(activate).not.toHaveBeenCalled();
-        expect(seedResolver).not.toHaveBeenCalled();
         expect(leaseReleased).toHaveBeenCalledOnce();
         expect(
           (await storage.scanSubmissions({}, 100, undefined, BACKGROUND_CONTEXT)).items.some(

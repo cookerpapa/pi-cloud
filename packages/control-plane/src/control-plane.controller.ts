@@ -742,6 +742,13 @@ export class ControlPlaneController {
     );
   }
 
+  @Get("conversations/:sessionId/environment")
+  conversationEnvironment(@Req() request: FastifyRequest, @Param("sessionId") sessionId: unknown) {
+    return this.controlPlaneStores
+      .forIdentity(this.tenantRequestContext.resolve(request))
+      .getConversationEnvironment(parseUuidPathParameter(sessionId, "sessionId"));
+  }
+
   @Get("conversations/:sessionId/search")
   async searchConversation(
     @Req() request: FastifyRequest,

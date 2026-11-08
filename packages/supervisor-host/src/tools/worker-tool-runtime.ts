@@ -40,6 +40,7 @@ import type { WorkflowPreparer } from "@pi-cloud/sandbox-supervisor";
 export class WorkerToolRuntime {
   constructor(
     readonly options: {
+      implementation(name: string): import("@pi-cloud/protocol").ToolImplementation | undefined;
       catalog: ControlToolCatalogSource;
       nativeConversations: {
         childAnchor(
@@ -75,7 +76,7 @@ export class WorkerToolRuntime {
   async create(context: {
     command: ExecuteTurnCommandMessage;
     prepareWorkflow: WorkflowPreparer;
-    prepareEnvironment(): Promise<string>;
+    environment(): import("@pi-cloud/protocol").ToolEnvironmentRequest;
     onExecutionUnavailable?(failure: { code: string; message: string }): void;
   }): Promise<TrustedAgentToolSet> {
     const scope = context.command.payload;
@@ -281,8 +282,12 @@ export class WorkerToolRuntime {
             throw new Error("skill_unavailable: this Skill needs workspace files");
         }
         const operationId = randomUUID();
-        const bindingId = needsWorkspace
-          ? await context.prepareEnvironment()
+        const implementation = ordinary ? this.options.implementation(definition.name) : undefined;
+        if (ordinary && !implementation)
+          throw new Error("tool_unavailable: implementation catalog is not ready");
+        const logicalEnvironment = needsWorkspace ? context.environment() : undefined;
+        const bindingId = logicalEnvironment
+          ? logicalEnvironment.requestId
           : environment.kind === "target"
             ? target
               ? await prepareTarget(target, signal)
@@ -343,6 +348,8 @@ export class WorkerToolRuntime {
                   ? { recovery: { sequence: original.sequence, operationId: original.operationId } }
                   : {}),
                 ...(bindingId ? { bindingId } : {}),
+                ...(logicalEnvironment ? { environment: logicalEnvironment } : {}),
+                ...(implementation ? { implementation } : {}),
                 occurredAt: new Date().toISOString(),
               };
         return {

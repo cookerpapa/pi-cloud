@@ -1,4 +1,10 @@
 import { isControlDispatchToolName } from "./control-tool-catalog.ts";
+import { parseToolEnvironmentRequest, type ToolEnvironmentRequest } from "./tool-environment.ts";
+export type ToolImplementation = Readonly<{
+  releaseId: string;
+  generation: number;
+  replay: "safe" | "never";
+}>;
 
 export type ControlToolRecoverySource = Readonly<{
   sequence: number;
@@ -28,6 +34,8 @@ export type CandidateControlToolCommand = Readonly<{
   arguments: Record<string, unknown>;
   contextAnchor: number | null;
   bindingId?: string;
+  environment?: ToolEnvironmentRequest;
+  implementation?: ToolImplementation;
   sourceDocumentId?: number;
   recovery?: ControlToolRecoverySource & { documentId?: number };
   replyMode?: "hostcall";
@@ -43,6 +51,8 @@ export type ControlToolDispatch = Readonly<{
   toolName: string;
   contextAnchor: number | null;
   bindingId?: string;
+  environment?: ToolEnvironmentRequest;
+  implementation?: ToolImplementation;
   sourceDocumentId?: number;
   recovery?: ControlToolRecovery;
   replyMode?: "hostcall";
@@ -52,6 +62,15 @@ export type ControlToolDispatch = Readonly<{
 
 export function parseControlToolDispatch(value: unknown): ControlToolDispatch {
   const v = value as ControlToolDispatch;
+  if (
+    v?.implementation &&
+    (!v.implementation.releaseId ||
+      v.implementation.releaseId.length > 256 ||
+      !Number.isSafeInteger(v.implementation.generation) ||
+      v.implementation.generation < 1 ||
+      !["safe", "never"].includes(v.implementation.replay))
+  )
+    throw new Error("Invalid Tool implementation identity");
   if (
     !v ||
     v.target !== "control" ||
@@ -76,6 +95,11 @@ export function parseControlToolDispatch(value: unknown): ControlToolDispatch {
   )
     throw new Error("Invalid control Tool dispatch reference");
   const recovery = v.recovery;
+  if (v.environment !== undefined) {
+    parseToolEnvironmentRequest(v.environment);
+    if (v.bindingId !== v.environment.requestId)
+      throw new Error("Tool environment does not match its logical binding");
+  }
   if (
     recovery !== undefined &&
     (!recovery ||

@@ -194,25 +194,10 @@ async function fixture(mode: Mode) {
     },
     close: async () => {},
   };
-  const activationId = randomUUID();
-  const release = vi.fn(async () => ({ retained: true }));
   const runner = new RemoteToolSandboxTurnRunner({
     trustedWorkspaceDirectory: directory,
     runtimeIdentity: { supervisorId: "fixture", sandboxId: "fixture", bootId: randomUUID() },
     broker: {
-      create: async (request) => ({
-        toolBrokerProtocolVersion: 1,
-        type: "tool_sandbox.reserved",
-        requestId: request.requestId,
-        activationId,
-        executionReference: command.payload.executionReference,
-        ownerBaseUrl: "http://fixture.invalid",
-        workspaceRoot: "/workspace",
-        continuity: "warm_reuse",
-        continuityId: "fixture-continuity",
-      }),
-      release,
-      refreshServices: async () => {},
       workflowUrlFor: () => "http://fixture.invalid/workflow",
     },
     openAgentSession: async () => handle,
@@ -257,7 +242,6 @@ async function fixture(mode: Mode) {
     fake,
     waits,
     storage,
-    release,
     commands,
     cancellations,
     fetching,
@@ -295,9 +279,7 @@ it.each(["download_error", "metadata_error", "integrity_error"] as const)(
       expect(f.waits[0]!.executionSettled()).toBe(true);
       expect(f.cancellations).toEqual([]);
       expect(unavailable).not.toHaveBeenCalled();
-      expect(f.release).toHaveBeenCalledWith(expect.any(String), expect.anything(), {
-        kind: "keep_warm",
-      });
+      expect(f.commands[0]?.environment?.requestId).toBe(f.commands[0]?.request.activationId);
       const entries = await f.storage.scanEntries(entriesQuery, 100, undefined, BACKGROUND_CONTEXT);
       const data = JSON.stringify(entries);
       expect(data).toContain("tool_result_attachment_unavailable");
@@ -323,9 +305,7 @@ it("keeps native Stop authoritative while a received image is still downloading"
     await expect(running).rejects.toMatchObject({ code: "turn_cancelled", reason: "user_request" });
     expect(f.cancellations).toEqual([]);
     expect(unavailable).not.toHaveBeenCalled();
-    expect(f.release).toHaveBeenCalledWith(expect.any(String), expect.anything(), {
-      kind: "keep_warm",
-    });
+    expect(f.commands[0]?.environment?.requestId).toBe(f.commands[0]?.request.activationId);
     const before = JSON.stringify(
       await f.storage.scanEntries(entriesQuery, 100, undefined, BACKGROUND_CONTEXT),
     );

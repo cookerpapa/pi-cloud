@@ -1,0 +1,119 @@
+import {
+  MAX_IMAGE_GUEST_RESPONSE_BYTES,
+  type AcceptedToolCommand,
+  type ExecutionLogPosition,
+  type ToolExecutionFailureData,
+} from "@pi-cloud/protocol";
+import {
+  CubeExecutionRejected,
+  CubeRuntimeClientError,
+  CubeRuntimeTransportError,
+  type CubeSandboxRuntimeClient,
+} from "./cubesandbox-runtime-client.ts";
+import type { SandboxBinding } from "./sandbox-bindings.ts";
+import { executionTargetId, type SandboxExecutionTarget } from "./sandbox-execution.ts";
+import type {
+  SandboxToolExecutor,
+  ToolExecutionCancellation,
+  ToolHandoffFailure,
+} from "./tool-executor.ts";
+
+/** Native Cube wire and refusal semantics remain behind the complete-Tool port.
+ * Cubelet, not this disposable client, owns an accepted execution and reply. */
+export class CubeSandboxToolExecutor implements SandboxToolExecutor {
+  constructor(readonly client: Pick<CubeSandboxRuntimeClient, "submitTool" | "cancelTool">) {}
+
+  submit(
+    binding: SandboxBinding,
+    command: AcceptedToolCommand,
+    source: ExecutionLogPosition,
+  ): Promise<void> {
+    return this.client.submitTool(binding.descriptor.target, {
+      source,
+      operationId: command.request.operationId,
+      executionScopeId: binding.bindingId,
+      writerId: command.scope.writerId,
+      payload: {
+        toolWorkerProtocolVersion: 7,
+        type: "worker.operation",
+        attachment: binding.descriptor.attachment,
+        request: command.request,
+      },
+      completionContext: {
+        execution: {
+          bindingId: binding.bindingId,
+          targetId: executionTargetId(binding.descriptor.target),
+          bootId: binding.descriptor.target.bootId,
+          continuityId: binding.snapshot.physicalActivationId,
+          ...(binding.snapshot.continuity ? { continuity: binding.snapshot.continuity } : {}),
+        },
+        scope: command.scope,
+        replyTopic: command.replyTopic,
+        toolCallId: command.toolCallId,
+        nativeToolCallId: command.request.toolCallId,
+        toolName: command.request.toolName,
+        partition: source.partition,
+      },
+      timeoutMs: command.request.timeoutMs + 5000,
+      maximumOutputBytes:
+        command.request.toolName === "read" ? MAX_IMAGE_GUEST_RESPONSE_BYTES : 8 * 1024 * 1024,
+    });
+  }
+
+  cancel(target: SandboxExecutionTarget, request: ToolExecutionCancellation): Promise<void> {
+    return this.client.cancelTool(target, request);
+  }
+
+  cancellationRefused(error: unknown): boolean {
+    return error instanceof CubeExecutionRejected;
+  }
+
+  handoffFailure(error: unknown): ToolHandoffFailure {
+    let code = "cubesandbox_tool_result_unknown";
+    let effect: ToolExecutionFailureData["effect"] = "unknown";
+    let quarantine = false;
+    if (
+      error instanceof CubeRuntimeTransportError ||
+      (error instanceof CubeRuntimeClientError &&
+        error.statusCode !== undefined &&
+        (error.statusCode === 408 || error.statusCode === 429 || error.statusCode >= 500))
+    )
+      code = "tool_handoff_unconfirmed";
+    if (error instanceof CubeExecutionRejected) {
+      switch (error.code) {
+        case "executor_replaced":
+        case "runtime_quarantined":
+          code = "cubesandbox_tool_unavailable";
+          quarantine = true;
+          break;
+        case "node_unavailable":
+        case "execution_unavailable":
+        case "runtime_retention_unavailable":
+        case "execution_endpoint_unconfigured":
+        case "executor_capacity":
+          code = "cubesandbox_tool_unavailable";
+          effect = "not_started";
+          break;
+        case "capacity":
+        case "invalid_request":
+        case "invalid_identity":
+        case "invalid_execution_position":
+          code = "tool_execution_not_started";
+          effect = "not_started";
+          break;
+        // Stale positions and changed identities can describe an earlier effect.
+      }
+    }
+    return {
+      quarantine,
+      failure: {
+        code,
+        effect,
+        message:
+          effect === "not_started"
+            ? "The execution request was refused before admission; this delivery did not start a file or shell action."
+            : "Execution handoff did not return a confirmed result. The operation may have executed or may still be running. It was not replayed; inspect effects before deciding to repeat it.",
+      },
+    };
+  }
+}

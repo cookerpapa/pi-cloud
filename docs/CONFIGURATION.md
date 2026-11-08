@@ -753,3 +753,19 @@ orders that mount before K3s; an unsupported mount fails closed.
 only the Workspace mount and receipt/service credentials. Ordinary file gateways
 remain unprivileged. The helper uses XFS's persistent filesystem UUID, so a
 changed loop-device number after reboot does not change Volume ownership.
+
+## Independent ordinary tools (ADR-0305)
+
+The platform chart has `images.toolHost` and `toolHost.resources`; the initial
+supported host topology is one replica. The build stamps `PI_CLOUD_TOOL_RELEASE_ID`
+from source revision and immutable image version. Deployment activates that exact
+release before readiness; code startup cannot replace a previously selected release.
+The host uses the existing management service credential, attachment access and
+ordinary-tool provider credential, with no Cube management credential or native Pi.
+
+Workers use `PI_CLOUD_SESSION_EXECUTION_URL` (Helm
+`pi-workers.services.sessionExecutionUrl`) for logical input-image preparation and
+workflow attachments. Existing `PI_CLOUD_SANDBOX_CONTROL_URLS` remain for Worker
+boot inventory/retirement. Model calls and canonical Session commits are unchanged.
+The complete Tool catalog uses `pi-cloud.tool-catalog.v1`; it is configuration,
+not conversation history or a second dispatch consumer.

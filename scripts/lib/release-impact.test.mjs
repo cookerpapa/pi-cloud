@@ -1,17 +1,17 @@
 import { expect, it } from "vitest";
 import { releaseImpact, catalogSeed, imageReleaseTargets } from "./release-impact.mjs";
-it("builds one shared host artifact for the Session-runtime-only ordinary-tool scope and rejects mixed runtime changes", () => {
+it("builds one shared host artifact for the Tool-host-only ordinary-tool scope and rejects mixed runtime changes", () => {
   const tool = "packages/control-plane/src/ordinary-tools/registry.ts";
   expect(
     releaseImpact([tool, "packages/control-plane/test/new-tool.test.ts"]).matrix.include.map(
       (i) => i.image,
     ),
   ).toEqual(["control-plane"]);
-  expect(releaseImpact([tool]).scope).toBe("session-runtime");
+  expect(releaseImpact([tool]).scope).toBe("tool-host");
   for (const changed of [
     "packages/control-plane/src/main.ts",
-    "packages/control-plane/src/session-runtime-main.ts",
-    "packages/sandbox-control/src/sandbox-session-runtime.ts",
+    "packages/control-plane/src/tool-host-main.ts",
+    "packages/sandbox-control/src/sandbox-tool-host.ts",
     "packages/control-plane/src/control-tool-dispatcher.ts",
     "packages/protocol/src/index.ts",
     "package-lock.json",
@@ -55,15 +55,15 @@ it("keeps missing history and runtime/schema/dependency/workflow changes on full
   expect(releaseImpact(["docs/README.md"]).scope).toBe("docs");
 });
 
-it("maps the public Session-runtime scope to one shared artifact and one independent installed role", () => {
-  expect(imageReleaseTargets["session-runtime"]).toEqual({
+it("maps the public Tool-host scope to one shared artifact and one independent installed role", () => {
+  expect(imageReleaseTargets["tool-host"]).toEqual({
     imageName: "control-plane",
     buildScope: "control-plane",
     buildCatalogKey: "controlPlane",
-    catalogKey: "sessionRuntime",
-    componentName: "session-runtime",
-    workload: "deployment/pi-cloud-session-runtime",
-    container: "session-runtime",
+    catalogKey: "toolHost",
+    componentName: "tool-host",
+    workload: "deployment/pi-cloud-tool-host",
+    container: "tool-host",
   });
   expect(imageReleaseTargets["control-plane"]).toBeUndefined();
 });

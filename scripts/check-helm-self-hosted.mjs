@@ -21,6 +21,7 @@ const images = Object.fromEntries(
   [
     "controlPlane",
     "sessionRuntime",
+    "toolHost",
     "metering",
     "worker",
     "web",

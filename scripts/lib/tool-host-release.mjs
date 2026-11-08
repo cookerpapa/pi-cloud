@@ -3,24 +3,24 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { digest } from "./component-release.mjs";
 
-export function sessionRuntimeSnapshot(deployment, autoscalers, pods) {
-  assert.equal(deployment.metadata.name, "pi-cloud-session-runtime");
+export function toolHostSnapshot(deployment, autoscalers, pods) {
+  assert.equal(deployment.metadata.name, "pi-cloud-tool-host");
   assert.equal(
     deployment.spec.replicas,
     1,
-    "Scoped Session runtime release requires one serving replica",
+    "Scoped Tool host release requires one serving replica",
   );
   assert(
     !autoscalers.some((h) => h.spec.scaleTargetRef.name === deployment.metadata.name),
-    "Scoped Session runtime release does not support an autoscaler",
+    "Scoped Tool host release does not support an autoscaler",
   );
-  assert.equal(pods.length, 1, "Session runtime Pods are not settled");
+  assert.equal(pods.length, 1, "Tool host Pods are not settled");
   const pod = pods[0];
   assert(
     !pod.metadata.deletionTimestamp &&
       pod.status.podIP &&
       pod.status.containerStatuses?.every((c) => c.ready),
-    "Session runtime Pod is not ready",
+    "Tool host Pod is not ready",
   );
   return {
     uid: deployment.metadata.uid,
@@ -31,21 +31,16 @@ export function sessionRuntimeSnapshot(deployment, autoscalers, pods) {
   };
 }
 
-export function sameSessionRuntime(receipt, deployment) {
-  assert.equal(deployment.metadata.name, "pi-cloud-session-runtime");
-  assert.equal(deployment.metadata.uid, receipt.uid, "Session runtime Deployment identity changed");
-  assert.equal(
-    digest(deployment.spec.template),
-    receipt.template,
-    "Session runtime template changed",
-  );
+export function sameToolHost(receipt, deployment) {
+  assert.equal(deployment.metadata.name, "pi-cloud-tool-host");
+  assert.equal(deployment.metadata.uid, receipt.uid, "Tool host Deployment identity changed");
+  assert.equal(digest(deployment.spec.template), receipt.template, "Tool host template changed");
 }
 
 /** Operator journal only. Helm/PG/Kafka keep their original authorities. */
-export async function replaceSessionRuntime(port, prior, version, budgetMs = 300_000) {
+export async function replaceToolHost(port, prior, version, budgetMs = 300_000) {
   let receipt = prior;
-  if (receipt)
-    assert.equal(receipt.role, "session-runtime", "Replacement receipt targets another role");
+  if (receipt) assert.equal(receipt.role, "tool-host", "Replacement receipt targets another role");
   const save = async (phase) => {
     const next = { ...receipt, phase };
     await port.save(next);
@@ -55,11 +50,11 @@ export async function replaceSessionRuntime(port, prior, version, budgetMs = 300
     if (receipt?.phase === "applying" || receipt?.phase === "applied") {
       assert.equal(receipt.version, version);
       const current = await port.observe();
-      assert.equal(current.deployment.metadata.name, "pi-cloud-session-runtime");
+      assert.equal(current.deployment.metadata.name, "pi-cloud-tool-host");
       assert.equal(
         current.deployment.metadata.uid,
         receipt.uid,
-        "Session runtime Deployment identity changed",
+        "Tool host Deployment identity changed",
       );
       assert(
         !current.autoscalers.some(
@@ -76,10 +71,10 @@ export async function replaceSessionRuntime(port, prior, version, budgetMs = 300
     const state = await port.observe();
     if (state.deployment.spec.replicas === 1) {
       receipt = {
-        ...sessionRuntimeSnapshot(state.deployment, state.autoscalers, state.pods),
+        ...toolHostSnapshot(state.deployment, state.autoscalers, state.pods),
         version,
         id: randomUUID(),
-        role: "session-runtime",
+        role: "tool-host",
         phase: "holding",
         startedAt: new Date().toISOString(),
       };
@@ -91,11 +86,7 @@ export async function replaceSessionRuntime(port, prior, version, budgetMs = 300
         assert.equal(status.requestId, receipt.id);
         assert(typeof status.instanceId === "string" && status.instanceId.length > 0);
         receipt.instanceId ??= status.instanceId;
-        assert.equal(
-          status.instanceId,
-          receipt.instanceId,
-          "Session runtime restarted while draining",
-        );
+        assert.equal(status.instanceId, receipt.instanceId, "Tool host restarted while draining");
         if (status.phase === "held") break;
         assert.equal(status.phase, "waiting");
         assert(
@@ -105,21 +96,21 @@ export async function replaceSessionRuntime(port, prior, version, budgetMs = 300
         await (port.pause ?? delay)(250);
       }
       const fresh = await port.observe();
-      sameSessionRuntime(receipt, fresh.deployment);
+      sameToolHost(receipt, fresh.deployment);
       assert.equal(
-        sessionRuntimeSnapshot(fresh.deployment, fresh.autoscalers, fresh.pods).podUid,
+        fresh.pods.find((pod) => !pod.metadata.deletionTimestamp)?.metadata.uid,
         receipt.podUid,
-        "Session runtime Pod changed before replacement",
+        "Tool host Pod changed before replacement",
       );
       await save("stopping");
       await port.stop();
     } else {
       assert(
         receipt && ["stopping", "stopped"].includes(receipt.phase),
-        "Session runtime is stopped without this candidate's replacement receipt",
+        "Tool host is stopped without this candidate's replacement receipt",
       );
       assert.equal(receipt.version, version);
-      sameSessionRuntime(receipt, state.deployment);
+      sameToolHost(receipt, state.deployment);
       assert.equal(state.deployment.spec.replicas, 0);
     }
     await port.waitAbsent();
@@ -132,7 +123,7 @@ export async function replaceSessionRuntime(port, prior, version, budgetMs = 300
     if (receipt && !["applying", "applied"].includes(receipt.phase)) {
       await port.request(receipt, "cancel").catch(() => {});
       const current = await port.observe();
-      sameSessionRuntime(receipt, current.deployment);
+      sameToolHost(receipt, current.deployment);
       if (current.deployment.spec.replicas === 0) {
         await port.waitAbsent();
         await port.restore();

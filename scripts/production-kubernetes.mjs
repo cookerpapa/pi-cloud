@@ -1,4 +1,5 @@
 import { configureBuildProxy } from "./lib/upstream-proxy.mjs";
+import { activateToolHost } from "./lib/tool-host-activation.mjs";
 import { createHash } from "node:crypto";
 import { waitForReadyCubelet } from "./lib/cube-execution-deployment.mjs";
 import {
@@ -187,11 +188,12 @@ async function build() {
       { env: environment },
     );
   }
-  // One artifact supplies three independent process roles. A scoped build only
+  // One artifact supplies independently deployed roles. A scoped build only
   // changes its private candidate; the scoped operator selects the published role.
   if (!selected) {
     images.sessionRuntime = images.controlPlane;
     images.metering = images.controlPlane;
+    images.toolHost = images.controlPlane;
   }
   writeFileSync(imageCatalogPath, JSON.stringify(images, null, 2) + "\n", {
     mode: 0o600,
@@ -389,10 +391,43 @@ export async function deployPlatform({ images, deploymentEnvironment }) {
     "pi-cloud",
     chart("platform"),
     ...flags("platform"),
-    "--wait",
     "--timeout",
     "15m",
   ]);
+  // The new tool executable is live before it is selected. Activate its
+  // catalog before waiting for readiness (which deliberately requires it).
+  const toolDeployment = JSON.parse(
+    kubectl(["get", "deployment/pi-cloud-tool-host", "-o", "json"]),
+  );
+  await activateToolHost({
+    expectedImage: toolDeployment.spec.template.spec.containers.find((c) => c.name === "tool-host")
+      .image,
+    token: readFileSync(
+      resolve(runtimeDirectory, "secrets/supervisor-management-token"),
+      "utf8",
+    ).trim(),
+    pods: async () =>
+      JSON.parse(
+        kubectl(["get", "pods", "-l", "app.kubernetes.io/component=tool-host", "-o", "json"]),
+      ).items,
+  });
+  const applicationWorkloads = JSON.parse(
+    kubectl([
+      "get",
+      "deployments,statefulsets",
+      "-l",
+      "app.kubernetes.io/instance=pi-cloud",
+      "-o",
+      "json",
+    ]),
+  ).items;
+  for (const resource of applicationWorkloads)
+    await kubectlAsync([
+      "rollout",
+      "status",
+      `${resource.kind.toLowerCase()}/${resource.metadata.name}`,
+      "--timeout=15m",
+    ]);
   const endpoint = JSON.parse(kubectl(["get", "service", "session-runtime", "-o", "json"])).spec
     .clusterIP;
   const token = readFileSync(

@@ -1,12 +1,12 @@
 import { expect, it, vi } from "vitest";
-import { sessionRuntimeSnapshot, replaceSessionRuntime } from "./session-runtime-release.mjs";
+import { toolHostSnapshot, replaceToolHost } from "./tool-host-release.mjs";
 
 function fixture() {
   const deployment = {
-    metadata: { name: "pi-cloud-session-runtime", uid: "deployment" },
+    metadata: { name: "pi-cloud-tool-host", uid: "deployment" },
     spec: {
       replicas: 1,
-      template: { spec: { containers: [{ name: "session-runtime", image: "old" }] } },
+      template: { spec: { containers: [{ name: "tool-host", image: "old" }] } },
     },
   };
   const oldPod = {
@@ -58,7 +58,7 @@ function fixture() {
 
 it("orders local execution quiescence and old Pod absence before Helm without touching resource ownership", async () => {
   const f = fixture();
-  await replaceSessionRuntime(f.port, undefined, "v2");
+  await replaceToolHost(f.port, undefined, "v2");
   expect(f.actions).toEqual(["prepare", "stop", "absent", "helm"]);
   expect(f.phases).toEqual(["holding", "stopping", "stopped", "applying", "applied"]);
   expect(f.port.restore).not.toHaveBeenCalled();
@@ -73,9 +73,7 @@ it("a busy Tool timeout cancels the hold and leaves the old process in service",
     instanceId: "process",
     phase: action === "prepare" ? "waiting" : "open",
   }));
-  await expect(replaceSessionRuntime(f.port, undefined, "v2", -1)).rejects.toThrow(
-    "did not settle",
-  );
+  await expect(replaceToolHost(f.port, undefined, "v2", -1)).rejects.toThrow("did not settle");
   expect(f.port.stop).not.toHaveBeenCalled();
   expect(f.port.apply).not.toHaveBeenCalled();
   expect(f.port.request.mock.calls.at(-1)[1]).toBe("cancel");
@@ -84,9 +82,7 @@ it("a busy Tool timeout cancels the hold and leaves the old process in service",
 it("restores the exact old template after a pre-Helm failure", async () => {
   const f = fixture();
   f.port.waitAbsent.mockRejectedValueOnce(new Error("Pod absence unconfirmed"));
-  await expect(replaceSessionRuntime(f.port, undefined, "v2")).rejects.toThrow(
-    "Pod absence unconfirmed",
-  );
+  await expect(replaceToolHost(f.port, undefined, "v2")).rejects.toThrow("Pod absence unconfirmed");
   expect(f.port.restore).toHaveBeenCalledTimes(1);
   expect(f.state.deployment.spec.replicas).toBe(1);
   expect(f.state.deployment.spec.template.spec.containers[0].image).toBe("old");
@@ -98,25 +94,23 @@ it("does not roll back an uncertain Helm mutation and resumes its same candidate
     await apply();
     throw new Error("lost Helm reply");
   });
-  await expect(replaceSessionRuntime(f.port, undefined, "v2")).rejects.toThrow("lost Helm reply");
+  await expect(replaceToolHost(f.port, undefined, "v2")).rejects.toThrow("lost Helm reply");
   expect(f.port.restore).not.toHaveBeenCalled();
   expect(f.receipt().phase).toBe("applying");
   const prepareCalls = f.port.request.mock.calls.length;
-  await replaceSessionRuntime(f.port, f.receipt(), "v2");
+  await replaceToolHost(f.port, f.receipt(), "v2");
   expect(f.port.request.mock.calls.length).toBe(prepareCalls);
   expect(f.receipt().phase).toBe("applied");
 });
 it("can resume after operator loss with zero replicas, but cannot adopt somebody else's stop", async () => {
   const f = fixture();
-  const snapshot = sessionRuntimeSnapshot(f.state.deployment, [], f.state.pods);
+  const snapshot = toolHostSnapshot(f.state.deployment, [], f.state.pods);
   f.state.deployment.spec.replicas = 0;
   f.state.pods = [];
-  await expect(replaceSessionRuntime(f.port, undefined, "v2")).rejects.toThrow(
-    "without this candidate",
-  );
-  await replaceSessionRuntime(
+  await expect(replaceToolHost(f.port, undefined, "v2")).rejects.toThrow("without this candidate");
+  await replaceToolHost(
     f.port,
-    { ...snapshot, id: "request", version: "v2", phase: "stopping", role: "session-runtime" },
+    { ...snapshot, id: "request", version: "v2", phase: "stopping", role: "tool-host" },
     "v2",
   );
   expect(f.port.request).not.toHaveBeenCalled();
@@ -125,17 +119,17 @@ it("can resume after operator loss with zero replicas, but cannot adopt somebody
 it("rejects autoscaling, overlap and an unready Pod before touching the deployment", async () => {
   const f = fixture();
   expect(() =>
-    sessionRuntimeSnapshot(
+    toolHostSnapshot(
       f.state.deployment,
-      [{ spec: { scaleTargetRef: { name: "pi-cloud-session-runtime" } } }],
+      [{ spec: { scaleTargetRef: { name: "pi-cloud-tool-host" } } }],
       f.state.pods,
     ),
   ).toThrow("autoscaler");
   expect(() =>
-    sessionRuntimeSnapshot(f.state.deployment, [], [...f.state.pods, ...f.state.pods]),
+    toolHostSnapshot(f.state.deployment, [], [...f.state.pods, ...f.state.pods]),
   ).toThrow("settled");
   f.state.pods[0].status.containerStatuses[0].ready = false;
-  await expect(replaceSessionRuntime(f.port, undefined, "v2")).rejects.toThrow("not ready");
+  await expect(replaceToolHost(f.port, undefined, "v2")).rejects.toThrow("not ready");
   expect(f.port.stop).not.toHaveBeenCalled();
 });
 
@@ -143,8 +137,8 @@ it("refuses another role's Deployment or replacement receipt", async () => {
   const f = fixture();
   const management = structuredClone(f.state.deployment);
   management.metadata.name = "pi-cloud-control-plane";
-  expect(() => sessionRuntimeSnapshot(management, [], f.state.pods)).toThrow();
-  await expect(replaceSessionRuntime(f.port, { role: "control-plane" }, "v2")).rejects.toThrow(
+  expect(() => toolHostSnapshot(management, [], f.state.pods)).toThrow();
+  await expect(replaceToolHost(f.port, { role: "control-plane" }, "v2")).rejects.toThrow(
     "another role",
   );
   expect(f.port.stop).not.toHaveBeenCalled();

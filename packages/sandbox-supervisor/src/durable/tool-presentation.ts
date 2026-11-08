@@ -1,6 +1,7 @@
 import type { EntryRecord, LiveState, TaskRecord, ToolSlot } from "@earendil-works/pi-durable";
 import type { JsonValue } from "@earendil-works/chord";
 import type { NativeDocumentChange } from "@pi-cloud/pi-session-postgres/durable";
+import { durableToolState } from "@pi-cloud/protocol";
 import type {
   DurableSessionCommit,
   DurableToolStartDescription,
@@ -46,19 +47,7 @@ export function prepareToolPresentation(
     if (slot.status !== "running" || previous.get(slot.callId)?.status === "running") continue;
     const source = slot.taskId === undefined ? undefined : tasks.get(slot.taskId);
     const task = source?.value;
-    const checkpoint =
-      task && "checkpoint" in task.state
-        ? (task.state.checkpoint as { phase?: string; arguments?: unknown })
-        : undefined;
-    if (
-      !source ||
-      task?.kind !== "pi.tool" ||
-      task.abortRequested ||
-      checkpoint?.phase !== "execute" ||
-      !checkpoint.arguments ||
-      typeof checkpoint.arguments !== "object" ||
-      Array.isArray(checkpoint.arguments)
-    )
+    if (!source || !task || !durableToolState(task)?.intent)
       throw new Error("Tool display start requires its same-commit native execution intent");
     const event = factory.next({
       type: "tool.started",

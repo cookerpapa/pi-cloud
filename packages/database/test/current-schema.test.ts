@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(212);
+      expect(firstMigrationPass.rows).toHaveLength(214);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("212_workspace_capacity");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("214_execution_binding_admission");
       const terminalColumns = await sql<{ column_name: string }>`select column_name
         from information_schema.columns where table_name='workspace_terminal_sessions'`.execute(
         database,
@@ -40,6 +40,7 @@ describe("current PiCloud schema", () => {
         database,
       );
       expect(leaseColumns.rows.map((r) => r.column_name)).toContain("pi_session_id");
+      expect(leaseColumns.rows.map((r) => r.column_name)).toContain("tool_bindings_closed_at");
       expect(leaseColumns.rows.map((r) => r.column_name)).not.toContain("run_id");
       const scopes = await sql<{
         table_type: string;
@@ -106,6 +107,7 @@ describe("current PiCloud schema", () => {
         "pi_durable_current",
         "workspace_runtimes",
         "sandbox_tool_bindings",
+        "tool_catalog_publication",
         "sandbox_control_instances",
         "workspaces",
         "development_environments",

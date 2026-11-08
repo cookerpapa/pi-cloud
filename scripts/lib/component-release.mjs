@@ -102,7 +102,14 @@ export function assertOperatorRevisionChanges(files) {
     );
 }
 
-export function scopedHelmUpgradeArguments({ name, chart, values, kubeconfig, namespace }) {
+export function scopedHelmUpgradeArguments({
+  name,
+  chart,
+  values,
+  kubeconfig,
+  namespace,
+  wait = true,
+}) {
   const args = [
     "upgrade",
     name,
@@ -110,7 +117,7 @@ export function scopedHelmUpgradeArguments({ name, chart, values, kubeconfig, na
     "--values",
     values,
     "--no-hooks",
-    "--wait",
+    ...(wait ? ["--wait"] : []),
     "--timeout",
     "5m",
     "--kubeconfig",
@@ -138,14 +145,11 @@ export function scopedApplyState({ baseline, next, current, helmRevision, before
 
 /** Source classifications are deliberately small; protocol changes use matched release. */
 export function assertScopedSources(scope, files) {
-  assert(
-    ["provider", "catalog", "web", "session-runtime"].includes(scope),
-    "Unknown release scope",
-  );
+  assert(["provider", "catalog", "web", "tool-host"].includes(scope), "Unknown release scope");
   for (const file of files) {
     assert(
       operatorSources.has(file) ||
-        (scope === "session-runtime" && ordinaryControlToolSource(file)) ||
+        (scope === "tool-host" && ordinaryControlToolSource(file)) ||
         (scope === "web" &&
           (/^packages\/web-ui\/src\/.*\.(tsx|css)$/.test(file) ||
             [
@@ -285,7 +289,7 @@ export function assertScopedManifests(scope, before, after, desired) {
       }
       targets++;
     } else if (
-      ["web", "session-runtime"].includes(scope) &&
+      ["web", "tool-host"].includes(scope) &&
       old.kind === "Deployment" &&
       old.metadata.name === imageReleaseTargets[scope].workload.split("/")[1]
     ) {
@@ -323,10 +327,15 @@ export const sharedHostRoles = {
   "control-plane": { workload: "pi-cloud-control-plane", container: "control-plane" },
   "session-runtime": { workload: "pi-cloud-session-runtime", container: "session-runtime" },
   metering: { workload: "pi-cloud-metering", container: "metering" },
+  "tool-host": { workload: "pi-cloud-tool-host", container: "tool-host" },
 };
 
 export function assertServingComponents(deployment, resources, alternative) {
-  for (const role of Object.keys(sharedHostRoles))
+  // The baseline describes roles already installed. A matched release may
+  // introduce another role; scoped publication separately requires its contract.
+  const requiredRoles = ["control-plane", "session-runtime", "metering"];
+  if (deployment.contracts?.toolHostReplacement === 1) requiredRoles.push("tool-host");
+  for (const role of requiredRoles)
     assert(
       deployment.components[role],
       "Install the matched role manifest before a scoped release",
@@ -381,7 +390,7 @@ export function deploymentFromEvidence({
       evidence: { directory: evidenceDirectory, manifestSha256: digest(evidence) },
     };
     for (const role of name === "control-plane"
-      ? ["control-plane", "session-runtime", "metering"]
+      ? ["control-plane", "session-runtime", "metering", "tool-host"]
       : [name]) {
       assert(!components[role], "Duplicate role provenance");
       components[role] = structuredClone(component);
@@ -404,7 +413,7 @@ export function composeScopedDeployment(
     const target = imageReleaseTargets[scope];
     const name = target.imageName;
     const role = target.componentName ?? name;
-    if (scope === "session-runtime")
+    if (scope === "tool-host")
       for (const shared of Object.keys(sharedHostRoles))
         assert(
           baseline.components[shared],

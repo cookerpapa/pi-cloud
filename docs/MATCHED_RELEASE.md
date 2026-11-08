@@ -1,5 +1,17 @@
 # Matched release procedure
 
+ADR-0305's current source cutover installs schema 214, logical environment dispatch,
+ordered binding application acknowledgements, tool-host and the Kafka catalog.
+Its deployment acceptance is pending in BACKLOG. The initial matched upgrade
+uses the existing writer/resource drain. New ordinary tools can then use the
+[tool-host component scope](COMPONENT_RELEASE.md#ordinary-tools).
+Application Helm apply does not wait for readiness before activation: the operator
+selects the exact new tool-host release, waits for catalog publication, then waits
+for workload readiness. Distributed publication activates from inside the chosen
+Pod, keeping management credentials inside the cluster. Do not use blind atomic
+Helm rollback across the catalog/schema boundary; reconcile the same candidate.
+
+
 Cube v0.7.3 preparation first dry-renders the complete pinned upstream chart
 against the installed explicit values. The private candidate retains the full
 manifest and stable credential additions; no Secret content is printed. New
@@ -39,7 +51,8 @@ ADR-0302 splits the API/Projector `session-runtime` from resource-management
 `control-plane`. Deploy both entrypoints and update Web, Worker, Cube observation
 and publication addresses together after the existing writer drain. The one built
 Control Plane image supplies both roles and metering, with separate Helm image
-values so scoped execution-tool updates only replace Session runtime. Preserve
+values. ADR-0305 adds an independent ordinary `tool-host` role; subsequent ordinary
+Tool publications replace only that role. Preserve
 all allocation/Volume ownership and encrypted data capsules. Management outages
 must pass the owned `PI_CLOUD_LIVE_CONTROL_PLANE_OUTAGE_CHECK=1` driver with
 continued PG projection, both sequential Bash calls, authenticated history/cost

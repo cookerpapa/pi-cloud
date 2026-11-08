@@ -177,6 +177,7 @@ async function start() {
     instanceId: "test-controller",
     managementToken: "m".repeat(64),
     publishBindingChanges: async () => {},
+    confirmBindingClosure: async () => {},
     onOwnershipLost: () => fixture.call("ownership.retire"),
     metrics: {} as any,
   });

@@ -288,6 +288,8 @@ async function startController(imageRevision = IMAGE_REVISION) {
         instanceId,
         ownerBaseUrl,
         async () => {},
+
+        async () => {},
       ),
       stateRepository,
       ownerBaseUrl,

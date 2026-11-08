@@ -4,70 +4,59 @@
 catalog and presentation-only Web operations. Install its initial schema 196 / Worker contract with the
 [matched procedure](MATCHED_RELEASE.md) first. Accounts and credentials survive.
 
-## Ordinary Session runtime tools
+## Ordinary tools
 
-[ADR-0302](adr/0302-session-runtime-and-resource-management.md) moves the scoped
-replacement contract to `session-runtime`. Install the matched split and
-`sessionRuntimeReplacement: 1` contract first. The old `control-plane` release
-scope is removed. Resource management and metering are independent roles, even
-though all three use the same built `pi-cloud/control-plane` artifact.
+[ADR-0305](adr/0305-execution-owned-tools-and-bindings.md) moves ordinary handlers
+into `tool-host`. Install its matched schema 214 / `toolHostReplacement: 1` and
+`toolCatalogPublication: 1` contracts first. Source implementation and pending
+acceptance are tracked in [BACKLOG](BACKLOG.md). The old `session-runtime` tool
+release scope is removed; the API and Projector remain serving during tool updates.
 
-The scope accepts ordinary Tool code under
-`packages/control-plane/src/ordinary-tools/`, including its registration module.
-A new tool on the existing transport needs no Worker edit. Shared protocol,
-dependency, ownership, lifecycle, schema, startup and public API changes require
-a matched release. Source classification does not replace semantic review.
+The scope accepts implementation/registration changes under
+`packages/control-plane/src/ordinary-tools/`. Existing transport needs no Worker
+edit. Protocol, dependency, ownership, lifecycle, schema, startup or public API
+changes still require a matched release.
 
 ```sh
-npm run release:component -- prepare session-runtime /private/releases/tools-1 tools-1
+npm run release:component -- prepare tool-host /private/releases/tools-1 tools-1
 npm run release:component -- preflight /private/releases/tools-1
 npm run release:component -- apply /private/releases/tools-1
 ```
 
-Preparation runs the ordinary Tool/catalog/dispatch/replacement contracts and
-builds/scans one Control Plane host artifact. It changes only
-`images.sessionRuntime`, the `pi-cloud-session-runtime` Deployment container and
-the `session-runtime` provenance record. `images.controlPlane`, `images.metering`
-and their role records retain their original image identities, source revisions
-and evidence. Full manifest comparison rejects changes to every other resource,
-and live-role checks reject an image merely found in a different workload.
+Preparation checks the ordinary Tool/catalog/dispatch/replacement contracts and
+builds/scans one shared host artifact. Only `images.toolHost`, the tool-host
+Deployment and its provenance record change. Management, Session runtime, metering,
+Worker and Cube identities are preserved. The tool host is single-replica, without
+an HPA. Its temporary drain rejects new ordinary calls and waits for accepted
+handlers, without pausing Session projection, input admission or SSE. A definite
+refusal becomes an unavailable result; a broken in-flight RPC becomes UNKNOWN.
+Neither automatically resends an unsafe effect.
 
-Apply requests quiescence through the Session runtime's private publication
-listener. It waits for executing control handlers, bound workflow/image/Skill
-operations and required native settlement while projection continues. Accepted
-fixed Cube commands can remain running. Once a safe boundary is held, new
-projection/recovery admission pauses before PG writes and dispatch commits.
+The operator records `tool-host-replacement.json`, removes the drained old Pod,
+applies the new image without migration hooks, and activates its exact release
+with a generation precondition. The new host publishes a complete Kafka catalog
+before readiness. A lost activation reply is reconciled using the manifest;
+restarting an old executable cannot select an obsolete directory. Every Worker
+reconstructs the latest snapshot even without another deployment event.
 
-The supported scoped topology is one Session runtime without an HPA. The
-operator waits for its old Pod to exit before Helm installs the new image with
-hooks disabled. It does not acquire, stop or wait on a Sandbox management lease.
-Management, metering, Workers, provider, Cube and VM allocations remain running.
-Kafka retains the sole Projector group and fences assignment changes. Workers
-reconnect to execution membership; the next model request receives the current
-catalog. New requests, dispatch and SSE can pause during this runtime replacement.
-Management-only outages have their own acceptance and do not pause those paths.
+The local drain expires after 30 seconds without renewal. Before Helm mutation,
+failure restores only the unchanged old template. After mutation, rerun the same
+candidate and reconcile actual state. Compatible rollback explicitly selects the
+previous image as a new catalog generation; there is no blind schema rollback.
 
-The hold expires after 30 seconds without renewal. A busy-drain timeout leaves
-the old release serving. SIGTERM repeats quiescence at termination, and the
-existing 720-second Pod grace remains the outer crash boundary.
-`session-runtime-replacement.json` records the exact role, Deployment/template,
-Pod and process identities before replica changes. A pre-Helm failure restores
-only that unchanged old template. After Helm starts, rerun the same candidate to
-reconcile actual state and finish the deployment record. An unresolved Helm
-`pending-upgrade` needs inspection; there is no blind rollback or legacy scope.
-
-The live driver requires a prepared candidate containing a reviewed ordinary
-Preview description change. It holds a real Luna Bash in Cube, replaces only
-Session runtime, verifies the unchanged Worker/Session lease/VM plus management
-and metering Pods/provenance, then unblocks the command and checks the new catalog
-within the same Run:
+The live driver holds an owned Luna Bash in Cube while replacing only tool-host.
+It submits a follow-up and reads the API during replacement, then checks unchanged
+Worker/lease/VM and Session API/Projector identities, one Bash effect and the new
+tool description within the same Run. Supply a prepared candidate with a reviewed
+ordinary Preview description change:
 
 ```sh
-PI_CLOUD_LIVE_SESSION_RUNTIME_RELEASE_CHECK=1 node --import tsx scripts/run-live-session-runtime-release-check.mjs /private/releases/tools-1 /private/evidence/tools-1
+PI_CLOUD_LIVE_TOOL_HOST_RELEASE_CHECK=1 node --import tsx scripts/run-live-tool-host-release-check.mjs /private/releases/tools-1 /private/evidence/tools-1
 ```
 
-The owned fixture confirms one Bash execution and physical VM/Volume cleanup
-before tenant removal. User conversations are not release probes.
+Owned fixture cleanup confirms VM/Volume absence before tenant removal. User
+conversations are not release probes. The initial matched cutover is required;
+this scope does not install a missing tool-host into an old runtime.
 
 ## Provider image
 
@@ -185,7 +174,7 @@ before retiring routes. Accepted Runs still need their original provider route.
 
 `runtime/k3s/deployment.json` records the full role combination. Full evidence
 expands the one Control Plane host artifact into independent management, Session
-runtime and metering records without building or scanning it three times. Unchanged
+runtime, metering and ordinary-tool records without four separate builds/scans. Unchanged
 images retain their original source commits, immutable identities and scan
 evidence; they are not rebuilt or described as freshly scanned. Full upgrades
 record a new combination and preserve an installed catalog override.
@@ -209,7 +198,7 @@ and publish the previous compatible provider pin/catalog with a new record.
 Credential-format/protocol changes require separate assessment. No automatic
 mixed schema rollback or silent model alias is supported.
 
-`npm run release:check -- provider|catalog|session-runtime` runs the relevant deterministic tests.
+`npm run release:check -- provider|catalog|tool-host` runs the relevant deterministic tests.
 Real acceptance still covers text, native Tool round trips, affected image/search
 features and interrupted requests. GPT/native drivers default to Luna; their
 explicit model can be any reviewed entry in `PI_CLOUD_MODEL_CATALOG_FILE`. Retain

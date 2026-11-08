@@ -400,6 +400,8 @@ export const migrationProvider: MigrationProvider = {
       "210_model_metering": modelMetering,
       "211_resource_metering": resourceMetering,
       "212_workspace_capacity": workspaceCapacity,
+      "213_tool_catalog_publication": toolCatalogPublication,
+      "214_execution_binding_admission": executionBindingAdmission,
     };
   },
 };
@@ -439,3 +441,6 @@ import * as modelMetering from "./210_model_metering.ts";
 import * as resourceMetering from "./211_resource_metering.ts";
 
 import * as workspaceCapacity from "./212_workspace_capacity.ts";
+import * as toolCatalogPublication from "./213_tool_catalog_publication.ts";
+
+import * as executionBindingAdmission from "./214_execution_binding_admission.ts";

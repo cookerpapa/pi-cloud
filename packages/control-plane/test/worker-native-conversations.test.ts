@@ -142,6 +142,7 @@ it.each([false, true])(
         >,
     });
     const tools = new WorkerToolRuntime({
+      implementation: () => ({ releaseId: "test-v1", generation: 1, replay: "never" }),
       catalog: new ControlToolRegistry(),
       nativeConversations: native,
       control,
@@ -163,9 +164,7 @@ it.each([false, true])(
         bootId: crypto.randomUUID(),
       },
       broker: {
-        create,
-        release: async () => ({ retained: true }),
-        refreshServices: async () => {},
+        prepareEnvironmentImages: create,
         workflowUrlFor: () => "http://fixture.invalid",
       },
       conversations: native,

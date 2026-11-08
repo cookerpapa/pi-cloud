@@ -13,6 +13,7 @@ let resultBytes = 0,
   callback;
 const runId = randomUUID();
 const runtime = new WorkerToolRuntime({
+  implementation: () => ({ releaseId: "test-v1", generation: 1, replay: "never" }),
   catalog: new ControlToolRegistry(),
   maximumDepth: null,
   nativeConversations: {
@@ -50,7 +51,7 @@ let bindings = await runtime.create({
       piSession: { conversationId: 1 },
     },
   },
-  prepareEnvironment: async () => {
+  environment: () => {
     throw new Error("No VM in this probe");
   },
   prepareWorkflow: async (_id, _script, call) => {

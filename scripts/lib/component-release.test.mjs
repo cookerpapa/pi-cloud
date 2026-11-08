@@ -67,9 +67,9 @@ it("allows only provider initialization to change in a provider release", () => 
 it("accepts operator-only replacement repairs without relabeling the prepared runtime", () => {
   expect(() =>
     assertOperatorRevisionChanges([
-      "scripts/lib/session-runtime-release.mjs",
-      "scripts/lib/session-runtime-release.test.mjs",
-      "scripts/run-live-session-runtime-release-check.mjs",
+      "scripts/lib/tool-host-release.mjs",
+      "scripts/lib/tool-host-release.test.mjs",
+      "scripts/run-live-tool-host-release-check.mjs",
       "scripts/lib/owned-acceptance-cleanup.mjs",
       "scripts/run-live-workspace-transfer-check.mjs",
     ]),
@@ -104,9 +104,9 @@ it("keeps presentation acceptance helpers outside the deployed runtime boundary"
     expect(() => assertScopedSources("web", [file])).toThrow("matched release");
 });
 
-it("limits Session runtime scope to ordinary tool implementations and one unchanged deployment template", () => {
+it("limits Tool host scope to ordinary tool implementations and one unchanged deployment template", () => {
   expect(() =>
-    assertScopedSources("session-runtime", [
+    assertScopedSources("tool-host", [
       "packages/control-plane/src/ordinary-tools/new-tool.ts",
       "packages/control-plane/src/ordinary-tools/registry.ts",
     ]),
@@ -123,19 +123,19 @@ it("limits Session runtime scope to ordinary tool implementations and one unchan
     "deploy/provider-gateway/Dockerfile",
     "deploy/helm/pi-cloud-platform/files/model-catalog.json",
   ])
-    expect(() => assertScopedSources("session-runtime", [file])).toThrow("matched release");
+    expect(() => assertScopedSources("tool-host", [file])).toThrow("matched release");
   const before = structuredClone(provider);
   before.kind = "Deployment";
-  before.metadata.name = "pi-cloud-session-runtime";
-  before.spec.template.spec.containers[0].name = "session-runtime";
+  before.metadata.name = "pi-cloud-tool-host";
+  before.spec.template.spec.containers[0].name = "tool-host";
   const next = structuredClone(before);
   next.spec.template.spec.containers[0].image = "new";
   expect(() =>
-    assertScopedManifests("session-runtime", yaml(before, other), yaml(next, other), "new"),
+    assertScopedManifests("tool-host", yaml(before, other), yaml(next, other), "new"),
   ).not.toThrow();
   next.spec.replicas = 0;
   expect(() =>
-    assertScopedManifests("session-runtime", yaml(before, other), yaml(next, other), "new"),
+    assertScopedManifests("tool-host", yaml(before, other), yaml(next, other), "new"),
   ).toThrow();
 });
 
@@ -158,11 +158,11 @@ it("fingerprints actual image COPY inputs including shared dependencies", () => 
   ).toThrow("Untracked");
 });
 
-it("records a new Session-runtime role from one host artifact and retains management, metering and Worker/Cube provenance", () => {
+it("records a new Tool-host role from one host artifact and retains management, metering and Worker/Cube provenance", () => {
   const baseline = {
     formatVersion: 1,
     revision: "old",
-    contracts: { sessionRuntimeReplacement: 1 },
+    contracts: { toolHostReplacement: 1, sessionRuntimeReplacement: 1 },
     components: {
       "control-plane": {
         imageId: "old",
@@ -170,6 +170,11 @@ it("records a new Session-runtime role from one host artifact and retains manage
         reference: "pi-cloud/control-plane:old",
       },
       "session-runtime": {
+        imageId: "old",
+        sourceRevision: "session-source",
+        reference: "pi-cloud/control-plane:old",
+      },
+      "tool-host": {
         imageId: "old",
         sourceRevision: "runtime-source",
         reference: "pi-cloud/control-plane:old",
@@ -195,7 +200,7 @@ it("records a new Session-runtime role from one host artifact and retains manage
     ],
   };
   const next = composeScopedDeployment(baseline, {
-    scope: "session-runtime",
+    scope: "tool-host",
     revision: "new",
     version: "new",
     evidence,
@@ -203,8 +208,8 @@ it("records a new Session-runtime role from one host artifact and retains manage
   });
   expect(next.components["supervisor-host"]).toEqual(baseline.components["supervisor-host"]);
   expect(next.components.cubelet).toEqual(baseline.components.cubelet);
-  expect(next.components["session-runtime"].imageId).toBe("new");
-  expect(next.components["session-runtime"].sourceRevision).toBe("new");
+  expect(next.components["tool-host"].imageId).toBe("new");
+  expect(next.components["tool-host"].sourceRevision).toBe("new");
   expect(next.components["control-plane"]).toEqual(baseline.components["control-plane"]);
   expect(next.components.metering).toEqual(baseline.components.metering);
   expect(next.contracts).toEqual(baseline.contracts);
@@ -212,7 +217,7 @@ it("records a new Session-runtime role from one host artifact and retains manage
   delete incomplete.components.metering;
   expect(() =>
     composeScopedDeployment(incomplete, {
-      scope: "session-runtime",
+      scope: "tool-host",
       revision: "new",
       version: "new",
       evidence,
@@ -510,7 +515,7 @@ function sharedHostDeployment(role, image = "pi-cloud/control-plane:old") {
               name: role,
               image,
               args: [
-                `/app/packages/${role === "metering" ? "accounting/src/main" : `control-plane/src/${role === "session-runtime" ? "session-runtime-main" : "main"}`}.ts`,
+                `/app/packages/${role === "metering" ? "accounting/src/main" : `control-plane/src/${role === "tool-host" ? "tool-host-main" : "main"}`}.ts`,
               ],
             },
           ],
@@ -520,7 +525,7 @@ function sharedHostDeployment(role, image = "pi-cloud/control-plane:old") {
   };
 }
 
-it("changes only images.sessionRuntime even when three roles share the same built image", () => {
+it("changes only images.toolHost even when four roles share the same built image", () => {
   const values = {
     images: {
       controlPlane: {
@@ -531,36 +536,42 @@ it("changes only images.sessionRuntime even when three roles share the same buil
       sessionRuntime: {
         repository: "pi-cloud/control-plane",
         tag: "old",
+        pullPolicy: "IfNotPresent",
+      },
+      toolHost: {
+        repository: "pi-cloud/control-plane",
+        tag: "old",
         digest: "sha256:old",
         pullPolicy: "IfNotPresent",
       },
       metering: { repository: "pi-cloud/control-plane", tag: "old", pullPolicy: "IfNotPresent" },
     },
   };
-  const next = scopedImageValues("session-runtime", values, "pi-cloud/control-plane:new", "new");
-  expect(next.images.sessionRuntime).toEqual({
+  const next = scopedImageValues("tool-host", values, "pi-cloud/control-plane:new", "new");
+  expect(next.images.toolHost).toEqual({
     repository: "pi-cloud/control-plane",
     tag: "new",
     pullPolicy: "IfNotPresent",
   });
   expect(next.images.controlPlane).toEqual(values.images.controlPlane);
   expect(next.images.metering).toEqual(values.images.metering);
-  expect(values.images.sessionRuntime.tag).toBe("old");
+  expect(next.images.sessionRuntime).toEqual(values.images.sessionRuntime);
+  expect(values.images.toolHost.tag).toBe("old");
   expect(() =>
     scopedImageValues("control-plane", values, "pi-cloud/control-plane:new", "new"),
   ).toThrow("Unknown");
   expect(() => assertScopedSources("control-plane", [])).toThrow("Unknown");
 });
 
-it("requires the Session API/Projector Deployment as the only manifest target", () => {
+it("requires the ordinary Tool host as the only manifest target", () => {
   const management = sharedHostDeployment("control-plane"),
-    runtime = sharedHostDeployment("session-runtime"),
+    runtime = sharedHostDeployment("tool-host"),
     metering = sharedHostDeployment("metering");
   const next = structuredClone(runtime);
   next.spec.template.spec.containers[0].image = "pi-cloud/control-plane:new";
   expect(() =>
     assertScopedManifests(
-      "session-runtime",
+      "tool-host",
       yaml(management, runtime, metering),
       yaml(management, next, metering),
       "pi-cloud/control-plane:new",
@@ -570,7 +581,7 @@ it("requires the Session API/Projector Deployment as the only manifest target", 
     const changed = sharedHostDeployment(role, "pi-cloud/control-plane:new");
     expect(() =>
       assertScopedManifests(
-        "session-runtime",
+        "tool-host",
         yaml(management, runtime, metering),
         yaml(
           role === "control-plane" ? changed : management,
@@ -585,7 +596,7 @@ it("requires the Session API/Projector Deployment as the only manifest target", 
   startup.spec.template.spec.containers[0].args = ["/app/packages/control-plane/src/main.ts"];
   expect(() =>
     assertScopedManifests(
-      "session-runtime",
+      "tool-host",
       yaml(management, runtime, metering),
       yaml(management, startup, metering),
       "pi-cloud/control-plane:new",
@@ -614,6 +625,7 @@ it("expands one scanned artifact to independent role provenance without extra bu
     "control-plane",
     "metering",
     "session-runtime",
+    "tool-host",
   ]);
   for (const component of Object.values(record.components))
     expect(component).toMatchObject({
@@ -627,17 +639,18 @@ it("expands one scanned artifact to independent role provenance without extra bu
 it("detects live management/metering drift even when the expected shared image is still present elsewhere", () => {
   const deployment = {
     components: Object.fromEntries(
-      ["control-plane", "session-runtime", "metering"].map((role) => [
+      ["control-plane", "session-runtime", "tool-host", "metering"].map((role) => [
         role,
         { reference: "pi-cloud/control-plane:old" },
       ]),
     ),
   };
-  const alternative = { name: "session-runtime", reference: "pi-cloud/control-plane:new" };
+  const alternative = { name: "tool-host", reference: "pi-cloud/control-plane:new" };
   const resources = [
     sharedHostDeployment("control-plane"),
-    sharedHostDeployment("session-runtime", alternative.reference),
+    sharedHostDeployment("tool-host", alternative.reference),
     sharedHostDeployment("metering"),
+    sharedHostDeployment("session-runtime"),
   ];
   expect(() => assertServingComponents(deployment, resources, alternative)).not.toThrow();
   for (const index of [0, 2]) {

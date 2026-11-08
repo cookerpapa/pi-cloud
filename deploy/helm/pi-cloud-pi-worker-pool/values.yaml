@@ -40,6 +40,7 @@ image:
   pullPolicy: IfNotPresent
 
 services:
+  sessionExecutionUrl: http://session-runtime.pi-cloud-system.svc.cluster.local:4300
   controlPlaneUrl: http://session-runtime.pi-cloud-system.svc.cluster.local:3000
   sandboxControlUrls:
     - http://sandbox-control.pi-cloud-system.svc.cluster.local:4300

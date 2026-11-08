@@ -815,11 +815,11 @@
       "invariant": "An older lookup cannot revoke ownership confirmed by a newer committed renewal."
     },
     {
-      "id": "lease-batch-one-second-revocation",
+      "id": "lease-direct-renewal-revocation",
       "workspace": "@pi-cloud/pi-session-postgres",
       "file": "test/session-lease-observer.test.ts",
-      "test": "shares fresh renewal evidence without extending the one-second revocation window",
-      "invariant": "Sharing heartbeat evidence does not slow periodic PG revocation observation."
+      "test": "learns silent PG revocation at the next direct renewal without an independent polling path",
+      "invariant": "Direct PG renewal observes revocation without restoring a competing one-second polling authority."
     },
     {
       "id": "lease-batch-no-revival",
@@ -878,11 +878,11 @@
       "invariant": "Old snapshots cannot repopulate a new partition owner."
     },
     {
-      "id": "binding-old-publication-revocation",
+      "id": "binding-ordered-deletion-race",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/sandbox-binding-view.test.ts",
-      "test": "an old publication retry still installs current deletion before its Kafka send",
-      "invariant": "An old unsent open reference cannot hide a current PG revocation."
+      "test": "an ordered deletion defeats an earlier in-flight view read",
+      "invariant": "Once ordered closure is installed, an earlier in-flight read cannot reopen routing; physical retirement separately waits for application confirmation."
     },
     {
       "id": "queue-view-snapshot-race",
@@ -2152,11 +2152,11 @@
       "invariant": "Commentary compaction preserves live event order, borrowed snapshots and canonical settlement identity."
     },
     {
-      "id": "lease-pending-observer-deadline",
+      "id": "lease-pending-renewal-deadline",
       "workspace": "@pi-cloud/pi-session-postgres",
       "file": "test/session-lease-observer.test.ts",
-      "test": "expires active authority independently of a stalled observation and releases its callers",
-      "invariant": "No pending PG read suppresses the last confirmed active-owner deadline; late responses cannot revive it."
+      "test": "expires active authority while PG is stalled and rejects late renewal revival",
+      "invariant": "A stalled PG operation cannot extend the last confirmed lifetime; a late renewal cannot revive an expired owner."
     },
     {
       "id": "lease-event-loop-expiry",

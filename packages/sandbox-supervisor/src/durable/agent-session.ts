@@ -1,3 +1,4 @@
+import { durableToolState } from "@pi-cloud/protocol";
 import { skillCatalogSection } from "./skill-context.ts";
 import { withToolInvocation } from "../tool-invocation.ts";
 import {
@@ -695,13 +696,8 @@ export class DurableAgentSession {
     try {
       await this.#harness.commit(async (tx) => {
         const task = await tx.task(taskId as TaskId);
-        if (
-          task?.kind !== "pi.tool" ||
-          task.conversationId !== command.conversationId ||
-          task.abortRequested ||
-          task.state.status !== "running" ||
-          (task.state.checkpoint as { phase?: string }).phase !== "execute"
-        )
+        const tool = durableToolState(task);
+        if (!tool?.intent || !tool.running || tool.conversationId !== command.conversationId)
           throw new Error("Native hostcall invocation has ended");
         if (command.recovery) {
           const seed = {
