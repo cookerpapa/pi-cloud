@@ -1,5 +1,9 @@
 # Delivery and research evidence
 
+- [Execution-owned tools and independent publication](execution-tools-20261108.md):
+  logical bindings, whole-tool provider adapter, Kafka directory broadcast,
+  live Tool-host-only publication, native recovery/images/children and BoxLite assessment.
+
 - [Independent runtime and resource accounting](runtime-accounting-20261107.md):
   Cube v0.7.3, independent receipt ingestion, kernel quotas, management-outage
   continuity, native recovery, images and original-asset preservation.

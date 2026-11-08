@@ -1,7 +1,7 @@
 # ADR-0305: Execution-owned tools, bindings and catalog publication
 
 Date: 2026-11-08.
-Status: accepted for implementation; source and deployment acceptance are pending.
+Status: implemented and deployed; [acceptance and limits](../reports/execution-tools-20261108.md).
 Issues: [#12](https://github.com/cookerpapa/pi-cloud/issues/12),
 [#13](https://github.com/cookerpapa/pi-cloud/issues/13),
 [#14](https://github.com/cookerpapa/pi-cloud/issues/14),

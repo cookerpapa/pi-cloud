@@ -106,8 +106,9 @@ Tools and serving reads while management is stopped. New VM activation and
 physical recovery wait for management. There is no independent Tool Broker. Ordinary control tools run in a separate `tool-host` process. Complete versioned
 definitions reach every Worker through a compacted Kafka configuration topic and
 take effect at the next model request. Updating these tools does not replace the
-Session API or Projector. The initial matched cutover is tracked in
-[the backlog](docs/BACKLOG.md#execution-owned-tools-and-bindings--implementation-in-progress).
+Session API or Projector. [Live publication and execution acceptance](docs/reports/execution-tools-20261108.md)
+verified the same Run continuing with its original Worker, lease and VM while
+its next model request observed the updated directory.
 
 Sandbox integration uses focused lifecycle, execution, file, image, terminal,
 preview, workflow and credential interfaces over the same Cube implementation.

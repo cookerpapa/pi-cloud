@@ -1,28 +1,27 @@
 # Maintained backlog
 
-## Execution-owned tools and bindings — implementation in progress
+## Execution-owned tools and bindings — deployed
 
-- [ ] #12: simplify the public Pi remote Tool boundary after evaluating native
-      intent, cancellation, publication costs and unsafe recovery.
-- [ ] #13: execution-side environment preparation/binding coordination and
-      ordered closure completion before physical retirement.
-- [ ] #14: provider-neutral whole-tool execution/cancellation and portable
-      completion assessment without duplicate execution authority.
-- [ ] #15: BoxLite v0.12.0 compatibility/cost evaluation and isolated checks;
-      no alternate runtime is enabled in production.
-- [ ] #16: independent ordinary-tool publication and Kafka catalog delivery to
-      Workers while Session API and Projector remain online.
+- [x] #12: public Pi proxies and consolidated native-state adaptation; retain
+      validated intent and dispatch in one commit after the SDK comparison.
+- [x] #13: execution-side logical environment preparation, binding reads and
+      ordered closure acknowledgement before physical retirement.
+- [x] #14: provider-owned whole-tool submit/cancel adapter; retain Cubelet completion
+      until a replacement meets the same delivery and lost-ACK guarantees.
+- [x] #15: pinned BoxLite v0.12.0 study and isolated KVM checks; defer production
+      adoption rather than enabling a silent alternate backend.
+- [x] #16: independent ordinary Tool host and Kafka catalog broadcast. Live
+      publication retained API/Projector, Worker/lease and VM identities; the same
+      Run observed the new directory and its original Bash ran once.
 
-[ADR-0305](adr/0305-execution-owned-tools-and-bindings.md) records the boundaries.
-The owner requested finishing source/documentation work before combined serial
-verification and matched deployment. Source and consolidated deterministic gates
-are complete; matched `execution-tools-20261108-r1` is deployed on schema 214.
-Pure chat passes without VM activation. Live Tool acceptance found the Session
-envelope decoder omitted the new logical environment/implementation fields;
-repair and real execution/recovery/publication acceptance remain in progress.
-Existing
-[#11](https://github.com/cookerpapa/pi-cloud/issues/11) PG maintenance/HA assessment
-remains separate from this batch.
+[ADR-0305](adr/0305-execution-owned-tools-and-bindings.md) records the decisions.
+The final combination is application Helm 151 / infrastructure Helm 116 / schema
+214, with independent artifact provenance. Consolidated source/failure gates,
+real Cube/preview/Workspace recovery, five native recovery cases, queue/retained
+images and thirteen child-Agent turns passed. [Delivery, resolved failures and
+limits](reports/execution-tools-20261108.md). Existing
+[#11](https://github.com/cookerpapa/pi-cloud/issues/11) PG maintenance/HA work remains
+separate. The deferred 131 MiB cold model request was not rerun.
 
 ## Runtime separation and resource accounting — deployed
 
@@ -1934,14 +1933,17 @@ separate design questions, not an implicit part of the completed query merge.
 
 ## Deployment operations
 
-- [ ] Wait for current Cube node registration/health before template creation
+- [x] Wait for current Cube node registration/health before template creation
       after native replacement. In the October 15 matched release, Kubernetes
       readiness preceded Master discovery of the new Cubelet address; template
       creation failed while Master still polled the old Pod IP. A second apply
       of the same scanned artifacts passed after registration and complete
-      zero-VM inventory. Add a bounded native-readiness gate and a replacement
-      regression; retain fail-closed cutover and physical cleanup requirements.
-      [Evidence](reports/projector-repair-20261015.md).
+      zero-VM inventory. The repair retains fail-closed cutover and physical cleanup
+      requirements.
+      [Original evidence](reports/projector-repair-20261015.md). A read-only gate
+      now checks the current Cubelet Pod identity and two fresh native ready/health
+      observations before template creation. Regressions and the November 8
+      matched publication passed; [delivery](reports/execution-tools-20261108.md).
 
 - [x] Reconcile the build host's Docker daemon proxy with its current proxy
       endpoint. October 10 uncached pulls needed a temporary loopback relay;

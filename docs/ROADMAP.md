@@ -1,14 +1,16 @@
 # Implementation roadmap
 
-## Execution-owned tools and independent publication — in progress
+## Execution-owned tools and independent publication — deployed
 
 Issues #12–#16 follow [ADR-0305](adr/0305-execution-owned-tools-and-bindings.md).
-Keep Pi in Workers; execution coordinates logical environment preparation and
-binding closure. One Projector remains; ordinary tools gain independent code
-publication and Kafka catalog snapshots. BoxLite is an isolated evaluation only.
-Complete source/protocol/documentation before combined serial verification and
-live acceptance. The matched base is deployed; live Tool acceptance exposed a
-strict envelope-decoder field omission. Repair and final live checks remain.
+Worker public proxies retain atomic intent publication; execution owns logical
+binding preparation and closure coordination, with management retaining physical
+lifecycle. Ordinary Tool handlers publish independently and Kafka broadcasts the
+selected directory. The same live Run continued through a Tool-host-only update.
+BoxLite was evaluated in isolation and remains deferred as a production backend.
+[Serial source, fault, Cube, recovery, image and Subagent acceptance, including
+failed samples](reports/execution-tools-20261108.md), accompanies application Helm
+151 / infrastructure 116 / schema 214. PG HA Issue #11 remains separate.
 
 ## Independent runtime and resource accounting — deployed
 

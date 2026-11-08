@@ -62,7 +62,8 @@ Git preserves their implementation history.
 The remaining product/contributor guides are [Web direction](WEB_UI_DIRECTION.md),
 [release policy](RELEASE_PROCESS.md) and [collaboration discipline](VIBE_CODING_PLAYBOOK.md).
 
-Latest delivery: [Independent runtime and resource accounting](reports/runtime-accounting-20261107.md).
+Latest delivery: [Execution-owned tools and independent publication](reports/execution-tools-20261108.md).
+Previous foundation: [Independent runtime and resource accounting](reports/runtime-accounting-20261107.md).
 Related assessment: [CLIProxyAPI upstream candidates](reports/provider-upstream-candidates-20261106.md)
 (the community contribution assessment is separate from the implementation issue).
 
