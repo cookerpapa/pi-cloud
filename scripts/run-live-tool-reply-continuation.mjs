@@ -33,6 +33,11 @@ assert.equal(
   "1",
   "Opt in with PI_CLOUD_LIVE_TOOL_REPLY_CHECK=1: Luna, disposable Cube, scoped reply loss and owned allocation removal",
 );
+const scope = process.env.PI_CLOUD_REPLY_ACCEPTANCE_SCOPE ?? "all";
+assert(
+  ["all", "vm"].includes(scope),
+  "Select complete reply acceptance or the owned VM fault only",
+);
 const faultTarget = process.env.PI_CLOUD_REPLY_FAULT_TARGET ?? "vm";
 assert(["vm", "cubelet"].includes(faultTarget), "Select an owned VM or an otherwise empty Cubelet");
 const output = resolve(process.argv[2] ?? "dist/tool-reply-continuation.json");
@@ -75,6 +80,7 @@ const api = new PiCloudApi((path, init = {}) =>
 const report = {
   checkedAt: new Date().toISOString(),
   model: "gpt-6-luna",
+  scope,
   accepted: false,
   cleanupConfirmed: false,
   cases: [],
@@ -190,165 +196,194 @@ try {
   );
   assert(originalVm, "Warmup did not prepare the owned VM");
   await excludeOtherWork();
-  receipt = await installOwnedReplyFault(receiptPath);
-  for (const dropProbe of [false, true]) {
-    await excludeOtherWork();
-    const marker = `REPLY_LOSS_${suffix}_${Number(dropProbe)}`,
-      path = `reply-${Number(dropProbe)}.txt`;
-    const nonce = armOwnedReplyFault(receipt, tenant.tenantId, marker, dropProbe);
-    const command = `printf 'hello\\n' >> ${path}; printf '${marker}\\n'`;
-    const started = Date.now();
-    active = await api.acceptTurn(
-      session.sessionId,
-      `严格调用一次 bash，参数 command 必须是 ${JSON.stringify(command)}，timeout 必须为 5。该命令无论返回什么，都绝对不要重复执行。如果结果未知，使用 read 读取 ${path}，确认只有一行 hello。然后简短说明检查结果。不要搜索、委派、其他修改或其他 bash。`,
-      newIdempotencyKey("reply-loss"),
-      "low",
-    );
-    let observedWaiting = false;
-    if (dropProbe) {
-      await until(
-        async () => {
-          const current = await api.getRun(active.runId);
-          assert(
-            !terminal(current),
-            "Run ended instead of retaining its environment-recovery wait",
-          );
-          return (await turnTools(active.runId)).some(
-            (tool) => tool.toolName === "bash" && tool.status === "unknown",
-          );
-        },
-        "native UNKNOWN before environment recovery",
-        240000,
-      );
-      await delay(15000);
-      assert(!terminal(await api.getRun(active.runId)), "Missing readiness ended logical work");
-      observedWaiting = true;
-      await api.cancelTurn(
+  if (scope === "all") {
+    const unknownTurns = [];
+    receipt = await installOwnedReplyFault(receiptPath);
+    for (const dropProbe of [false, true]) {
+      await excludeOtherWork();
+      const marker = `REPLY_LOSS_${suffix}_${Number(dropProbe)}`,
+        path = `reply-${Number(dropProbe)}.txt`;
+      const nonce = armOwnedReplyFault(receipt, tenant.tenantId, marker, dropProbe);
+      const command = `printf 'hello\\n' >> ${path}; printf '${marker}\\n'`;
+      const started = Date.now();
+      active = await api.acceptTurn(
         session.sessionId,
-        active.turnId,
-        newIdempotencyKey("stop-unconfirmed-environment"),
+        `严格调用一次 bash，参数 command 必须是 ${JSON.stringify(command)}，timeout 必须为 5。该命令无论返回什么，都绝对不要重复执行。如果结果未知，使用 read 读取 ${path}，确认只有一行 hello。然后简短说明检查结果。不要搜索、委派、其他修改或其他 bash。`,
+        newIdempotencyKey("reply-loss"),
+        "low",
       );
-    }
-    const run = await waitRun(active.runId),
-      calls = await turnTools(active.runId);
-    const state = readOwnedReplyFault(receipt);
-    assert.equal(
-      state?.nonce,
-      nonce,
-      `No matching reply-loss evidence; Run ${run.state}: ${JSON.stringify(run.failure)}`,
-    );
-    assert(
-      state.results.some((r) => r.runId === active.runId),
-      "No owned result was suppressed",
-    );
-    assert(state.probes.length > 0, "No guest path probe was observed");
-    const bash = calls.filter((c) => c.toolName === "bash");
-    assert.equal(bash.length, 1, "Original command was repeated");
-    assert.equal(bash[0].input.command, command);
-    assert.equal(bash[0].input.timeout, 5);
-    assert.equal(bash[0].status, "unknown");
-    if (dropProbe) {
-      assert.equal(run.state, "cancelled", JSON.stringify(run.failure));
-      assert(observedWaiting, "Missing readiness was not kept as an interruptible wait");
-      assert.equal(calls.length, 1, "Agent continued without confirmed readiness");
-      assert(state.probes.every((p) => p.suppressed));
-    } else {
-      assert.equal(run.state, "completed", JSON.stringify(run.failure));
-      assert(calls.some((c) => c.toolName === "read" && c.status === "completed"));
-      assert(state.probes.every((p) => !p.suppressed));
-    }
-    assert.equal(
-      Buffer.from((await api.readWorkspaceFile(session.sessionId, path)).bytes).toString(),
-      "hello\n",
-    );
-    assert(
-      (await cube.list()).some(
-        (v) => v.sandboxId === originalVm.sandboxId && v.state === "running",
-      ),
-      "Missing result/probe replaced the physical VM",
-    );
-    for (const probe of state.probes) {
-      const { rows } = await sql`select count(*)::int as n from (
+      let observedWaiting = false;
+      if (dropProbe) {
+        await until(
+          async () => {
+            const current = await api.getRun(active.runId);
+            assert(
+              !terminal(current),
+              "Run ended instead of retaining its environment-recovery wait",
+            );
+            return (await turnTools(active.runId)).some(
+              (tool) => tool.toolName === "bash" && tool.status === "unknown",
+            );
+          },
+          "native UNKNOWN before environment recovery",
+          240000,
+        );
+        await delay(15000);
+        assert(!terminal(await api.getRun(active.runId)), "Missing readiness ended logical work");
+        observedWaiting = true;
+        await api.cancelTurn(
+          session.sessionId,
+          active.turnId,
+          newIdempotencyKey("stop-unconfirmed-environment"),
+        );
+      }
+      const run = await waitRun(active.runId),
+        calls = await turnTools(active.runId);
+      const state = readOwnedReplyFault(receipt);
+      assert.equal(
+        state?.nonce,
+        nonce,
+        `No matching reply-loss evidence; Run ${run.state}: ${JSON.stringify(run.failure)}`,
+      );
+      assert(
+        state.results.some((r) => r.runId === active.runId),
+        "No owned result was suppressed",
+      );
+      assert(state.probes.length > 0, "No guest path probe was observed");
+      const bash = calls.filter((c) => c.toolName === "bash");
+      assert.equal(bash.length, 1, "Original command was repeated");
+      assert.equal(bash[0].input.command, command);
+      assert.equal(bash[0].input.timeout, 5);
+      assert.equal(bash[0].status, "unknown");
+      if (dropProbe) {
+        assert.equal(run.state, "cancelled", JSON.stringify(run.failure));
+        assert(observedWaiting, "Missing readiness was not kept as an interruptible wait");
+        assert.equal(calls.length, 1, "Agent continued without confirmed readiness");
+        assert(state.probes.every((p) => p.suppressed));
+      } else {
+        assert.equal(run.state, "completed", JSON.stringify(run.failure));
+        assert(calls.some((c) => c.toolName === "read" && c.status === "completed"));
+        assert(state.probes.every((p) => !p.suppressed));
+      }
+      assert.equal(
+        Buffer.from((await api.readWorkspaceFile(session.sessionId, path)).bytes).toString(),
+        "hello\n",
+      );
+      assert(
+        (await cube.list()).some(
+          (v) => v.sandboxId === originalVm.sandboxId && v.state === "running",
+        ),
+        "Missing result/probe replaced the physical VM",
+      );
+      for (const probe of state.probes) {
+        const { rows } = await sql`select count(*)::int as n from (
         select body from pi_durable_log where tenant_id=${tenant.tenantId}::uuid
         union all select body from pi_durable_current where tenant_id=${tenant.tenantId}::uuid
       ) native where position(${probe.operationId} in body)>0`.execute(db);
-      assert.equal(rows[0].n, 0, "Probe leaked into native storage");
+        assert.equal(rows[0].n, 0, "Probe leaked into native storage");
+      }
+      unknownTurns.push(active.turnId);
+      report.cases.push({
+        turnId: active.turnId,
+        kind: dropProbe ? "lost-result-and-probe" : "lost-result-then-inspect",
+        runId: run.runId ?? active.runId,
+        state: run.state,
+        elapsedMs: Date.now() - started,
+        originalExecutions: 1,
+        probePackets: state.probes.length,
+        probeInNativeStorage: false,
+        tools: calls.map((c) => ({ name: c.toolName, status: c.status })),
+      });
+      await writeFile(output, JSON.stringify(report, null, 2), { mode: 0o600 });
     }
+    // Final callback retries resend bytes; they never run Bash again. A completed
+    // background process also must not be killed because its first ACK was lost.
+    const ackMarker = `ACK_LOSS_${suffix}`;
+    const ackNonce = armOwnedReplyFault(receipt, tenant.tenantId, ackMarker, false, true);
+    const ackCommand = `nohup sleep 180 </dev/null >/dev/null 2>&1 & echo $! > ack-background.pid; printf 'once\\n' >> ack-count.txt; printf '${ackMarker}\\n'`;
+    active = await api.acceptTurn(
+      session.sessionId,
+      `只调用一次 bash，command 精确使用 ${JSON.stringify(ackCommand)}，然后简短回复。不要重试命令或调用其他工具。`,
+      newIdempotencyKey("callback-ack-loss"),
+      "low",
+    );
+    assert.equal((await waitRun(active.runId)).state, "completed");
+    const ackRunId = active.runId;
+    const ackState = await until(
+      () => {
+        const value = readOwnedReplyFault(receipt);
+        return value?.nonce === ackNonce && value.results.length >= 2 && value;
+      },
+      "identical callback resend after lost ACK",
+      30000,
+    );
+    assert.equal(new Set(ackState.results.map((row) => row.operationId)).size, 1);
+    assert.equal(
+      (await turnTools(active.runId)).filter((tool) => tool.toolName === "bash").length,
+      1,
+    );
+    assert.equal(
+      Buffer.from(
+        (await api.readWorkspaceFile(session.sessionId, "ack-count.txt")).bytes,
+      ).toString(),
+      "once\n",
+    );
+    active = await api.acceptTurn(
+      session.sessionId,
+      '只调用一次 bash，执行 kill -0 "$(cat ack-background.pid)" && printf BACKGROUND_PRESERVED，然后简短回复。不要其他工具。',
+      newIdempotencyKey("callback-background-check"),
+      "low",
+    );
+    assert.equal((await waitRun(active.runId)).state, "completed");
+    const background = await turnTools(active.runId);
+    assert.equal(background.length, 1);
+    assert.equal(background[0].status, "completed");
     report.cases.push({
-      kind: dropProbe ? "lost-result-and-probe" : "lost-result-then-inspect",
-      runId: run.runId ?? active.runId,
-      state: run.state,
-      elapsedMs: Date.now() - started,
-      originalExecutions: 1,
-      probePackets: state.probes.length,
-      probeInNativeStorage: false,
-      tools: calls.map((c) => ({ name: c.toolName, status: c.status })),
+      kind: "lost-callback-ack",
+      runId: ackRunId,
+      deliveries: ackState.results.length,
+      executions: 1,
+      backgroundPreserved: true,
     });
-    await writeFile(output, JSON.stringify(report, null, 2), { mode: 0o600 });
-  }
-  // Final callback retries resend bytes; they never run Bash again. A completed
-  // background process also must not be killed because its first ACK was lost.
-  const ackMarker = `ACK_LOSS_${suffix}`;
-  const ackNonce = armOwnedReplyFault(receipt, tenant.tenantId, ackMarker, false, true);
-  const ackCommand = `nohup sleep 180 </dev/null >/dev/null 2>&1 & echo $! > ack-background.pid; printf 'once\\n' >> ack-count.txt; printf '${ackMarker}\\n'`;
-  active = await api.acceptTurn(
-    session.sessionId,
-    `只调用一次 bash，command 精确使用 ${JSON.stringify(ackCommand)}，然后简短回复。不要重试命令或调用其他工具。`,
-    newIdempotencyKey("callback-ack-loss"),
-    "low",
-  );
-  assert.equal((await waitRun(active.runId)).state, "completed");
-  const ackRunId = active.runId;
-  const ackState = await until(
-    () => {
-      const value = readOwnedReplyFault(receipt);
-      return value?.nonce === ackNonce && value.results.length >= 2 && value;
-    },
-    "identical callback resend after lost ACK",
-    30000,
-  );
-  assert.equal(new Set(ackState.results.map((row) => row.operationId)).size, 1);
-  assert.equal(
-    (await turnTools(active.runId)).filter((tool) => tool.toolName === "bash").length,
-    1,
-  );
-  assert.equal(
-    Buffer.from((await api.readWorkspaceFile(session.sessionId, "ack-count.txt")).bytes).toString(),
-    "once\n",
-  );
-  active = await api.acceptTurn(
-    session.sessionId,
-    '只调用一次 bash，执行 kill -0 "$(cat ack-background.pid)" && printf BACKGROUND_PRESERVED，然后简短回复。不要其他工具。',
-    newIdempotencyKey("callback-background-check"),
-    "low",
-  );
-  assert.equal((await waitRun(active.runId)).state, "completed");
-  const background = await turnTools(active.runId);
-  assert.equal(background.length, 1);
-  assert.equal(background[0].status, "completed");
-  report.cases.push({
-    kind: "lost-callback-ack",
-    runId: ackRunId,
-    deliveries: ackState.results.length,
-    executions: 1,
-    backgroundPreserved: true,
-  });
-  await restoreOwnedReplyFault(receiptPath);
-  report.adapterRestored = true;
-  await withChromePage({}, async (page) => {
-    await page.send("Network.setExtraHTTPHeaders", {
-      headers: { Authorization: `Bearer ${tenant.credential.token}` },
+    await restoreOwnedReplyFault(receiptPath);
+    report.adapterRestored = true;
+    await withChromePage({}, async (page) => {
+      await page.send("Network.setExtraHTTPHeaders", {
+        headers: { Authorization: `Bearer ${tenant.credential.token}` },
+      });
+      await page.navigate(base);
+      await page.waitFor(
+        `Array.from(document.querySelectorAll('button')).some(b=>b.textContent.includes(${JSON.stringify(title)}))`,
+      );
+      await page.evaluate(
+        `Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes(${JSON.stringify(title)})).click()`,
+      );
+      await page.waitFor(
+        "document.querySelector('.product-tool-group-display-toggle') && document.querySelector('.product-chat-scroll')",
+      );
+      await page.evaluate(
+        "const b=document.querySelector('.product-tool-group-display-toggle');if(b.getAttribute('aria-pressed')!=='true')b.click()",
+      );
+      const seen = new Set();
+      // Virtual history deliberately unmounts off-screen rows. Check each owned
+      // UNKNOWN while scrolling, without requiring both to coexist in the DOM.
+      for (let step = 0; step < 80 && unknownTurns.some((id) => !seen.has(id)); step++) {
+        await page.evaluate(
+          `const c=document.querySelector('.product-chat-scroll');c.dispatchEvent(new KeyboardEvent('keydown',{key:'Home',bubbles:true}));c.scrollTop=${step}*300`,
+        );
+        await delay(150);
+        const ids = await page.evaluate(
+          "Array.from(document.querySelectorAll('.product-tool-unknown')).map(e=>e.closest('[data-conversation-turn-id]')?.getAttribute('data-conversation-turn-id')).filter(Boolean)",
+        );
+        for (const id of ids) seen.add(id);
+      }
+      assert(
+        unknownTurns.every((id) => seen.has(id)),
+        "Owned UNKNOWN history was not rendered after reload and scroll",
+      );
+      report.browserUnknownRestored = true;
     });
-    await page.navigate(base);
-    await page.waitFor(
-      `Array.from(document.querySelectorAll('button')).some(b=>b.textContent.includes(${JSON.stringify(title)}))`,
-    );
-    await page.evaluate(
-      `Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes(${JSON.stringify(title)})).click()`,
-    );
-    await page.waitFor("document.querySelectorAll('.product-tool-unknown').length>=2", 20000);
-    report.browserUnknownRestored = true;
-  });
+  } // Complete callback fault scope.
   await excludeOtherWork();
   const instances = await cube.list();
   const owned = instances.filter((vm) => vm.metadata["picloud.tenant_id"] === tenant.tenantId);
@@ -480,6 +515,15 @@ try {
   if (active) {
     const run = await api.getRun(active.runId).catch(() => undefined);
     if (run) report.failedRun = { runId: active.runId, state: run.state, failure: run.failure };
+    report.failedToolStates = (await turnTools(active.runId).catch(() => [])).map((tool) => ({
+      name: tool.toolName,
+      status: tool.status,
+    }));
+    report.environmentEntries = (
+      await nativeHistory(db, { tenantId: tenant.tenantId, runId: active.runId }).catch(() => [])
+    )
+      .map((row) => row.entry.kind)
+      .filter((kind) => kind?.startsWith("pi-cloud."));
   }
 } finally {
   try {
