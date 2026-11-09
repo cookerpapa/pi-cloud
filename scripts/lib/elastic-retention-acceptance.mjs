@@ -166,8 +166,7 @@ export async function elasticRetentionAcceptance({
         try {
           return (
             Buffer.from(
-              (await api.readWorkspaceFile(session.sessionId, "/workspace/retention-waiting.txt"))
-                .bytes,
+              (await api.readWorkspaceFile(session.sessionId, "retention-waiting.txt")).bytes,
             ).toString() === "waiting"
           );
         } catch {

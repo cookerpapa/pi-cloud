@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { kubectl, repositoryRoot, workload } from "./production-kubernetes.mjs";
 import { join } from "node:path";
 
@@ -33,11 +35,22 @@ const run = (pod, source) =>
   });
 const readDeployment = () =>
   JSON.parse(kubectl(["get", workload("tool-completion"), "-o", "json"]));
-const patchTemplate = (template) =>
-  kubectl(["patch", workload("tool-completion"), "--type=json", "--patch-file=/dev/stdin"], {
-    input: JSON.stringify([{ op: "replace", path: "/spec/template", value: template }]),
-    timeout: 30000,
-  });
+const patchTemplate = (template) => {
+  const temporary = mkdtempSync(join(tmpdir(), "picloud-reply-template-"));
+  try {
+    const path = join(temporary, "patch.json");
+    writeFileSync(
+      path,
+      JSON.stringify([{ op: "replace", path: "/spec/template", value: template }]),
+      { mode: 0o600 },
+    );
+    return kubectl(["patch", workload("tool-completion"), "--type=json", `--patch-file=${path}`], {
+      timeout: 30000,
+    });
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
+};
 const ready = () =>
   kubectl(["rollout", "status", workload("tool-completion"), "--timeout=180s"], {
     timeout: 185000,
@@ -129,7 +142,7 @@ export async function installOwnedReplyFault(receiptPath) {
     await writeFile(receiptPath, JSON.stringify(receipt, null, 2), { mode: 0o600 });
     return receipt;
   } catch (error) {
-    error.replyFaultReceipt = receipt;
+    Object.defineProperty(error, "replyFaultReceipt", { value: receipt });
     throw error;
   }
 }
