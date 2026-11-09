@@ -4,6 +4,7 @@ import {
   modelTests,
   ordinaryControlToolSource,
   sessionDecoderSource,
+  executionMaintenanceSource,
   sessionApiSource,
   imageReleaseTargets,
   providerSources,
@@ -147,10 +148,7 @@ export function scopedApplyState({ baseline, next, current, helmRevision, before
 
 /** Source classifications are deliberately small; protocol changes use matched release. */
 export function assertScopedSources(scope, files) {
-  assert(
-    ["provider", "catalog", "web", "tool-host", "session-decoder", "session-api"].includes(scope),
-    "Unknown release scope",
-  );
+  assert(scope === "catalog" || Object.hasOwn(imageReleaseTargets, scope), "Unknown release scope");
   for (const file of files) {
     assert(
       operatorSources.has(file) ||
@@ -158,6 +156,7 @@ export function assertScopedSources(scope, files) {
         (scope === "tool-host" &&
           file === "deploy/helm/pi-cloud-platform/templates/network-policy.yaml") ||
         (scope === "session-decoder" && file === sessionDecoderSource) ||
+        (scope === "execution-maintenance" && file === executionMaintenanceSource) ||
         (scope === "session-api" && sessionApiSource(file)) ||
         (scope === "web" &&
           (/^packages\/web-ui\/src\/.*\.(tsx|css)$/.test(file) ||
@@ -320,7 +319,9 @@ export function assertScopedManifests(scope, before, after, desired) {
       if (!expected.spec.egress.some((item) => isDeepStrictEqual(item, rule)))
         expected.spec.egress.unshift(rule);
     } else if (
-      ["web", "tool-host", "session-decoder", "session-api"].includes(scope) &&
+      ["web", "tool-host", "session-decoder", "session-api", "execution-maintenance"].includes(
+        scope,
+      ) &&
       old.kind === "Deployment" &&
       old.metadata.name === imageReleaseTargets[scope].workload.split("/")[1]
     ) {
@@ -446,7 +447,7 @@ export function composeScopedDeployment(
     const target = imageReleaseTargets[scope];
     const name = target.imageName;
     const role = target.componentName ?? name;
-    if (["tool-host", "session-decoder"].includes(scope))
+    if (["tool-host", "session-decoder", "execution-maintenance"].includes(scope))
       for (const shared of Object.keys(sharedHostRoles))
         assert(
           baseline.components[shared],

@@ -1,12 +1,63 @@
+import { imageReleaseTargets } from "./lib/release-impact.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const [scope] = process.argv.slice(2);
 assert(
-  ["provider", "catalog", "web", "tool-host", "session-decoder"].includes(scope),
-  "Use provider, catalog, web, tool-host or session-decoder; protocol changes require full checks",
+  scope === "catalog" || Object.hasOwn(imageReleaseTargets, scope),
+  "Use a declared component scope; protocol changes require full checks",
 );
+if (["session-api", "execution-maintenance"].includes(scope)) {
+  const options = { cwd: fileURLToPath(new URL("..", import.meta.url)), stdio: "inherit" };
+  execFileSync(
+    "npm",
+    [
+      "run",
+      "typecheck",
+      "--workspace",
+      scope === "session-api" ? "@pi-cloud/control-plane" : "@pi-cloud/sandbox-control",
+    ],
+    options,
+  );
+  const tests =
+    scope === "session-api"
+      ? [
+          "packages/control-plane/test/private-multi-tenant-api.test.ts",
+          "packages/control-plane/test/production-http-gateway.test.ts",
+          "packages/control-plane/test/session-live-service.test.ts",
+        ]
+      : [
+          "packages/sandbox-control/test/execution-maintenance.postgres.test.ts",
+          "packages/sandbox-control/test/execution-path-probes.test.ts",
+          "packages/sandbox-control/test/runtime-retention.test.ts",
+          "packages/runtime-core/test/path-probe.test.ts",
+          "packages/runtime-core/test/session-projector-handoffs.test.ts",
+          "packages/control-plane/test/control-plane-quiescence.test.ts",
+        ];
+  execFileSync(
+    process.execPath,
+    [
+      "scripts/run-with-test-postgres.mjs",
+      "--",
+      "node",
+      "node_modules/vitest/vitest.mjs",
+      "run",
+      ...tests,
+      "scripts/lib/runtime-component-release.test.mjs",
+      "scripts/lib/component-release.test.mjs",
+      "scripts/lib/release-impact.test.mjs",
+      "scripts/lib/release-image-evidence.test.mjs",
+      "--maxWorkers=1",
+      "--no-file-parallelism",
+      "--testTimeout=30000",
+      "--hookTimeout=60000",
+    ],
+    options,
+  );
+  console.log(JSON.stringify({ scope, passed: true }));
+  process.exit(0);
+}
 if (scope === "session-decoder") {
   const options = { cwd: fileURLToPath(new URL("..", import.meta.url)), stdio: "inherit" };
   execFileSync("npm", ["run", "typecheck", "--workspace", "@pi-cloud/runtime-core"], options);

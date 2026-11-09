@@ -83,7 +83,7 @@ export class ExecutionMaintenance {
         and not runtime.allocation_closed and runtime.state='allocated' and runtime.runtime_capsule is not null),'[]'::jsonb) as resources
       from active_execution_scopes e join session_leases l on l.lease_id=e.lease_id
       join runs r on r.id=e.run_id join sessions s on s.id=r.session_id
-      join workers w on w.id=e.worker_id join supervisor_hosts h on h.supervisor_id=w.supervisor_id and h.boot_id=w.boot_id
+      join workers w on w.id=e.worker_id join supervisor_hosts h on h.supervisor_id=w.supervisor_id
       where e.accepting_effects and e.valid_until>clock_timestamp() and l.tool_bindings_closed_at is null
         and ${writerId ? sql`e.writer_id=${writerId}::uuid` : sql`abs(hashtextextended(e.writer_id::text,0)%12)=floor(extract(epoch from clock_timestamp())/5)::bigint%12`}
       order by e.writer_id`.execute(this.options.database);

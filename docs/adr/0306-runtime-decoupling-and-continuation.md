@@ -211,3 +211,14 @@ image references and output limits; lifecycle reconnect/history gaps; external
 accounting duplicates, idle retention and uncertain intervals. Run source,
 PG/Kafka, native/Cube, browser and live checks serially before delivery. Final
 evidence lists removed and retained Cube patches with concrete reasons.
+
+### Compatible execution-maintenance repairs
+
+The installed Session-runtime replacement boundary may publish corrections confined
+ to `packages/sandbox-control/src/execution-maintenance.ts` through an explicit
+`execution-maintenance` scope. This reuses the existing partition/publication drain
+and replaces only Session runtime, preserving Worker and VM lifetimes. It does
+not authorize changes to lease authority, wire/storage schemas, physical cleanup,
+Tool dispatch admission or the meaning of retention. Those require a matched
+release. Real PostgreSQL eligibility tests, existing probe contracts and complete
+manifest comparison are required before this narrow repair.

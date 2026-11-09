@@ -77,7 +77,7 @@ function parseArguments(argv) {
     }
     if (argument === "--help") {
       process.stdout.write(
-        "Usage: npm run release:evidence -- [--output-dir EMPTY_PATH] [--cache-dir PATH] [--image-version VERSION] [--component all|host|provider|web|tool-host|session-decoder|android] [--allow-dirty]\n",
+        "Usage: npm run release:evidence -- [--output-dir EMPTY_PATH] [--cache-dir PATH] [--image-version VERSION] [--component all|host|provider|web|tool-host|session-decoder|session-api|execution-maintenance|android] [--allow-dirty]\n",
       );
       process.exit(0);
     }

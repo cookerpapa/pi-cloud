@@ -772,3 +772,40 @@ it("repairs only the declared Session runtime to Tool-host egress edge", () => {
     ).toThrow("Unexpected resource change");
   }
 });
+
+it("confines execution-maintenance repairs to one query owner and one installed role", () => {
+  assertScopedSources("execution-maintenance", [
+    "packages/sandbox-control/src/execution-maintenance.ts",
+  ]);
+  for (const file of [
+    "packages/sandbox-control/src/tool-command-dispatcher.ts",
+    "packages/protocol/src/index.ts",
+    "packages/database/src/schema.ts",
+  ])
+    expect(() => assertScopedSources("execution-maintenance", [file])).toThrow("matched release");
+  const old = [
+    "control-plane",
+    "session-api",
+    "session-runtime",
+    "tool-completion",
+    "tool-host",
+    "metering",
+  ].map((role) => sharedHostDeployment(role));
+  const next = structuredClone(old);
+  next[2].spec.template.spec.containers[0].image = "pi-cloud/control-plane:new";
+  assertScopedManifests(
+    "execution-maintenance",
+    yaml(...old),
+    yaml(...next),
+    "pi-cloud/control-plane:new",
+  );
+  next[3].spec.template.spec.containers[0].image = "pi-cloud/control-plane:new";
+  expect(() =>
+    assertScopedManifests(
+      "execution-maintenance",
+      yaml(...old),
+      yaml(...next),
+      "pi-cloud/control-plane:new",
+    ),
+  ).toThrow("Unexpected resource change");
+});

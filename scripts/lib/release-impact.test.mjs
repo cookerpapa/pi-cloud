@@ -67,3 +67,12 @@ it("maps the public Tool-host scope to one shared artifact and one independent i
   });
   expect(imageReleaseTargets["control-plane"]).toBeUndefined();
 });
+
+it("keeps maintenance changes on full CI while exposing a narrow operator repair target", () => {
+  expect(releaseImpact(["packages/sandbox-control/src/execution-maintenance.ts"]).scope).toBe(
+    "full",
+  );
+  expect(imageReleaseTargets["execution-maintenance"]).toEqual(
+    imageReleaseTargets["session-decoder"],
+  );
+});

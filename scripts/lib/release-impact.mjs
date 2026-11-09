@@ -78,12 +78,22 @@ export const providerSources = new Set([
   "deploy/helm/pi-cloud-infrastructure/templates/provider.yaml",
   ...providerConfigurationSources,
 ]);
+export const executionMaintenanceSource = "packages/sandbox-control/src/execution-maintenance.ts";
 export const sessionDecoderSource = "packages/runtime-core/src/session-log-envelope.ts";
 export const sessionApiSource = (file) =>
   /^packages\/control-plane\/src\/(?:session-api-main|application|control-plane\.module|control-plane\.controller|workspace-capacity-controller|resource-billing-controller|model-billing-controller|workspace-file-transfer-controller|skill-market-controller)\.ts$/.test(
     file,
   ) || /^packages\/control-plane\/src\/public-api\/.*\.ts$/.test(file);
 export const imageReleaseTargets = {
+  "execution-maintenance": {
+    imageName: "control-plane",
+    buildScope: "control-plane",
+    buildCatalogKey: "controlPlane",
+    catalogKey: "sessionRuntime",
+    componentName: "session-runtime",
+    workload: "deployment/pi-cloud-session-runtime",
+    container: "session-runtime",
+  },
   "session-api": {
     imageName: "control-plane",
     buildScope: "control-plane",

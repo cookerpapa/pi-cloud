@@ -120,3 +120,33 @@ persistent development machines and no unfinished Runs. The live VM-loss fixture
 therefore defaults to its own allocation only; whole-node loss remains an explicit
 option requiring an otherwise empty node. User Workspace bytes and machine intent
 are preserved throughout the matched release.
+
+## Matched rollout and initial live acceptance
+
+Source `03adcddc` was committed and pushed. All 14 matched images passed the release
+scan and the full native chart preflight. Operator correction `733efa4e` reads the
+actual deployed accounting domain ID when checking cleanup cursors.
+`runtime-decoupling-20261110-r1` was deployed after ordered writer drain, confirmed
+retirement of both old dedicated allocations and XFS Workspace verification.
+Schema 215 and the new API/completion roles are ready; both persistent machines
+returned to running intent/ready state with their stable identities and files.
+
+The first live check found the self-hosted metering network policy still allowed
+443 while its Cube API is on 3000. Commit `eb9d4487` corrects the maintained
+self-hosted values and adds a rendered policy contract. Whole-manifest comparison
+confirmed only the metering NetworkPolicy changed, then Helm revision 153 applied
+it without changing Pod templates. Lifecycle history now reaches accounting.
+The deployment journal records this verified configuration revision while all
+image source provenance remains `03adcddc`.
+
+Four GPT-6 Luna native-Tool Runs passed, including read/write/edit/Bash, source
+truncation and local Tool-error handling; owned resources were cleaned. Rolling
+replacement of the public API passed with the same Worker/Projector and one Bash
+effect. Abrupt Worker replacement re-admitted the original Run but could not
+finish its environment check. A live read-only query isolated PostgreSQL 42703:
+the maintenance query incorrectly joined a nonexistent `supervisor_hosts.boot_id`.
+The boot identity already comes from the authorized Worker row. That extra join
+predicate is removed and real PG tests now cover accepted readiness, mismatched
+boot/fencing and closed binding admission. The narrow execution-maintenance
+repair uses the existing Session-runtime replacement contract; live revalidation
+is still pending. This failed first recovery sample is not counted as acceptance.
