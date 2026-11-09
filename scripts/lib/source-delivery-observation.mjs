@@ -71,6 +71,17 @@ async function boundedRead(url, token, maximum, signal) {
   return Buffer.concat(parts).toString("utf8");
 }
 
+export function lifecycleProviderId(pod) {
+  const domain = pod.spec?.containers
+    ?.find((container) => container.name === "metering")
+    ?.env?.find((entry) => entry.name === "PI_CLOUD_SANDBOX_DOMAIN_ID")?.value;
+  assert(
+    typeof domain === "string" && domain.length > 0,
+    "Metering source identity is unavailable",
+  );
+  return `cube:${domain}`;
+}
+
 /** Operator-only private reader. Kubernetes is used only to discover existing
  * source Pods/Services. Source calls only read metrics/history and the accounting cursor; no lifecycle mutation. */
 export async function createDeployedSourceDeliveryReader({ database }) {
@@ -78,13 +89,12 @@ export async function createDeployedSourceDeliveryReader({ database }) {
   const cluster = JSON.parse(
     await readFile(resolve(runtimeDirectory, "cubesandbox/cluster.json"), "utf8"),
   );
-  const source = new CubeLifecycleSource({
-    id: `cube:${cluster.sandboxDomain}`,
+  const sourceOptions = {
     url: `http://${cluster.api.host}:${cluster.api.port}`,
     apiKey: (
       await readFile(resolve(runtimeDirectory, "secrets/cubesandbox-api-key"), "utf8")
     ).trim(),
-  });
+  };
   const [receiptToken, quotaToken] = await Promise.all([
     readFile(resolve(runtimeDirectory, "secrets/metering-ingest-token"), "utf8"),
     readFile(resolve(runtimeDirectory, "secrets/workspace-volume-gateway-token"), "utf8"),
@@ -121,6 +131,11 @@ export async function createDeployedSourceDeliveryReader({ database }) {
     );
     const providerPod = onePod(pods, "cli-proxy-api"),
       quotaPod = onePod(pods, "workspace-quota");
+    const source = new CubeLifecycleSource({
+      ...sourceOptions,
+      // The accounting domain ID is independent of Cube's sandbox DNS suffix.
+      id: lifecycleProviderId(onePod(pods, "metering")),
+    });
     const captures = await Promise.all(
       cubePods.map(async (pod) => {
         ready(pod);

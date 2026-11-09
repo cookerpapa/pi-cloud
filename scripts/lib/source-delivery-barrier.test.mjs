@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, it } from "vitest";
+import { lifecycleProviderId } from "./source-delivery-observation.mjs";
 import {
   parseComputeCaptureMetrics,
   waitForOwnedReceiptDelivery,
@@ -29,6 +30,24 @@ function snapshot(cycles, change = {}) {
     ...change,
   };
 }
+
+it("reads the deployed accounting domain rather than guessing it from sandbox DNS", () => {
+  const pod = {
+    spec: {
+      containers: [
+        {
+          name: "metering",
+          env: [
+            { name: "PI_CLOUD_SANDBOX_DOMAIN_ID", value: "sandbox-domain-0001" },
+            { name: "PI_CLOUD_CUBESANDBOX_DOMAIN", value: "cube.example.com" },
+          ],
+        },
+      ],
+    },
+  };
+  expect(lifecycleProviderId(pod)).toBe("cube:sandbox-domain-0001");
+  expect(() => lifecycleProviderId({ spec: { containers: [] } })).toThrow("source identity");
+});
 function fixture(rows) {
   let elapsed = 0,
     reads = 0;
