@@ -143,6 +143,12 @@ try {
   const management = find("Deployment", "pi-cloud-control-plane");
   const cp = find("Deployment", "pi-cloud-session-runtime");
   const metering = find("Deployment", "pi-cloud-metering");
+  assert(
+    find("NetworkPolicy", "pi-cloud-metering").spec.egress.some((rule) =>
+      rule.ports?.some((port) => port.protocol === "TCP" && port.port === 3000),
+    ),
+    "Local lifecycle collection must reach the declared Cube API service port",
+  );
   const api = find("Deployment", "pi-cloud-session-api");
   const completion = find("Deployment", "pi-cloud-tool-completion");
   assert.equal(api.spec.template.spec.containers[0].image, images.sessionApi);

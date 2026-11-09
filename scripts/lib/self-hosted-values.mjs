@@ -78,6 +78,7 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
       sessionRuntime: { replicas: 1, autoscaling: { enabled: false } },
       sessionApi: { replicas: 1, autoscaling: { enabled: false } },
       toolCompletion: { replicas: 1 },
+      metering: { sourcePorts: [3000] },
       controlPlane: {
         replicas: 1,
         defaultWorkspaceCapacityGiB: n("PI_CLOUD_DEFAULT_WORKSPACE_CAPACITY_GIB", 32),
