@@ -300,6 +300,33 @@ it("keeps an owned model grant beyond the former TTL and rejects it immediately 
   await expect(() => gateway.issue(command(), owner.signal)).toThrow();
 });
 
+it.each(["user_request", "timeout"])(
+  "provides only revoked metadata for native bootstrap after %s",
+  async (reason) => {
+    const upstream = vi.fn<typeof fetch>(async () => new Response("unexpected"));
+    const gateway = createGateway(upstream);
+    await gateway.start();
+    const owner = new AbortController();
+    owner.abort({ kind: "pi-cloud.turn-cancellation", reason, gracePeriodMs: 1000 });
+    const lease = gateway.issue(command("openai-codex", "gpt-6-luna"), owner.signal);
+    expect(lease.runtime).toMatchObject({
+      provider: "openai-codex",
+      modelId: "gpt-6-luna",
+      api: "openai-codex-responses",
+    });
+    const response = await fetch(`http://127.0.0.1:${gateway.listeningPort}/codex/responses`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${lease.runtime.capability}`, ...samplingHeaders() },
+      body: JSON.stringify({ model: "gpt-6-luna", stream: true, input: [] }),
+    });
+    expect(response.status).toBe(401);
+    await response.text();
+    expect(upstream).not.toHaveBeenCalled();
+    await lease.release();
+    await lease.release();
+  },
+);
+
 function createGateway(
   fetchImplementation: typeof fetch,
   maximumRequestsPerTurn = 8,

@@ -598,7 +598,15 @@ export class TenantModelGateway {
   }
 
   issue(command: ExecuteTurnCommandMessage, signal?: AbortSignal): TrustedModelRuntimeLease {
-    signal?.throwIfAborted();
+    const cancellation = signal?.reason as { kind?: unknown; reason?: unknown } | undefined;
+    const stoppedBootstrap =
+      signal?.aborted &&
+      cancellation?.kind === "pi-cloud.turn-cancellation" &&
+      (cancellation.reason === "user_request" || cancellation.reason === "timeout");
+    // Pi still needs runtime metadata to persist an early Stop. The returned
+    // capability is revoked before this synchronous method returns; owner loss
+    // remains a refusal and no provider request is made during local setup.
+    if (!stoppedBootstrap) signal?.throwIfAborted();
     if (!this.#started) {
       throw new TenantModelGatewayError("gateway_not_started", "Model Gateway is not listening");
     }
@@ -679,6 +687,7 @@ export class TenantModelGateway {
       const revoke = () => this.#revoke(active);
       signal.addEventListener("abort", revoke, { once: true });
       active.detachOwner = () => signal.removeEventListener("abort", revoke);
+      if (signal.aborted) revoke();
     }
     let released = false;
     const runtime: AgentModelRuntime =

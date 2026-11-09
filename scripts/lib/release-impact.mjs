@@ -78,6 +78,7 @@ export const providerSources = new Set([
   "deploy/helm/pi-cloud-infrastructure/templates/provider.yaml",
   ...providerConfigurationSources,
 ]);
+export const workerBootstrapSource = "packages/supervisor-host/src/model-gateway.ts";
 export const executionMaintenanceSource = "packages/sandbox-control/src/execution-maintenance.ts";
 export const sessionDecoderSource = "packages/runtime-core/src/session-log-envelope.ts";
 export const sessionApiSource = (file) =>
@@ -85,6 +86,14 @@ export const sessionApiSource = (file) =>
     file,
   ) || /^packages\/control-plane\/src\/public-api\/.*\.ts$/.test(file);
 export const imageReleaseTargets = {
+  "worker-bootstrap": {
+    imageName: "supervisor-host",
+    buildScope: "worker",
+    catalogKey: "worker",
+    componentName: "supervisor-host",
+    workload: "statefulset/pi-cloud-pi-worker-primary-v1",
+    container: "pi-worker",
+  },
   "execution-maintenance": {
     imageName: "control-plane",
     buildScope: "control-plane",

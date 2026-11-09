@@ -124,6 +124,22 @@ npm run release:component -- preflight /private/releases/maintenance-1
 npm run release:component -- apply /private/releases/maintenance-1
 ```
 
+## Local model bootstrap repair
+
+The explicit `worker-bootstrap` scope accepts compatible corrections confined to
+`packages/supervisor-host/src/model-gateway.ts`. It requires the installed native
+continuation and model-snapshot contracts, checks the gateway and native Stop
+cases, and changes only the Worker StatefulSet image. The existing graceful
+Worker shutdown/ordered writer closure remains in force. Native SDK, wire,
+storage, lease, Guest and unrelated runtime changes require a matched release.
+The full manifest guard rejects changed replicas, services and other images.
+
+```sh
+npm run release:component -- prepare worker-bootstrap /private/releases/bootstrap-1 bootstrap-1
+npm run release:component -- preflight /private/releases/bootstrap-1
+npm run release:component -- apply /private/releases/bootstrap-1
+```
+
 ## Provider image
 
 After ADR-0297's matched receipt installation, the explicitly listed metering

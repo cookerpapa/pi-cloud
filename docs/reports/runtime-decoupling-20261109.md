@@ -150,3 +150,18 @@ predicate is removed and real PG tests now cover accepted readiness, mismatched
 boot/fencing and closed binding admission. The narrow execution-maintenance
 repair uses the existing Session-runtime replacement contract; live revalidation
 is still pending. This failed first recovery sample is not counted as acceptance.
+
+The maintenance correction was published independently as
+`runtime-maintenance-20261110-r1` (source `063d2223`, Helm 154). The repeated real
+Worker SIGKILL acceptance passed: a replacement completed the original Run, the
+Bash start/end file showed one effect, and fixture cleanup completed.
+
+The reply-fault driver then exposed an early-Stop race before installing its fault
+preload: the user cancellation signal reached the local model gateway before it
+issued runtime metadata, so the Harness never reached native cancellation
+settlement. The local gateway now returns metadata with an already-revoked
+capability only for explicit user Stop/timeout; owner loss still refuses a grant.
+Requests with that capability return 401 without contacting the provider. The
+Worker bootstrap repair checks passed 8 files / 106 tests. Its independent Worker
+image publication and repeated live acceptance are pending; the failed initial
+early-Stop sample remains recorded and is not counted as passing reply acceptance.

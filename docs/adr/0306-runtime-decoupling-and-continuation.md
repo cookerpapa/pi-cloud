@@ -222,3 +222,19 @@ not authorize changes to lease authority, wire/storage schemas, physical cleanup
 Tool dispatch admission or the meaning of retention. Those require a matched
 release. Real PostgreSQL eligibility tests, existing probe contracts and complete
 manifest comparison are required before this narrow repair.
+
+### Stop during local model bootstrap
+
+A user Stop may arrive before the local model-gateway grant is constructed.
+Native cancellation still needs model metadata to open the Harness and settle
+its accepted input. For that explicit Stop/timeout reason, the local gateway may
+return runtime metadata with an already-revoked capability. It never authorizes
+a provider request. Generic owner loss or shutdown continues to reject grant
+creation. Existing native write-authority checks still govern cancellation.
+
+A compatible `worker-bootstrap` repair may replace only the installed Worker image
+for changes confined to the local model gateway implementation. It keeps the
+accepted wire/storage/lease contract, native SDK and Guest unchanged, uses the
+existing StatefulSet shutdown/rolling protocol, and checks full manifests and
+model-gateway/native-cancellation contracts. Broader runtime or authority changes
+remain matched upgrades.

@@ -54,7 +54,7 @@ configureBuildProxy();
 const [action, scopeOrPath, candidatePath, input] = process.argv.slice(2);
 if (action === "--help") {
   console.log(
-    "prepare provider|web|tool-host|session-decoder|session-api|execution-maintenance DIRECTORY VERSION | prepare catalog DIRECTORY CATALOG_JSON | preflight DIRECTORY | apply DIRECTORY\nScoped releases preserve unrelated workloads. See docs/COMPONENT_RELEASE.md.",
+    "prepare provider|web|tool-host|session-decoder|session-api|execution-maintenance|worker-bootstrap DIRECTORY VERSION | prepare catalog DIRECTORY CATALOG_JSON | preflight DIRECTORY | apply DIRECTORY\nScoped releases preserve unrelated workloads. See docs/COMPONENT_RELEASE.md.",
   );
   process.exit(0);
 }
@@ -164,6 +164,18 @@ if (action === "prepare") {
       1,
       "Install the matched runtime replacement contract first",
     );
+  if (scope === "worker-bootstrap") {
+    assert.equal(
+      baseline.contracts.modelRuntimeSnapshot,
+      1,
+      "Install the model snapshot contract first",
+    );
+    assert.equal(
+      baseline.contracts.guestHttpCompletion,
+      1,
+      "Install durable remote continuation first",
+    );
+  }
   assertServingCombination(baseline);
   const changed = capture("git", ["diff", "--name-only", `${baseline.revision}..${revision}`])
     .split("\n")

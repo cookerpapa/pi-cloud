@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { imageReleaseTargets } from "./lib/release-impact.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -8,7 +9,7 @@ assert(
   scope === "catalog" || Object.hasOwn(imageReleaseTargets, scope),
   "Use a declared component scope; protocol changes require full checks",
 );
-if (["session-api", "execution-maintenance"].includes(scope)) {
+if (["session-api", "execution-maintenance", "worker-bootstrap"].includes(scope)) {
   const options = { cwd: fileURLToPath(new URL("..", import.meta.url)), stdio: "inherit" };
   execFileSync(
     "npm",
@@ -16,7 +17,11 @@ if (["session-api", "execution-maintenance"].includes(scope)) {
       "run",
       "typecheck",
       "--workspace",
-      scope === "session-api" ? "@pi-cloud/control-plane" : "@pi-cloud/sandbox-control",
+      scope === "session-api"
+        ? "@pi-cloud/control-plane"
+        : scope === "worker-bootstrap"
+          ? "@pi-cloud/supervisor-host"
+          : "@pi-cloud/sandbox-control",
     ],
     options,
   );
@@ -27,14 +32,22 @@ if (["session-api", "execution-maintenance"].includes(scope)) {
           "packages/control-plane/test/production-http-gateway.test.ts",
           "packages/control-plane/test/session-live-service.test.ts",
         ]
-      : [
-          "packages/sandbox-control/test/execution-maintenance.postgres.test.ts",
-          "packages/sandbox-control/test/execution-path-probes.test.ts",
-          "packages/sandbox-control/test/runtime-retention.test.ts",
-          "packages/runtime-core/test/path-probe.test.ts",
-          "packages/runtime-core/test/session-projector-handoffs.test.ts",
-          "packages/control-plane/test/control-plane-quiescence.test.ts",
-        ];
+      : scope === "worker-bootstrap"
+        ? [
+            "packages/supervisor-host/test/model-gateway.test.ts",
+            "packages/sandbox-supervisor/test/agent-run-supervisor.test.ts",
+            "packages/supervisor-host/test/runtime.test.ts",
+            "packages/sandbox-supervisor/test/durable-turn-runner.test.ts",
+          ]
+        : [
+            "packages/sandbox-control/test/execution-maintenance.postgres.test.ts",
+            "packages/sandbox-control/test/execution-path-probes.test.ts",
+            "packages/sandbox-control/test/runtime-retention.test.ts",
+            "packages/runtime-core/test/path-probe.test.ts",
+            "packages/runtime-core/test/session-projector-handoffs.test.ts",
+            "packages/control-plane/test/control-plane-quiescence.test.ts",
+          ];
+  for (const test of tests) assert(existsSync(test), `Required component test is missing: ${test}`);
   execFileSync(
     process.execPath,
     [

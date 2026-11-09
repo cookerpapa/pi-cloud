@@ -5,6 +5,7 @@ import {
   ordinaryControlToolSource,
   sessionDecoderSource,
   executionMaintenanceSource,
+  workerBootstrapSource,
   sessionApiSource,
   imageReleaseTargets,
   providerSources,
@@ -157,6 +158,7 @@ export function assertScopedSources(scope, files) {
           file === "deploy/helm/pi-cloud-platform/templates/network-policy.yaml") ||
         (scope === "session-decoder" && file === sessionDecoderSource) ||
         (scope === "execution-maintenance" && file === executionMaintenanceSource) ||
+        (scope === "worker-bootstrap" && file === workerBootstrapSource) ||
         (scope === "session-api" && sessionApiSource(file)) ||
         (scope === "web" &&
           (/^packages\/web-ui\/src\/.*\.(tsx|css)$/.test(file) ||
@@ -204,7 +206,15 @@ export function scopedImageValues(scope, values, desired, version) {
   );
   const next = structuredClone(values);
   if (scope === "provider") next.provider.image = desired;
-  else {
+  else if (scope === "worker-bootstrap") {
+    assert(next["pi-workers"]?.image, "Installed Worker image values are required");
+    next["pi-workers"].image = {
+      ...next["pi-workers"].image,
+      repository: "pi-cloud/supervisor-host",
+      tag: version,
+    };
+    delete next["pi-workers"].image.digest;
+  } else {
     assert(
       next.images?.[target.catalogKey],
       "Install independent role image values before a scoped release",
@@ -318,6 +328,15 @@ export function assertScopedManifests(scope, before, after, desired) {
       };
       if (!expected.spec.egress.some((item) => isDeepStrictEqual(item, rule)))
         expected.spec.egress.unshift(rule);
+    } else if (
+      scope === "worker-bootstrap" &&
+      old.kind === "StatefulSet" &&
+      old.metadata.name === "pi-cloud-pi-worker-primary-v1"
+    ) {
+      const container = expected.spec.template.spec.containers.find((c) => c.name === "pi-worker");
+      assert(container, "Missing Worker container");
+      container.image = desired;
+      targets++;
     } else if (
       ["web", "tool-host", "session-decoder", "session-api", "execution-maintenance"].includes(
         scope,

@@ -809,3 +809,42 @@ it("confines execution-maintenance repairs to one query owner and one installed 
     ),
   ).toThrow("Unexpected resource change");
 });
+
+it("publishes only compatible model bootstrap code to the installed Worker StatefulSet", () => {
+  assertScopedSources("worker-bootstrap", ["packages/supervisor-host/src/model-gateway.ts"]);
+  expect(() =>
+    assertScopedSources("worker-bootstrap", ["packages/supervisor-host/src/runtime.ts"]),
+  ).toThrow("matched release");
+  const worker = structuredClone(provider);
+  worker.metadata.name = "pi-cloud-pi-worker-primary-v1";
+  worker.spec.template.spec.containers[0].name = "pi-worker";
+  const next = structuredClone(worker);
+  next.spec.template.spec.containers[0].image = "pi-cloud/supervisor-host:new";
+  assertScopedManifests(
+    "worker-bootstrap",
+    yaml(worker),
+    yaml(next),
+    "pi-cloud/supervisor-host:new",
+  );
+  next.spec.replicas = 8;
+  expect(() =>
+    assertScopedManifests(
+      "worker-bootstrap",
+      yaml(worker),
+      yaml(next),
+      "pi-cloud/supervisor-host:new",
+    ),
+  ).toThrow();
+  const values = {
+    images: { controlPlane: { tag: "old" } },
+    "pi-workers": { image: { repository: "pi-cloud/supervisor-host", tag: "old" } },
+  };
+  const updated = scopedImageValues(
+    "worker-bootstrap",
+    values,
+    "pi-cloud/supervisor-host:new",
+    "new",
+  );
+  expect(updated["pi-workers"].image.tag).toBe("new");
+  expect(updated.images).toEqual(values.images);
+});
