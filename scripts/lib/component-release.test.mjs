@@ -811,7 +811,10 @@ it("confines execution-maintenance repairs to one query owner and one installed 
 });
 
 it("publishes only compatible model bootstrap code to the installed Worker StatefulSet", () => {
-  assertScopedSources("worker-bootstrap", ["packages/supervisor-host/src/model-gateway.ts"]);
+  assertScopedSources("worker-bootstrap", [
+    "packages/supervisor-host/src/model-gateway.ts",
+    "scripts/production-kubernetes.mjs",
+  ]);
   expect(() =>
     assertScopedSources("worker-bootstrap", ["packages/supervisor-host/src/runtime.ts"]),
   ).toThrow("matched release");

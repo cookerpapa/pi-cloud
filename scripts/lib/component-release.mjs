@@ -158,7 +158,8 @@ export function assertScopedSources(scope, files) {
           file === "deploy/helm/pi-cloud-platform/templates/network-policy.yaml") ||
         (scope === "session-decoder" && file === sessionDecoderSource) ||
         (scope === "execution-maintenance" && file === executionMaintenanceSource) ||
-        (scope === "worker-bootstrap" && file === workerBootstrapSource) ||
+        (scope === "worker-bootstrap" &&
+          (file === workerBootstrapSource || file === "scripts/production-kubernetes.mjs")) ||
         (scope === "session-api" && sessionApiSource(file)) ||
         (scope === "web" &&
           (/^packages\/web-ui\/src\/.*\.(tsx|css)$/.test(file) ||

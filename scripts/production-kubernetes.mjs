@@ -156,7 +156,7 @@ async function build() {
     provider: ["cli-proxy-api", "deploy/provider-gateway/Dockerfile"],
   };
   const selected = args[0] === "control-plane" ? "controlPlane" : args[0];
-  if (selected !== undefined && !["provider", "web", "controlPlane"].includes(selected))
+  if (selected !== undefined && !["provider", "web", "controlPlane", "worker"].includes(selected))
     throw new Error("Unsupported build component");
   const images = selected
     ? JSON.parse(readFileSync(resolve(runtimeDirectory, "k3s/images.json"), "utf8"))
