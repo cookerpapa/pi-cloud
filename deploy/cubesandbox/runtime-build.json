@@ -1,28 +1,16 @@
 {
   "upstreamRepository": "https://github.com/TencentCloud/CubeSandbox.git",
   "upstreamCommit": "4411c96ba8658a959de34693f54f4918db2a432f",
-  "managedProtocolVersion": 8,
+  "managedProtocolVersion": 9,
   "guestProtocolVersion": 7,
   "patches": [
     {
-      "file": "0001-native-observations-and-tools.patch",
-      "sha256": "70ad48b356736c843cedd96625458e40bc13837513ea3078724ac85855c0455a"
+      "file": "0001-runtime-boundaries.patch",
+      "sha256": "b7692d3626324e27e45b51e14925c6016687139de134e4a3300500160fa356ce"
     },
     {
-      "file": "0002-allocation-and-volume-lifetimes.patch",
-      "sha256": "9137cee21e01a457bd0f5b6ede73a0115a529a647be254cf049db1cb2f56c7ae"
-    },
-    {
-      "file": "0003-template-cleanup-node-routing.patch",
-      "sha256": "79269cc2d8bddcb6f9b466856214cb5981a41aa31cee576449be38fee9675c91"
-    },
-    {
-      "file": "0004-release-dependencies.patch",
+      "file": "0002-release-dependencies.patch",
       "sha256": "379c7e41fc0bbf2b3184b95ec91e857ada0aa9d1e21608bfa20ddbdcf4a33008"
-    },
-    {
-      "file": "0005-resource-usage-receipts.patch",
-      "sha256": "54911d19098bea1b8ad464becf90906b15331581cbf4ec5b1fc7390926be6f54"
     }
   ],
   "buildImages": {
@@ -34,13 +22,5 @@
     "alpine": "alpine:3.21@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507"
   },
   "upstreamVersion": "0.7.3",
-  "resourceMeteringVersion": 1,
-  "ownedSources": [
-    {
-      "directory": "deploy/resource-metering",
-      "target": "PiCloud/resource-metering",
-      "files": ["LICENSE", "delivery.go", "go.mod", "go.sum", "journal.go", "journal_test.go"],
-      "sha256": "005ad1abe3a8843255a1f115abe7a8c98f509a9c1cde37a7b3d879b2096d7db8"
-    }
-  ]
+  "lifecycleHistoryVersion": 1
 }

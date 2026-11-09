@@ -1,5 +1,9 @@
 # Current architecture decisions
 
+[ADR-0306](0306-runtime-decoupling-and-continuation.md) records the authorized
+runtime decoupling and recovery work in Issues #17–#24. Source implementation is
+in progress; consolidated verification and rollout have not started.
+
 [ADR-0305](0305-execution-owned-tools-and-bindings.md) is accepted for execution-owned
 bindings, public Tool adaptation and independent tool-host/catalog publication in
 Issues #12–#16. [Implementation and serial live acceptance](../reports/execution-tools-20261108.md)

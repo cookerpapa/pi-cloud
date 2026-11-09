@@ -2,6 +2,9 @@ import { uploadHttp, readUploadReceipt } from "./upload-http.ts";
 import { fileTransferHttp } from "./workspace-file-transfer-http.ts";
 import {
   PREPARE_ENVIRONMENT_IMAGES_PATH,
+  RECOVER_TOOL_ENVIRONMENT_PATH,
+  parseToolEnvironmentRequest,
+  parseExecutionEvidence,
   parseEnvironmentImagesRequest,
   parseEnvironmentImagesResponse,
   WORKSPACE_FILE_TRANSFER_PATH,
@@ -221,6 +224,23 @@ export class SandboxControlClient {
         true,
       );
     }
+  }
+
+  async recoverEnvironment(
+    environment: import("@pi-cloud/protocol").ToolEnvironmentRequest,
+    signal: AbortSignal,
+  ) {
+    const evidence = parseExecutionEvidence(
+      await this.#request(
+        RECOVER_TOOL_ENVIRONMENT_PATH,
+        this.#serviceToken,
+        parseToolEnvironmentRequest(environment),
+        signal,
+      ),
+    );
+    if (evidence.bindingId !== environment.requestId)
+      throw new Error("Recovered binding identity changed");
+    return evidence;
   }
 
   async create(

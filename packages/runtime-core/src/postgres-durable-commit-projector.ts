@@ -12,7 +12,13 @@ import { captureNativePresentation } from "./frozen-history.ts";
 
 function cloudMetadata(fact: AcceptedDurableCommitFact) {
   const controlTools = fact.tools.filter((tool) => tool.target === "control");
-  return controlTools.length ? { controlTools } : undefined;
+  const remoteTools = fact.tools.filter((tool) => tool.target === "cube" && tool.replyRecovery);
+  return controlTools.length || remoteTools.length
+    ? {
+        ...(controlTools.length ? { controlTools } : {}),
+        ...(remoteTools.length ? { remoteTools } : {}),
+      }
+    : undefined;
 }
 
 export class PostgresDurableCommitProjector {

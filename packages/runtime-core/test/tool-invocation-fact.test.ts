@@ -68,7 +68,12 @@ async function publisherFixture() {
   });
   const publisher = new DurableSessionPublisher({
     channels: log,
-    replyTopic: "reply-worker-boot",
+    replyTopic: "pi-cloud.tool-replies.v4.10000000-0000-4000-8000-000000000009",
+    replyPosition: async () => ({
+      topic: "pi-cloud.tool-replies.v4.10000000-0000-4000-8000-000000000009",
+      partition: 0,
+      offset: "0",
+    }),
   }).scoped(f.executionReference);
   return { ...f, log, writer, publisher, append, ack };
 }

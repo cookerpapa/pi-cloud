@@ -196,7 +196,7 @@ Worker 仍以一秒为默认补扫间隔，在有 active Run 时检查取消候�
 [runtime-build.json](../../deploy/cubesandbox/runtime-build.json) 固定四个补丁，补丁文件合计 8,585 行，
 包括测试、生成代码和 diff 上下文，**不能当作 8,585 行手写运行代码**。
 它们涉及观测、Tool 接管、boot/scope fencing、停止、回包和探针，已超出普通 SDK 参数适配。
-[Cubelet 镜像](../../deploy/cubesandbox/Dockerfile.cubelet) 还打包 completion 适配器及多个 PiCloud 包。
+当时的 Cubelet 定制镜像（已由 ADR-0306 移除） 还打包 completion 适配器及多个 PiCloud 包。
 
 去掉独立 Broker 是合理的：进程生杀和已接纳 Tool 的生命周期由离进程最近的 Cubelet 管理。
 但这些职责并没有消失；升级 Cube 必须维护这一接口集合，并与 guest/completion 契约成套验证。

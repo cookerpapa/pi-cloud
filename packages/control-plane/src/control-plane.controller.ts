@@ -1405,30 +1405,38 @@ export class ControlPlaneController {
     const sessionId = parseUuidPathParameter(sessionIdValue, "sessionId");
     const identity = this.tenantRequestContext.resolve(request);
     const store = this.controlPlaneStores.forIdentity(identity);
-    const owner = await this.sessionEventStream.owner(identity.tenantId, sessionId);
-    if (owner) {
-      if (request.headers["x-pi-cloud-projector-hop"]) {
-        await reply.code(503).send();
-        return;
-      }
+    const remote = this.sessionEventStream.remoteTarget(identity.tenantId, sessionId);
+    if (remote) {
       const abort = new AbortController();
       const close = () => abort.abort();
       reply.raw.once("close", close);
       try {
-        const upstream = await internalFetch(new URL(`/v1/sessions/${sessionId}/events`, owner), {
-          dispatcher: this.#projectorHttp,
-          headers: {
-            "x-pi-cloud-projector-hop": "1",
-            ...(request.headers.authorization
-              ? { authorization: request.headers.authorization }
-              : {}),
-            ...(request.headers.cookie ? { cookie: request.headers.cookie } : {}),
-          },
-          signal: abort.signal,
-          redirect: "error",
-        });
-        if (!upstream.ok || !upstream.body) {
+        let destination = remote.url;
+        let upstream: Awaited<ReturnType<typeof internalFetch>> | undefined;
+        for (let hop = 0; hop < 3; hop++) {
+          upstream = await internalFetch(destination, {
+            dispatcher: this.#projectorHttp,
+            headers: remote.headers,
+            signal: abort.signal,
+            redirect: "manual",
+          });
+          if (upstream.status !== 307) break;
+          const location = upstream.headers.get("location");
           await upstream.body?.cancel();
+          if (!location) throw new Error("Session stream owner is unavailable");
+          const next = new URL(location);
+          if (
+            next.pathname !== remote.url.pathname ||
+            next.search ||
+            next.username ||
+            next.password ||
+            !["http:", "https:"].includes(next.protocol)
+          )
+            throw new Error("Invalid Session stream owner");
+          destination = next;
+        }
+        if (!upstream?.ok || !upstream.body) {
+          await upstream?.body?.cancel();
           await reply.code(503).send();
           return;
         }

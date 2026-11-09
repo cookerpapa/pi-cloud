@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 import {
   assertCubeWorkspaceContract,
-  assertCubeCompletionVersion,
+  assertCubeNativeVersion,
 } from "./cube-workspace-contract.mjs";
 const root = "/operator/runtime/state/cube-shared";
 function fixture(names) {
@@ -65,31 +65,20 @@ test("detects a removed Cubelet config mount even when the Workspace host path i
   );
 });
 
-test("requires matching native Cubelet patches and completion protocol sources", () => {
+test("requires the pinned native Cube release independently of the completion application", () => {
   assert.doesNotThrow(() =>
-    assertCubeCompletionVersion(
-      { source: "current", version: "0.7.3-picloud-expected" },
-      "current",
+    assertCubeNativeVersion(
+      { components: { cubelet: { version: "0.7.3-picloud-expected" } } },
       "0.7.3-picloud-expected",
     ),
   );
   assert.throws(
     () =>
-      assertCubeCompletionVersion(
-        { source: "current", version: "0.7.3-picloud-old" },
-        "current",
+      assertCubeNativeVersion(
+        { components: { cubelet: { version: "old" } } },
         "0.7.3-picloud-expected",
       ),
-    /Update Cubelet/,
-  );
-  assert.throws(
-    () =>
-      assertCubeCompletionVersion(
-        { source: "old", version: "0.7.3-picloud-expected" },
-        "current",
-        "0.7.3-picloud-expected",
-      ),
-    /Update Cubelet/,
+    /Update Cube/,
   );
 });
 

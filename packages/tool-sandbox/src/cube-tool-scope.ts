@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
 import { open, readFile, unlink } from "node:fs/promises";
+import { parseGuestToolPreview, type ToolWorkerOutput } from "@pi-cloud/protocol/guest";
+import { GuestCompletionClient } from "./completion-client.ts";
+import { toolOutputFrames } from "./tool-output-frames.ts";
 import { ScopeReceiptTransportError, settledScopeReceipt } from "./scope-receipt.ts";
 import {
   enterExecutionCgroup,
@@ -37,6 +40,9 @@ async function* frames(): AsyncGenerator<string> {
 /** Fixed trusted guest boundary. Receives one bounded JSON payload on a raw PTY;
  * untrusted files and shell commands begin only inside their kernel scope. */
 async function main(): Promise<void> {
+  // A dead API reader must not terminate a finalized HTTP delivery. The scope
+  // still obeys explicit cancellation and the Tool's own execution timeout.
+  process.stdout.on("error", () => {});
   const [mode, operationId] = process.argv.slice(2);
   if (!process.stdin.isTTY) throw new Error("Native raw execution terminal required");
   process.stdin.setRawMode(true);
@@ -65,14 +71,33 @@ async function main(): Promise<void> {
         !/^[0-9a-f-]{36}$/.test(operationId) ||
         input.probeId !== operationId ||
         input.mode !== "probe" ||
-        Object.keys(input).length !== 2
+        Object.keys(input).some((key) => !["probeId", "mode", "delivery"].includes(key))
       )
         throw new Error("Execution probe identity changed");
       const guestBootId = (await readFile("/proc/sys/kernel/random/boot_id", "utf8")).trim();
-      process.stdout.write(
-        JSON.stringify({ type: "worker.probe_result", probeId: operationId, guestBootId }) + "\n",
-      );
-      await receipt();
+      const result = { type: "worker.probe_result", probeId: operationId, guestBootId };
+      if (input.delivery) {
+        clearTimeout(deadline);
+        const delivery = new GuestCompletionClient(input.delivery, operationId);
+        let delivered = true;
+        await delivery.complete(result).catch(() => {
+          delivered = false;
+        });
+        process.stdout.write(
+          JSON.stringify({
+            type: "worker.delivery_result",
+            toolWorkerProtocolVersion: 7,
+            operationId,
+            executionComplete: true,
+            delivered,
+          }) + "\n",
+        );
+      } else {
+        // The resource owner's synchronous physical observation is deliberately
+        // separate from the full Guest → HTTPS → Kafka → Worker path.
+        process.stdout.write(JSON.stringify(result) + "\n");
+        await receipt();
+      }
     } finally {
       clearTimeout(deadline);
     }
@@ -95,6 +120,12 @@ async function main(): Promise<void> {
     input.request.operationId !== operationId
   )
     throw new Error("Execution scope input identity changed");
+  const delivery = new GuestCompletionClient(input.delivery, operationId);
+  if (delivery.destination.expiresAt <= Date.now())
+    throw new Error("Execution delivery already expired");
+  delete input.delivery; // The untrusted uid-1000 Tool never receives this capability.
+  const hangup = () => {};
+  process.on("SIGHUP", hangup);
   const inputPath = `/tmp/pi-cloud-envd-${operationId.toLowerCase()}.json`;
   await enterExecutionCgroup(operationId, inputPath);
   const file = await open(
@@ -103,7 +134,7 @@ async function main(): Promise<void> {
     0o600,
   );
   try {
-    await file.writeFile(body);
+    await file.writeFile(JSON.stringify(input));
     await file.chown(1000, 1000);
     await file.chmod(0o400);
   } finally {
@@ -122,12 +153,33 @@ async function main(): Promise<void> {
       "/opt/pi-cloud/bin/envd-tool-exec.mjs",
       inputPath,
     ],
-    { stdio: ["pipe", "inherit", "ignore"] },
+    // A lost provider PTY can send SIGHUP to its foreground process group.
+    // The fixed child has its own session; cancellation still uses our stdin
+    // channel and fault cleanup still addresses the inherited cgroup.
+    { stdio: ["pipe", "pipe", "ignore"], detached: true },
   );
   child.stdin.on("error", () => {
     /* A final result may race cancellation. */
   });
+  let final: ToolWorkerOutput | undefined;
+  const output = (async () => {
+    for await (const frame of toolOutputFrames(child.stdout)) {
+      const value = JSON.parse(frame) as ToolWorkerOutput | { type: "worker.preview" };
+      if (value.type === "worker.preview") delivery.progress(parseGuestToolPreview(value));
+      else {
+        if (final) throw new Error("Guest produced two terminal frames");
+        final = value;
+      }
+    }
+  })();
+  let outputFailed = false;
+  void output.catch(() => {
+    outputFailed = true;
+    child.kill("SIGTERM");
+  });
   const received = Promise.withResolvers<void>();
+  let scopeSettled = false,
+    controlFault = false;
   const control = (async () => {
     for await (const frame of inputFrames) {
       if (frame === '{"type":"scope.received"}') {
@@ -145,7 +197,13 @@ async function main(): Promise<void> {
         child.stdin.write(JSON.stringify({ type: "worker.cancel", operationId }) + "\n");
     }
   })();
-  void control.catch((error) => received.reject(error));
+  void control.catch((error) => {
+    received.reject(error);
+    if (!(error instanceof ScopeReceiptTransportError) && !scopeSettled) {
+      controlFault = true;
+      child.kill("SIGTERM");
+    }
+  });
   void received.promise.catch(() => {});
   const forward = () => {
     child.kill("SIGTERM");
@@ -157,18 +215,58 @@ async function main(): Promise<void> {
       child.once("error", reject);
       child.once("exit", (code) => resolve(code ?? 1));
     });
+    await output.catch(() => {
+      outputFailed = true;
+    });
     // The receipt-only code belongs to this launcher, never to its child.
     process.exitCode = status === 0 ? 0 : 1;
     await unlink(inputPath).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== "ENOENT") throw error;
     });
     await finishExecutionCgroup(operationId);
-    if (status === 0) {
-      process.exitCode = await settledScopeReceipt(received.promise);
-    }
+    const stopRequired =
+      status !== 0 ||
+      outputFailed ||
+      controlFault ||
+      !final ||
+      (final.type === "worker.operation_result" && final.scopeStopRequired);
+    if (stopRequired) await stopExecutionCgroup(operationId);
+    scopeSettled = true;
+    // Separate physical execution settlement from callback delivery. Losing the
+    // HTTPS ACK must not retroactively kill an already-started background server.
+    process.stdout.write(JSON.stringify({ type: "scope.executed", operationId }) + "\n");
+    let delivered = true;
+    await delivery
+      .complete(
+        status === 0 && !outputFailed && !controlFault && final
+          ? final
+          : {
+              toolWorkerProtocolVersion: 7,
+              type: "worker.failed",
+              code: "tool_operation_outcome_unknown",
+              message:
+                "Guest execution ended without a valid final result; inspect effects before repeating it.",
+              retryable: false,
+            },
+      )
+      .catch(() => {
+        delivered = false;
+      });
+    // Cube receives only a small delivery receipt; it never receives image bytes.
+    process.stdout.write(
+      JSON.stringify({
+        type: "worker.delivery_result",
+        toolWorkerProtocolVersion: 7,
+        operationId,
+        delivered,
+        executionComplete: true,
+      }) + "\n",
+    );
+    process.exitCode = 0;
   } finally {
     process.removeListener("SIGTERM", forward);
     process.removeListener("SIGINT", forward);
+    process.removeListener("SIGHUP", hangup);
     child.stdin.destroy();
     await unlink(inputPath).catch(() => {});
   }

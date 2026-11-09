@@ -440,7 +440,7 @@ export class SandboxController {
     );
     this.#admission = new SandboxAdmission(this.#maximumActiveSandboxes);
     this.#clock = options.clock ?? Date.now;
-    this.#elasticRetentionMs = options.elasticRetentionMs ?? 900000;
+    this.#elasticRetentionMs = options.elasticRetentionMs ?? 1800000;
     if (
       !Number.isSafeInteger(this.#elasticRetentionMs) ||
       this.#elasticRetentionMs < 1000 ||
@@ -997,6 +997,9 @@ export class SandboxController {
     for (const route of await this.#bindings.adopt(handle.activationId)) {
       const { snapshot, descriptor, bindingId } = route;
       if (route.closed) {
+        // A sealed Worker can leave a valid accepted Tool for its successor.
+        // The immutable closed binding remains available for result/cancel routing.
+        if (route.pendingReply) continue;
         await this.#bindings.closeBinding(bindingId, snapshot.assignment, true);
         await this.#bindings.release(bindingId, snapshot.assignment);
         continue;

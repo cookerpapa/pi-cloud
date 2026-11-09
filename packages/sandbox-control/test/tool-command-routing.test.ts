@@ -25,7 +25,7 @@ function fixture() {
   const command: AcceptedToolCommand = {
     kind: "tool_command",
     toolCallId: "result-entry",
-    replyTopic: "pi-cloud.tool-replies.v3." + randomUUID(),
+    replyTopic: "pi-cloud.tool-replies.v4." + randomUUID(),
     occurredAt: new Date().toISOString(),
     scope,
     request: {
@@ -92,7 +92,15 @@ function fixture() {
     quarantine = vi.fn(async () => {});
   const options = {
     routes: { get, closeWriter, isAlive: async () => true },
-    executor: new CubeSandboxToolExecutor(cube),
+    executor: new CubeSandboxToolExecutor(cube, {
+      issue: async (grant) => ({
+        url: "https://completion.test/v1/completions",
+        address: "127.0.0.1",
+        ca: "fixture",
+        capability: JSON.stringify(grant),
+        expiresAt: grant.expiresAt,
+      }),
+    }),
     workflow,
     publishReply,
     quarantine,
@@ -520,20 +528,27 @@ describe("Projector native Cube handoff", () => {
         operationId: f.command.request.operationId,
         executionScopeId: f.route.bindingId,
         writerId: f.command.scope.writerId,
-        payload: {
+        payload: expect.objectContaining({
           toolWorkerProtocolVersion: 7,
           type: "worker.operation",
           attachment: f.route.descriptor.attachment,
           request: f.command.request,
-        },
+          delivery: expect.objectContaining({ url: "https://completion.test/v1/completions" }),
+        }),
         completionContext: expect.objectContaining({
-          toolCallId: "result-entry",
-          nativeToolCallId: "native",
+          url: "https://completion.test/v1/completions",
         }),
       }),
     );
+    const submitted = vi.mocked(f.cube.submitTool).mock.calls[0]![1];
+    expect(
+      JSON.parse((submitted.completionContext as { capability: string }).capability),
+    ).toMatchObject({
+      issuer: "executor",
+      context: { toolCallId: "result-entry", nativeToolCallId: "native" },
+    });
     expect(f.workflow).not.toHaveBeenCalled();
-    expect(f.publishReply).not.toHaveBeenCalled(); // Native executor owns duration and final delivery.
+    expect(f.publishReply).not.toHaveBeenCalled(); // The Guest delivers through its scoped callback.
     await f.router.consume(
       record({ ...f.command, request: { ...f.command.request, operationId: randomUUID() } }, 2n),
     );

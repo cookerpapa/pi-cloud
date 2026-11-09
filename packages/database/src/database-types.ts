@@ -1067,6 +1067,7 @@ export interface Database {
     created_at: GeneratedTimestamp;
   };
   resource_metering_resources: {
+    lifecycle_state: GeneratedNullable<Record<string, unknown>>;
     id: string;
     tenant_id: string;
     workspace_id: string;
@@ -1075,6 +1076,16 @@ export interface Database {
     context: JsonObject;
     context_hash: string;
     received_at: GeneratedTimestamp;
+  };
+  resource_lifecycle_sources: {
+    id: string;
+    provider: string;
+    node_id: string;
+    epoch: GeneratedNullable<string>;
+    after_sequence: GeneratedInt8;
+    checked_at: GeneratedNullable<Date>;
+    failed_at: GeneratedNullable<Date>;
+    gap_detected_at: GeneratedNullable<Date>;
   };
   resource_metering_events: {
     id: string;

@@ -1,12 +1,16 @@
 import type { Database } from "@pi-cloud/database";
 import { operationalLog, type PiCloudMetrics } from "@pi-cloud/observability";
-import { KafkaToolReplyPublisher, ToolProgressPublisher } from "@pi-cloud/event-log";
+import {
+  KafkaToolReplyPublisher,
+  ToolProgressPublisher,
+  toolReplyTopic,
+} from "@pi-cloud/event-log";
 import {
   encodeSessionImages,
   type ConfiguredImageAttachments,
 } from "@pi-cloud/session-attachments";
 import { parseExecutionReference } from "@pi-cloud/protocol";
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 import { setTimeout as delay } from "node:timers/promises";
 import { loadSandboxControlConfig } from "./sandbox-control-config.ts";
 import { createCubeRuntimeTransport } from "./cube-runtime-transport.ts";
@@ -22,9 +26,13 @@ import { WorkflowCommandDispatcher } from "./workflow-command-dispatcher.ts";
 import { ToolCommandDispatcher, type ToolLogDelivery } from "./tool-command-dispatcher.ts";
 import { CubeSandboxToolExecutor } from "./cubesandbox-tool-executor.ts";
 import { ToolEnvironmentCoordinator } from "./tool-environment-coordinator.ts";
+import { EnvironmentRecovery } from "./environment-recovery.ts";
 import { SandboxControlClient } from "./sandbox-control-client.ts";
 import { ExecutionPathProbes } from "./execution-path-probes.ts";
 import { RuntimeRetention } from "./runtime-retention.ts";
+import { ExecutionMaintenance } from "./execution-maintenance.ts";
+import { ToolCompletionIssuer } from "./tool-completion-issuer.ts";
+import { readFile } from "node:fs/promises";
 import { quarantineExecutionTarget } from "./runtime-quarantine.ts";
 import { relayWorkflowAttachment } from "./workflow-attachment-relay.ts";
 
@@ -64,6 +72,15 @@ export async function createSandboxSessionRuntime(options: {
   try {
     const { client, provider } = await createCubeRuntimeTransport(config);
     cleanup.push(() => provider.close());
+    const completion = new ToolCompletionIssuer({
+      url:
+        process.env.PI_CLOUD_TOOL_COMPLETION_URL ?? "https://tool-completion:4320/v1/completions",
+      ca: await readFile(
+        process.env.PI_CLOUD_COMPLETION_CA_FILE ?? "/run/pi-cloud-completion/ca.crt",
+        "utf8",
+      ),
+      secret: options.managementToken,
+    });
     const bindings = new PostgresSandboxBindings(
       options.publicationDatabase,
       config.sandboxDomainId,
@@ -145,6 +162,7 @@ export async function createSandboxSessionRuntime(options: {
     const probes = new ExecutionPathProbes({
       routes: bindingView,
       cube: client,
+      completion,
       sample: (stage, ms, outcome) =>
         metrics.sandboxDuration.observe({ operation: `path_${stage}`, outcome }, ms / 1000),
       diagnostic: (runId, stage, reason) =>
@@ -159,26 +177,6 @@ export async function createSandboxSessionRuntime(options: {
     });
     cleanup.push(() => probes.close());
     const retention = new RuntimeRetention({
-      resolve: async (scope, resource, observedAt) => {
-        // Bootstrap each admitted writer/resource reference once; pulses use
-        // the resolved physical identity until an ordered binding change.
-        let query = database
-          .selectFrom("workspace_runtimes")
-          .select(["workspace_runtime_id", "runtime_capsule"])
-          .where("tenant_id", "=", scope.tenantId)
-          .where("workspace_id", "=", resource.workspaceId)
-          .where("allocation_closed", "=", false)
-          .where("created_at", "<=", new Date(observedAt))
-          .where("state", "in", ["allocated"])
-          .where("runtime_capsule", "is not", null);
-        query = resource.computeSessionId
-          ? query.where("compute_session_id", "=", resource.computeSessionId)
-          : query.where("compute_session_id", "is", null);
-        const row = await query.executeTakeFirst();
-        return row?.runtime_capsule
-          ? { id: row.workspace_runtime_id, capsule: row.runtime_capsule }
-          : undefined;
-      },
       renew: async (target, observedAt) => {
         const start = performance.now();
         let outcome = "confirmed";
@@ -196,9 +194,17 @@ export async function createSandboxSessionRuntime(options: {
       },
     });
     cleanup.push(() => retention.close());
+    const maintenance = new ExecutionMaintenance({
+      database,
+      bindings: bindingView,
+      retention,
+      probes,
+      managementToken: options.managementToken,
+    });
+    cleanup.push(() => maintenance.close());
     const dispatcher = new ToolCommandDispatcher({
       routes: bindingView,
-      executor: new CubeSandboxToolExecutor(client),
+      executor: new CubeSandboxToolExecutor(client, completion),
       environments,
       metrics,
       onDispatch: (command, route) => probes.rememberTool(command, route),
@@ -327,6 +333,27 @@ export async function createSandboxSessionRuntime(options: {
           : execution.attachWorkflow(id, operation, reference, send, signal);
       },
     };
+    const environmentOwner = async (id: string) => {
+      if (bindingView.owner(id)) return;
+      const owner = await options.ownerForPartition(options.partitionFor(id));
+      if (!owner)
+        throw new SandboxControlError(
+          "environment_owner_pending",
+          "Session partition is unavailable",
+          true,
+        );
+      const url = new URL(owner);
+      url.port = String(config.port);
+      return url.toString();
+    };
+    const recovery = new EnvironmentRecovery({
+      database,
+      environments,
+      owner: (id) => bindingView.owner(id),
+      probe: async (binding) => {
+        await client.probeExecution(binding.descriptor.target, crypto.randomUUID());
+      },
+    });
     const server = new SandboxControlServer({
       host: config.host,
       port: config.port,
@@ -339,15 +366,12 @@ export async function createSandboxSessionRuntime(options: {
       readiness: () => started && !closing,
       metrics,
       routeBinding: waitBinding,
+      environmentRecovery: {
+        route: environmentOwner,
+        recover: (environment, signal) => recovery.recover(environment, signal),
+      },
       environmentImages: {
-        route: async (id) => {
-          if (bindingView.owner(id)) return;
-          const owner = await options.ownerForPartition(options.partitionFor(id));
-          if (!owner) throw new Error("Session partition is unavailable");
-          const url = new URL(owner);
-          url.port = String(config.port);
-          return url.toString();
-        },
+        route: environmentOwner,
         prepare: async ({ environment, images }, signal) => {
           const current = bindingView.owner(environment.piSessionId);
           if (!current) throw new Error("Session partition owner changed");
@@ -394,6 +418,7 @@ export async function createSandboxSessionRuntime(options: {
     await server.listen();
     return {
       retention,
+      maintenance,
       dispatcher,
       probes,
       bindingView,
@@ -407,8 +432,6 @@ export async function createSandboxSessionRuntime(options: {
         position: import("@pi-cloud/protocol").ExecutionLogPosition,
       ) => {
         await bindingView.consume(change, current);
-        if (change.entity === "sandbox_binding")
-          retention.invalidateSession(change.scope.tenantId, change.scope.piSessionId);
         if (change.entity !== "sandbox_binding" || !change.closed || !current()) return;
         await dispatcher.cancelRetiredBinding(change, position, current);
         // Interactive channels belong to this Projector, independent of resource-owner liveness.
@@ -429,6 +452,42 @@ export async function createSandboxSessionRuntime(options: {
           offset: BigInt(position.offset),
         });
         await execution.closeBinding(change.entityId);
+        // Routing withdrawal is authoritative; a missing probe is not. Deliver
+        // this rare control observation through the existing Worker mailbox.
+        const owner = await database
+          .selectFrom("active_execution_scopes as e")
+          .innerJoin("workers as w", "w.id", "e.worker_id")
+          .select([
+            "e.tenant_id",
+            "e.pi_session_id",
+            "e.session_id",
+            "e.turn_id",
+            "e.run_id",
+            "e.writer_id",
+            "e.fencing_token",
+            "w.boot_id",
+          ])
+          .where("e.tenant_id", "=", change.scope.tenantId)
+          .where("e.pi_session_id", "=", change.scope.piSessionId)
+          .where("e.run_id", "=", change.runId)
+          .where("e.accepting_effects", "=", true)
+          .where("e.valid_until", ">", sql<Date>`clock_timestamp()`)
+          .executeTakeFirst();
+        if (owner && current())
+          await replies.publish(toolReplyTopic(owner.boot_id), {
+            kind: "environment_changed",
+            changeId: change.factId,
+            bindingId: change.entityId,
+            scope: {
+              tenantId: owner.tenant_id,
+              piSessionId: owner.pi_session_id,
+              sessionId: owner.session_id,
+              turnId: owner.turn_id,
+              runId: owner.run_id,
+              writerId: owner.writer_id,
+              fencingToken: Number(owner.fencing_token),
+            },
+          });
       },
       quiescence: () => ({
         active: execution.activeCount + workflows.statistics().activeCommands,
@@ -441,6 +500,7 @@ export async function createSandboxSessionRuntime(options: {
       start: async () => {
         if (closing) throw new Error("Session execution is closing");
         started = true;
+        maintenance.start();
       },
       close,
     };

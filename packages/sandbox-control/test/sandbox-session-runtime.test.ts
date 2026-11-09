@@ -1,7 +1,10 @@
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import type { Database } from "@pi-cloud/database";
 import { PiCloudMetrics } from "@pi-cloud/observability";
 import type { Kysely } from "kysely";
-import { afterEach, expect, it, vi } from "vitest";
+import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { SandboxControlServer } from "../src/sandbox-control-server.ts";
 
 const calls = vi.hoisted(() => ({
@@ -42,7 +45,19 @@ vi.mock("@pi-cloud/event-log", async (original) => ({
 }));
 import { createSandboxSessionRuntime } from "../src/sandbox-session-runtime.ts";
 
-afterEach(() => vi.restoreAllMocks());
+let directory: string;
+beforeEach(async () => {
+  vi.clearAllMocks();
+  directory = await mkdtemp(join(tmpdir(), "session-completion-ca-"));
+  const ca = join(directory, "ca.pem");
+  await writeFile(ca, "fixture-ca");
+  vi.stubEnv("PI_CLOUD_COMPLETION_CA_FILE", ca);
+});
+afterEach(async () => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+  await rm(directory, { recursive: true, force: true });
+});
 
 it("opens its real listener before bootstrap, advertises readiness only after start, and closes cleanly", async () => {
   const listen = vi.spyOn(SandboxControlServer.prototype, "listen");
@@ -75,4 +90,23 @@ it("opens its real listener before bootstrap, advertises readiness only after st
   await expect(runtime.start()).rejects.toThrow("closing");
   expect(calls.replyClose).toHaveBeenCalledOnce();
   expect(calls.providerClose).toHaveBeenCalledOnce();
+});
+
+it("releases the provider if callback credential loading fails before the listener opens", async () => {
+  vi.stubEnv("PI_CLOUD_COMPLETION_CA_FILE", join(directory, "missing.pem"));
+  await expect(
+    createSandboxSessionRuntime({
+      database: {} as Kysely<Database>,
+      publicationDatabase: {} as Kysely<Database>,
+      instanceId: "fixture-instance",
+      managementToken: "fixture-management".repeat(4),
+      metrics: new PiCloudMetrics("session-failed-bootstrap-test"),
+      publishBindingChanges: async () => {},
+      partitionFor: () => 0,
+      partitionCount: 1,
+      ownerForPartition: async () => undefined,
+    }),
+  ).rejects.toThrow("ENOENT");
+  expect(calls.providerClose).toHaveBeenCalledOnce();
+  expect(calls.replyStart).not.toHaveBeenCalled();
 });

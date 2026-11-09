@@ -113,8 +113,9 @@ Before a Tool executes, Pi commits complete model output, validates arguments
 and runs its before-Tool processing. The fixed Tool execute checkpoint and compact
 cloud dispatch share one native commit. Projector materializes that intent and
 confirms the monotonic dispatch offset before calling Cube. Projection replay
-never repeats arbitrary shell work. Cube owns accepted execution and final
-boot-scoped Kafka reply delivery; Worker Pi processing owns the canonical result.
+never repeats arbitrary shell work. Cube retains accepted execution admission;
+the fixed Guest delivers over HTTPS to the original Kafka reply destination.
+Worker Pi processing owns the canonical result.
 
 The first required Tool binding prepares or reuses the Workspace's Cube VM.
 Different Sessions may share that VM. Control Plane owns lifecycle/admission;
@@ -191,11 +192,16 @@ initializes the same Kafka transactional ID, rechecks the closure intent and
 publishes under its Projector group guard. Projector commits exact handoff state
 and closure proof before a fresh PG lease may resume the same Run/submission.
 
-An interrupted unsafe Tool receives native interruption settlement and is never
-automatically rerun. A stopped recovering Run opens only to record abort, with
+For fixed remote Tools, the public replay-safe proxy re-enters only the original
+result wait. Pending native references retain replies and images until canonical
+settlement; consuming a reply is not settlement. Other unsafe Tools retain native
+interruption semantics and are never automatically rerun. A stopped recovering Run opens only to record abort, with
 model/effect ports gated. An already committed native result is reused. The new
 owner may be on the original Worker or another one; native task state cannot
-self-authorize either.
+self-authorize either. If the environment is unavailable, the same Run waits for
+verified readiness under the current lease and records any reset before its next
+Agent model request. Worker replacement never resets an operation deadline or
+introduces a new overall Run duration limit.
 
 Abnormal VM cleanup retains immutable recorded-node targets in the existing
 control Outbox. Quota release requires positive physical absence. Normal Tool

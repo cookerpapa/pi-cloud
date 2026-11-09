@@ -16,6 +16,7 @@ import type { CubeSandboxRuntimeClient } from "./cubesandbox-runtime-client.ts";
 import { CubeExecutionRejected } from "./cubesandbox-runtime-client.ts";
 import { executionTargetId } from "./sandbox-execution.ts";
 import PQueue from "p-queue";
+import type { ToolCompletionIssuer } from "./tool-completion-issuer.ts";
 
 type Bound = { scope: RuntimeObservationScope; route: SandboxBinding; touched: number };
 type Pending = Bound & {
@@ -37,7 +38,6 @@ export class ExecutionPathProbes {
   #observer: ExecutionProbeObserver | undefined;
   readonly #bindings = new Map<string, Bound>();
   readonly #pending = new Map<string, Pending>();
-  readonly #families = new Map<string, number>();
   readonly #physical = new Map<string, number>();
   readonly #active = new Set<Promise<unknown>>();
   readonly #handoffs = new PQueue({ concurrency: 4 });
@@ -48,6 +48,7 @@ export class ExecutionPathProbes {
     readonly options: {
       routes: SandboxBindingReader;
       cube: Pick<CubeSandboxRuntimeClient, "submitProbe">;
+      completion: Pick<ToolCompletionIssuer, "issue">;
       runtimeEvidence(route: SandboxBinding, observedAt: number): Promise<void>;
       sample?(stage: "handoff" | "round_trip", durationMs: number, outcome: string): void;
       diagnostic?(runId: string, stage: "projector" | "cube", reason: string): void;
@@ -64,7 +65,6 @@ export class ExecutionPathProbes {
     this.#generation++;
     this.#pending.clear();
     this.#bindings.clear();
-    this.#families.clear();
     this.#physical.clear();
   }
   #now(): number {
@@ -98,11 +98,9 @@ export class ExecutionPathProbes {
       !this.#valid(fact.scope) ||
       !current() ||
       at < now - RUN_OBSERVATION_STALE_MS ||
-      at > now + 5000 ||
-      at <= (this.#families.get(fact.scope.writerId) ?? -1)
+      at > now + 5000
     )
       return;
-    this.#families.set(fact.scope.writerId, at);
     const bindings = fact.execution?.bindings ?? [];
     if (
       bindings.some(
@@ -226,13 +224,18 @@ export class ExecutionPathProbes {
               probeId: fact.factId,
               executionScopeId: first.route.bindingId,
               writerId: first.scope.writerId,
-              completionContext: {
-                kind: "execution_probe",
-                replyTopic: fact.execution!.replyTopic,
-                sentAt,
-                bindingIds: group.map((p) => p.route.bindingId),
-                execution: { bindingId: first.route.bindingId, targetId, bootId: target.bootId },
-              },
+              completionContext: await this.options.completion.issue({
+                operationId: fact.factId,
+                issuer: "guest",
+                expiresAt: sentAt + EXECUTION_PROBE_TIMEOUT_MS,
+                context: {
+                  kind: "execution_probe",
+                  replyTopic: fact.execution!.replyTopic,
+                  sentAt,
+                  bindingIds: group.map((p) => p.route.bindingId),
+                  execution: { bindingId: first.route.bindingId, targetId, bootId: target.bootId },
+                },
+              }),
             });
             return true;
           });
@@ -400,7 +403,6 @@ export class ExecutionPathProbes {
       }
     for (const [key, bound] of this.#bindings)
       if (now - bound.touched > 300_000 || !this.#valid(bound.scope)) this.#bindings.delete(key);
-    for (const [key, at] of this.#families) if (now - at > 300_000) this.#families.delete(key);
     for (const [key, at] of this.#physical) if (now - at > 300_000) this.#physical.delete(key);
   }
   async close(): Promise<void> {
@@ -409,7 +411,6 @@ export class ExecutionPathProbes {
     await Promise.allSettled([...this.#active]);
     this.#pending.clear();
     this.#bindings.clear();
-    this.#families.clear();
     this.#physical.clear();
   }
 }

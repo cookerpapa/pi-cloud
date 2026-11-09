@@ -6,6 +6,8 @@ import {
   type RuntimeObservationScope,
   EXECUTION_OBSERVATION_PATH,
   EXECUTION_READINESS_PATH,
+  EXECUTION_PROBE_REQUEST_PATH,
+  type PathProbe,
   RUN_OBSERVATION_STALE_MS,
   type ExecutionObservationDelivery,
 } from "@pi-cloud/protocol";
@@ -106,6 +108,12 @@ export class RunActivityPublisher {
       this.#executions.set(observationKey(delivery.scope), delivery);
   }
   /** Fault-path read only; the caller's deadline covers probing and this confirmation. */
+  async requestProbe(fact: PathProbe, partition: number, signal: AbortSignal): Promise<boolean> {
+    for (let attempt = 0; attempt < 2 && !signal.aborted; attempt++)
+      if (await this.#post(EXECUTION_PROBE_REQUEST_PATH, partition, fact, signal)) return true;
+    return false;
+  }
+
   async confirmExecution(
     delivery: ExecutionObservationDelivery,
     signal: AbortSignal,

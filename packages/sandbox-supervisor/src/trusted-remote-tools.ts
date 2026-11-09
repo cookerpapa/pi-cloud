@@ -13,7 +13,10 @@ import {
   ToolExecutionFailure,
   ToolResultAttachmentError,
   type ToolReplyWait,
+  type ToolReplyRecovery,
+  TOOL_REPLY_DELIVERY_MARGIN_MS,
 } from "@pi-cloud/protocol";
+import { isDeepStrictEqual } from "node:util";
 import type { Message } from "@earendil-works/pi-ai";
 import type { ProviderHeaders } from "@earendil-works/pi-ai";
 import { fixedRemoteToolDefinitions } from "./fixed-remote-tool-definitions.ts";
@@ -36,8 +39,6 @@ import {
   permitsReadinessCheck,
 } from "./tool-execution-outcome.ts";
 
-export const REMOTE_TOOL_REPLY_MARGIN_MS = 120_000;
-
 type RemoteOperationInput<T = ToolSandboxOperationRequest> = T extends unknown
   ? Omit<
       T,
@@ -54,12 +55,17 @@ type RemoteOperationInput<T = ToolSandboxOperationRequest> = T extends unknown
   : never;
 
 export type TrustedRemoteToolsRuntimeConfiguration = {
+  recordExecution?: (
+    evidence: import("@pi-cloud/protocol").ExecutionEvidence,
+    originalWriterId?: string,
+  ) => Promise<void>;
   observeToolDuration?: (seconds: number, outcome: "completed" | "failed") => void;
   waitForToolReply?: (
     request: ToolSandboxOperationRequest,
     signals: { receipt: AbortSignal; lifetime: AbortSignal },
     toolCallId?: string,
     imageScope?: { tenantId: string; runId: string },
+    recovery?: ToolReplyRecovery,
   ) => ToolReplyWait<NativeToolEnd>;
   confirmExecution?: (bindingId: string, signal: AbortSignal) => Promise<boolean>;
   workflowUrl?: string;
@@ -211,6 +217,7 @@ function validateRuntimeConfiguration(
     throw new Error("Trusted trace state is invalid");
   }
   return {
+    ...(candidate.recordExecution ? { recordExecution: candidate.recordExecution } : {}),
     ...(candidate.observeToolDuration
       ? { observeToolDuration: candidate.observeToolDuration }
       : {}),
@@ -310,7 +317,7 @@ export function createTrustedRemoteAgentTools(
     });
     signal?.throwIfAborted();
     const pendingAbort = new AbortController();
-    const replyDeadline = AbortSignal.timeout(candidate.timeoutMs + REMOTE_TOOL_REPLY_MARGIN_MS);
+    const replyDeadline = AbortSignal.timeout(candidate.timeoutMs + TOOL_REPLY_DELIVERY_MARGIN_MS);
     const lifetime = AbortSignal.any([pendingAbort.signal, ...(signal ? [signal] : [])]);
     const replySignal = AbortSignal.any([lifetime, replyDeadline]);
     if (!runtime.waitForToolReply) throw new Error("Native Tool reply transport is unavailable");
@@ -395,6 +402,9 @@ export function createTrustedRemoteAgentTools(
       result: async () => {
         if (candidate.operation === "tool.execute") {
           const event = await pending.result.catch(failTransport);
+          const evidence = pending.executionEvidence?.();
+          if (evidence && evidence.bindingId === target.activationId)
+            await runtime.recordExecution?.(evidence);
           continuedAfterUnknown = false;
           return {
             toolBrokerProtocolVersion: 1,
@@ -451,6 +461,62 @@ export function createTrustedRemoteAgentTools(
       ...tool,
       async execute() {
         throw new Error("Remote Tool must be prepared and committed by the trusted Runner");
+      },
+      async prepareRecovery(id, params, signal, original) {
+        signal?.throwIfAborted();
+        if (
+          !original ||
+          original.reply.toolCallId !== id ||
+          original.reply.toolName !== tool.name ||
+          original.command.request.operation !== "tool.execute" ||
+          !isDeepStrictEqual(original.command.request.args, params) ||
+          !runtime.waitForToolReply
+        )
+          throw new Error("Remote Tool recovery has no matching original operation");
+        const controller = new AbortController();
+        const lifetime = AbortSignal.any([controller.signal, ...(signal ? [signal] : [])]);
+        const pending = runtime.waitForToolReply(
+          original.command.request,
+          { receipt: lifetime, lifetime },
+          id,
+          undefined,
+          original.reply,
+        );
+        void pending.result.catch(() => {});
+        return {
+          command: {
+            executionReference: runtime.executionReference,
+            originalWriterId: original.command.scope.writerId,
+            toolCallId: toolInvocationId(id),
+            request: original.command.request,
+            replyTopic: original.reply.topic,
+            replyRecovery: original.reply,
+            occurredAt: original.command.occurredAt,
+          },
+          completed: pending.executionSettled,
+          dispose: () => controller.abort(new Error("Recovered Tool wait closed")),
+          result: async () => {
+            const event = await pending.result.catch(async (error: unknown): Promise<never> => {
+              if (signal?.aborted) throw signal.reason;
+              if (error instanceof ToolResultAttachmentError) throw error;
+              const failure = toolTransportFailure(error);
+              if (blocksToolSampling(failure)) await runtime.onToolOperationUnavailable?.(failure);
+              throw failure;
+            });
+            const evidence = pending.executionEvidence?.();
+            if (evidence && evidence.bindingId === original.command.request.activationId)
+              await runtime.recordExecution?.(evidence, original.command.scope.writerId);
+            if (
+              !runtime.supportsImages &&
+              event.result.content.some((part) => part.type === "image")
+            )
+              throw new Error("The selected model does not support image input");
+            return {
+              ...event.result,
+              isError: event.isError,
+            } as import("@earendil-works/pi-durable").ToolExecutionResult;
+          },
+        };
       },
       async prepareExecution(id, params, signal) {
         consumeToolCall();

@@ -14,7 +14,10 @@ const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000;
 export type SessionEventStreamOptions = Readonly<{
   heartbeatIntervalMs?: number;
   sendTimeoutMs?: number;
+  remote?: Readonly<{ baseUrl: string; token: string }>;
 }>;
+
+export const INTERNAL_SESSION_EVENTS_PATH = "/internal/v1/session-events";
 
 export interface LiveSessionTailSource {
   owner?(tenantId: string, sessionId: string): Promise<string | undefined>;
@@ -172,9 +175,27 @@ export class OpenSessionEventStream {
       this.#subscription.close();
     }
   }
+
+  close(): void {
+    this.#subscription.close();
+  }
 }
 
 export class SessionEventStream {
+  readonly #remote: SessionEventStreamOptions["remote"];
+  remoteTarget(
+    tenantId: string,
+    sessionId: string,
+  ): { url: URL; headers: Record<string, string> } | undefined {
+    if (!this.#remote) return;
+    return {
+      url: new URL(
+        `${INTERNAL_SESSION_EVENTS_PATH}/${encodeURIComponent(tenantId)}/${encodeURIComponent(sessionId)}`,
+        this.#remote.baseUrl,
+      ),
+      headers: { authorization: `Bearer ${this.#remote.token}` },
+    };
+  }
   owner(tenantId: string, sessionId: string): Promise<string | undefined> {
     return this.#tails.owner?.(tenantId, sessionId) ?? Promise.resolve(undefined);
   }
@@ -190,6 +211,7 @@ export class SessionEventStream {
   ) {
     this.#tails = tails;
     this.#hub = hub;
+    this.#remote = options.remote;
     this.#heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
     this.#sendTimeoutMs = options.sendTimeoutMs ?? SESSION_STREAM_SEND_TIMEOUT_MS;
     if (!Number.isSafeInteger(this.#heartbeatIntervalMs) || this.#heartbeatIntervalMs < 1) {

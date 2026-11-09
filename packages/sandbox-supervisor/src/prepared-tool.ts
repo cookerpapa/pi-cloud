@@ -1,5 +1,5 @@
 import type { ToolRegistration, ToolExecutionResult } from "@earendil-works/pi-durable";
-import type { CandidateToolEffect } from "@pi-cloud/protocol";
+import type { CandidateToolEffect, OriginalRemoteToolIntent } from "@pi-cloud/protocol";
 
 /** Owned adapter boundary, reached by the Runner only after native Pi validation. */
 export type PreparedToolExecution = Readonly<{
@@ -19,5 +19,6 @@ export type PreparedAgentTool = ToolRegistration & {
     callId: string,
     args: unknown,
     signal?: AbortSignal,
+    original?: OriginalRemoteToolIntent,
   ) => Promise<PreparedToolExecution>;
 };

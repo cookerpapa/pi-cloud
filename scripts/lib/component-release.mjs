@@ -4,6 +4,7 @@ import {
   modelTests,
   ordinaryControlToolSource,
   sessionDecoderSource,
+  sessionApiSource,
   imageReleaseTargets,
   providerSources,
 } from "./release-impact.mjs";
@@ -147,7 +148,7 @@ export function scopedApplyState({ baseline, next, current, helmRevision, before
 /** Source classifications are deliberately small; protocol changes use matched release. */
 export function assertScopedSources(scope, files) {
   assert(
-    ["provider", "catalog", "web", "tool-host", "session-decoder"].includes(scope),
+    ["provider", "catalog", "web", "tool-host", "session-decoder", "session-api"].includes(scope),
     "Unknown release scope",
   );
   for (const file of files) {
@@ -157,6 +158,7 @@ export function assertScopedSources(scope, files) {
         (scope === "tool-host" &&
           file === "deploy/helm/pi-cloud-platform/templates/network-policy.yaml") ||
         (scope === "session-decoder" && file === sessionDecoderSource) ||
+        (scope === "session-api" && sessionApiSource(file)) ||
         (scope === "web" &&
           (/^packages\/web-ui\/src\/.*\.(tsx|css)$/.test(file) ||
             [
@@ -318,7 +320,7 @@ export function assertScopedManifests(scope, before, after, desired) {
       if (!expected.spec.egress.some((item) => isDeepStrictEqual(item, rule)))
         expected.spec.egress.unshift(rule);
     } else if (
-      ["web", "tool-host", "session-decoder"].includes(scope) &&
+      ["web", "tool-host", "session-decoder", "session-api"].includes(scope) &&
       old.kind === "Deployment" &&
       old.metadata.name === imageReleaseTargets[scope].workload.split("/")[1]
     ) {
@@ -355,6 +357,8 @@ export function assertScopedManifests(scope, before, after, desired) {
 export const sharedHostRoles = {
   "control-plane": { workload: "pi-cloud-control-plane", container: "control-plane" },
   "session-runtime": { workload: "pi-cloud-session-runtime", container: "session-runtime" },
+  "session-api": { workload: "pi-cloud-session-api", container: "session-api" },
+  "tool-completion": { workload: "pi-cloud-tool-completion", container: "tool-completion" },
   metering: { workload: "pi-cloud-metering", container: "metering" },
   "tool-host": { workload: "pi-cloud-tool-host", container: "tool-host" },
 };
@@ -364,6 +368,8 @@ export function assertServingComponents(deployment, resources, alternative) {
   // introduce another role; scoped publication separately requires its contract.
   const requiredRoles = ["control-plane", "session-runtime", "metering"];
   if (deployment.contracts?.toolHostReplacement === 1) requiredRoles.push("tool-host");
+  if (deployment.contracts?.sessionApiReplacement === 1) requiredRoles.push("session-api");
+  if (deployment.contracts?.guestHttpCompletion === 1) requiredRoles.push("tool-completion");
   for (const role of requiredRoles)
     assert(
       deployment.components[role],
@@ -418,9 +424,7 @@ export function deploymentFromEvidence({
       sourceRevision: image.provenance.sourceRevision,
       evidence: { directory: evidenceDirectory, manifestSha256: digest(evidence) },
     };
-    for (const role of name === "control-plane"
-      ? ["control-plane", "session-runtime", "metering", "tool-host"]
-      : [name]) {
+    for (const role of name === "control-plane" ? Object.keys(sharedHostRoles) : [name]) {
       assert(!components[role], "Duplicate role provenance");
       components[role] = structuredClone(component);
     }

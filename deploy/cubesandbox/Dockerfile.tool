@@ -57,6 +57,7 @@ COPY packages/protocol/src/development-environment-profile.ts \
   packages/protocol/src/execution-reference.ts \
   packages/protocol/src/guest-directory.ts \
   packages/protocol/src/guest.ts \
+  packages/protocol/src/completion-transport.ts \
   packages/protocol/src/image-attachment.ts \
   packages/protocol/src/attachment-reference.ts \
   packages/protocol/src/native-tool-event.ts \

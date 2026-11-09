@@ -2,10 +2,15 @@ import { CubeSandboxProvider } from "./cubesandbox-sandbox-provider.ts";
 import { OfficialCubeSandboxRuntimeClient } from "./cubesandbox-runtime-client.ts";
 import { HttpWorkspaceVolumeGateway } from "./workspace-volume-gateway.ts";
 import type { SandboxControlConfig } from "./sandbox-control-config.ts";
+import { lookup } from "node:dns/promises";
 
 /** Each process owns its transport clients; only management receives lifecycle consumers. */
 export async function createCubeRuntimeTransport(config: SandboxControlConfig) {
   const cube = config.cubeSandbox;
+  const completion = new URL(
+    process.env.PI_CLOUD_TOOL_COMPLETION_URL ?? "https://tool-completion:4320/v1/completions",
+  );
+  const completionIp = (await lookup(completion.hostname, { family: 4 })).address;
   const client = new OfficialCubeSandboxRuntimeClient({
     apiUrl: cube.apiUrl,
     apiKey: cube.apiKey,
@@ -15,6 +20,7 @@ export async function createCubeRuntimeTransport(config: SandboxControlConfig) {
     proxyScheme: cube.proxyScheme,
     sandboxDomain: cube.sandboxDomain,
     egressProxyIp: cube.egressProxyHost,
+    completionIp,
     directPrivateCidrs: [...cube.directPrivateCidrs],
     requestTimeoutMs: cube.requestTimeoutMs,
   });

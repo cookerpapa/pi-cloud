@@ -82,7 +82,7 @@ export async function purgeOwnedAcceptanceTenant(
     );
   };
   await assertSettled(database);
-  const delivered = await awaitReceiptDelivery({ tenantId: tenant.tenantId, signal });
+  const delivered = await awaitReceiptDelivery({ tenantId: tenant.tenantId, database, signal });
   assert(
     delivered?.verified === true && delivered.tenantId === tenant.tenantId,
     "Acceptance receipt delivery is not verified for this tenant",

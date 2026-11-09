@@ -180,6 +180,16 @@ it("records a new Tool-host role from one host artifact and retains management, 
         sourceRevision: "runtime-source",
         reference: "pi-cloud/control-plane:old",
       },
+      "session-api": {
+        imageId: "old",
+        sourceRevision: "api-source",
+        reference: "pi-cloud/control-plane:old",
+      },
+      "tool-completion": {
+        imageId: "old",
+        sourceRevision: "completion-source",
+        reference: "pi-cloud/control-plane:old",
+      },
       metering: {
         imageId: "old",
         sourceRevision: "metering-source",
@@ -625,7 +635,9 @@ it("expands one scanned artifact to independent role provenance without extra bu
   expect(Object.keys(record.components).sort()).toEqual([
     "control-plane",
     "metering",
+    "session-api",
     "session-runtime",
+    "tool-completion",
     "tool-host",
   ]);
   for (const component of Object.values(record.components))

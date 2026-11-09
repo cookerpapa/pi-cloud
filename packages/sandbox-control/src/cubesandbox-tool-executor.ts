@@ -1,5 +1,5 @@
 import {
-  MAX_IMAGE_GUEST_RESPONSE_BYTES,
+  TOOL_REPLY_DELIVERY_MARGIN_MS,
   type AcceptedToolCommand,
   type ExecutionLogPosition,
   type ToolExecutionFailureData,
@@ -17,17 +17,49 @@ import type {
   ToolExecutionCancellation,
   ToolHandoffFailure,
 } from "./tool-executor.ts";
+import type { ToolCompletionIssuer } from "./tool-completion-issuer.ts";
 
 /** Native Cube wire and refusal semantics remain behind the complete-Tool port.
  * Cubelet, not this disposable client, owns an accepted execution and reply. */
 export class CubeSandboxToolExecutor implements SandboxToolExecutor {
-  constructor(readonly client: Pick<CubeSandboxRuntimeClient, "submitTool" | "cancelTool">) {}
+  constructor(
+    readonly client: Pick<CubeSandboxRuntimeClient, "submitTool" | "cancelTool">,
+    readonly completion: Pick<ToolCompletionIssuer, "issue">,
+  ) {}
 
-  submit(
+  async submit(
     binding: SandboxBinding,
     command: AcceptedToolCommand,
     source: ExecutionLogPosition,
   ): Promise<void> {
+    const context = {
+      execution: {
+        bindingId: binding.bindingId,
+        targetId: executionTargetId(binding.descriptor.target),
+        bootId: binding.descriptor.target.bootId,
+        continuityId: binding.snapshot.physicalActivationId,
+        ...(binding.snapshot.continuity ? { continuity: binding.snapshot.continuity } : {}),
+      },
+      scope: command.scope,
+      replyTopic: command.replyTopic!,
+      toolCallId: command.toolCallId,
+      nativeToolCallId: command.request.toolCallId,
+      toolName: command.request.toolName,
+      partition: source.partition,
+    };
+    const grant = {
+      operationId: command.request.operationId,
+      context,
+      expiresAt:
+        command.replyRecovery?.deadlineAt ??
+        Date.parse(command.occurredAt) + command.request.timeoutMs + TOOL_REPLY_DELIVERY_MARGIN_MS,
+    };
+    const [guest, executor] = await Promise.all([
+      this.completion.issue({ ...grant, issuer: "guest" }),
+      this.completion.issue({ ...grant, issuer: "executor" }),
+    ]).catch(() => {
+      throw new CubeExecutionRejected("execution_endpoint_unconfigured");
+    });
     return this.client.submitTool(binding.descriptor.target, {
       source,
       operationId: command.request.operationId,
@@ -38,25 +70,11 @@ export class CubeSandboxToolExecutor implements SandboxToolExecutor {
         type: "worker.operation",
         attachment: binding.descriptor.attachment,
         request: command.request,
+        delivery: guest,
       },
-      completionContext: {
-        execution: {
-          bindingId: binding.bindingId,
-          targetId: executionTargetId(binding.descriptor.target),
-          bootId: binding.descriptor.target.bootId,
-          continuityId: binding.snapshot.physicalActivationId,
-          ...(binding.snapshot.continuity ? { continuity: binding.snapshot.continuity } : {}),
-        },
-        scope: command.scope,
-        replyTopic: command.replyTopic,
-        toolCallId: command.toolCallId,
-        nativeToolCallId: command.request.toolCallId,
-        toolName: command.request.toolName,
-        partition: source.partition,
-      },
-      timeoutMs: command.request.timeoutMs + 5000,
-      maximumOutputBytes:
-        command.request.toolName === "read" ? MAX_IMAGE_GUEST_RESPONSE_BYTES : 8 * 1024 * 1024,
+      completionContext: executor,
+      timeoutMs: command.request.timeoutMs + TOOL_REPLY_DELIVERY_MARGIN_MS,
+      maximumOutputBytes: 64 * 1024,
     });
   }
 

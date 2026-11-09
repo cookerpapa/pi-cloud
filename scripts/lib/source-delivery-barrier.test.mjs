@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, it } from "vitest";
 import {
-  parseComputeDeliveryMetrics,
+  parseComputeCaptureMetrics,
   waitForOwnedReceiptDelivery,
 } from "./source-delivery-barrier.mjs";
 
@@ -145,28 +145,20 @@ it("honors cancellation before receipt purge can be authorized", async () => {
   expect(f.reads()).toBe(0);
 });
 
-it("parses bounded boot-scoped metrics and preserves an unavailable barrier", () => {
+it("keeps raw capture counters separate from delivery evidence", () => {
   const text = [
-    'picloud_resource_metering_collection_cycles_total{boot_id="boot-1",source_id="node-1"} 12',
-    'picloud_resource_metering_delivery_barrier{boot_id="boot-1",source_id="node-1"} NaN',
-    "picloud_resource_metering_capture_failures_total 0",
+    'picloud_lifecycle_collection_cycles_total{boot_id="boot-1",source_id="epoch-1"} 12',
+    "picloud_lifecycle_capture_failures_total 0",
   ].join("\n");
-  expect(parseComputeDeliveryMetrics(text, "pod-1")).toEqual({
-    sourceId: "node-1",
+  expect(parseComputeCaptureMetrics(text, "pod-1")).toEqual({
+    sourceId: "epoch-1",
     bootId: "boot-1",
     podId: "pod-1",
     completedCycles: 12,
-    deliveredCycles: null,
     captureFailures: 0,
   });
-  expect(parseComputeDeliveryMetrics(text.replace(" NaN", " 12"), "pod-1").deliveredCycles).toBe(
-    12,
-  );
   expect(() =>
-    parseComputeDeliveryMetrics(
-      text + "\npicloud_resource_metering_collection_cycles_total 13",
-      "pod-1",
-    ),
+    parseComputeCaptureMetrics(text + "\npicloud_lifecycle_collection_cycles_total 13", "pod-1"),
   ).toThrow("ambiguous");
-  expect(() => parseComputeDeliveryMetrics("", "pod-1")).toThrow("Missing");
+  expect(() => parseComputeCaptureMetrics("", "pod-1")).toThrow("Missing");
 });

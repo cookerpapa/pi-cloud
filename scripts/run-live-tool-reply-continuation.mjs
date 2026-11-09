@@ -13,6 +13,7 @@ import {
   settleOwnedAcceptanceRuns,
 } from "./lib/owned-acceptance-cleanup.mjs";
 import { kubectl, serviceAddress, runtimeDirectory } from "./lib/production-kubernetes.mjs";
+import { nativeHistory } from "./lib/native-session-history.mjs";
 import { withChromePage } from "./lib/chrome-cdp.mjs";
 import {
   installOwnedReplyFault,
@@ -30,8 +31,10 @@ if (process.argv[2] === "--restore") {
 assert.equal(
   process.env.PI_CLOUD_LIVE_TOOL_REPLY_CHECK,
   "1",
-  "Opt in with PI_CLOUD_LIVE_TOOL_REPLY_CHECK=1: Luna, disposable Cube, scoped reply loss and owned Cubelet crash",
+  "Opt in with PI_CLOUD_LIVE_TOOL_REPLY_CHECK=1: Luna, disposable Cube, scoped reply loss and owned allocation removal",
 );
+const faultTarget = process.env.PI_CLOUD_REPLY_FAULT_TARGET ?? "vm";
+assert(["vm", "cubelet"].includes(faultTarget), "Select an owned VM or an otherwise empty Cubelet");
 const output = resolve(process.argv[2] ?? "dist/tool-reply-continuation.json");
 await mkdir(dirname(output), { recursive: true, mode: 0o700 });
 const receiptPath = `${output}.adapter-restore.json`;
@@ -201,6 +204,31 @@ try {
       newIdempotencyKey("reply-loss"),
       "low",
     );
+    let observedWaiting = false;
+    if (dropProbe) {
+      await until(
+        async () => {
+          const current = await api.getRun(active.runId);
+          assert(
+            !terminal(current),
+            "Run ended instead of retaining its environment-recovery wait",
+          );
+          return (await turnTools(active.runId)).some(
+            (tool) => tool.toolName === "bash" && tool.status === "unknown",
+          );
+        },
+        "native UNKNOWN before environment recovery",
+        240000,
+      );
+      await delay(15000);
+      assert(!terminal(await api.getRun(active.runId)), "Missing readiness ended logical work");
+      observedWaiting = true;
+      await api.cancelTurn(
+        session.sessionId,
+        active.turnId,
+        newIdempotencyKey("stop-unconfirmed-environment"),
+      );
+    }
     const run = await waitRun(active.runId),
       calls = await turnTools(active.runId);
     const state = readOwnedReplyFault(receipt);
@@ -220,8 +248,8 @@ try {
     assert.equal(bash[0].input.timeout, 5);
     assert.equal(bash[0].status, "unknown");
     if (dropProbe) {
-      assert.equal(run.state, "timed_out", JSON.stringify(run.failure));
-      assert.equal(run.failure?.code, "tool_reply_timeout");
+      assert.equal(run.state, "cancelled", JSON.stringify(run.failure));
+      assert(observedWaiting, "Missing readiness was not kept as an interruptible wait");
       assert.equal(calls.length, 1, "Agent continued without confirmed readiness");
       assert(state.probes.every((p) => p.suppressed));
     } else {
@@ -258,6 +286,53 @@ try {
     });
     await writeFile(output, JSON.stringify(report, null, 2), { mode: 0o600 });
   }
+  // Final callback retries resend bytes; they never run Bash again. A completed
+  // background process also must not be killed because its first ACK was lost.
+  const ackMarker = `ACK_LOSS_${suffix}`;
+  const ackNonce = armOwnedReplyFault(receipt, tenant.tenantId, ackMarker, false, true);
+  const ackCommand = `nohup sleep 180 </dev/null >/dev/null 2>&1 & echo $! > ack-background.pid; printf 'once\\n' >> ack-count.txt; printf '${ackMarker}\\n'`;
+  active = await api.acceptTurn(
+    session.sessionId,
+    `只调用一次 bash，command 精确使用 ${JSON.stringify(ackCommand)}，然后简短回复。不要重试命令或调用其他工具。`,
+    newIdempotencyKey("callback-ack-loss"),
+    "low",
+  );
+  assert.equal((await waitRun(active.runId)).state, "completed");
+  const ackRunId = active.runId;
+  const ackState = await until(
+    () => {
+      const value = readOwnedReplyFault(receipt);
+      return value?.nonce === ackNonce && value.results.length >= 2 && value;
+    },
+    "identical callback resend after lost ACK",
+    30000,
+  );
+  assert.equal(new Set(ackState.results.map((row) => row.operationId)).size, 1);
+  assert.equal(
+    (await turnTools(active.runId)).filter((tool) => tool.toolName === "bash").length,
+    1,
+  );
+  assert.equal(
+    Buffer.from((await api.readWorkspaceFile(session.sessionId, "ack-count.txt")).bytes).toString(),
+    "once\n",
+  );
+  active = await api.acceptTurn(
+    session.sessionId,
+    '只调用一次 bash，执行 kill -0 "$(cat ack-background.pid)" && printf BACKGROUND_PRESERVED，然后简短回复。不要其他工具。',
+    newIdempotencyKey("callback-background-check"),
+    "low",
+  );
+  assert.equal((await waitRun(active.runId)).state, "completed");
+  const background = await turnTools(active.runId);
+  assert.equal(background.length, 1);
+  assert.equal(background[0].status, "completed");
+  report.cases.push({
+    kind: "lost-callback-ack",
+    runId: ackRunId,
+    deliveries: ackState.results.length,
+    executions: 1,
+    backgroundPreserved: true,
+  });
   await restoreOwnedReplyFault(receiptPath);
   report.adapterRestored = true;
   await withChromePage({}, async (page) => {
@@ -276,18 +351,31 @@ try {
   });
   await excludeOtherWork();
   const instances = await cube.list();
-  assert.equal(instances.length, 1, "Cubelet crash requires exactly the owned VM");
-  assert.equal(instances[0].metadata["picloud.tenant_id"], tenant.tenantId);
-  const before = singleReadyCubelet();
+  const owned = instances.filter((vm) => vm.metadata["picloud.tenant_id"] === tenant.tenantId);
+  assert.equal(owned.length, 1, "Expected one owned fault VM");
+  const unrelated = instances
+    .filter((vm) => vm.metadata["picloud.tenant_id"] !== tenant.tenantId)
+    .map((vm) => vm.sandboxId);
+  if (faultTarget === "cubelet")
+    assert.equal(instances.length, 1, "Cubelet crash requires exactly the owned VM");
+  const before = faultTarget === "cubelet" ? singleReadyCubelet() : undefined;
+  const allocation = await db
+    .selectFrom("workspace_runtimes")
+    .select(["workspace_runtime_id", "creation_not_after"])
+    .where("tenant_id", "=", tenant.tenantId)
+    .where("workspace_id", "=", project.workspaceId)
+    .where("runtime_name", "=", owned[0].sandboxId)
+    .where("allocation_closed", "=", false)
+    .executeTakeFirstOrThrow();
   active = await api.acceptTurn(
     session.sessionId,
     "只调用一次 bash，timeout 设为 90，执行 printf 'started\\n' > reply-crash-started.txt; sleep 60。不要其他工具、搜索或委派。",
-    newIdempotencyKey("cubelet-crash"),
+    newIdempotencyKey("owned-runtime-loss"),
     "low",
   );
   await until(
     async () => (await turnTools(active.runId)).some((c) => c.status === "running"),
-    "running Tool before Cubelet loss",
+    "running Tool before owned runtime loss",
     90000,
   );
   await until(
@@ -302,36 +390,88 @@ try {
         return false;
       }
     },
-    "actual guest effect before Cubelet loss",
+    "actual guest effect before owned runtime loss",
     30000,
   );
   await excludeOtherWork();
-  kubectl(["delete", "pod", before.metadata.name, "--grace-period=0", "--force", "--wait=false"], {
-    timeout: 30000,
-  });
-  await until(
-    () => {
-      try {
-        const after = singleReadyCubelet();
-        return after.metadata.uid !== before.metadata.uid ? after : undefined;
-      } catch {
-        return undefined;
-      }
-    },
-    "Cubelet replacement",
-    180000,
-  );
+  if (faultTarget === "cubelet") {
+    kubectl(
+      ["delete", "pod", before.metadata.name, "--grace-period=0", "--force", "--wait=false"],
+      {
+        timeout: 30000,
+      },
+    );
+    await until(
+      () => {
+        try {
+          const after = singleReadyCubelet();
+          return after.metadata.uid !== before.metadata.uid ? after : undefined;
+        } catch {
+          return undefined;
+        }
+      },
+      "Cubelet replacement",
+      180000,
+    );
+  } else {
+    // A physical fault outside PiCloud's desired-state tables, confined to this
+    // fixture allocation. This does not pause or delete any user's machine.
+    const createBefore = new Date(allocation.creation_not_after).getTime();
+    await cube.allocation(allocation.workspace_runtime_id, createBefore, "close");
+    await until(
+      async () => {
+        const result = await cube.allocation(allocation.workspace_runtime_id, createBefore, "get");
+        return result.closed && result.phase === "absent";
+      },
+      "owned allocation physically absent",
+      120000,
+    );
+  }
   const interrupted = await waitRun(active.runId);
-  assert.notEqual(interrupted.state, "completed", "Cubelet loss fabricated a completed result");
+  assert.equal(
+    interrupted.state,
+    "completed",
+    "The original Run did not continue after verified recovery",
+  );
   const interruptedCalls = await turnTools(active.runId);
-  assert.equal(interruptedCalls.length, 1, "Old binding continued after Cubelet replacement");
+  assert.equal(
+    interruptedCalls.filter((call) => call.toolName === "bash").length,
+    1,
+    "Original command was executed again",
+  );
+  assert(
+    interruptedCalls.every((call) => ["completed", "unknown"].includes(call.status)),
+    "Unsettled physical reply",
+  );
   report.cases.push({
-    kind: "cubelet-loss",
+    kind: faultTarget === "cubelet" ? "cubelet-loss" : "owned-allocation-loss",
     runId: active.runId,
     state: interrupted.state,
-    replacedPod: true,
+    replacedPod: faultTarget === "cubelet",
     originalCalls: 1,
   });
+  if (faultTarget === "vm") {
+    const history = await nativeHistory(db, { tenantId: tenant.tenantId, runId: active.runId });
+    assert(
+      history.some((row) => row.entry.kind === "pi-cloud.sandbox_reset"),
+      "Physical replacement was not recorded before model continuation",
+    );
+    const current = await cube.list();
+    for (const id of unrelated)
+      assert(
+        current.some((vm) => vm.sandboxId === id),
+        "An unrelated VM was removed",
+      );
+    assert(
+      current.some(
+        (vm) =>
+          vm.metadata["picloud.tenant_id"] === tenant.tenantId &&
+          vm.sandboxId !== owned[0].sandboxId &&
+          vm.state === "running",
+      ),
+    );
+    report.environmentResetRecorded = true;
+  }
   report.accepted = true;
 } catch (error) {
   receipt ??= error.replyFaultReceipt;

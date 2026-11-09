@@ -13,7 +13,7 @@ limits. Historical migrations and reports are not alternate production modes.
 ## One message
 
 ```text
-Browser -> Session runtime API -> PG Run admission -> Pi Worker
+Browser -> Session API -> PG Run admission -> Pi Worker
 Pi Worker <-> local Model Gateway <-> CLIProxyAPI <-> model provider
 
 Pi Worker -> transactional Session producer -> Kafka -> Session Projector
@@ -21,7 +21,8 @@ Pi Worker -> transactional Session producer -> Kafka -> Session Projector
                                                         +-> live view / browser SSE
                                                         +-> independent ordinary Tool host (HTTP)
                                                         `-> Cube execution endpoint
-Cube / Control Tool completion -> Worker-boot Kafka replies -> original Pi Harness
+Guest -> HTTPS completion -> original Kafka reply destination -> authorized Pi Harness
+Control Tool completion -> Kafka replies -> authorized Pi Harness
 
 PG control mutation + Outbox -> same Session Kafka partition -> Projector
 Workspace bytes -> persistent Cube Volume
@@ -43,18 +44,23 @@ Retained attachment originals -> private S3 objects; Kafka and PG carry referenc
 5. One Session Projector group materializes native state, updates live views and
    routes committed Tool intent. It confirms dispatch admission durably before
    issuing an external-effect command.
-6. The executor returns to the original Worker boot. Pi's result processing
-   produces the canonical Tool Result, which follows the same Session commit path.
+6. The Guest posts its finalized result to a scoped HTTPS endpoint, which packs
+   image references and publishes to the original Kafka reply destination. A new
+   authorized Worker can resume that original wait. Pi processing still produces
+   the canonical Tool Result through the normal Session commit path.
 7. Native family settlement leads to ordered completion and retirement of the
    idle owner. Forced replacement first closes the old writer; recovery uses a
    newly authorized Session lease, with no RunAttempt or automatic unsafe replay.
 
-The `session-runtime` process owns the authenticated API, history and cost reads,
-HTTP observations/SSE, Worker membership and this single Projector
-group. The `control-plane` process owns resource admission, recovery, lifecycle
-reconciliation and management timers. It has no Session Kafka consumer or Tool
-dispatcher. Both entrypoints use the same built image with independently selected
-Helm image values. See [ADR-0302](adr/0302-session-runtime-and-resource-management.md).
+`session-api` owns authentication, admission/read APIs and browser connections.
+It has no Session consumer, Worker membership or allocator. It authorizes and
+relays a private live stream assembled by the single execution owner with the
+existing PG/history coverage rules. Browser credentials never cross that port.
+`session-runtime` owns Worker membership/control, HTTP observations, the Session
+Projector and execution-side maintenance. `control-plane` owns resource admission,
+recovery and lifecycle policy; it has no Session consumer or ordinary dispatcher.
+`tool-completion` receives bounded HTTPS callbacks and publishes replies; it
+cannot start commands or authorize physical cleanup. See [ADR-0306](adr/0306-runtime-decoupling-and-continuation.md).
 
 With PG, Kafka, the Worker and its existing Cube binding available, stopping
 management leaves commits, projection, bound Tools and reads running. Workflow
@@ -200,7 +206,8 @@ revocation is learned at the next renewal, normally twenty seconds; a stalled
 renewal cannot exceed the last confirmed lifetime, normally sixty seconds.
 Known Kafka publication failure immediately aborts the whole native family and
 its model transports. An unobserved broker fence is discovered by subsequent
-publication, including existing quiet-Session probes. Already accepted provider
+publication. Periodic Worker Kafka probes have been removed; silent model waits
+do not imply a missing publication. Already accepted provider
 requests may still finish or bill. See [ADR-0303](adr/0303-direct-renewal-and-local-execution-authority.md).
 
 After Worker loss, PG authorizes closure, the old writer is sealed through Kafka,
@@ -215,12 +222,25 @@ lookup; late cleanup only touches its original execution. Settled superseded
 incarnations can be reaped while the logical Run continues, retaining its current
 family epoch. See the recovery mapping in [ADR-0229](adr/0229-native-durable-runtime.md).
 
-Worker reply topics are boot-scoped, transient transport. A replacement Worker
-starts its own mailbox rather than consuming old physical replies. Recoverable
-control operations, such as direct subagent creation, locate their native receipt
-and original child before delivering to the current owner. No raw-result cache,
-per-Tool PG ledger or independent child scheduler is introduced.
-See [ADR-0264](adr/0264-subagent-recovery-and-discovery.md).
+Reply destinations keep their original boot name. Pending fixed-Tool Tasks retain
+small transport references in native commit metadata and current indexes: topic,
+replay floor, immutable operation and original deadline. A replacement restores
+waiters before reading the old suffix and following its live tail with an independent
+consumer identity. It never executes the command again. Kafka/attachment retention
+follows native settlement, not receipt into Worker memory or the old boot's exit.
+Explicit Stop can cancel an adopted operation using its original physical target.
+Ordinary control operations retain their own native recovery policies; direct
+subagent creation still locates its original receipt and child. No raw-result PG
+ledger or second child scheduler is introduced.
+
+A physical result records its environment identity in a small current-only native
+document before returning to Pi. An authoritative binding withdrawal also notifies
+the current Worker through the existing reply transport. After handoff or a known
+execution failure, the same Run can wait for verified environment/reply readiness.
+A reset entry and recovery-gate settlement commit together before the next Agent
+model request. A stale readiness result cannot clear a newer withdrawal. Pure chat
+does not create a VM; compaction does not wait for the sandbox; model-request permits
+are not held during environment recovery.
 
 ## Browser view
 
@@ -305,7 +325,9 @@ See [ADR-0283](adr/0283-interrupted-assistant-text-context.md).
 
 Whole fixed file/shell Tools execute in Cube. The guest has the fixed Tool code,
 not a Harness, extension loader, model credentials or PG/Kafka credentials.
-The trusted Cubelet completion adapter externalizes images and publishes replies.
+The fixed Guest launcher submits the bounded result over HTTPS. An independent
+trusted completion service externalizes images and publishes replies after
+validating its scoped capability. Cubelet contains no Kafka/PG/S3 completion client.
 Only the Worker's Pi processing makes a result canonical.
 
 The Control Plane lazily prepares an immutable binding to an authorized VM/node/
@@ -526,8 +548,9 @@ an extra Actor framework, cache, scheduler or per-Step projection receipt.
 
 ## Intentional coupling and unverified boundaries
 
-- API and Projector share a process. A persistently failing record blocks its
-  Kafka partition. Physical Session Lanes share one Worker and writer.
+- API and Projector are separate processes, but live SSE still needs the execution
+  owner. A persistently failing record blocks its Kafka partition. Physical
+  Session Lanes share one Worker and writer.
 - Cold history waits for the necessary PG projection. Native live recovery also
   requires its protected Kafka suffix.
 - Cube acceptance is not durable cross-boot process/result recovery. Missing
@@ -560,11 +583,14 @@ configuration, credentials and retained Workspace assets are preserved.
 
 ## Independent usage accounting
 
-Provider model receipts, Cubelet compute allocation intervals and enforced
-Workspace capacity intervals reach the independent receipt receiver directly.
+Provider model receipts and enforced Workspace capacity intervals reach the
+independent receiver directly. Compute collection reads normalized provider
+lifecycle history and derives intervals outside the sandbox.
 They are financial facts, separate from Session Kafka projection and from the
 Control Plane's desired resource state. PG has the one long-term accounting
-ledger; bounded source journals retry immutable receipts until acknowledgement.
+ledger; compute source cursors advance atomically with derived intervals. The
+Cube adapter exposes raw observations, source epochs and explicit history gaps,
+while Workspace storage retains its receipt journal.
 Unverified intervals remain unconfirmed and do not produce an amount. Model,
 compute and storage share account/price rules while keeping separate source
 identities. See [resource accounting](RESOURCE_BILLING.md) and

@@ -5,6 +5,7 @@ import type { Database } from "@pi-cloud/database";
 import { ModelMeteringService } from "./model-metering-service.ts";
 import { ResourceMeteringService } from "./resource-metering-service.ts";
 import { MeteringConflict } from "./receipt-identity.ts";
+import { parseResourceMeteringBatch } from "@pi-cloud/protocol";
 
 export function installMeteringIngress(
   server: FastifyInstance,
@@ -21,6 +22,13 @@ export function installMeteringIngress(
     if (!timingSafeEqual(digest, supplied))
       return reply.code(401).send({ error: "authentication_required" });
     try {
+      if (
+        kind === "resource" &&
+        parseResourceMeteringBatch(req.body).events.some(
+          (event) => event.resource.kind !== "workspace",
+        )
+      )
+        return reply.code(409).send({ error: "compute_usage_requires_lifecycle_source" });
       return await service.ingest(req.body);
     } catch (error) {
       if (error instanceof TypeError)

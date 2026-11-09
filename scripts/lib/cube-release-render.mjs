@@ -1,10 +1,6 @@
 import { createHash } from "node:crypto";
 import { parse, parseAllDocuments, stringify } from "yaml";
-import {
-  cubeCompletionPatch,
-  cubeCompletionSecret,
-  withCubeExecutionCompletion,
-} from "./cube-execution-deployment.mjs";
+import { withCubeExecution } from "./cube-execution-deployment.mjs";
 
 export const CUBE_PLUGIN_CONFIG = "pi-cloud-posix-volume-plugin";
 const plugin = "picloud-posix";
@@ -56,7 +52,7 @@ export function cubeletPluginConfiguration(base) {
       type        = "binary"
       binary_path = "/usr/local/services/cubetoolbox/Cubelet/plugin/cube-volume-picloud-posix"`,
       );
-  return withCubeExecutionCompletion(configured);
+  return withCubeExecution(configured);
 }
 
 /** Pure manifest transformation. No cluster read or mutation happens here. */
@@ -66,17 +62,7 @@ export function renderCubeRelease(yaml, input) {
     !input.sharedRoot?.startsWith("/") ||
     !input.sharedRootIdentity ||
     !input.pluginSource ||
-    !input.cubeletConfig ||
-    !input.completionFiles ||
-    ![
-      "database-url",
-      "metering-ingest-token",
-      "supervisor-management-token",
-      "session-image-s3-credentials.json",
-    ].every(
-      (name) =>
-        typeof input.completionFiles[name] === "string" && input.completionFiles[name].length > 0,
-    )
+    !input.cubeletConfig
   )
     throw new Error("Invalid Cube render inputs");
   const resources = parseAllDocuments(yaml, { version: "1.1" })
@@ -173,18 +159,6 @@ export function renderCubeRelease(yaml, input) {
     subPath: "cubelet-config.toml",
     readOnly: true,
   });
-  const completion = cubeCompletionPatch({
-    kafkaBrokers: ["kafka-1:9092", "kafka-2:9092", "kafka-3:9092"],
-    controlPlaneUrl: "http://session-runtime:3000",
-    imageEndpoint: "http://session-images:8333",
-    secretDigest: hash(JSON.stringify(input.completionFiles)),
-  }).spec.template;
-  annotate(node, completion.metadata.annotations);
-  const cubelet = container(nodePod, "cubelet"),
-    additions = completion.spec.containers[0];
-  for (const entry of additions.env) upsert((cubelet.env ??= []), entry);
-  for (const entry of additions.volumeMounts) upsert(cubelet.volumeMounts, entry, "mountPath");
-  for (const entry of completion.spec.volumes) upsert(nodePod.volumes, entry);
   const owned = [
     {
       apiVersion: "v1",
@@ -192,14 +166,6 @@ export function renderCubeRelease(yaml, input) {
       metadata: { name: CUBE_PLUGIN_CONFIG, namespace: "cube-system" },
       data: { "cubelet-config.toml": config, "cube-volume-picloud-posix": input.pluginSource },
     },
-    cubeCompletionSecret(
-      Object.fromEntries(
-        Object.entries(input.completionFiles).map(([name, bytes]) => [
-          name,
-          Buffer.from(bytes, "base64"),
-        ]),
-      ),
-    ),
   ];
   for (const resource of owned) {
     const prior = resources.findIndex(

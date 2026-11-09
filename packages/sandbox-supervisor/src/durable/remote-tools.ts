@@ -170,6 +170,7 @@ export class DurableRemoteTools {
             conversationId: task.conversationId,
             activationId: command.request.activationId,
             operationId: command.request.operationId,
+            ...(command.originalWriterId ? { originalWriterId: command.originalWriterId } : {}),
           });
         cancelling.push(pending);
       }

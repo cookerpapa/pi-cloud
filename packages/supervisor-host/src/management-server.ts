@@ -8,6 +8,9 @@ import {
   SUBAGENT_HOST_PATH,
   MAX_TOOL_RESPONSE_BYTES,
   type SubagentHostRequest,
+  EXECUTION_PROBE_RECEIVER_PATH,
+  parsePathProbe,
+  type PathProbe,
 } from "@pi-cloud/protocol";
 import { createHash, timingSafeEqual } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
@@ -35,6 +38,7 @@ export type SupervisorManagementServerOptions = {
   humanInput?: (command: NativeInputCommand) => Promise<NativeInputResult>;
   compact?: (command: NativeCompactCommand) => Promise<NativeCompactResult>;
   subagentCommand?: (command: SubagentHostRequest) => Promise<unknown>;
+  receiveProbe?: (request: PathProbe) => string;
   bodyLimit?: number;
 };
 
@@ -130,6 +134,7 @@ export class SupervisorManagementServer {
   readonly #humanInput: ((command: NativeInputCommand) => Promise<NativeInputResult>) | undefined;
   readonly #compact: ((command: NativeCompactCommand) => Promise<NativeCompactResult>) | undefined;
   readonly #subagentCommand: ((command: SubagentHostRequest) => Promise<unknown>) | undefined;
+  readonly #receiveProbe: SupervisorManagementServerOptions["receiveProbe"];
   #stopOperation: Promise<void> | undefined;
   #address: string | undefined;
 
@@ -149,6 +154,7 @@ export class SupervisorManagementServer {
     this.#humanInput = options.humanInput;
     this.#compact = options.compact;
     this.#subagentCommand = options.subagentCommand;
+    this.#receiveProbe = options.receiveProbe;
     this.#server = Fastify({
       logger: false,
       bodyLimit: positiveInteger(options.bodyLimit ?? DEFAULT_BODY_LIMIT, "bodyLimit", 1024 * 1024),
@@ -175,6 +181,21 @@ export class SupervisorManagementServer {
   }
 
   #installRoutes(): void {
+    this.#server.post(
+      EXECUTION_PROBE_RECEIVER_PATH,
+      { bodyLimit: 64 * 1024 },
+      async (request, reply) => {
+        const token = bearerToken(request.headers.authorization);
+        if (!token || !timingSafeEqual(this.#managementDigest, digest(token)))
+          return reply.code(401).send();
+        if (!this.#receiveProbe) return reply.code(503).send();
+        try {
+          return reply.send({ replyTopic: this.#receiveProbe(parsePathProbe(request.body)) });
+        } catch {
+          return reply.code(409).send();
+        }
+      },
+    );
     this.#server.post(
       SUBAGENT_HOST_PATH,
       { bodyLimit: MAX_TOOL_RESPONSE_BYTES + 64 * 1024 },

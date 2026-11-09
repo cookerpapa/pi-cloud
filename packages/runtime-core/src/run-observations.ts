@@ -78,7 +78,7 @@ export class RunObservations {
       return;
     }
     let active = this.#runs.get(observationKey(scope));
-    if (!active && fact.kind !== "path_probe") {
+    if (!active) {
       const { tenantId, sessionId, turnId, runId, writerId, fencingToken, piSessionId } = scope;
       active = {
         scope: { tenantId, sessionId, turnId, runId, writerId, fencingToken, piSessionId },
@@ -103,7 +103,7 @@ export class RunObservations {
     const sentAt = Date.parse(fact.occurredAt),
       now = this.clock();
     if (!this.#fresh(sentAt, now)) return;
-    // One physical Session probe supplies evidence for all its observed active Lanes.
+    // One physical Session publication supplies evidence for all its observed active Lanes.
     for (const runId of this.#families.get(scope.writerId) ?? []) {
       const target = this.#runs.get(runId)!;
       if (target.pathAt >= sentAt) continue;
@@ -201,9 +201,9 @@ export class RunObservations {
     for (const runId of this.#families.get(writerId) ?? []) {
       const active = this.#runs.get(runId)!;
       const binding = bindings.find((b) => isDeepStrictEqual(b.scope, active.scope));
-      if (!binding)
-        this.execution(active.scope, { status: "not_applicable", stage: "projector", sentAt });
-      else if (binding.probe || active.execution?.bindingId !== binding.bindingId)
+      // Maintenance may rotate a large family over several bounded batches.
+      // A missing member of this batch is not evidence that it has no sandbox.
+      if (binding && (binding.probe || active.execution?.bindingId !== binding.bindingId))
         this.execution(active.scope, {
           status: "pending",
           stage: "projector",

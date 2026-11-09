@@ -132,10 +132,15 @@ it.each([false, true])(
     });
     const publisher = new DurableSessionPublisher({
       channels: log,
-      replyTopic: "pi-cloud.tool-replies.v3.fixture",
+      replyTopic: "pi-cloud.tool-replies.v4.10000000-0000-4000-8000-000000000009",
+      replyPosition: async () => ({
+        topic: "pi-cloud.tool-replies.v4.10000000-0000-4000-8000-000000000009",
+        partition: 0,
+        offset: "0",
+      }),
     });
     const control = new SubagentControlClient(native, {
-      topic: "pi-cloud.tool-replies.v3.fixture",
+      topic: "pi-cloud.tool-replies.v4.10000000-0000-4000-8000-000000000009",
       wait: (...args) =>
         replies.wait(...args) as import("@pi-cloud/protocol").ToolReplyWait<
           import("@pi-cloud/protocol").ToolResultPayload

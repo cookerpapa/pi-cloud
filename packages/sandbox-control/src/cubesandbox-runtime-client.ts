@@ -203,6 +203,7 @@ export type OfficialCubeSandboxRuntimeClientOptions = Readonly<{
   proxyScheme: "http" | "https";
   sandboxDomain: string;
   egressProxyIp: string;
+  completionIp?: string;
   directPrivateCidrs?: readonly string[];
   requestTimeoutMs?: number;
 }>;
@@ -571,6 +572,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
   readonly #sandboxDomain: string;
   readonly #requestTimeoutMs: number;
   readonly #egressProxyIp: string;
+  readonly #completionIp: string | undefined;
   readonly #directPrivateCidrs: readonly string[];
   readonly #dispatcher: Dispatcher;
 
@@ -593,6 +595,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     this.#sandboxDomain = validateHost(options.sandboxDomain, "CubeSandbox domain");
     this.#requestTimeoutMs = positiveInteger(options.requestTimeoutMs, 30_000, 1_000, 300_000);
     this.#egressProxyIp = validateHost(options.egressProxyIp, "CubeSandbox egress proxy IP");
+    this.#completionIp = options.completionIp;
     this.#directPrivateCidrs = directPrivateEgressCidrs(options.directPrivateCidrs);
     const proxyNodeIp = validateHost(options.proxyNodeIp, "CubeSandbox proxy node IP");
     const baseConnect = buildConnector({ timeout: this.#requestTimeoutMs });
@@ -720,7 +723,13 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       network: {
         allowPublicTraffic: false,
         maskRequestHost: "localhost:${PORT}",
-        allowOut: [...new Set([`${this.#egressProxyIp}/32`, ...this.#directPrivateCidrs])],
+        allowOut: [
+          ...new Set([
+            `${this.#egressProxyIp}/32`,
+            ...(this.#completionIp ? [`${this.#completionIp}/32`] : []),
+            ...this.#directPrivateCidrs,
+          ]),
+        ],
         denyOut: ["0.0.0.0/0"],
       },
       // Managed allocations use the Cubelet retention journal, with the generic
@@ -891,7 +900,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     if (value.runtimeBlocked === true) throw new CubeExecutionRejected("runtime_quarantined");
     if (
       value.enabled !== true ||
-      value.protocolVersion !== 8 ||
+      value.protocolVersion !== 9 ||
       typeof value.bootID !== "string" ||
       !/^[0-9a-f-]{36}$/.test(value.bootID)
     )

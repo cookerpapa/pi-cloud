@@ -25,6 +25,7 @@ import {
 } from "@pi-cloud/protocol";
 import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import type { SupervisorTurnRunner } from "./agent-run-supervisor.ts";
 import { PiTurnError, type PiEventPublisher, type PiTurnResult } from "./pi-turn-runtime.ts";
 import {
@@ -51,6 +52,10 @@ import {
 } from "./cloud-context.ts";
 
 export interface SandboxControlBoundary {
+  recoverEnvironment?(
+    environment: ToolEnvironmentRequest,
+    signal: AbortSignal,
+  ): Promise<ExecutionEvidence>;
   prepareEnvironmentImages?(
     environment: ToolEnvironmentRequest,
     images: import("@pi-cloud/protocol").ImageAttachmentReference[],
@@ -166,6 +171,23 @@ async function releaseModelRuntimeLease(lease: TrustedModelRuntimeLease): Promis
 }
 
 export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
+  readonly #environmentChanges = new Map<
+    string,
+    (change: import("@pi-cloud/protocol").EnvironmentChanged) => Promise<void>
+  >();
+  environmentChanged(
+    change: import("@pi-cloud/protocol").EnvironmentChanged,
+  ): Promise<void> | undefined {
+    return this.#environmentChanges
+      .get(change.bindingId)?.(change)
+      .catch(() => {
+        operationalLog({
+          service: "pi-cloud-worker",
+          level: "warn",
+          event: "environment.observation_deferred",
+        });
+      });
+  }
   readonly #environmentObservers = new Map<string, (evidence: ExecutionEvidence) => void>();
   observeExecution(evidence: ExecutionEvidence): void {
     this.#environmentObservers.get(evidence.bindingId)?.(evidence);
@@ -580,7 +602,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       runtimeIdentity: this.#runtimeIdentity,
       turnContextSha256: cloudTurn.sha256,
     });
-    const environment: ToolEnvironmentRequest = {
+    let environment: ToolEnvironmentRequest = {
       toolBrokerProtocolVersion: 1,
       type: "tool_environment",
       piSessionId: command.payload.piSession.id,
@@ -605,6 +627,22 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     let toolRuntimeFailure: PiTurnError | undefined;
     let continuity: { continuityId: string; continuity: "cold_restore" | "warm_reuse" } | undefined;
     let recordContinuity: (() => Promise<void>) | undefined;
+    let recordEnvironment: ((evidence: ExecutionEvidence) => Promise<void>) | undefined;
+    let invalidateEnvironment: (() => Promise<void>) | undefined;
+    const environmentChanged = async (change: import("@pi-cloud/protocol").EnvironmentChanged) => {
+      const current = parseExecutionReference(command.payload.executionReference);
+      if (
+        change.scope.tenantId !== command.payload.tenantId ||
+        change.scope.piSessionId !== command.payload.piSession.id ||
+        change.scope.runId !== current.runId ||
+        change.scope.writerId !== current.leaseId ||
+        change.scope.fencingToken !== current.fencingToken ||
+        signal.aborted
+      )
+        return;
+      await invalidateEnvironment?.();
+    };
+    this.#environmentChanges.set(environment.requestId, environmentChanged);
     const noteEnvironment = () => {
       if (!workspaceAvailable)
         throw new PiTurnError(
@@ -621,11 +659,12 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       );
       return environment;
     };
-    this.#environmentObservers.set(environment.requestId, (evidence) => {
+    const observeEnvironment = (evidence: ExecutionEvidence) => {
       if (!evidence.continuityId || !evidence.continuity) return;
       continuity = { continuityId: evidence.continuityId, continuity: evidence.continuity };
       void recordContinuity?.();
-    });
+    };
+    this.#environmentObservers.set(environment.requestId, observeEnvironment);
 
     try {
       // Worker describes a logical environment. The partition owner prepares it
@@ -716,6 +755,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         },
         ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
         sandboxContinuity: {
+          writerId: parseExecutionReference(command.payload.executionReference).leaseId,
           continuityId:
             continuity?.continuityId ??
             parseExecutionReference(command.payload.executionReference).runId,
@@ -791,6 +831,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             combined.throwIfAborted();
             this.observeExecution(prepared.execution);
             await recordContinuity?.();
+            await recordEnvironment?.(prepared.execution);
             return {
               images,
               hints: prepared.images.flatMap((item, index) =>
@@ -819,8 +860,97 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           toolRuntimeFailure ??= new PiTurnError(error.code, error.message, false);
         },
         createAgentTools: ({ stepWorldState, captureSamplingStep }) => {
+          recordEnvironment = (evidence) =>
+            stepWorldState.recordExecution(command.payload.runId, evidence);
+          invalidateEnvironment = () =>
+            stepWorldState.requireRecovery(
+              command.payload.runId,
+              environment.requestId,
+              "environment_binding_closed",
+            );
           recordContinuity = () => stepWorldState.recordActive(continuity);
+          let recovering: Promise<void> | undefined;
+          const ensureRecovered = () => {
+            const work = async () => {
+              let pending = await stepWorldState.pendingRecovery(command.payload.runId);
+              if (!pending) return;
+              if (!this.#broker.recoverEnvironment)
+                throw new Error("Environment recovery is not configured");
+              const active = AbortSignal.any([signal, activeSession!.authority.signal]);
+              const renewLogicalBinding = () => {
+                this.#environmentObservers.delete(environment.requestId);
+                this.#environmentChanges.delete(environment.requestId);
+                environment = { ...environment, requestId: this.#idGenerator() };
+                this.#environmentObservers.set(environment.requestId, observeEnvironment);
+                this.#environmentChanges.set(environment.requestId, environmentChanged);
+              };
+              // Reuse a still-open binding. Only authoritative closure requires
+              // a new logical address; no accepted command is moved or replayed.
+              for (;;) {
+                active.throwIfAborted();
+                pending = await stepWorldState.pendingRecovery(command.payload.runId);
+                if (!pending) return;
+                this.#onActivity?.(
+                  command,
+                  { phase: "waiting_environment", lastActivityAt: Date.now() },
+                  activityParent,
+                );
+                await activeSession!.authority.assertCurrent();
+                try {
+                  const evidence = await this.#broker.recoverEnvironment(environment, active);
+                  active.throwIfAborted();
+                  await activeSession!.authority.assertCurrent();
+                  this.#onRuntimeBinding?.(
+                    command.payload.executionReference,
+                    environment.requestId,
+                    command.payload.piSession.conversationId,
+                  );
+                  if (
+                    !evidence.continuityId ||
+                    !this.#confirmExecution ||
+                    !(await this.#confirmExecution(command, environment.requestId, active))
+                  )
+                    throw new PiTurnError(
+                      "tool_environment_pending",
+                      "Waiting for the restored execution reply path",
+                      true,
+                    );
+                  observeEnvironment(evidence);
+                  await stepWorldState.completeRecovery(
+                    command.payload.runId,
+                    {
+                      continuityId: evidence.continuityId!,
+                      continuity: evidence.continuity ?? "cold_restore",
+                    },
+                    pending.previousContinuityId,
+                    pending.revision,
+                  );
+                  return;
+                } catch (error) {
+                  active.throwIfAborted();
+                  const failure = error as { code?: string; retryable?: boolean };
+                  if (failure.code === "tool_binding_closed") renewLogicalBinding();
+                  else if (failure.retryable !== true) throw error;
+                  operationalLog({
+                    service: "pi-cloud-worker",
+                    level: "info",
+                    event: "environment.recovery_wait",
+                    attributes: {
+                      runId: command.payload.runId,
+                      code: failure.code ?? "unavailable",
+                    },
+                  });
+                  await delay(5000, undefined, { signal: active });
+                }
+              }
+            };
+            return (recovering ??= work().finally(() => {
+              recovering = undefined;
+            }));
+          };
           const remoteTools = createTrustedRemoteAgentTools({
+            recordExecution: (evidence, originalWriterId) =>
+              stepWorldState.recordExecution(command.payload.runId, evidence, originalWriterId),
             observeToolDuration: (seconds, outcome) =>
               this.#metrics?.toolDuration.observe({ tool: "tool.execute", outcome }, seconds),
             supportsImages: modelRuntimeLease.runtime.inputModalities.includes("image"),
@@ -845,11 +975,17 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
               : {}),
             ...(this.#waitForToolReply
               ? {
-                  waitForToolReply: (request, signal, toolCallId) =>
-                    this.#waitForToolReply!(request, signal, toolCallId, {
-                      tenantId: command.payload.tenantId,
-                      runId: command.payload.runId,
-                    }),
+                  waitForToolReply: (request, signal, toolCallId, _scope, recovery) =>
+                    this.#waitForToolReply!(
+                      request,
+                      signal,
+                      toolCallId,
+                      {
+                        tenantId: command.payload.tenantId,
+                        runId: command.payload.runId,
+                      },
+                      recovery,
+                    ),
                 }
               : {}),
             resolveOperationTarget: async () => {
@@ -869,6 +1005,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
               captureSamplingStep(
                 async (sequence) => {
                   if (toolRuntimeFailure !== undefined) throw toolRuntimeFailure;
+                  if (purpose === "agent") await ensureRecovered();
                   const captured = await stepWorldState.capture();
                   const step = createCloudStepContext({
                     sequence,
@@ -883,8 +1020,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                 { publishEvent: purpose === "agent" },
               ),
             onToolOperationUnavailable: async (failure) => {
-              toolRuntimeFailure ??= new PiTurnError(failure.code, failure.message, false);
-              await stepWorldState.recordUnavailable();
+              await stepWorldState.requireRecovery(
+                command.payload.runId,
+                environment.requestId,
+                failure.code,
+              );
             },
             remainingToolCalls: command.payload.budgets?.remainingToolCalls ?? null,
             maximumToolOutputBytes: command.payload.budgets?.maximumToolOutputBytes ?? 65_536,
@@ -963,6 +1103,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         /* Observation only. */
       }
       this.#environmentObservers.delete(environment.requestId);
+      this.#environmentChanges.delete(environment.requestId);
       if (cleanupError !== undefined && executionError !== undefined) {
         operationalLog({
           service: "pi-cloud-trusted-runner",

@@ -147,9 +147,19 @@ async function executeGroup(cases) {
   }
 }
 
+const selection = argument("--cases", "");
+const selectedIds = selection ? new Set(selection.split(",").filter(Boolean)) : undefined;
+if (
+  selectedIds &&
+  (!selectedIds.size || [...selectedIds].some((id) => !manifest.cases.some((c) => c.id === id)))
+)
+  throw new Error("Unknown or empty fault case selection");
+const casesToRun = selectedIds
+  ? manifest.cases.filter((c) => selectedIds.has(c.id))
+  : manifest.cases;
 const results = [];
 const groups = new Map();
-for (const faultCase of manifest.cases) {
+for (const faultCase of casesToRun) {
   const key = `${faultCase.workspace}/${faultCase.file}`;
   const group = groups.get(key) ?? [];
   group.push(faultCase);

@@ -14,7 +14,7 @@ function command(): AcceptedToolCommand {
   return {
     kind: "tool_command",
     toolCallId,
-    replyTopic: "pi-cloud.tool-replies.v3.test",
+    replyTopic: "pi-cloud.tool-replies.v4.test",
     scope: {
       tenantId: crypto.randomUUID(),
       sessionId: crypto.randomUUID(),

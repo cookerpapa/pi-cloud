@@ -1,0 +1,125 @@
+{{- if .Values.globalPlaneEnabled }}
+{{- $name := include "pi-cloud-platform.name" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-tool-completion
+  labels:
+    {{- include "pi-cloud-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tool-completion
+spec:
+  replicas: {{ .Values.toolCompletion.replicas }}
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: tool-completion }
+  template:
+    metadata:
+      labels:
+        {{- include "pi-cloud-platform.labels" . | nindent 8 }}
+        app.kubernetes.io/component: tool-completion
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.global.trustedNodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.global.trustedTolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: tool-completion
+          image: {{ include "pi-cloud-platform.image" .Values.images.toolCompletion | quote }}
+          imagePullPolicy: {{ .Values.images.toolCompletion.pullPolicy }}
+          args: ["/app/packages/cube-completion/src/main.ts"]
+          ports: [{ name: http, containerPort: 4320 }]
+          env:
+            - { name: NODE_ENV, value: production }
+            - { name: HOST, value: 0.0.0.0 }
+            - { name: DATABASE_URL_FILE, value: /run/pi-cloud-secrets/database-url }
+            - { name: PI_CLOUD_KAFKA_BROKERS, value: {{ join "," .Values.global.kafka.brokers | quote }} }
+            - { name: PI_CLOUD_CONTROL_PLANE_URL, value: {{ .Values.toolCompletion.observationBaseUrl | quote }} }
+            - { name: PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE, value: /run/pi-cloud-secrets/supervisor-management-token }
+            - { name: PI_CLOUD_COMPLETION_TLS_KEY_FILE, value: /run/pi-cloud-completion/tls.key }
+            - { name: PI_CLOUD_COMPLETION_TLS_CERT_FILE, value: /run/pi-cloud-completion/tls.crt }
+            {{- if .Values.imageAttachments.endpoint }}
+            - { name: PI_CLOUD_IMAGE_S3_ENDPOINT, value: {{ .Values.imageAttachments.endpoint | quote }} }
+            - { name: PI_CLOUD_IMAGE_S3_REGION, value: {{ .Values.imageAttachments.region | quote }} }
+            - { name: PI_CLOUD_IMAGE_S3_BUCKET, value: {{ .Values.imageAttachments.bucket | quote }} }
+            - { name: PI_CLOUD_IMAGE_S3_CREDENTIALS_FILE, value: /run/pi-cloud-secrets/session-image-s3-credentials.json }
+            {{- end }}
+          readinessProbe: { httpGet: { path: /health/ready, port: http, scheme: HTTPS }, periodSeconds: 5, timeoutSeconds: 3 }
+          livenessProbe: { httpGet: { path: /health/live, port: http, scheme: HTTPS }, periodSeconds: 10, timeoutSeconds: 3 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources: {{- toYaml .Values.toolCompletion.resources | nindent 12 }}
+          volumeMounts:
+            - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/database-url, subPath: {{ .Values.external.database.secretKey }}, readOnly: true }
+            - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/supervisor-management-token, subPath: supervisor-management-token, readOnly: true }
+            - { name: completion-tls, mountPath: /run/pi-cloud-completion, readOnly: true }
+            {{- if .Values.imageAttachments.endpoint }}
+            - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/session-image-s3-credentials.json, subPath: {{ .Values.imageAttachments.credentialsSecretKey }}, readOnly: true }
+            {{- end }}
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: platform-secrets
+          secret: { secretName: {{ .Values.global.existingSecret }}, defaultMode: 288 }
+        - name: completion-tls
+          secret: { secretName: {{ .Values.toolCompletion.tlsSecretName }}, defaultMode: 288 }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata: { name: tool-completion }
+spec:
+  selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: tool-completion }
+  ports: [{ name: http, port: 4320, targetPort: http }]
+{{- if .Values.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: {{ $name }}-tool-completion }
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: tool-completion }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { {{ .Values.networkPolicy.trustedNamespaceLabel.key }}: {{ .Values.networkPolicy.trustedNamespaceLabel.value | quote }} }
+        {{- range .Values.toolCompletion.guestCidrs }}
+        - ipBlock: { cidr: {{ . | quote }} }
+        {{- end }}
+      ports: [{ protocol: TCP, port: 4320 }]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+          podSelector:
+            matchLabels: { k8s-app: kube-dns }
+      ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
+    - to:
+        - namespaceSelector:
+            matchLabels: { {{ .Values.networkPolicy.trustedNamespaceLabel.key }}: {{ .Values.networkPolicy.trustedNamespaceLabel.value | quote }} }
+      ports: [{ protocol: TCP, port: 5432 }, { protocol: TCP, port: 9092 }, { protocol: TCP, port: 8333 }, { protocol: TCP, port: 3000 }]
+    {{- range .Values.networkPolicy.externalEgressCidrs }}
+    - to: [{ ipBlock: { cidr: {{ . | quote }} } }]
+      ports: [{ protocol: TCP, port: 5432 }, { protocol: TCP, port: 9092 }, { protocol: TCP, port: 8333 }, { protocol: TCP, port: 3000 }]
+    {{- end }}
+{{- end }}
+{{- end }}

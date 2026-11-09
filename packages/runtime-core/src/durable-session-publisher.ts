@@ -12,6 +12,7 @@ import {
   isNamedToolCommand,
   parseDurableDisplayDescription,
   parseToolEnvironmentRequest,
+  TOOL_REPLY_DELIVERY_MARGIN_MS,
   type DurableCommitPublication,
   type DurableCommitPublisher,
   type AcceptedToolCancellation,
@@ -35,6 +36,7 @@ export class DurableSessionPublisher {
       images?: ImageAttachmentCodec;
       metrics?: PiCloudMetrics;
       replyTopic: string;
+      replyPosition?: () => Promise<{ topic: string; partition: 0; offset: string }>;
     },
   ) {}
   checkHealth(): Promise<void> {
@@ -83,6 +85,13 @@ export class DurableSessionPublisher {
             return identity;
           };
           const index = new DurableCommitIndex(publication.commit);
+          const hasRemote = publication.tools.some(
+            ({ command }) =>
+              !isNamedToolCommand(command) && command.request.operation === "tool.execute",
+          );
+          const replyPosition = hasRemote ? await this.options.replyPosition?.() : undefined;
+          if (hasRemote && (!replyPosition || replyPosition.topic !== this.options.replyTopic))
+            throw new Error("Remote Tool requires its original Kafka replay position");
           const tools: DurableToolDispatch[] = publication.tools.map(({ taskId, command }) => {
             if ("environment" in command && command.environment) {
               const environment = parseToolEnvironmentRequest(command.environment);
@@ -185,6 +194,19 @@ export class DurableSessionPublisher {
               taskId,
               scope: identity,
               replyTopic: this.options.replyTopic,
+              ...(command.request.operation === "tool.execute"
+                ? {
+                    replyRecovery: {
+                      ...replyPosition!,
+                      deadlineAt:
+                        Date.parse(command.occurredAt) +
+                        command.request.timeoutMs +
+                        TOOL_REPLY_DELIVERY_MARGIN_MS,
+                      toolCallId: intent.callId,
+                      toolName: command.request.toolName,
+                    },
+                  }
+                : {}),
             };
           });
           const cancellations: AcceptedToolCancellation[] = publication.cancellations.map(
@@ -195,6 +217,7 @@ export class DurableSessionPublisher {
                 activationId: command.activationId,
                 operationId: command.operationId,
                 ...(command.target ? { target: command.target } : {}),
+                ...(command.originalWriterId ? { originalWriterId: command.originalWriterId } : {}),
               },
             }),
           );

@@ -17,9 +17,10 @@ afterEach(async () => {
 
 it.each([
   ["true", 0, false],
-  ["false", 76, false],
-  ["invalid", 1, true],
-  ["child-reserved", 1, false],
+  ["false", 0, false],
+  ["invalid", 0, false],
+  ["child-reserved", 0, false],
+  ["delivery-failed", 0, false],
 ] as const)(
   "classifies actual launcher exit with receipt mode %s",
   async (mode, code, failureText) => {
@@ -33,6 +34,7 @@ it.each([
       toolWorkerProtocolVersion: 7,
       type: "worker.operation",
       attachment: { activationId, toolRoot: directory },
+      delivery: { expiresAt: Date.now() + 10000 },
       request: {
         toolBrokerProtocolVersion: 1,
         type: "tool_sandbox.operation",
@@ -41,7 +43,10 @@ it.each([
         operationId,
         toolCallId: "scope-call",
         toolName: "bash",
-        args: { command: "printf complete" },
+        args: {
+          command:
+            "touch execution-started; printf started; sleep 1.2; printf complete; touch execution-finished",
+        },
         timeoutMs: 20000,
         maximumOutputBytes: 51200,
       },
@@ -86,6 +91,25 @@ it.each([
               path: "cgroup",
               namespace: "contract",
             }));
+            b.onResolve({ filter: /completion-client\.ts$/ }, () => ({
+              path: "completion",
+              namespace: "delivery",
+            }));
+            b.onLoad({ filter: /.*/, namespace: "delivery" }, () => ({
+              contents: `
+              import {readFile,writeFile} from 'node:fs/promises';
+              import {writeFileSync} from 'node:fs';
+              export class GuestCompletionClient {
+                constructor(value) { this.destination=value; }
+                progress() { writeFileSync(process.env.REVIEW_PROGRESS, "started"); }
+                async complete(value) {
+                  if (await readFile(process.env.REVIEW_FINISHED,'utf8')!=='finished') throw new Error('Scope not settled');
+                  await writeFile(process.env.REVIEW_RESULT,JSON.stringify(value));
+                  if (process.env.REVIEW_MODE==='delivery-failed') throw new Error('ACK unavailable');
+                }
+              }
+            `,
+            }));
             b.onLoad({ filter: /.*/, namespace: "contract" }, () => ({
               contents: `
         import {writeFile} from 'node:fs/promises';
@@ -112,11 +136,15 @@ it.each([
     );
     expect(JSON.parse(result.stdout)).toMatchObject({
       exitCode: code,
-      finalSucceeded: true,
+      finalSucceeded: mode !== "delivery-failed" && mode !== "false",
       localFinishCompleted: true,
-      scopeStopRequired: false,
+      ...(mode === "false" ? {} : { executionComplete: true }),
       scopeFailureText: failureText,
     });
+    const delivered = JSON.parse(await readFile(join(directory, "result-" + mode), "utf8"));
+    expect(delivered.type).toBe(
+      mode === "child-reserved" ? "worker.failed" : "worker.operation_result",
+    );
   },
   20000,
 );

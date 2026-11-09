@@ -114,7 +114,6 @@ await access(resolve(packagesDirectory, "supervisor-host", "src/tools/worker-too
 
 const dockerfileCandidates = [
   resolve(repositoryRoot, "deploy", "cubesandbox", "Dockerfile.tool"),
-  resolve(repositoryRoot, "deploy", "cubesandbox", "Dockerfile.cubelet"),
   resolve(packagesDirectory, "sandbox-control", "Dockerfile.volume-gateway"),
   ...packageDirectories
     .filter((entry) => entry.isDirectory())

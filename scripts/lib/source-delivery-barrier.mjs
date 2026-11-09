@@ -48,6 +48,7 @@ function checked(value) {
  * physical settlement. It proves delivery; it never grants VM/Volume deletion. */
 export async function waitForOwnedReceiptDelivery({
   tenantId,
+  database,
   signal,
   timeoutMs = 180_000,
   readSources,
@@ -62,7 +63,7 @@ export async function waitForOwnedReceiptDelivery({
   if (!readSources) {
     const { createDeployedSourceDeliveryReader } =
       await import("./source-delivery-observation.mjs");
-    readSources = await createDeployedSourceDeliveryReader();
+    readSources = await createDeployedSourceDeliveryReader({ database });
   }
   const deadline = monotonicNow() + timeoutMs;
   let baseline,
@@ -161,25 +162,20 @@ function metric(text, name) {
   return { value: match[2] === "NaN" ? null : Number(match[2]), labels };
 }
 
-export function parseComputeDeliveryMetrics(text, podId) {
+/** Capture completion is local evidence only. The deployed reader must also
+ * read the raw journal head and the accounting cursor before declaring delivery. */
+export function parseComputeCaptureMetrics(text, podId) {
   assert(
     typeof text === "string" && Buffer.byteLength(text) <= 1_048_576,
     "Source metrics exceed their bound",
   );
-  const cycles = metric(text, "picloud_resource_metering_collection_cycles_total"),
-    barrier = metric(text, "picloud_resource_metering_delivery_barrier"),
-    failures = metric(text, "picloud_resource_metering_capture_failures_total");
-  assert(
-    cycles.labels.source_id === barrier.labels.source_id &&
-      cycles.labels.boot_id === barrier.labels.boot_id,
-    "Source metric identity changed",
-  );
+  const cycles = metric(text, "picloud_lifecycle_collection_cycles_total");
+  const failures = metric(text, "picloud_lifecycle_capture_failures_total");
   return {
     sourceId: cycles.labels.source_id,
     bootId: cycles.labels.boot_id,
     podId,
     completedCycles: cycles.value,
-    deliveredCycles: barrier.value,
     captureFailures: failures.value,
   };
 }

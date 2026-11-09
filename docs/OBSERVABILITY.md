@@ -56,9 +56,11 @@ for source versus serving acceptance.
 
 ## Guest execution and physical runtime health
 
-ADR-0211 extends an activated Session probe through the fixed guest execution
-transport and the original Worker's Kafka mailbox. Projector confirmation and
-guest round-trip confirmation remain independent. `run.execution` carries a
+ADR-0306 moves periodic initiation to the execution owner. It batches fresh PG
+lease evidence, registers the current Worker receiver, then probes through Cube,
+the fixed Guest HTTPS callback and Kafka. This no longer probes Worker → Session
+Kafka ingress; ordinary writer ACKs and fatal fencing errors cover publication.
+Lease/retention success and complete return-path confirmation remain independent. `run.execution` carries a
 revision, observation time and an `execution` object: status (not_applicable,
 pending, confirmed or unavailable), last confirmed stage (projector, cube or
 worker), original sent time, optional binding/target IDs and last confirmed guest

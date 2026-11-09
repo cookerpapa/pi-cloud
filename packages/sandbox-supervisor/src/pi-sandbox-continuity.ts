@@ -47,6 +47,7 @@ export type PiRuntimeWorldState = Readonly<{
 }>;
 
 export type PiSandboxContinuity = Readonly<{
+  writerId?: string;
   continuityId: string;
   continuity: "cold_restore" | "warm_reuse";
   environmentSha256: string;
@@ -134,6 +135,26 @@ const WorldState = defineDoc<{ state: JsonValue | null }>({
   fork: "current",
   initial: () => ({ state: null }),
 });
+const EnvironmentRecovery = defineDoc<{
+  pending: { runId: string; bindingId: string; code: string } | null;
+}>({
+  kind: "pi-cloud.environment_recovery",
+  version: 1,
+  scope: "conversation",
+  history: "latest",
+  fork: "initial",
+  initial: () => ({ pending: null }),
+});
+const EnvironmentObservation = defineDoc<{
+  observed: { runId: string; writerId: string; continuityId: string } | null;
+}>({
+  kind: "pi-cloud.environment_observation",
+  version: 1,
+  scope: "conversation",
+  history: "latest",
+  fork: "initial",
+  initial: () => ({ observed: null }),
+});
 export function worldStateMessage(message: PiWorldStateModelMessage): SystemMessage {
   return {
     role: "system",
@@ -151,6 +172,8 @@ export class PiSessionWorldStateController {
   readonly #messagesAppendedDuringRun: PiWorldStateModelMessage[] = [];
   #status: PiRuntimeWorldState["sandbox"]["status"];
   #previous: PiRuntimeWorldState | undefined;
+  #localRecovery: { runId: string; bindingId: string; code: string } | undefined;
+  #recoveryRevision = 0;
 
   private constructor(
     session: Harness,
@@ -220,6 +243,79 @@ export class PiSessionWorldStateController {
     this.#status = "unavailable";
   }
 
+  async requireRecovery(runId: string, bindingId: string, code: string): Promise<void> {
+    this.#localRecovery = { runId, bindingId, code };
+    this.#recoveryRevision++;
+    this.#status = "unavailable";
+    await this.#session.commit(async (tx) => {
+      const value = await tx.doc(EnvironmentRecovery, this.#conversationId);
+      if (JSON.stringify(value.pending) !== JSON.stringify({ runId, bindingId, code }))
+        value.pending = { runId, bindingId, code };
+    }, BACKGROUND_CONTEXT);
+  }
+
+  async pendingRecovery(runId: string) {
+    const value = await this.#session.snapshot(
+      EnvironmentRecovery,
+      this.#conversationId,
+      BACKGROUND_CONTEXT,
+    );
+    const observed = (
+      await this.#session.snapshot(EnvironmentObservation, this.#conversationId, BACKGROUND_CONTEXT)
+    )?.observed;
+    const pending = this.#localRecovery?.runId === runId ? this.#localRecovery : value?.pending;
+    if (pending?.runId === runId)
+      return {
+        ...pending,
+        revision: this.#recoveryRevision,
+        previousContinuityId: observed?.runId === runId ? observed.continuityId : undefined,
+      };
+    if (observed?.runId === runId && observed.writerId !== this.#continuity.writerId)
+      return {
+        runId,
+        bindingId: "",
+        code: "worker_replaced",
+        revision: this.#recoveryRevision,
+        previousContinuityId: observed.continuityId,
+      };
+    return undefined;
+  }
+
+  /** Before returning a physical Tool result, retain its environment identity.
+   * This current-only document adds no model message and no stream history. */
+  async recordExecution(
+    runId: string,
+    evidence: { continuityId?: string },
+    writerId = this.#continuity.writerId,
+  ): Promise<void> {
+    if (!evidence.continuityId || !writerId) return;
+    const observed = { runId, writerId, continuityId: evidence.continuityId };
+    await this.#session.commit(async (tx) => {
+      const value = await tx.doc(EnvironmentObservation, this.#conversationId);
+      if (JSON.stringify(value.observed) !== JSON.stringify(observed)) value.observed = observed;
+    }, BACKGROUND_CONTEXT);
+  }
+
+  async completeRecovery(
+    runId: string,
+    evidence: Pick<PiSandboxContinuity, "continuityId" | "continuity">,
+    previousContinuityId?: string,
+    revision = this.#recoveryRevision,
+  ): Promise<void> {
+    this.#assertRecoveryRevision(revision);
+    await this.recordActive(evidence);
+    await this.#reconcile(runId, previousContinuityId, revision);
+    this.#assertRecoveryRevision(revision);
+    this.#localRecovery = undefined;
+  }
+  #assertRecoveryRevision(revision: number): void {
+    if (revision !== this.#recoveryRevision)
+      throw Object.assign(new Error("Environment changed during readiness confirmation"), {
+        code: "tool_environment_pending",
+        retryable: true,
+      });
+  }
+
   #current(): PiRuntimeWorldState {
     return {
       schemaVersion: 3,
@@ -236,10 +332,20 @@ export class PiSessionWorldStateController {
     };
   }
 
-  async #reconcile(): Promise<PiRuntimeWorldState> {
+  async #reconcile(
+    recoveredRunId?: string,
+    previousContinuityId?: string,
+    recoveryRevision?: number,
+  ): Promise<PiRuntimeWorldState> {
     const current = this.#current();
-    const previous = this.#previous;
-    if (previous !== undefined && sameState(previous, current)) return current;
+    const previous =
+      previousContinuityId && !this.#previous?.sandbox.continuityId
+        ? {
+            ...(this.#previous ?? current),
+            sandbox: { status: "active" as const, continuityId: previousContinuityId },
+          }
+        : this.#previous;
+    if (!recoveredRunId && previous !== undefined && sameState(previous, current)) return current;
 
     const material: PiWorldStateModelMessage["customType"][] = [];
     const workspaceChanged =
@@ -261,6 +367,7 @@ export class PiSessionWorldStateController {
     }
     const messages = material.map((customType) => modelMessage(customType, previous!, current));
     await this.#session.commit(async (tx) => {
+      if (recoveryRevision !== undefined) this.#assertRecoveryRevision(recoveryRevision);
       for (const message of messages)
         await tx.appendEntry(this.#conversationId, {
           kind: message.customType,
@@ -270,6 +377,16 @@ export class PiSessionWorldStateController {
       (await tx.doc(WorldState, this.#conversationId)).state = JSON.parse(
         JSON.stringify(current),
       ) as JsonValue;
+      if (recoveredRunId) {
+        const recovery = await tx.doc(EnvironmentRecovery, this.#conversationId);
+        if (recovery.pending?.runId === recoveredRunId) recovery.pending = null;
+        (await tx.doc(EnvironmentObservation, this.#conversationId)).observed = {
+          runId: recoveredRunId,
+          writerId: this.#continuity.writerId!,
+          continuityId: current.sandbox.continuityId!,
+        };
+      }
+      if (recoveryRevision !== undefined) this.#assertRecoveryRevision(recoveryRevision);
     }, BACKGROUND_CONTEXT);
     this.#messagesAppendedDuringRun.push(...messages);
     this.#previous = current;

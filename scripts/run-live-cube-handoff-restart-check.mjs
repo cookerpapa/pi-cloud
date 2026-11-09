@@ -76,13 +76,23 @@ async function nativeQuery(query) {
     await db.destroy();
   }
 }
-const faultMode = process.env.PI_CLOUD_LIVE_SESSION_RUNTIME_RESTART_MODE ?? "pod";
+const faultRole = process.env.PI_CLOUD_LIVE_HANDOFF_ROLE ?? "session-runtime";
+assert(["session-runtime", "session-api", "pi-worker"].includes(faultRole));
+const workerFault = faultRole === "pi-worker";
+assert(
+  !workerFault || scenario === "cube",
+  "Worker reattachment fixture uses one fixed remote Tool",
+);
+const faultMode =
+  process.env.PI_CLOUD_LIVE_SESSION_RUNTIME_RESTART_MODE ?? (workerFault ? "process" : "pod");
+assert(!workerFault || faultMode === "process", "Worker fixture kills only the owning container");
+const deploymentName = `deployment/pi-cloud-${faultRole}`;
 assert(["pod", "process", "rolling"].includes(faultMode));
 const report = {
   checkedAt: new Date().toISOString(),
   model: "gpt-6-luna",
   faultMode,
-  faultRole: "session-runtime",
+  faultRole,
   scenario,
   accepted: false,
 };
@@ -251,21 +261,27 @@ try {
       managementBefore.every((pod) => pod.containers?.every((container) => container.ready)),
     "Management must be ready before the isolated Projector fault",
   );
-  if (faultMode !== "rolling")
+  const projectorBefore = podFor("session-runtime");
+  if (!workerFault && faultMode !== "rolling")
     assert.equal(
-      JSON.parse(kubectl(["get", "deployment/pi-cloud-session-runtime", "-o", "json"])).spec
-        .replicas,
+      JSON.parse(kubectl(["get", deploymentName, "-o", "json"])).spec.replicas,
       1,
       "A single-Pod fault requires one Session Projector so the owned partition is actually replaced",
     );
-  const targetPod = podFor("session-runtime");
-  console.log(JSON.stringify({ phase: "replace-session-runtime", scenario }));
+  const owner = workerFault
+    ? (
+        await nativeQuery(sql`select supervisor_id from workers where id=${before.workerId}::uuid`)
+      )[0]
+    : undefined;
+  const targetPod = workerFault ? owner?.supervisor_id : podFor(faultRole);
+  assert(targetPod, "Owning process is unavailable");
+  console.log(JSON.stringify({ phase: "replace-runtime-component", role: faultRole, scenario }));
   const faultStartedAt = Date.now();
   const charactersBeforeRoll = observedText.length;
   if (faultMode === "process") {
     const beforePod = JSON.parse(kubectl(["get", "pod", targetPod, "-o", "json"]));
     const beforeContainer = beforePod.status.containerStatuses.find(
-      (container) => container.name === "session-runtime",
+      (container) => container.name === faultRole,
     );
     assert(beforeContainer, "The fault target is not the Session-runtime container");
     const count = beforeContainer.restartCount;
@@ -288,7 +304,7 @@ try {
       async () => {
         const status = JSON.parse(
           kubectl(["get", "pod", targetPod, "-o", "json"]),
-        ).status.containerStatuses.find((container) => container.name === "session-runtime");
+        ).status.containerStatuses.find((container) => container.name === faultRole);
         if (!status || !(status.restartCount > count && status.ready && status.state.running))
           return false;
         assert.equal(
@@ -304,38 +320,24 @@ try {
       180000,
     );
   } else if (faultMode === "rolling") {
-    const beforeDeployment = JSON.parse(
-      kubectl(["get", "deployment/pi-cloud-session-runtime", "-o", "json"]),
-    );
+    const beforeDeployment = JSON.parse(kubectl(["get", deploymentName, "-o", "json"]));
     assert.equal(beforeDeployment.spec.strategy.type, "RollingUpdate");
     const images = beforeDeployment.spec.template.spec.containers.map(
       (container) => container.image,
     );
-    await kubectlAsync(["rollout", "restart", "deployment/pi-cloud-session-runtime"]);
-    await kubectlAsync([
-      "rollout",
-      "status",
-      "deployment/pi-cloud-session-runtime",
-      "--timeout=180s",
-    ]);
-    const afterDeployment = JSON.parse(
-      kubectl(["get", "deployment/pi-cloud-session-runtime", "-o", "json"]),
-    );
+    await kubectlAsync(["rollout", "restart", deploymentName]);
+    await kubectlAsync(["rollout", "status", deploymentName, "--timeout=180s"]);
+    const afterDeployment = JSON.parse(kubectl(["get", deploymentName, "-o", "json"]));
     assert.deepEqual(
       afterDeployment.spec.template.spec.containers.map((container) => container.image),
       images,
     );
-    assert.notEqual(podFor("session-runtime"), targetPod);
+    assert.notEqual(podFor(faultRole), targetPod);
     report.compatibleRollingReplacement = true;
     report.artifactsUnchanged = true;
   } else {
     await kubectlAsync(["delete", "pod", targetPod, "--grace-period=0", "--force", "--wait=true"]);
-    await kubectlAsync([
-      "rollout",
-      "status",
-      "deployment/pi-cloud-session-runtime",
-      "--timeout=180s",
-    ]);
+    await kubectlAsync(["rollout", "status", deploymentName, "--timeout=180s"]);
   }
   report.replacementMs = Date.now() - faultStartedAt;
   assert.deepEqual(
@@ -363,7 +365,21 @@ try {
   report.completionState = finished.state;
   if (finished.failure) report.failure = finished.failure;
   assert.equal(finished.state, "completed", JSON.stringify(finished.failure));
-  assert.equal(finished.workerId, before.workerId);
+  if (workerFault)
+    assert.notEqual(
+      finished.workerId,
+      before.workerId,
+      "Original Worker incarnation was not replaced",
+    );
+  else assert.equal(finished.workerId, before.workerId);
+  if (faultRole === "session-api") {
+    assert.equal(
+      podFor("session-runtime"),
+      projectorBefore,
+      "API replacement restarted the Projector",
+    );
+    report.projectorPreserved = true;
+  }
   const transcript = (await api.getConversation(session.sessionId)).turns.find(
     (t) => t.runId === turn.runId,
   ).transcript;
@@ -405,7 +421,14 @@ try {
     report.cubeCompletedAcrossControlPlaneLoss = true;
   }
   report.accepted = true;
-  report.workerUnchanged = true;
+  report.workerUnchanged = !workerFault;
+  if (workerFault) {
+    const rows = await nativeQuery(
+      sql`select count(*)::int as n from run_transitions where run_id=${turn.runId}::uuid and reason='native_execution_recovery'`,
+    );
+    assert(rows[0].n >= 1, "No native recovery under the original Run");
+    report.originalRunResumed = true;
+  }
 } catch (e) {
   error = e;
 } finally {

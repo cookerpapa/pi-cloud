@@ -54,7 +54,7 @@ configureBuildProxy();
 const [action, scopeOrPath, candidatePath, input] = process.argv.slice(2);
 if (action === "--help") {
   console.log(
-    "prepare provider|web|tool-host|session-decoder DIRECTORY VERSION | prepare catalog DIRECTORY CATALOG_JSON | preflight DIRECTORY | apply DIRECTORY\nScoped releases preserve unrelated workloads. See docs/COMPONENT_RELEASE.md.",
+    "prepare provider|web|tool-host|session-decoder|session-api DIRECTORY VERSION | prepare catalog DIRECTORY CATALOG_JSON | preflight DIRECTORY | apply DIRECTORY\nScoped releases preserve unrelated workloads. See docs/COMPONENT_RELEASE.md.",
   );
   process.exit(0);
 }
@@ -156,7 +156,9 @@ function inputs(scope) {
 
 if (action === "prepare") {
   const scope = scopeOrPath;
-  assert(["provider", "catalog", "web", "tool-host", "session-decoder"].includes(scope));
+  assert(
+    ["provider", "catalog", "web", "tool-host", "session-decoder", "session-api"].includes(scope),
+  );
   const baseline = readJson(deploymentPath);
   if (runtimeReplacementTargets[scope])
     assert.equal(

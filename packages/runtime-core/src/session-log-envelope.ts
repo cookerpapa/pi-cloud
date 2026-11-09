@@ -112,18 +112,6 @@ export function encodeSessionLogFact(fact: SessionLogFact): string {
       }),
     });
   }
-  if (fact.kind === "path_probe" && fact.execution)
-    return JSON.stringify({
-      ...fact,
-      execution: {
-        ...fact.execution,
-        bindings: fact.execution.bindings.map((binding) => ({
-          bindingId: binding.bindingId,
-          probe: binding.probe,
-          view: view(binding.scope, fact.scope),
-        })),
-      },
-    });
   return JSON.stringify(fact);
 }
 
@@ -207,6 +195,7 @@ export function expandSessionLogEnvelope(input: unknown): SessionLogFact {
           "traceContext",
           "view",
           "environment",
+          "replyRecovery",
         ]);
         const { view: address, ...reference } = tool;
         const request = object(tool.request);
@@ -221,7 +210,7 @@ export function expandSessionLogEnvelope(input: unknown): SessionLogFact {
       }),
       cancellations: list(value.cancellations).map((item) => {
         const cancel = object(item);
-        keys(cancel, ["view", "activationId", "operationId", "target"]);
+        keys(cancel, ["view", "activationId", "operationId", "target", "originalWriterId"]);
         return {
           kind: "tool_cancel",
           scope: scope(root, cancel.view),
@@ -229,6 +218,7 @@ export function expandSessionLogEnvelope(input: unknown): SessionLogFact {
             activationId: cancel.activationId,
             operationId: cancel.operationId,
             ...(cancel.target ? { target: cancel.target } : {}),
+            ...(cancel.originalWriterId ? { originalWriterId: cancel.originalWriterId } : {}),
           },
         };
       }),
@@ -245,22 +235,6 @@ export function expandSessionLogEnvelope(input: unknown): SessionLogFact {
         };
       }),
     } as unknown as AcceptedDurableCommitFact;
-  }
-  if (value.kind === "path_probe" && value.execution) {
-    const execution = object(value.execution),
-      root = rootScope(value.scope);
-    return {
-      ...value,
-      execution: {
-        ...execution,
-        bindings: list(execution.bindings).map((item) => {
-          const binding = object(item);
-          keys(binding, ["bindingId", "probe", "view"]);
-          const { view: address, ...rest } = binding;
-          return { ...rest, scope: scope(root, address) };
-        }),
-      },
-    } as unknown as SessionLogFact;
   }
   return value as unknown as SessionLogFact;
 }

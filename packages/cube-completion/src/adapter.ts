@@ -1,37 +1,20 @@
 import {
   parseGuestToolPreview,
   parseToolWorkerOutput,
-  type AcceptedToolCommand,
   type NativeToolEnd,
   type ToolProgressDelivery,
   parseGuestProbeReply,
-  type ExecutionEvidence,
+  type ToolCompletionContext,
+  type ProbeCompletionContext,
 } from "@pi-cloud/protocol";
 import type { WorkerReply } from "@pi-cloud/event-log";
 import { encodeSessionImages, type ImageAttachmentCodec } from "@pi-cloud/session-attachments";
 
-type CompletionContext = {
-  kind?: never;
-  scope: AcceptedToolCommand["scope"];
-  replyTopic: string;
-  toolCallId: string;
-  nativeToolCallId: string;
-  toolName: string;
-  partition: number;
-  execution?: Omit<ExecutionEvidence, "observedAt">;
-};
-type ProbeCompletionContext = {
-  kind: "execution_probe";
-  replyTopic: string;
-  sentAt: number;
-  bindingIds: string[];
-  execution: Omit<ExecutionEvidence, "observedAt">;
-};
 export type CompletionPacket = {
   id?: string;
   kind: "progress" | "result";
   operationId: string;
-  context: CompletionContext | ProbeCompletionContext;
+  context: ToolCompletionContext | ProbeCompletionContext;
   output?: unknown;
   result?: { output?: unknown; failure?: string; quarantine?: boolean };
 };

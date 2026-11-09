@@ -60,7 +60,7 @@ and execution files are prepared in the current Tool Sandbox only when used.
 ## Architecture
 
 ```text
-Browser -> Session runtime API -> PostgreSQL (Run queue/control) -> Pi Worker
+Browser -> Session API -> PostgreSQL (Run queue/control) -> Pi Worker
 Pi Worker <-> Worker-local Model Gateway <-> CLIProxyAPI <-> Model
 
 Pi Worker -> Session Kafka producer -> Kafka -> Session Projector
@@ -70,11 +70,13 @@ Pi Worker -> Session Kafka producer -> Kafka -> Session Projector
                                                `-> Cube native execution endpoint
 
 Control changes -> PostgreSQL + Outbox -> same Session Kafka partition
-Cube/control Tool completion -> boot-scoped Kafka replies -> original Pi Worker
+Guest -> HTTPS completion -> Kafka replies -> authorized Pi Worker
+Control Tool completion -> Kafka replies -> authorized Pi Worker
 
 Workspace files -> persistent Cube Volumes
 Retained attachment originals -> private S3 objects; Kafka/PG carry references
-Model / Cube / storage receipts -> independent Metering service -> PG ledger
+Model / storage receipts -> independent Metering service -> PG ledger
+Provider lifecycle history -> Metering interval calculation -> PG ledger
 ```
 
 | Component | Responsibility |
@@ -82,10 +84,12 @@ Model / Cube / storage receipts -> independent Metering service -> PG ledger
 | PostgreSQL | Session configuration, Run admission, leases and control authority; materialized native history and current state |
 | Pi Worker | The pinned native Harness, context preparation, model requests and canonical Tool Result settlement |
 | Kafka | Ordered Session commits/control propagation, Worker-boot replies and a separate compacted Tool catalog |
-| Session runtime | Authenticated API/history/statements/SSE, Worker membership and the sole Projector for native projection and Tool dispatch |
+| Session API | Authentication, Run admission, history/statements and browser connections |
+| Session runtime | Worker membership and the sole Projector for native projection, live views and Tool dispatch |
+| Tool completion | Scoped Guest HTTPS callbacks, image claim checks and Kafka reply publication |
 | Tool host | Independently published trusted ordinary Tool implementations; no Pi or Session consumer |
 | Control Plane | VM allocation, lifecycle recovery, resource maintenance and scheduled/SCM admission |
-| CubeSandbox | KVM isolation, fixed native file/shell tools and completion delivery |
+| CubeSandbox | KVM isolation, destination admission/cancellation, finite retention and lifecycle evidence |
 | CLIProxyAPI | Provider credentials, account selection and upstream model transport |
 | S3 / Cube Volumes | Immutable conversation attachments and Skill packages / mutable Workspace files |
 
@@ -94,16 +98,18 @@ cross-request continuation. Existing installations use the reviewed provider
 configuration conversion in the [component release procedure](docs/COMPONENT_RELEASE.md).
 [Model metering](docs/MODEL_BILLING.md) records request receipts separately from
 conversation history, with versioned prices and an informational Model costs page.
-An independent receipt service also records compute allocation time and persistent
-Workspace capacity time; [resource statements](docs/RESOURCE_BILLING.md) preserve
+The independent metering service derives compute allocation time from provider
+lifecycle history and separately receives persistent Workspace capacity receipts; [resource statements](docs/RESOURCE_BILLING.md) preserve
 unconfirmed gaps. Payment collection and production tariffs are not enabled.
 
-The `session-runtime` process serves the authenticated API, history/statements,
-SSE, Worker membership and the sole Session Projector group. The separate
-`control-plane` process owns VM admission, recovery and resource lifecycle.
-Already-owned Sessions with active Cube bindings keep committing, dispatching
-Tools and serving reads while management is stopped. New VM activation and
-physical recovery wait for management. There is no independent Tool Broker. Ordinary control tools run in a separate `tool-host` process. Complete versioned
+The `session-api` process owns public requests and relays live views from the
+single Session Projector. It can be replaced without draining the Worker family.
+`session-runtime` retains Worker control and execution; `control-plane` retains
+physical resource lifecycle. Already-bound Tools continue while management is
+stopped. New VM activation and physical recovery wait for management. Fixed Guest
+Tools deliver through the independent `tool-completion` HTTPS role, so replacing
+the dispatch caller does not discard their completion path. There is no independent
+Tool Broker. Ordinary control tools run in a separate `tool-host` process. Complete versioned
 definitions reach every Worker through a compacted Kafka configuration topic and
 take effect at the next model request. Updating these tools does not replace the
 Session API or Projector. [Live publication and execution acceptance](docs/reports/execution-tools-20261108.md)

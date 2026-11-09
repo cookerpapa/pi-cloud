@@ -51,7 +51,9 @@ export interface SandboxBindings extends SandboxBindingReader {
     snapshot: SandboxBindingSnapshot,
   ): Promise<void>;
   release(bindingId: string, assignment: ToolSandboxAssignment): Promise<void>;
-  adopt(physicalActivationId: string): Promise<readonly (SandboxBinding & { closed: boolean })[]>;
+  adopt(
+    physicalActivationId: string,
+  ): Promise<readonly (SandboxBinding & { closed: boolean; pendingReply?: boolean })[]>;
   inventory(sandboxId: string): Promise<readonly SandboxBinding[]>;
 }
 
@@ -152,18 +154,26 @@ export class PostgresSandboxBindings implements SandboxBindings {
       .where("writer_id", "=", identity.leaseId)
       .where("binding_id", "=", bindingId)
       .where("dispatch_closed", "=", true)
+      .where(
+        sql<boolean>`not exists(select 1 from pi_durable_owned_records r
+        where r.tenant_id=${assignment.tenantId}::uuid and r.kind='task'
+          and r.fields ? 'replyTopic' and r.fields->>'status'<>'terminal'
+          and r.fields->>'replyBinding'=${bindingId})`,
+      )
       .returning("binding_id")
       .executeTakeFirst();
     if (
       !removed &&
-      (await this.database
-        .selectFrom("sandbox_tool_bindings")
-        .select("binding_id")
-        .where("binding_id", "=", bindingId)
-        .where("tenant_id", "=", assignment.tenantId)
-        .where("run_id", "=", parseExecutionReference(assignment.executionReference).runId)
-        .where("writer_id", "=", identity.leaseId)
-        .executeTakeFirst())
+      (
+        await this.database
+          .selectFrom("sandbox_tool_bindings")
+          .select(["binding_id", "dispatch_closed"])
+          .where("binding_id", "=", bindingId)
+          .where("tenant_id", "=", assignment.tenantId)
+          .where("run_id", "=", parseExecutionReference(assignment.executionReference).runId)
+          .where("writer_id", "=", identity.leaseId)
+          .executeTakeFirst()
+      )?.dispatch_closed === false
     )
       throw new Error("Binding routing admission is still open");
     // Removing routing metadata does not terminate accepted Tools or release VM quota.
@@ -274,7 +284,7 @@ export class PostgresSandboxBindings implements SandboxBindings {
   }
   async adopt(
     physicalActivationId: string,
-  ): Promise<readonly (SandboxBinding & { closed: boolean })[]> {
+  ): Promise<readonly (SandboxBinding & { closed: boolean; pendingReply?: boolean })[]> {
     // The immutable target stays unchanged. Ownership + its Outbox reference
     // commit together; a starting publication endpoint must not fail VM adoption.
     await this.database
@@ -291,8 +301,15 @@ export class PostgresSandboxBindings implements SandboxBindings {
           "closed",
         ),
       )
+      .select(
+        sql<boolean>`exists(select 1 from pi_durable_owned_records r
+        where r.tenant_id=binding.tenant_id and r.kind='task' and r.fields ? 'replyTopic'
+          and r.fields->>'status'<>'terminal' and r.fields->>'replyBinding'=binding.binding_id::text)`.as(
+          "pendingReply",
+        ),
+      )
       .where(sql<string>`binding.snapshot->>'physicalActivationId'`, "=", physicalActivationId)
-      .execute()) as unknown as (SandboxBinding & { closed: boolean })[];
+      .execute()) as unknown as (SandboxBinding & { closed: boolean; pendingReply?: boolean })[];
   }
   async inventory(sandboxId: string): Promise<readonly SandboxBinding[]> {
     return (await this.#query()

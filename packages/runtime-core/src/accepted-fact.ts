@@ -5,8 +5,6 @@ import type { AcceptedToolCommand, ToolSandboxOperationRequest } from "@pi-cloud
 
 export type CandidateFact =
   | Readonly<{ kind: "durable_commit"; fact: AcceptedDurableCommitFact }>
-  | Omit<import("@pi-cloud/protocol").PathProbe, "scope">
-  | Omit<import("@pi-cloud/protocol").RuntimeKeepalive, "scope">
   | Readonly<{ kind: "agent_event"; publication: EventPublishMessage }>;
 
 export type AcceptedFactScope = Readonly<{
@@ -119,8 +117,6 @@ export type ExecutionPublication = Readonly<{
 }>;
 export type AcceptedFact =
   | AcceptedDurableCommitFact
-  | import("@pi-cloud/protocol").PathProbe
-  | import("@pi-cloud/protocol").RuntimeKeepalive
   | AcceptedAgentEventFact
   | AcceptedWorkFinishedFact
   | AcceptedExecutionSealFact;

@@ -143,6 +143,9 @@ it.each([
       released = 0,
       leaseExpired = false;
     const handle: DurableSessionHandle = {
+      remoteToolIntent: async () => {
+        throw new Error("This fixture has no pending remote operation");
+      },
       ...textDisplay,
       binding: {
         tenantId: command.payload.tenantId,
@@ -368,8 +371,9 @@ it.each([
       void executing.catch(() => {});
       if (mode === "lease_expired_after_prepare") {
         await expect(executing).rejects.toMatchObject({ code: "session_lease_revoked" });
-        expect(acquired).toBe(1);
-        expect(released).toBe(1);
+        // Context/environment readiness precedes a provider permit.
+        expect(acquired).toBe(0);
+        expect(released).toBe(0);
         expect(fake.observations).toEqual([]);
         return;
       }

@@ -1,21 +1,23 @@
+import { ToolCompletionCapabilities } from "@pi-cloud/protocol/completion-capability";
 import { readFile } from "node:fs/promises";
 import { createDatabase } from "@pi-cloud/database/client";
+import { sql } from "kysely";
 import { KafkaToolReplyPublisher, ToolProgressPublisher } from "@pi-cloud/event-log";
 import { configuredImageAttachments } from "@pi-cloud/session-attachments";
-import { CubeCompletionAdapter, type CompletionPacket } from "./adapter.ts";
-import { completionFrames } from "./frames.ts";
+import { CubeCompletionAdapter } from "./adapter.ts";
+import { completionServer } from "./http-server.ts";
 
 const required = (name: string) => {
   const value = process.env[name];
   if (!value) throw new Error(`Missing ${name}`);
   return value;
 };
+const secret = async (name: string) => (await readFile(required(name), "utf8")).trim();
 async function main(): Promise<void> {
   const cleanup: Array<() => Promise<unknown>> = [];
-  const active = new Set<Promise<void>>();
   try {
     const database = createDatabase({
-      connectionString: (await readFile(required("PI_CLOUD_DATABASE_URL_FILE"), "utf8")).trim(),
+      connectionString: await secret("DATABASE_URL_FILE"),
       maxConnections: 4,
     });
     cleanup.push(() => database.destroy());
@@ -23,13 +25,14 @@ async function main(): Promise<void> {
     if (images) cleanup.push(async () => images.blobs.close());
     const publisher = new KafkaToolReplyPublisher(
       required("PI_CLOUD_KAFKA_BROKERS").split(","),
-      `cube-completion-${process.pid}`,
+      `tool-completion-${process.pid}`,
     );
     cleanup.push(() => publisher.close());
     await publisher.start();
+    const managementToken = await secret("PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE");
     const progress = new ToolProgressPublisher(
       required("PI_CLOUD_CONTROL_PLANE_URL"),
-      (await readFile(required("PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE"), "utf8")).trim(),
+      managementToken,
     );
     cleanup.push(() => progress.close());
     const adapter = new CubeCompletionAdapter({
@@ -37,34 +40,29 @@ async function main(): Promise<void> {
       progress,
       publish: (topic, reply) => publisher.publish(topic, reply),
     });
-    process.stdout.write('{"type":"ready","protocolVersion":3}\n');
-    for await (const line of completionFrames(process.stdin)) {
-      const packet = JSON.parse(line) as CompletionPacket;
-      if (packet.kind === "progress") {
-        void adapter.accept(packet).catch(() => {});
-        continue;
-      }
-      if (!packet.id || active.size >= 32) {
-        process.stdout.write(JSON.stringify({ id: packet.id, delivered: false }) + "\n");
-        continue;
-      }
-      const task = adapter.accept(packet).then(
-        () => {
-          process.stdout.write(JSON.stringify({ id: packet.id, delivered: true }) + "\n");
-        },
-        () => {
-          process.stdout.write(JSON.stringify({ id: packet.id, delivered: false }) + "\n");
-        },
-      );
-      active.add(task);
-      void task.finally(() => active.delete(task));
-    }
+    const server = completionServer({
+      adapter,
+      authority: new ToolCompletionCapabilities(managementToken),
+      key: await secret("PI_CLOUD_COMPLETION_TLS_KEY_FILE"),
+      cert: await secret("PI_CLOUD_COMPLETION_TLS_CERT_FILE"),
+      ready: async () => {
+        await sql`select 1`.execute(database);
+      },
+    });
+    cleanup.push(() => server.close());
+    await server.listen({
+      host: process.env.HOST ?? "0.0.0.0",
+      port: Number(process.env.PORT ?? 4320),
+    });
+    await new Promise<void>((resolve) => {
+      process.once("SIGTERM", resolve);
+      process.once("SIGINT", resolve);
+    });
   } finally {
-    await Promise.allSettled(active);
     for (const close of cleanup.reverse()) await close().catch(() => {});
   }
 }
 void main().catch(() => {
-  process.stderr.write("cube_completion_adapter_failed\n");
+  process.stderr.write("tool_completion_service_failed\n");
   process.exitCode = 1;
 });

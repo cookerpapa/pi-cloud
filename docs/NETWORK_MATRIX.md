@@ -5,30 +5,35 @@ firewall denial. Enforce deployment isolation with the configured networks/CNI.
 
 | Source | Destination | Runtime access / policy | Purpose |
 | --- | --- | --- | --- |
-| Browser | Web/Session runtime | yes | authenticated product API, history/statements and SSE |
-| Session runtime | PostgreSQL | yes | Run admission, projection, scoped reads and binding/control publication |
+| Browser | Web/Session API | yes | authenticated product API, history/statements and SSE |
+| Session API | PostgreSQL | yes | Run admission and scoped public reads |
+| Session API | Session runtime | yes | authenticated private live-view relay |
+| Session runtime | PostgreSQL | yes | projection, execution authority/bootstrap and batched maintenance eligibility |
 | Control Plane | PostgreSQL | yes | resource ownership, lifecycle and management admission |
 | Pi Worker | PostgreSQL | yes | queue, Session and lifecycle state |
 | Pi Worker | Session runtime | yes | boot registration, membership/catalog transport, bound input preparation and observations |
-| Pi Worker | Control Plane | yes | new Cube binding/resource activation |
-| Pi Worker | Kafka | yes | direct transactional Session publication and consumption of its boot's Tool replies |
+| Pi Worker | Control Plane | no ordinary Tool dependency | execution-side adapters own resource preparation |
+| Pi Worker | Kafka | yes | direct transactional Session publication and consumption of owned pending replies, including original destinations after handoff |
 | Pi Worker | provider proxy/model provider | yes | model requests |
 | Session runtime / Projector | Kafka | yes | ordered seal/control publication and one group for native history, live views and Tool routing |
 | Control Plane | Session runtime | yes | PG-authorized control publication; never native appends |
 | Session runtime | Cube execution/data endpoints | yes | fixed Tool dispatch, workflow/image/Skill/preview data and retention |
 | Control Plane | Cube API | yes | VM lifecycle and resource recovery |
-| Cubelet trusted completion adapter | Kafka | yes | native final replies to original Worker boot |
-| Cubelet trusted completion adapter | PostgreSQL / private S3 | yes | image inventory and immutable bytes |
-| Cubelet trusted completion adapter | Session runtime | yes | disposable progress HTTP observations |
+| Cube Guest | Tool completion HTTPS | scoped capability | finalized Tool results, ephemeral previews and fresh full-path probes |
+| Cubelet | Tool completion HTTPS | scoped capability | bounded executor failure delivery |
+| Tool completion | Kafka / PostgreSQL / private S3 | yes | reply publication and image claim checks |
+| Tool completion | Session runtime | yes | disposable progress HTTP observations |
 | Volume gateway | PostgreSQL / Workspace storage / quota helper | yes | revision/Volume coordination and initial capacity enforcement |
-| CLIProxyAPI / Cubelet / Workspace quota helper | Metering receiver | yes | durable source receipts, independently of management |
+| CLIProxyAPI / Workspace quota helper | Metering receiver | yes | model/storage receipts independently of management |
+| Metering collector | Cube lifecycle API | yes | bounded raw history and gap-aware catch-up |
 | Metering receiver | PostgreSQL | yes | idempotent accounting ledger and immutable price versions |
 | Cube guest | egress proxy | optional | governed public HTTP/HTTPS |
 | Cube guest | configured company CIDRs | optional | direct debugging/service access |
 | Cube guest | other platform services/internal/metadata | no | no route/credential |
 | Cube guest | other Workspace Volumes | no | mount isolation |
 
-The Sandbox default is deny-all. Public mode routes HTTP/HTTPS through the Cube
+The Sandbox default is deny-all. The completion service address is an explicit
+HTTPS callback exception with an operation-scoped capability and CA verification. Public mode routes HTTP/HTTPS through the Cube
 egress gateway, which blocks loopback, RFC1918, link-local, metadata, Kubernetes
 and platform destinations. Allowing public egress does not grant direct access
 to the trusted cluster network.

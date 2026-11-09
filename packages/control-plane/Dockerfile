@@ -11,6 +11,7 @@ COPY tsconfig.base.json ./
 COPY scripts/prepare-json-parser.mjs scripts/prepare-json-parser.mjs
 COPY scripts/retry-npm-command.sh scripts/retry-npm-command.sh
 COPY packages/accounting/package.json packages/accounting/package.json
+COPY packages/cube-completion/package.json packages/cube-completion/package.json
 COPY packages/control-plane/package.json packages/control-plane/package.json
 COPY packages/control-plane/tsconfig.json packages/control-plane/tsconfig.json
 COPY packages/session-attachments/package.json packages/session-attachments/package.json
@@ -47,9 +48,11 @@ COPY --from=dependencies /app/packages /app/packages
 COPY package.json package-lock.json ./
 COPY tsconfig.base.json ./
 COPY packages/accounting/package.json packages/accounting/package.json
+COPY packages/cube-completion/package.json packages/cube-completion/package.json
 COPY packages/control-plane/package.json packages/control-plane/package.json
 COPY packages/control-plane/tsconfig.json packages/control-plane/tsconfig.json
 COPY packages/accounting/src packages/accounting/src
+COPY packages/cube-completion/src packages/cube-completion/src
 COPY packages/control-plane/src packages/control-plane/src
 COPY deploy/helm/pi-cloud-platform/files/model-catalog.json deploy/helm/pi-cloud-platform/files/model-catalog.json
 COPY packages/session-attachments/package.json packages/session-attachments/package.json

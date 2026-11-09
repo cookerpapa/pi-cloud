@@ -1,6 +1,4 @@
-import { materializeCubeOwnedSources } from "./lib/cube-owned-sources.mjs";
 import { configureBuildProxy } from "./lib/upstream-proxy.mjs";
-import { completionBuildIdentity } from "./lib/guest-build-identity.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, writeFile, rm, copyFile, access } from "node:fs/promises";
@@ -65,13 +63,12 @@ try {
     await run("git", ["apply", "--check", path], temporary);
     await run("git", ["apply", path], temporary);
   }
-  await materializeCubeOwnedSources(root, temporary, manifest);
   const patchId = createHash("sha256").update(JSON.stringify(manifest)).digest("hex").slice(0, 16);
   for (const [name, file, context] of [
     ["cube-api", "CubeAPI/Dockerfile", "CubeAPI"],
     ["cube-master", "CubeMaster/docker/Dockerfile", "."],
     ["cube-templatecenter", "CubeTemplateCenter/docker/Dockerfile", "."],
-    ["cubelet-base", "Cubelet/Dockerfile", "."],
+    ["cubelet", "Cubelet/Dockerfile", "."],
   ]) {
     const original = join(temporary, file),
       dockerfile = join(temporary, `${name}.Dockerfile`);
@@ -150,30 +147,6 @@ try {
       join(temporary, context),
     ]);
   }
-  await run("docker", [
-    "build",
-    ...imageLabels,
-    "--network=host",
-    "--build-arg",
-    "HTTP_PROXY",
-    "--build-arg",
-    "HTTPS_PROXY",
-    "--build-arg",
-    "NO_PROXY",
-    "--build-arg",
-    `CUBELET_BASE_IMAGE=pi-cloud/cubelet-base:${tag}`,
-    "--build-arg",
-    `PI_CLOUD_COMPLETION_SOURCE_ID=${await completionBuildIdentity(root)}`,
-    "--build-arg",
-    `PI_CLOUD_CUBE_VERSION=${manifest.upstreamVersion}-picloud-${patchId}`,
-    "--build-arg",
-    `NPM_CONFIG_REGISTRY=${process.env.NPM_CONFIG_REGISTRY ?? "https://registry.npmjs.org"}`,
-    "-f",
-    "deploy/cubesandbox/Dockerfile.cubelet",
-    "-t",
-    `pi-cloud/cubelet:${tag}`,
-    ".",
-  ]);
   process.stdout.write(`Cube managed runtime images built: ${tag}; patch set ${patchId}\n`);
 } finally {
   await rm(temporary, { recursive: true, force: true });

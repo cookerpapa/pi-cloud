@@ -1,92 +1,146 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
-import { kubectl, repositoryRoot } from "./production-kubernetes.mjs";
+import { kubectl, repositoryRoot, workload } from "./production-kubernetes.mjs";
 import { join } from "node:path";
 
-const directory = "/opt/pi-cloud/packages/cube-completion/src";
-const target = `${directory}/adapter.ts`;
-const backup = `${directory}/adapter.acceptance-original.ts`;
-const wrapperFile = `${directory}/acceptance-reply-fault.mjs`;
-const config = "/tmp/pi-cloud-tool-reply-fault.json";
-const state = "/tmp/pi-cloud-tool-reply-fault-state.json";
-const digest = (value) => createHash("sha256").update(value).digest("hex");
-const restartCompletion = `for(const pid of fs.readdirSync('/proc').filter(p=>/^\\d+$/.test(p))){
- try{const args=fs.readFileSync('/proc/'+pid+'/cmdline','utf8').split('\\0');
- if(Number(pid)!==process.pid&&args.includes('${directory}/main.ts'))process.kill(Number(pid),'SIGTERM');
- }catch(e){if(!['ENOENT','ESRCH'].includes(e.code))throw e;}}
-`;
+const directory = "/app/packages/cube-completion/src";
+const config = "/tmp/pi-cloud-tool-reply-fault.json",
+  state = "/tmp/pi-cloud-tool-reply-fault-state.json";
+const mount = "/run/pi-cloud-acceptance";
+const canonical = (v) =>
+  Array.isArray(v)
+    ? v.map(canonical)
+    : v && typeof v === "object"
+      ? Object.fromEntries(
+          Object.keys(v)
+            .sort()
+            .map((k) => [k, canonical(v[k])]),
+        )
+      : v;
+const digest = (value) =>
+  createHash("sha256")
+    .update(
+      typeof value === "string" || Buffer.isBuffer(value)
+        ? value
+        : JSON.stringify(canonical(value)),
+    )
+    .digest("hex");
 const run = (pod, source) =>
-  kubectl(["exec", "-i", pod, "-c", "cubelet", "--", "node", "--input-type=module", "-"], {
-    input: `import fs from 'node:fs';import{createHash}from'node:crypto';const hash=v=>createHash('sha256').update(v).digest('hex');\n${source}`,
+  kubectl(["exec", "-i", pod, "-c", "tool-completion", "--", "node", "--input-type=module", "-"], {
+    input: `import fs from 'node:fs';\n${source}`,
     timeout: 30000,
   });
-
-export function singleReadyCubelet() {
-  const pods = JSON.parse(kubectl(["get", "pods", "-o", "json"])).items.filter(
+const readDeployment = () =>
+  JSON.parse(kubectl(["get", workload("tool-completion"), "-o", "json"]));
+const patchTemplate = (template) =>
+  kubectl(["patch", workload("tool-completion"), "--type=json", "--patch-file=/dev/stdin"], {
+    input: JSON.stringify([{ op: "replace", path: "/spec/template", value: template }]),
+    timeout: 30000,
+  });
+const ready = () =>
+  kubectl(["rollout", "status", workload("tool-completion"), "--timeout=180s"], {
+    timeout: 185000,
+  });
+const pods = () =>
+  JSON.parse(kubectl(["get", "pods", "-o", "json"])).items.filter(
     (p) =>
       !p.metadata.deletionTimestamp &&
-      p.spec.containers.some((c) => c.name === "cubelet") &&
       p.status.conditions?.some((c) => c.type === "Ready" && c.status === "True"),
   );
-  assert.equal(pods.length, 1, "Reply fault fixture requires one Ready Cubelet");
-  return pods[0];
+export function singleReadyCubelet() {
+  const values = pods().filter((p) => p.spec.containers.some((c) => c.name === "cubelet"));
+  assert.equal(values.length, 1, "Owned node fixture requires one Ready Cubelet");
+  return values[0];
+}
+function singleCompletion() {
+  const values = pods().filter((p) => p.spec.containers.some((c) => c.name === "tool-completion"));
+  assert.equal(values.length, 1, "Reply fixture requires one Ready completion replica");
+  return values[0];
 }
 
-/** Install only after excluding unrelated work; restore receipt is written first. */
+/** Test-only preload over the maintained immutable image. The production server
+ * has no fault flag; an ownership receipt precedes the temporary Pod template. */
 export async function installOwnedReplyFault(receiptPath) {
-  const pod = singleReadyCubelet();
+  const deployment = readDeployment();
+  assert.equal(deployment.spec.replicas, 1, "Reply fixture requires one completion replica");
+  const serving = singleCompletion();
   const original = run(
-    pod.metadata.name,
-    `console.log(fs.readFileSync('${target}').toString('base64'));`,
+    serving.metadata.name,
+    `console.log(fs.readFileSync('${directory}/adapter.ts').toString('base64'));`,
   ).trim();
   const local = await readFile(join(repositoryRoot, "packages/cube-completion/src/adapter.ts"));
   assert.equal(
     digest(Buffer.from(original, "base64")),
     digest(local),
-    "Serving adapter differs from this checkout",
+    "Serving completion image differs from checkout",
   );
+  const fixtureId = randomUUID(),
+    name = "pi-cloud-reply-fixture-" + fixtureId;
   const wrapper = await readFile(
     join(repositoryRoot, "scripts/fixtures/tool-reply-fault.mjs"),
     "utf8",
   );
-  const entry = `import{CubeCompletionAdapter as Base}from './adapter.acceptance-original.ts';\nimport{wrapCompletionAdapter}from './acceptance-reply-fault.mjs';\nexport const CubeCompletionAdapter=wrapCompletionAdapter(Base,${JSON.stringify(config)},${JSON.stringify(state)});\n`;
+  const preload = `import{CubeCompletionAdapter as Base}from '${directory}/adapter.ts';\nimport{wrapCompletionAdapter}from './fault.mjs';\nimport fs from 'node:fs';\nfs.writeFileSync('${config}',${JSON.stringify(JSON.stringify({ fixtureId, expiresAt: 0 }))},{mode:0o600});\nconst Wrapped=wrapCompletionAdapter(Base,'${config}','${state}');Base.prototype.accept=Wrapped.prototype.accept;\n`;
   const receipt = {
-    pod: pod.metadata.name,
-    uid: pod.metadata.uid,
-    fixtureId: randomUUID(),
+    version: 1,
+    kind: "https-completion-fixture",
+    fixtureId,
+    configMap: name,
+    deploymentUid: deployment.metadata.uid,
+    originalTemplate: deployment.spec.template,
     originalSha256: digest(local),
-    wrapperSha256: digest(entry),
     restored: false,
   };
   await writeFile(receiptPath, JSON.stringify(receipt, null, 2), { mode: 0o600, flag: "wx" });
   try {
-    run(
-      receipt.pod,
-      `
-if([${JSON.stringify(backup)},${JSON.stringify(wrapperFile)},${JSON.stringify(config)}].some(p=>fs.existsSync(p)))throw Error('Another reply fixture or unrestored files exist');
-if(hash(fs.readFileSync('${target}'))!==${JSON.stringify(receipt.originalSha256)})throw Error('Adapter changed');
-fs.writeFileSync('${config}',${JSON.stringify(JSON.stringify({ fixtureId: receipt.fixtureId, expiresAt: 0 }))},{flag:'wx',mode:0o600});
-fs.copyFileSync('${target}','${backup}',fs.constants.COPYFILE_EXCL);
-fs.writeFileSync('${wrapperFile}',${JSON.stringify(wrapper)},{flag:'wx',mode:0o600});
-fs.writeFileSync('${target}',${JSON.stringify(entry)});
-${restartCompletion}
-`,
-    );
+    kubectl(["apply", "-f", "-"], {
+      input: JSON.stringify({
+        apiVersion: "v1",
+        kind: "ConfigMap",
+        metadata: { name },
+        immutable: true,
+        data: { "preload.mjs": preload, "fault.mjs": wrapper },
+      }),
+    });
+    const template = structuredClone(deployment.spec.template);
+    template.metadata.annotations = {
+      ...template.metadata.annotations,
+      "pi-cloud.io/reply-fixture": fixtureId,
+    };
+    template.spec.volumes.push({ name: "reply-fixture", configMap: { name, defaultMode: 292 } });
+    const container = template.spec.containers.find((c) => c.name === "tool-completion");
+    container.volumeMounts.push({ name: "reply-fixture", mountPath: mount, readOnly: true });
+    container.command = [
+      "node",
+      "--import",
+      "/app/node_modules/tsx/dist/loader.mjs",
+      "--import",
+      mount + "/preload.mjs",
+    ];
+    container.args = [directory + "/main.ts"];
+    patchTemplate(template);
+    receipt.installedTemplateSha256 = digest(readDeployment().spec.template);
+    await writeFile(receiptPath, JSON.stringify(receipt, null, 2), { mode: 0o600 });
+    ready();
+    const current = singleCompletion();
+    receipt.pod = current.metadata.name;
+    receipt.uid = current.metadata.uid;
+    await writeFile(receiptPath, JSON.stringify(receipt, null, 2), { mode: 0o600 });
+    return receipt;
   } catch (error) {
     error.replyFaultReceipt = receipt;
     throw error;
   }
-  return receipt;
 }
-
-export function armOwnedReplyFault(receipt, tenantId, marker, dropProbe) {
+export function armOwnedReplyFault(receipt, tenantId, marker, dropProbe, dropAck = false) {
   assert.match(tenantId, /^[0-9a-f-]{36}$/);
   const settings = {
     fixtureId: receipt.fixtureId,
     tenantId,
     marker,
     dropProbe,
+    dropAck,
     nonce: randomUUID(),
     expiresAt: Date.now() + 10 * 60_000,
   };
@@ -96,7 +150,6 @@ export function armOwnedReplyFault(receipt, tenantId, marker, dropProbe) {
   );
   return settings.nonce;
 }
-
 export function readOwnedReplyFault(receipt) {
   return JSON.parse(
     run(
@@ -105,35 +158,45 @@ export function readOwnedReplyFault(receipt) {
     ),
   );
 }
-
 export async function restoreOwnedReplyFault(receiptPath) {
   const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
   if (receipt.restored) return;
-  const pod = singleReadyCubelet();
-  if (pod.metadata.uid === receipt.uid)
-    run(
-      receipt.pod,
-      `
-if(!fs.existsSync('${config}')&&[${JSON.stringify(backup)},${JSON.stringify(wrapperFile)}].some(p=>fs.existsSync(p)))throw Error('Fixture ownership record missing');
-if(fs.existsSync('${config}')&&JSON.parse(fs.readFileSync('${config}','utf8')).fixtureId!==${JSON.stringify(receipt.fixtureId)})throw Error('Fixture owner changed');
-const actual=hash(fs.readFileSync('${target}'));
-if(![${JSON.stringify(receipt.wrapperSha256)},${JSON.stringify(receipt.originalSha256)}].includes(actual))throw Error('Adapter changed outside fixture');
-if(actual!==${JSON.stringify(receipt.originalSha256)}){
- if(hash(fs.readFileSync('${backup}'))!==${JSON.stringify(receipt.originalSha256)})throw Error('Original adapter changed');
- fs.copyFileSync('${backup}','${target}');
-}
-${restartCompletion}
-for(const path of ${JSON.stringify([backup, wrapperFile, config, state])})if(fs.existsSync(path))fs.unlinkSync(path);
-if(hash(fs.readFileSync('${target}'))!==${JSON.stringify(receipt.originalSha256)})throw Error('Restore checksum mismatch');
-`,
+  assert.equal(receipt.kind, "https-completion-fixture", "Unknown restore receipt");
+  const deployment = readDeployment();
+  assert.equal(
+    deployment.metadata.uid,
+    receipt.deploymentUid,
+    "Completion deployment was replaced",
+  );
+  if (
+    deployment.spec.template.metadata.annotations?.["pi-cloud.io/reply-fixture"] ===
+    receipt.fixtureId
+  ) {
+    if (receipt.installedTemplateSha256)
+      assert.equal(
+        digest(deployment.spec.template),
+        receipt.installedTemplateSha256,
+        "Completion template changed outside fixture",
+      );
+    patchTemplate(receipt.originalTemplate);
+    ready();
+  } else
+    assert.equal(
+      digest(deployment.spec.template),
+      digest(receipt.originalTemplate),
+      "Completion template no longer belongs to fixture",
     );
-  else {
-    const restoredHash = run(
-      pod.metadata.name,
-      `console.log(hash(fs.readFileSync('${target}')));`,
-    ).trim();
-    assert.equal(restoredHash, receipt.originalSha256, "Replacement Cubelet adapter changed");
-  }
+  const pod = singleCompletion();
+  const source = run(
+    pod.metadata.name,
+    `console.log(fs.readFileSync('${directory}/adapter.ts').toString('base64'));`,
+  ).trim();
+  assert.equal(
+    digest(Buffer.from(source, "base64")),
+    receipt.originalSha256,
+    "Restored completion source changed",
+  );
+  kubectl(["delete", "configmap", receipt.configMap, "--ignore-not-found"]);
   receipt.restored = true;
   await writeFile(receiptPath, JSON.stringify(receipt, null, 2), { mode: 0o600 });
 }

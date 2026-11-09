@@ -26,3 +26,4 @@ export {
   type ToolExecutionAttachment,
   type ToolWorkerOutput,
 } from "./tool-sandbox.ts";
+export * from "./completion-transport.ts";

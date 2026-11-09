@@ -10,7 +10,7 @@ import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile, rename, rm, statfs, access } from "node:fs/promises";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { guestBuildIdentity, completionBuildIdentity } from "./lib/guest-build-identity.mjs";
+import { guestBuildIdentity } from "./lib/guest-build-identity.mjs";
 import { verifyMatchedRelease, matchedMachineDrained } from "./lib/matched-release.mjs";
 import { assertCubeKvmAvailable } from "./lib/cube-host-preflight.mjs";
 import {
@@ -169,7 +169,6 @@ if (action === "prepare") {
         version,
         revision: capture("git", ["rev-parse", "HEAD"]),
         guestIdentity: await guestBuildIdentity(root),
-        completionIdentity: await completionBuildIdentity(root),
         cubeReleasePlanDigest,
       },
       null,
@@ -263,6 +262,8 @@ const services = [
   "ssh-gateway",
   "pi-workers",
   "session-runtime",
+  "session-api",
+  "tool-completion",
   "tool-host",
   "control-plane",
   "workspace-volume-gateway",
@@ -277,7 +278,14 @@ async function stop(service) {
     workload(service),
     "-o",
     "json",
-    ...(["session-runtime", "tool-host", "metering", "workspace-quota"].includes(service)
+    ...([
+      "session-runtime",
+      "session-api",
+      "tool-completion",
+      "tool-host",
+      "metering",
+      "workspace-quota",
+    ].includes(service)
       ? ["--ignore-not-found"]
       : []),
   ]);
@@ -459,7 +467,8 @@ try {
     kubectl(["rollout", "status", "deployment/pi-cloud-cube-api-authorizer", "--timeout=120s"], {
       timeout: 125000,
     });
-    run("scripts/configure-cube-completion.mjs", [], env);
+    run("scripts/reconcile-cubesandbox-release.mjs", [], env);
+    run("scripts/configure-tool-completion.mjs", [], env);
     kubectl(["apply", "-f", "deploy/cubesandbox/template-registry.yaml"]);
     phase("wait for native Cube node registration after Pod rollout");
     await waitForCubeNodeReadiness({ kubectl });
@@ -512,9 +521,10 @@ try {
     contracts: {
       schema: schema.rows[0].name,
       guestIdentity: candidate.guestIdentity,
-      completionIdentity: candidate.completionIdentity,
       modelRuntimeSnapshot: 1,
       sessionRuntimeReplacement: 1,
+      sessionApiReplacement: 1,
+      guestHttpCompletion: 1,
       toolHostReplacement: 1,
       toolCatalogPublication: 1,
     },

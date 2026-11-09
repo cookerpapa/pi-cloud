@@ -604,7 +604,7 @@ export class CubeSandboxProvider implements SandboxProvider {
   #runtimeProbe: Promise<void> | undefined;
 
   constructor(options: CubeSandboxProviderOptions) {
-    this.#retentionWindowMs = positiveInteger(options.retentionWindowMs, 900000, 86400000);
+    this.#retentionWindowMs = positiveInteger(options.retentionWindowMs, 1800000, 86400000);
     this.#templateId = bounded(options.templateId, "CubeSandbox template ID", 256);
     this.#developmentTemplateIds = new Map(
       (["starter", "standard", "performance"] as const).map((key) => [

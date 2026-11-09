@@ -17,7 +17,7 @@ function fixture() {
       writerId,
       fencingToken: 1,
     },
-    replyTopic: `pi-cloud.tool-replies.v3.${randomUUID()}`,
+    replyTopic: `pi-cloud.tool-replies.v4.${randomUUID()}`,
     toolCallId: "result-entry",
     nativeToolCallId: "native-call",
     toolName: "read",

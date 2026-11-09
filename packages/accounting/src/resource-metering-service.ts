@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { sql, type Kysely } from "kysely";
+import { sql, type Kysely, type Transaction } from "kysely";
 import type { Database } from "@pi-cloud/database";
 import {
   parseResourceMeteringBatch,
   parseResourceRateInput,
   type ResourceRate,
+  type ResourceMeteringEvent,
+  type ResourceIdentity,
   type ResourceBillingItem,
   type ResourceBillingPage,
   type ResourceValuation,
@@ -28,6 +30,39 @@ export class ResourceMeteringService {
 
   async ingest(value: unknown): Promise<{ accepted: number }> {
     const { events } = parseResourceMeteringBatch(value);
+    await this.database.transaction().execute((tx) => this.ingestIn(tx, events));
+    return { accepted: events.length };
+  }
+
+  async lockResource(tx: Transaction<Database>, resource: ResourceIdentity) {
+    const key = `${resource.kind}:${resource.resourceId}`,
+      contextHash = receiptHash(resource);
+    await tx
+      .insertInto("resource_metering_resources")
+      .values({
+        id: key,
+        tenant_id: resource.tenantId,
+        workspace_id: resource.workspaceId,
+        kind: resource.kind,
+        resource_id: resource.resourceId,
+        context: resource,
+        context_hash: contextHash,
+      })
+      .onConflict((oc) => oc.column("id").doNothing())
+      .execute();
+    const owner = await tx
+      .selectFrom("resource_metering_resources")
+      .select(["context_hash", "lifecycle_state"])
+      .where("id", "=", key)
+      .forUpdate()
+      .executeTakeFirstOrThrow();
+    if (owner.context_hash !== contextHash)
+      throw new MeteringConflict("Resource accounting identity changed");
+    return owner;
+  }
+
+  async ingestIn(tx: Transaction<Database>, events: ResourceMeteringEvent[]): Promise<void> {
+    parseResourceMeteringBatch({ events });
     // Each resource row serializes interval admission. Different resources share
     // no lock, and all batches acquire locks in the same order.
     const ordered = [...events].sort(
@@ -38,54 +73,31 @@ export class ResourceMeteringService {
         Date.parse(a.from) - Date.parse(b.from) ||
         a.eventId.localeCompare(b.eventId),
     );
-    await this.database.transaction().execute(async (tx) => {
-      for (const event of ordered) {
-        const resource = event.resource,
-          key = `${resource.kind}:${resource.resourceId}`,
-          contextHash = receiptHash(resource);
-        await tx
-          .insertInto("resource_metering_resources")
-          .values({
-            id: key,
-            tenant_id: resource.tenantId,
-            workspace_id: resource.workspaceId,
-            kind: resource.kind,
-            resource_id: resource.resourceId,
-            context: resource,
-            context_hash: contextHash,
-          })
-          .onConflict((oc) => oc.column("id").doNothing())
-          .execute();
-        const owner = await tx
-          .selectFrom("resource_metering_resources")
-          .select("context_hash")
-          .where("id", "=", key)
-          .forUpdate()
-          .executeTakeFirstOrThrow();
-        if (owner.context_hash !== contextHash)
-          throw new MeteringConflict("Resource accounting identity changed");
-        const payloadHash = receiptHash(event);
-        const previous = await tx
-          .selectFrom("resource_metering_events")
-          .select("payload_hash")
-          .where("id", "=", event.eventId)
-          .executeTakeFirst();
-        if (previous) {
-          if (previous.payload_hash !== payloadHash)
-            throw new MeteringConflict("Resource receipt identity changed");
-          continue;
-        }
-        if (event.quality === "confirmed" && event.from !== event.to) {
-          const overlap = await sql<{ id: string }>`select id from resource_metering_events
+    for (const event of ordered) {
+      const resource = event.resource,
+        key = `${resource.kind}:${resource.resourceId}`;
+      await this.lockResource(tx, resource);
+      const payloadHash = receiptHash(event);
+      const previous = await tx
+        .selectFrom("resource_metering_events")
+        .select("payload_hash")
+        .where("id", "=", event.eventId)
+        .executeTakeFirst();
+      if (previous) {
+        if (previous.payload_hash !== payloadHash)
+          throw new MeteringConflict("Resource receipt identity changed");
+        continue;
+      }
+      if (event.quality === "confirmed" && event.from !== event.to) {
+        const overlap = await sql<{ id: string }>`select id from resource_metering_events
             where resource_key=${key} and quality='confirmed'
               and tstzrange(from_at,to_at,'[)') && tstzrange(${event.from}::timestamptz,${event.to}::timestamptz,'[)')
             limit 1`.execute(tx);
-          if (overlap.rows.length)
-            throw new MeteringConflict("Confirmed resource intervals overlap");
-        }
-        const rates =
-          event.quality === "confirmed"
-            ? await sql<{ id: string; definition: Record<string, unknown> }>`
+        if (overlap.rows.length) throw new MeteringConflict("Confirmed resource intervals overlap");
+      }
+      const rates =
+        event.quality === "confirmed"
+          ? await sql<{ id: string; definition: Record<string, unknown> }>`
           (select distinct on (kind) id,definition from resource_rate_versions
             where tenant_id=${resource.tenantId}::uuid and resource_kind=${resource.kind}
               and effective_at<=${event.from}::timestamptz order by kind,effective_at desc)
@@ -94,41 +106,39 @@ export class ResourceMeteringService {
             where tenant_id=${resource.tenantId}::uuid and resource_kind=${resource.kind}
               and effective_at>${event.from}::timestamptz and effective_at<${event.to}::timestamptz)
         `.execute(tx)
-            : { rows: [] };
-        const valuation = valueResourceReceipt(
-          event,
-          rates.rows.map((r) => ({ ...r.definition, id: r.id }) as ResourceRate),
-        );
-        const inserted = await tx
-          .insertInto("resource_metering_events")
-          .values({
-            id: event.eventId,
-            resource_key: key,
-            tenant_id: resource.tenantId,
-            workspace_id: resource.workspaceId,
-            resource_kind: resource.kind,
-            from_at: event.from,
-            to_at: event.to,
-            quality: event.quality,
-            payload: event,
-            payload_hash: payloadHash,
-            valuation: sql<ResourceValuation[]>`${JSON.stringify(valuation)}::jsonb`,
-          })
-          .onConflict((oc) => oc.column("id").doNothing())
-          .returning("id")
-          .executeTakeFirst();
-        if (!inserted) {
-          const conflict = await tx
-            .selectFrom("resource_metering_events")
-            .select("payload_hash")
-            .where("id", "=", event.eventId)
-            .executeTakeFirstOrThrow();
-          if (conflict.payload_hash !== payloadHash)
-            throw new MeteringConflict("Resource receipt identity changed");
-        }
+          : { rows: [] };
+      const valuation = valueResourceReceipt(
+        event,
+        rates.rows.map((r) => ({ ...r.definition, id: r.id }) as ResourceRate),
+      );
+      const inserted = await tx
+        .insertInto("resource_metering_events")
+        .values({
+          id: event.eventId,
+          resource_key: key,
+          tenant_id: resource.tenantId,
+          workspace_id: resource.workspaceId,
+          resource_kind: resource.kind,
+          from_at: event.from,
+          to_at: event.to,
+          quality: event.quality,
+          payload: event,
+          payload_hash: payloadHash,
+          valuation: sql<ResourceValuation[]>`${JSON.stringify(valuation)}::jsonb`,
+        })
+        .onConflict((oc) => oc.column("id").doNothing())
+        .returning("id")
+        .executeTakeFirst();
+      if (!inserted) {
+        const conflict = await tx
+          .selectFrom("resource_metering_events")
+          .select("payload_hash")
+          .where("id", "=", event.eventId)
+          .executeTakeFirstOrThrow();
+        if (conflict.payload_hash !== payloadHash)
+          throw new MeteringConflict("Resource receipt identity changed");
       }
-    });
-    return { accepted: events.length };
+    }
   }
 
   async createRate(tenantId: string, value: unknown): Promise<ResourceRate> {

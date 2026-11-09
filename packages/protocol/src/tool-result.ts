@@ -18,6 +18,7 @@ export type ToolResultPayload = {
 
 /** Invocation-local transport state, never serialized or a canonical Tool receipt. */
 export type ToolReplyWait<T> = Readonly<{
+  executionEvidence?(): import("./execution-probe.ts").ExecutionEvidence | undefined;
   result: Promise<T>;
   executionSettled(): boolean;
 }>;

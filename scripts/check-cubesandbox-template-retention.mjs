@@ -115,7 +115,7 @@ assert.match(releaseEvidence, /await guestBuildIdentity\(repositoryRoot\)/u);
 assert.match(releaseEvidence, /"cli-proxy-api"/u);
 const cubeBuilder = readFileSync("scripts/build-cubesandbox-runtime.mjs", "utf8");
 assert.match(cubeBuilder, /org.opencontainers.image.revision=\$\{revision\}/u);
-assert.equal(cubeBuilder.match(/\.\.\.imageLabels/g)?.length, 2);
+assert.match(cubeBuilder, /\.\.\.imageLabels/u);
 assert.ok(
   !/reference: `pi-cloud\/\$\{imageName\}:local`/u.test(releaseEvidence),
   "Retired mutable Cube image tags must not remain",

@@ -28,14 +28,6 @@ const input = {
 [plugins."io.containerd.monitor.v1.cgroups"]
     no_prometheus = false
 `,
-  completionFiles: Object.fromEntries(
-    [
-      "database-url",
-      "metering-ingest-token",
-      "supervisor-management-token",
-      "session-image-s3-credentials.json",
-    ].map((name) => [name, Buffer.from("fixture").toString("base64")]),
-  ),
 };
 function workload(kind, name, containers) {
   return {
@@ -93,9 +85,8 @@ it("renders a complete, idempotent Cube release before deployment while retainin
   expect(cubelet.env.find((e) => e.name === "CUBE_NODE_IP").valueFrom.fieldRef.fieldPath).toBe(
     "status.hostIP",
   );
-  expect(cubelet.env.find((e) => e.name === "PI_CLOUD_KAFKA_BROKERS").value).toBe(
-    "kafka-1:9092,kafka-2:9092,kafka-3:9092",
-  );
+  expect(cubelet.env.some((e) => e.name.startsWith("PI_CLOUD_"))).toBe(false);
+
   expect(
     cubelet.volumeMounts
       .filter((v) => v.name === "picloud-posix-volume-plugin")
@@ -106,7 +97,7 @@ it("renders a complete, idempotent Cube release before deployment while retainin
     "/opt/cube-image/Cubelet/plugin/cube-volume-picloud-posix",
   ]);
   const config = find(resources, "ConfigMap", "pi-cloud-posix-volume-plugin").data;
-  expect(config["cubelet-config.toml"]).toContain("execution_completion_command");
+  expect(config["cubelet-config.toml"]).toContain("execution_enabled = true");
   expect(config["cubelet-config.toml"]).toContain("cube-volume-picloud-posix");
   expect(config["cubelet-config.toml"]).toContain("no_sync = false");
   expect(config["cubelet-config.toml"]).not.toContain("no_sync = true");
@@ -115,7 +106,7 @@ it("renders a complete, idempotent Cube release before deployment while retainin
     find(resources, "Secret", "cube-master-config").stringData["conf.yaml"],
   );
   expect(masterConfig.volume_plugins.map((p) => p.name)).toEqual(["cos", "picloud-posix"]);
-  expect(find(resources, "Secret", "pi-cloud-cube-completion").data).toEqual(input.completionFiles);
+  expect(find(resources, "Secret", "pi-cloud-cube-completion")).toBeUndefined();
 });
 
 it("rolls the exact configuration consumers when plugins, credentials or shared-root identity change", () => {
@@ -123,13 +114,6 @@ it("rolls the exact configuration consumers when plugins, credentials or shared-
   const changes = [
     { ...input, sharedRootIdentity: "1-3" },
     { ...input, pluginSource: "#!/bin/sh\nexit 1\n" },
-    {
-      ...input,
-      completionFiles: {
-        ...input.completionFiles,
-        "database-url": Buffer.from("rotated").toString("base64"),
-      },
-    },
   ];
   for (const change of changes) {
     const next = objects(renderCubeRelease(fixture(), change));

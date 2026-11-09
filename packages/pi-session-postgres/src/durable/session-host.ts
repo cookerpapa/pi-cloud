@@ -15,6 +15,13 @@ import {
   type DurableCommitPublication,
   type DurableSessionCommit,
   type OriginalControlToolIntent,
+  type OriginalRemoteToolIntent,
+  type AcceptedToolCommand,
+  type PendingToolReplyRecovery,
+  parseToolReplyRecovery,
+  durableToolIntent,
+  parseToolSandboxOperationRequest,
+  durableToolState,
 } from "@pi-cloud/protocol";
 import type { ImageAttachmentCodec } from "@pi-cloud/session-attachments";
 import type { ActiveExecutionAuthority } from "../execution-authority.ts";
@@ -36,6 +43,7 @@ export type DurableRunBinding = Readonly<{
 }>;
 export type DurableSessionOpen = {
   binding: DurableRunBinding;
+  stopOnResume?: boolean;
   /** Owner/startup lifetime, excluding User Stop's native settlement. */
   signal?: AbortSignal;
   publish(publication: DurableCommitPublication): Promise<void>;
@@ -74,6 +82,13 @@ export type ManagedNativeRuntime = {
     view?: ConversationWorkView;
   }): Promise<number>;
 };
+type RemoteToolMetadata = Omit<AcceptedToolCommand, "kind" | "toolCallId" | "request"> & {
+  taskId: number;
+  request: Omit<
+    Extract<AcceptedToolCommand["request"], { operation: "tool.execute" }>,
+    "args" | "toolCallId"
+  >;
+};
 type Owner = {
   authority: ActiveExecutionAuthority & { start(): void; assertActive(): void };
   storage: Promise<PublishedDurableStorage>;
@@ -87,11 +102,13 @@ type Owner = {
   closing?: Promise<void>;
   interruption: AbortController;
   readSignal: AbortSignal;
+  recoveredOperations: Map<number, { operationId: string; activationId: string; writerId: string }>;
 };
 export type DurableSessionHandle = {
   binding: DurableRunBinding;
   storage: import("@earendil-works/pi-durable").Storage;
   recordSequence(id: number): Promise<number | undefined>;
+  remoteToolIntent(taskId: number, conversationId: number): Promise<OriginalRemoteToolIntent>;
   committedSequence(): number;
   authority: ActiveExecutionAuthority;
   runtime<T extends ManagedNativeRuntime>(factory: () => Promise<T>): Promise<T>;
@@ -115,6 +132,10 @@ export class PostgresDurableSessionHost {
       leaseDatabase?: Kysely<Database>;
       images?: ImageAttachmentCodec;
       onReadStart?: import("./published-storage.ts").DurableStorageOptions["onReadStart"];
+      restoreReplies?: (
+        references: readonly PendingToolReplyRecovery[],
+        signal: AbortSignal,
+      ) => Promise<void>;
     },
   ) {
     this.#leases = new PostgresSessionLeaseObserver({
@@ -251,6 +272,122 @@ export class PostgresDurableSessionHost {
       signal ? AbortSignal.any([owner.readSignal, signal]) : owner.readSignal,
       (error) => owner.interruption.abort(error),
     );
+  }
+
+  async originalRemoteIntent(
+    reference: string,
+    conversationId: number,
+    taskId: number,
+  ): Promise<OriginalRemoteToolIntent> {
+    const owner = this.#executions.get(reference);
+    const binding = owner?.bindings.get(conversationId);
+    if (!owner || !binding) throw new Error("Remote recovery owner is unavailable");
+    await owner.authority.assertCurrent();
+    return nativeRead(
+      async () => {
+        const {
+          rows: [row],
+        } = await sql<{ seq: string; cloud_metadata: string; body: string }>`
+        select c.seq::text,c.cloud_metadata,l.body
+        from pi_durable_records r join pi_durable_commits c
+          on c.tenant_id=r.tenant_id and c.session_id=r.session_id and c.seq=(r.fields->>'replyIntentSeq')::bigint
+        join pi_durable_log l on l.tenant_id=c.tenant_id and l.session_id=c.session_id and l.seq=c.seq
+          and l.record_kind='task' and l.record_id=r.id and l.phase='"execute"'
+        where r.tenant_id=${binding.tenantId}::uuid and r.session_id=${binding.piSessionId}
+          and r.id=${taskId} and r.kind='task' and r.fields->>'status'<>'terminal'
+        order by l.ordinal limit 1`.execute(this.options.database);
+        if (!row) throw new Error("Original remote Tool intent is unavailable");
+        const metadata = JSON.parse(row.cloud_metadata) as { remoteTools?: RemoteToolMetadata[] };
+        const source = metadata.remoteTools?.find((t) => t.taskId === taskId);
+        const write = JSON.parse(row.body);
+        if (
+          !source ||
+          source.scope?.tenantId !== binding.tenantId ||
+          source.scope.piSessionId !== binding.piSessionId ||
+          source.scope.runId !== binding.runId ||
+          source.scope.sessionId !== binding.sessionId ||
+          source.scope.turnId !== binding.turnId ||
+          write.value?.conversationId !== conversationId ||
+          source.request?.operation !== "tool.execute"
+        )
+          throw new Error("Remote Tool recovery changed native work identity");
+        const sequence = Number(row.seq);
+        const intent = durableToolIntent(
+          { seq: sequence, nextId: taskId + 1, writes: [write] },
+          taskId,
+        );
+        const reply = parseToolReplyRecovery(source.replyRecovery);
+        if (
+          reply.topic !== source.replyTopic ||
+          reply.toolCallId !== intent.callId ||
+          reply.toolName !== source.request.toolName
+        )
+          throw new Error("Remote Tool recovery changed reply identity");
+        return {
+          sequence,
+          taskId,
+          conversationId,
+          reply,
+          command: {
+            kind: "tool_command",
+            scope: source.scope,
+            toolCallId: `task:${taskId}`,
+            replyTopic: source.replyTopic,
+            replyRecovery: reply,
+            occurredAt: source.occurredAt,
+            ...(source.environment ? { environment: source.environment } : {}),
+            request: parseToolSandboxOperationRequest({
+              ...source.request,
+              args: intent.arguments,
+              toolCallId: intent.callId,
+            }),
+          },
+        };
+      },
+      owner.readSignal,
+      (error) => owner.interruption.abort(error),
+    );
+  }
+
+  async #restoreReplies(
+    binding: DurableRunBinding,
+    signal: AbortSignal,
+    operations: Owner["recoveredOperations"],
+    stopOnResume = false,
+  ): Promise<void> {
+    const { rows } = await sql<{ id: string; cloud_metadata: string }>`
+      select r.id::text,c.cloud_metadata from pi_durable_records r
+      join pi_durable_commits c on c.tenant_id=r.tenant_id and c.session_id=r.session_id
+        and c.seq=(r.fields->>'replyIntentSeq')::bigint
+      where r.tenant_id=${binding.tenantId}::uuid and r.session_id=${binding.piSessionId}
+        and r.kind='task' and r.fields ? 'replyTopic' and r.fields->>'status'<>'terminal'
+        and r.fields->>'run'=${binding.runId}
+      order by r.id`.execute(this.options.database);
+    const references = rows.map((row) => {
+      const metadata = JSON.parse(row.cloud_metadata) as { remoteTools?: RemoteToolMetadata[] };
+      const source = metadata.remoteTools?.find((t) => t.taskId === Number(row.id));
+      if (
+        !source ||
+        source.scope?.tenantId !== binding.tenantId ||
+        source.scope.piSessionId !== binding.piSessionId ||
+        source.scope.runId !== binding.runId
+      )
+        throw new Error("Pending Tool replay scope changed");
+      operations.set(Number(row.id), {
+        operationId: source.request.operationId,
+        activationId: source.request.activationId,
+        writerId: source.scope.writerId,
+      });
+      return {
+        operationId: source.request.operationId as string,
+        reply: parseToolReplyRecovery(source.replyRecovery),
+      };
+    });
+    if (!stopOnResume && references.length) {
+      if (!this.options.restoreReplies)
+        throw new Error("Remote Tool reply recovery is not configured");
+      await this.options.restoreReplies(references, signal);
+    }
   }
   async retireHostCall(reference: string, taskId: number, id: string): Promise<void> {
     const owner = this.#executions.get(reference);
@@ -447,6 +584,7 @@ export class PostgresDurableSessionHost {
       );
       const runs = new Map<number, DurableSessionOpen>(),
         bindings = new Map<number, DurableRunBinding>();
+      const recoveredOperations: Owner["recoveredOperations"] = new Map();
       const progress = new NativeProjectionProgress({
         initialThrough: 0,
         assertCurrent: () => authority.assertCurrent(),
@@ -473,6 +611,24 @@ export class PostgresDurableSessionHost {
                 );
               const commit = batch as unknown as DurableSessionCommit;
               const preparation = this.#owners.get(key)?.prepare?.(commit);
+              const recoveryCancellations: import("@pi-cloud/protocol").CandidateToolCancellation[] =
+                [];
+              const completedRecoveries: number[] = [];
+              for (const write of commit.writes) {
+                if (write.type !== "task") continue;
+                const task = durableToolState(write.value);
+                const original = task && recoveredOperations.get(task.id);
+                if (!task || !original) continue;
+                if (task.aborted)
+                  recoveryCancellations.push({
+                    executionReference: active.binding.executionReference,
+                    conversationId: active.binding.conversationId,
+                    activationId: original.activationId,
+                    operationId: original.operationId,
+                    originalWriterId: original.writerId,
+                  });
+                if (task.terminal) completedRecoveries.push(task.id);
+              }
               const display = [...this.#owners.get(key)!.display].map(
                 ([conversationId, prepare]) => ({
                   executionReference: bindings.get(conversationId)!.executionReference,
@@ -512,7 +668,13 @@ export class PostgresDurableSessionHost {
                       }
                     : {}),
                   tools: preparation?.tools ?? [],
-                  cancellations: preparation?.cancellations ?? [],
+                  cancellations: [
+                    ...new Map(
+                      [...(preparation?.cancellations ?? []), ...recoveryCancellations].map(
+                        (cancel) => [cancel.operationId, cancel],
+                      ),
+                    ).values(),
+                  ],
                   display: display.flatMap(({ executionReference, conversationId, prepared }) =>
                     prepared.events.length || prepared.coveredThrough !== undefined
                       ? [
@@ -530,6 +692,7 @@ export class PostgresDurableSessionHost {
                 });
                 acknowledged = true;
                 preparation?.confirmed();
+                for (const id of completedRecoveries) recoveredOperations.delete(id);
                 for (const { prepared } of display) prepared.confirmed();
               } catch (cause) {
                 if (!acknowledged && cause instanceof PublicationNotSentError) {
@@ -556,6 +719,7 @@ export class PostgresDurableSessionHost {
             }),
           waitProjected: (through) => progress.wait(through, authority.signal),
         });
+        await this.#restoreReplies(binding, readSignal, recoveredOperations, input.stopOnResume);
         return store;
       })();
       owner = {
@@ -565,6 +729,7 @@ export class PostgresDurableSessionHost {
         bindings,
         interruption,
         readSignal,
+        recoveredOperations,
         display: new Map(),
         publicationTail: Promise.resolve(),
         releaseTail: Promise.resolve(),
@@ -607,6 +772,8 @@ export class PostgresDurableSessionHost {
         binding,
         storage,
         recordSequence: (id) => storage.recordSequence(id),
+        remoteToolIntent: (taskId, conversationId) =>
+          this.originalRemoteIntent(binding.executionReference, conversationId, taskId),
         committedSequence: () => storage.committedSequence,
         authority: owner.authority,
         runtime: <T extends ManagedNativeRuntime>(factory: () => Promise<T>): Promise<T> => {

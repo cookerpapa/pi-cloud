@@ -304,6 +304,9 @@ export class PostgresAttachmentStore implements ImageAttachmentStore, ImageAttac
           and not exists(select 1 from pi_history_header_attachments r where r.tenant_id=o.tenant_id and r.attachment_id=o.id)
           and not exists(select 1 from session_uploads u where u.tenant_id=o.tenant_id and u.attachment_id=o.id)
           and not exists(select 1 from runs where id=o.source_run_id and output_sealed_at is null)
+          and not exists(select 1 from pi_durable_owned_records t where t.tenant_id=o.tenant_id
+            and t.kind='task' and t.fields ? 'replyTopic' and t.fields->>'status'<>'terminal'
+            and t.fields->>'run'=o.source_run_id::text)
         order by cleanup_available_at,created_at limit 32 for update skip locked`.execute(tx);
       if (!candidates.length) return [];
       // A fresh statement after locking observes reference commits which we waited for.
@@ -318,6 +321,9 @@ export class PostgresAttachmentStore implements ImageAttachmentStore, ImageAttac
           and not exists(select 1 from pi_history_header_attachments r where r.tenant_id=o.tenant_id and r.attachment_id=o.id)
           and not exists(select 1 from session_uploads u where u.tenant_id=o.tenant_id and u.attachment_id=o.id)
           and not exists(select 1 from runs where id=o.source_run_id and output_sealed_at is null)
+          and not exists(select 1 from pi_durable_owned_records t where t.tenant_id=o.tenant_id
+            and t.kind='task' and t.fields ? 'replyTopic' and t.fields->>'status'<>'terminal'
+            and t.fields->>'run'=o.source_run_id::text)
         returning tenant_id,id,write_completed_at`.execute(tx);
       return rows;
     });

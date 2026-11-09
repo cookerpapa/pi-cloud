@@ -69,15 +69,6 @@ export async function guestBuildIdentityAtRevision(repositoryRoot, revision) {
   }
 }
 
-export function completionBuildIdentity(repositoryRoot) {
-  return buildIdentity(
-    repositoryRoot,
-    "deploy/cubesandbox/Dockerfile.cubelet",
-    "pi-cloud.completion-build-inputs.v1\0",
-    ["deploy/cubesandbox/runtime-build.json"],
-  );
-}
-
 async function buildIdentity(repositoryRoot, dockerfilePath, prefix, extraInputs = []) {
   const root = resolve(repositoryRoot);
   const dockerfile = await readFile(resolve(root, dockerfilePath), "utf8");

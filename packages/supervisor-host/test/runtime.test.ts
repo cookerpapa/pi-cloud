@@ -21,7 +21,7 @@ const replies = vi.hoisted(() => ({ ready: true }));
 vi.mock("@pi-cloud/event-log", async (original) => ({
   ...(await original<typeof import("@pi-cloud/event-log")>()),
   KafkaToolReplyMailbox: class {
-    topic = "pi-cloud.tool-replies.v3.test";
+    topic = "pi-cloud.tool-replies.v4.test";
     get ready() {
       return replies.ready;
     }

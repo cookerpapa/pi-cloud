@@ -74,11 +74,9 @@ export class SessionProjector {
         ): Promise<void>;
       };
       executionProbes?: {
-        consume(fact: import("@pi-cloud/protocol").PathProbe, current?: () => boolean): void;
         reset(): void;
       };
       runtimeRetention?: {
-        consume(fact: import("@pi-cloud/protocol").RuntimeKeepalive, current: () => boolean): void;
         reset(): void;
         forget(writerId: string): void;
       };
@@ -240,20 +238,6 @@ export class SessionProjector {
           try {
             if (current?.() === false) return;
             const { fact } = record;
-            if (fact.kind === "runtime_keepalive") {
-              if (this.#projection.observes(record))
-                // This finite intent was authorized before ordered Run closure.
-                // Its original deadline remains valid after normal settlement;
-                // destination allocation closure still rejects it irreversibly.
-                options.runtimeRetention?.consume(fact, current ?? (() => true));
-              return;
-            }
-            if (fact.kind === "path_probe") {
-              const open = this.#projection.observes(record);
-              this.observations.record(record, open);
-              if (open) options.executionProbes?.consume(fact, current);
-              return;
-            }
             // Normal work completion also retires this idle owner. Publish routing
             // revocation before opening the PG boundary to a successor writer.
             if (fact.kind === "work_finished") await options.toolCommands.consume(record, current);

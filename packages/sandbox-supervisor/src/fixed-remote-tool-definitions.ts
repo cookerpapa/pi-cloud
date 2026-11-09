@@ -9,11 +9,14 @@ import { MIN_TOOL_EXECUTION_TIMEOUT_MS, MAX_TOOL_EXECUTION_TIMEOUT_MS } from "@p
 
 /** The same code-owned schemas drive Pi validation and the remote adapter.
  * No environment or effect port is created while constructing definitions. */
-export function fixedRemoteToolDefinitions(): Omit<ToolRegistration, "execute" | "replay">[] {
+export function fixedRemoteToolDefinitions(): Omit<ToolRegistration, "execute">[] {
   const bash = createBashTool();
   return [createReadTool(), createWriteTool(), createEditTool(), bash].map(
     ({ execute: _execute, replay: _replay, ...tool }) => ({
       ...tool,
+      // Only the cloud proxy is repeatable: recovery reconnects to its original
+      // durable operation and never repeats the underlying shell/file action.
+      replay: "safe" as const,
       executionMode: tool.name === "read" ? "parallel" : "sequential",
       parameters:
         tool.name === "bash"

@@ -94,7 +94,18 @@ it.skipIf(!postgres || !brokers)(
       const dispatcher = new ToolCommandDispatcher({
         routes: view,
         // Cube receives no stop RPC. Run settlement depends only on routing revocation.
-        executor: new CubeSandboxToolExecutor({ submitTool: submit, cancelTool: cancel }),
+        executor: new CubeSandboxToolExecutor(
+          { submitTool: submit, cancelTool: cancel },
+          {
+            issue: async (grant) => ({
+              url: "https://completion.test/v1/completions",
+              address: "127.0.0.1",
+              ca: "fixture",
+              capability: JSON.stringify(grant),
+              expiresAt: grant.expiresAt,
+            }),
+          },
+        ),
         workflow: async () => {},
         publishReply: async () => {},
         quarantine: async () => {

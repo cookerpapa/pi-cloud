@@ -23,9 +23,7 @@ const options = {
   cubeRepository: resolve(
     process.env.PI_CLOUD_CUBESANDBOX_REPOSITORY ?? resolve(repositoryRoot, "../CubeSandbox"),
   ),
-  kubeconfig:
-    process.env.PI_CLOUD_CUBE_COMPLETION_KUBECONFIG ??
-    resolve(runtimeDirectory, "k3s/kubeconfig.yaml"),
+  kubeconfig: process.env.KUBECONFIG ?? resolve(runtimeDirectory, "k3s/kubeconfig.yaml"),
 };
 const execute = promisify(execFile);
 const binary = process.env.PI_CLOUD_KUBECTL_BIN ?? "/usr/local/bin/k3s",
@@ -41,11 +39,6 @@ const capture = async (command, args, timeout = 120000) => {
 };
 const kube = (args) =>
   capture(binary, [...prefix, "--kubeconfig", options.kubeconfig, "-n", "cube-system", ...args]);
-for (const name of ["postgres", "session-images", "kafka-1", "kafka-2", "kafka-3"]) {
-  const service = JSON.parse(await kube(["get", "service", name, "-o", "json"]));
-  if (!Object.keys(service.spec?.selector ?? {}).length)
-    throw new Error(`Native completion requires selector-backed ${name}`);
-}
 const candidate = JSON.parse(await readFile(resolve(options.directory, "candidate.json"), "utf8"));
 const verified = await verifyCubeUpgradePlan({
   ...options,
@@ -65,7 +58,6 @@ if (!verified.alreadyApplied) {
       await kube([
         "get",
         "configmap/pi-cloud-posix-volume-plugin",
-        "secret/pi-cloud-cube-completion",
         "--ignore-not-found",
         "-o",
         "json",

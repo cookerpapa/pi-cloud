@@ -108,12 +108,6 @@ export { projectConversationTurnTranscript } from "@pi-cloud/runtime-core/conver
 
 export type { NativeInputBackend, NativeInputBackendFactory } from "./queued-input-service.ts";
 export {
-  createControlPlaneRuntime,
-  ControlPlaneRuntime,
-  type ControlPlaneRuntimeOptions,
-  type ControlPlaneRuntimeState,
-} from "./control-plane-runtime.ts";
-export {
   SupervisorMaintenanceRuntime,
   type SupervisorMaintenanceActivity,
   type SupervisorMaintenanceRuntimeOptions,

@@ -14,6 +14,7 @@ export const RunPhaseSchema = Type.Union([
   Type.Literal("preparing_tool"),
   Type.Literal("executing_tool"),
   Type.Literal("waiting_child"),
+  Type.Literal("waiting_environment"),
   Type.Literal("retrying"),
   Type.Literal("compacting"),
   Type.Literal("cancelling"),

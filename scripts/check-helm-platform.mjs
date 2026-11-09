@@ -51,6 +51,16 @@ assert.deepEqual(controlPlane.spec.template.spec.containers[0].args, [
   "/app/packages/control-plane/src/session-runtime-main.ts",
 ]);
 assert(controlPlane);
+const sessionApi = find("Deployment", "pi-cloud-session-api");
+assert(sessionApi && find("Service", "session-api"));
+assert.deepEqual(sessionApi.spec.template.spec.containers[0].args, [
+  "/app/packages/control-plane/src/session-api-main.ts",
+]);
+const completion = find("Deployment", "pi-cloud-tool-completion");
+assert(completion && find("Service", "tool-completion"));
+assert.deepEqual(completion.spec.template.spec.containers[0].args, [
+  "/app/packages/cube-completion/src/main.ts",
+]);
 const metering = find("Deployment", "pi-cloud-metering");
 assert(metering);
 assert.deepEqual(metering.spec.template.spec.containers[0].args, [
@@ -134,8 +144,8 @@ assert(web);
 const webEnvironment = Object.fromEntries(
   web.spec.template.spec.containers[0].env?.map((entry) => [entry.name, entry.value]) ?? [],
 );
-assert.equal(webEnvironment.PI_CLOUD_CONTROL_PLANE_UPSTREAM, "session-runtime:3000");
-assert.equal(webEnvironment.PI_CLOUD_PREVIEW_UPSTREAM, "session-runtime:3001");
+assert.equal(webEnvironment.PI_CLOUD_CONTROL_PLANE_UPSTREAM, "session-api:3000");
+assert.equal(webEnvironment.PI_CLOUD_PREVIEW_UPSTREAM, "session-api:3001");
 assert.equal(
   webEnvironment.PI_CLOUD_PUBLIC_ORIGIN_BASE_URL,
   environment.PI_CLOUD_PUBLIC_ORIGIN_BASE_URL,
@@ -184,7 +194,7 @@ assert(customWeb);
 const customWebEnvironment = Object.fromEntries(
   customWeb.spec.template.spec.containers[0].env.map((entry) => [entry.name, entry.value]),
 );
-assert.equal(customWebEnvironment.PI_CLOUD_CONTROL_PLANE_UPSTREAM, "session-runtime:3000");
+assert.equal(customWebEnvironment.PI_CLOUD_CONTROL_PLANE_UPSTREAM, "session-api:3000");
 assert.equal(customWebEnvironment.PI_CLOUD_ADMIN_ORIGIN_BASE_URL, "https://ops.company.test");
 assert.equal(customWebEnvironment.PI_CLOUD_GRAFANA_URL, "https://metrics.company.test/grafana/");
 const customDatabaseKeys = parseAllDocuments(

@@ -16,15 +16,6 @@ export function prepareExecutionFact(
       throw new Error("Native commit belongs to another execution owner");
     return candidate.fact;
   }
-  if (candidate.kind === "path_probe" || candidate.kind === "runtime_keepalive") {
-    const {
-      leaseId: _lease,
-      piConversationId: _lane,
-      executionReference: _reference,
-      ...identity
-    } = scope;
-    return { ...candidate, scope: identity };
-  }
   if (candidate.kind === "agent_event") {
     const publication = candidate.publication;
     if (

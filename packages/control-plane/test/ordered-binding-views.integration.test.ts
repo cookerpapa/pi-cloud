@@ -301,8 +301,12 @@ it.skipIf(!postgres || !brokers)(
       expect((await view!.get(scope, binding))?.dispatchClosed).toBe(false);
       closedAdmissionGate.resolve();
       await expect(closing).rejects.toThrow();
-      await vi.waitFor(async () =>
-        expect((await view!.get(scope, binding))?.dispatchClosed).toBe(true),
+      // A lost HTTP ACK confirms neither immediate consumer progress nor a VM
+      // stop. Give the real RF3 transaction/consumer the same bounded convergence
+      // budget as the other ordered-view assertions in this fixture.
+      await vi.waitFor(
+        async () => expect((await view!.get(scope, binding))?.dispatchClosed).toBe(true),
+        { timeout: 10000 },
       );
       await bindings.closeWriter(scope, false);
       await projector.close();

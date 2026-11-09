@@ -13,14 +13,20 @@ import {
   type ExecutionProbeReply,
   type ExecutionEvidence,
   parseExecutionEvidence,
+  parseToolReplyRecovery,
+  type PendingToolReplyRecovery,
+  type ToolReplyRecovery,
+  parseEnvironmentChanged,
+  type EnvironmentChanged,
 } from "@pi-cloud/protocol";
+import { createHash, randomUUID } from "node:crypto";
 import { KafkaLogConsumer } from "./kafka-log-consumer.ts";
 
 const { KafkaJS } = kafkaNative;
-export const TOOL_REPLY_TOPIC_PREFIX = "pi-cloud.tool-replies.v3.";
+export const TOOL_REPLY_TOPIC_PREFIX = "pi-cloud.tool-replies.v4.";
 const PREFIX = TOOL_REPLY_TOPIC_PREFIX;
 export const TOOL_REPLY_TOPIC_PATTERN =
-  /^pi-cloud\.tool-replies\.v3\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  /^pi-cloud\.tool-replies\.v4\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Transport redelivery starts when a result is published, not when the Tool
 // begins. A multi-hour native child wait has no Bash execution timeout.
 export const TOOL_REPLY_RETENTION_MS = 2 * 60 * 60_000 + 60_000;
@@ -44,10 +50,11 @@ export type ToolReply = ReplyIdentity &
         failure: ToolExecutionFailureData;
       }
   );
-export type WorkerReply = ToolReply | ExecutionProbeReply;
+export type WorkerReply = ToolReply | ExecutionProbeReply | EnvironmentChanged;
 
 export function parseWorkerReply(value: string | Buffer): WorkerReply {
   const valueObject = JSON.parse(value.toString());
+  if (valueObject?.kind === "environment_changed") return parseEnvironmentChanged(valueObject);
   if (valueObject?.kind === "execution_probe") return parseExecutionProbeReply(valueObject);
   const reply = valueObject as ToolReply;
   if (!reply || typeof reply.operationId !== "string" || !reply.operationId || reply.sequence !== 1)
@@ -104,7 +111,12 @@ export class KafkaToolReplyPublisher {
         topic,
         messages: [
           {
-            key: reply.kind === "execution_probe" ? reply.probeId : reply.operationId,
+            key:
+              reply.kind === "execution_probe"
+                ? reply.probeId
+                : reply.kind === "environment_changed"
+                  ? reply.changeId
+                  : reply.operationId,
             value,
             partition: 0,
           },
@@ -126,9 +138,11 @@ type Pending = {
   reject(error: unknown): void;
   cleanup(): void;
   settleExecution(): void;
+  observeExecution(value: ExecutionEvidence): void;
 };
 
-/** One boot-local mailbox for all slots. A new Worker never resumes old promises. */
+/** In-memory callbacks for owned operations. A replacement reconstructs these
+ * from native pending tasks before reading the original reply log. */
 export class ToolReplyMailbox {
   readonly #pending = new Map<string, Pending>();
   readonly #probes = new Map<
@@ -136,6 +150,7 @@ export class ToolReplyMailbox {
     { resolve(value: ExecutionProbeReply): void; reject(error: unknown): void; cleanup(): void }
   >();
   onExecutionEvidence: ((operationId: string, evidence: ExecutionEvidence) => void) | undefined;
+  onEnvironmentChange: ((change: EnvironmentChanged) => Promise<void> | void) | undefined;
   waitProbe(probeId: string, bindingId: string, signal: AbortSignal): Promise<ExecutionProbeReply> {
     signal.throwIfAborted();
     const key = `${probeId}:${bindingId}`;
@@ -167,6 +182,7 @@ export class ToolReplyMailbox {
     signal.throwIfAborted();
     if (this.#pending.has(operationId)) throw new Error("Tool operation already waiting");
     let settled = false;
+    let evidence: ExecutionEvidence | undefined;
     const promise = new Promise<ImagePacked<ToolResultPayload>>((resolve, reject) => {
       const abort = () => {
         this.#pending.delete(operationId);
@@ -182,14 +198,18 @@ export class ToolReplyMailbox {
         settleExecution: () => {
           settled = true;
         },
+        observeExecution: (value) => {
+          evidence = Object.freeze({ ...value });
+        },
       });
       signal.addEventListener("abort", abort, { once: true });
       if (signal.aborted) abort();
     });
     void promise.catch(() => {}); // cancellation may precede publication completion
-    return { result: promise, executionSettled: () => settled };
+    return { result: promise, executionSettled: () => settled, executionEvidence: () => evidence };
   }
-  accept(reply: WorkerReply): void {
+  accept(reply: WorkerReply): void | Promise<void> {
+    if (reply.kind === "environment_changed") return this.onEnvironmentChange?.(reply);
     if (reply.kind === "execution_probe") {
       for (const bindingId of reply.bindingIds) {
         const key = `${reply.probeId}:${bindingId}`,
@@ -239,6 +259,7 @@ export class ToolReplyMailbox {
       return;
     }
     pending.settleExecution();
+    if (reply.execution) pending.observeExecution(reply.execution);
     pending.resolve(reply.result);
     if (reply.execution) {
       try {
@@ -271,6 +292,17 @@ export class KafkaToolReplyMailbox extends ToolReplyMailbox {
   readonly topic: string;
   readonly #consumer: KafkaLogConsumer<WorkerReply>;
   readonly #admin;
+  readonly #restored = new Map<
+    string,
+    {
+      reference: ToolReplyRecovery;
+      wait: ToolReplyWait<ImagePacked<ToolResultPayload>>;
+      controller: AbortController;
+      dispose(): void;
+      startDeadline(): void;
+    }
+  >();
+  readonly #replayConsumers = new Set<KafkaLogConsumer<WorkerReply>>();
   /** Current local assignment/consumer state, never a network health probe. */
   get ready(): boolean {
     try {
@@ -302,6 +334,178 @@ export class KafkaToolReplyMailbox extends ToolReplyMailbox {
       handler: async ({ fact }) => this.accept(fact),
     });
   }
+  async replyPosition(): Promise<{ topic: string; partition: 0; offset: string }> {
+    const offsets = await this.#consumer.captureEndOffsets();
+    if (offsets[0] === undefined) throw new Error("Reply partition is unavailable");
+    return { topic: this.topic, partition: 0, offset: offsets[0].toString() };
+  }
+
+  /** Restore the callbacks before replay, so results arriving before Harness
+   * resume resolve the original waits rather than becoming unknown mailbox data. */
+  async restore(
+    references: readonly PendingToolReplyRecovery[],
+    signal: AbortSignal,
+  ): Promise<void> {
+    signal.throwIfAborted();
+    if (!references.length) return;
+    const operationIds = references.map((r) => r.operationId);
+    const releaseScope = () => {
+      for (const id of operationIds) {
+        const pending = this.#restored.get(id);
+        pending?.dispose();
+        pending?.controller.abort(signal.reason);
+        this.#restored.delete(id);
+      }
+    };
+    signal.addEventListener("abort", releaseScope, { once: true });
+    const grouped = new Map<string, { floor: bigint; operations: string[] }>();
+    for (const original of references) {
+      signal.throwIfAborted();
+      const reference = parseToolReplyRecovery(original.reply);
+      if (this.#restored.has(original.operationId))
+        throw new Error("Tool recovery registered twice");
+      const controller = new AbortController();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let settled = false;
+      const abort = () => {
+        controller.abort(signal.reason);
+        this.#restored.delete(original.operationId);
+      };
+      signal.addEventListener("abort", abort, { once: true });
+      const wait = super.wait(
+        original.operationId,
+        reference.toolCallId,
+        reference.toolName,
+        controller.signal,
+      );
+      const dispose = () => {
+        clearTimeout(timer);
+        signal.removeEventListener("abort", abort);
+      };
+      const completed = () => {
+        settled = true;
+        dispose();
+      };
+      void wait.result.then(completed, completed);
+      // Start the deadline after historical catch-up below. A result already
+      // committed to Kafka wins over a timer that elapsed while no Worker ran.
+      const group = grouped.get(reference.topic) ?? {
+        floor: BigInt(reference.offset),
+        operations: [],
+      };
+      if (BigInt(reference.offset) < group.floor) group.floor = BigInt(reference.offset);
+      group.operations.push(original.operationId);
+      grouped.set(reference.topic, group);
+      this.#restored.set(original.operationId, {
+        reference,
+        wait,
+        controller,
+        dispose,
+        startDeadline: () => {
+          if (settled) return;
+          const expire = () =>
+            controller.abort(
+              new ToolExecutionFailure({
+                code: "tool_reply_timeout",
+                effect: "unknown",
+                message:
+                  "The original Tool reply deadline elapsed; the command was not executed again.",
+              }),
+            );
+          const remaining = reference.deadlineAt - Date.now();
+          if (remaining <= 0) expire();
+          else {
+            timer = setTimeout(expire, remaining);
+            timer.unref();
+          }
+        },
+      });
+    }
+    for (const [topic, group] of grouped) {
+      const ids = new Set(group.operations);
+      const groupId = `tool-restore-${this.options.bootId}-${createHash("sha256").update(topic).digest("hex").slice(0, 16)}-${randomUUID()}`;
+      const consumer = new KafkaLogConsumer<WorkerReply>({
+        brokers: this.options.brokers,
+        clientId: `tool-restore-${this.options.bootId}`,
+        groupId,
+        topic,
+        commitMessages: false,
+        replayOffsets: async (bounds) =>
+          new Map(
+            bounds.map((b) => [
+              b.partition,
+              b.partition !== 0 || group.floor < b.low || group.floor > b.high
+                ? new Error("Required Tool replies are outside Kafka retention")
+                : group.floor,
+            ]),
+          ),
+        decode: parseWorkerReply,
+        handler: async ({ fact }) => {
+          if ("operationId" in fact && ids.has(fact.operationId)) await this.accept(fact);
+        },
+      });
+      this.#replayConsumers.add(consumer);
+      let closed: Promise<void> | undefined;
+      const close = () => {
+        closed ??= consumer
+          .close()
+          .then(async () => {
+            // Cleanup is also retried by safe retention after this boot retires.
+            await this.#admin.deleteGroups([groupId]);
+          })
+          .catch(() => {})
+          .finally(() => this.#replayConsumers.delete(consumer));
+      };
+      signal.addEventListener("abort", close, { once: true });
+      try {
+        await consumer.start();
+        await consumer.waitForPartition(0);
+        for (const id of ids) this.#restored.get(id)?.startDeadline();
+        const waits = group.operations.map((id) => this.#restored.get(id)?.wait.result);
+        void Promise.allSettled(waits).then(() => {
+          signal.removeEventListener("abort", close);
+          close();
+        });
+      } catch (cause) {
+        for (const id of ids)
+          this.#restored.get(id)?.controller.abort(
+            new ToolExecutionFailure(
+              {
+                code: "tool_handoff_unconfirmed",
+                effect: "unknown",
+                message:
+                  "Original Tool reply recovery is unavailable; inspect effects before repeating it.",
+              },
+              { cause },
+            ),
+          );
+        signal.removeEventListener("abort", close);
+        close();
+      }
+    }
+  }
+
+  resumeWait(
+    operationId: string,
+    reference: ToolReplyRecovery,
+    signal: AbortSignal,
+  ): ToolReplyWait<ImagePacked<ToolResultPayload>> {
+    const restored = this.#restored.get(operationId);
+    if (
+      !restored ||
+      JSON.stringify(restored.reference) !== JSON.stringify(parseToolReplyRecovery(reference))
+    )
+      throw new Error("Original Tool reply waiter is unavailable or changed");
+    this.#restored.delete(operationId);
+    const abort = () => restored.controller.abort(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
+    void restored.wait.result.then(
+      () => signal.removeEventListener("abort", abort),
+      () => signal.removeEventListener("abort", abort),
+    );
+    return restored.wait;
+  }
   async start(): Promise<void> {
     await this.#admin.connect();
     await this.#admin.createTopics({
@@ -311,7 +515,10 @@ export class KafkaToolReplyMailbox extends ToolReplyMailbox {
           numPartitions: 1,
           replicationFactor: this.options.replicas,
           configEntries: [
-            { name: "retention.ms", value: String(TOOL_REPLY_RETENTION_MS) },
+            // PG native-task references and the existing safe-retention worker
+            // own deletion; broker age alone cannot discard pending results.
+            { name: "retention.ms", value: "-1" },
+            { name: "retention.bytes", value: "-1" },
             { name: "min.insync.replicas", value: String(Math.max(1, this.options.replicas - 1)) },
             { name: "cleanup.policy", value: "delete" },
             { name: "max.message.bytes", value: String(MAX_TOOL_RESPONSE_BYTES) },
@@ -324,10 +531,18 @@ export class KafkaToolReplyMailbox extends ToolReplyMailbox {
     await this.#consumer.waitUntilAssigned();
   }
   async shutdown(): Promise<void> {
+    for (const pending of this.#restored.values()) {
+      pending.dispose();
+      pending.controller.abort(new Error("Reply owner stopped"));
+    }
+    this.#restored.clear();
+    await Promise.allSettled([...this.#replayConsumers].map((consumer) => consumer.close()));
+    this.#replayConsumers.clear();
     super.close();
     await this.#consumer.close();
     try {
-      await this.#admin.deleteTopics({ topics: [this.topic] });
+      // A replacement may still need this boot's results. The PG-backed
+      // retention pass deletes it after all canonical waits have settled.
       const groups = await this.#admin.listGroups();
       const groupId = `tool-reply-${this.options.bootId}`;
       if (groups.groups.some((group) => group.groupId === groupId))

@@ -28,6 +28,9 @@ export type CandidateToolCommand = Readonly<{
   /** Logical Tool may use the workflow executor's Bash transport. */
   nativeToolName?: string;
   replyTopic?: string;
+  replyRecovery?: import("./tool-recovery.ts").ToolReplyRecovery;
+  /** Reattachment keeps the original physical operation while the new writer settles it. */
+  originalWriterId?: string;
   request: ToolSandboxOperationRequest;
   occurredAt: string;
   traceContext?: Readonly<{ traceparent: string; tracestate?: string }>;
@@ -38,6 +41,7 @@ export type AcceptedToolCommand = Readonly<{
   kind: "tool_command";
   toolCallId: string;
   replyTopic?: string;
+  replyRecovery?: import("./tool-recovery.ts").ToolReplyRecovery;
   scope: Readonly<{
     tenantId: string;
     sessionId: string;

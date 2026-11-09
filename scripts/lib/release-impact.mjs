@@ -79,7 +79,20 @@ export const providerSources = new Set([
   ...providerConfigurationSources,
 ]);
 export const sessionDecoderSource = "packages/runtime-core/src/session-log-envelope.ts";
+export const sessionApiSource = (file) =>
+  /^packages\/control-plane\/src\/(?:session-api-main|application|control-plane\.module|control-plane\.controller|workspace-capacity-controller|resource-billing-controller|model-billing-controller|workspace-file-transfer-controller|skill-market-controller)\.ts$/.test(
+    file,
+  ) || /^packages\/control-plane\/src\/public-api\/.*\.ts$/.test(file);
 export const imageReleaseTargets = {
+  "session-api": {
+    imageName: "control-plane",
+    buildScope: "control-plane",
+    buildCatalogKey: "controlPlane",
+    catalogKey: "sessionApi",
+    componentName: "session-api",
+    workload: "deployment/pi-cloud-session-api",
+    container: "session-api",
+  },
   "session-decoder": {
     imageName: "control-plane",
     buildScope: "control-plane",
@@ -148,6 +161,18 @@ export function releaseImpact(files) {
   if (!files?.length) return full();
   if (files.every(documentation))
     return { scope: "docs", matrix: { include: [] }, buildImages: false };
+  if (
+    files.some(sessionApiSource) &&
+    files.every(
+      (file) =>
+        sessionApiSource(file) ||
+        documentation(file) ||
+        operatorSources.has(file) ||
+        /(?:^|\/)test\/.*\.test\.[cm]?tsx?$/.test(file) ||
+        /^scripts\/lib\/.*\.test\.mjs$/.test(file),
+    )
+  )
+    return { scope: "session-api", matrix: { include: [fullImages[0]] }, buildImages: true };
   if (
     files.some(ordinaryControlToolSource) &&
     files.every(

@@ -68,6 +68,7 @@ spec:
             - { name: PI_CLOUD_IMAGE_S3_CREDENTIALS_FILE, value: /run/pi-cloud-secrets/session-image-s3-credentials.json }
             {{- end }}
             - { name: NODE_ENV, value: production }
+            - { name: PI_CLOUD_TOOL_COMPLETION_URL, value: {{ .Values.toolCompletion.baseUrl | quote }} }
             - { name: PI_CLOUD_MODEL_CATALOG_FILE, value: /run/pi-cloud-models/model-catalog.json }
             - { name: HOST, value: 0.0.0.0 }
             - name: POD_IP

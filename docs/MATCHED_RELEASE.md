@@ -1,4 +1,34 @@
-# Matched release procedure
+# Matched release
+
+ADR-0306 uses schema 215, Session topic v19, reply topic v4, Guest Tool protocol 7
+and managed Cube protocol 9. The independent `session-api` and `tool-completion`
+roles are part of the matched image/Helm inventory. Generate the completion TLS
+Secret from the existing Cube CA before application rollout; Cubelet no longer
+contains a Node completion process or platform database/object-store credentials.
+The source pipeline and [delivery report](reports/runtime-decoupling-20261109.md)
+record the pending verification for this change.
+
+Drain writers and materialize every protected native replay suffix before migration.
+Preserve accounts, model/provider configuration, credentials, stable machine intent
+and Workspace files. After cutover, remove retired v18/v3 Kafka transports only
+when no surviving native replay or pending Tool reference requires them. A new
+Worker's consumption is not permission to discard an unsettled result.
+
+Verification is consolidated and serial: native SDK contracts, PG/Kafka recovery,
+Guest HTTPS retry and lifecycle history, external accounting, browser/API replacement,
+and owned live Cube/Worker/VM cases. Historical procedures below describe their
+original releases; obsolete Cubelet Node-adapter injection is not a current path.
+No verification claim transfers automatically to this revision.
+
+The handoff acceptance driver now selects the process boundary explicitly:
+`PI_CLOUD_LIVE_SESSION_RUNTIME_RESTART_CHECK=1 PI_CLOUD_LIVE_HANDOFF_ROLE=session-api`
+replaces the public API while the Worker/Projector continue; use
+`PI_CLOUD_LIVE_HANDOFF_ROLE=pi-worker` for abrupt owning-Worker replacement during
+one remote Bash. Both run through `scripts/run-live-cube-handoff-restart-check.mjs`.
+The Worker case requires the same Run to complete and the file to contain exactly
+one start/end pair. It does not redispatch the accepted shell command.
+
+## Earlier release procedures
 
 ADR-0305's current source cutover installs schema 214, logical environment dispatch,
 ordered binding application acknowledgements, tool-host and the Kafka catalog.
@@ -536,7 +566,7 @@ For ADR-0252's guest/preview cutover, also run the maintained real-browser and
 native-receipt fault fixture on the current single-node deployment:
 
 ```sh
-PI_CLOUD_LIVE_TOOL_PROGRESS_CHECK=1 PI_CLOUD_TOOL_PROGRESS_RESTART_CHECK=1 PI_CLOUD_LIVE_RECEIPT_CHECK=1 node --import tsx scripts/run-live-tool-progress-check.mjs /private/tool-preview.json
+PI_CLOUD_LIVE_TOOL_PROGRESS_CHECK=1 PI_CLOUD_TOOL_PROGRESS_RESTART_CHECK=1 node --import tsx scripts/run-live-tool-progress-check.mjs /private/tool-preview.json
 ```
 
 For ADR-0253's reply continuation, run the owned fault fixture after deploying
@@ -546,31 +576,18 @@ the matching source (real GPT-6 Luna, Cube and browser):
 PI_CLOUD_LIVE_TOOL_REPLY_CHECK=1 node --import tsx scripts/run-live-tool-reply-continuation.mjs /private/tool-reply.json
 ```
 
-It temporarily wraps the trusted completion adapter only in the single Ready
-Cubelet. The wrapper suppresses a marker-bearing result for the exact new fixture
-tenant, optionally suppresses that binding's probe replies, and expires after ten
-minutes. Other packets pass through. It restarts only the completion child,
-retains a checksum/ownership restore receipt before installation and restores the
-original source before testing an owned Cubelet Pod crash. No production fault
-switch is added. Unrelated active work forbids injection; the Pod-crash case also
-requires the owned VM to be the only native VM. The fixture proves a single
-append, same-Run inspection, bounded interruption, no probe in native storage and
-browser UNKNOWN restoration. Physical Workspace purge precedes account cleanup.
-If the operator is interrupted, restore the adapter with the retained receipt:
+The maintained fixture now preloads an acceptance-only wrapper in the independent
+HTTPS completion Deployment, scoped to its disposable tenant and marker. It records
+an ownership/restore receipt before changing the Pod template, expires the filter,
+and restores the exact original image/template afterward. No production fault flag
+or mutable Cubelet source is used. Missing results with a healthy return path allow
+same-Run inspection; missing readiness keeps an interruptible recovery wait until
+explicit Stop. Owned Cube/Worker cases check that original commands are not replayed.
+Native Guest/HTTP and process-boundary contracts separately cover lost acknowledgements.
 
 ```sh
 node --import tsx scripts/run-live-tool-reply-continuation.mjs --restore /private/tool-reply.json.adapter-restore.json
 ```
-
-It checks incremental observations, a redrawing progress bar, browser reconnect,
-Control Plane replacement, silence, Stop and subsequent coding. The receipt case
-builds an operator helper from the exact patched native module, filters one reverse
-receipt between real native FIFOs in its owned VM, and checks both the result and
-a background HTTP server/sibling process. It adds no fault switch to production
-services and does not exercise publication admission through that helper; ordinary
-Run cases cover admission/Kafka. It requires one Ready Cubelet, compiles with the
-operator's Go toolchain and removes its helper after use. Workspace lifecycle
-purge must finish before owned account/configuration records are removed.
 
 For ADR-0255's native Tool result boundaries, run the owned coordination check:
 
@@ -704,3 +721,10 @@ model/provider configuration and credentials. Migration 188 rejects retained old
 native commits or ownership records. There is no legacy ingress or child-Run mode.
 The matched release still requires confirmed absence of physical VMs; the schema
 marker never permits discarding cleanup ownership without its physical proof.
+
+
+The reply-continuation live driver defaults to physical removal of its own
+allocation, verifies same-Run continuation and a native environment-reset entry,
+and checks that unrelated VMs remain present. `PI_CLOUD_REPLY_FAULT_TARGET=cubelet`
+selects whole-Cubelet loss only when the node has exactly the disposable fixture
+VM. It is never an implicit fallback on a shared user node.

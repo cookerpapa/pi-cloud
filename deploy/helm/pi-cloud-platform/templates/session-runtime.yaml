@@ -58,7 +58,6 @@ spec:
           args: [/app/packages/control-plane/src/session-runtime-main.ts]
           ports:
             - { name: http, containerPort: 3000 }
-            - { name: preview, containerPort: 3001 }
             - { name: metrics, containerPort: 9464 }
             - { name: sandbox, containerPort: 4300 }
           env:
@@ -69,6 +68,8 @@ spec:
             - { name: PI_CLOUD_IMAGE_S3_CREDENTIALS_FILE, value: /run/pi-cloud-secrets/session-image-s3-credentials.json }
             {{- end }}
             - { name: NODE_ENV, value: production }
+            - { name: PI_CLOUD_TOOL_COMPLETION_URL, value: {{ .Values.toolCompletion.baseUrl | quote }} }
+            - { name: PI_CLOUD_COMPLETION_CA_FILE, value: /run/pi-cloud-completion/ca.crt }
             - { name: PI_CLOUD_DEFAULT_WORKSPACE_CAPACITY_GIB, value: {{ .Values.controlPlane.defaultWorkspaceCapacityGiB | quote }} }
             - { name: PI_CLOUD_MODEL_CATALOG_FILE, value: /run/pi-cloud-models/model-catalog.json }
             - { name: HOST, value: 0.0.0.0 }
@@ -179,6 +180,7 @@ spec:
             capabilities: { drop: [ALL] }
           resources: {{- toYaml .Values.sessionRuntime.resources | nindent 12 }}
           volumeMounts:
+            - { name: completion-ca, mountPath: /run/pi-cloud-completion, readOnly: true }
             - { name: model-catalog, mountPath: /run/pi-cloud-models, readOnly: true }
             {{- if .Values.imageAttachments.endpoint }}
             - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/session-image-s3-credentials.json, subPath: {{ .Values.imageAttachments.credentialsSecretKey }}, readOnly: true }
@@ -192,6 +194,8 @@ spec:
             {{- end }}
             - { name: tmp, mountPath: /tmp }
       volumes:
+        - name: completion-ca
+          secret: { secretName: {{ .Values.toolCompletion.tlsSecretName }}, defaultMode: 288, items: [{ key: ca.crt, path: ca.crt }] }
         - name: model-catalog
           configMap: { name: {{ $name }}-model-catalog }
         {{- if .Values.sandboxPlane.cube.executionEndpoints }}
@@ -213,7 +217,6 @@ spec:
   selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: session-runtime }
   ports:
     - { name: http, port: 3000, targetPort: http }
-    - { name: preview, port: 3001, targetPort: preview }
     - { name: metrics, port: 9464, targetPort: metrics }
     - { name: sandbox, port: 4300, targetPort: sandbox }
 ---

@@ -8,9 +8,6 @@ import { SessionEventHub } from "../src/session-event-hub.ts";
 import { RunObservations } from "../src/run-observations.ts";
 import { RunObservationView } from "../src/run-observation-view.ts";
 import type { KafkaAcceptedFactRecord } from "../src/kafka-accepted-fact-consumer.ts";
-import { ExecutionStreamProjector } from "../src/execution-stream-projection.ts";
-import type { Database } from "@pi-cloud/database";
-import type { Kysely } from "kysely";
 
 const scope = {
   tenantId: "tenant",
@@ -116,9 +113,8 @@ it("records stage confirmations without replacing activity, preserves freshness 
   observations.record(record(now, 1n), true);
   await sub.next();
   observations.executionTargets(scope.writerId, [], now);
-  expect(await sub.next()).toMatchObject({
-    observation: { type: "run.execution", generation: 1, execution: { status: "not_applicable" } },
-  });
+  // A bounded maintenance batch can omit this Lane; absence is not a no-VM claim.
+  expect(await sub.next(1)).toBe("heartbeat");
   now += 1000;
   observations.execution(scope, {
     status: "confirmed",
@@ -169,7 +165,7 @@ it("records stage confirmations without replacing activity, preserves freshness 
   hub.onApplicationShutdown();
 });
 
-it("shares Session path evidence across Lanes while rejecting replay, stale and future probes", async () => {
+it("shares real Session publications across Lanes while rejecting replay and invalid timestamps", async () => {
   let now = 100_000;
   const hub = new SessionEventHub(),
     observations = new RunObservations(hub, () => now);
@@ -184,15 +180,7 @@ it("shares Session path evidence across Lanes while rejecting replay, stale and 
   await main.next();
   await child.next();
   now += 15_000;
-  const probe = {
-    ...record(now, 3n),
-    fact: {
-      kind: "path_probe" as const,
-      factId: "probe",
-      scope,
-      occurredAt: new Date(now).toISOString(),
-    },
-  };
+  const probe = record(now, 3n);
   observations.record(probe, true);
   expect(await main.next()).toMatchObject({
     observation: { type: "run.path", generation: 1, sentAt: now },
@@ -221,7 +209,8 @@ it("shares Session path evidence across Lanes while rejecting replay, stale and 
   expect(await otherTenant.next(1)).toBe("heartbeat");
   observations.reset();
   observations.record({ ...probe, offset: 6n }, true);
-  expect(await main.next(1)).toBe("heartbeat"); // probe cannot create an active scope
+  expect(await main.next()).toMatchObject({ observation: { type: "run.path", sentAt: now } });
+  expect(observations.isActive(scope)).toBe(true); // a validated native commit restores its scope
   hub.onApplicationShutdown();
 });
 
@@ -272,29 +261,6 @@ it("authenticates observations against projected scopes and closes all Lanes on 
   hub.onApplicationShutdown();
 });
 
-it("never writes probes to PG or creates a native recovery floor", async () => {
-  const database = new Proxy(
-    {},
-    {
-      get() {
-        throw new Error("Probe touched PostgreSQL");
-      },
-    },
-  );
-  const projector = new ExecutionStreamProjector(database as Kysely<Database>);
-  const probe = {
-    ...record(Date.now(), 1n),
-    fact: {
-      kind: "path_probe" as const,
-      factId: "probe",
-      scope,
-      occurredAt: new Date().toISOString(),
-    },
-  };
-  expect(projector.observes(probe)).toBe(false);
-  await expect(projector.project(probe)).resolves.toBeUndefined();
-});
-
 it("keeps latest bounded SSE observations and lets terminal events win", async () => {
   const hub = new SessionEventHub(),
     sub = hub.subscribe("tenant", "session"),
@@ -342,7 +308,7 @@ it("resyncs readers when same-generation observation counters expire", async () 
   const fresh = hub.subscribe(scope.tenantId, scope.sessionId);
   observations.record(record(now, 2n), true);
   await fresh.next();
-  observations.executionTargets(scope.writerId, [], now);
+  observations.executionTargets(scope.writerId, [{ bindingId: "b", scope, probe: true }], now);
   expect(await fresh.next()).toMatchObject({ observation: { generation: 1, revision: 1 } });
   hub.onApplicationShutdown();
 });

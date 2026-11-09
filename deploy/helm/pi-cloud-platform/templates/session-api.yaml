@@ -1,0 +1,202 @@
+{{- if .Values.globalPlaneEnabled }}
+{{- $name := include "pi-cloud-platform.name" . -}}
+{{- $sandboxControlUrls := list -}}
+{{- range .Values.sandboxDomains -}}
+{{- $sandboxControlUrls = append $sandboxControlUrls .sandboxControlBaseUrl -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-session-api
+  labels:
+    {{- include "pi-cloud-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: session-api
+spec:
+  replicas: {{ ternary (int .Values.sessionApi.autoscaling.minReplicas) (int .Values.sessionApi.replicas) .Values.sessionApi.autoscaling.enabled }}
+  minReadySeconds: 5
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: session-api }
+  template:
+    metadata:
+      labels:
+        {{- include "pi-cloud-platform.labels" . | nindent 8 }}
+        app.kubernetes.io/component: session-api
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      {{- with .Values.global.trustedNodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.global.trustedTolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: session-api }
+      containers:
+        - name: session-api
+          image: {{ include "pi-cloud-platform.image" .Values.images.sessionApi | quote }}
+          imagePullPolicy: {{ .Values.images.sessionApi.pullPolicy }}
+          args: [/app/packages/control-plane/src/session-api-main.ts]
+          ports:
+            - { name: http, containerPort: 3000 }
+            - { name: preview, containerPort: 3001 }
+            - { name: metrics, containerPort: 9464 }
+          env:
+            {{- if .Values.imageAttachments.endpoint }}
+            - { name: PI_CLOUD_IMAGE_S3_ENDPOINT, value: {{ .Values.imageAttachments.endpoint | quote }} }
+            - { name: PI_CLOUD_IMAGE_S3_REGION, value: {{ .Values.imageAttachments.region | quote }} }
+            - { name: PI_CLOUD_IMAGE_S3_BUCKET, value: {{ .Values.imageAttachments.bucket | quote }} }
+            - { name: PI_CLOUD_IMAGE_S3_CREDENTIALS_FILE, value: /run/pi-cloud-secrets/session-image-s3-credentials.json }
+            {{- end }}
+            - { name: NODE_ENV, value: production }
+            - { name: PI_CLOUD_DEFAULT_WORKSPACE_CAPACITY_GIB, value: {{ .Values.controlPlane.defaultWorkspaceCapacityGiB | quote }} }
+            - { name: PI_CLOUD_MODEL_CATALOG_FILE, value: /run/pi-cloud-models/model-catalog.json }
+            - { name: HOST, value: 0.0.0.0 }
+            - name: POD_IP
+              valueFrom: { fieldRef: { fieldPath: status.podIP } }
+            - { name: PI_CLOUD_SESSION_RUNTIME_URL, value: "http://session-runtime:3000" }
+            - { name: PI_CLOUD_SESSION_EXECUTION_URL, value: {{ .Values.sessionRuntime.executionBaseUrl | quote }} }
+            - { name: PORT, value: "3000" }
+            - { name: DATABASE_URL_FILE, value: /run/pi-cloud-secrets/database-url }
+            - { name: DATABASE_NOTIFICATION_URL_FILE, value: /run/pi-cloud-secrets/database-notification-url }
+            - { name: PI_CLOUD_KAFKA_BROKERS, value: {{ join "," .Values.global.kafka.brokers | quote }} }
+            - { name: PI_CLOUD_KAFKA_REPLICAS, value: {{ .Values.global.kafka.replicas | quote }} }
+            - { name: PI_CLOUD_KAFKA_PARTITIONS, value: {{ .Values.global.kafka.partitions | quote }} }
+            - { name: PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES, value: {{ .Values.global.kafka.producerPendingBytes | quote }} }
+            - { name: PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS, value: {{ .Values.global.kafka.producerPendingFacts | quote }} }
+            - { name: PI_CLOUD_ACCEPTED_FACT_RETENTION_MS, value: {{ .Values.global.kafka.acceptedFactRetentionMs | quote }} }
+            - { name: PI_CLOUD_PREVIEW_ORIGIN_BASE_URL, value: {{ .Values.controlPlane.previewOriginBaseUrl | default (printf "https://preview.%s" .Values.web.ingress.host) | quote }} }
+            - { name: PI_CLOUD_PUBLIC_ORIGIN_BASE_URL, value: {{ .Values.controlPlane.publicOriginBaseUrl | quote }} }
+            - { name: NODE_USE_ENV_PROXY, value: "1" }
+            - { name: NO_PROXY, value: {{ .Values.controlPlane.noProxy | quote }} }
+            - { name: HTTPS_PROXY, value: {{ .Values.external.providerProxyUrl | quote }} }
+            - { name: HTTP_PROXY, value: {{ .Values.external.providerProxyUrl | quote }} }
+            {{- if .Values.controlPlane.sourceControl.github.enabled }}
+            - { name: PI_CLOUD_GITHUB_APP_ID, value: {{ .Values.controlPlane.sourceControl.github.appId | quote }} }
+            - { name: PI_CLOUD_GITHUB_APP_PRIVATE_KEY_FILE, value: /run/pi-cloud-secrets/github-app-private-key.pem }
+            - { name: PI_CLOUD_GITHUB_WEBHOOK_SECRET_FILE, value: /run/pi-cloud-secrets/github-webhook-secret }
+            - { name: PI_CLOUD_GITHUB_ISSUE_LABEL, value: {{ .Values.controlPlane.sourceControl.github.issueLabel | quote }} }
+            {{- end }}
+            {{- if .Values.controlPlane.sourceControl.gitlab.enabled }}
+            - { name: PI_CLOUD_GITLAB_ENABLED, value: "true" }
+            - { name: PI_CLOUD_GITLAB_WEBHOOK_URL, value: {{ .Values.controlPlane.sourceControl.gitlab.webhookUrl | quote }} }
+            {{- if .Values.controlPlane.sourceControl.gitlab.internalBaseUrl }}
+            - { name: PI_CLOUD_GITLAB_INTERNAL_BASE_URL, value: {{ .Values.controlPlane.sourceControl.gitlab.internalBaseUrl | quote }} }
+            {{- end }}
+            {{- if .Values.controlPlane.sourceControl.gitlab.workspaceBaseUrl }}
+            - { name: PI_CLOUD_GITLAB_WORKSPACE_BASE_URL, value: {{ .Values.controlPlane.sourceControl.gitlab.workspaceBaseUrl | quote }} }
+            {{- end }}
+            - { name: PI_CLOUD_GITLAB_ISSUE_LABEL, value: {{ .Values.controlPlane.sourceControl.gitlab.issueLabel | quote }} }
+            - { name: PI_CLOUD_SOURCE_CONTROL_CREDENTIAL_MASTER_KEY_FILE, value: /run/pi-cloud-secrets/source-control-credential-master-key }
+            {{- end }}
+            - { name: PI_CLOUD_SUPERVISOR_ENROLLMENT_TOKEN_FILE, value: /run/pi-cloud-secrets/supervisor-enrollment-token }
+            - { name: PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE, value: /run/pi-cloud-secrets/supervisor-management-token }
+            - { name: PI_CLOUD_CUBE_EGRESS_CONFIG_TOKEN_FILE, value: /run/pi-cloud-secrets/cube-egress-config-token }
+            - { name: PI_CLOUD_WORKSPACE_SERVICE_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-service-token }
+            - { name: PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-terminal-token }
+            - { name: PI_CLOUD_SSH_GATEWAY_ENABLED, value: {{ .Values.sshGateway.enabled | quote }} }
+            - { name: PI_CLOUD_SSH_ADVERTISED_HOST, value: {{ .Values.sshGateway.advertisedHost | quote }} }
+            - { name: PI_CLOUD_SSH_ADVERTISED_PORT, value: {{ .Values.sshGateway.port | quote }} }
+            - { name: PI_CLOUD_SSH_TICKET_TTL_MS, value: {{ .Values.sshGateway.ticketTtlMs | quote }} }
+            - name: PI_CLOUD_SANDBOX_CONTROL_URLS
+              value: {{ join "," $sandboxControlUrls | quote }}
+            - { name: PI_CLOUD_IMAGE_REVISION, value: {{ .Values.global.imageRevision | quote }} }
+            - { name: PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP, value: "true" }
+            - { name: PI_CLOUD_SUPERVISOR_ID_PREFIX, value: {{ .Values.controlPlane.supervisorIdPrefix | quote }} }
+            - { name: PI_CLOUD_SUPERVISOR_MAXIMUM_CAPACITY, value: {{ (index .Values "pi-workers").workerPool.capacity | default "unlimited" | quote }} }
+            - { name: PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH, value: {{ (index .Values "pi-workers").runtime.subagents.maximumDepth | default "unlimited" | quote }} }
+            - { name: PI_CLOUD_SUBAGENT_MAXIMUM_NODES, value: {{ (index .Values "pi-workers").runtime.subagents.maximumNodes | default "unlimited" | quote }} }
+            - name: PI_CLOUD_SUPERVISOR_MANAGEMENT_URL_TEMPLATES
+              value: {{ printf "http://{supervisorId}.pi-cloud-pi-worker-%s.%s.svc.%s:4100" (index .Values "pi-workers").workerPool.name .Release.Namespace .Values.global.clusterDomain | quote }}
+            - { name: PI_CLOUD_PLATFORM_MODEL_SOURCE_TENANT_ID, value: {{ .Values.controlPlane.platformModelSourceTenantId | quote }} }
+            - { name: PI_CLOUD_PLATFORM_OPERATOR_TENANT_ID, value: {{ .Values.controlPlane.platformOperatorTenantId | quote }} }
+            - { name: PI_CLOUD_PUBLIC_REGISTRATION_ENABLED, value: {{ .Values.controlPlane.publicRegistration.enabled | quote }} }
+            - { name: PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS, value: {{ .Values.controlPlane.publicRegistration.maximumTenants | default "unlimited" | quote }} }
+            - { name: PI_CLOUD_PUBLIC_TENANT_MAXIMUM_PROJECTS, value: {{ .Values.controlPlane.publicRegistration.maximumProjects | default "unlimited" | quote }} }
+            - { name: PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS, value: {{ .Values.controlPlane.publicRegistration.maximumSessions | default "unlimited" | quote }} }
+            - { name: PI_CLOUD_WEB_SESSION_COOKIE_SECURE, value: {{ .Values.controlPlane.cookieSecure | quote }} }
+            - { name: PI_CLOUD_METRICS_HOST, value: 0.0.0.0 }
+            - { name: PI_CLOUD_METRICS_PORT, value: "9464" }
+            - { name: PI_CLOUD_METRICS_TOKEN_FILE, value: /run/pi-cloud-secrets/metrics-token }
+            {{- if .Values.external.otlpTracesEndpoint }}
+            - { name: PI_CLOUD_OTLP_TRACES_ENDPOINT, value: {{ .Values.external.otlpTracesEndpoint | quote }} }
+            {{- end }}
+          readinessProbe: { httpGet: { path: /health/ready, port: http }, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 6 }
+          livenessProbe: { httpGet: { path: /health/live, port: http }, periodSeconds: 10, timeoutSeconds: 3, failureThreshold: 6 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources: {{- toYaml .Values.sessionApi.resources | nindent 12 }}
+          volumeMounts:
+            - { name: model-catalog, mountPath: /run/pi-cloud-models, readOnly: true }
+            {{- if .Values.imageAttachments.endpoint }}
+            - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/session-image-s3-credentials.json, subPath: {{ .Values.imageAttachments.credentialsSecretKey }}, readOnly: true }
+            {{- end }}
+            {{- include "pi-cloud-platform.secretMounts" . | nindent 12 }}
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: model-catalog
+          configMap: { name: {{ $name }}-model-catalog }
+        - name: platform-secrets
+          secret: { secretName: {{ .Values.global.existingSecret }}, defaultMode: 288 }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: session-api
+  labels:
+    {{- include "pi-cloud-platform.labels" . | nindent 4 }}
+spec:
+  selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: session-api }
+  ports:
+    - { name: http, port: 3000, targetPort: http }
+    - { name: preview, port: 3001, targetPort: preview }
+    - { name: metrics, port: 9464, targetPort: metrics }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: {{ $name }}-session-api }
+spec:
+  minAvailable: {{ max 1 (sub (ternary (int .Values.sessionApi.autoscaling.minReplicas) (int .Values.sessionApi.replicas) .Values.sessionApi.autoscaling.enabled) 1) }}
+  selector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: session-api }
+{{- if .Values.sessionApi.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: {{ $name }}-session-api }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: {{ $name }}-session-api }
+  minReplicas: {{ .Values.sessionApi.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.sessionApi.autoscaling.maxReplicas }}
+  behavior:
+    scaleDown: { stabilizationWindowSeconds: 300 }
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: {{ .Values.sessionApi.autoscaling.targetCpuUtilization }} }
+{{- end }}
+{{- end }}

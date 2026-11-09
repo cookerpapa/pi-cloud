@@ -1,3 +1,4 @@
+import type { CubeSandboxRuntimeClient } from "../src/cubesandbox-runtime-client.ts";
 import { randomUUID } from "node:crypto";
 import { expect, it, vi } from "vitest";
 import {
@@ -73,13 +74,22 @@ function fixture() {
     [first, second].find((r) => r.bindingId === id),
   );
   const routes = { get } as unknown as SandboxBindingReader;
-  const submitProbe = vi.fn(async () => {}),
+  const submitProbe = vi.fn<CubeSandboxRuntimeClient["submitProbe"]>(async () => {}),
     evidence = vi.fn(async () => {});
   const observer = { active: vi.fn(() => true), targets: vi.fn(), status: vi.fn() };
   const sample = vi.fn();
   const probes = new ExecutionPathProbes({
     routes,
     cube: { submitProbe },
+    completion: {
+      issue: async (grant) => ({
+        url: "https://completion.test/v1/completions",
+        address: "127.0.0.1",
+        ca: "fixture",
+        capability: JSON.stringify(grant),
+        expiresAt: grant.expiresAt,
+      }),
+    },
     runtimeEvidence: evidence,
     sample,
     clock: () => now,
@@ -136,10 +146,13 @@ it("publishes Projector status immediately and shares one guest probe across VM 
     f.probes.consume(f.fact);
     expect(f.observer.targets).toHaveBeenCalledOnce();
     await vi.waitFor(() => expect(f.submitProbe).toHaveBeenCalledOnce());
-    expect(vi.mocked(f.submitProbe).mock.calls[0]).toMatchObject([
-      expect.anything(),
-      { completionContext: { bindingIds: [f.first.bindingId, f.second.bindingId] } },
-    ]);
+    const submitted = vi.mocked(f.submitProbe).mock.calls[0]![1];
+    expect(
+      JSON.parse((submitted.completionContext as { capability: string }).capability),
+    ).toMatchObject({
+      issuer: "guest",
+      context: { bindingIds: [f.first.bindingId, f.second.bindingId] },
+    });
     f.probes.complete(f.completion());
     f.probes.complete(f.completion(f.second, f.sibling));
     await vi.waitFor(() => expect(f.evidence).toHaveBeenCalledOnce());

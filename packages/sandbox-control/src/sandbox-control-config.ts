@@ -307,7 +307,7 @@ export async function loadSandboxControlConfig(
     runtimeProbeConcurrency: integer(environment.PI_CLOUD_RUNTIME_PROBE_CONCURRENCY, 4, 1, 64),
     elasticRetentionMs: integer(
       environment.PI_CLOUD_ELASTIC_RETENTION_MS,
-      15 * 60_000,
+      30 * 60_000,
       1_000,
       24 * 60 * 60_000,
     ),

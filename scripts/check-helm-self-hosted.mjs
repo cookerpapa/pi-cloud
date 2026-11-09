@@ -21,6 +21,8 @@ const images = Object.fromEntries(
   [
     "controlPlane",
     "sessionRuntime",
+    "sessionApi",
+    "toolCompletion",
     "toolHost",
     "metering",
     "worker",
@@ -141,6 +143,16 @@ try {
   const management = find("Deployment", "pi-cloud-control-plane");
   const cp = find("Deployment", "pi-cloud-session-runtime");
   const metering = find("Deployment", "pi-cloud-metering");
+  const api = find("Deployment", "pi-cloud-session-api");
+  const completion = find("Deployment", "pi-cloud-tool-completion");
+  assert.equal(api.spec.template.spec.containers[0].image, images.sessionApi);
+  assert.equal(completion.spec.template.spec.containers[0].image, images.toolCompletion);
+  assert.deepEqual(api.spec.template.spec.containers[0].args, [
+    "/app/packages/control-plane/src/session-api-main.ts",
+  ]);
+  assert.deepEqual(completion.spec.template.spec.containers[0].args, [
+    "/app/packages/cube-completion/src/main.ts",
+  ]);
   assert.equal(management.spec.template.spec.containers[0].image, images.controlPlane);
   assert.equal(cp.spec.template.spec.containers[0].image, images.sessionRuntime);
   assert.equal(metering.spec.template.spec.containers[0].image, images.metering);
@@ -174,7 +186,7 @@ try {
     /Command failed/,
   );
   assert(
-    !readFileSync("scripts/configure-cube-completion.mjs", "utf8").includes('capture("docker"'),
+    !readFileSync("scripts/reconcile-cubesandbox-release.mjs", "utf8").includes('capture("docker"'),
   );
   console.log(
     "Self-hosted K3s charts: native discovery, local storage retention, entry points and trusted boundaries passed.",

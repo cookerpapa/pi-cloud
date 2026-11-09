@@ -64,7 +64,7 @@ it("separates context inheritance from optional Linux workspace access", () => {
 function mailboxFixture() {
   const mailbox = new ToolReplyMailbox();
   const transport = {
-    topic: "pi-cloud.tool-replies.v3.fixture",
+    topic: "pi-cloud.tool-replies.v4.10000000-0000-4000-8000-000000000009",
     wait: (...args: Parameters<ToolReplyMailbox["wait"]>) =>
       mailbox.wait(...args) as import("@pi-cloud/protocol").ToolReplyWait<ToolResultPayload>,
   };

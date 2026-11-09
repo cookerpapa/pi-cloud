@@ -1,4 +1,3 @@
-import { materializeCubeOwnedSources } from "./lib/cube-owned-sources.mjs";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { createHash } from "node:crypto";
@@ -47,7 +46,6 @@ try {
       throw new Error(`Cube patch digest changed: ${patch.file}`);
     await exec("git", ["apply", path], { cwd: directory });
   }
-  await materializeCubeOwnedSources(root, directory, manifest);
   const name = `pi-cloud-template-mysql-${process.pid}`;
   await run("docker", [
     "run",

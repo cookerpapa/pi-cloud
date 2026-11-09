@@ -85,6 +85,12 @@ it("keeps activity and path freshness separate across silence, cancellation and 
     activitySeconds: 70,
     delayed: true,
   });
+  expect(
+    runStatus(turn, { activity: { ...activity, observedAt: 150_000 } }, 150_001),
+  ).toMatchObject({
+    phase: "waiting_model",
+    delayed: false,
+  }); // A healthy, silent model does not need a fresh Kafka publication.
   expect(runStatus({ ...turn, status: "cancelling" }, store.get("turn"), 101_000).phase).toBe(
     "cancelling",
   );

@@ -10,7 +10,11 @@ import { retainedHistoryBody, writeRetainedHistory } from "./shared-entry-bodies
 import { createHash } from "node:crypto";
 import { sql, type Kysely, type Transaction, type RawBuilder } from "kysely";
 import { databaseReadSignal, type Database } from "@pi-cloud/database";
-import { validateImageReferencePayload, type DurableRecordOrigin } from "@pi-cloud/protocol";
+import {
+  validateImageReferencePayload,
+  parseToolReplyRecovery,
+  type DurableRecordOrigin,
+} from "@pi-cloud/protocol";
 import {
   decodeSessionImages,
   retainSessionAttachments,
@@ -84,7 +88,49 @@ const INDEX_FIELDS = new Set([
   "cloudSession",
   "run",
   "turn",
+  "replyTopic",
+  "replyOffset",
+  "replyOperation",
+  "replyIntentSeq",
+  "replyBinding",
 ]);
+
+function toolRecoveryFields(
+  metadata: Readonly<Record<string, unknown>> | undefined,
+  seq: number,
+): Map<number, Record<string, string>> {
+  const result = new Map<number, Record<string, string>>();
+  if (!metadata?.remoteTools) return result;
+  if (!Array.isArray(metadata.remoteTools)) throw new Error("Invalid Tool recovery metadata");
+  for (const value of metadata.remoteTools) {
+    const tool = value as {
+      taskId: number;
+      target: string;
+      replyTopic: string;
+      replyRecovery: unknown;
+      request: { operation: string; operationId: string; activationId: string };
+    };
+    const reply = parseToolReplyRecovery(tool.replyRecovery);
+    if (
+      tool.target !== "cube" ||
+      tool.request?.operation !== "tool.execute" ||
+      !Number.isSafeInteger(tool.taskId) ||
+      tool.taskId < 1 ||
+      tool.replyTopic !== reply.topic ||
+      !/^[0-9a-f-]{36}$/.test(tool.request.operationId) ||
+      result.has(tool.taskId)
+    )
+      throw new Error("Invalid Tool recovery identity");
+    result.set(tool.taskId, {
+      replyTopic: reply.topic,
+      replyOffset: reply.offset,
+      replyOperation: tool.request.operationId,
+      replyIntentSeq: String(seq),
+      replyBinding: tool.request.activationId,
+    });
+  }
+  return result;
+}
 const CURRENT_SOURCE_COLUMNS = sql`c.id::text,c.kind,c.seq::text,c.ordinal,c.body,c.delta_count,
   c.created_seq::text,c.retired_seq::text,c.cloud_origin,c.replay_topic,c.replay_partition,
   c.replay_offset::text,c.replay_seq::text,r.id as indexed_id,r.kind as indexed_kind,r.fields as indexed_fields`;
@@ -575,7 +621,14 @@ export class DurablePostgresProjection {
     if (retiredCurrent.length)
       await sql`update pi_durable_owned_records r set retired_seq=${batch.seq}
       where ${this.scoped("r")} and id=any(${retiredCurrent}::bigint[])`.execute(tx);
-    await this.#indexBatch(tx, batch, effective, current.omitted);
+    await this.#indexBatch(
+      tx,
+      batch,
+      effective,
+      current.omitted,
+      undefined,
+      toolRecoveryFields(cloudMetadata, batch.seq),
+    );
     await this.#checkpointRows(tx, checkpoints);
     if (live) {
       for (const row of pending) {
@@ -795,6 +848,7 @@ export class DurablePostgresProjection {
     effective: ReadonlyMap<number, Record<string, string> | undefined>,
     omitted: ReadonlySet<number> = new Set(),
     positions?: readonly number[],
+    recovery: ReadonlyMap<number, Record<string, string>> = new Map(),
   ): Promise<void> {
     const view = new DurablePostgresProjection(tx, this.scope, undefined, "references");
     const retired = new Set(
@@ -839,6 +893,12 @@ export class DurablePostgresProjection {
         if (origin)
           for (const key of ["cloudSession", "run", "turn"] as const)
             if (origin[key]) record.fields[key] = origin[key]!;
+        const transport = recovery.get(value.id);
+        if (transport) {
+          if (kind !== "task" || record.fields.status !== "running")
+            throw new Error("Reply recovery must belong to an executing native Tool");
+          Object.assign(record.fields, transport);
+        }
         records.set(value.id, record);
       }
       if (write.type === "document.create" || write.type === "document.change")
@@ -918,7 +978,22 @@ export class DurablePostgresProjection {
           'cloudSession',coalesce(existing.fields->'cloudSession',excluded.fields->'cloudSession'),
           'run',coalesce(existing.fields->'run',excluded.fields->'run'),
           'turn',coalesce(existing.fields->'turn',excluded.fields->'turn')))
-      where existing.kind=excluded.kind and (existing.kind in ('task','submission') or
+        || case when excluded.kind='task' and excluded.fields->>'status'<>'terminal' then
+          jsonb_strip_nulls(jsonb_build_object(
+            'replyTopic',coalesce(existing.fields->'replyTopic',excluded.fields->'replyTopic'),
+            'replyOffset',coalesce(existing.fields->'replyOffset',excluded.fields->'replyOffset'),
+            'replyOperation',coalesce(existing.fields->'replyOperation',excluded.fields->'replyOperation'),
+            'replyBinding',coalesce(existing.fields->'replyBinding',excluded.fields->'replyBinding'),
+            'replyIntentSeq',coalesce(existing.fields->'replyIntentSeq',excluded.fields->'replyIntentSeq')))
+          else '{}'::jsonb end
+      where existing.kind=excluded.kind
+        and (not (existing.fields ? 'replyOperation' and excluded.fields ? 'replyOperation')
+          or (existing.fields->'replyOperation'=excluded.fields->'replyOperation'
+            and existing.fields->'replyTopic'=excluded.fields->'replyTopic'
+            and existing.fields->'replyOffset'=excluded.fields->'replyOffset'
+            and existing.fields->'replyBinding'=excluded.fields->'replyBinding'
+            and existing.fields->'replyIntentSeq'=excluded.fields->'replyIntentSeq'))
+        and (existing.kind in ('task','submission') or
         (${current} and existing.kind='document' and existing.created_seq=excluded.created_seq)) returning id`.execute(
       tx,
     );
@@ -1088,7 +1163,8 @@ export class DurablePostgresProjection {
         write_count: number;
         history_write_count: number;
         history_fingerprint: string;
-      }>`select seq,next_id,write_count,history_write_count,history_fingerprint from pi_durable_commits c
+        cloud_metadata: string | null;
+      }>`select seq,next_id,write_count,history_write_count,history_fingerprint,cloud_metadata from pi_durable_commits c
           where ${this.scoped("c")} and seq>${through} order by seq limit 1`.execute(tx);
       if (!headers.rows.length) break;
       const rows = await sql<
@@ -1124,6 +1200,10 @@ export class DurablePostgresProjection {
           new Map(entries.map((row) => [Number(row.record_id), row.cloud_origin ?? undefined])),
           new Set(),
           entries.map((row) => row.ordinal),
+          toolRecoveryFields(
+            header.cloud_metadata ? JSON.parse(header.cloud_metadata) : undefined,
+            batch.seq,
+          ),
         );
       }
       through = Number(headers.rows.at(-1)!.seq);

@@ -114,6 +114,9 @@ async function fixture(
       runtimeIdentity: { supervisorId: "test", bootId: "test", sandboxId: "test" },
     });
   const handle: DurableSessionHandle = {
+    remoteToolIntent: async () => {
+      throw new Error("This fixture has no pending remote operation");
+    },
     ...textDisplay,
     storage,
     binding: {

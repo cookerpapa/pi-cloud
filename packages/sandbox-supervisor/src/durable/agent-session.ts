@@ -205,9 +205,13 @@ export class DurableAgentSession {
       recover: async (invocation) => {
         const prepared = await this.#prepareRemote(invocation);
         try {
-          if (!isControlToolCommand(prepared.command) || !prepared.command.recovery)
-            throw new Error("Remote recovery must publish an original control reference");
-          await this.publishControl(invocation.taskId, prepared.command);
+          if (isControlToolCommand(prepared.command)) {
+            if (!prepared.command.recovery)
+              throw new Error("Control recovery requires its original reference");
+            await this.publishControl(invocation.taskId, prepared.command);
+          } else if (!("replyRecovery" in prepared.command) || !prepared.command.replyRecovery) {
+            throw new Error("Remote recovery requires an original reply reference");
+          }
           return prepared;
         } catch (error) {
           prepared.dispose();

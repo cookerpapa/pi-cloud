@@ -147,7 +147,7 @@ function fakeWorkspaceVolumeGateway(): WorkspaceVolumeGateway {
 
 class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
   readonly retention = vi.fn(
-    async (_id: string, _createBefore: number, _boot: string, at: number) => at + 900000,
+    async (_id: string, _createBefore: number, _boot: string, at: number) => at + 1800000,
   );
   renewRetention(id: string, createBefore: number, boot: string, at: number) {
     return this.retention(id, createBefore, boot, at);
@@ -934,7 +934,7 @@ describe("CubeSandbox Provider contract", () => {
       },
       creationAuthorization,
     );
-    expect(runtime.creates[0]?.metadata["picloud.retention_window_ms"]).toBe("900000");
+    expect(runtime.creates[0]?.metadata["picloud.retention_window_ms"]).toBe("1800000");
     vi.useFakeTimers();
     try {
       await provider.probeExecution(handle);

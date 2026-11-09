@@ -1113,7 +1113,6 @@ try {
       "cube-system",
       "get",
       "configmap/pi-cloud-posix-volume-plugin",
-      "secret/pi-cloud-cube-completion",
       "--ignore-not-found",
       "-o",
       "json",

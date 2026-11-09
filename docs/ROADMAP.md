@@ -1,5 +1,13 @@
 # Implementation roadmap
 
+## Runtime decoupling and continuation — implementation in progress
+
+Implement Issues #17–#23 under [ADR-0306](adr/0306-runtime-decoupling-and-continuation.md),
+then perform one consolidated serial verification and matched rollout. Issue #24
+records the final provider-native execution and remaining Cube patch assessment.
+The owner authorized source work first; no acceptance is claimed before testing.
+[Progress and delivery evidence](reports/runtime-decoupling-20261109.md).
+
 ## Execution-owned tools and independent publication — deployed
 
 Issues #12–#16 follow [ADR-0305](adr/0305-execution-owned-tools-and-bindings.md).

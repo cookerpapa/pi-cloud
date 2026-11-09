@@ -307,8 +307,8 @@
       "id": "execution-probe-independent-paths",
       "workspace": "@pi-cloud/runtime-core",
       "file": "test/path-probe.test.ts",
-      "test": "lost guest replies do not stop log probes, and replacement rejects old binding replies",
-      "invariant": "Missing guest replies do not block publication, native drain or future log-path probes; replaced bindings reject late evidence."
+      "test": "does not turn changed_binding into readiness or writer revocation",
+      "invariant": "A replaced binding rejects late probe evidence without revoking the Session writer."
     },
     {
       "id": "machine-rebind-release-race",
@@ -342,15 +342,15 @@
       "id": "path-probe-stalled-ack",
       "workspace": "@pi-cloud/runtime-core",
       "file": "test/path-probe.test.ts",
-      "test": "bounds stalled probes and a lost probe ACK does not poison later semantic writes",
-      "invariant": "At most one probe is outstanding per physical Session; a probe has no semantic commit to recover."
+      "test": "coalesces fault checks and waits for a fresh reply and owner confirmation over HTTP",
+      "invariant": "One fault check is shared per current binding; readiness needs both its fresh reply and current owner confirmation."
     },
     {
       "id": "path-probe-stale-replay",
       "workspace": "@pi-cloud/runtime-core",
       "file": "test/run-observations.test.ts",
-      "test": "shares Session path evidence across Lanes while rejecting replay, stale and future probes",
-      "invariant": "A replay or stale probe cannot refresh liveness or create an active execution scope."
+      "test": "shares real Session publications across Lanes while rejecting replay and invalid timestamps",
+      "invariant": "Only checked native publications refresh log-path evidence; duplicate or invalid timestamps do not refresh it."
     },
     {
       "id": "activity-writer-seal",
@@ -1875,15 +1875,15 @@
       "id": "readiness-lost-reply",
       "workspace": "@pi-cloud/runtime-core",
       "file": "test/path-probe.test.ts",
-      "test": "ends a fault probe without granting readiness: lost_reply",
-      "invariant": "A missing guest reply ends the fault check within its budget without authorizing continuation."
+      "test": "does not turn lost_reply into readiness or writer revocation",
+      "invariant": "Missing Guest replies end the bounded diagnostic check without certifying readiness or revoking a writer."
     },
     {
       "id": "readiness-lost-publication-ack",
       "workspace": "@pi-cloud/runtime-core",
       "file": "test/path-probe.test.ts",
-      "test": "ends a fault probe without granting readiness: lost_publication_ack",
-      "invariant": "An unconfirmed probe publication cannot pin a readiness waiter or be treated as successful evidence."
+      "test": "does not turn lost_http_ack into readiness or writer revocation",
+      "invariant": "Unconfirmed probe HTTP handoff cannot pin a readiness waiter or become successful evidence."
     },
     {
       "id": "reply-admission-recovery",
@@ -2738,6 +2738,76 @@
       "file": "test/skill-staging.test.ts",
       "test": "preserves modified abandoned staging for inspection instead of deleting user bytes",
       "invariant": "OS lock loss permits inspection, not deletion of changed Skill staging or completed user files."
+    },
+    {
+      "id": "maintenance-no-native-history",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/path-probe.test.ts",
+      "test": "does not accept maintenance as Session Kafka history",
+      "invariant": "Maintenance is not a second native execution history."
+    },
+    {
+      "id": "maintenance-no-worker-kafka-timer",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/path-probe.test.ts",
+      "test": "keeps silent families free of periodic Kafka publications",
+      "invariant": "A silent Worker does not publish periodic maintenance into the Session log."
+    },
+    {
+      "id": "guest-callback-lost-ack",
+      "workspace": "@pi-cloud/tool-sandbox",
+      "file": "test/completion-client.test.ts",
+      "test": "retries the identical finalized result after a lost HTTP ACK without executing another command",
+      "invariant": "Callback retries resend finalized bytes and cannot re-execute the operation."
+    },
+    {
+      "id": "callback-persistence-before-ack",
+      "workspace": "@pi-cloud/cube-completion",
+      "file": "test/http-server.test.ts",
+      "test": "conceals routing, scopes Guest replies, and acknowledges only after publication",
+      "invariant": "A final callback is acknowledged only after publication; the Guest cannot replace its delivery scope."
+    },
+    {
+      "id": "native-proxy-reattachment",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/remote-tool-continuation.test.ts",
+      "test": "Pi re-enters only the acknowledged proxy wait and commits the original Tool result once",
+      "invariant": "Native recovery resumes the acknowledged remote wait without dispatching the command again."
+    },
+    {
+      "id": "environment-recovery-newer-withdrawal",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/pi-sandbox-continuity.test.ts",
+      "test": "does not clear a newer routing withdrawal with an older readiness confirmation",
+      "invariant": "An older readiness check cannot clear a newer environment withdrawal."
+    },
+    {
+      "id": "environment-observation-handoff",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/pi-sandbox-continuity.test.ts",
+      "test": "retains physical result identity before a model boundary and verifies it after handoff without waking a pure-chat Run",
+      "invariant": "A replacement checks the original physical identity before a model call; pure chat does not allocate compute."
+    },
+    {
+      "id": "lifecycle-unknown-stop-time",
+      "workspace": "@pi-cloud/accounting",
+      "file": "test/lifecycle-interval.test.ts",
+      "test": "does not charge until discovery when a VM stopped earlier, and accepts an explicit physical end time",
+      "invariant": "Discovery time is not invented as physical stop time for a confirmed charge."
+    },
+    {
+      "id": "lifecycle-clock-rollback",
+      "workspace": "@pi-cloud/accounting",
+      "file": "test/lifecycle-interval.test.ts",
+      "test": "keeps paused checkpoints without invoice rows and never prices a wall-clock interval twice",
+      "invariant": "Clock rollback cannot price an interval twice and paused snapshots do not accrue compute."
+    },
+    {
+      "id": "lifecycle-source-fairness",
+      "workspace": "@pi-cloud/accounting",
+      "file": "test/lifecycle-scheduling.test.ts",
+      "test": "gives untouched sources a turn while other nodes continuously catch up",
+      "invariant": "Continuously busy source histories cannot starve untouched nodes."
     }
   ]
 }

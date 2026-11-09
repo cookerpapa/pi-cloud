@@ -1,3 +1,4 @@
+// Test-only composition; production API and Worker control have separate listeners.
 import type { Database } from "@pi-cloud/database";
 import type { SandboxAssignmentInventory } from "@pi-cloud/protocol";
 import type { NestFastifyApplication } from "@nestjs/platform-fastify";
@@ -6,27 +7,27 @@ import type { Kysely } from "kysely";
 import {
   createControlPlaneApplication,
   type ControlPlaneApplicationOptions,
-} from "./application.ts";
-import { AssignmentReconciler } from "./assignment-reconciler.ts";
+} from "../../src/application.ts";
+import { AssignmentReconciler } from "../../src/assignment-reconciler.ts";
 import type { LiveSessionTailSource } from "@pi-cloud/runtime-core/session-event-stream";
 import {
   SupervisorMaintenanceRuntime,
   type SupervisorMaintenanceRuntimeOptions,
-} from "./supervisor-maintenance-runtime.ts";
+} from "../../src/supervisor-maintenance-runtime.ts";
 import { SessionEventHub } from "@pi-cloud/runtime-core/session-event-hub";
 import {
   SupervisorConnectionManager,
   type SupervisorBootIdentity,
   type SupervisorConnectionManagerOptions,
   type SupervisorOwnerBoundary,
-} from "./supervisor-connection-manager.ts";
+} from "../../src/supervisor-connection-manager.ts";
 import {
   SupervisorWebSocketGateway,
   type SupervisorUpgradeAuthorizer,
   type SupervisorWebSocketGatewayOptions,
-} from "./supervisor-websocket-gateway.ts";
-import type { SupervisorProvisioningGateway } from "./supervisor-boot-provisioner.ts";
-import type { ProductionHttpGateway } from "./production-http-gateway.ts";
+} from "../../src/supervisor-websocket-gateway.ts";
+import type { SupervisorProvisioningGateway } from "../../src/supervisor-boot-provisioner.ts";
+import type { ProductionHttpGateway } from "../../src/production-http-gateway.ts";
 
 type ConnectionManagerConfiguration = Omit<
   SupervisorConnectionManagerOptions,

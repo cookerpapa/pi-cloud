@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const fixture = vi.hoisted(() => ({
   calls: [] as string[],
@@ -161,7 +161,9 @@ vi.mock("../src/sandbox-control-server.ts", () => ({
     }
   },
 }));
+afterEach(() => vi.unstubAllEnvs());
 beforeEach(() => {
+  vi.stubEnv("PI_CLOUD_TOOL_COMPLETION_URL", "https://127.0.0.1:4320/v1/completions");
   vi.resetModules();
   fixture.calls.length = 0;
   fixture.errors.clear();

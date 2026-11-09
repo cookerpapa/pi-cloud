@@ -169,42 +169,6 @@ describe("Unified Projector handoff boundaries (transport/PG simulated)", () => 
     await work;
     expect(f.project).toHaveBeenCalledTimes(1);
   });
-  it("handles probes on the same consumer without native projection, dispatch or public sequence", async () => {
-    const { fact } = toolInvocationFixture();
-    const original = { fact, topic: "test", partition: 0, offset: 12n };
-    f.observes.mockReturnValue(true);
-    await f.handler!(
-      original,
-      () => true,
-      async () => true,
-    );
-    f.project.mockClear();
-    route.mockClear();
-    const display = vi.spyOn(projector.eventHub, "publish"),
-      observe = vi.spyOn(projector.eventHub, "publishObservation"),
-      commit = vi.fn();
-    const probe = {
-      ...original,
-      offset: 13n,
-      fact: {
-        kind: "path_probe",
-        factId: "probe",
-        scope: fact.scope,
-        occurredAt: new Date().toISOString(),
-      },
-    };
-    await f.handler!(probe, () => true, commit);
-    expect(f.project).not.toHaveBeenCalled();
-    expect(route).not.toHaveBeenCalled();
-    expect(commit).not.toHaveBeenCalled();
-    expect(display).not.toHaveBeenCalled();
-    expect(observe).toHaveBeenCalledOnce();
-    await f.handler!(probe, () => true, commit);
-    expect(observe).toHaveBeenCalledOnce();
-    f.observes.mockReturnValue(false);
-    await f.handler!({ ...probe, offset: 14n }, () => true, commit);
-    expect(observe).toHaveBeenCalledOnce();
-  });
   it("projects a combined invocation before dispatch commit and never reissues it on history replay", async () => {
     const { fact } = toolInvocationFixture();
     const r = { fact, topic: "test", partition: 0, offset: 12n };

@@ -63,6 +63,28 @@ Owned fixture cleanup confirms VM/Volume absence before tenant removal. User
 conversations are not release probes. The initial matched cutover is required;
 this scope does not install a missing tool-host into an old runtime.
 
+## Public Session API
+
+[ADR-0306](adr/0306-runtime-decoupling-and-continuation.md) installs the independent
+`session-api` role with schema 215 and `sessionApiReplacement: 1`. After that matched
+cutover, compatible public HTTP/controller changes can use the explicit
+`session-api` scope. The allowlist is `sessionApiSource` in
+`scripts/lib/release-impact.mjs`; changes to execution ownership, database schemas,
+shared protocols or other process entry points still require a matched release.
+
+```sh
+npm run release:component -- prepare session-api /private/releases/api-1 api-1
+npm run release:component -- preflight /private/releases/api-1
+npm run release:component -- apply /private/releases/api-1
+```
+
+This builds one host artifact but changes only `images.sessionApi` and its role
+provenance. Workers, Session projection, completion delivery, resource management,
+ordinary Tools and accounting retain their installed artifacts. It does not wait
+for whole Runs to finish. Browser streams reconnect through the API to the same
+projection owner; an uncertain message submission reuses its original idempotency
+key. This scope cannot install the new role into an older combined deployment.
+
 ## Installed Session decoder repair
 
 The explicit `session-decoder` scope only accepts runtime changes in

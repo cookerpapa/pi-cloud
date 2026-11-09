@@ -101,7 +101,7 @@ renderer with retained Helm values, without repeating root-only host preparation
 ```bash
 PI_CLOUD_IMAGE_VERSION=<release> node scripts/build-cubesandbox-runtime.mjs
 # Import the matching cube-api, cube-master and cubelet images into K3s first.
-PI_CLOUD_CUBE_IMAGE_VERSION=<release> node scripts/configure-cube-completion.mjs
+PI_CLOUD_CUBE_IMAGE_VERSION=<release> node scripts/reconcile-cubesandbox-release.mjs
 ```
 
 This changes all three native image values in one rendered Helm release. Existing
@@ -170,3 +170,12 @@ Prometheus, Alertmanager, Grafana and Jaeger in K3s, then rebuild/import and dep
 The optional monitoring stack has retained claims and loopback-only operator ports.
 Its configuration/rules remain under `deploy/observability`; it adds no execution
 authority. See [observability](OBSERVABILITY.md).
+
+
+ADR-0306 separates the public `session-api` and private `tool-completion` roles
+from the Session Projector. The distributed chart requires the Secret named by
+`toolCompletion.tlsSecretName` with `tls.crt`, `tls.key` and `ca.crt`. Its certificate
+must cover `toolCompletion.baseUrl`; execution and Guest callers verify that CA.
+The maintained single-host installer and matched release use
+`scripts/configure-tool-completion.mjs` to provision/reuse this certificate.
+Cubelet no longer mounts the platform database, Kafka or object-store credentials.

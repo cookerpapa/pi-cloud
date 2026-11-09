@@ -1,3 +1,7 @@
+> Current transport changes are specified in [ADR-0306](adr/0306-runtime-decoupling-and-continuation.md):
+> Session topic v19, original reply-topic recovery and pending-reference retention.
+> Maintenance probes are now execution-initiated HTTP/Guest/reply traffic, not Session publications.
+
 # Streaming durability and recovery
 
 The active publication path is Worker → Session Kafka producer → one Session

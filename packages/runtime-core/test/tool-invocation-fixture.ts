@@ -25,7 +25,7 @@ export function toolInvocationFixture(content = "hello") {
   const command: CandidateToolCommand = {
     executionReference,
     toolCallId: "task:4",
-    replyTopic: "reply-worker-boot",
+    replyTopic: "pi-cloud.tool-replies.v4.10000000-0000-4000-8000-000000000009",
     occurredAt: "2026-09-28T00:00:00.000Z",
     request: {
       type: "tool_sandbox.operation",

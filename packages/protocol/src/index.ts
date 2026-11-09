@@ -629,6 +629,13 @@ export * from "./run-observation.ts";
 export * from "./control-tool-catalog.ts";
 export * from "./tool-catalog-publication.ts";
 export * from "./tool-environment.ts";
+export * from "./completion-transport.ts";
+export type {
+  ToolCompletionGrant,
+  ToolCompletionContext,
+  ProbeCompletionContext,
+} from "./completion-capability.ts";
+export * from "./sandbox-lifecycle.ts";
 export * from "./queued-inputs.ts";
 export {
   MAX_AGENT_INPUT_CHARACTERS,
@@ -653,6 +660,7 @@ export {
   type RunInterruptionReason,
 } from "./run-interruption.ts";
 export * from "./execution-probe.ts";
+export * from "./environment-change.ts";
 export * from "./execution-position.ts";
 export * from "./publication-availability.ts";
 export * from "./tool-cancellation.ts";
@@ -690,7 +698,6 @@ export {
   type DurableToolEndDescription,
   type DurableDisplayPreparation,
 } from "./durable-display.ts";
-export * from "./runtime-keepalive.ts";
 export { toolImageView, toolContentView, type ToolImageView } from "./tool-image-view.ts";
 export {
   UsageTokensSchema,
@@ -732,3 +739,4 @@ export * from "./resource-metering.ts";
 export * from "./workspace-capacity.ts";
 export * from "./session-environment.ts";
 export type { ToolImplementation } from "./control-tool-command.ts";
+export * from "./tool-recovery.ts";

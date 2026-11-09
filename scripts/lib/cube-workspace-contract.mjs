@@ -49,9 +49,9 @@ export function assertCubeWorkspaceContract(master, node, expectedHostRoot) {
     );
 }
 
-export function assertCubeCompletionVersion(probe, sourceId, expectedVersion) {
-  if (probe?.source !== sourceId || probe?.version !== expectedVersion)
+export function assertCubeNativeVersion(probe, expectedVersion) {
+  if (probe?.components?.cubelet?.version !== expectedVersion)
     throw new Error(
-      "Update Cubelet from the current pinned runtime and completion sources before deploying the platform",
+      "Update Cube from the current pinned native patch set before deploying the platform",
     );
 }

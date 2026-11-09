@@ -344,6 +344,11 @@ export class PiWorkerRuntime {
         this.#claimAvailability() !== undefined,
       stopCurrentBoot: () => this.#stopCurrentBoot(),
       assignmentInventory: this.#sandboxControl,
+      receiveProbe: (request) => {
+        if (!(this.#activeExecutionLogs instanceof WorkerExecutionLog))
+          throw new Error("Worker reply receiver is not ready");
+        return this.#activeExecutionLogs.receiveProbe(request);
+      },
       subagentCommand: async (command) => {
         if (!this.#nativeSessions || !this.#subagentControl)
           throw new Error("Subagent runtime is not ready");
@@ -484,6 +489,7 @@ export class PiWorkerRuntime {
       new DurableSessionPublisher({
         channels: executionLogResolver(executionLogs),
         replyTopic: toolReplies.topic,
+        replyPosition: () => toolReplies.replyPosition(),
         ...(images ? { images: images.codec } : {}),
         ...(this.#metrics ? { metrics: this.#metrics } : {}),
       });
@@ -498,6 +504,7 @@ export class PiWorkerRuntime {
     await runClaimReadiness.start();
     this.#assertStarting();
     const nativeSessions = new PostgresDurableSessionHost({
+      restoreReplies: (references, signal) => toolReplies.restore(references, signal),
       onReadStart: () => capturePreparationWork("storage_read"),
       database: this.#readDatabase,
       leaseDatabase: this.#leaseDatabase,
@@ -558,10 +565,22 @@ export class PiWorkerRuntime {
       partitionFor: (id) => kafkaProducerLane(id, this.#config.kafka.partitions),
       report: (delivery) => activity.execution(delivery),
       confirm: (delivery, signal) => activity.confirmExecution(delivery, signal),
+      request: (fact, signal) =>
+        activity.requestProbe(
+          fact,
+          kafkaProducerLane(fact.scope.piSessionId, this.#config.kafka.partitions),
+          signal,
+        ),
     });
     toolReplies.onExecutionEvidence = (id, evidence) => {
       workerLog?.recordExecutionEvidence(id, evidence);
       this.#agentRunner?.observeExecution(evidence);
+    };
+    // An environment notice must not block unrelated operations sharing this
+    // boot Topic. The runner marks the local gate synchronously; its bounded
+    // native write is observed separately and a replacement verifies afresh.
+    toolReplies.onEnvironmentChange = (change) => {
+      void this.#agentRunner?.environmentChanged(change);
     };
     const runner = new RemoteToolSandboxTurnRunner({
       publicEgress: () => this.#publicEgress,
@@ -576,16 +595,6 @@ export class PiWorkerRuntime {
         ) ?? Promise.resolve(false),
       onActivity: (command, update, parent) => {
         const p = command.payload;
-        workerLog?.bindRetention(
-          p.executionReference,
-          p.piSession.conversationId,
-          update && (p.executionMode !== "development_environment" || p.computeSessionId)
-            ? {
-                workspaceId: p.workspaceId,
-                ...(p.computeSessionId ? { computeSessionId: p.computeSessionId } : {}),
-              }
-            : undefined,
-        );
         if (!update) {
           activity.forget(p.runId, p.sessionId);
           return;
@@ -614,22 +623,23 @@ export class PiWorkerRuntime {
         ),
       acquireModelPermit: (command, signal) =>
         modelPermits.acquire(`${command.payload.tenantId}:${command.payload.piSession.id}`, signal),
-      waitForToolReply: (request, signals, toolCallId, imageScope) => {
+      waitForToolReply: (request, signals, toolCallId, imageScope, recovery) => {
         if (!toolCallId) throw new Error("Tool call identity is unavailable");
         if (!imageScope) throw new Error("Tool image scope is unavailable");
-        const reply = toolReplies.wait(
-          request.operationId,
-          toolCallId,
-          request.toolName,
-          signals.receipt,
-        );
+        const reply = recovery
+          ? toolReplies.resumeWait(request.operationId, recovery, signals.receipt)
+          : toolReplies.wait(request.operationId, toolCallId, request.toolName, signals.receipt);
         const restored = restoreToolReply(reply, images?.codec, imageScope, signals.lifetime);
         const result = restored.result.then((value) => ({
           type: "tool_execution_end" as const,
           ...value,
         }));
         void result.catch(() => {});
-        return { result, executionSettled: restored.executionSettled };
+        return {
+          result,
+          executionSettled: restored.executionSettled,
+          ...(restored.executionEvidence ? { executionEvidence: restored.executionEvidence } : {}),
+        };
       },
       broker: new SandboxControlClient({
         baseUrl: this.#config.sessionExecutionBaseUrl,
@@ -659,6 +669,7 @@ export class PiWorkerRuntime {
       trustedWorkspaceDirectory: this.#config.trustedWorkspaceDirectory,
       openAgentSession: (command, signal) =>
         nativeSessions.open({
+          ...(command.payload.stopOnResume ? { stopOnResume: true } : {}),
           ...(signal ? { signal } : {}),
           binding: {
             tenantId: command.payload.tenantId,

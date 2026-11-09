@@ -77,7 +77,7 @@ it("round-trips ordinary Tool environment and frozen implementation without dupl
     operationId: crypto.randomUUID(),
     toolName: "preview",
     contextAnchor: null,
-    replyTopic: "reply-worker-boot",
+    replyTopic: "pi-cloud.tool-replies.v4.10000000-0000-4000-8000-000000000009",
     bindingId: environment.requestId,
     environment,
     implementation: { releaseId: "release-1", generation: 1, replay: "safe" as const },
@@ -111,7 +111,7 @@ it("round-trips compact ownership, child views and the original reply identity",
   };
   const encoded = encodeSessionLogFact(source),
     wire = JSON.parse(encoded);
-  expect(wire.replyTopic).toBe("reply-worker-boot");
+  expect(wire.replyTopic).toBe("pi-cloud.tool-replies.v4.10000000-0000-4000-8000-000000000009");
   expect(wire.tools[0].view).toEqual({ sessionId: child.sessionId, turnId: child.turnId });
   for (const name of ["scope", "replyTopic", "toolCallId", "factId", "nativeToolName"])
     expect(wire.tools[0]).not.toHaveProperty(name);
@@ -124,7 +124,7 @@ it("round-trips compact ownership, child views and the original reply identity",
   expect(decoded.tools[0]).toMatchObject({
     scope: child,
     toolCallId: "task:4",
-    replyTopic: "reply-worker-boot",
+    replyTopic: "pi-cloud.tool-replies.v4.10000000-0000-4000-8000-000000000009",
     request: { operationId: command.request.operationId, toolCallId: "provider-1" },
   });
   expect(decoded.fact.kind === "durable_commit" && decoded.fact.commit).toEqual(fact.commit);
@@ -178,29 +178,6 @@ it("inherits display addresses without leaking owner fields into public events",
   expect(decodeSessionLogFact(JSON.stringify(wire)).fact).toEqual(source);
 });
 
-it("shares owner metadata for grouped execution probes", () => {
-  const { fact } = toolInvocationFixture();
-  const probe = {
-    kind: "path_probe" as const,
-    factId: crypto.randomUUID(),
-    scope: fact.scope,
-    occurredAt: fact.occurredAt,
-    execution: {
-      replyTopic: "reply-worker-boot",
-      bindings: [
-        {
-          bindingId: crypto.randomUUID(),
-          probe: true,
-          scope: { ...fact.scope, sessionId: crypto.randomUUID(), turnId: crypto.randomUUID() },
-        },
-      ],
-    },
-  };
-  const wire = JSON.parse(encodeSessionLogFact(probe));
-  expect(wire.execution.bindings[0]).not.toHaveProperty("scope");
-  expect(decodeSessionLogFact(JSON.stringify(wire)).fact).toEqual(probe);
-});
-
 it("routes Android using the native intent once, with ordered position and no duplicate arguments", () => {
   const { fact } = toolInvocationFixture("phone input");
   const source: import("../src/accepted-fact.ts").AcceptedDurableCommitFact = {
@@ -214,7 +191,7 @@ it("routes Android using the native intent once, with ordered position and no du
         taskId: 4,
         conversationId: 1,
         toolName: "android_input_text",
-        replyTopic: "reply-worker-boot",
+        replyTopic: "pi-cloud.tool-replies.v4.10000000-0000-4000-8000-000000000009",
       },
     ],
     cancellations: [

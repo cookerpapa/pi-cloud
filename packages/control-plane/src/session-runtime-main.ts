@@ -1,5 +1,3 @@
-import { SkillMarketService } from "./skill-market-service.ts";
-import { SessionScheduleService } from "./session-schedule-service.ts";
 import { runtimeModelCatalog } from "./runtime-model-catalog.ts";
 import { SessionPublicationService } from "./session-publication-service.ts";
 import { SubagentController } from "./subagent-controller.ts";
@@ -35,23 +33,15 @@ import {
   SupervisorProvisioningGateway,
 } from "./supervisor-boot-provisioner.ts";
 import { loadProductionControlPlaneConfig } from "./production-config.ts";
-import { ProductionHttpGateway } from "./production-http-gateway.ts";
-import { PostgresTenantApiAuthenticator } from "./tenant-identity.ts";
-import { resolvePlatformInitialModel } from "./platform-model-configuration.ts";
-import { WebAuthenticationService } from "./web-authentication.ts";
-import { createControlPlaneRuntime, type ControlPlaneRuntime } from "./control-plane-runtime.ts";
-import { ReplicatedSandboxControlClient } from "@pi-cloud/sandbox-control/client";
-import { WorkspaceTerminalGateway } from "./workspace-terminal-gateway.ts";
-import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
-import { SandboxPreviewGateway } from "./sandbox-preview-gateway.ts";
-import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
+import { SupervisorControlRuntime } from "./supervisor-control-runtime.ts";
+import { SessionLiveService } from "./session-live-service.ts";
+import { SessionEventStream } from "@pi-cloud/runtime-core/session-event-stream";
+import { RuntimeSettingsObserver } from "./runtime-settings-observer.ts";
 import { OperationalMetricsSampler } from "./operational-metrics-sampler.ts";
-import { createSourceControlServices } from "./source-control-services.ts";
 import {
   configuredImageAttachments,
   type ConfiguredImageAttachments,
 } from "@pi-cloud/session-attachments";
-import { EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
 import { ControlPlaneQuiescence } from "./control-plane-quiescence.ts";
 
 import { closeControlPlaneResources } from "./close-resources.ts";
@@ -92,8 +82,8 @@ export async function startSessionRuntime(): Promise<void> {
     return { active: tools.active + bound.active, unsettled: tools.unsettled + bound.unsettled };
   });
   let agentEvents: SessionProjector | undefined;
-  let runtime: ControlPlaneRuntime | undefined;
-  let developmentEnvironmentService: DevelopmentEnvironmentService | undefined;
+  let runtime: SupervisorControlRuntime | undefined;
+  let runtimeSettings: RuntimeSettingsObserver | undefined;
   let operationalMetrics: OperationalMetricsSampler | undefined;
   let images: ConfiguredImageAttachments | undefined;
   let toolHost: ToolHostClient | undefined;
@@ -104,8 +94,6 @@ export async function startSessionRuntime(): Promise<void> {
   let executorCleanupTimer: ReturnType<typeof setInterval> | undefined;
   let executorCleanup: Promise<void> | undefined;
   let queueViews: InputQueueView | undefined;
-  let sourceControlDispatcher: EnvHttpProxyAgent | undefined;
-  let ownedSourceControlServices: ReturnType<typeof createSourceControlServices> | undefined;
   let closePromise: Promise<void> | undefined;
   const startupSettled = Promise.withResolvers<void>();
   const close = (): Promise<void> => {
@@ -115,6 +103,7 @@ export async function startSessionRuntime(): Promise<void> {
       () => agentEvents?.close(),
       () => queueViews?.close(),
       () => queueDatabase?.destroy(),
+      () => runtimeSettings?.close(),
       () => runtime?.close(),
       async () => {
         clearInterval(executorCleanupTimer);
@@ -122,15 +111,12 @@ export async function startSessionRuntime(): Promise<void> {
         await executorTransport?.close();
       },
       () => conversationDatabase?.destroy(),
-      () => developmentEnvironmentService?.close(),
       () => operationalMetrics?.close(),
       () => sandboxControl?.close(),
       () => unattachedSubagents?.close(),
       () => unattachedControlTools?.close(),
       () => toolHost?.close(),
       () => catalogConsumer?.close(),
-      () => sourceControlDispatcher?.close(),
-      () => ownedSourceControlServices?.close(),
       () => images?.blobs.close(),
       () => ownedProjectionDatabase?.destroy(),
       () => ownedPublicationDatabase?.destroy(),
@@ -192,11 +178,6 @@ export async function startSessionRuntime(): Promise<void> {
       },
       ...(images ? { images } : {}),
     });
-    const workspaceBrowserClient = new ReplicatedSandboxControlClient({
-      baseUrls: config.sandboxControlBaseUrls,
-      serviceToken: config.workspaceServiceToken,
-      allowInsecureHttp: config.allowInsecureInternalHttp,
-    });
     const subagents = new SubagentController({
       database,
       managementToken: config.supervisorManagementToken,
@@ -247,25 +228,6 @@ export async function startSessionRuntime(): Promise<void> {
       token: config.supervisorManagementToken,
       catalog: () => toolCatalog.snapshot,
     });
-    const schedules = new SessionScheduleService({
-      database,
-      admissionDatabase: maintenanceDatabase,
-      environmentImageRevision: config.environmentImageRevision,
-    });
-    sourceControlDispatcher = new EnvHttpProxyAgent();
-    const skillDispatcher = sourceControlDispatcher;
-    const skills = new SkillMarketService({
-      database,
-      ...(images ? { blobs: images.blobs } : {}),
-      catalog: () => toolCatalog.read().tools,
-      maximumDepth: config.subagentTreePolicy.maximumDepth,
-      fetch: ((url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
-        undiciFetch(url as Parameters<typeof undiciFetch>[0], {
-          ...(init as Parameters<typeof undiciFetch>[1]),
-          dispatcher: skillDispatcher,
-        })) as unknown as typeof fetch,
-    });
-    await skills.initialize();
     const controlTools = new ControlToolDispatcher({
       database,
       partitions: config.kafkaPartitions,
@@ -458,18 +420,6 @@ export async function startSessionRuntime(): Promise<void> {
         }),
     });
     await operationalMetrics.start();
-    const registrationConfiguration = {
-      ...config.publicRegistration,
-      initialModel: () => resolvePlatformInitialModel(database, config.platformModelSourceTenantId),
-    };
-    const webAuthentication = new WebAuthenticationService({
-      database,
-      ...registrationConfiguration,
-      initialModel: () => resolvePlatformInitialModel(database, config.platformModelSourceTenantId),
-      secureCookie: config.webSessionCookieSecure,
-      sessionTtlMs: config.webSessionTtlMs,
-      platformOperatorTenantId: config.platformOperatorTenantId,
-    });
     const resolveManagementClient = async (identity: {
       supervisorId: string;
       bootId: string;
@@ -494,21 +444,6 @@ export async function startSessionRuntime(): Promise<void> {
         allowInsecureHttp: config.allowInsecureInternalHttp,
       });
     };
-    const resolveNativeInputBackend = async (
-      sandboxId: string,
-    ): Promise<HttpSupervisorManagementClient> => {
-      const identity = await database
-        .selectFrom("workers")
-        .select(["supervisor_id", "boot_id"])
-        .where("id", "=", sandboxId)
-        .executeTakeFirst();
-      if (identity === undefined) throw new Error("Active Pi Worker identity is unavailable");
-      return resolveManagementClient({
-        supervisorId: identity.supervisor_id,
-        bootId: identity.boot_id,
-        sandboxId,
-      });
-    };
     const provisioner = new SupervisorBootProvisioner({
       database,
       allowedSupervisorIdPrefix: config.supervisorIdPrefix,
@@ -517,46 +452,6 @@ export async function startSessionRuntime(): Promise<void> {
       enrollmentToken: config.supervisorEnrollmentToken,
     });
     const provisioningGateway = new SupervisorProvisioningGateway({ provisioner });
-    const httpGateway = new ProductionHttpGateway({
-      authenticator: new PostgresTenantApiAuthenticator({ database }),
-      publicRegistrationEnabled: config.publicRegistration.enabled,
-      webSessionAuthenticator: webAuthentication,
-      readiness: async () => {
-        if (runtime?.state !== "running" || sandboxControl?.ready !== true) return false;
-        await Promise.all([activeAgentEvents.checkIngestHealth(), sql`select 1`.execute(database)]);
-        return true;
-      },
-    });
-    const workspaceTerminalGateway = new WorkspaceTerminalGateway({
-      database,
-      terminalToken: config.workspaceTerminalToken,
-      allowInsecureInternalHttp: config.allowInsecureInternalHttp,
-    });
-    const sandboxPreviewGateway = new SandboxPreviewGateway({
-      database,
-      previewToken: config.workspaceTerminalToken,
-      executionBaseUrl: process.env.PI_CLOUD_SESSION_EXECUTION_URL ?? "http://session-runtime:4300",
-      publicOriginBaseUrl: config.previewPublicOriginBaseUrl,
-      listenHost: config.host,
-      listenPort: config.previewPort,
-      allowInsecureInternalHttp: config.allowInsecureInternalHttp,
-    });
-    developmentEnvironmentService = new DevelopmentEnvironmentService({
-      database,
-      terminalToken: config.workspaceTerminalToken,
-      allowInsecureInternalHttp: config.allowInsecureInternalHttp,
-      environmentImageRevision: config.environmentImageRevision,
-    });
-    const sshAccessTicketService = new SshAccessTicketService({
-      database,
-      enabled: config.sshGatewayEnabled,
-      advertisedHost: config.sshAdvertisedHost,
-      advertisedPort: config.sshAdvertisedPort,
-      ticketTtlMs: config.sshTicketTtlMs,
-    });
-    const sourceControlServices = createSourceControlServices(database, config);
-    ownedSourceControlServices = sourceControlServices;
-    const sourceControlService = sourceControlServices.sourceControlService;
     const platformRuntimeSettings = new PlatformRuntimeSettingsService({
       database,
       platformOperatorTenantId: config.platformOperatorTenantId,
@@ -569,76 +464,19 @@ export async function startSessionRuntime(): Promise<void> {
       maxConnections: 4,
       readTimeoutMs: 5000,
     });
-    runtime = await createControlPlaneRuntime({
-      skills,
-      executionTargets,
-      executionTargetIngress: new ExecutionTargetIngress(
-        executionTargets,
-        config.supervisorManagementToken,
-      ),
-      conversationReadDatabase: conversationDatabase,
-      platformRuntimeSettings,
+    runtime = new SupervisorControlRuntime({
+      database,
+      maintenanceDatabase,
+      instanceId: controlPlaneInstanceId,
+      authorizer: new PostgresSupervisorCredentialAuthorizer({ database }),
+      ownerBoundary: new RoutedHttpSupervisorOwnerBoundary(resolveManagementClient),
+      inventory: (identity) =>
+        new RoutedHttpSandboxAssignmentInventory(resolveManagementClient, identity),
       gateway: {
         runtimeConfiguration: async () => ({
           publicEgress: await platformRuntimeSettings.publicEgress(),
         }),
       },
-      sessionPublicationService: new SessionPublicationService(
-        config.supervisorManagementToken,
-        activeAgentEvents,
-        quiescence,
-      ),
-      runActivityIngress: new RunActivityIngress(
-        config.supervisorManagementToken,
-        (partition) => activeAgentEvents.ownerForPartition(partition),
-        (delivery) => activeAgentEvents.observations.activity(delivery),
-        (delivery) => executionProbes.complete(delivery),
-        (delivery) => executionProbes.ready(delivery),
-      ),
-      toolProgressIngress: new ToolProgressIngress(
-        config.supervisorManagementToken,
-        (partition) => activeAgentEvents.ownerForPartition(partition),
-        ({ tenantId, progress }) => activeAgentEvents.eventHub.publishProgress(tenantId, progress),
-      ),
-      database,
-      controlPlaneInstanceId,
-      eventRuntime: {
-        eventHub: activeAgentEvents.eventHub,
-        eventStore: activeAgentEvents.eventStore,
-      },
-      developmentEnvironmentService,
-      sshAccessTicketService,
-      supervisorAuthorizer: new PostgresSupervisorCredentialAuthorizer({ database }),
-      connectionManager: { maintenanceDatabase },
-      supervisorOwnerBoundary: new RoutedHttpSupervisorOwnerBoundary(resolveManagementClient),
-      assignmentInventoryFactory: (identity) =>
-        new RoutedHttpSandboxAssignmentInventory(resolveManagementClient, identity),
-      supervisorProvisioningGateway: provisioningGateway,
-      nativeInputBackendFactory: resolveNativeInputBackend,
-      productionHttpGateway: httpGateway,
-      publicRegistration: registrationConfiguration,
-      webAuthentication,
-      platformOperatorTenantId: config.platformOperatorTenantId,
-      platformModelSourceTenantId: config.platformModelSourceTenantId,
-      cubeEgressConfigToken: config.cubeEgressConfigToken,
-      workspaceTerminalGateway,
-      sandboxPreviewGateway,
-      sourceControlService,
-      schedules,
-      environmentImageRevision: config.environmentImageRevision,
-      metrics: observability.metrics,
-      workspaceBrowser: {
-        listWorkspaceDirectory: (request) =>
-          sandboxControl!.resources.listWorkspaceDirectory(request),
-        readWorkspaceFile: (request, signal) =>
-          sandboxControl!.resources.readWorkspaceFile(request, signal),
-      },
-      workspaceUploader: {
-        uploadWorkspaceFile: (request, bytes, signal) =>
-          workspaceBrowserClient.uploadWorkspaceFile(request, bytes, signal),
-      },
-      workspaceFileTransfers: workspaceBrowserClient,
-      ...(images ? { imageAttachmentStore: images.store } : {}),
       maintenance: {
         onActivity: (activity) =>
           operationalLog({
@@ -649,7 +487,62 @@ export async function startSessionRuntime(): Promise<void> {
           }),
       },
     });
+    provisioningGateway.install(runtime.server);
+    new SessionPublicationService(
+      config.supervisorManagementToken,
+      activeAgentEvents,
+      quiescence,
+    ).install(runtime.server);
+    new ExecutionTargetIngress(executionTargets, config.supervisorManagementToken).install(
+      runtime.server,
+    );
+    new RunActivityIngress(
+      config.supervisorManagementToken,
+      (partition) => activeAgentEvents.ownerForPartition(partition),
+      (delivery) => activeAgentEvents.observations.activity(delivery),
+      (delivery) => executionProbes.complete(delivery),
+      (delivery) => executionProbes.ready(delivery),
+      {
+        partitionFor: (id) => kafkaProducerLane(id, config.kafkaPartitions),
+        request: (fact) => sandboxControl!.maintenance.request(fact),
+      },
+    ).install(runtime.server);
+    new ToolProgressIngress(
+      config.supervisorManagementToken,
+      (partition) => activeAgentEvents.ownerForPartition(partition),
+      ({ tenantId, progress }) => activeAgentEvents.eventHub.publishProgress(tenantId, progress),
+    ).install(runtime.server);
+    new SessionLiveService({
+      database: conversationDatabase,
+      stream: new SessionEventStream(activeAgentEvents.eventStore, activeAgentEvents.eventHub),
+      token: config.supervisorManagementToken,
+    }).install(runtime.server);
+    runtime.server.get("/health/live", async () => ({ status: "ok" }));
+    runtime.server.get("/health/ready", async (_request, reply) => {
+      try {
+        if (runtime?.state !== "running" || !sandboxControl?.ready)
+          throw new Error("Execution is starting");
+        await Promise.all([activeAgentEvents.checkIngestHealth(), sql`select 1`.execute(database)]);
+        return reply.send({ status: "ready" });
+      } catch {
+        return reply.code(503).send({ status: "not_ready" });
+      }
+    });
+    runtime.server.get("/v1/internal/cube-egress-configuration", async (request, reply) => {
+      try {
+        const token = request.headers["x-pi-cloud-internal-token"];
+        return await platformRuntimeSettings.internal(
+          typeof token === "string" ? token : undefined,
+        );
+      } catch {
+        return reply.code(401).send();
+      }
+    });
     await runtime.listen(config.port, config.host);
+    runtimeSettings = new RuntimeSettingsObserver(config.databaseNotificationUrl, () =>
+      platformRuntimeSettings.publicEgress(),
+    );
+    runtimeSettings.start();
     await sandboxControl.start();
     process.stdout.write(
       `PiCloud Session runtime listening on ${config.host}:${String(config.port)}\n`,

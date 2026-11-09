@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, it, vi } from "vitest";
 import { KafkaLogConsumer } from "../src/kafka-log-consumer.ts";
+import { Admin } from "@platformatic/kafka";
 import {
   KafkaToolReplyMailbox,
   KafkaToolReplyPublisher,
@@ -8,6 +9,71 @@ import {
 } from "../src/tool-replies.ts";
 
 const brokers = process.env.PI_CLOUD_KAFKA_INTEGRATION_BROKERS?.split(",");
+it.skipIf(!brokers)(
+  "a replacement reads a delivered but uncommitted result and follows an original pending operation",
+  async () => {
+    const a = new KafkaToolReplyMailbox({ brokers: brokers!, replicas: 3, bootId: randomUUID() });
+    const b = new KafkaToolReplyMailbox({ brokers: brokers!, replicas: 3, bootId: randomUUID() });
+    const publisher = new KafkaToolReplyPublisher(brokers!, `handoff-${randomUUID()}`);
+    const authority = new AbortController();
+    const admin = new Admin({ bootstrapBrokers: brokers!, clientId: `cleanup-${randomUUID()}` });
+    const reply = (operationId: string): ToolReply => ({
+      kind: "tool_result",
+      operationId,
+      sequence: 1,
+      result: {
+        toolCallId: operationId,
+        toolName: "bash",
+        isError: false,
+        result: { content: [{ type: "text", text: `original:${operationId}` }] },
+      },
+    });
+    let closedA = false;
+    try {
+      await a.start();
+      await b.start();
+      await publisher.start();
+      const start = await a.replyPosition();
+      const refs = ["completed", "running"].map((operationId) => ({
+        operationId,
+        reply: {
+          ...start,
+          toolCallId: operationId,
+          toolName: "bash",
+          // The completed reply must win despite downtime exceeding its deadline.
+          deadlineAt: Date.now() + (operationId === "completed" ? -1 : 60_000),
+        },
+      }));
+      const receivedByA = a.wait("completed", "completed", "bash", authority.signal);
+      await publisher.publish(a.topic, reply("completed"));
+      await receivedByA.result;
+      await a.shutdown();
+      closedA = true;
+      await b.restore(refs, authority.signal);
+      const done = b.resumeWait("completed", refs[0]!.reply, authority.signal);
+      expect((await done.result).result.content).toEqual([
+        { type: "text", text: "original:completed" },
+      ]);
+      const running = b.resumeWait("running", refs[1]!.reply, authority.signal);
+      await publisher.publish(a.topic, reply("completed")); // duplicate is harmless
+      await publisher.publish(a.topic, reply("running")); // original destination, never B's Topic
+      expect((await running.result).result.content).toEqual([
+        { type: "text", text: "original:running" },
+      ]);
+      expect(b.size).toBe(0);
+      // Kafka retention follows native settlement, not consumption by either boot.
+      expect((await admin.listTopics()).includes(a.topic)).toBe(true);
+    } finally {
+      authority.abort();
+      await b.shutdown();
+      if (!closedA) await a.shutdown();
+      await publisher.close();
+      await admin.deleteTopics({ topics: [a.topic, b.topic] });
+      await admin.close();
+    }
+  },
+  120_000,
+);
 it.skipIf(!brokers)(
   "resumes the original boot's callbacks after reassignment without reading its delivered prefix",
   async () => {
@@ -20,7 +86,7 @@ it.skipIf(!brokers)(
     let competitor: KafkaLogConsumer<unknown> | undefined;
     const accept = mailbox.accept.bind(mailbox);
     mailbox.accept = (value) => {
-      if (value.kind !== "execution_probe")
+      if ("operationId" in value)
         counts.set(value.operationId, (counts.get(value.operationId) ?? 0) + 1);
       accept(value);
     };
@@ -86,6 +152,12 @@ it.skipIf(!brokers)(
         mailbox.shutdown(),
       ]);
       const errors = closed.flatMap((r) => (r.status === "rejected" ? [r.reason] : []));
+      const admin = new Admin({ bootstrapBrokers: brokers!, clientId: `reply-cleanup-${bootId}` });
+      try {
+        await admin.deleteTopics({ topics: [mailbox.topic] });
+      } finally {
+        await admin.close();
+      }
       if (errors.length) throw new AggregateError(errors, "Reply transport fixture cleanup failed");
     }
   },

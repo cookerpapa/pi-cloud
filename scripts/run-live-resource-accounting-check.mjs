@@ -14,6 +14,8 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { sql } from "kysely";
+import { CubeLifecycleSource } from "../packages/accounting/src/cube-lifecycle-source.ts";
+import { LifecycleCollector } from "../packages/accounting/src/lifecycle-collector.ts";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
@@ -728,10 +730,48 @@ try {
   assert(duplicates.every(Boolean));
   for (let repeat = 0; repeat < 2; repeat++) {
     const ack = await privateJson(meteringUrl, meteringToken, "/internal/v1/resource-metering", {
-      events: duplicates.map((row) => row.payload),
+      events: duplicates
+        .filter((row) => row.payload.resource.kind === "workspace")
+        .map((row) => row.payload),
     });
-    assert.equal(ack.accepted, duplicates.length);
+    assert.equal(ack.accepted, 1);
   }
+  const lifecycleSource = await db
+    .selectFrom("resource_lifecycle_sources")
+    .selectAll()
+    .where("id", "=", firstCompute.payload.sourceId)
+    .executeTakeFirstOrThrow();
+  assert(lifecycleSource.epoch && BigInt(lifecycleSource.after_sequence) > 0n);
+  const cluster = JSON.parse(
+    await readFile(`${runtimeDirectory}/cubesandbox/cluster.json`, "utf8"),
+  );
+  const lifecycleApiKey = (
+    await readFile(`${runtimeDirectory}/secrets/cubesandbox-api-key`, "utf8")
+  ).trim();
+  secrets.push(lifecycleApiKey);
+  const lifecycle = new CubeLifecycleSource({
+    id: lifecycleSource.provider,
+    url: `http://${cluster.api.host}:${cluster.api.port}`,
+    apiKey: lifecycleApiKey,
+  });
+  const rawPage = await lifecycle.read(lifecycleSource.node_id, undefined, abort.signal);
+  assert.equal(rawPage.epoch, lifecycleSource.epoch);
+  const collector = new LifecycleCollector(db, lifecycle);
+  try {
+    // Replaying the old source position must lose the cursor compare-and-swap;
+    // compute receipts cannot be injected through the Workspace receipt API.
+    for (let repeat = 0; repeat < 2; repeat++)
+      assert.equal(await collector.apply(lifecycleSource.id, undefined, rawPage), false);
+  } finally {
+    await collector.close();
+  }
+  report.lifecycle = {
+    sourceId: lifecycleSource.id,
+    epoch: rawPage.epoch,
+    observedHigh: rawPage.high,
+    accountingCursor: String(lifecycleSource.after_sequence),
+    stalePagesRejected: 2,
+  };
   const originIds = duplicates.map((row) => row.id);
   const { rows: duplicated } = await sql`select id,payload_hash from resource_metering_events
     where tenant_id=${tenant.tenantId}::uuid and payload->>'eventId'=any(${originIds}::text[]) order by id`.execute(
@@ -747,7 +787,12 @@ try {
       row.payload_hash,
       duplicates.find((original) => original.id === row.id)?.payload_hash,
     );
-  report.receiptReplay = { originalIds: originIds, deliveries: 3, storedFacts: duplicated.length };
+  report.receiptReplay = {
+    originalIds: originIds,
+    workspaceDeliveries: 3,
+    staleLifecyclePages: 2,
+    storedFacts: duplicated.length,
+  };
   const query = new URLSearchParams({
     from: new Date(started - 1000).toISOString(),
     to: new Date().toISOString(),

@@ -51,14 +51,15 @@ protocol, record the decision under `docs/adr/` before implementation.
   transport boundary; the public API and durable domain model use PiCloud-owned
   schemas. Native Tool final replies become canonical only after Worker Harness
   processing. Observation-only phase/Tool updates use lossy HTTP/SSE, never Kafka,
-  PG or context. ADR-0201/0211 permit bounded transport probes on the same Kafka
-  Session path and boot-scoped Worker reply transport; they never become native
-  history or a second execution authority. Physical health observations are disposable;
-  missing probes never authorize destruction, replay or quota release.
-  ADR-0272 separately authorizes finite elastic retention: typed keepalive
-  intents renew Cubelet's existing allocation journal, and Cubelet owns idle
-  expiry. This does not make diagnostic probes a VM-death signal, renew a PG
-  execution lease, or permit quota release without confirmed physical absence.
+  PG or context. ADR-0306 moves maintenance initiation to the execution owner:
+  fresh batched PG lease/family evidence renews finite Cubelet retention and
+  prepares current-Worker probes through Guest HTTPS and the existing reply
+  transport. No periodic Worker probe/keepalive is a Session Kafka publication.
+  Diagnostic evidence never becomes native history or authorizes destruction,
+  replay, lease renewal or quota release. Authoritative binding withdrawal may
+  notify the current Worker through that mailbox and gate its next model request.
+  Cubelet alone owns finite elastic idle expiry; management still requires
+  confirmed physical absence before releasing allocation/quota records.
 - Run the fixed Pi core only in the trusted Agent Runner, never in the API/control-plane
   process. Route every untrusted file or shell operation to a separate Tool Sandbox.
 - Load only code-owned trusted infrastructure tools in the Agent Runner.
@@ -77,7 +78,7 @@ protocol, record the decision under `docs/adr/` before implementation.
   and interrupted unsafe Tools are never automatically replayed. The native
   writer identity is the Session lease incarnation, not a task anchor.
   Model-request permits are local, fair and held only through provider completion;
-  never reserve the same permit while waiting for a child or Tool.
+  never reserve the same permit while waiting for a child, Tool or environment recovery.
 - Preserve per-Lane task ordering and one physical-Session writer without
   dedicating a process or OS thread to a cold session.
 - PostgreSQL is the sole Run/control authority. Active Pi Session writes are
@@ -107,8 +108,12 @@ protocol, record the decision under `docs/adr/` before implementation.
   replaying a projection must never imply replaying arbitrary shell work.
   Projector confirms its monotonic Kafka dispatch commit before issuing a Tool
   command. Rewinding for text reconstruction never reissues committed commands.
-  Whole fixed Pi Tools execute in Cube; boot-scoped Kafka replies resolve the
-  original Worker's callbacks. No raw-result GET/cache or PG operation ledger.
+  Whole fixed Pi Tools execute in the Guest and deliver through scoped HTTPS
+  completion. Under ADR-0306 a replacement restores pending native waiters and
+  reads their original reply Topics from protected offsets; proxy replay safety
+  never means shell replay. Replies/images remain protected until canonical native
+  settlement, not merely consumption or Worker exit. Original deadlines and
+  cancellation targets survive handoff. No raw-result GET/cache or PG operation ledger.
   Workers/Kafka/PG are trusted private infrastructure; do not reintroduce per-record
   signatures or key management. This does not remove tenant checks or Tool fencing.
   ADR-0212 carries PG-authorized control references through the same Session
@@ -143,6 +148,13 @@ protocol, record the decision under `docs/adr/` before implementation.
   SDK or management credentials to the Worker. There is no independent Broker.
   Quota release requires confirmed absence on the recorded node, not a missing
   heartbeat or master route. A normal Tool error never authorizes whole-VM deletion.
+- Keep public Session API, Session execution/Worker control, resource management,
+  ordinary Tool host and HTTPS completion as independent maintained roles.
+  The public API relays the single execution owner's live view without acquiring
+  a Session consumer or execution authority. Cubelet contains no Node completion
+  process, Kafka/PG/S3 client or compute-price/interval producer. Independent
+  metering derives intervals from provider lifecycle history and commits its cursor
+  with receipts. Source gaps remain unpriced; accounting is never resource authority.
 - CubeSandbox KVM is the only supported Tool runtime. Adding an alternate
   runtime requires a new current ADR and the same security/recovery acceptance
   suite; it must not enter as a silent fallback.

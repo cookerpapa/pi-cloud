@@ -57,6 +57,8 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
       images: {
         controlPlane: image("controlPlane"),
         sessionRuntime: image("sessionRuntime"),
+        sessionApi: image("sessionApi"),
+        toolCompletion: image("toolCompletion"),
         metering: image("metering"),
         toolHost: image("toolHost"),
         web: image("web"),
@@ -74,6 +76,8 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
         maximumSessions: quota("PI_CLOUD_TENANT_MAXIMUM_SESSIONS"),
       },
       sessionRuntime: { replicas: 1, autoscaling: { enabled: false } },
+      sessionApi: { replicas: 1, autoscaling: { enabled: false } },
+      toolCompletion: { replicas: 1 },
       controlPlane: {
         replicas: 1,
         defaultWorkspaceCapacityGiB: n("PI_CLOUD_DEFAULT_WORKSPACE_CAPACITY_GIB", 32),
@@ -88,7 +92,7 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
           `http://preview.localhost:${n("PI_CLOUD_HTTP_PORT", 8080)}`,
         cookieSecure: b("PI_CLOUD_WEB_SESSION_COOKIE_SECURE", false),
         noProxy:
-          "127.0.0.1,localhost,postgres,session-images,control-plane,session-runtime,tool-host,metering,workspace-quota,workspace-volume-gateway,cube-api,cube-proxy,cli-proxy-api,gitlab.internal,.svc,.cluster.local,10.42.0.0/16,10.43.0.0/16,10.255.255.254",
+          "127.0.0.1,localhost,postgres,session-images,control-plane,session-runtime,session-api,tool-completion,tool-host,metering,workspace-quota,workspace-volume-gateway,cube-api,cube-proxy,cli-proxy-api,gitlab.internal,.svc,.cluster.local,10.42.0.0/16,10.43.0.0/16,10.255.255.254",
         publicRegistration: {
           enabled: b("PI_CLOUD_PUBLIC_REGISTRATION_ENABLED", true),
           maximumTenants: quota("PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS"),
@@ -159,7 +163,7 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
         workspace: { existingClaim: "pi-cloud-workspaces" },
         maximumActivePerReplica: quota("PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES"),
         maximumActiveCommands: n("PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS", 8),
-        elasticRetentionMs: n("PI_CLOUD_ELASTIC_RETENTION_MS", 900000),
+        elasticRetentionMs: n("PI_CLOUD_ELASTIC_RETENTION_MS", 1800000),
         cube: {
           apiUrl: "http://cube-api:3000",
           proxyNodeIp: "cube-proxy",

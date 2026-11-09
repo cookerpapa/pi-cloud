@@ -1,8 +1,6 @@
 import {
   parsePiCloudEvent,
   parseDurableDisplayDescription,
-  parsePathProbe,
-  parseRuntimeKeepalive,
   parseSessionControlChange,
   parseToolCancellation,
   parseDurableSessionCommit,
@@ -88,8 +86,6 @@ function validateAcceptedFact(value: unknown): AcceptedFact {
   if (parsed.kind === "agent_event") {
     return { ...parsed, event: parsePiCloudEvent(parsed.event) };
   }
-  if (parsed.kind === "path_probe") return parsePathProbe(parsed);
-  if (parsed.kind === "runtime_keepalive") return parseRuntimeKeepalive(parsed);
   if (parsed.kind === "execution_seal") {
     return parsed;
   }

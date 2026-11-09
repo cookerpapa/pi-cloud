@@ -1,3 +1,4 @@
+import { createControlPlaneRuntime } from "./fixtures/control-plane-runtime.ts";
 import { emptyEventRuntime } from "./fixtures/event-runtime.ts";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
@@ -18,7 +19,6 @@ import {
   SessionEventHub,
   SandboxPreviewGateway,
   SupervisorMaintenanceRuntime,
-  createControlPlaneRuntime,
   createPrivateTenant,
   ControlPlaneStore,
   type SupervisorMaintenanceActivity,

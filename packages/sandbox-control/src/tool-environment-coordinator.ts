@@ -9,6 +9,7 @@ import {
 } from "@pi-cloud/protocol";
 import type { SandboxControlClient } from "./sandbox-control-client.ts";
 import type { SandboxBinding, SandboxBindingReader } from "./sandbox-bindings.ts";
+import { SandboxControlError } from "./sandbox-provider.ts";
 
 type Preparation = {
   request: ToolEnvironmentRequest;
@@ -50,7 +51,12 @@ export class ToolEnvironmentCoordinator {
     if (!current()) throw new Error("Environment partition owner changed");
     const existing = await this.options.bindings.get(scope, request.requestId);
     if (existing) {
-      if (existing.dispatchClosed) throw new Error("Tool environment binding is closed");
+      if (existing.dispatchClosed)
+        throw new SandboxControlError(
+          "tool_binding_closed",
+          "Tool environment binding is closed",
+          false,
+        );
       return existing;
     }
     let pending = this.#preparing.get(request.requestId);
@@ -92,12 +98,23 @@ export class ToolEnvironmentCoordinator {
         while (valid() && Date.now() < until) {
           const route = await this.options.bindings.get(scope, request.requestId);
           if (route) {
-            if (route.dispatchClosed) throw new Error("Prepared Tool binding was closed");
+            if (route.dispatchClosed)
+              throw new SandboxControlError(
+                "tool_binding_closed",
+                "Prepared Tool binding was closed",
+                false,
+              );
             return route;
           }
           await delay(20, undefined, { signal: controller.signal });
         }
-        throw new Error("Tool environment preparation was not confirmed", { cause: failure });
+        if (failure instanceof SandboxControlError) throw failure;
+        throw new SandboxControlError(
+          "tool_environment_pending",
+          "Tool environment preparation was not confirmed",
+          true,
+          failure,
+        );
       })();
       pending = { request: structuredClone(request), controller, result };
       this.#preparing.set(request.requestId, pending);

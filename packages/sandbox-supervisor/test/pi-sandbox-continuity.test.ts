@@ -32,6 +32,68 @@ async function fixture() {
     close: () => harness.close(BACKGROUND_CONTEXT),
   };
 }
+it("retains physical result identity before a model boundary and verifies it after handoff without waking a pure-chat Run", async () => {
+  const f = await fixture();
+  try {
+    const a = await PiSessionWorldStateController.create(f.harness, f.root.id, {
+      ...continuity("unused", "cold_restore"),
+      writerId: "writer-a",
+    });
+    await a.capture();
+    await a.recordExecution("run", { continuityId: "vm-a" });
+    const b = await PiSessionWorldStateController.create(f.harness, f.root.id, {
+      ...continuity("unused", "cold_restore"),
+      writerId: "writer-b",
+    });
+    await b.capture();
+    expect(await b.pendingRecovery("a-new-chat-run")).toBeUndefined();
+    const pending = await b.pendingRecovery("run");
+    expect(pending).toMatchObject({ code: "worker_replaced", previousContinuityId: "vm-a" });
+    await b.completeRecovery(
+      "run",
+      { continuityId: "vm-b", continuity: "cold_restore" },
+      pending!.previousContinuityId,
+    );
+    expect(await b.pendingRecovery("run")).toBeUndefined();
+    const c = await PiSessionWorldStateController.create(f.harness, f.root.id, {
+      ...continuity("unused", "cold_restore"),
+      writerId: "writer-c",
+    });
+    const again = await c.pendingRecovery("run");
+    await c.completeRecovery(
+      "run",
+      { continuityId: "vm-b", continuity: "warm_reuse" },
+      again!.previousContinuityId,
+    );
+    const entries = await f.root.entries({}, 100, undefined, BACKGROUND_CONTEXT);
+    expect(entries.items.filter((e) => e.kind === PI_SANDBOX_RESET_CUSTOM_TYPE)).toHaveLength(1);
+  } finally {
+    await f.close();
+  }
+});
+it("does not clear a newer routing withdrawal with an older readiness confirmation", async () => {
+  const f = await fixture();
+  try {
+    const world = await PiSessionWorldStateController.create(f.harness, f.root.id, {
+      ...continuity("vm"),
+      writerId: "writer",
+    });
+    await world.requireRecovery("run", "binding", "first");
+    const first = await world.pendingRecovery("run");
+    await world.requireRecovery("run", "binding", "withdrawn_again");
+    await expect(
+      world.completeRecovery(
+        "run",
+        { continuityId: "vm", continuity: "warm_reuse" },
+        undefined,
+        first!.revision,
+      ),
+    ).rejects.toMatchObject({ code: "tool_environment_pending", retryable: true });
+    expect(await world.pendingRecovery("run")).toMatchObject({ code: "withdrawn_again" });
+  } finally {
+    await f.close();
+  }
+});
 it("appends a reset after the original Tool result and produces exactly one Responses tool output", async () => {
   const f = await fixture();
   try {

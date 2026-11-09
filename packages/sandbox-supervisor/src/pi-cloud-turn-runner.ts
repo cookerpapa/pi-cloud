@@ -45,6 +45,7 @@ import {
   type PiCloudMetrics,
 } from "@pi-cloud/observability";
 import { DurableAgentSession, type DurableRunConfiguration } from "./durable/agent-session.ts";
+import type { CloudModelPermit } from "./durable/scoped-models.ts";
 import { DurableRunEvents } from "./durable/run-events.ts";
 import { CloudModelRegistry } from "./durable/model-registry.ts";
 import {
@@ -670,18 +671,30 @@ export class PiCloudTurnRunner {
           const tool = tools.tools.find((tool) => tool.name === invocation.toolName);
           const prepare = invocation.recovery ? tool?.prepareRecovery : tool?.prepareExecution;
           if (!tool || !prepare) throw new Error("Remote Tool has no matching preparation port");
+          const original =
+            invocation.recovery && ["bash", "read", "write", "edit"].includes(invocation.toolName)
+              ? await owner.remoteToolIntent(invocation.taskId, invocation.conversationId)
+              : undefined;
           const prepared = await withToolInvocation(
             {
               id: `task:${invocation.taskId}`,
               nativeToolCallId: invocation.callId,
             },
             () =>
-              prepare.call(
-                tool,
-                invocation.callId,
-                invocation.args,
-                invocation.context.abortSignal,
-              ),
+              invocation.recovery
+                ? tool.prepareRecovery!.call(
+                    tool,
+                    invocation.callId,
+                    invocation.args,
+                    invocation.context.abortSignal,
+                    original,
+                  )
+                : tool.prepareExecution!.call(
+                    tool,
+                    invocation.callId,
+                    invocation.args,
+                    invocation.context.abortSignal,
+                  ),
           );
           return {
             ...prepared,
@@ -712,15 +725,10 @@ export class PiCloudTurnRunner {
             conversationId: p.piSession.conversationId,
             ...(native ? { taskId: native.taskId, purpose: native.purpose } : {}),
           };
-          const release = await measureRunPreparation(
-            p.runId,
-            "model_permit_wait",
-            options.metrics,
-            async () => (await options.acquireModelPermit?.(requestSignal)) ?? (() => {}),
-            { signal: requestSignal, details },
-          );
+          let release = () => {};
+          let phase: "compacting" | "waiting_model" | undefined;
           try {
-            return await measureRunPreparation(
+            const preparedRequest = await measureRunPreparation<Omit<CloudModelPermit, "release">>(
               p.runId,
               "model_request_prepare",
               options.metrics,
@@ -778,14 +786,12 @@ export class PiCloudTurnRunner {
                     p.input.kind === "compact" ||
                     task?.owner !== undefined
                   )
-                    activity.phase(
-                      native.purpose === "context_maintenance" ? "compacting" : "waiting_model",
-                    );
+                    phase =
+                      native.purpose === "context_maintenance" ? "compacting" : "waiting_model";
                   return {
                     model,
                     eventIdleTimeoutMs: options.modelEventIdleTimeoutMs ?? MODEL_EVENT_IDLE_MS,
                     input: nativeProviderContext(context, model),
-                    release,
                     ...(native.purpose === "agent"
                       ? { onToolCallProgress: () => activity.phase("preparing_tool") }
                       : {}),
@@ -858,6 +864,19 @@ export class PiCloudTurnRunner {
               },
               { signal: requestSignal, details },
             );
+            // Environment recovery and context loading do not consume a
+            // provider request permit. Acquire only once those waits end.
+            release = await measureRunPreparation(
+              p.runId,
+              "model_permit_wait",
+              options.metrics,
+              async () => (await options.acquireModelPermit?.(requestSignal)) ?? (() => {}),
+              { signal: requestSignal, details },
+            );
+            await owner.authority.assertCurrent();
+            requestSignal.throwIfAborted();
+            if (phase) activity.phase(phase);
+            return { ...preparedRequest, release };
           } catch (error) {
             release();
             throw error;

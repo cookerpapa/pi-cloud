@@ -30,5 +30,9 @@ export function restoreToolReply(
   });
   // A fast result can fail decoding before the original intent's ACK is observed.
   void result.catch(() => {});
-  return { result, executionSettled: wait.executionSettled };
+  return {
+    result,
+    executionSettled: wait.executionSettled,
+    ...(wait.executionEvidence ? { executionEvidence: wait.executionEvidence } : {}),
+  };
 }

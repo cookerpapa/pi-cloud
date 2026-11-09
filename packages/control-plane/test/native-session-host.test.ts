@@ -100,7 +100,12 @@ it("shares one root grant across Conversation views, closes concurrent handles o
   const channels = new Map<string, AcceptedFactWriter>();
   const facts: Array<AcceptedDurableCommitFact | AcceptedWorkFinishedFact> = [];
   const publisher = new DurableSessionPublisher({
-    replyTopic: "unused",
+    replyTopic: "pi-cloud.tool-replies.v4.10000000-0000-4000-8000-000000000009",
+    replyPosition: async () => ({
+      topic: "pi-cloud.tool-replies.v4.10000000-0000-4000-8000-000000000009",
+      partition: 0,
+      offset: "0",
+    }),
     channels: {
       resolve: (reference, conversationId = 1) => channels.get(`${reference}:${conversationId}`),
       checkHealth: async () => {},

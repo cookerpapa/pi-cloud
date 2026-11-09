@@ -25,6 +25,8 @@ export function parseToolEnvironmentRequest(value: unknown): ToolEnvironmentRequ
 }
 
 export const PREPARE_ENVIRONMENT_IMAGES_PATH = "/internal/v1/tool-environment/input-images";
+/** Fault-only reattachment. Ordinary Tools prepare the environment at dispatch. */
+export const RECOVER_TOOL_ENVIRONMENT_PATH = "/internal/v1/tool-environment/recover";
 export const EnvironmentImagesRequestSchema = Type.Object(
   {
     environment: ToolEnvironmentRequestSchema,

@@ -168,6 +168,9 @@ async function fixture(mode: Mode) {
     }
   })();
   const handle: DurableSessionHandle = {
+    remoteToolIntent: async () => {
+      throw new Error("This fixture has no pending remote operation");
+    },
     ...display,
     storage,
     binding: {

@@ -51,6 +51,8 @@ export const workloads = {
   "tool-host": "deployment/pi-cloud-tool-host",
   "control-plane": "deployment/pi-cloud-control-plane",
   "session-runtime": "deployment/pi-cloud-session-runtime",
+  "session-api": "deployment/pi-cloud-session-api",
+  "tool-completion": "deployment/pi-cloud-tool-completion",
   web: "deployment/pi-cloud-web",
   "ssh-gateway": "deployment/pi-cloud-ssh-gateway",
   "workspace-volume-gateway": "deployment/pi-cloud-workspace-volume-gateway",
@@ -109,12 +111,15 @@ export function signalService(service, signal, prior) {
   const file =
     service === "control-plane"
       ? "/app/packages/control-plane/src/main.ts"
-      : service === "session-runtime"
-        ? "/app/packages/control-plane/src/session-runtime-main.ts"
-        : "/app/packages/supervisor-host/src/main.ts";
+      : service === "session-api"
+        ? "/app/packages/control-plane/src/session-api-main.ts"
+        : service === "session-runtime"
+          ? "/app/packages/control-plane/src/session-runtime-main.ts"
+          : "/app/packages/supervisor-host/src/main.ts";
   if (
     service !== "control-plane" &&
     service !== "session-runtime" &&
+    service !== "session-api" &&
     !/^pi-cloud-pi-worker-primary-v1-\d+$/.test(service)
   )
     throw new Error("Unknown test process");

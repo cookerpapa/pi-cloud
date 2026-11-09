@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { waitForReadyCubelet } from "./lib/cube-execution-deployment.mjs";
 import {
   assertCubeWorkspaceContract,
-  assertCubeCompletionVersion,
+  assertCubeNativeVersion,
 } from "./lib/cube-workspace-contract.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, chmodSync } from "node:fs";
@@ -32,7 +32,7 @@ import {
 import { selfHostedValues } from "./lib/self-hosted-values.mjs";
 import { ensureWslWebForwarder, removeWslWebForwarder } from "./lib/wsl-web-forwarder.mjs";
 import { validateProductionRuntimeEnvironment } from "./production-runtime-policy.mjs";
-import { guestBuildIdentity, completionBuildIdentity } from "./lib/guest-build-identity.mjs";
+import { guestBuildIdentity } from "./lib/guest-build-identity.mjs";
 
 configureBuildProxy();
 
@@ -192,6 +192,8 @@ async function build() {
   // changes its private candidate; the scoped operator selects the published role.
   if (!selected) {
     images.sessionRuntime = images.controlPlane;
+    images.sessionApi = images.controlPlane;
+    images.toolCompletion = images.controlPlane;
     images.metering = images.controlPlane;
     images.toolHost = images.controlPlane;
   }
@@ -317,17 +319,15 @@ export async function deployPlatform({ images, deploymentEnvironment }) {
       "-c",
       "cubelet",
       "--",
-      "/usr/local/bin/node",
-      "-e",
-      "const v=require('/opt/cube-image/Cubelet/version.json');console.log(JSON.stringify({source:process.env.PI_CLOUD_COMPLETION_SOURCE_ID,version:v.components.cubelet.version}))",
+      "cat",
+      "/opt/cube-image/Cubelet/version.json",
     ]),
   );
   const runtimeBuild = JSON.parse(
     readFileSync(resolve(repositoryRoot, "deploy/cubesandbox/runtime-build.json")),
   );
-  assertCubeCompletionVersion(
+  assertCubeNativeVersion(
     installed,
-    await completionBuildIdentity(repositoryRoot),
     `${runtimeBuild.upstreamVersion}-picloud-${createHash("sha256").update(JSON.stringify(runtimeBuild)).digest("hex").slice(0, 16)}`,
   );
   const { platform } = await values({ images, deploymentEnvironment });

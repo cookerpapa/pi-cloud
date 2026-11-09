@@ -1,6 +1,8 @@
 import { Readable } from "node:stream";
 import {
   PREPARE_ENVIRONMENT_IMAGES_PATH,
+  RECOVER_TOOL_ENVIRONMENT_PATH,
+  parseToolEnvironmentRequest,
   parseEnvironmentImagesRequest,
   SANDBOX_CONTROL_DEVELOPMENT_ENVIRONMENT_PATH,
   SANDBOX_CONTROL_DEVELOPMENT_ENVIRONMENT_TERMINAL_PATH,
@@ -53,6 +55,13 @@ const MAXIMUM_TERMINAL_PENDING_INPUT_FRAMES = 128;
 export { SANDBOX_CONTROL_TERMINAL_PATH };
 
 export type SandboxControlServerOptions = {
+  environmentRecovery?: {
+    route(sessionId: string): Promise<string | undefined>;
+    recover(
+      environment: import("@pi-cloud/protocol").ToolEnvironmentRequest,
+      signal: AbortSignal,
+    ): Promise<import("@pi-cloud/protocol").ExecutionEvidence>;
+  };
   environmentImages?: {
     route(sessionId: string): Promise<string | undefined>;
     prepare(
@@ -320,6 +329,29 @@ export class SandboxControlServer {
     this.#capacityMetrics = setInterval(() => this.#recordCapacityMetrics(), 1_000);
     this.#capacityMetrics.unref();
     this.#installRoutes();
+    if (options.environmentRecovery)
+      this.#server.post(RECOVER_TOOL_ENVIRONMENT_PATH, async (request, reply) => {
+        if (!this.#serviceAuthorized(request.headers.authorization)) return reply.code(401).send();
+        const abort = new AbortController();
+        const closed = () => {
+          if (!reply.raw.writableEnded) abort.abort(new Error("Environment waiter disconnected"));
+        };
+        reply.raw.on("close", closed);
+        try {
+          const environment = parseToolEnvironmentRequest(request.body);
+          const owner = await options.environmentRecovery!.route(environment.piSessionId);
+          if (owner)
+            return reply
+              .code(307)
+              .header("location", new URL(RECOVER_TOOL_ENVIRONMENT_PATH, owner).toString())
+              .send();
+          return reply.send(await options.environmentRecovery!.recover(environment, abort.signal));
+        } catch (error) {
+          return this.#failure(reply, error);
+        } finally {
+          reply.raw.removeListener("close", closed);
+        }
+      });
     if (options.environmentImages)
       this.#server.post(PREPARE_ENVIRONMENT_IMAGES_PATH, async (request, reply) => {
         if (!this.#serviceAuthorized(request.headers.authorization)) return reply.code(401).send();

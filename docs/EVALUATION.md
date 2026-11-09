@@ -61,6 +61,10 @@ The presentation check uses installed Chrome/Chromium and actual React effects,
 without accounts or model calls: progressive text under StrictMode, immediate
 reconnect-prefix presentation, first-use panel sizing and resize cleanup.
 
+For a targeted rerun, `npm run eval:faults -- --cases id-one,id-two --output /tmp/fault-rerun.json`
+selects only the named case IDs. Unknown IDs fail before execution; the report counts
+only the selected cases. The default command still runs the complete manifest.
+
 `eval:faults` selects named process/protocol failure cases from
 `eval/fault-cases.json`. Every manifest entry must refer to a test that exists
 in the current tree and has a passed assertion in Vitest's machine-readable

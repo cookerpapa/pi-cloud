@@ -144,34 +144,59 @@ export async function elasticRetentionAcceptance({
     const initial = await inspect();
     assert.equal(
       initial.retentionWindowMs,
-      900000,
-      "Default-window evidence requires the actual 15-minute policy",
+      1800000,
+      "Default-window evidence requires the actual 30-minute policy",
     );
     assert(initial.retainUntil > Date.now());
     result.initialRuntimeId = runtime.workspace_runtime_id;
     result.windowMs = initial.retentionWindowMs;
     await save(result);
-    // Allow coalescing to become due so this short, no-Tool turn proves initial
-    // keepalive delivery even if it finishes before the next 15-second tick.
-    progress("retention: existing VM renewed by a pure-chat task");
-    await new Promise((resolve) => setTimeout(resolve, 31000));
-    const chat = await api.acceptTurn(
+    // Execution-side maintenance is periodic. Keep a real Run active across a
+    // complete minute without sending another Tool call; a one-second chat need
+    // not overlap its lease bucket and is not evidence of a periodic renewal.
+    progress("retention: existing VM renewed while the same Tool is still pending");
+    const waiting = await api.acceptTurn(
       session.sessionId,
-      "不要调用任何工具，只回复 RETENTION_CHAT_OK。",
-      newIdempotencyKey("retention-chat"),
+      "只调用一次 bash，timeout 设为 150，command 精确为：printf waiting > /workspace/retention-waiting.txt; sleep 100; printf RETENTION_WAIT_OK。不要搜索、委派或其他工具。完成后简短回复。",
+      newIdempotencyKey("retention-wait"),
       "low",
     );
-    const history = await completed(chat.runId);
-    assert(!nativeMessages(history).some((message) => message.role === "toolResult"));
+    await wait(
+      async () => {
+        try {
+          return (
+            Buffer.from(
+              (await api.readWorkspaceFile(session.sessionId, "/workspace/retention-waiting.txt"))
+                .bytes,
+            ).toString() === "waiting"
+          );
+        } catch {
+          return false;
+        }
+      },
+      "one pending guest command",
+      120000,
+    );
+    const beforeMaintenance = await inspect();
     const renewed = await wait(
       async () => {
+        const run = await api.getRun(waiting.runId);
+        assert(
+          !["completed", "failed", "cancelled", "timed_out"].includes(run.state),
+          "Fixture ended before its periodic renewal",
+        );
         const value = await inspect();
-        return value.retainUntil > initial.retainUntil + 20000 && value;
+        return value.retainUntil > beforeMaintenance.retainUntil + 20000 && value;
       },
-      "pure-chat retention renewal",
-      45000,
+      "execution-owned retention renewal without another Tool",
+      90000,
     );
-    result.pureChatRenewedExistingVm = true;
+    const history = await completed(waiting.runId);
+    assert.equal(
+      nativeMessages(history).filter((message) => message.role === "toolResult").length,
+      1,
+    );
+    result.activeWaitRenewedWithoutNewTool = true;
     result.renewedUntil = renewed.retainUntil;
     await save(result);
     if (outageRequested) {
@@ -220,7 +245,7 @@ export async function elasticRetentionAcceptance({
       result.managementStayedAvailable = true;
       await save(result);
     }
-    progress("retention: waiting for the real 15-minute idle expiry");
+    progress("retention: waiting for the real 30-minute idle expiry");
     const idleStart = Date.now();
     await wait(
       async () => {
@@ -231,7 +256,7 @@ export async function elasticRetentionAcceptance({
         return true;
       },
       "Cube-owned idle expiry",
-      1080000,
+      1980000,
       5000,
     );
     result.idleWaitMs = Date.now() - idleStart;

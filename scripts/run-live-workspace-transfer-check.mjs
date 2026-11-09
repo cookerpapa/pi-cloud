@@ -96,7 +96,7 @@ async function browserMemory(page) {
   };
 }
 let readingMetrics = false;
-const metricsUrl = `http://${serviceAddress("session-runtime")}:9464/metrics`;
+const metricsUrl = `http://${serviceAddress("session-api")}:9464/metrics`;
 const metricsToken = (await readFile(`${runtimeDirectory}/secrets/metrics-token`, "utf8")).trim();
 const timer = setInterval(() => {
   report.peaks.driverRss = Math.max(report.peaks.driverRss, process.memoryUsage().rss);

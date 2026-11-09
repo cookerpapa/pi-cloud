@@ -164,6 +164,14 @@ export class SandboxBindingView implements SandboxBindingReader {
     if (!this.#ready) throw new Error("Sandbox binding view has not recovered");
     return this.#bindings.get(bindingId)?.route;
   }
+  writerBindings(writerId: string): SandboxBindingRecord[] {
+    if (!this.#ready) return [];
+    return [...this.#bindings.values()].flatMap((entry) =>
+      entry.route?.writerId === writerId && !entry.closed && !entry.route.dispatchClosed
+        ? [entry.route]
+        : [],
+    );
+  }
   async closeWriter(...args: Parameters<SandboxBindingReader["closeWriter"]>): Promise<void> {
     // Called at the currently consumed work_finished/seal boundary. Do not wait
     // for our own future Kafka close notification while consuming this record.

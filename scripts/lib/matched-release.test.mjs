@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
 import { verifyMatchedRelease, matchedMachineDrained } from "./matched-release.mjs";
-import { guestBuildIdentity, completionBuildIdentity } from "./guest-build-identity.mjs";
+import { guestBuildIdentity } from "./guest-build-identity.mjs";
 
 it("retains a failed machine record only after closed compute and holder retirement", () => {
   const absent = {
@@ -39,7 +39,7 @@ it("checks scanned image identity before any mutation and rejects catalog substi
   const root = await mkdtemp(join(tmpdir(), "pi-cloud-candidate-test-"));
   try {
     await mkdir(join(root, "deploy/cubesandbox"), { recursive: true });
-    for (const file of ["Dockerfile.tool", "Dockerfile.cubelet"])
+    for (const file of ["Dockerfile.tool"])
       await writeFile(
         join(root, "deploy/cubesandbox", file),
         "FROM fixture\nCOPY input.txt /input\n",
@@ -49,13 +49,14 @@ it("checks scanned image identity before any mutation and rejects catalog substi
     const revision = "a".repeat(40),
       version = "candidate";
     const guestIdentity = await guestBuildIdentity(root);
-    const completionIdentity = await completionBuildIdentity(root);
     const catalog = Object.fromEntries(
       ["controlPlane", "provider", "relay", "sshGateway", "volumeGateway", "web", "worker"].map(
         (name) => [name, `fixture/${name}:${version}`],
       ),
     );
     catalog.sessionRuntime = catalog.controlPlane;
+    catalog.sessionApi = catalog.controlPlane;
+    catalog.toolCompletion = catalog.controlPlane;
     catalog.metering = catalog.controlPlane;
     catalog.toolHost = catalog.controlPlane;
     const references = [
@@ -73,7 +74,7 @@ it("checks scanned image identity before any mutation and rejects catalog substi
     await mkdir(join(root, "evidence"));
     await writeFile(
       join(root, "candidate.json"),
-      JSON.stringify({ formatVersion: 1, revision, version, guestIdentity, completionIdentity }),
+      JSON.stringify({ formatVersion: 1, revision, version, guestIdentity }),
     );
     await writeFile(join(root, "images.json"), JSON.stringify(catalog));
     const report = { path: "report.json" };
@@ -231,7 +232,6 @@ it("checks scanned image identity before any mutation and rejects catalog substi
         revision,
         version,
         guestIdentity,
-        completionIdentity,
         retainedDeploymentDigest: "c".repeat(64),
       }),
     );
@@ -245,7 +245,6 @@ it("checks scanned image identity before any mutation and rejects catalog substi
         revision,
         version,
         guestIdentity,
-        completionIdentity,
       }),
     );
     manifest.images[0].policyVulnerabilities.HIGH.fixable = 1;

@@ -1,43 +1,47 @@
 # Resource usage and statements
 
-[ADR-0300](adr/0300-resource-usage-receipts.md) defines source resource receipts.
-The [matched release and live acceptance](reports/runtime-accounting-20261107.md)
-are complete. It provides informational statements, not real payment collection
-or a published tariff.
+[ADR-0306](adr/0306-runtime-decoupling-and-continuation.md) separates provider
+lifecycle evidence from PiCloud interval calculation and pricing. Delivery status
+and verification are recorded in the [current report](reports/runtime-decoupling-20261109.md).
+Statements remain informational: payment collection and production tariffs are disabled.
 
 ## Compute
 
-Cubelet records the accepted workload CPU and memory allocation over verified running intervals.
-Host/VMM overhead and snapshot rounding are excluded from the billed quantity.
-It reads native lifecycle/resource metadata and confirms running state against
-the existing local task interface. The source does not query PiCloud PG, invoke
-the management API or depend on a particular Session/Run. A VM shared by several
-conversations has one allocation identity and one meter.
+The independent metering process reads a provider-owned lifecycle port. It does
+not depend on Session activity, a running Agent, the public API or diagnostic
+probes. A shared VM has one allocation identity and one meter. Quantity is the
+accepted workload CPU/memory allocation, excluding host/VMM overhead and snapshot
+rounding; actual CPU utilization is a separate monitoring measurement.
 
-Every 30 seconds, and on coalesced lifecycle changes, a local bbolt transaction
-records the receipt and advances its cursor together. An independent sender
-delivers up to 128 receipts to `metering:3000/internal/v1/resource-metering`.
-Only PG acknowledgement removes receipts. The 65,536-record source buffer is an
-operational capacity bound; reaching it preserves pending facts and marks later
-unobserved intervals uncertain. It does not terminate VMs or cancel Tools.
+The pinned Cube adapter exposes raw observations from its existing synchronous
+metadata database. Native lifecycle hints and thirty-second observations retain
+source epoch/boot, resource incarnation, sequence, preceding resource sequence,
+observed time and coverage gaps. The journal stores at most 100,000 events and
+prunes seven-day history on capture. Bounded history pages and long polling use
+the same cursor; expiration or replaced metadata is explicit. No compute interval,
+price, Kafka client or metering credential is installed in Cubelet.
 
-Collector restart, instance replacement, clock discontinuity, collection failure
-and unavailable observations leave explicit unconfirmed gaps. An observation
-interval longer than 90 seconds cannot be assumed continuously verified. This
-changes accounting confidence, not the permitted lifetime of an Agent or VM.
-Paused resources do not accumulate compute time. Cube's pause/exit status timestamps
-mix physical events with later snapshot/recovery bookkeeping. The adapter therefore
-keeps the final unsampled interval unconfirmed rather than billing cleanup time.
-Metering begins at first verified capture, without retroactive charges for an
-existing machine. Very short lifetimes lost before the first source observation
-and loss of the node metadata store are limits on completeness.
+PiCloud normally collects and settles each source once per minute, with bounded
+catch-up slices when behind. A source cursor and derived receipts commit in one
+PG transaction. This cadence does not round usage to whole minutes. Duplicate
+pages do not duplicate charges. Compatible consecutive observations establish
+bounded running intervals; source restart, a missing predecessor, clock change,
+instance/quantity change, unavailable state or an unobserved interval over ninety
+seconds remains unconfirmed. Paused/absent checkpoints do not accrue compute time.
 
-The existing `/v1/metrics` endpoint exposes
-`picloud_resource_metering_pending` and
-`picloud_resource_metering_capture_failures_total`, completed collection cycles and
-a coherent delivery barrier (NaN when capture/delivery is unconfirmed). These are delivery diagnostics,
-not authority for VM destruction, quota release or replay. Upstream
-`/v1/metrics/resource` retains actual CPU/memory observations separately.
+Cube's pause/exit timestamps mix physical events with snapshot/recovery bookkeeping.
+The adapter leaves `occurredAt` unknown instead of presenting discovery time as
+physical stop time. Unproven trailing intervals are unpriced. Metering starts at
+first observed evidence, without retrospective charges for an existing machine.
+Very short lifetimes missed by the source and loss/expiry of source history remain
+completeness limits. Provider monetary bills are optional reconciliation evidence,
+not authority for PiCloud customer prices.
+
+The native `picloud_lifecycle_capture_failures_total` counter reports source capture
+failures. PG `resource_lifecycle_sources` retains collection/cursor/failure/gap
+watermarks, and each metered resource retains only its current lifecycle checkpoint.
+None of this is authority for VM destruction, command replay, quota release or
+Session lease renewal. Upstream resource metrics retain their monitoring role.
 
 ## Storage boundary
 
@@ -102,9 +106,9 @@ pagination avoids reordering a resource every time its next receipt arrives.
 }
 ```
 
-Source delivery uses the dedicated `metering-ingest-token`, shared only by the
-trusted provider, Cube source adapters and receiver. Cube does not receive the
-model API key for accounting. Ordinary public reads use existing tenant auth;
+Model and Workspace receipt delivery use the dedicated `metering-ingest-token`.
+Compute collection reads Cube history through its provider adapter and API
+credential; Cubelet does not receive an accounting or model credential. Ordinary public reads use existing tenant auth;
 only the configured platform owner can inspect another account or configure rates.
 Owned acceptance-fixture cleanup is the explicit exception to retaining financial
 records and must follow source delivery and physical cleanup confirmation.

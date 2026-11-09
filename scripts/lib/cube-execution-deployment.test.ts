@@ -1,8 +1,6 @@
 import { expect, it } from "vitest";
 import {
-  withCubeExecutionCompletion,
-  cubeCompletionPatch,
-  cubeCompletionSecret,
+  withCubeExecution,
   readyCubeletPod,
   waitForReadyCubelet,
   cubeNativeImageArguments,
@@ -67,24 +65,12 @@ it("waits past an old ready Pod and a not-yet-ready replacement", async () => {
   ).rejects.toThrow("cube:v2");
 });
 
-it("installs one fixed completion command in the Cubelet service section", () => {
+it("enables native admission without installing a completion subprocess or platform credentials", () => {
   const text =
     '[plugins."io.cubelet.cubebox-service.v1.cubebox-service"]\n  create_deadline="1m"\n[plugins.other]\n';
-  const updated = withCubeExecutionCompletion(text);
-  expect(updated.match(/execution_completion_command/g)).toHaveLength(1);
-  expect(withCubeExecutionCompletion(updated)).toBe(updated);
-  expect(updated).toContain("/opt/pi-cloud/packages/cube-completion/src/main.ts");
-  expect(() => withCubeExecutionCompletion("[plugins.other]")).toThrow("section");
-});
-it("keeps completion credentials on the trusted Cubelet container", () => {
-  const patch = cubeCompletionPatch({
-    kafkaBrokers: ["kafka-1:9092"],
-    controlPlaneUrl: "http://control-plane:3000",
-    imageEndpoint: "http://session-images:8333",
-  });
-  expect(patch.spec.template.spec.containers.map((c) => c.name)).toEqual(["cubelet"]);
-  expect(patch.spec.template.spec.volumes[0].secret.defaultMode).toBe(256);
-  expect(JSON.stringify(patch)).not.toContain("api-key");
-  const secret = cubeCompletionSecret({ "database-url": Buffer.from("fixture") });
-  expect(Buffer.from(secret.data["database-url"], "base64").toString()).toBe("fixture");
+  const updated = withCubeExecution(text);
+  expect(updated.match(/execution_enabled/g)).toHaveLength(1);
+  expect(withCubeExecution(updated)).toBe(updated);
+  expect(updated).not.toContain("completion_command");
+  expect(() => withCubeExecution("[plugins.other]")).toThrow("section");
 });

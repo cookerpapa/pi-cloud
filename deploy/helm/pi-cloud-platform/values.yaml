@@ -32,7 +32,15 @@ global:
     acceptedFactRetentionMs: 7200000
 
 images:
+  toolCompletion:
+    repository: pi-cloud/control-plane
+    tag: production
+    pullPolicy: IfNotPresent
   toolHost:
+    repository: pi-cloud/control-plane
+    tag: production
+    pullPolicy: IfNotPresent
+  sessionApi:
     repository: pi-cloud/control-plane
     tag: production
     pullPolicy: IfNotPresent
@@ -74,12 +82,23 @@ bootstrap:
   maximumSessions: null
 
 metering:
+  sourcePorts: [443]
   replicas: 1
   resources:
     requests: { cpu: 50m, memory: 128Mi }
 
 toolHost:
   replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+
+sessionApi:
+  replicas: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCpuUtilization: 65
   resources:
     requests: { cpu: 100m, memory: 256Mi }
 
@@ -225,7 +244,7 @@ sandboxPlane:
   volumeGatewayRequestTimeoutMs: 660000
   maximumActivePerReplica: null
   maximumActiveCommands: 32
-  elasticRetentionMs: 900000
+  elasticRetentionMs: 1800000
   workspace:
     quotaExistingClaim: ""
     quotaNodeSelector: {}
@@ -328,3 +347,12 @@ imageAttachments:
 
 # Optional complete reviewed catalog JSON. Empty uses the chart-owned seed.
 modelCatalogJson: ""
+
+toolCompletion:
+  replicas: 2
+  tlsSecretName: pi-cloud-tool-completion-tls
+  baseUrl: https://tool-completion:4320/v1/completions
+  observationBaseUrl: http://session-runtime:3000
+  guestCidrs: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }

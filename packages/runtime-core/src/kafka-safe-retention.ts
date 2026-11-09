@@ -148,11 +148,58 @@ export class KafkaSafeRetention {
     const replyTopics = (await this.#admin.listTopics()).filter((name) =>
       TOOL_REPLY_TOPIC_PATTERN.test(name),
     );
+    const replyOffsets = (timestamp: bigint) =>
+      replyTopics.length
+        ? this.#admin.listOffsets({
+            topics: replyTopics.map((name) => ({
+              name,
+              partitions: [{ partitionIndex: 0, timestamp }],
+            })),
+          })
+        : Promise.resolve([]);
+    // Capture both cuts before the PG snapshot, exactly as for the Session log.
+    const [replyEnds, replyAges] = await Promise.all([
+      replyOffsets(-1n),
+      replyOffsets(BigInt(now - TOOL_REPLY_RETENTION_MS)),
+    ]);
+    const replyHigh = new Map(replyEnds.map((t) => [t.name, t.partitions[0]?.offset]));
+    const pendingReplies = replyTopics.length
+      ? await sql<{ topic: string; floor: string }>`
+      select fields->>'replyTopic' as topic,min((fields->>'replyOffset')::bigint)::text as floor
+      from pi_durable_owned_records
+      where kind='task' and fields ? 'replyTopic' and fields->>'status'<>'terminal'
+        and fields->>'replyTopic'=any(${replyTopics}::text[])
+      group by fields->>'replyTopic'`.execute(this.#database)
+      : { rows: [] };
+    const replyFloors = new Map(pendingReplies.rows.map((r) => [r.topic, BigInt(r.floor)]));
+    // Result age alone is not enough: a callback can have reached Kafka before
+    // the current Worker commits Pi's canonical result.
+    if (replyTopics.length) {
+      for (const topic of replyAges) {
+        const position = topic.partitions.find((p) => p.partitionIndex === 0)?.offset;
+        const end = replyHigh.get(topic.name);
+        if (position === undefined || end === undefined) continue;
+        const limit = position < 0n || position > end ? end : position;
+        const floor = replyFloors.get(topic.name);
+        const before = floor === undefined || limit < floor ? limit : floor;
+        if (before > 0n)
+          await this.#admin.deleteRecords({
+            topics: [{ name: topic.name, partitions: [{ partition: 0, offset: before }] }],
+          });
+      }
+    }
     const groups = await this.#admin.listGroups();
     const retiredCandidates = new Set(
       replyTopics.map((name) => name.slice(TOOL_REPLY_TOPIC_PREFIX.length)),
     );
+    const restoredGroups = new Map<string, string[]>();
     for (const id of groups.keys()) {
+      const restored = /^tool-restore-([0-9a-f-]{36})-[0-9a-f]{16}-[0-9a-f-]{36}$/.exec(id);
+      if (restored && TOOL_REPLY_TOPIC_PATTERN.test(`${TOOL_REPLY_TOPIC_PREFIX}${restored[1]}`)) {
+        const boot = restored[1]!;
+        retiredCandidates.add(boot);
+        restoredGroups.set(boot, [...(restoredGroups.get(boot) ?? []), id]);
+      }
       if (
         id.startsWith("tool-reply-") &&
         TOOL_REPLY_TOPIC_PATTERN.test(`${TOOL_REPLY_TOPIC_PREFIX}${id.slice(11)}`)
@@ -169,8 +216,11 @@ export class KafkaSafeRetention {
         .limit(64)
         .execute();
       for (const row of retired) {
+        for (const restored of restoredGroups.get(row.boot_id) ?? [])
+          await deleteIfPresent(() => this.#admin.deleteGroups({ groups: [restored] }), 69);
         const topic = toolReplyTopic(row.boot_id),
           group = `tool-reply-${row.boot_id}`;
+        if (replyFloors.has(topic)) continue;
         if (replyTopics.includes(topic))
           await deleteIfPresent(() => this.#admin.deleteTopics({ topics: [topic] }), 3);
         if (groups.has(group))

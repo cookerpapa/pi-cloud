@@ -179,7 +179,12 @@ export class ToolCommandDispatcher {
       const cancel = record.fact as AcceptedToolCancellation;
       const pending = this.#preparing.get(cancel.request.operationId);
       pending?.controller.abort(new Error("Tool cancelled before handoff"));
-      const route = await this.options.routes.get(cancel.scope, cancel.request.activationId);
+      const route = await this.options.routes.get(
+        cancel.request.originalWriterId
+          ? { ...cancel.scope, writerId: cancel.request.originalWriterId }
+          : cancel.scope,
+        cancel.request.activationId,
+      );
       if (!route) return; // Nothing was submitted, or immutable cleanup is in the close Outbox.
       const queued = this.#enqueue(
         record.partition,
@@ -212,12 +217,21 @@ export class ToolCommandDispatcher {
       const terminal = (record.fact as { terminal?: { type: string } }).terminal;
       await this.options.routes.closeWriter(
         fact.scope,
-        record.fact.kind === "execution_seal" || terminal?.type !== "turn.completed",
+        record.fact.kind === "execution_seal"
+          ? !("recover" in record.fact && record.fact.recover === true)
+          : terminal?.type !== "turn.completed",
       );
       return;
     }
     const invocation = fact as AcceptedToolCommand | AcceptedToolCancellation;
-    const route = await this.options.routes.get(fact.scope, invocation.request.activationId);
+    const originalWriterId =
+      fact.kind === "tool_cancel"
+        ? (fact as AcceptedToolCancellation).request.originalWriterId
+        : undefined;
+    const route = await this.options.routes.get(
+      originalWriterId ? { ...fact.scope, writerId: originalWriterId } : fact.scope,
+      invocation.request.activationId,
+    );
     if (current?.() === false) return;
     const source = {
       topic: record.topic,
@@ -232,7 +246,7 @@ export class ToolCommandDispatcher {
           {
             source,
             executionScopeId: route.bindingId,
-            writerId: cancel.scope.writerId,
+            writerId: originalWriterId ?? cancel.scope.writerId,
             operationId: cancel.request.operationId,
           },
           current,

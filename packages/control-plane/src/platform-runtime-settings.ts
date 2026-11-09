@@ -6,7 +6,8 @@ import type {
   GuestPublicEgress,
 } from "@pi-cloud/protocol";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
+import { RUNTIME_SETTINGS_CHANNEL } from "./runtime-settings-observer.ts";
 import type { TenantRequestIdentity } from "./tenant-identity.ts";
 
 export class PlatformRuntimeSettingsError extends Error {
@@ -196,6 +197,9 @@ export class PlatformRuntimeSettingsService {
           created_at: now,
         })
         .executeTakeFirstOrThrow();
+      await sql`select pg_notify(${RUNTIME_SETTINGS_CHANNEL},${String(nextRevision)})`.execute(
+        transaction,
+      );
       return {
         enabled,
         configured: proxyUrl !== null,

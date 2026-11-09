@@ -46,8 +46,12 @@ function scenario(name, options, verify) {
   writeFileSync(
     join(temporary, "fixture.json"),
     JSON.stringify({
-      secrets: { "pi-cloud-platform-secrets": defaultKeys },
       ...options.fixture,
+      secrets: {
+        "pi-cloud-platform-secrets": defaultKeys,
+        "pi-cloud-tool-completion-tls": ["tls.crt", "tls.key", "ca.crt"],
+        ...options.fixture?.secrets,
+      },
     }),
   );
   const result = spawnSync(
@@ -130,6 +134,15 @@ if(args[0]!=='upgrade'){
     { mode: 0o700 },
   );
 
+  scenario(
+    "missing Guest completion TLS material",
+    { fixture: { secrets: { "pi-cloud-tool-completion-tls": null } } },
+    (result, calls) => {
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /pi-cloud-tool-completion-tls/);
+      readonly(calls);
+    },
+  );
   scenario("inherited chart defaults", {}, (result, calls) => {
     success(result);
     readonly(calls);
@@ -256,6 +269,7 @@ if(args[0]!=='upgrade'){
         values.bootstrap = { enabled: false };
         values.controlPlane = { autoscaling: { enabled: false } };
         values.sessionRuntime = { autoscaling: { enabled: false } };
+        values.sessionApi = { autoscaling: { enabled: false } };
         values.web = { autoscaling: { enabled: false } };
       },
       fixture: {

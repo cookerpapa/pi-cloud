@@ -12,10 +12,12 @@ node, scope, payload_path, mode, directory = sys.argv[1:]
 payload = json.loads(pathlib.Path(payload_path).read_text())
 operation_id = payload["request"]["operationId"]
 finished = pathlib.Path(directory) / ("finished-" + mode)
+progress = pathlib.Path(directory) / ("progress-" + mode)
+closed = False
 master, slave = os.openpty()
 child = subprocess.Popen(
     [node, scope, "run", operation_id], stdin=slave, stdout=slave, stderr=slave,
-    env={**os.environ, "REVIEW_FINISHED": str(finished)},
+    env={**os.environ, "REVIEW_FINISHED": str(finished), "REVIEW_RESULT": str(pathlib.Path(directory) / ("result-" + mode)), "REVIEW_MODE": mode, "REVIEW_PROGRESS": str(progress)},
 )
 os.close(slave)
 pending = b""
@@ -24,6 +26,11 @@ final = None
 started = time.monotonic()
 try:
     while time.monotonic() - started < 12:
+        if mode == "false" and pathlib.Path(directory, "execution-started").exists():
+            assert not pathlib.Path(directory, "execution-finished").exists(), "caller did not exit during execution"
+            os.close(master)
+            closed = True
+            break
         ready, _, _ = select.select([master], [], [], 0.1)
         if not ready:
             if child.poll() is not None:
@@ -47,24 +54,21 @@ try:
                 continue
             if frame.get("type") == "scope.ready":
                 os.write(master, json.dumps(payload).encode() + b"\n")
-            elif frame.get("type") == "worker.operation_result":
+            elif frame.get("type") == "worker.delivery_result":
                 final = frame
-                if mode in ("true", "child-reserved"):
-                    os.write(master, b'{"type":"scope.received"}\n')
-                elif mode == "invalid":
-                    os.write(master, b'{"type":"scope.received","extra":true}\n')
-    code = child.wait(timeout=1)
+    code = child.wait(timeout=5)
     pathlib.Path(directory, "scope-" + mode + ".jsonl").write_text("\n".join(frames) + "\n")
     print(json.dumps({
         "acknowledged": mode in ("true", "child-reserved"), "exitCode": code,
-        "finalSucceeded": bool(final and not final["response"]["event"]["isError"]),
+        "finalSucceeded": bool(final and final["delivered"]),
         "localFinishCompleted": finished.exists(),
-        "scopeStopRequired": final["scopeStopRequired"] if final else None,
+        "executionComplete": final["executionComplete"] if final else None,
         "elapsedMs": round((time.monotonic() - started) * 1000),
         "scopeFailureText": any(line.strip() == "cube_execution_scope_failed" for line in frames),
     }))
 finally:
-    os.close(master)
+    if not closed:
+        os.close(master)
     if child.poll() is None:
         child.kill()
     child.wait()

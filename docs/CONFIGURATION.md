@@ -271,7 +271,7 @@ Do not commit proxy credentials or expose a local proxy publicly.
 | `PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES` | `unlimited` | optional active-Cube quota; physical Cube capacity still applies |
 | `PI_CLOUD_RUNTIME_PROBE_CONCURRENCY` | `4` | concurrent physical-runtime health checks per control plane, range 1–64; limits in-flight work, never the number of VMs covered |
 | `PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS` | `8` | simultaneous interactive workflows per control plane (Helm default 32); fixed Tools have a Cubelet-local limit of 32 |
-| `PI_CLOUD_ELASTIC_RETENTION_MS` | `900000` | finite elastic-VM retention window, captured in the allocation before creation; Cubelet owns expiry, range 1 second–24 hours |
+| `PI_CLOUD_ELASTIC_RETENTION_MS` | `1800000` | finite elastic-VM retention window, captured in the allocation before creation; Cubelet owns expiry, range 1 second–24 hours |
 | `PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_LEASE_MS` | `15000` | control-plane sandbox-management ownership lease |
 | `PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_HEARTBEAT_MS` | `5000` | sandbox-management ownership heartbeat |
 
@@ -450,7 +450,8 @@ the primary configured Cube endpoint is included automatically. Helm exposes
 `sandboxPlane.cube.executionEndpoints` with corresponding Secret keys. An unknown
 endpoint is rejected before sending credentials; dispatch never falls back to
 another cluster. Self-hosted installation builds the pinned Cube patch set and
-mounts completion PG/S3/management credentials only into the trusted Cubelet.
+enables native execution without mounting PG/S3/Kafka completion credentials
+into Cubelet. Those belong to the independent HTTPS completion role.
 
 Kafka retention must cover a maximum Turn plus settlement grace. Browser
 reconnect always receives a replacement PostgreSQL + Gateway-tail snapshot;
@@ -666,7 +667,12 @@ Worker enrollment/management tokens,
 Sandbox management service tokens, Cube API key, SSH host key and
 source-control credential master key in the
 generated private files or Kubernetes Secrets. The Tool guest receives none of them;
-the trusted Cubelet completion adapter receives only its PG/S3/management credentials.
+the trusted completion service receives its PG/S3/management credentials. Guests
+receive only an operation-scoped opaque callback capability and public CA. The
+`pi-cloud-tool-completion-tls` Secret supplies the HTTPS certificate/key; the
+self-hosted installer reuses the existing Cube CA. `toolCompletion.baseUrl` must
+be reachable from compute guests, and its address is added as a narrow egress
+exception. Custom deployments provide a matching certificate/CA and guest CIDRs.
 When GitHub integration is enabled, the App private key and Webhook secret are
 also deployment Secrets; installation access tokens are generated at runtime
 and must never be copied into configuration. GitLab project tokens stay
@@ -681,7 +687,7 @@ enable authenticated Kafka. Keep those listeners restricted to trusted services.
 
 ## Session image attachments
 
-Trusted Control Plane, Cube completion adapter and Workers use the same private S3 bucket:
+Trusted Session API, completion service and Workers use the same private S3 bucket:
 
 | Setting | Meaning |
 | --- | --- |

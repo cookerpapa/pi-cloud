@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
-import { guestBuildIdentity, completionBuildIdentity } from "./guest-build-identity.mjs";
+import { guestBuildIdentity } from "./guest-build-identity.mjs";
 import { assertOperatorRevisionChanges } from "./component-release.mjs";
 
 /** A failed control record can retain its Workspace after confirmed compute retirement. */
@@ -53,11 +53,6 @@ export async function verifyMatchedRelease({ directory, root, capture, currentGu
     "Release checkout is dirty",
   );
   assert.equal(candidate.guestIdentity, await guestBuildIdentity(root), "Guest inputs changed");
-  assert.equal(
-    candidate.completionIdentity,
-    await completionBuildIdentity(root),
-    "Completion inputs changed",
-  );
   assert.equal(evidence.format, "pi-cloud.release-evidence.v1");
   assert.equal(evidence.git.revision, candidate.revision);
   assert.equal(evidence.git.dirty, false);
@@ -111,9 +106,9 @@ export async function verifyMatchedRelease({ directory, root, capture, currentGu
   const catalog = JSON.parse(await readFile(resolve(directory, "images.json"), "utf8"));
   assert.equal(
     Object.keys(catalog).sort().join(","),
-    "controlPlane,metering,provider,relay,sessionRuntime,sshGateway,toolHost,volumeGateway,web,worker",
+    "controlPlane,metering,provider,relay,sessionApi,sessionRuntime,sshGateway,toolCompletion,toolHost,volumeGateway,web,worker",
   );
-  for (const role of ["sessionRuntime", "metering", "toolHost"])
+  for (const role of ["sessionRuntime", "sessionApi", "toolCompletion", "metering", "toolHost"])
     assert.equal(
       catalog[role],
       catalog.controlPlane,

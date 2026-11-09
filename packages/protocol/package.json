@@ -10,7 +10,8 @@
     "./workspace": "./src/workspace-seed.ts",
     "./uploads": "./src/user-upload.ts",
     "./transfers": "./src/workspace-file-transfer.ts",
-    "./skills": "./src/skills.ts"
+    "./skills": "./src/skills.ts",
+    "./completion-capability": "./src/completion-capability.ts"
   },
   "imports": {
     "#schema-check": {

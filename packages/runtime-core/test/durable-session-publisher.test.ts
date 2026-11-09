@@ -39,7 +39,7 @@ it("uploads images before Kafka timing, packs their references, and rejects publ
   const publisher = new DurableSessionPublisher({
     images,
     metrics,
-    replyTopic: "reply-worker-boot",
+    replyTopic: "pi-cloud.tool-replies.v4.10000000-0000-4000-8000-000000000009",
     channels: { resolve: () => channel, checkHealth: async () => {} },
   });
   const publication = {
@@ -105,7 +105,7 @@ it("needs no PG receipt or second payload ledger and leaves telemetry outside AC
   });
   const publisher = new DurableSessionPublisher({
     metrics,
-    replyTopic: "reply-worker-boot",
+    replyTopic: "pi-cloud.tool-replies.v4.10000000-0000-4000-8000-000000000009",
     channels: { resolve: () => channel, checkHealth: async () => {} },
   });
   for (let seq = 1; seq <= 100; seq++)

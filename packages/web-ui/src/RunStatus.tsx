@@ -9,7 +9,7 @@ export function runStatus(
   turn: TurnView,
   observations: Observations | undefined,
   now: number,
-  observingSince = now,
+  observingSince?: number,
 ) {
   const belongs = (value: RunObservation | undefined) =>
     value && (!turn.runId || turn.runId === value.runId);
@@ -39,9 +39,16 @@ export function runStatus(
     executionStage: execution?.stage,
     delayed:
       turn.status !== "queued" &&
-      (path
-        ? now - path.sentAt > RUN_OBSERVATION_STALE_MS
-        : now - observingSince > RUN_OBSERVATION_STALE_MS),
+      // No periodic Worker publication is required while a model is silent.
+      // Keep the last real Kafka ACK visible, without treating silence as loss.
+      now -
+        Math.max(
+          path?.sentAt ?? 0,
+          activity?.observedAt ?? 0,
+          execution?.confirmedAt ?? 0,
+          observingSince ?? (path || activity || execution ? 0 : now),
+        ) >
+        RUN_OBSERVATION_STALE_MS,
   };
 }
 

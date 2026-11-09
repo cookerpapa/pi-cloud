@@ -40,16 +40,6 @@ export async function prepareCubeRelease({
     const sharedRoot = resolve(runtimeDirectory, "state/cube-shared"),
       metadata = await stat(sharedRoot);
     if (!metadata.isDirectory()) throw new Error("Workspace shared root is not a directory");
-    const completionFiles = {};
-    for (const name of [
-      "database-url",
-      "metering-ingest-token",
-      "supervisor-management-token",
-      "session-image-s3-credentials.json",
-    ])
-      completionFiles[name] = (await readFile(resolve(runtimeDirectory, "secrets", name))).toString(
-        "base64",
-      );
     const input = {
       version: 1,
       sharedRoot,
@@ -59,7 +49,6 @@ export async function prepareCubeRelease({
         resolve(repositoryRoot, "deploy/cubesandbox/cube-volume-picloud-posix.sh"),
         "utf8",
       ),
-      completionFiles,
     };
     const inputIdentity = createHash("sha256").update(JSON.stringify(input)).digest("hex");
     Object.assign(input, renderOverrides, ...(validation ? [{ validation }] : []));
@@ -84,13 +73,10 @@ export async function prepareCubeRelease({
   }
 }
 
-/** Only the two previously installer-owned PiCloud objects may be adopted. */
+/** Only the installer-owned Workspace plugin ConfigMap may be adopted. */
 export function cubeAdoptionFlags(objects) {
   let adopt = false;
-  const allowed = new Set([
-    "ConfigMap/pi-cloud-posix-volume-plugin",
-    "Secret/pi-cloud-cube-completion",
-  ]);
+  const allowed = new Set(["ConfigMap/pi-cloud-posix-volume-plugin"]);
   for (const object of objects) {
     if (!allowed.has(`${object.kind}/${object.metadata?.name}`))
       throw new Error("Unexpected Cube adoption resource");

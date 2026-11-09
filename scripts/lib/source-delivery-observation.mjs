@@ -4,7 +4,8 @@ import { resolve } from "node:path";
 import { isIP } from "node:net";
 import { Agent, fetch } from "undici";
 import { kubectl, runtimeDirectory } from "./production-kubernetes.mjs";
-import { parseComputeDeliveryMetrics } from "./source-delivery-barrier.mjs";
+import { CubeLifecycleSource } from "../../packages/accounting/src/cube-lifecycle-source.ts";
+import { parseComputeCaptureMetrics } from "./source-delivery-barrier.mjs";
 
 const dispatcher = new Agent();
 const hasContainer = (pod, name) =>
@@ -71,8 +72,19 @@ async function boundedRead(url, token, maximum, signal) {
 }
 
 /** Operator-only private reader. Kubernetes is used only to discover existing
- * source Pods/Services. Every source call is HTTP GET; no exec or lifecycle RPC. */
-export async function createDeployedSourceDeliveryReader() {
+ * source Pods/Services. Source calls only read metrics/history and the accounting cursor; no lifecycle mutation. */
+export async function createDeployedSourceDeliveryReader({ database }) {
+  assert(database, "Accounting cursor database is required");
+  const cluster = JSON.parse(
+    await readFile(resolve(runtimeDirectory, "cubesandbox/cluster.json"), "utf8"),
+  );
+  const source = new CubeLifecycleSource({
+    id: `cube:${cluster.sandboxDomain}`,
+    url: `http://${cluster.api.host}:${cluster.api.port}`,
+    apiKey: (
+      await readFile(resolve(runtimeDirectory, "secrets/cubesandbox-api-key"), "utf8")
+    ).trim(),
+  });
   const [receiptToken, quotaToken] = await Promise.all([
     readFile(resolve(runtimeDirectory, "secrets/metering-ingest-token"), "utf8"),
     readFile(resolve(runtimeDirectory, "secrets/workspace-volume-gateway-token"), "utf8"),
@@ -109,7 +121,7 @@ export async function createDeployedSourceDeliveryReader() {
     );
     const providerPod = onePod(pods, "cli-proxy-api"),
       quotaPod = onePod(pods, "workspace-quota");
-    const compute = await Promise.all(
+    const captures = await Promise.all(
       cubePods.map(async (pod) => {
         ready(pod);
         assert(
@@ -127,9 +139,38 @@ export async function createDeployedSourceDeliveryReader() {
           1_048_576,
           signal,
         );
-        return parseComputeDeliveryMetrics(text, pod.metadata.uid);
+        return parseComputeCaptureMetrics(text, pod.metadata.uid);
       }),
     );
+    const lifecycleNodes = await source.list(signal ?? AbortSignal.timeout(28000));
+    assert.equal(lifecycleNodes.length, captures.length, "Lifecycle source coverage changed");
+    const compute = [];
+    for (const node of lifecycleNodes) {
+      assert(node.available, "Lifecycle source is unavailable");
+      // Metrics precede the raw head read; the latter covers all completed
+      // captures reported in that scrape, including a final absent observation.
+      const page = await source.read(node.id, undefined, signal ?? AbortSignal.timeout(28000));
+      const matching = captures.filter((capture) => capture.sourceId === page.epoch);
+      assert.equal(matching.length, 1, "Lifecycle epoch cannot be mapped to a Ready node");
+      const capture = matching[0];
+      const cursor = await database
+        .selectFrom("resource_lifecycle_sources")
+        .select(["epoch", "after_sequence", "failed_at"])
+        .where("node_id", "=", node.id)
+        .where("provider", "=", source.id)
+        .executeTakeFirst();
+      compute.push({
+        ...capture,
+        sourceId: node.id,
+        deliveredCycles:
+          cursor &&
+          !cursor.failed_at &&
+          cursor.epoch === page.epoch &&
+          BigInt(cursor.after_sequence) >= BigInt(page.high)
+            ? capture.completedCycles
+            : null,
+      });
+    }
     const [quotaText, providerText] = await Promise.all([
       boundedRead(
         serviceURL(services, "workspace-quota", "quota", "/v1/delivery"),

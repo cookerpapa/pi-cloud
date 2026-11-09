@@ -62,9 +62,15 @@ it("isolates reply loss to the armed tenant/result and its guest probe, with exp
     await writeFile(config, JSON.stringify({ ...settings, dropProbe: false }));
     await adapter.accept(probe);
     expect(accepted).toHaveBeenCalledTimes(3);
+    await writeFile(config, JSON.stringify({ ...settings, nonce: "ack-loss", dropAck: true }));
+    Base.prototype.accept = Adapter.prototype.accept;
+    await expect(adapter.accept(packet)).rejects.toThrow("ACK lost");
+    expect(accepted).toHaveBeenCalledTimes(4);
+    await adapter.accept(packet);
+    expect(accepted).toHaveBeenCalledTimes(5);
     await writeFile(config, JSON.stringify({ ...settings, expiresAt: 1 }));
     await adapter.accept(packet);
-    expect(accepted).toHaveBeenCalledTimes(4);
+    expect(accepted).toHaveBeenCalledTimes(6);
   } finally {
     await rm(directory, { recursive: true });
   }
