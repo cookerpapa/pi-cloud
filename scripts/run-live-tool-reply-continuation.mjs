@@ -362,14 +362,14 @@ try {
         "document.querySelector('.product-tool-group-display-toggle') && document.querySelector('.product-chat-scroll')",
       );
       await page.evaluate(
-        "const b=document.querySelector('.product-tool-group-display-toggle');if(b.getAttribute('aria-pressed')!=='true')b.click()",
+        "(()=>{const b=document.querySelector('.product-tool-group-display-toggle');if(b.getAttribute('aria-pressed')!=='true')b.click()})()",
       );
       const seen = new Set();
       // Virtual history deliberately unmounts off-screen rows. Check each owned
       // UNKNOWN while scrolling, without requiring both to coexist in the DOM.
       for (let step = 0; step < 80 && unknownTurns.some((id) => !seen.has(id)); step++) {
         await page.evaluate(
-          `const c=document.querySelector('.product-chat-scroll');c.dispatchEvent(new KeyboardEvent('keydown',{key:'Home',bubbles:true}));c.scrollTop=${step}*300`,
+          `(()=>{const c=document.querySelector('.product-chat-scroll');c.dispatchEvent(new KeyboardEvent('keydown',{key:'Home',bubbles:true}));c.scrollTop=${step}*300})()`,
         );
         await delay(150);
         const ids = await page.evaluate(
