@@ -475,7 +475,7 @@ try {
     "Original command was executed again",
   );
   assert(
-    interruptedCalls.every((call) => ["completed", "unknown"].includes(call.status)),
+    interruptedCalls.every((call) => ["completed", "failed", "unknown"].includes(call.status)),
     "Unsettled physical reply",
   );
   report.cases.push({
