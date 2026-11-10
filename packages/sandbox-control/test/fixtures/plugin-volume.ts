@@ -6,7 +6,7 @@ import { join } from "node:path";
 export async function createPluginVolumeFixture(root: string, input: { volumeId: string }) {
   const volume = join(root, `picloud-posix-${input.volumeId}`);
   await mkdir(join(volume, "workspace"), { recursive: true });
-  await mkdir(join(volume, ".pi-cloud-runtime"), { recursive: true });
+  await mkdir(join(volume, ".pi-cloud-runtime/attachments"), { recursive: true });
   await writeFile(
     join(volume, ".pi-cloud-runtime/identity"),
     `pi-cloud-volume-v1\n${input.volumeId}\n${randomBytes(32).toString("hex")}\n`,

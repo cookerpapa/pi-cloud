@@ -165,3 +165,15 @@ an extra hold if its reply is lost; this is explicitly preferable to releasing a
 new mount on a late Detach. Missing hook metadata, missing hold directories or
 unconfirmed old-node cleanup cannot authorize deletion. The old release must
 retire compute before the one-time attachment-directory initialization at cutover.
+
+Native lifecycle records omit PiCloud tenant/Workspace ownership. The original
+resource-creation receipt therefore registers only a bounded provider-id mapping
+in the existing accounting resource directory, in the same PG transaction as the
+receipt. It contains no charge, duration or execution authority. This lets a
+later collector attribute a short-lived VM after management clears its active
+binding. Management never reads accounting to decide physical absence. The
+collector retains the native opaque stream cursor atomically with its accounting
+checkpoint; no extra broker, billing scheduler or provider source fork is added.
+Stock Cube notifications are best-effort observations, not continuous physical
+coverage. Unverified intervals stay unpriced, including inferred time between
+samples; model and Workspace-capacity accounting retain their existing evidence.

@@ -798,6 +798,18 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
             "Volume deletion was not authorized",
             false,
           );
+        const attachments = join(envelope.directory, VOLUME_METADATA_DIRECTORY, "attachments");
+        const holds = await lstat(attachments)
+          .then(async (stat) =>
+            stat.isDirectory() && !stat.isSymbolicLink() ? readdir(attachments) : undefined,
+          )
+          .catch(() => undefined);
+        if (!holds || holds.length)
+          throw new WorkspaceVolumeGatewayError(
+            "workspace_volume_delete_pending",
+            "Workspace attachment release remains unconfirmed",
+            true,
+          );
         const workspace = await lstat(join(envelope.directory, VOLUME_WORKSPACE_DIRECTORY)).catch(
           (error: NodeJS.ErrnoException) => {
             if (error.code === "ENOENT") return undefined;

@@ -2,7 +2,7 @@
 # Copyright (c) 2026 PiCloud contributors.
 # SPDX-License-Identifier: Apache-2.0
 #
-# CubeSandbox v0.6 binary Volume Plugin for an already-mounted POSIX shared
+# CubeSandbox native binary Volume Plugin for an already-mounted POSIX shared
 # filesystem. Production operators mount the same filesystem at
 # /data/cube-shared/volume on every Cube node and on the trusted Volume Gateway.
 # The local profile uses a single host directory at that path.
@@ -120,6 +120,29 @@ assert_safe_workspace() {
   [[ "$resolved_workspace" == "${resolved_volume}/${VOLUME_WORKSPACE_DIRECTORY}" ]] || fail
 }
 
+# Share admission with the Volume Gateway. The lock file is never replaced while
+# the envelope exists; plugin holds never enter the Guest's Workspace mount.
+lock_volume() {
+  [[ ! -L "${metadata_path}/gateway.lock" ]] || fail
+  exec {volume_lock}<> "${metadata_path}/gateway.lock"
+  [[ -f "${metadata_path}/gateway.lock" ]] || fail
+  chmod 0600 -- "${metadata_path}/gateway.lock"
+  chown 1000:1000 -- "${metadata_path}/gateway.lock"
+  flock -x "$volume_lock"
+  read_identity
+  [[ -d "${metadata_path}/attachments" && ! -L "${metadata_path}/attachments" ]] || fail
+}
+
+read_holder() {
+  [[ -f "$holder_path" && ! -L "$holder_path" ]] || fail
+  [[ "$(stat -c %s -- "$holder_path")" -le 1024 ]] || fail
+  mapfile -t holder_fields < "$holder_path"
+  [[ "${#holder_fields[@]}" -eq 4 ]] || fail
+  [[ "${holder_fields[0]}" == "$volume_generation" && "${holder_fields[1]}" == "$namespace" && "${holder_fields[2]}" == "$sandbox_id" ]] || fail
+  hold="${holder_fields[3]}"
+  [[ "$hold" =~ ^[0-9a-f]{64}$ ]] || fail
+}
+
 case "$operation" in
   create)
     [[ -z "$name" || "$name" == "$volume_id" ]] || fail
@@ -146,11 +169,16 @@ case "$operation" in
     if [[ -e "$identity_path" || -L "$identity_path" ]]; then
       read_identity
       assert_safe_workspace
+      [[ -d "${metadata_path}/attachments" && ! -L "${metadata_path}/attachments" ]] || fail
       sync -- "$identity_path" "$metadata_path" "$volume_path" "$DEFAULT_BASE_DIR"
       printf '%s\n' '{"token":"","private_data":"picloud-posix-v2","error":""}'
       exit 0
     fi
-    [[ -z "$(find "$metadata_path" -mindepth 1 -maxdepth 1 -print -quit)" ]] || fail
+    [[ -z "$(find "$metadata_path" -mindepth 1 -maxdepth 1 ! -name attachments -print -quit)" ]] || fail
+    if [[ -e "${metadata_path}/attachments" || -L "${metadata_path}/attachments" ]]; then
+      [[ -d "${metadata_path}/attachments" && ! -L "${metadata_path}/attachments" ]] || fail
+      [[ -z "$(find "${metadata_path}/attachments" -mindepth 1 -maxdepth 1 -print -quit)" ]] || fail
+    fi
     if [[ -e "$workspace_path" && ! -d "$workspace_path" ]] || [[ -L "$workspace_path" ]]; then
       fail
     fi
@@ -159,6 +187,10 @@ case "$operation" in
     [[ -z "$(find "$workspace_path" -mindepth 1 -maxdepth 1 -print -quit)" ]] || fail
     chmod 0700 -- "$workspace_path"
     chown 1000:1000 -- "$workspace_path"
+    mkdir -p -- "${metadata_path}/attachments"
+    chmod 0700 -- "${metadata_path}/attachments"
+    chown 1000:1000 -- "${metadata_path}/attachments"
+    sync -- "${metadata_path}/attachments"
     temporary_identity="$(mktemp "${metadata_path}/.identity.XXXXXXXX")"
     trap 'rm -f -- "$temporary_identity"' EXIT
     volume_generation="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
@@ -184,10 +216,10 @@ case "$operation" in
       exit 0
     fi
     assert_safe_volume
-    # CubeMaster has already verified zero live references. PiCloud authorizes
-    # this exact generation outside the Guest mount; untrusted files never
-    # carry deletion authority. Keep the envelope intact for failed GC retries.
-    read_identity
+    # Native reference counts can drift. Our supported plugin owns a separate
+    # durable hold for each exposed path; a missing Detach never means zero.
+    lock_volume
+    [[ -z "$(find "${metadata_path}/attachments" -mindepth 1 -maxdepth 1 -print -quit)" ]] || fail
     [[ -f "$marker_path" && ! -L "$marker_path" ]] || fail
     expected_marker="$(printf 'pi-cloud-volume-delete-v1\n%s\n%s' "$volume_id" "$volume_generation")"
     [[ "$(cat -- "$marker_path")" == "$expected_marker" ]] || fail
@@ -198,19 +230,55 @@ case "$operation" in
     printf '%s\n' '{"error":""}'
     ;;
   attach)
-    [[ -n "$sandbox_id" && -n "$namespace" && "$ref_count" =~ ^[0-9]+$ ]] || fail
+    [[ "$sandbox_id" =~ ^[A-Za-z0-9_.-]{1,128}$ && "$namespace" =~ ^[A-Za-z0-9_.-]{1,128}$ && "$ref_count" =~ ^[0-9]+$ ]] || fail
     [[ -z "$private_data" || "$private_data" == "picloud-posix-v2" ]] || fail
     assert_safe_root
     assert_safe_volume
+    lock_volume
+    [[ ! -e "$marker_path" && ! -L "$marker_path" ]] || fail
     assert_safe_workspace
-    printf '{"host_path":"%s","metadata":{"driver":"picloud-posix-v2"},"error":""}\n' \
-      "$workspace_path"
+    # The native hook has no attachment-incarnation id. Allocate an opaque
+    # receipt per successful call, even for a repeated sandbox id. A lost reply
+    # can retain an extra hold; it must never let an old Detach release new bytes.
+    hold="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+    [[ "$hold" =~ ^[0-9a-f]{64}$ ]] || fail
+    holder="$(printf '%s\n' "$namespace" "$sandbox_id" "$hold" | sha256sum | cut -d ' ' -f 1)"
+    holder_path="${metadata_path}/attachments/${holder}"
+    temporary_holder="$(mktemp "${metadata_path}/.holder.XXXXXXXX")"
+    trap 'rm -f -- "$temporary_holder"' EXIT
+    printf '%s\n%s\n%s\n%s\n' "$volume_generation" "$namespace" "$sandbox_id" "$hold" > "$temporary_holder"
+    chmod 0400 -- "$temporary_holder"
+    sync -- "$temporary_holder"
+    ln -T -- "$temporary_holder" "$holder_path" || fail
+    rm -- "$temporary_holder"
+    trap - EXIT
+    sync -- "$holder_path" "${metadata_path}/attachments" "$metadata_path"
+    printf '{"host_path":"%s","metadata":{"driver":"picloud-posix-v3","holder":"%s","hold":"%s"},"error":""}\n' \
+      "$workspace_path" "$holder" "$hold"
     ;;
   detach)
-    [[ -n "$sandbox_id" && -n "$namespace" && "$ref_count" =~ ^[0-9]+$ ]] || fail
-    # Attach only returns an existing POSIX path; there is no host mount to undo.
-    # Failed Attach may have returned no metadata. Cleanup depends on the
-    # validated request identity, not the success-only informational driver tag.
+    [[ "$sandbox_id" =~ ^[A-Za-z0-9_.-]{1,128}$ && "$namespace" =~ ^[A-Za-z0-9_.-]{1,128}$ && "$ref_count" =~ ^[0-9]+$ ]] || fail
+    assert_safe_root
+    assert_safe_volume
+    lock_volume
+    # A failed Attach has no authority to release any successful attachment.
+    if [[ "$metadata" == '{}' || -z "$metadata" ]]; then
+      printf '%s\n' '{"error":""}'
+      exit 0
+    fi
+    [[ "$metadata" =~ \"holder\"[[:space:]]*:[[:space:]]*\"([0-9a-f]{64})\" ]] || fail
+    holder="${BASH_REMATCH[1]}"
+    [[ "$metadata" =~ \"hold\"[[:space:]]*:[[:space:]]*\"([0-9a-f]{64})\" ]] || fail
+    supplied_hold="${BASH_REMATCH[1]}"
+    holder_path="${metadata_path}/attachments/${holder}"
+    if [[ -e "$holder_path" || -L "$holder_path" ]]; then
+      read_holder
+      # A delayed Detach for a preceding lifetime must not release the new one.
+      if [[ "$hold" == "$supplied_hold" ]]; then
+        rm -- "$holder_path"
+        sync -- "${metadata_path}/attachments"
+      fi
+    fi
     printf '%s\n' '{"error":""}'
     ;;
   *)

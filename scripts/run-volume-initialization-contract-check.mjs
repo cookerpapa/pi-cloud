@@ -84,13 +84,13 @@ try {
   const attached = await docker(
     `/bin/bash /plugin --op attach --volume-id ${shared.id} --sandbox-id test-guest --namespace test --ref-count 1 --private-data picloud-posix-v2`,
   );
-  assert.deepEqual(JSON.parse(attached.stdout), {
-    host_path: `${shared.path}/workspace`,
-    metadata: { driver: "picloud-posix-v2" },
-    error: "",
-  });
+  const attachment = JSON.parse(attached.stdout);
+  assert.equal(attachment.host_path, `${shared.path}/workspace`);
+  assert.equal(attachment.metadata.driver, "picloud-posix-v3");
+  assert.match(attachment.metadata.holder, /^[0-9a-f]{64}$/);
+  assert.match(attachment.metadata.hold, /^[0-9a-f]{64}$/);
   await docker(
-    `/bin/bash /plugin --op detach --volume-id ${shared.id} --sandbox-id test-guest --namespace test --ref-count 0 --metadata '{"driver":"picloud-posix-v2"}'`,
+    `/bin/bash /plugin --op detach --volume-id ${shared.id} --sandbox-id test-guest --namespace test --ref-count 0 --metadata '${JSON.stringify(attachment.metadata)}'`,
   );
   // The native binary adapter serializes missing failed-Attach metadata as {}.
   await docker(
@@ -120,7 +120,10 @@ try {
   await docker(`test ! -e '${before.identity}'`);
   await docker(create(before));
   validIdentity(before, await readIdentity(before));
-  assert.equal((await docker(`ls -A '${before.path}/.pi-cloud-runtime'`)).stdout, "identity\n");
+  assert.equal(
+    (await docker(`ls -A '${before.path}/.pi-cloud-runtime'`)).stdout,
+    "attachments\nidentity\n",
+  );
 
   const after = volume("killed-after-publication");
   await writeFile(
@@ -137,7 +140,10 @@ try {
   validIdentity(after, published);
   await docker(create(after));
   assert.equal(await readIdentity(after), published);
-  assert.equal((await docker(`ls -A '${after.path}/.pi-cloud-runtime'`)).stdout, "identity\n");
+  assert.equal(
+    (await docker(`ls -A '${after.path}/.pi-cloud-runtime'`)).stdout,
+    "attachments\nidentity\n",
+  );
 
   const unknown = volume("unknown-nonempty");
   await docker(
