@@ -8,31 +8,24 @@ lower-security fallback.
 
 The integration is pinned to
 [`TencentCloud/CubeSandbox` v0.7.3](https://github.com/TencentCloud/CubeSandbox/tree/v0.7.3)
-at commit `4411c96ba8658a959de34693f54f4918db2a432f`, with the responsibility-scoped
-patches pinned in `runtime-build.json`. The added resource-receipt adapter is
-separate from execution/lifecycle authority (ADR-0300). The upgrade is pending the consolidated
-matched release (ADR-0299). Cube is a separate
-CubeAPI/CubeMaster/Cubelet/CubeShim KVM control and execution plane, not a
-Kubernetes `RuntimeClass`.
+at commit `4411c96ba8658a959de34693f54f4918db2a432f`. ADR-0309 replaces private
+engine APIs with stock resource creation, native timeout, retained connections
+and native lifecycle observations. `runtime-build.json` pins upstream artifacts;
+publication cannot skip its existing scan gates. The source migration is not yet
+a deployed matched release.
 
 ```text
-Browser
-   │
-Control Plane
-   │ PostgreSQL ready Run / Session ownership
-Trusted Pi Worker pool
-   │ Kafka append
-Session Projector (inside Control Plane)
-   │ ordered Tool command / seal
-Tool Broker
-   │ fixed-target CubeAPI/CubeProxy relays
-CubeMaster / Cubelet
-   │
-Workspace compute / user-owned development machine
+Worker Pi -> Kafka -> Session Projector -> native process API -> fixed Guest
+Guest -> HTTPS completion service -> Kafka replies -> current Worker Pi
+Control Plane -> native resource API (create/pause/resume/delete)
+Native lifecycle observations -> independent metering (unverified time is unpriced)
+Persistent Workspace -> supported Volume Plugin with external attachment receipts
 ```
 
-Pi, model authentication and conversation state remain in the trusted Worker
-pool. Only the credential-free Tool Worker and Workspace enter Cube.
+The Projector lives in `session-runtime`, separately from the public Session API
+and resource-management Control Plane. There is no Tool Broker. The Guest owns
+Tool admission and precise cancellation; its callback path is independent of the
+dispatch caller. Pi, model credentials and conversation state stay in Workers.
 
 ## Deployment profiles
 
@@ -51,9 +44,10 @@ A public or business-critical deployment should follow the upstream
 - private CubeAPI/CubeProxy routing and firewalls;
 - rehearsed control-node, compute-node, storage and rolling-upgrade drills.
 
-Only CubeAPI TCP 3000 and CubeProxy TCP 80/443 should be privately reachable
-from PiCloud. Do not expose CubeMaster, MySQL, Redis, Cubelet, CubeProxy admin
-ports or the Kubernetes API.
+CubeAPI TCP 3000 and CubeProxy TCP 80/443 are private integration endpoints.
+Only resource management and metering additionally read the native Redis lifecycle
+channel on TCP 6379, using the existing Secret. Workers, Guests and browsers never
+receive that address or credential. Keep all management endpoints private.
 
 ## 1. Initialize private runtime state
 

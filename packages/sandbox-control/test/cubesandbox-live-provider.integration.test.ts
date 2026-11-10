@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { liveNativeTools } from "./helpers/live-native-tools.ts";
 import { InMemorySandboxBindings } from "./helpers/in-memory-sandbox-bindings.ts";
 import { InMemoryWorkspaceRuntimeStateRepository } from "./helpers/in-memory-workspace-runtime-state-repository.ts";
@@ -147,6 +148,10 @@ async function configuration(): Promise<LiveConfiguration> {
     publicHttpsUrl: publicHttpsUrl.toString(),
     runtime: {
       apiUrl: apiUrl.toString(),
+      lifecycleRedisUrl: required("PI_CLOUD_CUBE_LIFECYCLE_REDIS_URL"),
+      lifecycleRedisPassword: (
+        await readFile(required("PI_CLOUD_CUBE_LIFECYCLE_REDIS_PASSWORD_FILE"), "utf8")
+      ).trim(),
       apiKey: await readPrivateKey(required("PI_CLOUD_CUBESANDBOX_API_KEY_FILE")),
       proxyNodeIp: required("PI_CLOUD_CUBESANDBOX_PROXY_NODE_IP"),
       proxyPort: port(

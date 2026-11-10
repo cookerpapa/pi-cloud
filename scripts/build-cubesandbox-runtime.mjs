@@ -1,153 +1,93 @@
 import { configureBuildProxy } from "./lib/upstream-proxy.mjs";
 import { execFileSync, spawn } from "node:child_process";
-import { createHash } from "node:crypto";
-import { mkdtemp, readFile, writeFile, rm, copyFile, access } from "node:fs/promises";
-import { tmpdir, homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import assert from "node:assert/strict";
 
 configureBuildProxy();
-
 const root = fileURLToPath(new URL("..", import.meta.url));
 const manifest = JSON.parse(
   await readFile(join(root, "deploy/cubesandbox/runtime-build.json"), "utf8"),
 );
+assert.equal(manifest.providerContractVersion, 1);
+assert.equal(manifest.patches, undefined, "Stock runtime cannot apply patches");
+assert.equal(manifest.buildImages, undefined, "Stock runtime cannot rewrite dependency toolchains");
 const tag = process.env.PI_CLOUD_IMAGE_VERSION ?? "production";
-if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(tag)) throw new Error("Invalid Cube image tag");
-const revision = execFileSync("git", ["rev-parse", "HEAD"], {
-  cwd: root,
-  encoding: "utf8",
-}).trim();
-const ubuntuMirror = process.env.PI_CLOUD_CUBE_APT_MIRROR;
-if (ubuntuMirror && !/^https:\/\/[a-z0-9.-]+(?::[0-9]+)?\/[a-zA-Z0-9/_-]+$/.test(ubuntuMirror))
-  throw new Error("Cube APT mirror must be an HTTPS archive URL without credentials or query");
-const imageLabels = [
-  "--label",
-  `org.opencontainers.image.revision=${revision}`,
-  "--label",
-  `org.opencontainers.image.version=${tag}`,
-];
-const sourceRepository = resolve(
-  process.env.PI_CLOUD_CUBESANDBOX_REPOSITORY ?? join(homedir(), "CubeSandbox"),
-);
-const temporary = await mkdtemp(join(tmpdir(), "pi-cloud-cube-build-"));
-const run = (command, args, cwd = root) =>
-  new Promise((resolvePromise, reject) => {
-    const child = spawn(command, args, { cwd, stdio: "inherit" });
+assert.match(tag, /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/);
+const revision = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+const temporary = await mkdtemp(join(tmpdir(), "pma-stock-cube-"));
+const run = (command, args) =>
+  new Promise((resolve, reject) => {
+    const child = spawn(command, args, { cwd: root, stdio: "inherit" });
     child.once("error", reject);
     child.once("exit", (code) =>
-      code === 0 ? resolvePromise() : reject(new Error(`${command} exited ${code}`)),
+      code === 0 ? resolve() : reject(new Error(`${command} exited ${code}`)),
     );
   });
+const inspect = (reference) =>
+  JSON.parse(
+    execFileSync("docker", ["image", "inspect", reference], {
+      encoding: "utf8",
+      maxBuffer: 4 * 1024 ** 2,
+    }),
+  )[0];
 try {
-  // Export the pinned commit; never edit the operator's checkout or include its
-  // uncommitted files, diagnostics, credentials or generated binaries.
-  await run("git", [
-    "-C",
-    sourceRepository,
-    "archive",
-    "--format=tar",
-    `--output=${join(temporary, "source.tar")}`,
-    manifest.upstreamCommit,
+  assert.deepEqual(Object.keys(manifest.nativeImages).sort(), [
+    "cube-api",
+    "cube-master",
+    "cube-templatecenter",
+    "cubelet",
   ]);
-  await run("tar", ["-xf", "source.tar"], temporary);
-  await rm(join(temporary, "source.tar"));
-  for (const patch of manifest.patches) {
-    const path = join(root, "deploy/cubesandbox/patches", patch.file);
-    if (
-      createHash("sha256")
-        .update(await readFile(path))
-        .digest("hex") !== patch.sha256
-    )
-      throw new Error(`Cube patch digest changed: ${patch.file}`);
-    await run("git", ["apply", "--check", path], temporary);
-    await run("git", ["apply", path], temporary);
-  }
-  const patchId = createHash("sha256").update(JSON.stringify(manifest)).digest("hex").slice(0, 16);
-  for (const [name, file, context] of [
-    ["cube-api", "CubeAPI/Dockerfile", "CubeAPI"],
-    ["cube-master", "CubeMaster/docker/Dockerfile", "."],
-    ["cube-templatecenter", "CubeTemplateCenter/docker/Dockerfile", "."],
-    ["cubelet", "Cubelet/Dockerfile", "."],
-  ]) {
-    const original = join(temporary, file),
-      dockerfile = join(temporary, `${name}.Dockerfile`);
-    let text = await readFile(original, "utf8");
-    if (name === "cube-api") {
-      const packages = "RUN apk add --no-cache ca-certificates curl tzdata";
-      if (!text.includes(packages))
-        throw new Error("Cube API runtime package installation changed");
-      text = text.replace(
-        packages,
-        "RUN apk upgrade --no-cache \\\n    && apk add --no-cache ca-certificates curl tzdata",
-      );
-    }
-    if (name === "cube-templatecenter") {
-      // Template Center imports the patched Master from this same export. Its
-      // upstream runtime stage needs the same reviewed Ubuntu package fixes.
-      const packages =
-        "RUN apt-get update \\\n    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \\\n";
-      if (!text.includes(packages))
-        throw new Error("Template Center runtime package installation changed");
-      text = text.replace(
-        packages,
-        "RUN apt-get -o Acquire::Retries=0 update \\\n    && apt-get -o Acquire::Retries=0 install -y --no-install-recommends apt=2.8.4ubuntu0.1 libapt-pkg6.0t64=2.8.4ubuntu0.1 \\\n    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \\\n        libbrotli1=1.1.0-2ubuntu0.1 \\\n",
-      );
-    }
-    if (ubuntuMirror) text = text.replaceAll("https://mirrors.aliyun.com/ubuntu", ubuntuMirror);
-    const pins = new Map([
-      ["golang:1.25-bookworm", manifest.buildImages.go],
-      ["rust:1.85.1-alpine", manifest.buildImages.rust],
-      ["ubuntu:22.04", manifest.buildImages.ubuntu22],
-      ["ubuntu:24.04", manifest.buildImages.ubuntu24],
-      ["alpine:3.21", manifest.buildImages.alpine],
-    ]);
-    text = text.replace(
-      /^FROM (\S+)(.*)$/gm,
-      (_, image, rest) => `FROM ${pins.get(image) ?? image}${rest}`,
+  for (const [name, source] of Object.entries(manifest.nativeImages)) {
+    assert.equal(source.platform, "linux/amd64");
+    const prefix = `cube-sandbox-int.tencentcloudcr.com/cube-sandbox/${name}:v${manifest.upstreamVersion}@sha256:`;
+    assert(
+      source.reference.startsWith(prefix) &&
+        /^[0-9a-f]{64}$/.test(source.reference.slice(prefix.length)),
+      "Invalid official native image pin",
     );
-    text = text.replace(
-      "ARG CUBE_BUILD_TIME=unknown",
-      "ARG CUBE_BUILD_TIME=unknown\nARG PI_CLOUD_GOPROXY=https://goproxy.cn|https://proxy.golang.org|direct\nENV GOPROXY=${PI_CLOUD_GOPROXY}" +
-        (["cube-master", "cube-templatecenter"].includes(name)
-          ? "\nENV GOTOOLCHAIN=local\nENV GOFLAGS=-mod=readonly"
-          : ""),
-    );
-    text = text.replace(
-      "cargo build --release -p cubecow",
-      "cargo build --locked --release -p cubecow",
-    );
-    await writeFile(dockerfile, text);
-    await access(`${original}.dockerignore`)
-      .then(() => copyFile(`${original}.dockerignore`, `${dockerfile}.dockerignore`))
-      .catch(() => {});
+    await run("docker", ["pull", "--platform", source.platform, source.reference]);
+    const base = inspect(source.reference);
+    assert.equal(base.Architecture, "amd64");
+    // No RUN, COPY, package upgrade, dependency rewrite or engine source build.
+    const dockerfile = join(temporary, "Dockerfile");
+    await writeFile(dockerfile, `FROM ${source.reference}\n`);
+    const image = `pi-cloud/${name}:${tag}`;
     await run("docker", [
       "build",
-      ...imageLabels,
-      "--network=host",
-      "--build-arg",
-      "HTTP_PROXY",
-      "--build-arg",
-      "HTTPS_PROXY",
-      "--build-arg",
-      "NO_PROXY",
-      "--build-arg",
-      `CUBE_BUILDER_IMAGE=${manifest.buildImages.cubeletBuilder}`,
-      "--build-arg",
-      `CUBE_VERSION=${manifest.upstreamVersion}-picloud-${patchId}`,
-      "--build-arg",
-      `CUBE_COMMIT=${manifest.upstreamCommit}+${patchId}`,
-      ...(process.env.PI_CLOUD_GOPROXY
-        ? ["--build-arg", `PI_CLOUD_GOPROXY=${process.env.PI_CLOUD_GOPROXY}`]
-        : []),
+      "--platform",
+      source.platform,
+      "--pull=false",
+      "--label",
+      `org.opencontainers.image.revision=${revision}`,
+      "--label",
+      `org.opencontainers.image.version=${tag}`,
+      "--label",
+      `org.opencontainers.image.base.name=${source.reference}`,
+      "--label",
+      `org.opencontainers.image.base.digest=${source.reference.split("@")[1]}`,
+      "--label",
+      `io.pi-cloud.cube.upstream-commit=${manifest.upstreamCommit}`,
+      "--label",
+      "io.pi-cloud.cube.provider-contract=1",
       "-f",
       dockerfile,
       "-t",
-      `pi-cloud/${name}:${tag}`,
-      join(temporary, context),
+      image,
+      temporary,
     ]);
+    const built = inspect(image);
+    assert.deepEqual(
+      built.RootFS.Layers,
+      base.RootFS.Layers,
+      "Native runtime filesystem differs from the official image",
+    );
+    assert.deepEqual(built.Config.Entrypoint, base.Config.Entrypoint);
+    assert.deepEqual(built.Config.Cmd, base.Config.Cmd);
+    process.stdout.write(`Stock Cube filesystem verified: ${name}\n`);
   }
-  process.stdout.write(`Cube managed runtime images built: ${tag}; patch set ${patchId}\n`);
 } finally {
   await rm(temporary, { recursive: true, force: true });
 }

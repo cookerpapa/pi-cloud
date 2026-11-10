@@ -402,14 +402,16 @@ Ordinary elastic Sessions can share a Workspace's compute scope, files, ports an
 processes. Subagents may use separate temporary Linux compute on the same Volume.
 Human terminals have independent product authority. Pure chat creates no VM.
 
-Cubelet owns finite elastic idle expiry, renewed from fresh Session activity on
+The native provider owns elastic idle expiry, renewed from fresh Session activity on
 the existing Kafka path. Stale replay uses its original timestamp and cannot buy
 extra time. A missing VM is never created by maintenance. After renewal stops,
 expiry may reclaim compute even with an unfinished Tool; healthy Session families
 can renew indefinitely. The Control Plane has no competing idle deadline scanner.
 Dedicated machines do not expire. Diagnostic heartbeats are not retention intents,
 PG lease renewals or proof that a VM has disappeared.
-See [ADR-0272](adr/0272-cube-owned-elastic-retention.md).
+See [ADR-0309](adr/0309-stock-sandbox-contract.md).
+Management health samples native resource status without Guest traffic; execution
+uses on-demand full probes. Stock CubeProxy traffic can affect native idle timing.
 
 PG stores a dedicated machine's stable identity, desired running/paused/released
 intent and lifecycle completion. Cube supplies disposable physical observations.
@@ -419,9 +421,9 @@ justify replacement. Direct lifecycle management uses the Cube API; Session
 binding changes still travel through Kafka.
 See [ADR-0273](adr/0273-resource-intent-and-machine-recovery.md).
 
-Volume deletion closes new attachment admission and reconciles versioned node
-references. Unknown holders, missing allocation replies or a missing Master route
-are not proof that storage is unused. Workspace bytes survive compute replacement;
+Volume deletion closes attachment admission and requires the supported Volume
+Plugin to release its exact persisted attachment receipts. Missing/late replies,
+unknown holders or a missing Master route do not prove storage is unused. Workspace bytes survive compute replacement;
 process memory and system-disk changes are not promised to survive cold recovery.
 Machine Release deletes its Workspace, while conversation history has its own lifetime.
 
@@ -596,16 +598,13 @@ configuration, credentials and retained Workspace assets are preserved.
 ## Independent usage accounting
 
 Provider model receipts and enforced Workspace capacity intervals reach the
-independent receiver directly. Compute collection reads normalized provider
-lifecycle history and derives intervals outside the sandbox.
-They are financial facts, separate from Session Kafka projection and from the
-Control Plane's desired resource state. PG has the one long-term accounting
-ledger; compute source cursors advance atomically with derived intervals. The
-Cube adapter exposes raw observations, source epochs and explicit history gaps,
-while Workspace storage retains its receipt journal.
-Unverified intervals remain unconfirmed and do not produce an amount. Model,
-compute and storage share account/price rules while keeping separate source
-identities. See [resource accounting](RESOURCE_BILLING.md) and
+independent receiver directly. Stock Cube inventory and native lifecycle events
+are observations, not a continuous physical accounting journal. A bounded native
+resource mapping is recorded with creation; the independent collector atomically
+commits observation pages and cursors in PG. Sampled compute intervals remain
+unconfirmed and unpriced under ADR-0309. Model and Workspace storage retain their
+existing pricing evidence. Accounting never acquires resource lifecycle authority.
+See [resource accounting](RESOURCE_BILLING.md) and
 [Workspace capacity](adr/0301-workspace-capacity-enforcement.md).
 
 Workspace bytes stay in persistent Cube Volumes. PG capacity/revision/pending

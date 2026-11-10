@@ -13,6 +13,7 @@ const fixture = vi.hoisted(() => ({
 vi.mock("../src/sandbox-control-config.ts", () => ({
   loadSandboxControlConfig: async () => ({
     databaseUrl: "unused",
+    persistentStateKey: Buffer.alloc(32, 7),
     sessionExecutionBaseUrl: "http://session-runtime:4300",
     cubeSandbox: { directPrivateCidrs: [] },
   }),

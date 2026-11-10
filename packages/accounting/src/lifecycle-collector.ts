@@ -96,11 +96,15 @@ export class LifecycleCollector {
       this.#abort.signal.throwIfAborted();
       const checkpoint = await this.database
         .selectFrom("resource_lifecycle_sources")
-        .select(["epoch", "after_sequence"])
+        .select(["epoch", "after_sequence", "source_position"])
         .where("id", "=", id)
         .executeTakeFirstOrThrow();
       const cursor = checkpoint.epoch
-        ? { epoch: checkpoint.epoch, sequence: String(checkpoint.after_sequence) }
+        ? {
+            epoch: checkpoint.epoch,
+            sequence: String(checkpoint.after_sequence),
+            ...(checkpoint.source_position ? { sourcePosition: checkpoint.source_position } : {}),
+          }
         : undefined;
       const page = await this.source.read(node, cursor, this.#abort.signal);
       if (!(await this.apply(id, cursor, page))) return true;
@@ -116,13 +120,14 @@ export class LifecycleCollector {
     return this.database.transaction().execute(async (tx) => {
       const current = await tx
         .selectFrom("resource_lifecycle_sources")
-        .select(["epoch", "after_sequence"])
+        .select(["epoch", "after_sequence", "source_position"])
         .where("id", "=", id)
         .forUpdate()
         .executeTakeFirstOrThrow();
       if (
         current.epoch !== (cursor?.epoch ?? null) ||
-        String(current.after_sequence) !== (cursor?.sequence ?? "0")
+        String(current.after_sequence) !== (cursor?.sequence ?? "0") ||
+        current.source_position !== (cursor?.sourcePosition ?? null)
       )
         return false;
       if (
@@ -154,6 +159,7 @@ export class LifecycleCollector {
         .set({
           epoch: page.epoch,
           after_sequence: page.next,
+          source_position: page.sourcePosition ?? null,
           checked_at: new Date(),
           failed_at: null,
           ...(page.gap ? { gap_detected_at: new Date() } : {}),
@@ -168,5 +174,6 @@ export class LifecycleCollector {
     clearInterval(this.#timer);
     await this.#tick;
     await Promise.allSettled(this.#pending.values());
+    await this.source.close?.();
   }
 }

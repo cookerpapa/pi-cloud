@@ -40,6 +40,8 @@ describe("Cube API authorizer", () => {
     ["POST", `/sandboxes/${"a".repeat(32)}/execution/probe`],
     ["POST", `/sandboxes/${"a".repeat(32)}/execution/stop`],
     ["GET", `/sandboxes/${"a".repeat(32)}/observation`],
+    ["POST", "/lifecycle/sources"],
+    ["POST", "/lifecycle/history"],
     ["POST", "/allocations/11111111-1111-4111-8111-111111111111/get"],
     ["POST", "/allocations/11111111-1111-4111-8111-111111111111/close"],
     ["POST", "/allocations/11111111-1111-4111-8111-111111111111/reopen"],

@@ -9,7 +9,9 @@ remaining Cube patch before any removal. [#27](https://github.com/cookerpapa/pi-
 tracks BoxLite integration and the Android source audit. The owner subsequently
 accepted [ADR-0309](adr/0309-stock-sandbox-contract.md) to implement stock Cube
 APIs with conservative external ownership and explicit accounting gaps. No new
-resource protocol has been deployed yet.
+resource protocol has been deployed yet. The [source migration report](reports/stock-cube-source-20261111.md)
+records the completed adapter changes, conservative limits and the unchanged
+upstream-image release blocker.
 
 ## Guest execution and Session activity — deployed
 

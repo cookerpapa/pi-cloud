@@ -105,9 +105,9 @@ try {
   );
   const allocation = await until(async () => {
     const { rows } =
-      await sql`select runtime.workspace_runtime_id,runtime.creation_not_after,runtime.runtime_capsule,runtime.allocation_closed,
+      await sql`select runtime.workspace_runtime_id,runtime.provider_create_started_at,runtime.runtime_capsule,runtime.allocation_closed,
       owner.owner_base_url from workspace_runtimes runtime join sandbox_control_instances owner on owner.instance_id=runtime.owner_instance_id
-      where runtime.workspace_id=${project.workspaceId}::uuid and runtime.creation_not_after is not null order by runtime.created_at desc limit 1`.execute(
+      where runtime.workspace_id=${project.workspaceId}::uuid and runtime.provider_create_started_at is not null order by runtime.created_at desc limit 1`.execute(
         database,
       );
     return rows[0];
@@ -162,7 +162,7 @@ try {
   report.sessionRuntimePreserved = true;
   const restored = await until(async () => {
     const { rows } =
-      await sql`select workspace_runtime_id,runtime_id,runtime_capsule,state,allocation_closed,creation_not_after from workspace_runtimes
+      await sql`select workspace_runtime_id,runtime_id,runtime_capsule,state,allocation_closed,provider_create_started_at from workspace_runtimes
       where workspace_runtime_id=${allocation.workspace_runtime_id}::uuid`.execute(database);
     const row = rows[0];
     return (
@@ -170,8 +170,8 @@ try {
     );
   }, "original VM creation adoption");
   assert.equal(
-    new Date(restored.creation_not_after).valueOf(),
-    new Date(allocation.creation_not_after).valueOf(),
+    new Date(restored.provider_create_started_at).valueOf(),
+    new Date(allocation.provider_create_started_at).valueOf(),
   );
   report.originalAllocationRecovered = true;
   report.creationWindowUnchanged = true;

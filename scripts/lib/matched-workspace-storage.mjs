@@ -332,4 +332,18 @@ export async function prepareMatchedWorkspaceStorage({
       ...nodeArgs,
     ]);
   else execute("sudo", ["-n", process.execPath, ...nodeArgs]);
+  // This runs while all native storage consumers are still stopped. It does not
+  // touch Workspace bytes or discard an uncertain attachment.
+  rootCommand(
+    process.execPath,
+    [
+      "--import",
+      resolve(root, "node_modules/tsx/dist/loader.mjs"),
+      resolve(root, "scripts/run-workspace-storage-pool.mjs"),
+      "attachments",
+      "--plan",
+      planPath,
+    ],
+    root,
+  );
 }

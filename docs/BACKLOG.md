@@ -6,14 +6,15 @@
 - [x] #26 source: reject lifecycle mutations until creation is resolved; reflect this in UI.
 - [x] #26 source: recovery-pending Runs and unfinished seals continue to block deletion.
 - [x] #26: complete the patch inventory and agree the weaker native-provider contract.
-- [ ] #26: remove all Cube source/dependency patches and hidden build rewrites under ADR-0309.
+- [x] #26 source: remove Cube source/dependency patches and hidden build rewrites under ADR-0309.
 - [x] #26 source: recover cold Guest credentials from existing encrypted resource capsules, without a custom allocation API.
 - [x] #26 source: create/renew elastic resources using native timeout, with stale activity refusal and no probe renewal.
 - [x] #26 source: one-shot native creation admission and encrypted early receipts; remove private allocation RPC and deadline.
 - [x] #26 source: external Volume Plugin attachment receipts and shared deletion admission; isolated create/attach/delete checks pass.
-- [ ] #26: finish native lifecycle/expiry evidence and release-operator migration; these source changes are not independently deployable.
+- [x] #26 source: native lifecycle/expiry evidence and release-operator migration; remain a single matched cutover.
+- [ ] #26: resolve official-image scan failures without an implicit dependency overlay or release waiver.
 - [ ] #26: serial verification, matched delivery and original-asset preservation.
-- [ ] #27: audit Android upstream modifications and simplify packaging where safe.
+- [x] #27 source: audit Android upstream artifacts and remove the driver manifest rewrite; device rollout remains pending.
 - [ ] #27: evaluate BoxLite against the stock-provider boundary before enabling it.
 
 [ADR-0308](adr/0308-unresolved-resource-admission.md) and

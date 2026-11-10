@@ -228,7 +228,7 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
     if (instance !== undefined) this.instances.set(sandboxId, { ...instance, state: "paused" });
   }
 
-  async observe(sandboxId: string, nodeId: string) {
+  async observe(sandboxId: string, nodeId = "node-test") {
     const instance = this.instances.get(sandboxId);
     return {
       runtimeName: sandboxId,

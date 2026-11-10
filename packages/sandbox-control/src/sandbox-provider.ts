@@ -92,6 +92,8 @@ export type SandboxCreateSpec = Readonly<{
 
 /** A provider's actual identity/private connection is saved before Guest setup. */
 export type SandboxCreationReceipt = Readonly<{
+  providerId: string;
+  quantity?: { kind: "compute"; cpuMillis: number; memoryBytes: number };
   runtimeId: string;
   runtimeName: string;
   capsule: string;

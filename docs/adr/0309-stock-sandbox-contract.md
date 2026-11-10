@@ -177,3 +177,17 @@ checkpoint; no extra broker, billing scheduler or provider source fork is added.
 Stock Cube notifications are best-effort observations, not continuous physical
 coverage. Unverified intervals stay unpriced, including inferred time between
 samples; model and Workspace-capacity accounting retain their existing evidence.
+
+Use digest-pinned official Cube v0.7.3 runtime images for the four formerly patched
+roles. PiCloud publication adds only OCI provenance labels; verify that every
+filesystem layer is identical to the upstream base. Keep these four roles in the
+existing mandatory scan/release gates. This removes source/dependency/Dockerfile
+rewrites without reclassifying the images to avoid checks. A stock-image scan
+failure remains a release blocker, not an implicit exception.
+
+Stock CubeProxy records all routed Guest requests as activity for its native
+lifecycle manager. Periodic management Guest probes would therefore prevent idle
+expiry. Resource health now samples native inventory/status/deletion evidence
+only; it never opens a Guest process just to keep health green. Execution-side
+on-demand full probes and real Tool evidence remain, and native Tool admission
+still rejects changed Guest boots. Pure API observations do not renew the VM.

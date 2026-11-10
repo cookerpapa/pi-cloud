@@ -50,6 +50,7 @@ export const ResourceMeteringEventSchema = Type.Object(
         Type.Literal("instance_changed"),
         Type.Literal("clock_changed"),
         Type.Literal("collection_unavailable"),
+        Type.Literal("provider_observation"),
       ]),
     ),
     state: Type.Union([

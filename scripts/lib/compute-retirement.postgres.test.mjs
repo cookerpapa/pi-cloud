@@ -94,16 +94,17 @@ it.skipIf(!postgres)(
             idempotency_key: randomUUID(),
             request_sha256: "a".repeat(64),
             creation_spec: spec,
-            // Exercise full timestamp equality, including precision lost by JS Date.
-            creation_not_after: sql`clock_timestamp()+interval '5 minutes 123 microseconds'`,
+            // The original native request remains immutable during retirement.
+            provider_create_started_at: sql`clock_timestamp()`,
           })
           .returningAll()
           .executeTakeFirstOrThrow();
         const capsule = codec.seal({
-          version: 2,
+          version: 3,
           handle: {
             activationId: allocation,
-            allocation: { createBefore: row.creation_not_after.valueOf() },
+            providerApiVersion: 1,
+            providerId: "cubesandbox",
             runtimeId: runtime,
             runtimeName: row.runtime_name,
             assignment,
@@ -146,21 +147,7 @@ it.skipIf(!postgres)(
             .executeTakeFirstOrThrow()
         ).runtime_capsule,
       ).toBe(stale.capsule);
-      const native = {
-        async allocation(id, deadline, action) {
-          return {
-            allocationId: id,
-            createBefore: deadline,
-            sandboxId: id.replaceAll("-", ""),
-            nodeId: "owned-node",
-            closed: action === "close",
-            phase: action === "close" ? "absent" : "ready",
-          };
-        },
-        async observe(runtimeName, nodeId) {
-          return { runtimeName, nodeId, presence: "absent", state: "unknown" };
-        },
-      };
+      const native = { async destroy() {} };
       await retireComputeForMaintenance({
         repository,
         native,
@@ -185,7 +172,7 @@ it.skipIf(!postgres)(
           "allocation_id",
           "generation",
           "creation_spec",
-          "creation_not_after",
+          "provider_create_started_at",
           "owner_instance_id",
         ])
           expect(row[field]).toEqual(before[field]);

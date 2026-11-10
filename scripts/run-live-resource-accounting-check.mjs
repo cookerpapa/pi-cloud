@@ -1,3 +1,4 @@
+import { nativeCubeLifecycleOptions } from "./lib/cube-native-lifecycle-options.mjs";
 // Owned, bounded live evidence for source compute/storage receipts and kernel
 // Workspace quotas. No shared-service outage, price changes or user resources.
 // Run after matched deployment:
@@ -420,12 +421,20 @@ try {
           row.payload.resource.kind === "workspace" &&
           row.payload.quantity.capacityBytes === GiB,
       ) &&
-      rows.some((row) => positiveConfirmed(row) && row.payload.resource.kind === "compute") &&
+      rows.some(
+        (row) =>
+          row.payload.quality === "unconfirmed" &&
+          Date.parse(row.payload.to) > Date.parse(row.payload.from) &&
+          row.payload.resource.kind === "compute",
+      ) &&
       rows
     );
-  }, "Source compute and 1 GiB retention receipts");
+  }, "Unpriced native compute observations and confirmed 1 GiB retention receipts");
   const firstCompute = initialRows.find(
-    (row) => positiveConfirmed(row) && row.payload.resource.kind === "compute",
+    (row) =>
+      row.payload.quality === "unconfirmed" &&
+      Date.parse(row.payload.to) > Date.parse(row.payload.from) &&
+      row.payload.resource.kind === "compute",
   );
   assert.equal(firstCompute.payload.resource.resourceId, physical.allocation_id);
   assert.deepEqual(
@@ -439,6 +448,8 @@ try {
     to: firstCompute.payload.to,
     quantity: firstCompute.payload.quantity,
     beforeAnyRun: true,
+    quality: firstCompute.payload.quality,
+    nativeObservationsUnpriced: true,
   };
   const firstStorage = initialRows.find(
     (row) => positiveConfirmed(row) && row.payload.resource.kind === "workspace",
@@ -724,7 +735,12 @@ try {
 
   await phase("replay real receipts and inspect authenticated resource statements");
   const duplicates = [
-    pausedRows.find((row) => positiveConfirmed(row) && row.payload.resource.kind === "compute"),
+    pausedRows.find(
+      (row) =>
+        row.payload.quality === "unconfirmed" &&
+        Date.parse(row.payload.to) > Date.parse(row.payload.from) &&
+        row.payload.resource.kind === "compute",
+    ),
     pausedStorage,
   ];
   assert(duplicates.every(Boolean));
@@ -750,6 +766,8 @@ try {
   ).trim();
   secrets.push(lifecycleApiKey);
   const lifecycle = new CubeLifecycleSource({
+    database: db,
+    ...nativeCubeLifecycleOptions(),
     id: lifecycleSource.provider,
     url: `http://${cluster.api.host}:${cluster.api.port}`,
     apiKey: lifecycleApiKey,

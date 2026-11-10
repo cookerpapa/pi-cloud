@@ -1,3 +1,4 @@
+import { resourceIdentityHash } from "@pi-cloud/database";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type {
@@ -560,6 +561,13 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     receipt: SandboxCreationReceipt,
   ): Promise<void> {
     if (
+      !/^[a-z][a-z0-9-]{0,63}$/.test(receipt.providerId) ||
+      (receipt.quantity &&
+        (!Number.isSafeInteger(receipt.quantity.cpuMillis) ||
+          receipt.quantity.cpuMillis <= 0 ||
+          receipt.quantity.cpuMillis > 1000000 ||
+          !Number.isSafeInteger(receipt.quantity.memoryBytes) ||
+          receipt.quantity.memoryBytes <= 0)) ||
       !receipt.runtimeName ||
       receipt.runtimeName.length > 256 ||
       !receipt.runtimeId ||
@@ -574,17 +582,64 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     await this.#ownedTransaction(async (tx) => {
       // Preserve factual identity even when retirement was requested while the
       // provider call was in flight. Only the separate ready transition admits Tools.
-      const result = await sql`update ${table} set runtime_id=${receipt.runtimeId}::uuid,
+      const result = await sql<{
+        tenant_id: string;
+        workspace_id: string;
+      }>`update ${table} set runtime_id=${receipt.runtimeId}::uuid,
         runtime_name=${receipt.runtimeName}, provider_receipt=${receipt.capsule}, updated_at=clock_timestamp()
         where ${key}=${id}::uuid and owner_instance_id=${this.#instanceId}::uuid
           and sandbox_domain_id=${this.#sandboxDomainId} and state<>'released'
           and provider_create_started_at is not null
           and (runtime_name is null or runtime_name=${receipt.runtimeName})
-          returning ${key}`.execute(tx);
+          returning tenant_id,workspace_id`.execute(tx);
       if (result.rows.length !== 1)
         throw new WorkspaceRuntimeStateRepositoryError(
           "ownership_lost",
           "Creation receipt is no longer owned or changed identity",
+        );
+      const owner = result.rows[0]!;
+      const identity = {
+        kind: "compute",
+        resourceId: id,
+        tenantId: owner.tenant_id,
+        workspaceId: owner.workspace_id,
+      };
+      const binding = {
+        sourceId: `${receipt.providerId}:${this.#sandboxDomainId}`,
+        resourceId: receipt.runtimeName,
+        ...(receipt.quantity ? { quantity: receipt.quantity } : {}),
+      };
+      const registered = await tx
+        .insertInto("resource_metering_resources")
+        .values({
+          id: `compute:${id}`,
+          tenant_id: owner.tenant_id,
+          workspace_id: owner.workspace_id,
+          kind: "compute",
+          resource_id: id,
+          context: identity,
+          context_hash: resourceIdentityHash(identity),
+          provider_binding: binding,
+        })
+        .onConflict((oc) =>
+          oc
+            .column("id")
+            .doUpdateSet({
+              provider_binding: sql`coalesce(resource_metering_resources.provider_binding, '{}'::jsonb) || ${JSON.stringify(binding)}::jsonb`,
+            })
+            .where(
+              sql<boolean>`resource_metering_resources.context_hash=${resourceIdentityHash(identity)}`,
+            )
+            .where(
+              sql<boolean>`resource_metering_resources.provider_binding is null or (resource_metering_resources.provider_binding->>'sourceId'=${binding.sourceId} and resource_metering_resources.provider_binding->>'resourceId'=${binding.resourceId})`,
+            ),
+        )
+        .returning("id")
+        .executeTakeFirst();
+      if (!registered)
+        throw new WorkspaceRuntimeStateRepositoryError(
+          "state_conflict",
+          "Provider accounting identity changed",
         );
     });
   }

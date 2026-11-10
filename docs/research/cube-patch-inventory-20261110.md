@@ -11,6 +11,9 @@ Manifest hashes were verified before counting. No Cube patch is removed by the
 ADR-0308 public-admission changes. The prior 92-path runtime inventory was the
 ADR-0306 baseline; it must not be used for this post-Guest-migration count.
 
+This is the pre-migration baseline. Immutable patch links preserve the audit while
+ADR-0309 removes those files and their consumers from the maintained runtime.
+
 ## Exact footprint
 
 Counts are `git apply --numstat` changed lines, not total upstream LOC or the
@@ -147,98 +150,98 @@ appear once here. The following tables cover every active manifest path.
 
 | Upstream path | Role | New | + | − | Patch |
 | --- | --- | --- | ---: | ---: | --- |
-| `CubeAPI/src/cubemaster/mod.rs` | Source (including inline tests) | no | 45 | 0 | [L1](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L1) |
-| `CubeAPI/src/handlers/sandboxes.rs` | Source (including inline tests) | no | 49 | 0 | [L64](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L64) |
-| `CubeAPI/src/models/mod.rs` | Source (including inline tests) | no | 30 | 1 | [L126](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L126) |
-| `CubeAPI/src/openapi.rs` | Source (including inline tests) | no | 5 | 0 | [L174](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L174) |
-| `CubeAPI/src/routes.rs` | Source (including inline tests) | no | 10 | 0 | [L197](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L197) |
-| `CubeAPI/src/services/sandboxes.rs` | Source (including inline tests) | no | 166 | 4 | [L236](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L236) |
-| `CubeMaster/pkg/allocation/store.go` | Source (including inline tests) | yes | 255 | 0 | [L461](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L461) |
-| `CubeMaster/pkg/allocation/store_test.go` | Standalone tests | yes | 147 | 0 | [L722](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L722) |
-| `CubeMaster/pkg/allocation/volumes.go` | Source (including inline tests) | yes | 298 | 0 | [L875](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L875) |
-| `CubeMaster/pkg/allocation/volumes_test.go` | Standalone tests | yes | 204 | 0 | [L1179](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L1179) |
-| `CubeMaster/pkg/pausesnap/delete_paused.go` | Source (including inline tests) | no | 21 | 1 | [L1389](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L1389) |
-| `CubeMaster/pkg/pausesnap/delete_paused_test.go` | Standalone tests | no | 46 | 0 | [L1436](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L1436) |
-| `CubeMaster/pkg/service/httpservice/cube/lifecycle_history.go` | Source (including inline tests) | yes | 67 | 0 | [L1493](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L1493) |
-| `CubeMaster/pkg/service/httpservice/cube/managed_allocation.go` | Source (including inline tests) | yes | 81 | 0 | [L1566](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L1566) |
-| `CubeMaster/pkg/service/httpservice/cube/routes.go` | Source (including inline tests) | no | 2 | 0 | [L1653](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L1653) |
-| `CubeMaster/pkg/service/httpservice/cube/sandbox_create.go` | Source (including inline tests) | no | 9 | 0 | [L1666](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L1666) |
-| `CubeMaster/pkg/service/httpservice/cube/volume.go` | Source (including inline tests) | no | 32 | 0 | [L1686](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L1686) |
-| `CubeMaster/pkg/service/sandbox/allocation.go` | Source (including inline tests) | yes | 331 | 0 | [L1739](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L1739) |
-| `CubeMaster/pkg/service/sandbox/allocation_pause_test.go` | Standalone tests | yes | 84 | 0 | [L2076](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2076) |
-| `CubeMaster/pkg/service/sandbox/allocation_retention.go` | Source (including inline tests) | yes | 52 | 0 | [L2166](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2166) |
-| `CubeMaster/pkg/service/sandbox/sandbox_info.go` | Source (including inline tests) | no | 8 | 1 | [L2224](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2224) |
-| `CubeMaster/pkg/service/sandbox/sandbox_observation_test.go` | Standalone tests | yes | 57 | 0 | [L2256](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2256) |
-| `CubeMaster/pkg/service/sandbox/sandbox_remove.go` | Source (including inline tests) | no | 20 | 0 | [L2319](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2319) |
-| `CubeMaster/pkg/service/sandbox/sandbox_run.go` | Source (including inline tests) | no | 44 | 3 | [L2357](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2357) |
-| `CubeMaster/pkg/service/sandbox/util.go` | Source (including inline tests) | no | 3 | 0 | [L2473](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2473) |
-| `CubeMaster/pkg/service/sandbox/volume_references.go` | Source (including inline tests) | yes | 64 | 0 | [L2487](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2487) |
-| `CubeMaster/pkg/templatecenter/artifact_lifecycle.go` | Source (including inline tests) | no | 4 | 14 | [L2557](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2557) |
-| `CubeMaster/pkg/templatecenter/cleanup_node_routing_mysql_test.go` | Standalone tests | yes | 118 | 0 | [L2595](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2595) |
-| `CubeMaster/pkg/templatecenter/cleanup_node_routing_test.go` | Standalone tests | yes | 155 | 0 | [L2719](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2719) |
-| `CubeMaster/pkg/templatecenter/delete.go` | Source (including inline tests) | no | 33 | 25 | [L2880](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2880) |
-| `CubeMaster/pkg/templatecenter/delete_test.go` | Standalone tests | no | 11 | 8 | [L2978](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2978) |
-| `CubeMaster/pkg/templatecenter/distribution.go` | Source (including inline tests) | no | 3 | 8 | [L3066](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L3066) |
-| `CubeMaster/pkg/templatecenter/snapshot_reconciler_test.go` | Standalone tests | no | 1 | 1 | [L3096](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L3096) |
-| `Cubelet/Dockerfile.dockerignore` | Build / dependency inputs | no | 3 | 0 | [L3109](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L3109) |
-| `Cubelet/pkg/allocation/manager.go` | Source (including inline tests) | yes | 169 | 0 | [L3120](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L3120) |
-| `Cubelet/pkg/allocation/manager_test.go` | Standalone tests | yes | 237 | 0 | [L3295](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L3295) |
-| `Cubelet/pkg/allocation/receipt_recovery_test.go` | Standalone tests | yes | 83 | 0 | [L3538](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L3538) |
-| `Cubelet/pkg/allocation/retention.go` | Source (including inline tests) | yes | 109 | 0 | [L3627](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L3627) |
-| `Cubelet/pkg/allocation/retention_test.go` | Standalone tests | yes | 122 | 0 | [L3742](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L3742) |
-| `Cubelet/pkg/allocation/store.go` | Source (including inline tests) | yes | 201 | 0 | [L3870](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L3870) |
-| `Cubelet/pkg/allocation/volume_evidence_test.go` | Standalone tests | yes | 76 | 0 | [L4077](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L4077) |
-| `Cubelet/pkg/lifecyclejournal/journal.go` | Source (including inline tests) | yes | 296 | 0 | [L4159](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L4159) |
-| `Cubelet/pkg/lifecyclejournal/journal_test.go` | Standalone tests | yes | 98 | 0 | [L4461](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L4461) |
-| `Cubelet/plugins/cube/internals/createid/managed_resume_test.go` | Standalone tests | yes | 39 | 0 | [L4565](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L4565) |
-| `Cubelet/plugins/cube/internals/createid/plugin.go` | Source (including inline tests) | no | 13 | 4 | [L4610](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L4610) |
-| `Cubelet/plugins/cube/internals/cubes/observe.go` | Source (including inline tests) | yes | 61 | 0 | [L4649](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L4649) |
-| `Cubelet/plugins/cube/internals/cubes/observe_test.go` | Standalone tests | yes | 55 | 0 | [L4716](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L4716) |
-| `Cubelet/plugins/cube/internals/cubes/plugin.go` | Source (including inline tests) | no | 2 | 0 | [L4777](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L4777) |
-| `Cubelet/plugins/volume/interface.go` | Source (including inline tests) | no | 2 | 1 | [L4790](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L4790) |
-| `Cubelet/plugins/volume/manager.go` | Source (including inline tests) | no | 123 | 52 | [L4804](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L4804) |
-| `Cubelet/plugins/volume/posix_recovery_test.go` | Standalone tests | yes | 149 | 0 | [L5062](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L5062) |
-| `Cubelet/plugins/volume/refcount/state.go` | Source (including inline tests) | yes | 113 | 0 | [L5217](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L5217) |
-| `Cubelet/plugins/volume/refcount/store.go` | Source (including inline tests) | no | 43 | 37 | [L5336](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L5336) |
-| `Cubelet/plugins/volume/reference_recovery_test.go` | Standalone tests | yes | 190 | 0 | [L5504](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L5504) |
-| `Cubelet/plugins/volume/stale_reference_test.go` | Standalone tests | yes | 229 | 0 | [L5700](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L5700) |
-| `Cubelet/services/cubebox/allocation.go` | Source (including inline tests) | yes | 222 | 0 | [L5935](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L5935) |
-| `Cubelet/services/cubebox/allocation_cleanup_test.go` | Standalone tests | yes | 44 | 0 | [L6163](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6163) |
-| `Cubelet/services/cubebox/lifecycle_history.go` | Source (including inline tests) | yes | 264 | 0 | [L6213](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6213) |
-| `Cubelet/services/cubebox/lifecycle_history_test.go` | Standalone tests | yes | 42 | 0 | [L6483](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6483) |
-| `Cubelet/services/cubebox/observation_test.go` | Standalone tests | yes | 42 | 0 | [L6531](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6531) |
-| `Cubelet/services/cubebox/resume_reconcile_test.go` | Standalone tests | no | 9 | 0 | [L6579](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6579) |
-| `Cubelet/services/cubebox/service.go` | Source (including inline tests) | no | 69 | 15 | [L6606](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6606) |
-| `Cubelet/services/cubebox/volume_holder_evidence_test.go` | Standalone tests | yes | 67 | 0 | [L6773](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6773) |
-| `Cubelet/services/cubebox/volume_references.go` | Source (including inline tests) | yes | 55 | 0 | [L6846](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6846) |
-| `Cubelet/storage/local.go` | Source (including inline tests) | no | 3 | 1 | [L6907](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6907) |
-| `Cubelet/storage/plugin.go` | Source (including inline tests) | no | 2 | 2 | [L6922](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6922) |
-| `pkgs/cubedb/migrate/migrations/mysql/20261004000000_pi_cloud_allocation.sql` | Cube metadata migrations | yes | 24 | 0 | [L6937](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6937) |
-| `pkgs/cubedb/migrate/migrations/mysql/20261005000000_pi_cloud_volume_state.sql` | Cube metadata migrations | yes | 22 | 0 | [L6967](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6967) |
-| `pkgs/cubedb/migrate/migrations/postgres/20261004000000_pi_cloud_allocation.sql` | Cube metadata migrations | yes | 24 | 0 | [L6995](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6995) |
-| `pkgs/cubedb/migrate/migrations/postgres/20261005000000_pi_cloud_volume_state.sql` | Cube metadata migrations | yes | 22 | 0 | [L7025](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L7025) |
-| `pkgs/proto/services/cubebox/v1/cubebox.pb.go` | Generated protobuf / gRPC | no | 871 | 479 | [L7053](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L7053) |
-| `pkgs/proto/services/cubebox/v1/cubebox.proto` | Protocol schema | no | 33 | 0 | [L10165](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L10165) |
-| `pkgs/proto/services/cubebox/v1/cubebox_grpc.pb.go` | Generated protobuf / gRPC | no | 114 | 0 | [L10216](../../deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L10216) |
+| `CubeAPI/src/cubemaster/mod.rs` | Source (including inline tests) | no | 45 | 0 | [L1](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L1) |
+| `CubeAPI/src/handlers/sandboxes.rs` | Source (including inline tests) | no | 49 | 0 | [L64](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L64) |
+| `CubeAPI/src/models/mod.rs` | Source (including inline tests) | no | 30 | 1 | [L126](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L126) |
+| `CubeAPI/src/openapi.rs` | Source (including inline tests) | no | 5 | 0 | [L174](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L174) |
+| `CubeAPI/src/routes.rs` | Source (including inline tests) | no | 10 | 0 | [L197](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L197) |
+| `CubeAPI/src/services/sandboxes.rs` | Source (including inline tests) | no | 166 | 4 | [L236](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L236) |
+| `CubeMaster/pkg/allocation/store.go` | Source (including inline tests) | yes | 255 | 0 | [L461](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L461) |
+| `CubeMaster/pkg/allocation/store_test.go` | Standalone tests | yes | 147 | 0 | [L722](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L722) |
+| `CubeMaster/pkg/allocation/volumes.go` | Source (including inline tests) | yes | 298 | 0 | [L875](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L875) |
+| `CubeMaster/pkg/allocation/volumes_test.go` | Standalone tests | yes | 204 | 0 | [L1179](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L1179) |
+| `CubeMaster/pkg/pausesnap/delete_paused.go` | Source (including inline tests) | no | 21 | 1 | [L1389](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L1389) |
+| `CubeMaster/pkg/pausesnap/delete_paused_test.go` | Standalone tests | no | 46 | 0 | [L1436](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L1436) |
+| `CubeMaster/pkg/service/httpservice/cube/lifecycle_history.go` | Source (including inline tests) | yes | 67 | 0 | [L1493](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L1493) |
+| `CubeMaster/pkg/service/httpservice/cube/managed_allocation.go` | Source (including inline tests) | yes | 81 | 0 | [L1566](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L1566) |
+| `CubeMaster/pkg/service/httpservice/cube/routes.go` | Source (including inline tests) | no | 2 | 0 | [L1653](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L1653) |
+| `CubeMaster/pkg/service/httpservice/cube/sandbox_create.go` | Source (including inline tests) | no | 9 | 0 | [L1666](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L1666) |
+| `CubeMaster/pkg/service/httpservice/cube/volume.go` | Source (including inline tests) | no | 32 | 0 | [L1686](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L1686) |
+| `CubeMaster/pkg/service/sandbox/allocation.go` | Source (including inline tests) | yes | 331 | 0 | [L1739](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L1739) |
+| `CubeMaster/pkg/service/sandbox/allocation_pause_test.go` | Standalone tests | yes | 84 | 0 | [L2076](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2076) |
+| `CubeMaster/pkg/service/sandbox/allocation_retention.go` | Source (including inline tests) | yes | 52 | 0 | [L2166](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2166) |
+| `CubeMaster/pkg/service/sandbox/sandbox_info.go` | Source (including inline tests) | no | 8 | 1 | [L2224](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2224) |
+| `CubeMaster/pkg/service/sandbox/sandbox_observation_test.go` | Standalone tests | yes | 57 | 0 | [L2256](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2256) |
+| `CubeMaster/pkg/service/sandbox/sandbox_remove.go` | Source (including inline tests) | no | 20 | 0 | [L2319](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2319) |
+| `CubeMaster/pkg/service/sandbox/sandbox_run.go` | Source (including inline tests) | no | 44 | 3 | [L2357](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2357) |
+| `CubeMaster/pkg/service/sandbox/util.go` | Source (including inline tests) | no | 3 | 0 | [L2473](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2473) |
+| `CubeMaster/pkg/service/sandbox/volume_references.go` | Source (including inline tests) | yes | 64 | 0 | [L2487](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2487) |
+| `CubeMaster/pkg/templatecenter/artifact_lifecycle.go` | Source (including inline tests) | no | 4 | 14 | [L2557](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2557) |
+| `CubeMaster/pkg/templatecenter/cleanup_node_routing_mysql_test.go` | Standalone tests | yes | 118 | 0 | [L2595](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2595) |
+| `CubeMaster/pkg/templatecenter/cleanup_node_routing_test.go` | Standalone tests | yes | 155 | 0 | [L2719](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2719) |
+| `CubeMaster/pkg/templatecenter/delete.go` | Source (including inline tests) | no | 33 | 25 | [L2880](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2880) |
+| `CubeMaster/pkg/templatecenter/delete_test.go` | Standalone tests | no | 11 | 8 | [L2978](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L2978) |
+| `CubeMaster/pkg/templatecenter/distribution.go` | Source (including inline tests) | no | 3 | 8 | [L3066](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L3066) |
+| `CubeMaster/pkg/templatecenter/snapshot_reconciler_test.go` | Standalone tests | no | 1 | 1 | [L3096](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L3096) |
+| `Cubelet/Dockerfile.dockerignore` | Build / dependency inputs | no | 3 | 0 | [L3109](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L3109) |
+| `Cubelet/pkg/allocation/manager.go` | Source (including inline tests) | yes | 169 | 0 | [L3120](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L3120) |
+| `Cubelet/pkg/allocation/manager_test.go` | Standalone tests | yes | 237 | 0 | [L3295](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L3295) |
+| `Cubelet/pkg/allocation/receipt_recovery_test.go` | Standalone tests | yes | 83 | 0 | [L3538](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L3538) |
+| `Cubelet/pkg/allocation/retention.go` | Source (including inline tests) | yes | 109 | 0 | [L3627](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L3627) |
+| `Cubelet/pkg/allocation/retention_test.go` | Standalone tests | yes | 122 | 0 | [L3742](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L3742) |
+| `Cubelet/pkg/allocation/store.go` | Source (including inline tests) | yes | 201 | 0 | [L3870](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L3870) |
+| `Cubelet/pkg/allocation/volume_evidence_test.go` | Standalone tests | yes | 76 | 0 | [L4077](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L4077) |
+| `Cubelet/pkg/lifecyclejournal/journal.go` | Source (including inline tests) | yes | 296 | 0 | [L4159](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L4159) |
+| `Cubelet/pkg/lifecyclejournal/journal_test.go` | Standalone tests | yes | 98 | 0 | [L4461](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L4461) |
+| `Cubelet/plugins/cube/internals/createid/managed_resume_test.go` | Standalone tests | yes | 39 | 0 | [L4565](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L4565) |
+| `Cubelet/plugins/cube/internals/createid/plugin.go` | Source (including inline tests) | no | 13 | 4 | [L4610](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L4610) |
+| `Cubelet/plugins/cube/internals/cubes/observe.go` | Source (including inline tests) | yes | 61 | 0 | [L4649](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L4649) |
+| `Cubelet/plugins/cube/internals/cubes/observe_test.go` | Standalone tests | yes | 55 | 0 | [L4716](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L4716) |
+| `Cubelet/plugins/cube/internals/cubes/plugin.go` | Source (including inline tests) | no | 2 | 0 | [L4777](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L4777) |
+| `Cubelet/plugins/volume/interface.go` | Source (including inline tests) | no | 2 | 1 | [L4790](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L4790) |
+| `Cubelet/plugins/volume/manager.go` | Source (including inline tests) | no | 123 | 52 | [L4804](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L4804) |
+| `Cubelet/plugins/volume/posix_recovery_test.go` | Standalone tests | yes | 149 | 0 | [L5062](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L5062) |
+| `Cubelet/plugins/volume/refcount/state.go` | Source (including inline tests) | yes | 113 | 0 | [L5217](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L5217) |
+| `Cubelet/plugins/volume/refcount/store.go` | Source (including inline tests) | no | 43 | 37 | [L5336](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L5336) |
+| `Cubelet/plugins/volume/reference_recovery_test.go` | Standalone tests | yes | 190 | 0 | [L5504](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L5504) |
+| `Cubelet/plugins/volume/stale_reference_test.go` | Standalone tests | yes | 229 | 0 | [L5700](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L5700) |
+| `Cubelet/services/cubebox/allocation.go` | Source (including inline tests) | yes | 222 | 0 | [L5935](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L5935) |
+| `Cubelet/services/cubebox/allocation_cleanup_test.go` | Standalone tests | yes | 44 | 0 | [L6163](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6163) |
+| `Cubelet/services/cubebox/lifecycle_history.go` | Source (including inline tests) | yes | 264 | 0 | [L6213](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6213) |
+| `Cubelet/services/cubebox/lifecycle_history_test.go` | Standalone tests | yes | 42 | 0 | [L6483](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6483) |
+| `Cubelet/services/cubebox/observation_test.go` | Standalone tests | yes | 42 | 0 | [L6531](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6531) |
+| `Cubelet/services/cubebox/resume_reconcile_test.go` | Standalone tests | no | 9 | 0 | [L6579](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6579) |
+| `Cubelet/services/cubebox/service.go` | Source (including inline tests) | no | 69 | 15 | [L6606](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6606) |
+| `Cubelet/services/cubebox/volume_holder_evidence_test.go` | Standalone tests | yes | 67 | 0 | [L6773](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6773) |
+| `Cubelet/services/cubebox/volume_references.go` | Source (including inline tests) | yes | 55 | 0 | [L6846](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6846) |
+| `Cubelet/storage/local.go` | Source (including inline tests) | no | 3 | 1 | [L6907](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6907) |
+| `Cubelet/storage/plugin.go` | Source (including inline tests) | no | 2 | 2 | [L6922](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6922) |
+| `pkgs/cubedb/migrate/migrations/mysql/20261004000000_pi_cloud_allocation.sql` | Cube metadata migrations | yes | 24 | 0 | [L6937](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6937) |
+| `pkgs/cubedb/migrate/migrations/mysql/20261005000000_pi_cloud_volume_state.sql` | Cube metadata migrations | yes | 22 | 0 | [L6967](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6967) |
+| `pkgs/cubedb/migrate/migrations/postgres/20261004000000_pi_cloud_allocation.sql` | Cube metadata migrations | yes | 24 | 0 | [L6995](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L6995) |
+| `pkgs/cubedb/migrate/migrations/postgres/20261005000000_pi_cloud_volume_state.sql` | Cube metadata migrations | yes | 22 | 0 | [L7025](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L7025) |
+| `pkgs/proto/services/cubebox/v1/cubebox.pb.go` | Generated protobuf / gRPC | no | 871 | 479 | [L7053](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L7053) |
+| `pkgs/proto/services/cubebox/v1/cubebox.proto` | Protocol schema | no | 33 | 0 | [L10165](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L10165) |
+| `pkgs/proto/services/cubebox/v1/cubebox_grpc.pb.go` | Generated protobuf / gRPC | no | 114 | 0 | [L10216](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0001-runtime-boundaries.patch#L10216) |
 
 ### 0002-release-dependencies.patch
 
 | Upstream path | Role | New | + | − | Patch |
 | --- | --- | --- | ---: | ---: | --- |
-| `CubeAPI/Dockerfile` | Build / dependency inputs | no | 1 | 1 | [L1](../../deploy/cubesandbox/patches/0002-release-dependencies.patch#L1) |
-| `CubeAPI/rust-toolchain.toml` | Build / dependency inputs | no | 1 | 1 | [L14](../../deploy/cubesandbox/patches/0002-release-dependencies.patch#L14) |
-| `CubeMaster/docker/Dockerfile` | Build / dependency inputs | no | 3 | 1 | [L22](../../deploy/cubesandbox/patches/0002-release-dependencies.patch#L22) |
-| `CubeMaster/go.mod` | Build / dependency inputs | no | 18 | 18 | [L38](../../deploy/cubesandbox/patches/0002-release-dependencies.patch#L38) |
-| `CubeMaster/go.sum` | Build / dependency inputs | no | 36 | 36 | [L125](../../deploy/cubesandbox/patches/0002-release-dependencies.patch#L125) |
-| `CubeNet/cubevs/go.mod` | Build / dependency inputs | no | 3 | 3 | [L265](../../deploy/cubesandbox/patches/0002-release-dependencies.patch#L265) |
-| `CubeNet/cubevs/go.sum` | Build / dependency inputs | no | 4 | 4 | [L291](../../deploy/cubesandbox/patches/0002-release-dependencies.patch#L291) |
-| `CubeTemplateCenter/go.mod` | Build / dependency inputs | no | 15 | 15 | [L317](../../deploy/cubesandbox/patches/0002-release-dependencies.patch#L317) |
-| `CubeTemplateCenter/go.sum` | Build / dependency inputs | no | 38 | 38 | [L388](../../deploy/cubesandbox/patches/0002-release-dependencies.patch#L388) |
-| `Cubelet/Dockerfile` | Build / dependency inputs | no | 8 | 1 | [L557](../../deploy/cubesandbox/patches/0002-release-dependencies.patch#L557) |
-| `Cubelet/go.mod` | Build / dependency inputs | no | 27 | 28 | [L586](../../deploy/cubesandbox/patches/0002-release-dependencies.patch#L586) |
-| `Cubelet/go.sum` | Build / dependency inputs | no | 197 | 105 | [L727](../../deploy/cubesandbox/patches/0002-release-dependencies.patch#L727) |
-| `examples/volume/s3/go.mod` | Build / dependency inputs | no | 5 | 5 | [L1468](../../deploy/cubesandbox/patches/0002-release-dependencies.patch#L1468) |
-| `examples/volume/s3/go.sum` | Build / dependency inputs | no | 8 | 8 | [L1494](../../deploy/cubesandbox/patches/0002-release-dependencies.patch#L1494) |
+| `CubeAPI/Dockerfile` | Build / dependency inputs | no | 1 | 1 | [L1](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0002-release-dependencies.patch#L1) |
+| `CubeAPI/rust-toolchain.toml` | Build / dependency inputs | no | 1 | 1 | [L14](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0002-release-dependencies.patch#L14) |
+| `CubeMaster/docker/Dockerfile` | Build / dependency inputs | no | 3 | 1 | [L22](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0002-release-dependencies.patch#L22) |
+| `CubeMaster/go.mod` | Build / dependency inputs | no | 18 | 18 | [L38](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0002-release-dependencies.patch#L38) |
+| `CubeMaster/go.sum` | Build / dependency inputs | no | 36 | 36 | [L125](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0002-release-dependencies.patch#L125) |
+| `CubeNet/cubevs/go.mod` | Build / dependency inputs | no | 3 | 3 | [L265](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0002-release-dependencies.patch#L265) |
+| `CubeNet/cubevs/go.sum` | Build / dependency inputs | no | 4 | 4 | [L291](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0002-release-dependencies.patch#L291) |
+| `CubeTemplateCenter/go.mod` | Build / dependency inputs | no | 15 | 15 | [L317](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0002-release-dependencies.patch#L317) |
+| `CubeTemplateCenter/go.sum` | Build / dependency inputs | no | 38 | 38 | [L388](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0002-release-dependencies.patch#L388) |
+| `Cubelet/Dockerfile` | Build / dependency inputs | no | 8 | 1 | [L557](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0002-release-dependencies.patch#L557) |
+| `Cubelet/go.mod` | Build / dependency inputs | no | 27 | 28 | [L586](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0002-release-dependencies.patch#L586) |
+| `Cubelet/go.sum` | Build / dependency inputs | no | 197 | 105 | [L727](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0002-release-dependencies.patch#L727) |
+| `examples/volume/s3/go.mod` | Build / dependency inputs | no | 5 | 5 | [L1468](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0002-release-dependencies.patch#L1468) |
+| `examples/volume/s3/go.sum` | Build / dependency inputs | no | 8 | 8 | [L1494](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/deploy/cubesandbox/patches/0002-release-dependencies.patch#L1494) |
 
 ## Reproduce the counts
 

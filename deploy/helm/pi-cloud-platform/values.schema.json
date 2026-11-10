@@ -662,6 +662,28 @@
                   }
                 }
               }
+            },
+            "lifecycleRedisUrl": {
+              "type": "string",
+              "maxLength": 2048,
+              "pattern": "^(|rediss?://.+)$"
+            },
+            "lifecycleRedisSecret": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "key"],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 253
+                },
+                "key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 253,
+                  "pattern": "^[A-Za-z0-9._-]+$"
+                }
+              }
             }
           }
         },

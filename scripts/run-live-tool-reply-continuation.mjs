@@ -1,3 +1,4 @@
+import { nativeCubeLifecycleOptions } from "./lib/cube-native-lifecycle-options.mjs";
 import assert from "node:assert/strict";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
@@ -59,6 +60,7 @@ const cluster = JSON.parse(
   await readFile(resolve(runtimeDirectory, "cubesandbox/cluster.json"), "utf8"),
 );
 const cube = new OfficialCubeSandboxRuntimeClient({
+  ...nativeCubeLifecycleOptions(),
   apiUrl: `http://${cluster.api.host}:${cluster.api.port}`,
   apiKey: await secret("cubesandbox-api-key"),
   proxyNodeIp: cluster.proxy.host,
@@ -437,7 +439,7 @@ try {
     const before = faultTarget === "cubelet" ? singleReadyCubelet() : undefined;
     const allocation = await db
       .selectFrom("workspace_runtimes")
-      .select(["workspace_runtime_id", "creation_not_after"])
+      .select(["workspace_runtime_id", "runtime_name"])
       .where("tenant_id", "=", tenant.tenantId)
       .where("workspace_id", "=", project.workspaceId)
       .where("runtime_name", "=", owned[0].sandboxId)
@@ -492,18 +494,10 @@ try {
     } else {
       // A physical fault outside PiCloud's desired-state tables, confined to this
       // fixture allocation. This does not pause or delete any user's machine.
-      const createBefore = new Date(allocation.creation_not_after).getTime();
-      await cube.allocation(allocation.workspace_runtime_id, createBefore, "close");
+      await cube.destroy(allocation.runtime_name);
       await until(
-        async () => {
-          const result = await cube.allocation(
-            allocation.workspace_runtime_id,
-            createBefore,
-            "get",
-          );
-          return result.closed && result.phase === "absent";
-        },
-        "owned allocation physically absent",
+        async () => (await cube.observe(owned[0].sandboxId, owned[0].nodeId)).presence === "absent",
+        "native provider deletion evidence",
         120000,
       );
     }

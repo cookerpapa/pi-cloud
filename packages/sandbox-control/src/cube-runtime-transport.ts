@@ -19,6 +19,8 @@ export async function createCubeRuntimeTransport(
   const completionIp = (await lookup(completion.hostname, { family: 4 })).address;
   const client = new OfficialCubeSandboxRuntimeClient({
     resolveExecutionConnection: cubeConnectionResolver(database, config.persistentStateKey),
+    ...(cube.lifecycleRedisPassword ? { lifecycleRedisPassword: cube.lifecycleRedisPassword } : {}),
+    ...(cube.lifecycleRedisUrl ? { lifecycleRedisUrl: cube.lifecycleRedisUrl } : {}),
     apiUrl: cube.apiUrl,
     apiKey: cube.apiKey,
     executionEndpoints: cube.executionEndpoints,

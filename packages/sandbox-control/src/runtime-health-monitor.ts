@@ -4,7 +4,6 @@ import type { SandboxRuntimeObservation } from "./sandbox-provider.ts";
 export type RuntimeHealthTarget = {
   id: string;
   observe(): Promise<SandboxRuntimeObservation>;
-  probe(): Promise<unknown>;
   fail(): Promise<void>;
 };
 type Target = {
@@ -156,22 +155,18 @@ export class RuntimeHealthMonitor {
     return observation.presence === "present" && observation.state === "running";
   }
   async #check(entry: Target): Promise<void> {
-    const inventory =
-      this.#now() - this.#inventoryAt < 30_000 ? this.#inventory.get(entry.target.id) : undefined;
-    const observed = inventory ?? (await entry.target.observe());
-    if (!(await this.#classify(entry, observed))) return;
-    if (entry.successAt > 0 && this.#now() - entry.successAt < RUN_PATH_PROBE_INTERVAL_MS) return;
     const started = this.#now();
     try {
-      await entry.target.probe();
-      if (this.#current(entry)) this.evidence(entry.target.id, this.#now());
-      this.options.sample?.("probe", this.#now() - started, "success");
+      const inventory =
+        this.#now() - this.#inventoryAt < 30_000 ? this.#inventory.get(entry.target.id) : undefined;
+      const observed = inventory ?? (await entry.target.observe());
+      await this.#classify(entry, observed);
+      this.options.sample?.("probe", this.#now() - started, observed.presence);
     } catch (error) {
       this.options.sample?.("probe", this.#now() - started, "unconfirmed");
-      // Timeout is diagnostic, not deletion authority. Only independent exact
-      // management evidence can quarantine the physical target.
-      if (this.#current(entry)) await this.#classify(entry, await entry.target.observe());
-      this.options.onError(error);
+      // A management read failure is not evidence that the VM died. Full Guest
+      // probes belong to active execution; polling them here refreshes native idle TTL.
+      throw error;
     }
   }
   async settle(): Promise<void> {

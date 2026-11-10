@@ -60,3 +60,5 @@ export {
   type MigrationDirection,
   type MigrationRunResult,
 } from "./run-migrations.ts";
+
+export { resourceIdentityHash } from "./resource-identity.ts";

@@ -981,3 +981,37 @@ it("routes a recorded endpoint through the deployment-owned credential registry"
     await client.close();
   }
 });
+
+it.each(["delete", "wrong-id", "running"] as const)(
+  "uses matching native deletion evidence after an inventory miss (%s)",
+  async (mode) => {
+    observationMode = "absent";
+    const nativeLifecycle = {
+      close() {},
+      deletion: vi.fn(async () => ({
+        id: "100-0",
+        operation: mode === "running" ? ("state" as const) : ("delete" as const),
+        sandboxId: mode === "wrong-id" ? "different-vm" : executionTarget.sandboxId,
+        at: Date.now(),
+        payload: {},
+      })),
+    };
+    const client = new OfficialCubeSandboxRuntimeClient({
+      apiUrl: `http://127.0.0.1:${port}`,
+      apiKey: "fixture",
+      proxyNodeIp: "127.0.0.1",
+      proxyPort: port,
+      proxyScheme: "http",
+      sandboxDomain: "cube.internal",
+      egressProxyIp: "127.0.0.1",
+      nativeLifecycle,
+    });
+    try {
+      expect((await client.observe(executionTarget.sandboxId, "cube-node-1")).presence).toBe(
+        mode === "delete" ? "absent" : "unavailable",
+      );
+    } finally {
+      await client.close();
+    }
+  },
+);

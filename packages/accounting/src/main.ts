@@ -23,16 +23,28 @@ export async function startMetering() {
   });
   const application = createMeteringApplication(database, token);
   const sourceUrl = process.env.PI_CLOUD_SANDBOX_LIFECYCLE_URL;
-  const collector = sourceUrl
-    ? new LifecycleCollector(
-        database,
-        new CubeLifecycleSource({
-          id: `cube:${process.env.PI_CLOUD_SANDBOX_DOMAIN_ID ?? "sandbox-domain-0001"}`,
-          url: sourceUrl,
-          apiKey: await secretFile("PI_CLOUD_CUBESANDBOX_API_KEY_FILE"),
-        }),
-      )
-    : undefined;
+  const collector =
+    sourceUrl && process.env.PI_CLOUD_CUBE_LIFECYCLE_REDIS_URL
+      ? new LifecycleCollector(
+          database,
+          new CubeLifecycleSource({
+            id: `cubesandbox:${process.env.PI_CLOUD_SANDBOX_DOMAIN_ID ?? "sandbox-domain-0001"}`,
+            database,
+            ...(process.env.PI_CLOUD_CUBE_LIFECYCLE_REDIS_PASSWORD_FILE
+              ? {
+                  lifecycleRedisPassword: await secretFile(
+                    "PI_CLOUD_CUBE_LIFECYCLE_REDIS_PASSWORD_FILE",
+                  ),
+                }
+              : {}),
+            ...(process.env.PI_CLOUD_CUBE_LIFECYCLE_REDIS_URL
+              ? { lifecycleRedisUrl: process.env.PI_CLOUD_CUBE_LIFECYCLE_REDIS_URL }
+              : {}),
+            url: sourceUrl,
+            apiKey: await secretFile("PI_CLOUD_CUBESANDBOX_API_KEY_FILE"),
+          }),
+        )
+      : undefined;
   let closing: Promise<void> | undefined;
   const close = () =>
     (closing ??= (async () => {

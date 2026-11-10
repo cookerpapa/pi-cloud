@@ -67,7 +67,6 @@ export function validateRetirementTarget(target, openCapsule) {
       target.ownerBaseUrl.length > 0,
     "Compute retirement requires an existing recorded owner",
   );
-  assert.equal(target.allocationProtocol, 1, "Allocation lacks maintained close authorization");
   if (target.kind === "machine") {
     assert(
       ["running", "paused"].includes(target.desiredState),
@@ -82,7 +81,7 @@ export function validateRetirementTarget(target, openCapsule) {
       "Machine still has active holders",
     );
   }
-  const neverIssued = target.creationSpec === null && target.createBefore === null;
+  const neverIssued = target.creationSpec === null;
   if (neverIssued) {
     assert(
       target.runtimeId === null && target.runtimeName === null && target.capsule === null,
@@ -90,10 +89,6 @@ export function validateRetirementTarget(target, openCapsule) {
     );
     return { ...target, neverIssued: true, nodeId: null };
   }
-  assert(
-    Number.isSafeInteger(target.createBefore) && target.createBefore > 0,
-    "Missing creation deadline",
-  );
   assert.equal(
     target.creationSpec?.activationId,
     target.allocationId,
@@ -105,17 +100,22 @@ export function validateRetirementTarget(target, openCapsule) {
       target[name],
       "Creation ownership changed",
     );
-  const sandboxId = target.allocationId.replaceAll("-", "");
-  if (target.runtimeName !== null)
-    assert.equal(target.runtimeName, sandboxId, "Recorded sandbox changed");
+  const sandboxId = target.runtimeName;
+  assert(
+    typeof sandboxId === "string" && /^[A-Za-z0-9-]{1,128}$/.test(sandboxId),
+    "Original native creation remains unresolved",
+  );
+  assert(target.capsule !== null, "Settle pending creation before compute maintenance");
   let nodeId = null;
   if (target.capsule !== null) {
     const capsule = openCapsule(target.capsule);
-    assert.equal(capsule?.version, 2, "Unsupported recorded recovery capsule");
     const handle = capsule.handle,
       execution = capsule.executionTarget;
     assert.equal(handle?.activationId, target.allocationId, "Capsule allocation changed");
-    assert.equal(handle?.allocation?.createBefore, target.createBefore, "Capsule deadline changed");
+    // Retirement consumes only the stable provider-address contract. It does
+    // not adopt a Harness, Guest or a historical private allocation protocol.
+    assert.equal(handle?.providerApiVersion, 1, "Unsupported provider address contract");
+    assert.equal(handle?.providerId, "cubesandbox", "Unsupported resource provider");
     assert.equal(handle?.runtimeName, sandboxId, "Capsule sandbox changed");
     if (target.runtimeId !== null)
       assert.equal(handle?.runtimeId, target.runtimeId, "Capsule runtime changed");
@@ -131,38 +131,6 @@ export function validateRetirementTarget(target, openCapsule) {
     nodeId = execution.nodeId;
   }
   return { ...target, neverIssued: false, nodeId };
-}
-
-function placement(target, receipt, knownNode) {
-  assert.equal(receipt?.allocationId, target.allocationId, "Native allocation identity changed");
-  assert.equal(receipt.createBefore, target.createBefore, "Native creation deadline changed");
-  assert(
-    typeof receipt.closed === "boolean" &&
-      ["missing", "pending", "creating", "ready", "failed", "closing", "absent"].includes(
-        receipt.phase,
-      ),
-    "Invalid native allocation receipt",
-  );
-  if (receipt.sandboxId !== undefined)
-    assert.equal(
-      receipt.sandboxId,
-      target.allocationId.replaceAll("-", ""),
-      "Native physical identity changed",
-    );
-  // Native terminal receipts may already have been collected. A missing route
-  // cannot replace the recorded capsule's node, nor prove physical absence;
-  // that exact node is still observed after the original admission is closed.
-  if (knownNode !== null && receipt.nodeId !== undefined)
-    assert.equal(receipt.nodeId, knownNode, "Native recorded node changed");
-  const node = knownNode ?? receipt.nodeId ?? null;
-  if (node !== null)
-    assert(
-      typeof node === "string" && node.length > 0 && node.length <= 256,
-      "Invalid native node",
-    );
-  if (receipt.phase === "absent")
-    assert.equal(receipt.closed, true, "Native absence lacks closed admission");
-  return node;
 }
 
 /** Wait for positive process/PG quiescence. Time passing never clears a writer
@@ -196,7 +164,7 @@ export async function awaitComputeRetirementQuiescence({
   }
 }
 
-/** Ports expose existing PG authority and native allocation closure only. No
+/** Ports expose existing PG authority and native deletion only. No
  * Workspace, Tool, create/resume, direct process or Volume-delete port exists. */
 export async function retireComputeForMaintenance({
   repository,
@@ -205,14 +173,7 @@ export async function retireComputeForMaintenance({
   openCapsule,
   signal,
   progress = () => {},
-  timeoutMs = 120_000,
-  monotonicNow = () => performance.now(),
-  sleep = (ms, signal) => delay(ms, undefined, { signal }),
 }) {
-  assert(
-    Number.isSafeInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= 600_000,
-    "Invalid retirement wait",
-  );
   const cold = async () => {
     signal?.throwIfAborted();
     await assertProcessesStopped();
@@ -238,44 +199,11 @@ export async function retireComputeForMaintenance({
     if (!target.neverIssued) {
       await cold();
       await repository.assertCurrent(target);
-      const current = await native.allocation(target.allocationId, target.createBefore, "get");
-      let nodeId = placement(target, current, target.nodeId);
-      if (
-        nodeId === null &&
-        (target.runtimeId !== null || target.runtimeName !== null || target.capsule !== null)
-      )
-        throw new Error("Recorded physical allocation has no verifiable node");
-      const deadline = monotonicNow() + timeoutMs;
-      for (;;) {
-        await cold();
-        await repository.assertCurrent(target);
-        if (monotonicNow() >= deadline)
-          throw new Error("Native allocation closure remains unconfirmed");
-        // Join the native call even on cancellation; never leave a detached effect.
-        const closed = await native.allocation(target.allocationId, target.createBefore, "close");
-        nodeId = placement(target, closed, nodeId);
-        signal?.throwIfAborted();
-        if (closed.closed && closed.phase === "absent") {
-          if (nodeId !== null) {
-            const absent = await native.observe(target.allocationId.replaceAll("-", ""), nodeId);
-            assert.equal(
-              absent?.runtimeName,
-              target.allocationId.replaceAll("-", ""),
-              "Absence target changed",
-            );
-            assert.equal(absent.nodeId, nodeId, "Absence node changed");
-            assert.equal(
-              absent.presence,
-              "absent",
-              "Recorded-node physical absence is unconfirmed",
-            );
-          }
-          break;
-        }
-        if (monotonicNow() >= deadline)
-          throw new Error("Native allocation closure remains unconfirmed");
-        await sleep(Math.min(1000, Math.max(1, deadline - monotonicNow())), signal);
-      }
+      // The adapter accepts a successful native deletion or a retained matching
+      // native delete event. Generic 404, timeouts and probes remain uncertain.
+      // Join the admitted request even if operator cancellation arrives.
+      await native.destroy(target.runtimeName);
+      signal?.throwIfAborted();
     }
     await cold();
     await repository.finishClose(target);

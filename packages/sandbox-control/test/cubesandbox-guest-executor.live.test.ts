@@ -29,6 +29,10 @@ it.skipIf(!enabled)(
   "Guest restart preserves accepted execution, exact cancellation and finite VM expiry",
   async () => {
     const client = new OfficialCubeSandboxRuntimeClient({
+      lifecycleRedisUrl: required("PI_CLOUD_CUBE_LIFECYCLE_REDIS_URL"),
+      lifecycleRedisPassword: (
+        await readFile(required("PI_CLOUD_CUBE_LIFECYCLE_REDIS_PASSWORD_FILE"), "utf8")
+      ).trim(),
       apiUrl: required("PI_CLOUD_CUBESANDBOX_API_URL"),
       apiKey: (await readFile(required("PI_CLOUD_CUBESANDBOX_API_KEY_FILE"), "utf8")).trim(),
       proxyNodeIp: required("PI_CLOUD_CUBESANDBOX_PROXY_NODE_IP"),

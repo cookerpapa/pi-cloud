@@ -28,6 +28,8 @@ export type SandboxControlConfig = {
   workspaceDeletionReaperIntervalMs: number;
   workspaceDeletionReaperBatchSize: number;
   cubeSandbox: {
+    lifecycleRedisUrl?: string;
+    lifecycleRedisPassword?: string;
     executionEndpoints: readonly Readonly<{ apiUrl: string; apiKey: string }>[];
     apiUrl: string;
     apiKey: string;
@@ -141,7 +143,7 @@ async function readSecret(path: string): Promise<string> {
   }
 }
 
-async function readCubeApiKey(path: string): Promise<string> {
+async function readCubeCredential(path: string, minimumLength = 32): Promise<string> {
   if (!isAbsolute(path) || path.includes("\0")) {
     throw new TypeError("CubeSandbox API key path must be absolute");
   }
@@ -153,13 +155,17 @@ async function readCubeApiKey(path: string): Promise<string> {
       (metadata.mode & 0o137) !== 0 ||
       ((metadata.mode & 0o040) !== 0 &&
         ![process.getegid?.(), ...(process.getgroups?.() ?? [])].includes(metadata.gid)) ||
-      metadata.size < 32 ||
+      metadata.size < minimumLength ||
       metadata.size > 4_096
     ) {
       throw new TypeError("CubeSandbox API key file is not private and bounded");
     }
     const value = (await handle.readFile("utf8")).replace(/\r?\n$/, "");
-    if (value.length < 32 || value.length > 4_096 || /[\u0000-\u001f\u007f]/.test(value)) {
+    if (
+      value.length < minimumLength ||
+      value.length > 4_096 ||
+      /[\u0000-\u001f\u007f]/.test(value)
+    ) {
       throw new TypeError("CubeSandbox API key file is invalid");
     }
     return value;
@@ -220,7 +226,7 @@ async function executionEndpoints(path: string | undefined) {
           throw new Error("Cube execution endpoint entry is invalid");
         return {
           apiUrl: serviceUrl(item.apiUrl, "Cube execution URL"),
-          apiKey: await readCubeApiKey(item.apiKeyFile),
+          apiKey: await readCubeCredential(item.apiKeyFile),
         };
       }),
     );
@@ -324,6 +330,17 @@ export async function loadSandboxControlConfig(
       256,
     ),
     cubeSandbox: {
+      ...(environment.PI_CLOUD_CUBE_LIFECYCLE_REDIS_PASSWORD_FILE
+        ? {
+            lifecycleRedisPassword: await readCubeCredential(
+              environment.PI_CLOUD_CUBE_LIFECYCLE_REDIS_PASSWORD_FILE,
+              1,
+            ),
+          }
+        : {}),
+      ...(environment.PI_CLOUD_CUBE_LIFECYCLE_REDIS_URL
+        ? { lifecycleRedisUrl: environment.PI_CLOUD_CUBE_LIFECYCLE_REDIS_URL }
+        : {}),
       executionEndpoints: await executionEndpoints(
         environment.PI_CLOUD_CUBE_EXECUTION_ENDPOINTS_FILE,
       ),
@@ -332,7 +349,7 @@ export async function loadSandboxControlConfig(
         "cubeSandboxApiUrl",
         2_048,
       ),
-      apiKey: await readCubeApiKey(required(environment, "PI_CLOUD_CUBESANDBOX_API_KEY_FILE")),
+      apiKey: await readCubeCredential(required(environment, "PI_CLOUD_CUBESANDBOX_API_KEY_FILE")),
       templateId: bounded(
         required(environment, "PI_CLOUD_CUBESANDBOX_TEMPLATE_ID"),
         "cubeSandboxTemplateId",

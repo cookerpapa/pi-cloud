@@ -9,6 +9,7 @@ async function assertDrained(database) {
     (select count(*) from session_leases where released_at is null)::int as writers,
     (select count(*) from sandbox_tool_bindings)::int as bindings,
     (select count(*) from workspace_terminal_sessions where state<>'released')::int as terminals,
+    (select count(*) from workspaces where deleted_at is not null and storage_purged_at is null)::int as pending_storage_deletions,
     (select count(*) from development_environments where agent_activation_id is not null or terminal_active)::int as machine_holders,
     (select count(*) from sandbox_control_instances where state='ready' and lease_expires_at>clock_timestamp())::int as owners,
     (select count(*) from supervisor_connections where state='active' and expires_at>clock_timestamp())::int as workers
@@ -34,10 +35,7 @@ function target(row, kind) {
     domainId: row.sandbox_domain_id,
     ownerId: row.owner_instance_id,
     ownerBaseUrl: row.owner_base_url,
-    allocationProtocol: row.allocation_protocol,
     creationSpec: row.creation_spec,
-    createBefore: row.deadline_ms === null ? null : Number(row.deadline_ms),
-    deadlineText: row.deadline_text,
     runtimeId: row.runtime_id,
     runtimeName: row.runtime_name,
     capsule: row.runtime_capsule,
@@ -71,7 +69,6 @@ function matching(query, value) {
     sandbox_domain_id: value.domainId,
     owner_instance_id: value.ownerId,
     owner_base_url: value.ownerBaseUrl,
-    allocation_protocol: value.allocationProtocol,
     runtime_id: value.runtimeId,
     runtime_name: value.runtimeName,
     runtime_capsule: value.capsule,
@@ -89,12 +86,9 @@ function matching(query, value) {
   };
   for (const [name, field] of Object.entries(fields))
     query = query.where(name, field === null ? "is" : "=", field);
-  // Preserve PG's full timestamp precision. A JS Date rounds away microseconds.
-  return query
-    .where(sql`creation_not_after is not distinct from ${value.deadlineText}::timestamptz`)
-    .where(
-      sql`creation_spec is not distinct from ${value.creationSpec === null ? null : JSON.stringify(value.creationSpec)}::jsonb`,
-    );
+  return query.where(
+    sql`creation_spec is not distinct from ${value.creationSpec === null ? null : JSON.stringify(value.creationSpec)}::jsonb`,
+  );
 }
 
 /** Existing ownership rows remain the cleanup intent. No operator lease/table,
@@ -118,15 +112,11 @@ export function createComputeRetirementRepository(database) {
     assertDrained: () => assertDrained(database),
     async listTargets() {
       const machines = await sql`select m.*,
-        m.creation_not_after::text as deadline_text,
-        floor(extract(epoch from m.creation_not_after)*1000)::bigint as deadline_ms,
         w.id is not null and w.tenant_id=m.tenant_id as workspace_present,
         w.deleted_at as workspace_deleted_at
         from development_environments m left join workspaces w on w.id=m.workspace_id
         where m.state<>'released' order by m.id limit 1001`.execute(database);
       const elastic = await sql`select r.*,
-        r.creation_not_after::text as deadline_text,
-        floor(extract(epoch from r.creation_not_after)*1000)::bigint as deadline_ms,
         w.id is not null and w.tenant_id=r.tenant_id as workspace_present,
         w.deleted_at as workspace_deleted_at
         from workspace_runtimes r left join workspaces w on w.id=r.workspace_id

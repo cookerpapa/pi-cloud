@@ -35,7 +35,6 @@ import { isIPv4 } from "node:net";
 import {
   CubeApplicationPortError,
   OfficialCubeSandboxRuntimeClient,
-  CubeExecutionRejected,
   type CubeSandboxInstance,
   type CubeSandboxRuntimeClient,
   type OfficialCubeSandboxRuntimeClientOptions,
@@ -924,6 +923,16 @@ export class CubeSandboxProvider implements SandboxProvider {
   ): Promise<void> {
     if (!this.#persistentCapsules) throw new Error("Resource receipt key is unavailable");
     await context.recordCreated({
+      providerId: this.providerId,
+      ...(instance.cpuCount && instance.memoryMB
+        ? {
+            quantity: {
+              kind: "compute" as const,
+              cpuMillis: instance.cpuCount * 1000,
+              memoryBytes: instance.memoryMB * 1024 * 1024,
+            },
+          }
+        : {}),
       runtimeId: runtimeUuid(instance.sandboxId),
       runtimeName: instance.sandboxId,
       capsule: this.#persistentCapsules.seal({
@@ -1171,27 +1180,13 @@ export class CubeSandboxProvider implements SandboxProvider {
     }
     if (!receipt) return undefined;
     const { instance } = this.#openCreated(receipt, id);
-    const nodeId = instance.nodeId ?? (await this.#client.read(instance.sandboxId))?.nodeId;
-    return nodeId ? this.#client.observe(instance.sandboxId, nodeId) : undefined;
+    return this.#client.observe(instance.sandboxId, instance.nodeId);
   }
 
   async #observeTarget(
     target: SandboxExecutionTarget,
   ): Promise<import("./sandbox-provider.ts").SandboxRuntimeObservation> {
-    const observed = await this.#client.observe(target.sandboxId, target.nodeId);
-    if (observed.presence !== "present" || observed.state !== "running") return observed;
-    try {
-      const current = await this.#client.executionTarget(target.sandboxId, target.nodeId);
-      return { ...observed, execution: current.bootId === target.bootId ? "ready" : "unsafe" };
-    } catch (error) {
-      return {
-        ...observed,
-        execution:
-          error instanceof CubeExecutionRejected && error.code === "runtime_quarantined"
-            ? "unsafe"
-            : "unavailable",
-      };
-    }
+    return this.#client.observe(target.sandboxId, target.nodeId);
   }
 
   executionIdentity(handle: SandboxHandle): string {
@@ -1756,6 +1751,18 @@ export class CubeSandboxProvider implements SandboxProvider {
         raw.imageRevision,
       )
     ) {
+      if (
+        !current &&
+        (await this.#client.observe(handle.runtimeName, handle.runtimeNodeId)).presence === "absent"
+      )
+        throw new SandboxCreationError(
+          new SandboxControlError(
+            "runtime_retired",
+            "The provider confirmed compute removal; Workspace bytes are preserved",
+            true,
+          ),
+          true,
+        );
       throw new SandboxControlError(
         "persistent_machine_identity_mismatch",
         "Exclusive machine physical identity did not match its recovery state",
@@ -1963,6 +1970,10 @@ export class CubeSandboxProvider implements SandboxProvider {
     this.#assertHandle(handle);
     const instance = await this.#client.read(handle.runtimeName);
     if (instance === undefined) {
+      if (
+        (await this.#client.observe(handle.runtimeName, handle.runtimeNodeId)).presence === "absent"
+      )
+        return { providerApiVersion: 1, providerId: this.providerId, state: "absent", handle };
       throw new SandboxControlError(
         "cubesandbox_absence_unconfirmed",
         "Native inventory cannot confirm resource removal",

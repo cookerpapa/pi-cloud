@@ -1,3 +1,4 @@
+import { nativeCubeLifecycleOptions } from "./lib/cube-native-lifecycle-options.mjs";
 import { randomUUID } from "node:crypto";
 import { register } from "tsx/esm/api";
 
@@ -60,7 +61,11 @@ const gatewayAddress = workspaceVolumeGatewayAddress();
 const testDatabase = await testPostgres();
 const temporary = await mkdtemp(join(tmpdir(), "pi-cloud-native-live-"));
 const nodePrefix = resolve(dirname(process.execPath), "..");
-const build = await readJson(join(repositoryRoot, "deploy/cubesandbox/runtime-build.json"));
+const testImages = await readJson(join(repositoryRoot, "deploy/cubesandbox/test-images.json"));
+const nativeLifecycle = nativeCubeLifecycleOptions();
+await writeFile(join(temporary, "native-redis-password"), nativeLifecycle.lifecycleRedisPassword, {
+  mode: 0o600,
+});
 const kafkaServices = ["kafka-1", "kafka-2", "kafka-3"];
 const runtimeDeployment = JSON.parse(
   kubectl(["get", "deployment/pi-cloud-session-runtime", "-o", "json"]),
@@ -163,6 +168,8 @@ const environment = {
   PI_CLOUD_COMPLETION_CA_FILE: "/operator-test/completion-ca.crt",
   PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE: `${runtimeDirectory}/secrets/supervisor-management-token`,
   PI_CLOUD_CUBESANDBOX_TEST: "1",
+  PI_CLOUD_CUBE_LIFECYCLE_REDIS_URL: nativeLifecycle.lifecycleRedisUrl,
+  PI_CLOUD_CUBE_LIFECYCLE_REDIS_PASSWORD_FILE: "/operator-test/native-redis-password",
   PI_CLOUD_CUBE_LIVE_ASSIGNMENTS_FILE: "/operator-test/owned-resources.json",
   PI_CLOUD_KAFKA_BROKERS: kafkaServices.map((name) => name + ":9092").join(","),
   PI_CLOUD_KAFKA_REPLICAS: "3",
@@ -206,7 +213,7 @@ try {
       "--env",
       "PATH=/opt/operator-node/bin:/usr/local/bin:/usr/bin:/bin",
       ...Object.entries(environment).flatMap(([key, value]) => ["--env", `${key}=${value}`]),
-      build.buildImages.ubuntu24,
+      testImages.operator,
       "/opt/operator-node/bin/node",
       join(repositoryRoot, "node_modules/vitest/vitest.mjs"),
       "run",

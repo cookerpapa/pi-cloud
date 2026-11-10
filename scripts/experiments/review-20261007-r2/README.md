@@ -52,9 +52,9 @@ one owned VM/Volume, copies freshly bundled input/holder helpers into that VM,
 checks UID-1000 file locking, SIGKILL reclamation, final-file preservation, retry
 and EXIF normalization, then confirms physical cleanup:
 
-```sh
-node --import tsx scripts/experiments/review-20261007-r2/live-staging.mjs /tmp/live-staging.json
-```
+The historical live driver is archived at
+[`e1eaeb1d`](https://github.com/cookerpapa/pi-managed-agents/blob/e1eaeb1d/scripts/experiments/review-20261007-r2/live-staging.mjs).
+Its private allocation protocol is not supported by the current stock-provider adapter.
 
 All JSON output arguments are optional. No probe calls a paid model. Live helper
 acceptance is not a matched image rollout or a physical-host restart test.

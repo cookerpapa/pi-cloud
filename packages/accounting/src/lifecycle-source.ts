@@ -3,6 +3,7 @@ import type { SandboxLifecycleCursor, SandboxLifecyclePage } from "@pi-cloud/pro
 /** Provider facts, not a second resource controller or provider price API. */
 export interface SandboxLifecycleSource {
   readonly id: string;
+  close?(): void | Promise<void>;
   list(signal: AbortSignal): Promise<Array<{ id: string; available: boolean }>>;
   read(
     id: string,
@@ -21,6 +22,10 @@ export async function* watchSandboxLifecycle(
   while (!signal.aborted) {
     const page = await source.read(id, cursor, signal, 20_000);
     yield page;
-    cursor = { epoch: page.epoch, sequence: page.next };
+    cursor = {
+      epoch: page.epoch,
+      sequence: page.next,
+      ...(page.sourcePosition ? { sourcePosition: page.sourcePosition } : {}),
+    };
   }
 }

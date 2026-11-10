@@ -149,7 +149,7 @@ never a conversation or Workspace durability dependency. User-owned development
 machines use the separate pause/resume/release lifecycle and never enter the
 elastic warm pool.
 
-Cubelet owns finite elastic retention in its allocation journal (ADR-0272).
+The native Cube lifecycle manager owns elastic expiry through the stock timeout API (ADR-0309).
 The Worker outer runtime declares logical family resource use through its single
 fenced Session Kafka writer, including model/child waits. Execution renews from its
 resource view without querying Worker ownership or leases. Cold metadata reads
@@ -157,12 +157,15 @@ and binding updates populate the view; missing compute is a no-op. The default
 is one declaration per minute and thirty minutes of finite retention. Stale replay
 keeps its original timestamp. When renewal stops, expiry may reclaim even an
 unfinished Tool. Control Plane has no competing deadline scanner; management still
-confirms physical absence before releasing allocation/quota records.
+requires positive provider deletion evidence before releasing allocation/quota records.
+Management health reads native status only: periodic Guest probes would refresh
+CubeProxy activity and prevent idle expiry.
 A user owns an exclusive machine's
 lifecycle through authenticated pause/resume/release operations. Controller
 restart adopts both elastic and user-owned VMs without changing their physical
-state. Destruction is an explicit lifecycle action and is followed by an exact
-node observation before quota is released.
+state. Destruction is an explicit lifecycle action. A successful native delete or matching
+retained native delete event supplies the provider's completion evidence; generic
+404, an unreachable node or a missing heartbeat remains uncertain.
 
 ## Tool and terminal channels
 
@@ -172,8 +175,9 @@ identity without Workspace access or user commands. Direct probes return within
 the bounded request; on-demand Session probes return via Guest HTTPS and the
 original Kafka mailbox. The Worker registers its waiter before publishing the
 probe through Session Kafka. Execution never calls the Worker to prepare a
-receiver. Probes do not renew retention, advance Tool positions, create compute
-or authorize quarantine/deletion. A cancellation ACK does not assert process exit.
+receiver. Probes do not send timeout renewals, advance Tool positions, create compute
+or authorize quarantine/deletion. Stock CubeProxy can count actual Guest traffic
+as activity, so only active execution uses on-demand Guest probes. A cancellation ACK does not assert process exit.
 
 There are no native Cube `/execution/*` routes or old-wire fallbacks. Cube/app
 upgrades require drained matched publication. The Web Terminal keeps its
@@ -223,23 +227,26 @@ Pi Session records.
 
 ## Reconciliation and evidence
 
-Managed protocol 8 retains recoverable allocations (ADR-0223) and adds queryable
-Volume reference state (ADR-0226), alongside v2 boot replies. `SandboxProvider`
-receives an immutable PG-issued creation deadline alongside the physical identity.
-Cube creation carries that identity and deadline, and queries/closure use the
-private `/allocations/:allocationId/get|close` POST endpoints. Duplicate creation
-retains its original VM/node and private-ingress token. A timeout is not a proved
-capacity refusal or absence. Closed admission plus node absence is required for
-cleanup completion; endpoint acceptance alone cannot release resources.
-The rendered Cubelet metadata configuration requires `no_sync = false`; the
-allocation adapter refuses startup if durable admission cannot be guaranteed.
+The provider contract uses native sandbox IDs, separate from PG resource request
+IDs. PG authorizes one create send; an encrypted receipt records the native ID and
+connection data before Guest initialization. Recovery uses that receipt or unique
+native metadata lookup, never another uncertain POST create. Empty/ambiguous
+lookup remains pending. A user may have only one unresolved machine application
+and cannot pause/release it until its creation outcome is known.
 
-`workspace_runtimes`, `development_environments` and independent terminal
-allocations retain their creation configuration until resource deletion. Existing
-capsule adoption remains supported; incomplete creation recovers through its
-recorded allocation. Legacy UNKNOWN rows without this protocol are not relabelled
-as safe. Cubelet metadata loss rejects old-boot creation and retains uncertainty
-when a prior unfinished creator cannot be physically accounted for.
+Creation/close allocation extensions and private observation/history APIs are
+removed. Cold data connections use retained capsules; connect/resume is not a
+health probe. Native provider uncertainty may require operator reconciliation;
+exactly-once physical creation is not claimed. The supported Volume Plugin owns
+opaque attachment receipts under the trusted Volume envelope. Lost Attach replies
+or Detach metadata retain holds; stale Detach cannot release a newer attachment.
+Destroy and Attach share deletion admission, and missing hold state is not zero.
+
+Schema 216 removes creation-deadline/protocol fields after old compute retirement;
+schema 217 adds provider attribution and observation cursors. No old runtime
+capsule reader or private-API fallback is retained. The matched operator retires
+known physical addresses without adopting old runtime state, then initializes
+attachment directories only during the guarded first stock-provider cutover.
 
 PostgreSQL records physical Workspace runtime identity and control-plane ownership.
 Run Tool bindings are independently fenced and never masquerade as Cube

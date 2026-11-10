@@ -24,12 +24,9 @@ function fixture(desiredState = "running", kind = "machine") {
     domainId: "owned-domain",
     ownerId: randomUUID(),
     ownerBaseUrl: "http://old-owner.test",
-    allocationProtocol: 1,
     creationSpec: { activationId: allocationId, assignment: { tenantId, projectId, workspaceId } },
-    createBefore: 1_800_000_000_000,
-    deadlineText: "2027-01-15 08:00:00.000123+00",
     runtimeId: randomUUID(),
-    runtimeName: allocationId.replaceAll("-", ""),
+    runtimeName: `provider-${randomUUID()}`,
     capsule: "private-capsule",
     state: kind === "machine" ? "ready" : "allocated",
     allocationClosed: false,
@@ -45,10 +42,11 @@ function fixture(desiredState = "running", kind = "machine") {
     events = [],
     abort = new AbortController();
   const capsule = {
-    version: 2,
+    version: 3,
     handle: {
+      providerApiVersion: 1,
+      providerId: "cubesandbox",
       activationId: allocationId,
-      allocation: { createBefore: row.createBefore },
       runtimeId: row.runtimeId,
       runtimeName: row.runtimeName,
       assignment: row.creationSpec.assignment,
@@ -88,31 +86,12 @@ function fixture(desiredState = "running", kind = "machine") {
       events.push("pg-absent");
     }),
   };
-  const receipt = (closed) => ({
-    allocationId,
-    createBefore: row.createBefore,
-    sandboxId: original.runtimeName,
-    nodeId: "recorded-node",
-    closed,
-    phase: closed ? "absent" : "ready",
-  });
   const native = {
-    allocation: vi.fn(async (_id, _deadline, action) => {
-      if (action === "close") {
-        assert(row.allocationClosed);
-        physicallyClosed = true;
-        events.push("native-close");
-      }
-      return receipt(physicallyClosed);
-    }),
-    observe: vi.fn(async () => {
-      events.push("node-absent");
-      return {
-        runtimeName: original.runtimeName,
-        nodeId: "recorded-node",
-        presence: "absent",
-        state: "unknown",
-      };
+    destroy: vi.fn(async (id) => {
+      assert.equal(id, original.runtimeName);
+      assert(row.allocationClosed);
+      physicallyClosed = true;
+      events.push("native-close");
     }),
   };
   const options = {
@@ -131,7 +110,6 @@ function fixture(desiredState = "running", kind = "machine") {
     original,
     events,
     abort,
-    receipt,
     activeOwner() {
       cold = false;
     },
@@ -144,7 +122,7 @@ it.each(["running", "paused"])(
   async (desired) => {
     const f = fixture(desired);
     expect(await f.run()).toHaveLength(1);
-    expect(f.events).toEqual(["pg-close", "native-close", "node-absent", "pg-absent"]);
+    expect(f.events).toEqual(["pg-close", "native-close", "pg-absent"]);
     for (const name of [
       "id",
       "workspaceId",
@@ -155,7 +133,6 @@ it.each(["running", "paused"])(
       "generation",
       "allocationId",
       "creationSpec",
-      "createBefore",
       "ownerId",
     ])
       expect(f.row[name]).toEqual(f.original[name]);
@@ -168,14 +145,14 @@ it.each(["running", "paused"])(
       capsule: null,
     });
     expect(await f.run()).toEqual([]);
-    expect(f.native.allocation.mock.calls.filter((call) => call[2] === "close")).toHaveLength(1);
+    expect(f.native.destroy).toHaveBeenCalledTimes(1);
   },
 );
 
 it("retains the exact cleanup target after a lost native close reply", async () => {
   const f = fixture(),
-    normal = f.native.allocation.getMockImplementation();
-  f.native.allocation.mockImplementationOnce(normal).mockImplementationOnce(async (...args) => {
+    normal = f.native.destroy.getMockImplementation();
+  f.native.destroy.mockImplementationOnce(async (...args) => {
     await normal(...args);
     throw new Error("lost close reply");
   });
@@ -199,57 +176,37 @@ it("does not repeat physical effects after a lost final PG acknowledgement", asy
   });
   await expect(f.run()).rejects.toThrow("lost PG commit reply");
   expect(await f.run()).toEqual([]);
-  expect(f.native.allocation.mock.calls.filter((call) => call[2] === "close")).toHaveLength(1);
+  expect(f.native.destroy).toHaveBeenCalledTimes(1);
   expect(f.row.desiredState).toBe("running");
 });
 
-it.each(["unavailable", "present"])(
-  "never settles %s recorded-node observation",
-  async (presence) => {
+it.each([404, 503])(
+  "keeps cleanup pending after an uncertain native response (%s)",
+  async (status) => {
     const f = fixture();
-    f.native.observe.mockResolvedValue({
-      runtimeName: f.row.runtimeName,
-      nodeId: "recorded-node",
-      presence,
-      state: "unknown",
-    });
-    await expect(f.run()).rejects.toThrow("physical absence is unconfirmed");
+    f.native.destroy.mockRejectedValue(new Error(`native HTTP ${status}`));
+    await expect(f.run()).rejects.toThrow(`native HTTP ${status}`);
     expect(f.repository.finishClose).not.toHaveBeenCalled();
     expect(f.row.capsule).toBe(f.original.capsule);
   },
 );
 
-it("refuses changed native placement and leaves PG admission closed", async () => {
+it("refuses an unresolved creation before closing any target", async () => {
   const f = fixture();
-  f.native.allocation.mockResolvedValue({ ...f.receipt(false), nodeId: "replacement-node" });
-  await expect(f.run()).rejects.toThrow("recorded node changed");
-  expect(f.row.allocationClosed).toBe(true);
-  expect(f.native.allocation.mock.calls.every((call) => call[2] === "get")).toBe(true);
-  expect(f.repository.finishClose).not.toHaveBeenCalled();
-});
-
-it("retains the capsule node after native terminal receipt collection", async () => {
-  const f = fixture(),
-    normal = f.native.allocation.getMockImplementation();
-  f.native.allocation.mockImplementation(async (...args) => {
-    const receipt = await normal(...args);
-    delete receipt.nodeId;
-    if (args[2] === "get") receipt.phase = "missing";
-    return receipt;
-  });
-  await f.run();
-  expect(f.native.observe).toHaveBeenCalledWith(f.original.runtimeName, "recorded-node");
-  expect(f.events).toEqual(["pg-close", "native-close", "node-absent", "pg-absent"]);
+  f.row.capsule = null;
+  await expect(f.run()).rejects.toThrow("Settle pending creation");
+  expect(f.native.destroy).not.toHaveBeenCalled();
+  expect(f.repository.beginClose).not.toHaveBeenCalled();
 });
 
 it.each(["allocationId", "intentRevision", "ownerId"])(
   "fences stale %s after a native reply",
   async (field) => {
     const f = fixture(),
-      normal = f.native.allocation.getMockImplementation();
-    f.native.allocation.mockImplementation(async (...args) => {
+      normal = f.native.destroy.getMockImplementation();
+    f.native.destroy.mockImplementation(async (...args) => {
       const result = await normal(...args);
-      if (args[2] === "close") f.row[field] = field === "intentRevision" ? "5" : randomUUID();
+      f.row[field] = field === "intentRevision" ? "5" : randomUUID();
       return result;
     });
     await expect(f.run()).rejects.toThrow("changed");
@@ -258,45 +215,25 @@ it.each(["allocationId", "intentRevision", "ownerId"])(
   },
 );
 
-it("rechecks cold ownership before issuing native closure", async () => {
+it("rechecks stopped ownership after recording closure and before native deletion", async () => {
   const f = fixture(),
-    normal = f.native.allocation.getMockImplementation();
-  f.native.allocation.mockImplementation(async (...args) => {
-    const result = await normal(...args);
+    normal = f.repository.beginClose.getMockImplementation();
+  f.repository.beginClose.mockImplementation(async (value) => {
+    await normal(value);
     f.activeOwner();
-    return result;
   });
   await expect(f.run()).rejects.toThrow("owner still active");
-  expect(f.native.allocation.mock.calls).toHaveLength(1);
+  expect(f.native.destroy).not.toHaveBeenCalled();
   expect(f.row.allocationClosed).toBe(true);
   expect(f.row.runtimeId).toBe(f.original.runtimeId);
 });
 
-it("retains cleanup ownership while native closure remains pending", async () => {
-  const f = fixture();
-  let elapsed = 0;
-  Object.assign(f.options, {
-    timeoutMs: 1000,
-    monotonicNow: () => elapsed,
-    sleep: async (ms) => {
-      elapsed += ms;
-    },
-  });
-  f.native.allocation.mockImplementation(async (_id, _deadline, action) =>
-    action === "get" ? f.receipt(false) : { ...f.receipt(true), phase: "closing" },
-  );
-  await expect(f.run()).rejects.toThrow("closure remains unconfirmed");
-  expect(f.repository.finishClose).not.toHaveBeenCalled();
-  expect(f.native.observe).not.toHaveBeenCalled();
-  expect(f.row.capsule).toBe(f.original.capsule);
-});
-
 it("joins an admitted close but retains ownership when cancellation arrives", async () => {
   const f = fixture(),
-    normal = f.native.allocation.getMockImplementation();
-  f.native.allocation.mockImplementation(async (...args) => {
+    normal = f.native.destroy.getMockImplementation();
+  f.native.destroy.mockImplementation(async (...args) => {
     const result = await normal(...args);
-    if (args[2] === "close") f.abort.abort(new Error("owned cancellation"));
+    f.abort.abort(new Error("owned cancellation"));
     return result;
   });
   await expect(f.run()).rejects.toThrow("owned cancellation");
@@ -309,13 +246,12 @@ it("closes never-issued owned admission without inventing a VM action", async ()
   const f = fixture("running", "elastic");
   Object.assign(f.row, {
     creationSpec: null,
-    createBefore: null,
     runtimeId: null,
     runtimeName: null,
     capsule: null,
   });
   await f.run();
-  expect(f.native.allocation).not.toHaveBeenCalled();
+  expect(f.native.destroy).not.toHaveBeenCalled();
   expect(f.row.state).toBe("released");
 });
 

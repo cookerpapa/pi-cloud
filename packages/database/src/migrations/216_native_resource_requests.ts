@@ -32,6 +32,10 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       add column provider_receipt text check(provider_receipt is null or octet_length(provider_receipt) between 64 and 65536)`.execute(
       db,
     );
+    if (table !== "workspace_terminal_sessions")
+      await sql`alter table ${sql.table(table)} add check(runtime_capsule is null or provider_receipt is null)`.execute(
+        db,
+      );
   }
   await sql`
     create function pi_cloud_native_resource_identity() returns trigger language plpgsql as $$

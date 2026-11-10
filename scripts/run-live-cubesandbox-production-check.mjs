@@ -1,3 +1,4 @@
+import { nativeCubeLifecycleOptions } from "./lib/cube-native-lifecycle-options.mjs";
 import { readNativeHistory, nativeMessages, runUsage } from "./lib/native-session-history.mjs";
 import { resourceLimit } from "../packages/domain/src/resource-limit.ts";
 import { kubectl, podFor } from "./lib/production-kubernetes.mjs";
@@ -154,6 +155,7 @@ let api = bootstrapApi;
 let tenantId = bootstrapTenantId;
 let authorizationToken = token;
 const cube = new OfficialCubeSandboxRuntimeClient({
+  ...nativeCubeLifecycleOptions(),
   apiUrl: `http://${cluster.api.host}:${String(cluster.api.port)}`,
   apiKey: cubeApiKey,
   proxyNodeIp: cluster.proxy.host,
@@ -452,12 +454,7 @@ async function waitForRunningCubeSession(sessionId) {
 async function destroyCubeSession(sessionId) {
   const retained = managedForSession(await cube.list(), sessionId);
   for (const instance of retained) {
-    const id = instance.metadata["picloud.allocation_id"];
-    const createBefore = Number(instance.metadata["picloud.create_before"]);
-    assert(id && Number.isSafeInteger(createBefore) && createBefore > 0);
-    const result = await cube.allocation(id, createBefore, "close");
-    assert(result.closed && result.phase === "absent", "Owned allocation closure was unconfirmed");
-    assert.equal((await cube.observe(instance.sandboxId, instance.nodeId)).presence, "absent");
+    await cube.destroy(instance.sandboxId);
   }
   await waitForNoCubeSession(sessionId);
 }
@@ -602,7 +599,7 @@ async function terminateWarmCubeSession(runId, sessionId) {
   const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
     const state = await psql(
-      `select state from workspace_runtimes where workspace_runtime_id=${sqlLiteral(previous.metadata["picloud.allocation_id"])}`,
+      `select state from workspace_runtimes where workspace_runtime_id=${sqlLiteral(previous.metadata["picloud.workspace_runtime_id"])}`,
     );
     assert(state, "Owned allocation lost its PG lifecycle record before reconciliation");
     if (state === "released") return;

@@ -98,10 +98,12 @@ const next = {
   ...cluster,
   cubeCommit: build.upstreamCommit,
   upstreamVersion: build.upstreamVersion,
-  executionProtocolVersion: build.managedProtocolVersion,
-  runtimePatchSha256: cubeReleaseDigest(buildBytes),
+  providerContractVersion: build.providerContractVersion,
+  runtimeManifestSha256: cubeReleaseDigest(buildBytes),
   nativeReleasePlanDigest: candidate.cubeReleasePlanDigest,
 };
+delete next.executionProtocolVersion;
+delete next.runtimePatchSha256;
 await writeFile(path + ".next", JSON.stringify(next, null, 2) + "\n", { mode: 0o600 });
 await chown(path + ".next", owner.uid, owner.gid);
 await rename(path + ".next", path);

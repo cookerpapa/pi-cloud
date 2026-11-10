@@ -1,3 +1,4 @@
+import { CubeLifecycleEvents } from "./cube-lifecycle-events.ts";
 import { Agent, buildConnector, fetch, type Dispatcher } from "undici";
 import { directPrivateEgressCidrs } from "./direct-private-egress.ts";
 import {
@@ -105,7 +106,7 @@ export interface CubeSandboxRuntimeClient {
   read(sandboxId: string): Promise<CubeSandboxInstance | undefined>;
   observe(
     sandboxId: string,
-    nodeId: string,
+    nodeId?: string,
   ): Promise<import("./sandbox-provider.ts").SandboxRuntimeObservation>;
   executionTarget(
     sandboxId: string,
@@ -168,6 +169,9 @@ export interface CubeSandboxTerminal {
 }
 
 export type OfficialCubeSandboxRuntimeClientOptions = Readonly<{
+  lifecycleRedisUrl?: string;
+  lifecycleRedisPassword?: string;
+  nativeLifecycle?: Pick<CubeLifecycleEvents, "deletion" | "close">;
   resolveExecutionConnection?(
     target: Pick<CubeExecutionTarget, "apiUrl" | "sandboxId" | "nodeId">,
   ): Promise<CubeSandboxInstance | undefined>;
@@ -541,6 +545,7 @@ function terminalSize(value: Readonly<{ rows: number; cols: number }>): Readonly
 }
 
 export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClient {
+  readonly #nativeLifecycle: Pick<CubeLifecycleEvents, "deletion" | "close"> | undefined;
   readonly #apiUrl: string;
   readonly #apiKey: string;
   readonly #executionEndpoints = new Map<string, string>();
@@ -556,6 +561,14 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
 
   constructor(options: OfficialCubeSandboxRuntimeClientOptions) {
     this.#apiUrl = validateApiUrl(options.apiUrl);
+    this.#nativeLifecycle =
+      options.nativeLifecycle ??
+      (options.lifecycleRedisUrl
+        ? new CubeLifecycleEvents({
+            url: options.lifecycleRedisUrl,
+            ...(options.lifecycleRedisPassword ? { password: options.lifecycleRedisPassword } : {}),
+          })
+        : undefined);
     this.#resolveExecutionConnection = options.resolveExecutionConnection;
     this.#apiKey = bounded(options.apiKey, "CubeSandbox API key", 4_096);
     this.#executionEndpoints.set(this.#apiUrl, this.#apiKey);
@@ -731,10 +744,10 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
 
   async observe(
     sandboxId: string,
-    nodeId: string,
+    nodeId?: string,
   ): Promise<import("./sandbox-provider.ts").SandboxRuntimeObservation> {
     const runtimeName = bounded(sandboxId, "CubeSandbox ID", 128);
-    const node = bounded(nodeId, "Cube node identity", 256);
+    const node = nodeId === undefined ? "" : bounded(nodeId, "Cube node identity", 256);
     const unavailable = {
       runtimeName,
       nodeId: node,
@@ -745,8 +758,21 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       const instance = await this.read(runtimeName);
       // Native absence from inventory is not proof of physical removal. The
       // lifecycle owner requires positive delete/event evidence for retirement.
-      if (instance?.nodeId !== node) return unavailable;
-      return { ...unavailable, presence: "present", state: instance.state };
+      if (!instance && (await this.#confirmedDeletion(runtimeName)))
+        return { ...unavailable, presence: "absent" };
+      if (
+        !instance ||
+        instance.sandboxId !== runtimeName ||
+        !instance.nodeId ||
+        (node && instance.nodeId !== node)
+      )
+        return unavailable;
+      return {
+        ...unavailable,
+        nodeId: instance.nodeId,
+        presence: "present",
+        state: instance.state,
+      };
     } catch {
       return unavailable;
     }
@@ -1074,13 +1100,28 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     return values.map((value) => parseInstance(value, this.#sandboxDomain, true));
   }
 
+  async #confirmedDeletion(sandboxId: string): Promise<boolean> {
+    const event = await this.#nativeLifecycle?.deletion(sandboxId);
+    return event?.operation === "delete" && event.sandboxId === sandboxId;
+  }
   async destroy(sandboxId: string): Promise<void> {
-    const id = encodeURIComponent(bounded(sandboxId, "CubeSandbox ID", 256));
-    const response = await this.#control(`/sandboxes/${id}`, {
-      method: "DELETE",
-      timeoutMs: Math.max(80_000, this.#requestTimeoutMs),
-    });
-    await response.body?.cancel().catch(() => undefined);
+    const raw = bounded(sandboxId, "CubeSandbox ID", 128),
+      id = encodeURIComponent(raw);
+    try {
+      const response = await this.#control(`/sandboxes/${id}`, {
+        method: "DELETE",
+        timeoutMs: Math.max(80_000, this.#requestTimeoutMs),
+      });
+      await response.body?.cancel().catch(() => undefined);
+    } catch (error) {
+      if (
+        error instanceof CubeRuntimeClientError &&
+        error.statusCode === 404 &&
+        (await this.#confirmedDeletion(raw))
+      )
+        return;
+      throw error;
+    }
   }
 
   async runCommand(
@@ -1700,6 +1741,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
   }
 
   async close(): Promise<void> {
+    this.#nativeLifecycle?.close();
     await this.#dispatcher.close();
   }
 

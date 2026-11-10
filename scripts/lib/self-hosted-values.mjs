@@ -78,7 +78,7 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
       sessionRuntime: { replicas: 1, autoscaling: { enabled: false } },
       sessionApi: { replicas: 1, autoscaling: { enabled: false } },
       toolCompletion: { replicas: 1 },
-      metering: { sourcePorts: [3000] },
+      metering: { sourcePorts: [3000, 6379] },
       controlPlane: {
         replicas: 1,
         defaultWorkspaceCapacityGiB: n("PI_CLOUD_DEFAULT_WORKSPACE_CAPACITY_GIB", 32),
@@ -153,8 +153,8 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
       // Cube's direct node APIs and local provider relay keep their existing private-node boundary.
       networkPolicy: {
         trustedTcpPorts: [
-          80, 8333, 8317, 443, 3000, 3001, 3129, 4100, 4300, 4318, 4500, 4510, 5432, 9092, 9464,
-          9465, 9466, 8089, 12345, 12346,
+          80, 8333, 8317, 443, 3000, 3001, 3129, 4100, 4300, 4318, 4500, 4510, 5432, 6379, 9092,
+          9464, 9465, 9466, 8089, 12345, 12346,
         ],
         externalEgressCidrs: [`${cluster.nodeAddress ?? "10.255.255.254"}/32`],
       },
@@ -167,6 +167,10 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
         elasticRetentionMs: n("PI_CLOUD_ELASTIC_RETENTION_MS", 1800000),
         cube: {
           apiUrl: "http://cube-api:3000",
+          lifecycleRedisSecret: { name: "cube-secret", key: "redis-password" },
+          lifecycleRedisUrl:
+            e.PI_CLOUD_CUBE_LIFECYCLE_REDIS_URL ??
+            "redis://cube-redis.cube-system.svc.cluster.local:6379",
           proxyNodeIp: "cube-proxy",
           proxyPort: 80,
           proxyScheme: "http",

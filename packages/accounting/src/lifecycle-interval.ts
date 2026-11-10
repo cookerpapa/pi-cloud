@@ -23,7 +23,7 @@ export function lifecycleInterval(
     event,
     through: new Date(end).toISOString(),
   };
-  let reason: ResourceMeteringEvent["reason"];
+  let reason: ResourceMeteringEvent["reason"] = event.gapReason;
   if (previous) {
     if (at < before || event.gapReason === "clock_changed") reason = "clock_changed";
     else if (

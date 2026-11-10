@@ -1,3 +1,5 @@
+import { CubeLifecycleEvents } from "../../packages/sandbox-control/src/cube-lifecycle-events.ts";
+import { nativeCubeLifecycleOptions } from "./cube-native-lifecycle-options.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -30,7 +32,13 @@ export async function elasticRetentionAcceptance({
   const cluster = JSON.parse(
     await readFile(runtimeDirectory + "/cubesandbox/cluster.json", "utf8"),
   );
+  const lifecycleOptions = nativeCubeLifecycleOptions();
+  const lifecycle = new CubeLifecycleEvents({
+    url: lifecycleOptions.lifecycleRedisUrl,
+    password: lifecycleOptions.lifecycleRedisPassword,
+  });
   const cube = new OfficialCubeSandboxRuntimeClient({
+    nativeLifecycle: lifecycle,
     apiUrl: `http://${cluster.api.host}:${cluster.api.port}`,
     apiKey: (await readFile(runtimeDirectory + "/secrets/cubesandbox-api-key", "utf8")).trim(),
     proxyNodeIp: cluster.proxy.host,
@@ -65,7 +73,7 @@ export async function elasticRetentionAcceptance({
   const current = async () =>
     database
       .selectFrom("workspace_runtimes")
-      .select(["workspace_runtime_id", "runtime_name", "creation_not_after", "state"])
+      .select(["workspace_runtime_id", "runtime_name", "creation_spec", "state"])
       .where("tenant_id", "=", tenant.tenantId)
       .where("workspace_id", "=", session.workspaceId)
       .where("compute_session_id", "is", null)
@@ -139,17 +147,25 @@ export async function elasticRetentionAcceptance({
     );
     await completed(first.runId);
     const runtime = await wait(current, "retention fixture runtime", 30000);
-    const deadline = new Date(runtime.creation_not_after).valueOf();
-    const inspect = () => cube.allocation(runtime.workspace_runtime_id, deadline, "get");
+    const policyWindow = runtime.creation_spec?.retentionWindowMs;
+    assert.equal(policyWindow, 1800000, "The fixture must use the actual 30-minute policy");
+    const instance = await cube.read(runtime.runtime_name);
+    assert(instance?.nodeId, "Native resource node is unavailable");
+    const inspect = async () => {
+      const meta = await lifecycle.metadata(runtime.runtime_name);
+      assert(
+        meta &&
+          Number.isSafeInteger(meta.end_at) &&
+          meta.timeout_seconds > 0 &&
+          meta.timeout_seconds <= 1800,
+        "Native timeout evidence is unavailable",
+      );
+      return meta.end_at;
+    };
     const initial = await inspect();
-    assert.equal(
-      initial.retentionWindowMs,
-      1800000,
-      "Default-window evidence requires the actual 30-minute policy",
-    );
-    assert(initial.retainUntil > Date.now());
+    assert(initial > Date.now());
     result.initialRuntimeId = runtime.workspace_runtime_id;
-    result.windowMs = initial.retentionWindowMs;
+    result.windowMs = policyWindow;
     await save(result);
     // Worker Session activity is periodic. Keep a real Run active across a
     // complete minute without sending another Tool call; a one-second chat need
@@ -185,7 +201,7 @@ export async function elasticRetentionAcceptance({
           "Fixture ended before its periodic renewal",
         );
         const value = await inspect();
-        return value.retainUntil > beforeMaintenance.retainUntil + 20000 && value;
+        return value > beforeMaintenance + 20000 && value;
       },
       "Session activity renewal without another Tool",
       90000,
@@ -196,7 +212,7 @@ export async function elasticRetentionAcceptance({
       1,
     );
     result.activeWaitRenewedWithoutNewTool = true;
-    result.renewedUntil = renewed.retainUntil;
+    result.renewedUntil = renewed;
     await save(result);
     if (outageRequested) {
       await assertNoWork();
@@ -207,11 +223,7 @@ export async function elasticRetentionAcceptance({
         "Management must remain ready while the keepalive delivery path is stopped",
       );
       const restorePath = `${runtimeDirectory}/retention-session-runtime-${randomUUID()}.restore.json`;
-      outage = await armRuntimeRestore(
-        "session-runtime",
-        restorePath,
-        renewed.retainUntil + 300000,
-      );
+      outage = await armRuntimeRestore("session-runtime", restorePath, renewed + 300000);
       assert.equal(
         outage.receipt.replicas,
         1,
@@ -249,9 +261,9 @@ export async function elasticRetentionAcceptance({
     await wait(
       async () => {
         if (outage) await assertNoWork();
-        const state = await inspect();
-        if (!state.closed || state.phase !== "absent") return false;
-        assert(Date.now() >= renewed.retainUntil, "Compute expired before its accepted deadline");
+        const state = await cube.observe(instance.sandboxId, instance.nodeId);
+        if (state.presence !== "absent") return false;
+        assert(Date.now() >= renewed, "Compute expired before its accepted deadline");
         return true;
       },
       "Cube-owned idle expiry",
@@ -260,7 +272,7 @@ export async function elasticRetentionAcceptance({
     );
     result.idleWaitMs = Date.now() - idleStart;
     result.expiredAt = new Date().toISOString();
-    result.cubeClosedAndConfirmedAbsent = true;
+    result.nativeDeletionConfirmed = true;
     if (outage) {
       assert.equal(
         JSON.parse(kubectl(["get", "pods", "-l", outage.selector, "-o", "json"])).items.length,

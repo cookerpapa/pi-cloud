@@ -13,35 +13,32 @@ probes. A shared VM has one allocation identity and one meter. Quantity is the
 accepted workload CPU/memory allocation, excluding host/VMM overhead and snapshot
 rounding; actual CPU utilization is a separate monitoring measurement.
 
-The pinned Cube adapter exposes raw observations from its existing synchronous
-metadata database. Native lifecycle hints and thirty-second observations retain
-source epoch/boot, resource incarnation, sequence, preceding resource sequence,
-observed time and coverage gaps. The journal stores at most 100,000 events and
-prunes seven-day history on capture. Bounded history pages and long polling use
-the same cursor; expiration or replaced metadata is explicit. No compute interval,
-price, Kafka client or metering credential is installed in Cubelet.
+Under [ADR-0309](adr/0309-stock-sandbox-contract.md), the stock Cube adapter reads
+native API inventory and the native Redis lifecycle channel. The first successful
+creation receipt registers its bounded provider-id/tenant/Workspace mapping in
+the existing accounting resource directory. This is attribution metadata, not
+an interval, price or additional resource authority. It survives removal of the
+active management binding.
 
-PiCloud normally collects and settles each source once per minute, with bounded
-catch-up slices when behind. A source cursor and derived receipts commit in one
-PG transaction. This cadence does not round usage to whole minutes. Duplicate
-pages do not duplicate charges. Compatible consecutive observations establish
-bounded running intervals; source restart, a missing predecessor, clock change,
-instance/quantity change, unavailable state or an unobserved interval over ninety
-seconds remains unconfirmed. Paused/absent checkpoints do not accrue compute time.
+Collection uses bounded pages and normally runs once per minute. Each observation
+page and its opaque cursor commit together in PG. A lost page or stale collector
+cannot duplicate settlement. Native notifications may be lost or trimmed; absence
+of an event or inventory entry does not prove resource removal.
 
-Cube's pause/exit timestamps mix physical events with snapshot/recovery bookkeeping.
-The adapter leaves `occurredAt` unknown instead of presenting discovery time as
-physical stop time. Unproven trailing intervals are unpriced. Metering starts at
-first observed evidence, without retrospective charges for an existing machine.
-Very short lifetimes missed by the source and loss/expiry of source history remain
-completeness limits. Provider monetary bills are optional reconciliation evidence,
-not authority for PiCloud customer prices.
+Stock Cube does not supply verified continuous physical-time coverage. This
+adapter therefore marks sampled compute intervals `provider_observation` /
+`unconfirmed` and **does not price them**, including time between two running
+samples. Missing quantities are not replaced with a default VM size. Native
+explicit deletion evidence can settle resource state, but discovery time is not
+presented as a precise physical stop timestamp. Model and Workspace-capacity
+accounting retain their existing evidence and pricing behavior. Stronger compute
+pricing requires an explicitly agreed provider coverage or estimation contract.
 
-The native `picloud_lifecycle_capture_failures_total` counter reports source capture
-failures. PG `resource_lifecycle_sources` retains collection/cursor/failure/gap
-watermarks, and each metered resource retains only its current lifecycle checkpoint.
-None of this is authority for VM destruction, command replay, quota release or
-Session lease renewal. Upstream resource metrics retain their monitoring role.
+PG `resource_lifecycle_sources` retains observation cursors and failure/gap
+watermarks; each resource retains its current observation checkpoint. There is no
+PiCloud lifecycle journal, pricing code or accounting credential inside Cubelet.
+Accounting never authorizes VM destruction, Tool replay, quota release or Session
+lease renewal.
 
 ## Storage boundary
 
@@ -107,8 +104,8 @@ pagination avoids reordering a resource every time its next receipt arrives.
 ```
 
 Model and Workspace receipt delivery use the dedicated `metering-ingest-token`.
-Compute collection reads Cube history through its provider adapter and API
-credential; Cubelet does not receive an accounting or model credential. Ordinary public reads use existing tenant auth;
+Compute collection reads stock API inventory and native Redis notifications through
+its private adapter credentials; Cubelet receives no accounting or model credential. Ordinary public reads use existing tenant auth;
 only the configured platform owner can inspect another account or configure rates.
 Owned acceptance-fixture cleanup is the explicit exception to retaining financial
 records and must follow source delivery and physical cleanup confirmation.

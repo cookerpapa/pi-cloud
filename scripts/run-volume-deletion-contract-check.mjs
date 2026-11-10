@@ -4,9 +4,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm, lstat, chmod } from "node:fs/p
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import {
-  workspaceVolumeId,
-} from "../packages/sandbox-control/src/index.ts";
+import { workspaceVolumeId } from "../packages/sandbox-control/src/index.ts";
 
 import { TestQuotaVolumeGateway } from "../packages/sandbox-control/test/fixtures/volume-quota.ts";
 

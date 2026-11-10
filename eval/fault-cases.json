@@ -3,6 +3,97 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "native-creation-permit-recovery",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/workspace-runtime-state-repository.test.ts",
+      "test": "issues native creation only once and retains its receipt through owner replacement",
+      "invariant": "Owner replacement never reissues an uncertain native create."
+    },
+    {
+      "id": "native-creation-unissued-close",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/workspace-runtime-state-repository.test.ts",
+      "test": "closes an unissued resource without making a provider call",
+      "invariant": "Known unsent admission closes without fabricating a native effect."
+    },
+    {
+      "id": "native-creation-receipt-after-close",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/workspace-runtime-state-repository.test.ts",
+      "test": "grants one sender under concurrency and retains an early receipt after closure",
+      "invariant": "One sender is admitted; a factual late receipt cannot reopen resource admission."
+    },
+    {
+      "id": "native-creation-no-http-retry",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/cubesandbox-runtime-client.test.ts",
+      "test": "never retries an uncertain native creation or consults a private allocation endpoint",
+      "invariant": "A disconnected native creation reply triggers no second POST."
+    },
+    {
+      "id": "native-creation-metadata-recovery",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/cubesandbox-provider.test.ts",
+      "test": "recovers a lost creation reply by read-only correlation without another native create",
+      "invariant": "Read-only unique native lookup recovers the original VM."
+    },
+    {
+      "id": "native-creation-ambiguous-lookup",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/cubesandbox-provider.test.ts",
+      "test": "does not guess or repeat creation when native lookup is empty or ambiguous",
+      "invariant": "Missing or duplicate physical identities remain unresolved."
+    },
+    {
+      "id": "native-creation-receipt-failure",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/cubesandbox-provider.test.ts",
+      "test": "stops before Guest work if the original receipt cannot be persisted",
+      "invariant": "Lost receipt ownership stops Guest initialization without unowned physical cleanup."
+    },
+    {
+      "id": "native-recovery-refusal-not-absence",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/sandbox-controller.test.ts",
+      "test": "accepts no-effect evidence only for the first send (fresh=false)",
+      "invariant": "A recovery-time local refusal cannot disprove the first request effects."
+    },
+    {
+      "id": "native-missing-inventory-not-absence",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/cube-lifecycle-events.test.ts",
+      "test": "requires an explicit retained delete, never a missing snapshot or an empty stream",
+      "invariant": "Only positive retained provider evidence can establish deletion."
+    },
+    {
+      "id": "native-lifecycle-source-outage",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/cube-lifecycle-events.test.ts",
+      "test": "does not return stale absence during a source outage",
+      "invariant": "Unavailable lifecycle evidence does not release resources."
+    },
+    {
+      "id": "native-lifecycle-history-gap",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/cube-lifecycle-events.test.ts",
+      "test": "reports trimming and cursor rollback instead of inventing complete history",
+      "invariant": "Provider history gaps remain explicit."
+    },
+    {
+      "id": "native-observation-unpriced",
+      "workspace": "@pi-cloud/accounting",
+      "file": "test/cube-native-observations.postgres.test.ts",
+      "test": "keeps native sampled time unpriced and attributes delete evidence after active bindings are gone",
+      "invariant": "Best-effort samples never invent confirmed monetary amounts."
+    },
+    {
+      "id": "native-observation-empty-page-cursor",
+      "workspace": "@pi-cloud/accounting",
+      "file": "test/cube-native-observations.postgres.test.ts",
+      "test": "atomically advances an opaque scan cursor even when missing quantities produce no priced events",
+      "invariant": "Empty observation pages retain atomic cursor fencing."
+    },
+    {
       "id": "native-timeout-renewal-wire",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/cubesandbox-runtime-client.test.ts",
@@ -1177,48 +1268,6 @@
       "file": "test/native-tools.test.ts",
       "test": "leaves a completed background launch alive when a later Bash is cancelled",
       "invariant": "Esc targets unfinished Tools, never background services left by completed calls."
-    },
-    {
-      "id": "allocation-intent-recovery",
-      "workspace": "@pi-cloud/sandbox-control",
-      "file": "test/workspace-runtime-state-repository.test.ts",
-      "test": "retains immutable allocation authorization and recovers uncapsuled creation after owner replacement",
-      "invariant": "Creation authorization and configuration survive controller loss; closure is irreversible and late completion cannot reopen the resource."
-    },
-    {
-      "id": "allocation-unissued-closure",
-      "workspace": "@pi-cloud/sandbox-control",
-      "file": "test/workspace-runtime-state-repository.test.ts",
-      "test": "closes unissued allocations without fabricating legacy absence (legacy=false)",
-      "invariant": "Closing before authorization blocks later materialization without inferring physical absence from an inventory miss."
-    },
-    {
-      "id": "allocation-legacy-uncertainty",
-      "workspace": "@pi-cloud/sandbox-control",
-      "file": "test/workspace-runtime-state-repository.test.ts",
-      "test": "closes unissued allocations without fabricating legacy absence (legacy=true)",
-      "invariant": "Historical missing allocation identity never becomes invented absence or quota release."
-    },
-    {
-      "id": "allocation-lost-create-reply",
-      "workspace": "@pi-cloud/sandbox-control",
-      "file": "test/cubesandbox-runtime-client.test.ts",
-      "test": "recovers a lost creation reply by the original allocation identity without another physical create",
-      "invariant": "Lost creation replies resolve by the original allocation, without allocating another VM."
-    },
-    {
-      "id": "allocation-late-create",
-      "workspace": "@pi-cloud/sandbox-control",
-      "file": "test/cubesandbox-runtime-client.test.ts",
-      "test": "closes an unregistered allocation before accepting a delayed creation",
-      "invariant": "A delayed create cannot reopen a previously closed allocation."
-    },
-    {
-      "id": "allocation-preflight-not-absence",
-      "workspace": "@pi-cloud/sandbox-control",
-      "file": "test/sandbox-controller.test.ts",
-      "test": "requires durable allocation closure even after a retry reports a preflight rejection",
-      "invariant": "Local preflight rejection cannot release an earlier uncertain same-ID allocation; closure and physical confirmation remain required."
     },
     {
       "id": "controller-resource-renewal-isolation",

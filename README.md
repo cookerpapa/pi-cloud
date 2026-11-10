@@ -77,7 +77,7 @@ Control Tool completion -> Kafka replies -> authorized Pi Worker
 Workspace files -> persistent Cube Volumes
 Retained attachment originals -> private S3 objects; Kafka/PG carry references
 Model / storage receipts -> independent Metering service -> PG ledger
-Provider lifecycle history -> Metering interval calculation -> PG ledger
+Provider observations -> independent Metering -> PG ledger (unverified time unpriced)
 ```
 
 | Component | Responsibility |
@@ -90,7 +90,7 @@ Provider lifecycle history -> Metering interval calculation -> PG ledger
 | Tool completion | Scoped Guest HTTPS callbacks, image claim checks and Kafka reply publication |
 | Tool host | Independently published trusted ordinary Tool implementations; no Pi or Session consumer |
 | Control Plane | VM allocation, lifecycle recovery, resource maintenance and scheduled/SCM admission |
-| CubeSandbox | KVM isolation, finite retention and lifecycle evidence; fixed Guest admission/cancellation |
+| CubeSandbox | KVM isolation and native lifecycle APIs; fixed Guest admission/cancellation |
 | CLIProxyAPI | Provider credentials, account selection and upstream model transport |
 | S3 / Cube Volumes | Immutable conversation attachments and Skill packages / mutable Workspace files |
 
@@ -99,8 +99,7 @@ cross-request continuation. Existing installations use the reviewed provider
 configuration conversion in the [component release procedure](docs/COMPONENT_RELEASE.md).
 [Model metering](docs/MODEL_BILLING.md) records request receipts separately from
 conversation history, with versioned prices and an informational Model costs page.
-The independent metering service derives compute allocation time from provider
-lifecycle history and separately receives persistent Workspace capacity receipts; [resource statements](docs/RESOURCE_BILLING.md) preserve
+The independent metering service collects native compute observations and separately receives persistent Workspace capacity receipts; [resource statements](docs/RESOURCE_BILLING.md) preserve
 unconfirmed gaps. Payment collection and production tariffs are not enabled.
 
 The `session-api` process owns public requests and relays live views from the
@@ -116,8 +115,8 @@ idle expiry and external resource accounting.
 The [Guest execution follow-up](docs/reports/guest-execution-20261110.md) moves
 operation admission and exact cancellation out of Cubelet. Session activity uses
 the existing Kafka writer; execution renews eligible resources without polling
-Worker ownership or leases. Physical resource and Volume protections remain in
-the provider adapter and retained Cube extensions.
+Worker ownership or leases. The stock-provider migration moves remaining resource and Volume protection into
+conservative admission and the supported Volume Plugin; see [ADR-0309](docs/adr/0309-stock-sandbox-contract.md).
 Ordinary control tools run in a separate `tool-host` process. Complete versioned
 definitions reach every Worker through a compacted Kafka configuration topic and
 take effect at the next model request. Updating these tools does not replace the
@@ -192,6 +191,12 @@ continuation. Follow [configuration](docs/CONFIGURATION.md) and
 [deployment](docs/PRODUCTION_DEPLOYMENT.md) for non-local addresses and previews.
 
 ## Validation and current limits
+
+The stock Cube cutover in [#26](https://github.com/cookerpapa/pi-managed-agents/issues/26)
+is under validation and is not yet deployed. Official unmodified images currently
+fail the maintained release scan gate. Existing installations remain on their
+serving matched release until this is resolved. Stock compute observations are
+unconfirmed/unpriced; model and Workspace-capacity metering remain independent.
 
 The repository contains native SDK contract tests, PostgreSQL/Kafka integration
 checks, browser layout tests, deterministic fault scenarios and opt-in live

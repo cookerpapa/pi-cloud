@@ -12,7 +12,6 @@ function target(id: string): RuntimeHealthTarget {
   return {
     id,
     observe: vi.fn(async () => running),
-    probe: vi.fn(async () => {}),
     fail: vi.fn(async () => {}),
   };
 }
@@ -33,7 +32,7 @@ it("contains timer enumeration failures and retries without fabricating physical
     expect(vm.fail).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1000);
     await monitor.settle();
-    expect(vm.probe).toHaveBeenCalledOnce();
+    expect(vm.observe).toHaveBeenCalledOnce();
     expect(vm.fail).not.toHaveBeenCalled();
   } finally {
     await monitor.close();
@@ -49,15 +48,16 @@ it("covers 160 due VMs without a batch truncation and bounds concurrent executio
   });
   const targets = Array.from({ length: 160 }, (_, i) => target(String(i)));
   for (const vm of targets)
-    vm.probe = vi.fn(async () => {
+    vm.observe = vi.fn(async () => {
       active++;
       maximum = Math.max(maximum, active);
       await gate;
       active--;
+      return running;
     });
   const monitor = new RuntimeHealthMonitor({
     targets: () => targets,
-    inventory: async () => new Map(targets.map((t) => [t.id, running])),
+    inventory: async () => new Map(),
     onError: vi.fn(),
     concurrency: 8,
   });
@@ -67,8 +67,7 @@ it("covers 160 due VMs without a batch truncation and bounds concurrent executio
     release();
     await monitor.settle();
     expect(maximum).toBe(8);
-    expect(targets.every((t) => vi.mocked(t.probe).mock.calls.length === 1)).toBe(true);
-    expect(targets.every((t) => vi.mocked(t.observe).mock.calls.length === 0)).toBe(true);
+    expect(targets.every((t) => vi.mocked(t.observe).mock.calls.length === 1)).toBe(true);
   } finally {
     release();
     await monitor.close();
@@ -99,21 +98,21 @@ it("shares fresh guest evidence, skips paused VMs and never creates an inactive 
     monitor.refresh();
     expect(monitor.evidence(vm.id, now)).toBe(true);
     await monitor.settle();
-    expect(vm.probe).not.toHaveBeenCalled();
-    expect(paused.probe).not.toHaveBeenCalled();
+    expect(vm.observe).not.toHaveBeenCalled();
+    expect(paused.observe).not.toHaveBeenCalled();
     now += 15_000;
     monitor.refresh();
     await monitor.settle();
-    expect(vm.probe).toHaveBeenCalledOnce();
+    expect(vm.observe).not.toHaveBeenCalled();
     expect(monitor.evidence(vm.id, now - 46_000)).toBe(false);
   } finally {
     await monitor.close();
   }
 });
-it("missing inventory and failed execution need exact evidence, not inferred absence", async () => {
+it("missing inventory and failed native observations never infer physical absence", async () => {
   const vm = target("one"),
     onError = vi.fn();
-  vm.probe = vi.fn(async () => {
+  vm.observe = vi.fn(async () => {
     throw new Error("reply lost");
   });
   const monitor = new RuntimeHealthMonitor({
@@ -124,7 +123,7 @@ it("missing inventory and failed execution need exact evidence, not inferred abs
   try {
     monitor.refresh();
     await monitor.settle();
-    expect(vm.observe).toHaveBeenCalledTimes(2);
+    expect(vm.observe).toHaveBeenCalledTimes(1);
     expect(vm.fail).not.toHaveBeenCalled();
     expect(onError).toHaveBeenCalledOnce();
   } finally {
@@ -144,7 +143,6 @@ it("confirmed physical loss quarantines, while a removed target's late reply is 
     monitor.refresh();
     await monitor.settle();
     expect(dead.fail).toHaveBeenCalledOnce();
-    expect(dead.probe).not.toHaveBeenCalled();
     targets = [];
     monitor.refresh();
     expect(monitor.evidence(dead.id, Date.now())).toBe(false);

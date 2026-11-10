@@ -62,9 +62,10 @@ protocol, record the decision under `docs/adr/` before implementation.
   for maintenance. Cold resource metadata bootstrap is allowed. On-demand probes
   register their original reply waiter before entering that same Session path.
   Diagnostic evidence never becomes native history or authorizes destruction,
-  replay, lease renewal or quota release. Cubelet alone owns finite elastic expiry:
-  without fresh renewal, its deadline permits reclamation even with an unconfirmed
-  Tool. Dedicated machines do not expire. Physical absence still gates quota release.
+  replay, lease renewal or quota release. Under ADR-0309 the native provider owns elastic expiry through its timeout API.
+  Without fresh activity, expiry may reclaim an unconfirmed Tool. Management
+  observations must not generate Guest traffic that refreshes native idle time.
+  Dedicated machines do not expire. Positive provider deletion evidence gates quota release.
 - Run the fixed Pi core only in the trusted Agent Runner, never in the API/control-plane
   process. Route every untrusted file or shell operation to a separate Tool Sandbox.
 - Load only code-owned trusted infrastructure tools in the Agent Runner.
@@ -128,21 +129,23 @@ protocol, record the decision under `docs/adr/` before implementation.
 - Treat the persistent Cube Volume as the sole Workspace byte authority. Do
   not add a second per-Run archive/checkpoint head without measured recovery
   requirements and a new ADR.
-  Volume deletion closes attachment admission and reconciles versioned node
-  reference state (ADR-0226). Lost allocation replies, zero holder count alone,
-  and replaced node metadata never prove safe Volume deletion.
+  Under ADR-0309 the supported Volume Plugin persists an opaque receipt for each
+  attachment and shares deletion admission. Lost replies, missing metadata and
+  zero native reference counts do not prove that Workspace bytes can be deleted.
 - Do not claim exactly-once semantics for arbitrary shell commands or external side effects.
 - Do not run untrusted tools in the control-plane or trusted Agent Runner process.
 - Control Plane owns VM lifecycle policy, binding admission, explicit release
   and recovery. ADR-0273 separates durable user intent and verified allocation
   closure from disposable physical observations. A stable development machine
   receives a new allocation UUID only after confirmed old physical absence.
-  Under ADR-0272 Cubelet owns finite elastic idle expiry; retain
+  Under ADR-0309 native provider timeout/traffic semantics own idle expiry; retain
   no competing Control Plane deadline scanner or warm-cache eviction policy.
   Dedicated machines remain non-expiring. The fixed Guest service owns
   operation admission, boot/ordered-position fencing and exact Tool cancellation
-  through the provider ordinary process API (ADR-0307). Cube retains resource closure
-  and Volume reference protection; no native Cube execution-manager fallback remains.
+  through the provider ordinary process API (ADR-0307). Resource creation uses one
+  PG-issued send permit and early encrypted receipt, never uncertain create replay.
+  Pending applications cannot be cancelled/released; unknown cleanup stays pending.
+  No private Cube allocation API or execution-manager fallback remains.
   Do not add per-Tool PG Run-lease checks. Chat Stop aborts the Worker Agent and
   sends operation cancellation through the same Session log. Pi Durable owns
   native abort settlement; late physical replies never overwrite it (ADR-0229).
@@ -153,15 +156,17 @@ protocol, record the decision under `docs/adr/` before implementation.
   target in the existing control Outbox, with no process-stop receipt table.
   `SandboxProvider` owns Cube mechanics and exposes no native
   SDK or management credentials to the Worker. There is no independent Broker.
-  Quota release requires confirmed absence on the recorded node, not a missing
-  heartbeat or master route. A normal Tool error never authorizes whole-VM deletion.
+  Quota release requires positive deletion evidence under the selected provider
+  contract, never a missing heartbeat, inventory row or master route. A normal Tool error never authorizes whole-VM deletion.
 - Keep public Session API, Session execution/Worker control, resource management,
   ordinary Tool host and HTTPS completion as independent maintained roles.
   The public API relays the single execution owner's live view without acquiring
   a Session consumer or execution authority. Cubelet contains no Node completion
   process, Kafka/PG/S3 client or compute-price/interval producer. Independent
-  metering derives intervals from provider lifecycle history and commits its cursor
-  with receipts. Source gaps remain unpriced; accounting is never resource authority.
+  metering commits provider observations and opaque cursors with derived receipts.
+  Stock Cube cannot prove continuous physical coverage: sampled compute intervals
+  are unconfirmed/unpriced. Model and capacity pricing retain their own evidence.
+  Accounting never becomes resource authority.
 - CubeSandbox KVM is the only supported Tool runtime. Adding an alternate
   runtime requires a new current ADR and the same security/recovery acceptance
   suite; it must not enter as a silent fallback.

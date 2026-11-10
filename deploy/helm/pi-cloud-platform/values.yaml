@@ -82,7 +82,7 @@ bootstrap:
   maximumSessions: null
 
 metering:
-  sourcePorts: [443]
+  sourcePorts: [443, 6379]
   replicas: 1
   resources:
     requests: { cpu: 50m, memory: 128Mi }
@@ -253,6 +253,9 @@ sandboxPlane:
     # All Projector replicas need the endpoints of every served Cube cluster.
     executionEndpoints: []
     apiUrl: https://cube-api.example.com
+    # Read-only native Cube lifecycle evidence; keep this on the trusted network.
+    lifecycleRedisUrl: ""
+    lifecycleRedisSecret: { name: "", key: redis-password }
     templateId: pi-cloud-tool-v1
     developmentTemplateIds:
       starter: tpl-000000000000000000000000

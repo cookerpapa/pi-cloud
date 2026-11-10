@@ -1,3 +1,4 @@
+import { initializeNativeVolumeAttachmentState } from "./lib/native-volume-attachment-state.mjs";
 import { resolve } from "node:path";
 import { readPrivateRuntimeFile } from "./lib/runtime-file-policy.mjs";
 import { createWorkspaceStoragePoolGuard } from "./lib/workspace-storage-pool-guard.mjs";
@@ -24,7 +25,7 @@ for (let i = 0; i < args.length; i += 2) {
 let guard;
 try {
   let result;
-  if (operation === "plan" || operation === "prepare") {
+  if (operation === "plan" || operation === "prepare" || operation === "attachments") {
     if (!flags.has("--plan") || flags.size !== 1)
       throw new Error("A private bounded operator plan file is required");
     const options = JSON.parse(
@@ -35,7 +36,12 @@ try {
       ),
     );
     if (operation === "plan") result = await inspectWorkspaceStoragePool(options);
-    else if ((await inspectWorkspaceStoragePool(options)).state === "complete") {
+    else if (operation === "attachments") {
+      guard = await createWorkspaceStoragePoolGuard(options, {
+        planPath: resolve(flags.get("--plan")),
+      });
+      result = await initializeNativeVolumeAttachmentState(options, guard.assertQuiescent);
+    } else if ((await inspectWorkspaceStoragePool(options)).state === "complete") {
       // A completed operation has no mutation to authorize. Verify the owned
       // mount without requiring the PG that K3s cannot start until it is ready.
       result = await verifyWorkspaceStoragePool(options);

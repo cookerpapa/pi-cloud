@@ -1167,14 +1167,14 @@ const serviceAddress = (component, portName) => {
 const runtimeBuild = await readFile(
   resolve(repositoryRoot, "deploy/cubesandbox/runtime-build.json"),
 );
-const executionProtocolVersion = JSON.parse(runtimeBuild.toString("utf8")).managedProtocolVersion;
-if (!Number.isSafeInteger(executionProtocolVersion) || executionProtocolVersion < 1)
-  throw new Error("Managed Cube execution protocol version is invalid");
+const providerContractVersion = JSON.parse(runtimeBuild.toString("utf8")).providerContractVersion;
+if (!Number.isSafeInteger(providerContractVersion) || providerContractVersion < 1)
+  throw new Error("Stock Cube provider contract version is invalid");
 const cluster = {
   formatVersion: 1,
   cubeCommit: CUBE_COMMIT,
-  executionProtocolVersion,
-  runtimePatchSha256: createHash("sha256").update(runtimeBuild).digest("hex"),
+  providerContractVersion,
+  runtimeManifestSha256: createHash("sha256").update(runtimeBuild).digest("hex"),
   nodeName,
   api: serviceAddress("api", "http-api"),
   master: serviceAddress("master", "cubemaster"),

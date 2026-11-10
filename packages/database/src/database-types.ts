@@ -1067,6 +1067,7 @@ export interface Database {
     created_at: GeneratedTimestamp;
   };
   resource_metering_resources: {
+    provider_binding: GeneratedNullable<Record<string, unknown>>;
     lifecycle_state: GeneratedNullable<Record<string, unknown>>;
     id: string;
     tenant_id: string;
@@ -1078,6 +1079,7 @@ export interface Database {
     received_at: GeneratedTimestamp;
   };
   resource_lifecycle_sources: {
+    source_position: GeneratedNullable<string>;
     id: string;
     provider: string;
     node_id: string;

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { sql, type Kysely, type Transaction } from "kysely";
-import type { Database } from "@pi-cloud/database";
+import { resourceIdentityHash, type Database } from "@pi-cloud/database";
 import {
   parseResourceMeteringBatch,
   parseResourceRateInput,
@@ -36,7 +36,7 @@ export class ResourceMeteringService {
 
   async lockResource(tx: Transaction<Database>, resource: ResourceIdentity) {
     const key = `${resource.kind}:${resource.resourceId}`,
-      contextHash = receiptHash(resource);
+      contextHash = resourceIdentityHash(resource);
     await tx
       .insertInto("resource_metering_resources")
       .values({

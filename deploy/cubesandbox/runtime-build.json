@@ -1,27 +1,26 @@
 {
   "upstreamRepository": "https://github.com/TencentCloud/CubeSandbox.git",
   "upstreamCommit": "4411c96ba8658a959de34693f54f4918db2a432f",
-  "managedProtocolVersion": 10,
   "guestProtocolVersion": 7,
   "guestExecutorProtocolVersion": 1,
-  "patches": [
-    {
-      "file": "0001-runtime-boundaries.patch",
-      "sha256": "1393107b4f98cedd6d4e11fca4d44b1a11e7e583e9acf7f881c15538976b55f3"
-    },
-    {
-      "file": "0002-release-dependencies.patch",
-      "sha256": "379c7e41fc0bbf2b3184b95ec91e857ada0aa9d1e21608bfa20ddbdcf4a33008"
-    }
-  ],
-  "buildImages": {
-    "cubeletBuilder": "ghcr.io/tencentcloud/cubesandbox-builder@sha256:732c9fd482dd1480bbf1e3aaf5e7f8f61d822f53548b4447ce1ad75bb393fb15",
-    "go": "golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af",
-    "rust": "rust:1.85-alpine@sha256:4333721398de61f53ccbe53b0b855bcc4bb49e55828e8f652d7a8ac33dd0c118",
-    "ubuntu22": "ubuntu:22.04@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02",
-    "ubuntu24": "ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3",
-    "alpine": "alpine:3.21@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507"
-  },
   "upstreamVersion": "0.7.3",
-  "lifecycleHistoryVersion": 1
+  "providerContractVersion": 1,
+  "nativeImages": {
+    "cube-api": {
+      "reference": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-api:v0.7.3@sha256:f7f4a91155774609645604e1e427455abe6757b9dccb2eda909a4cd5d0b220c1",
+      "platform": "linux/amd64"
+    },
+    "cube-master": {
+      "reference": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-master:v0.7.3@sha256:0e76d7c90a4250243478cfbed64cdce75cb2096c6d10e2a66894d7dc883972ad",
+      "platform": "linux/amd64"
+    },
+    "cube-templatecenter": {
+      "reference": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-templatecenter:v0.7.3@sha256:1e3622e3fc78b9bceaafd63619b8818e9c036f6b4fd14de745984d3ab154dc48",
+      "platform": "linux/amd64"
+    },
+    "cubelet": {
+      "reference": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cubelet:v0.7.3@sha256:9ae364f5ae4495e489820e5b74c8c470e086aa826e0b46d00375072d0f31acfc",
+      "platform": "linux/amd64"
+    }
+  }
 }

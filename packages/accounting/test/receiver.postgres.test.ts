@@ -33,7 +33,18 @@ it("starts without management, preserves acknowledged receipts across restart, a
     payload: { events: [{ context, kind: "started", occurredAt: context.requestedAt }] },
   };
   try {
-    await runMigrations(database, "up");
+    // Bootstrap DDL is not a receiver request and must not inherit the deliberately
+    // short checkout deadline used below to exercise an unavailable service pool.
+    const bootstrap = createDatabase({
+      connectionString: process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL!,
+      maxConnections: 1,
+      checkoutTimeoutMs: 60000,
+    });
+    try {
+      await runMigrations(bootstrap, "up");
+    } finally {
+      await bootstrap.destroy();
+    }
     expect((await first.inject({ url: "/health/ready" })).statusCode).toBe(200);
     expect((await first.inject(request)).statusCode).toBe(200);
     await first.close();

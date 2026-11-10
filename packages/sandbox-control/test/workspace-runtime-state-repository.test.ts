@@ -459,6 +459,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
     ]);
     expect(results.filter((r) => r.fresh)).toHaveLength(1);
     const receipt = {
+      providerId: "cubesandbox",
       runtimeId: randomUUID(),
       runtimeName: "native-created-id",
       capsule: "test-receipt-" + "x".repeat(96),

@@ -1,3 +1,5 @@
+import { retireCubeExtensionTables } from "./lib/retire-cube-extension-tables.mjs";
+import { nativeCubeLifecycleOptions } from "./lib/cube-native-lifecycle-options.mjs";
 import { reconcileCubeEgressGateway } from "./lib/cube-egress-release.mjs";
 import { ensureMeteringSecret } from "./lib/metering-secret.mjs";
 import { configureBuildProxy } from "./lib/upstream-proxy.mjs";
@@ -405,6 +407,7 @@ try {
         ),
       );
       const native = new OfficialCubeSandboxRuntimeClient({
+        ...nativeCubeLifecycleOptions(),
         apiUrl: `http://${cluster.api.host}:${cluster.api.port}`,
         apiKey: (
           await readFile(resolve(runtimeDirectory, "secrets/cubesandbox-api-key"), "utf8")
@@ -473,6 +476,12 @@ try {
     kubectl(["apply", "-f", "deploy/cubesandbox/template-registry.yaml"]);
     phase("wait for native Cube node registration after Pod rollout");
     await waitForCubeNodeReadiness({ kubectl });
+    await retireCubeExtensionTables({
+      kubectl,
+      tag: candidate.version,
+      assertDrained: () => assertDrained(true),
+      assertNativeAbsent: () => assertNativeInventory(true),
+    });
     run(
       "scripts/register-cubesandbox-tool-template.mjs",
       ["--prepared-image-id", candidate.guestImageId],

@@ -40,6 +40,7 @@ export const SandboxLifecycleEventSchema = Type.Object(
         Type.Literal("source_restarted"),
         Type.Literal("collection_unavailable"),
         Type.Literal("clock_changed"),
+        Type.Literal("provider_observation"),
       ]),
     ),
   },
@@ -49,6 +50,7 @@ export type SandboxLifecycleEvent = Static<typeof SandboxLifecycleEventSchema>;
 const page = Type.Object(
   {
     epoch: name,
+    sourcePosition: Type.Optional(Type.String({ minLength: 1, maxLength: 1024 })),
     low: sequence,
     high: sequence,
     next: sequence,
@@ -59,7 +61,7 @@ const page = Type.Object(
   { additionalProperties: false },
 );
 export type SandboxLifecyclePage = Static<typeof page>;
-export type SandboxLifecycleCursor = { epoch: string; sequence: string };
+export type SandboxLifecycleCursor = { epoch: string; sequence: string; sourcePosition?: string };
 export function parseSandboxLifecyclePage(value: unknown): SandboxLifecyclePage {
   if (!Value.Check(page, value)) throw new TypeError("Invalid sandbox lifecycle history");
   if (

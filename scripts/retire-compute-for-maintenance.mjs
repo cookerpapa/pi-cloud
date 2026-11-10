@@ -1,3 +1,4 @@
+import { nativeCubeLifecycleOptions } from "./lib/cube-native-lifecycle-options.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -84,6 +85,7 @@ try {
       await readFile(resolve(runtimeDirectory, "cubesandbox/cluster.json"), "utf8"),
     );
     native = new OfficialCubeSandboxRuntimeClient({
+      ...nativeCubeLifecycleOptions(),
       apiUrl: `http://${cluster.api.host}:${cluster.api.port}`,
       apiKey: (
         await readFile(resolve(runtimeDirectory, "secrets/cubesandbox-api-key"), "utf8")

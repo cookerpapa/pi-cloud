@@ -3425,7 +3425,6 @@ export class SandboxController {
           tenantId: candidate.handle.assignment.tenantId,
           id,
           observe: () => this.#provider.observeRuntime(candidate.handle),
-          probe: () => this.#execution.probeExecution(candidate.handle),
           fail: () =>
             candidate.fail(
               new SandboxControlError(

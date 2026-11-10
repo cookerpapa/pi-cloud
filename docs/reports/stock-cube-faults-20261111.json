@@ -1,0 +1,158 @@
+{
+  "format": "pi-cloud.fault-eval-report.v1",
+  "piCloudRevision": "292e558869fab364c7c0152afc828a42b16bbb47",
+  "dirtyWorktree": true,
+  "generatedAt": "2026-11-10T20:36:09.087Z",
+  "methodology": "deterministic_targeted_fault_injection",
+  "executionGroups": 8,
+  "executionDurationMs": 74940,
+  "durationMetric": "Vitest target assertion duration; shared file setup/process cost is groupDurationMs",
+  "liveChaosExperiment": false,
+  "caseCount": 20,
+  "successful": 20,
+  "successRate": 1,
+  "p50DurationMs": 25,
+  "p95DurationMs": 7678,
+  "results": [
+    {
+      "id": "native-creation-permit-recovery",
+      "success": true,
+      "invariant": "Owner replacement never reissues an uncertain native create.",
+      "durationMs": 7678,
+      "groupDurationMs": 28012
+    },
+    {
+      "id": "native-creation-unissued-close",
+      "success": true,
+      "invariant": "Known unsent admission closes without fabricating a native effect.",
+      "durationMs": 7762,
+      "groupDurationMs": 28012
+    },
+    {
+      "id": "native-creation-receipt-after-close",
+      "success": true,
+      "invariant": "One sender is admitted; a factual late receipt cannot reopen resource admission.",
+      "durationMs": 7603,
+      "groupDurationMs": 28012
+    },
+    {
+      "id": "native-creation-no-http-retry",
+      "success": true,
+      "invariant": "A disconnected native creation reply triggers no second POST.",
+      "durationMs": 5,
+      "groupDurationMs": 3826
+    },
+    {
+      "id": "native-timeout-renewal-wire",
+      "success": true,
+      "invariant": "Elastic renewal uses the provider-native timeout contract, not a private allocation journal API.",
+      "durationMs": 25,
+      "groupDurationMs": 3826
+    },
+    {
+      "id": "guest-cold-connection-from-cloud-capsule",
+      "success": true,
+      "invariant": "Cold Guest-control access uses retained private connection data and never calls a managed allocation receipt or implicitly resumes compute.",
+      "durationMs": 25,
+      "groupDurationMs": 3826
+    },
+    {
+      "id": "native-creation-metadata-recovery",
+      "success": true,
+      "invariant": "Read-only unique native lookup recovers the original VM.",
+      "durationMs": 3,
+      "groupDurationMs": 4088
+    },
+    {
+      "id": "native-creation-ambiguous-lookup",
+      "success": true,
+      "invariant": "Missing or duplicate physical identities remain unresolved.",
+      "durationMs": 2,
+      "groupDurationMs": 4088
+    },
+    {
+      "id": "native-creation-receipt-failure",
+      "success": true,
+      "invariant": "Lost receipt ownership stops Guest initialization without unowned physical cleanup.",
+      "durationMs": 1,
+      "groupDurationMs": 4088
+    },
+    {
+      "id": "native-timeout-stale-activity",
+      "success": true,
+      "invariant": "Delayed activity does not receive a new full retention window and expired activity never renews compute.",
+      "durationMs": 14,
+      "groupDurationMs": 4088
+    },
+    {
+      "id": "native-recovery-refusal-not-absence",
+      "success": true,
+      "invariant": "A recovery-time local refusal cannot disprove the first request effects.",
+      "durationMs": 7,
+      "groupDurationMs": 4116
+    },
+    {
+      "id": "native-missing-inventory-not-absence",
+      "success": true,
+      "invariant": "Only positive retained provider evidence can establish deletion.",
+      "durationMs": 5,
+      "groupDurationMs": 789
+    },
+    {
+      "id": "native-lifecycle-source-outage",
+      "success": true,
+      "invariant": "Unavailable lifecycle evidence does not release resources.",
+      "durationMs": 2,
+      "groupDurationMs": 789
+    },
+    {
+      "id": "native-lifecycle-history-gap",
+      "success": true,
+      "invariant": "Provider history gaps remain explicit.",
+      "durationMs": 1,
+      "groupDurationMs": 789
+    },
+    {
+      "id": "native-observation-unpriced",
+      "success": true,
+      "invariant": "Best-effort samples never invent confirmed monetary amounts.",
+      "durationMs": 6348,
+      "groupDurationMs": 9732
+    },
+    {
+      "id": "native-observation-empty-page-cursor",
+      "success": true,
+      "invariant": "Empty observation pages retain atomic cursor fencing.",
+      "durationMs": 410,
+      "groupDurationMs": 9732
+    },
+    {
+      "id": "machine-unresolved-create-admission",
+      "success": true,
+      "invariant": "Concurrent API owners cannot admit a second unresolved machine for the same user; exact retries and independent users retain their own identities.",
+      "durationMs": 394,
+      "groupDurationMs": 13274
+    },
+    {
+      "id": "machine-recovery-retains-occupancy",
+      "success": true,
+      "invariant": "Sealing a lost Worker does not release the original logical Run's resource occupancy.",
+      "durationMs": 151,
+      "groupDurationMs": 13274
+    },
+    {
+      "id": "workspace-recovery-retains-occupancy",
+      "success": true,
+      "invariant": "Recovery-pending work cannot lose its Workspace even when the old writer was sealed.",
+      "durationMs": 127,
+      "groupDurationMs": 11086
+    },
+    {
+      "id": "workspace-stop-seal-retains-occupancy",
+      "success": true,
+      "invariant": "A user Stop with unfinished ordered writer closure still blocks resource deletion.",
+      "durationMs": 73,
+      "groupDurationMs": 11086
+    }
+  ]
+}

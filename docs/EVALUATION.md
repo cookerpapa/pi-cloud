@@ -170,7 +170,7 @@ transport contracts: durable-before-launch, duplicate/changed commands, exact
 cancel-before-submit, original deadlines, service/VM identity and disconnected
 callers. `guest-operation.test.ts` exercises the actual launcher with isolated OS
 ports; deployed KVM acceptance proves real cgroup cancellation and background work.
-Native allocation/Volume contracts remain in `npm run cubesandbox:allocation-check`.
+Native allocation/Volume contracts remain in `npm run cubesandbox:native-check`.
 No Guest test substitutes for physical-resource closure evidence.
 
 ## Cube and real-model acceptance
@@ -372,18 +372,21 @@ the measurements; this is not fleet capacity or live provider latency evidence.
 
 ### Agent Stop and controller replacement
 
-`npm run cubesandbox:allocation-check` exports the pinned Cube source and applies
-the maintained patch set. It tests node bbolt persistence and race boundaries and
-Master allocation transactions against disposable pinned MySQL. An explicit
-`PI_CLOUD_ALLOCATION_MYSQL_DSN` must address a disposable database named
-`allocation_test` or prefixed `pi_cloud_allocation_`; it is never inferred from
-production credentials. Cube source defaults to `~/CubeSandbox`, overridable via
-`PI_CLOUD_CUBESANDBOX_REPOSITORY`.
+`npm run cubesandbox:native-check` verifies pinned stock artifacts and the absence
+of Cube source/dependency patches. Provider, PG ownership and native lifecycle
+contracts live in their package suites. The external Volume Plugin has isolated
+initialization, attachment and deletion checks:
 
-`PI_CLOUD_LIVE_VM_ALLOCATION_CHECK=1 node --import tsx scripts/run-live-vm-allocation-check.mjs`
-uses owned short-lived VMs to drop a successful create reply, retrieve the same
-VM, repeat creation, close before delayed creation, and close in the native
-creation window. It confirms physical absence on the recorded node.
+```sh
+PI_CLOUD_TEST_IMAGE=<built-volume-gateway-image> node scripts/run-volume-initialization-contract-check.mjs
+PI_CLOUD_TEST_IMAGE=<built-volume-gateway-image> node scripts/run-volume-attachment-contract-check.mjs
+PI_CLOUD_TEST_IMAGE=<built-volume-gateway-image> node --import tsx scripts/run-volume-deletion-contract-check.mjs
+```
+
+`PI_CLOUD_LIVE_RESOURCE_ADMISSION_CHECK=1 node --import tsx scripts/run-live-resource-admission-check.mjs`
+verifies the owned per-user pending-create gate, exact retries, active-Run refusal,
+Stop settlement and preserved Workspace cleanup. Uncertain native creation is not
+repeated; there is no longer a private close-before-create endpoint to exercise.
 `PI_CLOUD_LIVE_CREATION_RECOVERY_CHECK=1 node --import tsx scripts/run-live-vm-creation-recovery-check.mjs`
 uses Luna and an owned Workspace, SIGKILLs Control Plane after creation intent but
 before capsule persistence, and requires adoption of the original allocation.
@@ -407,12 +410,8 @@ mode tests Pod replacement; force deletion alone is not proof of SIGKILL.
 Upload acceptance uses the starter fixture profile by default;
 `PI_CLOUD_LIVE_SANDBOX_PROFILE=standard` tests the standard template explicitly.
 
-The October 4 repair regressions are maintained in the owning package suites and
-`npm run cubesandbox:allocation-check` (real Bolt/MySQL plus native paused-delete
-composition). The old review characterizations remain in Git at `c3f5f6bd`.
-`PI_CLOUD_LIVE_ALLOCATION_VOLUME_CHECK=1 node --import tsx scripts/run-live-allocation-volume-check.mjs`
-uses only its own two VMs and Volume, proving paused direct closure, shared bytes,
-delete/admission exclusion and confirmed cleanup. It requires the matched native
-protocol 7 release. `PI_CLOUD_LIVE_FAST_COMPACTION_CHECK=1 node --import tsx scripts/run-live-fast-compaction-check.mjs`
+The earlier private allocation/MySQL and patched template-cleanup tests remain in
+Git at `e1eaeb1d`. They are superseded by the stock API and external attachment
+contracts, rather than retained as compatibility requirements. `PI_CLOUD_LIVE_FAST_COMPACTION_CHECK=1 node --import tsx scripts/run-live-fast-compaction-check.mjs`
 runs real Luna through the production Gateway/Pi components with a small fixture
 window. The latter does not claim a durable PG/Kafka Run or million-token load.
