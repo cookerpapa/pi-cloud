@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "id": "stock-cube-20261111",
+  "approvedAt": "2026-11-11",
+  "reason": "Owner explicitly approved publishing the four pinned unmodified official Cube images after reviewing their dependency findings. This does not approve other images or changed upstream inputs.",
+  "images": [
+    {
+      "role": "cube-api",
+      "upstream": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-api:v0.7.3@sha256:f7f4a91155774609645604e1e427455abe6757b9dccb2eda909a4cd5d0b220c1",
+      "filesystemLayersSha256": "07acd786351b95b085601b172e0658b0f7d9a92be5f5a140a0166e8e4d015afd"
+    },
+    {
+      "role": "cube-master",
+      "upstream": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-master:v0.7.3@sha256:0e76d7c90a4250243478cfbed64cdce75cb2096c6d10e2a66894d7dc883972ad",
+      "filesystemLayersSha256": "0ee5ab26cb48d3a4ddaf6e77702fc9086ff3421d6d828fc1d2fd7d23e51b199d"
+    },
+    {
+      "role": "cube-templatecenter",
+      "upstream": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-templatecenter:v0.7.3@sha256:1e3622e3fc78b9bceaafd63619b8818e9c036f6b4fd14de745984d3ab154dc48",
+      "filesystemLayersSha256": "eed224737d0b451d5056f9090a8efb518391a68cccdab4ce6b185e8e09de3791"
+    },
+    {
+      "role": "cubelet",
+      "upstream": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cubelet:v0.7.3@sha256:9ae364f5ae4495e489820e5b74c8c470e086aa826e0b46d00375072d0f31acfc",
+      "filesystemLayersSha256": "8d0c949e137021802db00670b6397f838d961d756de766fa6bdd2599d4f30608"
+    }
+  ]
+}

@@ -1,3 +1,7 @@
+import {
+  acceptedStockCubeImage,
+  STOCK_CUBE_EXCEPTION_PATH,
+} from "./stock-cube-release-exception.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
@@ -83,6 +87,9 @@ export async function verifyMatchedRelease({ directory, root, capture, currentGu
     "manifest.json",
     evidence.rootSbom.path,
     evidence.policy.exceptionPolicy.path,
+    ...(evidence.policy.stockCubeExceptionPolicy
+      ? [evidence.policy.stockCubeExceptionPolicy.path]
+      : []),
     ...evidence.images.flatMap((image) => [
       image.sbom.path,
       image.vulnerabilityReport.path,
@@ -96,11 +103,25 @@ export async function verifyMatchedRelease({ directory, root, capture, currentGu
     const inspected = JSON.parse(await capture("docker", ["image", "inspect", image.reference]));
     assert.equal(inspected.length, 1);
     assert.equal(inspected[0].Id, image.imageId, "Scanned image was replaced");
-    assert.equal(
-      image.policyVulnerabilities.HIGH.fixable + image.policyVulnerabilities.CRITICAL.fixable,
-      0,
-      "Release security gate failed",
-    );
+    const fixable =
+      image.policyVulnerabilities.HIGH.fixable + image.policyVulnerabilities.CRITICAL.fixable;
+    if (fixable > 0) {
+      const accepted = await acceptedStockCubeImage(root, image.reference, inspected[0]);
+      assert(accepted && image.releaseException, "Release security gate failed");
+      assert.deepEqual(image.releaseException, accepted, "Stock Cube exception identity changed");
+      assert(
+        evidence.policy.stockCubeExceptionPolicy,
+        "Stock Cube exception policy is not recorded",
+      );
+      assert.equal(
+        await readFile(
+          resolve(directory, "evidence", evidence.policy.stockCubeExceptionPolicy.path),
+          "utf8",
+        ),
+        await readFile(resolve(root, STOCK_CUBE_EXCEPTION_PATH), "utf8"),
+        "Stock Cube exception policy changed",
+      );
+    }
     references.set(image.reference, image.imageId);
   }
   const catalog = JSON.parse(await readFile(resolve(directory, "images.json"), "utf8"));

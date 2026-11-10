@@ -12,7 +12,7 @@
 - [x] #26 source: one-shot native creation admission and encrypted early receipts; remove private allocation RPC and deadline.
 - [x] #26 source: external Volume Plugin attachment receipts and shared deletion admission; isolated create/attach/delete checks pass.
 - [x] #26 source: native lifecycle/expiry evidence and release-operator migration; remain a single matched cutover.
-- [ ] #26: resolve official-image scan failures without an implicit dependency overlay or release waiver.
+- [x] #26: record the owner's explicit four-image exception under ADR-0310, without hidden dependency changes or a global scan bypass.
 - [ ] #26: serial verification, matched delivery and original-asset preservation.
 - [x] #27 source: audit Android upstream artifacts and remove the driver manifest rewrite; device rollout remains pending.
 - [ ] #27: evaluate BoxLite against the stock-provider boundary before enabling it.

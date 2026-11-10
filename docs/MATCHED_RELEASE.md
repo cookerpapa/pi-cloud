@@ -2,9 +2,11 @@
 
 ADR-0309's stock-provider source migration uses schemas 216/217, resource capsule 3
 and provider contract 1. Session v20, replies v4 and Guest protocols remain unchanged.
-It is **not deployed**: unchanged upstream images fail the existing scan gate.
-See the [source/image assessment](reports/stock-cube-source-20261111.md). Do not
-substitute a hidden dependency patch or skip the gate during publication.
+The owner approved the four fixed official images under
+[ADR-0310](adr/0310-stock-cube-release-exception.md). Keep their findings visible,
+record the exact exception in release evidence and verify unchanged filesystem
+layers; other images retain the normal scan gate. Do not introduce a hidden
+source/dependency patch or a global skip flag. Cutover is in progress.
 The new operator first settles applications and pending storage deletion, retires
 old compute, and initializes external Volume attachment state under the cold guard.
 Only after old native writers disappear may it remove private SQL extension tables.

@@ -1,5 +1,8 @@
 # Current architecture decisions
 
+[ADR-0310](0310-stock-cube-release-exception.md) records the owner-approved release
+exception for four exact stock Cube image inputs; all other publication gates remain.
+
 [ADR-0309](0309-stock-sandbox-contract.md) records the owner's accepted zero-Cube-
 patch implementation boundary: native APIs, external ownership, pending uncertainty
 and unpriced accounting gaps. Implementation is in progress in #26–#27.

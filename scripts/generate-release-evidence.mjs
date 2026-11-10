@@ -1,3 +1,7 @@
+import {
+  acceptedStockCubeImage,
+  STOCK_CUBE_EXCEPTION_PATH,
+} from "./lib/stock-cube-release-exception.mjs";
 import { imageReleaseTargets } from "./lib/release-impact.mjs";
 import { configureBuildProxy, proxyDownloadNetwork } from "./lib/upstream-proxy.mjs";
 import { execFile, spawn } from "node:child_process";
@@ -263,6 +267,11 @@ try {
     { mode: 0o600 },
   );
 
+  await writeFile(
+    resolve(stageDirectory, "stock-cube-image-exception.json"),
+    await readFile(resolve(repositoryRoot, STOCK_CUBE_EXCEPTION_PATH)),
+    { mode: 0o600 },
+  );
   const trivyBase = trivyContainerArguments({
     cacheDirectory: options.cacheDirectory,
     inputDirectory: temporaryDirectory,
@@ -432,7 +441,16 @@ try {
     if (imageName === "cubesandbox-tool") assertGuestInventory(report);
     const vulnerabilities = vulnerabilitySummary(report);
     const policyVulnerabilities = vulnerabilitySummary(policyReport);
+    const releaseException =
+      policyVulnerabilities.HIGH.fixable + policyVulnerabilities.CRITICAL.fixable > 0
+        ? await acceptedStockCubeImage(
+            repositoryRoot,
+            reference,
+            JSON.parse(await capture("docker", ["image", "inspect", reference]))[0],
+          )
+        : undefined;
     images.push({
+      ...(releaseException ? { releaseException } : {}),
       ...evidence,
       vulnerabilities,
       policyVulnerabilities,
@@ -444,8 +462,9 @@ try {
 
   const blocked = images.filter(
     (image) =>
-      image.policyVulnerabilities.HIGH.fixable > 0 ||
-      image.policyVulnerabilities.CRITICAL.fixable > 0,
+      (image.policyVulnerabilities.HIGH.fixable > 0 ||
+        image.policyVulnerabilities.CRITICAL.fixable > 0) &&
+      !image.releaseException,
   );
   const manifest = {
     format: "pi-cloud.release-evidence.v1",
@@ -459,6 +478,10 @@ try {
       reportUnfixed: true,
       maximumFixableFindings: 0,
       exceptionPolicy: await fileEvidence(stageDirectory, ".trivyignore.yaml"),
+      stockCubeExceptionPolicy: await fileEvidence(
+        stageDirectory,
+        "stock-cube-image-exception.json",
+      ),
       packageTypes: ["os", "library"],
     },
     rootSbom: await fileEvidence(stageDirectory, relative(stageDirectory, rootSbomPath)),
@@ -470,6 +493,7 @@ try {
   const evidencePaths = [
     "pi-cloud-root.cdx.json",
     ".trivyignore.yaml",
+    "stock-cube-image-exception.json",
     "manifest.json",
     ...images.flatMap((image) => [
       image.sbom.path,
