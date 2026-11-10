@@ -1,0 +1,98 @@
+{
+  "sourceRevision": "6875abaa",
+  "generatedAt": "2026-11-10T20:46:22.979Z",
+  "passed": false,
+  "results": [
+    {
+      "role": "cube-api",
+      "reference": "pi-cloud/cube-api:stock-source-20261111-review",
+      "fixableHigh": 15,
+      "fixableCritical": 1,
+      "packages": [
+        "brotli-libs",
+        "curl",
+        "libcrypto3",
+        "libcurl",
+        "libssl3",
+        "musl",
+        "musl-utils",
+        "zlib"
+      ],
+      "upstream": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-api:v0.7.3@sha256:f7f4a91155774609645604e1e427455abe6757b9dccb2eda909a4cd5d0b220c1",
+      "imageId": "sha256:353324718d410476a7daa70315517bf74aa2eb7347df8661630a9ea83e9e3c77",
+      "upstreamFilesystemUnchanged": true,
+      "filesystemLayersSha256": "07acd786351b95b085601b172e0658b0f7d9a92be5f5a140a0166e8e4d015afd"
+    },
+    {
+      "role": "cube-master",
+      "reference": "pi-cloud/cube-master:stock-source-20261111-review",
+      "fixableHigh": 19,
+      "fixableCritical": 1,
+      "packages": [
+        "apt",
+        "libapt-pkg6.0t64",
+        "libbrotli1",
+        "certifi",
+        "github.com/quic-go/quic-go",
+        "golang.org/x/net",
+        "google.golang.org/grpc",
+        "stdlib"
+      ],
+      "upstream": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-master:v0.7.3@sha256:0e76d7c90a4250243478cfbed64cdce75cb2096c6d10e2a66894d7dc883972ad",
+      "imageId": "sha256:4b1291d6b6016dcbd533dcee01bc7cb1d77e25881f62b907349aa2886f8c02cb",
+      "upstreamFilesystemUnchanged": true,
+      "filesystemLayersSha256": "0ee5ab26cb48d3a4ddaf6e77702fc9086ff3421d6d828fc1d2fd7d23e51b199d"
+    },
+    {
+      "role": "cube-templatecenter",
+      "reference": "pi-cloud/cube-templatecenter:stock-source-20261111-review",
+      "fixableHigh": 14,
+      "fixableCritical": 0,
+      "packages": [
+        "apt",
+        "libapt-pkg6.0t64",
+        "libbrotli1",
+        "github.com/containerd/containerd",
+        "github.com/quic-go/quic-go",
+        "golang.org/x/net",
+        "google.golang.org/grpc",
+        "stdlib"
+      ],
+      "upstream": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-templatecenter:v0.7.3@sha256:1e3622e3fc78b9bceaafd63619b8818e9c036f6b4fd14de745984d3ab154dc48",
+      "imageId": "sha256:ba3032f3a06245fa4706686645be0d94b586d4b09ebc88e2101cf24003b0f446",
+      "upstreamFilesystemUnchanged": true,
+      "filesystemLayersSha256": "eed224737d0b451d5056f9090a8efb518391a68cccdab4ce6b185e8e09de3791"
+    },
+    {
+      "role": "cubelet",
+      "reference": "pi-cloud/cubelet:stock-source-20261111-review",
+      "fixableHigh": 173,
+      "fixableCritical": 3,
+      "packages": [
+        "apt",
+        "libapt-pkg6.0",
+        "libbrotli1",
+        "libssl3",
+        "certifi",
+        "github.com/buger/jsonparser",
+        "github.com/containerd/containerd/v2",
+        "github.com/go-jose/go-jose/v4",
+        "github.com/klauspost/compress",
+        "github.com/moby/spdystream",
+        "go.opentelemetry.io/otel",
+        "golang.org/x/crypto",
+        "golang.org/x/mod",
+        "golang.org/x/net",
+        "golang.org/x/text",
+        "google.golang.org/grpc",
+        "stdlib",
+        "github.com/quic-go/quic-go"
+      ],
+      "upstream": "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cubelet:v0.7.3@sha256:9ae364f5ae4495e489820e5b74c8c470e086aa826e0b46d00375072d0f31acfc",
+      "imageId": "sha256:1041ee2ed8f447f5025765d3094c1f7b524cf71b17bc79fe6c0a3672405e27bd",
+      "upstreamFilesystemUnchanged": true,
+      "filesystemLayersSha256": "8d0c949e137021802db00670b6397f838d961d756de766fa6bdd2599d4f30608"
+    }
+  ],
+  "findingUnit": "Package findings; the same vulnerability may recur in multiple binaries."
+}

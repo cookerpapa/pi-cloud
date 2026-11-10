@@ -62,7 +62,8 @@ late receipt/closure handling, preserved resource occupancy, bounded observation
 collection and atomic cursor checks. The shared-VM and dedicated-machine suites
 retain native family occupancy and explicit Stop semantics.
 
-Three isolated Docker checks passed for the actual storage plugin: concurrent
+Three isolated Docker checks passed for the actual storage plugin, and all three
+were repeated successfully inside both unchanged official Master and Cubelet images: concurrent
 initialization and killed publication; repeated Attach, late Detach, missing
 metadata and closed admission; root-owned files, interrupted deletion and retained
 original bytes. These checks did not replace a serving Cube engine.
@@ -74,6 +75,7 @@ was corrected without relaxing production configuration. The affected 82 PG
 regressions passed afterward, as did the nine migration/startup smoke tests.
 The broader source run had 428 passing assertions before those repairs.
 A separate 60-case focused run and the 290-case acceptance-helper suite passed.
+Five final operator/cutover checks also passed.
 Environment-gated live checks remain excluded from those counts.
 
 All-workspace type checks, application build, Helm/distributed/self-hosted/Android
@@ -83,9 +85,21 @@ these results is a live stock-stack acceptance or a fleet-scale claim.
 
 ## Release gate found in unchanged upstream artifacts
 
-Using the existing pinned Trivy and existing exception policy, the official
-Cube API image produced 16 fixable HIGH/CRITICAL package findings. The official
-Master image produced 20. Examples include Brotli, curl/OpenSSL, gRPC 1.80.0,
+All four candidate images were built from the pinned official inputs with only
+publication labels; each filesystem layer list matched its upstream base exactly.
+After refreshing the vulnerability database, the existing Trivy/exception policy
+produced these fixable package findings:
+
+| Image | HIGH | CRITICAL |
+| --- | ---: | ---: |
+| Cube API | 15 | 1 |
+| Cube Master | 19 | 1 |
+| TemplateCenter | 14 | 0 |
+| Cubelet | 173 | 3 |
+
+These counts can repeat a vulnerability across packages/binaries; they are not
+counts of distinct reachable attacks. [Image identities and summary](stock-cube-images-20261111.json).
+Examples include Brotli, curl/OpenSSL, gRPC 1.80.0,
 quic-go 0.54.0, x/net 0.58.0 and Go 1.25.14. These are scanner findings, not an
 exploit experiment or a claim that each issue is reachable in this deployment.
 
