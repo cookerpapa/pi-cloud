@@ -17,6 +17,7 @@ export const operatorSources = new Set([
   "scripts/check-helm-platform.mjs",
   "scripts/run-matched-release.mjs",
   "scripts/lib/matched-release.mjs",
+  "scripts/lib/retire-cube-extension-tables.mjs",
   "scripts/lib/cube-node-readiness.mjs",
   "scripts/run-live-model-metering-check.mjs",
   "scripts/run-live-fast-compaction-check.mjs",

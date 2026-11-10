@@ -54,7 +54,8 @@ export async function retireCubeExtensionTables({
     (e) => e.name === "MYSQL_DATABASE",
   )?.value;
   assert.match(database ?? "", /^[A-Za-z0-9_]{1,64}$/);
-  // Only the existing container environment supplies the password. It is not
+  // The existing schema-scoped Cube user supplies its password from the container
+  // environment. The maintenance path does not assume the root login. It is not
   // returned to Node, included in process arguments or written to a report.
   kubectl(
     [
@@ -65,7 +66,7 @@ export async function retireCubeExtensionTables({
       "sh",
       "-eu",
       "-c",
-      'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql --user=root --batch "$1"',
+      'MYSQL_PWD="$MYSQL_PASSWORD" exec mysql --protocol=TCP --host=cube-mysql --user="$MYSQL_USER" --batch "$1"',
       "native-cutover",
       database,
     ],
