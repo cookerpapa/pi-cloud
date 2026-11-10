@@ -38,10 +38,18 @@ if (
   serializeRelease(runtimeDirectory);
 const capabilityScope = process.env.PI_CLOUD_RUNTIME_CAPABILITY_SCOPE ?? "all";
 assert(
-  ["all", "catalog", "browser"].includes(capabilityScope),
+  ["all", "catalog", "browser", "retention"].includes(capabilityScope),
   "Unknown runtime capability acceptance scope",
 );
 assert(capabilityScope !== "catalog" || process.env.PI_CLOUD_LIVE_RUNTIME_CAPABILITIES === "1");
+if (capabilityScope === "retention") {
+  assert.equal(process.env.PI_CLOUD_LIVE_ELASTIC_RETENTION, "1");
+  assert(
+    process.env.PI_CLOUD_LIVE_RUNTIME_CAPABILITIES !== "1" &&
+      process.env.PI_CLOUD_LIVE_GUEST_BROWSER !== "1",
+    "Select only elastic retention for this acceptance scope",
+  );
+}
 if (capabilityScope === "browser") {
   assert(
     process.env.PI_CLOUD_LIVE_GUEST_BROWSER === "1",

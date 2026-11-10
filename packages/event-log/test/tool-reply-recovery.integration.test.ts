@@ -14,6 +14,7 @@ it.skipIf(!brokers)(
   async () => {
     const a = new KafkaToolReplyMailbox({ brokers: brokers!, replicas: 3, bootId: randomUUID() });
     const b = new KafkaToolReplyMailbox({ brokers: brokers!, replicas: 3, bootId: randomUUID() });
+    const c = new KafkaToolReplyMailbox({ brokers: brokers!, replicas: 3, bootId: randomUUID() });
     const publisher = new KafkaToolReplyPublisher(brokers!, `handoff-${randomUUID()}`);
     const authority = new AbortController();
     const admin = new Admin({ bootstrapBrokers: brokers!, clientId: `cleanup-${randomUUID()}` });
@@ -28,10 +29,12 @@ it.skipIf(!brokers)(
         result: { content: [{ type: "text", text: `original:${operationId}` }] },
       },
     });
-    let closedA = false;
+    let closedA = false,
+      closedB = false;
     try {
       await a.start();
       await b.start();
+      await c.start();
       await publisher.start();
       const start = await a.replyPosition();
       const refs = ["completed", "running"].map((operationId) => ({
@@ -55,20 +58,34 @@ it.skipIf(!brokers)(
         { type: "text", text: "original:completed" },
       ]);
       const running = b.resumeWait("running", refs[1]!.reply, authority.signal);
+      // B is replaced while still waiting. Neither B's consumed prefix nor its
+      // private group offset is proof of a native result commit. C restores the
+      // same original references, including the already-delivered result.
+      const abandoned = expect(running.result).rejects.toThrow();
+      await b.shutdown();
+      closedB = true;
+      await abandoned;
+      const restoring = c.restore(refs, authority.signal);
+      await publisher.publish(a.topic, reply("unrelated"));
       await publisher.publish(a.topic, reply("completed")); // duplicate is harmless
       await publisher.publish(a.topic, reply("running")); // original destination, never B's Topic
-      expect((await running.result).result.content).toEqual([
-        { type: "text", text: "original:running" },
-      ]);
-      expect(b.size).toBe(0);
+      await restoring;
+      expect(
+        (await c.resumeWait("completed", refs[0]!.reply, authority.signal).result).result.content,
+      ).toEqual([{ type: "text", text: "original:completed" }]);
+      expect(
+        (await c.resumeWait("running", refs[1]!.reply, authority.signal).result).result.content,
+      ).toEqual([{ type: "text", text: "original:running" }]);
+      expect(c.size).toBe(0);
       // Kafka retention follows native settlement, not consumption by either boot.
       expect((await admin.listTopics()).includes(a.topic)).toBe(true);
     } finally {
       authority.abort();
-      await b.shutdown();
+      await c.shutdown();
+      if (!closedB) await b.shutdown();
       if (!closedA) await a.shutdown();
       await publisher.close();
-      await admin.deleteTopics({ topics: [a.topic, b.topic] });
+      await admin.deleteTopics({ topics: [a.topic, b.topic, c.topic] });
       await admin.close();
     }
   },

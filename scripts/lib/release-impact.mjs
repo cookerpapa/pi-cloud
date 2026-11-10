@@ -4,6 +4,8 @@ export const operatorSources = new Set([
   "scripts/fixtures/tool-reply-fault.mjs",
   "scripts/run-live-tool-reply-continuation.mjs",
   "scripts/run-live-execution-probe-check.mjs",
+  "scripts/run-live-image-attachment-check.mjs",
+  "scripts/run-live-release-acceptance.mjs",
   "scripts/lib/elastic-retention-acceptance.mjs",
   "scripts/run-live-resource-accounting-check.mjs",
   "scripts/lib/source-delivery-barrier.mjs",

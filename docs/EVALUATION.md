@@ -7,6 +7,19 @@ Lane-view ablation/control-budget investigation scripts were retired with the
 0.84 runtime; their evidence remains in Git. Current native storage verification
 uses upstream Storage conformance, the PG projection benchmark and RF3 tests.
 
+For the current [ADR-0306 delivery](reports/runtime-decoupling-20261109.md), run live
+checks serially. The reply driver accepts
+`PI_CLOUD_REPLY_ACCEPTANCE_SCOPE=all|vm|history` together with
+`PI_CLOUD_LIVE_TOOL_REPLY_CHECK=1`; every report records its actual scope. `history`
+exercises one real lost-result case and a fresh browser history search, while `vm`
+isolates owned-allocation loss. Neither focused scope represents the full driver.
+
+The actual default-window retention check is
+`PI_CLOUD_LIVE_RELEASE_CHECK=1 PI_CLOUD_LIVE_ELASTIC_RETENTION=1 PI_CLOUD_RUNTIME_CAPABILITY_SCOPE=retention node --import tsx scripts/run-live-release-acceptance.mjs`.
+It uses the configured 30-minute policy without shortening the timer. Select a
+private report path with `PI_CLOUD_ACCEPTANCE_REPORT`. Cleanup verifies physical
+resource release before removing the owned tenant and accounting fixtures.
+
 
 Pi Cloud separates deterministic protocol checks, live infrastructure
 acceptance and model-quality experiments. A checked-in report is current only
@@ -329,11 +342,11 @@ they are diagnostics for upstream restoration, not passing release evidence.
 checks actual GPT-6 Luna function calls, image Tool results and hosted search.
 `PI_CLOUD_LIVE_IMAGE_CHECK=1 node --import tsx scripts/run-live-image-attachment-check.mjs`
 creates a disposable Cube Workspace, reads repeated >5 MiB images at high/original
-quality, overwrites the source and replaces an idle Worker. Compose keeps the
-other Worker running for an actual owner change; the local Kubernetes mode
-restarts the owning Pod. The
-final Run must identify earlier image-only digits after cold restore without any
-file Tools. Test fixture digits are verified only after that answer. The script
+quality, overwrites the source and replaces the idle owning Kubernetes Pod.
+The final Run must identify the three earlier charts' color-height rankings after
+cold restore without any file Tools. The random expected rankings are read only
+after that answer, and a model-answer mismatch remains a failed sample even when
+byte/hash/reference transport checks passed. The script
 refuses the restart if any other Run is active and cleans its Session/Workspace.
 
 Set `PI_CLOUD_POSTGRES_INTEGRATION_URL` to an isolated PostgreSQL administrator

@@ -52,12 +52,20 @@ async function controlProbe(workspaceId) {
   const source = `
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
+import {readFile} from 'node:fs/promises';
 import {createDatabase} from '@pi-cloud/database';
+import {EXECUTION_PROBE_TIMEOUT_MS} from '@pi-cloud/protocol';
 import {loadSandboxControlConfig,OfficialCubeSandboxRuntimeClient} from '@pi-cloud/sandbox-control';
 import {CubePersistentCapsuleCodec} from '/app/packages/sandbox-control/src/cube-persistent-capsule.ts';
+import {ToolCompletionIssuer} from '/app/packages/sandbox-control/src/tool-completion-issuer.ts';
 const config=await loadSandboxControlConfig(),cube=config.cubeSandbox;
 const database=createDatabase({connectionString:config.databaseUrl,maxConnections:1});
 const client=new OfficialCubeSandboxRuntimeClient({...cube,egressProxyIp:cube.egressProxyHost});
+const completion=new ToolCompletionIssuer({
+ url:process.env.PI_CLOUD_TOOL_COMPLETION_URL,
+ ca:await readFile(process.env.PI_CLOUD_COMPLETION_CA_FILE,'utf8'),
+ secret:(await readFile(process.env.PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE,'utf8')).trim(),
+});
 let paused=false,target;
 try{
  const row=await database.selectFrom('workspace_runtimes').select('runtime_capsule').where('workspace_id','=',process.argv[2]).where('state','in',['allocated']).executeTakeFirstOrThrow();
@@ -69,10 +77,15 @@ try{
  // An undeliverable reply belongs solely to this fixture. Do not interrupt
  // the shared Kafka brokers or a user's Worker to emulate that failure.
  const probeId=randomUUID(),bindingId=randomUUID();
- await client.submitProbe(target,{probeId,executionScopeId:randomUUID(),writerId:randomUUID(),completionContext:{
+ await client.submitProbe(target,{probeId,executionScopeId:randomUUID(),writerId:randomUUID(),completionContext:await completion.issue({
+   operationId:probeId,issuer:'guest',expiresAt:Date.now()+10000,context:{
    kind:'execution_probe',replyTopic:'pi-cloud.tool-replies.v4.'+randomUUID(),sentAt:Date.now(),bindingIds:[bindingId],
-   execution:{bindingId,targetId:'fixture',bootId:target.bootId}}});
+   execution:{bindingId,targetId:'fixture',bootId:target.bootId}}})});
  await client.probeExecution(target,randomUUID());
+ // The deliberately undeliverable asynchronous Guest callback is itself an
+ // active exec until its finite deadline. Native Cube correctly refuses a
+ // memory snapshot with active execs; allow that owned probe to retire first.
+ await new Promise(resolve=>setTimeout(resolve,EXECUTION_PROBE_TIMEOUT_MS+5000));
  await client.pause(target.sandboxId);paused=true;
  await assert.rejects(client.probeExecution(target,randomUUID()));
  assert.equal((await client.observe(target.sandboxId,target.nodeId)).state,'paused');
@@ -90,7 +103,7 @@ try{
       [
         "scripts/production-kubernetes.mjs",
         "exec",
-        "control-plane",
+        "session-runtime",
         "node",
         "--import",
         "tsx",

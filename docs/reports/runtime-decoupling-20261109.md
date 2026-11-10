@@ -1,8 +1,8 @@
 # Runtime decoupling and continuation delivery
 
-Status on November 10: implementation is present; consolidated serial source verification
-has completed. No root-repository commit, push, matched image build or rollout has
-occurred for this batch. Existing release evidence is not acceptance for these changes.
+Status on November 10: implementation, consolidated serial source verification,
+commit/push, matched rollout and live acceptance are complete;
+the detailed results below distinguish passing cases from failed earlier samples.
 
 ## Scope and issue audit
 
@@ -33,14 +33,14 @@ ownership and protocol changes. Important decisions from the discussion are:
 
 | Issue | Source behavior | Delivery state |
 | --- | --- | --- |
-| #17 | Separate public Session API, private projection/live stream, deployment and release roles | Awaiting live API replacement |
-| #18 | Execution-side batched eligibility, finite retention, passive Worker probe receiver | Awaiting live probe/retention acceptance |
-| #19 | External interval derivation, own prices and atomic source cursor/receipt settlement | PG contracts passed; live collection pending |
-| #20 | Guest HTTPS callback, scoped capabilities, independent receiver, no Cubelet Node adapter | Unit/TLS/Guest contracts passed; live acceptance pending |
-| #21 | Current pending-reply index, protected original topics, native safe proxy reattachment | Native/PG/mailbox contracts passed; live Worker loss pending |
-| #22 | Current environment observation/recovery gate and atomic model-visible reset | Native contracts passed; live VM recovery pending |
-| #23 | Bounded raw Cube lifecycle history and provider source port | Native compilation/contract verification in progress |
-| #24 | Final remaining-patch review | After matched delivery and live acceptance |
+| #17 | Separate public Session API, private projection/live stream, deployment and release roles | Live API replacement passed |
+| #18 | Execution-side batched eligibility, finite retention, passive Worker probe receiver | Full probes and actual 30-minute idle expiry passed |
+| #19 | External interval derivation, own prices and atomic source cursor/receipt settlement | PG contracts and live accounting passed |
+| #20 | Guest HTTPS callback, scoped capabilities, independent receiver, no Cubelet Node adapter | Live text, lost result/ACK, UNKNOWN history and images passed |
+| #21 | Current pending-reply index, protected original topics, native safe proxy reattachment | Live Worker loss / same-Run continuation passed |
+| #22 | Current environment observation/recovery gate and atomic model-visible reset | Live owned VM loss / same-Run continuation passed |
+| #23 | Bounded raw Cube lifecycle history and provider source port | Native contracts and live cursor/replay checks passed |
+| #24 | Final remaining-patch review | Complete; native admission/cancellation and lifecycle patches remain |
 
 The isolated Cube worktree is `/tmp/picloud-cube-0306`, based on pinned upstream
 `4411c96ba8658a959de34693f54f4918db2a432f`. Its private baseline commit is not an
@@ -78,8 +78,10 @@ must be materialized before discarding retired transport resources.
   (about 10 MiB each) and published eight claim-check results. Combined client,
   server and synthetic image generation peaked near 817 MiB RSS; this is not an
   aggregate production memory limit or a live S3/Kafka/VM measurement.
-- Standalone native admission/race contracts passed. Full Cube allocation,
-  execution, lifecycle and Volume contracts are currently running.
+- Native admission/race, allocation, execution, lifecycle, Volume and service
+  contracts passed. The final fault manifest's 402 cases passed across the initial
+  run and targeted reruns, including refreshed probe fixtures and pending-reply
+  Topic/image retention checks.
 
 The initial review of test failures also found and fixed an actual startup leak:
 Provider cleanup is registered before loading the callback CA, so a missing CA
@@ -99,17 +101,17 @@ Temporary verification logs are `/tmp/picloud-0306-tests.log`,
 `/tmp/picloud-0306-helpers.log`, `/tmp/picloud-0306-last-contracts.log`,
 `/tmp/picloud-0306-transport.log`, `/tmp/picloud-0306-transport-rerun.log` and
 `/tmp/picloud-0306-native-results.json`. These are local working evidence, not
-committed transcripts or credentials. KVM and the old deployment are available.
+committed transcripts or credentials. They do not substitute for the live reports below.
 
-## Remaining delivery work
+## Delivery checklist
 
 - [x] Finish native, fault, dependency and browser checks; fix failures.
-- [ ] Commit and push the completed source change.
-- [ ] Prepare the maintained matched release and scan its images.
-- [ ] Drain/fence writers and retire compute while preserving Workspace bytes.
-- [ ] Install TLS/new roles/schema/transports; remove retired resources after confirmation.
-- [ ] Run relevant live API/Worker/VM/reply/retention/accounting acceptance serially.
-- [ ] Publish #24's evidence-based remaining-Cube-patch assessment and close delivered issues.
+- [x] Commit and push the completed source change.
+- [x] Prepare the maintained matched release and scan its images.
+- [x] Drain/fence writers and retire compute while preserving Workspace bytes.
+- [x] Install TLS/new roles/schema/transports; remove retired resources after confirmation.
+- [x] Run relevant live API/Worker/VM/reply/retention/accounting acceptance serially.
+- [x] Publish #24's evidence-based remaining-Cube-patch assessment and close delivered issues.
 
 The previously deferred approximately 131 MiB upstream model-upload experiment
 remains out of scope. Model acceptance uses GPT-6 Luna.
@@ -148,8 +150,8 @@ the maintenance query incorrectly joined a nonexistent `supervisor_hosts.boot_id
 The boot identity already comes from the authorized Worker row. That extra join
 predicate is removed and real PG tests now cover accepted readiness, mismatched
 boot/fencing and closed binding admission. The narrow execution-maintenance
-repair uses the existing Session-runtime replacement contract; live revalidation
-is still pending. This failed first recovery sample is not counted as acceptance.
+repair uses the existing Session-runtime replacement contract; its successful
+revalidation is recorded below. The failed first sample is not counted as acceptance.
 
 The maintenance correction was published independently as
 `runtime-maintenance-20261110-r1` (source `063d2223`, Helm 154). The repeated real
@@ -162,6 +164,95 @@ issued runtime metadata, so the Harness never reached native cancellation
 settlement. The local gateway now returns metadata with an already-revoked
 capability only for explicit user Stop/timeout; owner loss still refuses a grant.
 Requests with that capability return 401 without contacting the provider. The
-Worker bootstrap repair checks passed 8 files / 106 tests. Its independent Worker
-image publication and repeated live acceptance are pending; the failed initial
-early-Stop sample remains recorded and is not counted as passing reply acceptance.
+Worker bootstrap repair checks passed 8 files / 106 tests. Its independent image
+was published as `worker-bootstrap-20261110-r1` (source `20d80592`, Helm 155).
+Repeated early-Stop checks passed with zero Tools and zero VM activation.
+
+## Subsequent serial live evidence
+
+Owned VM removal passed in `acceptance/vm-recovery-verified.json`: the original Run
+completed after verified replacement, exactly one original Bash call remained,
+`pi-cloud.sandbox_reset` was committed before continuation, and the unrelated
+dedicated VMs remained present. A truthful executor failure is a settled Tool
+outcome, so the old assertion allowing only completed/unknown was corrected to
+also allow failed; this did not change product recovery semantics.
+
+Lost-result and lost-result-plus-probe cases passed in the reply reports. A healthy
+fresh path allows UNKNOWN followed by effect inspection; an unconfirmed path keeps
+the Run interruptibly waiting. Neither case redispatched the original Bash or
+replaced the physical VM. Lost callback ACK caused two deliveries and one execution;
+completed background work survived. Probes did not enter native history.
+
+The first browser assertions failed: one redeclared a global CDP variable, another
+blindly scrolled a virtualized list, and the last operated disabled controls before
+opening the Session. Screenshot diagnostics showed the New Chat page. Canonical
+UNKNOWN results for both fault cases were still present. The focused
+`acceptance/reply-history-focused.json` passed after waiting for the selected chat
+and using its actual history search cursor. This is an operator-fixture correction,
+not a hidden product-state fix. Failed reports remain available as local evidence.
+
+The retired v18 Session Topic was deleted after checking zero native replay
+references, old pending reply references, unfinished old-topic Runs and unreleased
+old-topic owners. No v3 reply Topics remained. Current v19/v4 transports were retained;
+`acceptance/retired-transport-cleanup.json` records the checks. Owned fault templates
+and resources were restored/cleaned before starting the next serial check.
+
+`acceptance/execution-probe-verified.json` passed: pure chat allocated no VM,
+the full Projector/Cube/Worker path confirmed while Bash was still executing,
+no probe entered native history, an old boot was rejected, direct observation
+worked with an undeliverable callback, a paused VM was not woken, and resume
+restored the path. The first fixture attempted Pause while its deliberately lost
+callback probe was still an active exec; Cube correctly refused the snapshot.
+The corrected fixture waits for that probe's bounded lifetime before pausing.
+
+`acceptance/images-repeat.json` passed three immutable image claim checks of about
+6, 6 and 24 MiB. Native records were 596–597 bytes, hashes matched stored originals,
+and a replacement Worker correctly recalled all three charts without reading the
+overwritten source file. The first sample delivered/stored the bytes successfully
+but Luna reversed two bars in the final chart. That stochastic visual-answer
+failure is preserved in `acceptance/images.json`; the repeat did not relax the
+comparison. This is one-host acceptance, not a model-accuracy or fleet-scale claim.
+
+`acceptance/resource-accounting.json` passed and cleaned its owned tenant. Two
+Sessions used one allocation; the real kernel enforced the 1 GiB Workspace limit
+and its growth to 2 GiB. A 56.576-second stable paused window had zero confirmed
+compute milliseconds while storage continued. Repeated Workspace receipts and two
+stale lifecycle pages did not duplicate accounting facts. Statements/export matched
+the interval ledger; an unconfirmed interval remained unpriced. No tariffs or
+payment collection were enabled. A subsequent one-node observation measured the
+metering container at about 142 MiB with a recorded cgroup peak near 162 MiB
+(including its Node launcher and service). This is not a fleet benchmark.
+
+`acceptance/elastic-retention.json` passed and cleaned its owned tenant. A single
+pending Tool overlapped periodic renewal without issuing another Tool. After
+settlement, the actual 1,800,000 ms policy expired; the measured idle wait was
+1,808,010 ms, ending at 00:51:31 UTC. Cube confirmed physical absence, management
+adopted it, and Luna continued on a new allocation with the same retained file and
+a model-visible reset entry. This fixture did not stop the shared Session-runtime
+process for the whole idle window; outage/freshness boundaries have separate
+contracts.
+
+Final recovery checks passed 15 tests in three files against isolated RF3 Kafka
+and real PostgreSQL. They include a second Worker replacement while an original
+reply remains pending, reply arrival during restoration, protection of the old
+Topic's suffix, and preservation of an image after old-writer closure until native
+settlement. The operator release helpers passed 40 tests and the affected runtime
+types passed. These were run serially after the live retention fixture completed.
+Final inventory found no unfinished Runs, no pending Workspace physical purges
+and no owned acceptance tenants. Both original running-intent development machines
+remain; all enabled application workloads are ready.
+
+## Final Cube assessment
+
+[#24's source inventory](../research/cube-patch-assessment-20261110.md) concludes
+that the execution path is **not yet patch-free**. Fixed Guest application code
+is not a Cube source modification, but Cubelet still owns the external operation
+gate, exact cancellation, process-scope lifetime and bounded launch-failure
+delivery. Ordinary provider APIs can launch a future Guest operation service;
+their PID/command interfaces alone do not replace those guarantees.
+
+Allocation closure, Volume proofs, finite expiry, raw lifecycle history and
+independent upstream fixes are a separate remaining patch set. This release
+does not delete them or enable an alternate production backend. The next
+execution-only replacement needs its own verified vertical slice; its design
+candidate and failure requirements are documented, not silently implemented.

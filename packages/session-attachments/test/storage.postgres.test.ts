@@ -408,7 +408,7 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
     expect(marker.rows).toHaveLength(1);
   });
 
-  it("protects uploads until their Run is sealed, including the unprojected Kafka interval", async () => {
+  it("protects images across writer closure until the pending native reply is settled", async () => {
     const tenant = await createPrivateTenant(db, {
       slug: `image-${randomUUID()}`,
       ownerDisplayName: "image test",
@@ -431,8 +431,32 @@ describe.skipIf(!integrationUrl)("Session image storage on PostgreSQL", () => {
     );
     expect(await store.reap(0)).toBe(0);
     expect((await store.get(tenant.tenantId, ref)).toString()).toBe("unprojected");
-    // Model a terminal projection, not another execution attempt.
+    // Model ordered old-writer closure, without changing the logical Run.
     await sql`update runs set output_sealed_at=clock_timestamp() where id=${run.runId}::uuid`.execute(
+      db,
+    );
+    // A replacement still owns the original reply wait. An ordered writer seal
+    // is not native Tool settlement and must not make its image collectible.
+    const physical = await db
+      .selectFrom("sessions")
+      .select("pi_session_id")
+      .where("id", "=", session.sessionId)
+      .executeTakeFirstOrThrow();
+    await db
+      .insertInto("pi_sessions")
+      .values({ tenant_id: tenant.tenantId, id: physical.pi_session_id })
+      .onConflict((c) => c.columns(["tenant_id", "id"]).doNothing())
+      .execute();
+    await sql`insert into pi_durable_owned_records
+      (tenant_id,session_id,id,kind,seq,ordinal,fields)
+      values (${tenant.tenantId}::uuid,${physical.pi_session_id},1,'task',1,0,
+        ${JSON.stringify({ run: run.runId, status: "running", replyTopic: `pi-cloud.tool-replies.v4.${randomUUID()}`, replyOffset: "0" })}::jsonb)`.execute(
+      db,
+    );
+    expect(await store.reap(0)).toBe(0);
+    expect((await store.get(tenant.tenantId, ref)).toString()).toBe("unprojected");
+    await sql`update pi_durable_owned_records set fields=fields||'{"status":"terminal"}'::jsonb
+      where tenant_id=${tenant.tenantId}::uuid and session_id=${physical.pi_session_id} and id=1`.execute(
       db,
     );
     expect(await store.reap(0)).toBe(1);

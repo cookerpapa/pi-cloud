@@ -1,8 +1,10 @@
 # Current architecture decisions
 
 [ADR-0306](0306-runtime-decoupling-and-continuation.md) records the authorized
-runtime decoupling and recovery work in Issues #17–#24. Source implementation is
-in progress; consolidated verification and rollout have not started.
+runtime decoupling and recovery work in Issues #17–#24. Source verification,
+matched publication and [live acceptance](../reports/runtime-decoupling-20261109.md)
+are complete. [The Cube assessment](../research/cube-patch-assessment-20261110.md)
+separates Guest application code from remaining provider patches.
 
 [ADR-0305](0305-execution-owned-tools-and-bindings.md) is accepted for execution-owned
 bindings, public Tool adaptation and independent tool-host/catalog publication in
@@ -18,22 +20,25 @@ publication failure to the whole native family.
 
 [ADR-0301](0301-workspace-capacity-enforcement.md) selects XFS enforcement for
 persistent Workspace capacity, with separate user intent and physical receipts.
-Implementation and the verified storage handoff are in progress.
+Implementation and the verified storage handoff are
+[delivered](../reports/runtime-accounting-20261107.md).
 
 [ADR-0302](0302-session-runtime-and-resource-management.md) separates the
 Session execution/API/Projector process from resource management, preserving one
-PG authority, one Projector group and existing lease semantics. Source implementation
-and written outage/failure contracts await consolidated validation and release.
+PG authority, one Projector group and existing lease semantics. This separation
+was delivered; ADR-0306 further separates its public API from execution.
 
 [ADR-0300](0300-resource-usage-receipts.md) selects allocated compute-time receipts
-from Cube and independent informational resource statements. Implementation in progress.
+from Cube and independent informational resource statements. That baseline was
+delivered; ADR-0306 moves compute interval construction outside Cube.
 
 [ADR-0299](0299-cube-073-resource-observation.md) fixes the Cube v0.7.3 upgrade
 target and separates disposable resource metrics from future usage accounting.
-Patch adaptation and matched validation are in progress.
+Patch adaptation and matched validation are delivered; the pinned native version
+remains the baseline for ADR-0306.
 
 [ADR-0298](0298-independent-metering-receiver.md) selects an independent receipt
-receiver with shared PG accounting authority. Implementation is in progress in
+receiver with shared PG accounting authority. Implementation is delivered in
 [Issue #5](https://github.com/cookerpapa/pi-cloud/issues/5).
 
 [ADR-0297](0297-model-metering-receipts-and-statements.md) is accepted for

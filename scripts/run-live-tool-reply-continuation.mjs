@@ -35,8 +35,8 @@ assert.equal(
 );
 const scope = process.env.PI_CLOUD_REPLY_ACCEPTANCE_SCOPE ?? "all";
 assert(
-  ["all", "vm"].includes(scope),
-  "Select complete reply acceptance or the owned VM fault only",
+  ["all", "vm", "history"].includes(scope),
+  "Select complete acceptance, the owned VM fault, or lost-result history",
 );
 const faultTarget = process.env.PI_CLOUD_REPLY_FAULT_TARGET ?? "vm";
 assert(["vm", "cubelet"].includes(faultTarget), "Select an owned VM or an otherwise empty Cubelet");
@@ -196,10 +196,10 @@ try {
   );
   assert(originalVm, "Warmup did not prepare the owned VM");
   await excludeOtherWork();
-  if (scope === "all") {
+  if (scope !== "vm") {
     const unknownTurns = [];
     receipt = await installOwnedReplyFault(receiptPath);
-    for (const dropProbe of [false, true]) {
+    for (const dropProbe of scope === "history" ? [false] : [false, true]) {
       await excludeOtherWork();
       const marker = `REPLY_LOSS_${suffix}_${Number(dropProbe)}`,
         path = `reply-${Number(dropProbe)}.txt`;
@@ -282,7 +282,7 @@ try {
       ) native where position(${probe.operationId} in body)>0`.execute(db);
         assert.equal(rows[0].n, 0, "Probe leaked into native storage");
       }
-      unknownTurns.push(active.turnId);
+      unknownTurns.push({ turnId: active.turnId, toolCallId: bash[0].toolCallId, marker });
       report.cases.push({
         turnId: active.turnId,
         kind: dropProbe ? "lost-result-and-probe" : "lost-result-then-inspect",
@@ -298,214 +298,260 @@ try {
     }
     // Final callback retries resend bytes; they never run Bash again. A completed
     // background process also must not be killed because its first ACK was lost.
-    const ackMarker = `ACK_LOSS_${suffix}`;
-    const ackNonce = armOwnedReplyFault(receipt, tenant.tenantId, ackMarker, false, true);
-    const ackCommand = `nohup sleep 180 </dev/null >/dev/null 2>&1 & echo $! > ack-background.pid; printf 'once\\n' >> ack-count.txt; printf '${ackMarker}\\n'`;
-    active = await api.acceptTurn(
-      session.sessionId,
-      `只调用一次 bash，command 精确使用 ${JSON.stringify(ackCommand)}，然后简短回复。不要重试命令或调用其他工具。`,
-      newIdempotencyKey("callback-ack-loss"),
-      "low",
-    );
-    assert.equal((await waitRun(active.runId)).state, "completed");
-    const ackRunId = active.runId;
-    const ackState = await until(
-      () => {
-        const value = readOwnedReplyFault(receipt);
-        return value?.nonce === ackNonce && value.results.length >= 2 && value;
-      },
-      "identical callback resend after lost ACK",
-      30000,
-    );
-    assert.equal(new Set(ackState.results.map((row) => row.operationId)).size, 1);
-    assert.equal(
-      (await turnTools(active.runId)).filter((tool) => tool.toolName === "bash").length,
-      1,
-    );
-    assert.equal(
-      Buffer.from(
-        (await api.readWorkspaceFile(session.sessionId, "ack-count.txt")).bytes,
-      ).toString(),
-      "once\n",
-    );
-    active = await api.acceptTurn(
-      session.sessionId,
-      '只调用一次 bash，执行 kill -0 "$(cat ack-background.pid)" && printf BACKGROUND_PRESERVED，然后简短回复。不要其他工具。',
-      newIdempotencyKey("callback-background-check"),
-      "low",
-    );
-    assert.equal((await waitRun(active.runId)).state, "completed");
-    const background = await turnTools(active.runId);
-    assert.equal(background.length, 1);
-    assert.equal(background[0].status, "completed");
-    report.cases.push({
-      kind: "lost-callback-ack",
-      runId: ackRunId,
-      deliveries: ackState.results.length,
-      executions: 1,
-      backgroundPreserved: true,
-    });
+    if (scope === "all") {
+      const ackMarker = `ACK_LOSS_${suffix}`;
+      const ackNonce = armOwnedReplyFault(receipt, tenant.tenantId, ackMarker, false, true);
+      const ackCommand = `nohup sleep 180 </dev/null >/dev/null 2>&1 & echo $! > ack-background.pid; printf 'once\\n' >> ack-count.txt; printf '${ackMarker}\\n'`;
+      active = await api.acceptTurn(
+        session.sessionId,
+        `只调用一次 bash，command 精确使用 ${JSON.stringify(ackCommand)}，然后简短回复。不要重试命令或调用其他工具。`,
+        newIdempotencyKey("callback-ack-loss"),
+        "low",
+      );
+      assert.equal((await waitRun(active.runId)).state, "completed");
+      const ackRunId = active.runId;
+      const ackState = await until(
+        () => {
+          const value = readOwnedReplyFault(receipt);
+          return value?.nonce === ackNonce && value.results.length >= 2 && value;
+        },
+        "identical callback resend after lost ACK",
+        30000,
+      );
+      assert.equal(new Set(ackState.results.map((row) => row.operationId)).size, 1);
+      assert.equal(
+        (await turnTools(active.runId)).filter((tool) => tool.toolName === "bash").length,
+        1,
+      );
+      assert.equal(
+        Buffer.from(
+          (await api.readWorkspaceFile(session.sessionId, "ack-count.txt")).bytes,
+        ).toString(),
+        "once\n",
+      );
+      active = await api.acceptTurn(
+        session.sessionId,
+        '只调用一次 bash，执行 kill -0 "$(cat ack-background.pid)" && printf BACKGROUND_PRESERVED，然后简短回复。不要其他工具。',
+        newIdempotencyKey("callback-background-check"),
+        "low",
+      );
+      assert.equal((await waitRun(active.runId)).state, "completed");
+      const background = await turnTools(active.runId);
+      assert.equal(background.length, 1);
+      assert.equal(background[0].status, "completed");
+      report.cases.push({
+        kind: "lost-callback-ack",
+        runId: ackRunId,
+        deliveries: ackState.results.length,
+        executions: 1,
+        backgroundPreserved: true,
+      });
+    }
     await restoreOwnedReplyFault(receiptPath);
     report.adapterRestored = true;
-    await withChromePage({}, async (page) => {
-      await page.send("Network.setExtraHTTPHeaders", {
-        headers: { Authorization: `Bearer ${tenant.credential.token}` },
+    // Inspect canonical history independently of the live view before opening
+    // a fresh browser. A rendering failure must not hide a storage regression.
+    for (const expected of unknownTurns) {
+      const restored = await api.getConversation(session.sessionId, {
+        turnId: expected.turnId,
+        toolCallId: expected.toolCallId,
       });
-      await page.navigate(base);
-      await page.waitFor(
-        `Array.from(document.querySelectorAll('button')).some(b=>b.textContent.includes(${JSON.stringify(title)}))`,
-      );
-      await page.evaluate(
-        `Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes(${JSON.stringify(title)})).click()`,
-      );
-      await page.waitFor(
-        "document.querySelector('.product-tool-group-display-toggle') && document.querySelector('.product-chat-scroll')",
-      );
-      await page.evaluate(
-        "(()=>{const b=document.querySelector('.product-tool-group-display-toggle');if(b.getAttribute('aria-pressed')!=='true')b.click()})()",
-      );
-      const seen = new Set();
-      // Virtual history deliberately unmounts off-screen rows. Check each owned
-      // UNKNOWN while scrolling, without requiring both to coexist in the DOM.
-      for (let step = 0; step < 80 && unknownTurns.some((id) => !seen.has(id)); step++) {
+      const tool = restored.turns
+        .find((turn) => turn.turnId === expected.turnId)
+        ?.transcript?.items.find(
+          (item) => item.kind === "tool" && item.toolCallId === expected.toolCallId,
+        );
+      assert.equal(tool?.status, "unknown", "Canonical history lost the UNKNOWN result");
+    }
+    report.canonicalUnknownRestored = true;
+    await withChromePage({}, async (page) => {
+      try {
+        await page.send("Network.setExtraHTTPHeaders", {
+          headers: { Authorization: `Bearer ${tenant.credential.token}` },
+        });
+        await page.navigate(`${base}/?session=${session.sessionId}`);
+        await page.waitFor(
+          `Array.from(document.querySelectorAll('.product-conversation-row > button:first-child')).some(b=>b.querySelector('strong')?.textContent===${JSON.stringify(title)}&&!b.disabled)`,
+        );
         await page.evaluate(
-          `(()=>{const c=document.querySelector('.product-chat-scroll');c.dispatchEvent(new KeyboardEvent('keydown',{key:'Home',bubbles:true}));c.scrollTop=${step}*300})()`,
+          `Array.from(document.querySelectorAll('.product-conversation-row > button:first-child')).find(b=>b.querySelector('strong')?.textContent===${JSON.stringify(title)}).click()`,
         );
-        await delay(150);
-        const ids = await page.evaluate(
-          "Array.from(document.querySelectorAll('.product-tool-unknown')).map(e=>e.closest('[data-conversation-turn-id]')?.getAttribute('data-conversation-turn-id')).filter(Boolean)",
+        await page.waitFor(
+          "document.querySelector('.product-conversation-row.active > button:first-child')?.disabled===false && document.querySelector('.product-history-search-toggle')?.disabled===false && Number(document.querySelector('[data-history-rows]')?.dataset.historyRows)>0",
         );
-        for (const id of ids) seen.add(id);
+        await page.evaluate(
+          "(()=>{const b=document.querySelector('.product-tool-group-display-toggle');if(b.getAttribute('aria-pressed')!=='true')b.click()})()",
+        );
+        // Search jumps use the actual history cursor. Blind scrollTop changes can
+        // be undone by tail following or evict the very row being inspected.
+        for (const expected of unknownTurns) {
+          const matches = await api.searchConversation(session.sessionId, expected.marker);
+          const index = matches.results.findIndex(
+            (hit) => hit.turnId === expected.turnId && hit.kind === "tool",
+          );
+          assert(index >= 0, "Owned UNKNOWN tool was absent from searchable history");
+          await page.evaluate("document.querySelector('.product-history-search-toggle').click()");
+          await page.evaluate(
+            `(()=>{const i=document.querySelector('.product-history-search input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,${JSON.stringify(expected.marker)});i.dispatchEvent(new Event('input',{bubbles:true}));})()`,
+          );
+          await page.evaluate(
+            "document.querySelector('.product-history-search form').requestSubmit()",
+          );
+          await page.waitFor(`document.querySelectorAll('.product-history-hit').length > ${index}`);
+          await page.evaluate(
+            `document.querySelectorAll('.product-history-hit')[${index}].click()`,
+          );
+          await page.waitFor(
+            `Array.from(document.querySelectorAll('.product-tool-unknown')).some(e=>e.closest('[data-conversation-turn-id]')?.getAttribute('data-conversation-turn-id')===${JSON.stringify(expected.turnId)})`,
+          );
+        }
+        report.browserUnknownRestored = true;
+      } catch (error) {
+        await page.screenshot(`${output}.browser.png`).catch(() => {});
+        report.browserDiagnostic = await page
+          .evaluate(
+            `({
+          path:location.pathname+location.search,
+          rows:document.querySelector('[data-history-rows]')?.getAttribute('data-history-rows'),
+          tools:Array.from(document.querySelectorAll('.product-tool')).map(e=>({
+            status:e.className,turn:e.closest('[data-conversation-turn-id]')?.getAttribute('data-conversation-turn-id')
+          })),
+          alerts:Array.from(document.querySelectorAll('[role=alert]')).map(e=>e.textContent.slice(0,300))
+        })`,
+          )
+          .catch(() => null);
+        throw error;
       }
-      assert(
-        unknownTurns.every((id) => seen.has(id)),
-        "Owned UNKNOWN history was not rendered after reload and scroll",
-      );
-      report.browserUnknownRestored = true;
     });
   } // Complete callback fault scope.
-  await excludeOtherWork();
-  const instances = await cube.list();
-  const owned = instances.filter((vm) => vm.metadata["picloud.tenant_id"] === tenant.tenantId);
-  assert.equal(owned.length, 1, "Expected one owned fault VM");
-  const unrelated = instances
-    .filter((vm) => vm.metadata["picloud.tenant_id"] !== tenant.tenantId)
-    .map((vm) => vm.sandboxId);
-  if (faultTarget === "cubelet")
-    assert.equal(instances.length, 1, "Cubelet crash requires exactly the owned VM");
-  const before = faultTarget === "cubelet" ? singleReadyCubelet() : undefined;
-  const allocation = await db
-    .selectFrom("workspace_runtimes")
-    .select(["workspace_runtime_id", "creation_not_after"])
-    .where("tenant_id", "=", tenant.tenantId)
-    .where("workspace_id", "=", project.workspaceId)
-    .where("runtime_name", "=", owned[0].sandboxId)
-    .where("allocation_closed", "=", false)
-    .executeTakeFirstOrThrow();
-  active = await api.acceptTurn(
-    session.sessionId,
-    "只调用一次 bash，timeout 设为 90，执行 printf 'started\\n' > reply-crash-started.txt; sleep 60。不要其他工具、搜索或委派。",
-    newIdempotencyKey("owned-runtime-loss"),
-    "low",
-  );
-  await until(
-    async () => (await turnTools(active.runId)).some((c) => c.status === "running"),
-    "running Tool before owned runtime loss",
-    90000,
-  );
-  await until(
-    async () => {
-      try {
-        return (
-          Buffer.from(
-            (await api.readWorkspaceFile(session.sessionId, "reply-crash-started.txt")).bytes,
-          ).toString() === "started\n"
-        );
-      } catch {
-        return false;
-      }
-    },
-    "actual guest effect before owned runtime loss",
-    30000,
-  );
-  await excludeOtherWork();
-  if (faultTarget === "cubelet") {
-    kubectl(
-      ["delete", "pod", before.metadata.name, "--grace-period=0", "--force", "--wait=false"],
-      {
-        timeout: 30000,
-      },
+  if (scope !== "history") {
+    await excludeOtherWork();
+    const instances = await cube.list();
+    const owned = instances.filter((vm) => vm.metadata["picloud.tenant_id"] === tenant.tenantId);
+    assert.equal(owned.length, 1, "Expected one owned fault VM");
+    const unrelated = instances
+      .filter((vm) => vm.metadata["picloud.tenant_id"] !== tenant.tenantId)
+      .map((vm) => vm.sandboxId);
+    if (faultTarget === "cubelet")
+      assert.equal(instances.length, 1, "Cubelet crash requires exactly the owned VM");
+    const before = faultTarget === "cubelet" ? singleReadyCubelet() : undefined;
+    const allocation = await db
+      .selectFrom("workspace_runtimes")
+      .select(["workspace_runtime_id", "creation_not_after"])
+      .where("tenant_id", "=", tenant.tenantId)
+      .where("workspace_id", "=", project.workspaceId)
+      .where("runtime_name", "=", owned[0].sandboxId)
+      .where("allocation_closed", "=", false)
+      .executeTakeFirstOrThrow();
+    active = await api.acceptTurn(
+      session.sessionId,
+      "只调用一次 bash，timeout 设为 90，执行 printf 'started\\n' > reply-crash-started.txt; sleep 60。不要其他工具、搜索或委派。",
+      newIdempotencyKey("owned-runtime-loss"),
+      "low",
     );
     await until(
-      () => {
-        try {
-          const after = singleReadyCubelet();
-          return after.metadata.uid !== before.metadata.uid ? after : undefined;
-        } catch {
-          return undefined;
-        }
-      },
-      "Cubelet replacement",
-      180000,
+      async () => (await turnTools(active.runId)).some((c) => c.status === "running"),
+      "running Tool before owned runtime loss",
+      90000,
     );
-  } else {
-    // A physical fault outside PiCloud's desired-state tables, confined to this
-    // fixture allocation. This does not pause or delete any user's machine.
-    const createBefore = new Date(allocation.creation_not_after).getTime();
-    await cube.allocation(allocation.workspace_runtime_id, createBefore, "close");
     await until(
       async () => {
-        const result = await cube.allocation(allocation.workspace_runtime_id, createBefore, "get");
-        return result.closed && result.phase === "absent";
+        try {
+          return (
+            Buffer.from(
+              (await api.readWorkspaceFile(session.sessionId, "reply-crash-started.txt")).bytes,
+            ).toString() === "started\n"
+          );
+        } catch {
+          return false;
+        }
       },
-      "owned allocation physically absent",
-      120000,
+      "actual guest effect before owned runtime loss",
+      30000,
     );
-  }
-  const interrupted = await waitRun(active.runId);
-  assert.equal(
-    interrupted.state,
-    "completed",
-    "The original Run did not continue after verified recovery",
-  );
-  const interruptedCalls = await turnTools(active.runId);
-  assert.equal(
-    interruptedCalls.filter((call) => call.toolName === "bash").length,
-    1,
-    "Original command was executed again",
-  );
-  assert(
-    interruptedCalls.every((call) => ["completed", "failed", "unknown"].includes(call.status)),
-    "Unsettled physical reply",
-  );
-  report.cases.push({
-    kind: faultTarget === "cubelet" ? "cubelet-loss" : "owned-allocation-loss",
-    runId: active.runId,
-    state: interrupted.state,
-    replacedPod: faultTarget === "cubelet",
-    originalCalls: 1,
-  });
-  if (faultTarget === "vm") {
-    const history = await nativeHistory(db, { tenantId: tenant.tenantId, runId: active.runId });
-    assert(
-      history.some((row) => row.entry.kind === "pi-cloud.sandbox_reset"),
-      "Physical replacement was not recorded before model continuation",
-    );
-    const current = await cube.list();
-    for (const id of unrelated)
-      assert(
-        current.some((vm) => vm.sandboxId === id),
-        "An unrelated VM was removed",
+    await excludeOtherWork();
+    if (faultTarget === "cubelet") {
+      kubectl(
+        ["delete", "pod", before.metadata.name, "--grace-period=0", "--force", "--wait=false"],
+        {
+          timeout: 30000,
+        },
       );
-    assert(
-      current.some(
-        (vm) =>
-          vm.metadata["picloud.tenant_id"] === tenant.tenantId &&
-          vm.sandboxId !== owned[0].sandboxId &&
-          vm.state === "running",
-      ),
+      await until(
+        () => {
+          try {
+            const after = singleReadyCubelet();
+            return after.metadata.uid !== before.metadata.uid ? after : undefined;
+          } catch {
+            return undefined;
+          }
+        },
+        "Cubelet replacement",
+        180000,
+      );
+    } else {
+      // A physical fault outside PiCloud's desired-state tables, confined to this
+      // fixture allocation. This does not pause or delete any user's machine.
+      const createBefore = new Date(allocation.creation_not_after).getTime();
+      await cube.allocation(allocation.workspace_runtime_id, createBefore, "close");
+      await until(
+        async () => {
+          const result = await cube.allocation(
+            allocation.workspace_runtime_id,
+            createBefore,
+            "get",
+          );
+          return result.closed && result.phase === "absent";
+        },
+        "owned allocation physically absent",
+        120000,
+      );
+    }
+    const interrupted = await waitRun(active.runId);
+    assert.equal(
+      interrupted.state,
+      "completed",
+      "The original Run did not continue after verified recovery",
     );
-    report.environmentResetRecorded = true;
+    const interruptedCalls = await turnTools(active.runId);
+    assert.equal(
+      interruptedCalls.filter((call) => call.toolName === "bash").length,
+      1,
+      "Original command was executed again",
+    );
+    assert(
+      interruptedCalls.every((call) => ["completed", "failed", "unknown"].includes(call.status)),
+      "Unsettled physical reply",
+    );
+    report.cases.push({
+      kind: faultTarget === "cubelet" ? "cubelet-loss" : "owned-allocation-loss",
+      runId: active.runId,
+      state: interrupted.state,
+      replacedPod: faultTarget === "cubelet",
+      originalCalls: 1,
+    });
+    if (faultTarget === "vm") {
+      const history = await nativeHistory(db, { tenantId: tenant.tenantId, runId: active.runId });
+      assert(
+        history.some((row) => row.entry.kind === "pi-cloud.sandbox_reset"),
+        "Physical replacement was not recorded before model continuation",
+      );
+      const current = await cube.list();
+      for (const id of unrelated)
+        assert(
+          current.some((vm) => vm.sandboxId === id),
+          "An unrelated VM was removed",
+        );
+      assert(
+        current.some(
+          (vm) =>
+            vm.metadata["picloud.tenant_id"] === tenant.tenantId &&
+            vm.sandboxId !== owned[0].sandboxId &&
+            vm.state === "running",
+        ),
+      );
+      report.environmentResetRecorded = true;
+    }
   }
   report.accepted = true;
 } catch (error) {

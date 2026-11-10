@@ -109,7 +109,10 @@ physical resource lifecycle. Already-bound Tools continue while management is
 stopped. New VM activation and physical recovery wait for management. Fixed Guest
 Tools deliver through the independent `tool-completion` HTTPS role, so replacing
 the dispatch caller does not discard their completion path. There is no independent
-Tool Broker. Ordinary control tools run in a separate `tool-host` process. Complete versioned
+Tool Broker. [Runtime delivery and recovery evidence](docs/reports/runtime-decoupling-20261109.md)
+covers API/Worker/VM replacement, callback loss, retained images, actual 30-minute
+idle expiry and external resource accounting.
+Ordinary control tools run in a separate `tool-host` process. Complete versioned
 definitions reach every Worker through a compacted Kafka configuration topic and
 take effect at the next model request. Updating these tools does not replace the
 Session API or Projector. [Live publication and execution acceptance](docs/reports/execution-tools-20261108.md)

@@ -1,6 +1,7 @@
 # ADR-0306: Runtime decoupling, recoverable Tool delivery and external accounting
 
-Status: accepted for implementation; verification and deployment pending.
+Status: implemented and deployed; serial source and live acceptance recorded in
+[the delivery report](../reports/runtime-decoupling-20261109.md).
 Date: 2026-11-09. Tracking: Issues #17–#24.
 
 ## Authorization and delivery

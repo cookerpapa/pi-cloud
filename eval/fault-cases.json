@@ -776,8 +776,8 @@
       "id": "image-unprojected-retention",
       "workspace": "@pi-cloud/session-attachments",
       "file": "test/storage.postgres.test.ts",
-      "test": "protects uploads until their Run is sealed, including the unprojected Kafka interval",
-      "invariant": "Kafka-acknowledged but unprojected images remain protected by their unsealed source Run."
+      "test": "protects images across writer closure until the pending native reply is settled",
+      "invariant": "Kafka-acknowledged but unprojected images remain protected by the source Run or its pending native reply, including after ordered writer closure."
     },
     {
       "id": "image-cleanup-reference-race",
@@ -2808,6 +2808,13 @@
       "file": "test/lifecycle-scheduling.test.ts",
       "test": "gives untouched sources a turn while other nodes continuously catch up",
       "invariant": "Continuously busy source histories cannot starve untouched nodes."
+    },
+    {
+      "id": "pending-reply-retention-floor",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/tool-reply-retention.test.ts",
+      "test": "protects an old boot's reply suffix until native settlement releases its reference",
+      "invariant": "A positively retired Worker does not make a pending native operation's original reply suffix or Topic collectible."
     }
   ]
 }

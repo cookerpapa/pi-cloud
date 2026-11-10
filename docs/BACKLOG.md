@@ -1,21 +1,23 @@
 # Maintained backlog
 
-## Runtime decoupling and continuation — implementation in progress
+## Runtime decoupling and continuation — deployed
 
-- [ ] #17: independent public Session API and sole execution Projector.
-- [ ] #21: original remote-operation waits survive authorized Worker replacement.
-- [ ] #22: original Run waits for verified environment recovery and records changes.
-- [ ] #20: fixed Guest completion through a scoped HTTP receiver and Kafka.
-- [ ] #18: execution-side finite retention and current-Worker full probes.
-- [ ] #23: trustworthy lifecycle notifications and retained-history catch-up.
-- [ ] #19: independent external compute intervals and minute-batch valuation.
-- [ ] Consolidated serial tests, matched publication, live acceptance and preservation.
-- [ ] #24: evidence-backed verdict on provider-native execution and remaining patches.
+- [x] #17: independent public Session API and sole execution Projector.
+- [x] #21: original remote-operation waits survive authorized Worker replacement.
+- [x] #22: original Run waits for verified environment recovery and records changes.
+- [x] #20: fixed Guest completion through a scoped HTTP receiver and Kafka.
+- [x] #18: execution-side finite retention and current-Worker full probes.
+- [x] #23: trustworthy lifecycle notifications and retained-history catch-up.
+- [x] #19: independent external compute intervals and minute-batch valuation.
+- [x] Consolidated serial tests, matched publication, live acceptance and preservation.
+- [x] #24: evidence-backed verdict on provider-native execution and remaining patches.
 
 [ADR-0306](adr/0306-runtime-decoupling-and-continuation.md) and
-[progress record](reports/runtime-decoupling-20261109.md). Implementation was
-authorized on November 9; verification is deferred until source work is complete,
-as requested. This does not waive fencing, physical cleanup or release gates.
+[delivery record](reports/runtime-decoupling-20261109.md). The matched release and
+two scoped corrections are deployed on schema 215 / Session v19 / replies v4.
+The [Cube assessment](research/cube-patch-assessment-20261110.md) keeps remaining
+admission, cancellation, lifecycle and Volume protections. Zero execution patches
+needs a separately verified replacement; no alternate runtime is enabled.
 
 ## Execution-owned tools and bindings — deployed
 

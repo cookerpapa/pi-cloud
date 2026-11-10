@@ -1,5 +1,12 @@
 # Delivery and research evidence
 
+- [Runtime decoupling and continuation](runtime-decoupling-20261109.md):
+  public API separation, Guest HTTPS completion, original-operation recovery,
+  execution-side retention and external compute accounting.
+- [Remaining Cube patch assessment](../research/cube-patch-assessment-20261110.md):
+  native provider interfaces, portable Guest responsibilities and remaining
+  execution/lifecycle protections after ADR-0306.
+
 - [Execution-owned tools and independent publication](execution-tools-20261108.md):
   logical bindings, whole-tool provider adapter, Kafka directory broadcast,
   live Tool-host-only publication, native recovery/images/children and BoxLite assessment.

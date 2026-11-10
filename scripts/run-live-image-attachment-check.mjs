@@ -183,10 +183,11 @@ try {
   assert(Array.isArray(rankings) && rankings.length === 3);
   for (const ranking of rankings)
     assert.deepEqual([...ranking].sort(), ["BLUE", "GREEN", "ORANGE"]);
-  assert.deepEqual(
-    (answer.match(/\b(?:BLUE|ORANGE|GREEN)\b/gi) ?? []).map((c) => c.toUpperCase()),
-    rankings.flat(),
-  );
+  report.visionRecall = {
+    expected: rankings.flat(),
+    actual: (answer.match(/\b(?:BLUE|ORANGE|GREEN)\b/gi) ?? []).map((c) => c.toUpperCase()),
+  };
+  assert.deepEqual(report.visionRecall.actual, report.visionRecall.expected);
   const {
     rows: [newOwner],
   } = await sql`select boot_id from workers where id=${recalled.run.workerId}::uuid`.execute(db);
@@ -200,12 +201,9 @@ try {
   report.accepted = true;
 } catch (error) {
   failure = error;
+  report.failure = String(error?.message ?? error).slice(0, 700);
 } finally {
   const errors = [];
-  try {
-  } catch (e) {
-    errors.push(e);
-  }
   try {
     if (
       active &&
