@@ -189,6 +189,7 @@ describe("tenant-aware browser API", () => {
           workspaceName: "agent-runtime",
           state: path.endsWith("/actions") ? "paused" : "running",
           desiredState: path.endsWith("/actions") ? "paused" : "running",
+          creationPending: false,
           generation: 1,
           profileKey: "standard",
           cpuCount: 2,
