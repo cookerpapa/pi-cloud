@@ -32,6 +32,7 @@ let runtimeState: string | undefined = "running";
 let loseCreateReply = false;
 let allocationClosed = false;
 let createEffects = 0;
+let guestInspected = false;
 let createReceipt: Record<string, unknown> | undefined;
 let allocationReplyOverride: unknown;
 let pauseReturnsTimeout = false;
@@ -49,6 +50,7 @@ beforeEach(() => {
   loseCreateReply = false;
   allocationClosed = false;
   createEffects = 0;
+  guestInspected = false;
   createReceipt = undefined;
   allocationReplyOverride = undefined;
   observed.length = 0;
@@ -363,6 +365,20 @@ beforeAll(async () => {
       }
       if (request.method === "POST" && request.url?.startsWith(`/allocations/${allocation.id}/`)) {
         if (request.url.endsWith("/close")) allocationClosed = true;
+        const existing =
+          createReceipt ??
+          (guestInspected
+            ? {
+                sandboxID: allocation.id.replaceAll("-", ""),
+                clientID: "cube-node-1",
+                templateID: "pi-cloud-tool-v1",
+                state: runtimeState,
+                domain: "cube.test",
+                metadata: {},
+                trafficAccessToken: "private-traffic-token",
+                envdAccessToken: "envd-access-token",
+              }
+            : undefined);
         response.writeHead(200, { "content-type": "application/json" });
         response.end(
           JSON.stringify(
@@ -370,10 +386,10 @@ beforeAll(async () => {
               allocationID: allocation.id,
               createBefore: allocation.createBefore,
               closed: allocationClosed,
-              phase: allocationClosed ? "absent" : createReceipt ? "ready" : "missing",
+              phase: allocationClosed ? "absent" : existing ? "ready" : "missing",
               sandboxID: allocation.id.replaceAll("-", ""),
               nodeID: "cube-node-1",
-              ...(!allocationClosed && createReceipt ? { instance: createReceipt } : {}),
+              ...(!allocationClosed && existing ? { instance: existing } : {}),
             },
           ),
         );
@@ -422,6 +438,7 @@ beforeAll(async () => {
         request.method === "GET" &&
         request.url === "/sandboxes/aabbccddeeff00112233445566778899"
       ) {
+        guestInspected = true;
         response.writeHead(200, { "content-type": "application/json" });
         response.end(
           JSON.stringify({
@@ -430,9 +447,11 @@ beforeAll(async () => {
             templateID: "pi-cloud-tool-v1",
             state: runtimeState,
             domain: "cube.test",
-            trafficAccessToken: "private-traffic-token",
-            envdAccessToken: "envd-access-token",
-            metadata: { "picloud.managed": "true" },
+            metadata: {
+              "picloud.managed": "true",
+              "picloud.allocation_id": allocation.id,
+              "picloud.create_before": String(allocation.createBefore),
+            },
           }),
         );
         return;
@@ -914,6 +933,45 @@ function executionClient() {
     egressProxyIp: "127.0.0.1",
   });
 }
+it("recovers private data access from the allocation receipt and never overwrites it with public inspection", async () => {
+  const client = executionClient();
+  try {
+    executionReply = {
+      accepted: true,
+      bootId: executionTarget.bootId,
+      operationId: executionRequest.operationId,
+    };
+    await client.submitTool(executionTarget, executionRequest);
+    expect(observed.filter((r) => r.path === `/allocations/${allocation.id}/get`)).toHaveLength(1);
+    expect(
+      observed.find((r) => r.path === "/process.Process/Start")?.headers[
+        "cube-traffic-access-token"
+      ],
+    ).toBe("private-traffic-token");
+    expect(await client.read(executionTarget.sandboxId)).not.toHaveProperty("trafficAccessToken");
+    await client.submitTool(executionTarget, executionRequest);
+    expect(observed.filter((r) => r.path === `/allocations/${allocation.id}/get`)).toHaveLength(1);
+    expect(
+      observed.some(
+        (r) => r.path.endsWith("/connect") || (r.path === "/sandboxes" && r.method === "POST"),
+      ),
+    ).toBe(false);
+  } finally {
+    await client.close();
+  }
+});
+it("does not connect or resume a paused Guest during cold probe discovery", async () => {
+  const client = executionClient();
+  try {
+    runtimeState = "paused";
+    await expect(client.probeExecution(executionTarget, crypto.randomUUID())).rejects.toMatchObject(
+      { code: "execution_unavailable" },
+    );
+    expect(observed.map((r) => r.path)).toEqual([`/sandboxes/${executionTarget.sandboxId}`]);
+  } finally {
+    await client.close();
+  }
+});
 it("accepts only a handoff for the recorded executor boot and operation", async () => {
   const client = executionClient();
   try {

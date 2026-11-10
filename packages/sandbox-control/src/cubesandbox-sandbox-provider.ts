@@ -869,7 +869,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         allowPublicTraffic: false,
         volumeMounts: [{ name: volumeId, path: volumeMountPath }],
         ...(spec.lifetime === "development_environment"
-          ? { lifecycle: { onTimeout: "pause" as const, autoResume: true } }
+          ? { lifecycle: { onTimeout: "pause" as const, autoResume: false } }
           : {}),
       });
     } catch (error: unknown) {

@@ -37,6 +37,7 @@ protocol 10, Guest executor control 1 and unchanged Guest Tool payload 7. PG sch
 | --- | --- |
 | Build and types | Full build/types passed; affected runtime, Guest and provider types rerun after the final implementation refinements |
 | Package sweep and corrections | 2,473 tests passed in the broad sweep; five old first-record fixture assertions were corrected, then 103 targeted regressions passed. Three accidentally discovered `.cache/research` suites are not product acceptance |
+| Cold data-plane recovery | 65 provider/client tests passed: recover private access from the existing allocation receipt, retain credentials across metadata reads, and never connect/resume during cold probes. Dedicated traffic-triggered auto-resume is disabled to preserve explicit pause intent |
 | Updated admission/receiver contracts | 109 tests passed, including removed native API permissions and explicit refusal versus unknown outcomes |
 | Real PostgreSQL / Kafka RF3 | 11 transport, fencing, binding, publication and original-reply recovery tests passed |
 | Fault manifest | All 409 current cases passed cumulatively; the retired native cancellation test name was replaced with the Guest UNKNOWN case and rerun explicitly |

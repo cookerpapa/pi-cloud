@@ -1025,7 +1025,7 @@ describe("CubeSandbox Provider contract", () => {
     expect(runtime.creates[0]).toMatchObject({
       templateId: "tpl-standard0000000000000000",
       timeoutSeconds: -1,
-      lifecycle: { onTimeout: "pause", autoResume: true },
+      lifecycle: { onTimeout: "pause", autoResume: false },
       volumeMounts: [
         {
           name: expect.stringMatching(/^pcw-[0-9a-f]{48}$/),

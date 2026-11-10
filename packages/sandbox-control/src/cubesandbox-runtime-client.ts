@@ -781,12 +781,25 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     createBefore: number,
     action: "get" | "close",
   ): Promise<CubeAllocationState> {
+    return this.#allocationAt(id, createBefore, action, this.#apiUrl);
+  }
+  async #allocationAt(
+    id: string,
+    createBefore: number,
+    action: "get" | "close",
+    apiUrl: string,
+  ): Promise<CubeAllocationState> {
     this.#allocationIdentity(id, createBefore);
-    const response = await this.#control(`/allocations/${id}/${action}`, {
-      method: "POST",
-      body: JSON.stringify({ createBefore }),
-      ...(action === "close" ? { timeoutMs: Math.max(80_000, this.#requestTimeoutMs) } : {}),
-    });
+    const response = await this.#control(
+      `/allocations/${id}/${action}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ createBefore }),
+        ...(action === "close" ? { timeoutMs: Math.max(80_000, this.#requestTimeoutMs) } : {}),
+      },
+      false,
+      apiUrl,
+    );
     const value = record(
       parseJson(await readBoundedResponse(response, 256 * 1024), "Cube allocation"),
       "Cube allocation",
@@ -818,6 +831,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       throw new CubeRuntimeClientError("Cube allocation result is incomplete");
     if (value.phase === "ready" && !instance)
       throw new CubeRuntimeClientError("Cube allocation result is missing");
+    if (instance && !value.closed) this.#rememberInstance(instance, apiUrl);
     return {
       allocationId: id,
       createBefore,
@@ -885,9 +899,11 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     }
   }
 
-  #rememberInstance(instance: CubeSandboxInstance): CubeSandboxInstance {
-    if (instance.nodeId) {
-      const key = JSON.stringify([this.#apiUrl, instance.nodeId, instance.sandboxId]);
+  #rememberInstance(instance: CubeSandboxInstance, apiUrl = this.#apiUrl): CubeSandboxInstance {
+    // Detail/list responses intentionally omit private ingress credentials.
+    // They must not replace the allocation receipt used by the data adapter.
+    if (instance.nodeId && instance.trafficAccessToken) {
+      const key = JSON.stringify([apiUrl, instance.nodeId, instance.sandboxId]);
       if (this.#guestInstances.size >= 1024 && !this.#guestInstances.has(key))
         this.#guestInstances.delete(this.#guestInstances.keys().next().value!);
       this.#guestInstances.set(key, instance);
@@ -912,13 +928,27 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       await response.body?.cancel();
       throw new CubeExecutionRejected("execution_unavailable");
     }
-    const instance = parseInstance(
+    let instance = parseInstance(
       parseJson(await readBoundedResponse(response, 256 * 1024), "CubeSandbox inspect"),
       this.#sandboxDomain,
       true,
     );
     if (instance.sandboxId !== sandboxId || instance.nodeId !== nodeId)
       throw new CubeExecutionRejected("executor_replaced");
+    if (instance.state !== "running") throw new CubeExecutionRejected("execution_unavailable");
+    if (!instance.trafficAccessToken) {
+      const id = instance.metadata["picloud.allocation_id"],
+        deadline = Number(instance.metadata["picloud.create_before"]);
+      if (!id || id.replaceAll("-", "") !== sandboxId)
+        throw new CubeExecutionRejected("execution_unavailable");
+      // Recover the existing allocation receipt, never connect/resume a VM.
+      const allocation = await this.#allocationAt(id, deadline, "get", apiUrl);
+      if (allocation.closed || allocation.phase !== "ready" || !allocation.instance)
+        throw new CubeExecutionRejected("execution_unavailable");
+      if (allocation.instance.nodeId !== nodeId)
+        throw new CubeExecutionRejected("executor_replaced");
+      instance = allocation.instance;
+    }
     if (this.#guestInstances.size >= 1024)
       this.#guestInstances.delete(this.#guestInstances.keys().next().value!);
     this.#guestInstances.set(key, instance);

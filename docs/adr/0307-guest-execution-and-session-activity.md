@@ -98,6 +98,13 @@ Normal process/data APIs carry the fixed Guest client. Executor identity comes f
 the Guest; allocation renewal uses the allocation's existing identity/recorded-node
 authorization rather than an execution-manager boot token.
 
+Cold provider data access recovers the original credentials from the existing
+allocation receipt: ordinary VM inspection intentionally omits them. This is
+read-only resource bootstrap, not a Worker/lease query or a VM connect/resume.
+Managed allocations disable traffic-triggered auto-resume, including dedicated
+machines; only the lifecycle owner may resume them under PG user intent. Thus a
+probe or delayed control request cannot undo a deliberate pause.
+
 Cubelet's allocation journal remains the sole finite expiry clock. Expiry atomically
 checks/marks the allocation closed, without consulting a busy-Tool map. Continued
 Tool execution does not override an expired retention policy. Physical closure,
