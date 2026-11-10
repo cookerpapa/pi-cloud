@@ -103,3 +103,22 @@ images remain the matched r2 artifacts; these follow-up changes are operator/tes
 Private evidence: `/tmp/pma-0307-live-guest-fixed.log`,
 `/tmp/pma-0307-live-provider-online.log`, and the matched candidate under
 `~/.local/share/pi-cloud/releases/guest-runtime-20261110-r2`.
+
+## VM-loss continuation follow-up
+
+The r2 fault run passed lost-result inspection, lost result/probe holding, repeated
+HTTP completion after a lost ACK (two deliveries / one execution), preserved
+background work and browser restoration of UNKNOWN. VM loss exposed a recovery
+address race: resource cleanup removed the old closed binding, then a retry used
+the same logical ID to prepare a fresh VM. The ordered view refused to reopen
+that identity and the native Run remained waiting. Failed fixtures were cancelled,
+physically cleaned and their acceptance tenants purged.
+
+The Worker now chooses one fresh logical binding when recovery still references
+its current failed binding, retains it across retries, and ignores withdrawal for
+an older address. Operation identity/target/reply deadline do not change; no Tool
+is replayed. A native Harness regression seeds that pending recovery and verifies
+two readiness attempts use the same new ID without Tool activation. Relevant
+Worker/Harness suites pass 415 tests and the new fault case passes; the manifest
+now contains 410 cases. The corrected runtime requires publication and a fresh
+VM-loss acceptance before this item is complete.

@@ -632,6 +632,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     const environmentChanged = async (change: import("@pi-cloud/protocol").EnvironmentChanged) => {
       const current = parseExecutionReference(command.payload.executionReference);
       if (
+        change.bindingId !== environment.requestId ||
         change.scope.tenantId !== command.payload.tenantId ||
         change.scope.piSessionId !== command.payload.piSession.id ||
         change.scope.runId !== current.runId ||
@@ -884,12 +885,14 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                 this.#environmentObservers.set(environment.requestId, observeEnvironment);
                 this.#environmentChanges.set(environment.requestId, environmentChanged);
               };
-              // Reuse a still-open binding. Only authoritative closure requires
-              // a new logical address; no accepted command is moved or replayed.
+              // A failed environment may already have lost its closed PG row.
+              // Start recovery with a new logical address once; retries retain
+              // that address. Existing operations keep their original targets.
               for (;;) {
                 active.throwIfAborted();
                 pending = await stepWorldState.pendingRecovery(command.payload.runId);
                 if (!pending) return;
+                if (pending.bindingId === environment.requestId) renewLogicalBinding();
                 this.#onActivity?.(
                   command,
                   { phase: "waiting_environment", lastActivityAt: Date.now() },

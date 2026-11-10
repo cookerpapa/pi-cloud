@@ -1,3 +1,4 @@
+import { PiSessionWorldStateController } from "../src/pi-sandbox-continuity.ts";
 import { nativeTestDisplay } from "./fixtures/native-test-display.ts";
 import { expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -39,6 +40,7 @@ it.each([
   "cold_compact",
   "cold_compact_history",
   "cold_compact_stop",
+  "environment_recovery",
 ] as const)(
   "runs native input and admission gates (%s)",
   async (mode) => {
@@ -89,7 +91,39 @@ it.each([
         });
       }
     })();
+    const failedBinding = crypto.randomUUID(),
+      recoveryBindings: string[] = [];
     let initialConversationId = 1;
+    if (mode === "environment_recovery") {
+      const seed = await Harness.open(
+        storage,
+        { models: createModels(), registry: createRegistry() },
+        BACKGROUND_CONTEXT,
+      );
+      try {
+        const root = await seed.root(BACKGROUND_CONTEXT);
+        initialConversationId = root.id;
+        const context = createCloudTurnContext(command);
+        const world = await PiSessionWorldStateController.create(seed, root.id, {
+          writerId: command.payload.piSession.writerId,
+          continuityId: "old-vm",
+          continuity: "warm_reuse",
+          environmentSha256: context.environmentSha256,
+          workspaceBindingSha256: context.workspaceBindingSha256,
+          toolPolicySha256: context.toolPolicySha256,
+        });
+        await world.recordActive();
+        await world.capture();
+        await world.recordExecution(command.payload.runId, { continuityId: "old-vm" });
+        await world.requireRecovery(
+          command.payload.runId,
+          failedBinding,
+          "tool_result_unavailable",
+        );
+      } finally {
+        await seed.close(BACKGROUND_CONTEXT);
+      }
+    }
     if (mode === "cold_compact_history" || mode === "cold_compact_stop") {
       const seed = await Harness.open(
         storage,
@@ -271,10 +305,48 @@ it.each([
           gracePeriodMs: 1000,
         });
       }
-      if (mode === "stop_before_setup" || mode.startsWith("cold_compact")) {
+      if (
+        mode === "stop_before_setup" ||
+        mode.startsWith("cold_compact") ||
+        mode === "environment_recovery"
+      ) {
         runner = new RemoteToolSandboxTurnRunner({
+          ...(mode === "environment_recovery"
+            ? {
+                idGenerator: (() => {
+                  let first = true;
+                  return () => {
+                    if (first) {
+                      first = false;
+                      return failedBinding;
+                    }
+                    return crypto.randomUUID();
+                  };
+                })(),
+                confirmExecution: async () => recoveryBindings.length > 1,
+              }
+            : {}),
           broker: {
             prepareEnvironmentImages: activate,
+            ...(mode === "environment_recovery"
+              ? {
+                  recoverEnvironment: async (
+                    environment: import("@pi-cloud/protocol").ToolEnvironmentRequest,
+                  ) => {
+                    if (environment.requestId === failedBinding)
+                      throw new Error("Closed binding identity was reused after row removal");
+                    recoveryBindings.push(environment.requestId);
+                    return {
+                      bindingId: environment.requestId,
+                      targetId: "new-target",
+                      bootId: "new-boot",
+                      observedAt: Date.now(),
+                      continuityId: "new-vm",
+                      continuity: "cold_restore" as const,
+                    };
+                  },
+                }
+              : {}),
             workflowUrlFor: () => {
               throw new Error("No Workflow expected");
             },
@@ -467,6 +539,12 @@ it.each([
         return;
       }
       expect((await executing).stopReason).toBe("stop");
+      if (mode === "environment_recovery") {
+        expect(recoveryBindings).toHaveLength(2);
+        expect(new Set(recoveryBindings).size).toBe(1);
+        expect(recoveryBindings[0]).not.toBe(failedBinding);
+        expect(activate).not.toHaveBeenCalled();
+      }
       expect(acquired).toBe(1);
       expect(released).toBe(1);
       expect(events.some((event) => event.payload.event.type === "assistant.text.delta")).toBe(

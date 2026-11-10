@@ -2864,6 +2864,13 @@
       "file": "test/session-projector-handoffs.test.ts",
       "test": "routes Session activity without native PG projection or a Tool dispatch receipt",
       "invariant": "Transport-only resource use neither writes native history nor admits a Tool effect."
+    },
+    {
+      "id": "native-environment-recovery-fresh-binding",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/durable-turn-runner.test.ts",
+      "test": "runs native input and admission gates (environment_recovery)",
+      "invariant": "After environment failure the native Run uses one fresh logical binding for recovery, retaining it across readiness retries without republishing any accepted Tool."
     }
   ]
 }

@@ -90,6 +90,23 @@ There is no result GET/cache or per-Tool PG ledger. A missing Guest service/VM m
 prevent a callback; the original deadline and existing UNKNOWN/environment-recovery
 path remain the fallback. Source truncation and immutable image references remain.
 
+## Recovery binding identity
+
+Live VM-loss acceptance exposed an old address reuse race: resource cleanup can
+remove a closed binding before an unconfirmed Tool settles. Reusing that logical
+request ID may create another PG row which the ordered view correctly refuses to
+reopen. Native continuation then waits indefinitely despite a fresh physical VM.
+
+When recovery still references the current logical binding, the Worker runtime
+selects a new binding request ID once for that recovery. Retries keep that new ID;
+a replacement Worker already starts with a fresh address. The execution side can
+reuse healthy compute or prepare new compute under existing resource authority.
+Accepted operations retain their original ID, target, reply topic and deadline;
+no Tool intent is republished. Late withdrawal for an older binding cannot
+invalidate the replacement address. This uses the existing recovery document,
+logical environment port and immutable-binding rule, without new PG tables,
+leases, schedulers or permanent closed-binding history.
+
 ## Cube boundary
 
 Remove the native managed Tool submit/cancel/probe implementation, its execution
