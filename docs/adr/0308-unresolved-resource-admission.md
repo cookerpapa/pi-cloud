@@ -66,6 +66,13 @@ unreleased master changes and community proposals separately from pinned v0.7.3.
 The owner conditions production BoxLite adoption on the stock-provider assessment;
 the Android audit can proceed independently without re-enabling its Web picker.
 
+The Android packaging slice selects official UiAutomator2 8.7.3 with existing
+Appium 3.8.0. Its published optional Sharp pin replaces our rewritten 8.7.0
+manifest. Use ordinary integrity-locked npm installation and remove the custom
+extraction/manifest-transform step after dependency and device acceptance. This
+does not fork Android/Cuttlefish or change the mobile execution protocol. Do not
+upgrade to Appium 4 beta solely to remove a packaging workaround.
+
 ## Adopt before build and acceptance
 
 Reuse PostgreSQL transactions and current resource rows, the existing controller,

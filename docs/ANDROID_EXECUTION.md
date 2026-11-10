@@ -1,7 +1,8 @@
 # Android execution targets
 
-Status: deployed under ADR-0279 on 2026-10-26. Current core `schedules-08063299`
-(schema 202/catalog v3), device `android-7aa30c34`.
+Status: retained operator prototype, initially deployed under ADR-0279 on
+2026-10-26. That initial core was `schedules-08063299` (schema 202/catalog v3),
+with device `android-7aa30c34`; those identifiers describe historical acceptance.
 [Delivery evidence](reports/android-execution-delivery-20261026.md) covers real
 model calls, Web binding/images, device restart and original-asset preservation.
 
@@ -64,7 +65,7 @@ Do not expose Appium, ADB, device management credentials or Kafka to public clie
 
 The first installer provisions one node-affine device. It uses the pinned
 Cuttlefish host/system build from `deploy/android/artifacts.json`, a persistent
-owned host directory, Appium 3.8.0 and UiAutomator2 8.7.0. It has no independent
+owned host directory, Appium 3.8.0 and UiAutomator2 8.7.3. It has no independent
 Android scheduler or self-service VM lifecycle. Multi-node placement requires an
 explicit owned local PV/node; the helper refuses to infer it.
 
@@ -82,10 +83,13 @@ contains its stable ID and vsock CID; provision each concurrently running device
 with a distinct CID. The fixed host/image binaries are separate from writable
 state. The deployment helper builds/scans four images, retains the image evidence,
 imports them into K3s, and registers the verified executor endpoint for the tenant.
-The UiAutomator2 npm archive is hash-verified; preparation retains its code/APKs
-and resolves bundled JavaScript dependencies through one pinned lockfile. Its
-optional Sharp dependency is updated from 0.35.4 to 0.35.5 in package metadata.
-No Appium/UIAutomator runtime code is patched.
+UiAutomator2 is installed from its official npm package with the archive integrity
+and dependency graph pinned in the lockfile. Version 8.7.3 already supplies the
+required Sharp version; the old archive extraction and package-manifest rewriting
+step is removed. Root dependency overrides remain ordinary deployment configuration.
+No Android/Cuttlefish, Appium/UiAutomator runtime code or APK is patched.
+The #27 packaging change requires its own image and device acceptance; historical
+deployment evidence at the top of this guide is not proof of that new release.
 The Android Pod has no Docker socket or host-home mount. Only its trusted
 executor/egress containers receive the minimal required service credentials.
 

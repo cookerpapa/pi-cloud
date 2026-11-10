@@ -4,6 +4,9 @@ Date: 2026-11-10. Issues [#26](https://github.com/cookerpapa/pi-managed-agents/i
 and [#27](https://github.com/cookerpapa/pi-managed-agents/issues/27).
 This assessment separates implementation, upstream contracts and unverified
 alternatives. It does not authorize an incomplete replacement or data deletion.
+The [complete patch inventory](cube-patch-inventory-20261110.md) accounts for every
+active upstream path and build transformation, rather than only the lifecycle
+features discussed with the owner.
 
 ## Result
 
@@ -96,13 +99,19 @@ quota/resource ownership and Workspace safety.
 The retained Android operator prototype uses stock hash-pinned Cuttlefish host and
 system archives, stock Appium, and a PiCloud-owned external execution adapter.
 No Android/Cuttlefish, UiAutomator2 runtime JavaScript or APK source patch was found.
-The old build does rewrite the UiAutomator2 8.7.0 package manifest to remove bundled
+The previous build rewrote the UiAutomator2 8.7.0 package manifest to remove bundled
 dependency handling and raise optional Sharp. That is a packaging customization,
 not an Android VM fork, and is a candidate for removal with upstream packaging.
 
 UiAutomator2 8.7.3 is compatible with Appium 3 and already pins Sharp 0.35.5 in its
-official npm distribution. Its archive integrity and dependency closure must be
-verified before replacing the generated manifest path. The latest 9.0.1 instead
+[official npm distribution](https://registry.npmjs.org/appium-uiautomator2-driver/8.7.3).
+The source implementation now uses this integrity-locked registry package and
+removes the generated manifest, extraction script and separate archive pin.
+Ordinary npm installation and Appium driver discovery passed; the driver reports
+`installType: npm`, version 8.7.3, with Appium 3.8.0 and Sharp 0.35.5. The high/
+critical npm audit gate passes; image and real-device acceptance remain separate.
+Root dependency overrides are deployment configuration, not upstream runtime
+source changes. The latest 9.0.1 instead
 requires Appium 4 beta; there is no reason to force that major migration merely
 for this cleanup. No Android product picker is re-enabled by the audit.
 
