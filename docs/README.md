@@ -74,3 +74,7 @@ The [remaining Cube patch assessment](research/cube-patch-assessment-20261110.md
 distinguishes the Guest application from execution and physical lifecycle patches.
 
 Current boundary assessment: [Guest and provider resource boundaries](research/guest-and-resource-boundaries-20261110.md), supporting [ADR-0307](adr/0307-guest-execution-and-session-activity.md).
+
+[Complete Cube patch inventory](research/cube-patch-inventory-20261110.md) lists
+all 87 patched upstream paths, runtime callers, supporting/generated changes and
+the additional build-time Dockerfile transformations for #26.

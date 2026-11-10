@@ -1,5 +1,9 @@
 # Delivery and research evidence
 
+- [Complete Cube patch inventory](../research/cube-patch-inventory-20261110.md):
+  every current source/dependency patch, seven runtime responsibility groups,
+  cold-connection consumers and build transformations outside patch files.
+
 - [Guest execution and Session activity](guest-execution-20261110.md): Guest-owned
   admission/cancellation, finite retention, fenced Session activity, matched release,
   real recovery/image acceptance and the remaining resource/Volume patch boundary.
