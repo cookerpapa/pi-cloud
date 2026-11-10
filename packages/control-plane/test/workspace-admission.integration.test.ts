@@ -121,6 +121,63 @@ describe.skipIf(connectionString === undefined)("Workspace deletion / message ad
     return { ...project, environmentId };
   }
 
+  it.each(["recovery", "unfinished-stop", "unfinished-seal"] as const)(
+    "retains Workspace occupancy during %s, then permits deletion after settlement",
+    async (phase) => {
+      const { project, session } = await fixture(`resource-${phase}`);
+      const run = await store.acceptTurn(session.sessionId, randomUUID(), {
+        prompt: "resource owner",
+      });
+      await database
+        .updateTable("runs")
+        .set({
+          state:
+            phase === "unfinished-stop"
+              ? "cancel_requested"
+              : phase === "recovery"
+                ? "failed"
+                : "cancelled",
+          recovery_requested_at: phase === "recovery" ? new Date() : null,
+          settled_at: phase === "unfinished-stop" ? null : new Date(),
+          failure_code: phase === "recovery" ? "worker_lost" : null,
+          failure_message: phase === "recovery" ? "Worker recovery fixture" : null,
+          failure_retryable: phase === "recovery" ? true : null,
+          output_seal_id: randomUUID(),
+          output_sealed_at: phase === "recovery" ? new Date() : null,
+        })
+        .where("id", "=", run.runId)
+        .execute();
+      await expect(
+        store.deleteWorkspace(project.workspaceId, `delete-${phase}`),
+      ).rejects.toMatchObject({ code: "conflict" });
+      expect(
+        (
+          await database
+            .selectFrom("workspaces")
+            .select("deleted_at")
+            .where("id", "=", project.workspaceId)
+            .executeTakeFirstOrThrow()
+        ).deleted_at,
+      ).toBeNull();
+      await database
+        .updateTable("runs")
+        .set({
+          state: "cancelled",
+          recovery_requested_at: null,
+          failure_code: null,
+          failure_message: null,
+          failure_retryable: null,
+          output_sealed_at: new Date(),
+          settled_at: new Date(),
+        })
+        .where("id", "=", run.runId)
+        .execute();
+      expect(await store.deleteWorkspace(project.workspaceId, `delete-${phase}`)).toMatchObject({
+        storageState: "pending",
+      });
+    },
+  );
+
   it.each(["running", "paused", "released"] as const)(
     "inherits a %s machine's stable binding when Forking and replaying",
     async (state) => {

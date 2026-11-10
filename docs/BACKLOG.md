@@ -1,5 +1,18 @@
 # Maintained backlog
 
+## Resource admission and stock sandbox boundaries — in progress
+
+- [ ] #26: one unresolved machine application per user; exact retries retain it.
+- [ ] #26: reject lifecycle mutations until creation is resolved; reflect this in UI.
+- [ ] #26: recovery-pending Runs and unfinished seals continue to block deletion.
+- [ ] #26: assess the complete Cube patch inventory and validate native alternatives.
+- [ ] #26: serial verification, matched delivery and original-asset preservation.
+- [ ] #27: audit Android upstream modifications and simplify packaging where safe.
+- [ ] #27: evaluate BoxLite against the stock-provider boundary before enabling it.
+
+[ADR-0308](adr/0308-unresolved-resource-admission.md). Stock Cube and production
+BoxLite remain conditional outcomes, not completed capabilities.
+
 ## Guest execution and Session activity — deployed
 
 - [x] #25: Worker-owned activity declarations through the Session writer; no

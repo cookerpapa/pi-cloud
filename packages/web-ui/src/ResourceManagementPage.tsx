@@ -34,8 +34,10 @@ function activeConversation(
 export function resourceRefreshPending(
   environments: readonly DevelopmentEnvironmentResource[],
 ): boolean {
-  return environments.some((environment) =>
-    ["requested", "provisioning", "recovering", "releasing"].includes(environment.state),
+  return environments.some(
+    (environment) =>
+      environment.creationPending ||
+      ["requested", "provisioning", "recovering", "releasing"].includes(environment.state),
   );
 }
 
@@ -84,6 +86,7 @@ export function ResourceManagementPage({
   const [issueDirectoryPickerOpen, setIssueDirectoryPickerOpen] = useState(false);
   const [issueCodeHostWorkspaceId, setIssueCodeHostWorkspaceId] = useState<string | null>(null);
   const liveEnvironments = environments;
+  const creationPending = environments.some((environment) => environment.creationPending);
   const elasticWorkspaces = workspaces;
   const selectedProfile = profiles.find((candidate) => candidate.key === profileKey) ?? profiles[0];
   const issueStartJob = issueJobs.find((job) => job.jobId === issueStartJobId);
@@ -160,9 +163,12 @@ export function ResourceManagementPage({
           ? t("resource.capacityUnavailable")
           : reason instanceof PiCloudApiError && reason.code === "tenant_quota_exceeded"
             ? t("resource.quotaExceeded")
-            : reason instanceof Error
-              ? reason.message
-              : t("resource.operationFailed"),
+            : reason instanceof PiCloudApiError &&
+                reason.code === "development_environment_creation_pending"
+              ? t("resource.creationPending")
+              : reason instanceof Error
+                ? reason.message
+                : t("resource.operationFailed"),
       );
     } finally {
       setBusy(false);
@@ -399,6 +405,7 @@ export function ResourceManagementPage({
                 className="product-resource-create product-environment-create"
                 onSubmit={(event) => {
                   event.preventDefault();
+                  if (creationPending) return;
                   const name = machineName.trim();
                   if (name.length === 0) {
                     setError(t("resource.machineNameRequired"));
@@ -477,11 +484,18 @@ export function ResourceManagementPage({
                 <button
                   className="product-primary-button"
                   disabled={
-                    busy || selectedProfile === undefined || machineName.trim().length === 0
+                    busy ||
+                    creationPending ||
+                    selectedProfile === undefined ||
+                    machineName.trim().length === 0
                   }
                   type="submit"
                 >
-                  {busy ? t("common.processing") : t("resource.apply")}
+                  {busy
+                    ? t("common.processing")
+                    : creationPending
+                      ? t("resource.creationPending")
+                      : t("resource.apply")}
                 </button>
               </form>
             </div>
@@ -545,7 +559,12 @@ export function ResourceManagementPage({
                         {environment.desiredState === "running" &&
                         environment.state !== "releasing" ? (
                           <button
-                            disabled={busy || active}
+                            disabled={busy || active || environment.creationPending}
+                            title={
+                              environment.creationPending
+                                ? t("resource.creationPending")
+                                : undefined
+                            }
                             onClick={() =>
                               void mutate(() =>
                                 api.developmentEnvironmentAction(
@@ -562,7 +581,12 @@ export function ResourceManagementPage({
                         ) : null}
                         {environment.desiredState === "paused" ? (
                           <button
-                            disabled={busy}
+                            disabled={busy || environment.creationPending}
+                            title={
+                              environment.creationPending
+                                ? t("resource.creationPending")
+                                : undefined
+                            }
                             onClick={() =>
                               void mutate(() =>
                                 api.developmentEnvironmentAction(
@@ -579,7 +603,10 @@ export function ResourceManagementPage({
                         ) : null}
                         <button
                           className="product-danger-button"
-                          disabled={busy || active}
+                          disabled={busy || active || environment.creationPending}
+                          title={
+                            environment.creationPending ? t("resource.creationPending") : undefined
+                          }
                           onClick={() => {
                             if (!window.confirm(t("resource.releaseConfirm"))) return;
                             void mutate(() =>

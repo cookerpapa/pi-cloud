@@ -638,6 +638,7 @@ export const DevelopmentEnvironmentResourceSchema = Type.Object(
     workspaceId: UuidSchema,
     workspaceName: Type.String({ minLength: 1, maxLength: 256 }),
     state: DevelopmentEnvironmentStateSchema,
+    creationPending: Type.Boolean(),
     desiredState: Type.Union([
       Type.Literal("running"),
       Type.Literal("paused"),

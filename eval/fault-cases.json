@@ -3,6 +3,34 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "machine-unresolved-create-admission",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/development-environment-service.test.ts",
+      "test": "admits one unresolved creation per user across API instances",
+      "invariant": "Concurrent API owners cannot admit a second unresolved machine for the same user; exact retries and independent users retain their own identities."
+    },
+    {
+      "id": "machine-recovery-retains-occupancy",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/development-environment-service.test.ts",
+      "test": "keeps a sealed recovery-pending Run from releasing its machine",
+      "invariant": "Sealing a lost Worker does not release the original logical Run's resource occupancy."
+    },
+    {
+      "id": "workspace-recovery-retains-occupancy",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/workspace-admission.integration.test.ts",
+      "test": "retains Workspace occupancy during recovery, then permits deletion after settlement",
+      "invariant": "Recovery-pending work cannot lose its Workspace even when the old writer was sealed."
+    },
+    {
+      "id": "workspace-stop-seal-retains-occupancy",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/workspace-admission.integration.test.ts",
+      "test": "retains Workspace occupancy during unfinished-seal, then permits deletion after settlement",
+      "invariant": "A user Stop with unfinished ordered writer closure still blocks resource deletion."
+    },
+    {
       "id": "workspace-transfer-partial-stream",
       "workspace": "@pi-cloud/workspace-runtime",
       "file": "test/workspace-file-transfer.test.ts",

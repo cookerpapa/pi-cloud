@@ -151,6 +151,7 @@ describe("product chat experience", () => {
       desiredState: "running" as const,
       workspaceName: "acceptance",
       generation: 1,
+      creationPending: false,
       profileKey: "standard" as const,
       cpuCount: 2,
       memoryMiB: 4_096,
@@ -296,6 +297,46 @@ describe("product chat experience", () => {
     expect(markup).not.toContain("项目路径或 ID");
     expect(markup).not.toContain("项目 Access Token");
     expect(markup).not.toContain("连接项目");
+  });
+
+  it("keeps unresolved creation visible without offering another application or lifecycle action", () => {
+    const environment = {
+      environmentId: "10000000-0000-4000-8000-000000000001",
+      projectId: "10000000-0000-4000-8000-000000000002",
+      workspaceId: "10000000-0000-4000-8000-000000000003",
+      workspaceName: "Pending machine",
+      state: "failed" as const,
+      desiredState: "running" as const,
+      creationPending: true,
+      generation: 1,
+      profileKey: "starter" as const,
+      cpuCount: 1,
+      memoryMiB: 2048,
+      systemDiskGiB: 8,
+      createdAt: "2026-11-10T00:00:00.000Z",
+      updatedAt: "2026-11-10T00:00:00.000Z",
+    };
+    const render = (creationPending: boolean) =>
+      renderToStaticMarkup(
+        <ResourceManagementPage
+          api={new PiCloudApi(async () => new Response(null, { status: 500 }))}
+          conversations={[]}
+          environments={[{ ...environment, creationPending }]}
+          profiles={[]}
+          workspaces={[]}
+          initialTab="environments"
+          onClose={() => undefined}
+          onRefresh={async () => undefined}
+        />,
+      );
+    const markup = render(true);
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>等待当前开发机创建完成<\/button>/);
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>暂停<\/button>/);
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>释放<\/button>/);
+    expect(resourceRefreshPending([environment])).toBe(true);
+    expect(render(false)).toMatch(
+      /<button class="product-danger-button" type="button">释放<\/button>/,
+    );
   });
 
   it("presents an exclusive environment directory as an Explorer-style persisted root", () => {

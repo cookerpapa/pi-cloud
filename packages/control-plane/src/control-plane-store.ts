@@ -1,4 +1,5 @@
 import { defaultWorkspaceCapacityBytes } from "./workspace-capacity-service.ts";
+import { runRetainsResource } from "./resource-admission.ts";
 import { readConversationEnvironment } from "./conversation-environment.ts";
 import { parseScheduledOrigin, type ScheduledOrigin } from "@pi-cloud/protocol";
 import { readExecutionTargetGrants } from "@pi-cloud/runtime-core/execution-target-grants";
@@ -863,7 +864,7 @@ export class ControlPlaneStore {
             }>`select
             exists(select 1 from runs r join sessions s on s.tenant_id=r.tenant_id and s.id=r.session_id
               where r.tenant_id=${this.#tenantId}::uuid and s.workspace_id=${workspaceId}::uuid
-                and r.state in ('queued','running','settling','cancel_requested')) as run,
+                and ${runRetainsResource("r")}) as run,
             exists(select 1 from workspace_terminal_sessions t
               where t.tenant_id=${this.#tenantId}::uuid and t.workspace_id=${workspaceId}::uuid
                 and t.state in ('reserved','materializing','active','cleaning','unknown')) as terminal,

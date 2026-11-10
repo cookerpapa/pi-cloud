@@ -1,9 +1,14 @@
 # Current architecture decisions
 
+[ADR-0308](0308-unresolved-resource-admission.md) records unresolved machine
+admission and recovery-aware deletion, with conditional stock Cube/BoxLite and
+Android portability evaluation in #26–#27.
+
 [ADR-0307](0307-guest-execution-and-session-activity.md) records the authorized
 Guest admission/cancellation migration and Worker Session-activity declarations.
 Finite retention may expire unconfirmed work; resource/Volume replacement remains
-an API assessment. Implementation and delivery are pending in #25.
+an API assessment. [Implementation and live delivery](../reports/guest-execution-20261110.md)
+are complete in #25.
 
 [ADR-0306](0306-runtime-decoupling-and-continuation.md) records the authorized
 runtime decoupling and recovery work in Issues #17–#24. Source verification,

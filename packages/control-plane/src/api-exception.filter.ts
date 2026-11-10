@@ -89,7 +89,9 @@ export function mappedError(error: unknown): ErrorResponse {
             ? 429
             : error.code === "capacity_exhausted" || error.code === "input_delivery_unavailable"
               ? 503
-              : error.code === "conflict" || error.code === "idempotency_conflict"
+              : error.code === "conflict" ||
+                  error.code === "idempotency_conflict" ||
+                  error.code === "development_environment_creation_pending"
                 ? 409
                 : 503;
     return { status, body: { error: { code: error.code, message: error.message } } };

@@ -1,5 +1,13 @@
 # Implementation roadmap
 
+## Resource admission and stock sandbox boundaries — in progress
+
+[#26](https://github.com/cookerpapa/pi-managed-agents/issues/26) implements the
+owner's unresolved-creation restrictions and verifies recovery-aware deletion
+under [ADR-0308](adr/0308-unresolved-resource-admission.md). It assesses every
+remaining Cube patch before any removal. [#27](https://github.com/cookerpapa/pi-managed-agents/issues/27)
+tracks conditional BoxLite integration and the independent Android source audit.
+
 ## Guest execution and Session activity — deployed
 
 Delivered [#25](https://github.com/cookerpapa/pi-managed-agents/issues/25) under

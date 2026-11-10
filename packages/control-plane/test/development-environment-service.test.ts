@@ -394,6 +394,77 @@ afterAll(async () => {
 });
 
 describe("user-owned development environments", () => {
+  it.skipIf(!external)("admits one unresolved creation per user across API instances", async () => {
+    const originalFetch = (await vi.importActual<typeof import("undici")>("undici")).fetch;
+    const otherService = new DevelopmentEnvironmentService({
+      database,
+      terminalToken: TOKEN,
+      allowInsecureInternalHttp: true,
+      environmentImageRevision: IMAGE_REVISION,
+      observeMachine: (...args) => controller.developmentEnvironmentObservation(...args),
+    });
+    const owned: { user: TenantRequestIdentity; id: string }[] = [];
+    vi.mocked(undici.fetch).mockRejectedValue(new Error("Creation delivery unavailable"));
+    try {
+      const inputs = [0, 1].map((n) => ({ name: `Pending ${n}`, profileKey: "starter" as const }));
+      const outcomes = await Promise.allSettled([
+        service.create(identity, "pending-0", inputs[0]!),
+        otherService.create(identity, "pending-1", inputs[1]!),
+      ]);
+      const winner = outcomes.findIndex((r) => r.status === "fulfilled");
+      expect(winner).toBeGreaterThanOrEqual(0);
+      expect(outcomes.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+      expect(outcomes.find((r) => r.status === "rejected")).toMatchObject({
+        reason: { code: "development_environment_creation_pending" },
+      });
+      const accepted = outcomes[winner]!;
+      if (accepted.status !== "fulfilled") throw new Error("Missing accepted creation");
+      const pending = accepted.value;
+      owned.push({ user: identity, id: pending.environmentId });
+      expect(pending).toMatchObject({ state: "requested", creationPending: true });
+      const replay = await otherService.create(identity, `pending-${winner}`, inputs[winner]!);
+      expect(replay.environmentId).toBe(pending.environmentId);
+      expect(replay.creationPending).toBe(true);
+      const independent = await otherService.create(otherIdentity, "independent-pending", {
+        name: "Independent owner",
+        profileKey: "starter",
+      });
+      owned.push({ user: otherIdentity, id: independent.environmentId });
+      expect(independent.creationPending).toBe(true);
+      for (const action of ["pause", "resume", "release"] as const)
+        await expect(
+          service.action(identity, pending.environmentId, `pending-${action}`, { action }),
+        ).rejects.toMatchObject({ code: "development_environment_creation_pending" });
+      const state = await database
+        .selectFrom("development_environments")
+        .select(["desired_state", "intent_revision"])
+        .where("id", "=", pending.environmentId)
+        .executeTakeFirstOrThrow();
+      expect(state).toEqual({ desired_state: "running", intent_revision: "1" });
+      vi.mocked(undici.fetch).mockImplementation(originalFetch);
+      await service.reconcileLifecycle();
+      expect(await service.get(identity, pending.environmentId)).toMatchObject({
+        state: "running",
+        creationPending: false,
+      });
+      const next = await otherService.create(identity, "after-pending-resolved", {
+        name: "Second ready machine",
+        profileKey: "starter",
+      });
+      owned.push({ user: identity, id: next.environmentId });
+      expect(next).toMatchObject({ state: "running", creationPending: false });
+    } finally {
+      vi.mocked(undici.fetch).mockImplementation(originalFetch);
+      await service.reconcileLifecycle();
+      for (const machine of owned)
+        await service.action(machine.user, machine.id, `cleanup-${machine.id}`, {
+          action: "release",
+        });
+      await otherService.close();
+      destroys.mockClear();
+    }
+  });
+
   it.skipIf(!external)(
     "commits one machine when two identical create requests overlap",
     async () => {
@@ -1010,15 +1081,28 @@ describe("user-owned development environments", () => {
       profileKey: "starter",
     });
     expect(machine.state).toBe("recovering");
+    expect(machine.creationPending).toBe(true);
     const original = await database
       .selectFrom("development_environments")
       .select(["allocation_id", "creation_spec"])
       .where("id", "=", machine.environmentId)
       .executeTakeFirstOrThrow();
     try {
+      await expect(
+        service.action(identity, machine.environmentId, "reject-unresolved-release", {
+          action: "release",
+        }),
+      ).rejects.toMatchObject({ code: "development_environment_creation_pending" });
+      await expect(
+        service.create(identity, "reject-unresolved-second", {
+          name: "Too early",
+          profileKey: "starter",
+        }),
+      ).rejects.toMatchObject({ code: "development_environment_creation_pending" });
       await controller.recoverPersistentDevelopmentEnvironments();
       expect(await service.get(identity, machine.environmentId)).toMatchObject({
         state: "running",
+        creationPending: false,
         workspaceId: machine.workspaceId,
       });
       const current = await database
@@ -1069,6 +1153,113 @@ describe("user-owned development environments", () => {
       await service.action(identity, machine.environmentId, "cleanup-paused-recovery", {
         action: "release",
       });
+    }
+  });
+
+  it("keeps a sealed recovery-pending Run from releasing its machine", async () => {
+    const machine = await service.create(identity, "recovery-occupancy", {
+      name: "Recovery occupancy",
+      profileKey: "starter",
+    });
+    const session = await store.createSession(
+      machine.projectId,
+      machine.workspaceId,
+      "Recovering",
+      "development_environment",
+      {
+        ownerUserId: identity.userId,
+        workingDirectory: "/home/user",
+        sandboxProfileKey: "starter",
+      },
+    );
+    const run = await store.acceptTurn(session.sessionId, "recovering-input", {
+      prompt: "continue",
+    });
+    try {
+      await database
+        .updateTable("runs")
+        .set({
+          state: "failed",
+          recovery_requested_at: new Date(),
+          settled_at: new Date(),
+          failure_code: "worker_lost",
+          failure_message: "Worker recovery fixture",
+          failure_retryable: true,
+          output_seal_id: crypto.randomUUID(),
+          output_sealed_at: new Date(),
+        })
+        .where("id", "=", run.runId)
+        .execute();
+      await expect(
+        service.action(identity, machine.environmentId, "release-during-recovery", {
+          action: "release",
+        }),
+      ).rejects.toMatchObject({ code: "conflict" });
+      const row = await database
+        .selectFrom("development_environments")
+        .select("desired_state")
+        .where("id", "=", machine.environmentId)
+        .executeTakeFirstOrThrow();
+      expect(row.desired_state).toBe("running");
+    } finally {
+      await database
+        .updateTable("runs")
+        .set({
+          state: "cancelled",
+          recovery_requested_at: null,
+          settled_at: new Date(),
+          failure_code: null,
+          failure_message: null,
+          failure_retryable: null,
+        })
+        .where("id", "=", run.runId)
+        .execute();
+      await service.action(identity, machine.environmentId, "cleanup-recovery-occupancy", {
+        action: "release",
+      });
+    }
+  });
+
+  it("admits a new application after a prior failure is confirmed physically absent", async () => {
+    const originalFetch = (await vi.importActual<typeof import("undici")>("undici")).fetch;
+    vi.mocked(undici.fetch).mockRejectedValueOnce(new Error("Unsent fixture request"));
+    const first = await service.create(identity, "confirmed-empty-create", {
+      name: "No physical creation",
+      profileKey: "starter",
+    });
+    let nextId: string | undefined;
+    try {
+      expect(first.creationPending).toBe(true);
+      await database
+        .updateTable("development_environments")
+        .set({
+          state: "released",
+          desired_state: "released",
+          allocation_closed: true,
+          allocation_absent: true,
+          intent_revision: sql<string>`intent_revision+1`,
+          failure_code: "capacity_exhausted",
+          released_at: new Date(),
+        })
+        .where("id", "=", first.environmentId)
+        .execute();
+      expect((await service.get(identity, first.environmentId)).creationPending).toBe(false);
+      const next = await service.create(identity, "after-confirmed-empty-create", {
+        name: "Next application",
+        profileKey: "starter",
+      });
+      nextId = next.environmentId;
+      expect(next).toMatchObject({ state: "running", creationPending: false });
+    } finally {
+      vi.mocked(undici.fetch).mockImplementation(originalFetch);
+      await service.reconcileLifecycle();
+      await service.action(identity, first.environmentId, "cleanup-confirmed-empty", {
+        action: "release",
+      });
+      if (nextId)
+        await service.action(identity, nextId, "cleanup-after-confirmed-empty", {
+          action: "release",
+        });
     }
   });
 

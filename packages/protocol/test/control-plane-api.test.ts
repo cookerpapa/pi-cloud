@@ -107,6 +107,7 @@ describe("control-plane public API schemas", () => {
             workspaceName: "agent-runtime",
             state: "running",
             desiredState: "running",
+            creationPending: false,
             generation: 1,
             profileKey: "standard",
             cpuCount: 2,

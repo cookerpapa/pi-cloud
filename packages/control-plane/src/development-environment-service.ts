@@ -27,6 +27,7 @@ import { sql, type Kysely } from "kysely";
 import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
 import type { TenantRequestIdentity } from "./tenant-identity.ts";
 import { Agent, fetch as internalFetch } from "undici";
+import { machineCreationPending, runRetainsResource } from "./resource-admission.ts";
 
 const internalDispatcher = new Agent();
 
@@ -85,6 +86,7 @@ function resource(
     state: DevelopmentEnvironmentState;
     desiredState: "running" | "paused" | "released";
     generation: string;
+    creationPending: boolean;
     profileKey: string;
     cpuCount: number;
     memoryMiB: number;
@@ -119,6 +121,7 @@ function resource(
             : "unknown"
           : row.state,
     generation,
+    creationPending: row.creationPending,
     profileKey: selectedProfile.key,
     cpuCount: row.cpuCount,
     memoryMiB: row.memoryMiB,
@@ -381,6 +384,19 @@ export class DevelopmentEnvironmentService {
         }
         return replay.id;
       }
+      const pending = await transaction
+        .selectFrom("development_environments")
+        .select("id")
+        .where("tenant_id", "=", identity.tenantId)
+        .where("owner_user_id", "=", identity.userId)
+        .where(machineCreationPending())
+        .limit(1)
+        .executeTakeFirst();
+      if (pending)
+        throw new ControlPlaneStoreError(
+          "development_environment_creation_pending",
+          "Wait for the current development machine creation to resolve before applying for another",
+        );
       const id = this.#id();
       const projectId = this.#id();
       const workspaceId = this.#id();
@@ -547,6 +563,7 @@ export class DevelopmentEnvironmentService {
       const machine = await tx
         .selectFrom("development_environments")
         .selectAll()
+        .select(machineCreationPending().as("creation_pending"))
         .where("tenant_id", "=", identity.tenantId)
         .where("owner_user_id", "=", identity.userId)
         .where("id", "=", environmentId)
@@ -578,12 +595,17 @@ export class DevelopmentEnvironmentService {
           "conflict",
           "Development machine release has been requested",
         );
+      if (machine.creation_pending)
+        throw new ControlPlaneStoreError(
+          "development_environment_creation_pending",
+          "Wait for development machine creation to resolve before changing or releasing it",
+        );
       const active = await tx
         .selectFrom("runs")
         .select("id")
         .where("tenant_id", "=", identity.tenantId)
         .where("workspace_id", "=", machine.workspace_id)
-        .where("state", "in", ["queued", "running", "settling", "cancel_requested"])
+        .where(runRetainsResource())
         .limit(1)
         .executeTakeFirst();
       if (active || machine.agent_activation_id || machine.terminal_active)
@@ -705,7 +727,7 @@ export class DevelopmentEnvironmentService {
         .select("run.id")
         .where("run.tenant_id", "=", identity.tenantId)
         .where("session_row.workspace_id", "=", environment.workspace_id)
-        .where("run.state", "in", ["queued", "running", "settling", "cancel_requested"])
+        .where(runRetainsResource("run"))
         .limit(1)
         .executeTakeFirst();
       if (activeTurn !== undefined) {
@@ -831,6 +853,7 @@ export class DevelopmentEnvironmentService {
       )
       .select([
         "development.id",
+        machineCreationPending("development").as("creationPending"),
         "development.project_id as projectId",
         "development.workspace_id as workspaceId",
         "project.name as workspaceName",
