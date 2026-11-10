@@ -1,11 +1,15 @@
 # Maintained backlog
 
-## Pi Managed Agents identity — publishing
+## Pi Managed Agents identity — published
 
 - [x] Adopt Pi Managed Agents in the project introduction and Web product chrome.
 - [x] Keep existing package/protocol/resource identities documented as technical names.
 - [x] Rename the GitHub repository to `pi-managed-agents` and update the local remote.
-- [ ] Verify browser layout and publish only the Web image; record live acceptance.
+- [x] Verify browser layout and publish only the Web image; record live acceptance.
+
+[Delivery](reports/project-identity-20261110.md): the repository, introduction,
+login/sidebar/administration branding and browser metadata use the new name.
+The scoped Web release preserves existing backend and VM identities.
 
 ## Runtime decoupling and continuation — deployed
 

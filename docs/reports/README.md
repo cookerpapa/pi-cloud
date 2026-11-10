@@ -1,5 +1,8 @@
 # Delivery and research evidence
 
+- [Pi Managed Agents project identity](project-identity-20261110.md): repository
+  rename, public branding and Web-only publication with existing resources preserved.
+
 - [Runtime decoupling and continuation](runtime-decoupling-20261109.md):
   public API separation, Guest HTTPS completion, original-operation recovery,
   execution-side retention and external compute accounting.
