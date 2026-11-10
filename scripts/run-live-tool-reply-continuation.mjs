@@ -558,6 +558,11 @@ try {
   receipt ??= error.replyFaultReceipt;
   failure = error;
   report.failure = String(error?.message ?? error).slice(0, 700);
+  if (receipt) {
+    try {
+      report.failedFaultEvidence = readOwnedReplyFault(receipt);
+    } catch {}
+  }
   if (active) {
     const run = await api.getRun(active.runId).catch(() => undefined);
     if (run) report.failedRun = { runId: active.runId, state: run.state, failure: run.failure };

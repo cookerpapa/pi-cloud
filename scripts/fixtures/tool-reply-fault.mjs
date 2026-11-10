@@ -29,7 +29,18 @@ export function wrapCompletionAdapter(Base, configPath, statePath) {
       const probe =
         packet.kind === "result" &&
         context?.kind === "execution_probe" &&
-        context.bindingIds.some((id) => state.results.some((r) => r.bindingId === id));
+        state.results.some(
+          (r) =>
+            context.bindingIds.includes(r.bindingId) ||
+            // Recovery changes the logical binding while preserving this owned
+            // Guest. Keep the loss armed for its replacement readiness probe.
+            (r.targetId &&
+              r.bootId &&
+              r.replyTopic &&
+              context.execution?.targetId === r.targetId &&
+              context.execution?.bootId === r.bootId &&
+              context.replyTopic === r.replyTopic),
+        );
       if (!result && !probe) return accept.call(this, packet);
       const entry = { operationId: packet.operationId, at: Date.now() };
       if (result)
@@ -37,6 +48,9 @@ export function wrapCompletionAdapter(Base, configPath, statePath) {
           ...entry,
           runId: context.scope.runId,
           bindingId: context.execution?.bindingId,
+          targetId: context.execution?.targetId,
+          bootId: context.execution?.bootId,
+          replyTopic: context.replyTopic,
         });
       else state.probes.push({ ...entry, suppressed: !!config.dropProbe });
       state.results = state.results.slice(-32);

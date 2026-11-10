@@ -22,7 +22,8 @@ it("isolates reply loss to the armed tenant/result and its guest probe, with exp
     context: {
       scope: { tenantId: "owned", runId: "run" },
       toolName: "bash",
-      execution: { bindingId: "binding" },
+      execution: { bindingId: "binding", targetId: "owned-vm", bootId: "owned-boot" },
+      replyTopic: "owned-replies",
     },
     result: {
       output: {
@@ -59,18 +60,44 @@ it("isolates reply loss to the armed tenant/result and its guest probe, with exp
     });
     await adapter.accept({ ...probe, context: { ...probe.context, bindingIds: ["unrelated"] } });
     expect(accepted).toHaveBeenCalledTimes(2);
+    const recoveryProbe = {
+      ...probe,
+      operationId: "recovery-probe",
+      context: {
+        ...probe.context,
+        bindingIds: ["fresh-binding"],
+        execution: { bindingId: "fresh-binding", targetId: "owned-vm", bootId: "owned-boot" },
+        replyTopic: "owned-replies",
+      },
+    };
+    await adapter.accept(recoveryProbe);
+    expect(accepted).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(await readFile(state, "utf8")).probes).toContainEqual(
+      expect.objectContaining({ operationId: "recovery-probe", suppressed: true }),
+    );
+    for (const unrelated of [
+      { execution: { ...recoveryProbe.context.execution, targetId: "other-vm" } },
+      { execution: { ...recoveryProbe.context.execution, bootId: "other-boot" } },
+      { replyTopic: "other-replies" },
+    ]) {
+      await adapter.accept({
+        ...recoveryProbe,
+        context: { ...recoveryProbe.context, ...unrelated },
+      });
+    }
+    expect(accepted).toHaveBeenCalledTimes(5);
     await writeFile(config, JSON.stringify({ ...settings, dropProbe: false }));
     await adapter.accept(probe);
-    expect(accepted).toHaveBeenCalledTimes(3);
+    expect(accepted).toHaveBeenCalledTimes(6);
     await writeFile(config, JSON.stringify({ ...settings, nonce: "ack-loss", dropAck: true }));
     Base.prototype.accept = Adapter.prototype.accept;
     await expect(adapter.accept(packet)).rejects.toThrow("ACK lost");
-    expect(accepted).toHaveBeenCalledTimes(4);
+    expect(accepted).toHaveBeenCalledTimes(7);
     await adapter.accept(packet);
-    expect(accepted).toHaveBeenCalledTimes(5);
+    expect(accepted).toHaveBeenCalledTimes(8);
     await writeFile(config, JSON.stringify({ ...settings, expiresAt: 1 }));
     await adapter.accept(packet);
-    expect(accepted).toHaveBeenCalledTimes(6);
+    expect(accepted).toHaveBeenCalledTimes(9);
   } finally {
     await rm(directory, { recursive: true });
   }
