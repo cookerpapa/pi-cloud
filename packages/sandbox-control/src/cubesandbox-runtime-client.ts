@@ -124,7 +124,7 @@ export interface CubeSandboxRuntimeClient {
     createBefore: number,
     action: "get" | "close",
   ): Promise<CubeAllocationState>;
-  renewRetention?(id: string, createBefore: number, observedAt: number): Promise<number>;
+  setTimeout?(sandboxId: string, timeoutSeconds: number): Promise<void>;
   read(sandboxId: string): Promise<CubeSandboxInstance | undefined>;
   observe(
     sandboxId: string,
@@ -621,23 +621,15 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     const response = await this.#control("/health");
     await response.body?.cancel().catch(() => undefined);
   }
-  async renewRetention(id: string, createBefore: number, observedAt: number): Promise<number> {
-    const response = await this.#control(`/allocations/${encodeURIComponent(id)}/renew`, {
+  async setTimeout(sandboxId: string, timeoutSeconds: number): Promise<void> {
+    const id = bounded(sandboxId, "CubeSandbox ID", 128);
+    if (timeoutSeconds !== -1) positiveInteger(timeoutSeconds, 1800, 1, 2_147_483_647);
+    const response = await this.#control(`/sandboxes/${encodeURIComponent(id)}/timeout`, {
       method: "POST",
       timeoutMs: 5000,
-      body: JSON.stringify({ createBefore, observedAt }),
+      body: JSON.stringify({ timeout: timeoutSeconds }),
     });
-    const value = record(
-      parseJson(await readBoundedResponse(response, 8192), "Cube retention"),
-      "Cube retention",
-    );
-    if (
-      value.allocationID !== id ||
-      !Number.isSafeInteger(value.retainUntil) ||
-      (value.retainUntil as number) <= observedAt
-    )
-      throw new CubeRuntimeClientError("Cube retention acknowledgement is invalid");
-    return value.retainUntil as number;
+    await response.body?.cancel();
   }
 
   async ensureVolume(volumeId: string, driver: string): Promise<CubeSandboxVolume> {
@@ -725,8 +717,8 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         ],
         denyOut: ["0.0.0.0/0"],
       },
-      // Managed allocations use the Cubelet retention journal, with the generic
-      // timeout disabled. Dedicated machines retain explicit pause/resume.
+      // Native timeout owns expiry. Dedicated machines use timeout=-1 and
+      // explicit lifecycle operations; ordinary traffic must not auto-resume.
       lifecycle: {
         on_timeout: input.lifecycle?.onTimeout ?? "kill",
         auto_resume: input.lifecycle?.autoResume ?? false,

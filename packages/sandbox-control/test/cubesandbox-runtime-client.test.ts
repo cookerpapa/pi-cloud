@@ -69,32 +69,18 @@ beforeEach(() => {
   retainedConnection.mockClear();
 });
 
-it("renews the original allocation time and rejects unconfirmed or changed acknowledgements", async () => {
+it("renews through the native timeout API without an allocation journal endpoint", async () => {
   const client = executionClient();
-  const observedAt = Date.now() - 10000;
   try {
-    allocationReplyOverride = { allocationID: allocation.id, retainUntil: observedAt + 900000 };
-    await expect(
-      client.renewRetention(allocation.id, allocation.createBefore, observedAt),
-    ).resolves.toBe(observedAt + 900000);
+    await expect(client.setTimeout(executionTarget.sandboxId, 1790)).resolves.toBeUndefined();
     expect(observed.at(-1)).toMatchObject({
       method: "POST",
-      path: `/allocations/${allocation.id}/renew`,
-      body: {
-        createBefore: allocation.createBefore,
-        observedAt,
-      },
+      path: `/sandboxes/${executionTarget.sandboxId}/timeout`,
+      body: { timeout: 1790 },
     });
-    for (const receipt of [
-      { allocationID: "different", retainUntil: observedAt + 900000 },
-      { allocationID: allocation.id, retainUntil: observedAt },
-      { allocationID: allocation.id, closed: true },
-    ]) {
-      allocationReplyOverride = receipt;
-      await expect(
-        client.renewRetention(allocation.id, allocation.createBefore, observedAt),
-      ).rejects.toThrow();
-    }
+    for (const timeout of [0, -2, 1.5, 2_147_483_648])
+      await expect(client.setTimeout(executionTarget.sandboxId, timeout)).rejects.toThrow();
+    expect(observed).toHaveLength(1);
   } finally {
     await client.close();
   }
@@ -322,6 +308,13 @@ beforeAll(async () => {
             name: (body as { name?: unknown }).name,
           }),
         );
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        request.url === `/sandboxes/${executionTarget.sandboxId}/timeout`
+      ) {
+        response.writeHead(204).end();
         return;
       }
       if (request.method === "POST" && request.url === "/sandboxes") {

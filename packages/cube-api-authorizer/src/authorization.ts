@@ -9,7 +9,7 @@ export type CubeAuthorizationRequest = Readonly<{
 
 const SANDBOX_ID = "[A-Za-z0-9](?:[A-Za-z0-9-]{0,126}[A-Za-z0-9])?";
 const SANDBOX_ITEM_PATH = new RegExp(`^/sandboxes/${SANDBOX_ID}$`);
-const SANDBOX_LIFECYCLE_PATH = new RegExp(`^/sandboxes/${SANDBOX_ID}/(?:pause|connect)$`);
+const SANDBOX_LIFECYCLE_PATH = new RegExp(`^/sandboxes/${SANDBOX_ID}/(?:pause|connect|timeout)$`);
 const SANDBOX_SNAPSHOT_PATH = new RegExp(`^/sandboxes/${SANDBOX_ID}/snapshots$`);
 const SNAPSHOT_ITEM_PATH = /^\/templates\/snap-[a-f0-9]{24}$/;
 const WORKSPACE_VOLUME_ITEM_PATH = /^\/volumes\/pcw-[a-f0-9]{48}$/;
@@ -40,7 +40,7 @@ export function isAllowedCubeApiOperation(path: string, method: string): boolean
     return parsed.search === "";
   if (
     normalizedMethod === "POST" &&
-    /^\/allocations\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/(get|close|renew)$/.test(
+    /^\/allocations\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/(get|close)$/.test(
       parsed.pathname,
     )
   )

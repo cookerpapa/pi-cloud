@@ -200,6 +200,7 @@ type CubeActivation = {
   state: "running" | "quiesced" | "idle" | "paused";
   volumeId: string;
   lifetime: "elastic" | "development_environment";
+  retentionWindowMs: number;
   toolRoot: string;
   /** Observed lazily, including for machines adopted before their first probe. */
   guestBootId?: string;
@@ -846,10 +847,9 @@ export class CubeSandboxProvider implements SandboxProvider {
           spec.sandboxProfileKey !== undefined
             ? this.#developmentTemplateIds.get(spec.sandboxProfileKey)!
             : this.#templateId,
-        // Control Plane owns lifecycle policy and explicit closure.
-        // The managed allocation journal owns finite idle expiry;
-        // the generic Cube timer must not compete with its renewable deadline.
-        timeoutSeconds: -1,
+        timeoutSeconds: exclusiveMachine
+          ? -1
+          : Math.ceil((spec.retentionWindowMs ?? this.#retentionWindowMs) / 1000),
         metadata: {
           ...assignmentMetadata(
             spec.activationId,
@@ -857,13 +857,6 @@ export class CubeSandboxProvider implements SandboxProvider {
             this.#imageRevision,
             bindingSha256,
           ),
-          ...(!exclusiveMachine
-            ? {
-                "picloud.retention_window_ms": String(
-                  spec.retentionWindowMs ?? this.#retentionWindowMs,
-                ),
-              }
-            : {}),
         },
         allowInternetAccess: true,
         allowPublicTraffic: false,
@@ -978,6 +971,9 @@ export class CubeSandboxProvider implements SandboxProvider {
         state: "running",
         volumeId,
         lifetime: spec.lifetime ?? "elastic",
+        retentionWindowMs: exclusiveMachine
+          ? 0
+          : (spec.retentionWindowMs ?? this.#retentionWindowMs),
         toolRoot,
       });
       return handle;
@@ -1419,6 +1415,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         state: activation.state,
         volumeId: activation.volumeId,
         lifetime: activation.lifetime,
+        retentionWindowMs: activation.retentionWindowMs,
         toolRoot: activation.toolRoot,
         guestBootId: activation.guestBootId,
         continuityId: activation.continuityId,
@@ -1460,6 +1457,8 @@ export class CubeSandboxProvider implements SandboxProvider {
       typeof raw.volumeId !== "string" ||
       typeof raw.toolRoot !== "string" ||
       (raw.lifetime !== "elastic" && raw.lifetime !== "development_environment") ||
+      !Number.isSafeInteger(raw.retentionWindowMs) ||
+      (raw.retentionWindowMs as number) < 0 ||
       target.apiUrl !== descriptor.target.apiUrl ||
       target.nodeId !== descriptor.target.nodeId ||
       target.sandboxId !== descriptor.target.sandboxId ||
@@ -1501,6 +1500,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         state: raw.state as "running" | "idle",
         volumeId: raw.volumeId,
         lifetime: raw.lifetime,
+        retentionWindowMs: raw.retentionWindowMs as number,
         toolRoot: raw.toolRoot,
       });
     }
@@ -1546,6 +1546,8 @@ export class CubeSandboxProvider implements SandboxProvider {
       typeof raw.imageRevision !== "string" ||
       !/^[0-9a-z._-]{1,128}$/.test(raw.imageRevision) ||
       (raw.lifetime !== "development_environment" && raw.lifetime !== "elastic") ||
+      !Number.isSafeInteger(raw.retentionWindowMs) ||
+      (raw.retentionWindowMs as number) < 0 ||
       typeof raw.bindingSha256 !== "string" ||
       !/^[0-9a-f]{64}$/.test(raw.bindingSha256) ||
       !Number.isSafeInteger(raw.authorityEpoch) ||
@@ -1646,6 +1648,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       state,
       volumeId: raw.volumeId,
       lifetime: raw.lifetime,
+      retentionWindowMs: raw.retentionWindowMs as number,
       toolRoot: raw.toolRoot,
       ...(typeof raw.guestBootId === "string" ? { guestBootId: raw.guestBootId } : {}),
       ...(typeof raw.continuityId === "string" ? { continuityId: raw.continuityId } : {}),
@@ -1683,7 +1686,7 @@ export class CubeSandboxProvider implements SandboxProvider {
   }
 
   async renewPersistentRetention(capsule: string, observedAt: number): Promise<void> {
-    if (!this.#persistentCapsules || !this.#client.renewRetention)
+    if (!this.#persistentCapsules || !this.#client.setTimeout)
       throw new Error("Cube retention transport unavailable");
     const raw = record(this.#persistentCapsules.open(capsule), "Retention capsule");
     if (raw.version !== 2 || raw.lifetime !== "elastic") throw new Error("Runtime is not elastic");
@@ -1692,11 +1695,17 @@ export class CubeSandboxProvider implements SandboxProvider {
     const target = raw.executionTarget as SandboxExecutionTarget;
     if (!target || target.sandboxId !== handle.runtimeName || typeof target.bootId !== "string")
       throw new Error("Retention target changed");
-    await this.#client.renewRetention(
-      handle.activationId,
-      handle.allocation.createBefore,
-      observedAt,
-    );
+    const window = raw.retentionWindowMs;
+    if (
+      !Number.isSafeInteger(window) ||
+      (window as number) <= 0 ||
+      !Number.isSafeInteger(observedAt) ||
+      observedAt <= 0
+    )
+      throw new Error("Runtime retention policy changed");
+    const remaining = (window as number) - Math.max(0, Date.now() - observedAt);
+    if (remaining <= 0) throw new Error("Runtime activity expired before renewal");
+    await this.#client.setTimeout(handle.runtimeName, Math.ceil(remaining / 1000));
   }
 
   #retainInteractive(activation: CubeActivation): () => void {
@@ -1710,12 +1719,10 @@ export class CubeSandboxProvider implements SandboxProvider {
         state.pending = true;
         void Promise.resolve()
           .then(() => {
-            if (!this.#client.renewRetention)
-              throw new Error("Cube retention transport unavailable");
-            return this.#client.renewRetention(
-              id,
-              activation.handle.allocation.createBefore,
-              Date.now(),
+            if (!this.#client.setTimeout) throw new Error("Cube retention transport unavailable");
+            return this.#client.setTimeout(
+              activation.handle.runtimeName,
+              Math.ceil(activation.retentionWindowMs / 1000),
             );
           })
           .catch(() => undefined)

@@ -146,11 +146,9 @@ function fakeWorkspaceVolumeGateway(): WorkspaceVolumeGateway {
 }
 
 class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
-  readonly retention = vi.fn(
-    async (_id: string, _createBefore: number, at: number) => at + 1800000,
-  );
-  renewRetention(id: string, createBefore: number, at: number) {
-    return this.retention(id, createBefore, at);
+  readonly retention = vi.fn(async (_id: string, _seconds: number) => {});
+  setTimeout(id: string, seconds: number) {
+    return this.retention(id, seconds);
   }
   readonly allocationClosures = new Set<string>();
   async allocation(id: string, createBefore: number, action: "get" | "close") {
@@ -934,7 +932,8 @@ describe("CubeSandbox Provider contract", () => {
       },
       creationAuthorization,
     );
-    expect(runtime.creates[0]?.metadata["picloud.retention_window_ms"]).toBe("1800000");
+    expect(runtime.creates[0]?.timeoutSeconds).toBe(1800);
+    expect(runtime.creates[0]?.metadata).not.toHaveProperty("picloud.retention_window_ms");
     vi.useFakeTimers();
     try {
       await provider.probeExecution(handle);
@@ -953,6 +952,43 @@ describe("CubeSandbox Provider contract", () => {
       await provider.probeExecution(handle);
       await vi.advanceTimersByTimeAsync(60000);
       expect(runtime.retention).toHaveBeenCalledTimes(3);
+    } finally {
+      await provider.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("renews only the remaining native timeout window and rejects stale activity", async () => {
+    const runtime = new FakeCubeRuntimeClient();
+    const provider = testCubeProvider({
+      templateId: "pi-cloud-tool-v1",
+      imageRevision: "development",
+      webProxy: WEB_PROXY,
+      runtimeClient: runtime,
+      workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
+    });
+    const handle = await provider.create(
+      {
+        activationId: ACTIVATION_ID,
+        assignment,
+        environment,
+        workspaceSeed: { kind: "bundle", bundle: encodeWorkspaceBlob(createWorkspaceSeed([])) },
+        policy: provider.defaultPolicy,
+        retentionWindowMs: 60000,
+      },
+      creationAuthorization,
+    );
+    const saved = await provider.persistentCapsule(handle);
+    const now = Date.now();
+    vi.useFakeTimers({ now });
+    try {
+      expect(runtime.creates[0]?.timeoutSeconds).toBe(60);
+      await provider.renewPersistentRetention(saved.capsule, now - 10000);
+      expect(runtime.retention).toHaveBeenLastCalledWith(handle.runtimeName, 50);
+      await expect(provider.renewPersistentRetention(saved.capsule, now - 60000)).rejects.toThrow(
+        "expired",
+      );
+      expect(runtime.retention).toHaveBeenCalledTimes(1);
     } finally {
       await provider.close();
       vi.useRealTimers();
@@ -1120,7 +1156,7 @@ describe("CubeSandbox Provider contract", () => {
       workspaceSeed: { kind: "sample_java" },
     });
     expect(runtime.creates).toHaveLength(1);
-    expect(runtime.creates[0]?.timeoutSeconds).toBe(-1);
+    expect(runtime.creates[0]?.timeoutSeconds).toBe(1800);
     expect(runtime.creates).toHaveLength(1);
     expect(runtime.creates[0]?.metadata).not.toHaveProperty("host-mount");
     const activeAssignments = await manager.listAssignments(assignment.sandboxId);

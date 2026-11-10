@@ -137,3 +137,12 @@ the Sandbox-control type check pass. Allocation lifecycle, retention, Volume and
 history extensions remain until their following replacements; no deployment or
 zero-patch completion is claimed by this source milestone.
 
+The second source slice uses the native `POST /sandboxes/:id/timeout` interface.
+Elastic creation supplies its idle timeout; dedicated creation retains `-1`.
+The adapter subtracts activity age before renewal and rejects expired activity.
+Interactive connections renew through the same native API; diagnostic probes do
+not. The custom renewal client and its authorizer permission are removed. The
+private allocation lifecycle and journal source remain until the full cutover,
+so this slice must not be deployed over still-running managed-retention VMs.
+Its 120 focused client/provider/authorizer tests and type check pass.
+

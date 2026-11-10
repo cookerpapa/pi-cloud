@@ -3,6 +3,20 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "native-timeout-renewal-wire",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/cubesandbox-runtime-client.test.ts",
+      "test": "renews through the native timeout API without an allocation journal endpoint",
+      "invariant": "Elastic renewal uses the provider-native timeout contract, not a private allocation journal API."
+    },
+    {
+      "id": "native-timeout-stale-activity",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/cubesandbox-provider.test.ts",
+      "test": "renews only the remaining native timeout window and rejects stale activity",
+      "invariant": "Delayed activity does not receive a new full retention window and expired activity never renews compute."
+    },
+    {
       "id": "guest-cold-connection-from-cloud-capsule",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/cubesandbox-runtime-client.test.ts",
