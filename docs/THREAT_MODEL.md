@@ -18,23 +18,25 @@ Pi, PostgreSQL access and short-lived Tool/model capabilities remain in the
 trusted Worker. CubeSandbox KVM executes `read/write/edit/bash` and receives no
 platform credential. Upstream OAuth/API credentials remain in CLIProxyAPI's
 private deployment Volume. The Worker has no Cube API credential; sandbox
-management and the Cube host completion adapter have no model credential.
+management and the independent completion receiver have no model credential.
 
 ### Tenant and stale-Worker isolation
 
 Every product read/write includes tenant ownership. PG issues one immutable
 publication scope under the current ExecutionReference. Records are not signed:
-trusted Workers publish through the control-plane ingress. Its cached PG-issued
-scope closes before ordered seal publication. Projector preserves historical
-scope/position checks and commits dispatch before issuing effects. Cube checks
+trusted Workers publish directly through one stable transactional producer per
+physical Session. Initialization checks PG authorization before and after Kafka
+takeover; ordered closure fences the old producer. Projector preserves historical
+scope/position checks and commits dispatch before issuing effects. The fixed Guest checks
 executor boot, operation identity and monotonic partition positions. The control
 plane revokes binding eligibility before sealing, without per-Tool lease/fence
 SQL or a second channel lease. Normal Stop cancels unfinished Tool process groups
 through the ordered operation transport; VM lifecycle is separate. Unconfirmed
 operations may continue and remain UNKNOWN when their result is unavailable.
 
-Workers consume their boot's Kafka replies. Control Plane publishes execution
-records; the trusted Cubelet host publishes Tool replies. The Tool guest and
+Workers consume their own and explicitly retained original Kafka reply destinations.
+Workers publish native Session records, while Projector publishes ordered control
+changes and seals. The independent trusted HTTPS receiver publishes Tool replies. The Tool guest and
 browser never receive Kafka connectivity or credentials.
 The deployment must restrict Kafka network/ACL access to trusted roles, especially
 Projector consumer-group membership used for internal SSE owner discovery.
@@ -50,7 +52,7 @@ Gateway caches are rebuildable. There is no competing workflow or checkpoint
 head.
 
 Private S3 owns immutable Session image bytes; PG owns their tenant-scoped
-inventory and native-log reachability. Cube host completion adapter/Worker/Control Plane receive bucket
+inventory and native-log reachability. The independent completion receiver/Worker/Control Plane receive bucket
 credentials, never the Tool guest or browser. References cannot name arbitrary URLs or
 paths. Guest-supplied references, cross-tenant lookups, mismatched hashes and
 oversized bodies are rejected. The native loop receives decoded images only at

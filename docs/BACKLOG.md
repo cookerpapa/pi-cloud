@@ -1,6 +1,6 @@
 # Maintained backlog
 
-## Guest execution and Session activity — source verified, delivery pending
+## Guest execution and Session activity — deployed
 
 - [x] #25: Worker-owned activity declarations through the Session writer; no
       execution-side Worker/lease polling or passive probe registration.
@@ -8,13 +8,14 @@
       using the provider's normal process interface and existing HTTPS replies.
 - [x] #25: finite idle expiry may retire unconfirmed work; remove the busy-Tool veto.
 - [x] #25: assess provider allocation closure and Volume deletion guarantees.
-- [ ] Serial verification, matched deployment, preservation and final patch inventory.
+- [x] Serial verification, matched deployment, preservation and final patch inventory.
 
 [ADR-0307](adr/0307-guest-execution-and-session-activity.md) records the owner's
 revised retention policy and the implementation boundaries. Resource closure and
-Volume migration remain evaluation work; no new sandbox backend is enabled.
+Volume protection were assessed; their native implementation remains. A replacement
+requires a separately accepted provider contract; no new sandbox backend is enabled.
 
-[Source verification and remaining delivery gates](reports/guest-execution-20261110.md).
+[Source checks, live acceptance and remaining patch verdict](reports/guest-execution-20261110.md).
 
 ## Pi Managed Agents identity — published
 

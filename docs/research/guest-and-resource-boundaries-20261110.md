@@ -104,3 +104,20 @@ separate backend acceptance, not a general-purpose wrapper pretending to supply
 missing guarantees. Workspace export and Pi-owned history remain independent of
 Guest metadata. Matched rollback requires writer drain and compute retirement;
 never mix an old Cube execution manager with the new Guest admission authority.
+
+## Final source inventory for this slice
+
+The maintained runtime patch now covers 73 paths (including resource tests and
+generated protobuf); the dependency/build patch covers 14. The native execution
+manager directory, managed Tool RPCs/routes, native cancellation/probe handlers
+and executor completion fallback are gone. The upstream ordinary process API is
+used without adding a Cube Tool-execution API.
+
+This does not make stock Cube a drop-in backend for the whole application. Cold
+execution-client bootstrap still obtains private connection information from the
+retained allocation receipt API; resource creation/closure, Volume reconciliation
+and raw lifecycle evidence also retain their existing native extensions. These
+are resource-adapter dependencies. Replacing them requires a provider contract
+with equivalent lifecycle guarantees or a separate approved resource-boundary
+change. Do not describe removal of the Tool-specific extension as removal of all
+Cube modifications or all custom API dependencies.

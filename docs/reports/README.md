@@ -1,5 +1,11 @@
 # Delivery and research evidence
 
+- [Guest execution and Session activity](guest-execution-20261110.md): Guest-owned
+  admission/cancellation, finite retention, fenced Session activity, matched release,
+  real recovery/image acceptance and the remaining resource/Volume patch boundary.
+- [Guest and provider resource boundaries](../research/guest-and-resource-boundaries-20261110.md):
+  pinned E2B, Daytona, OpenSandbox, BoxLite and Modal lifecycle/storage comparison.
+
 - [Pi Managed Agents project identity](project-identity-20261110.md): repository
   rename, public branding and Web-only publication with existing resources preserved.
 

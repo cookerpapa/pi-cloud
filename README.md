@@ -68,7 +68,7 @@ Pi Worker -> Session Kafka producer -> Kafka -> Session Projector
                                                +-> PostgreSQL (native state/history)
                                                +-> Browser (SSE)
                                                +-> Ordinary Tool host (HTTP)
-                                               `-> Cube native execution endpoint
+                                               `-> Provider process API -> fixed Guest
 
 Control changes -> PostgreSQL + Outbox -> same Session Kafka partition
 Guest -> HTTPS completion -> Kafka replies -> authorized Pi Worker
@@ -113,6 +113,11 @@ the dispatch caller does not discard their completion path. There is no independ
 Tool Broker. [Runtime delivery and recovery evidence](docs/reports/runtime-decoupling-20261109.md)
 covers API/Worker/VM replacement, callback loss, retained images, actual 30-minute
 idle expiry and external resource accounting.
+The [Guest execution follow-up](docs/reports/guest-execution-20261110.md) moves
+operation admission and exact cancellation out of Cubelet. Session activity uses
+the existing Kafka writer; execution renews eligible resources without polling
+Worker ownership or leases. Physical resource and Volume protections remain in
+the provider adapter and retained Cube extensions.
 Ordinary control tools run in a separate `tool-host` process. Complete versioned
 definitions reach every Worker through a compacted Kafka configuration topic and
 take effect at the next model request. Updating these tools does not replace the

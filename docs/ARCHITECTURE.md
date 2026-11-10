@@ -215,7 +215,11 @@ requests may still finish or bill. See [ADR-0303](adr/0303-direct-renewal-and-lo
 After Worker loss, PG authorizes closure, the old writer is sealed through Kafka,
 and Projector confirms native closure before a replacement becomes eligible.
 The new Harness restores native Tasks, Inbox and the active context suffix.
-Unsafe interrupted effects become uncertain outcomes, not repeated Bash commands.
+Unsafe interrupted effects become uncertain outcomes, not repeated Bash commands. Environment
+recovery selects a fresh logical binding address when the previous one may already
+have been closed and removed. Retries retain that new address; original accepted
+operations keep their own target, reply topic and deadline. This cannot reopen an
+old binding or redispatch a Tool.
 
 Worker-local duplicate execution and cancellation outcomes are scoped to the
 existing ExecutionReference. The same Run may resume on the same still-running

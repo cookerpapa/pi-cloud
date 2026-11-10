@@ -1,7 +1,8 @@
 # ADR-0307: Guest execution authority and Session activity
 
-Status: implemented; source verified, matched delivery pending. Date: 2026-11-10.
+Status: accepted and deployed; serial source and live acceptance passed. Date: 2026-11-10.
 Tracking: [Issue #25](https://github.com/cookerpapa/pi-managed-agents/issues/25).
+[Delivery and limitations](../reports/guest-execution-20261110.md).
 
 ## Decisions confirmed with the owner
 

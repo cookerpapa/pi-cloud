@@ -62,7 +62,8 @@ Git preserves their implementation history.
 The remaining product/contributor guides are [Web direction](WEB_UI_DIRECTION.md),
 [release policy](RELEASE_PROCESS.md) and [collaboration discipline](VIBE_CODING_PLAYBOOK.md).
 
-Latest delivery: [Runtime decoupling and continuation](reports/runtime-decoupling-20261109.md).
+Latest delivery: [Guest execution and Session activity](reports/guest-execution-20261110.md).
+Previous delivery: [Runtime decoupling and continuation](reports/runtime-decoupling-20261109.md).
 Previous delivery: [Execution-owned tools and independent publication](reports/execution-tools-20261108.md).
 Previous foundation: [Independent runtime and resource accounting](reports/runtime-accounting-20261107.md).
 Related assessment: [CLIProxyAPI upstream candidates](reports/provider-upstream-candidates-20261106.md)
@@ -72,4 +73,4 @@ Execution-boundary research: [Pi / OpenMA / BoxLite comparison](research/executi
 The [remaining Cube patch assessment](research/cube-patch-assessment-20261110.md)
 distinguishes the Guest application from execution and physical lifecycle patches.
 
-Current follow-up: [Guest and provider resource boundaries](research/guest-and-resource-boundaries-20261110.md), supporting [ADR-0307](adr/0307-guest-execution-and-session-activity.md).
+Current boundary assessment: [Guest and provider resource boundaries](research/guest-and-resource-boundaries-20261110.md), supporting [ADR-0307](adr/0307-guest-execution-and-session-activity.md).

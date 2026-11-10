@@ -1,14 +1,17 @@
 # Release evidence process
 
-[Component releases](COMPONENT_RELEASE.md) scan the changed provider image and retain original provenance for unchanged artifacts. Catalog-only publication builds no image. The eleven-image procedure below remains for full matched upgrades.
+[Component releases](COMPONENT_RELEASE.md) scan the changed artifacts and retain
+original provenance for unchanged components. Catalog-only publication builds no
+image. Current full publication follows [Matched release](MATCHED_RELEASE.md).
 
-PiCloud's matched runtime release binds a clean Git revision to seven
-application/provider images, three native Cube runtime images and one guest
-template, plus machine-readable dependency/security evidence. The unchanged
-installer-managed authorizer/egress gateway and third-party infrastructure are
-outside this application-upgrade image set. It does not
-currently push, sign, or publish images; registry policy and signing need a
-separate deployment decision.
+The matched set binds a clean Git revision to fourteen custom artifacts: seven
+application/provider images, four native Cube images, one Guest image, the Cube
+API authorizer and the egress gateway. One application image supplies several
+independently deployed roles. Pinned upstream chart dependencies have separate
+digest evidence. The operator builds/scans/imports artifacts into managed K3s and
+publishes the Guest to the private registry; public image distribution/signing is
+not part of this private deployment workflow. Earlier evidence procedures below
+must be read with that current inventory.
 
 ## Preconditions
 

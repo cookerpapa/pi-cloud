@@ -1,22 +1,26 @@
 # Implementation roadmap
 
-## Guest execution and Session activity — source verified, delivery pending
+## Guest execution and Session activity — deployed
 
-Implement [#25](https://github.com/cookerpapa/pi-managed-agents/issues/25) under
-[ADR-0307](adr/0307-guest-execution-and-session-activity.md): move execution admission
-and cancellation to the Guest, publish logical activity from the Worker, and
-apply finite expiry without a busy-Tool veto. Separately assess provider-native
-allocation/Volume lifecycle guarantees before replacing those protections.
+Delivered [#25](https://github.com/cookerpapa/pi-managed-agents/issues/25) under
+[ADR-0307](adr/0307-guest-execution-and-session-activity.md): Guest execution admission
+and cancellation, logical Worker activity through the existing Session writer,
+and finite expiry without a busy-Tool veto. Serial source checks, matched r3
+publication and real Guest/Luna/recovery/image acceptance passed. The provider API
+assessment retains native resource/Volume protections pending an equivalent
+contract. [Delivery and remaining patch verdict](reports/guest-execution-20261110.md).
 
 ## Runtime decoupling and continuation — deployed
 
 Issues #17–#23 are delivered under [ADR-0306](adr/0306-runtime-decoupling-and-continuation.md),
 with serial source checks, matched publication and real API/Worker/VM/reply/image,
 30-minute idle-retention and accounting acceptance. Issue #24 records the
-[remaining Cube patches](research/cube-patch-assessment-20261110.md): completion
-and compute valuation moved out, while native execution admission/cancellation
-and physical lifecycle protections remain. A portable Guest operation gate is a
-future proposal, not another supported execution path.
+[Cube patch baseline after ADR-0306](research/cube-patch-assessment-20261110.md):
+completion and compute valuation had moved out, while native execution admission,
+cancellation and physical lifecycle protections remained. ADR-0307 replaces that
+native execution authority with the fixed Guest; the
+[current assessment](research/guest-and-resource-boundaries-20261110.md) documents
+the remaining resource, Volume and lifecycle extensions.
 [Progress and delivery evidence](reports/runtime-decoupling-20261109.md).
 
 ## Execution-owned tools and independent publication — deployed

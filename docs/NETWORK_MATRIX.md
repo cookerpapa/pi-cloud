@@ -8,7 +8,7 @@ firewall denial. Enforce deployment isolation with the configured networks/CNI.
 | Browser | Web/Session API | yes | authenticated product API, history/statements and SSE |
 | Session API | PostgreSQL | yes | Run admission and scoped public reads |
 | Session API | Session runtime | yes | authenticated private live-view relay |
-| Session runtime | PostgreSQL | yes | projection, execution authority/bootstrap and batched maintenance eligibility |
+| Session runtime | PostgreSQL | yes | projection, admission and cold resource-view bootstrap; no maintenance Worker/lease polling |
 | Control Plane | PostgreSQL | yes | resource ownership, lifecycle and management admission |
 | Pi Worker | PostgreSQL | yes | queue, Session and lifecycle state |
 | Pi Worker | Session runtime | yes | boot registration, membership/catalog transport, bound input preparation and observations |
@@ -17,10 +17,9 @@ firewall denial. Enforce deployment isolation with the configured networks/CNI.
 | Pi Worker | provider proxy/model provider | yes | model requests |
 | Session runtime / Projector | Kafka | yes | ordered seal/control publication and one group for native history, live views and Tool routing |
 | Control Plane | Session runtime | yes | PG-authorized control publication; never native appends |
-| Session runtime | Cube execution/data endpoints | yes | fixed Tool dispatch, workflow/image/Skill/preview data and retention |
+| Session runtime | Cube resource / ordinary envd data endpoints | yes | fixed Guest control, cold connection receipt, workflow/image/Skill/preview data and retention |
 | Control Plane | Cube API | yes | VM lifecycle and resource recovery |
 | Cube Guest | Tool completion HTTPS | scoped capability | finalized Tool results, ephemeral previews and fresh full-path probes |
-| Cubelet | Tool completion HTTPS | scoped capability | bounded executor failure delivery |
 | Tool completion | Kafka / PostgreSQL / private S3 | yes | reply publication and image claim checks |
 | Tool completion | Session runtime | yes | disposable progress HTTP observations |
 | Volume gateway | PostgreSQL / Workspace storage / quota helper | yes | revision/Volume coordination and initial capacity enforcement |

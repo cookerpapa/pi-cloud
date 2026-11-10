@@ -28,10 +28,10 @@ publication is not complete until these maintained live gates pass.
 
 ## Earlier release procedures
 
-ADR-0305's current source cutover installs schema 214, logical environment dispatch,
+ADR-0305's earlier cutover installed schema 214, logical environment dispatch,
 ordered binding application acknowledgements, tool-host and the Kafka catalog.
-Its deployment acceptance is pending in BACKLOG. The initial matched upgrade
-uses the existing writer/resource drain. New ordinary tools can then use the
+Its [deployment acceptance](reports/execution-tools-20261108.md) is complete. That
+matched upgrade used the existing writer/resource drain. Ordinary tools use the
 [tool-host component scope](COMPONENT_RELEASE.md#ordinary-tools).
 Application Helm apply does not wait for readiness before activation: the operator
 selects the exact new tool-host release, waits for catalog publication, then waits
