@@ -6,7 +6,10 @@
 owner's unresolved-creation restrictions and verifies recovery-aware deletion
 under [ADR-0308](adr/0308-unresolved-resource-admission.md). It assesses every
 remaining Cube patch before any removal. [#27](https://github.com/cookerpapa/pi-managed-agents/issues/27)
-tracks conditional BoxLite integration and the independent Android source audit.
+tracks BoxLite integration and the Android source audit. The owner subsequently
+accepted [ADR-0309](adr/0309-stock-sandbox-contract.md) to implement stock Cube
+APIs with conservative external ownership and explicit accounting gaps. No new
+resource protocol has been deployed yet.
 
 ## Guest execution and Session activity — deployed
 

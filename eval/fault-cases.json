@@ -3,6 +3,13 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "guest-cold-connection-from-cloud-capsule",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/cubesandbox-runtime-client.test.ts",
+      "test": "recovers private data access from retained cloud data without allocation or resume APIs",
+      "invariant": "Cold Guest-control access uses retained private connection data and never calls a managed allocation receipt or implicitly resumes compute."
+    },
+    {
       "id": "machine-unresolved-create-admission",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/development-environment-service.test.ts",

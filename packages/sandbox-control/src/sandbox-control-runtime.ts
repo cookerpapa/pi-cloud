@@ -68,7 +68,7 @@ export async function createSandboxControl(options: {
     });
     cleanup.push(() => (controllerOwns ? undefined : ownership.close()));
     await ownership.start();
-    const { volume, provider } = await createCubeRuntimeTransport(config);
+    const { volume, provider } = await createCubeRuntimeTransport(config, database);
     cleanup.push(() => (controllerOwns ? undefined : provider.close()));
     const wake = new PostgresNotificationWake(
       config.databaseNotificationUrl,

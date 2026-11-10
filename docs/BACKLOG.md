@@ -2,16 +2,19 @@
 
 ## Resource admission and stock sandbox boundaries — in progress
 
-- [ ] #26: one unresolved machine application per user; exact retries retain it.
-- [ ] #26: reject lifecycle mutations until creation is resolved; reflect this in UI.
-- [ ] #26: recovery-pending Runs and unfinished seals continue to block deletion.
-- [ ] #26: assess the complete Cube patch inventory and validate native alternatives.
+- [x] #26 source: one unresolved machine application per user; exact retries retain it.
+- [x] #26 source: reject lifecycle mutations until creation is resolved; reflect this in UI.
+- [x] #26 source: recovery-pending Runs and unfinished seals continue to block deletion.
+- [x] #26: complete the patch inventory and agree the weaker native-provider contract.
+- [ ] #26: remove all Cube source/dependency patches and hidden build rewrites under ADR-0309.
+- [x] #26 source: recover cold Guest credentials from existing encrypted resource capsules, without a custom allocation API.
 - [ ] #26: serial verification, matched delivery and original-asset preservation.
 - [ ] #27: audit Android upstream modifications and simplify packaging where safe.
 - [ ] #27: evaluate BoxLite against the stock-provider boundary before enabling it.
 
-[ADR-0308](adr/0308-unresolved-resource-admission.md). Stock Cube and production
-BoxLite remain conditional outcomes, not completed capabilities.
+[ADR-0308](adr/0308-unresolved-resource-admission.md) and
+[ADR-0309](adr/0309-stock-sandbox-contract.md). Stock Cube implementation is now
+authorized; production acceptance and subsequent BoxLite adoption remain pending.
 
 ## Guest execution and Session activity — deployed
 

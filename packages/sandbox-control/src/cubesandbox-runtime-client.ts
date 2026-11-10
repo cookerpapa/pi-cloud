@@ -187,6 +187,9 @@ export interface CubeSandboxTerminal {
 }
 
 export type OfficialCubeSandboxRuntimeClientOptions = Readonly<{
+  resolveExecutionConnection?(
+    target: Pick<CubeExecutionTarget, "apiUrl" | "sandboxId" | "nodeId">,
+  ): Promise<CubeSandboxInstance | undefined>;
   executionEndpoints?: readonly Readonly<{ apiUrl: string; apiKey: string }>[];
   apiUrl: string;
   apiKey: string;
@@ -561,6 +564,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
   readonly #apiKey: string;
   readonly #executionEndpoints = new Map<string, string>();
   readonly #guestInstances = new Map<string, CubeSandboxInstance>();
+  readonly #resolveExecutionConnection: OfficialCubeSandboxRuntimeClientOptions["resolveExecutionConnection"];
   readonly #proxyScheme: "http" | "https";
   readonly #sandboxDomain: string;
   readonly #requestTimeoutMs: number;
@@ -571,6 +575,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
 
   constructor(options: OfficialCubeSandboxRuntimeClientOptions) {
     this.#apiUrl = validateApiUrl(options.apiUrl);
+    this.#resolveExecutionConnection = options.resolveExecutionConnection;
     this.#apiKey = bounded(options.apiKey, "CubeSandbox API key", 4_096);
     this.#executionEndpoints.set(this.#apiUrl, this.#apiKey);
     if ((options.executionEndpoints?.length ?? 0) > 256)
@@ -937,17 +942,27 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       throw new CubeExecutionRejected("executor_replaced");
     if (instance.state !== "running") throw new CubeExecutionRejected("execution_unavailable");
     if (!instance.trafficAccessToken) {
-      const id = instance.metadata["picloud.allocation_id"],
-        deadline = Number(instance.metadata["picloud.create_before"]);
-      if (!id || id.replaceAll("-", "") !== sandboxId)
+      let retained: CubeSandboxInstance | undefined;
+      try {
+        retained = await this.#resolveExecutionConnection?.({ apiUrl, sandboxId, nodeId });
+      } catch {
+        // No Guest client or Tool request has been sent at this point.
         throw new CubeExecutionRejected("execution_unavailable");
-      // Recover the existing allocation receipt, never connect/resume a VM.
-      const allocation = await this.#allocationAt(id, deadline, "get", apiUrl);
-      if (allocation.closed || allocation.phase !== "ready" || !allocation.instance)
+      }
+      if (
+        !retained?.trafficAccessToken ||
+        retained.sandboxId !== sandboxId ||
+        retained.nodeId !== nodeId
+      )
         throw new CubeExecutionRejected("execution_unavailable");
-      if (allocation.instance.nodeId !== nodeId)
-        throw new CubeExecutionRejected("executor_replaced");
-      instance = allocation.instance;
+      // The public observation confirms current identity/state; private values
+      // come from retained cloud data. Never connect/resume or read an extension.
+      instance = {
+        ...retained,
+        ...instance,
+        trafficAccessToken: retained.trafficAccessToken,
+        ...(retained.envdAccessToken ? { envdAccessToken: retained.envdAccessToken } : {}),
+      };
     }
     if (this.#guestInstances.size >= 1024)
       this.#guestInstances.delete(this.#guestInstances.keys().next().value!);

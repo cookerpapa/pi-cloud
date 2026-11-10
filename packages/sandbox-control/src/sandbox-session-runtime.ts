@@ -70,7 +70,7 @@ export async function createSandboxSessionRuntime(options: {
       if (errors.length) throw new AggregateError(errors, "Session execution cleanup failed");
     })());
   try {
-    const { client, provider } = await createCubeRuntimeTransport(config);
+    const { client, provider } = await createCubeRuntimeTransport(config, database);
     cleanup.push(() => provider.close());
     const completion = new ToolCompletionIssuer({
       url:

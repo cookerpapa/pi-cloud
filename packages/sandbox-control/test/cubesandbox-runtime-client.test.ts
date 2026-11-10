@@ -11,6 +11,7 @@ import {
   CubeExecutionRejected,
   CubeApplicationPortError,
   CubeRuntimeTransportError,
+  type OfficialCubeSandboxRuntimeClientOptions,
 } from "../src/cubesandbox-runtime-client.ts";
 import { MAX_IMAGE_GUEST_RESPONSE_BYTES } from "@pi-cloud/protocol";
 
@@ -65,6 +66,7 @@ beforeEach(() => {
   observationMode = "present";
   tcpConnectMode = "connected";
   tcpResponse = undefined;
+  retainedConnection.mockClear();
 });
 
 it("renews the original allocation time and rejects unconfirmed or changed acknowledgements", async () => {
@@ -922,8 +924,21 @@ const executionRequest = {
   payload: {},
   timeoutMs: 1000,
 };
-function executionClient() {
+const retainedConnection = vi.fn(async () => ({
+  sandboxId: executionTarget.sandboxId,
+  nodeId: executionTarget.nodeId,
+  templateId: "pi-cloud-tool-v1",
+  domain: "cube.internal",
+  state: "running" as const,
+  metadata: {},
+  trafficAccessToken: "private-traffic-token",
+  envdAccessToken: "envd-access-token",
+}));
+function executionClient(
+  resolveExecutionConnection: OfficialCubeSandboxRuntimeClientOptions["resolveExecutionConnection"] = retainedConnection,
+) {
   return new OfficialCubeSandboxRuntimeClient({
+    resolveExecutionConnection,
     apiUrl: `http://127.0.0.1:${port}`,
     apiKey: "test-api-key",
     proxyNodeIp: "127.0.0.1",
@@ -933,7 +948,7 @@ function executionClient() {
     egressProxyIp: "127.0.0.1",
   });
 }
-it("recovers private data access from the allocation receipt and never overwrites it with public inspection", async () => {
+it("recovers private data access from retained cloud data without allocation or resume APIs", async () => {
   const client = executionClient();
   try {
     executionReply = {
@@ -942,7 +957,8 @@ it("recovers private data access from the allocation receipt and never overwrite
       operationId: executionRequest.operationId,
     };
     await client.submitTool(executionTarget, executionRequest);
-    expect(observed.filter((r) => r.path === `/allocations/${allocation.id}/get`)).toHaveLength(1);
+    expect(retainedConnection).toHaveBeenCalledOnce();
+    expect(observed.some((r) => r.path.startsWith("/allocations/"))).toBe(false);
     expect(
       observed.find((r) => r.path === "/process.Process/Start")?.headers[
         "cube-traffic-access-token"
@@ -950,7 +966,8 @@ it("recovers private data access from the allocation receipt and never overwrite
     ).toBe("private-traffic-token");
     expect(await client.read(executionTarget.sandboxId)).not.toHaveProperty("trafficAccessToken");
     await client.submitTool(executionTarget, executionRequest);
-    expect(observed.filter((r) => r.path === `/allocations/${allocation.id}/get`)).toHaveLength(1);
+    expect(retainedConnection).toHaveBeenCalledOnce();
+    expect(observed.some((r) => r.path.startsWith("/allocations/"))).toBe(false);
     expect(
       observed.some(
         (r) => r.path.endsWith("/connect") || (r.path === "/sandboxes" && r.method === "POST"),
@@ -968,10 +985,28 @@ it("does not connect or resume a paused Guest during cold probe discovery", asyn
       { code: "execution_unavailable" },
     );
     expect(observed.map((r) => r.path)).toEqual([`/sandboxes/${executionTarget.sandboxId}`]);
+    expect(retainedConnection).not.toHaveBeenCalled();
   } finally {
     await client.close();
   }
 });
+it.each(["missing", "unavailable"])(
+  "refuses a cold Guest with %s retained credentials before dispatch",
+  async (state) => {
+    const client = executionClient(async () => {
+      if (state === "unavailable") throw new Error("Fixture resource store unavailable");
+      return undefined;
+    });
+    try {
+      await expect(client.submitTool(executionTarget, executionRequest)).rejects.toMatchObject({
+        code: "execution_unavailable",
+      });
+      expect(observed.map((r) => r.path)).toEqual([`/sandboxes/${executionTarget.sandboxId}`]);
+    } finally {
+      await client.close();
+    }
+  },
+);
 it("accepts only a handoff for the recorded executor boot and operation", async () => {
   const client = executionClient();
   try {
@@ -1041,6 +1076,7 @@ it("routes a recorded endpoint through the deployment-owned credential registry"
   const client = new OfficialCubeSandboxRuntimeClient({
     apiUrl: `http://127.0.0.1:${port}`,
     apiKey: "primary-key",
+    resolveExecutionConnection: retainedConnection,
     executionEndpoints: [{ apiUrl: remoteUrl, apiKey: "remote-key" }],
     proxyNodeIp: "127.0.0.1",
     proxyPort: port,

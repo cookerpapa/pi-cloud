@@ -1,5 +1,9 @@
 # Current architecture decisions
 
+[ADR-0309](0309-stock-sandbox-contract.md) records the owner's accepted zero-Cube-
+patch implementation boundary: native APIs, external ownership, pending uncertainty
+and unpriced accounting gaps. Implementation is in progress in #26–#27.
+
 [ADR-0308](0308-unresolved-resource-admission.md) records unresolved machine
 admission and recovery-aware deletion, with conditional stock Cube/BoxLite and
 Android portability evaluation in #26–#27.
