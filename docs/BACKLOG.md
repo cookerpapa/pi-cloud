@@ -9,6 +9,8 @@
 - [ ] #26: remove all Cube source/dependency patches and hidden build rewrites under ADR-0309.
 - [x] #26 source: recover cold Guest credentials from existing encrypted resource capsules, without a custom allocation API.
 - [x] #26 source: create/renew elastic resources using native timeout, with stale activity refusal and no probe renewal.
+- [x] #26 source: one-shot native creation admission and encrypted early receipts; remove private allocation RPC and deadline.
+- [ ] #26: finish native lifecycle/expiry evidence and release-operator migration; these source changes are not independently deployable.
 - [ ] #26: serial verification, matched delivery and original-asset preservation.
 - [ ] #27: audit Android upstream modifications and simplify packaging where safe.
 - [ ] #27: evaluate BoxLite against the stock-provider boundary before enabling it.

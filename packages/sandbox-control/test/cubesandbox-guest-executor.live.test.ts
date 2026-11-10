@@ -50,7 +50,7 @@ it.skipIf(!enabled)(
       bootId: randomUUID(),
       replicas: 3,
     });
-    const allocations: { id: string; createBefore: number }[] = [];
+    const allocations: CubeSandboxInstance[] = [];
     const sourceTopic = `guest-check-${randomUUID()}`;
     let offset = 0;
     const source = () => ({ topic: sourceTopic, partition: 0, offset: String(++offset) });
@@ -63,20 +63,22 @@ it.skipIf(!enabled)(
         maximumOutputBytes: 4096,
       });
     const create = async (retentionMs?: number) => {
-      const allocation = { id: randomUUID(), createBefore: Date.now() + 300000 };
-      allocations.push(allocation);
-      const vm = await client.create({
-        allocation,
+      const created = await client.create({
         templateId: required("PI_CLOUD_CUBESANDBOX_TEMPLATE_ID"),
-        timeoutSeconds: -1,
+        timeoutSeconds: retentionMs ? Math.ceil(retentionMs / 1000) : -1,
         metadata: {
           "picloud.managed": "true",
           "picloud.workload": "guest-acceptance",
-          ...(retentionMs ? { "picloud.retention_window_ms": String(retentionMs) } : {}),
         },
         allowInternetAccess: true,
         allowPublicTraffic: false,
       });
+      allocations.push(created);
+      const current = await client.read(created.sandboxId);
+      if (!current?.nodeId) throw new Error("Owned Guest fixture node is unconfirmed");
+      const vm = { ...created, nodeId: current.nodeId };
+      await client.executionTarget(vm.sandboxId, vm.nodeId, vm);
+      allocations[allocations.length - 1] = vm;
       const setup = await command(
         vm,
         "install -d -o 1000 -g 1000 -m 0700 /workspace/guest-fixture",
@@ -296,7 +298,6 @@ PMA`,
       expect((await command(vm, "test ! -f /workspace/never-started")).exitCode).toBe(0);
       // Short explicit fixture policy: prove expiry does not consult a busy Tool map.
       const expiring = await create(60000),
-        expiry = allocations.at(-1)!,
         expiringTarget = await client.executionTarget(expiring.sandboxId, expiring.nodeId!);
       const pending = await request("touch /workspace/expiry-start; sleep 120", 180000);
       await client.submitTool(expiringTarget, pending.handoff);
@@ -309,8 +310,8 @@ PMA`,
       );
       await until(
         async () => {
-          const r = await client.allocation(expiry.id, expiry.createBefore, "get");
-          return r.closed && r.phase === "absent" ? r : undefined;
+          const r = await client.observe(expiring.sandboxId, expiring.nodeId!);
+          return r.presence === "absent" ? r : undefined;
         },
         "finite retention despite unfinished Tool",
         180000,
@@ -334,8 +335,10 @@ PMA`,
         try {
           await until(
             async () => {
-              const r = await client.allocation(a.id, a.createBefore, "close");
-              return r.closed && r.phase === "absent" ? r : undefined;
+              if (a.nodeId && (await client.observe(a.sandboxId, a.nodeId)).presence === "absent")
+                return true;
+              await client.destroy(a.sandboxId);
+              return true;
             },
             "owned allocation cleanup",
             90000,

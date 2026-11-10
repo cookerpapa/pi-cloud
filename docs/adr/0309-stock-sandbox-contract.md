@@ -146,3 +146,22 @@ private allocation lifecycle and journal source remain until the full cutover,
 so this slice must not be deployed over still-running managed-retention VMs.
 Its 120 focused client/provider/authorizer tests and type check pass.
 
+
+The third source slice separates the PG creation permit from the provider's native
+identity. Only its first owner may issue POST create. Recovery uses an early
+encrypted receipt or a unique native metadata match; empty/ambiguous discovery
+never repeats creation. Preparation records the real provider identity first.
+Schema 216 removes the former protocol/deadline columns only after a drained
+cutover, and private resource capsules advance to version 3 without a compatibility
+reader. Native DELETE failures and inventory gaps retain ownership. Resource
+health no longer creates an untracked probe VM; owned bootstrap attests the Guest.
+Native lifecycle observation/expiry evidence and the release operator are still
+being migrated, so this source slice is not a deployable matched release alone.
+
+The supported Volume Hook does not provide an attachment-incarnation id. The
+external plugin therefore publishes a unique durable hold per successful Attach
+and returns its opaque receipt as native hook metadata. Repeated Attach may leave
+an extra hold if its reply is lost; this is explicitly preferable to releasing a
+new mount on a late Detach. Missing hook metadata, missing hold directories or
+unconfirmed old-node cleanup cannot authorize deletion. The old release must
+retire compute before the one-time attachment-directory initialization at cutover.

@@ -36,7 +36,6 @@ import {
   CubeApplicationPortError,
   OfficialCubeSandboxRuntimeClient,
   CubeExecutionRejected,
-  CubeAllocationClosedError,
   type CubeSandboxInstance,
   type CubeSandboxRuntimeClient,
   type OfficialCubeSandboxRuntimeClientOptions,
@@ -52,7 +51,7 @@ import {
   SandboxControlError,
   SandboxCreationError,
   type SandboxCreateSpec,
-  type SandboxAllocationAuthorization,
+  type SandboxCreateContext,
   type SandboxDirectoryListing,
   type SandboxEffectiveIsolation,
   type SandboxHandle,
@@ -602,7 +601,6 @@ export class CubeSandboxProvider implements SandboxProvider {
     string,
     { users: number; timer: NodeJS.Timeout; pending: boolean }
   >();
-  #runtimeProbe: Promise<void> | undefined;
 
   constructor(options: CubeSandboxProviderOptions) {
     this.#retentionWindowMs = positiveInteger(options.retentionWindowMs, 1800000, 86400000);
@@ -770,29 +768,18 @@ export class CubeSandboxProvider implements SandboxProvider {
 
   async checkHealth(): Promise<void> {
     await Promise.all([this.#client.checkHealth(), this.#workspaceVolumeGateway.checkHealth()]);
-    this.#runtimeProbe ??= this.#probeRuntime();
-    try {
-      await this.#runtimeProbe;
-    } catch (error: unknown) {
-      this.#runtimeProbe = undefined;
-      throw error;
-    }
   }
 
   async deleteWorkspaceVolume(volumeId: string): Promise<void> {
     await this.#client.deleteVolume(volumeId);
   }
 
-  async create(
-    spec: SandboxCreateSpec,
-    authorization: SandboxAllocationAuthorization,
-  ): Promise<SandboxHandle> {
+  async create(spec: SandboxCreateSpec, context: SandboxCreateContext): Promise<SandboxHandle> {
     if (this.#activations.has(spec.activationId)) {
       const owned = this.#activations.get(spec.activationId)!;
       if (
         owned.instance.metadata[METADATA.bindingSha256] ===
-          physicalBindingSha256(spec.activationId, spec.assignment, spec.environment) &&
-        this.#allocationDeadline(owned.instance, spec.activationId) === authorization.createBefore
+        physicalBindingSha256(spec.activationId, spec.assignment, spec.environment)
       ) {
         await this.probeExecution(owned.handle);
         return owned.handle;
@@ -818,10 +805,11 @@ export class CubeSandboxProvider implements SandboxProvider {
         true,
       );
     }
+    if (!this.#persistentCapsules)
+      throw new SandboxCreationError(new Error("Resource receipt key is unavailable"), true);
     const exclusiveMachine = spec.lifetime === "development_environment";
     const volumeMountPath =
       spec.volumeMountPath ?? (exclusiveMachine ? "/home/user" : "/workspace");
-    const toolRoot = spec.toolRoot ?? (exclusiveMachine ? "/home/user" : "/workspace");
     const bindingSha256 = physicalBindingSha256(
       spec.activationId,
       spec.assignment,
@@ -842,7 +830,6 @@ export class CubeSandboxProvider implements SandboxProvider {
     let instance: CubeSandboxInstance;
     try {
       instance = await this.#client.create({
-        allocation: { id: spec.activationId, createBefore: authorization.createBefore },
         templateId:
           spec.sandboxProfileKey !== undefined
             ? this.#developmentTemplateIds.get(spec.sandboxProfileKey)!
@@ -866,15 +853,173 @@ export class CubeSandboxProvider implements SandboxProvider {
           : {}),
       });
     } catch (error: unknown) {
-      if (error instanceof CubeAllocationClosedError)
-        throw new SandboxCreationError(error, error.absenceConfirmed);
       throw new SandboxCreationError(error, false);
     }
+    await this.#recordCreated(spec.activationId, spec.assignment, instance, context);
+    return this.#prepareCreated(spec, instance);
+  }
+
+  async recoverCreation(
+    spec: SandboxCreateSpec,
+    context: SandboxCreateContext,
+    receipt?: string,
+  ): Promise<SandboxHandle | undefined> {
+    let instance = await this.#findCreated(spec.activationId, spec.assignment, receipt);
+    if (!instance) return undefined;
+    const binding = physicalBindingSha256(spec.activationId, spec.assignment, spec.environment);
+    if (
+      !metadataMatchesPhysicalBinding(
+        instance.metadata,
+        spec.activationId,
+        spec.assignment,
+        binding,
+        this.#imageRevision,
+      )
+    )
+      throw new SandboxControlError(
+        "tool_sandbox_identity_mismatch",
+        "Recovered creation does not match its original request",
+        false,
+      );
+    await this.#recordCreated(spec.activationId, spec.assignment, instance, context);
+    const current = await this.#client.read(instance.sandboxId);
+    if (!current || current.state !== "running") return undefined;
+    if (
+      !metadataMatchesPhysicalBinding(
+        current.metadata,
+        spec.activationId,
+        spec.assignment,
+        binding,
+        this.#imageRevision,
+      )
+    )
+      throw new SandboxControlError(
+        "tool_sandbox_identity_mismatch",
+        "Recovered provider identity changed",
+        false,
+      );
+    if (!instance.trafficAccessToken) {
+      // Only the owner recovering this original, still-pending running creation
+      // may obtain a native connection. Diagnostics and Tool access never do this.
+      const connected = await this.#client.connect(instance.sandboxId);
+      if (connected.sandboxId !== instance.sandboxId || !connected.trafficAccessToken)
+        throw new Error("Recovered Cube connection identity changed");
+      instance = { ...instance, ...connected, metadata: instance.metadata };
+    }
+    const restored = {
+      ...current,
+      ...instance,
+      ...(current.nodeId ? { nodeId: current.nodeId } : {}),
+      state: current.state,
+    };
+    await this.#recordCreated(spec.activationId, spec.assignment, restored, context);
+    return this.#prepareCreated(spec, restored);
+  }
+
+  async #recordCreated(
+    id: string,
+    assignment: ToolSandboxAssignment,
+    instance: CubeSandboxInstance,
+    context: SandboxCreateContext,
+  ): Promise<void> {
+    if (!this.#persistentCapsules) throw new Error("Resource receipt key is unavailable");
+    await context.recordCreated({
+      runtimeId: runtimeUuid(instance.sandboxId),
+      runtimeName: instance.sandboxId,
+      capsule: this.#persistentCapsules.seal({
+        version: 3,
+        kind: "created",
+        activationId: id,
+        assignment,
+        instance,
+      }),
+    });
+  }
+
+  #openCreated(
+    receipt: string,
+    id: string,
+  ): { assignment: ToolSandboxAssignment; instance: CubeSandboxInstance } {
+    if (!this.#persistentCapsules) throw new Error("Resource receipt key is unavailable");
+    const raw = record(this.#persistentCapsules.open(receipt), "Native creation receipt");
+    const instance = raw.instance as CubeSandboxInstance;
+    const assignment = raw.assignment as ToolSandboxAssignment;
+    if (
+      raw.version !== 3 ||
+      raw.kind !== "created" ||
+      raw.activationId !== id ||
+      !instance?.sandboxId ||
+      !assignment?.workspaceId ||
+      instance.metadata?.[METADATA.workspaceRuntimeId] !== id ||
+      instance.metadata[METADATA.tenantId] !== assignment.tenantId ||
+      instance.metadata[METADATA.workspaceId] !== assignment.workspaceId
+    )
+      throw new SandboxControlError(
+        "persistent_capsule_invalid",
+        "Native creation receipt identity changed",
+        false,
+      );
+    return { assignment, instance };
+  }
+
+  async #findCreated(
+    id: string,
+    assignment: ToolSandboxAssignment,
+    receipt?: string,
+  ): Promise<CubeSandboxInstance | undefined> {
+    if (receipt) {
+      const found = this.#openCreated(receipt, id);
+      if (!sameWorkspace(found.assignment, assignment))
+        throw new Error("Native creation receipt Workspace changed");
+      return found.instance;
+    }
+    const matches = (await this.#client.list()).filter(
+      (instance) =>
+        instance.metadata[METADATA.workspaceRuntimeId] === id &&
+        instance.metadata[METADATA.provider] === this.providerId &&
+        instance.metadata[METADATA.tenantId] === assignment.tenantId &&
+        instance.metadata[METADATA.projectId] === assignment.projectId &&
+        instance.metadata[METADATA.workspaceId] === assignment.workspaceId,
+    );
+    // Provider-internal retries can create multiple physical instances. Never
+    // pick one arbitrarily or assume an empty/bounded list means no creation.
+    return matches.length === 1 ? matches[0] : undefined;
+  }
+
+  async #prepareCreated(
+    spec: SandboxCreateSpec,
+    instance: CubeSandboxInstance,
+  ): Promise<SandboxHandle> {
+    const exclusiveMachine = spec.lifetime === "development_environment";
+    const toolRoot = spec.toolRoot ?? (exclusiveMachine ? "/home/user" : "/workspace");
+    const volumeId = workspaceVolumeId(spec.assignment);
+    const bindingSha256 = physicalBindingSha256(
+      spec.activationId,
+      spec.assignment,
+      spec.environment,
+    );
     let nodeId = instance.nodeId;
     try {
-      nodeId ??= (await this.#client.read(instance.sandboxId))?.nodeId;
-      if (!nodeId) throw new Error("Cube runtime node identity was unavailable");
-      const executionTarget = await this.#client.executionTarget(instance.sandboxId, nodeId);
+      const current = await this.#client.read(instance.sandboxId);
+      nodeId = current?.nodeId;
+      if (
+        !nodeId ||
+        !current ||
+        !metadataMatchesPhysicalBinding(
+          current.metadata,
+          spec.activationId,
+          spec.assignment,
+          bindingSha256,
+          this.#imageRevision,
+        )
+      )
+        throw new Error("Cube runtime node identity was unavailable or changed");
+      instance = { ...current, ...instance, nodeId, state: current.state };
+      const executionTarget = await this.#client.executionTarget(
+        instance.sandboxId,
+        nodeId,
+        instance,
+      );
       const evidence = await this.#waitForEvidence(instance);
       this.#assertEvidence(evidence, spec.policy);
       if (exclusiveMachine) {
@@ -947,7 +1092,6 @@ export class CubeSandboxProvider implements SandboxProvider {
         readOnlyRootFilesystem: false,
       };
       const handle: SandboxHandle = Object.freeze({
-        allocation: authorization,
         runtimeNodeId: nodeId,
         providerApiVersion: 1,
         providerId: this.providerId,
@@ -978,8 +1122,8 @@ export class CubeSandboxProvider implements SandboxProvider {
       });
       return handle;
     } catch (error: unknown) {
-      // The controller persists retirement before physical cleanup. Cube's
-      // allocation catalog retains identity without a completed PG capsule.
+      // The early PG receipt preserves the original resource before Guest
+      // preparation; only the still-authorized controller may retire it.
       throw new SandboxCreationError(error, false);
     }
   }
@@ -1007,40 +1151,28 @@ export class CubeSandboxProvider implements SandboxProvider {
     return this.#observeTarget(target);
   }
 
-  async observeAllocation(
-    id: string,
-    authorization: SandboxAllocationAuthorization,
-    capsule?: string,
-  ) {
-    const allocation = await this.#client.allocation(id, authorization.createBefore, "get");
-    if (allocation.closed && allocation.phase === "absent") {
-      return {
-        runtimeName: allocation.sandboxId ?? id.replaceAll("-", ""),
-        nodeId: allocation.nodeId ?? "",
-        presence: "absent" as const,
-        state: "unknown" as const,
-      };
-    }
-    if (!allocation.sandboxId || !allocation.nodeId) return undefined;
+  async observeAllocation(id: string, receipt?: string, capsule?: string) {
     if (capsule && this.#persistentCapsules) {
       const raw = record(this.#persistentCapsules.open(capsule), "Cube recovery capsule");
       const handle = raw.handle as SandboxHandle;
       this.#assertHandle(handle);
       const target = raw.executionTarget as SandboxExecutionTarget;
       if (
+        raw.version !== 3 ||
         handle.activationId !== id ||
-        handle.allocation.createBefore !== authorization.createBefore ||
-        target.sandboxId !== allocation.sandboxId ||
-        target.nodeId !== allocation.nodeId
+        target?.sandboxId !== handle.runtimeName
       )
         throw new SandboxControlError(
           "persistent_capsule_invalid",
-          "Allocation observation identity changed",
+          "Resource observation identity changed",
           false,
         );
       return this.#observeTarget(target);
     }
-    return this.#client.observe(allocation.sandboxId, allocation.nodeId);
+    if (!receipt) return undefined;
+    const { instance } = this.#openCreated(receipt, id);
+    const nodeId = instance.nodeId ?? (await this.#client.read(instance.sandboxId))?.nodeId;
+    return nodeId ? this.#client.observe(instance.sandboxId, nodeId) : undefined;
   }
 
   async #observeTarget(
@@ -1377,15 +1509,36 @@ export class CubeSandboxProvider implements SandboxProvider {
         false,
       );
     }
+    const current = await this.#client.read(instance.sandboxId);
+    if (!current?.nodeId || current.state !== "running")
+      throw new SandboxControlError(
+        "development_environment_resume_unconfirmed",
+        "Native resume is not yet observable",
+        true,
+      );
     activation.instance = Object.freeze({
       ...activation.instance,
+      ...current,
       ...instance,
+      nodeId: current.nodeId,
+      state: current.state,
       metadata: activation.instance.metadata,
-      ...(activation.instance.trafficAccessToken === undefined
-        ? {}
-        : { trafficAccessToken: activation.instance.trafficAccessToken }),
+    });
+    activation.executionTarget = await this.#client.executionTarget(
+      instance.sandboxId,
+      current.nodeId,
+      activation.instance,
+    );
+    const evidence = await this.#waitForEvidence(activation.instance);
+    this.#assertEvidence(evidence, this.defaultPolicy, activation.evidence.imageRevision);
+    activation.evidence = evidence;
+    activation.handle = Object.freeze({
+      ...activation.handle,
+      runtimeNodeId: current.nodeId,
+      ipAddress: evidence.ipAddress,
     });
     activation.state = "running";
+
     return activation.handle;
   }
 
@@ -1403,7 +1556,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     return {
       handle: activation.handle,
       capsule: this.#persistentCapsules.seal({
-        version: 2,
+        version: 3,
         executionTarget: activation.executionTarget,
         imageRevision: activation.evidence.imageRevision,
         instance: activation.instance,
@@ -1443,7 +1596,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     const target = raw.executionTarget as SandboxExecutionTarget;
     const evidence = parseEvidence(raw.evidence);
     if (
-      raw.version !== 2 ||
+      raw.version !== 3 ||
       !handle ||
       !instance ||
       !target ||
@@ -1540,7 +1693,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     const evidence = parseEvidence(raw.evidence);
     const toolchain = raw.toolchain as EnvironmentToolchainReport;
     if (
-      raw.version !== 2 ||
+      raw.version !== 3 ||
       typeof raw.executionTarget !== "object" ||
       raw.executionTarget === null ||
       typeof raw.imageRevision !== "string" ||
@@ -1603,7 +1756,6 @@ export class CubeSandboxProvider implements SandboxProvider {
         raw.imageRevision,
       )
     ) {
-      await this.#throwIfExpiredElastic(handle, raw.lifetime);
       throw new SandboxControlError(
         "persistent_machine_identity_mismatch",
         "Exclusive machine physical identity did not match its recovery state",
@@ -1618,7 +1770,6 @@ export class CubeSandboxProvider implements SandboxProvider {
     });
     const state = current.state.toLowerCase();
     if (state !== "paused" && state !== "running") {
-      await this.#throwIfExpiredElastic(handle, raw.lifetime);
       throw new SandboxControlError(
         "cubesandbox_tool_unavailable",
         "Development machine is not ready for execution",
@@ -1658,38 +1809,17 @@ export class CubeSandboxProvider implements SandboxProvider {
         await this.probeExecution(handle);
       } catch (error) {
         this.#activations.delete(handle.activationId);
-        await this.#throwIfExpiredElastic(handle, raw.lifetime);
         throw error;
       }
     }
     return handle;
   }
 
-  async #throwIfExpiredElastic(handle: SandboxHandle, lifetime: unknown): Promise<void> {
-    if (lifetime !== "elastic") return;
-    const allocation = await this.#client.allocation(
-      handle.activationId,
-      handle.allocation.createBefore,
-      "get",
-    );
-    if (allocation.closed && allocation.phase === "absent") {
-      await this.#confirmInstanceAbsent(handle.runtimeName, handle.runtimeNodeId);
-      throw new SandboxCreationError(
-        new SandboxControlError(
-          "elastic_runtime_expired",
-          "Elastic compute was retired; the Workspace is preserved",
-          true,
-        ),
-        true,
-      );
-    }
-  }
-
   async renewPersistentRetention(capsule: string, observedAt: number): Promise<void> {
     if (!this.#persistentCapsules || !this.#client.setTimeout)
       throw new Error("Cube retention transport unavailable");
     const raw = record(this.#persistentCapsules.open(capsule), "Retention capsule");
-    if (raw.version !== 2 || raw.lifetime !== "elastic") throw new Error("Runtime is not elastic");
+    if (raw.version !== 3 || raw.lifetime !== "elastic") throw new Error("Runtime is not elastic");
     const handle = raw.handle as SandboxHandle;
     this.#assertHandle(handle);
     const target = raw.executionTarget as SandboxExecutionTarget;
@@ -1788,7 +1918,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     const target = raw.executionTarget as SandboxExecutionTarget;
     this.#assertHandle(handle);
     if (
-      raw.version !== 2 ||
+      raw.version !== 3 ||
       handle.activationId !== activationId ||
       !sameWorkspace(handle.assignment, assignment) ||
       target?.sandboxId !== handle.runtimeName ||
@@ -1799,7 +1929,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         "Runtime recovery identity changed",
         false,
       );
-    await this.#closeAllocation(activationId, handle.allocation.createBefore);
+    await this.#client.destroy(handle.runtimeName);
     this.#activations.delete(activationId);
   }
 
@@ -1825,7 +1955,7 @@ export class CubeSandboxProvider implements SandboxProvider {
           false,
         );
     }
-    await this.#closeAllocation(handle.activationId, handle.allocation.createBefore);
+    await this.#client.destroy(handle.runtimeName);
     this.#activations.delete(handle.activationId);
   }
 
@@ -1833,8 +1963,11 @@ export class CubeSandboxProvider implements SandboxProvider {
     this.#assertHandle(handle);
     const instance = await this.#client.read(handle.runtimeName);
     if (instance === undefined) {
-      await this.#confirmInstanceAbsent(handle.runtimeName, handle.runtimeNodeId);
-      return { providerApiVersion: 1, providerId: this.providerId, state: "absent", handle };
+      throw new SandboxControlError(
+        "cubesandbox_absence_unconfirmed",
+        "Native inventory cannot confirm resource removal",
+        true,
+      );
     }
     if (
       runtimeUuid(instance.sandboxId) !== handle.runtimeId ||
@@ -2504,62 +2637,28 @@ export class CubeSandboxProvider implements SandboxProvider {
   async destroyRuntime(
     activationId: string,
     assignment: ToolSandboxAssignment,
-    authorization: SandboxAllocationAuthorization | undefined,
+    context: SandboxCreateContext,
+    receipt?: string,
   ): Promise<void> {
     const activation = this.#activations.get(activationId);
-    if (activation !== undefined) {
-      if (!sameWorkspace(activation.handle.assignment, assignment)) {
+    if (activation) {
+      if (!sameWorkspace(activation.handle.assignment, assignment))
         throw new SandboxControlError(
           "tool_sandbox_identity_mismatch",
           "CubeSandbox assignment identity did not match",
           false,
         );
-      }
-      await this.destroy(activation.handle);
-      return;
+      return this.destroy(activation.handle);
     }
-    if (!authorization)
-      throw new SandboxControlError(
-        "cubesandbox_allocation_identity_unavailable",
-        "Historical allocation requires independent verification",
-        false,
-      );
-    await this.#closeAllocation(activationId, authorization.createBefore);
-  }
-
-  #allocationDeadline(instance: CubeSandboxInstance, id: string): number {
-    const value = Number(instance?.metadata?.["picloud.create_before"]);
-    if (
-      instance?.metadata?.["picloud.allocation_id"] !== id ||
-      !Number.isSafeInteger(value) ||
-      value <= 0
-    )
-      throw new SandboxControlError(
-        "cubesandbox_allocation_identity_unavailable",
-        "Allocation authorization is unavailable",
-        false,
-      );
-    return value;
-  }
-
-  async #closeAllocation(id: string, createBefore: number): Promise<void> {
-    const result = await this.#client.allocation(id, createBefore, "close");
-    if (!result.closed || result.phase !== "absent")
+    const instance = await this.#findCreated(activationId, assignment, receipt);
+    if (!instance)
       throw new SandboxControlError(
         "cubesandbox_absence_unconfirmed",
-        "Allocation cleanup remains unconfirmed",
+        "Original resource creation remains unresolved",
         true,
       );
-  }
-
-  async #confirmInstanceAbsent(sandboxId: string, nodeId: string | undefined): Promise<void> {
-    if (!nodeId || (await this.#client.observe(sandboxId, nodeId)).presence !== "absent") {
-      throw new SandboxControlError(
-        "cubesandbox_assignment_still_alive",
-        "CubeSandbox absence could not be confirmed",
-        false,
-      );
-    }
+    await this.#recordCreated(activationId, assignment, instance, context);
+    await this.#client.destroy(instance.sandboxId);
   }
 
   async close(): Promise<void> {
@@ -2642,31 +2741,6 @@ export class CubeSandboxProvider implements SandboxProvider {
     if (errors.length) throw new AggregateError(errors, "Guest upload staging cleanup deferred");
   }
 
-  async #probeRuntime(): Promise<void> {
-    const allocation = { id: randomUUID(), createBefore: Date.now() + 60_000 };
-    try {
-      const instance = await this.#client.create({
-        allocation,
-        templateId: this.#templateId,
-        timeoutSeconds: 60,
-        metadata: {
-          [METADATA.managed]: "true",
-          [METADATA.provider]: this.providerId,
-          [METADATA.workload]: "runtime-probe",
-          [METADATA.imageRevision]: this.#imageRevision,
-        },
-        allowInternetAccess: true,
-        allowPublicTraffic: false,
-      });
-      this.#assertEvidence(await this.#waitForEvidence(instance), this.defaultPolicy);
-      const nodeId = instance.nodeId ?? (await this.#client.read(instance.sandboxId))?.nodeId;
-      if (!nodeId) throw new Error("Cube execution node identity is unavailable");
-      await this.#client.executionTarget(instance.sandboxId, nodeId);
-    } finally {
-      await this.#closeAllocation(allocation.id, allocation.createBefore);
-    }
-  }
-
   async #waitForEvidence(instance: CubeSandboxInstance): Promise<CubeRuntimeEvidence> {
     const deadline = Date.now() + this.#readyTimeoutMs;
     let lastError: unknown;
@@ -2698,10 +2772,14 @@ export class CubeSandboxProvider implements SandboxProvider {
     );
   }
 
-  #assertEvidence(evidence: CubeRuntimeEvidence, policy: SandboxPolicy): void {
+  #assertEvidence(
+    evidence: CubeRuntimeEvidence,
+    policy: SandboxPolicy,
+    imageRevision = this.#imageRevision,
+  ): void {
     if (
       evidence.controlProtocolVersion !== 2 ||
-      evidence.imageRevision !== this.#imageRevision ||
+      evidence.imageRevision !== imageRevision ||
       evidence.uid !== 1_000 ||
       evidence.gid !== 1_000 ||
       evidence.supervisorUid !== 0 ||
@@ -2781,8 +2859,6 @@ export class CubeSandboxProvider implements SandboxProvider {
 
   #assertHandle(handle: SandboxHandle): void {
     if (
-      !Number.isSafeInteger(handle.allocation?.createBefore) ||
-      handle.allocation.createBefore <= 0 ||
       handle.providerApiVersion !== 1 ||
       handle.providerId !== this.providerId ||
       typeof handle.runtimeNodeId !== "string" ||

@@ -38,21 +38,6 @@ export function isAllowedCubeApiOperation(path: string, method: string): boolean
   if (parsed.origin !== "http://cube-api.internal" || parsed.hash !== "") return false;
   if (normalizedMethod === "POST" && /^\/lifecycle\/(sources|history)$/.test(parsed.pathname))
     return parsed.search === "";
-  if (
-    normalizedMethod === "POST" &&
-    /^\/allocations\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/(get|close)$/.test(
-      parsed.pathname,
-    )
-  )
-    return parsed.search === "";
-  if (
-    normalizedMethod === "GET" &&
-    /^\/sandboxes\/[a-f0-9]{32}\/observation$/i.test(parsed.pathname)
-  ) {
-    // CubeAPI's callback sends URI.path(), without the query string. The API
-    // handler validates the required nodeID before its anchored observation.
-    return parsed.search === "";
-  }
   if (normalizedMethod === "POST" && parsed.pathname === "/sandboxes" && parsed.search === "") {
     return true;
   }

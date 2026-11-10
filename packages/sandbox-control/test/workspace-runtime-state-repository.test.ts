@@ -134,7 +134,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
     expect(lost).not.toHaveBeenCalled();
   });
 
-  async function allocationFixture(legacy = false) {
+  async function allocationFixture() {
     const database = await fixtureDatabase(),
       instanceId = randomUUID();
     const repository = new PostgresWorkspaceRuntimeStateRepository({
@@ -176,7 +176,7 @@ describe("PostgreSQL Sandbox control ownership", () => {
       .insertInto("workspace_runtimes")
       .values({
         workspace_runtime_id: activationId,
-        allocation_protocol: legacy ? null : 1,
+
         tenant_id: tenant.tenantId,
         project_id: project.projectId,
         workspace_id: project.workspaceId,
@@ -393,17 +393,18 @@ describe("PostgreSQL Sandbox control ownership", () => {
     ).toEqual({ state: "cleaning", allocation_closed: true });
   });
 
-  it("retains immutable allocation authorization and recovers uncapsuled creation after owner replacement", async () => {
+  it("issues native creation only once and retains its receipt through owner replacement", async () => {
     const f = await allocationFixture();
     const first = await f.repository.beginCreation(f.spec);
-    expect(await f.repository.beginCreation(f.spec)).toEqual(first);
+    expect(first).toEqual({ fresh: true });
+    expect(await f.repository.beginCreation(f.spec)).toEqual({ fresh: false });
     await expect(
       f.repository.beginCreation({ ...f.spec, toolRoot: "/changed" }),
     ).rejects.toMatchObject({ code: "state_conflict" });
     await expect(
       f.database
         .updateTable("workspace_runtimes")
-        .set({ creation_not_after: new Date(first.createBefore + 1) })
+        .set({ provider_create_started_at: new Date(0) })
         .where("workspace_runtime_id", "=", f.spec.activationId)
         .execute(),
     ).rejects.toThrow("cannot change");
@@ -420,13 +421,12 @@ describe("PostgreSQL Sandbox control ownership", () => {
     expect(recovered).toContainEqual(
       expect.objectContaining({
         activationId: f.spec.activationId,
-        creation: { spec: f.spec, authorization: first },
+        creation: { spec: f.spec },
       }),
     );
-    expect(await next.beginCreation(f.spec)).toEqual(first);
+    expect(await next.beginCreation(f.spec)).toEqual({ fresh: false });
     expect(await next.closeAllocation(f.spec.activationId, "workspace")).toEqual({
-      status: "authorized",
-      authorization: first,
+      status: "issued",
     });
     await expect(next.beginCreation(f.spec)).rejects.toMatchObject({ code: "state_conflict" });
     await expect(
@@ -442,18 +442,43 @@ describe("PostgreSQL Sandbox control ownership", () => {
     expect(await next.claimRecoverableWorkspaceRuntimes(16, [])).toEqual([]);
   });
 
-  it.each([false, true])(
-    "closes unissued allocations without fabricating legacy absence (legacy=%s)",
-    async (legacy) => {
-      const f = await allocationFixture(legacy);
-      expect(await f.repository.closeAllocation(f.spec.activationId, "workspace")).toEqual({
-        status: legacy ? "legacy" : "never_issued",
-      });
-      await expect(f.repository.beginCreation(f.spec)).rejects.toMatchObject({
-        code: "state_conflict",
-      });
-    },
-  );
+  it("closes an unissued resource without making a provider call", async () => {
+    const f = await allocationFixture();
+    expect(await f.repository.closeAllocation(f.spec.activationId, "workspace")).toEqual({
+      status: "never_issued",
+    });
+    await expect(f.repository.beginCreation(f.spec)).rejects.toMatchObject({
+      code: "state_conflict",
+    });
+  });
+  it("grants one sender under concurrency and retains an early receipt after closure", async () => {
+    const f = await allocationFixture();
+    const results = await Promise.all([
+      f.repository.beginCreation(f.spec),
+      f.repository.beginCreation(f.spec),
+    ]);
+    expect(results.filter((r) => r.fresh)).toHaveLength(1);
+    const receipt = {
+      runtimeId: randomUUID(),
+      runtimeName: "native-created-id",
+      capsule: "test-receipt-" + "x".repeat(96),
+    };
+    await f.repository.closeAllocation(f.spec.activationId, "workspace");
+    await f.repository.recordCreation(f.spec.activationId, "workspace", receipt);
+    expect(await f.repository.closeAllocation(f.spec.activationId, "workspace")).toEqual({
+      status: "issued",
+      receipt: receipt.capsule,
+    });
+    await expect(
+      f.repository.recordCreation(f.spec.activationId, "workspace", {
+        ...receipt,
+        runtimeName: "another-instance",
+      }),
+    ).rejects.toMatchObject({ code: "ownership_lost" });
+    await expect(f.repository.beginCreation(f.spec)).rejects.toMatchObject({
+      code: "state_conflict",
+    });
+  });
   it("loads only owned binding pages before applying capacity limits", async () => {
     const database = await fixtureDatabase(),
       instanceId = randomUUID();
@@ -659,35 +684,35 @@ describe("PostgreSQL Sandbox control ownership", () => {
       ).state,
     ).toBe("unknown");
     const replacementId = randomUUID(),
-      replacementName = "b".repeat(32),
-      replacementBinding = randomUUID();
-    await database
-      .updateTable("workspace_runtimes")
-      .set({ state: "allocated", runtime_id: replacementId, runtime_name: replacementName })
-      .where("workspace_runtime_id", "=", physicalId)
-      .execute();
-    await register(replacementBinding, replacementName);
+      replacementName = "b".repeat(32);
+    await expect(
+      database
+        .updateTable("workspace_runtimes")
+        .set({ state: "allocated", runtime_id: replacementId, runtime_name: replacementName })
+        .where("workspace_runtime_id", "=", physicalId)
+        .execute(),
+    ).rejects.toThrow("identity cannot change");
     await expect(
       repository.setWorkspaceRuntimeState(physicalId, "unknown", {
-        handle: { runtimeId, runtimeName: target.sandboxId } as SandboxHandle,
+        handle: { runtimeId: replacementId, runtimeName: replacementName } as SandboxHandle,
       }),
     ).rejects.toMatchObject({ code: "ownership_lost" });
-    await quarantineExecutionTarget(database, target);
-    const resource = await database
-      .selectFrom("workspace_runtimes")
-      .select(["state", "runtime_id"])
-      .where("workspace_runtime_id", "=", physicalId)
-      .executeTakeFirstOrThrow();
-    expect(resource).toEqual({ state: "allocated", runtime_id: replacementId });
+    expect(
+      await database
+        .selectFrom("workspace_runtimes")
+        .select(["state", "runtime_id"])
+        .where("workspace_runtime_id", "=", physicalId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ state: "unknown", runtime_id: runtimeId });
     expect(
       (
         await database
           .selectFrom("sandbox_tool_bindings")
           .select("dispatch_closed")
-          .where("binding_id", "=", replacementBinding)
+          .where("binding_id", "=", oldBinding)
           .executeTakeFirstOrThrow()
       ).dispatch_closed,
-    ).toBe(false);
+    ).toBe(true);
   });
   it("keeps shared warm compute until its last conversation is deleted and accounts for failed cleanup", async () => {
     const database = await fixtureDatabase();
@@ -1256,7 +1281,6 @@ describe("PostgreSQL Sandbox control ownership", () => {
       ],
     });
     const handle: SandboxHandle = {
-      allocation: { createBefore: Date.now() + 300_000 },
       runtimeNodeId: "node-test",
       providerApiVersion: 1,
       providerId: "cubesandbox",

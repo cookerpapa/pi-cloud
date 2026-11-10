@@ -10,10 +10,9 @@ import {
   type SandboxPreviewTarget,
 } from "@pi-cloud/protocol";
 import {
-  SANDBOX_CREATION_WINDOW_MS,
   type SandboxHandle,
   type SandboxCreateSpec,
-  type SandboxAllocationAuthorization,
+  type SandboxCreationReceipt,
 } from "../../src/sandbox-provider.ts";
 import { isDeepStrictEqual } from "node:util";
 import type {
@@ -38,29 +37,39 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   async reconcileOwnership(): Promise<void> {}
   readonly creations = new Map<
     string,
-    { spec: SandboxCreateSpec; authorization: SandboxAllocationAuthorization }
+    { spec: SandboxCreateSpec; issued: boolean; receipt?: string }
   >();
   readonly closedAllocations = new Set<string>();
   async beginCreation(
     spec: SandboxCreateSpec,
     _kind?: AllocationKind,
-  ): Promise<SandboxAllocationAuthorization> {
+  ): Promise<{ fresh: boolean; receipt?: string }> {
     if (this.closedAllocations.has(spec.activationId)) throw new Error("Allocation closed");
     const prior = this.creations.get(spec.activationId);
     if (prior) {
       if (!isDeepStrictEqual(prior.spec, spec)) throw new Error("Allocation changed");
-      return prior.authorization;
+      const fresh = !prior.issued;
+      prior.issued = true;
+      return { fresh, ...(prior.receipt ? { receipt: prior.receipt } : {}) };
     }
-    const authorization = { createBefore: Date.now() + SANDBOX_CREATION_WINDOW_MS };
-    this.creations.set(spec.activationId, { spec: structuredClone(spec), authorization });
-    return authorization;
+    this.creations.set(spec.activationId, { spec: structuredClone(spec), issued: true });
+    return { fresh: true };
+  }
+  async recordCreation(
+    id: string,
+    _kind: AllocationKind,
+    receipt: SandboxCreationReceipt,
+  ): Promise<void> {
+    const prior = this.creations.get(id);
+    if (!prior?.issued) throw new Error("Original creation is not issued");
+    prior.receipt = receipt.capsule;
   }
   async closeAllocation(id: string, _kind: AllocationKind): Promise<AllocationClosure> {
     this.closedAllocations.add(id);
     this.onQuarantine?.(id);
     const prior = this.creations.get(id);
-    return prior
-      ? { status: "authorized", authorization: prior.authorization }
+    return prior?.issued
+      ? { status: "issued", ...(prior.receipt ? { receipt: prior.receipt } : {}) }
       : { status: "never_issued" };
   }
   onQuarantine?: (physicalActivationId: string) => void;
@@ -296,7 +305,7 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       reservation: next,
       state: "provisioning",
     });
-    await this.beginCreation(spec);
+    this.creations.set(spec.activationId, { spec, issued: false });
     return next;
   }
   setMachineIntent(id: string, desiredState: "running" | "paused" | "released"): number {

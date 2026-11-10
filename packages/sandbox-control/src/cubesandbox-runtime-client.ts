@@ -66,7 +66,6 @@ export class CubeExecutionRejected extends Error {
 }
 
 export type CubeSandboxCreateInput = Readonly<{
-  allocation: Readonly<{ id: string; createBefore: number }>;
   templateId: string;
   timeoutSeconds: number;
   metadata: Readonly<Record<string, string>>;
@@ -75,23 +74,6 @@ export type CubeSandboxCreateInput = Readonly<{
   volumeMounts?: readonly Readonly<{ name: string; path: "/workspace" | "/home/user" }>[];
   lifecycle?: Readonly<{ onTimeout: "kill" | "pause"; autoResume: boolean }>;
 }>;
-
-export type CubeAllocationState = Readonly<{
-  retainUntil?: number;
-  retentionWindowMs?: number;
-  allocationId: string;
-  createBefore: number;
-  phase: "missing" | "pending" | "creating" | "ready" | "failed" | "closing" | "absent";
-  closed: boolean;
-  sandboxId?: string;
-  nodeId?: string;
-  instance?: CubeSandboxInstance;
-}>;
-export class CubeAllocationClosedError extends Error {
-  constructor(readonly absenceConfirmed: boolean) {
-    super("Cube allocation is closed");
-  }
-}
 
 export type CubeSandboxGuestCommandRequest = Readonly<{
   command: string;
@@ -119,18 +101,17 @@ export interface CubeSandboxRuntimeClient {
   ensureVolume(volumeId: string, driver: string): Promise<CubeSandboxVolume>;
   deleteVolume(volumeId: string): Promise<void>;
   create(input: CubeSandboxCreateInput): Promise<CubeSandboxInstance>;
-  allocation(
-    id: string,
-    createBefore: number,
-    action: "get" | "close",
-  ): Promise<CubeAllocationState>;
   setTimeout?(sandboxId: string, timeoutSeconds: number): Promise<void>;
   read(sandboxId: string): Promise<CubeSandboxInstance | undefined>;
   observe(
     sandboxId: string,
     nodeId: string,
   ): Promise<import("./sandbox-provider.ts").SandboxRuntimeObservation>;
-  executionTarget(sandboxId: string, nodeId: string): Promise<CubeExecutionTarget>;
+  executionTarget(
+    sandboxId: string,
+    nodeId: string,
+    connection?: CubeSandboxInstance,
+  ): Promise<CubeExecutionTarget>;
   probeExecution(target: CubeExecutionTarget, probeId: string): Promise<GuestProbeReply>;
   submitProbe(
     target: CubeExecutionTarget,
@@ -151,7 +132,7 @@ export interface CubeSandboxRuntimeClient {
   ): Promise<void>;
 
   pause(sandboxId: string): Promise<void>;
-  connect(sandboxId: string, timeoutSeconds: number): Promise<CubeSandboxInstance>;
+  connect(sandboxId: string, timeoutSeconds?: number): Promise<CubeSandboxInstance>;
   list(): Promise<readonly CubeSandboxInstance[]>;
   destroy(sandboxId: string): Promise<void>;
   runCommand(
@@ -682,15 +663,10 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
   }
 
   async create(input: CubeSandboxCreateInput): Promise<CubeSandboxInstance> {
-    this.#allocationIdentity(input.allocation.id, input.allocation.createBefore);
     const body = JSON.stringify({
       templateID: input.templateId,
       timeout: input.timeoutSeconds,
-      metadata: {
-        ...input.metadata,
-        "picloud.allocation_id": input.allocation.id,
-        "picloud.create_before": String(input.allocation.createBefore),
-      },
+      metadata: input.metadata,
       ...(input.volumeMounts === undefined
         ? {}
         : {
@@ -724,126 +700,17 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         auto_resume: input.lifecycle?.autoResume ?? false,
       },
     });
-    const end = performance.now() + this.#requestTimeoutMs;
-    let failure: unknown;
-    do {
-      try {
-        const response = await this.#control("/sandboxes", { method: "POST", body });
-        const instance = parseInstance(
-          parseJson(await readBoundedResponse(response, 256 * 1024), "CubeSandbox create"),
-          this.#sandboxDomain,
-          true,
-        );
-        if (
-          !instance.trafficAccessToken ||
-          !instance.nodeId ||
-          instance.sandboxId !== input.allocation.id.replaceAll("-", "")
-        )
-          throw new CubeRuntimeClientError(
-            "Cube allocation did not return its exact private runtime identity",
-          );
-        return this.#rememberInstance(instance);
-      } catch (cause) {
-        failure = cause;
-        if (
-          cause instanceof CubeRuntimeClientError &&
-          [400, 401, 403, 409].includes(cause.statusCode ?? 0)
-        )
-          throw cause;
-      }
-      const state = await this.allocation(
-        input.allocation.id,
-        input.allocation.createBefore,
-        "get",
-      );
-      if (state.closed) throw new CubeAllocationClosedError(state.phase === "absent");
-      if (state.phase === "ready" && state.instance) return state.instance;
-      if (state.phase === "failed" || Date.now() >= input.allocation.createBefore) break;
-      if (performance.now() < end) await new Promise((resolve) => setTimeout(resolve, 250));
-    } while (performance.now() < end);
-    throw failure ?? new CubeRuntimeClientError("Cube allocation creation is unconfirmed");
-  }
-
-  #allocationIdentity(id: string, createBefore: number): void {
-    if (
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id) ||
-      !Number.isSafeInteger(createBefore) ||
-      createBefore <= 0
-    )
-      throw new CubeRuntimeClientError("Invalid allocation authorization");
-  }
-
-  async allocation(
-    id: string,
-    createBefore: number,
-    action: "get" | "close",
-  ): Promise<CubeAllocationState> {
-    return this.#allocationAt(id, createBefore, action, this.#apiUrl);
-  }
-  async #allocationAt(
-    id: string,
-    createBefore: number,
-    action: "get" | "close",
-    apiUrl: string,
-  ): Promise<CubeAllocationState> {
-    this.#allocationIdentity(id, createBefore);
-    const response = await this.#control(
-      `/allocations/${id}/${action}`,
-      {
-        method: "POST",
-        body: JSON.stringify({ createBefore }),
-        ...(action === "close" ? { timeoutMs: Math.max(80_000, this.#requestTimeoutMs) } : {}),
-      },
+    // Native creation is not idempotent. The PG resource owner grants this call
+    // once; transport/parse failures must never trigger another POST here.
+    const response = await this.#control("/sandboxes", { method: "POST", body });
+    const instance = parseInstance(
+      parseJson(await readBoundedResponse(response, 256 * 1024), "CubeSandbox create"),
+      this.#sandboxDomain,
       false,
-      apiUrl,
     );
-    const value = record(
-      parseJson(await readBoundedResponse(response, 256 * 1024), "Cube allocation"),
-      "Cube allocation",
-    );
-    if (
-      value.allocationID !== id ||
-      value.createBefore !== createBefore ||
-      typeof value.closed !== "boolean" ||
-      !["missing", "pending", "creating", "ready", "failed", "closing", "absent"].includes(
-        String(value.phase),
-      )
-    )
-      throw new CubeRuntimeClientError("Cube allocation receipt identity is invalid");
-    if (value.sandboxID !== undefined && value.sandboxID !== id.replaceAll("-", ""))
-      throw new CubeRuntimeClientError("Cube allocation physical identity changed");
-    if (value.phase === "absent" && value.closed !== true)
-      throw new CubeRuntimeClientError("Cube allocation absence lacks closed admission");
-    const instance =
-      value.instance === undefined
-        ? undefined
-        : parseInstance(value.instance, this.#sandboxDomain, true);
-    if (
-      instance &&
-      (!instance.trafficAccessToken ||
-        !instance.nodeId ||
-        instance.sandboxId !== value.sandboxID ||
-        instance.nodeId !== value.nodeID)
-    )
-      throw new CubeRuntimeClientError("Cube allocation result is incomplete");
-    if (value.phase === "ready" && !instance)
-      throw new CubeRuntimeClientError("Cube allocation result is missing");
-    if (instance && !value.closed) this.#rememberInstance(instance, apiUrl);
-    return {
-      allocationId: id,
-      createBefore,
-      phase: value.phase as CubeAllocationState["phase"],
-      closed: value.closed,
-      ...(typeof value.sandboxID === "string" ? { sandboxId: value.sandboxID } : {}),
-      ...(typeof value.nodeID === "string" && value.nodeID ? { nodeId: value.nodeID } : {}),
-      ...(instance ? { instance } : {}),
-      ...(Number.isSafeInteger(value.retainUntil) && Number.isSafeInteger(value.retentionWindowMs)
-        ? {
-            retainUntil: value.retainUntil as number,
-            retentionWindowMs: value.retentionWindowMs as number,
-          }
-        : {}),
-    };
+    if (!instance.trafficAccessToken)
+      throw new CubeRuntimeClientError("Cube creation omitted its private connection data");
+    return { ...instance, metadata: input.metadata };
   }
 
   async read(sandboxId: string): Promise<CubeSandboxInstance | undefined> {
@@ -875,23 +742,12 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       state: "unknown" as const,
     };
     try {
-      const response = await this.#control(
-        `/sandboxes/${encodeURIComponent(runtimeName)}/observation?nodeID=${encodeURIComponent(node)}`,
-        { timeoutMs: 5000 },
-      );
-      const body = record(
-        parseJson(await readBoundedResponse(response, 8192), "Cube observation"),
-        "Cube observation",
-      );
-      if (body.sandboxID !== runtimeName || body.nodeID !== node) return unavailable;
-      if (body.presence === "present")
-        return { ...unavailable, presence: "present", state: observedState(body.state) };
-      if (body.presence === "absent" && body.state === "unknown")
-        return { ...unavailable, presence: "absent" };
-      return unavailable;
+      const instance = await this.read(runtimeName);
+      // Native absence from inventory is not proof of physical removal. The
+      // lifecycle owner requires positive delete/event evidence for retirement.
+      if (instance?.nodeId !== node) return unavailable;
+      return { ...unavailable, presence: "present", state: instance.state };
     } catch {
-      // Includes missing endpoint, missing master routing state and node/RPC
-      // failure. None authorizes quota release or a replacement attachment.
       return unavailable;
     }
   }
@@ -1078,7 +934,20 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       // the service or Tool when its caller disconnects.
     }
   }
-  async executionTarget(sandboxId: string, nodeId: string): Promise<CubeExecutionTarget> {
+  async executionTarget(
+    sandboxId: string,
+    nodeId: string,
+    connection?: CubeSandboxInstance,
+  ): Promise<CubeExecutionTarget> {
+    if (connection) {
+      if (
+        connection.sandboxId !== sandboxId ||
+        connection.nodeId !== nodeId ||
+        !connection.trafficAccessToken
+      )
+        throw new CubeRuntimeClientError("Cube execution connection identity changed");
+      this.#rememberInstance(connection);
+    }
     const instance = await this.#guestInstance(sandboxId, nodeId);
     const value = await this.#guestRpc(instance, { version: 1, action: "info" });
     if (value.runtimeBlocked === true) throw new CubeExecutionRejected("runtime_quarantined");
@@ -1167,9 +1036,14 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     }
   }
 
-  async connect(sandboxId: string, timeoutSeconds: number): Promise<CubeSandboxInstance> {
+  async connect(sandboxId: string, timeoutSeconds?: number): Promise<CubeSandboxInstance> {
     const id = encodeURIComponent(bounded(sandboxId, "CubeSandbox ID", 256));
-    const timeout = timeoutSeconds === -1 ? -1 : positiveInteger(timeoutSeconds, 900, 1, 86_400);
+    const timeout =
+      timeoutSeconds === undefined
+        ? undefined
+        : timeoutSeconds === -1
+          ? -1
+          : positiveInteger(timeoutSeconds, 900, 1, 2_147_483_647);
     const response = await this.#control(`/sandboxes/${id}/connect`, {
       method: "POST",
       body: JSON.stringify({ timeout }),
@@ -1202,7 +1076,10 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
 
   async destroy(sandboxId: string): Promise<void> {
     const id = encodeURIComponent(bounded(sandboxId, "CubeSandbox ID", 256));
-    const response = await this.#control(`/sandboxes/${id}`, { method: "DELETE" }, true);
+    const response = await this.#control(`/sandboxes/${id}`, {
+      method: "DELETE",
+      timeoutMs: Math.max(80_000, this.#requestTimeoutMs),
+    });
     await response.body?.cancel().catch(() => undefined);
   }
 

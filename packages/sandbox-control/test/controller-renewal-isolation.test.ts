@@ -57,7 +57,7 @@ it.each(["workspace", "terminal"] as const)(
           .insertInto("workspace_runtimes")
           .values({
             workspace_runtime_id: id,
-            allocation_protocol: 1,
+
             tenant_id: tenant.tenantId,
             project_id: project.projectId,
             workspace_id: project.workspaceId,

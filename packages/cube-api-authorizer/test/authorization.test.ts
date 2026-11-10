@@ -7,11 +7,8 @@ const SANDBOX = "sandbox-123";
 describe("Cube API authorizer", () => {
   it.each([
     ["POST", "/sandboxes"],
-    ["POST", "/allocations/11111111-1111-4111-8111-111111111111/get"],
-    ["POST", "/allocations/11111111-1111-4111-8111-111111111111/close"],
     ["POST", `/sandboxes/${SANDBOX}/timeout`],
     ["GET", `/sandboxes/${SANDBOX}`],
-    ["GET", `/sandboxes/${"a".repeat(32)}/observation`],
     ["DELETE", `/sandboxes/${SANDBOX}`],
     ["POST", `/sandboxes/${SANDBOX}/pause`],
     ["POST", `/sandboxes/${SANDBOX}/connect`],
@@ -42,6 +39,9 @@ describe("Cube API authorizer", () => {
     ["POST", `/sandboxes/${"a".repeat(32)}/execution/cancel`],
     ["POST", `/sandboxes/${"a".repeat(32)}/execution/probe`],
     ["POST", `/sandboxes/${"a".repeat(32)}/execution/stop`],
+    ["GET", `/sandboxes/${"a".repeat(32)}/observation`],
+    ["POST", "/allocations/11111111-1111-4111-8111-111111111111/get"],
+    ["POST", "/allocations/11111111-1111-4111-8111-111111111111/close"],
     ["POST", "/allocations/11111111-1111-4111-8111-111111111111/reopen"],
     ["GET", "/allocations/11111111-1111-4111-8111-111111111111/get"],
     ["GET", "/allocations/11111111-1111-4111-8111-111111111111/renew"],

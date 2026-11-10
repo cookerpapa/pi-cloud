@@ -90,12 +90,17 @@ export type SandboxCreateSpec = Readonly<{
   sandboxProfileKey?: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey;
 }>;
 
-/** Issued once by the resource owner before Cube receives any creation RPC. */
-export type SandboxAllocationAuthorization = Readonly<{ createBefore: number }>;
-export const SANDBOX_CREATION_WINDOW_MS = 5 * 60_000;
+/** A provider's actual identity/private connection is saved before Guest setup. */
+export type SandboxCreationReceipt = Readonly<{
+  runtimeId: string;
+  runtimeName: string;
+  capsule: string;
+}>;
+export type SandboxCreateContext = Readonly<{
+  recordCreated(receipt: SandboxCreationReceipt): Promise<void>;
+}>;
 
 export type SandboxHandle = Readonly<{
-  allocation: SandboxAllocationAuthorization;
   runtimeNodeId: string;
   providerApiVersion: 1;
   providerId: string;
@@ -220,10 +225,13 @@ export interface SandboxLifecycle {
   readonly defaultPolicy: SandboxPolicy;
   checkHealth(): Promise<void>;
   observeRuntimeInventory(): Promise<ReadonlyMap<string, SandboxRuntimeObservation>>;
-  create(
+  create(spec: SandboxCreateSpec, context: SandboxCreateContext): Promise<SandboxHandle>;
+  /** Read an issued creation's outcome and prepare that resource; never POST create again. */
+  recoverCreation(
     spec: SandboxCreateSpec,
-    authorization: SandboxAllocationAuthorization,
-  ): Promise<SandboxHandle>;
+    context: SandboxCreateContext,
+    receipt?: string,
+  ): Promise<SandboxHandle | undefined>;
   destroyPersistentCapsule(
     capsule: string,
     activationId: string,
@@ -233,7 +241,7 @@ export interface SandboxLifecycle {
   /** Observe an existing creation on its recorded node without adopting or starting it. */
   observeAllocation?(
     id: string,
-    authorization: SandboxAllocationAuthorization,
+    receipt?: string,
     capsule?: string,
   ): Promise<SandboxRuntimeObservation | undefined>;
   /** Pause a long-lived user environment while preserving Cube VM state. */
@@ -252,7 +260,8 @@ export interface SandboxLifecycle {
   destroyRuntime(
     activationId: string,
     assignment: ToolSandboxAssignment,
-    authorization: SandboxAllocationAuthorization | undefined,
+    context: SandboxCreateContext,
+    receipt?: string,
   ): Promise<void>;
 
   close(): Promise<void>;

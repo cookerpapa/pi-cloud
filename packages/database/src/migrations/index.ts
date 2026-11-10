@@ -403,6 +403,7 @@ export const migrationProvider: MigrationProvider = {
       "213_tool_catalog_publication": toolCatalogPublication,
       "214_execution_binding_admission": executionBindingAdmission,
       "215_runtime_continuation": runtimeContinuation,
+      "216_native_resource_requests": nativeResourceRequests,
     };
   },
 };
@@ -446,3 +447,4 @@ import * as toolCatalogPublication from "./213_tool_catalog_publication.ts";
 
 import * as executionBindingAdmission from "./214_execution_binding_admission.ts";
 import * as runtimeContinuation from "./215_runtime_continuation.ts";
+import * as nativeResourceRequests from "./216_native_resource_requests.ts";

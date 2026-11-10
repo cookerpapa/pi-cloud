@@ -94,7 +94,7 @@ function provider(): SandboxProvider {
     async probeExecution(handle) {
       return { continuityId: handle.runtimeId };
     },
-    async create(spec, authorization) {
+    async create(spec) {
       const prior = machineHandles.get(spec.activationId);
       if (prior) return prior;
       if (retiredAllocations.has(spec.activationId))
@@ -102,7 +102,6 @@ function provider(): SandboxProvider {
       machineStates.set(spec.activationId, "running");
       physicalCreations += 1;
       const handle: SandboxHandle = {
-        allocation: authorization,
         runtimeNodeId: "node-test",
         providerApiVersion: 1,
         providerId: "cubesandbox",
@@ -254,6 +253,9 @@ function provider(): SandboxProvider {
           sandboxKernelRelease: "6.1",
         },
       };
+    },
+    async recoverCreation(spec) {
+      return machineHandles.get(spec.activationId);
     },
     async destroyRuntime(id) {
       const handle = machineHandles.get(id);

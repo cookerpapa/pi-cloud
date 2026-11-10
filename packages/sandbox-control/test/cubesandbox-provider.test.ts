@@ -150,35 +150,6 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
   setTimeout(id: string, seconds: number) {
     return this.retention(id, seconds);
   }
-  readonly allocationClosures = new Set<string>();
-  async allocation(id: string, createBefore: number, action: "get" | "close") {
-    const index = this.creates.findIndex((input) => input.allocation.id === id);
-    const sandboxId = index < 0 ? undefined : `cube-sandbox-${index + 1}`;
-    const instance = sandboxId ? this.instances.get(sandboxId) : undefined;
-    if (action === "close") {
-      this.allocationClosures.add(id);
-      if (sandboxId) {
-        await this.destroy(sandboxId);
-        const observed = await this.observe(sandboxId, "node-test");
-        if (observed.presence !== "absent")
-          return { allocationId: id, createBefore, closed: true, phase: "closing" as const };
-      }
-      return { allocationId: id, createBefore, closed: true, phase: "absent" as const };
-    }
-    return {
-      allocationId: id,
-      createBefore,
-      closed: this.allocationClosures.has(id),
-      phase: this.allocationClosures.has(id)
-        ? instance
-          ? ("closing" as const)
-          : ("absent" as const)
-        : instance
-          ? ("ready" as const)
-          : ("missing" as const),
-      ...(instance ? { instance } : {}),
-    };
-  }
   readonly cancelTool = vi.fn<CubeSandboxRuntimeClient["cancelTool"]>(async () => {});
   readonly submitProbe = vi.fn<CubeSandboxRuntimeClient["submitProbe"]>(async () => {});
   async probeExecution(
@@ -230,15 +201,6 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
   async deleteVolume(_volumeId: string): Promise<void> {}
 
   async create(input: CubeSandboxCreateInput): Promise<CubeSandboxInstance> {
-    if (this.allocationClosures.has(input.allocation.id)) throw new Error("Allocation was closed");
-    const previous = this.creates.findIndex((c) => c.allocation.id === input.allocation.id);
-    if (previous >= 0) {
-      if (JSON.stringify(this.creates[previous]) !== JSON.stringify(input))
-        throw new Error("Allocation parameters changed");
-      const existing = this.instances.get(`cube-sandbox-${previous + 1}`);
-      if (!existing) throw new Error("Allocation is absent");
-      return existing;
-    }
     this.creates.push(input);
     const sandboxId = `cube-sandbox-${String(this.creates.length)}`;
     const instance: CubeSandboxInstance = {
@@ -247,11 +209,7 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
       nodeId: "node-test",
       state: "running",
       domain: "cube.internal",
-      metadata: Object.freeze({
-        ...input.metadata,
-        "picloud.allocation_id": input.allocation.id,
-        "picloud.create_before": String(input.allocation.createBefore),
-      }),
+      metadata: Object.freeze({ ...input.metadata }),
       trafficAccessToken: `private-traffic-token-${String(this.creates.length)}`,
       envdAccessToken: `envd-access-token-${String(this.creates.length)}`,
       cpuCount: 1,
@@ -275,7 +233,7 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
     return {
       runtimeName: sandboxId,
       nodeId,
-      presence: instance ? ("present" as const) : ("absent" as const),
+      presence: instance ? ("present" as const) : ("unavailable" as const),
       state: instance?.state ?? ("unknown" as const),
     };
   }
@@ -293,8 +251,6 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
   }
 
   async destroy(sandboxId: string): Promise<void> {
-    const id = this.instances.get(sandboxId)?.metadata["picloud.allocation_id"];
-    if (id) this.allocationClosures.add(id);
     this.destroyed.push(sandboxId);
     this.instances.delete(sandboxId);
   }
@@ -792,7 +748,7 @@ describe("CubeSandbox Provider contract", () => {
     },
   );
 
-  it("keeps destruction unconfirmed when Cube acknowledges DELETE but still lists the VM", async () => {
+  it("keeps ownership when native deletion fails instead of inferring absence from a lookup", async () => {
     const runtime = new FakeCubeRuntimeClient();
     const provider = testCubeProvider({
       templateId: "pi-cloud-tool-v1",
@@ -811,10 +767,10 @@ describe("CubeSandbox Provider contract", () => {
       },
       creationAuthorization,
     );
-    const destroy = vi.spyOn(runtime, "destroy").mockResolvedValue(undefined);
-    await expect(provider.destroy(handle)).rejects.toMatchObject({
-      code: "cubesandbox_absence_unconfirmed",
-    });
+    const destroy = vi
+      .spyOn(runtime, "destroy")
+      .mockRejectedValue(new Error("Native delete unconfirmed"));
+    await expect(provider.destroy(handle)).rejects.toThrow("Native delete unconfirmed");
     expect((await provider.inspect(handle)).state).toBe("running");
     destroy.mockRestore();
     await provider.destroy(handle);
@@ -822,7 +778,7 @@ describe("CubeSandbox Provider contract", () => {
     await provider.close();
   });
 
-  it("attests a real-template probe with full-public egress and private ingress", async () => {
+  it("checks API and storage health without creating an untracked probe VM", async () => {
     const runtime = new FakeCubeRuntimeClient();
     const provider = testCubeProvider({
       templateId: "pi-cloud-tool-v1",
@@ -833,18 +789,8 @@ describe("CubeSandbox Provider contract", () => {
     });
     await provider.checkHealth();
     expect(runtime.healthChecks).toBe(1);
-    expect(runtime.creates).toHaveLength(1);
-    expect(runtime.creates[0]).toMatchObject({
-      templateId: "pi-cloud-tool-v1",
-      allowInternetAccess: true,
-      allowPublicTraffic: false,
-      metadata: {
-        "picloud.managed": "true",
-        "picloud.provider": "cubesandbox",
-        "picloud.workload": "runtime-probe",
-      },
-    });
-    expect(runtime.destroyed).toEqual(["cube-sandbox-1"]);
+    expect(runtime.creates).toHaveLength(0);
+    expect(runtime.destroyed).toEqual([]);
     await provider.close();
   });
 
@@ -879,7 +825,7 @@ describe("CubeSandbox Provider contract", () => {
     await provider.close();
   });
 
-  it("recognizes confirmed Cube expiry during cold controller recovery without deleting the Volume", async () => {
+  it("retains missing native resources as uncertain during cold recovery", async () => {
     const runtime = new FakeCubeRuntimeClient();
     const options = {
       templateId: "pi-cloud-tool-v1",
@@ -901,12 +847,11 @@ describe("CubeSandbox Provider contract", () => {
     );
     const { capsule } = await first.persistentCapsule(handle);
     await first.close();
-    await runtime.allocation(handle.activationId, handle.allocation.createBefore, "close");
+    await runtime.destroy(handle.runtimeName);
     const next = testCubeProvider(options);
     try {
       await expect(next.adoptPersistentCapsule(capsule)).rejects.toMatchObject({
-        absenceConfirmed: true,
-        code: "elastic_runtime_expired",
+        code: "persistent_machine_identity_mismatch",
       });
     } finally {
       await next.close();
@@ -1709,7 +1654,7 @@ describe("CubeSandbox Provider contract", () => {
     }
   });
 
-  it("retains the readiness failure cause while releasing the probe VM", async () => {
+  it("persists the original VM receipt before a Guest preparation failure", async () => {
     const runtime = new FakeCubeRuntimeClient();
     const cause = new Error("Guest transport disconnected");
     vi.spyOn(runtime, "runCommand").mockRejectedValue(cause);
@@ -1722,11 +1667,27 @@ describe("CubeSandbox Provider contract", () => {
       readyTimeoutMs: 30,
     });
     try {
-      await expect(provider.checkHealth()).rejects.toMatchObject({
-        code: "cubesandbox_data_plane_unavailable",
-        cause,
-      });
-      expect(runtime.destroyed).toEqual(["cube-sandbox-1"]);
+      const recordCreated = vi.fn(async () => {});
+      await expect(
+        provider.create(
+          {
+            activationId: ACTIVATION_ID,
+            assignment,
+            environment,
+            workspaceSeed: { kind: "sample_java" },
+            policy: provider.defaultPolicy,
+          },
+          { recordCreated },
+        ),
+      ).rejects.toMatchObject({ absenceConfirmed: false });
+      expect(recordCreated).toHaveBeenCalledOnce();
+      expect(recordCreated).toHaveBeenCalledWith(
+        expect.objectContaining({
+          runtimeName: "cube-sandbox-1",
+          capsule: expect.stringMatching(/^pcvm1_/),
+        }),
+      );
+      expect(runtime.destroyed).toEqual([]);
     } finally {
       await provider.close();
     }
@@ -1905,6 +1866,108 @@ describe("CubeSandbox Provider contract", () => {
     await provider.destroy(handle);
     await provider.close();
   });
+  it("recovers a lost creation reply by read-only correlation without another native create", async () => {
+    const runtime = new FakeCubeRuntimeClient();
+    const options = {
+      templateId: "pi-cloud-tool-v1",
+      imageRevision: "development",
+      webProxy: WEB_PROXY,
+      runtimeClient: runtime,
+      workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
+    };
+    const first = testCubeProvider(options);
+    const original = runtime.create.bind(runtime);
+    const create = vi.spyOn(runtime, "create").mockImplementationOnce(async (input) => {
+      await original(input);
+      throw new Error("create reply lost");
+    });
+    const spec = {
+      activationId: ACTIVATION_ID,
+      assignment,
+      environment,
+      workspaceSeed: { kind: "sample_java" as const },
+      policy: first.defaultPolicy,
+    };
+    const recordCreated = vi.fn(
+      async (_receipt: import("../src/sandbox-provider.ts").SandboxCreationReceipt) => {},
+    );
+    await expect(first.create(spec, { recordCreated })).rejects.toMatchObject({
+      absenceConfirmed: false,
+    });
+    expect(recordCreated).not.toHaveBeenCalled();
+    await first.close();
+    const next = testCubeProvider(options);
+    const recovered = await next.recoverCreation(spec, { recordCreated });
+    expect(recovered?.runtimeName).toBe("cube-sandbox-1");
+    expect(create).toHaveBeenCalledOnce();
+    expect(recordCreated).toHaveBeenCalled();
+    await next.destroy(recovered!);
+    await next.close();
+  });
+
+  it("does not guess or repeat creation when native lookup is empty or ambiguous", async () => {
+    const runtime = new FakeCubeRuntimeClient();
+    const provider = testCubeProvider({
+      templateId: "pi-cloud-tool-v1",
+      imageRevision: "development",
+      webProxy: WEB_PROXY,
+      runtimeClient: runtime,
+      workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
+    });
+    const spec = {
+      activationId: ACTIVATION_ID,
+      assignment,
+      environment,
+      workspaceSeed: { kind: "sample_java" as const },
+      policy: provider.defaultPolicy,
+    };
+    const context = { recordCreated: vi.fn(async () => {}) };
+    expect(await provider.recoverCreation(spec, context)).toBeUndefined();
+    expect(runtime.creates).toHaveLength(0);
+    await provider.create(spec, context);
+    const one = [...runtime.instances.values()][0]!;
+    runtime.instances.set("provider-duplicate", { ...one, sandboxId: "provider-duplicate" });
+    context.recordCreated.mockClear();
+    expect(await provider.recoverCreation(spec, context)).toBeUndefined();
+    expect(context.recordCreated).not.toHaveBeenCalled();
+    expect(runtime.creates).toHaveLength(1);
+    await provider.close();
+  });
+
+  it("stops before Guest work if the original receipt cannot be persisted", async () => {
+    const runtime = new FakeCubeRuntimeClient();
+    const provider = testCubeProvider({
+      templateId: "pi-cloud-tool-v1",
+      imageRevision: "development",
+      webProxy: WEB_PROXY,
+      runtimeClient: runtime,
+      workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
+    });
+    await expect(
+      provider.create(
+        {
+          activationId: ACTIVATION_ID,
+          assignment,
+          environment,
+          workspaceSeed: { kind: "sample_java" },
+          policy: provider.defaultPolicy,
+        },
+        {
+          recordCreated: async () => {
+            throw new Error("owner changed");
+          },
+        },
+      ),
+    ).rejects.toThrow("owner changed");
+    expect(runtime.requests).toHaveLength(0);
+    expect(runtime.destroyed).toHaveLength(0);
+    expect(runtime.instances.size).toBe(1);
+    await provider.close();
+  });
 });
 
-const creationAuthorization = { createBefore: Date.now() + 300_000 };
+const creationAuthorization = {
+  recordCreated: async (
+    _receipt: import("../src/sandbox-provider.ts").SandboxCreationReceipt,
+  ) => {},
+};

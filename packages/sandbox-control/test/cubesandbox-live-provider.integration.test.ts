@@ -359,10 +359,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
       const binding = await broker.create(createRequest(assigned, config.imageRevision));
       expect(binding.continuity).toBe("cold_restore");
       const failure = new Error("Owned test allocation closure did not reach Cube");
-      const allocation = runtime.allocation.bind(runtime);
-      vi.spyOn(runtime, "allocation").mockImplementation((id, createBefore, action) =>
-        action === "close" ? Promise.reject(failure) : allocation(id, createBefore, action),
-      );
+      vi.spyOn(runtime, "destroy").mockRejectedValue(failure);
       setState.mockClear();
       await expect(
         broker.release({

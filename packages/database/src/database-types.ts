@@ -246,8 +246,8 @@ export interface SandboxControlInstanceTable {
 }
 
 export interface SandboxControlWorkspaceRuntimeTable {
-  allocation_protocol: GeneratedNullable<1>;
-  creation_not_after: NullableTimestamp;
+  provider_create_started_at: NullableTimestamp;
+  provider_receipt: GeneratedNullable<string>;
   creation_spec: GeneratedNullable<Record<string, unknown>>;
   allocation_closed: GeneratedBoolean;
   sandbox_profile_key: Generated<SandboxProfileKey>;
@@ -319,8 +319,8 @@ export interface SandboxHttpServiceTable {
 }
 
 export interface WorkspaceTerminalSessionTable {
-  allocation_protocol: GeneratedNullable<1>;
-  creation_not_after: NullableTimestamp;
+  provider_create_started_at: NullableTimestamp;
+  provider_receipt: GeneratedNullable<string>;
   creation_spec: GeneratedNullable<Record<string, unknown>>;
   allocation_closed: GeneratedBoolean;
   terminal_id: string;
@@ -346,8 +346,8 @@ export interface DevelopmentEnvironmentTable {
   intent_revision: GeneratedInt8;
   allocation_id: Generated<string>;
   allocation_absent: GeneratedBoolean;
-  allocation_protocol: GeneratedNullable<1>;
-  creation_not_after: NullableTimestamp;
+  provider_create_started_at: NullableTimestamp;
+  provider_receipt: GeneratedNullable<string>;
   creation_spec: GeneratedNullable<Record<string, unknown>>;
   allocation_closed: GeneratedBoolean;
   id: string;

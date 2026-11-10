@@ -20,10 +20,9 @@ import type { WorkspaceFileTransferRequest } from "@pi-cloud/protocol";
 import { CompiledQuery } from "kysely";
 import { workspaceFileTransferGrantQuery } from "./workspace-file-transfer-grant.ts";
 import {
-  SANDBOX_CREATION_WINDOW_MS,
   type SandboxHandle,
   type SandboxCreateSpec,
-  type SandboxAllocationAuthorization,
+  type SandboxCreationReceipt,
 } from "./sandbox-provider.ts";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { setTimeout as delay } from "node:timers/promises";
@@ -137,20 +136,17 @@ export type RecoverableWorkspaceRuntime = Readonly<{
 
 export type AllocationRecovery = Readonly<{
   spec: SandboxCreateSpec;
-  authorization: SandboxAllocationAuthorization;
+  receipt?: string;
 }>;
-export type AllocationClosure =
-  | { status: "never_issued" }
-  | { status: "legacy" }
-  | { status: "authorized"; authorization: SandboxAllocationAuthorization };
+export type AllocationClosure = { status: "never_issued" } | { status: "issued"; receipt?: string };
 export type AllocationKind = "workspace" | "development_environment" | "terminal";
 
 function allocationRecovery(
   id: string,
   spec: Record<string, unknown> | null,
-  deadline: Date | null,
+  receipt: string | null,
 ): AllocationRecovery | undefined {
-  if (spec === null || deadline === null) return undefined;
+  if (spec === null) return undefined;
   if (
     spec.activationId !== id ||
     !spec.assignment ||
@@ -161,7 +157,7 @@ function allocationRecovery(
     throw new Error("Stored allocation identity is invalid");
   return {
     spec: spec as SandboxCreateSpec,
-    authorization: { createBefore: new Date(deadline).valueOf() },
+    ...(receipt ? { receipt } : {}),
   };
 }
 
@@ -169,7 +165,8 @@ export interface WorkspaceRuntimeStateRepository {
   beginCreation(
     spec: SandboxCreateSpec,
     kind?: AllocationKind,
-  ): Promise<SandboxAllocationAuthorization>;
+  ): Promise<{ fresh: boolean; receipt?: string }>;
+  recordCreation(id: string, kind: AllocationKind, receipt: SandboxCreationReceipt): Promise<void>;
   closeAllocation(id: string, kind: AllocationKind): Promise<AllocationClosure>;
   claimRecoverableWorkspaceRuntimes(
     limit: number,
@@ -497,93 +494,123 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     }
   }
 
+  #allocationLocation(kind: AllocationKind) {
+    return {
+      table: sql.table(
+        kind === "terminal"
+          ? "workspace_terminal_sessions"
+          : kind === "development_environment"
+            ? "development_environments"
+            : "workspace_runtimes",
+      ),
+      key: sql.ref(
+        kind === "terminal"
+          ? "terminal_id"
+          : kind === "development_environment"
+            ? "allocation_id"
+            : "workspace_runtime_id",
+      ),
+    };
+  }
+
   async beginCreation(
     spec: SandboxCreateSpec,
     kind: AllocationKind = spec.lifetime === "development_environment"
       ? "development_environment"
       : "workspace",
-  ): Promise<SandboxAllocationAuthorization> {
+  ): Promise<{ fresh: boolean; receipt?: string }> {
     const encoded = JSON.stringify(spec);
     if (Buffer.byteLength(encoded) > 256 * 1024)
       throw new WorkspaceRuntimeStateRepositoryError(
         "state_conflict",
-        "Allocation specification exceeds its transport budget",
+        "Creation specification exceeds its transport budget",
       );
-    const table = sql.table(
-      kind === "terminal"
-        ? "workspace_terminal_sessions"
-        : kind === "development_environment"
-          ? "development_environments"
-          : "workspace_runtimes",
-    );
-    const key = sql.ref(
-      kind === "terminal"
-        ? "terminal_id"
-        : kind === "development_environment"
-          ? "allocation_id"
-          : "workspace_runtime_id",
-    );
+    const { table, key } = this.#allocationLocation(kind);
     return this.#ownedTransaction(async (tx) => {
       const { rows } = await sql<{
-        creation_spec: Record<string, unknown>;
-        creation_not_after: Date;
-      }>`
-        update ${table} set creation_spec=coalesce(creation_spec,${encoded}::jsonb),
-          creation_not_after=coalesce(creation_not_after,clock_timestamp()+${SANDBOX_CREATION_WINDOW_MS}*interval '1 millisecond'),
-          updated_at=clock_timestamp()
+        creation_spec: Record<string, unknown> | null;
+        provider_create_started_at: Date | null;
+        provider_receipt: string | null;
+      }>`select creation_spec,provider_create_started_at,provider_receipt from ${table}
         where ${key}=${spec.activationId}::uuid and tenant_id=${spec.assignment.tenantId}::uuid
           and workspace_id=${spec.assignment.workspaceId}::uuid and owner_instance_id=${this.#instanceId}::uuid
-          and sandbox_domain_id=${this.#sandboxDomainId} and allocation_protocol=1 and not allocation_closed
+          and sandbox_domain_id=${this.#sandboxDomainId} and not allocation_closed
           and state in ('reserved','materializing','provisioning','unknown','reconciling')
           and exists(select 1 from workspaces w where w.id=${spec.assignment.workspaceId}::uuid
             and w.tenant_id=${spec.assignment.tenantId}::uuid and w.deleted_at is null)
-        returning creation_spec,creation_not_after`.execute(tx);
+        for update`.execute(tx);
       const row = rows[0];
-      if (!row || !isDeepStrictEqual(row.creation_spec, JSON.parse(encoded)))
+      if (!row || (row.creation_spec && !isDeepStrictEqual(row.creation_spec, JSON.parse(encoded))))
         throw new WorkspaceRuntimeStateRepositoryError(
           "state_conflict",
-          "Allocation is closed, changed or not owned",
+          "Creation is closed, changed or not owned",
         );
-      return { createBefore: new Date(row.creation_not_after).valueOf() };
+      const fresh = row.provider_create_started_at === null;
+      if (fresh)
+        await sql`update ${table} set creation_spec=${encoded}::jsonb,
+        provider_create_started_at=clock_timestamp(), updated_at=clock_timestamp()
+        where ${key}=${spec.activationId}::uuid`.execute(tx);
+      return { fresh, ...(row.provider_receipt ? { receipt: row.provider_receipt } : {}) };
+    });
+  }
+
+  async recordCreation(
+    id: string,
+    kind: AllocationKind,
+    receipt: SandboxCreationReceipt,
+  ): Promise<void> {
+    if (
+      !receipt.runtimeName ||
+      receipt.runtimeName.length > 256 ||
+      !receipt.runtimeId ||
+      Buffer.byteLength(receipt.capsule) < 64 ||
+      Buffer.byteLength(receipt.capsule) > 65536
+    )
+      throw new WorkspaceRuntimeStateRepositoryError(
+        "state_conflict",
+        "Invalid native creation receipt",
+      );
+    const { table, key } = this.#allocationLocation(kind);
+    await this.#ownedTransaction(async (tx) => {
+      // Preserve factual identity even when retirement was requested while the
+      // provider call was in flight. Only the separate ready transition admits Tools.
+      const result = await sql`update ${table} set runtime_id=${receipt.runtimeId}::uuid,
+        runtime_name=${receipt.runtimeName}, provider_receipt=${receipt.capsule}, updated_at=clock_timestamp()
+        where ${key}=${id}::uuid and owner_instance_id=${this.#instanceId}::uuid
+          and sandbox_domain_id=${this.#sandboxDomainId} and state<>'released'
+          and provider_create_started_at is not null
+          and (runtime_name is null or runtime_name=${receipt.runtimeName})
+          returning ${key}`.execute(tx);
+      if (result.rows.length !== 1)
+        throw new WorkspaceRuntimeStateRepositoryError(
+          "ownership_lost",
+          "Creation receipt is no longer owned or changed identity",
+        );
     });
   }
 
   async closeAllocation(id: string, kind: AllocationKind): Promise<AllocationClosure> {
-    const table = sql.table(
-      kind === "terminal"
-        ? "workspace_terminal_sessions"
-        : kind === "development_environment"
-          ? "development_environments"
-          : "workspace_runtimes",
-    );
-    const key = sql.ref(
-      kind === "terminal"
-        ? "terminal_id"
-        : kind === "development_environment"
-          ? "allocation_id"
-          : "workspace_runtime_id",
-    );
+    const { table, key } = this.#allocationLocation(kind);
     return this.#ownedTransaction(async (tx) => {
       const { rows } = await sql<{
-        allocation_protocol: number | null;
-        creation_not_after: Date | null;
+        provider_create_started_at: Date | null;
+        provider_receipt: string | null;
       }>`
         update ${table} set allocation_closed=true,
           state=case when state='released' then state else ${kind === "development_environment" ? sql`case when desired_state='released' then 'releasing' else 'reconciling' end` : sql`'cleaning'`} end,
           updated_at=clock_timestamp()
         where ${key}=${id}::uuid and owner_instance_id=${this.#instanceId}::uuid and sandbox_domain_id=${this.#sandboxDomainId}
-        returning allocation_protocol,creation_not_after`.execute(tx);
+        returning provider_create_started_at,provider_receipt`.execute(tx);
       const row = rows[0];
       if (!row)
         throw new WorkspaceRuntimeStateRepositoryError(
           "ownership_lost",
-          "Allocation close is not owned",
+          "Resource close is not owned",
         );
-      if (row.allocation_protocol !== 1) return { status: "legacy" };
-      if (!row.creation_not_after) return { status: "never_issued" };
+      if (!row.provider_create_started_at) return { status: "never_issued" };
       return {
-        status: "authorized",
-        authorization: { createBefore: new Date(row.creation_not_after).valueOf() },
+        status: "issued",
+        ...(row.provider_receipt ? { receipt: row.provider_receipt } : {}),
       };
     });
   }
@@ -1241,8 +1268,8 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
             : { agent_activation_id: detail.agentActive ? identity.allocationId : null }),
           ...(state === "ready" || state === "reconciling" ? {} : { terminal_active: false }),
           ...(state === "released" ? { owner_instance_id: null, owner_base_url: null } : {}),
-          ...(state === "released" || state === "failed"
-            ? { runtime_id: null, runtime_name: null }
+          ...(state === "released"
+            ? { runtime_id: null, runtime_name: null, provider_receipt: null }
             : detail.handle === undefined
               ? {}
               : {
@@ -1253,7 +1280,10 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
             ? { runtime_capsule: null }
             : detail.runtimeCapsule === undefined
               ? {}
-              : { runtime_capsule: detail.runtimeCapsule }),
+              : {
+                  runtime_capsule: detail.runtimeCapsule,
+                  ...(detail.runtimeCapsule ? { provider_receipt: null } : {}),
+                }),
           failure_code: failureCode(detail.failureCode),
           released_at: state === "released" ? now : null,
           updated_at: now,
@@ -1300,7 +1330,10 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
               }),
           ...(detail.runtimeCapsule === undefined
             ? {}
-            : { runtime_capsule: detail.runtimeCapsule }),
+            : {
+                runtime_capsule: detail.runtimeCapsule,
+                ...(detail.runtimeCapsule ? { provider_receipt: null } : {}),
+              }),
           updated_at: now,
         })
         .where("id", "=", environmentId)
@@ -1359,6 +1392,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .updateTable("development_environments")
         .set({
           allocation_absent: true,
+          provider_receipt: null,
           runtime_id: null,
           runtime_name: null,
           runtime_capsule: null,
@@ -1444,7 +1478,8 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           allocation_closed: false,
           allocation_absent: false,
           creation_spec: spec as unknown as Record<string, unknown>,
-          creation_not_after: sql<Date>`clock_timestamp()+${SANDBOX_CREATION_WINDOW_MS}*interval '1 millisecond'`,
+          provider_create_started_at: null,
+          provider_receipt: null,
           runtime_id: null,
           runtime_name: null,
           runtime_capsule: null,
@@ -1502,7 +1537,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           "runtime.runtime_id",
           "runtime.sandbox_profile_key",
           "runtime.creation_spec",
-          "runtime.creation_not_after",
+          "runtime.provider_receipt",
         ])
         .where("runtime.sandbox_domain_id", "=", this.#sandboxDomainId)
         .where("runtime.allocation_closed", "=", false)
@@ -1560,12 +1595,12 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         activationId: row.workspace_runtime_id,
         ...(row.runtime_id ? { runtimeId: row.runtime_id } : {}),
         ...(row.runtime_capsule ? { runtimeCapsule: row.runtime_capsule } : {}),
-        ...(row.creation_spec && row.creation_not_after
+        ...(row.creation_spec
           ? {
               creation: allocationRecovery(
                 row.workspace_runtime_id,
                 row.creation_spec,
-                row.creation_not_after,
+                row.provider_receipt,
               )!,
             }
           : {}),
@@ -1619,7 +1654,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           "environment.state",
           "environment.runtime_capsule",
           "environment.creation_spec",
-          "environment.creation_not_after",
+          "environment.provider_receipt",
         ])
         .where("environment.sandbox_domain_id", "=", this.#sandboxDomainId)
         .where((eb) =>
@@ -1709,12 +1744,12 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
             recipeSha256: row.configRecipeSha256,
           }),
           ...(row.runtime_capsule ? { runtimeCapsule: row.runtime_capsule } : {}),
-          ...(row.creation_spec && row.creation_not_after
+          ...(row.creation_spec
             ? {
                 creation: allocationRecovery(
                   row.allocation_id,
                   row.creation_spec,
-                  row.creation_not_after,
+                  row.provider_receipt,
                 )!,
               }
             : {}),
@@ -1863,12 +1898,22 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .set({
           state,
           ...(state === "released"
-            ? { runtime_id: null, runtime_name: null, runtime_capsule: null }
+            ? {
+                runtime_id: null,
+                runtime_name: null,
+                runtime_capsule: null,
+                provider_receipt: null,
+              }
             : {
                 ...(detail.handle
                   ? { runtime_id: detail.handle.runtimeId, runtime_name: detail.handle.runtimeName }
                   : {}),
-                ...(detail.runtimeCapsule ? { runtime_capsule: detail.runtimeCapsule } : {}),
+                ...(detail.runtimeCapsule
+                  ? {
+                      runtime_capsule: detail.runtimeCapsule,
+                      ...(detail.runtimeCapsule ? { provider_receipt: null } : {}),
+                    }
+                  : {}),
               }),
           failure_code: failureCode(detail.failureCode),
           updated_at: now,

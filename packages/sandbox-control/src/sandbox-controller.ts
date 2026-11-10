@@ -518,14 +518,41 @@ export class SandboxController {
   async #createPhysical(spec: SandboxCreateSpec, kind?: AllocationKind): Promise<SandboxHandle> {
     if (spec.lifetime !== "development_environment")
       spec = { ...spec, retentionWindowMs: spec.retentionWindowMs ?? this.#elasticRetentionMs };
-    const authorization = await this.#stateRepository.beginCreation(spec, kind);
+    const resourceKind =
+      kind ??
+      (spec.lifetime === "development_environment" ? "development_environment" : "workspace");
+    const admission = await this.#stateRepository.beginCreation(spec, resourceKind);
+    let receiptRecorded = false;
+    const context = {
+      recordCreated: async (receipt: import("./sandbox-provider.ts").SandboxCreationReceipt) => {
+        await this.#stateRepository.recordCreation(spec.activationId, resourceKind, receipt);
+        receiptRecorded = true;
+      },
+    };
     try {
-      return await this.#provider.create(spec, authorization);
+      const handle = admission.fresh
+        ? await this.#provider.create(spec, context)
+        : await this.#provider.recoverCreation(spec, context, admission.receipt);
+      if (!handle)
+        throw new SandboxCreationError(
+          new SandboxControlError(
+            "sandbox_creation_unconfirmed",
+            "The original sandbox creation is still unconfirmed; it was not repeated",
+            true,
+          ),
+          false,
+        );
+      return handle;
     } catch (error) {
+      if (error instanceof SandboxCreationError && error.absenceConfirmed) {
+        // A recovery-time local refusal says nothing about the original POST.
+        if (!admission.fresh || receiptRecorded) throw new SandboxCreationError(error, false);
+        await this.#stateRepository.closeAllocation(spec.activationId, resourceKind);
+        throw error;
+      }
       if (
-        Date.now() >= authorization.createBefore ||
-        (error instanceof SandboxCreationError &&
-          (error.absenceConfirmed || error.code === "environment_preflight_mismatch"))
+        error instanceof SandboxCreationError &&
+        error.code === "environment_preflight_mismatch"
       ) {
         let absent = false;
         try {
@@ -567,17 +594,8 @@ export class SandboxController {
     const intent = await this.#stateRepository.closeAllocation(id, kind);
     if (kind !== "terminal") await this.#bindings.confirmPhysicalClosure(id);
     if (intent.status === "never_issued" && !handle && !capsule) return;
-    if (intent.status !== "authorized")
-      throw new SandboxControlError(
-        "cubesandbox_allocation_identity_unavailable",
-        "Allocation requires independent physical verification",
-        false,
-      );
     if (handle) {
-      if (
-        handle.activationId !== id ||
-        handle.allocation.createBefore !== intent.authorization.createBefore
-      )
+      if (handle.activationId !== id)
         throw new SandboxControlError(
           "cubesandbox_allocation_identity_unavailable",
           "Allocation handle changed",
@@ -585,7 +603,15 @@ export class SandboxController {
         );
       await this.#provider.destroy(handle);
     } else if (capsule) await this.#provider.destroyPersistentCapsule(capsule, id, assignment);
-    else await this.#provider.destroyRuntime(id, assignment, intent.authorization);
+    else
+      await this.#provider.destroyRuntime(
+        id,
+        assignment,
+        {
+          recordCreated: (receipt) => this.#stateRepository.recordCreation(id, kind, receipt),
+        },
+        intent.status === "issued" ? intent.receipt : undefined,
+      );
   }
 
   async recoverPersistentDevelopmentEnvironments(): Promise<number> {
@@ -682,7 +708,7 @@ export class SandboxController {
           : candidate.creation
             ? await this.#provider.observeAllocation?.(
                 identity.allocationId,
-                candidate.creation.authorization,
+                candidate.creation.receipt,
                 candidate.runtimeCapsule,
               )
             : undefined;
@@ -690,18 +716,7 @@ export class SandboxController {
         observation?.presence === "absent" ||
         observation?.execution === "unsafe" ||
         (observation?.presence === "present" && ["stopped", "error"].includes(observation.state));
-      const unstartedExpired =
-        !candidate.runtimeCapsule &&
-        !handle &&
-        !observation &&
-        candidate.creation &&
-        Date.now() >= candidate.creation.authorization.createBefore;
-      if (
-        identity.allocationClosed ||
-        candidate.allocationAbsent ||
-        physicalLost ||
-        unstartedExpired
-      ) {
+      if (identity.allocationClosed || candidate.allocationAbsent || physicalLost) {
         await this.#stateRepository.setDevelopmentEnvironmentState(identity, "reconciling");
         await this.#retireDevelopmentAllocation(identity, handle, candidate.runtimeCapsule);
         if (identity.desiredState !== "running") {
@@ -1314,7 +1329,14 @@ export class SandboxController {
           absent = false;
         }
       }
-      if (admitted && absent) this.#admission.release(request.allocationId);
+      if (admitted && absent) {
+        await this.#stateRepository.closeAllocation(
+          request.allocationId,
+          "development_environment",
+        );
+        await this.#stateRepository.confirmDevelopmentEnvironmentAbsent(reservation);
+        this.#admission.release(request.allocationId);
+      }
       const capsule =
         !absent && handle
           ? await this.#persistentCapsule(handle).catch(() => undefined)

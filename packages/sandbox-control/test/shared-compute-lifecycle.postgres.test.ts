@@ -424,9 +424,8 @@ async function controllerFixture(f: Awaited<ReturnType<typeof fixture>>) {
       throw new Error("Physical inspection is outside this controlled fixture");
     },
     async close() {},
-    async create(spec, authorization) {
+    async create(spec) {
       const handle: SandboxHandle = {
-        allocation: authorization,
         providerApiVersion: 1,
         providerId: "cubesandbox",
         activationId: spec.activationId,
@@ -444,6 +443,9 @@ async function controllerFixture(f: Awaited<ReturnType<typeof fixture>>) {
     async destroy(handle) {
       closed.push(handle.activationId);
       physical.delete(handle.activationId);
+    },
+    async recoverCreation(spec) {
+      return physical.get(spec.activationId);
     },
     async destroyRuntime(id) {
       closed.push(id);
