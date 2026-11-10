@@ -1,7 +1,7 @@
 # Workspace files, continuation and local drafts
 
 [ADR-0295](adr/0295-workspace-file-transfers.md),
-[Issue #3](https://github.com/cookerpapa/pi-cloud/issues/3).
+[Issue #3](https://github.com/cookerpapa/pi-managed-agents/issues/3).
 BACKLOG records implementation and publication separately.
 
 ## Interaction and retention

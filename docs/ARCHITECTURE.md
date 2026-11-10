@@ -1,6 +1,6 @@
 # Architecture
 
-PiCloud hosts Pi Durable 1.0 in trusted Workers and runs untrusted file/shell
+Pi Managed Agents hosts Pi Durable 1.0 in trusted Workers and runs untrusted file/shell
 operations in separate CubeSandbox KVM guests. The Control Plane never hosts
 the Pi Harness. Conversations and retained attachments outlive a particular Worker
 or Workspace; Workspace files belong to persistent Cube Volumes.

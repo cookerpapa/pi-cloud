@@ -39,7 +39,7 @@ remains the baseline for ADR-0306.
 
 [ADR-0298](0298-independent-metering-receiver.md) selects an independent receipt
 receiver with shared PG accounting authority. Implementation is delivered in
-[Issue #5](https://github.com/cookerpapa/pi-cloud/issues/5).
+[Issue #5](https://github.com/cookerpapa/pi-managed-agents/issues/5).
 
 [ADR-0297](0297-model-metering-receipts-and-statements.md) is accepted for
 implementation: provider-side recoverable receipts, PG usage/rate authority and
@@ -58,7 +58,7 @@ Large-file/browser/model and recovery checks passed; [delivery](../reports/works
 [ADR-0294](0294-retained-user-attachments.md) is deployed as `retained-attachments-20261104`:
 automatic editable long-paste attachments and retained user originals using the
 existing S3/PG reference authority. Source and real Luna/Cube/browser/recovery checks passed.
-[Issue #2](https://github.com/cookerpapa/pi-cloud/issues/2).
+[Issue #2](https://github.com/cookerpapa/pi-managed-agents/issues/2).
 
 [ADR-0293](0293-cloud-skill-runtime.md) is deployed as
 `cloud-skills-20261101-r5`: early catalog selection, native prompt sections,

@@ -6,7 +6,7 @@ import "./product.css";
 import { loadWebConfiguration } from "./web-configuration.ts";
 
 const root = document.getElementById("root");
-if (root === null) throw new Error("PiCloud root element is missing");
+if (root === null) throw new Error("Pi Managed Agents root element is missing");
 
 const renderer = createRoot(root);
 void loadWebConfiguration().then(
@@ -19,10 +19,10 @@ void loadWebConfiguration().then(
       </StrictMode>,
     ),
   (error: unknown) => {
-    console.error("PiCloud Web configuration could not be loaded", error);
+    console.error("Pi Managed Agents Web configuration could not be loaded", error);
     renderer.render(
       <main role="alert">
-        PiCloud Web configuration is unavailable. Reload after checking the deployment
+        Pi Managed Agents Web configuration is unavailable. Reload after checking the deployment
         configuration.
       </main>,
     );

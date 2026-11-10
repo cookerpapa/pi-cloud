@@ -14,6 +14,7 @@ export type UiLanguage = "zh-CN" | "en-US";
 const STORAGE_KEY = "pi-cloud:ui-language";
 
 const zhCN = {
+  "app.name": "Pi Managed Agents",
   "schedule.title": "定时任务",
   "schedule.origin": "定时任务",
   "schedule.name": "名称",
@@ -143,7 +144,7 @@ const zhCN = {
   "auth.passwordPlaceholder": "至少 10 个字符",
   "auth.pleaseWait": "请稍候…",
   "auth.registerContinue": "注册并继续",
-  "admin.title": "PiCloud 管理后台",
+  "admin.title": "Pi Managed Agents 管理后台",
   "admin.subtitle": "平台运行配置",
   "admin.administration": "ADMINISTRATION",
   "admin.runtimeConfiguration": "运行配置",
@@ -163,7 +164,7 @@ const zhCN = {
   "admin.applyProxy": "应用代理配置",
   "admin.proxyRequired": "启用公网代理前需要填写上游代理地址。",
   "admin.services": "组件管理",
-  "admin.servicesDescription": "PiCloud 只提供统一入口，各组件继续使用自己的原生管理页面。",
+  "admin.servicesDescription": "Pi Managed Agents 提供统一入口，各组件使用自己的原生管理页面。",
   "admin.providerGateway": "Provider Gateway",
   "admin.providerGatewayDescription": "管理订阅账号、API Key、模型额度、冷却和会话亲和。",
   "admin.grafanaDescription": "查看平台 Dashboard 与资源趋势。",
@@ -574,6 +575,7 @@ const zhCN = {
 export type UiTextKey = keyof typeof zhCN;
 
 const enUS: Record<UiTextKey, string> = {
+  "app.name": "Pi Managed Agents",
   "schedule.title": "Scheduled tasks",
   "schedule.origin": "Scheduled task",
   "schedule.name": "Name",
@@ -704,7 +706,7 @@ const enUS: Record<UiTextKey, string> = {
   "auth.passwordPlaceholder": "At least 10 characters",
   "auth.pleaseWait": "Please wait…",
   "auth.registerContinue": "Register and continue",
-  "admin.title": "PiCloud Administration",
+  "admin.title": "Pi Managed Agents Administration",
   "admin.subtitle": "Platform runtime settings",
   "admin.administration": "ADMINISTRATION",
   "admin.runtimeConfiguration": "Runtime configuration",
@@ -727,7 +729,7 @@ const enUS: Record<UiTextKey, string> = {
   "admin.proxyRequired": "Enter an upstream proxy before enabling the public proxy.",
   "admin.services": "Component management",
   "admin.servicesDescription":
-    "PiCloud provides one landing page while each component keeps its native management interface.",
+    "Pi Managed Agents provides one landing page while each component keeps its native management interface.",
   "admin.providerGateway": "Provider Gateway",
   "admin.providerGatewayDescription":
     "Manage subscriptions, API keys, model quota, cooldown, and session affinity.",
@@ -898,7 +900,7 @@ const enUS: Record<UiTextKey, string> = {
     "The queue changed or processing started. Review the refreshed queue; your draft has been kept.",
   "queue.draftKept": "This message is no longer in the displayed list. Your draft has been kept.",
   "queue.restoreDraft": "Return to composer",
-  "chat.promptPlaceholder": "Message PiCloud",
+  "chat.promptPlaceholder": "Message Pi Managed Agents",
   "chat.steer": "Steer",
   "chat.stop": "Stop",
   "chat.send": "Send",

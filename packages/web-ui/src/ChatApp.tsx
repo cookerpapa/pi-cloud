@@ -1952,9 +1952,9 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
         ) : null}
         <div className="product-panel-content product-sidebar-content">
           <div className="product-sidebar-actions">
-            <div className="product-sidebar-brand" aria-label="PiCloud">
+            <div className="product-sidebar-brand" aria-label={t("app.name")}>
               <span aria-hidden="true">π</span>
-              <strong>PiCloud</strong>
+              <strong>{t("app.name")}</strong>
             </div>
             <button
               className="product-new-chat"

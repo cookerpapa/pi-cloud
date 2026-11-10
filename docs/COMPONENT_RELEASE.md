@@ -202,7 +202,8 @@ No Tool replay or model substitution is introduced.
 
 ## Presentation-only Web
 
-TSX/CSS presentation changes, plus the explicitly reviewed `session-view.ts`,
+TSX/CSS presentation changes, the static `packages/web-ui/index.html` entry page,
+plus the explicitly reviewed `session-view.ts`,
 `conversation-presentation.ts`, `virtual-conversation-rows.ts`,
 `composer-submission.ts` and `submission-presentation.ts` browser helpers,
 can replace just the Web image when the installed

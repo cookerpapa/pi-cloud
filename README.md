@@ -1,11 +1,12 @@
-# PiCloud
+# Pi Managed Agents
 
-A self-hosted cloud runtime for coding agents, built around Pi Durable 1.0's
-public embedded SDK. Agent loops run in trusted Workers; file and shell tools
+Self-hosted infrastructure for managed agents, powered by Pi.
+
+Built around Pi Durable 1.0's public embedded SDK. Coding-agent loops run in trusted Workers; file and shell tools
 run in separate CubeSandbox KVM guests. Conversations and retained attachments survive
 Worker replacement and Workspace changes.
 
-PiCloud is a personal infrastructure project with integration and failure-recovery
+Pi Managed Agents is a personal infrastructure project with integration and failure-recovery
 acceptance on a single-host K3s deployment. It has not been validated at fleet
 scale or as a highly available production service.
 
@@ -152,6 +153,8 @@ at least 16 GiB RAM and 40 GiB free disk. The maintained setup targets private
 networks. All runtime services run in K3s; Docker builds the images.
 
 ```bash
+git clone https://github.com/cookerpapa/pi-managed-agents.git
+cd pi-managed-agents
 ./install.sh --check-only
 ./install.sh
 ```
@@ -220,6 +223,10 @@ native crash recovery and image preservation on the maintained single-host setup
 the version before the native Durable migration. Retired architecture experiments
 are historical references, not supported runtime alternatives.
 
+The public project name is **Pi Managed Agents** (formerly PiCloud). Existing
+package scopes, protocol names and deployment resource identifiers use `pi-cloud`;
+these are stable technical identities, not separate product editions.
+
 ```bash
 npm ci
 npm run check
@@ -242,6 +249,6 @@ are preserved; obsolete development compatibility paths are removed.
 
 ## License
 
-PiCloud is licensed under the [MIT License](LICENSE).
+Pi Managed Agents is licensed under the [MIT License](LICENSE).
 Third-party components and files with explicit license declarations retain their
 own terms; see [third-party notices](THIRD_PARTY_NOTICES.md).

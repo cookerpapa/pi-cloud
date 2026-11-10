@@ -1,4 +1,9 @@
-# PiCloud collaboration instructions
+# Pi Managed Agents collaboration instructions
+
+Public project name: **Pi Managed Agents**. Repository: `cookerpapa/pi-managed-agents`.
+Existing `pi-cloud`, `PiCloud` and `PI_CLOUD_*` package, protocol and deployment
+identifiers retain their technical meaning. Branding changes do not migrate those
+identities or alter the runtime rules below.
 
 ## Mission
 

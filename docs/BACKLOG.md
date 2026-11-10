@@ -1,5 +1,12 @@
 # Maintained backlog
 
+## Pi Managed Agents identity — publishing
+
+- [x] Adopt Pi Managed Agents in the project introduction and Web product chrome.
+- [x] Keep existing package/protocol/resource identities documented as technical names.
+- [x] Rename the GitHub repository to `pi-managed-agents` and update the local remote.
+- [ ] Verify browser layout and publish only the Web image; record live acceptance.
+
 ## Runtime decoupling and continuation — deployed
 
 - [x] #17: independent public Session API and sole execution Projector.
@@ -39,7 +46,7 @@ The final combination is application Helm 151 / infrastructure Helm 116 / schema
 real Cube/preview/Workspace recovery, five native recovery cases, queue/retained
 images and thirteen child-Agent turns passed. [Delivery, resolved failures and
 limits](reports/execution-tools-20261108.md). Existing
-[#11](https://github.com/cookerpapa/pi-cloud/issues/11) PG maintenance/HA work remains
+[#11](https://github.com/cookerpapa/pi-managed-agents/issues/11) PG maintenance/HA work remains
 separate. The deferred 131 MiB cold model request was not rerun.
 
 ## Runtime separation and resource accounting — deployed
@@ -87,7 +94,7 @@ Operational follow-ups from this release:
 ## Provider v8 and model accounting — deployed
 
 - [x] Record isolated v8.0.57 compatibility evidence and phased
-      [Issue #4](https://github.com/cookerpapa/pi-cloud/issues/4).
+      [Issue #4](https://github.com/cookerpapa/pi-managed-agents/issues/4).
 - [x] Record [ADR-0296](adr/0296-provider-v8-and-model-accounting-boundary.md).
 - [x] Adapt the fixed provider and existing native Responses/continuation/image
       behavior; migrate configuration and management calls to v8.
@@ -123,7 +130,7 @@ Production tariffs, payment collection and automatic top-up remain separate work
 
 - [x] Confirm explicit retention in the composer and Workspace file panel; record
       [ADR-0295](adr/0295-workspace-file-transfers.md) and
-      [Issue #3](https://github.com/cookerpapa/pi-cloud/issues/3).
+      [Issue #3](https://github.com/cookerpapa/pi-managed-agents/issues/3).
 - [x] Verify the official tus server/client restart and offset contract; pin
       stable versions and retain existing filesystem ownership.
 - [x] Implement transfer admission, bounded streaming, source-owned progress,
@@ -150,7 +157,7 @@ the deployed Workspace-only transfer slice.
 
 - [x] Record approved storage ownership, protocol and UX decisions in
       [ADR-0294](adr/0294-retained-user-attachments.md); open
-      [Issue #2](https://github.com/cookerpapa/pi-cloud/issues/2).
+      [Issue #2](https://github.com/cookerpapa/pi-managed-agents/issues/2).
 - [x] Generalize retained originals and preserve streaming, claims and collection.
 - [x] Carry references through admission, native queue edits, history and Forks.
 - [x] Add automatic long-paste files, local text editing, original viewing and reuse.

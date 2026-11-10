@@ -162,7 +162,8 @@ export function assertScopedSources(scope, files) {
           (file === workerBootstrapSource || file === "scripts/production-kubernetes.mjs")) ||
         (scope === "session-api" && sessionApiSource(file)) ||
         (scope === "web" &&
-          (/^packages\/web-ui\/src\/.*\.(tsx|css)$/.test(file) ||
+          (file === "packages/web-ui/index.html" ||
+            /^packages\/web-ui\/src\/.*\.(tsx|css)$/.test(file) ||
             [
               "session-view.ts",
               "conversation-presentation.ts",

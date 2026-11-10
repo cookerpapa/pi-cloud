@@ -68,7 +68,7 @@ export function AuthScreen({
         <LanguageSelect />
       </div>
       <section className="product-auth-brand">
-        <h1>PiCloud</h1>
+        <h1>{t("app.name")}</h1>
       </section>
       <form className="product-auth-card" onSubmit={(event) => void submit(event)}>
         {configuration?.local.login === false ? null : (

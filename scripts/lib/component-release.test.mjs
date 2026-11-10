@@ -303,6 +303,7 @@ it("catalog publishing changes only its JSON, with unrelated resource changes re
 it("Web presentation releases cannot alter the API, proxy, dependencies or other images", () => {
   expect(() =>
     assertScopedSources("web", [
+      "packages/web-ui/index.html",
       "packages/web-ui/src/RunStatus.tsx",
       "packages/web-ui/src/product.css",
       "scripts/production-kubernetes.mjs",
@@ -314,6 +315,7 @@ it("Web presentation releases cannot alter the API, proxy, dependencies or other
       "scripts/run-live-development-environment-check.mjs",
       "scripts/run-live-missing-directory-check.mjs",
       "AGENTS.md",
+      "eval/fault-cases.json",
     ]),
   ).not.toThrow();
   for (const file of [

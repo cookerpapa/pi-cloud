@@ -28,17 +28,17 @@ failed samples](reports/execution-tools-20261108.md), accompanies application He
 The six authorized slices are implemented and published as
 `runtime-accounting-20261107-r11` on schema 212:
 
-1. [#5](https://github.com/cookerpapa/pi-cloud/issues/5): independent receipt
+1. [#5](https://github.com/cookerpapa/pi-managed-agents/issues/5): independent receipt
    receiver and PG valuation, as selected in [ADR-0298](adr/0298-independent-metering-receiver.md).
-2. [#6](https://github.com/cookerpapa/pi-cloud/issues/6): fixed Cube v0.7.3 with
+2. [#6](https://github.com/cookerpapa/pi-managed-agents/issues/6): fixed Cube v0.7.3 with
    complete extension/release closure and preserved Workspace bytes.
-3. [#7](https://github.com/cookerpapa/pi-cloud/issues/7): periodic source compute
+3. [#7](https://github.com/cookerpapa/pi-managed-agents/issues/7): periodic source compute
    receipts and informational statements with explicit uncertainty.
-4. [#8](https://github.com/cookerpapa/pi-cloud/issues/8): enforced Workspace
+4. [#8](https://github.com/cookerpapa/pi-managed-agents/issues/8): enforced Workspace
    capacity, growth and persistent storage-retention metering.
-5. [#9](https://github.com/cookerpapa/pi-cloud/issues/9): separate Session
+5. [#9](https://github.com/cookerpapa/pi-managed-agents/issues/9): separate Session
    execution/read paths from resource management; one Projector group remains.
-6. [#10](https://github.com/cookerpapa/pi-cloud/issues/10): retain direct PG
+6. [#10](https://github.com/cookerpapa/pi-managed-agents/issues/10): retain direct PG
    renewal/local expiry, remove duplicate observation/renewal paths, and propagate
    known writer failure to the entire native family.
 
@@ -53,7 +53,7 @@ Real payment collection and production tariffs remain separate work.
 [ADR-0297](adr/0297-model-metering-receipts-and-statements.md) are delivered:
 provider v8, recoverable model receipts, versioned exact prices and informational
 statements. [Delivery and boundaries](reports/model-accounting-20261106.md).
-[Issue #4](https://github.com/cookerpapa/pi-cloud/issues/4) remains separate from
+[Issue #4](https://github.com/cookerpapa/pi-managed-agents/issues/4) remains separate from
 Sandbox/storage billing and real payment collection. Cube idle expiry is unchanged.
 
 ## Workspace file transfers — deployed
@@ -63,7 +63,7 @@ retention. Composer and Workspace inspector can upload working files without an
 S3 original, using standard tus continuation over existing Cube file adapters.
 Filesystem progress and bounded PG admission remain separate; native input and
 retained originals keep their existing semantics. Tracking:
-[Issue #3](https://github.com/cookerpapa/pi-cloud/issues/3).
+[Issue #3](https://github.com/cookerpapa/pi-managed-agents/issues/3).
 
 Matched schema 209 and the Web follow-up are live on Helm 144. Actual 5 GiB/1 GiB
 continuation, browser recovery, native/retained-input regressions and original-asset
@@ -72,7 +72,7 @@ preservation passed. [Delivery](reports/workspace-file-transfers-20261105.md).
 ## Retained user originals and long paste — deployed
 
 [ADR-0294](adr/0294-retained-user-attachments.md) and
-[Issue #2](https://github.com/cookerpapa/pi-cloud/issues/2) define automatic editable
+[Issue #2](https://github.com/cookerpapa/pi-managed-agents/issues/2) define automatic editable
 text attachments, original retention, native queue references and shared Fork
 lifetimes. Reuse existing attachment infrastructure; no Pi core changes or second
 input queue. Matched `retained-attachments-20261104` is deployed on schema 208.

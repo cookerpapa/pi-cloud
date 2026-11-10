@@ -1,4 +1,4 @@
-# Documentation map
+# Pi Managed Agents documentation
 
 Start with the current behavior, then follow the relevant decision or evidence.
 Release names and historical measurements belong to reports, not the component map.
