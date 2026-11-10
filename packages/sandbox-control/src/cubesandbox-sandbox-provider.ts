@@ -1695,7 +1695,6 @@ export class CubeSandboxProvider implements SandboxProvider {
     await this.#client.renewRetention(
       handle.activationId,
       handle.allocation.createBefore,
-      target.bootId,
       observedAt,
     );
   }
@@ -1716,7 +1715,6 @@ export class CubeSandboxProvider implements SandboxProvider {
             return this.#client.renewRetention(
               id,
               activation.handle.allocation.createBefore,
-              activation.executionTarget.bootId,
               Date.now(),
             );
           })

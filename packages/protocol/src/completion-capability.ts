@@ -22,10 +22,9 @@ export type ProbeCompletionContext = {
 export type ToolCompletionGrant = {
   operationId: string;
   expiresAt: number;
-  issuer: "guest" | "executor";
   context: ToolCompletionContext | ProbeCompletionContext;
 };
-const purpose = Buffer.from("pi-cloud.tool-completion.v1");
+const purpose = Buffer.from("pi-cloud.tool-completion.v2");
 
 /** The same bounded AES-GCM capsule pattern as persistent VM capsules, with
  * a separate purpose-derived key. This is delivery authority, never execution
@@ -43,10 +42,10 @@ export class ToolCompletionCapabilities {
     const bytes = Buffer.from(JSON.stringify(grant));
     if (bytes.length > 4096) throw new Error("Completion grant exceeds its scope bound");
     const body = Buffer.concat([cipher.update(bytes), cipher.final()]);
-    return "pctc1_" + Buffer.concat([nonce, cipher.getAuthTag(), body]).toString("base64url");
+    return "pctc2_" + Buffer.concat([nonce, cipher.getAuthTag(), body]).toString("base64url");
   }
   read(value: string, now = Date.now()): ToolCompletionGrant {
-    if (!/^pctc1_[A-Za-z0-9_-]+$/.test(value) || value.length > 8192)
+    if (!/^pctc2_[A-Za-z0-9_-]+$/.test(value) || value.length > 8192)
       throw new Error("Invalid completion capability");
     const bytes = Buffer.from(value.slice(6), "base64url");
     if (bytes.length < 30) throw new Error("Invalid completion capability");
@@ -60,7 +59,6 @@ export class ToolCompletionCapabilities {
       !Number.isSafeInteger(grant.expiresAt) ||
       grant.expiresAt <= now ||
       !/^[0-9a-f-]{36}$/.test(grant.operationId) ||
-      !["guest", "executor"].includes(grant.issuer) ||
       !grant.context
     )
       throw new Error("Expired or invalid completion capability");

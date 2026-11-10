@@ -3,5 +3,5 @@ export * from "./producer-capacity.ts";
 export * from "./tool-replies.ts";
 export * from "./tool-catalog.ts";
 export * from "./kafka-session-writer.ts";
-export const ACCEPTED_FACT_TOPIC = "pi-cloud.execution-log.v19";
+export const ACCEPTED_FACT_TOPIC = "pi-cloud.execution-log.v20";
 export * from "./tool-progress-publisher.ts";

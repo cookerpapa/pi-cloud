@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { parse, parseAllDocuments, stringify } from "yaml";
-import { withCubeExecution } from "./cube-execution-deployment.mjs";
 
 export const CUBE_PLUGIN_CONFIG = "pi-cloud-posix-volume-plugin";
 const plugin = "picloud-posix";
@@ -52,7 +51,7 @@ export function cubeletPluginConfiguration(base) {
       type        = "binary"
       binary_path = "/usr/local/services/cubetoolbox/Cubelet/plugin/cube-volume-picloud-posix"`,
       );
-  return withCubeExecution(configured);
+  return configured;
 }
 
 /** Pure manifest transformation. No cluster read or mutation happens here. */

@@ -113,7 +113,7 @@ Before a Tool executes, Pi commits complete model output, validates arguments
 and runs its before-Tool processing. The fixed Tool execute checkpoint and compact
 cloud dispatch share one native commit. Projector materializes that intent and
 confirms the monotonic dispatch offset before calling Cube. Projection replay
-never repeats arbitrary shell work. Cube retains accepted execution admission;
+never repeats arbitrary shell work. The fixed Guest retains accepted operation admission;
 the fixed Guest delivers over HTTPS to the original Kafka reply destination.
 Worker Pi processing owns the canonical result.
 

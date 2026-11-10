@@ -150,7 +150,7 @@ It binds an ephemeral raw TCP relay to `127.0.0.1:5000` only while pushing the
 image, uses a temporary empty Docker client configuration because this private
 registry needs no interactive credential helper, then destroys both temporary
 resources. CubeMaster, the registry and their management ports remain private;
-this path deliberately avoids granting the PiCloud runtime or its Tool Broker
+this path deliberately avoids granting the PiCloud runtime
 broader Kubernetes RBAC.
 
 The registration command:
@@ -174,10 +174,13 @@ invalidating a successfully registered immutable template; operators should
 resolve the reported Cube control-plane error before storage pressure grows.
 
 The image contains Node 24, Java 17, Python 3.11 and Git 2. It keeps Cube's
-standard `cube-agent → vsock → envd` guest contract. Tool Broker owns admission,
-Lease/Fence checks and durable operation identity outside the VM; envd starts
-only short-lived, credential-free PiCloud Tool Worker processes as uid/gid 1000.
-No PiCloud HTTP controller remains resident in the guest.
+standard `cube-agent → vsock → envd` guest contract. The execution-side adapter
+invokes a small fixed root client through ordinary process/stdin APIs. A root
+Guest service owns bounded SQLite operation admission and cancellation, then
+starts the fixed Tool child as uid/gid 1000. It has no provider, PG or Kafka
+credentials; result delivery uses an operation-scoped HTTPS capability. Native
+Cube execution endpoints are removed. Allocation closure and Volume reference
+protection remain at Cube's resource owner (ADR-0307).
 
 ## 4. Run the real KVM gate
 
@@ -195,7 +198,7 @@ The gate creates real microVMs for isolated tenants and proves:
 - a guest kernel distinct from the host and `cubesandbox-kvm` evidence;
 - uid/gid 1000, no new privileges and zero effective capabilities;
 - no Docker socket, Kubernetes token or platform/model credential;
-- an envd PTY works through the authenticated Cube data plane without a resident PiCloud daemon;
+- an envd PTY works through the authenticated Cube data plane independently of Guest operation lifetime;
 - same-path canaries remain different across tenant Workspaces;
 - a stable public HTTPS endpoint is reachable;
 - CubeAPI, platform endpoints, private/link-local networks and metadata are denied;

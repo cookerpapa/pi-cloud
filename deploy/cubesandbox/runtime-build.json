@@ -1,12 +1,13 @@
 {
   "upstreamRepository": "https://github.com/TencentCloud/CubeSandbox.git",
   "upstreamCommit": "4411c96ba8658a959de34693f54f4918db2a432f",
-  "managedProtocolVersion": 9,
+  "managedProtocolVersion": 10,
   "guestProtocolVersion": 7,
+  "guestExecutorProtocolVersion": 1,
   "patches": [
     {
       "file": "0001-runtime-boundaries.patch",
-      "sha256": "b7692d3626324e27e45b51e14925c6016687139de134e4a3300500160fa356ce"
+      "sha256": "1393107b4f98cedd6d4e11fca4d44b1a11e7e583e9acf7f881c15538976b55f3"
     },
     {
       "file": "0002-release-dependencies.patch",

@@ -107,19 +107,19 @@ rejected record. The next consumer decodes from the retained Kafka position.
 One role-checked replacement helper serves both this repair and ordinary Tool
 publication, including unchanged-template restoration before Helm mutation.
 
-## Execution maintenance query repair
+## Session resource-view repair
 
-The explicit `execution-maintenance` scope accepts only
-`packages/sandbox-control/src/execution-maintenance.ts` plus tests/operator/docs
+The explicit `session-retention` scope accepts only
+`packages/sandbox-control/src/session-activity-retention.ts` plus tests/operator/docs
 changes. It reuses the installed Session-runtime drain and replacement contract.
-Use it for compatible corrections to the existing eligibility query, with real
-PostgreSQL and probe contracts; changes to authority, dispatch, expiry ownership,
+Use it for compatible corrections to the disposable resource view, with retention
+and probe contracts; changes to authority, dispatch, expiry ownership,
 wire formats or schema still require matched publication. Hosted CI keeps its full
 gate. Preparation/verification compares the complete manifests and replaces only
 the Session-runtime image, retaining Worker and VM identities.
 
 ```sh
-npm run release:component -- prepare execution-maintenance /private/releases/maintenance-1 maintenance-1
+npm run release:component -- prepare session-retention /private/releases/maintenance-1 maintenance-1
 npm run release:component -- preflight /private/releases/maintenance-1
 npm run release:component -- apply /private/releases/maintenance-1
 ```

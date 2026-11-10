@@ -4,7 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { digest } from "./component-release.mjs";
 
 export const runtimeReplacementTargets = {
-  "execution-maintenance": {
+  "session-retention": {
     role: "session-runtime",
     contract: "sessionRuntimeReplacement",
     port: 3000,

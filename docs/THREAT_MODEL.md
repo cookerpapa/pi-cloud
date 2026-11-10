@@ -75,7 +75,7 @@ File metadata remains escaped user data, never a system instruction.
 | Agents intentionally share one exclusive environment | independently authorized Tool bindings share the owner's VM; files and processes use user-managed concurrency, while pause/release wait for active bindings and the terminal |
 | two Sessions intentionally share one elastic Workspace | independently fenced Tool bindings enter one unprivileged Cube; files, processes and ports use ordinary Linux semantics and are not isolated from each other |
 | exclusive owner has root inside its own VM | KVM is the tenant boundary; the guest contains no platform/model/database credentials and the trusted external executor enforces boot/operation/scope admission |
-| user invokes or tampers with envd inside their own VM | envd is credential-free tenant-local transport; Cube traffic/envd tokens, operation admission and every cross-resource authority remain outside the VM |
+| user invokes or tampers with envd inside their own VM | envd is credential-free tenant-local transport; Cube traffic/envd tokens and cross-resource authority stay outside the VM; fixed root Guest metadata enforces operation replay/cancel boundaries |
 | Control-plane replacement loses, pauses or swaps an exclusive VM | shutdown leaves physical state unchanged; encrypted reconnect capsule plus PostgreSQL owner CAS and Cube physical metadata/runtime identity validation before adoption |
 | directory picker exposes another runtime | tenant/user/environment authorization at Control Plane and sandbox management; listing is read from the selected live Cube only |
 | stale Worker mutation | PG-issued publication scope, same-partition opening/seal cutoff and Cube boot/closed-scope checks |

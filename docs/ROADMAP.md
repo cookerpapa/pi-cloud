@@ -1,5 +1,13 @@
 # Implementation roadmap
 
+## Guest execution and Session activity — source verified, delivery pending
+
+Implement [#25](https://github.com/cookerpapa/pi-managed-agents/issues/25) under
+[ADR-0307](adr/0307-guest-execution-and-session-activity.md): move execution admission
+and cancellation to the Guest, publish logical activity from the Worker, and
+apply finite expiry without a busy-Tool veto. Separately assess provider-native
+allocation/Volume lifecycle guarantees before replacing those protections.
+
 ## Runtime decoupling and continuation — deployed
 
 Issues #17–#23 are delivered under [ADR-0306](adr/0306-runtime-decoupling-and-continuation.md),

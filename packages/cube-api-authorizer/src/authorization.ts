@@ -46,13 +46,6 @@ export function isAllowedCubeApiOperation(path: string, method: string): boolean
   )
     return parsed.search === "";
   if (
-    normalizedMethod === "POST" &&
-    /^\/sandboxes\/[a-f0-9]{32}\/execution\/(capabilities|submit|cancel|probe)$/i.test(
-      parsed.pathname,
-    )
-  )
-    return parsed.search === "";
-  if (
     normalizedMethod === "GET" &&
     /^\/sandboxes\/[a-f0-9]{32}\/observation$/i.test(parsed.pathname)
   ) {

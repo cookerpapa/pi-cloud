@@ -75,6 +75,11 @@ export class SessionProjector {
       };
       executionProbes?: {
         reset(): void;
+        consume?(fact: import("@pi-cloud/protocol").PathProbe, current: () => boolean): void;
+      };
+      sessionActivity?: {
+        consume(fact: import("@pi-cloud/protocol").SessionActivity, current: () => boolean): void;
+        reset(): void;
       };
       runtimeRetention?: {
         reset(): void;
@@ -178,6 +183,7 @@ export class SessionProjector {
         this.observations.reset();
         options.executionProbes?.reset();
         options.runtimeRetention?.reset();
+        options.sessionActivity?.reset();
         options.controlChanges?.reset();
       },
       onRevoked: () => {
@@ -206,6 +212,20 @@ export class SessionProjector {
         this.#throughGate(async () => {
           const prepared = decoded.fact;
           const raw = { ...decoded, fact: prepared.fact };
+          if (raw.fact.kind === "session_activity") {
+            if (current?.() === false) return;
+            if (this.observations.isActive(raw.fact.scope))
+              this.observations.record({ ...raw, fact: raw.fact }, true);
+            options.sessionActivity?.consume(raw.fact, current ?? (() => true));
+            return;
+          }
+          if (raw.fact.kind === "path_probe") {
+            if (current?.() === false) return;
+            if (this.observations.isActive(raw.fact.scope))
+              this.observations.record({ ...raw, fact: raw.fact }, true);
+            options.executionProbes?.consume?.(raw.fact, current ?? (() => true));
+            return;
+          }
           if (raw.fact.kind === "control_change") {
             if (current?.() === false) return;
             if (!options.controlChanges && raw.fact.entity === "sandbox_binding")

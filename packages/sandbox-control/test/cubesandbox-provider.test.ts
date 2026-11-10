@@ -147,10 +147,10 @@ function fakeWorkspaceVolumeGateway(): WorkspaceVolumeGateway {
 
 class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
   readonly retention = vi.fn(
-    async (_id: string, _createBefore: number, _boot: string, at: number) => at + 1800000,
+    async (_id: string, _createBefore: number, at: number) => at + 1800000,
   );
-  renewRetention(id: string, createBefore: number, boot: string, at: number) {
-    return this.retention(id, createBefore, boot, at);
+  renewRetention(id: string, createBefore: number, at: number) {
+    return this.retention(id, createBefore, at);
   }
   readonly allocationClosures = new Set<string>();
   async allocation(id: string, createBefore: number, action: "get" | "close") {

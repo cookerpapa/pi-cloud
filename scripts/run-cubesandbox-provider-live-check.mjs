@@ -1,4 +1,4 @@
-import { serviceAddress } from "./lib/production-kubernetes.mjs";
+import { serviceAddress, kubectl } from "./lib/production-kubernetes.mjs";
 import { spawn } from "node:child_process";
 import { readFile, mkdtemp, writeFile, rm } from "node:fs/promises";
 import { dirname, resolve, join } from "node:path";
@@ -57,8 +57,32 @@ const temporary = await mkdtemp(join(tmpdir(), "pi-cloud-native-live-"));
 const nodePrefix = resolve(dirname(process.execPath), "..");
 const build = await readJson(join(repositoryRoot, "deploy/cubesandbox/runtime-build.json"));
 const kafkaServices = ["kafka-1", "kafka-2", "kafka-3"];
+const runtimeDeployment = JSON.parse(
+  kubectl(["get", "deployment/pi-cloud-session-runtime", "-o", "json"]),
+);
+const completionUrl = runtimeDeployment.spec.template.spec.containers[0].env.find(
+  (e) => e.name === "PI_CLOUD_TOOL_COMPLETION_URL",
+)?.value;
+if (!completionUrl) throw new Error("Installed completion URL is missing");
+const completionHost = new URL(completionUrl).hostname;
+await writeFile(
+  join(temporary, "completion-ca.crt"),
+  Buffer.from(
+    kubectl([
+      "get",
+      "secret",
+      "pi-cloud-tool-completion-tls",
+      "-o",
+      "jsonpath={.data.ca\\.crt}",
+    ]).trim(),
+    "base64",
+  ),
+);
 const environment = {
   PI_CLOUD_POSTGRES_INTEGRATION_URL: testDatabase.url,
+  PI_CLOUD_TOOL_COMPLETION_URL: completionUrl,
+  PI_CLOUD_COMPLETION_CA_FILE: "/operator-test/completion-ca.crt",
+  PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE: `${runtimeDirectory}/secrets/supervisor-management-token`,
   PI_CLOUD_CUBESANDBOX_TEST: "1",
   PI_CLOUD_KAFKA_BROKERS: kafkaServices.map((name) => name + ":9092").join(","),
   PI_CLOUD_KAFKA_REPLICAS: "3",
@@ -87,6 +111,8 @@ try {
       "host",
       "--user",
       `${process.getuid()}:${process.getgid()}`,
+      "--add-host",
+      `${completionHost}:${serviceAddress("tool-completion")}`,
       ...kafkaServices.flatMap((name) => ["--add-host", `${name}:${serviceAddress(name)}`]),
       "--mount",
       `type=bind,src=${repositoryRoot},dst=${repositoryRoot},readonly`,
@@ -104,6 +130,8 @@ try {
       join(repositoryRoot, "node_modules/vitest/vitest.mjs"),
       "run",
       "test/cubesandbox-live-provider.integration.test.ts",
+      "test/cubesandbox-guest-executor.live.test.ts",
+      "--no-file-parallelism",
       "--config",
       "/operator-test/vitest.mjs",
     ],

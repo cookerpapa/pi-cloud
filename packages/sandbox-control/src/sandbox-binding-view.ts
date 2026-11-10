@@ -34,6 +34,7 @@ export class SandboxBindingView implements SandboxBindingReader {
       partitionCount: number;
       maximumBytes?: number;
       maximumEntries?: number;
+      onBinding?(binding: SandboxBindingRecord): void;
     },
   ) {}
 
@@ -104,6 +105,7 @@ export class SandboxBindingView implements SandboxBindingReader {
     if (route) {
       entry.route = structuredClone(route);
       this.#bindings.set(route.bindingId, entry);
+      if (!entry.closed) this.options.onBinding?.(entry.route);
     } else {
       if (entry.route) this.#bindings.delete(entry.route.bindingId);
       delete entry.route;

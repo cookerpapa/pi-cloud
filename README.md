@@ -90,7 +90,7 @@ Provider lifecycle history -> Metering interval calculation -> PG ledger
 | Tool completion | Scoped Guest HTTPS callbacks, image claim checks and Kafka reply publication |
 | Tool host | Independently published trusted ordinary Tool implementations; no Pi or Session consumer |
 | Control Plane | VM allocation, lifecycle recovery, resource maintenance and scheduled/SCM admission |
-| CubeSandbox | KVM isolation, destination admission/cancellation, finite retention and lifecycle evidence |
+| CubeSandbox | KVM isolation, finite retention and lifecycle evidence; fixed Guest admission/cancellation |
 | CLIProxyAPI | Provider credentials, account selection and upstream model transport |
 | S3 / Cube Volumes | Immutable conversation attachments and Skill packages / mutable Workspace files |
 

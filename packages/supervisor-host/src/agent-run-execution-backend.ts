@@ -355,6 +355,16 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
             },
             turnId: request.turnId,
             nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
+            ...(request.executionMode === "elastic" || request.computeSessionId
+              ? {
+                  resourceUse: {
+                    workspaceId: request.workspaceId,
+                    ...(request.computeSessionId
+                      ? { computeSessionId: request.computeSessionId }
+                      : {}),
+                  },
+                }
+              : {}),
           }),
       );
       const publication = executionLog;

@@ -20,7 +20,7 @@ import type {
 import type { ToolCompletionIssuer } from "./tool-completion-issuer.ts";
 
 /** Native Cube wire and refusal semantics remain behind the complete-Tool port.
- * Cubelet, not this disposable client, owns an accepted execution and reply. */
+ * The fixed Guest service owns admission/execution independently of this client. */
 export class CubeSandboxToolExecutor implements SandboxToolExecutor {
   constructor(
     readonly client: Pick<CubeSandboxRuntimeClient, "submitTool" | "cancelTool">,
@@ -54,10 +54,7 @@ export class CubeSandboxToolExecutor implements SandboxToolExecutor {
         command.replyRecovery?.deadlineAt ??
         Date.parse(command.occurredAt) + command.request.timeoutMs + TOOL_REPLY_DELIVERY_MARGIN_MS,
     };
-    const [guest, executor] = await Promise.all([
-      this.completion.issue({ ...grant, issuer: "guest" }),
-      this.completion.issue({ ...grant, issuer: "executor" }),
-    ]).catch(() => {
+    const guest = await this.completion.issue(grant).catch(() => {
       throw new CubeExecutionRejected("execution_endpoint_unconfigured");
     });
     return this.client.submitTool(binding.descriptor.target, {
@@ -72,9 +69,8 @@ export class CubeSandboxToolExecutor implements SandboxToolExecutor {
         request: command.request,
         delivery: guest,
       },
-      completionContext: executor,
+
       timeoutMs: command.request.timeoutMs + TOOL_REPLY_DELIVERY_MARGIN_MS,
-      maximumOutputBytes: 64 * 1024,
     });
   }
 
@@ -112,6 +108,7 @@ export class CubeSandboxToolExecutor implements SandboxToolExecutor {
           code = "cubesandbox_tool_unavailable";
           effect = "not_started";
           break;
+        case "execution_not_started":
         case "capacity":
         case "invalid_request":
         case "invalid_identity":

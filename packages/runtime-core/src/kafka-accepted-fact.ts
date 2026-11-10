@@ -1,6 +1,8 @@
 import {
   parsePiCloudEvent,
   parseDurableDisplayDescription,
+  parseSessionActivity,
+  parsePathProbe,
   parseSessionControlChange,
   parseToolCancellation,
   parseDurableSessionCommit,
@@ -67,6 +69,8 @@ export function prepareAcceptedFact(
 
 function validateAcceptedFact(value: unknown): AcceptedFact {
   const parsed = value as AcceptedFact;
+  if (parsed.kind === "session_activity") return parseSessionActivity(value);
+  if (parsed.kind === "path_probe") return parsePathProbe(value);
   if (parsed.kind === "durable_commit") {
     const commit = parseDurableSessionCommit(parsed.commit);
     return {

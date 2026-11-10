@@ -4,6 +4,8 @@ import type { DurableSessionCommit, DurableRecordOrigin } from "@pi-cloud/protoc
 import type { AcceptedToolCommand, ToolSandboxOperationRequest } from "@pi-cloud/protocol";
 
 export type CandidateFact =
+  | Readonly<{ kind: "session_activity"; fact: import("@pi-cloud/protocol").SessionActivity }>
+  | Readonly<{ kind: "path_probe"; fact: import("@pi-cloud/protocol").PathProbe }>
   | Readonly<{ kind: "durable_commit"; fact: AcceptedDurableCommitFact }>
   | Readonly<{ kind: "agent_event"; publication: EventPublishMessage }>;
 
@@ -116,6 +118,8 @@ export type ExecutionPublication = Readonly<{
   scope: AcceptedFactScope & { leaseId: string; piConversationId: number };
 }>;
 export type AcceptedFact =
+  | import("@pi-cloud/protocol").SessionActivity
+  | import("@pi-cloud/protocol").PathProbe
   | AcceptedDurableCommitFact
   | AcceptedAgentEventFact
   | AcceptedWorkFinishedFact

@@ -88,7 +88,7 @@ export const providerSources = new Set([
   ...providerConfigurationSources,
 ]);
 export const workerBootstrapSource = "packages/supervisor-host/src/model-gateway.ts";
-export const executionMaintenanceSource = "packages/sandbox-control/src/execution-maintenance.ts";
+export const sessionRetentionSource = "packages/sandbox-control/src/session-activity-retention.ts";
 export const sessionDecoderSource = "packages/runtime-core/src/session-log-envelope.ts";
 export const sessionApiSource = (file) =>
   /^packages\/control-plane\/src\/(?:session-api-main|application|control-plane\.module|control-plane\.controller|workspace-capacity-controller|resource-billing-controller|model-billing-controller|workspace-file-transfer-controller|skill-market-controller)\.ts$/.test(
@@ -103,7 +103,7 @@ export const imageReleaseTargets = {
     workload: "statefulset/pi-cloud-pi-worker-primary-v1",
     container: "pi-worker",
   },
-  "execution-maintenance": {
+  "session-retention": {
     imageName: "control-plane",
     buildScope: "control-plane",
     buildCatalogKey: "controlPlane",

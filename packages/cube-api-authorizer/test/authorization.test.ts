@@ -12,10 +12,6 @@ describe("Cube API authorizer", () => {
     ["POST", "/allocations/11111111-1111-4111-8111-111111111111/renew"],
     ["GET", `/sandboxes/${SANDBOX}`],
     ["GET", `/sandboxes/${"a".repeat(32)}/observation`],
-    ["POST", `/sandboxes/${"a".repeat(32)}/execution/capabilities`],
-    ["POST", `/sandboxes/${"a".repeat(32)}/execution/submit`],
-    ["POST", `/sandboxes/${"a".repeat(32)}/execution/cancel`],
-    ["POST", `/sandboxes/${"a".repeat(32)}/execution/probe`],
     ["DELETE", `/sandboxes/${SANDBOX}`],
     ["POST", `/sandboxes/${SANDBOX}/pause`],
     ["POST", `/sandboxes/${SANDBOX}/connect`],
@@ -41,6 +37,10 @@ describe("Cube API authorizer", () => {
   });
 
   it.each([
+    ["POST", `/sandboxes/${"a".repeat(32)}/execution/capabilities`],
+    ["POST", `/sandboxes/${"a".repeat(32)}/execution/submit`],
+    ["POST", `/sandboxes/${"a".repeat(32)}/execution/cancel`],
+    ["POST", `/sandboxes/${"a".repeat(32)}/execution/probe`],
     ["POST", `/sandboxes/${"a".repeat(32)}/execution/stop`],
     ["POST", "/allocations/11111111-1111-4111-8111-111111111111/reopen"],
     ["GET", "/allocations/11111111-1111-4111-8111-111111111111/get"],

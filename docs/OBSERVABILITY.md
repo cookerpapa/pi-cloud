@@ -56,11 +56,13 @@ for source versus serving acceptance.
 
 ## Guest execution and physical runtime health
 
-ADR-0306 moves periodic initiation to the execution owner. It batches fresh PG
-lease evidence, registers the current Worker receiver, then probes through Cube,
-the fixed Guest HTTPS callback and Kafka. This no longer probes Worker → Session
-Kafka ingress; ordinary writer ACKs and fatal fencing errors cover publication.
-Lease/retention success and complete return-path confirmation remain independent. `run.execution` carries a
+ADR-0307 uses periodic resource-use declarations from the Worker outer runtime
+through the existing fenced Session Kafka writer. Execution consumes a disposable
+resource view without polling Worker ownership or PG leases. Full return-path
+probes are on-demand: the caller registers its waiter, publishes through Session
+Kafka, then waits for Guest HTTPS → reply Kafka → Worker and the owner confirmation.
+Resource-use declarations do not prove Guest health; probe success is not the
+retention authority. `run.execution` carries a
 revision, observation time and an `execution` object: status (not_applicable,
 pending, confirmed or unavailable), last confirmed stage (projector, cube or
 worker), original sent time, optional binding/target IDs and last confirmed guest

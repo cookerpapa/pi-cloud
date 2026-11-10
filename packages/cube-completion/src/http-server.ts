@@ -56,24 +56,19 @@ export function completionServer(options: {
       kind?: string;
       operationId?: string;
       output?: unknown;
-      result?: CompletionPacket["result"];
     };
     if (
       !body ||
       body.operationId !== grant.operationId ||
       !["progress", "result"].includes(body.kind ?? "") ||
-      Object.keys(body).some((key) => !["kind", "operationId", "output", "result"].includes(key)) ||
-      (grant.issuer === "guest" && body.result !== undefined) ||
-      (grant.issuer === "executor" && body.kind === "result" && !body.result)
+      Object.keys(body).some((key) => !["kind", "operationId", "output"].includes(key))
     )
       return reply.code(409).send();
     const packet: CompletionPacket = {
       operationId: grant.operationId,
       context: grant.context,
       kind: body.kind as CompletionPacket["kind"],
-      ...(body.kind === "progress"
-        ? { output: body.output }
-        : { result: grant.issuer === "guest" ? { output: body.output } : body.result! }),
+      ...(body.kind === "progress" ? { output: body.output } : { result: { output: body.output } }),
     };
     processing.add(request);
     try {

@@ -11,12 +11,11 @@ import type { WorkerReply } from "@pi-cloud/event-log";
 import { encodeSessionImages, type ImageAttachmentCodec } from "@pi-cloud/session-attachments";
 
 export type CompletionPacket = {
-  id?: string;
   kind: "progress" | "result";
   operationId: string;
   context: ToolCompletionContext | ProbeCompletionContext;
   output?: unknown;
-  result?: { output?: unknown; failure?: string; quarantine?: boolean };
+  result?: { output?: unknown };
 };
 
 export class CubeCompletionAdapter {
@@ -32,12 +31,7 @@ export class CubeCompletionAdapter {
     const context = packet.context;
     const observedAt = Date.now();
     if (context.kind === "execution_probe") {
-      if (
-        packet.kind !== "result" ||
-        !packet.result ||
-        packet.result.failure ||
-        packet.result.quarantine
-      )
+      if (packet.kind !== "result" || !packet.result)
         throw new Error("Execution probe did not complete");
       const result = parseGuestProbeReply(packet.result.output);
       if (result.probeId !== packet.operationId)
@@ -109,29 +103,6 @@ export class CubeCompletionAdapter {
         failure: { code, message: message.slice(0, 4096), effect },
       });
     };
-    if (packet.result.failure) {
-      const notStarted = [
-        "execution_not_started",
-        "read_capacity_timeout",
-        "tool_cancelled_before_start",
-      ].includes(packet.result.failure);
-      const code =
-        packet.result.quarantine || packet.result.failure === "tool_sandbox_unavailable"
-          ? "cubesandbox_tool_unavailable"
-          : notStarted
-            ? packet.result.failure
-            : "cubesandbox_tool_result_unknown";
-      await fail(
-        code,
-        packet.result.quarantine
-          ? "The execution scope could not be stopped; the runtime requires control-plane recovery."
-          : notStarted
-            ? "The Tool did not start; it performed no file or shell action."
-            : "Tool execution did not provide a confirmed result; inspect effects before deciding to repeat it.",
-        notStarted && !packet.result.quarantine ? "not_started" : "unknown",
-      );
-      return;
-    }
     let output: ReturnType<typeof parseToolWorkerOutput>;
     try {
       output = parseToolWorkerOutput(packet.result.output);

@@ -740,3 +740,5 @@ export * from "./workspace-capacity.ts";
 export * from "./session-environment.ts";
 export type { ToolImplementation } from "./control-tool-command.ts";
 export * from "./tool-recovery.ts";
+export * from "./session-activity.ts";
+export * from "./guest-executor.ts";

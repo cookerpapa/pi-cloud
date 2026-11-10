@@ -535,16 +535,12 @@ describe("Projector native Cube handoff", () => {
           request: f.command.request,
           delivery: expect.objectContaining({ url: "https://completion.test/v1/completions" }),
         }),
-        completionContext: expect.objectContaining({
-          url: "https://completion.test/v1/completions",
-        }),
       }),
     );
     const submitted = vi.mocked(f.cube.submitTool).mock.calls[0]![1];
     expect(
-      JSON.parse((submitted.completionContext as { capability: string }).capability),
+      JSON.parse((submitted.payload as { delivery: { capability: string } }).delivery.capability),
     ).toMatchObject({
-      issuer: "executor",
       context: { toolCallId: "result-entry", nativeToolCallId: "native" },
     });
     expect(f.workflow).not.toHaveBeenCalled();
@@ -661,6 +657,7 @@ describe("Projector native Cube handoff", () => {
     ["execution_endpoint_unconfigured", "cubesandbox_tool_unavailable", "not_started"],
     ["executor_capacity", "cubesandbox_tool_unavailable", "not_started"],
     ["capacity", "tool_execution_not_started", "not_started"],
+    ["execution_not_started", "tool_execution_not_started", "not_started"],
     ["invalid_request", "tool_execution_not_started", "not_started"],
     ["invalid_identity", "tool_execution_not_started", "not_started"],
     ["invalid_execution_position", "tool_execution_not_started", "not_started"],

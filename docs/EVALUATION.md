@@ -163,29 +163,15 @@ control-plane/sandbox workspace commands provision the same fixture when needed.
 Concurrent queued-input and binding-closure contracts require real PostgreSQL;
 they do not use the PGlite socket fallback. Explicit test URLs remain caller-owned.
 
-## Cube admission contract
+## Guest admission contract
 
-`npm run cubesandbox:admission-check` extracts the maintained Go admission/probe
-tests from the digest-checked patch and runs them with the pinned Go Docker image
-and race detector. It needs Docker, not an operator Cube checkout or a live VM.
-It covers delayed submit after a later handoff, duplicate/ambiguous admission,
-accepted-command survival, native timeout isolation, independent partitions,
-probe isolation, and 70,000 completions followed
-by new work. This is part of `npm run ci`.
-
-`node scripts/check-cube-template-cleanup.mjs` exports the pinned Cube source,
-applies the digest-checked patches and runs the template-center suite with a
-disposable MySQL. It verifies current-node cleanup routing, retained unknown
-targets, shared-rootfs references, node pins and successful physical/metadata
-cleanup. Set `PI_CLOUD_CUBESANDBOX_REPOSITORY` to a local Cube checkout; CI checks
-out the manifest's exact upstream revision before both native contract gates.
-The runner does not mount the Docker socket into the Go container. Optional
-upstream Docker/PostgreSQL fixtures may skip; the new MySQL routing tests run.
-
-`agent-stop-binding-closure.integration.test.ts` uses the explicit test PG and RF3 Kafka
-endpoints. It proves routing revocation precedes the final seal without a separate
-process-stop receipt table. The native Go
-contract and matched live Cube acceptance cover the destination separately.
+`npm run guest:admission-check` runs the fixed Guest's SQLite admission and local
+transport contracts: durable-before-launch, duplicate/changed commands, exact
+cancel-before-submit, original deadlines, service/VM identity and disconnected
+callers. `guest-operation.test.ts` exercises the actual launcher with isolated OS
+ports; deployed KVM acceptance proves real cgroup cancellation and background work.
+Native allocation/Volume contracts remain in `npm run cubesandbox:allocation-check`.
+No Guest test substitutes for physical-resource closure evidence.
 
 ## Cube and real-model acceptance
 

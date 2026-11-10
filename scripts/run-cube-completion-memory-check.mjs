@@ -128,7 +128,6 @@ try {
         expiresAt,
         capability: authority.issue({
           operationId: op,
-          issuer: "guest",
           expiresAt,
           context: packet.context,
         }),

@@ -7,8 +7,9 @@ import {
   MAX_TERMINAL_COLS,
   PREVIEW_ACCESS_TTL_MS,
   MAX_IMAGE_GUEST_RESPONSE_BYTES,
-  EXECUTION_PROBE_TIMEOUT_MS,
   parseGuestProbeReply,
+  GUEST_EXECUTOR_MAX_INPUT,
+  GUEST_EXECUTOR_MAX_OUTPUT,
   type GuestProbeReply,
 } from "@pi-cloud/protocol";
 import { Duplex, Readable, Writable } from "node:stream";
@@ -53,9 +54,7 @@ export type CubeToolHandoff = Readonly<{
   executionScopeId: string;
   writerId: string;
   payload: unknown;
-  completionContext: unknown;
   timeoutMs: number;
-  maximumOutputBytes: number;
 }>;
 
 /** Endpoint refusal, distinct from a lost transport ACK. A stale position or
@@ -125,12 +124,7 @@ export interface CubeSandboxRuntimeClient {
     createBefore: number,
     action: "get" | "close",
   ): Promise<CubeAllocationState>;
-  renewRetention?(
-    id: string,
-    createBefore: number,
-    executionBoot: string,
-    observedAt: number,
-  ): Promise<number>;
+  renewRetention?(id: string, createBefore: number, observedAt: number): Promise<number>;
   read(sandboxId: string): Promise<CubeSandboxInstance | undefined>;
   observe(
     sandboxId: string,
@@ -142,9 +136,7 @@ export interface CubeSandboxRuntimeClient {
     target: CubeExecutionTarget,
     request: {
       probeId: string;
-      executionScopeId: string;
-      writerId: string;
-      completionContext: unknown;
+      delivery: unknown;
     },
   ): Promise<void>;
   submitTool(target: CubeExecutionTarget, request: CubeToolHandoff): Promise<void>;
@@ -568,6 +560,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
   readonly #apiUrl: string;
   readonly #apiKey: string;
   readonly #executionEndpoints = new Map<string, string>();
+  readonly #guestInstances = new Map<string, CubeSandboxInstance>();
   readonly #proxyScheme: "http" | "https";
   readonly #sandboxDomain: string;
   readonly #requestTimeoutMs: number;
@@ -623,16 +616,11 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     const response = await this.#control("/health");
     await response.body?.cancel().catch(() => undefined);
   }
-  async renewRetention(
-    id: string,
-    createBefore: number,
-    executionBoot: string,
-    observedAt: number,
-  ): Promise<number> {
+  async renewRetention(id: string, createBefore: number, observedAt: number): Promise<number> {
     const response = await this.#control(`/allocations/${encodeURIComponent(id)}/renew`, {
       method: "POST",
       timeoutMs: 5000,
-      body: JSON.stringify({ createBefore, executionBoot, observedAt }),
+      body: JSON.stringify({ createBefore, observedAt }),
     });
     const value = record(
       parseJson(await readBoundedResponse(response, 8192), "Cube retention"),
@@ -757,7 +745,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
           throw new CubeRuntimeClientError(
             "Cube allocation did not return its exact private runtime identity",
           );
-        return instance;
+        return this.#rememberInstance(instance);
       } catch (cause) {
         failure = cause;
         if (
@@ -854,10 +842,12 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       await response.body?.cancel().catch(() => undefined);
       return undefined;
     }
-    return parseInstance(
-      parseJson(await readBoundedResponse(response, 256 * 1_024), "CubeSandbox inspect"),
-      this.#sandboxDomain,
-      true,
+    return this.#rememberInstance(
+      parseInstance(
+        parseJson(await readBoundedResponse(response, 256 * 1_024), "CubeSandbox inspect"),
+        this.#sandboxDomain,
+        true,
+      ),
     );
   }
 
@@ -895,52 +885,199 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     }
   }
 
-  async executionTarget(sandboxId: string, nodeId: string): Promise<CubeExecutionTarget> {
-    const value = await this.#executionRequest(sandboxId, "capabilities", { nodeID: nodeId }, 5000);
-    if (value.runtimeBlocked === true) throw new CubeExecutionRejected("runtime_quarantined");
-    if (
-      value.enabled !== true ||
-      value.protocolVersion !== 9 ||
-      typeof value.bootID !== "string" ||
-      !/^[0-9a-f-]{36}$/.test(value.bootID)
-    )
-      throw new CubeExecutionRejected("execution_unavailable");
-    return { apiUrl: this.#apiUrl, sandboxId, nodeId, bootId: value.bootID };
+  #rememberInstance(instance: CubeSandboxInstance): CubeSandboxInstance {
+    if (instance.nodeId) {
+      const key = JSON.stringify([this.#apiUrl, instance.nodeId, instance.sandboxId]);
+      if (this.#guestInstances.size >= 1024 && !this.#guestInstances.has(key))
+        this.#guestInstances.delete(this.#guestInstances.keys().next().value!);
+      this.#guestInstances.set(key, instance);
+    }
+    return instance;
   }
-
-  async submitTool(target: CubeExecutionTarget, request: CubeToolHandoff): Promise<void> {
-    const value = await this.#executionRequest(
-      target.sandboxId,
-      "submit",
-      {
-        nodeID: target.nodeId,
-        bootID: target.bootId,
-        operationID: request.operationId,
-        source: parseExecutionLogPosition(request.source),
-        runID: request.executionScopeId,
-        writerID: request.writerId,
-        payload: request.payload,
-        completionContext: request.completionContext,
-        timeoutMs: request.timeoutMs,
-        maximumOutputBytes: request.maximumOutputBytes,
-      },
-      5000,
-      target.apiUrl,
+  async #guestInstance(
+    sandboxId: string,
+    nodeId: string,
+    apiUrl = this.#apiUrl,
+  ): Promise<CubeSandboxInstance> {
+    const key = JSON.stringify([apiUrl, nodeId, sandboxId]);
+    const cached = this.#guestInstances.get(key);
+    if (cached) return cached;
+    const response = await this.#control(
+      `/sandboxes/${encodeURIComponent(bounded(sandboxId, "CubeSandbox ID", 128))}`,
+      {},
+      true,
+      apiUrl,
     );
-    if (
-      value.accepted === false &&
-      value.operationID === request.operationId &&
-      typeof value.rejection === "string"
-    )
-      throw new CubeExecutionRejected(value.rejection);
-    if (
-      value.accepted !== true ||
-      value.operationID !== request.operationId ||
-      value.bootID !== target.bootId
-    )
-      throw new CubeRuntimeClientError("Cube execution handoff could not be confirmed");
+    if (response.status === 404) {
+      await response.body?.cancel();
+      throw new CubeExecutionRejected("execution_unavailable");
+    }
+    const instance = parseInstance(
+      parseJson(await readBoundedResponse(response, 256 * 1024), "CubeSandbox inspect"),
+      this.#sandboxDomain,
+      true,
+    );
+    if (instance.sandboxId !== sandboxId || instance.nodeId !== nodeId)
+      throw new CubeExecutionRejected("executor_replaced");
+    if (this.#guestInstances.size >= 1024)
+      this.#guestInstances.delete(this.#guestInstances.keys().next().value!);
+    this.#guestInstances.set(key, instance);
+    return instance;
   }
-
+  async #guestRpc(
+    instance: CubeSandboxInstance,
+    request: unknown,
+    timeoutMs = 10000,
+  ): Promise<Record<string, unknown>> {
+    const input = Buffer.from(JSON.stringify(request) + "\n");
+    if (input.length > GUEST_EXECUTOR_MAX_INPUT) throw new CubeExecutionRejected("invalid_request");
+    const abort = new AbortController(),
+      timer = setTimeout(() => abort.abort(), timeoutMs);
+    timer.unref();
+    let frames: AsyncGenerator<{ flags: number; payload: Buffer }> | undefined;
+    let pid: number | undefined,
+      sent = false;
+    const unary = async (method: string, body: object) => {
+      const response = await this.#dataFetch(
+        instance,
+        CUBESANDBOX_ENVD_PORT,
+        `/process.Process/${method}`,
+        {
+          headers: {
+            authorization: userAuthorization("root"),
+            "content-type": "application/json",
+            "connect-protocol-version": CONNECT_PROTOCOL_VERSION,
+          },
+          body: Buffer.from(JSON.stringify({ process: { pid }, ...body })),
+          signal: abort.signal,
+        },
+      );
+      await response.body?.cancel();
+      if (!response.ok)
+        throw new CubeRuntimeClientError("Guest process control failed", response.status);
+    };
+    try {
+      const response = await this.#dataFetch(
+        instance,
+        CUBESANDBOX_ENVD_PORT,
+        "/process.Process/Start",
+        {
+          headers: {
+            authorization: userAuthorization("root"),
+            "content-type": CONNECT_CONTENT_TYPE,
+            "connect-protocol-version": CONNECT_PROTOCOL_VERSION,
+          },
+          body: encodeConnectEnvelope(
+            Buffer.from(
+              JSON.stringify({
+                process: {
+                  cmd: "/usr/local/bin/node",
+                  args: ["/opt/pi-cloud/bin/guest-executor-client.mjs"],
+                  cwd: "/",
+                  envs: {},
+                },
+                stdin: true,
+              }),
+            ),
+          ),
+          signal: abort.signal,
+        },
+      );
+      if (!response.ok || !response.body) throw new CubeExecutionRejected("execution_unavailable");
+      frames = connectFrames(response.body as ReadableStream<Uint8Array>);
+      const first = await frames.next();
+      if (first.done) throw new Error("Guest process unavailable");
+      const start = record(
+        record(parseJson(first.value.payload, "Guest start"), "Guest start").event,
+        "Guest event",
+      ).start as { pid?: number };
+      pid = start?.pid;
+      if (!Number.isSafeInteger(pid) || pid! < 1)
+        throw new Error("Guest process identity unavailable");
+      let output = "";
+      for await (const frame of frames) {
+        if (frame.flags & CONNECT_END_STREAM_FLAG) {
+          raiseConnectEnd(frame.payload);
+          break;
+        }
+        if (frame.flags & CONNECT_COMPRESSED_FLAG)
+          throw new Error("Unexpected compressed Guest control");
+        const event = record(
+          record(parseJson(frame.payload, "Guest control"), "Guest control").event,
+          "Guest event",
+        );
+        const data = record(event.data ?? {}, "Guest output");
+        if (typeof data.stdout === "string")
+          output += Buffer.from(data.stdout, "base64").toString("utf8");
+        if (Buffer.byteLength(output) > GUEST_EXECUTOR_MAX_OUTPUT)
+          throw new Error("Guest control output limit");
+        if (!sent && output.includes("PI_CLOUD_GUEST_READY\n")) {
+          output = output.slice(
+            output.indexOf("PI_CLOUD_GUEST_READY\n") + "PI_CLOUD_GUEST_READY\n".length,
+          );
+          sent = true;
+          for (let offset = 0; offset < input.length; offset += 65536)
+            await unary("SendInput", {
+              input: { stdin: input.subarray(offset, offset + 65536).toString("base64") },
+            });
+        }
+        if (sent && output.includes("\n"))
+          return record(
+            parseJson(Buffer.from(output.slice(0, output.indexOf("\n"))), "Guest response"),
+            "Guest response",
+          );
+        if (event.end) break;
+      }
+      throw new Error("Guest response unavailable");
+    } catch (error) {
+      if (error instanceof CubeExecutionRejected) throw error;
+      if (!sent) throw new CubeExecutionRejected("execution_not_started");
+      throw new CubeRuntimeTransportError("Guest handoff acknowledgement was not confirmed");
+    } finally {
+      clearTimeout(timer);
+      abort.abort();
+      await frames?.return(undefined).catch(() => {});
+      // The short client is independent of the admitted operation. Never signal
+      // the service or Tool when its caller disconnects.
+    }
+  }
+  async executionTarget(sandboxId: string, nodeId: string): Promise<CubeExecutionTarget> {
+    const instance = await this.#guestInstance(sandboxId, nodeId);
+    const value = await this.#guestRpc(instance, { version: 1, action: "info" });
+    if (value.runtimeBlocked === true) throw new CubeExecutionRejected("runtime_quarantined");
+    if (value.version !== 1 || typeof value.bootId !== "string" || !this.#uuid(value.bootId))
+      throw new CubeExecutionRejected("execution_unavailable");
+    return { apiUrl: this.#apiUrl, sandboxId, nodeId, bootId: value.bootId };
+  }
+  #uuid(value: string) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
+  }
+  async #callGuest(target: CubeExecutionTarget, request: object) {
+    const instance = await this.#guestInstance(target.sandboxId, target.nodeId, target.apiUrl);
+    const value = await this.#guestRpc(instance, { version: 1, bootId: target.bootId, ...request });
+    if (value.accepted === false && value.rejection === "handoff_unconfirmed")
+      throw new CubeRuntimeTransportError("Guest handoff acknowledgement was not confirmed");
+    if (value.accepted === false)
+      throw new CubeExecutionRejected(
+        typeof value.rejection === "string" ? value.rejection : "execution_unavailable",
+      );
+    if (value.accepted !== true || value.bootId !== target.bootId)
+      throw new CubeRuntimeClientError("Guest execution acknowledgement changed");
+    return value;
+  }
+  async submitTool(target: CubeExecutionTarget, request: CubeToolHandoff): Promise<void> {
+    const value = await this.#callGuest(target, {
+      action: "submit",
+      operationId: request.operationId,
+      scopeId: request.executionScopeId,
+      writerId: request.writerId,
+      source: parseExecutionLogPosition(request.source),
+      payload: request.payload,
+      timeoutMs: request.timeoutMs,
+    });
+    if (value.operationId !== request.operationId)
+      throw new CubeRuntimeClientError("Guest operation identity changed");
+  }
   async cancelTool(
     target: CubeExecutionTarget,
     request: {
@@ -950,94 +1087,32 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       operationId?: string;
     },
   ): Promise<void> {
-    const value = await this.#executionRequest(
-      target.sandboxId,
-      "cancel",
-      {
-        nodeID: target.nodeId,
-        bootID: target.bootId,
-        runID: request.executionScopeId,
-        writerID: request.writerId,
-        operationID: request.operationId,
-        source: parseExecutionLogPosition(request.source),
-      },
-      3000,
-      target.apiUrl,
-    );
-    if (value.accepted === false && typeof value.rejection === "string")
-      throw new CubeExecutionRejected(value.rejection);
-    if (value.accepted !== true || value.bootID !== target.bootId)
-      throw new CubeRuntimeClientError("Cube cancellation acceptance could not be confirmed");
-    // Accepted means the cancellation signal was scheduled, never process exit.
+    await this.#callGuest(target, {
+      action: "cancel",
+      scopeId: request.executionScopeId,
+      writerId: request.writerId,
+      operationId: request.operationId,
+      source: parseExecutionLogPosition(request.source),
+    });
   }
-
   async probeExecution(target: CubeExecutionTarget, probeId: string): Promise<GuestProbeReply> {
-    const value = await this.#probe(target, probeId);
-    if (value.failure) throw new CubeExecutionRejected(String(value.failure));
+    const value = await this.#callGuest(target, { action: "probe", probeId });
     const reply = parseGuestProbeReply(value.output);
     if (reply.probeId !== probeId) throw new CubeRuntimeClientError("Guest probe identity changed");
     return reply;
   }
-
   async submitProbe(
     target: CubeExecutionTarget,
     request: {
       probeId: string;
-      executionScopeId: string;
-      writerId: string;
-      completionContext: unknown;
+      delivery: unknown;
     },
   ): Promise<void> {
-    await this.#probe(target, request.probeId, {
-      runID: request.executionScopeId,
-      writerID: request.writerId,
-      completionContext: request.completionContext,
+    await this.#callGuest(target, {
+      action: "probe",
+      probeId: request.probeId,
+      delivery: request.delivery,
     });
-  }
-
-  async #probe(target: CubeExecutionTarget, probeId: string, extra?: object) {
-    const value = await this.#executionRequest(
-      target.sandboxId,
-      "probe",
-      {
-        nodeID: target.nodeId,
-        bootID: target.bootId,
-        probeID: probeId,
-        ...extra,
-      },
-      extra ? 5000 : EXECUTION_PROBE_TIMEOUT_MS,
-      target.apiUrl,
-    );
-    if (value.accepted !== true)
-      throw new CubeExecutionRejected(
-        typeof value.rejection === "string" ? value.rejection : "probe_unavailable",
-      );
-    if (value.bootID !== target.bootId || value.probeID !== probeId)
-      throw new CubeRuntimeClientError("Cube probe identity changed");
-    return value;
-  }
-
-  async #executionRequest(
-    sandboxId: string,
-    action: string,
-    body: unknown,
-    timeoutMs: number,
-    apiUrl = this.#apiUrl,
-  ) {
-    const response = await this.#control(
-      `/sandboxes/${encodeURIComponent(bounded(sandboxId, "CubeSandbox ID", 128))}/execution/${action}`,
-      {
-        method: "POST",
-        body: JSON.stringify(body),
-        timeoutMs,
-      },
-      false,
-      apiUrl,
-    );
-    return record(
-      parseJson(await readBoundedResponse(response, 8192), "Cube execution reply"),
-      "Cube execution reply",
-    );
   }
 
   async pause(sandboxId: string): Promise<void> {
@@ -1062,10 +1137,12 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       method: "POST",
       body: JSON.stringify({ timeout }),
     });
-    return parseInstance(
-      parseJson(await readBoundedResponse(response, 256 * 1_024), "CubeSandbox connect"),
-      this.#sandboxDomain,
-      false,
+    return this.#rememberInstance(
+      parseInstance(
+        parseJson(await readBoundedResponse(response, 256 * 1_024), "CubeSandbox connect"),
+        this.#sandboxDomain,
+        false,
+      ),
     );
   }
 

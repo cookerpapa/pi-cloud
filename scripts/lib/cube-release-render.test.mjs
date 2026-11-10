@@ -97,7 +97,7 @@ it("renders a complete, idempotent Cube release before deployment while retainin
     "/opt/cube-image/Cubelet/plugin/cube-volume-picloud-posix",
   ]);
   const config = find(resources, "ConfigMap", "pi-cloud-posix-volume-plugin").data;
-  expect(config["cubelet-config.toml"]).toContain("execution_enabled = true");
+  expect(config["cubelet-config.toml"]).not.toContain("execution_enabled");
   expect(config["cubelet-config.toml"]).toContain("cube-volume-picloud-posix");
   expect(config["cubelet-config.toml"]).toContain("no_sync = false");
   expect(config["cubelet-config.toml"]).not.toContain("no_sync = true");

@@ -57,6 +57,7 @@ COPY packages/protocol/src/development-environment-profile.ts \
   packages/protocol/src/execution-reference.ts \
   packages/protocol/src/guest-directory.ts \
   packages/protocol/src/guest.ts \
+  packages/protocol/src/guest-executor.ts \
   packages/protocol/src/completion-transport.ts \
   packages/protocol/src/image-attachment.ts \
   packages/protocol/src/attachment-reference.ts \
@@ -77,7 +78,9 @@ RUN node node_modules/esbuild/bin/esbuild \
       packages/tool-sandbox/src/envd-tool-exec.ts \
       packages/tool-sandbox/src/envd-guest-control.ts \
       packages/tool-sandbox/src/envd-input-files.ts \
-      packages/tool-sandbox/src/cube-tool-scope.ts \
+      packages/tool-sandbox/src/guest-tool-operation.ts \
+      packages/tool-sandbox/src/guest-executor-service.ts \
+      packages/tool-sandbox/src/guest-executor-client.ts \
       --bundle \
       --platform=node \
       --external:sharp \
@@ -211,7 +214,9 @@ RUN sh scripts/retry-npm-command.sh install --global npm@12.0.2 \
 COPY --from=file-exchange-builder /out/file-exchange /opt/pi-cloud/bin/file-exchange
 COPY --from=envd-builder /out/envd /usr/bin/envd
 COPY --from=tool-worker-builder /out/envd-tool-exec.mjs /opt/pi-cloud/bin/envd-tool-exec.mjs
-COPY --from=tool-worker-builder /out/cube-tool-scope.mjs /opt/pi-cloud/bin/cube-tool-scope.mjs
+COPY --from=tool-worker-builder /out/guest-tool-operation.mjs /opt/pi-cloud/bin/guest-tool-operation.mjs
+COPY --from=tool-worker-builder /out/guest-executor-service.mjs /opt/pi-cloud/bin/guest-executor-service.mjs
+COPY --from=tool-worker-builder /out/guest-executor-client.mjs /opt/pi-cloud/bin/guest-executor-client.mjs
 COPY --from=tool-worker-builder /out/envd-guest-control.mjs /opt/pi-cloud/bin/envd-guest-control.mjs
 COPY --from=tool-worker-builder /out/envd-input-files.mjs /opt/pi-cloud/bin/envd-input-files.mjs
 COPY --from=tool-worker-builder /src/node_modules/sharp /opt/pi-cloud/node_modules/sharp
@@ -239,6 +244,6 @@ RUN runuser -u "$(getent passwd 1000 | cut -d: -f1)" -- \
       node /opt/pi-cloud/browser/check.mjs
 # Reuse Cube's standard guest contract. cube-agent reaches the inherited
 # entrypoint over vsock, which starts the credential-free envd data plane on
-# 49983 for lifecycle and interactive access. Cube's native executor launches
-# a scoped uid-1000, no-new-privileges fixed Tool Worker only when work exists.
+# 49983 for lifecycle and interactive access. The fixed Guest service launches
+# a scoped uid-1000, no-new-privileges Tool child through ordinary envd access.
 EXPOSE 49983

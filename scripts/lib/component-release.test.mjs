@@ -775,16 +775,16 @@ it("repairs only the declared Session runtime to Tool-host egress edge", () => {
   }
 });
 
-it("confines execution-maintenance repairs to one query owner and one installed role", () => {
-  assertScopedSources("execution-maintenance", [
-    "packages/sandbox-control/src/execution-maintenance.ts",
+it("confines session-retention repairs to one resource view and one installed role", () => {
+  assertScopedSources("session-retention", [
+    "packages/sandbox-control/src/session-activity-retention.ts",
   ]);
   for (const file of [
     "packages/sandbox-control/src/tool-command-dispatcher.ts",
     "packages/protocol/src/index.ts",
     "packages/database/src/schema.ts",
   ])
-    expect(() => assertScopedSources("execution-maintenance", [file])).toThrow("matched release");
+    expect(() => assertScopedSources("session-retention", [file])).toThrow("matched release");
   const old = [
     "control-plane",
     "session-api",
@@ -796,7 +796,7 @@ it("confines execution-maintenance repairs to one query owner and one installed 
   const next = structuredClone(old);
   next[2].spec.template.spec.containers[0].image = "pi-cloud/control-plane:new";
   assertScopedManifests(
-    "execution-maintenance",
+    "session-retention",
     yaml(...old),
     yaml(...next),
     "pi-cloud/control-plane:new",
@@ -804,7 +804,7 @@ it("confines execution-maintenance repairs to one query owner and one installed 
   next[3].spec.template.spec.containers[0].image = "pi-cloud/control-plane:new";
   expect(() =>
     assertScopedManifests(
-      "execution-maintenance",
+      "session-retention",
       yaml(...old),
       yaml(...next),
       "pi-cloud/control-plane:new",

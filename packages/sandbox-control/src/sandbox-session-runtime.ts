@@ -30,7 +30,7 @@ import { EnvironmentRecovery } from "./environment-recovery.ts";
 import { SandboxControlClient } from "./sandbox-control-client.ts";
 import { ExecutionPathProbes } from "./execution-path-probes.ts";
 import { RuntimeRetention } from "./runtime-retention.ts";
-import { ExecutionMaintenance } from "./execution-maintenance.ts";
+import { SessionActivityRetention } from "./session-activity-retention.ts";
 import { ToolCompletionIssuer } from "./tool-completion-issuer.ts";
 import { readFile } from "node:fs/promises";
 import { quarantineExecutionTarget } from "./runtime-quarantine.ts";
@@ -91,7 +91,9 @@ export async function createSandboxSessionRuntime(options: {
         throw new Error("Physical closure belongs to resource management");
       },
     );
+    let activity: SessionActivityRetention | undefined;
     const bindingView = new SandboxBindingView({
+      onBinding: (binding) => activity?.remember(binding),
       source: bindings,
       partitionFor: options.partitionFor,
       partitionCount: options.partitionCount,
@@ -194,14 +196,30 @@ export async function createSandboxSessionRuntime(options: {
       },
     });
     cleanup.push(() => retention.close());
-    const maintenance = new ExecutionMaintenance({
-      database,
-      bindings: bindingView,
+    activity = new SessionActivityRetention({
       retention,
-      probes,
-      managementToken: options.managementToken,
+      read: async (tenantId, use) => {
+        const row = await database
+          .selectFrom("workspace_runtimes")
+          .select(["workspace_runtime_id", "runtime_capsule"])
+          .where("tenant_id", "=", tenantId)
+          .where("workspace_id", "=", use.workspaceId)
+          .where(
+            "compute_session_id",
+            use.computeSessionId ? "=" : "is",
+            use.computeSessionId ?? null,
+          )
+          .where("state", "=", "allocated")
+          .where("allocation_closed", "=", false)
+          .where("runtime_capsule", "is not", null)
+          .executeTakeFirst();
+        return row?.runtime_capsule
+          ? { id: row.workspace_runtime_id, capsule: row.runtime_capsule }
+          : undefined;
+      },
     });
-    cleanup.push(() => maintenance.close());
+    const sessionActivity = activity;
+    cleanup.push(() => sessionActivity.close());
     const dispatcher = new ToolCommandDispatcher({
       routes: bindingView,
       executor: new CubeSandboxToolExecutor(client, completion),
@@ -418,7 +436,7 @@ export async function createSandboxSessionRuntime(options: {
     await server.listen();
     return {
       retention,
-      maintenance,
+      sessionActivity,
       dispatcher,
       probes,
       bindingView,
@@ -500,7 +518,6 @@ export async function createSandboxSessionRuntime(options: {
       start: async () => {
         if (closing) throw new Error("Session execution is closing");
         started = true;
-        maintenance.start();
       },
       close,
     };

@@ -151,9 +151,9 @@ export async function elasticRetentionAcceptance({
     result.initialRuntimeId = runtime.workspace_runtime_id;
     result.windowMs = initial.retentionWindowMs;
     await save(result);
-    // Execution-side maintenance is periodic. Keep a real Run active across a
+    // Worker Session activity is periodic. Keep a real Run active across a
     // complete minute without sending another Tool call; a one-second chat need
-    // not overlap its lease bucket and is not evidence of a periodic renewal.
+    // not overlap a resource-use declaration and is not evidence of a periodic renewal.
     progress("retention: existing VM renewed while the same Tool is still pending");
     const waiting = await api.acceptTurn(
       session.sessionId,
@@ -187,7 +187,7 @@ export async function elasticRetentionAcceptance({
         const value = await inspect();
         return value.retainUntil > beforeMaintenance.retainUntil + 20000 && value;
       },
-      "execution-owned retention renewal without another Tool",
+      "Session activity renewal without another Tool",
       90000,
     );
     const history = await completed(waiting.runId);

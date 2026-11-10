@@ -1,32 +1,30 @@
 # Matched release
 
-ADR-0306 uses schema 215, Session topic v19, reply topic v4, Guest Tool protocol 7
-and managed Cube protocol 9. The independent `session-api` and `tool-completion`
-roles are part of the matched image/Helm inventory. Generate the completion TLS
-Secret from the existing Cube CA before application rollout; Cubelet no longer
-contains a Node completion process or platform database/object-store credentials.
-The source pipeline and [delivery report](reports/runtime-decoupling-20261109.md)
-record the pending verification for this change.
+ADR-0307 keeps schema 215 and reply topic v4, and changes the Session topic to v20,
+managed Cube protocol to 10, and fixed Guest executor control to version 1. The
+existing Guest Tool payload remains version 7. Guest admission/cancellation uses
+ordinary envd process APIs; remove native managed execution endpoints and their
+manager. Session activity replaces PG Worker/lease maintenance scans; probes are
+on-demand. [Decision](adr/0307-guest-execution-and-session-activity.md).
 
-Drain writers and materialize every protected native replay suffix before migration.
+Drain writers and materialize protected native replay suffixes before replacement.
 Preserve accounts, model/provider configuration, credentials, stable machine intent
-and Workspace files. After cutover, remove retired v18/v3 Kafka transports only
-when no surviving native replay or pending Tool reference requires them. A new
-Worker's consumption is not permission to discard an unsettled result.
+and Workspace files. Retire compute with confirmed physical absence before replacing
+Guest/Cube protocols. The maintained operator prepares and scans all matched
+artifacts, then applies the same recorded candidate; no mixed-version fallback.
+Retired v19 data can be removed only when no replay reference requires it. Reply
+v4 remains active; never delete old boot topics still needed by pending native Tools.
 
-Verification is consolidated and serial: native SDK contracts, PG/Kafka recovery,
-Guest HTTPS retry and lifecycle history, external accounting, browser/API replacement,
-and owned live Cube/Worker/VM cases. Historical procedures below describe their
-original releases; obsolete Cubelet Node-adapter injection is not a current path.
-No verification claim transfers automatically to this revision.
+Run source/PG/RF3 and native allocation/Volume tests serially, then live Guest
+admission, cancellation, daemon/caller loss, Worker continuation, images, retention
+and physical cleanup. Finite expiry during an unconfirmed Tool is now intentional;
+a busy map must not veto the resource policy. Missing probes never authorize
+physical cleanup. The 131 MiB cold-provider upload remains outside this release.
 
-The handoff acceptance driver now selects the process boundary explicitly:
-`PI_CLOUD_LIVE_SESSION_RUNTIME_RESTART_CHECK=1 PI_CLOUD_LIVE_HANDOFF_ROLE=session-api`
-replaces the public API while the Worker/Projector continue; use
-`PI_CLOUD_LIVE_HANDOFF_ROLE=pi-worker` for abrupt owning-Worker replacement during
-one remote Bash. Both run through `scripts/run-live-cube-handoff-restart-check.mjs`.
-The Worker case requires the same Run to complete and the file to contain exactly
-one start/end pair. It does not redispatch the accepted shell command.
+The handoff driver supports `PI_CLOUD_LIVE_HANDOFF_ROLE=session-api` or `pi-worker`
+with `scripts/run-live-cube-handoff-restart-check.mjs`; the Worker case must retain
+one logical Run and one start/end pair without redispatching the command. The
+publication is not complete until these maintained live gates pass.
 
 ## Earlier release procedures
 

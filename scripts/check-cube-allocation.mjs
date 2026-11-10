@@ -1,7 +1,7 @@
 // Exercise the maintained allocation patch with real node metadata and MySQL.
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, mkdir } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -22,6 +22,18 @@ const repository = resolve(
 const directory = await mkdtemp(join(tmpdir(), "pi-cloud-allocation-contract-"));
 const exec = promisify(execFile);
 const name = `pi-cloud-allocation-${randomUUID()}`;
+const goCache = process.env.PI_CLOUD_CUBE_TEST_CACHE_DIRECTORY;
+const cacheMounts = [];
+if (goCache) {
+  for (const [name, destination] of [
+    ["modules", "/go/pkg/mod"],
+    ["build", "/root/.cache/go-build"],
+  ]) {
+    const path = resolve(goCache, name);
+    await mkdir(path, { recursive: true });
+    cacheMounts.push("-v", `${path}:${destination}`);
+  }
+}
 let container;
 async function run(command, args, options = {}) {
   const child = spawn(command, args, { cwd: root, stdio: "inherit", ...options });
@@ -104,6 +116,7 @@ try {
         "GOTMPDIR=/tmp",
         "-v",
         `${directory}:/source:ro`,
+        ...cacheMounts,
         "-v",
         `${join(root, "deploy/cubesandbox/cube-volume-picloud-posix.sh")}:/posix-plugin:ro`,
         "-e",
@@ -129,14 +142,12 @@ try {
         "env GOTMPDIR=/test-tmp",
         "-v",
         "./pkg/allocation",
-        ...(component === "Cubelet"
-          ? ["./plugins/volume/...", "./pkg/execution", "./pkg/lifecyclejournal"]
-          : []),
+        ...(component === "Cubelet" ? ["./plugins/volume/...", "./pkg/lifecyclejournal"] : []),
       ],
       { env: { ...process.env, PI_CLOUD_ALLOCATION_MYSQL_DSN: dsn } },
     );
   }
-  // Compose managed cleanup, paused destruction and HTTPS failure delivery and lifecycle capture.
+  // Compose managed cleanup, paused destruction and lifecycle capture.
   // The logic fixture needs no KVM or CGO cubecow library; production builds
   // separately compile the CGO runtime and live tests exercise actual VMs.
   await run("docker", [
@@ -147,6 +158,7 @@ try {
     "--cpus=2",
     "-v",
     `${directory}:/source:ro`,
+    ...cacheMounts,
     "-w",
     "/source/Cubelet",
     "-e",
@@ -164,7 +176,7 @@ try {
     "-count=1",
     "./services/cubebox",
     "-run",
-    "TestManagedCleanup|TestDestroyLifecycle|TestExecution|TestVolumeHolder|TestLifecycle",
+    "TestManagedCleanup|TestDestroyLifecycle|TestVolumeHolder|TestLifecycle",
   ]);
 } finally {
   if (container) await exec("docker", ["stop", "-t", "5", container]).catch(() => {});

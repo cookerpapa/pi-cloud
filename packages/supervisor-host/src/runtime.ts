@@ -344,11 +344,6 @@ export class PiWorkerRuntime {
         this.#claimAvailability() !== undefined,
       stopCurrentBoot: () => this.#stopCurrentBoot(),
       assignmentInventory: this.#sandboxControl,
-      receiveProbe: (request) => {
-        if (!(this.#activeExecutionLogs instanceof WorkerExecutionLog))
-          throw new Error("Worker reply receiver is not ready");
-        return this.#activeExecutionLogs.receiveProbe(request);
-      },
       subagentCommand: async (command) => {
         if (!this.#nativeSessions || !this.#subagentControl)
           throw new Error("Subagent runtime is not ready");
@@ -565,12 +560,6 @@ export class PiWorkerRuntime {
       partitionFor: (id) => kafkaProducerLane(id, this.#config.kafka.partitions),
       report: (delivery) => activity.execution(delivery),
       confirm: (delivery, signal) => activity.confirmExecution(delivery, signal),
-      request: (fact, signal) =>
-        activity.requestProbe(
-          fact,
-          kafkaProducerLane(fact.scope.piSessionId, this.#config.kafka.partitions),
-          signal,
-        ),
     });
     toolReplies.onExecutionEvidence = (id, evidence) => {
       workerLog?.recordExecutionEvidence(id, evidence);
@@ -657,6 +646,14 @@ export class PiWorkerRuntime {
           sessionId: p.sessionId,
           turnId: p.turnId,
           nextEventSeq: p.nextEventSeq,
+          ...(p.executionMode === "elastic" || p.computeSessionId
+            ? {
+                resourceUse: {
+                  workspaceId: p.workspaceId,
+                  ...(p.computeSessionId ? { computeSessionId: p.computeSessionId } : {}),
+                },
+              }
+            : {}),
         });
         return {
           publish: async (event) => {

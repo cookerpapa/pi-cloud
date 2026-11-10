@@ -1,16 +1,53 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { createExecutionReference, type PathProbe } from "@pi-cloud/protocol";
+import {
+  createExecutionReference,
+  PublicationNotSentError,
+  type PathProbe,
+} from "@pi-cloud/protocol";
 import type { AcceptedFact } from "../src/accepted-fact.ts";
 import { WorkerExecutionLog } from "../src/worker-execution-log.ts";
 import { toolInvocationFixture } from "./tool-invocation-fixture.ts";
 import { parseKafkaAcceptedFact } from "../src/kafka-accepted-fact.ts";
 import { ToolReplyMailbox, toolReplyTopic } from "@pi-cloud/event-log";
 afterEach(() => vi.useRealTimers());
-async function fixture() {
+it("retires the whole writer after uncertain Session activity publication", async () => {
+  vi.useFakeTimers();
+  const f = await fixture({ workspaceId: "used" }, (fact) => {
+    if (fact.kind === "session_activity") throw new Error("producer fenced");
+  });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(f.writer.failureSignal?.aborted).toBe(true);
+  await expect(f.publish()).rejects.toThrow("fenced");
+  await f.log.close();
+});
+it("defers definitely unsent activity without disabling native publication", async () => {
+  vi.useFakeTimers();
+  let first = true;
+  const f = await fixture({ workspaceId: "used" }, (fact) => {
+    if (first && fact.kind === "session_activity") {
+      first = false;
+      throw new PublicationNotSentError("full before enqueue");
+    }
+  });
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.writer.failureSignal?.aborted).toBe(false);
+    await f.publish();
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(f.facts.at(-1)?.kind).toBe("session_activity");
+  } finally {
+    await f.log.close();
+  }
+});
+async function fixture(
+  resourceUse?: { workspaceId: string },
+  onAppend?: (fact: AcceptedFact) => void,
+) {
   const facts: AcceptedFact[] = [];
   const log = new WorkerExecutionLog({
     append: async (fact) => {
       facts.push(fact);
+      onAppend?.(fact);
       return { factId: fact.factId, durable: true };
     },
     checkHealth: async () => {},
@@ -24,6 +61,7 @@ async function fixture() {
     nextEventSeq: 1,
     piSession: { id: scope.piSessionId, conversationId: 1, writerId: scope.writerId },
     publication: { scope },
+    ...(resourceUse ? { resourceUse } : {}),
   });
   const { leaseId: _lease, piConversationId: _conversation, ...identity } = scope;
   const publish = () =>
@@ -40,10 +78,10 @@ async function fixture() {
     });
   return { facts, log, scope, identity, reference, writer, publish };
 }
-it("does not accept maintenance as Session Kafka history", async () => {
+it("rejects obsolete keepalive and incomplete Session activity envelopes", async () => {
   const f = await fixture();
   try {
-    for (const kind of ["path_probe", "runtime_keepalive"])
+    for (const kind of ["session_activity", "runtime_keepalive"])
       expect(() =>
         parseKafkaAcceptedFact(
           JSON.stringify({
@@ -58,24 +96,58 @@ it("does not accept maintenance as Session Kafka history", async () => {
     await f.log.close();
   }
 });
-it("keeps silent families free of periodic Kafka publications", async () => {
+it("publishes bounded Session activity during silent model waits without advancing native or display sequence", async () => {
   vi.useFakeTimers();
-  const f = await fixture();
+  const f = await fixture({ workspaceId: crypto.randomUUID() });
   try {
     await f.publish();
-    await vi.advanceTimersByTimeAsync(40 * 60_000);
-    expect(f.facts.map((fact) => fact.kind)).toEqual(["durable_commit"]);
+    await vi.advanceTimersByTimeAsync(3 * 60_000);
+    expect(f.facts.filter((x) => x.kind === "session_activity")).toHaveLength(4);
+    expect(f.facts.filter((x) => x.kind === "durable_commit")).toHaveLength(1);
     expect(f.writer.acknowledgedThroughSeq).toBe(0);
+    await f.writer.drain();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(f.facts.filter((x) => x.kind === "session_activity")).toHaveLength(4);
+  } finally {
+    await f.log.close();
+  }
+});
+it("uses one physical writer for child resource activity and removes settled children", async () => {
+  vi.useFakeTimers();
+  const f = await fixture({ workspaceId: "parent" });
+  try {
+    const child = f.log.openConversation(f.reference, {
+      conversationId: 2,
+      sessionId: crypto.randomUUID(),
+      turnId: crypto.randomUUID(),
+      nextEventSeq: 1,
+      resourceUse: { workspaceId: "child" },
+    });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(f.facts.at(-1)).toMatchObject({
+      kind: "session_activity",
+      scope: f.identity,
+      resources: [{ workspaceId: "parent" }, { workspaceId: "child" }],
+    });
+    await child.close();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(f.facts.at(-1)).toMatchObject({ resources: [{ workspaceId: "parent" }] });
   } finally {
     await f.log.close();
   }
 });
 it("coalesces fault checks and waits for a fresh reply and owner confirmation over HTTP", async () => {
   vi.useFakeTimers();
-  const f = await fixture(),
-    mailbox = new ToolReplyMailbox();
-  const requests: PathProbe[] = [],
-    owner = Promise.withResolvers<boolean>(),
+  const mailbox = new ToolReplyMailbox(),
+    requests: PathProbe[] = [];
+  const registered = vi.spyOn(mailbox, "waitProbe");
+  const f = await fixture(undefined, (fact) => {
+    if (fact.kind === "path_probe") {
+      expect(registered).toHaveBeenCalledOnce();
+      requests.push(fact);
+    }
+  });
+  const owner = Promise.withResolvers<boolean>(),
     confirm = vi.fn(() => owner.promise);
   f.log.configureExecutionProbes({
     topic: toolReplyTopic(crypto.randomUUID()),
@@ -83,10 +155,6 @@ it("coalesces fault checks and waits for a fresh reply and owner confirmation ov
     report: vi.fn(),
     confirm,
     partitionFor: () => 0,
-    request: async (value) => {
-      requests.push(value);
-      return true;
-    },
   });
   try {
     const binding = crypto.randomUUID();
@@ -116,7 +184,7 @@ it("coalesces fault checks and waits for a fresh reply and owner confirmation ov
     owner.resolve(true);
     expect(await first).toBe(true);
     expect(await second).toBe(true);
-    expect(f.facts).toHaveLength(1);
+    expect(f.facts.map((f) => f.kind)).toEqual(["durable_commit", "path_probe"]);
     expect(mailbox.size).toBe(0);
   } finally {
     owner.resolve(false);
@@ -124,25 +192,22 @@ it("coalesces fault checks and waits for a fresh reply and owner confirmation ov
     await f.log.close();
   }
 });
-it.each(["lost_reply", "lost_http_ack", "changed_binding", "stop", "closing_writer"])(
+it.each(["lost_reply", "changed_binding", "stop", "closing_writer"])(
   "does not turn %s into readiness or writer revocation",
   async (fault) => {
     vi.useFakeTimers();
-    const f = await fixture(),
-      mailbox = new ToolReplyMailbox(),
+    const mailbox = new ToolReplyMailbox(),
       sent: PathProbe[] = [];
-    const acknowledgement = Promise.withResolvers<boolean>(),
-      confirm = vi.fn(async () => true);
+    const f = await fixture(undefined, (fact) => {
+      if (fact.kind === "path_probe") sent.push(fact);
+    });
+    const confirm = vi.fn(async () => true);
     f.log.configureExecutionProbes({
       topic: toolReplyTopic(crypto.randomUUID()),
       replies: mailbox,
       report: vi.fn(),
       confirm,
       partitionFor: () => 0,
-      request: async (value) => {
-        sent.push(value);
-        return fault === "lost_http_ack" ? acknowledgement.promise : true;
-      },
     });
     try {
       const binding = crypto.randomUUID(),
@@ -158,7 +223,6 @@ it.each(["lost_reply", "lost_http_ack", "changed_binding", "stop", "closing_writ
       expect(await ready).toBe(false);
       expect(confirm).not.toHaveBeenCalled();
       expect(f.writer.failureSignal?.aborted).toBe(false);
-      acknowledgement.resolve(true);
       const probe = sent[0]!;
       mailbox.accept({
         kind: "execution_probe",
@@ -176,56 +240,44 @@ it.each(["lost_reply", "lost_http_ack", "changed_binding", "stop", "closing_writ
       await vi.advanceTimersByTimeAsync(0);
       expect(confirm).not.toHaveBeenCalled();
     } finally {
-      acknowledgement.resolve(false);
       mailbox.close();
       await f.log.close();
     }
   },
 );
-it("passively registers the owned current-Worker receiver before execution-side dispatch", async () => {
+it("publishes child probes with the physical writer identity and the child's exact binding", async () => {
   vi.useFakeTimers();
   const f = await fixture(),
-    mailbox = new ToolReplyMailbox(),
-    report = vi.fn();
-  const topic = toolReplyTopic(crypto.randomUUID());
+    mailbox = new ToolReplyMailbox();
   f.log.configureExecutionProbes({
-    topic,
+    topic: toolReplyTopic(crypto.randomUUID()),
     replies: mailbox,
-    report,
+    report: vi.fn(),
     confirm: async () => true,
-    request: async () => true,
     partitionFor: () => 0,
+  });
+  const child = f.log.openConversation(f.reference, {
+    conversationId: 2,
+    sessionId: crypto.randomUUID(),
+    turnId: crypto.randomUUID(),
+    nextEventSeq: 1,
   });
   try {
     const binding = crypto.randomUUID();
-    await f.publish();
-    f.log.bindRuntime(f.reference, binding);
-    const request: PathProbe = {
-      kind: "path_probe",
-      factId: crypto.randomUUID(),
-      scope: f.identity,
-      occurredAt: new Date().toISOString(),
-      execution: {
-        replyTopic: topic,
-        bindings: [{ scope: f.identity, bindingId: binding, probe: true }],
-      },
-    };
-    expect(() =>
-      f.log.receiveProbe({ ...request, scope: { ...f.identity, writerId: crypto.randomUUID() } }),
-    ).toThrow();
-    expect(f.log.receiveProbe(request)).toBe(topic);
-    mailbox.accept({
-      kind: "execution_probe",
-      probeId: request.factId,
-      sentAt: Date.parse(request.occurredAt),
-      guestBootId: "guest",
-      bindingIds: [binding],
-      evidence: { bindingId: binding, targetId: "target", bootId: "boot", observedAt: Date.now() },
-    });
+    f.log.bindRuntime(f.reference, binding, 2);
+    const check = f.log.confirmExecution(f.reference, binding, 2, new AbortController().signal);
     await vi.advanceTimersByTimeAsync(0);
-    expect(report).toHaveBeenCalledOnce();
-    expect(f.facts).toHaveLength(1);
+    expect(f.facts.at(-1)).toMatchObject({
+      kind: "path_probe",
+      scope: f.identity,
+      execution: {
+        bindings: [{ bindingId: binding, scope: { sessionId: child.publication.scope.sessionId } }],
+      },
+    });
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(await check).toBe(false);
   } finally {
+    await child.close();
     mailbox.close();
     await f.log.close();
   }

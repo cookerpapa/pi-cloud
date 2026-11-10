@@ -24,7 +24,6 @@ function fixture() {
     partition: 0,
   };
   const packet: CompletionPacket = {
-    id: randomUUID(),
     kind: "result",
     operationId,
     context,
@@ -87,25 +86,6 @@ it.each([null, { type: "text", text: 17 }, { type: "unexpected" }])(
       kind: "execution_failure",
       failure: { code: "tool_reply_protocol_error", effect: "unknown" },
     });
-  },
-);
-
-it.each([
-  ["tool_cancelled_before_start", "not_started"],
-  ["tool_cancelled", "unknown"],
-  ["read_capacity_timeout", "not_started"],
-] as const)(
-  "keeps native pre-start and in-flight interruption distinct: %s",
-  async (code, effect) => {
-    const f = fixture();
-    await f.adapter.accept({ ...f.packet, result: { failure: code } });
-    expect(f.publish.mock.calls[0]![1]).toMatchObject({
-      kind: "execution_failure",
-      failure: { effect },
-    });
-    const reply = f.publish.mock.calls[0]![1] as Extract<ToolReply, { kind: "execution_failure" }>;
-    if (effect === "not_started") expect(reply.failure.message).toContain("did not start");
-    else expect(reply.failure.message).toContain("inspect effects");
   },
 );
 
@@ -201,7 +181,7 @@ it("preserves a known directory failure as a final native Tool result", async ()
   expect(f.put).not.toHaveBeenCalled();
 });
 
-it.each(["workspace_attach_invalid", "tool_worker_failed"])(
+it.each(["workspace_attach_invalid", "tool_worker_failed", "tool_operation_outcome_unknown"])(
   "keeps guest infrastructure failure uncertain: %s",
   async (code) => {
     const f = fixture();
@@ -239,18 +219,6 @@ it("returns a blocking protocol failure for mismatched identity or old guest wir
     });
 });
 
-it("marks an unconfirmed scope stop as runtime unavailable without destroying a VM", async () => {
-  const f = fixture();
-  await f.adapter.accept({
-    ...f.packet,
-    result: { failure: "tool_scope_stop_unconfirmed", quarantine: true },
-  });
-  expect(f.publish.mock.calls[0]![1]).toMatchObject({
-    kind: "execution_failure",
-    failure: { code: "cubesandbox_tool_unavailable", effect: "unknown" },
-  });
-});
-
 it("publishes one distinct probe reply for shared VM bindings without Tool or image work", async () => {
   const f = fixture(),
     probeId = randomUUID(),
@@ -276,7 +244,7 @@ it("publishes one distinct probe reply for shared VM bindings without Tool or im
   expect(f.put).not.toHaveBeenCalled();
   expect(f.progress.update).not.toHaveBeenCalled();
   await expect(
-    f.adapter.accept({ ...packet, result: { failure: "probe_expired" } }),
+    f.adapter.accept({ ...packet, result: { output: { type: "worker.failed" } } }),
   ).rejects.toThrow();
   await expect(f.adapter.accept({ ...packet, operationId: randomUUID() })).rejects.toThrow(
     "identity",
@@ -291,6 +259,18 @@ it("only actual native guest completion supplies physical execution evidence", a
   expect(f.publish.mock.calls[0]![1]).toMatchObject({
     execution: { ...f.context.execution, observedAt: expect.any(Number) },
   });
-  await f.adapter.accept({ ...f.packet, result: { failure: "execution_not_started" } });
+  await f.adapter.accept({
+    ...f.packet,
+    result: {
+      output: {
+        toolWorkerProtocolVersion: 7,
+        type: "worker.failed",
+        operationId: f.packet.operationId,
+        code: "tool_operation_outcome_unknown",
+        message: "Guest operation interrupted",
+        retryable: false,
+      },
+    },
+  });
   expect(f.publish.mock.calls[1]![1]).not.toHaveProperty("execution");
 });

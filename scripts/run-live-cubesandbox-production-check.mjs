@@ -1164,11 +1164,6 @@ try {
     (await cube.observe(sourceExecution.sandboxId, sourceExecution.nodeId)).presence,
     "absent",
   );
-  assert.equal(
-    (await cube.executionTarget(sourceExecution.sandboxId, sourceExecution.nodeId)).bootId,
-    sourceExecution.bootId,
-    "Keep the executor Boot unchanged for the post-deletion admission check",
-  );
   const absentOperation = {
     source: { topic: ACCEPTED_FACT_TOPIC, partition: 0, offset: "0" },
     operationId: randomUUID(),
@@ -1176,23 +1171,24 @@ try {
     writerId: randomUUID(),
   };
   const refusedBeforeAdmission = (error) =>
-    error instanceof CubeExecutionRejected && error.code === "execution_unavailable";
+    error instanceof CubeExecutionRejected &&
+    ["execution_unavailable", "execution_not_started"].includes(error.code);
+  await assert.rejects(
+    cube.executionTarget(sourceExecution.sandboxId, sourceExecution.nodeId),
+    refusedBeforeAdmission,
+  );
   // Negative endpoint check after anchored absence. Opaque empty payloads can
   // never contain a file/shell command; no new execution intent is being created.
   await assert.rejects(
     cube.submitTool(sourceExecution, {
       ...absentOperation,
       payload: {},
-      completionContext: {},
       timeoutMs: 1000,
-      maximumOutputBytes: 1024,
     }),
     refusedBeforeAdmission,
   );
   await assert.rejects(cube.cancelTool(sourceExecution, absentOperation), refusedBeforeAdmission);
-  progress(
-    "deleted VM rejected both Tool and cancellation admission on the original executor Boot",
-  );
+  progress("deleted Guest rejected Tool, cancellation and execution identity lookup");
 
   const largeFollowUp = await runTurn(
     largeSession.sessionId,

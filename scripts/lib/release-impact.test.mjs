@@ -69,10 +69,8 @@ it("maps the public Tool-host scope to one shared artifact and one independent i
 });
 
 it("keeps maintenance changes on full CI while exposing a narrow operator repair target", () => {
-  expect(releaseImpact(["packages/sandbox-control/src/execution-maintenance.ts"]).scope).toBe(
+  expect(releaseImpact(["packages/sandbox-control/src/session-activity-retention.ts"]).scope).toBe(
     "full",
   );
-  expect(imageReleaseTargets["execution-maintenance"]).toEqual(
-    imageReleaseTargets["session-decoder"],
-  );
+  expect(imageReleaseTargets["session-retention"]).toEqual(imageReleaseTargets["session-decoder"]);
 });

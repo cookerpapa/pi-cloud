@@ -147,10 +147,7 @@ it("publishes Projector status immediately and shares one guest probe across VM 
     expect(f.observer.targets).toHaveBeenCalledOnce();
     await vi.waitFor(() => expect(f.submitProbe).toHaveBeenCalledOnce());
     const submitted = vi.mocked(f.submitProbe).mock.calls[0]![1];
-    expect(
-      JSON.parse((submitted.completionContext as { capability: string }).capability),
-    ).toMatchObject({
-      issuer: "guest",
+    expect(JSON.parse((submitted.delivery as { capability: string }).capability)).toMatchObject({
       context: { bindingIds: [f.first.bindingId, f.second.bindingId] },
     });
     f.probes.complete(f.completion());

@@ -1,11 +1,12 @@
 import { KafkaToolReplyMailbox } from "@pi-cloud/event-log";
 import {
-  MAX_IMAGE_GUEST_RESPONSE_BYTES,
   parseExecutionReference,
   parseNativeToolEvent,
   type ToolSandboxOperationRequest,
   type ToolSandboxOperationResponse,
 } from "@pi-cloud/protocol";
+import { readFile } from "node:fs/promises";
+import { ToolCompletionIssuer } from "../../src/tool-completion-issuer.ts";
 import { randomUUID } from "node:crypto";
 import {
   OfficialCubeSandboxRuntimeClient,
@@ -23,6 +24,16 @@ export async function liveNativeTools(
   const brokers = process.env.PI_CLOUD_KAFKA_BROKERS?.split(",");
   if (!brokers?.length)
     throw new Error("Live native Tool completion requires PI_CLOUD_KAFKA_BROKERS");
+  const url = process.env.PI_CLOUD_TOOL_COMPLETION_URL,
+    caFile = process.env.PI_CLOUD_COMPLETION_CA_FILE,
+    secretFile = process.env.PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE;
+  if (!url || !caFile || !secretFile)
+    throw new Error("Guest live fixture requires completion URL, CA and management token file");
+  const issuer = new ToolCompletionIssuer({
+    url,
+    ca: await readFile(caFile, "utf8"),
+    secret: (await readFile(secretFile, "utf8")).trim(),
+  });
   const client = new OfficialCubeSandboxRuntimeClient(runtime);
   const mailbox = new KafkaToolReplyMailbox({
     brokers,
@@ -82,27 +93,28 @@ export async function liveNativeTools(
             type: "worker.operation",
             attachment: binding.descriptor.attachment,
             request,
-          },
-          completionContext: {
-            scope: {
-              tenantId: assignment.tenantId,
-              sessionId: assignment.sessionId,
-              piSessionId: assignment.sessionId,
-              turnId: assignment.turnId,
-              runId: identity.runId,
-              writerId: identity.leaseId,
-              leaseId: identity.leaseId,
-              fencingToken: identity.fencingToken,
-            },
-            replyTopic: mailbox.topic,
-            toolCallId: request.toolCallId,
-            nativeToolCallId: request.toolCallId,
-            toolName: request.toolName,
-            partition: 0,
+            delivery: await issuer.issue({
+              operationId: request.operationId,
+              expiresAt: Date.now() + request.timeoutMs + 15000,
+              context: {
+                scope: {
+                  tenantId: assignment.tenantId,
+                  sessionId: assignment.sessionId,
+                  piSessionId: assignment.sessionId,
+                  turnId: assignment.turnId,
+                  runId: identity.runId,
+                  writerId: identity.leaseId,
+                  fencingToken: identity.fencingToken,
+                },
+                replyTopic: mailbox.topic,
+                toolCallId: request.toolCallId,
+                nativeToolCallId: request.toolCallId,
+                toolName: request.toolName,
+                partition: 0,
+              },
+            }),
           },
           timeoutMs: request.timeoutMs + 5000,
-          maximumOutputBytes:
-            request.toolName === "read" ? MAX_IMAGE_GUEST_RESPONSE_BYTES : 8 * 1024 * 1024,
         });
         const event = parseNativeToolEvent({
           type: "tool_execution_end",

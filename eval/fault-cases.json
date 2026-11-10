@@ -1217,8 +1217,8 @@
       "id": "started-cancel-outcome-unknown",
       "workspace": "@pi-cloud/cube-completion",
       "file": "test/adapter.test.ts",
-      "test": "keeps native pre-start and in-flight interruption distinct: tool_cancelled",
-      "invariant": "Interruption after native execution may have effects; only explicit before-start cancellation proves no execution."
+      "test": "keeps guest infrastructure failure uncertain: tool_operation_outcome_unknown",
+      "invariant": "An interrupted Guest without a confirmed final result stays UNKNOWN; it cannot certify absence of earlier effects."
     },
     {
       "id": "durable-ack-visibility",
@@ -1877,13 +1877,6 @@
       "file": "test/path-probe.test.ts",
       "test": "does not turn lost_reply into readiness or writer revocation",
       "invariant": "Missing Guest replies end the bounded diagnostic check without certifying readiness or revoking a writer."
-    },
-    {
-      "id": "readiness-lost-publication-ack",
-      "workspace": "@pi-cloud/runtime-core",
-      "file": "test/path-probe.test.ts",
-      "test": "does not turn lost_http_ack into readiness or writer revocation",
-      "invariant": "Unconfirmed probe HTTP handoff cannot pin a readiness waiter or become successful evidence."
     },
     {
       "id": "reply-admission-recovery",
@@ -2740,20 +2733,6 @@
       "invariant": "OS lock loss permits inspection, not deletion of changed Skill staging or completed user files."
     },
     {
-      "id": "maintenance-no-native-history",
-      "workspace": "@pi-cloud/runtime-core",
-      "file": "test/path-probe.test.ts",
-      "test": "does not accept maintenance as Session Kafka history",
-      "invariant": "Maintenance is not a second native execution history."
-    },
-    {
-      "id": "maintenance-no-worker-kafka-timer",
-      "workspace": "@pi-cloud/runtime-core",
-      "file": "test/path-probe.test.ts",
-      "test": "keeps silent families free of periodic Kafka publications",
-      "invariant": "A silent Worker does not publish periodic maintenance into the Session log."
-    },
-    {
       "id": "guest-callback-lost-ack",
       "workspace": "@pi-cloud/tool-sandbox",
       "file": "test/completion-client.test.ts",
@@ -2815,6 +2794,76 @@
       "file": "test/tool-reply-retention.test.ts",
       "test": "protects an old boot's reply suffix until native settlement releases its reference",
       "invariant": "A positively retired Worker does not make a pending native operation's original reply suffix or Topic collectible."
+    },
+    {
+      "id": "guest-admission-restart",
+      "workspace": "@pi-cloud/tool-sandbox",
+      "file": "test/guest-executor-store.test.ts",
+      "test": "retains replay boundaries and outstanding registrations across a Guest service restart",
+      "invariant": "Guest restart never replays accepted effects."
+    },
+    {
+      "id": "guest-cancel-before-submit",
+      "workspace": "@pi-cloud/tool-sandbox",
+      "file": "test/guest-executor-store.test.ts",
+      "test": "rejects a delayed submit when cancellation reached the Guest first",
+      "invariant": "The destination ordered position prevents a late Tool from starting."
+    },
+    {
+      "id": "guest-cancel-background",
+      "workspace": "@pi-cloud/tool-sandbox",
+      "file": "test/guest-executor-store.test.ts",
+      "test": "cancels only the original unfinished scope and never completed background work",
+      "invariant": "Stop remains scoped to the original unfinished operation."
+    },
+    {
+      "id": "guest-deadline-restart",
+      "workspace": "@pi-cloud/tool-sandbox",
+      "file": "test/guest-executor-store.test.ts",
+      "test": "does not extend the original operation deadline after restart",
+      "invariant": "Recovery keeps the original deadline."
+    },
+    {
+      "id": "guest-caller-loss",
+      "workspace": "@pi-cloud/tool-sandbox",
+      "file": "test/guest-executor-ipc.test.ts",
+      "test": "a lost caller connection does not cancel an already accepted Guest request",
+      "invariant": "The request connection does not own operation lifetime."
+    },
+    {
+      "id": "session-activity-fenced",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/path-probe.test.ts",
+      "test": "retires the whole writer after uncertain Session activity publication",
+      "invariant": "An uncertain maintenance publication follows the existing writer failure boundary."
+    },
+    {
+      "id": "session-activity-unsent",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/path-probe.test.ts",
+      "test": "defers definitely unsent activity without disabling native publication",
+      "invariant": "A known pre-enqueue refusal does not make native execution uncertain."
+    },
+    {
+      "id": "session-activity-silent",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/path-probe.test.ts",
+      "test": "publishes bounded Session activity during silent model waits without advancing native or display sequence",
+      "invariant": "Retention declarations are not native history or display progress."
+    },
+    {
+      "id": "session-activity-revoked",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/session-activity-retention.test.ts",
+      "test": "does not renew from revoked activity after an asynchronous cold read",
+      "invariant": "Partition revocation invalidates late resource-view work."
+    },
+    {
+      "id": "session-activity-no-pg-projection",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-projector-handoffs.test.ts",
+      "test": "routes Session activity without native PG projection or a Tool dispatch receipt",
+      "invariant": "Transport-only resource use neither writes native history nor admits a Tool effect."
     }
   ]
 }

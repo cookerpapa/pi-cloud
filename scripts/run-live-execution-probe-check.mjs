@@ -77,8 +77,8 @@ try{
  // An undeliverable reply belongs solely to this fixture. Do not interrupt
  // the shared Kafka brokers or a user's Worker to emulate that failure.
  const probeId=randomUUID(),bindingId=randomUUID();
- await client.submitProbe(target,{probeId,executionScopeId:randomUUID(),writerId:randomUUID(),completionContext:await completion.issue({
-   operationId:probeId,issuer:'guest',expiresAt:Date.now()+10000,context:{
+ await client.submitProbe(target,{probeId,delivery:await completion.issue({
+   operationId:probeId,expiresAt:Date.now()+10000,context:{
    kind:'execution_probe',replyTopic:'pi-cloud.tool-replies.v4.'+randomUUID(),sentAt:Date.now(),bindingIds:[bindingId],
    execution:{bindingId,targetId:'fixture',bootId:target.bootId}}})});
  await client.probeExecution(target,randomUUID());
@@ -195,19 +195,24 @@ try {
         `Run ended before live probe confirmation: ${r.state} ${JSON.stringify(r.failure)}`,
       );
     }
-    const confirmed = observations.find(
-      (v) => v.runId === turn.runId && v.type === "run.execution" && v.execution.confirmedAt,
-    );
-    if (!confirmed) return;
     const detail = await api.getConversation(session.sessionId);
     const tools =
       detail.turns
         .find((t) => t.runId === turn.runId)
         ?.transcript.items.filter((i) => i.kind === "tool") ?? [];
-    if (tools.some((t) => t.status === "running")) return confirmed;
-  }, "probe returned while the real Bash remains in progress");
-  report.confirmedDuringBash = true;
-  assert(observations.some((v) => v.runId === turn.runId && v.type === "run.path"));
+    return tools.some((t) => t.status === "running");
+  }, "real Bash execution");
+  // Ordinary waiting emits Session activity, not unsolicited full Guest probes.
+  const before = Date.now();
+  await waitFor(
+    async () =>
+      observations.some(
+        (v) => v.runId === turn.runId && v.type === "run.path" && v.observedAt > before + 30000,
+      ),
+    "Session path activity during silent Tool wait",
+    90000,
+  );
+  report.activityDuringBash = true;
   const done = await waitFor(async () => {
     const r = await api.getRun(turn.runId);
     return terminal(r) ? r : undefined;

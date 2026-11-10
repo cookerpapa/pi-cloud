@@ -362,6 +362,7 @@ export async function startSessionRuntime(): Promise<void> {
       controlTools,
       executionProbes: sandboxControl.probes,
       runtimeRetention: sandboxControl.retention,
+      sessionActivity: sandboxControl.sessionActivity,
       controlChanges: {
         load: async (partitions, current) => {
           await bindingView.load(partitions, current);
@@ -502,10 +503,6 @@ export async function startSessionRuntime(): Promise<void> {
       (delivery) => activeAgentEvents.observations.activity(delivery),
       (delivery) => executionProbes.complete(delivery),
       (delivery) => executionProbes.ready(delivery),
-      {
-        partitionFor: (id) => kafkaProducerLane(id, config.kafkaPartitions),
-        request: (fact) => sandboxControl!.maintenance.request(fact),
-      },
     ).install(runtime.server);
     new ToolProgressIngress(
       config.supervisorManagementToken,

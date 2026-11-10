@@ -7,6 +7,10 @@ Baseline: CubeSandbox v0.7.3, commit
 [Delivery evidence and limitations](../reports/runtime-decoupling-20261109.md)
 describe the actual tested deployment.
 
+This document records the ADR-0306 baseline. The follow-up replacement and resource
+assessment is [ADR-0307](../adr/0307-guest-execution-and-session-activity.md) and
+[the provider comparison](guest-and-resource-boundaries-20261110.md).
+
 ## Verdict
 
 The current Tool execution path still needs Cube source patches. Moving Tool

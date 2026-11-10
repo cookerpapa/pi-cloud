@@ -4,7 +4,7 @@ import {
   modelTests,
   ordinaryControlToolSource,
   sessionDecoderSource,
-  executionMaintenanceSource,
+  sessionRetentionSource,
   workerBootstrapSource,
   sessionApiSource,
   imageReleaseTargets,
@@ -157,7 +157,7 @@ export function assertScopedSources(scope, files) {
         (scope === "tool-host" &&
           file === "deploy/helm/pi-cloud-platform/templates/network-policy.yaml") ||
         (scope === "session-decoder" && file === sessionDecoderSource) ||
-        (scope === "execution-maintenance" && file === executionMaintenanceSource) ||
+        (scope === "session-retention" && file === sessionRetentionSource) ||
         (scope === "worker-bootstrap" &&
           (file === workerBootstrapSource || file === "scripts/production-kubernetes.mjs")) ||
         (scope === "session-api" && sessionApiSource(file)) ||
@@ -340,9 +340,7 @@ export function assertScopedManifests(scope, before, after, desired) {
       container.image = desired;
       targets++;
     } else if (
-      ["web", "tool-host", "session-decoder", "session-api", "execution-maintenance"].includes(
-        scope,
-      ) &&
+      ["web", "tool-host", "session-decoder", "session-api", "session-retention"].includes(scope) &&
       old.kind === "Deployment" &&
       old.metadata.name === imageReleaseTargets[scope].workload.split("/")[1]
     ) {
@@ -468,7 +466,7 @@ export function composeScopedDeployment(
     const target = imageReleaseTargets[scope];
     const name = target.imageName;
     const role = target.componentName ?? name;
-    if (["tool-host", "session-decoder", "execution-maintenance"].includes(scope))
+    if (["tool-host", "session-decoder", "session-retention"].includes(scope))
       for (const shared of Object.keys(sharedHostRoles))
         assert(
           baseline.components[shared],

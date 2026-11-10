@@ -71,3 +71,5 @@ Related assessment: [CLIProxyAPI upstream candidates](reports/provider-upstream-
 Execution-boundary research: [Pi / OpenMA / BoxLite comparison](research/execution-boundaries-20261108.md), with [ADR-0305](adr/0305-execution-owned-tools-and-bindings.md).
 The [remaining Cube patch assessment](research/cube-patch-assessment-20261110.md)
 distinguishes the Guest application from execution and physical lifecycle patches.
+
+Current follow-up: [Guest and provider resource boundaries](research/guest-and-resource-boundaries-20261110.md), supporting [ADR-0307](adr/0307-guest-execution-and-session-activity.md).

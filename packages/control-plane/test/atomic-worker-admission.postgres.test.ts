@@ -110,6 +110,10 @@ describe.skipIf(!endpoint)("atomic Worker admission", () => {
     const coordinator = new SessionLeaseCoordinator({ database: db, workerId: worker });
     const facts: AcceptedFact[] = [];
     const append = vi.fn(async (fact: AcceptedFact) => {
+      // SessionProjector routes maintenance before native PG projection. Keep
+      // these projection fixtures focused on records which materialize history.
+      if (fact.kind === "session_activity" || fact.kind === "path_probe")
+        return { factId: fact.factId, durable: true as const };
       // Kafka is called only after the single admission transaction commits.
       const a = await db
         .selectFrom("runs")

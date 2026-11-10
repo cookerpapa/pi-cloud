@@ -12,7 +12,6 @@ it("conceals routing, scopes Guest replies, and acknowledges only after publicat
   const grant: ToolCompletionGrant = {
     operationId: randomUUID(),
     expiresAt: Date.now() + 60000,
-    issuer: "guest",
     context: {
       scope: {
         tenantId: randomUUID(),

@@ -38,6 +38,9 @@ let pauseReturnsTimeout = false;
 let observationMode: "present" | "absent" | "unavailable" | "missing-endpoint" | "wrong-node" =
   "present";
 let executionReply: unknown = {};
+let guestResponse: ServerResponse | undefined;
+let guestInput = "";
+const guestRequests: Record<string, unknown>[] = [];
 let executionStatus = 200;
 let loseExecutionReply = false;
 let tcpResponse: ServerResponse | undefined;
@@ -49,6 +52,9 @@ beforeEach(() => {
   createReceipt = undefined;
   allocationReplyOverride = undefined;
   observed.length = 0;
+  guestResponse = undefined;
+  guestInput = "";
+  guestRequests.length = 0;
   executionTarget.apiUrl = `http://127.0.0.1:${port}`;
   executionReply = {};
   executionStatus = 200;
@@ -65,19 +71,13 @@ it("renews the original allocation time and rejects unconfirmed or changed ackno
   try {
     allocationReplyOverride = { allocationID: allocation.id, retainUntil: observedAt + 900000 };
     await expect(
-      client.renewRetention(
-        allocation.id,
-        allocation.createBefore,
-        executionTarget.bootId,
-        observedAt,
-      ),
+      client.renewRetention(allocation.id, allocation.createBefore, observedAt),
     ).resolves.toBe(observedAt + 900000);
     expect(observed.at(-1)).toMatchObject({
       method: "POST",
       path: `/allocations/${allocation.id}/renew`,
       body: {
         createBefore: allocation.createBefore,
-        executionBoot: executionTarget.bootId,
         observedAt,
       },
     });
@@ -88,12 +88,7 @@ it("renews the original allocation time and rejects unconfirmed or changed ackno
     ]) {
       allocationReplyOverride = receipt;
       await expect(
-        client.renewRetention(
-          allocation.id,
-          allocation.createBefore,
-          executionTarget.bootId,
-          observedAt,
-        ),
+        client.renewRetention(allocation.id, allocation.createBefore, observedAt),
       ).rejects.toThrow();
     }
   } finally {
@@ -101,37 +96,36 @@ it("renews the original allocation time and rejects unconfirmed or changed ackno
   }
 });
 
-it("uses the same native probe endpoint for direct guest evidence and asynchronous mailbox delivery", async () => {
+it("uses the ordinary process API and fixed Guest service for direct guest evidence and asynchronous mailbox delivery", async () => {
   const client = executionClient();
   const probeId = "10000000-0000-4000-8000-000000000099",
     guestBootId = "10000000-0000-4000-8000-000000000098";
   try {
     executionReply = {
       accepted: true,
-      bootID: executionTarget.bootId,
-      probeID: probeId,
+      bootId: executionTarget.bootId,
+      probeId,
       output: { type: "worker.probe_result", probeId, guestBootId },
     };
     await expect(client.probeExecution(executionTarget, probeId)).resolves.toMatchObject({
       probeId,
       guestBootId,
     });
-    expect(observed.at(-1)?.path).toContain("/execution/probe");
-    expect(observed.at(-1)?.body).not.toHaveProperty("completionContext");
-    executionReply = { accepted: true, bootID: executionTarget.bootId, probeID: probeId };
+    expect(observed.at(-1)?.path).toBe("/process.Process/SendInput");
+    expect(guestRequests.at(-1)).not.toHaveProperty("delivery");
+    executionReply = { accepted: true, bootId: executionTarget.bootId, probeId };
     await client.submitProbe(executionTarget, {
       probeId,
-      executionScopeId: "run",
-      writerId: "writer",
-      completionContext: { kind: "execution_probe" },
+      delivery: { kind: "execution_probe" },
     });
-    expect(observed.at(-1)?.body).toMatchObject({
-      runID: "run",
-      writerID: "writer",
-      completionContext: { kind: "execution_probe" },
+    expect(guestRequests.at(-1)).toMatchObject({
+      action: "probe",
+      delivery: { kind: "execution_probe" },
     });
-    executionReply = { accepted: true, bootID: "replaced", probeID: probeId };
-    await expect(client.probeExecution(executionTarget, probeId)).rejects.toThrow("identity");
+    executionReply = { accepted: true, bootId: "replaced", probeId };
+    await expect(client.probeExecution(executionTarget, probeId)).rejects.toThrow(
+      "acknowledgement",
+    );
     executionReply = { accepted: false, rejection: "node_unavailable" };
     await expect(client.probeExecution(executionTarget, probeId)).rejects.toMatchObject({
       code: "node_unavailable",
@@ -187,15 +181,6 @@ beforeAll(async () => {
         );
         return;
       }
-      if (request.url?.includes("/execution/")) {
-        if (loseExecutionReply) {
-          response.destroy();
-          return;
-        }
-        response.writeHead(executionStatus, { "content-type": "application/json" });
-        response.end(JSON.stringify(executionReply));
-        return;
-      }
       if (request.url === "/health") {
         response.writeHead(200, { "content-type": "application/json" });
         response.end('{"status":"ok"}');
@@ -209,6 +194,21 @@ beforeAll(async () => {
         }
         if (request.url === "/process.Process/Start") {
           response.writeHead(200, { "content-type": "application/connect+json" });
+          if (
+            (body as any)?.process?.args?.includes("/opt/pi-cloud/bin/guest-executor-client.mjs")
+          ) {
+            guestResponse = response;
+            guestInput = "";
+            response.write(connectFrame({ event: { start: { pid: 75 } } }));
+            response.write(
+              connectFrame({
+                event: {
+                  data: { stdout: Buffer.from("PI_CLOUD_GUEST_READY\n").toString("base64") },
+                },
+              }),
+            );
+            return;
+          }
           if (typeof body === "object" && body !== null && "stdin" in body && body.stdin === true) {
             tcpResponse = response;
             response.write(connectFrame({ event: { start: { pid: 74 } } }));
@@ -255,6 +255,30 @@ beforeAll(async () => {
           return;
         }
         if (request.url?.startsWith("/process.Process/") === true) {
+          if ((body as any)?.process?.pid === 75) {
+            if ((body as any)?.input?.stdin)
+              guestInput += Buffer.from((body as any).input.stdin, "base64").toString("utf8");
+            if (guestInput.includes("\n")) {
+              guestRequests.push(JSON.parse(guestInput.trim()));
+              guestInput = "";
+              if (loseExecutionReply || executionStatus !== 200) {
+                guestResponse?.destroy();
+                response.destroy();
+                return;
+              }
+              guestResponse?.end(
+                connectFrame({
+                  event: {
+                    data: {
+                      stdout: Buffer.from(JSON.stringify(executionReply) + "\n").toString("base64"),
+                    },
+                  },
+                }),
+              );
+            }
+            response.writeHead(200, { "content-type": "application/json" }).end("{}");
+            return;
+          }
           const input = body as { input?: { stdin?: string }; signal?: string };
           if (input.input?.stdin)
             tcpResponse?.write(connectFrame({ event: { data: { stdout: input.input.stdin } } }));
@@ -406,6 +430,8 @@ beforeAll(async () => {
             templateID: "pi-cloud-tool-v1",
             state: runtimeState,
             domain: "cube.test",
+            trafficAccessToken: "private-traffic-token",
+            envdAccessToken: "envd-access-token",
             metadata: { "picloud.managed": "true" },
           }),
         );
@@ -866,7 +892,7 @@ describe("official CubeSandbox HTTP compatibility client", () => {
 const executionTarget = {
   apiUrl: "",
   sandboxId: "aabbccddeeff00112233445566778899",
-  nodeId: "node-1",
+  nodeId: "cube-node-1",
   bootId: "11111111-1111-4111-8111-111111111111",
 };
 const executionRequest = {
@@ -875,9 +901,7 @@ const executionRequest = {
   executionScopeId: "33333333-3333-4333-8333-333333333333",
   writerId: "44444444-4444-4444-8444-444444444444",
   payload: {},
-  completionContext: {},
   timeoutMs: 1000,
-  maximumOutputBytes: 1024,
 };
 function executionClient() {
   return new OfficialCubeSandboxRuntimeClient({
@@ -895,19 +919,19 @@ it("accepts only a handoff for the recorded executor boot and operation", async 
   try {
     executionReply = {
       accepted: true,
-      bootID: executionTarget.bootId,
-      operationID: executionRequest.operationId,
+      bootId: executionTarget.bootId,
+      operationId: executionRequest.operationId,
     };
     await client.submitTool(executionTarget, executionRequest);
-    expect(observed.at(-1)?.body).toMatchObject({
-      nodeID: "node-1",
-      bootID: executionTarget.bootId,
-      operationID: executionRequest.operationId,
+    expect(guestRequests.at(-1)).toMatchObject({
+      action: "submit",
+      bootId: executionTarget.bootId,
+      operationId: executionRequest.operationId,
     });
     executionReply = {
       accepted: true,
-      bootID: "wrong-boot",
-      operationID: executionRequest.operationId,
+      bootId: "wrong-boot",
+      operationId: executionRequest.operationId,
     };
     await expect(client.submitTool(executionTarget, executionRequest)).rejects.not.toBeInstanceOf(
       CubeExecutionRejected,
@@ -921,7 +945,7 @@ it("distinguishes explicit refusal from an ambiguous HTTP or identity failure", 
   try {
     executionReply = {
       accepted: false,
-      operationID: executionRequest.operationId,
+      operationId: executionRequest.operationId,
       rejection: "execution_position_stale",
     };
     await expect(client.submitTool(executionTarget, executionRequest)).rejects.toBeInstanceOf(
@@ -934,8 +958,7 @@ it("distinguishes explicit refusal from an ambiguous HTTP or identity failure", 
     executionStatus = 200;
     executionReply = {
       accepted: false,
-      operationID: "another-operation",
-      rejection: "execution_position_stale",
+      rejection: "handoff_unconfirmed",
     };
     await expect(client.submitTool(executionTarget, executionRequest)).rejects.not.toBeInstanceOf(
       CubeExecutionRejected,
@@ -970,11 +993,13 @@ it("routes a recorded endpoint through the deployment-owned credential registry"
   try {
     executionReply = {
       accepted: true,
-      bootID: executionTarget.bootId,
-      operationID: executionRequest.operationId,
+      bootId: executionTarget.bootId,
+      operationId: executionRequest.operationId,
     };
     await client.submitTool({ ...executionTarget, apiUrl: remoteUrl }, executionRequest);
-    expect(observed.at(-1)?.headers.authorization).toBe("Bearer remote-key");
+    expect(observed.find((r) => r.path.startsWith("/sandboxes/"))?.headers.authorization).toBe(
+      "Bearer remote-key",
+    );
   } finally {
     await client.close();
   }

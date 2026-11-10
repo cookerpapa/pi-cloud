@@ -8,9 +8,6 @@ import {
   EXECUTION_READINESS_PATH,
   parseExecutionObservationDelivery,
   type ExecutionObservationDelivery,
-  EXECUTION_PROBE_REQUEST_PATH,
-  parsePathProbe,
-  type PathProbe,
 } from "@pi-cloud/protocol";
 
 /** Uses the existing trusted Worker management credential, never Broker credentials. */
@@ -21,40 +18,10 @@ export class RunActivityIngress {
     readonly publish: (delivery: RunActivityDelivery) => void,
     readonly execution?: (delivery: ExecutionObservationDelivery) => void,
     readonly readiness?: (delivery: ExecutionObservationDelivery) => Promise<boolean>,
-    readonly probeRequest?: {
-      partitionFor(id: string): number;
-      request(fact: PathProbe): Promise<boolean>;
-    },
   ) {}
   install(server: FastifyInstance): void {
     const digest = (value: string) => createHash("sha256").update(value).digest();
     const credential = digest(`Bearer ${this.token}`);
-    if (this.probeRequest)
-      server.post(
-        EXECUTION_PROBE_REQUEST_PATH,
-        { bodyLimit: 64 * 1024 },
-        async (request, reply) => {
-          if (!timingSafeEqual(credential, digest(request.headers.authorization ?? "")))
-            return reply.code(401).send();
-          let fact: PathProbe;
-          try {
-            fact = parsePathProbe(request.body);
-          } catch {
-            return reply.code(400).send();
-          }
-          try {
-            const owner = await this.owner(this.probeRequest!.partitionFor(fact.scope.piSessionId));
-            if (owner)
-              return reply
-                .code(307)
-                .header("location", new URL(EXECUTION_PROBE_REQUEST_PATH, owner).toString())
-                .send();
-            return reply.code((await this.probeRequest!.request(fact)) ? 204 : 409).send();
-          } catch {
-            return reply.code(503).send();
-          }
-        },
-      );
     for (const path of [EXECUTION_OBSERVATION_PATH, EXECUTION_READINESS_PATH])
       server.post(path, { bodyLimit: 4096 }, async (request, reply) => {
         if (!timingSafeEqual(credential, digest(request.headers.authorization ?? "")))

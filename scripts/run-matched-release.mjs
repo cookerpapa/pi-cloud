@@ -525,6 +525,8 @@ try {
       sessionRuntimeReplacement: 1,
       sessionApiReplacement: 1,
       guestHttpCompletion: 1,
+      guestExecution: 1,
+      sessionActivity: 1,
       toolHostReplacement: 1,
       toolCatalogPublication: 1,
     },

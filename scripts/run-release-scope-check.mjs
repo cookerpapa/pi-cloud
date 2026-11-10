@@ -9,7 +9,7 @@ assert(
   scope === "catalog" || Object.hasOwn(imageReleaseTargets, scope),
   "Use a declared component scope; protocol changes require full checks",
 );
-if (["session-api", "execution-maintenance", "worker-bootstrap"].includes(scope)) {
+if (["session-api", "session-retention", "worker-bootstrap"].includes(scope)) {
   const options = { cwd: fileURLToPath(new URL("..", import.meta.url)), stdio: "inherit" };
   execFileSync(
     "npm",
@@ -40,7 +40,7 @@ if (["session-api", "execution-maintenance", "worker-bootstrap"].includes(scope)
             "packages/sandbox-supervisor/test/durable-turn-runner.test.ts",
           ]
         : [
-            "packages/sandbox-control/test/execution-maintenance.postgres.test.ts",
+            "packages/sandbox-control/test/session-activity-retention.test.ts",
             "packages/sandbox-control/test/execution-path-probes.test.ts",
             "packages/sandbox-control/test/runtime-retention.test.ts",
             "packages/runtime-core/test/path-probe.test.ts",

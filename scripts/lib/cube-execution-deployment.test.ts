@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
 import {
-  withCubeExecution,
   readyCubeletPod,
   waitForReadyCubelet,
   cubeNativeImageArguments,
@@ -63,14 +62,4 @@ it("waits past an old ready Pod and a not-yet-ready replacement", async () => {
       readPods: async () => [old, next],
     }),
   ).rejects.toThrow("cube:v2");
-});
-
-it("enables native admission without installing a completion subprocess or platform credentials", () => {
-  const text =
-    '[plugins."io.cubelet.cubebox-service.v1.cubebox-service"]\n  create_deadline="1m"\n[plugins.other]\n';
-  const updated = withCubeExecution(text);
-  expect(updated.match(/execution_enabled/g)).toHaveLength(1);
-  expect(withCubeExecution(updated)).toBe(updated);
-  expect(updated).not.toContain("completion_command");
-  expect(() => withCubeExecution("[plugins.other]")).toThrow("section");
 });

@@ -51,8 +51,8 @@ function requireRoot(): void {
     throw new Error("Execution scope control requires trusted guest root");
 }
 
-/** Native containerd exec has completed its own cgroup placement before this
- * launcher runs. Enter before starting any untrusted Tool descendants. */
+/** The fixed Guest launcher enters its operation scope before starting any
+ * untrusted Tool descendants. */
 export async function enterExecutionCgroup(operationId: string, inputPath: string): Promise<void> {
   requireRoot();
   const id = identity(operationId);
@@ -69,8 +69,8 @@ export async function enterExecutionCgroup(operationId: string, inputPath: strin
     await mkdir(path, { mode: 0o700 });
   }
   await stat(posix.join(path, "cgroup.kill"));
-  // Root-owned identity is needed while native execution can require stopping.
-  // The boot-scoped Cube registry owns deduplication; boot replacement does not
+  // Root-owned identity is needed while Guest execution can require stopping.
+  // The Guest admission store owns deduplication; boot replacement does not
   // resume old commands. This locator contains no result or history.
   const locator = await open(
     posix.join(LOCATORS, `${id}.json`),
@@ -103,7 +103,7 @@ export async function finishExecutionCgroup(operationId: string): Promise<void> 
     });
 }
 
-/** Only call after the native main process has exited. An empty observation
+/** Only call after the operation launcher has exited. An empty observation
  * alone cannot exclude a launcher that has not entered its group yet. */
 export async function stopExecutionCgroup(
   operationId: string,

@@ -55,14 +55,3 @@ export async function waitForReadyCubelet({
     await sleep(Math.min(1000, deadline - now()));
   }
 }
-
-export function withCubeExecution(config) {
-  const section = '[plugins."io.cubelet.cubebox-service.v1.cubebox-service"]';
-  if (!config.includes(section))
-    throw new Error("Cubelet service configuration section is missing");
-  return config
-    .split("\n")
-    .filter((line) => !/^\s*execution_enabled\s*=/.test(line))
-    .join("\n")
-    .replace(section, `${section}\n    execution_enabled = true`);
-}

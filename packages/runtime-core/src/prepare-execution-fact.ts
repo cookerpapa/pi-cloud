@@ -5,7 +5,11 @@ export function prepareExecutionFact(
   scope: ExecutionPublication["scope"] & { executionReference: string },
   candidate: CandidateFact,
 ): AcceptedFact {
-  if (candidate.kind === "durable_commit") {
+  if (
+    candidate.kind === "durable_commit" ||
+    candidate.kind === "session_activity" ||
+    candidate.kind === "path_probe"
+  ) {
     const {
       leaseId: _lease,
       piConversationId: _lane,

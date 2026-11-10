@@ -56,15 +56,15 @@ protocol, record the decision under `docs/adr/` before implementation.
   transport boundary; the public API and durable domain model use PiCloud-owned
   schemas. Native Tool final replies become canonical only after Worker Harness
   processing. Observation-only phase/Tool updates use lossy HTTP/SSE, never Kafka,
-  PG or context. ADR-0306 moves maintenance initiation to the execution owner:
-  fresh batched PG lease/family evidence renews finite Cubelet retention and
-  prepares current-Worker probes through Guest HTTPS and the existing reply
-  transport. No periodic Worker probe/keepalive is a Session Kafka publication.
+  PG or context. Under ADR-0307 the Worker outer runtime publishes bounded Session
+  resource-use declarations through its existing fenced Kafka writer. Execution
+  consumes its resource view, never polls Worker ownership or PG execution leases
+  for maintenance. Cold resource metadata bootstrap is allowed. On-demand probes
+  register their original reply waiter before entering that same Session path.
   Diagnostic evidence never becomes native history or authorizes destruction,
-  replay, lease renewal or quota release. Authoritative binding withdrawal may
-  notify the current Worker through that mailbox and gate its next model request.
-  Cubelet alone owns finite elastic idle expiry; management still requires
-  confirmed physical absence before releasing allocation/quota records.
+  replay, lease renewal or quota release. Cubelet alone owns finite elastic expiry:
+  without fresh renewal, its deadline permits reclamation even with an unconfirmed
+  Tool. Dedicated machines do not expire. Physical absence still gates quota release.
 - Run the fixed Pi core only in the trusted Agent Runner, never in the API/control-plane
   process. Route every untrusted file or shell operation to a separate Tool Sandbox.
 - Load only code-owned trusted infrastructure tools in the Agent Runner.
@@ -139,8 +139,10 @@ protocol, record the decision under `docs/adr/` before implementation.
   receives a new allocation UUID only after confirmed old physical absence.
   Under ADR-0272 Cubelet owns finite elastic idle expiry; retain
   no competing Control Plane deadline scanner or warm-cache eviction policy.
-  Dedicated machines remain non-expiring. Cubelet owns
-  accepted fixed Tool lifetimes and boot/ordered-position fencing (ADR-0219/0221).
+  Dedicated machines remain non-expiring. The fixed Guest service owns
+  operation admission, boot/ordered-position fencing and exact Tool cancellation
+  through the provider ordinary process API (ADR-0307). Cube retains resource closure
+  and Volume reference protection; no native Cube execution-manager fallback remains.
   Do not add per-Tool PG Run-lease checks. Chat Stop aborts the Worker Agent and
   sends operation cancellation through the same Session log. Pi Durable owns
   native abort settlement; late physical replies never overwrite it (ADR-0229).

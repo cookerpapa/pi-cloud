@@ -27,3 +27,4 @@ export {
   type ToolWorkerOutput,
 } from "./tool-sandbox.ts";
 export * from "./completion-transport.ts";
+export * from "./guest-executor.ts";

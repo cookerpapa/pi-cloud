@@ -206,8 +206,10 @@ revocation is learned at the next renewal, normally twenty seconds; a stalled
 renewal cannot exceed the last confirmed lifetime, normally sixty seconds.
 Known Kafka publication failure immediately aborts the whole native family and
 its model transports. An unobserved broker fence is discovered by subsequent
-publication. Periodic Worker Kafka probes have been removed; silent model waits
-do not imply a missing publication. Already accepted provider
+publication. ADR-0307 adds a bounded Session resource-use declaration about once
+per minute through that same writer, including silent model waits. Execution
+uses its resource view without polling Worker ownership or PG leases. Full probes
+are on-demand and register the caller waiter before Kafka publication. Already accepted provider
 requests may still finish or bill. See [ADR-0303](adr/0303-direct-renewal-and-local-execution-authority.md).
 
 After Worker loss, PG authorizes closure, the old writer is sealed through Kafka,
@@ -333,8 +335,11 @@ Only the Worker's Pi processing makes a result canonical.
 The Control Plane lazily prepares an immutable binding to an authorized VM/node/
 boot and working directory. Projector checks its ordered view, confirms its
 monotonic dispatch commit, then submits to Cube. It waits for bounded acceptance,
-not the full Bash duration. Cube independently fences boot/position/operation
-identity without querying PG on each Tool.
+not the full Bash duration. The fixed Guest service fences boot/position/operation
+identity without querying PG on each Tool. The adapter invokes its small control
+client through ordinary envd process/stdin APIs; accepted operations outlive that
+connection and the service process. Guest SQLite retains only position boundaries
+and outstanding operation metadata, not final results. See [ADR-0307](adr/0307-guest-execution-and-session-activity.md).
 
 The provider boundary is divided by responsibility:
 
@@ -371,7 +376,7 @@ deadline remain retryable; an expired local owner cannot revive itself. This
 failure never constitutes physical VM absence or permission to delete a Volume.
 
 Chat Stop requests native abort at the Worker and co-commits operation cancellation
-on the Session log. Projector delivers cancellation to Cube, which signals the
+on the Session log. Projector delivers cancellation to the Guest, which signals the
 unfinished Tool's process group. It does not retroactively terminate completed
 background launches or destroy the VM. Native abort settles independently of late
 physical replies; no cancellation acknowledgement proves process exit.
@@ -393,8 +398,11 @@ Ordinary elastic Sessions can share a Workspace's compute scope, files, ports an
 processes. Subagents may use separate temporary Linux compute on the same Volume.
 Human terminals have independent product authority. Pure chat creates no VM.
 
-Cubelet owns finite elastic idle expiry, renewed by typed keepalive intents on the
-Session Kafka path. The Control Plane has no competing idle deadline scanner.
+Cubelet owns finite elastic idle expiry, renewed from fresh Session activity on
+the existing Kafka path. Stale replay uses its original timestamp and cannot buy
+extra time. A missing VM is never created by maintenance. After renewal stops,
+expiry may reclaim compute even with an unfinished Tool; healthy Session families
+can renew indefinitely. The Control Plane has no competing idle deadline scanner.
 Dedicated machines do not expire. Diagnostic heartbeats are not retention intents,
 PG lease renewals or proof that a VM has disappeared.
 See [ADR-0272](adr/0272-cube-owned-elastic-retention.md).

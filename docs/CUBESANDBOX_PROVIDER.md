@@ -5,14 +5,14 @@
 CubeSandbox KVM is the only untrusted Tool runtime. Pi and provider credentials
 stay in the trusted Worker. The Control Plane owns VM lifecycle and immutable
 Run bindings; the separate Session runtime dispatches existing bindings and
-serves workflow/image/Skill/preview data without that controller. Cubelet owns
-native admission/cancellation. The Guest and independent HTTPS completion service
-own result delivery. [Boundary](adr/0306-runtime-decoupling-and-continuation.md).
+serves workflow/image/Skill/preview data without that controller. The fixed Guest
+service owns Tool admission/cancellation; the independent HTTPS completion service
+owns reply publication. [Boundary](adr/0307-guest-execution-and-session-activity.md).
 
 ```text
 Pi Tool -> Worker validates and commits through its Session producer -> Kafka
   -> Projector dispatch commit -> execution-side binding preparation
-  -> Cube executor adapter -> Cube API/Master -> Cubelet native exec
+  -> Cube adapter -> ordinary CubeProxy/envd process API -> fixed Guest service
   -> fixed guest Tool -> HTTPS completion service -> original Kafka reply topic
   -> authorized Worker callback -> Pi after-Tool hooks -> canonical Session append
 ```
@@ -20,17 +20,17 @@ Pi Tool -> Worker validates and commits through its Session producer -> Kafka
 The Projector waits for bounded takeover. It does not relay Tool duration or
 large results. The guest runs the complete pinned Pi Tool under UID 1000 inside
 an operation cgroup; no user extension or Agent Loop enters that boundary.
-The native raw-PTY transport still provides input/cancellation and small execution
-receipts because upstream non-terminal exec does not expose pipes. Tool data and
-images leave the Guest over HTTPS. A detached fixed child survives caller I/O
-loss; the launcher distinguishes physical settlement from callback delivery, so
-a lost HTTP ACK cannot retroactively kill completed background work.
+The ordinary process API starts a short fixed control client; bounded JSON travels
+on stdin/stdout. Tool data and images leave the Guest over HTTPS. The Guest service
+persists admission before launching an independent operation process. Neither the
+caller connection nor service restart cancels or repeats an admitted command.
+A lost completion ACK cannot retroactively kill completed background work.
 
 ## Identity and authority
 
 PG is Run/control authority. Source admission uses installed memory and closes
-before seals. A Cube request carries immutable physical endpoint/node/boot,
-Run/writer, operation identity and its Kafka topic/partition/offset. Cube checks
+before seals. A Guest request carries immutable physical endpoint/node/boot,
+Run/writer, operation identity and its Kafka topic/partition/offset. The Guest checks
 boot identity, active duplicate fingerprints and monotonic VM/partition progress,
 without a per-command PG lease query. Domain-independent Projector ownership
 uses a deployment-owned Cube endpoint registry; metadata cannot select an
@@ -40,7 +40,7 @@ PG closes resource/new-binding admission first; its closed reference follows the
 same Kafka Session queue. The partition owner consumes it and records stopped
 routing admission in the existing Outbox before management can retire the VM
 (ADR-0305). Kafka publication alone is not that acknowledgement. Normal cancellation carries an operation ID
-and position through that path to Cube. Cube acknowledges only signal acceptance;
+and position through that path to the Guest. It acknowledges only signal acceptance;
 the fixed guest delivers cancellation to its Tool AbortController. Native Durable
 abort may settle before physical completion and discard the original waiter.
 Already committed results remain; late replies cannot overwrite native abort.
@@ -69,10 +69,10 @@ service hostname and CA. Encryption does not prove Guest output truthful.
 The independent completion role holds its required PG/S3/Kafka credentials,
 externalizes images and acknowledges only after Kafka publication. Previews remain
 bounded lossy HTTP/SSE data. The receiver bounds concurrent request memory; source
-limits and the 64 MiB image envelope remain. Cubelet receives a small delivery
-receipt instead of image bodies, so its former large-result semaphore and Node
-completion subprocess are removed. It retains bounded HTTPS forwarding for
-executor failures, with operation-scoped credentials and no platform client SDKs.
+limits and the 64 MiB image envelope remain. Cube carries only the small process
+control exchange. It has no Tool output buffer, completion fallback or admission
+manager. The Guest's private SQLite store contains outstanding registrations and
+ordered-position boundaries, never finalized results or conversation history.
 
 Reply topic v4 still contains the original boot ID. A replacement restores native
 pending-task waiters, replays the protected suffix and then follows live results.
@@ -96,9 +96,9 @@ fixed input helper for owned, running development machines. It takes guest-local
 filesystem exclusion and consults derived staging locators. Elastic uploads are
 maintained by the Volume Gateway; this operation does not allocate/wake a VM or
 contribute health/deletion evidence. The current native Tool Worker reply protocol
-is 7; managed Cube execution protocol is 9. See
+is 7; managed Cube resource protocol is 10 and Guest executor control is 1. See
 [ADR-0235](adr/0235-upload-staging-recovery.md) for staging layout and
-[ADR-0249](adr/0249-compact-projector-publication.md) for the current matched cutover.
+[ADR-0307](adr/0307-guest-execution-and-session-activity.md) for the current matched cutover.
 
 The guest uses Pi's public image processor hook with pinned Sharp. `read` accepts
 optional image `detail: high | original`; high is the default. The dimensions and
@@ -150,12 +150,14 @@ machines use the separate pause/resume/release lifecycle and never enter the
 elastic warm pool.
 
 Cubelet owns finite elastic retention in its allocation journal (ADR-0272).
-The execution owner batches fresh PG lease/family evidence and renews existing
-compute, including during model thinking and native child waits. It never creates
-a VM for maintenance. The default is one renewal round per minute with thirty
-minutes of finite elastic retention. Missing renewal eventually permits idle expiry;
-Control Plane has no competing warm-cache deadline scanner. Management reconciles
-physical absence before releasing allocation/quota records.
+The Worker outer runtime declares logical family resource use through its single
+fenced Session Kafka writer, including model/child waits. Execution renews from its
+resource view without querying Worker ownership or leases. Cold metadata reads
+and binding updates populate the view; missing compute is a no-op. The default
+is one declaration per minute and thirty minutes of finite retention. Stale replay
+keeps its original timestamp. When renewal stops, expiry may reclaim even an
+unfinished Tool. Control Plane has no competing deadline scanner; management still
+confirms physical absence before releasing allocation/quota records.
 A user owns an exclusive machine's
 lifecycle through authenticated pause/resume/release operations. Controller
 restart adopts both elastic and user-owned VMs without changing their physical
@@ -164,27 +166,17 @@ node observation before quota is released.
 
 ## Tool and terminal channels
 
-Managed execution includes `POST /sandboxes/:id/execution/probe`.
-The recorded node and executor boot are required. A fixed guest program echoes
-a probe UUID and its kernel boot identity over the same native raw-PTY transport
-as Tools, without Workspace access or user commands. Controller probes return
-within the bounded HTTP request; Session probes use bounded asynchronous takeover
-and the same Guest HTTPS/Kafka/current-Worker callback used by Tools. The receiver
-is registered before dispatch; this groups shared VM bindings while preserving
-each Worker's own return-path evidence. Direct observation works even when Kafka completion is
-unavailable. Probe lifetimes use a separate four-request Cubelet budget and no
-retained Tool operation ledger. Failure has no quarantine or deletion authority.
-The provider replaces its former envd command-based execution probe with this
-single native implementation. Probes never advance Tool admission positions;
-late observations have no effect authority. Managed submit requires a source
-position. Protocol 5 adds idempotent `execution/cancel`; its accepted response
-does not assert process exit. Guest wire 3 forwards cancellation over the original
-operation pipe. There is no old-wire fallback.
-Cube/app upgrades require the drained, matched build in
-[ADR-0221](adr/0221-pi-tool-cancellation.md); probe semantics remain those of
-[ADR-0211](adr/0211-execution-path-and-runtime-probes.md).
+The fixed Guest control client exposes info, submit, cancel and probe actions
+through ordinary envd process/stdin APIs. A probe echoes its UUID and kernel boot
+identity without Workspace access or user commands. Direct probes return within
+the bounded request; on-demand Session probes return via Guest HTTPS and the
+original Kafka mailbox. The Worker registers its waiter before publishing the
+probe through Session Kafka. Execution never calls the Worker to prepare a
+receiver. Probes do not renew retention, advance Tool positions, create compute
+or authorize quarantine/deletion. A cancellation ACK does not assert process exit.
 
-Fixed Agent Tools use native Cubelet execution. The Web Terminal keeps its
+There are no native Cube `/execution/*` routes or old-wire fallbacks. Cube/app
+upgrades require drained matched publication. The Web Terminal keeps its
 separate human reservation and envd PTY through the control-plane module:
 
 ```text

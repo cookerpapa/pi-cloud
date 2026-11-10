@@ -9,6 +9,7 @@ export type ExecutionLogOpenRequest = Readonly<{
   nextEventSeq: number;
   publication: ExecutionPublication;
   signal?: AbortSignal;
+  resourceUse?: import("@pi-cloud/protocol").SessionResourceUse;
 }>;
 
 export interface ExecutionLogWriter extends AcceptedFactWriter {
@@ -27,6 +28,12 @@ export interface ExecutionLogFactory {
   open(request: ExecutionLogOpenRequest): Promise<ExecutionLogWriter>;
   openConversation?(
     reference: string,
-    address: { conversationId: number; sessionId: string; turnId: string; nextEventSeq: number },
+    address: {
+      conversationId: number;
+      sessionId: string;
+      turnId: string;
+      nextEventSeq: number;
+      resourceUse?: import("@pi-cloud/protocol").SessionResourceUse;
+    },
   ): ExecutionLogWriter;
 }

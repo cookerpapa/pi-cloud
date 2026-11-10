@@ -2,9 +2,10 @@ import { randomUUID } from "node:crypto";
 import {
   parseSupervisorToControlMessage,
   RUN_OBSERVATION_STALE_MS,
+  SESSION_ACTIVITY_INTERVAL_MS,
+  type SessionResourceUse,
   EXECUTION_PROBE_TIMEOUT_MS,
   type RuntimeObservationScope,
-  type PathProbe,
   type ExecutionObservationDelivery,
   type ExecutionEvidence,
 } from "@pi-cloud/protocol";
@@ -32,6 +33,7 @@ export type ConversationLogAddress = {
   sessionId: string;
   turnId: string;
   nextEventSeq: number;
+  resourceUse?: SessionResourceUse;
 };
 
 export type WorkerExecutionProbeTransport = {
@@ -40,14 +42,13 @@ export type WorkerExecutionProbeTransport = {
   partitionFor(id: string): number;
   report(value: ExecutionObservationDelivery): void;
   confirm(value: ExecutionObservationDelivery, signal: AbortSignal): Promise<boolean>;
-  request(fact: PathProbe, signal: AbortSignal): Promise<boolean>;
 };
 
 type RuntimeBinding = {
   scope: RuntimeObservationScope;
   bindingId?: string;
   successAt: number;
-  pending?: AbortController;
+  resourceUse?: SessionResourceUse;
   check?: { controller: AbortController; result: Promise<boolean> };
 };
 /** Worker-local ordering over its physical Session producer; no second lease renewer. */
@@ -55,6 +56,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
   #probeTransport: WorkerExecutionProbeTransport | undefined;
   readonly #runtimeBindings = new Map<string, RuntimeBinding>();
   readonly #writers = new Map<string, ExecutionLogWriter>();
+  readonly #publishers = new Map<string, (fact: CandidateFact) => Promise<void>>();
   readonly #conversationWriters = new Map<string, Map<number, ExecutionLogWriter>>();
   readonly #conversationFactories = new Map<
     string,
@@ -82,9 +84,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
         : `${executionReference}:${conversationId}`;
     const runtime = this.#runtimeBindings.get(key);
     if (!runtime || runtime.bindingId === bindingId) return;
-    runtime.pending?.abort();
     runtime.check?.controller.abort();
-    delete runtime.pending;
     if (bindingId) runtime.bindingId = bindingId;
     else delete runtime.bindingId;
     runtime.successAt = 0;
@@ -97,18 +97,22 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
     signal: AbortSignal,
   ): Promise<boolean> {
     const writer = this.#writers.get(reference);
+    const rootScope = this.#runtimeBindings.get(reference)?.scope;
     const key =
       writer?.publication.scope.piConversationId === conversationId
         ? reference
         : `${reference}:${conversationId}`;
     const runtime = this.#runtimeBindings.get(key),
-      transport = this.#probeTransport;
+      transport = this.#probeTransport,
+      publish = this.#publishers.get(reference);
     if (
       signal.aborted ||
       !runtime ||
       runtime.bindingId !== bindingId ||
       !transport ||
+      !publish ||
       !writer ||
+      !rootScope ||
       writer.failureSignal?.aborted
     )
       return false;
@@ -130,23 +134,19 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
         const reply = transport.replies.waitProbe(id, bindingId, active);
         const [value] = await Promise.all([
           reply,
-          transport
-            .request(
-              {
-                kind: "path_probe",
-                scope: runtime.scope,
-                factId: id,
-                occurredAt: new Date(sentAt).toISOString(),
-                execution: {
-                  replyTopic: transport.topic,
-                  bindings: [{ bindingId, scope: runtime.scope, probe: true }],
-                },
+          publish({
+            kind: "path_probe",
+            fact: {
+              kind: "path_probe",
+              scope: rootScope,
+              factId: id,
+              occurredAt: new Date(sentAt).toISOString(),
+              execution: {
+                replyTopic: transport.topic,
+                bindings: [{ bindingId, scope: runtime.scope, probe: true }],
               },
-              active,
-            )
-            .then((accepted) => {
-              if (!accepted) throw new Error("Execution probe was not accepted");
-            }),
+            },
+          }),
         ]);
         if (
           !current() ||
@@ -219,111 +219,6 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       evidence,
     });
   }
-  receiveProbe(fact: PathProbe): string {
-    const transport = this.#probeTransport;
-    if (
-      !transport ||
-      !fact.execution ||
-      Math.abs(Date.now() - Date.parse(fact.occurredAt)) > EXECUTION_PROBE_TIMEOUT_MS
-    )
-      throw new Error("Probe receiver is unavailable or request is stale");
-    const writer = [...this.#writers.values()].find(
-      (w) => w.publication.scope.writerId === fact.scope.writerId,
-    );
-    if (!writer || writer.failureSignal?.aborted) throw new Error("Probe owner retired");
-    writer.assertHealthy?.();
-    for (const requested of fact.execution.bindings) {
-      const local = [...this.#runtimeBindings.values()].find(
-        (b) => b.bindingId === requested.bindingId,
-      );
-      if (
-        !local ||
-        Object.entries(local.scope).some(
-          ([key, value]) => value !== requested.scope[key as keyof RuntimeObservationScope],
-        )
-      )
-        throw new Error("Probe binding belongs to another active Conversation");
-    }
-    const prepared = this.#prepareProbe(
-      fact.scope.writerId,
-      fact.factId,
-      Date.parse(fact.occurredAt),
-      new Set(fact.execution.bindings.map((b) => b.bindingId)),
-    );
-    if (
-      !prepared ||
-      prepared.bindings.length !== fact.execution.bindings.length ||
-      prepared.bindings.some((b) => !b.probe)
-    )
-      throw new Error("Probe receiver is busy");
-    return transport.topic;
-  }
-  #prepareProbe(
-    writerId: string,
-    probeId: string,
-    sentAt: number,
-    requested: ReadonlySet<string>,
-  ): PathProbe["execution"] {
-    const transport = this.#probeTransport;
-    if (!transport) return undefined;
-    const bindings = [];
-    for (const [reference, runtime] of this.#runtimeBindings) {
-      if (
-        runtime.scope.writerId !== writerId ||
-        !runtime.bindingId ||
-        !requested.has(runtime.bindingId) ||
-        bindings.length >= 64
-      )
-        continue;
-      const bindingId = runtime.bindingId;
-      let probe = !runtime.pending;
-      if (probe) {
-        const started = performance.now();
-        const pending = new AbortController();
-        runtime.pending = pending;
-        try {
-          const reply = transport.replies.waitProbe(
-            probeId,
-            bindingId,
-            AbortSignal.any([pending.signal, AbortSignal.timeout(EXECUTION_PROBE_TIMEOUT_MS)]),
-          );
-          void reply
-            .then((value) => {
-              if (
-                this.#runtimeBindings.get(reference) !== runtime ||
-                runtime.bindingId !== bindingId ||
-                value.sentAt !== sentAt ||
-                Date.now() - sentAt > EXECUTION_PROBE_TIMEOUT_MS ||
-                performance.now() - started > EXECUTION_PROBE_TIMEOUT_MS ||
-                value.evidence.observedAt < sentAt - 5000 ||
-                value.evidence.observedAt > Date.now() + 5000
-              )
-                return;
-              runtime.successAt = Math.max(runtime.successAt, value.evidence.observedAt);
-              transport.report({
-                scope: runtime.scope,
-                partition: transport.partitionFor(runtime.scope.piSessionId),
-                kind: "probe",
-                requestId: probeId,
-                sentAt,
-                roundTripMs: Math.max(0, performance.now() - started),
-                evidence: { ...value.evidence, bindingId },
-              });
-            })
-            .catch(() => {})
-            .finally(() => {
-              if (runtime.pending === pending) delete runtime.pending;
-            });
-        } catch {
-          pending.abort();
-          delete runtime.pending;
-          probe = false;
-        }
-      }
-      bindings.push({ bindingId, scope: runtime.scope, probe });
-    }
-    return { replyTopic: transport.topic, bindings };
-  }
   resolve(lease: string, conversationId?: number) {
     const root = this.#writers.get(lease);
     return conversationId === undefined ||
@@ -363,15 +258,19 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
     }
     const permit = request.publication;
     const { leaseId: _lease, piConversationId: _lane, ...observationScope } = permit.scope;
-    const runtimeBinding: RuntimeBinding = { scope: observationScope, successAt: 0 };
+    const runtimeBinding: RuntimeBinding = {
+      scope: observationScope,
+      successAt: 0,
+      ...(request.resourceUse ? { resourceUse: request.resourceUse } : {}),
+    };
     this.#runtimeBindings.set(request.executionReference, runtimeBinding);
     const failed = new AbortController();
     const producerFailure = this.bus.publicationFailureSignal?.(permit.scope);
     const failureSignal = producerFailure
       ? AbortSignal.any([failed.signal, producerFailure])
       : failed.signal;
-    // Admission installs soft state only. The first real append establishes
-    // the Projector's recovery floor; opening adds no native/Kafka record.
+    // Activity is transport-only; the first native append establishes its
+    // own recovery floor without consuming native sequence for a heartbeat.
     let closing = false,
       tail = Promise.resolve(),
       nativeSequence = 0,
@@ -425,6 +324,41 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       tail = pending.catch(() => {});
       return pending;
     };
+    let activityPending = false;
+    const pulse = async () => {
+      if (closing || finishing || activityPending || failureSignal.aborted) return;
+      const resources = [
+        ...new Map(
+          [...this.#runtimeBindings.values()]
+            .filter((b) => b.scope.writerId === permit.scope.writerId && b.resourceUse)
+            .map((b) => [JSON.stringify(b.resourceUse), b.resourceUse!]),
+        ).values(),
+      ];
+      if (!resources.length) return;
+      activityPending = true;
+      try {
+        const occurredAt = new Date().toISOString();
+        for (let at = 0; at < resources.length; at += 256) {
+          if (closing || finishing || failureSignal.aborted) break;
+          await publish({
+            kind: "session_activity",
+            fact: {
+              kind: "session_activity",
+              factId: randomUUID(),
+              scope: observationScope,
+              occurredAt,
+              resources: resources.slice(at, at + 256),
+            },
+          });
+        }
+      } catch {
+        /* The publication port already latches uncertain/fenced writes. */
+      } finally {
+        activityPending = false;
+      }
+    };
+    const activityTimer = setInterval(() => void pulse(), SESSION_ACTIVITY_INTERVAL_MS);
+    activityTimer.unref();
     const writer: ExecutionLogWriter = {
       failureSignal,
       assertHealthy: () => {
@@ -472,6 +406,7 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
         }
       },
       drain: async () => {
+        clearInterval(activityTimer);
         closing = true;
         await tail;
         const cause = failureSignal.reason;
@@ -519,10 +454,14 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
         return promise;
       },
       close: async () => {
+        clearInterval(activityTimer);
         closing = true;
-        runtimeBinding.pending?.abort();
-        runtimeBinding.check?.controller.abort();
-        this.#runtimeBindings.delete(request.executionReference);
+        this.#publishers.delete(request.executionReference);
+        for (const [key, binding] of this.#runtimeBindings) {
+          if (binding.scope.writerId !== permit.scope.writerId) continue;
+          binding.check?.controller.abort();
+          this.#runtimeBindings.delete(key);
+        }
         await tail;
         this.#writers.delete(request.executionReference);
         this.#conversationFactories.delete(request.executionReference);
@@ -546,7 +485,11 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       };
       const { leaseId: _lease, piConversationId: _conversation, ...observationScope } = scope;
       const bindingKey = `${request.executionReference}:${address.conversationId}`;
-      this.#runtimeBindings.set(bindingKey, { scope: observationScope, successAt: 0 });
+      this.#runtimeBindings.set(bindingKey, {
+        scope: observationScope,
+        successAt: 0,
+        ...(address.resourceUse ? { resourceUse: address.resourceUse } : {}),
+      });
       let closed = false,
         through = address.nextEventSeq - 1;
       const view: ExecutionLogWriter = {
@@ -585,7 +528,6 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
           await tail;
           conversations.delete(address.conversationId);
           conversationAcknowledgements.delete(address.sessionId);
-          this.#runtimeBindings.get(bindingKey)?.pending?.abort();
           this.#runtimeBindings.get(bindingKey)?.check?.controller.abort();
           this.#runtimeBindings.delete(bindingKey);
           failureSignal.throwIfAborted();
@@ -598,6 +540,8 @@ export class WorkerExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       return view;
     });
     this.#writers.set(request.executionReference, writer);
+    this.#publishers.set(request.executionReference, publish);
+    void pulse();
     return writer;
   }
   async close() {

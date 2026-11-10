@@ -222,11 +222,8 @@ export class ExecutionPathProbes {
               return false;
             await this.options.cube.submitProbe(target, {
               probeId: fact.factId,
-              executionScopeId: first.route.bindingId,
-              writerId: first.scope.writerId,
-              completionContext: await this.options.completion.issue({
+              delivery: await this.options.completion.issue({
                 operationId: fact.factId,
-                issuer: "guest",
                 expiresAt: sentAt + EXECUTION_PROBE_TIMEOUT_MS,
                 context: {
                   kind: "execution_probe",

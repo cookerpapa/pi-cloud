@@ -5,8 +5,6 @@ export const EXECUTION_PROBE_TIMEOUT_MS = 10_000;
 export const EXECUTION_OBSERVATION_PATH = "/internal/v1/execution-observation";
 /** Fault-only confirmation of an observed probe against current routing admission. */
 export const EXECUTION_READINESS_PATH = "/internal/v1/execution-readiness";
-export const EXECUTION_PROBE_REQUEST_PATH = "/internal/v1/execution-probes/request";
-export const EXECUTION_PROBE_RECEIVER_PATH = "/internal/v1/execution-probes/receiver";
 export const RUNTIME_EXECUTION_EVIDENCE_PATH = "/internal/v1/runtime-execution-evidence";
 const id = Type.String({ minLength: 1, maxLength: 128 });
 const timestamp = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });

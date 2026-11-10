@@ -54,7 +54,7 @@ configureBuildProxy();
 const [action, scopeOrPath, candidatePath, input] = process.argv.slice(2);
 if (action === "--help") {
   console.log(
-    "prepare provider|web|tool-host|session-decoder|session-api|execution-maintenance|worker-bootstrap DIRECTORY VERSION | prepare catalog DIRECTORY CATALOG_JSON | preflight DIRECTORY | apply DIRECTORY\nScoped releases preserve unrelated workloads. See docs/COMPONENT_RELEASE.md.",
+    "prepare provider|web|tool-host|session-decoder|session-api|session-retention|worker-bootstrap DIRECTORY VERSION | prepare catalog DIRECTORY CATALOG_JSON | preflight DIRECTORY | apply DIRECTORY\nScoped releases preserve unrelated workloads. See docs/COMPONENT_RELEASE.md.",
   );
   process.exit(0);
 }
