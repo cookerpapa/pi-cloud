@@ -210,7 +210,7 @@ describe("product chat experience", () => {
         onLogout={() => undefined}
       />,
     );
-    expect(markup).toContain("PiCloud 管理后台");
+    expect(markup).toContain("Pi Managed Agents 管理后台");
     expect(markup).toContain("Pi Worker 模型");
     // Server rendering cannot fetch the runtime catalog; the browser fixture
     // verifies API-supplied choices, including a model unknown to this build.
