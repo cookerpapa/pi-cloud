@@ -1,3 +1,4 @@
+import { reconcileCubeEgressGateway } from "./lib/cube-egress-release.mjs";
 import { ensureMeteringSecret } from "./lib/metering-secret.mjs";
 import { configureBuildProxy } from "./lib/upstream-proxy.mjs";
 import { updateProviderRuntimePolicyFile } from "./lib/provider-runtime-policy.mjs";
@@ -486,17 +487,7 @@ try {
   // The gateway needs the restarted Control Plane's configuration before it can
   // become Ready, so reconcile it after application readiness, before recording
   // successful matched publication. Its image was built/imported/scanned above.
-  {
-    kubectl([
-      "set",
-      "image",
-      "deployment/pi-cloud-cube-egress-gateway",
-      `gateway=pi-cloud/cube-egress-gateway:${candidate.version}`,
-    ]);
-    kubectl(["rollout", "status", "deployment/pi-cloud-cube-egress-gateway", "--timeout=120s"], {
-      timeout: 125000,
-    });
-  }
+  reconcileCubeEgressGateway(kubectl, `pi-cloud/cube-egress-gateway:${candidate.version}`);
   const installed = resolve(runtimeDirectory, "k3s/images.json");
   await writeFile(installed + ".candidate", await readFile(resolve(directory, "images.json")), {
     mode: 0o600,

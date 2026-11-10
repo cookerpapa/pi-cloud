@@ -12,7 +12,7 @@ import {
   type ToolSandboxOperationResponse,
 } from "@pi-cloud/protocol";
 import { randomUUID, randomBytes } from "node:crypto";
-import { constants } from "node:fs";
+import { constants, readFileSync } from "node:fs";
 import { open } from "node:fs/promises";
 import { connect } from "node:net";
 import { release as hostKernelRelease } from "node:os";
@@ -25,7 +25,6 @@ import {
   type OfficialCubeSandboxRuntimeClientOptions,
   type SandboxControllerOptions,
 } from "../src/index.ts";
-import { workspaceVolumeId } from "../src/workspace-volume-gateway-contract.ts";
 
 type TestSandboxControlDefaults = "stateRepository" | "ownerBaseUrl" | "imageRevision" | "bindings";
 type TestSandboxControllerOptions = Omit<SandboxControllerOptions, TestSandboxControlDefaults> &
@@ -157,6 +156,7 @@ async function configuration(): Promise<LiveConfiguration> {
       proxyScheme,
       sandboxDomain: process.env.PI_CLOUD_CUBESANDBOX_DOMAIN ?? "cube.app",
       egressProxyIp,
+      completionIp: required("PI_CLOUD_TOOL_COMPLETION_IP"),
       requestTimeoutMs: 30_000,
     },
     webProxy: { host: egressProxyIp, port: egressProxyPort },
@@ -164,18 +164,24 @@ async function configuration(): Promise<LiveConfiguration> {
   };
 }
 
-function assignment(testRun: string, index: number): ToolSandboxAssignment {
+function assignment(testRun: string, index: number, slot = index): ToolSandboxAssignment {
+  const owned = JSON.parse(readFileSync(required("PI_CLOUD_CUBE_LIVE_ASSIGNMENTS_FILE"), "utf8"))[
+    slot
+  ];
+  if (!owned?.workspaceId || !owned?.tenantId)
+    throw new Error("Owned production Workspace is missing");
+  const runId = randomUUID();
   return {
-    tenantId: `cube-live-${testRun}-tenant-${String(index)}`,
-    projectId: `cube-live-${testRun}-project-${String(index)}`,
-    workspaceId: `cube-live-${testRun}-workspace-${String(index)}`,
+    tenantId: owned.tenantId,
+    projectId: owned.projectId,
+    workspaceId: owned.workspaceId,
     supervisorId: `cube-live-${testRun}-supervisor`,
     bootId: randomUUID(),
     sandboxId: randomUUID(),
-    runId: `cube-live-${testRun}-command-${String(index)}`,
-    sessionId: `cube-live-${testRun}-session-${String(index)}`,
-    turnId: `cube-live-${testRun}-turn-${String(index)}`,
-    executionReference: createExecutionReference(randomUUID(), randomUUID(), index),
+    runId,
+    sessionId: owned.sessionId,
+    turnId: randomUUID(),
+    executionReference: createExecutionReference(randomUUID(), runId, index),
   };
 }
 
@@ -322,7 +328,7 @@ async function waitForNoManagedInstances(
 describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
   it("does not claim cleanup when deletion of a real owned VM is unconfirmed", async () => {
     const config = await configuration();
-    const assigned = assignment(randomUUID(), 1);
+    const assigned = assignment(randomUUID(), 1, 0);
     const gatewayOptions = {
       baseUrl: required("PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_URL"),
       serviceToken: await readPrivateKey(required("PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE")),
@@ -385,28 +391,27 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
     } finally {
       await broker.close().catch((error) => errors.push(error));
       const cleanup = new OfficialCubeSandboxRuntimeClient(config.runtime);
-      const gateway = new HttpWorkspaceVolumeGateway(gatewayOptions);
       try {
         for (const instance of await cleanup.list()) {
           if (
             instance.metadata["picloud.tenant_id"] === assigned.tenantId &&
             instance.metadata["picloud.workspace_id"] === assigned.workspaceId
-          )
+          ) {
             await cleanup.destroy(instance.sandboxId);
+            if (
+              !instance.nodeId ||
+              (await cleanup.observe(instance.sandboxId, instance.nodeId)).presence !== "absent"
+            )
+              throw new Error("Owned physical absence was not confirmed");
+          }
         }
         await waitForNoManagedInstances(config, [assigned]);
-        const identity = {
-          tenantId: assigned.tenantId,
-          workspaceId: assigned.workspaceId,
-          volumeId: workspaceVolumeId(assigned),
-        };
-        await gateway.prepareDelete(identity);
-        await cleanup.deleteVolume(identity.volumeId);
-        await gateway.finalizeDelete(identity);
+        // The outer fixture deletes the registered Workspace through its API,
+        // which owns quota intent and final Volume cleanup.
       } catch (error) {
         errors.push(error);
       } finally {
-        for (const close of [() => cleanup.close(), () => gateway.close()])
+        for (const close of [() => cleanup.close()])
           await close().catch((error) => errors.push(error));
       }
     }
@@ -421,7 +426,8 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           releaseRejected: true,
           nativeSurvivorConfirmed: true,
           releasedNotReported: true,
-          cleanupConfirmed: true,
+          computeCleanupConfirmed: true,
+          workspaceCleanup: "enclosing product API fixture",
           scope: "real Cube; controlled allocation-close failure; in-memory ownership fixture",
         },
       }) + "\n",
@@ -863,7 +869,6 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           failures.push(error);
         });
         const cleanupClient = new OfficialCubeSandboxRuntimeClient(config.runtime);
-        const cleanupGateway = new HttpWorkspaceVolumeGateway(volumeGatewayOptions);
         try {
           for (const instance of await cleanupClient.list()) {
             if (
@@ -887,21 +892,11 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
             secondAssignment,
             terminalAssignment,
           ]);
-          for (const owned of [firstAssignment, secondAssignment, terminalAssignment]) {
-            const volumeId = workspaceVolumeId(owned);
-            const identity = { tenantId: owned.tenantId, workspaceId: owned.workspaceId, volumeId };
-            try {
-              await cleanupGateway.prepareDelete(identity);
-              await cleanupClient.deleteVolume(volumeId);
-              await cleanupGateway.finalizeDelete(identity);
-            } catch (error) {
-              failures.push(error);
-            }
-          }
+          // Outer cleanup uses the product's registered Workspace deletion flow.
         } catch (error) {
           failures.push(error);
         } finally {
-          for (const close of [() => cleanupClient.close(), () => cleanupGateway.close()]) {
+          for (const close of [() => cleanupClient.close()]) {
             try {
               await close();
             } catch (error) {
@@ -918,7 +913,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
       process.stdout.write(
         `${JSON.stringify({
           cubeSandboxLiveGate: {
-            upstream: "TencentCloud/CubeSandbox@v0.6.0",
+            upstream: "TencentCloud/CubeSandbox@v0.7.3",
             isolationValidated: true,
             tenantCount: 2,
             firstToolMs,
@@ -933,7 +928,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
             staleToolAuthorityRejected: true,
             explicitStopRetiredCancelledToolBinding: true,
             dispatchedCancellationRemainsUnknown: true,
-            persistentVolumesRemoved: 3,
+            workspaceCleanup: "enclosing product API fixture",
             orphanCount: 0,
           },
         })}\n`,

@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import { register } from "tsx/esm/api";
+
 import { serviceAddress, kubectl } from "./lib/production-kubernetes.mjs";
 import { spawn } from "node:child_process";
 import { readFile, mkdtemp, writeFile, rm } from "node:fs/promises";
@@ -7,6 +10,8 @@ import { testPostgres } from "./lib/test-postgres.mjs";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
+register();
+const { purgeOwnedAcceptanceTenant } = await import("./lib/owned-acceptance-cleanup.mjs");
 const runtimeDirectory =
   process.env.PI_CLOUD_RUNTIME_DIRECTORY ??
   fileURLToPath(new URL("../deploy/production/runtime", import.meta.url));
@@ -78,12 +83,87 @@ await writeFile(
     "base64",
   ),
 );
+const scope = process.env.PI_CLOUD_CUBE_LIVE_SCOPE ?? "all";
+if (!["all", "provider", "guest"].includes(scope)) throw new Error("Unknown Cube live scope");
+const liveFiles = [
+  ...(scope !== "guest" ? ["test/cubesandbox-live-provider.integration.test.ts"] : []),
+  ...(scope !== "provider" ? ["test/cubesandbox-guest-executor.live.test.ts"] : []),
+];
+const owned = [];
+let businessDb;
+const ownershipPath = join(temporary, "owned-resources.json");
+const saveOwned = () =>
+  writeFile(ownershipPath, JSON.stringify(owned.map(({ api, ...identity }) => identity)), {
+    mode: 0o600,
+  });
+async function prepareBusinessFixtures() {
+  if (scope === "guest") return;
+  const { PiCloudApi } = await import("../packages/web-ui/src/api.ts");
+  const { createDatabase } = await import("../packages/database/src/index.ts");
+  const dbUrl = new URL(
+    (await readFile(`${runtimeDirectory}/secrets/database-url`, "utf8")).trim(),
+  );
+  dbUrl.hostname = serviceAddress("postgres");
+  businessDb = createDatabase({ connectionString: dbUrl.toString(), maxConnections: 2 });
+  const httpPort = (await readFile(`${runtimeDirectory}/.env`, "utf8")).match(
+    /^PI_CLOUD_HTTP_PORT=(\d+)$/m,
+  )?.[1];
+  if (!httpPort) throw new Error("Production API port is missing");
+  const fetchApi = (url, init) => fetch(new URL(String(url), `http://127.0.0.1:${httpPort}`), init);
+  for (let i = 0; i < 4; i++) {
+    const tenantSlug = "cube-check-provider-" + randomUUID();
+    const entry = { tenantSlug };
+    owned.push(entry);
+    await saveOwned();
+    const registration = await new PiCloudApi(fetchApi).registerTenant(
+      tenantSlug,
+      "Owned native Provider acceptance",
+    );
+    Object.assign(entry, registration, { api: new PiCloudApi(fetchApi, registration.apiToken) });
+    await saveOwned();
+    const project = await entry.api.createProject("Native Provider acceptance", { kind: "empty" });
+    Object.assign(entry, {
+      projectId: project.projectId,
+      workspaceId: project.workspaceId,
+      sessionId: randomUUID(),
+    });
+    await saveOwned();
+  }
+}
+async function cleanupBusinessFixtures() {
+  for (const entry of owned) {
+    if (!entry.tenantId)
+      throw new Error("Registration outcome needs reconciliation using the saved owned slug");
+    if (entry.workspaceId) {
+      await entry.api.deleteWorkspace(entry.workspaceId, randomUUID());
+      const end = Date.now() + 180000;
+      for (;;) {
+        const row = await businessDb
+          .selectFrom("workspaces")
+          .select("storage_purged_at")
+          .where("id", "=", entry.workspaceId)
+          .where("tenant_id", "=", entry.tenantId)
+          .executeTakeFirst();
+        if (!row || row.storage_purged_at) break;
+        if (Date.now() > end) throw new Error("Owned Workspace cleanup remains unconfirmed");
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+    await purgeOwnedAcceptanceTenant(businessDb, entry, {
+      delete: async () => {
+        throw new Error("Unexpected retained image in native Provider fixture");
+      },
+    });
+  }
+}
 const environment = {
   PI_CLOUD_POSTGRES_INTEGRATION_URL: testDatabase.url,
   PI_CLOUD_TOOL_COMPLETION_URL: completionUrl,
+  PI_CLOUD_TOOL_COMPLETION_IP: serviceAddress("tool-completion"),
   PI_CLOUD_COMPLETION_CA_FILE: "/operator-test/completion-ca.crt",
   PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE: `${runtimeDirectory}/secrets/supervisor-management-token`,
   PI_CLOUD_CUBESANDBOX_TEST: "1",
+  PI_CLOUD_CUBE_LIVE_ASSIGNMENTS_FILE: "/operator-test/owned-resources.json",
   PI_CLOUD_KAFKA_BROKERS: kafkaServices.map((name) => name + ":9092").join(","),
   PI_CLOUD_KAFKA_REPLICAS: "3",
   PI_CLOUD_CUBESANDBOX_API_URL: `http://${api.host}:${api.port}`,
@@ -98,6 +178,7 @@ const environment = {
   PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE: `${runtimeDirectory}/secrets/workspace-volume-gateway-token`,
 };
 try {
+  await prepareBusinessFixtures();
   await writeFile(
     join(temporary, "vitest.mjs"),
     "export default {cacheDir:'/tmp/pi-cloud-test-cache',test:{maxWorkers:1,testTimeout:300000,hookTimeout:60000}};\n",
@@ -129,8 +210,7 @@ try {
       "/opt/operator-node/bin/node",
       join(repositoryRoot, "node_modules/vitest/vitest.mjs"),
       "run",
-      "test/cubesandbox-live-provider.integration.test.ts",
-      "test/cubesandbox-guest-executor.live.test.ts",
+      ...liveFiles,
       "--no-file-parallelism",
       "--config",
       "/operator-test/vitest.mjs",
@@ -146,6 +226,18 @@ try {
     );
   });
 } finally {
-  await testDatabase.close();
-  await rm(temporary, { recursive: true, force: true });
+  let cleaned = false;
+  try {
+    await cleanupBusinessFixtures();
+    cleaned = true;
+    console.log(JSON.stringify({ nativeFixtureCleanup: true, tenants: owned.length }));
+  } finally {
+    await businessDb?.destroy();
+    await testDatabase.close();
+    if (cleaned) await rm(temporary, { recursive: true, force: true });
+    else
+      console.error(
+        `Owned resource receipt retained at ${ownershipPath}; no ownership records discarded`,
+      );
+  }
 }

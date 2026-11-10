@@ -182,7 +182,7 @@ try {
   report.chatAllocatedNoVm = true;
   turn = await api.acceptTurn(
     session.sessionId,
-    "只调用一次 bash，timeout 设为 120，命令必须为：sleep 80; printf 'EXECUTION_PROBE_OK'。不要调用其他工具、不要搜索、不要子代理。完成后只回复 EXECUTION_PROBE_OK。",
+    "只调用一次 bash，timeout 设为 150，命令必须为：sleep 100; printf 'EXECUTION_PROBE_OK'。不要调用其他工具、不要搜索、不要子代理。完成后只回复 EXECUTION_PROBE_OK。",
     newIdempotencyKey("probe-bash"),
     "low",
   );
@@ -205,12 +205,15 @@ try {
   // Ordinary waiting emits Session activity, not unsolicited full Guest probes.
   const before = Date.now();
   await waitFor(
-    async () =>
-      observations.some(
+    async () => {
+      const run = await api.getRun(turn.runId);
+      assert(!terminal(run), "Run settled before activity was observed during Bash");
+      return observations.some(
         (v) => v.runId === turn.runId && v.type === "run.path" && v.observedAt > before + 30000,
-      ),
+      );
+    },
     "Session path activity during silent Tool wait",
-    90000,
+    100000,
   );
   report.activityDuringBash = true;
   const done = await waitFor(async () => {

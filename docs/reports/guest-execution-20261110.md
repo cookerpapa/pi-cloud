@@ -3,8 +3,9 @@
 Tracking: [#25](https://github.com/cookerpapa/pi-managed-agents/issues/25),
 [ADR-0307](../adr/0307-guest-execution-and-session-activity.md).
 
-Status: source implementation verified; matched publication and live acceptance
-remain pending. The previous serving release is not evidence for this revision.
+Status: matched release `guest-runtime-20261110-r2` (runtime source `4f4dd68e`) is
+serving. Real Guest and Provider gates passed; model/recovery/image acceptance
+remains in progress. No complete-delivery claim is made yet.
 
 ## Implemented behavior
 
@@ -64,3 +65,41 @@ code. Allocation close-before-create, physical closure, Volume reference protect
 finite expiry and raw lifecycle history still have native Cube extensions. They
 remain until a provider equivalent proves the same required behavior. No alternate
 production sandbox was enabled, and the project is not yet zero-patch Cube.
+
+## Publication and live progress
+
+All 14 matched artifacts passed the maintained image policy. The first APT
+attempt failed on an HTTP 502 from the configured proxy; the retry used a
+build-process `NO_PROXY` exception for Ubuntu's existing signed repositories.
+The application proxy configuration was not changed.
+
+The maintained cutover drained writers, retired two old dedicated allocations
+with confirmed absence and preserved the existing XFS Workspace pool. Both stable
+machines returned to `ready` under their original running intent, with new
+allocation identities and unchanged Workspace IDs.
+
+The real Guest gate passed duplicates/changed requests, service SIGKILL during
+accepted work, completion while the service was absent, exact Bash cancellation
+with process disappearance, survival of completed background work, and explicit
+60-second retention expiry while a 120-second Tool was unfinished. Every owned
+allocation was closed and confirmed absent. This uses the deployed, unmodified
+Guest image.
+
+The native Provider gate passed two-tenant isolation, public access/private-route
+boundaries, cancellation, warm background survival and physical cleanup. Sample
+complete-Tool durations were 406 ms and 402 ms; these are fixture measurements,
+not a latency guarantee. Its stale pre-quota fixtures were updated to register
+real Workspace intent and use the normal Workspace deletion API. The original
+helper omitted completion ingress and used a non-mounted `/workspace`; the Guest
+control fixture now uses an explicit owned subdirectory and the deployed callback
+address. Failed fixtures were not counted as acceptance.
+
+Publication also exposed a stopped egress gateway: Kubernetes considers rollout
+of zero replicas successful. The gateway was restored to the declared singleton,
+and the operator now verifies replicas, availability, observed generation and
+image after reconciliation. Two regression cases cover this failure. Runtime
+images remain the matched r2 artifacts; these follow-up changes are operator/tests.
+
+Private evidence: `/tmp/pma-0307-live-guest-fixed.log`,
+`/tmp/pma-0307-live-provider-online.log`, and the matched candidate under
+`~/.local/share/pi-cloud/releases/guest-runtime-20261110-r2`.

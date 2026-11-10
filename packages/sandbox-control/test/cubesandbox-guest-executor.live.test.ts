@@ -36,6 +36,7 @@ it.skipIf(!enabled)(
       proxyScheme: "http",
       sandboxDomain: required("PI_CLOUD_CUBESANDBOX_DOMAIN"),
       egressProxyIp: "10.255.255.254",
+      completionIp: required("PI_CLOUD_TOOL_COMPLETION_IP"),
     });
     const issuer = new ToolCompletionIssuer({
       url: required("PI_CLOUD_TOOL_COMPLETION_URL"),
@@ -64,7 +65,7 @@ it.skipIf(!enabled)(
     const create = async (retentionMs?: number) => {
       const allocation = { id: randomUUID(), createBefore: Date.now() + 300000 };
       allocations.push(allocation);
-      return client.create({
+      const vm = await client.create({
         allocation,
         templateId: required("PI_CLOUD_CUBESANDBOX_TEMPLATE_ID"),
         timeoutSeconds: -1,
@@ -76,6 +77,12 @@ it.skipIf(!enabled)(
         allowInternetAccess: true,
         allowPublicTraffic: false,
       });
+      const setup = await command(
+        vm,
+        "install -d -o 1000 -g 1000 -m 0700 /workspace/guest-fixture",
+      );
+      if (setup.exitCode !== 0) throw new Error("Owned Guest fixture directory setup failed");
+      return vm;
     };
     const scope = {
         tenantId: randomUUID(),
@@ -111,7 +118,7 @@ it.skipIf(!enabled)(
         payload: {
           toolWorkerProtocolVersion: 7,
           type: "worker.operation",
-          attachment: { activationId: binding, toolRoot: "/workspace" },
+          attachment: { activationId: binding, toolRoot: "/workspace/guest-fixture" },
           request: input,
           delivery: await issuer.issue({
             operationId,
@@ -129,10 +136,12 @@ it.skipIf(!enabled)(
       };
       return { handoff, toolCallId };
     }
+    let inspectedVm: CubeSandboxInstance | undefined;
     try {
       await mailbox.start();
       const vm = await create(),
         target = await client.executionTarget(vm.sandboxId, vm.nodeId!);
+      inspectedVm = vm;
       const first = await request(
         "printf start >> /workspace/guest-count; touch /workspace/guest-started; sleep 8; printf end >> /workspace/guest-count; printf DONE",
       );
@@ -142,7 +151,15 @@ it.skipIf(!enabled)(
         "bash",
         AbortSignal.timeout(60000),
       );
-      void result.result.catch(() => {});
+      let early: Awaited<typeof result.result> | Error | undefined;
+      void result.result.then(
+        (r) => {
+          early = r;
+        },
+        (e) => {
+          early = e;
+        },
+      );
       await client.submitTool(target, first.handoff);
       await client.submitTool(target, first.handoff);
       await expect(
@@ -157,11 +174,17 @@ it.skipIf(!enabled)(
           },
         }),
       ).rejects.toMatchObject({ code: "operation_changed" });
-      await until(
-        async () =>
-          (await command(vm, "test -f /workspace/guest-started")).exitCode === 0 ? true : undefined,
-        "command started",
-      );
+      await until(async () => {
+        if (early instanceof Error) throw early;
+        if (early?.isError)
+          throw new Error(
+            "Guest failed before command marker: " +
+              JSON.stringify(early.result.content).slice(0, 4000),
+          );
+        return (await command(vm, "test -f /workspace/guest-started")).exitCode === 0
+          ? true
+          : undefined;
+      }, "command started");
       const killDaemon = async () => {
         const killed = await command(
           vm,
@@ -293,6 +316,18 @@ PMA`,
         180000,
       );
       expect((await client.observe(expiring.sandboxId, expiring.nodeId!)).presence).toBe("absent");
+    } catch (error) {
+      if (inspectedVm) {
+        const diagnostic = await command(
+          inspectedVm,
+          `id; cat /proc/self/cgroup; stat -c '%a %U %n' /sys/fs/cgroup /workspace; ps -eo pid,ppid,stat,comm; node --input-type=module <<'PMA'
+import {DatabaseSync} from 'node:sqlite';import{existsSync}from'node:fs';
+const p='/run/pi-cloud-executor/state.sqlite';if(existsSync(p)){const d=new DatabaseSync(p);console.log(JSON.stringify({identity:d.prepare('select owner_pid,owner_start,blocked from identity').get(),operations:d.prepare('select id,pid,start,deadline,cancelled,finished from operations').all()}));d.close();}
+PMA`,
+        ).catch(() => undefined);
+        console.error("Owned Guest diagnostics", JSON.stringify(diagnostic));
+      }
+      throw error;
     } finally {
       const errors: unknown[] = [];
       for (const a of allocations)
