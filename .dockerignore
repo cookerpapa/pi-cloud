@@ -41,6 +41,8 @@
 !deploy/cubesandbox/browser/package-lock.json
 !deploy/cubesandbox/browser/index.mjs
 !deploy/cubesandbox/browser/check.mjs
+!deploy/cubesandbox/cube-volume-picloud-posix.sh
+!deploy/boxlite/supervisord.conf
 !packages/sandbox-supervisor/test/fixtures/sample-java-repair/**
 
 # Local files can exist inside an otherwise allowed source directory.
