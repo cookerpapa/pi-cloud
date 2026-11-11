@@ -192,11 +192,12 @@ continuation. Follow [configuration](docs/CONFIGURATION.md) and
 
 ## Validation and current limits
 
-The stock Cube cutover in [#26](https://github.com/cookerpapa/pi-managed-agents/issues/26)
-is under validation and is not yet deployed. Official unmodified images currently
-fail the maintained release scan gate. Existing installations remain on their
-serving matched release until this is resolved. Stock compute observations are
-unconfirmed/unpriced; model and Workspace-capacity metering remain independent.
+The stock Cube integration in [#26](https://github.com/cookerpapa/pi-managed-agents/issues/26)
+is deployed using unchanged, digest-pinned official v0.7.3 images. The owner accepted
+the reviewed findings for those four exact images under [ADR-0310](docs/adr/0310-stock-cube-release-exception.md);
+other release gates remain enforced. Final follow-up acceptance is tracked in the
+[delivery report](docs/reports/stock-cube-source-20261111.md). Stock compute observations
+are unconfirmed/unpriced; model and Workspace-capacity metering remain independent.
 
 The repository contains native SDK contract tests, PostgreSQL/Kafka integration
 checks, browser layout tests, deterministic fault scenarios and opt-in live

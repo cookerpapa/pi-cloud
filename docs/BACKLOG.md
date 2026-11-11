@@ -17,13 +17,14 @@
 - [x] #26 operator: privileged WSL maintenance configures the local web socket as the existing runtime owner.
 - [x] #26 acceptance: use retained Guest credentials, bounded native delete evidence and the independent collector's committed state in live fixtures and cleanup.
 - [x] #26 source: enrich creation receipts with native detail capacity before Guest preparation, including VMs shorter than the sampling interval.
-- [ ] #26: serial verification, matched delivery and original-asset preservation.
+- [x] #26: first stock matched delivery and original-asset preservation; Guest and Provider live gates passed.
+- [ ] #26: publish the capacity correction and complete final model/recovery/retention/accounting acceptance.
 - [x] #27 source: audit Android upstream artifacts and remove the driver manifest rewrite; device rollout remains pending.
 - [ ] #27: evaluate BoxLite against the stock-provider boundary before enabling it.
 
 [ADR-0308](adr/0308-unresolved-resource-admission.md) and
 [ADR-0309](adr/0309-stock-sandbox-contract.md). Stock Cube implementation is now
-authorized; production acceptance and subsequent BoxLite adoption remain pending.
+deployed; final follow-up acceptance and subsequent BoxLite adoption remain pending.
 
 ## Guest execution and Session activity — deployed
 

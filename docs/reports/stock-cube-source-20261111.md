@@ -1,11 +1,12 @@
 # Stock Cube source migration — 2026-11-11
 
-Status: source implementation verified; **not deployed**.
+Status: **stock Cube R3 is deployed; the capacity correction and final acceptance are in progress**.
 Tracking: [#26](https://github.com/cookerpapa/pi-managed-agents/issues/26),
 [ADR-0309](../adr/0309-stock-sandbox-contract.md).
-The serving installation remains `guest-runtime-20261110-r3`, schema 215.
-No existing user VM, Workspace, account, provider credential or retained attachment
-was removed during this source migration.
+The serving installation is `stock-cube-20261111-r3`, schema 217. Old VMs were
+retired with positive deletion evidence; both original development-machine
+identities recovered on new native VMs with their original Workspace bytes.
+Accounts, model/provider configuration, credentials and retained attachments were preserved.
 
 ## What changes
 
@@ -80,8 +81,7 @@ Environment-gated live checks remain excluded from those counts.
 
 All-workspace type checks, application build, Helm/distributed/self-hosted/Android
 chart checks, runtime policy and maintained documentation checks passed.
-The [20 targeted fault checks](stock-cube-faults-20261111.md) all passed. Publication evidence remains pending; none of
-these results is a live stock-stack acceptance or a fleet-scale claim.
+The [20 targeted fault checks](stock-cube-faults-20261111.md) all passed. These source checks are distinct from the live results below and are not a fleet-scale claim.
 
 ## Release gate found in unchanged upstream artifacts
 
@@ -103,10 +103,11 @@ Examples include Brotli, curl/OpenSSL, gRPC 1.80.0,
 quic-go 0.54.0, x/net 0.58.0 and Go 1.25.14. These are scanner findings, not an
 exploit experiment or a claim that each issue is reachable in this deployment.
 
-The required gate in `scripts/lib/matched-release.mjs` rejects fixable HIGH/CRITICAL
-findings. The four formerly patched native roles remain inside that gate. No
-exception, scan bypass, dependency overlay or relabeling as exempt upstream
-infrastructure was introduced.
+The existing release gate initially rejected these findings. The owner subsequently
+approved the four exact unchanged upstream inputs. [ADR-0310](../adr/0310-stock-cube-release-exception.md)
+and `514328ef` pin the accepted references and filesystem hashes. Raw/policy scans
+and SBOMs remain in the release evidence. Other image gates and all drain/fencing
+checks remain enforced; no dependency overlay or global scan bypass was introduced.
 
 Official upstream HEAD was checked as
 `84d9cedf806417b8e86794b86e12138503383f70`; its
@@ -116,27 +117,60 @@ those pinned Go dependencies. An unmodified upstream API Dockerfile/source rebui
 was also tried; it stopped on a Rust documentation download timeout. That failed
 attempt is not presented as a passing replacement artifact.
 
-Strictly unchanged upstream inputs and the current release gate therefore do not
-yet produce an acceptable matched release. A fixed upstream input or an explicitly
-reviewed change to the selected dependency/release policy is required. Existing
-services remain on the previous release while this is unresolved.
+## Matched publication and live results
 
-## Cutover and remaining acceptance
+R3 was published with application Helm revision 160, infrastructure revision 121,
+schema 217, artifact revision `fc2f3918` and operator revision `8ec802f0`.
+The complete candidate contains 14 scanned images, with four exact stock-Cube
+exceptions. The Guest identity remains `96e3d791e039a2d7fb60f3ea296194c122c04b5f`.
 
-Before any replacement, drain writers, settle resource applications, confirm old
-compute deletion and finish pending Workspace deletion. Preserve stable machine
-intent, accounts, configuration, credentials, retained images and Workspace bytes.
-Initialize the new attachment directory only under the existing cold storage guard,
-against each frozen Volume generation. A later native deployment must reject
-missing attachment state rather than repeat that one-time initialization.
+The operator drained writers and confirmed old compute deletion, preserved the
+existing XFS Workspace filesystem, initialized attachment state under the cold
+storage guard and removed the five private Cube SQL tables and two private
+migration versions. The four official engines and application roles became Ready.
+Both original machines recovered. The preservation check passed for original
+account/model/credential records, both machine/Workspace identities and 394
+original source/image files. This is a targeted preservation check, not a full backup.
 
-After old native writers disappear, the operator removes only the five retired
-`t_pi_cloud_*` extension tables and their two exact migration/fingerprint versions.
-It does not remove upstream Volume/template tables. Existing live extension data
-has not been touched; final cold node-metadata cleanup remains part of cutover.
+| Check | Result |
+| --- | --- |
+| Real Guest restart, exact cancellation, finite expiry with an unfinished Tool | Passed; 89-second live case |
+| Real Provider execution, PTY, reuse, stale-authority refusal, deletion uncertainty and cleanup | Two cases passed; four owned fixture accounts and Workspaces purged |
+| User-facing unresolved-create admission, exact retry and two Ready machines | Passed within the admission fixture |
+| User-facing Stop followed by release | First fixture raced resource-binding retirement; corrected wait still needs the final rerun |
+| Short-lived VM capacity | Real gap fixed in `e0485697`; 37 Provider cases and type checking passed; next matched candidate pending |
+| Full model/image/browser, Worker/VM recovery, production-window retention and accounting acceptance | Pending on the final candidate |
 
-The complete stock-image cutover, real Guest/Worker/VM recovery, native expiry,
-images and accounting acceptance remain pending. Android packaging was simplified
-in `fa342d61`, with 221 upstream driver files/APKs byte-checked; device publication
-remains pending and its intentionally stopped StatefulSet stays stopped. BoxLite
-adoption remains conditional on the validated stock-provider boundary in #27.
+Three operator corrections were needed: use the existing Cube schema account for
+retired-table cleanup, check the official `v0.7.3` version manifest, and configure
+the WSL local web socket as its existing user during privileged maintenance.
+All were tested and pushed. Failed partial cutovers kept application writers
+stopped; they did not mix old and new protocols.
+
+The first live fixtures also retained assumptions about private credentials,
+node fields and Cubelet accounting counters. `fab3b760` switches them to retained
+connection capsules, bounded positive deletion evidence and independent collector
+state. Failed samples remain recorded as failures. Two disposable, never-measured
+short-lifetime records required cold cleanup after physical deletion, delivery
+drain and stopping the sampler. No missing quantity or price was invented.
+
+The capacity correction reuses the already-required native detail read and
+persists verified CPU/memory before Guest preparation. This avoids losing capacity
+when a VM closes before the periodic sample. It adds no per-Tool query and does
+not turn observed compute intervals into confirmed billable time.
+
+## Remaining maintenance and acceptance
+
+Four obsolete templates were deferred after the native delete API timed out.
+Their ownership is retained. Inactive private node-metadata buckets are not read
+by stock Cube; removing them requires a narrow cold cleanup, never deleting the
+native metadata database or preserved Workspace bytes.
+
+One preserved Workspace has an old upload-cleanup locator whose directory identity
+changed. The fixed input programs work; new uploads re-register their actual
+staging directory. Existing bytes were preserved rather than guessed away.
+
+Android packaging was simplified in `fa342d61`, with 221 upstream driver files/APKs
+byte-checked. Device publication remains pending and its intentionally stopped
+StatefulSet stays stopped. BoxLite remains conditional in #27. The requested
+131 MiB cold model upload is excluded from this acceptance.
