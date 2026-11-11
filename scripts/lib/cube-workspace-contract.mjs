@@ -1,4 +1,4 @@
-/** Helm chart upgrades can overwrite installer patches. Refuse application
+/** Refuse application
  * rollout if Cube and the Volume Gateway would see different Workspace bytes. */
 export function assertCubeWorkspaceContract(master, node, expectedHostRoot) {
   const requiredMount = (pod, containerName, path, hostRoot) => {
@@ -50,8 +50,6 @@ export function assertCubeWorkspaceContract(master, node, expectedHostRoot) {
 }
 
 export function assertCubeNativeVersion(probe, expectedVersion) {
-  if (probe?.components?.cubelet?.version !== expectedVersion)
-    throw new Error(
-      "Update Cube from the current pinned native patch set before deploying the platform",
-    );
+  if (probe?.schema_version !== 1 || probe?.components?.cubelet?.version !== expectedVersion)
+    throw new Error("Update Cube to the pinned official release before deploying the platform");
 }

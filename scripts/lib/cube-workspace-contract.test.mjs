@@ -68,18 +68,17 @@ test("detects a removed Cubelet config mount even when the Workspace host path i
 test("requires the pinned native Cube release independently of the completion application", () => {
   assert.doesNotThrow(() =>
     assertCubeNativeVersion(
-      { components: { cubelet: { version: "0.7.3-picloud-expected" } } },
-      "0.7.3-picloud-expected",
+      { schema_version: 1, components: { cubelet: { version: "v0.7.3" } } },
+      "v0.7.3",
     ),
   );
-  assert.throws(
-    () =>
-      assertCubeNativeVersion(
-        { components: { cubelet: { version: "old" } } },
-        "0.7.3-picloud-expected",
-      ),
-    /Update Cube/,
-  );
+  for (const probe of [
+    { schema_version: 1, components: { cubelet: { version: "old" } } },
+    { schema_version: 1, components: { cubelet: { version: "0.7.3-picloud-old" } } },
+    { schema_version: 2, components: { cubelet: { version: "v0.7.3" } } },
+    { components: { cubelet: { version: "v0.7.3" } } },
+  ])
+    assert.throws(() => assertCubeNativeVersion(probe, "v0.7.3"), /Update Cube/);
 });
 
 test("refuses a missing executable even when the same ConfigMap still provides the config", () => {

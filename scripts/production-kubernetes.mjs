@@ -1,6 +1,5 @@
 import { configureBuildProxy } from "./lib/upstream-proxy.mjs";
 import { activateToolHost } from "./lib/tool-host-activation.mjs";
-import { createHash } from "node:crypto";
 import { waitForReadyCubelet } from "./lib/cube-execution-deployment.mjs";
 import {
   assertCubeWorkspaceContract,
@@ -326,10 +325,7 @@ export async function deployPlatform({ images, deploymentEnvironment }) {
   const runtimeBuild = JSON.parse(
     readFileSync(resolve(repositoryRoot, "deploy/cubesandbox/runtime-build.json")),
   );
-  assertCubeNativeVersion(
-    installed,
-    `${runtimeBuild.upstreamVersion}-picloud-${createHash("sha256").update(JSON.stringify(runtimeBuild)).digest("hex").slice(0, 16)}`,
-  );
+  assertCubeNativeVersion(installed, `v${runtimeBuild.upstreamVersion}`);
   const { platform } = await values({ images, deploymentEnvironment });
   installSecrets();
   if (deploymentEnvironment.PI_CLOUD_OBSERVABILITY_ENABLED === "1") {

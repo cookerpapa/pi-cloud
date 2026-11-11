@@ -13,6 +13,7 @@
 - [x] #26 source: external Volume Plugin attachment receipts and shared deletion admission; isolated create/attach/delete checks pass.
 - [x] #26 source: native lifecycle/expiry evidence and release-operator migration; remain a single matched cutover.
 - [x] #26: record the owner's explicit four-image exception under ADR-0310, without hidden dependency changes or a global scan bypass.
+- [x] #26 operator: retire old SQL through the existing Cube schema account and check the official version manifest; preserve image and mount guards.
 - [ ] #26: serial verification, matched delivery and original-asset preservation.
 - [x] #27 source: audit Android upstream artifacts and remove the driver manifest rewrite; device rollout remains pending.
 - [ ] #27: evaluate BoxLite against the stock-provider boundary before enabling it.
