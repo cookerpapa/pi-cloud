@@ -24,12 +24,24 @@ async function fixture() {
   const calls = [],
     pods = new Set(items.map((item) => item.metadata.name));
   let replaceUid = false;
+  const unready = new Set();
   const kubectl = vi.fn((args) => {
     calls.push(args);
     if (args[0] === "get" && args.includes("--ignore-not-found")) return JSON.stringify({ items });
     if (args[0] === "get" && args[1] === "pods") {
       const name = args[args.indexOf("-l") + 1].split("=")[1];
-      return JSON.stringify({ items: pods.has(name) ? [{ metadata: { name } }] : [] });
+      return JSON.stringify({
+        items: pods.has(name)
+          ? [
+              {
+                metadata: { name, ownerReferences: [{ uid: `${name}-uid` }] },
+                status: {
+                  conditions: [{ type: "Ready", status: unready.has(name) ? "False" : "True" }],
+                },
+              },
+            ]
+          : [],
+      });
     }
     if (args[0] === "wait") {
       pods.delete(args[args.indexOf("-l") + 1].split("=")[1]);
@@ -41,8 +53,10 @@ async function fixture() {
       if (replaceUid && name === "cube-node-bootstrap") item.metadata.uid = "replacement";
       return JSON.stringify(item);
     }
-    if (args[0] === "scale") item.spec.replicas = Number(args[2].split("=")[1]);
-    else if (args[0] === "patch") {
+    if (args[0] === "scale") {
+      item.spec.replicas = Number(args[2].split("=")[1]);
+      if (item.spec.replicas > 0) pods.add(name);
+    } else if (args[0] === "patch") {
       item.spec.template.spec.nodeSelector = JSON.parse(args.at(-1))[0].value;
       item.metadata.generation++;
     } else if (args[0] !== "rollout") throw new Error(`Unexpected ${args}`);
@@ -65,6 +79,7 @@ async function fixture() {
     calls,
     kubectl,
     delay,
+    unready,
     replaceUid: () => {
       replaceUid = true;
     },
@@ -93,6 +108,47 @@ it("stops bootstrap too, waits for controller convergence and restores dependenc
   expect(
     JSON.parse(await readFile(join(f.directory, "native-storage-maintenance.json"))).restored,
   ).toBe(true);
+});
+
+it.each([0, 1])(
+  "restores OnDelete nodes at %i replicas without a rollout watch",
+  async (replicas) => {
+    const f = await fixture();
+    const box = structuredClone(f.items[0]);
+    box.kind = "StatefulSet";
+    box.metadata = { name: "pi-cloud-boxlite", uid: "pi-cloud-boxlite-uid", generation: 1 };
+    box.spec.selector.matchLabels = { component: "pi-cloud-boxlite" };
+    box.spec.updateStrategy = { type: "OnDelete" };
+    box.spec.replicas = replicas;
+    f.items.push(box);
+    const restore = await stopNativeStorageConsumers(f);
+    await restore();
+    expect(
+      f.calls.some(
+        (args) => args[0] === "rollout" && args.includes("statefulset/pi-cloud-boxlite"),
+      ),
+    ).toBe(false);
+    expect(
+      JSON.parse(await readFile(join(f.directory, "native-storage-maintenance.json"))).restored,
+    ).toBe(true);
+  },
+);
+
+it("retains the cold-operation receipt when an OnDelete node is not ready", async () => {
+  const f = await fixture();
+  const box = structuredClone(f.items[0]);
+  box.kind = "StatefulSet";
+  box.metadata = { name: "pi-cloud-boxlite", uid: "pi-cloud-boxlite-uid", generation: 1 };
+  box.spec.selector.matchLabels = { component: "pi-cloud-boxlite" };
+  box.spec.updateStrategy = { type: "OnDelete" };
+  f.items.push(box);
+  const restore = await stopNativeStorageConsumers(f);
+  f.unready.add("pi-cloud-boxlite");
+  f.delay.mockRejectedValue(new Error("Interrupted readiness wait"));
+  await expect(restore()).rejects.toThrow("Interrupted readiness wait");
+  expect(
+    JSON.parse(await readFile(join(f.directory, "native-storage-maintenance.json"))).restored,
+  ).toBe(false);
 });
 
 it("rejects a replaced bootstrap workload while waiting for stop", async () => {

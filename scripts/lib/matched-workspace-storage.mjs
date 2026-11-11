@@ -220,11 +220,37 @@ export async function stopNativeStorageConsumers({
     }
     // Start every dependency before awaiting readiness: API needs Master, and
     // node registration also needs Master. Waiting inside the scale loop deadlocks.
-    for (const saved of state.resources)
-      kubectl(
-        ["rollout", "status", `${saved.kind.toLowerCase()}/${saved.name}`, "--timeout=300s"],
-        { timeout: 305_000 },
-      );
+    for (const saved of state.resources) {
+      const target = `${saved.kind.toLowerCase()}/${saved.name}`;
+      const current = JSON.parse(kubectl(["get", target, "-o", "json"]));
+      assert.equal(current.metadata.uid, saved.uid, "Native storage workload identity changed");
+      if (saved.kind === "StatefulSet" && current.spec.updateStrategy?.type === "OnDelete") {
+        // Cold maintenance removed the old Pods. OnDelete has no rollout-status
+        // watch: require the controller and its newly created Pods to be ready.
+        const selector = Object.entries(current.spec.selector.matchLabels)
+          .map(([key, value]) => `${key}=${value}`)
+          .join(",");
+        const deadline = performance.now() + 300_000;
+        for (;;) {
+          const object = JSON.parse(kubectl(["get", target, "-o", "json"]));
+          assert.equal(object.metadata.uid, saved.uid, "Native storage workload identity changed");
+          const pods = JSON.parse(kubectl(["get", "pods", "-l", selector, "-o", "json"])).items;
+          if (
+            object.status?.observedGeneration >= object.metadata.generation &&
+            pods.length === saved.replicas &&
+            pods.every(
+              (pod) =>
+                !pod.metadata.deletionTimestamp &&
+                pod.metadata.ownerReferences?.some((owner) => owner.uid === saved.uid) &&
+                pod.status?.conditions?.some((c) => c.type === "Ready" && c.status === "True"),
+            )
+          )
+            break;
+          assert(performance.now() < deadline, "Native storage StatefulSet is not ready");
+          await delay(250);
+        }
+      } else kubectl(["rollout", "status", target, "--timeout=300s"], { timeout: 305_000 });
+    }
     state.restored = true;
     await saveMaintenance(recordedPath(directory), state);
   };

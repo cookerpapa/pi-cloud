@@ -10,6 +10,9 @@
 Alternate images have passed their release scans. Live rollout is in progress;
 the BoxLite operator now uses the maintained temporary registry forward, and
 operator-only repairs retain the scanned runtime revision without relabeling it.
+Real node checks passed creation, retained Workspace pause/resume, API-child
+replacement and confirmed deletion. Cold maintenance also waits for OnDelete
+node Pods directly; an unready node keeps the resumable maintenance receipt.
 
 [ADR-0313](adr/0313-alternate-runtime-production-integration.md) records the new
 owner authorization beyond the earlier operator-only experiment.
