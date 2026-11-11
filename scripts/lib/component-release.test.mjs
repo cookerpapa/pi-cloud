@@ -853,3 +853,19 @@ it("publishes only compatible model bootstrap code to the installed Worker State
   expect(updated["pi-workers"].image.tag).toBe("new");
   expect(updated.images).toEqual(values.images);
 });
+it("excludes independently built BoxLite node source only with a disjoint Docker input closure", () => {
+  const api = "packages/control-plane/src/application.ts";
+  const node = "packages/boxlite-node/src/backend.ts";
+  expect(() => assertScopedSources("session-api", [api, node], new Set([api]))).not.toThrow();
+  expect(() => assertScopedSources("session-api", [api, node])).toThrow("matched release");
+  expect(() => assertScopedSources("session-api", [api, node], new Set([api, node]))).toThrow(
+    "matched release",
+  );
+  expect(() =>
+    assertScopedSources(
+      "session-api",
+      ["packages/sandbox-control/src/boxlite-runtime-client.ts"],
+      new Set([api]),
+    ),
+  ).toThrow("matched release");
+});

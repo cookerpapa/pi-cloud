@@ -9,11 +9,17 @@ import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
 import { S3AttachmentBlobStore } from "../packages/session-attachments/src/s3.ts";
 import { OfficialCubeSandboxRuntimeClient } from "../packages/sandbox-control/src/cubesandbox-runtime-client.ts";
+import { BoxLiteRuntimeClient } from "../packages/sandbox-control/src/boxlite-runtime-client.ts";
 import {
   purgeOwnedAcceptanceTenant,
   settleOwnedAcceptanceRuns,
 } from "./lib/owned-acceptance-cleanup.mjs";
-import { kubectl, serviceAddress, runtimeDirectory } from "./lib/production-kubernetes.mjs";
+import {
+  kubectl,
+  serviceAddress,
+  runtimeDirectory,
+  runtimeEnvironment,
+} from "./lib/production-kubernetes.mjs";
 import { nativeHistory } from "./lib/native-session-history.mjs";
 import { withChromePage } from "./lib/chrome-cdp.mjs";
 import {
@@ -59,8 +65,14 @@ const db = createDatabase({ connectionString: pg.toString(), maxConnections: 2 }
 const cluster = JSON.parse(
   await readFile(resolve(runtimeDirectory, "cubesandbox/cluster.json"), "utf8"),
 );
-const cube = new OfficialCubeSandboxRuntimeClient({
-  ...nativeCubeLifecycleOptions(),
+const runtimeProvider = runtimeEnvironment().PI_CLOUD_SANDBOX_PROVIDER ?? "cubesandbox";
+assert(["cubesandbox", "boxlite"].includes(runtimeProvider), "Unknown serving runtime provider");
+assert(
+  faultTarget !== "cubelet" || runtimeProvider === "cubesandbox",
+  "Cubelet fault requires Cube compute",
+);
+const nativeCube = new OfficialCubeSandboxRuntimeClient({
+  ...(runtimeProvider === "cubesandbox" ? nativeCubeLifecycleOptions() : {}),
   apiUrl: `http://${cluster.api.host}:${cluster.api.port}`,
   apiKey: await secret("cubesandbox-api-key"),
   proxyNodeIp: cluster.proxy.host,
@@ -69,6 +81,16 @@ const cube = new OfficialCubeSandboxRuntimeClient({
   sandboxDomain: cluster.sandboxDomain,
   egressProxyIp: "10.255.255.254",
 });
+const cube =
+  runtimeProvider === "cubesandbox"
+    ? nativeCube
+    : new BoxLiteRuntimeClient({
+        url: `http://${JSON.parse(kubectl(["get", "service", "pi-cloud-boxlite", "-o", "json"])).spec.clusterIP}:8091`,
+        nodeId: JSON.parse(await readFile(resolve(runtimeDirectory, "k3s/boxlite.json"), "utf8"))
+          .nodeId,
+        token: await secret("sandbox-control-token"),
+        volumes: nativeCube,
+      });
 let tenant, project, session, active, receipt, failure;
 const api = new PiCloudApi((path, init = {}) =>
   fetch(new URL(path, base), {
@@ -82,6 +104,7 @@ const api = new PiCloudApi((path, init = {}) =>
 const report = {
   checkedAt: new Date().toISOString(),
   model: "gpt-6-luna",
+  runtimeProvider,
   scope,
   accepted: false,
   cleanupConfirmed: false,
@@ -496,7 +519,8 @@ try {
       // fixture allocation. This does not pause or delete any user's machine.
       await cube.destroy(allocation.runtime_name);
       await until(
-        async () => (await cube.observe(owned[0].sandboxId, owned[0].nodeId)).presence === "absent",
+        async () =>
+          (await cube.observe(owned[0].sandboxId, owned[0].nodeId, owned[0])).presence === "absent",
         "native provider deletion evidence",
         120000,
       );

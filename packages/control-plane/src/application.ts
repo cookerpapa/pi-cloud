@@ -2,6 +2,8 @@ import { installBinaryBodyParser } from "./binary-body-parser.ts";
 import type { SessionPublicationService } from "./session-publication-service.ts";
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
+import fastifyWebsocket from "@fastify/websocket";
+import { MAX_WORKSPACE_TERMINAL_FRAME_BYTES } from "@pi-cloud/protocol";
 import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fastify";
 import { ApiExceptionFilter } from "./api-exception.filter.ts";
 import { ControlPlaneModule, type ControlPlaneEventRuntime } from "./control-plane.module.ts";
@@ -77,6 +79,13 @@ export async function createControlPlaneApplication(
   options.executionTargetIngress?.install(adapter.getInstance());
   options.supervisorProvisioningGateway?.install(adapter.getInstance());
   options.supervisorWebSocketGateway?.install(adapter.getInstance());
+  // Public Session API runs without the Worker gateway that used to install
+  // this transport. Its terminal routes still require the plugin before Avvio
+  // registers their scope. Combined test compositions install it only once.
+  if (options.workspaceTerminalGateway && !options.supervisorWebSocketGateway)
+    adapter.getInstance().register(fastifyWebsocket, {
+      options: { maxPayload: MAX_WORKSPACE_TERMINAL_FRAME_BYTES, perMessageDeflate: false },
+    });
   options.workspaceTerminalGateway?.install(adapter.getInstance());
   options.sandboxPreviewGateway?.install(adapter.getInstance());
   let staticRequestIdentity;
@@ -102,7 +111,16 @@ export async function createControlPlaneApplication(
       ...(staticRequestIdentity === undefined ? {} : { staticRequestIdentity }),
     }),
     adapter,
-    { logger: false, rawBody: true },
+    {
+      logger: false,
+      rawBody: true,
+      // The public role owns disposable browser sockets. Use Nest's supported
+      // connection tracking so upgraded/half-closed terminals cannot hold its
+      // replacement open; Worker ownership is on a different listener.
+      forceCloseConnections: Boolean(
+        options.workspaceTerminalGateway && !options.supervisorWebSocketGateway,
+      ),
+    },
   );
   application.useGlobalFilters(new ApiExceptionFilter());
   await application.init();

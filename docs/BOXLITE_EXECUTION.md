@@ -49,6 +49,12 @@ untrusted workflow processes use UID 1000, dropped capabilities and
 no-new-privileges inside the VM. The complete deployment still requires its
 own isolation/failure acceptance before promotion.
 
+The Box container's default user is also UID/GID 1000. BoxLite automatically
+maps host volume ownership to that default user; choosing root here would swap
+Workspace IDs and break shared access. Infrastructure commands explicitly use
+root without changing the container default. The live node check verifies host
+and Guest ownership, not only the command's exit status.
+
 Supervisor manages only the node API child, allowing that process to restart
 without ending its container or detached VMM children. It does not schedule
 Agents, Tools or resource expiry. Full Pod or host loss is a VM-failure boundary.
@@ -97,4 +103,21 @@ real model Tools/images, Worker handoff to original replies, API-child restart,
 Guest/VM loss, cancellation, terminal/preview, expiry and retained Workspace
 checks. Keep Android device acceptance separate and serial. Compute observations
 remain unconfirmed/unpriced; model and capacity billing retain their own evidence.
+BoxLite currently registers allocation identity/size but has no compute-observation
+collector. It therefore does not accumulate a priced compute duration. The owned
+acceptance cleanup distinguishes this absent producer from pending Cube receipts,
+and requires confirmed Workspace purge before discarding test registrations.
 Do not infer production readiness from the earlier SDK-only experiment.
+
+The maintained node and lifecycle checks use disposable owned fixtures:
+
+```sh
+PI_CLOUD_LIVE_BOXLITE_CHECK=1 node --import tsx scripts/run-boxlite-node-live-check.mjs PRIVATE_NODE_REPORT
+PI_CLOUD_LIVE_BOXLITE_CHECK=1 node --import tsx scripts/run-live-boxlite-lifecycle-check.mjs PRIVATE_LIFECYCLE_REPORT
+```
+
+The lifecycle check advances only its own settled Session's PG idle deadline.
+It verifies provider deletion and retained Workspace recovery without claiming
+an actual 30-minute elapsed-time sample. Production retention policy is unchanged.
+Run these serially with the existing model Tool, Worker handoff, cancellation,
+browser/image and lost-reply acceptance scripts.

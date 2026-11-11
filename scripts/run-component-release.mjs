@@ -180,7 +180,7 @@ if (action === "prepare") {
   const changed = capture("git", ["diff", "--name-only", `${baseline.revision}..${revision}`])
     .split("\n")
     .filter(Boolean);
-  assertScopedSources(scope, changed);
+  assertScopedSources(scope, changed, new Set(inputs(scope)));
   if (scope === "provider") {
     assertProviderBuildContextChanges(
       capture("git", ["show", `${baseline.revision}:.dockerignore`]),
@@ -384,6 +384,7 @@ assertScopedSources(
   ])
     .split("\n")
     .filter(Boolean),
+  new Set(inputs(candidate.scope)),
 );
 for (const [file, hash] of Object.entries(candidate.sourceInputs))
   assert.equal(digest(readFileSync(resolve(root, file), "utf8")), hash, "Source inputs changed");

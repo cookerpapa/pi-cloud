@@ -8,12 +8,12 @@ import {
 } from "@pi-cloud/protocol";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
-import fastifyWebsocket from "@fastify/websocket";
-import Fastify from "fastify";
 import type { Kysely } from "kysely";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket, { WebSocketServer, type RawData } from "ws";
 import { ProductionHttpGateway } from "../src/production-http-gateway.ts";
+import { createControlPlaneApplication } from "../src/application.ts";
+import { emptyEventRuntime } from "./fixtures/event-runtime.ts";
 import {
   DEVELOPMENT_ENVIRONMENT_TERMINAL_PATH,
   WORKSPACE_TERMINAL_PATH,
@@ -42,6 +42,14 @@ const closeTasks: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const close of closeTasks.splice(0).reverse()) await close();
 });
+
+async function closeBrowser(socket: WebSocket): Promise<void> {
+  if (socket.readyState === WebSocket.CLOSED) return;
+  await new Promise<void>((resolve) => {
+    socket.once("close", () => resolve());
+    socket.terminate();
+  });
+}
 
 function queuedFrames(socket: WebSocket): () => Promise<Record<string, unknown>> {
   const frames: Array<Record<string, unknown>> = [];
@@ -206,11 +214,7 @@ describe("WorkspaceTerminalGateway", () => {
     await runMigrations(database, "up");
     await seed(database, `http://127.0.0.1:${String(upstreamAddress.port)}`);
 
-    const server = Fastify({ logger: false });
-    // Match production: the plugin and route are queued before Fastify becomes
-    // ready, rather than awaiting plugin registration in isolation.
-    server.register(fastifyWebsocket);
-    new ProductionHttpGateway({
+    const productionHttpGateway = new ProductionHttpGateway({
       authenticator: {
         authenticate: async (token) =>
           token === TOKEN
@@ -226,14 +230,23 @@ describe("WorkspaceTerminalGateway", () => {
             : undefined,
       },
       readiness: () => true,
-    }).install(server);
-    new WorkspaceTerminalGateway({
+    });
+    const workspaceTerminalGateway = new WorkspaceTerminalGateway({
       database,
       terminalToken: TERMINAL_TOKEN,
       allowInsecureInternalHttp: true,
-    }).install(server);
-    const address = await server.listen({ host: "127.0.0.1", port: 0 });
-    closeTasks.push(() => server.close());
+    });
+    // Exercise the actual public role without a Supervisor gateway. Registering
+    // @fastify/websocket in the fixture hid the split-role regression.
+    const application = await createControlPlaneApplication({
+      database,
+      eventRuntime: emptyEventRuntime(),
+      productionHttpGateway,
+      workspaceTerminalGateway,
+    });
+    await application.listen(0, "127.0.0.1");
+    const address = await application.getUrl();
+    closeTasks.push(() => application.close());
 
     const terminalUrl = new URL(
       WORKSPACE_TERMINAL_PATH.replace(":sessionId", IDS.session),
@@ -243,9 +256,7 @@ describe("WorkspaceTerminalGateway", () => {
     const browser = new WebSocket(terminalUrl, {
       headers: { authorization: `Bearer ${TOKEN}` },
     });
-    closeTasks.push(async () => {
-      if (browser.readyState === WebSocket.OPEN) browser.close();
-    });
+    closeTasks.push(() => closeBrowser(browser));
     const nextFrame = queuedFrames(browser);
     await new Promise<void>((resolve, reject) => {
       browser.once("open", resolve);
@@ -321,9 +332,7 @@ describe("WorkspaceTerminalGateway", () => {
     const developmentBrowser = new WebSocket(developmentUrl, {
       headers: { authorization: `Bearer ${TOKEN}` },
     });
-    closeTasks.push(async () => {
-      if (developmentBrowser.readyState === WebSocket.OPEN) developmentBrowser.close();
-    });
+    closeTasks.push(() => closeBrowser(developmentBrowser));
     const nextDevelopmentFrame = queuedFrames(developmentBrowser);
     await new Promise<void>((resolve, reject) => {
       developmentBrowser.once("open", resolve);
@@ -354,9 +363,7 @@ describe("WorkspaceTerminalGateway", () => {
       .where("id", "=", IDS.development)
       .execute();
     const notOwner = new WebSocket(terminalUrl, { headers: { authorization: `Bearer ${TOKEN}` } });
-    closeTasks.push(async () => {
-      if (notOwner.readyState === WebSocket.OPEN) notOwner.close();
-    });
+    closeTasks.push(() => closeBrowser(notOwner));
     const nextNotOwnerFrame = queuedFrames(notOwner);
     await new Promise<void>((resolve, reject) => {
       notOwner.once("open", resolve);
@@ -377,9 +384,7 @@ describe("WorkspaceTerminalGateway", () => {
     const failed = new WebSocket(terminalUrl, {
       headers: { authorization: `Bearer ${TOKEN}` },
     });
-    closeTasks.push(async () => {
-      if (failed.readyState === WebSocket.OPEN) failed.close();
-    });
+    closeTasks.push(() => closeBrowser(failed));
     const nextFailedFrame = queuedFrames(failed);
     await new Promise<void>((resolve, reject) => {
       failed.once("open", resolve);
@@ -391,11 +396,14 @@ describe("WorkspaceTerminalGateway", () => {
     expect(observedDevelopmentOpen).toMatchObject({ environmentId: IDS.development });
 
     const unauthorized = new WebSocket(terminalUrl);
+    closeTasks.push(() => closeBrowser(unauthorized));
     await expect(
       new Promise<number>((resolve, reject) => {
-        unauthorized.once("unexpected-response", (_request, response) =>
-          resolve(response.statusCode ?? 0),
-        );
+        unauthorized.once("unexpected-response", (_request, response) => {
+          response.resume();
+          resolve(response.statusCode ?? 0);
+          unauthorized.terminate();
+        });
         unauthorized.once("error", reject);
       }),
     ).resolves.toBe(401);

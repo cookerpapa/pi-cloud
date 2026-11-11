@@ -15,7 +15,13 @@ replacement and confirmed deletion. Cold maintenance also waits for OnDelete
 node Pods directly; an unready node keeps the resumable maintenance receipt.
 Full-path acceptance found BoxLite's automatic volume UID mapping conflicted
 with a root default container user. The adapter now selects UID 1000 to preserve
-the platform Workspace identity; live ownership and Tool checks are pending.
+the platform Workspace identity. Actual host/Guest ownership, node replacement,
+pause/resume and four real model Tool cases pass; full lifecycle/failure checks
+remain in progress.
+The real terminal handshake also exposed a public-role composition regression:
+Session API relied on the removed Worker gateway to register WebSocket support.
+Application assembly now installs it for the standalone terminal gateway, and
+the terminal test uses that assembly instead of manually supplying the plugin.
 
 [ADR-0313](adr/0313-alternate-runtime-production-integration.md) records the new
 owner authorization beyond the earlier operator-only experiment.

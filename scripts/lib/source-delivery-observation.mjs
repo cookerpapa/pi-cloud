@@ -81,6 +81,24 @@ export function lifecycleProviderId(pod) {
   return `cubesandbox:${domain}`;
 }
 
+/** BoxLite compute is registered but currently has no observation producer.
+ * Only a positively purged owned test Workspace can retire those unpriced
+ * registrations. A newly installed collector must join the delivery inventory. */
+export function assertUncollectedComputeClosed({
+  sourceId,
+  cubeSourceId,
+  workspacePurged,
+  collectorExists,
+}) {
+  assert.equal(
+    sourceId,
+    cubeSourceId.replace(/^cubesandbox:/, "boxlite:"),
+    "Unknown compute receipt producer",
+  );
+  assert(!collectorExists, "BoxLite collector must join the receipt delivery inventory");
+  assert(workspacePurged, "Uncollected compute still has an unconfirmed Workspace closure");
+}
+
 /** Operator-only private reader. Kubernetes is used only to discover existing
  * source Pods/Services. Source calls only read metrics/history and the accounting cursor; no lifecycle mutation. */
 export async function createDeployedSourceDeliveryReader({ database, tenantId }) {
@@ -116,9 +134,25 @@ export async function createDeployedSourceDeliveryReader({ database, tenantId })
       rows: [owned],
     } = await sql`select count(*)::int as resources,
       count(*) filter(where lifecycle_state->'event'->>'state' is distinct from 'absent')::int as pending
-      from resource_metering_resources where tenant_id=${tenantId}::uuid and kind='compute'`.execute(
-      database,
-    );
+      from resource_metering_resources where tenant_id=${tenantId}::uuid and kind='compute'
+      and provider_binding->>'sourceId'=${provider}`.execute(database);
+    const { rows: uncollected } = await sql`
+      select r.provider_binding->>'sourceId' as source_id,
+        bool_and(w.storage_purged_at is not null) as workspace_purged,
+        bool_or(exists(select 1 from resource_lifecycle_sources s
+          where s.provider=r.provider_binding->>'sourceId')) as collector_exists
+      from resource_metering_resources r left join workspaces w
+        on w.id=r.workspace_id and w.tenant_id=r.tenant_id
+      where r.tenant_id=${tenantId}::uuid and r.kind='compute'
+        and (r.provider_binding->>'sourceId') is distinct from ${provider}
+      group by r.provider_binding->>'sourceId'`.execute(database);
+    for (const row of uncollected)
+      assertUncollectedComputeClosed({
+        sourceId: row.source_id,
+        cubeSourceId: provider,
+        workspacePurged: row.workspace_purged === true,
+        collectorExists: row.collector_exists,
+      });
     // Stock observations and derived receipts commit in one PG transaction.
     // Once an owned resource is absent, future pages exclude it; stale pages
     // cannot pass the collector's cursor CAS. No Cubelet journal remains to drain.

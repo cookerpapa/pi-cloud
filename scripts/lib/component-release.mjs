@@ -148,11 +148,17 @@ export function scopedApplyState({ baseline, next, current, helmRevision, before
 }
 
 /** Source classifications are deliberately small; protocol changes use matched release. */
-export function assertScopedSources(scope, files) {
+export function assertScopedSources(scope, files, runtimeInputs) {
   assert(scope === "catalog" || Object.hasOwn(imageReleaseTargets, scope), "Unknown release scope");
   for (const file of files) {
     assert(
       operatorSources.has(file) ||
+        // BoxLite node code is independently published and is absent from the
+        // ordinary role images. Require the selected Docker input closure to
+        // prove that absence; never excuse shared provider/protocol changes.
+        (runtimeInputs instanceof Set &&
+          file.startsWith("packages/boxlite-node/src/") &&
+          !runtimeInputs.has(file)) ||
         (scope === "tool-host" && ordinaryControlToolSource(file)) ||
         (scope === "tool-host" &&
           file === "deploy/helm/pi-cloud-platform/templates/network-policy.yaml") ||
