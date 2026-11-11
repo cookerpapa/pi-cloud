@@ -22,9 +22,9 @@
 - [x] #26 R5: publish the Worker-retirement correction and verify the forced reachable-inventory path plus accounting.
 - [x] #26: first stock matched delivery and original-asset preservation; Guest and Provider live gates passed.
 - [x] #26: actual 30-minute expiry, active-wait renewal, retained-file recovery and environment-reset notice passed; final delivery evidence recorded.
-- [ ] #28 maintenance: reconcile four native template deletions that timed out and retire inactive private node-metadata buckets only under a narrow cold guard; #26's implementation and acceptance are complete.
+- [x] #28 maintenance: four obsolete templates/rootfs artifacts deleted through native APIs; three private buckets retired with native-data hashes preserved.
 - [x] #28 source: guarded one-time locator repair and offline bbolt bucket retirement; preserve native records and use official template deletion.
-- [ ] #28 acceptance: execute the cold window and verify preserved files/configuration and machine recovery.
+- [x] #28 acceptance: cold maintenance completed; original 394 files/configuration and both recovered machines verified. [Evidence](reports/cube-metadata-cleanup-20261111.md).
 - [x] #27 source: audit Android upstream artifacts and remove the driver manifest rewrite; device rollout remains pending.
 - [ ] #27: evaluate BoxLite against the stock-provider boundary before enabling it.
 
