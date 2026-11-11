@@ -22,14 +22,15 @@
 - [x] #26 R5: publish the Worker-retirement correction and verify the forced reachable-inventory path plus accounting.
 - [x] #26: first stock matched delivery and original-asset preservation; Guest and Provider live gates passed.
 - [x] #26: actual 30-minute expiry, active-wait renewal, retained-file recovery and environment-reset notice passed; final delivery evidence recorded.
-- [ ] #26 maintenance: reconcile four native template deletions that timed out and retire inactive private node-metadata buckets only under a narrow cold guard.
+- [ ] #28 maintenance: reconcile four native template deletions that timed out and retire inactive private node-metadata buckets only under a narrow cold guard; #26's implementation and acceptance are complete.
 - [x] #27 source: audit Android upstream artifacts and remove the driver manifest rewrite; device rollout remains pending.
 - [ ] #27: evaluate BoxLite against the stock-provider boundary before enabling it.
 
 [ADR-0308](adr/0308-unresolved-resource-admission.md) and
 [ADR-0309](adr/0309-stock-sandbox-contract.md). Stock Cube implementation is now
-deployed and live-verified. Native cleanup maintenance and subsequent BoxLite
-adoption remain tracked separately. [Delivery](reports/stock-cube-source-20261111.md).
+deployed and live-verified. Native cleanup maintenance is tracked in
+[#28](https://github.com/cookerpapa/pi-managed-agents/issues/28), and subsequent BoxLite
+adoption in #27. [Delivery](reports/stock-cube-source-20261111.md).
 
 ## Guest execution and Session activity — deployed
 

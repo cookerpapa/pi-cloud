@@ -4,6 +4,8 @@ Status: `stock-cube-20261111-r5` is deployed; maintained live acceptance passed.
 Tracking: [#26](https://github.com/cookerpapa/pi-managed-agents/issues/26),
 [ADR-0309](../adr/0309-stock-sandbox-contract.md),
 [ADR-0310](../adr/0310-stock-cube-release-exception.md).
+Implementation and acceptance are complete. Remaining artifact cleanup is tracked
+separately in [#28](https://github.com/cookerpapa/pi-managed-agents/issues/28).
 
 ## Delivered boundary
 

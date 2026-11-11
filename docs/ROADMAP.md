@@ -2,17 +2,18 @@
 
 ## Resource admission and stock sandbox boundaries — deployed
 
-[#26](https://github.com/cookerpapa/pi-managed-agents/issues/26) implements the
-owner's unresolved-creation restrictions and verifies recovery-aware deletion
-under [ADR-0308](adr/0308-unresolved-resource-admission.md). It assesses every
-remaining Cube patch before any removal. [#27](https://github.com/cookerpapa/pi-managed-agents/issues/27)
+Completed [#26](https://github.com/cookerpapa/pi-managed-agents/issues/26) delivered the
+owner's unresolved-creation restrictions and recovery-aware deletion
+under [ADR-0308](adr/0308-unresolved-resource-admission.md), following the complete
+Cube patch inventory. [#27](https://github.com/cookerpapa/pi-managed-agents/issues/27)
 tracks BoxLite integration and the Android source audit. The owner subsequently
 accepted [ADR-0309](adr/0309-stock-sandbox-contract.md) to implement stock Cube
 APIs with conservative external ownership and explicit accounting gaps. Stock
 Cube R5 is deployed on schema 217 with original assets preserved. Capacity,
 image/browser, VM recovery, forced reachable-inventory Worker recovery and accounting
 acceptance passed, including the real 30-minute idle-expiry and retained-file recovery
-check. Native template/node-metadata cleanup remains tracked as maintenance. The
+check. Native template/node-metadata cleanup is separate maintenance in
+[#28](https://github.com/cookerpapa/pi-managed-agents/issues/28). The
 [delivery report](reports/stock-cube-source-20261111.md) records passing live
 checks, failed samples, limits and the owner-approved exact-image exception.
 

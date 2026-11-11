@@ -1,6 +1,6 @@
 # ADR-0309: Stock sandbox APIs and conservative external ownership
 
-Date: 2026-11-11. Status: accepted; implementation in progress.
+Date: 2026-11-11. Status: accepted; implemented and deployed in stock Cube R5.
 Tracking: [#26](https://github.com/cookerpapa/pi-managed-agents/issues/26),
 [BoxLite / Android #27](https://github.com/cookerpapa/pi-managed-agents/issues/27).
 
